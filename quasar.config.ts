@@ -3,6 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
+import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 
 export default defineConfig((ctx) => {
   return {
@@ -70,6 +71,26 @@ export default defineConfig((ctx) => {
       // viteVuePluginOptions: {},
 
       vitePlugins: [
+        [
+          'unplugin-vue-components/vite',
+          {
+            dts: 'src/auto-components.d.ts',
+            resolvers: [
+              PrimeVueResolver({
+                importStyle: true,
+                importIcons: true,
+              }),
+            ],
+          },
+        ],
+
+        [
+          'unplugin-auto-import/vite',
+          {
+            dts: 'src/auto-imports.d.ts',
+            resolvers: [PrimeVueResolver()],
+          },
+        ],
         [
           '@intlify/unplugin-vue-i18n/vite',
           {
