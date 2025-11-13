@@ -12,7 +12,7 @@ export default defineConfig((ctx) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: ['i18n', 'axios'],
+    boot: ['i18n', 'axios', 'primevue'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['tailwind.css', 'app.scss'],
@@ -60,7 +60,13 @@ export default defineConfig((ctx) => {
       // polyfillModulePreload: true,
       // distDir
 
-      // extendViteConf (viteConf) {},
+      extendViteConf(viteConf) {
+        // Reduce log noise in terminal
+        viteConf.logLevel = 'error';
+        // Suppress large chunk size warnings
+        if (!viteConf.build) viteConf.build = {};
+        viteConf.build.chunkSizeWarningLimit = 2000;
+      },
       // viteVuePluginOptions: {},
 
       vitePlugins: [
@@ -89,6 +95,8 @@ export default defineConfig((ctx) => {
               lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
               useFlatConfig: true,
             },
+            // Turn off in-browser overlay entirely (keep terminal output)
+            overlay: false,
           },
           { server: false },
         ],
@@ -103,7 +111,9 @@ export default defineConfig((ctx) => {
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
     framework: {
-      config: {},
+      config: {
+        dark: true,
+      },
 
       // iconSet: 'material-icons', // Quasar icon set
       lang: 'zh-CN', // Quasar language pack
