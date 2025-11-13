@@ -1,5 +1,5 @@
 {
-  "name": "luna",
+  "name": "luna-ai-translator",
   "version": "0.0.1",
   "description": "Luna AI translator",
   "productName": "luna App",
@@ -9,7 +9,7 @@
   "scripts": {
     "lint": "eslint -c ./eslint.config.js \"./src*/**/*.{ts,js,cjs,mjs,vue}\"",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
-    "test": "echo \"No test specified\" && exit 0",
+    "test": "bun test",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare"
