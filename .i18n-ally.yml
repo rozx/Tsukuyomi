@@ -1,0 +1,28 @@
+# i18n-ally 配置文件
+# 用于配置国际化翻译工具的行为
+
+# 语言文件路径
+localesPaths:
+  - src/i18n
+
+# 语言文件匹配模式
+pathMatcher: '{locale}/index.ts'
+
+# 键名风格
+keystyle: nested
+
+# 源语言（默认语言）
+sourceLanguage: zh-CN
+
+# 显示语言
+displayLanguage: zh-CN
+
+# 启用的框架
+enabledFrameworks:
+  - vue
+  - i18next
+
+# 排除的文件和目录
+# 排除 boot 目录，因为那里是配置文件，不是翻译文件
+ignoredLocales: []
+
