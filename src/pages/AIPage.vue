@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { v4 as uuidv4 } from 'uuid';
+import { useConfirm } from 'primevue/useconfirm';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
-import Dialog from 'primevue/dialog';
 import Tag from 'primevue/tag';
-import type { AIModel } from 'src/types/ai-model';
+import ConfirmDialog from 'primevue/confirmdialog';
+import type { AIModel, AIProvider } from 'src/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import AIModelDialog from 'src/components/AIModelDialog.vue';
 
 const aiModelsStore = useAIModelsStore();
+const confirm = useConfirm();
 
 // 使用 store 中的模型列表
 const aiModels = computed(() => aiModelsStore.models);
@@ -16,18 +20,105 @@ const selectedModel = ref<AIModel | null>(null);
 const showAddDialog = ref(false);
 const showEditDialog = ref(false);
 
+// 生成唯一 ID
+const generateId = (): string => {
+  return uuidv4();
+};
+
+// 添加模型
 const addModel = () => {
+  selectedModel.value = null;
   showAddDialog.value = true;
 };
 
+// 编辑模型
 const editModel = (model: AIModel) => {
   selectedModel.value = { ...model };
   showEditDialog.value = true;
 };
 
-const deleteModel = (model: AIModel) => {
-  aiModelsStore.deleteModel(model.id);
+// 保存模型（添加或编辑）
+const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault'] }) => {
+  if (showAddDialog.value) {
+    // 添加新模型
+    const newModel: AIModel = {
+      id: generateId(),
+      name: formData.name!,
+      provider: formData.provider as AIProvider,
+      model: formData.model!,
+      temperature: formData.temperature!,
+      maxTokens: formData.maxTokens!,
+      ...(formData.contextWindow !== undefined && formData.contextWindow !== null ? { contextWindow: formData.contextWindow } : {}),
+      ...(formData.rateLimit !== undefined && formData.rateLimit !== null ? { rateLimit: formData.rateLimit } : {}),
+      apiKey: formData.apiKey!,
+      baseUrl: formData.baseUrl!,
+      enabled: formData.enabled ?? true,
+      isDefault: {
+        translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
+        proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
+        polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
+        characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
+        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
+      },
+    };
+    aiModelsStore.addModel(newModel);
+    showAddDialog.value = false;
+  } else if (showEditDialog.value && selectedModel.value) {
+    // 更新现有模型
+    const updates: Partial<AIModel> = {
+      name: formData.name!,
+      provider: formData.provider as AIProvider,
+      model: formData.model!,
+      temperature: formData.temperature!,
+      maxTokens: formData.maxTokens!,
+      apiKey: formData.apiKey!,
+      baseUrl: formData.baseUrl!,
+      enabled: formData.enabled ?? true,
+      isDefault: {
+        translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
+        proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
+        polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
+        characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
+        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
+      },
+    };
+
+    // 只在有值时才添加可选字段
+    if (formData.contextWindow !== undefined && formData.contextWindow !== null) {
+      updates.contextWindow = formData.contextWindow;
+    }
+    if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
+      updates.rateLimit = formData.rateLimit;
+    }
+
+    aiModelsStore.updateModel(selectedModel.value.id, updates);
+    showEditDialog.value = false;
+    selectedModel.value = null;
+  }
 };
+
+// 删除模型
+const deleteModel = (model: AIModel) => {
+  confirm.require({
+    message: `确定要删除模型 "${model.name}" 吗？`,
+    header: '确认删除',
+    icon: 'pi pi-exclamation-triangle',
+    rejectClass: 'p-button-text',
+    acceptClass: 'p-button-danger',
+    rejectLabel: '取消',
+    acceptLabel: '删除',
+    accept: () => {
+      aiModelsStore.deleteModel(model.id);
+    },
+  });
+};
+
+// 关闭对话框时重置
+watch([showAddDialog, showEditDialog], ([addVisible, editVisible]) => {
+  if (!addVisible && !editVisible) {
+    selectedModel.value = null;
+  }
+});
 
 const getProviderLabel = (provider: string) => {
   return provider === 'openai' ? 'OpenAI' : 'Gemini';
@@ -35,12 +126,20 @@ const getProviderLabel = (provider: string) => {
 
 const getDefaultTasks = (model: AIModel) => {
   const tasks: string[] = [];
-  if (model.isDefault.translation) tasks.push('翻译');
-  if (model.isDefault.proofreading) tasks.push('校对');
-  if (model.isDefault.polishing) tasks.push('润色');
-  if (model.isDefault.characterExtraction) tasks.push('角色提取');
-  if (model.isDefault.terminologyExtraction) tasks.push('术语提取');
+  if (model.isDefault.translation?.enabled) tasks.push('翻译');
+  if (model.isDefault.proofreading?.enabled) tasks.push('校对');
+  if (model.isDefault.polishing?.enabled) tasks.push('润色');
+  if (model.isDefault.characterExtraction?.enabled) tasks.push('角色提取');
+  if (model.isDefault.terminologyExtraction?.enabled) tasks.push('术语提取');
   return tasks.join('、') || '无';
+};
+
+const formatApiKey = (apiKey: string): string => {
+  if (!apiKey) return '';
+  if (apiKey.length <= 6) return apiKey;
+  const prefix = apiKey.substring(0, 6);
+  const maskedLength = apiKey.length - 6;
+  return prefix + '*'.repeat(maskedLength);
 };
 </script>
 
@@ -51,17 +150,22 @@ const getDefaultTasks = (model: AIModel) => {
         <h1 class="text-2xl font-bold">AI 模型管理</h1>
         <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
       </div>
-      <Button label="添加 AI 模型" icon="pi pi-plus" @click="addModel" class="p-button-primary" />
+      <Button
+        label="添加 AI 模型"
+        icon="pi pi-plus"
+        @click="addModel"
+        class="p-button-primary icon-button-hover"
+      />
     </div>
 
     <div v-if="aiModels.length === 0" class="text-center py-12">
-      <i class="pi pi-sparkles text-4xl text-moon/50 mb-4" />
+      <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
       <p class="text-moon/70">暂无配置的 AI 模型</p>
       <Button
         label="添加第一个 AI 模型"
         icon="pi pi-plus"
         @click="addModel"
-        class="p-button-primary mt-4"
+        class="p-button-primary mt-4 icon-button-hover"
       />
     </div>
 
@@ -72,7 +176,7 @@ const getDefaultTasks = (model: AIModel) => {
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
                 <i
-                  class="pi pi-sparkles text-xl"
+                  class="pi pi-sparkles text-xl icon-hover"
                   :class="model.enabled ? 'text-primary' : 'text-moon/50'"
                 />
                 <div>
@@ -89,12 +193,12 @@ const getDefaultTasks = (model: AIModel) => {
                 />
                 <Button
                   icon="pi pi-pencil"
-                  class="p-button-text p-button-sm"
+                  class="p-button-text p-button-sm icon-button-hover"
                   @click="editModel(model)"
                 />
                 <Button
                   icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-danger"
+                  class="p-button-text p-button-sm p-button-danger icon-button-hover"
                   @click="deleteModel(model)"
                 />
               </div>
@@ -114,7 +218,7 @@ const getDefaultTasks = (model: AIModel) => {
               </div>
               <div>
                 <span class="text-moon/70">API Key:</span>
-                <span class="ml-2 font-mono text-xs">{{ model.apiKey }}</span>
+                <span class="ml-2 font-mono text-xs">{{ formatApiKey(model.apiKey) }}</span>
               </div>
               <div>
                 <span class="text-moon/70">基础地址:</span>
@@ -130,52 +234,28 @@ const getDefaultTasks = (model: AIModel) => {
       </Card>
     </div>
 
-    <!-- 添加/编辑对话框将在后续实现 -->
-    <Dialog
+    <!-- 添加对话框 -->
+    <AIModelDialog
       v-model:visible="showAddDialog"
-      header="添加 AI 模型"
-      :modal="true"
-      :style="{ width: '600px' }"
-    >
-      <p class="text-moon/70">添加 AI 模型表单将在后续实现</p>
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text"
-          @click="showAddDialog = false"
-        />
-        <Button label="保存" icon="pi pi-check" @click="showAddDialog = false" />
-      </template>
-    </Dialog>
+      mode="add"
+      @save="handleSave"
+      @cancel="showAddDialog = false"
+    />
 
-    <Dialog
+    <!-- 编辑对话框 -->
+    <AIModelDialog
       v-model:visible="showEditDialog"
-      header="编辑 AI 模型"
-      :modal="true"
-      :style="{ width: '600px' }"
-    >
-      <p class="text-moon/70">编辑 AI 模型表单将在后续实现</p>
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text"
-          @click="showEditDialog = false"
-        />
-        <Button label="保存" icon="pi pi-check" @click="showEditDialog = false" />
-      </template>
-    </Dialog>
+      mode="edit"
+      :model="selectedModel"
+      @save="handleSave"
+      @cancel="showEditDialog = false"
+    />
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog />
   </div>
 </template>
 
 <style scoped>
-:deep(.p-card) {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-:deep(.p-card-body) {
-  padding: 0;
-}
+/* 所有组件样式已在全局 app.scss 中定义，确保整个应用样式一致 */
 </style>

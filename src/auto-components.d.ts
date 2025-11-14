@@ -11,8 +11,10 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AIModelDialog: typeof import('./components/AIModelDialog.vue')['default']
     AppFooter: typeof import('./components/AppFooter.vue')['default']
     AppHeader: typeof import('./components/AppHeader.vue')['default']
+    AppMessage: typeof import('./components/AppMessage.vue')['default']
     AppSideMenu: typeof import('./components/AppSideMenu.vue')['default']
     Breadcrumb: typeof import('primevue/breadcrumb')['default']
     Button: typeof import('primevue/button')['default']
@@ -20,11 +22,13 @@ declare module 'vue' {
     ExampleComponent: typeof import('./components/ExampleComponent.vue')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']
+    Message: typeof import('primevue/message')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     Sidebar: typeof import('primevue/sidebar')['default']
     Splitter: typeof import('primevue/splitter')['default']
     SplitterPanel: typeof import('primevue/splitterpanel')['default']
+    TestResult: typeof import('./components/TestResult.vue')['default']
     ToggleButton: typeof import('primevue/togglebutton')['default']
   }
 }

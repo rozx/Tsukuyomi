@@ -56,7 +56,7 @@ export const useAIModelsStore = defineStore('aiModels', {
      */
     getDefaultModelForTask: (state) => {
       return (task: keyof AIModel['isDefault']): AIModel | undefined => {
-        return state.models.find((model) => model.enabled && model.isDefault[task]);
+        return state.models.find((model) => model.enabled && model.isDefault[task]?.enabled);
       };
     },
   },
@@ -112,12 +112,17 @@ export const useAIModelsStore = defineStore('aiModels', {
         // 如果设置为默认，先取消其他模型的默认状态
         if (isDefault) {
           this.models.forEach((m) => {
-            if (m.id !== id) {
-              m.isDefault[task] = false;
+            if (m.id !== id && m.isDefault[task]) {
+              m.isDefault[task] = { ...m.isDefault[task], enabled: false };
             }
           });
         }
-        model.isDefault[task] = isDefault;
+        // 保持现有的 temperature，只更新 enabled
+        const currentConfig = model.isDefault[task];
+        model.isDefault[task] = {
+          enabled: isDefault,
+          temperature: currentConfig?.temperature ?? 0.7,
+        };
         saveModelsToStorage(this.models);
       }
     },

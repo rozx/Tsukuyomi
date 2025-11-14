@@ -4,14 +4,22 @@
 export type AIProvider = 'openai' | 'gemini';
 
 /**
+ * 任务配置
+ */
+export interface TaskConfig {
+  enabled: boolean;
+  temperature: number;
+}
+
+/**
  * AI 模型默认任务配置
  */
 export interface AIModelDefaultTasks {
-  translation: boolean;
-  proofreading: boolean;
-  polishing: boolean;
-  characterExtraction: boolean;
-  terminologyExtraction: boolean;
+  translation: TaskConfig;
+  proofreading: TaskConfig;
+  polishing: TaskConfig;
+  characterExtraction: TaskConfig;
+  terminologyExtraction: TaskConfig;
 }
 
 /**
@@ -24,6 +32,8 @@ export interface AIModel {
   model: string;
   temperature: number;
   maxTokens: number;
+  contextWindow?: number; // 上下文窗口大小（总 token 限制）
+  rateLimit?: number; // 速率限制（每分钟请求数）
   apiKey: string;
   baseUrl: string;
   isDefault: AIModelDefaultTasks;

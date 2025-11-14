@@ -29,7 +29,7 @@ const menuItems = ref<MenuItem[]>([
             icon="pi pi-bars"
             @click="ui.toggleSideMenu()"
           />
-          <i class="pi pi-sparkles text-primary-600" />
+          <i class="pi pi-moon text-primary-600" />
           <span class="font-semibold">Luna AI Translator</span>
         </div>
       </template>

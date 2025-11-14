@@ -64,7 +64,7 @@ const bottomItems: MenuItem[] = [
     <div class="shrink-0 px-4 pt-6 pb-4 relative z-10">
       <div class="flex items-center gap-2 mb-6">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-luna-500 to-luna-600 flex items-center justify-center shadow-lg shadow-luna-500/30">
-          <i class="pi pi-sparkles text-white text-sm" />
+          <i class="pi pi-moon text-white text-sm" />
         </div>
         <span class="font-semibold text-moon-500 text-sm tracking-wide">Luna AI</span>
       </div>

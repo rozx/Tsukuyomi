@@ -1,3 +1,7 @@
+<script setup lang="ts">
+import Button from 'primevue/button';
+</script>
+
 <template>
   <div class="w-full h-full bg-primary-500 text-white text-center p-4 flex items-center justify-center">
     <div>
@@ -11,7 +15,3 @@
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import Button from 'primevue/button';
-</script>
