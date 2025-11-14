@@ -25,6 +25,16 @@ const topItems: MenuItem[] = [
       },
     ],
   },
+  {
+    label: 'AI管理',
+    items: [
+      {
+        label: 'AI列表',
+        icon: 'pi pi-sparkles',
+        command: () => void router.push('/ai'),
+      },
+    ],
+  },
 ];
 
 const bottomItems: MenuItem[] = [

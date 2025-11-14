@@ -2,11 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Optional: body defaults for the Luna theme */
+/* Base styles for the Luna theme using TailwindCSS */
 @layer base {
   html,
   body,
   #q-app {
     height: 100%;
+    @apply bg-night-900 text-moon-500;
   }
 }

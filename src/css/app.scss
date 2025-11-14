@@ -1,27 +1,27 @@
 // app global css in SCSS form
 
-/* PrimeVue dark theme variable alignment with Luna palette */
+/* PrimeVue dark theme variable alignment with TailwindCSS Luna palette */
 :root {
-  /* Primary */
+  /* Primary - using TailwindCSS luna-500 */
   --primary-color: #5567f2;
   --primary-color-text: #ffffff;
 }
 
-/* Default (dark is on by config) */
+/* Default (dark is on by config) - using TailwindCSS moon color */
 body,
 #q-app {
-  color: rgba(246, 243, 209, 0.92);
+  color: rgba(246, 243, 209, 0.92); /* moon-500 with opacity */
 }
 
-/* PrimeVue surface tokens (aura) */
+/* PrimeVue surface tokens (aura) - aligned with TailwindCSS night colors */
 :root {
-  --surface-ground: #0b1026; /* night 900 */
+  --surface-ground: #0b1026; /* night-900 from TailwindCSS config */
   --surface-section: #0b1026;
-  --surface-card: #0e1535; /* between night 900 and primary 950 */
-  --surface-overlay: rgba(7, 10, 26, 0.92); /* night 950 with alpha */
+  --surface-card: #0e1535; /* between night-900 and luna-950 */
+  --surface-overlay: rgba(7, 10, 26, 0.92); /* night-950 with alpha */
   --surface-border: rgba(255, 255, 255, 0.1);
-  --text-color: rgba(246, 243, 209, 0.92);
-  --text-muted-color: rgba(246, 243, 209, 0.7);
-  --highlight-bg: rgba(85, 103, 242, 0.18);
+  --text-color: rgba(246, 243, 209, 0.92); /* moon-500 with opacity */
+  --text-muted-color: rgba(246, 243, 209, 0.7); /* moon-500 with lower opacity */
+  --highlight-bg: rgba(85, 103, 242, 0.18); /* luna-500 with opacity */
   --highlight-text-color: #ffffff;
 }

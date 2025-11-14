@@ -1,23 +1,22 @@
 // Quasar SCSS (& Sass) Variables
 // --------------------------------------------------
-// To customize the look and feel of this app, you can override
-// the Sass/SCSS variables found in Quasar's source Sass/SCSS files.
+// NOTE: This project uses TailwindCSS for theming instead of Quasar's theme system.
+// These variables are kept for compatibility with Quasar components that may still
+// reference them, but the primary styling should be done through TailwindCSS classes.
+//
+// TailwindCSS theme colors are defined in tailwind.config.cjs:
+// - luna: primary color palette (#5567f2)
+// - night: dark background colors (#0b1026, #070a1a)
+// - moon: light text colors (#f6f3d1)
+//
+// To customize the theme, update tailwind.config.cjs instead of this file.
 
-// Check documentation for full list of Quasar variables
-
-// Your own variables (that are declared here) and Quasar's own
-// ones will be available out of the box in your .vue/.scss/.sass files
-
-// It's highly recommended to change the default colors
-// to match your app's branding.
-// Tip: Use the "Theme Builder" on Quasar's documentation website.
-
-$primary: #5567f2; // Luna primary
+$primary: #5567f2; // Luna primary (matches luna-500 in TailwindCSS)
 $secondary: #26a69a;
 $accent: #9c27b0;
 
-$dark: #0b1026; // Luna night 900
-$dark-page: #070a1a; // Luna night 950
+$dark: #0b1026; // Luna night 900 (matches night-900 in TailwindCSS)
+$dark-page: #070a1a; // Luna night 950 (matches night-950 in TailwindCSS)
 
 $positive: #21ba45;
 $negative: #c10015;
