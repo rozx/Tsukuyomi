@@ -11,9 +11,20 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppFooter: typeof import('./components/AppFooter.vue')['default']
+    AppHeader: typeof import('./components/AppHeader.vue')['default']
+    AppSideMenu: typeof import('./components/AppSideMenu.vue')['default']
+    Breadcrumb: typeof import('primevue/breadcrumb')['default']
+    Button: typeof import('primevue/button')['default']
     EssentialLink: typeof import('./components/EssentialLink.vue')['default']
     ExampleComponent: typeof import('./components/ExampleComponent.vue')['default']
+    Menu: typeof import('primevue/menu')['default']
+    Menubar: typeof import('primevue/menubar')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    Sidebar: typeof import('primevue/sidebar')['default']
+    Splitter: typeof import('primevue/splitter')['default']
+    SplitterPanel: typeof import('primevue/splitterpanel')['default']
+    ToggleButton: typeof import('primevue/togglebutton')['default']
   }
 }
