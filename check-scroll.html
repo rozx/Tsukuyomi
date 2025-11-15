@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+// This will be injected into the browser console
+const main = document.querySelector('main');
+console.log('Main element:', main);
+console.log('Main scrollHeight:', main?.scrollHeight);
+console.log('Main clientHeight:', main?.clientHeight);
+console.log('Main computed styles:', window.getComputedStyle(main));
+console.log('Main overflow-y:', window.getComputedStyle(main).overflowY);
+console.log('Main overflow-x:', window.getComputedStyle(main).overflowX);
+console.log('Main height:', window.getComputedStyle(main).height);
+console.log('Main min-height:', window.getComputedStyle(main).minHeight);
+</script>
+</body>
+</html>

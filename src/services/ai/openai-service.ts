@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { AIService, AIServiceConfig, AIConfigResult, ModelInfo, RateLimitInfo } from './types';
+import type { AIService, AIServiceConfig, AIConfigResult, ModelInfo } from './types';
 
 export class OpenAIService implements AIService {
   /**
@@ -21,26 +21,25 @@ export class OpenAIService implements AIService {
 
   /**
    * 获取模型配置信息
-   * 直接询问 AI 模型来获取配置信息
+   * 专注于获取最大输入 token 数，用于限制上下文输入
    */
   async getConfig(config: AIServiceConfig): Promise<AIConfigResult> {
     try {
       const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
       const apiKey = config.apiKey;
 
-      // 询问 AI 模型关于其配置信息
-      const prompt = `请以 JSON 格式返回你的配置信息，包括：
-      1. maxTokens: 最大输出 token 数
-      2. contextWindow: 上下文窗口大小（总 token 限制）
-      3. modelName: 模型名称
-      4. rateLimit: 速率限制（每分钟请求数，必须是数字）
+      // 询问 AI 模型关于其最大输入 token 数
+      const prompt = `请以 JSON 格式返回你的最大输入 token 数（maxInputTokens），这是我可以发送给你的最大 token 数量，用于限制上下文输入。
 
       请只返回 JSON 对象，格式如下：
       {
-        "maxTokens": 数字,
-        "contextWindow": 数字,
-        "modelName": "字符串",
-        "rateLimit": 数字（每分钟请求数，例如：500）
+        "maxInputTokens": 数字
+      }
+
+      如果你不知道确切的 maxInputTokens，但知道 contextWindow（总上下文窗口大小），可以返回：
+      {
+        "maxInputTokens": 数字,
+        "contextWindow": 数字
       }`;
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -53,8 +52,8 @@ export class OpenAIService implements AIService {
         body: JSON.stringify({
           model: config.model,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 500,
-          temperature: 0.3, // 使用较低的温度以获得更准确的配置信息
+          max_tokens: 200,
+          temperature: 0.1,
           response_format: { type: 'json_object' }, // 要求 JSON 格式响应
         }),
       });
@@ -85,57 +84,35 @@ export class OpenAIService implements AIService {
         modelInfo.name = data.model;
       }
 
-      let maxTokens: number | undefined;
+      let maxInputTokens: number | undefined;
       let contextWindow: number | undefined;
-      const rateLimit: RateLimitInfo = {};
 
       // 尝试解析 AI 返回的 JSON 配置
       if (content) {
         try {
           const configJson = JSON.parse(content);
-          if (typeof configJson.maxTokens === 'number') {
-            maxTokens = configJson.maxTokens;
+          if (typeof configJson.maxInputTokens === 'number') {
+            maxInputTokens = configJson.maxInputTokens;
           }
           if (typeof configJson.contextWindow === 'number') {
             contextWindow = configJson.contextWindow;
-            // 如果没有 maxTokens，使用 contextWindow 作为参考
-            if (!maxTokens && contextWindow) {
-              maxTokens = Math.floor(contextWindow * 0.75); // 通常 maxTokens 约为 contextWindow 的 75%
-            }
-          }
-          if (configJson.modelName) {
-            modelInfo.name = configJson.modelName;
-            modelInfo.displayName = configJson.modelName;
-          }
-          // 从 AI 响应中提取速率限制信息（确保是数字）
-          if (configJson.rateLimit !== undefined) {
-            const limitValue =
-              typeof configJson.rateLimit === 'number'
-                ? configJson.rateLimit
-                : parseInt(String(configJson.rateLimit), 10);
-            if (!isNaN(limitValue)) {
-              rateLimit.limit = limitValue;
+            // 如果没有 maxInputTokens，使用 contextWindow 的 80% 作为估算值（保留 20% 给输出）
+            if (!maxInputTokens && contextWindow) {
+              maxInputTokens = Math.floor(contextWindow * 0.8);
             }
           }
         } catch {
           // 如果解析失败，尝试从文本中提取数字
-          const maxTokensMatch = content.match(/maxTokens["\s:]+(\d+)/i);
+          const maxInputTokensMatch = content.match(/maxInputTokens["\s:]+(\d+)/i);
           const contextMatch = content.match(/contextWindow["\s:]+(\d+)/i);
-          const rateLimitMatch = content.match(/rateLimit["\s:]+(\d+)/i);
 
-          if (maxTokensMatch) {
-            maxTokens = parseInt(maxTokensMatch[1], 10);
+          if (maxInputTokensMatch) {
+            maxInputTokens = parseInt(maxInputTokensMatch[1], 10);
           }
           if (contextMatch) {
             contextWindow = parseInt(contextMatch[1], 10);
-            if (!maxTokens && contextWindow) {
-              maxTokens = Math.floor(contextWindow * 0.75);
-            }
-          }
-          if (rateLimitMatch) {
-            const limitValue = parseInt(rateLimitMatch[1], 10);
-            if (!isNaN(limitValue)) {
-              rateLimit.limit = limitValue;
+            if (!maxInputTokens && contextWindow) {
+              maxInputTokens = Math.floor(contextWindow * 0.8);
             }
           }
         }
@@ -149,14 +126,21 @@ export class OpenAIService implements AIService {
         success: true,
         message: `模型 "${config.model}" 配置已获取`,
         modelInfo,
-        rateLimit: Object.keys(rateLimit).length > 0 ? rateLimit : undefined,
       };
 
-      if (maxTokens) {
-        result.maxTokens = maxTokens;
-        if (result.modelInfo) {
-          result.modelInfo.maxTokens = maxTokens;
-        }
+      // maxTokens 字段用于存储最大输入 token 数
+      // 如果不是有效数字，设置为 -1 表示无限制
+      const finalMaxTokens =
+        maxInputTokens !== undefined &&
+        typeof maxInputTokens === 'number' &&
+        !isNaN(maxInputTokens) &&
+        maxInputTokens > 0
+          ? maxInputTokens
+          : -1;
+
+      result.maxTokens = finalMaxTokens;
+      if (result.modelInfo) {
+        result.modelInfo.maxTokens = finalMaxTokens;
       }
 
       return result;

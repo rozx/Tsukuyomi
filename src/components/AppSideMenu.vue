@@ -1,8 +1,69 @@
 <script setup lang="ts">
 import type { MenuItem } from 'primevue/menuitem';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
+const menuContainerRef = ref<HTMLElement | null>(null);
+
+// 修复 PrimeVue Menu 组件的 aria-hidden 可访问性问题
+// PrimeVue 会在子菜单关闭时设置 aria-hidden，但这些元素仍可能获得焦点
+// 我们需要移除所有可以获得焦点的菜单项链接上的 aria-hidden 属性
+let observer: MutationObserver | null = null;
+let handleFocus: ((e: FocusEvent) => void) | null = null;
+
+onMounted(() => {
+  const container = menuContainerRef.value;
+  if (!container) return;
+
+  // 移除所有菜单项链接上的 aria-hidden 属性
+  // 如果元素可以获得焦点，就不应该有 aria-hidden
+  const removeAriaHiddenFromFocusable = () => {
+    const menuLinks = container.querySelectorAll<HTMLElement>('.p-menuitem-link');
+    menuLinks.forEach((link) => {
+      // 移除所有菜单项链接上的 aria-hidden，因为它们都是可交互的
+      if (link.hasAttribute('aria-hidden')) {
+        link.removeAttribute('aria-hidden');
+      }
+    });
+  };
+
+  // 初始清理
+  removeAriaHiddenFromFocusable();
+
+  // 监听焦点事件，确保获得焦点的元素没有 aria-hidden
+  handleFocus = (e: FocusEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('p-menuitem-link')) {
+      target.removeAttribute('aria-hidden');
+    }
+  };
+
+  container.addEventListener('focusin', handleFocus);
+
+  // 使用 MutationObserver 监控 aria-hidden 属性的变化
+  // 当 PrimeVue 设置 aria-hidden 时，立即移除它
+  observer = new MutationObserver(() => {
+    removeAriaHiddenFromFocusable();
+  });
+
+  observer.observe(container, {
+    attributes: true,
+    attributeFilter: ['aria-hidden'],
+    subtree: true,
+  });
+});
+
+onUnmounted(() => {
+  const container = menuContainerRef.value;
+  if (container && handleFocus) {
+    container.removeEventListener('focusin', handleFocus);
+  }
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+});
 
 const topItems: MenuItem[] = [
   {
@@ -53,7 +114,8 @@ const bottomItems: MenuItem[] = [
 
 <template>
   <aside
-    class="w-64 shrink-0 h-full overflow-hidden border-r border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative"
+    ref="menuContainerRef"
+    class="w-64 shrink-0 h-full border-r border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative"
   >
     <!-- Subtle gradient overlay -->
     <div

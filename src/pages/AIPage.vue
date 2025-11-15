@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import { useConfirm } from 'primevue/useconfirm';
 import Button from 'primevue/button';
-import Card from 'primevue/card';
+import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
 import ConfirmDialog from 'primevue/confirmdialog';
 import type { AIModel, AIProvider } from 'src/types/ai-model';
@@ -35,6 +35,17 @@ const addModel = () => {
 const editModel = (model: AIModel) => {
   selectedModel.value = { ...model };
   showEditDialog.value = true;
+};
+
+// 复制模型
+const duplicateModel = (model: AIModel) => {
+  const duplicatedModel: AIModel = {
+    ...model,
+    id: generateId(),
+    name: `${model.name} (副本)`,
+    enabled: false, // 复制的模型默认禁用
+  };
+  aiModelsStore.addModel(duplicatedModel);
 };
 
 // 保存模型（添加或编辑）
@@ -144,112 +155,135 @@ const formatApiKey = (apiKey: string): string => {
 </script>
 
 <template>
-  <div class="w-full h-full p-6 space-y-6">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold">AI 模型管理</h1>
-        <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
+  <div class="p-6 space-y-6">
+      <!-- 固定头部 -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold">AI 模型管理</h1>
+          <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
+        </div>
+        <Button
+          label="添加 AI 模型"
+          icon="pi pi-plus"
+          @click="addModel"
+          class="p-button-primary icon-button-hover"
+        />
       </div>
-      <Button
-        label="添加 AI 模型"
-        icon="pi pi-plus"
-        @click="addModel"
-        class="p-button-primary icon-button-hover"
-      />
-    </div>
 
-    <div v-if="aiModels.length === 0" class="text-center py-12">
-      <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
-      <p class="text-moon/70">暂无配置的 AI 模型</p>
-      <Button
-        label="添加第一个 AI 模型"
-        icon="pi pi-plus"
-        @click="addModel"
-        class="p-button-primary mt-4 icon-button-hover"
-      />
-    </div>
+      <!-- DataView 内容区域 -->
+      <DataView
+        :value="aiModels"
+        data-key="id"
+        :rows="10"
+        :paginator="aiModels.length > 0"
+        :rows-per-page-options="[5, 10, 20, 50]"
+        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
+      >
+      <template #empty>
+        <div class="text-center py-12">
+          <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
+          <p class="text-moon/70">暂无配置的 AI 模型</p>
+          <Button
+            label="添加第一个 AI 模型"
+            icon="pi pi-plus"
+            @click="addModel"
+            class="p-button-primary mt-4 icon-button-hover"
+          />
+        </div>
+      </template>
 
-    <div v-else class="grid grid-cols-1 gap-4">
-      <Card v-for="model in aiModels" :key="model.id" class="hover:bg-white/5 transition-colors">
-        <template #header>
-          <div class="p-4 border-b border-white/10">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <i
-                  class="pi pi-sparkles text-xl icon-hover"
-                  :class="model.enabled ? 'text-primary' : 'text-moon/50'"
-                />
-                <div>
-                  <h3 class="text-lg font-semibold">{{ model.name }}</h3>
-                  <p class="text-sm text-moon/70">
-                    {{ getProviderLabel(model.provider) }} · {{ model.model }}
-                  </p>
+      <template #list="slotProps">
+        <div class="grid grid-cols-1 gap-4">
+          <div
+            v-for="model in slotProps.items"
+            :key="model.id"
+            class="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.1)] rounded-lg overflow-hidden hover:bg-white/5 transition-colors"
+          >
+            <!-- 卡片头部 -->
+            <div class="p-4 border-b border-white/10">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <i
+                    class="pi pi-sparkles text-xl icon-hover"
+                    :class="model.enabled ? 'text-primary' : 'text-moon/50'"
+                  />
+                  <div>
+                    <h3 class="text-lg font-semibold">{{ model.name }}</h3>
+                    <p class="text-sm text-moon/70">
+                      {{ getProviderLabel(model.provider) }} · {{ model.model }}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Tag
+                    :value="model.enabled ? '已启用' : '已禁用'"
+                    :severity="model.enabled ? 'success' : 'secondary'"
+                  />
+                  <Button
+                    icon="pi pi-copy"
+                    class="p-button-text p-button-sm icon-button-hover"
+                    @click="duplicateModel(model)"
+                  />
+                  <Button
+                    icon="pi pi-pencil"
+                    class="p-button-text p-button-sm icon-button-hover"
+                    @click="editModel(model)"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    class="p-button-text p-button-sm p-button-danger icon-button-hover"
+                    @click="deleteModel(model)"
+                  />
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <Tag
-                  :value="model.enabled ? '已启用' : '已禁用'"
-                  :severity="model.enabled ? 'success' : 'secondary'"
-                />
-                <Button
-                  icon="pi pi-pencil"
-                  class="p-button-text p-button-sm icon-button-hover"
-                  @click="editModel(model)"
-                />
-                <Button
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-danger icon-button-hover"
-                  @click="deleteModel(model)"
-                />
+            </div>
+
+            <!-- 卡片内容 -->
+            <div class="p-4 space-y-3">
+              <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span class="text-moon/70">温度:</span>
+                  <span class="ml-2">{{ model.temperature }}</span>
+                </div>
+                <div>
+                  <span class="text-moon/70">最大 Token:</span>
+                  <span class="ml-2">{{ model.maxTokens }}</span>
+                </div>
+                <div>
+                  <span class="text-moon/70">API Key:</span>
+                  <span class="ml-2 font-mono text-xs">{{ formatApiKey(model.apiKey) }}</span>
+                </div>
+                <div>
+                  <span class="text-moon/70">基础地址:</span>
+                  <span class="ml-2 font-mono text-xs">{{ model.baseUrl }}</span>
+                </div>
+              </div>
+              <div class="pt-2 border-t border-white/10">
+                <span class="text-moon/70 text-sm">默认任务:</span>
+                <span class="ml-2 text-sm">{{ getDefaultTasks(model) }}</span>
               </div>
             </div>
           </div>
-        </template>
-        <template #content>
-          <div class="p-4 space-y-3">
-            <div class="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span class="text-moon/70">温度:</span>
-                <span class="ml-2">{{ model.temperature }}</span>
-              </div>
-              <div>
-                <span class="text-moon/70">最大 Token:</span>
-                <span class="ml-2">{{ model.maxTokens }}</span>
-              </div>
-              <div>
-                <span class="text-moon/70">API Key:</span>
-                <span class="ml-2 font-mono text-xs">{{ formatApiKey(model.apiKey) }}</span>
-              </div>
-              <div>
-                <span class="text-moon/70">基础地址:</span>
-                <span class="ml-2 font-mono text-xs">{{ model.baseUrl }}</span>
-              </div>
-            </div>
-            <div class="pt-2 border-t border-white/10">
-              <span class="text-moon/70 text-sm">默认任务:</span>
-              <span class="ml-2 text-sm">{{ getDefaultTasks(model) }}</span>
-            </div>
-          </div>
-        </template>
-      </Card>
-    </div>
+        </div>
+      </template>
+      </DataView>
 
-    <!-- 添加对话框 -->
-    <AIModelDialog
-      v-model:visible="showAddDialog"
-      mode="add"
-      @save="handleSave"
-      @cancel="showAddDialog = false"
-    />
+      <!-- 添加对话框 -->
+      <AIModelDialog
+        v-model:visible="showAddDialog"
+        mode="add"
+        @save="handleSave"
+        @cancel="showAddDialog = false"
+      />
 
-    <!-- 编辑对话框 -->
-    <AIModelDialog
-      v-model:visible="showEditDialog"
-      mode="edit"
-      :model="selectedModel"
-      @save="handleSave"
-      @cancel="showEditDialog = false"
-    />
+      <!-- 编辑对话框 -->
+      <AIModelDialog
+        v-model:visible="showEditDialog"
+        mode="edit"
+        :model="selectedModel"
+        @save="handleSave"
+        @cancel="showEditDialog = false"
+      />
 
     <!-- 确认对话框 -->
     <ConfirmDialog />

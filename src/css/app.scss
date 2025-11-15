@@ -497,3 +497,177 @@ body,
   font-size: 0.875rem !important;
   margin-top: 0.25rem !important;
 }
+
+/* ============================================
+   全局 Paginator 样式 - 统一分页器外观
+   ============================================ */
+
+.p-paginator {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  padding: 0.75rem 1rem !important;
+  backdrop-filter: blur(10px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.p-paginator .p-paginator-first,
+.p-paginator .p-paginator-prev,
+.p-paginator .p-paginator-next,
+.p-paginator .p-paginator-last,
+.p-paginator .p-paginator-page {
+  min-width: 2.25rem !important;
+  height: 2.25rem !important;
+  margin: 0 0.25rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(246, 243, 209, 0.85) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 500 !important;
+}
+
+.p-paginator .p-paginator-first:hover,
+.p-paginator .p-paginator-prev:hover,
+.p-paginator .p-paginator-next:hover,
+.p-paginator .p-paginator-last:hover,
+.p-paginator .p-paginator-page:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(85, 103, 242, 0.5) !important;
+  color: rgba(246, 243, 209, 0.95) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.p-paginator .p-paginator-first:focus,
+.p-paginator .p-paginator-prev:focus,
+.p-paginator .p-paginator-next:focus,
+.p-paginator .p-paginator-last:focus,
+.p-paginator .p-paginator-page:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(85, 103, 242, 0.2) !important;
+}
+
+.p-paginator .p-paginator-page.p-highlight {
+  background: linear-gradient(135deg, rgba(85, 103, 242, 0.9) 0%, rgba(85, 103, 242, 0.85) 100%) !important;
+  border-color: rgba(85, 103, 242, 0.6) !important;
+  color: white !important;
+  box-shadow: 0 2px 6px rgba(85, 103, 242, 0.3) !important;
+}
+
+.p-paginator .p-paginator-page.p-highlight:hover {
+  background: linear-gradient(135deg, rgba(85, 103, 242, 1) 0%, rgba(85, 103, 242, 0.95) 100%) !important;
+  border-color: rgba(85, 103, 242, 0.8) !important;
+  box-shadow: 0 3px 8px rgba(85, 103, 242, 0.4) !important;
+}
+
+.p-paginator .p-paginator-first:disabled,
+.p-paginator .p-paginator-prev:disabled,
+.p-paginator .p-paginator-next:disabled,
+.p-paginator .p-paginator-last:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.p-paginator .p-paginator-first:disabled:hover,
+.p-paginator .p-paginator-prev:disabled:hover,
+.p-paginator .p-paginator-next:disabled:hover,
+.p-paginator .p-paginator-last:disabled:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.p-paginator .p-dropdown {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 8px !important;
+  min-width: 4rem !important;
+  height: 2.25rem !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-panel {
+  min-height: auto !important;
+}
+
+.p-paginator .p-dropdown:hover {
+  border-color: rgba(85, 103, 242, 0.5) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.p-paginator .p-dropdown.p-focus {
+  border-color: rgba(85, 103, 242, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(85, 103, 242, 0.2) !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-label {
+  color: rgba(246, 243, 209, 0.9) !important;
+  font-weight: 500 !important;
+  padding: 0.5rem 0.75rem !important;
+  line-height: 1.5 !important;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 2.25rem !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-label.p-inputtext {
+  color: rgba(246, 243, 209, 0.9) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0.5rem 0.75rem !important;
+  line-height: 1.5 !important;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 2.25rem !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-trigger-container {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-trigger {
+  color: rgba(246, 243, 209, 0.7) !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-trigger:hover {
+  color: rgba(246, 243, 209, 0.9) !important;
+}
+
+.p-paginator .p-paginator-current {
+  color: rgba(246, 243, 209, 0.85) !important;
+  font-weight: 500 !important;
+  margin: 0 0.75rem !important;
+}
+
+.p-paginator .p-paginator-pages {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+}
+
+/* ============================================
+   全局 DataView 样式
+   ============================================ */
+
+.p-dataview {
+  background: transparent !important;
+  border: none !important;
+}
+
+.p-dataview .p-dataview-content {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.p-dataview .p-paginator {
+  margin-top: 1.5rem !important;
+}

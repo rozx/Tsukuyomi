@@ -49,8 +49,6 @@ const testResult = ref<{
 const aiConfig = ref<{
   maxTokens?: number;
   contextWindow?: number;
-  rateLimit?: number; // 速率限制（每分钟请求数）
-  modelName?: string;
 } | null>(null);
 
 // 表单数据
@@ -121,7 +119,8 @@ const validateForm = (): boolean => {
     formErrors.value.apiKey = 'API Key 不能为空';
   }
 
-  if (!formData.value.baseUrl?.trim()) {
+  // Gemini 不需要 baseUrl，其他提供商需要
+  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
     formErrors.value.baseUrl = '基础地址不能为空';
   }
 
@@ -139,7 +138,16 @@ const validateForm = (): boolean => {
 
 // 测试 AI 模型（获取配置）
 const testModel = async () => {
-  if (!formData.value.apiKey?.trim() || !formData.value.baseUrl?.trim() || !formData.value.model?.trim()) {
+  if (!formData.value.apiKey?.trim() || !formData.value.model?.trim()) {
+    testResult.value = {
+      success: false,
+      message: '请先填写 API Key 和模型标识',
+    };
+    return;
+  }
+
+  // Gemini 不需要 baseUrl，其他提供商需要
+  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
     testResult.value = {
       success: false,
       message: '请先填写 API Key、基础地址和模型标识',
@@ -151,9 +159,14 @@ const testModel = async () => {
   testResult.value = null;
 
   try {
+    // Gemini 使用默认 baseUrl，其他提供商使用用户输入的 baseUrl
+    const baseUrl = formData.value.provider === 'gemini'
+      ? undefined
+      : formData.value.baseUrl;
+
     const result = await AIServiceFactory.getConfig(formData.value.provider as AIProvider, {
       apiKey: formData.value.apiKey!,
-      baseUrl: formData.value.baseUrl!,
+      baseUrl: baseUrl,
       model: formData.value.model!,
       temperature: formData.value.temperature,
       maxTokens: formData.value.maxTokens,
@@ -182,21 +195,6 @@ const testModel = async () => {
       }
     }
 
-    const modelName = result.modelInfo?.displayName || result.modelInfo?.name;
-    if (modelName) {
-      config.modelName = modelName;
-    }
-
-    // 确保 rateLimit 是数字类型
-    if (result.rateLimit?.limit !== undefined && result.rateLimit.limit !== null) {
-      const rateLimitValue = typeof result.rateLimit.limit === 'number'
-        ? result.rateLimit.limit
-        : parseInt(String(result.rateLimit.limit), 10);
-      if (!isNaN(rateLimitValue) && rateLimitValue > 0) {
-        config.rateLimit = rateLimitValue;
-      }
-    }
-
     aiConfig.value = Object.keys(config).length > 0 ? config : null;
 
     // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
@@ -209,11 +207,6 @@ const testModel = async () => {
       formData.value.contextWindow = config.contextWindow;
     }
 
-    // 如果获取到 rateLimit，自动更新表单字段（确保是数字）
-    if (config.rateLimit !== undefined && config.rateLimit > 0) {
-      formData.value.rateLimit = config.rateLimit;
-    }
-
     // 如果模型信息有更新，更新模型字段
     if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
       formData.value.model = result.modelInfo.id;
@@ -221,23 +214,9 @@ const testModel = async () => {
 
     // 构建限制信息
     const limits: {
-      rateLimit?: string;
-      modelInfo?: string;
       maxTokens?: number;
     } = {};
 
-    if (result.rateLimit?.limit) {
-      limits.rateLimit = `每分钟 ${result.rateLimit.limit} 次请求`;
-    }
-    if (result.modelInfo) {
-      const modelInfoParts: string[] = [result.modelInfo.id];
-      if (result.modelInfo.displayName) {
-        modelInfoParts.push(`(${result.modelInfo.displayName})`);
-      } else if (result.modelInfo.ownedBy) {
-        modelInfoParts.push(`(${result.modelInfo.ownedBy})`);
-      }
-      limits.modelInfo = modelInfoParts.join(' ');
-    }
     if (result.maxTokens) {
       limits.maxTokens = result.maxTokens;
     }
@@ -282,14 +261,21 @@ const getContextWindowDisplay = (): string => {
   return '-';
 };
 
-// 获取速率限制显示值
-const getRateLimitDisplay = (): string => {
-  const value = formData.value.rateLimit ?? aiConfig.value?.rateLimit;
-  if (value !== undefined && value !== null && typeof value === 'number' && value > 0) {
-    return `${value.toLocaleString()} 次/分钟`;
+
+// 监听 provider 变化，当切换到 Gemini 时清空 baseUrl
+watch(
+  () => formData.value.provider,
+  (newProvider) => {
+    if (newProvider === 'gemini') {
+      // 切换到 Gemini 时，清空 baseUrl（服务会使用默认值）
+      formData.value.baseUrl = '';
+      // 清除 baseUrl 相关的错误
+      if (formErrors.value.baseUrl) {
+        delete formErrors.value.baseUrl;
+      }
+    }
   }
-  return '-';
-};
+);
 
 // 监听 visible 变化，初始化表单
 watch(
@@ -310,9 +296,6 @@ watch(
         }
         if (props.model.contextWindow !== undefined && props.model.contextWindow !== null) {
           config.contextWindow = props.model.contextWindow;
-        }
-        if (props.model.rateLimit !== undefined && props.model.rateLimit !== null) {
-          config.rateLimit = props.model.rateLimit;
         }
         // 即使只有部分字段，也要设置 aiConfig
         aiConfig.value = config;
@@ -419,8 +402,8 @@ watch(
         <small v-if="formErrors.apiKey" class="p-error block mt-1">{{ formErrors.apiKey }}</small>
       </div>
 
-      <!-- 基础地址 -->
-      <div class="space-y-2">
+      <!-- 基础地址（Gemini 不需要） -->
+      <div v-if="formData.provider !== 'gemini'" class="space-y-2">
         <label :for="`${idPrefix}-baseUrl`" class="block text-sm font-medium text-moon/90">基础地址 *</label>
         <InputText
           :id="`${idPrefix}-baseUrl`"
@@ -440,14 +423,14 @@ watch(
             label="获取配置"
             icon="pi pi-download"
             class="p-button-text p-button-sm icon-button-hover"
-            :disabled="isTesting || !formData.apiKey?.trim() || !formData.baseUrl?.trim() || !formData.model?.trim()"
+            :disabled="isTesting || !formData.apiKey?.trim() || !formData.model?.trim() || (formData.provider !== 'gemini' && !formData.baseUrl?.trim())"
             :loading="isTesting"
             @click="testModel"
           />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
-            <label class="text-xs text-moon/70">最大 Token</label>
+            <label class="text-xs text-moon/70">最大输入 Token</label>
             <InputText
               :value="(formData.maxTokens ?? 0) === 0 ? '无限制' : (formData.maxTokens ?? 0).toLocaleString()"
               disabled
@@ -461,22 +444,6 @@ watch(
             <label class="text-xs text-moon/70">上下文窗口</label>
             <InputText
               :value="getContextWindowDisplay()"
-              disabled
-              class="w-full"
-            />
-          </div>
-          <div class="space-y-1">
-            <label class="text-xs text-moon/70">模型名称</label>
-            <InputText
-              :value="aiConfig?.modelName || '-'"
-              disabled
-              class="w-full"
-            />
-          </div>
-          <div class="space-y-1">
-            <label class="text-xs text-moon/70">速率限制</label>
-            <InputText
-              :value="getRateLimitDisplay()"
               disabled
               class="w-full"
             />

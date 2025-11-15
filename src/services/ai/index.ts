@@ -7,7 +7,7 @@ import { GeminiService } from './gemini-service';
  * AI 服务工厂
  */
 export class AIServiceFactory {
-  private static services: Map<AIProvider, AIService> = new Map([
+  private static services: Map<AIProvider, AIService> = new Map<AIProvider, AIService>([
     ['openai', new OpenAIService()],
     ['gemini', new GeminiService()],
   ]);
@@ -27,14 +27,10 @@ export class AIServiceFactory {
    * 获取模型配置（统一接口）
    * 通过调用 chat completion API 来验证连接并获取配置
    */
-  static async getConfig(
-    provider: AIProvider,
-    config: AIServiceConfig
-  ): Promise<AIConfigResult> {
+  static async getConfig(provider: AIProvider, config: AIServiceConfig): Promise<AIConfigResult> {
     const service = this.getService(provider);
     return service.getConfig(config);
   }
 }
 
 export * from './types';
-
