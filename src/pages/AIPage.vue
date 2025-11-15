@@ -5,6 +5,9 @@ import { useConfirm } from 'primevue/useconfirm';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
+import InputText from 'primevue/inputtext';
+import InputGroup from 'primevue/inputgroup';
+import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
 import type { AIModel, AIProvider } from 'src/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -15,6 +18,44 @@ const confirm = useConfirm();
 
 // 使用 store 中的模型列表
 const aiModels = computed(() => aiModelsStore.models);
+
+// 辅助函数
+const getProviderLabel = (provider: string) => {
+  return provider === 'openai' ? 'OpenAI' : 'Gemini';
+};
+
+const getDefaultTasks = (model: AIModel) => {
+  const tasks: string[] = [];
+  if (model.isDefault.translation?.enabled) tasks.push('翻译');
+  if (model.isDefault.proofreading?.enabled) tasks.push('校对');
+  if (model.isDefault.polishing?.enabled) tasks.push('润色');
+  if (model.isDefault.characterExtraction?.enabled) tasks.push('角色提取');
+  if (model.isDefault.terminologyExtraction?.enabled) tasks.push('术语提取');
+  return tasks.join('、') || '无';
+};
+
+// 搜索关键词
+const searchQuery = ref('');
+
+// 过滤后的模型列表
+const filteredModels = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return aiModels.value;
+  }
+  const query = searchQuery.value.toLowerCase().trim();
+  return aiModels.value.filter((model) => {
+    const name = model.name.toLowerCase();
+    const provider = getProviderLabel(model.provider).toLowerCase();
+    const modelName = model.model.toLowerCase();
+    const defaultTasks = getDefaultTasks(model).toLowerCase();
+    return (
+      name.includes(query) ||
+      provider.includes(query) ||
+      modelName.includes(query) ||
+      defaultTasks.includes(query)
+    );
+  });
+});
 
 const selectedModel = ref<AIModel | null>(null);
 const showAddDialog = ref(false);
@@ -131,20 +172,6 @@ watch([showAddDialog, showEditDialog], ([addVisible, editVisible]) => {
   }
 });
 
-const getProviderLabel = (provider: string) => {
-  return provider === 'openai' ? 'OpenAI' : 'Gemini';
-};
-
-const getDefaultTasks = (model: AIModel) => {
-  const tasks: string[] = [];
-  if (model.isDefault.translation?.enabled) tasks.push('翻译');
-  if (model.isDefault.proofreading?.enabled) tasks.push('校对');
-  if (model.isDefault.polishing?.enabled) tasks.push('润色');
-  if (model.isDefault.characterExtraction?.enabled) tasks.push('角色提取');
-  if (model.isDefault.terminologyExtraction?.enabled) tasks.push('术语提取');
-  return tasks.join('、') || '无';
-};
-
 const formatApiKey = (apiKey: string): string => {
   if (!apiKey) return '';
   if (apiKey.length <= 6) return apiKey;
@@ -162,28 +189,51 @@ const formatApiKey = (apiKey: string): string => {
           <h1 class="text-2xl font-bold">AI 模型管理</h1>
           <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
         </div>
-        <Button
-          label="添加 AI 模型"
-          icon="pi pi-plus"
-          @click="addModel"
-          class="p-button-primary icon-button-hover"
-        />
+        <div class="flex items-center gap-3">
+          <InputGroup class="search-input-group">
+            <InputGroupAddon>
+              <i class="pi pi-search text-base" />
+            </InputGroupAddon>
+            <InputText
+              v-model="searchQuery"
+              placeholder="搜索模型名称、提供商、模型类型或默认任务..."
+              class="search-input"
+            />
+            <InputGroupAddon v-if="searchQuery" class="clear-addon">
+              <Button
+                icon="pi pi-times"
+                class="p-button-text p-button-sm clear-button"
+                @click="searchQuery = ''"
+                title="清除搜索"
+              />
+            </InputGroupAddon>
+          </InputGroup>
+          <Button
+            label="添加 AI 模型"
+            icon="pi pi-plus"
+            @click="addModel"
+            class="p-button-primary icon-button-hover"
+          />
+        </div>
       </div>
 
       <!-- DataView 内容区域 -->
       <DataView
-        :value="aiModels"
+        :value="filteredModels"
         data-key="id"
         :rows="10"
-        :paginator="aiModels.length > 0"
+        :paginator="filteredModels.length > 0"
         :rows-per-page-options="[5, 10, 20, 50]"
         paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
       >
       <template #empty>
         <div class="text-center py-12">
           <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
-          <p class="text-moon/70">暂无配置的 AI 模型</p>
+          <p class="text-moon/70">
+            {{ searchQuery ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型' }}
+          </p>
           <Button
+            v-if="!searchQuery"
             label="添加第一个 AI 模型"
             icon="pi pi-plus"
             @click="addModel"

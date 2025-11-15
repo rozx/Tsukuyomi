@@ -396,6 +396,175 @@ body,
 }
 
 /* ============================================
+   全局 InputGroup 样式 - 统一输入组外观
+   ============================================ */
+
+.p-inputgroup {
+  display: flex !important;
+  align-items: stretch !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  box-shadow: 0 2px 8px rgba(85, 103, 242, 0.15) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.p-inputgroup:hover {
+  box-shadow: 0 4px 12px rgba(85, 103, 242, 0.25) !important;
+  transform: translateY(-1px) !important;
+}
+
+.p-inputgroup .p-inputtext {
+  border-radius: 0 !important;
+  border: 1px solid rgba(85, 103, 242, 0.2) !important;
+  border-right: none !important;
+  flex: 1 !important;
+  font-size: 0.9375rem !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.p-inputgroup .p-inputtext:first-child {
+  border-top-left-radius: 10px !important;
+  border-bottom-left-radius: 10px !important;
+  border-right: none !important;
+}
+
+.p-inputgroup .p-inputtext:last-child {
+  border-top-right-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+  border-left: none !important;
+}
+
+.p-inputgroup .p-inputtext:only-child {
+  border-radius: 10px !important;
+  border: 1px solid rgba(85, 103, 242, 0.2) !important;
+}
+
+.p-inputgroup .p-inputgroup-addon,
+.p-inputgroup-addon {
+  background: rgba(85, 103, 242, 0.2) !important;
+  border: 1px solid rgba(85, 103, 242, 0.3) !important;
+  color: rgba(246, 243, 209, 0.9) !important;
+  padding: 0.75rem 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  min-width: 2.75rem !important;
+}
+
+.p-inputgroup .p-inputgroup-addon i,
+.p-inputgroup-addon i {
+  color: rgba(246, 243, 209, 0.9) !important;
+}
+
+.p-inputgroup .p-inputgroup-addon:first-child {
+  border-top-left-radius: 10px !important;
+  border-bottom-left-radius: 10px !important;
+  border-right: none !important;
+}
+
+.p-inputgroup .p-inputgroup-addon:last-child {
+  border-top-right-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+  border-left: none !important;
+}
+
+.p-inputgroup:hover .p-inputtext,
+.p-inputgroup:hover .p-inputgroup-addon {
+  border-color: rgba(85, 103, 242, 0.6) !important;
+}
+
+.p-inputgroup:hover .p-inputtext {
+  background: rgba(85, 103, 242, 0.08) !important;
+}
+
+.p-inputgroup:hover .p-inputgroup-addon {
+  background: rgba(85, 103, 242, 0.25) !important;
+  color: rgba(246, 243, 209, 0.95) !important;
+}
+
+.p-inputgroup:hover .p-inputgroup-addon i {
+  color: rgba(246, 243, 209, 0.95) !important;
+}
+
+.p-inputgroup .p-inputtext:focus,
+.p-inputgroup.p-focus .p-inputtext {
+  border-color: rgba(85, 103, 242, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(85, 103, 242, 0.2) !important;
+  background: rgba(85, 103, 242, 0.1) !important;
+}
+
+.p-inputgroup .p-inputtext:focus ~ .p-inputgroup-addon,
+.p-inputgroup.p-focus .p-inputgroup-addon {
+  border-color: rgba(85, 103, 242, 0.8) !important;
+  background: rgba(85, 103, 242, 0.3) !important;
+  color: rgba(246, 243, 209, 1) !important;
+}
+
+.p-inputgroup .p-inputtext:focus ~ .p-inputgroup-addon i,
+.p-inputgroup.p-focus .p-inputgroup-addon i {
+  color: rgba(246, 243, 209, 1) !important;
+}
+
+.p-inputgroup .p-inputgroup-addon .p-button {
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-width: auto !important;
+  height: auto !important;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.p-inputgroup .p-inputgroup-addon .p-button:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.p-inputgroup .p-inputgroup-addon .p-button-icon {
+  color: rgba(246, 243, 209, 0.75) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-size: 0.875rem !important;
+}
+
+.p-inputgroup .p-inputgroup-addon .p-button:hover .p-button-icon {
+  color: rgba(246, 243, 209, 1) !important;
+  transform: scale(1.15) !important;
+}
+
+/* 搜索输入组特定样式 */
+.search-input-group {
+  width: 360px !important;
+  max-width: 100% !important;
+}
+
+.search-input {
+  padding-left: 0.5rem !important;
+}
+
+.search-input::placeholder {
+  color: rgba(246, 243, 209, 0.45) !important;
+  font-weight: 400 !important;
+}
+
+.clear-addon {
+  padding: 0.5rem 0.75rem !important;
+  min-width: 2.5rem !important;
+}
+
+.clear-button {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+
+/* ============================================
    全局 Slider 样式
    ============================================ */
 
