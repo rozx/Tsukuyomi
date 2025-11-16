@@ -3,12 +3,11 @@ import { ref, computed, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import InputNumber from 'primevue/inputnumber';
 import Dropdown from 'primevue/dropdown';
 import Checkbox from 'primevue/checkbox';
 import InputSwitch from 'primevue/inputswitch';
 import Slider from 'primevue/slider';
-import TestResult from 'src/components/TestResult.vue';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIProvider } from 'src/types/ai-model';
 import { AIServiceFactory } from 'src/services/ai';
 
@@ -30,20 +29,10 @@ const emit = defineEmits<{
 }>();
 
 const idPrefix = computed(() => props.mode === 'add' ? '' : 'edit');
+const toast = useToastWithHistory();
 
 // 测试相关状态
 const isTesting = ref(false);
-const testResult = ref<{
-  success: boolean;
-  message: string;
-  limits?: {
-    rateLimit?: string;
-    usageLimit?: string;
-    remainingQuota?: string;
-    modelInfo?: string;
-    maxTokens?: number;
-  };
-} | null>(null);
 
 // 从 AI 获取的配置信息（只读）
 const aiConfig = ref<{
@@ -99,7 +88,6 @@ const resetForm = () => {
     },
   } as typeof formData.value;
   formErrors.value = {};
-  testResult.value = null;
   aiConfig.value = null;
 };
 
@@ -139,24 +127,27 @@ const validateForm = (): boolean => {
 // 测试 AI 模型（获取配置）
 const testModel = async () => {
   if (!formData.value.apiKey?.trim() || !formData.value.model?.trim()) {
-    testResult.value = {
-      success: false,
-      message: '请先填写 API Key 和模型标识',
-    };
+    toast.add({
+      severity: 'warn',
+      summary: '提示',
+      detail: '请先填写 API Key 和模型标识',
+      life: 3000,
+    });
     return;
   }
 
   // Gemini 不需要 baseUrl，其他提供商需要
   if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
-    testResult.value = {
-      success: false,
-      message: '请先填写 API Key、基础地址和模型标识',
-    };
+    toast.add({
+      severity: 'warn',
+      summary: '提示',
+      detail: '请先填写 API Key、基础地址和模型标识',
+      life: 3000,
+    });
     return;
   }
 
   isTesting.value = true;
-  testResult.value = null;
 
   try {
     // Gemini 使用默认 baseUrl，其他提供商使用用户输入的 baseUrl
@@ -212,26 +203,27 @@ const testModel = async () => {
       formData.value.model = result.modelInfo.id;
     }
 
-    // 构建限制信息
-    const limits: {
-      maxTokens?: number;
-    } = {};
-
+    // 构建详细信息
+    const details: string[] = [];
     if (result.maxTokens) {
-      limits.maxTokens = result.maxTokens;
+      details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
     }
 
-    const finalLimits = Object.keys(limits).length > 0 ? limits : undefined;
-    testResult.value = {
-      success: result.success,
-      message: result.message,
-      ...(finalLimits ? { limits: finalLimits } : {}),
-    };
+    const detailMessage = details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
+
+    toast.add({
+      severity: result.success ? 'success' : 'error',
+      summary: result.success ? '测试成功' : '测试失败',
+      detail: detailMessage,
+      life: result.success ? 3000 : 5000,
+    });
   } catch (error) {
-    testResult.value = {
-      success: false,
-      message: error instanceof Error ? error.message : '获取配置失败：未知错误',
-    };
+    toast.add({
+      severity: 'error',
+      summary: '测试失败',
+      detail: error instanceof Error ? error.message : '获取配置失败：未知错误',
+      life: 5000,
+    });
   } finally {
     isTesting.value = false;
   }
@@ -304,7 +296,6 @@ watch(
         resetForm();
       }
       formErrors.value = {};
-      testResult.value = null;
     } else {
       // 关闭时重置
       resetForm();
@@ -450,9 +441,6 @@ watch(
           </div>
         </div>
       </div>
-
-      <!-- 测试结果 -->
-      <TestResult :result="testResult" @close="testResult = null" />
 
       <!-- 默认任务 -->
       <div class="space-y-4 pt-3 border-t border-white/10">

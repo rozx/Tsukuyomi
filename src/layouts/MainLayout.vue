@@ -2,10 +2,20 @@
 import AppHeader from '../components/AppHeader.vue';
 import AppFooter from '../components/AppFooter.vue';
 import AppSideMenu from '../components/AppSideMenu.vue';
+import Toast from 'primevue/toast';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
+import { useToastHistory } from 'src/composables/useToastHistory';
 
 const ui = useUiStore();
+const { markAsReadByMessage } = useToastHistory();
+
+// 处理 Toast 关闭事件
+const handleToastClose = (event: any) => {
+  if (event?.message) {
+    markAsReadByMessage(event.message);
+  }
+};
 </script>
 
 <template>
@@ -32,6 +42,9 @@ const ui = useUiStore();
 
     <AppFooter />
   </div>
+
+  <!-- Toast 组件 -->
+  <Toast position="top-right" @close="handleToastClose" />
 </template>
 
 <style scoped>

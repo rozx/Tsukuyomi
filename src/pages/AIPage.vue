@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import { useConfirm } from 'primevue/useconfirm';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
@@ -15,6 +16,7 @@ import AIModelDialog from 'src/components/AIModelDialog.vue';
 
 const aiModelsStore = useAIModelsStore();
 const confirm = useConfirm();
+const toast = useToastWithHistory();
 
 // 使用 store 中的模型列表
 const aiModels = computed(() => aiModelsStore.models);
@@ -87,6 +89,12 @@ const duplicateModel = (model: AIModel) => {
     enabled: false, // 复制的模型默认禁用
   };
   aiModelsStore.addModel(duplicatedModel);
+  toast.add({
+    severity: 'success',
+    summary: '复制成功',
+    detail: `已成功复制模型 "${model.name}"`,
+    life: 3000,
+  });
 };
 
 // 保存模型（添加或编辑）
@@ -115,6 +123,12 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
     };
     aiModelsStore.addModel(newModel);
     showAddDialog.value = false;
+    toast.add({
+      severity: 'success',
+      summary: '添加成功',
+      detail: `已成功添加模型 "${newModel.name}"`,
+      life: 3000,
+    });
   } else if (showEditDialog.value && selectedModel.value) {
     // 更新现有模型
     const updates: Partial<AIModel> = {
@@ -145,7 +159,14 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
 
     aiModelsStore.updateModel(selectedModel.value.id, updates);
     showEditDialog.value = false;
+    const modelName = updates.name || selectedModel.value.name;
     selectedModel.value = null;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已成功更新模型 "${modelName}"`,
+      life: 3000,
+    });
   }
 };
 
@@ -160,7 +181,14 @@ const deleteModel = (model: AIModel) => {
     rejectLabel: '取消',
     acceptLabel: '删除',
     accept: () => {
+      const modelName = model.name;
       aiModelsStore.deleteModel(model.id);
+      toast.add({
+        severity: 'success',
+        summary: '删除成功',
+        detail: `已成功删除模型 "${modelName}"`,
+        life: 3000,
+      });
     },
   });
 };

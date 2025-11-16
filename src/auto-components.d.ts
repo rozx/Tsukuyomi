@@ -18,6 +18,7 @@ declare module 'vue' {
     AppSideMenu: typeof import('./components/AppSideMenu.vue')['default']
     Breadcrumb: typeof import('primevue/breadcrumb')['default']
     Button: typeof import('primevue/button')['default']
+    Dialog: typeof import('primevue/dialog')['default']
     EssentialLink: typeof import('./components/EssentialLink.vue')['default']
     ExampleComponent: typeof import('./components/ExampleComponent.vue')['default']
     Menu: typeof import('primevue/menu')['default']
@@ -25,10 +26,12 @@ declare module 'vue' {
     Message: typeof import('primevue/message')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SettingsDialog: typeof import('./components/SettingsDialog.vue')['default']
     Sidebar: typeof import('primevue/sidebar')['default']
     Splitter: typeof import('primevue/splitter')['default']
     SplitterPanel: typeof import('primevue/splitterpanel')['default']
     TestResult: typeof import('./components/TestResult.vue')['default']
+    ToastHistoryDialog: typeof import('./components/ToastHistoryDialog.vue')['default']
     ToggleButton: typeof import('primevue/togglebutton')['default']
   }
 }

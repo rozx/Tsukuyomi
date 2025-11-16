@@ -2,8 +2,10 @@
 import type { MenuItem } from 'primevue/menuitem';
 import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import SettingsDialog from './SettingsDialog.vue';
 
 const router = useRouter();
+const settingsDialogVisible = ref(false);
 const menuContainerRef = ref<HTMLElement | null>(null);
 
 // 修复 PrimeVue Menu 组件的 aria-hidden 可访问性问题
@@ -102,7 +104,9 @@ const bottomItems: MenuItem[] = [
   {
     label: '设置',
     icon: 'pi pi-cog',
-    command: () => void router.push('/settings'),
+    command: () => {
+      settingsDialogVisible.value = true;
+    },
   },
   {
     label: '帮助',
@@ -145,6 +149,9 @@ const bottomItems: MenuItem[] = [
       />
       <Menu :model="bottomItems" />
     </div>
+
+    <!-- 设置对话框 -->
+    <SettingsDialog v-model:visible="settingsDialogVisible" />
   </aside>
 </template>
 

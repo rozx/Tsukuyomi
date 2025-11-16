@@ -2,10 +2,15 @@
 import type { MenuItem } from 'primevue/menuitem';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import Button from 'primevue/button';
+import Badge from 'primevue/badge';
 import { useUiStore } from '../stores/ui';
+import { useToastHistory } from 'src/composables/useToastHistory';
+import ToastHistoryDialog from './ToastHistoryDialog.vue';
 
 const router = useRouter();
 const ui = useUiStore();
+const { unreadCount } = useToastHistory();
 
 const menuItems = ref<MenuItem[]>([
   // {
@@ -16,6 +21,13 @@ const menuItems = ref<MenuItem[]>([
   //   },
   // },
 ]);
+
+const bellButtonRef = ref<HTMLElement | null>(null);
+const toastHistoryRef = ref<InstanceType<typeof ToastHistoryDialog> | null>(null);
+
+const toggleHistoryDialog = (event: Event) => {
+  toastHistoryRef.value?.toggle(event);
+};
 </script>
 
 <template>
@@ -36,9 +48,36 @@ const menuItems = ref<MenuItem[]>([
 
       <template #end>
         <div class="flex items-center gap-2 px-2 mr-3">
-          <i class="pi pi-bell" />
+          <Button
+            ref="bellButtonRef"
+            aria-label="消息历史"
+            class="p-button-text p-button-rounded relative bell-button"
+            @click="toggleHistoryDialog"
+          >
+            <i class="pi pi-bell" />
+            <Badge
+              v-if="unreadCount > 0"
+              :value="unreadCount > 99 ? '99+' : unreadCount"
+              class="absolute top-0 right-0"
+              severity="danger"
+            />
+          </Button>
         </div>
       </template>
     </Menubar>
+
+    <!-- Toast 历史 Popover -->
+    <ToastHistoryDialog ref="toastHistoryRef" />
   </header>
 </template>
+
+<style scoped>
+.bell-button i {
+  color: rgba(246, 243, 209, 0.85) !important;
+  font-size: 1rem;
+}
+
+.bell-button:hover i {
+  color: rgba(246, 243, 209, 0.95) !important;
+}
+</style>

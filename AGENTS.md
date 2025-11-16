@@ -28,3 +28,4 @@
 - 使用uuid生成唯一ID。
 - 使用pinia管理状态。
 - 使用primevue组件库。
+- 使用useToastWithHistory来展示各种行为的结果，使其可以自动保存toast历史记录。
