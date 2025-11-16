@@ -40,6 +40,7 @@ export interface Volume {
 export interface Chapter {
   id: string;
   title: string;
+  webUrl?: string; // 网络地址
   content?: Paragraph[];
   lastEdited: Date;
   createdAt: Date;
@@ -49,21 +50,24 @@ export interface Chapter {
 export interface Paragraph {
   id: string;
   text: string;
+  selectedTranslation: string; // id of Translation
   translations: Translation[];
   lastEdited: Date;
   createdAt: Date;
 }
 
 export interface Translation {
+  id: string;
   translation: string;
   aiModel: string; // id of AIModel
   lastTranslatedAt: Date;
+  createdAt: Date;
 }
 
 export interface Note {
   id: string;
   text: string;
-  aiResult: string;
+  aiResults: string[];
   defaultAIModel: string; // id of AIModel
   lastEdited: Date;
   createdAt: Date;
