@@ -1,4 +1,4 @@
-import type { AIModel } from './ai-model';
+import type { AIModel } from './ai/ai-model';
 import type { Novel } from './novel';
 import type { SyncConfig } from './sync';
 

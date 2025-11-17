@@ -39,3 +39,4 @@ export interface AIModel {
   isDefault: AIModelDefaultTasks;
   enabled: boolean;
 }
+

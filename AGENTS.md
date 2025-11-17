@@ -29,3 +29,7 @@
 - 使用pinia管理状态。
 - 使用primevue组件库。
 - 使用useToastWithHistory来展示各种行为的结果，使其可以自动保存toast历史记录。
+- 总是将数据类型定义在src/types目录下。
+- 将Constants定义在src/constants目录下。
+- 将Services定义在src/services目录下。
+- 将Stores定义在src/stores目录下。

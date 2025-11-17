@@ -1,4 +1,4 @@
-import type { AIModel } from './ai-model';
+import type { AIModel } from './ai/ai-model';
 
 // 小说
 export interface Novel {
@@ -50,7 +50,7 @@ export interface Chapter {
 export interface Paragraph {
   id: string;
   text: string;
-  selectedTranslation: string; // id of Translation
+  selectedTranslationId: string; // id of Translation
   translations: Translation[];
   lastEdited: Date;
   createdAt: Date;
@@ -59,7 +59,7 @@ export interface Paragraph {
 export interface Translation {
   id: string;
   translation: string;
-  aiModel: string; // id of AIModel
+  aiModelId: string; // id of AIModel
   lastTranslatedAt: Date;
   createdAt: Date;
 }
@@ -68,7 +68,7 @@ export interface Note {
   id: string;
   text: string;
   aiResults: string[];
-  defaultAIModel: string; // id of AIModel
+  defaultAIModelId: string; // id of AIModel
   lastEdited: Date;
   createdAt: Date;
   references: Chapter[];
@@ -79,11 +79,10 @@ export interface Terminology {
   id: string;
   name: string;
   description?: string;
-  translation: Translation[];
+  translation: Translation;
   lastEdited: Date;
   createdAt: Date;
-  references: string[];
-  occurrences: number;
+  occurrences: Occurrence[];
 }
 
 // 角色设定
@@ -95,6 +94,10 @@ export interface CharacterSetting {
   aliases: CharacterSetting[];
   lastEdited: Date;
   createdAt: Date;
-  references: string[];
-  occurrences: number;
+  occurrences: Occurrence[];
+}
+
+export interface Occurrence {
+  chapterId: string;
+  count: number;
 }

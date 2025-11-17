@@ -1,7 +1,14 @@
 import OpenAI from 'openai';
-import type { AIService, AIServiceConfig, AIConfigResult, ModelInfo } from './types';
+import type { AIServiceConfig } from './types';
+import type { ParsedResponse } from 'src/types/ai/interfaces';
+import { BaseAIService } from './base-ai-service';
+import { DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_TEMPERATURE } from 'src/constants/ai';
 
-export class OpenAIService implements AIService {
+/**
+ * OpenAI AI 服务实现
+ * 使用 OpenAI API
+ */
+export class OpenAIService extends BaseAIService {
   /**
    * 创建 OpenAI 客户端
    * 确保所有通信都使用 JSON 格式
@@ -20,144 +27,32 @@ export class OpenAIService implements AIService {
   }
 
   /**
-   * 获取模型配置信息
-   * 专注于获取最大输入 token 数，用于限制上下文输入
+   * 发送配置请求到 OpenAI API 并解析响应
    */
-  async getConfig(config: AIServiceConfig): Promise<AIConfigResult> {
+  protected async makeConfigRequest(config: AIServiceConfig): Promise<ParsedResponse> {
     try {
-      const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
-      const apiKey = config.apiKey;
-
-      // 询问 AI 模型关于其最大输入 token 数
-      const prompt = `请以 JSON 格式返回你的最大输入 token 数（maxInputTokens），这是我可以发送给你的最大 token 数量，用于限制上下文输入。
-
-      请只返回 JSON 对象，格式如下：
-      {
-        "maxInputTokens": 数字
-      }
-
-      如果你不知道确切的 maxInputTokens，但知道 contextWindow（总上下文窗口大小），可以返回：
-      {
-        "maxInputTokens": 数字,
-        "contextWindow": 数字
-      }`;
-
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 200,
-          temperature: 0.1,
-          response_format: { type: 'json_object' }, // 要求 JSON 格式响应
-        }),
+      const client = this.createClient(config);
+      const completion = await client.chat.completions.create({
+        model: config.model,
+        messages: [{ role: 'user', content: this.CONFIG_PROMPT }],
+        max_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+        temperature: DEFAULT_TEMPERATURE,
+        response_format: { type: 'json_object' }, // 要求 JSON 格式响应
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage =
-          (errorData as { error?: { message?: string } })?.error?.message ||
-          `HTTP ${response.status}: ${response.statusText}`;
-        return {
-          success: false,
-          message: errorMessage,
-        };
-      }
+      const content = completion.choices[0]?.message?.content || null;
+      const modelId = completion.model || config.model;
 
-      // 解析响应体
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-
-      // 尝试从响应中提取模型信息
-      const modelInfo: ModelInfo = {
-        id: config.model,
-        name: config.model,
-      };
-
-      if (data.model) {
-        modelInfo.id = data.model;
-        modelInfo.name = data.model;
-      }
-
-      let maxInputTokens: number | undefined;
-      let contextWindow: number | undefined;
-
-      // 尝试解析 AI 返回的 JSON 配置
-      if (content) {
-        try {
-          const configJson = JSON.parse(content);
-          if (typeof configJson.maxInputTokens === 'number') {
-            maxInputTokens = configJson.maxInputTokens;
-          }
-          if (typeof configJson.contextWindow === 'number') {
-            contextWindow = configJson.contextWindow;
-            // 如果没有 maxInputTokens，使用 contextWindow 的 80% 作为估算值（保留 20% 给输出）
-            if (!maxInputTokens && contextWindow) {
-              maxInputTokens = Math.floor(contextWindow * 0.8);
-            }
-          }
-        } catch {
-          // 如果解析失败，尝试从文本中提取数字
-          const maxInputTokensMatch = content.match(/maxInputTokens["\s:]+(\d+)/i);
-          const contextMatch = content.match(/contextWindow["\s:]+(\d+)/i);
-
-          if (maxInputTokensMatch) {
-            maxInputTokens = parseInt(maxInputTokensMatch[1], 10);
-          }
-          if (contextMatch) {
-            contextWindow = parseInt(contextMatch[1], 10);
-            if (!maxInputTokens && contextWindow) {
-              maxInputTokens = Math.floor(contextWindow * 0.8);
-            }
-          }
-        }
-      }
-
-      if (contextWindow) {
-        modelInfo.contextWindow = contextWindow;
-      }
-
-      const result: AIConfigResult = {
-        success: true,
-        message: `模型 "${config.model}" 配置已获取`,
-        modelInfo,
-      };
-
-      // maxTokens 字段用于存储最大输入 token 数
-      // 如果不是有效数字，设置为 -1 表示无限制
-      const finalMaxTokens =
-        maxInputTokens !== undefined &&
-        typeof maxInputTokens === 'number' &&
-        !isNaN(maxInputTokens) &&
-        maxInputTokens > 0
-          ? maxInputTokens
-          : -1;
-
-      result.maxTokens = finalMaxTokens;
-      if (result.modelInfo) {
-        result.modelInfo.maxTokens = finalMaxTokens;
-      }
-
-      return result;
-    } catch (error) {
-      let errorMessage = '获取配置失败：未知错误';
-      if (error && typeof error === 'object' && 'error' in error) {
-        const errorObj = (error as { error?: { message?: string } }).error;
-        if (errorObj?.message) {
-          errorMessage = errorObj.message;
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
       return {
-        success: false,
-        message: errorMessage,
+        content,
+        modelId,
       };
+    } catch (error) {
+      // 将官方 SDK 的错误转换为标准错误格式
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('OpenAI API 请求失败');
     }
   }
 }

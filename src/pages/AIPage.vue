@@ -10,7 +10,7 @@ import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
-import type { AIModel, AIProvider } from 'src/types/ai-model';
+import type { AIModel, AIProvider } from 'src/types/ai/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import AIModelDialog from 'src/components/AIModelDialog.vue';
 

@@ -5,7 +5,7 @@ import Button from 'primevue/button';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import type { Settings } from 'src/types/settings';
-import type { AIModel } from 'src/types/ai-model';
+import type { AIModel } from 'src/types/ai/ai-model';
 
 const props = withDefaults(
   defineProps<{

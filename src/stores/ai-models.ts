@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { AIModel } from 'src/types/ai-model';
+import type { AIModel } from 'src/types/ai/ai-model';
 
 const STORAGE_KEY = 'luna-ai-models';
 

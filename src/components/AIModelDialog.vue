@@ -8,7 +8,7 @@ import Checkbox from 'primevue/checkbox';
 import InputSwitch from 'primevue/inputswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { AIModel, AIProvider } from 'src/types/ai-model';
+import type { AIModel, AIProvider } from 'src/types/ai/ai-model';
 import { AIServiceFactory } from 'src/services/ai';
 
 const props = withDefaults(
@@ -205,7 +205,7 @@ const testModel = async () => {
 
     // 构建详细信息
     const details: string[] = [];
-    if (result.maxTokens) {
+    if (result.maxTokens && result.maxTokens > 0) {
       details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
     }
 
@@ -427,7 +427,7 @@ watch(
               disabled
               class="w-full"
             />
-            <small v-if="aiConfig?.maxTokens && formData.maxTokens !== aiConfig.maxTokens" class="text-xs text-moon/70 block mt-1">
+            <small v-if="aiConfig?.maxTokens && aiConfig.maxTokens > 0 && formData.maxTokens !== aiConfig.maxTokens" class="text-xs text-moon/70 block mt-1">
               从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
             </small>
           </div>

@@ -1,4 +1,4 @@
-import type { AIProvider } from 'src/types/ai-model';
+import type { AIProvider } from 'src/types/ai/ai-model';
 import type { AIService, AIServiceConfig, AIConfigResult } from './types';
 import { OpenAIService } from './openai-service';
 import { GeminiService } from './gemini-service';
@@ -34,3 +34,5 @@ export class AIServiceFactory {
 }
 
 export * from './types';
+export * from 'src/types/ai/interfaces';
+export * from 'src/constants/ai';
