@@ -27,6 +27,11 @@
 - 注意代码的鲁棒性和抽象性，确保代码的健壮性和可维护性。尽量创建可复用的组件和函数。
 - script 必须置于template 之后，且必须使用 setup 语法。
 - 使用uuid生成唯一ID。
+- **ID 生成规范**：
+  - 对于 `Volume`、`Chapter`、`Paragraph`、`Translation`、`Note`、`Terminology`、`CharacterSetting`，使用短 ID（8 位十六进制字符串，例如 "e58ed763"）。
+  - 使用 `UniqueIdGenerator` 类（位于 `src/utils/id-generator.ts`）确保在各自的组内唯一。
+  - `Novel` 的 ID 仍使用完整的 uuidv4。
+  - 示例：`const idGenerator = new UniqueIdGenerator(); const id = idGenerator.generate();`
 - 使用pinia管理状态。
 - 使用primevue组件库。
 - 使用useToastWithHistory来展示各种行为的结果，使其可以自动保存toast历史记录。

@@ -13,6 +13,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Novel } from 'src/types/novel';
 import BookDialog from 'src/components/BookDialog.vue';
+import { formatWordCount, getNovelCharCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
 
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
@@ -38,40 +39,9 @@ const sortMenuItems = computed(() => {
 // 搜索关键词
 const searchQuery = ref('');
 
-// 计算总章节数（需要在排序选项之前定义）
-const getTotalChapters = (book: Novel): number => {
-  if (!book.volumes || book.volumes.length === 0) {
-    return 0;
-  }
-  return book.volumes.reduce((total, volume) => {
-    return total + (volume.chapters?.length || 0);
-  }, 0);
-};
-
-// 计算总字数（需要在排序选项之前定义）
-const getTotalWords = (book: Novel): number => {
-  if (!book.volumes || book.volumes.length === 0) {
-    return 0;
-  }
-  let totalWords = 0;
-  book.volumes.forEach((volume) => {
-    if (volume.chapters) {
-      volume.chapters.forEach((chapter) => {
-        if (chapter.content) {
-          chapter.content.forEach((paragraph) => {
-            if (paragraph.text) {
-              // 中文字符按字计算，其他按单词计算
-              const chineseChars = paragraph.text.match(/[\u4e00-\u9fa5]/g)?.length || 0;
-              const otherWords = paragraph.text.replace(/[\u4e00-\u9fa5]/g, '').trim().split(/\s+/).filter(w => w.length > 0).length;
-              totalWords += chineseChars + otherWords;
-            }
-          });
-        }
-      });
-    }
-  });
-  return totalWords;
-};
+// 使用工具函数计算（需要在排序选项之前定义）
+const getTotalChapters = utilGetTotalChapters;
+const getTotalWords = getNovelCharCount;
 
 // 排序选项
 type SortOption = {
@@ -239,13 +209,8 @@ const getCoverUrl = (book: Novel): string => {
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 };
 
-// 格式化字数
-const formatWordCount = (count: number): string => {
-  if (count === 0) return '0';
-  if (count < 1000) return count.toString();
-  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-  return `${(count / 10000).toFixed(1)}万`;
-};
+// 格式化字数（使用工具函数）
+// formatWordCount 已从 utils 导入
 
 // 格式化日期
 const formatDate = (date: Date): string => {
@@ -328,6 +293,7 @@ const handleSave = (formData: Partial<Novel>) => {
       ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
       ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
       ...(formData.cover ? { cover: formData.cover } : {}),
+      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
       createdAt: now,
       lastEdited: now,
     };
@@ -363,6 +329,10 @@ const handleSave = (formData: Partial<Novel>) => {
     // 处理封面：如果提供了封面就更新，如果为 null 就删除封面
     if (formData.cover !== undefined) {
       updates.cover = formData.cover;
+    }
+    // 处理 volumes：如果提供了 volumes 就更新
+    if (formData.volumes !== undefined) {
+      updates.volumes = formData.volumes;
     }
     booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;

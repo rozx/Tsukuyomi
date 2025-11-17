@@ -65,8 +65,51 @@ module.exports = {
         '.bg-luna-sky': {
           backgroundImage: 'linear-gradient(180deg, #0b1026 0%, #141a46 35%, #1e276b 100%)',
         },
+        // 统一的卡片样式
+        '.card-base': {
+          backgroundColor: 'rgba(11, 16, 38, 0.5)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '12px',
+        },
+        '.card-header': {
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '1rem 1.25rem',
+        },
+        '.card-content': {
+          backgroundColor: 'rgba(14, 21, 53, 0.95)',
+          padding: '1.5rem',
+        },
+        '.card-footer': {
+          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '1rem 1.5rem',
+        },
+        // 统一的输入组样式
+        '.input-group-base': {
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          borderRadius: '8px',
+        },
+        // 统一的列表项样式
+        '.list-item-base': {
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '8px',
+          padding: '0.75rem 1rem',
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        },
+        '.list-item-hover': {
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          borderColor: 'rgba(255, 255, 255, 0.2)',
+        },
+        '.list-item-selected': {
+          backgroundColor: 'rgba(85, 103, 242, 0.2)',
+          borderColor: 'rgba(85, 103, 242, 0.5)',
+          boxShadow: '0 2px 8px rgba(85, 103, 242, 0.2)',
+        },
       };
-      addUtilities(newUtilities, ['responsive']);
+      addUtilities(newUtilities, ['responsive', 'hover', 'focus']);
     },
   ],
 };

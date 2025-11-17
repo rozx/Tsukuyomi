@@ -5,3 +5,12 @@
 
 export type { AIModel, AIProvider, AIModelDefaultTasks } from './ai/ai-model';
 export type { MessageLanguages, MessageSchema } from './i18n';
+export type {
+  SyosetuChapter,
+  SyosetuNovelInfo,
+} from './syosetu';
+export type {
+  NovelScraper,
+  FetchNovelResult,
+  ScraperType,
+} from './scraper';

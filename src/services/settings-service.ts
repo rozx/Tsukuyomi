@@ -2,6 +2,7 @@ import type {
   Settings,
   ExportResult,
   ImportResult,
+  AppSettings,
 } from 'src/types/settings';
 import type { AIModel } from 'src/types/ai/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/types/novel';
@@ -210,14 +211,31 @@ export class SettingsService {
       }
     }
 
+    // 验证应用设置（如果存在）
+    let validAppSettings: AppSettings | undefined;
+    if (settings.appSettings && typeof settings.appSettings === 'object') {
+      const appSettings = settings.appSettings;
+      // 验证并发数限制
+      if (
+        typeof appSettings.scraperConcurrencyLimit === 'number' &&
+        appSettings.scraperConcurrencyLimit >= 1 &&
+        appSettings.scraperConcurrencyLimit <= 10
+      ) {
+        validAppSettings = {
+          scraperConcurrencyLimit: appSettings.scraperConcurrencyLimit,
+        };
+      }
+    }
+
     if (
       validModels.length === 0 &&
       validNovels.length === 0 &&
-      validCoverHistory.length === 0
+      validCoverHistory.length === 0 &&
+      !validAppSettings
     ) {
       return {
         success: false,
-        error: '设置数据中没有有效的 AI 模型、书籍或封面历史',
+        error: '设置数据中没有有效的 AI 模型、书籍、封面历史或应用设置',
       };
     }
 
@@ -232,6 +250,9 @@ export class SettingsService {
     if (validCoverHistory.length > 0) {
       messages.push(`${validCoverHistory.length} 个封面历史记录`);
     }
+    if (validAppSettings) {
+      messages.push('应用设置');
+    }
 
     return {
       success: true,
@@ -240,6 +261,7 @@ export class SettingsService {
         models: validModels,
         novels: validNovels,
         coverHistory: validCoverHistory,
+        ...(validAppSettings ? { appSettings: validAppSettings } : {}),
       },
     };
   }

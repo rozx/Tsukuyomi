@@ -49,6 +49,7 @@ export interface Chapter {
   title: string;
   webUrl?: string; // 网络地址
   content?: Paragraph[];
+  originalContent?: string; // 原始爬取的内容文本（保留原始格式）
   lastEdited: Date;
   createdAt: Date;
   specialInstructions?: string; // 特殊指令，如：翻译时需要保留原文的格式

@@ -130,7 +130,7 @@ const bottomItems: MenuItem[] = [
     </div>
 
     <!-- Main navigation -->
-    <div class="flex-1 overflow-auto px-3 pt-2 pb-2 min-h-0 relative z-10">
+    <div class="flex-1 overflow-auto px-3 pt-2 pb-2 min-h-0 min-w-0 max-w-full relative z-10">
       <!-- 导航菜单 -->
       <div class="mb-6">
         <Menu :model="topItems" />
@@ -140,28 +140,29 @@ const bottomItems: MenuItem[] = [
       <div class="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
       
       <!-- 收藏小说独立区域 -->
-      <div class="mt-4">
+      <div class="mt-4 min-w-0 max-w-full overflow-hidden">
         <!-- 标题区域 -->
-        <div class="px-3 py-2 mb-3 bg-white/5 rounded-lg border border-white/10">
-          <div class="flex items-center gap-2">
-            <i class="pi pi-bookmark text-primary text-sm" />
-            <span class="text-xs font-semibold text-moon/90 uppercase tracking-wide">收藏小说</span>
-            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+        <div class="px-3 py-2 mb-3 bg-white/5 rounded-lg border border-white/10 min-w-0 max-w-full overflow-hidden">
+          <div class="flex items-center gap-2 min-w-0">
+            <i class="pi pi-bookmark text-primary text-sm flex-shrink-0" />
+            <span class="text-xs font-semibold text-moon/90 uppercase tracking-wide flex-shrink-0">收藏小说</span>
+            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary flex-shrink-0">
               {{ starredNovels.length }}
             </span>
           </div>
         </div>
         
         <!-- 收藏小说列表 -->
-        <div v-if="starredNovels.length > 0" class="space-y-1">
+        <div v-if="starredNovels.length > 0" class="space-y-1 min-w-0 max-w-full overflow-hidden">
           <button
             v-for="book in starredNovels"
             :key="book.id"
-            class="w-full text-left px-3 py-2 rounded-lg text-sm text-moon/80 hover:bg-primary/15 hover:text-moon/95 hover:border-primary/30 border border-transparent transition-all duration-200 flex items-center gap-2 group"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm text-moon/80 hover:bg-primary/15 hover:text-moon/95 hover:border-primary/30 border border-transparent transition-all duration-200 flex items-center gap-2 group min-w-0 overflow-hidden"
+            style="max-width: 100%; box-sizing: border-box;"
             @click="() => void router.push('/books')"
           >
             <i class="pi pi-star-fill text-yellow-400 text-xs flex-shrink-0" />
-            <span class="truncate flex-1">{{ book.title }}</span>
+            <span class="truncate flex-1 min-w-0 text-ellipsis whitespace-nowrap overflow-hidden">{{ book.title }}</span>
           </button>
         </div>
         
