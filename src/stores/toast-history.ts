@@ -7,6 +7,7 @@ export interface ToastHistoryItem {
   detail: string;
   timestamp: number;
   life?: number;
+  read?: boolean; // 标记该 toast 是否已被关闭/标记为已读
 }
 
 const STORAGE_KEY = 'luna-toast-history';
@@ -20,7 +21,12 @@ function loadHistoryFromStorage(): ToastHistoryItem[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored) as ToastHistoryItem[];
+      const items = JSON.parse(stored) as ToastHistoryItem[];
+      // 确保所有旧数据都有 read 属性（向后兼容）
+      return items.map((item) => ({
+        ...item,
+        read: item.read ?? false,
+      }));
     }
   } catch (error) {
     console.error('Failed to load toast history from storage:', error);
@@ -78,14 +84,10 @@ export const useToastHistoryStore = defineStore('toastHistory', {
 
   getters: {
     /**
-     * 未读消息数量（在上次查看之后的消息）
+     * 未读消息数量（未标记为已读的消息）
      */
     unreadCount(state): number {
-      if (state.lastViewedTimestamp === 0) {
-        // 如果从未查看过，显示所有消息
-        return state.historyItems.length;
-      }
-      return state.historyItems.filter((item) => item.timestamp > state.lastViewedTimestamp).length;
+      return state.historyItems.filter((item) => !item.read).length;
     },
   },
 
@@ -97,6 +99,7 @@ export const useToastHistoryStore = defineStore('toastHistory', {
       const historyItem: ToastHistoryItem = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         timestamp: Date.now(),
+        read: false, // 新消息默认为未读
         ...item,
       };
 
@@ -113,25 +116,32 @@ export const useToastHistoryStore = defineStore('toastHistory', {
     },
 
     /**
-     * 标记为已读（更新上次查看时间戳）
+     * 标记为已读（打开历史对话框时，标记所有消息为已读）
      */
     markAsRead(): void {
+      // 标记所有消息为已读
+      this.historyItems.forEach((item) => {
+        item.read = true;
+      });
       this.lastViewedTimestamp = Date.now();
       saveLastViewedTimestamp(this.lastViewedTimestamp);
+      saveHistoryToStorage(this.historyItems);
     },
 
     /**
-     * 标记指定时间戳的消息为已读
+     * 标记指定时间戳的消息为已读（已废弃，保留用于兼容）
      */
     markAsReadByTimestamp(timestamp: number): void {
-      if (timestamp >= this.lastViewedTimestamp) {
-        this.lastViewedTimestamp = timestamp;
-        saveLastViewedTimestamp(this.lastViewedTimestamp);
+      // 找到对应时间戳的消息并标记为已读
+      const item = this.historyItems.find((item) => item.timestamp === timestamp);
+      if (item) {
+        item.read = true;
+        saveHistoryToStorage(this.historyItems);
       }
     },
 
     /**
-     * 根据消息内容标记为已读
+     * 根据消息内容标记为已读（关闭单个 toast 时调用）
      */
     markAsReadByMessage(message: { summary?: string; detail?: string }): void {
       const summary = message.summary || '';
@@ -140,7 +150,29 @@ export const useToastHistoryStore = defineStore('toastHistory', {
       const timestamp = messageToTimestampMap.get(messageKey);
 
       if (timestamp !== undefined) {
-        this.markAsReadByTimestamp(timestamp);
+        // 优先找到对应时间戳的未读消息并标记为已读
+        // 如果找不到，则找最接近该时间戳的未读消息（处理相同内容的多条消息）
+        let item = this.historyItems.find((item) => item.timestamp === timestamp && !item.read);
+        
+        if (!item) {
+          // 如果找不到精确匹配的未读项，找最接近时间戳的未读项
+          const unreadItems = this.historyItems.filter(
+            (item) => !item.read && item.summary === summary && item.detail === detail
+          );
+          if (unreadItems.length > 0) {
+            // 找时间戳最接近的项
+            item = unreadItems.reduce((closest, current) => {
+              const closestDiff = Math.abs(closest.timestamp - timestamp);
+              const currentDiff = Math.abs(current.timestamp - timestamp);
+              return currentDiff < closestDiff ? current : closest;
+            });
+          }
+        }
+
+        if (item) {
+          item.read = true;
+          saveHistoryToStorage(this.historyItems);
+        }
         // 清理映射（避免内存泄漏）
         messageToTimestampMap.delete(messageKey);
       }

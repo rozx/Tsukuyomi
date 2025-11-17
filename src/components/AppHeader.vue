@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import type { MenuItem } from 'primevue/menuitem';
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, type ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import { useUiStore } from '../stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import ToastHistoryDialog from './ToastHistoryDialog.vue';
 
-const router = useRouter();
 const ui = useUiStore();
 const { unreadCount } = useToastHistory();
 
@@ -23,7 +21,7 @@ const menuItems = ref<MenuItem[]>([
 ]);
 
 const bellButtonRef = ref<HTMLElement | null>(null);
-const toastHistoryRef = ref<InstanceType<typeof ToastHistoryDialog> | null>(null);
+const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => void }> | null>(null);
 
 const toggleHistoryDialog = (event: Event) => {
   toastHistoryRef.value?.toggle(event);
