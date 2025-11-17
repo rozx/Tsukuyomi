@@ -67,6 +67,17 @@ export default defineConfig((ctx) => {
         // Suppress large chunk size warnings
         if (!viteConf.build) viteConf.build = {};
         viteConf.build.chunkSizeWarningLimit = 2000;
+        
+        // 配置代理以解决 CORS 问题
+        if (!viteConf.server) viteConf.server = {};
+        viteConf.server.proxy = {
+          '/api/sda1': {
+            target: 'https://p.sda1.dev',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/sda1/, ''),
+            secure: true,
+          },
+        };
       },
       // viteVuePluginOptions: {},
 
@@ -128,6 +139,7 @@ export default defineConfig((ctx) => {
     devServer: {
       // https: true,
       open: true, // opens browser window automatically
+      // 代理配置在 extendViteConf 中设置
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

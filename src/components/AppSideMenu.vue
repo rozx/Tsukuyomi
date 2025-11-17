@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import type { MenuItem } from 'primevue/menuitem';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { useBooksStore } from 'src/stores/books';
+import type { Novel } from 'src/types/novel';
 import SettingsDialog from './SettingsDialog.vue';
 
 const router = useRouter();
+const booksStore = useBooksStore();
 const settingsDialogVisible = ref(false);
 const menuContainerRef = ref<HTMLElement | null>(null);
+
+// 获取收藏的小说
+const starredNovels = computed(() => {
+  return booksStore.books.filter((book) => book.starred);
+});
 
 // 修复 PrimeVue Menu 组件的 aria-hidden 可访问性问题
 // PrimeVue 会在子菜单关闭时设置 aria-hidden，但这些元素仍可能获得焦点
@@ -69,34 +77,19 @@ onUnmounted(() => {
 
 const topItems: MenuItem[] = [
   {
-    label: '导航',
-    items: [
-      {
-        label: '首页',
-        icon: 'pi pi-home',
-        command: () => void router.push('/'),
-      },
-    ],
+    label: '首页',
+    icon: 'pi pi-home',
+    command: () => void router.push('/'),
   },
   {
-    label: '书籍管理',
-    items: [
-      {
-        label: '书籍列表',
-        icon: 'pi pi-book',
-        command: () => void router.push('/books'),
-      },
-    ],
+    label: '书籍列表',
+    icon: 'pi pi-book',
+    command: () => void router.push('/books'),
   },
   {
-    label: 'AI管理',
-    items: [
-      {
-        label: 'AI列表',
-        icon: 'pi pi-sparkles',
-        command: () => void router.push('/ai'),
-      },
-    ],
+    label: 'AI列表',
+    icon: 'pi pi-sparkles',
+    command: () => void router.push('/ai'),
   },
 ];
 
@@ -138,7 +131,45 @@ const bottomItems: MenuItem[] = [
 
     <!-- Main navigation -->
     <div class="flex-1 overflow-auto px-3 pt-2 pb-2 min-h-0 relative z-10">
-      <Menu :model="topItems" class="mb-4" />
+      <!-- 导航菜单 -->
+      <div class="mb-6">
+        <Menu :model="topItems" />
+      </div>
+      
+      <!-- 分隔线 -->
+      <div class="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
+      
+      <!-- 收藏小说独立区域 -->
+      <div class="mt-4">
+        <!-- 标题区域 -->
+        <div class="px-3 py-2 mb-3 bg-white/5 rounded-lg border border-white/10">
+          <div class="flex items-center gap-2">
+            <i class="pi pi-bookmark text-primary text-sm" />
+            <span class="text-xs font-semibold text-moon/90 uppercase tracking-wide">收藏小说</span>
+            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+              {{ starredNovels.length }}
+            </span>
+          </div>
+        </div>
+        
+        <!-- 收藏小说列表 -->
+        <div v-if="starredNovels.length > 0" class="space-y-1">
+          <button
+            v-for="book in starredNovels"
+            :key="book.id"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm text-moon/80 hover:bg-primary/15 hover:text-moon/95 hover:border-primary/30 border border-transparent transition-all duration-200 flex items-center gap-2 group"
+            @click="() => void router.push('/books')"
+          >
+            <i class="pi pi-star-fill text-yellow-400 text-xs flex-shrink-0" />
+            <span class="truncate flex-1">{{ book.title }}</span>
+          </button>
+        </div>
+        
+        <!-- 空状态 -->
+        <div v-else class="px-3 py-2 text-xs text-moon/40 italic text-center">
+          暂无收藏的小说
+        </div>
+      </div>
     </div>
 
     <!-- Bottom section -->
@@ -165,15 +196,17 @@ const bottomItems: MenuItem[] = [
 
 /* Submenu header styling */
 :deep(.p-menu .p-submenu-header) {
-  background-color: transparent;
-  color: rgba(246, 243, 209, 0.6);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgba(246, 243, 209, 0.8);
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.75rem 0.75rem 0.5rem;
-  margin-top: 0.5rem;
-  margin-bottom: 0.25rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 :deep(.p-menu .p-submenu-header:first-child) {

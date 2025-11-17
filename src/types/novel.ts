@@ -4,12 +4,14 @@ import type { AIModel } from './ai/ai-model';
 export interface Novel {
   id: string;
   title: string;
+  alternateTitles?: string[];
   author?: string;
   description?: string;
   cover?: CoverImage;
   tags?: string[];
   volumes?: Volume[];
   webUrl?: string[];
+  starred?: boolean;
   lastEdited: Date;
   createdAt: Date;
   defaultAIModel?: {
@@ -27,6 +29,11 @@ export interface Novel {
 export interface CoverImage {
   url: string;
   deleteUrl?: string;
+}
+
+export interface CoverHistoryItem extends CoverImage {
+  id: string;
+  addedAt: Date;
 }
 
 export interface Volume {
