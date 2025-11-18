@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
-import InputGroup from 'primevue/inputgroup';
-import InputGroupAddon from 'primevue/inputgroupaddon';
+import Chips from 'primevue/chips';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -11,27 +8,21 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TranslationService } from 'src/services/ai';
 
 interface Props {
-  modelValue: string;
+  modelValue: string[];
   placeholder?: string;
   id?: string;
   disabled?: boolean;
   invalid?: boolean;
-  type?: 'input' | 'textarea';
-  rows?: number;
-  autoResize?: boolean;
+  separator?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  type: 'input',
-  autoResize: false,
+  separator: ',',
 });
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string];
+  'update:modelValue': [value: string[]];
 }>();
-
-// 计算 id，如果未提供则返回 undefined
-const inputId = computed<string | undefined>(() => props.id);
 
 const aiModelsStore = useAIModelsStore();
 const toast = useToastWithHistory();
@@ -41,7 +32,7 @@ const translating = ref(false);
 
 // 翻译结果对话框状态
 const showTranslationDialog = ref(false);
-const translationResult = ref('');
+const translationResult = ref<string[]>([]);
 
 // 获取所有可用的翻译模型
 const availableTranslationModels = computed(() => {
@@ -53,17 +44,16 @@ const availableTranslationModels = computed(() => {
 // 是否禁用翻译按钮
 const isTranslateDisabled = computed(() => {
   return (
-    !props.modelValue?.trim() || translating.value || availableTranslationModels.value.length === 0
+    !props.modelValue || props.modelValue.length === 0 || translating.value || availableTranslationModels.value.length === 0
   );
 });
 
-// 翻译文本
+// 翻译标签数组
 const handleTranslate = async () => {
-  if (!props.modelValue?.trim()) {
+  if (!props.modelValue || props.modelValue.length === 0) {
     return;
   }
 
-  const originalText = props.modelValue.trim();
   translating.value = true;
 
   try {
@@ -80,11 +70,57 @@ const handleTranslate = async () => {
       return;
     }
 
+    // 将所有标签用中文顿号连接，然后翻译
+    // 使用中文顿号是因为它更可能在翻译结果中保留
+    const originalText = props.modelValue.join('、');
+    
     // 使用翻译服务进行翻译
     const translatedText = await TranslationService.translate(originalText, selectedModel);
 
+    // 尝试将翻译结果分割回数组
+    // 翻译结果可能用中文顿号、中文逗号、英文逗号或其他分隔符分隔
+    let translatedTags: string[] = [];
+    
+    // 尝试多种分隔符（按优先级排序）
+    const separators = ['、', '，', ',', ' '];
+    let foundSeparator = false;
+    
+    for (const sep of separators) {
+      if (translatedText.includes(sep)) {
+        translatedTags = translatedText
+          .split(sep)
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0);
+        foundSeparator = true;
+        break;
+      }
+    }
+    
+    // 如果没有找到分隔符，尝试按原始标签数量分割
+    // 或者将整个文本作为一个标签
+    if (!foundSeparator) {
+      const originalCount = props.modelValue.length;
+      // 如果原始只有一个标签，直接使用翻译结果
+      if (originalCount === 1) {
+        translatedTags = [translatedText.trim()].filter(tag => tag.length > 0);
+      } else {
+        // 如果有多个标签但翻译结果没有分隔符，尝试按字符数大致分割
+        // 但这不太准确，所以还是作为一个标签处理
+        translatedTags = [translatedText.trim()].filter(tag => tag.length > 0);
+      }
+    }
+    
+    // 确保翻译后的标签数量不超过原始标签数量（防止过度分割）
+    if (translatedTags.length > props.modelValue.length * 2) {
+      // 如果分割后标签过多，可能是分割方式不对，尝试用空格分割
+      const spaceSplit = translatedText.split(/\s+/).map(tag => tag.trim()).filter(tag => tag.length > 0);
+      if (spaceSplit.length <= props.modelValue.length * 2) {
+        translatedTags = spaceSplit;
+      }
+    }
+
     // 保存翻译结果并显示对话框
-    translationResult.value = translatedText;
+    translationResult.value = translatedTags;
     showTranslationDialog.value = true;
   } catch (error) {
     console.error('翻译失败:', error);
@@ -101,70 +137,25 @@ const handleTranslate = async () => {
 </script>
 
 <template>
-  <!-- Input Text Mode -->
-  <InputGroup v-if="type === 'input'">
-    <InputText
-      v-if="inputId"
-      :id="inputId as string"
+  <div class="translatable-chips-wrapper" :class="$attrs.class">
+    <Chips
+      :id="id"
       :model-value="modelValue"
       :placeholder="placeholder"
-      class="flex-1"
-      :class="{ 'p-invalid': invalid }"
+      :separator="separator"
       :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
-    />
-    <InputText
-      v-else
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      class="flex-1"
       :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
-    />
-    <InputGroupAddon class="translatable-input-addon">
-      <Button
-        icon="pi pi-language"
-        :loading="translating"
-        :disabled="isTranslateDisabled"
-        class="translatable-input-button"
-        @click="handleTranslate"
-      />
-    </InputGroupAddon>
-  </InputGroup>
-  <!-- Textarea Mode -->
-  <div v-else class="translatable-textarea-wrapper">
-    <Textarea
-      v-if="inputId"
-      :id="inputId as string"
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      :rows="rows"
-      :auto-resize="autoResize"
-      class="translatable-textarea"
-      :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
-    />
-    <Textarea
-      v-else
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      :rows="rows"
-      :auto-resize="autoResize"
-      class="translatable-textarea"
-      :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
+      @update:model-value="(value: string[] | undefined) => emit('update:modelValue', value ?? [])"
     />
     <Button
       icon="pi pi-language"
       :loading="translating"
       :disabled="isTranslateDisabled"
-      class="translatable-textarea-button"
+      class="translatable-chips-button"
       @click="handleTranslate"
     />
   </div>
+  
   <!-- 翻译结果对话框 -->
   <Dialog
     v-model:visible="showTranslationDialog"
@@ -175,7 +166,11 @@ const handleTranslate = async () => {
   >
     <div class="translation-result-container">
       <div class="translation-result-label">翻译结果：</div>
-      <div class="translation-result-content">{{ translationResult }}</div>
+      <div class="translation-result-content">
+        <div v-for="(tag, index) in translationResult" :key="index" class="translation-tag">
+          {{ tag }}
+        </div>
+      </div>
       <div class="translation-result-question">是否要应用此翻译？</div>
     </div>
     <template #footer>
@@ -203,7 +198,7 @@ const handleTranslate = async () => {
           toast.add({
             severity: 'success',
             summary: '翻译已应用',
-            detail: '翻译结果已应用到输入框',
+            detail: '翻译结果已应用到标签',
             life: 3000,
           });
         "
@@ -213,78 +208,23 @@ const handleTranslate = async () => {
 </template>
 
 <style scoped>
-/* Input Mode Styles */
-.translatable-input-addon {
-  padding: 0 !important;
-  display: flex !important;
-  align-items: stretch !important;
-  position: relative !important;
-}
-
-.translatable-input-addon .translatable-input-button {
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  margin: 0 !important;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  min-width: auto !important;
-  min-height: auto !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  border-radius: 0 !important;
-}
-
-.translatable-input-addon .translatable-input-button :deep(.p-button-icon) {
-  margin: 0 !important;
-  color: rgba(246, 243, 209, 0.9) !important;
-}
-
-.translatable-input-addon .translatable-input-button:not(:disabled):hover {
-  background: rgba(85, 103, 242, 0.3) !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  transform: none !important;
-}
-
-.translatable-input-addon .translatable-input-button:not(:disabled):active,
-.translatable-input-addon .translatable-input-button:not(:disabled):focus {
-  background: rgba(85, 103, 242, 0.3) !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  transform: none !important;
-}
-
-.translatable-input-addon .translatable-input-button:not(:disabled):hover :deep(.p-button-icon),
-.translatable-input-addon .translatable-input-button:not(:disabled):active :deep(.p-button-icon),
-.translatable-input-addon .translatable-input-button:not(:disabled):focus :deep(.p-button-icon) {
-  color: rgba(246, 243, 209, 1) !important;
-  transform: none !important;
-}
-
-/* Textarea Mode Styles */
-.translatable-textarea-wrapper {
+.translatable-chips-wrapper {
   position: relative;
   width: 100%;
 }
 
-.translatable-textarea {
+.translatable-chips-wrapper :deep(.p-chips) {
   width: 100%;
 }
 
-.translatable-textarea-button {
+.translatable-chips-wrapper :deep(.p-chips-multiple-container) {
+  padding-right: 3rem !important;
+}
+
+.translatable-chips-button {
   position: absolute !important;
-  top: 0.5rem !important;
-  right: 0.5rem !important;
+  top: 0.375rem !important;
+  right: 0.375rem !important;
   width: 2rem !important;
   height: 2rem !important;
   min-width: 2rem !important;
@@ -298,40 +238,39 @@ const handleTranslate = async () => {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  pointer-events: auto !important;
 }
 
-.translatable-textarea-button :deep(.p-button-icon) {
+.translatable-chips-button :deep(.p-button-icon) {
   margin: 0 !important;
   color: rgba(246, 243, 209, 0.9) !important;
   font-size: 0.875rem !important;
 }
 
-.translatable-textarea-button:not(:disabled):hover {
+.translatable-chips-button:not(:disabled):hover {
   background: rgba(85, 103, 242, 0.7) !important;
   border-color: rgba(85, 103, 242, 0.5) !important;
   box-shadow: 0 2px 8px rgba(85, 103, 242, 0.3) !important;
 }
 
-.translatable-textarea-button:not(:disabled):active,
-.translatable-textarea-button:not(:disabled):focus {
+.translatable-chips-button:not(:disabled):active,
+.translatable-chips-button:not(:disabled):focus {
   background: rgba(85, 103, 242, 0.8) !important;
   border-color: rgba(85, 103, 242, 0.6) !important;
   box-shadow: 0 2px 8px rgba(85, 103, 242, 0.4) !important;
 }
 
-.translatable-textarea-button:not(:disabled):hover :deep(.p-button-icon),
-.translatable-textarea-button:not(:disabled):active :deep(.p-button-icon),
-.translatable-textarea-button:not(:disabled):focus :deep(.p-button-icon) {
+.translatable-chips-button:not(:disabled):hover :deep(.p-button-icon),
+.translatable-chips-button:not(:disabled):active :deep(.p-button-icon),
+.translatable-chips-button:not(:disabled):focus :deep(.p-button-icon) {
   color: rgba(246, 243, 209, 1) !important;
 }
 
-.translatable-textarea-button:disabled {
+.translatable-chips-button:disabled {
   opacity: 0.5 !important;
   cursor: not-allowed !important;
 }
-</style>
 
-<style scoped>
 /* 翻译结果对话框样式 */
 .translation-result-container {
   display: flex;
@@ -355,12 +294,19 @@ const handleTranslate = async () => {
   max-height: 400px;
   overflow-y: auto;
   overflow-x: hidden;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  color: rgba(246, 243, 209, 0.9);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  font-family: inherit;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.translation-tag {
+  background: rgba(85, 103, 242, 0.2);
+  border: 1px solid rgba(85, 103, 242, 0.4);
+  color: rgba(246, 243, 209, 0.95);
+  padding: 0.375rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .translation-result-content::-webkit-scrollbar {
@@ -387,3 +333,4 @@ const handleTranslate = async () => {
   margin-top: 0.5rem;
 }
 </style>
+

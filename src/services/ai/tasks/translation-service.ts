@@ -27,15 +27,27 @@ export class TranslationService {
       throw new Error('所选模型不支持翻译任务');
     }
 
-    const defaultPrompt = `请将以下日文小说标题翻译为简体中文，只返回翻译结果，不要包含任何其他内容：\n\n${text.trim()}`;
+    const trimmedText = text.trim();
+    const defaultPrompt = `请将以下日文文本翻译为简体中文，保持原文的格式和结构，只返回翻译结果，不要包含任何其他内容：\n\n${trimmedText}`;
     const finalPrompt = prompt || defaultPrompt;
+
+    // 动态计算 maxTokens：
+    // 日文和中文通常每个字符约为 1-2 tokens，为了确保完整翻译，我们使用更保守的估算
+    // 估算输入 token 数（日文每个字符约 1.5 tokens）
+    const estimatedInputTokens = Math.ceil(trimmedText.length * 1.5);
+    // 输出通常与输入长度相似或稍长（中文翻译），加上一些缓冲
+    // 使用输入 token 数的 2 倍作为输出上限，确保有足够空间
+    const estimatedOutputTokens = estimatedInputTokens * 2;
+    const minTokens = 500; // 最小 500 tokens，确保足够翻译较长的文本
+    const maxTokensLimit = model.maxTokens && model.maxTokens > 0 ? model.maxTokens : 8000; // 使用模型限制或默认 8000
+    const calculatedMaxTokens = Math.max(minTokens, Math.min(estimatedOutputTokens, maxTokensLimit));
 
     const config: AIServiceConfig = {
       apiKey: model.apiKey,
       baseUrl: model.baseUrl,
       model: model.model,
       temperature: model.isDefault.translation?.temperature ?? 0.7,
-      maxTokens: 100,
+      maxTokens: calculatedMaxTokens,
     };
 
     try {

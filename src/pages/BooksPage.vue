@@ -354,14 +354,13 @@ const handleSave = (formData: Partial<Novel>) => {
             placeholder="搜索书籍标题、别名、作者、描述或标签..."
             class="search-input"
           />
-          <InputGroupAddon v-if="searchQuery" class="clear-addon">
-            <Button
-              icon="pi pi-times"
-              class="p-button-text p-button-sm clear-button"
-              @click="searchQuery = ''"
-              title="清除搜索"
-            />
-          </InputGroupAddon>
+          <Button
+            v-if="searchQuery"
+            icon="pi pi-times"
+            class="p-button-text p-button-sm"
+            @click="searchQuery = ''"
+            title="清除搜索"
+          />
         </InputGroup>
         <Button
           :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"

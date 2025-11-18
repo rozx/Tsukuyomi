@@ -4,12 +4,12 @@ import { cloneDeep } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
 import Chips from 'primevue/chips';
 import type { Novel, Chapter } from 'src/types/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
 import TranslatableInput from './TranslatableInput.vue';
+import TranslatableChips from './TranslatableChips.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -351,14 +351,10 @@ watch(
           <label :for="`${idPrefix}-alternateTitles`" class="block text-sm font-medium text-moon/90"
             >别名标题</label
           >
-          <Chips
+          <TranslatableChips
             :id="`${idPrefix}-alternateTitles`"
             :model-value="formData.alternateTitles || []"
-            @update:model-value="
-              (value) => {
-                formData.alternateTitles = value;
-              }
-            "
+            @update:model-value="(value) => { formData.alternateTitles = value; }"
             placeholder="输入别名标题后按回车"
             class="w-full"
           />
@@ -383,13 +379,14 @@ watch(
           <label :for="`${idPrefix}-description`" class="block text-sm font-medium text-moon/90"
             >描述</label
           >
-          <Textarea
+          <TranslatableInput
             :id="`${idPrefix}-description`"
-            v-model="formData.description"
-            placeholder="输入书籍描述..."
+            :model-value="formData.description || ''"
+            @update:model-value="(value) => { formData.description = value; }"
+            type="textarea"
             :rows="4"
-            class="w-full"
-            auto-resize
+            :auto-resize="true"
+            placeholder="输入书籍描述..."
           />
         </div>
 
@@ -398,14 +395,10 @@ watch(
           <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
             >标签</label
           >
-          <Chips
+          <TranslatableChips
             :id="`${idPrefix}-tags`"
             :model-value="formData.tags || []"
-            @update:model-value="
-              (value) => {
-                formData.tags = value;
-              }
-            "
+            @update:model-value="(value) => { formData.tags = value; }"
             placeholder="输入标签后按回车，或用逗号分隔输入多个标签"
             class="w-full"
             separator=","

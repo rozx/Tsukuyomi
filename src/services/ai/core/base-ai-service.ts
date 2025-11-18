@@ -81,6 +81,17 @@ export abstract class BaseAIService implements AIService {
   protected abstract makeConfigRequest(config: AIServiceConfig): Promise<ParsedResponse>;
 
   /**
+   * 估算文本的 token 数（粗略估算）
+   * 对于日文和中文，每个字符大约 1-2 tokens
+   * 使用保守估算：每个字符 2 tokens
+   */
+  protected estimateTokenCount(text: string): number {
+    if (!text) return 0;
+    // 保守估算：每个字符 2 tokens（对于日文和中文）
+    return Math.ceil(text.length * 2);
+  }
+
+  /**
    * 生成文本（子类需要实现）
    * @param config 服务配置
    * @param request 文本生成请求
@@ -98,7 +109,21 @@ export abstract class BaseAIService implements AIService {
       throw new Error('提示词不能为空');
     }
 
-    // 调用子类实现
+    // 检查 prompt 长度，如果可能超过限制则显示警告（但不截断）
+    // 注意：这里我们无法准确知道模型的 maxInputTokens，所以只做粗略检查
+    // 如果 prompt 很长（比如超过 10000 字符），显示警告
+    const promptLength = request.prompt.length;
+    const estimatedTokens = this.estimateTokenCount(request.prompt);
+    
+    // 如果估算的 token 数超过 10000，显示警告
+    // 这是一个保守的阈值，大多数模型的 maxInputTokens 都远大于此
+    if (estimatedTokens > 10000) {
+      console.warn(
+        `[AI Service] 警告：提示词可能超过模型限制。估算 token 数: ${estimatedTokens}，字符数: ${promptLength}。文本将完整发送，但可能被模型截断。`,
+      );
+    }
+
+    // 调用子类实现（不截断文本）
     return this.makeTextGenerationRequest(config, request);
   }
 
