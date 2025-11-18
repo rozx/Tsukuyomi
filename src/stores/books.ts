@@ -66,7 +66,12 @@ export const useBooksStore = defineStore('books', {
     updateBook(id: string, updates: Partial<Novel>): void {
       const index = this.books.findIndex((book) => book.id === id);
       if (index > -1) {
-        this.books[index] = { ...this.books[index], ...updates } as Novel;
+        const updatedBook = { ...this.books[index], ...updates } as Novel;
+        // 如果 cover 是 null，删除该属性
+        if ('cover' in updates && updates.cover === null) {
+          delete updatedBook.cover;
+        }
+        this.books[index] = updatedBook;
         saveBooksToStorage(this.books);
       }
     },
