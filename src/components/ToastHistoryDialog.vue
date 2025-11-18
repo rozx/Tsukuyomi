@@ -79,7 +79,7 @@ defineExpose({
           :paginator="sortedHistoryItems.length > 10"
           :rows="10"
           :rows-per-page-options="[5, 10, 20, 50]"
-          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
+          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
         >
           <template #empty>
             <div class="text-center py-12">

@@ -218,6 +218,7 @@ const handleTranslate = async () => {
 }
 
 .translatable-chips-wrapper :deep(.p-chips-multiple-container) {
+  width: 100% !important;
   padding-right: 3rem !important;
 }
 

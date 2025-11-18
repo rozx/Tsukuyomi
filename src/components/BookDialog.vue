@@ -133,6 +133,62 @@ const handleSave = () => {
   emit('save', formData.value);
 };
 
+// 导出 JSON
+const handleExportJson = () => {
+  try {
+    // 准备要导出的数据
+    const exportData: Partial<Novel> = {
+      ...formData.value,
+    };
+
+    // 如果有 book 数据，包含 id 和时间戳
+    if (props.mode === 'edit' && props.book) {
+      exportData.id = props.book.id;
+      exportData.createdAt = props.book.createdAt;
+      exportData.lastEdited = props.book.lastEdited;
+    }
+
+    // 创建 JSON 字符串
+    const jsonString = JSON.stringify(exportData, null, 2);
+
+    // 创建 Blob
+    const blob = new Blob([jsonString], { type: 'application/json' });
+
+    // 创建下载链接
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // 生成文件名（使用书名或默认名称）
+    const title = formData.value.title || props.book?.title || 'book';
+    const sanitizedTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
+    const timestamp = new Date().toISOString().split('T')[0];
+    link.download = `${sanitizedTitle}-${timestamp}.json`;
+
+    // 触发下载
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 清理 URL
+    URL.revokeObjectURL(url);
+
+    toast.add({
+      severity: 'success',
+      summary: '导出成功',
+      detail: '书籍数据已成功导出为 JSON 文件',
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导出失败',
+      detail: error instanceof Error ? error.message : '导出 JSON 时发生未知错误',
+      life: 3000,
+    });
+  }
+};
+
 // 处理取消
 const handleCancel = () => {
   emit('cancel');
@@ -614,18 +670,28 @@ watch(
       </div>
     </div>
     <template #footer>
-      <Button
-        label="取消"
-        icon="pi pi-times"
-        class="p-button-text icon-button-hover"
-        @click="handleCancel"
-      />
-      <Button
-        label="保存"
-        icon="pi pi-check"
-        class="p-button-primary icon-button-hover"
-        @click="handleSave"
-      />
+      <div class="flex items-center justify-between w-full">
+        <Button
+          icon="pi pi-download"
+          label="导出 JSON"
+          class="p-button-text icon-button-hover"
+          @click="handleExportJson"
+        />
+        <div class="flex gap-2">
+          <Button
+            label="取消"
+            icon="pi pi-times"
+            class="p-button-text icon-button-hover"
+            @click="handleCancel"
+          />
+          <Button
+            label="保存"
+            icon="pi pi-check"
+            class="p-button-primary icon-button-hover"
+            @click="handleSave"
+          />
+        </div>
+      </div>
     </template>
 
     <!-- 封面管理对话框 -->

@@ -10,6 +10,7 @@ import InputGroupAddon from 'primevue/inputgroupaddon';
 import TieredMenu from 'primevue/tieredmenu';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useBooksStore } from 'src/stores/books';
+import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/types/novel';
@@ -22,6 +23,7 @@ import {
 } from 'src/utils';
 
 const booksStore = useBooksStore();
+const coverHistoryStore = useCoverHistoryStore();
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 
@@ -30,6 +32,9 @@ const showAddDialog = ref(false);
 const showEditDialog = ref(false);
 const showImportDialog = ref(false);
 const selectedBook = ref<Novel | null>(null);
+
+// 文件输入引用（用于导入 JSON）
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 // 排序菜单
 const sortMenuRef = ref<{
@@ -205,6 +210,159 @@ const importBookFromWeb = () => {
   showImportDialog.value = true;
 };
 
+// 从 JSON 文件导入书籍
+const importBookFromJson = () => {
+  fileInputRef.value?.click();
+};
+
+// 处理文件选择
+const handleFileSelect = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  // 验证文件类型
+  const isValidFile =
+    file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
+
+  if (!isValidFile) {
+    toast.add({
+      severity: 'error',
+      summary: '导入失败',
+      detail: '请选择 JSON 或 TXT 格式的文件',
+      life: 3000,
+    });
+    target.value = '';
+    return;
+  }
+
+  try {
+    // 读取文件
+    const content = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve(e.target?.result as string);
+      };
+      reader.onerror = () => {
+        reject(new Error('读取文件时发生错误'));
+      };
+      reader.readAsText(file);
+    });
+
+    // 解析 JSON
+    const data = JSON.parse(content);
+
+    // 处理导入的数据
+    let importedBooks: Novel[] = [];
+
+    // 如果数据是数组，直接使用
+    if (Array.isArray(data)) {
+      importedBooks = data;
+    }
+    // 如果数据是单个书籍对象
+    else if (data && typeof data === 'object' && data.title) {
+      importedBooks = [data];
+    }
+    // 如果数据包含 novels 字段（Settings 格式）
+    else if (data.novels && Array.isArray(data.novels)) {
+      importedBooks = data.novels;
+    }
+    // 如果数据包含单个 novel 字段
+    else if (data.novel && typeof data.novel === 'object') {
+      importedBooks = [data.novel];
+    } else {
+      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+    }
+
+    if (importedBooks.length === 0) {
+      throw new Error('文件中没有找到有效的书籍数据');
+    }
+
+    // 验证并导入书籍
+    const now = new Date();
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const bookData of importedBooks) {
+      try {
+        // 验证必需字段
+        if (!bookData.title || typeof bookData.title !== 'string') {
+          errorCount++;
+          continue;
+        }
+
+        // 创建新书籍对象
+        const newBook: Novel = {
+          id: uuidv4(),
+          title: bookData.title,
+          ...(bookData.alternateTitles && Array.isArray(bookData.alternateTitles)
+            ? { alternateTitles: bookData.alternateTitles }
+            : {}),
+          ...(bookData.author && typeof bookData.author === 'string'
+            ? { author: bookData.author }
+            : {}),
+          ...(bookData.description && typeof bookData.description === 'string'
+            ? { description: bookData.description }
+            : {}),
+          ...(bookData.tags && Array.isArray(bookData.tags) ? { tags: bookData.tags } : {}),
+          ...(bookData.webUrl && Array.isArray(bookData.webUrl) ? { webUrl: bookData.webUrl } : {}),
+          ...(bookData.cover && typeof bookData.cover === 'object' && bookData.cover.url
+            ? { cover: bookData.cover }
+            : {}),
+          ...(bookData.volumes && Array.isArray(bookData.volumes)
+            ? { volumes: bookData.volumes }
+            : {}),
+          ...(bookData.starred !== undefined ? { starred: Boolean(bookData.starred) } : {}),
+          createdAt: bookData.createdAt ? new Date(bookData.createdAt) : now,
+          lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
+        };
+
+        booksStore.addBook(newBook);
+
+        // 如果书籍有封面，添加到封面历史
+        if (newBook.cover) {
+          coverHistoryStore.addCover(newBook.cover);
+        }
+
+        successCount++;
+      } catch (error) {
+        console.error('导入书籍时出错:', error);
+        errorCount++;
+      }
+    }
+
+    // 显示结果
+    if (successCount > 0) {
+      toast.add({
+        severity: 'success',
+        summary: '导入成功',
+        detail: `成功导入 ${successCount} 本书籍${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
+        life: 3000,
+      });
+    } else {
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: `未能导入任何书籍${errorCount > 0 ? `（${errorCount} 本失败）` : ''}`,
+        life: 3000,
+      });
+    }
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导入失败',
+      detail: error instanceof Error ? error.message : '解析文件时发生未知错误',
+      life: 5000,
+    });
+  }
+
+  // 清空输入
+  target.value = '';
+};
+
 // 处理从网站导入的书籍
 const handleImportBook = (novel: Novel) => {
   const now = new Date();
@@ -215,6 +373,12 @@ const handleImportBook = (novel: Novel) => {
     lastEdited: now,
   };
   booksStore.addBook(newBook);
+
+  // 如果导入的书籍有封面，添加到封面历史
+  if (newBook.cover) {
+    coverHistoryStore.addCover(newBook.cover);
+  }
+
   showImportDialog.value = false;
   toast.add({
     severity: 'success',
@@ -286,6 +450,12 @@ const handleSave = (formData: Partial<Novel>) => {
       lastEdited: now,
     };
     booksStore.addBook(newBook);
+
+    // 如果新书有封面，添加到封面历史
+    if (newBook.cover) {
+      coverHistoryStore.addCover(newBook.cover);
+    }
+
     showAddDialog.value = false;
     toast.add({
       severity: 'success',
@@ -378,9 +548,15 @@ const handleSave = (formData: Partial<Novel>) => {
         />
         <Button
           label="从网站导入"
-          icon="pi pi-download"
+          icon="pi pi-globe"
           class="p-button-primary icon-button-hover"
           @click="importBookFromWeb"
+        />
+        <Button
+          label="从 JSON 导入"
+          icon="pi pi-file-import"
+          class="p-button-primary icon-button-hover"
+          @click="importBookFromJson"
         />
         <Button
           label="添加书籍"
@@ -398,7 +574,7 @@ const handleSave = (formData: Partial<Novel>) => {
       :rows="20"
       :paginator="filteredBooks.length > 0"
       :rows-per-page-options="[10, 20, 50, 100]"
-      paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
+      paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
       layout="grid"
     >
       <template #empty>
@@ -529,6 +705,15 @@ const handleSave = (formData: Partial<Novel>) => {
 
     <!-- 排序菜单 -->
     <TieredMenu ref="sortMenuRef" :model="sortMenuItems" popup />
+
+    <!-- 隐藏的文件输入（用于导入 JSON） -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept=".json,.txt"
+      class="hidden"
+      @change="handleFileSelect"
+    />
   </div>
 </template>
 
