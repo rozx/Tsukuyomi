@@ -1,10 +1,9 @@
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
-import type { Novel, Volume, Chapter } from 'src/types/novel';
+import type { Novel } from 'src/types/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/types/syosetu';
+import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/types/scraper';
 import { BaseScraper } from './base-scraper';
-import type { FetchNovelResult } from 'src/types/scraper';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
 
 /**
  * syosetu.org 小说爬虫服务
@@ -87,6 +86,16 @@ export class SyosetuScraper extends BaseScraper {
    */
   async fetchChapterContent(chapterUrl: string): Promise<string> {
     const html = await this.fetchPage(chapterUrl, '/api/syosetu');
+    const paragraphs = this.extractParagraphsFromHtml(html);
+    return this.mergeParagraphs(paragraphs);
+  }
+
+  /**
+   * 从 HTML 中提取段落（实现抽象方法）
+   * @param html 章节 HTML 内容
+   * @returns 段落数组，每个元素是一个段落文本
+   */
+  protected extractParagraphsFromHtml(html: string): string[] {
     const $ = cheerio.load(html);
 
     // 提取正文内容（按优先级查找）
@@ -327,6 +336,15 @@ export class SyosetuScraper extends BaseScraper {
       }
     }
 
+    return paragraphs;
+  }
+
+  /**
+   * 合并段落数组为完整内容（syosetu 特定方法）
+   * @param paragraphs 段落数组
+   * @returns 合并后的内容字符串
+   */
+  private mergeParagraphs(paragraphs: string[]): string {
     // 合并段落
     // 每个段落（无论是普通段落还是空段落）都应该产生换行符
     // 空的 <p> 标签只产生换行符，普通段落在内容后添加换行符
@@ -504,12 +522,26 @@ export class SyosetuScraper extends BaseScraper {
               }
 
               // 查找日期（通常在最后一列）
+              // syosetu.org 的日期格式可能是：
+              // - "2025年05月16日(金) 08:13" (创建时间，但也作为 lastUpdated)
+              // - "2025年05月16日(金) 08:13(改)" (更新时间)
+              // 无论是否有 (改) 标记，都设置 lastUpdated，因为这是从网站获取的最新信息
               let date: string | undefined;
+              let lastUpdated: string | undefined;
               if (cells.length >= 2) {
                 // 日期通常在最后一列
                 const dateText = cells.last().text().trim();
                 if (dateText && dateText.match(/\d{4}年\d{1,2}月\d{1,2}日/)) {
-                  date = dateText;
+                  // 检查是否包含 "(改)" 标记
+                  if (dateText.includes('(改)')) {
+                    // 如果有 "(改)"，这是明确的更新时间
+                    lastUpdated = dateText;
+                    // 通常这种情况下，date 保持 undefined（因为只有更新时间）
+                  } else {
+                    // 没有 "(改)"，这是创建时间，但也作为 lastUpdated（因为这是从网站获取的最新信息）
+                    date = dateText;
+                    lastUpdated = dateText; // 导入时，所有从网站获取的日期都作为 lastUpdated
+                  }
                 }
               }
 
@@ -519,6 +551,9 @@ export class SyosetuScraper extends BaseScraper {
               };
               if (date) {
                 chapter.date = date;
+              }
+              if (lastUpdated) {
+                chapter.lastUpdated = lastUpdated;
               }
               chapters.push(chapter);
               chapterIndex++;
@@ -611,97 +646,29 @@ export class SyosetuScraper extends BaseScraper {
   private convertToNovel(info: SyosetuNovelInfo): Novel {
     const now = new Date();
 
-    // 创建 ID 生成器，确保卷和章节 ID 在各自的组内唯一
-    const volumeIdGenerator = new UniqueIdGenerator();
-    const chapterIdGenerator = new UniqueIdGenerator();
-
-    // 按卷分组章节
-    const volumes: Volume[] = [];
-
-    // 如果有卷信息，按卷分组
-    if (info.volumes && info.volumes.length > 0) {
-      info.volumes.forEach((volumeInfo, volumeIndex) => {
-        const volume: Volume = {
-          id: volumeIdGenerator.generate(),
-          title: volumeInfo.title,
-          chapters: [],
-        };
-
-        // 计算该卷的章节范围
-        const startIndex = volumeInfo.startIndex;
-        const volumeInfos = info.volumes || [];
-        const nextVolumeInfo = volumeInfos[volumeIndex + 1];
-        const endIndex = nextVolumeInfo ? nextVolumeInfo.startIndex : info.chapters.length;
-
-        // 将该卷的章节添加到卷中
-        for (let i = startIndex; i < endIndex; i++) {
-          const chapterInfo = info.chapters[i];
-          if (!chapterInfo) continue;
-
-          // 尝试解析日期（格式：2025年05月16日(金) 08:13(改)）
-          let chapterDate = now;
-          if (chapterInfo.date) {
-            // 提取日期部分（2025年05月16日）
-            const dateMatch = chapterInfo.date.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-            if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-              const year = parseInt(dateMatch[1], 10);
-              const month = parseInt(dateMatch[2], 10) - 1; // JavaScript 月份从 0 开始
-              const day = parseInt(dateMatch[3], 10);
-              chapterDate = new Date(year, month, day);
-            }
-          }
-
-          const chapter: Chapter = {
-            id: chapterIdGenerator.generate(),
-            title: chapterInfo.title,
-            webUrl: chapterInfo.url,
-            lastEdited: chapterDate,
-            createdAt: chapterDate,
-          };
-          volume.chapters?.push(chapter);
-        }
-
-        if (volume.chapters && volume.chapters.length > 0) {
-          volumes.push(volume);
-        }
-      });
-    } else {
-      // 如果没有卷信息，使用默认卷
-      const defaultVolume: Volume = {
-        id: volumeIdGenerator.generate(),
-        title: '正文',
-        chapters: [],
+    // 将 SyosetuChapter 转换为 ParsedChapterInfo
+    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
+      const parsedChapter: ParsedChapterInfo = {
+        title: chapter.title,
+        url: chapter.url,
       };
-
-      // 将章节添加到默认卷
-      info.chapters.forEach((chapterInfo) => {
-        // 尝试解析日期（格式：2025年05月16日(金) 08:13(改)）
-        let chapterDate = now;
-        if (chapterInfo.date) {
-          // 提取日期部分（2025年05月16日）
-          const dateMatch = chapterInfo.date.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-          if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-            const year = parseInt(dateMatch[1], 10);
-            const month = parseInt(dateMatch[2], 10) - 1; // JavaScript 月份从 0 开始
-            const day = parseInt(dateMatch[3], 10);
-            chapterDate = new Date(year, month, day);
-          }
-        }
-
-        const chapter: Chapter = {
-          id: chapterIdGenerator.generate(),
-          title: chapterInfo.title,
-          webUrl: chapterInfo.url,
-          lastEdited: chapterDate,
-          createdAt: chapterDate,
-        };
-        defaultVolume.chapters?.push(chapter);
-      });
-
-      if (defaultVolume.chapters && defaultVolume.chapters.length > 0) {
-        volumes.push(defaultVolume);
+      if (chapter.date) {
+        parsedChapter.date = chapter.date;
       }
-    }
+      if (chapter.lastUpdated) {
+        parsedChapter.lastUpdated = chapter.lastUpdated;
+      }
+      return parsedChapter;
+    });
+
+    // 将 SyosetuVolumeInfo 转换为 ParsedVolumeInfo
+    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
+      title: volume.title,
+      startIndex: volume.startIndex,
+    }));
+
+    // 使用基类的通用方法将章节分组到卷中
+    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
 
     // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
     // 注意：根据要求，只有 chapter/volume/paragraph/translation/note/terminology/character settings 使用短 ID

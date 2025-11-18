@@ -11,9 +11,21 @@ import ProgressBar from 'primevue/progressbar';
 // 不再需要 words-count 包，直接使用字符串长度计算字符数
 import type { Novel, Chapter } from 'src/types/novel';
 import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
+import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { formatWordCount, getChapterContentText as utilGetChapterContentText, UniqueIdGenerator } from 'src/utils';
+import { formatWordCount, UniqueIdGenerator } from 'src/utils';
+
+// 格式化日期显示
+const formatDate = (date: Date | string | undefined): string => {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const props = defineProps<{
   visible: boolean;
@@ -98,10 +110,14 @@ const handleFetch = async () => {
     if (result.success && result.novel) {
       scrapedNovel.value = result.novel;
 
-      // 自动选中所有未导入的章节
+      // 自动选中所有未导入的章节，以及已导入但远程更新的章节
       result.novel.volumes?.forEach((volume) => {
         volume.chapters?.forEach((chapter) => {
           if (!isChapterImported(chapter)) {
+            // 未导入的章节，自动选中
+            selectedChapters.value.add(chapter.id);
+          } else if (shouldAutoSelectChapter(chapter)) {
+            // 已导入但远程更新的章节，自动选中
             selectedChapters.value.add(chapter.id);
           }
         });
@@ -133,44 +149,28 @@ const handleFetch = async () => {
   }
 };
 
-// 使用工具函数合并章节内容
-const getChapterContentText = utilGetChapterContentText;
-
-// 通过 URL 查找当前书籍中的章节
+// 使用 ChapterService 的方法
 const findImportedChapterByUrl = (chapterUrl: string): Chapter | null => {
-  if (!props.currentBook || !props.currentBook.volumes || !chapterUrl) {
-    return null;
-  }
-  for (const volume of props.currentBook.volumes) {
-    if (volume.chapters) {
-      for (const chapter of volume.chapters) {
-        if (chapter.webUrl === chapterUrl) {
-          return chapter;
-        }
-      }
-    }
-  }
-  return null;
+  return ChapterService.findChapterByUrl(props.currentBook, chapterUrl);
 };
 
-// 检查章节是否已经在当前书籍中（通过 URL 判断）
 const isChapterImported = (chapter: Chapter): boolean => {
-  if (!props.currentBook || !chapter.webUrl) {
-    return false;
-  }
-  return findImportedChapterByUrl(chapter.webUrl) !== null;
+  return ChapterService.isChapterImported(props.currentBook, chapter);
 };
 
-// 获取已导入章节的内容文本
 const getImportedChapterContent = (chapter: Chapter): string | null => {
   if (!props.currentBook || !chapter.webUrl) {
     return null;
   }
-  const importedChapter = findImportedChapterByUrl(chapter.webUrl);
+  const importedChapter = ChapterService.findChapterByUrl(props.currentBook, chapter.webUrl);
   if (!importedChapter) {
     return null;
   }
-  return getChapterContentText(importedChapter);
+  return ChapterService.getChapterContentText(importedChapter);
+};
+
+const shouldAutoSelectChapter = (chapter: Chapter): boolean => {
+  return ChapterService.shouldUpdateChapter(props.currentBook, chapter);
 };
 
 // 加载章节内容
@@ -201,16 +201,19 @@ const loadChapterContent = async (chapter: Chapter, retry = false) => {
     chapterContents.value.set(chapter.id, content);
     chapterErrors.value.delete(chapter.id);
 
-    // 自动选中未导入的章节
+    // 自动选中未导入的章节，或已导入但远程更新的章节
     if (!isChapterImported(chapter)) {
+      selectedChapters.value.add(chapter.id);
+    } else if (shouldAutoSelectChapter(chapter)) {
+      // 已导入但远程更新，自动选中
       selectedChapters.value.add(chapter.id);
     }
 
-    // 如果还没有选中任何章节，自动选中所有未导入的章节
+    // 如果还没有选中任何章节，自动选中所有未导入的章节和已导入但远程更新的章节
     if (selectedChapters.value.size === 0 && scrapedNovel.value) {
       scrapedNovel.value.volumes?.forEach((vol) => {
         vol.chapters?.forEach((ch) => {
-          if (!isChapterImported(ch)) {
+          if (!isChapterImported(ch) || shouldAutoSelectChapter(ch)) {
             selectedChapters.value.add(ch.id);
           }
         });
@@ -270,6 +273,19 @@ const isSelectedChapterImported = computed(() => {
     return false;
   }
   return isChapterImported(selectedChapter.value);
+});
+
+// 获取章节的导入状态标签信息（使用 ChapterService）
+const getChapterImportStatus = (chapter: Chapter): { text: string; class: string } | null => {
+  return ChapterService.getChapterImportStatus(props.currentBook, chapter);
+};
+
+// 当前选中章节的导入状态
+const selectedChapterImportStatus = computed(() => {
+  if (!selectedChapter.value) {
+    return null;
+  }
+  return getChapterImportStatus(selectedChapter.value);
 });
 
 // 当前选中章节的错误
@@ -449,20 +465,8 @@ const handleApply = async () => {
           // 如果章节有内容，创建段落数组
           const content = chapterContents.value.get(chapter.id);
           if (content) {
-            // 将内容按行分割，每行创建一个段落
-            // 保留空行作为段落间的换行符，保留段落开头的空格（缩进）
-            // 为每个段落生成独立的短 ID
-            const idGenerator = new UniqueIdGenerator();
-            const paragraphs = content
-              .split('\n')
-              .map((text) => ({
-                id: idGenerator.generate(),
-                text: text, // 不使用 trim()，保留原始格式（包括开头空格和空行）
-                selectedTranslationId: '',
-                translations: [],
-                lastEdited: new Date(),
-                createdAt: new Date(),
-              }));
+            // 使用 ChapterService 将内容转换为段落数组
+            const paragraphs = ChapterService.convertContentToParagraphs(content);
 
             return {
               ...chapter,
@@ -674,12 +678,11 @@ watch(
                             <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
                               {{ chapter.title }}
                             </div>
-                            <span
-                              v-if="isChapterImported(chapter)"
-                              class="px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded flex-shrink-0"
-                            >
-                              已导入
-                            </span>
+                            <template v-if="getChapterImportStatus(chapter)">
+                              <span :class="getChapterImportStatus(chapter)!.class">
+                                {{ getChapterImportStatus(chapter)!.text }}
+                              </span>
+                            </template>
                           </div>
                           <div class="flex items-center gap-3 mt-2 text-xs">
                             <span
@@ -693,6 +696,10 @@ watch(
                             </span>
                             <span v-else class="text-moon/40">
                               未加载
+                            </span>
+                            <span v-if="chapter.lastUpdated" class="text-moon/50 flex items-center gap-1">
+                              <i class="pi pi-clock text-[10px]" />
+                              {{ formatDate(chapter.lastUpdated) }}
                             </span>
                           </div>
                           <div v-if="chapter.webUrl" class="mt-2">
@@ -722,14 +729,15 @@ watch(
                 <div class="flex items-start justify-between gap-2 mb-2">
                   <h4 class="text-lg font-semibold text-moon/90 flex-1">{{ selectedChapter.title }}</h4>
                   <span
-                    v-if="isSelectedChapterImported"
-                    class="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded flex-shrink-0"
+                    v-if="selectedChapterImportStatus"
+                    :class="selectedChapterImportStatus.class"
                   >
-                    已导入
+                    {{ selectedChapterImportStatus.text }}
                   </span>
                 </div>
-                <div v-if="selectedChapter.webUrl" class="flex items-center gap-2">
+                <div v-if="selectedChapter.webUrl || selectedChapter.lastUpdated" class="flex items-center gap-2 flex-wrap">
                   <a
+                    v-if="selectedChapter.webUrl"
                     :href="selectedChapter.webUrl"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -742,6 +750,13 @@ watch(
                     class="text-xs text-moon/60"
                   >
                     · {{ formatWordCount(getChapterWordCount(selectedChapter.id)) }} 字
+                  </span>
+                  <span
+                    v-if="selectedChapter.lastUpdated"
+                    class="text-xs text-moon/50 flex items-center gap-1"
+                  >
+                    <i class="pi pi-clock text-[10px]" />
+                    {{ formatDate(selectedChapter.lastUpdated) }}
                   </span>
                 </div>
               </div>

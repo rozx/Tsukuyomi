@@ -42,3 +42,21 @@ export interface FetchNovelResult {
  */
 export type ScraperType = 'syosetu' | 'unknown';
 
+/**
+ * 章节信息接口（用于从不同网站解析的章节数据）
+ */
+export interface ParsedChapterInfo {
+  title: string;
+  url: string;
+  date?: string | Date; // 章节的创建/首次发布时间
+  lastUpdated?: string | Date; // 章节的最后更新时间（从网站获取）
+}
+
+/**
+ * 卷信息接口（用于从不同网站解析的卷数据）
+ */
+export interface ParsedVolumeInfo {
+  title: string;
+  startIndex: number; // 该卷开始的章节索引
+}
+

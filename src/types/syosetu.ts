@@ -4,7 +4,8 @@
 export interface SyosetuChapter {
   title: string;
   url: string;
-  date?: string;
+  date?: string; // 章节的创建/首次发布时间
+  lastUpdated?: string; // 章节的最后更新时间
 }
 
 /**

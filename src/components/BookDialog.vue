@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { cloneDeep } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
@@ -10,8 +10,20 @@ import type { Novel, Chapter } from 'src/types/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
+import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatCharCount, getChapterCharCount } from 'src/utils';
+
+// 格式化日期显示
+const formatDate = (date: Date | string | undefined): string => {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const props = withDefaults(
   defineProps<{
@@ -129,111 +141,49 @@ const isUrlScrapable = (url: string): boolean => {
 
 // 处理应用爬取的数据
 const handleApplyScrapedData = (novel: Novel) => {
-  // 合并爬取的数据到表单
-  // 只有当当前表单没有标题时才覆盖标题
-  if (novel.title && !formData.value.title?.trim()) {
-    formData.value.title = novel.title;
-  }
-  if (novel.author) {
-    formData.value.author = novel.author;
-  }
-  if (novel.description) {
-    formData.value.description = novel.description;
-  }
-  if (novel.tags && novel.tags.length > 0) {
-    // 合并标签，去重
-    const existingTags = formData.value.tags || [];
-    formData.value.tags = [
-      ...existingTags,
-      ...novel.tags.filter((tag) => !existingTags.includes(tag)),
-    ];
-  }
-  if (novel.webUrl && novel.webUrl.length > 0) {
-    // 合并 URL，去重
-    const existingUrls = formData.value.webUrl || [];
-    formData.value.webUrl = [
-      ...existingUrls,
-      ...novel.webUrl.filter((url) => !existingUrls.includes(url)),
-    ];
-  }
-  // 合并 volumes 和 chapters（如果存在）
-  if (novel.volumes && novel.volumes.length > 0) {
-    const existingVolumes = formData.value.volumes || [];
+  // 使用 ChapterService 合并爬取的数据到表单
+  const currentBook = props.mode === 'edit' ? props.book : null;
+  const mergedData = ChapterService.mergeNovelData(
+    formData.value,
+    novel,
+    {
+      updateTitle: true, // 只有当现有标题为空时才更新
+      updateAuthor: true,
+      updateDescription: true,
+      updateTags: true,
+      updateWebUrl: true,
+      chapterUpdateStrategy: 'merge', // 合并章节属性
+    },
+  );
 
-    if (existingVolumes.length === 0) {
-      // 如果没有现有卷，直接使用新的
-      formData.value.volumes = novel.volumes;
-    } else {
-      // 合并卷和章节
-      const mergedVolumes = [...existingVolumes];
-
-      novel.volumes.forEach((newVolume) => {
-        // 查找同标题的现有卷
-        const existingVolumeIndex = mergedVolumes.findIndex(
-          (v) => v.title === newVolume.title
-        );
-
-        if (existingVolumeIndex >= 0) {
-          // 卷已存在，合并章节
-          const existingVolume = mergedVolumes[existingVolumeIndex];
-          const existingChapters = existingVolume?.chapters || [];
-          const newChapters = newVolume.chapters || [];
-
-          if (existingChapters.length === 0) {
-            // 如果现有卷没有章节，直接使用新章节
-            if (existingVolume) {
-              existingVolume.chapters = newChapters;
-            }
-          } else {
-            // 合并章节：通过 webUrl 判断是否已存在
-            const mergedChapters = [...existingChapters];
-
-            newChapters.forEach((newChapter) => {
-              if (newChapter.webUrl) {
-                // 查找同 URL 的现有章节
-                const existingChapterIndex = mergedChapters.findIndex(
-                  (ch) => ch.webUrl === newChapter.webUrl
-                );
-
-                if (existingChapterIndex >= 0) {
-                  // 章节已存在，更新内容
-                  mergedChapters[existingChapterIndex] = {
-                    ...mergedChapters[existingChapterIndex],
-                    ...newChapter,
-                    lastEdited: new Date(),
-                  };
-                } else {
-                  // 章节不存在，添加新章节
-                  mergedChapters.push(newChapter);
-                }
-              } else {
-                // 没有 URL 的章节，直接添加
-                mergedChapters.push(newChapter);
-              }
-            });
-
-            if (existingVolume) {
-              existingVolume.chapters = mergedChapters;
-            }
-          }
-        } else {
-          // 卷不存在，添加新卷
-          mergedVolumes.push(newVolume);
-        }
-      });
-
-      formData.value.volumes = mergedVolumes;
-    }
-  }
+  // 更新表单数据
+  formData.value = mergedData;
 
   showScraper.value = false;
 
-  toast.add({
-    severity: 'success',
-    summary: '应用成功',
-    detail: '小说信息已应用到表单，请检查后保存',
-    life: 3000,
-  });
+  // 自动保存（如果表单验证通过）
+  // 在编辑模式下，如果表单有标题（验证通过），自动保存
+  // 在添加模式下，如果表单有标题，也尝试保存（让父组件处理）
+  if (validateForm()) {
+    // 使用 nextTick 确保表单数据已更新
+    nextTick(() => {
+      emit('save', formData.value);
+      toast.add({
+        severity: 'success',
+        summary: '导入并保存成功',
+        detail: '章节数据已导入并自动保存',
+        life: 3000,
+      });
+    });
+  } else {
+    // 如果验证失败，提示用户需要填写标题
+    toast.add({
+      severity: 'warn',
+      summary: '应用成功，但未保存',
+      detail: '小说信息已应用到表单，但需要填写标题后才能保存',
+      life: 3000,
+    });
+  }
 };
 
 // 复制封面 URL
@@ -537,16 +487,23 @@ watch(
                       {{ formatCharCount(getChapterCharCount(chapter)) }} 字
                     </span>
                   </div>
-                  <div v-if="chapter.webUrl" class="mt-1">
-                    <a
-                      :href="chapter.webUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-xs text-primary hover:underline break-all"
-                      @click.stop
-                    >
-                      {{ chapter.webUrl }}
-                    </a>
+                  <div class="flex items-center gap-3 mt-1 text-xs text-moon/50">
+                    <span v-if="chapter.lastUpdated" class="flex items-center gap-1">
+                      <i class="pi pi-clock text-[10px]" />
+                      {{ formatDate(chapter.lastUpdated) }}
+                    </span>
+                    <span v-if="chapter.webUrl" class="flex items-center gap-1">
+                      <i class="pi pi-link text-[10px]" />
+                      <a
+                        :href="chapter.webUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-primary hover:underline break-all"
+                        @click.stop
+                      >
+                        {{ chapter.webUrl }}
+                      </a>
+                    </span>
                   </div>
                 </div>
               </div>

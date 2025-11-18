@@ -11,9 +11,15 @@ import TieredMenu from 'primevue/tieredmenu';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/types/novel';
 import BookDialog from 'src/components/BookDialog.vue';
-import { formatWordCount, getNovelCharCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
+import NovelScraperDialog from 'src/components/NovelScraperDialog.vue';
+import {
+  formatWordCount,
+  getNovelCharCount,
+  getTotalChapters as utilGetTotalChapters,
+} from 'src/utils';
 
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
@@ -22,10 +28,15 @@ const confirm = useConfirm();
 // 对话框状态
 const showAddDialog = ref(false);
 const showEditDialog = ref(false);
+const showImportDialog = ref(false);
 const selectedBook = ref<Novel | null>(null);
 
 // 排序菜单
-const sortMenuRef = ref<{ toggle: (event: Event) => void; show: (event: Event) => void; hide: () => void } | null>(null);
+const sortMenuRef = ref<{
+  toggle: (event: Event) => void;
+  show: (event: Event) => void;
+  hide: () => void;
+} | null>(null);
 const sortMenuItems = computed(() => {
   return sortOptions.map((option) => ({
     label: option.label,
@@ -147,7 +158,7 @@ const filteredBooks = computed(() => {
 
   // 排序
   const sortedBooks = [...books];
-  const sortOption = sortOptions.find(opt => opt.value === selectedSort.value);
+  const sortOption = sortOptions.find((opt) => opt.value === selectedSort.value);
   if (sortOption) {
     sortedBooks.sort(sortOption.sortFn);
   }
@@ -157,56 +168,7 @@ const filteredBooks = computed(() => {
 
 // 获取封面图片 URL，如果没有则返回默认占位图
 const getCoverUrl = (book: Novel): string => {
-  if (book.cover?.url) {
-    return book.cover.url;
-  }
-  // 生成带有书籍标题和作者的默认封面
-  const title = (book.title || '未命名').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const author = (book.author || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  // 将标题分行（每行最多10个字符）
-  const titleLines: string[] = [];
-  const words = title.split('');
-  let currentLine = '';
-  for (let i = 0; i < words.length; i++) {
-    const char = words[i];
-    if (char && currentLine.length >= 10 && char !== ' ') {
-      titleLines.push(currentLine.trim());
-      currentLine = char;
-    } else if (char) {
-      currentLine += char;
-    }
-  }
-  if (currentLine) {
-    titleLines.push(currentLine.trim());
-  }
-  const displayTitle = titleLines.slice(0, 3).join('\n');
-
-  // 创建 SVG，使用书籍的实际信息
-  const svg = `
-    <svg width="200" height="300" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="coverGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
-        </linearGradient>
-      </defs>
-      <!-- 背景 -->
-      <rect width="200" height="300" fill="url(#coverGrad)"/>
-      <!-- 顶部装饰线 -->
-      <line x1="20" y1="40" x2="180" y2="40" stroke="rgba(85,103,242,0.3)" stroke-width="2"/>
-      <!-- 标题 -->
-      <text x="100" y="120" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="rgba(246,243,209,0.9)" text-anchor="middle" dominant-baseline="middle">
-        ${displayTitle.split('\n').map((line, i) => `<tspan x="100" dy="${i === 0 ? '0' : '20'}">${line}</tspan>`).join('')}
-      </text>
-      <!-- 作者 -->
-      ${author ? `<text x="100" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="rgba(246,243,209,0.6)" text-anchor="middle" dominant-baseline="middle">${author}</text>` : ''}
-      <!-- 底部装饰线 -->
-      <line x1="20" y1="260" x2="180" y2="260" stroke="rgba(85,103,242,0.3)" stroke-width="2"/>
-    </svg>
-  `.trim().replace(/\s+/g, ' ');
-
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+  return CoverService.getCoverUrl(book);
 };
 
 // 格式化字数（使用工具函数）
@@ -236,6 +198,30 @@ const formatDate = (date: Date): string => {
 const addBook = () => {
   selectedBook.value = null;
   showAddDialog.value = true;
+};
+
+// 从网站导入书籍
+const importBookFromWeb = () => {
+  showImportDialog.value = true;
+};
+
+// 处理从网站导入的书籍
+const handleImportBook = (novel: Novel) => {
+  const now = new Date();
+  const newBook: Novel = {
+    ...novel,
+    id: uuidv4(),
+    createdAt: now,
+    lastEdited: now,
+  };
+  booksStore.addBook(newBook);
+  showImportDialog.value = false;
+  toast.add({
+    severity: 'success',
+    summary: '导入成功',
+    detail: `已成功从网站导入书籍 "${newBook.title}"`,
+    life: 3000,
+  });
 };
 
 // 编辑书籍
@@ -287,7 +273,9 @@ const handleSave = (formData: Partial<Novel>) => {
     const newBook: Novel = {
       id: uuidv4(),
       title: formData.title!,
-      ...(formData.alternateTitles && formData.alternateTitles.length > 0 ? { alternateTitles: formData.alternateTitles } : {}),
+      ...(formData.alternateTitles && formData.alternateTitles.length > 0
+        ? { alternateTitles: formData.alternateTitles }
+        : {}),
       ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
       ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
       ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
@@ -376,16 +364,24 @@ const handleSave = (formData: Partial<Novel>) => {
           </InputGroupAddon>
         </InputGroup>
         <Button
-          :label="sortOptions.find(opt => opt.value === selectedSort)?.label || '排序'"
+          :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
           icon="pi pi-sort-alt"
           iconPos="right"
           class="p-button-outlined icon-button-hover"
-          @click="(e: Event) => {
-            const menu = sortMenuRef;
-            if (menu) {
-              menu.toggle(e);
+          @click="
+            (e: Event) => {
+              const menu = sortMenuRef;
+              if (menu) {
+                menu.toggle(e);
+              }
             }
-          }"
+          "
+        />
+        <Button
+          label="从网站导入"
+          icon="pi pi-download"
+          class="p-button-primary icon-button-hover"
+          @click="importBookFromWeb"
         />
         <Button
           label="添加书籍"
@@ -423,27 +419,32 @@ const handleSave = (formData: Partial<Novel>) => {
       </template>
 
       <template #grid="slotProps">
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
-          <div
-            v-for="book in slotProps.items"
-            :key="book.id"
-            class="book-card group"
-          >
+        <div
+          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4"
+        >
+          <div v-for="book in slotProps.items" :key="book.id" class="book-card group">
             <!-- 封面 -->
-            <div class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-[rgba(255,255,255,0.05)] mb-2">
+            <div
+              class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-[rgba(255,255,255,0.05)] mb-2"
+            >
               <img
                 :src="getCoverUrl(book)"
                 :alt="book.title"
                 class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                @error="(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = getCoverUrl(book);
-                }"
+                @error="
+                  (e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src = getCoverUrl(book);
+                  }
+                "
               />
             </div>
             <!-- 内容 -->
             <div class="px-1 pb-2 space-y-1.5">
-              <h3 class="text-sm font-semibold line-clamp-2 group-hover:text-primary transition-colors cursor-pointer" :title="book.title">
+              <h3
+                class="text-sm font-semibold line-clamp-2 group-hover:text-primary transition-colors cursor-pointer"
+                :title="book.title"
+              >
                 {{ book.title }}
               </h3>
               <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
@@ -476,7 +477,7 @@ const handleSave = (formData: Partial<Novel>) => {
                   :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                   :class="[
                     'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2',
-                    book.starred ? '!text-yellow-400' : ''
+                    book.starred ? '!text-yellow-400' : '',
                   ]"
                   @click.stop="toggleStar(book)"
                   :title="book.starred ? '取消收藏' : '收藏'"
@@ -515,6 +516,13 @@ const handleSave = (formData: Partial<Novel>) => {
       :book="selectedBook"
       @save="handleSave"
       @cancel="showEditDialog = false"
+    />
+
+    <!-- 从网站导入对话框 -->
+    <NovelScraperDialog
+      v-model:visible="showImportDialog"
+      :current-book="null"
+      @apply="handleImportBook"
     />
 
     <!-- 确认对话框 -->
