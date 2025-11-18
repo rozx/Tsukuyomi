@@ -14,6 +14,13 @@ import { UniqueIdGenerator } from 'src/utils/id-generator';
  */
 export abstract class BaseScraper implements NovelScraper {
   /**
+   * 是否使用代理（AllOrigins CORS 代理服务）
+   * 子类可以通过设置此属性来控制是否使用代理
+   * @default true
+   */
+  protected useProxy: boolean = true;
+
+  /**
    * 验证 URL 是否为该服务支持的 URL
    * @param url 要验证的 URL
    * @returns 是否为支持的 URL
@@ -44,7 +51,8 @@ export abstract class BaseScraper implements NovelScraper {
 
   /**
    * 获取页面 HTML（通用方法）
-   * 使用 AllOrigins CORS 代理服务获取页面内容
+   * 根据 useProxy 选项决定是否使用 AllOrigins CORS 代理服务
+   * 在浏览器环境中，如果 URL 匹配代理配置，会自动使用 Vite 代理
    * @param url 页面 URL
    * @param _proxyPath 代理路径（可选，已弃用，现在使用 AllOrigins）
    * @returns Promise<string> HTML 内容
@@ -52,9 +60,18 @@ export abstract class BaseScraper implements NovelScraper {
    */
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
     try {
-      // 使用 AllOrigins CORS 代理服务
-      // API 文档: https://allorigins.win/
-      const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      // 在浏览器环境中，检查是否需要使用 Vite 代理
+      const isBrowser = typeof window !== 'undefined';
+      let finalUrl = url;
+      
+      if (isBrowser && !this.useProxy) {
+        // 在浏览器环境中且不使用 AllOrigins 代理时，使用 Vite 代理
+        const urlObj = new URL(url);
+        if (urlObj.hostname === 'kakuyomu.jp') {
+          // 使用 Vite 代理路径
+          finalUrl = `/api/kakuyomu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+        }
+      }
 
       // 添加随机延迟，模拟人类行为（1-3秒）
       const delay = Math.floor(Math.random() * 2000) + 1000;
@@ -66,30 +83,67 @@ export abstract class BaseScraper implements NovelScraper {
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-          // AllOrigins 返回 JSON 格式: { contents: "HTML内容", status: {...} }
-          const response = await axios.get<{
-            contents: string;
-            status: {
-              http_code: number;
-              content_type: string;
-              url: string;
+          if (this.useProxy) {
+            // 使用 AllOrigins CORS 代理服务
+            // API 文档: https://allorigins.win/
+            const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+            // AllOrigins 返回 JSON 格式: { contents: "HTML内容", status: {...} }
+            const response = await axios.get<{
+              contents: string;
+              status: {
+                http_code: number;
+                content_type: string;
+                url: string;
+              };
+            }>(allOriginsUrl, {
+              timeout: 60000, // 60 秒超时（AllOrigins 可能需要更长时间）
+              validateStatus: (status) => status >= 200 && status < 400,
+            });
+
+            // 检查 AllOrigins 返回的状态
+            if (response.data.status.http_code >= 400) {
+              throw new Error(`目标网站返回错误: ${response.data.status.http_code}`);
+            }
+
+            // 返回 HTML 内容
+            if (response.data.contents) {
+              return response.data.contents;
+            }
+
+            throw new Error('AllOrigins 返回的内容为空');
+          } else {
+            // 直接请求，不使用 AllOrigins 代理（在浏览器环境中可能使用 Vite 代理）
+            // 在浏览器环境中，某些请求头（如 User-Agent、Accept-Encoding、Referer）不能手动设置
+            // 这些请求头会被浏览器自动设置，或者由 Vite 代理服务器设置
+            const headers: Record<string, string> = {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
             };
-          }>(allOriginsUrl, {
-            timeout: 60000, // 60 秒超时（AllOrigins 可能需要更长时间）
-            validateStatus: (status) => status >= 200 && status < 400,
-          });
 
-          // 检查 AllOrigins 返回的状态
-          if (response.data.status.http_code >= 400) {
-            throw new Error(`目标网站返回错误: ${response.data.status.http_code}`);
+            // 只在非浏览器环境（如 Electron 或 Node.js）中设置这些请求头
+            if (!isBrowser) {
+              headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+              headers['Accept-Encoding'] = 'gzip, deflate, br';
+              headers['Referer'] = url.startsWith('https://') ? new URL(url).origin : 'https://kakuyomu.jp/';
+            }
+
+            const response = await axios.get(finalUrl, {
+              timeout: 30000, // 30 秒超时
+              headers,
+              validateStatus: (status) => status >= 200 && status < 400,
+            });
+
+            if (response.status >= 400) {
+              throw new Error(`目标网站返回错误: ${response.status}`);
+            }
+
+            if (response.data) {
+              return response.data;
+            }
+
+            throw new Error('返回的内容为空');
           }
-
-          // 返回 HTML 内容
-          if (response.data.contents) {
-            return response.data.contents;
-          }
-
-          throw new Error('AllOrigins 返回的内容为空');
         } catch (error) {
           lastError = error instanceof Error ? error : new Error('Unknown error');
 

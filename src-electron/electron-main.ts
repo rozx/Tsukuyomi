@@ -17,6 +17,9 @@ function createWindow() {
       // preload: join(__dirname, 'electron-preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      // 在开发环境中禁用 webSecurity 以绕过 CORS 限制
+      // 注意：这仅用于开发环境，生产环境应保持 webSecurity 为 true
+      webSecurity: !process.env.DEV,
     },
   });
 

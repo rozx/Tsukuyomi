@@ -1,5 +1,4 @@
 import { runWithConcurrencyLimit } from 'src/utils/concurrency';
-import type { NovelScraper } from 'src/types/scraper';
 import { NovelScraperFactory } from './index';
 
 /**
@@ -56,19 +55,24 @@ export class ScraperService {
     });
 
     // 使用并发控制批量获取章节内容
-    const results = await runWithConcurrencyLimit(
-      tasks,
-      concurrencyLimit,
-      onProgress,
-    );
+    const results = await runWithConcurrencyLimit(tasks, concurrencyLimit, onProgress);
 
     // 转换结果格式
-    return results.map((result) => ({
-      success: result.success,
-      result: result.result,
-      error: result.error,
-      index: result.index,
-    }));
+    return results.map((result) => {
+      const batchResult: BatchFetchResult = {
+        success: result.success,
+        index: result.index,
+      };
+
+      if (result.result) {
+        batchResult.result = result.result;
+      }
+
+      if (result.error) {
+        batchResult.error = result.error;
+      }
+
+      return batchResult;
+    });
   }
 }
-

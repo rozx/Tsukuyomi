@@ -372,6 +372,9 @@ body,
   padding: 0.625rem 0.875rem !important;
   color: rgba(246, 243, 209, 0.9) !important;
   transition: all 0.2s ease !important;
+  min-height: 2.5rem !important;
+  display: flex !important;
+  align-items: center !important;
 }
 
 .p-inputtext:hover,
@@ -987,4 +990,29 @@ body,
 .p-chips-token .p-chips-token-icon:hover {
   color: rgba(248, 113, 113, 0.9) !important;
   transform: scale(1.1) !important;
+}
+
+/* ============================================
+   列表项样式 - 统一列表项外观
+   ============================================ */
+
+.list-item-base {
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden; /* 防止内容溢出 */
+}
+
+.list-item-hover:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(85, 103, 242, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.list-item-selected {
+  background: rgba(85, 103, 242, 0.15);
+  border-color: rgba(85, 103, 242, 0.4);
+  box-shadow: 0 2px 6px rgba(85, 103, 242, 0.2);
 }

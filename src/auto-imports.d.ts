@@ -6,5 +6,5 @@
 // biome-ignore lint: disable
 export {}
 declare global {
-  const Image: typeof import('primevue/image').Image
+
 }

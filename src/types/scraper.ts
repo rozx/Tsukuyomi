@@ -40,7 +40,7 @@ export interface FetchNovelResult {
 /**
  * 支持的爬虫服务类型
  */
-export type ScraperType = 'syosetu' | 'unknown';
+export type ScraperType = 'syosetu' | 'kakuyomu' | 'unknown';
 
 /**
  * 章节信息接口（用于从不同网站解析的章节数据）

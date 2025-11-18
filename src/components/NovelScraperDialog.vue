@@ -49,6 +49,10 @@ const loadingChapters = ref<Set<string>>(new Set());
 const chapterErrors = ref<Map<string, string>>(new Map());
 const selectedChapters = ref<Set<string>>(new Set());
 
+// 章节过滤和折叠
+const chapterFilter = ref<'all' | 'imported' | 'unimported'>('all');
+const collapsedVolumes = ref<Set<string>>(new Set());
+
 // 导入进度相关
 const importing = ref(false);
 const importProgress = ref(0);
@@ -75,6 +79,45 @@ const isValidUrl = computed(() => {
   return NovelScraperFactory.isValidUrl(urlInput.value);
 });
 
+// 支持的网站列表
+const supportedSites = computed(() => {
+  return NovelScraperFactory.getSupportedSites();
+});
+
+// 支持的网站文本
+const supportedSitesText = computed(() => {
+  return NovelScraperFactory.getSupportedSitesText();
+});
+
+// 过滤后的卷和章节
+const filteredVolumes = computed(() => {
+  if (!scrapedNovel.value?.volumes) return [];
+  
+  return scrapedNovel.value.volumes
+    .map((volume) => {
+      const filteredChapters = volume.chapters?.filter((chapter) => {
+        if (chapterFilter.value === 'all') return true;
+        const imported = isChapterImported(chapter);
+        return chapterFilter.value === 'imported' ? imported : !imported;
+      }) || [];
+      
+      return {
+        ...volume,
+        chapters: filteredChapters,
+      };
+    })
+    .filter((volume) => volume.chapters && volume.chapters.length > 0);
+});
+
+// 按卷组织的章节（用于显示）
+const displayVolumeChapters = computed(() => {
+  return filteredVolumes.value.map((volume) => ({
+    volumeId: volume.id,
+    volumeTitle: volume.title || '未命名卷',
+    chapters: volume.chapters || [],
+  }));
+});
+
 // 获取小说信息
 const handleFetch = async () => {
   if (!isValidUrl.value) {
@@ -93,6 +136,7 @@ const handleFetch = async () => {
   chapterErrors.value.clear();
   selectedChapters.value.clear();
   selectedChapterId.value = null;
+  collapsedVolumes.value.clear();
 
   try {
     const scraper = NovelScraperFactory.getScraper(urlInput.value);
@@ -364,6 +408,20 @@ const isAllSelected = computed(() => {
     Array.from(allChapterIds).every(id => selectedChapters.value.has(id));
 });
 
+// 切换卷的折叠状态
+const toggleVolumeCollapse = (volumeId: string) => {
+  if (collapsedVolumes.value.has(volumeId)) {
+    collapsedVolumes.value.delete(volumeId);
+  } else {
+    collapsedVolumes.value.add(volumeId);
+  }
+};
+
+// 检查卷是否折叠
+const isVolumeCollapsed = (volumeId: string) => {
+  return collapsedVolumes.value.has(volumeId);
+};
+
 // 应用更改
 const handleApply = async () => {
   if (!scrapedNovel.value) {
@@ -557,7 +615,7 @@ watch(
         <div class="flex gap-2">
           <InputText
             v-model="urlInput"
-            placeholder="syosetu.org 或其他支持的网站"
+            :placeholder="`输入 ${supportedSitesText} 的小说 URL`"
             class="flex-1"
             :class="{ 'p-invalid': urlInput && !isValidUrl }"
             @keyup.enter="handleFetch"
@@ -571,9 +629,20 @@ watch(
           />
         </div>
         <small v-if="urlInput && !isValidUrl" class="p-error block">
-          请输入支持的小说网站 URL（当前支持：syosetu.org）
+          请输入支持的小说网站 URL（当前支持：{{ supportedSitesText }}）
         </small>
-        <small class="text-moon/60 block">输入支持的小说网站 URL 后点击获取按钮</small>
+        <div class="flex items-center gap-2 flex-wrap">
+          <small class="text-moon/60">支持的网站：</small>
+          <div class="flex gap-2 flex-wrap">
+            <span
+              v-for="site in supportedSites"
+              :key="site"
+              class="px-2 py-0.5 text-xs bg-primary/10 text-primary rounded border border-primary/20 font-medium"
+            >
+              {{ site }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- 加载中 - 使用骨架屏 -->
@@ -620,7 +689,10 @@ watch(
             </div>
           </div>
         </div>
-        <div v-if="scrapedNovel.description" class="mt-3 text-sm text-moon/80">
+        <div
+          v-if="scrapedNovel.description"
+          class="mt-3 text-sm text-moon/80 whitespace-pre-wrap"
+        >
           {{ scrapedNovel.description }}
         </div>
         <div v-if="scrapedNovel.tags && scrapedNovel.tags.length > 0" class="mt-3 flex flex-wrap gap-2">
@@ -640,25 +712,58 @@ watch(
           <!-- 左侧：章节列表 -->
           <SplitterPanel :size="40" :min-size="30">
             <div class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden">
-              <div class="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
-                <h4 class="text-md font-semibold text-moon/90">章节列表</h4>
-                <Button
-                  :label="isAllSelected ? '取消全选' : '全选'"
-                  icon="pi pi-check-square"
-                  class="p-button-text p-button-sm text-moon/70 hover:text-moon/90"
-                  @click="toggleSelectAll"
-                />
+              <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2">
+                <div class="flex items-center justify-between min-w-0 gap-2">
+                  <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
+                  <div class="flex items-center gap-2 flex-1 justify-end">
+                    <div class="flex gap-1">
+                      <Button
+                        label="全部"
+                        :class="chapterFilter === 'all' ? '' : 'p-button-outlined'"
+                        class="p-button-sm icon-button-hover"
+                        @click="chapterFilter = 'all'"
+                      />
+                      <Button
+                        label="已导入"
+                        :class="chapterFilter === 'imported' ? '' : 'p-button-outlined'"
+                        class="p-button-sm icon-button-hover"
+                        @click="chapterFilter = 'imported'"
+                      />
+                      <Button
+                        label="未导入"
+                        :class="chapterFilter === 'unimported' ? '' : 'p-button-outlined'"
+                        class="p-button-sm icon-button-hover"
+                        @click="chapterFilter = 'unimported'"
+                      />
+                    </div>
+                    <Button
+                      :label="isAllSelected ? '取消全选' : '全选'"
+                      icon="pi pi-check-square"
+                      class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
+                      @click="toggleSelectAll"
+                    />
+                  </div>
+                </div>
               </div>
               <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3">
-                <div v-for="volume in scrapedNovel.volumes" :key="volume.id" class="space-y-2">
-                  <div class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg sticky top-0 backdrop-blur-sm">
-                    {{ volume.title || '未命名卷' }} ({{ volume.chapters?.length || 0 }} 章)
+                <div v-for="volumeGroup in displayVolumeChapters" :key="volumeGroup.volumeId" class="space-y-2">
+                  <div
+                    class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
+                    @click="toggleVolumeCollapse(volumeGroup.volumeId)"
+                  >
+                    <span class="flex-1">
+                      {{ volumeGroup.volumeTitle }} ({{ filteredVolumes.find(v => v.id === volumeGroup.volumeId)?.chapters?.length || 0 }} 章)
+                    </span>
+                    <i
+                      :class="isVolumeCollapsed(volumeGroup.volumeId) ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
+                      class="text-xs text-moon/60"
+                    />
                   </div>
-                  <div class="space-y-2">
+                  <div v-show="!isVolumeCollapsed(volumeGroup.volumeId)" class="space-y-2">
                     <div
-                      v-for="chapter in volume.chapters"
+                      v-for="chapter in volumeGroup.chapters"
                       :key="chapter.id"
-                      class="list-item-base cursor-pointer"
+                      class="list-item-base cursor-pointer min-w-0"
                       :class="
                         selectedChapterId === chapter.id
                           ? 'list-item-selected'
@@ -666,14 +771,14 @@ watch(
                       "
                       @click="selectChapter(chapter)"
                     >
-                      <div class="flex items-start gap-3">
+                      <div class="flex items-start gap-3 min-w-0">
                         <Checkbox
                           :model-value="selectedChapters.has(chapter.id)"
                           :binary="true"
                           class="flex-shrink-0 mt-0.5"
                           @click="toggleChapterSelection(chapter.id, $event)"
                         />
-                        <div class="flex-1 min-w-0">
+                        <div class="flex-1 min-w-0 w-0 overflow-hidden">
                           <div class="flex items-start justify-between gap-2">
                             <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
                               {{ chapter.title }}
@@ -702,12 +807,13 @@ watch(
                               {{ formatDate(chapter.lastUpdated) }}
                             </span>
                           </div>
-                          <div v-if="chapter.webUrl" class="mt-2">
+                          <div v-if="chapter.webUrl" class="mt-2 w-full max-w-full overflow-hidden">
                             <a
                               :href="chapter.webUrl"
                               target="_blank"
                               rel="noopener noreferrer"
-                              class="text-xs text-primary/80 hover:text-primary hover:underline truncate block"
+                              class="text-xs text-primary/80 hover:text-primary hover:underline block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
+                              style="max-width: 100%;"
                               @click.stop
                             >
                               {{ chapter.webUrl }}
@@ -716,6 +822,11 @@ watch(
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+                <div v-if="displayVolumeChapters.length === 0" class="flex items-center justify-center py-8">
+                  <div class="text-center text-moon/60">
+                    没有找到章节
                   </div>
                 </div>
               </div>
