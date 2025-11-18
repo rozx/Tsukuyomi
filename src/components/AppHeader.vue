@@ -71,11 +71,11 @@ const toggleHistoryDialog = (event: Event) => {
 
 <style scoped>
 .bell-button i {
-  color: rgba(246, 243, 209, 0.85) !important;
+  color: var(--moon-opacity-85) !important;
   font-size: 1rem;
 }
 
 .bell-button:hover i {
-  color: rgba(246, 243, 209, 0.95) !important;
+  color: var(--moon-opacity-95) !important;
 }
 </style>

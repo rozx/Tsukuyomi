@@ -5,13 +5,13 @@
 // reference them, but the primary styling should be done through TailwindCSS classes.
 //
 // TailwindCSS theme colors are defined in tailwind.config.cjs:
-// - luna: primary color palette (#5567f2)
+// - luna: primary color palette (#f0458b)
 // - night: dark background colors (#0b1026, #070a1a)
 // - moon: light text colors (#f6f3d1)
 //
 // To customize the theme, update tailwind.config.cjs instead of this file.
 
-$primary: #5567f2; // Luna primary (matches luna-500 in TailwindCSS)
+$primary: #f0458b; // Luna primary (matches luna-500 in TailwindCSS)
 $secondary: #26a69a;
 $accent: #9c27b0;
 

@@ -8,17 +8,17 @@ module.exports = {
       colors: {
         // Luna palette
         luna: {
-          50: '#f5f7ff',
-          100: '#eaefff',
-          200: '#cfd8ff',
-          300: '#aab6ff',
-          400: '#7c8eff',
-          500: '#5567f2', // primary
-          600: '#3d4dd3',
-          700: '#2f3ca8',
-          800: '#262f85',
-          900: '#1e276b',
-          950: '#141a46',
+          50: '#fef2f7',
+          100: '#fce7f0',
+          200: '#f9cfe1',
+          300: '#f4a7c8',
+          400: '#ed6ba8',
+          500: '#f0458b', // primary
+          600: '#d91d7a',
+          700: '#b81666',
+          800: '#961455',
+          900: '#7a1145',
+          950: '#4d0a2b',
         },
         night: {
           DEFAULT: '#0b1026',
@@ -32,23 +32,23 @@ module.exports = {
         },
         // Convenience alias for Tailwind usage
         primary: {
-          DEFAULT: '#5567f2',
-          50: '#f5f7ff',
-          100: '#eaefff',
-          200: '#cfd8ff',
-          300: '#aab6ff',
-          400: '#7c8eff',
-          500: '#5567f2',
-          600: '#3d4dd3',
-          700: '#2f3ca8',
-          800: '#262f85',
-          900: '#1e276b',
-          950: '#141a46',
+          DEFAULT: '#f0458b',
+          50: '#fef2f7',
+          100: '#fce7f0',
+          200: '#f9cfe1',
+          300: '#f4a7c8',
+          400: '#ed6ba8',
+          500: '#f0458b',
+          600: '#d91d7a',
+          700: '#b81666',
+          800: '#961455',
+          900: '#7a1145',
+          950: '#4d0a2b',
         },
       },
       backgroundImage: {
         'luna-gradient':
-          'radial-gradient(1200px circle at 80% -10%, rgba(85,103,242,0.35), transparent 60%), radial-gradient(800px circle at 10% 110%, rgba(241,227,168,0.12), transparent 40%)',
+          'radial-gradient(1200px circle at 80% -10%, rgba(240,69,139,0.35), transparent 60%), radial-gradient(800px circle at 10% 110%, rgba(241,227,168,0.12), transparent 40%)',
       },
     },
   },
@@ -63,7 +63,7 @@ module.exports = {
           backgroundRepeat: 'repeat',
         },
         '.bg-luna-sky': {
-          backgroundImage: 'linear-gradient(180deg, #0b1026 0%, #141a46 35%, #1e276b 100%)',
+          backgroundImage: 'linear-gradient(180deg, #0b1026 0%, #4d0a2b 35%, #7a1145 100%)',
         },
         // 统一的卡片样式
         '.card-base': {
@@ -104,9 +104,9 @@ module.exports = {
           borderColor: 'rgba(255, 255, 255, 0.2)',
         },
         '.list-item-selected': {
-          backgroundColor: 'rgba(85, 103, 242, 0.2)',
-          borderColor: 'rgba(85, 103, 242, 0.5)',
-          boxShadow: '0 2px 8px rgba(85, 103, 242, 0.2)',
+          backgroundColor: 'rgba(240, 69, 139, 0.2)',
+          borderColor: 'rgba(240, 69, 139, 0.5)',
+          boxShadow: '0 2px 8px rgba(240, 69, 139, 0.2)',
         },
       };
       addUtilities(newUtilities, ['responsive', 'hover', 'focus']);

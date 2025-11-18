@@ -121,12 +121,6 @@ const bottomItems: MenuItem[] = [
 
     <!-- Top section with logo/branding area -->
     <div class="shrink-0 px-4 pt-6 pb-4 relative z-10">
-      <div class="flex items-center gap-2 mb-6">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-luna-500 to-luna-600 flex items-center justify-center shadow-lg shadow-luna-500/30">
-          <i class="pi pi-moon text-white text-sm" />
-        </div>
-        <span class="font-semibold text-moon-500 text-sm tracking-wide">Luna AI</span>
-      </div>
     </div>
 
     <!-- Main navigation -->
@@ -197,8 +191,8 @@ const bottomItems: MenuItem[] = [
 
 /* Submenu header styling */
 :deep(.p-menu .p-submenu-header) {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: rgba(246, 243, 209, 0.8);
+  background-color: var(--white-opacity-5);
+  color: var(--moon-opacity-80);
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -220,45 +214,45 @@ const bottomItems: MenuItem[] = [
   padding: 0.625rem 0.75rem;
   margin-bottom: 0.25rem;
   transition: all 0.2s ease;
-  color: rgba(246, 243, 209, 0.85);
+  color: var(--moon-opacity-85);
   background-color: transparent;
   border: 1px solid transparent;
 }
 
 /* Hover state */
 :deep(.p-menu .p-menuitem-link:hover) {
-  background-color: rgba(85, 103, 242, 0.15);
-  color: rgba(246, 243, 209, 0.95);
-  border-color: rgba(85, 103, 242, 0.3);
+  background-color: var(--primary-opacity-15);
+  color: var(--moon-opacity-95);
+  border-color: var(--primary-opacity-30);
   transform: translateX(2px);
 }
 
 /* Active state */
 :deep(.p-menu .p-menuitem-link.router-link-active),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true']) {
-  background: linear-gradient(135deg, rgba(85, 103, 242, 0.25) 0%, rgba(85, 103, 242, 0.15) 100%);
-  color: rgba(246, 243, 209, 1);
-  border-color: rgba(85, 103, 242, 0.4);
-  box-shadow: 0 2px 8px rgba(85, 103, 242, 0.15);
+  background: linear-gradient(135deg, var(--primary-opacity-25) 0%, var(--primary-opacity-15) 100%);
+  color: var(--moon-opacity-100);
+  border-color: var(--primary-opacity-40);
+  box-shadow: 0 2px 8px var(--primary-opacity-15);
   font-weight: 500;
 }
 
 /* Icon styling */
 :deep(.p-menu .p-menuitem-icon) {
-  color: rgba(85, 103, 242, 0.7);
+  color: var(--primary-opacity-70);
   margin-right: 0.75rem;
   transition: all 0.2s ease;
   font-size: 1rem;
 }
 
 :deep(.p-menu .p-menuitem-link:hover .p-menuitem-icon) {
-  color: rgba(85, 103, 242, 0.9);
+  color: var(--primary-opacity-90);
   transform: scale(1.1);
 }
 
 :deep(.p-menu .p-menuitem-link.router-link-active .p-menuitem-icon),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true'] .p-menuitem-icon) {
-  color: rgba(85, 103, 242, 1);
+  color: var(--primary-opacity-100);
 }
 
 /* Label styling */
@@ -270,7 +264,7 @@ const bottomItems: MenuItem[] = [
 /* Focus state */
 :deep(.p-menu .p-menuitem-link:focus) {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(85, 103, 242, 0.3);
+  box-shadow: 0 0 0 2px var(--primary-opacity-30);
 }
 
 /* Smooth transitions for all interactive elements */

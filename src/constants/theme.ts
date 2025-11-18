@@ -6,20 +6,20 @@
 export const Theme = {
   // 颜色 - 使用 TailwindCSS Luna 调色板
   colors: {
-    // 主色 - Luna 蓝
+    // 主色 - Luna 粉
     primary: {
-      DEFAULT: '#5567f2',
-      50: '#f5f7ff',
-      100: '#eaefff',
-      200: '#cfd8ff',
-      300: '#aab6ff',
-      400: '#7c8eff',
-      500: '#5567f2',
-      600: '#3d4dd3',
-      700: '#2f3ca8',
-      800: '#262f85',
-      900: '#1e276b',
-      950: '#141a46',
+      DEFAULT: '#f0458b',
+      50: '#fef2f7',
+      100: '#fce7f0',
+      200: '#f9cfe1',
+      300: '#f4a7c8',
+      400: '#ed6ba8',
+      500: '#f0458b',
+      600: '#d91d7a',
+      700: '#b81666',
+      800: '#961455',
+      900: '#7a1145',
+      950: '#4d0a2b',
     },
     // 背景色 - Night 深色
     night: {
@@ -41,9 +41,9 @@ export const Theme = {
     light: 'rgba(255, 255, 255, 0.05)',
     medium: 'rgba(255, 255, 255, 0.08)',
     strong: 'rgba(255, 255, 255, 0.1)',
-    primary: 'rgba(85, 103, 242, 0.1)',
-    primaryLight: 'rgba(85, 103, 242, 0.2)',
-    primaryMedium: 'rgba(85, 103, 242, 0.3)',
+    primary: 'rgba(240, 69, 139, 0.1)',
+    primaryLight: 'rgba(240, 69, 139, 0.2)',
+    primaryMedium: 'rgba(240, 69, 139, 0.3)',
   },
 
   // 边框透明度级别
@@ -52,9 +52,9 @@ export const Theme = {
     light: 'rgba(255, 255, 255, 0.1)',
     medium: 'rgba(255, 255, 255, 0.15)',
     strong: 'rgba(255, 255, 255, 0.2)',
-    primary: 'rgba(85, 103, 242, 0.2)',
-    primaryMedium: 'rgba(85, 103, 242, 0.5)',
-    primaryStrong: 'rgba(85, 103, 242, 0.8)',
+    primary: 'rgba(240, 69, 139, 0.2)',
+    primaryMedium: 'rgba(240, 69, 139, 0.5)',
+    primaryStrong: 'rgba(240, 69, 139, 0.8)',
   },
 
   // 文本透明度级别
@@ -81,8 +81,8 @@ export const Theme = {
     md: '0 2px 4px rgba(0, 0, 0, 0.15)',
     lg: '0 4px 12px rgba(0, 0, 0, 0.15)',
     xl: '0 20px 60px rgba(0, 0, 0, 0.5)',
-    primary: '0 2px 8px rgba(85, 103, 242, 0.3)',
-    primaryHover: '0 4px 12px rgba(85, 103, 242, 0.4)',
+    primary: '0 2px 8px rgba(240, 69, 139, 0.3)',
+    primaryHover: '0 4px 12px rgba(240, 69, 139, 0.4)',
   },
 
   // 过渡动画

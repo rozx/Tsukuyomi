@@ -244,11 +244,11 @@ const handleTranslate = async () => {
 
 .translatable-input-addon .translatable-input-button :deep(.p-button-icon) {
   margin: 0 !important;
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
 }
 
 .translatable-input-addon .translatable-input-button:not(:disabled):hover {
-  background: rgba(85, 103, 242, 0.3) !important;
+  background: var(--primary-opacity-30) !important;
   border-color: transparent !important;
   box-shadow: none !important;
   border-radius: 0 !important;
@@ -257,7 +257,7 @@ const handleTranslate = async () => {
 
 .translatable-input-addon .translatable-input-button:not(:disabled):active,
 .translatable-input-addon .translatable-input-button:not(:disabled):focus {
-  background: rgba(85, 103, 242, 0.3) !important;
+  background: var(--primary-opacity-30) !important;
   border-color: transparent !important;
   box-shadow: none !important;
   border-radius: 0 !important;
@@ -267,7 +267,7 @@ const handleTranslate = async () => {
 .translatable-input-addon .translatable-input-button:not(:disabled):hover :deep(.p-button-icon),
 .translatable-input-addon .translatable-input-button:not(:disabled):active :deep(.p-button-icon),
 .translatable-input-addon .translatable-input-button:not(:disabled):focus :deep(.p-button-icon) {
-  color: rgba(246, 243, 209, 1) !important;
+  color: var(--moon-opacity-100) !important;
   transform: none !important;
 }
 
@@ -302,27 +302,27 @@ const handleTranslate = async () => {
 
 .translatable-textarea-button :deep(.p-button-icon) {
   margin: 0 !important;
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
   font-size: 0.875rem !important;
 }
 
 .translatable-textarea-button:not(:disabled):hover {
-  background: rgba(85, 103, 242, 0.7) !important;
-  border-color: rgba(85, 103, 242, 0.5) !important;
-  box-shadow: 0 2px 8px rgba(85, 103, 242, 0.3) !important;
+  background: var(--primary-opacity-70) !important;
+  border-color: var(--primary-opacity-50) !important;
+  box-shadow: 0 2px 8px var(--primary-opacity-30) !important;
 }
 
 .translatable-textarea-button:not(:disabled):active,
 .translatable-textarea-button:not(:disabled):focus {
-  background: rgba(85, 103, 242, 0.8) !important;
-  border-color: rgba(85, 103, 242, 0.6) !important;
-  box-shadow: 0 2px 8px rgba(85, 103, 242, 0.4) !important;
+  background: var(--primary-opacity-80) !important;
+  border-color: var(--primary-opacity-60) !important;
+  box-shadow: 0 2px 8px var(--primary-opacity-40) !important;
 }
 
 .translatable-textarea-button:not(:disabled):hover :deep(.p-button-icon),
 .translatable-textarea-button:not(:disabled):active :deep(.p-button-icon),
 .translatable-textarea-button:not(:disabled):focus :deep(.p-button-icon) {
-  color: rgba(246, 243, 209, 1) !important;
+  color: var(--moon-opacity-100) !important;
 }
 
 .translatable-textarea-button:disabled {
@@ -343,13 +343,13 @@ const handleTranslate = async () => {
 .translation-result-label {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: rgba(246, 243, 209, 0.95);
+  color: var(--moon-opacity-95);
   margin-bottom: 0.25rem;
 }
 
 .translation-result-content {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 0.5rem;
   padding: 1rem;
   max-height: 400px;
@@ -357,7 +357,7 @@ const handleTranslate = async () => {
   overflow-x: hidden;
   white-space: pre-wrap;
   word-wrap: break-word;
-  color: rgba(246, 243, 209, 0.9);
+  color: var(--moon-opacity-90);
   font-size: 0.9375rem;
   line-height: 1.6;
   font-family: inherit;
@@ -368,22 +368,22 @@ const handleTranslate = async () => {
 }
 
 .translation-result-content::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--white-opacity-5);
   border-radius: 4px;
 }
 
 .translation-result-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-opacity-20);
   border-radius: 4px;
 }
 
 .translation-result-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--white-opacity-30);
 }
 
 .translation-result-question {
   font-size: 0.9375rem;
-  color: rgba(246, 243, 209, 0.85);
+  color: var(--moon-opacity-85);
   margin-top: 0.5rem;
 }
 </style>
