@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/types/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/types/syosetu';
 import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/types/scraper';
-import { BaseScraper } from './base-scraper';
+import { BaseScraper } from '../core';
 
 /**
  * syosetu.org 小说爬虫服务

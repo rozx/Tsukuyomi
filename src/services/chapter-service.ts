@@ -112,21 +112,24 @@ export class ChapterService {
 
         if (existingChapterIndex >= 0) {
           // 章节已存在，更新内容
-          if (updateStrategy === 'replace') {
-            // 替换整个章节
-            mergedChapters[existingChapterIndex] = {
-              ...newChapter,
-              id: mergedChapters[existingChapterIndex].id, // 保留原有 ID
-              lastEdited: new Date(),
-            };
-          } else {
-            // 合并章节属性
-            mergedChapters[existingChapterIndex] = {
-              ...mergedChapters[existingChapterIndex],
-              ...newChapter,
-              id: mergedChapters[existingChapterIndex].id, // 保留原有 ID
-              lastEdited: new Date(),
-            };
+          const existingChapter = mergedChapters[existingChapterIndex];
+          if (existingChapter) {
+            if (updateStrategy === 'replace') {
+              // 替换整个章节
+              mergedChapters[existingChapterIndex] = {
+                ...newChapter,
+                id: existingChapter.id, // 保留原有 ID
+                lastEdited: new Date(),
+              };
+            } else {
+              // 合并章节属性
+              mergedChapters[existingChapterIndex] = {
+                ...existingChapter,
+                ...newChapter,
+                id: existingChapter.id, // 保留原有 ID
+                lastEdited: new Date(),
+              };
+            }
           }
         } else {
           // 章节不存在，添加新章节
@@ -316,4 +319,3 @@ export class ChapterService {
     }
   }
 }
-

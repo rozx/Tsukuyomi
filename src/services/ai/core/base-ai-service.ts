@@ -1,4 +1,11 @@
-import type { AIService, AIServiceConfig, AIConfigResult, ModelInfo } from './types';
+import type {
+  AIService,
+  AIServiceConfig,
+  AIConfigResult,
+  ModelInfo,
+  TextGenerationRequest,
+  TextGenerationResult,
+} from 'src/types/ai/ai-service';
 import type { ParsedResponse, ConfigJson, ConfigParseResult } from 'src/types/ai/interfaces';
 import { CONFIG_PROMPT, DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
 
@@ -72,6 +79,36 @@ export abstract class BaseAIService implements AIService {
    * 返回解析后的响应数据
    */
   protected abstract makeConfigRequest(config: AIServiceConfig): Promise<ParsedResponse>;
+
+  /**
+   * 生成文本（子类需要实现）
+   * @param config 服务配置
+   * @param request 文本生成请求
+   * @returns 生成的文本结果
+   */
+  async generateText(
+    config: AIServiceConfig,
+    request: TextGenerationRequest,
+  ): Promise<TextGenerationResult> {
+    // 验证配置
+    this.validateConfig(config);
+
+    // 验证请求
+    if (!request.prompt?.trim()) {
+      throw new Error('提示词不能为空');
+    }
+
+    // 调用子类实现
+    return this.makeTextGenerationRequest(config, request);
+  }
+
+  /**
+   * 发送文本生成请求（子类需要实现）
+   */
+  protected abstract makeTextGenerationRequest(
+    config: AIServiceConfig,
+    request: TextGenerationRequest,
+  ): Promise<TextGenerationResult>;
 
   /**
    * 构建模型信息

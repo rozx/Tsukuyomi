@@ -1,10 +1,17 @@
 import type { AIProvider } from 'src/types/ai/ai-model';
-import type { AIService, AIServiceConfig, AIConfigResult } from './types';
-import { OpenAIService } from './openai-service';
-import { GeminiService } from './gemini-service';
+import type {
+  AIService,
+  AIServiceConfig,
+  AIConfigResult,
+  TextGenerationRequest,
+  TextGenerationResult,
+} from 'src/types/ai/ai-service';
+import { OpenAIService } from './providers';
+import { GeminiService } from './providers';
 
 /**
  * AI 服务工厂
+ * 提供统一的 AI 服务访问接口
  */
 export class AIServiceFactory {
   private static services: Map<AIProvider, AIService> = new Map<AIProvider, AIService>([
@@ -18,7 +25,7 @@ export class AIServiceFactory {
   static getService(provider: AIProvider): AIService {
     const service = this.services.get(provider);
     if (!service) {
-      throw new Error(`Unsupported AI provider: ${provider}`);
+      throw new Error(`不支持的 AI 提供商: ${provider}`);
     }
     return service;
   }
@@ -31,8 +38,34 @@ export class AIServiceFactory {
     const service = this.getService(provider);
     return service.getConfig(config);
   }
+
+  /**
+   * 生成文本（统一接口）
+   * @param provider AI 提供商
+   * @param config 服务配置
+   * @param request 文本生成请求
+   * @returns 生成的文本结果
+   */
+  static async generateText(
+    provider: AIProvider,
+    config: AIServiceConfig,
+    request: TextGenerationRequest,
+  ): Promise<TextGenerationResult> {
+    const service = this.getService(provider);
+    return service.generateText(config, request);
+  }
 }
 
-export * from './types';
+// 导出类型和接口
+export * from 'src/types/ai/ai-service';
 export * from 'src/types/ai/interfaces';
 export * from 'src/constants/ai';
+
+// 导出核心服务
+export * from './core';
+
+// 导出提供商服务
+export * from './providers';
+
+// 导出任务服务
+export * from './tasks';

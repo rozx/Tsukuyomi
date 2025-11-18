@@ -1,7 +1,11 @@
 import OpenAI from 'openai';
-import type { AIServiceConfig } from './types';
+import type {
+  AIServiceConfig,
+  TextGenerationRequest,
+  TextGenerationResult,
+} from 'src/types/ai/ai-service';
 import type { ParsedResponse } from 'src/types/ai/interfaces';
-import { BaseAIService } from './base-ai-service';
+import { BaseAIService } from '../core';
 import { DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_TEMPERATURE } from 'src/constants/ai';
 
 /**
@@ -53,6 +57,55 @@ export class OpenAIService extends BaseAIService {
         throw error;
       }
       throw new Error('OpenAI API 请求失败');
+    }
+  }
+
+  /**
+   * 发送文本生成请求到 OpenAI API
+   */
+  protected async makeTextGenerationRequest(
+    config: AIServiceConfig,
+    request: TextGenerationRequest,
+  ): Promise<TextGenerationResult> {
+    try {
+      const client = this.createClient(config);
+
+      const requestParams: {
+        model: string;
+        messages: Array<{ role: 'user'; content: string }>;
+        temperature?: number;
+        max_tokens?: number;
+      } = {
+        model: config.model,
+        messages: [{ role: 'user', content: request.prompt }],
+      };
+
+      const temperature = request.temperature ?? config.temperature;
+      if (temperature !== undefined) {
+        requestParams.temperature = temperature;
+      }
+
+      const maxTokens = request.maxTokens ?? config.maxTokens;
+      if (maxTokens !== undefined) {
+        requestParams.max_tokens = maxTokens;
+      }
+
+      const completion = await client.chat.completions.create(requestParams);
+
+      const text = completion.choices[0]?.message?.content?.trim();
+      if (!text) {
+        throw new Error('AI 返回的文本为空');
+      }
+
+      return {
+        text,
+        model: completion.model || config.model,
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('OpenAI 文本生成请求失败');
     }
   }
 }

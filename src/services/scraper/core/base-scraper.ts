@@ -63,7 +63,7 @@ export abstract class BaseScraper implements NovelScraper {
       // 在浏览器环境中，检查是否需要使用 Vite 代理
       const isBrowser = typeof window !== 'undefined';
       let finalUrl = url;
-      
+
       if (isBrowser && !this.useProxy) {
         // 在浏览器环境中且不使用 AllOrigins 代理时，使用 Vite 代理
         const urlObj = new URL(url);
@@ -117,15 +117,18 @@ export abstract class BaseScraper implements NovelScraper {
             // 在浏览器环境中，某些请求头（如 User-Agent、Accept-Encoding、Referer）不能手动设置
             // 这些请求头会被浏览器自动设置，或者由 Vite 代理服务器设置
             const headers: Record<string, string> = {
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
               'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
             };
 
             // 只在非浏览器环境（如 Electron 或 Node.js）中设置这些请求头
             if (!isBrowser) {
-              headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+              headers['User-Agent'] =
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
               headers['Accept-Encoding'] = 'gzip, deflate, br';
-              headers['Referer'] = url.startsWith('https://') ? new URL(url).origin : 'https://kakuyomu.jp/';
+              headers['Referer'] = url.startsWith('https://')
+                ? new URL(url).origin
+                : 'https://kakuyomu.jp/';
             }
 
             const response = await axios.get(finalUrl, {

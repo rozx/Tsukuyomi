@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/types/novel';
 import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/types/scraper';
-import { BaseScraper } from './base-scraper';
+import { BaseScraper } from '../core';
 
 /**
  * Kakuyomu Apollo State 数据结构
@@ -41,11 +41,11 @@ interface KakuyomuEpisode {
 /**
  * kakuyomu.jp 小说爬虫服务
  * 用于从 kakuyomu.jp 获取和解析小说信息
- * 
+ *
  * Kakuyomu 使用 Next.js，所有数据都嵌入在页面的 __NEXT_DATA__ JSON 中
  */
 export class KakuyomuScraper extends BaseScraper {
-  protected useProxy: boolean = false; // Kakuyomu 不使用代理，直接请求
+  protected override useProxy: boolean = false; // Kakuyomu 不使用代理，直接请求
 
   private static readonly BASE_URL = 'https://kakuyomu.jp';
   private static readonly NOVEL_URL_PATTERN = /^https?:\/\/kakuyomu\.jp\/works\/(\d+)(?:\/.*)?$/;
@@ -87,7 +87,7 @@ export class KakuyomuScraper extends BaseScraper {
 
       const novelIndexUrl = this.getNovelIndexUrl(url);
       const html = await this.fetchPage(novelIndexUrl);
-      
+
       // 解析页面中的 Next.js 数据
       const novelInfo = this.parseNovelPage(html, novelIndexUrl);
       const novel = this.convertToNovel(novelInfo);
@@ -119,7 +119,7 @@ export class KakuyomuScraper extends BaseScraper {
 
     // Kakuyomu 的章节内容在 .widget-episodeBody 中
     let contentElement = $('.widget-episodeBody').first();
-    
+
     // 如果找不到，尝试其他可能的选择器
     if (contentElement.length === 0) {
       contentElement = $('[class*="widget-episodeBody"]').first();
@@ -213,7 +213,7 @@ export class KakuyomuScraper extends BaseScraper {
       const cleanedText = allText.trim();
       if (cleanedText && !/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
         // 按双换行符分割段落
-        const splitParagraphs = cleanedText.split(/\n{2,}/).filter(p => p.trim());
+        const splitParagraphs = cleanedText.split(/\n{2,}/).filter((p) => p.trim());
         if (splitParagraphs.length > 0) {
           paragraphs.push(...splitParagraphs);
         } else if (cleanedText) {
@@ -310,22 +310,22 @@ export class KakuyomuScraper extends BaseScraper {
       catchphraseEl = $('[class*="EyeCatch_container"]').first();
     }
     const catchphrase = catchphraseEl.length > 0 ? catchphraseEl.text().trim() : '';
-    
+
     // 提取 introduction（第二行）- 保留原始格式（包括换行）
     let introductionEl = $('.CollapseTextWithKakuyomuLinks_collapseText__XSlmz').first();
     if (introductionEl.length === 0) {
       introductionEl = $('[class*="CollapseTextWithKakuyomuLinks_collapseText"]').first();
     }
-    
+
     // 提取 introduction 文本，保留换行符
     let introduction = '';
     if (introductionEl.length > 0) {
       // 创建一个副本来处理，避免修改原始 DOM
       const $clone = introductionEl.clone();
-      
+
       // 将 <br> 标签转换为换行符
       $clone.find('br').replaceWith('\n');
-      
+
       // 将段落标签转换为换行符
       $clone.find('p').each((_, el) => {
         const $p = $(el);
@@ -336,14 +336,14 @@ export class KakuyomuScraper extends BaseScraper {
           $p.remove();
         }
       });
-      
+
       // 提取文本，保留换行符
       introduction = $clone.text().trim();
-      
+
       // 清理多余的换行符（将多个连续换行符合并为单个）
       introduction = introduction.replace(/\n{3,}/g, '\n\n');
     }
-    
+
     // 合并两部分，使用双换行符分隔
     if (catchphrase && introduction) {
       // 确保有换行符分隔
@@ -353,7 +353,7 @@ export class KakuyomuScraper extends BaseScraper {
     } else if (introduction) {
       return introduction;
     }
-    
+
     return undefined;
   }
 
@@ -385,7 +385,7 @@ export class KakuyomuScraper extends BaseScraper {
               startIndex: currentVolumeStartIndex,
             });
           }
-          
+
           // 新卷开始
           currentVolumeTitle = chapterData.title;
           currentVolumeStartIndex = chapters.length;
@@ -399,13 +399,19 @@ export class KakuyomuScraper extends BaseScraper {
           if (!episode) return;
 
           const chapterUrl = `${KakuyomuScraper.BASE_URL}/works/${novelId}/episodes/${episode.id}`;
-          
-          chapters.push({
+
+          const chapterInfo: ParsedChapterInfo = {
             title: episode.title,
             url: chapterUrl,
-            date: episode.publishedAt ? this.formatDate(episode.publishedAt) : undefined,
-            lastUpdated: episode.publishedAt ? this.formatDate(episode.publishedAt) : undefined,
-          });
+          };
+
+          if (episode.publishedAt) {
+            const formattedDate = this.formatDate(episode.publishedAt);
+            chapterInfo.date = formattedDate;
+            chapterInfo.lastUpdated = formattedDate;
+          }
+
+          chapters.push(chapterInfo);
         });
       }
     });
@@ -418,7 +424,15 @@ export class KakuyomuScraper extends BaseScraper {
       });
     }
 
-    return { volumes: volumes.length > 0 ? volumes : undefined, chapters };
+    const result: { volumes?: ParsedVolumeInfo[]; chapters: ParsedChapterInfo[] } = {
+      chapters,
+    };
+
+    if (volumes.length > 0) {
+      result.volumes = volumes;
+    }
+
+    return result;
   }
 
   /**
@@ -477,4 +491,3 @@ export class KakuyomuScraper extends BaseScraper {
     return novel;
   }
 }
-

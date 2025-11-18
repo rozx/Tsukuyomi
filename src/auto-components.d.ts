@@ -25,6 +25,8 @@ declare module 'vue' {
     Dropdown: typeof import('primevue/dropdown')['default']
     EssentialLink: typeof import('./components/EssentialLink.vue')['default']
     ExampleComponent: typeof import('./components/ExampleComponent.vue')['default']
+    InputGroup: typeof import('primevue/inputgroup')['default']
+    InputGroupAddon: typeof import('primevue/inputgroupaddon')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']
     Message: typeof import('primevue/message')['default']
@@ -34,11 +36,13 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SettingsDialog: typeof import('./components/SettingsDialog.vue')['default']
     Sidebar: typeof import('primevue/sidebar')['default']
+    SplitButton: typeof import('primevue/splitbutton')['default']
     Splitter: typeof import('primevue/splitter')['default']
     SplitterPanel: typeof import('primevue/splitterpanel')['default']
     SyosetuScraperDialog: typeof import('./components/SyosetuScraperDialog.vue')['default']
     TestResult: typeof import('./components/TestResult.vue')['default']
     ToastHistoryDialog: typeof import('./components/ToastHistoryDialog.vue')['default']
     ToggleButton: typeof import('primevue/togglebutton')['default']
+    TranslatableInput: typeof import('./components/TranslatableInput.vue')['default']
   }
 }

@@ -1,6 +1,6 @@
 import type { NovelScraper, ScraperType } from 'src/types/scraper';
-import { SyosetuScraper } from './syosetu-scraper';
-import { KakuyomuScraper } from './kakuyomu-scraper';
+import { SyosetuScraper } from './scrapers';
+import { KakuyomuScraper } from './scrapers';
 
 /**
  * 爬虫服务工厂
@@ -88,8 +88,8 @@ export class NovelScraperFactory {
 export type { NovelScraper, FetchNovelResult, ScraperType } from 'src/types/scraper';
 
 // 导出具体实现（供需要时直接使用）
-export { SyosetuScraper } from './syosetu-scraper';
-export { KakuyomuScraper } from './kakuyomu-scraper';
-export { BaseScraper } from './base-scraper';
-export { ScraperService } from './scraper-service';
-export type { ChapterContentResult, BatchFetchResult } from './scraper-service';
+export { SyosetuScraper } from './scrapers';
+export { KakuyomuScraper } from './scrapers';
+export { BaseScraper } from './core';
+export { ScraperService } from './services';
+export type { ChapterContentResult, BatchFetchResult } from './services';

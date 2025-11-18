@@ -40,6 +40,23 @@ export interface AIConfigResult {
 }
 
 /**
+ * 文本生成请求参数
+ */
+export interface TextGenerationRequest {
+  prompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+/**
+ * 文本生成结果
+ */
+export interface TextGenerationResult {
+  text: string;
+  model?: string;
+}
+
+/**
  * AI 服务抽象接口
  */
 export interface AIService {
@@ -48,4 +65,15 @@ export interface AIService {
    * 通过调用 chat completion API 来验证连接并获取配置
    */
   getConfig(config: AIServiceConfig): Promise<AIConfigResult>;
+
+  /**
+   * 生成文本
+   * @param config 服务配置
+   * @param request 文本生成请求
+   * @returns 生成的文本结果
+   */
+  generateText(
+    config: AIServiceConfig,
+    request: TextGenerationRequest,
+  ): Promise<TextGenerationResult>;
 }

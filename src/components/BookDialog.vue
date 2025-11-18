@@ -9,6 +9,7 @@ import Chips from 'primevue/chips';
 import type { Novel, Chapter } from 'src/types/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
+import TranslatableInput from './TranslatableInput.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -43,6 +44,10 @@ const emit = defineEmits<{
 }>();
 
 const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
+const titleInputId = computed<string>(() => {
+  const prefix = idPrefix.value;
+  return prefix ? `${prefix}-title` : 'title';
+});
 const toast = useToastWithHistory();
 
 // 表单数据
@@ -329,15 +334,14 @@ watch(
       <div class="flex-1 space-y-5 min-w-0">
         <!-- 书籍标题 -->
         <div class="space-y-2">
-          <label :for="`${idPrefix}-title`" class="block text-sm font-medium text-moon/90"
+          <label :for="titleInputId" class="block text-sm font-medium text-moon/90"
             >书籍标题 *</label
           >
-          <InputText
-            :id="`${idPrefix}-title`"
-            v-model="formData.title"
-            placeholder="例如: 转生成为史莱姆"
-            class="w-full"
-            :class="{ 'p-invalid': formErrors.title }"
+          <TranslatableInput
+            v-model="formData.title!"
+            :placeholder="'例如: 转生成为史莱姆'"
+            :id="titleInputId"
+            :invalid="!!formErrors.title"
           />
           <small v-if="formErrors.title" class="p-error block mt-1">{{ formErrors.title }}</small>
         </div>
