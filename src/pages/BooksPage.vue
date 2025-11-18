@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
-import { useConfirm } from 'primevue/useconfirm';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
+import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
@@ -25,13 +25,17 @@ import {
 const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
 const toast = useToastWithHistory();
-const confirm = useConfirm();
 
 // 对话框状态
 const showAddDialog = ref(false);
 const showEditDialog = ref(false);
 const showImportDialog = ref(false);
 const selectedBook = ref<Novel | null>(null);
+
+// 删除确认对话框状态
+const showDeleteConfirm = ref(false);
+const deleteConfirmInput = ref('');
+const bookToDelete = ref<Novel | null>(null);
 
 // 文件输入引用（用于导入 JSON）
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -396,26 +400,92 @@ const editBook = (book: Novel) => {
 
 // 删除书籍
 const deleteBook = (book: Novel) => {
-  confirm.require({
-    message: `确定要删除书籍 "${book.title}" 吗？此操作无法撤销。`,
-    header: '确认删除',
-    icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
-    accept: () => {
-      const bookTitle = book.title;
-      booksStore.deleteBook(book.id);
-      toast.add({
-        severity: 'success',
-        summary: '删除成功',
-        detail: `已成功删除书籍 "${bookTitle}"`,
-        life: 3000,
-      });
-    },
+  bookToDelete.value = book;
+  deleteConfirmInput.value = '';
+  showDeleteConfirm.value = true;
+};
+
+// 确认删除书籍
+const confirmDeleteBook = () => {
+  if (!bookToDelete.value) {
+    return;
+  }
+
+  const bookTitle = bookToDelete.value.title;
+
+  // 检查用户输入的标题是否匹配（不区分大小写，去除首尾空格）
+  const inputTitle = deleteConfirmInput.value.trim();
+  if (inputTitle !== bookTitle) {
+    toast.add({
+      severity: 'error',
+      summary: '标题不匹配',
+      detail: '输入的标题与书籍标题不一致，请重新输入',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 执行删除
+  booksStore.deleteBook(bookToDelete.value.id);
+
+  // 关闭对话框
+  showDeleteConfirm.value = false;
+  deleteConfirmInput.value = '';
+  bookToDelete.value = null;
+
+  toast.add({
+    severity: 'success',
+    summary: '删除成功',
+    detail: `已成功删除书籍 "${bookTitle}"`,
+    life: 3000,
   });
 };
+
+// 取消删除
+const cancelDeleteBook = () => {
+  showDeleteConfirm.value = false;
+  deleteConfirmInput.value = '';
+  bookToDelete.value = null;
+};
+
+// 复制书籍标题并填充到输入框
+const copyBookTitle = async () => {
+  if (!bookToDelete.value) {
+    return;
+  }
+
+  const title = bookToDelete.value.title;
+
+  try {
+    // 复制到剪贴板
+    await navigator.clipboard.writeText(title);
+    // 同时填充到输入框，方便用户直接粘贴或修改
+    deleteConfirmInput.value = title;
+    toast.add({
+      severity: 'success',
+      summary: '已复制',
+      detail: '书籍标题已复制并填充到输入框',
+      life: 2000,
+    });
+  } catch {
+    // 即使复制失败，也填充到输入框
+    deleteConfirmInput.value = title;
+    toast.add({
+      severity: 'info',
+      summary: '已填充',
+      detail: '书籍标题已填充到输入框（复制到剪贴板失败）',
+      life: 2000,
+    });
+  }
+};
+
+// 计算删除按钮是否可用
+const isDeleteDisabled = computed(() => {
+  if (!bookToDelete.value) {
+    return true;
+  }
+  return deleteConfirmInput.value.trim() !== bookToDelete.value.title;
+});
 
 // 切换收藏状态
 const toggleStar = (book: Novel) => {
@@ -702,6 +772,63 @@ const handleSave = (formData: Partial<Novel>) => {
 
     <!-- 确认对话框 -->
     <ConfirmDialog />
+
+    <!-- 删除确认对话框 -->
+    <Dialog
+      v-model:visible="showDeleteConfirm"
+      modal
+      header="确认删除"
+      :style="{ width: '30rem', maxWidth: '90vw' }"
+      class="delete-confirm-dialog"
+    >
+      <div class="space-y-4">
+        <div class="flex items-start gap-3">
+          <i class="pi pi-exclamation-triangle text-2xl text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div class="flex-1">
+            <p class="text-moon/90 mb-2">
+              确定要删除书籍 <strong class="text-moon/95">"{{ bookToDelete?.title }}"</strong> 吗？
+            </p>
+            <p class="text-sm text-moon/70 mb-4">
+              此操作无法撤销。请在下方的输入框中输入书籍标题以确认删除。
+            </p>
+            <div class="space-y-2">
+              <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
+              <InputGroup class="w-full">
+                <InputText
+                  v-model="deleteConfirmInput"
+                  :placeholder="bookToDelete?.title"
+                  class="flex-1"
+                  autofocus
+                  @keyup.enter="if (!isDeleteDisabled) confirmDeleteBook();"
+                />
+                <InputGroupAddon>
+                  <Button
+                    icon="pi pi-copy"
+                    class="p-button-text p-button-sm"
+                    title="复制标题"
+                    @click="copyBookTitle"
+                  />
+                </InputGroupAddon>
+              </InputGroup>
+              <small class="text-xs text-moon/60 block">
+                <i class="pi pi-info-circle mr-1" />
+                提示：点击右侧的复制按钮会将标题复制到剪贴板并自动填充到输入框
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="取消" icon="pi pi-times" class="p-button-text" @click="cancelDeleteBook" />
+        <Button
+          label="删除"
+          icon="pi pi-trash"
+          class="p-button-danger"
+          :disabled="isDeleteDisabled"
+          @click="confirmDeleteBook"
+        />
+      </template>
+    </Dialog>
 
     <!-- 排序菜单 -->
     <TieredMenu ref="sortMenuRef" :model="sortMenuItems" popup />
