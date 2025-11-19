@@ -275,7 +275,7 @@ const formatApiKey = (apiKey: string): string => {
           <div
             v-for="model in slotProps.items"
             :key="model.id"
-            class="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.1)] rounded-lg overflow-hidden hover:bg-white/5 transition-colors"
+            class="bg-white/3 border border-white/10 rounded-lg overflow-hidden hover:bg-white/5 transition-colors"
           >
             <!-- 卡片头部 -->
             <div class="p-4 border-b border-white/10">

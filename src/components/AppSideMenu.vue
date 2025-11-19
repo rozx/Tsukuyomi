@@ -201,7 +201,7 @@ const bottomItems: MenuItem[] = [
   margin-top: 0.75rem;
   margin-bottom: 0.5rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--white-opacity-10);
 }
 
 :deep(.p-menu .p-submenu-header:first-child) {

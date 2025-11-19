@@ -291,9 +291,9 @@ const handleTranslate = async () => {
   padding: 0 !important;
   margin: 0 !important;
   border-radius: 0.375rem !important;
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: var(--black-opacity-50) !important;
   backdrop-filter: blur(4px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid var(--white-opacity-10) !important;
   z-index: 10 !important;
   display: flex !important;
   align-items: center !important;

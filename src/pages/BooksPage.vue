@@ -669,9 +669,7 @@ const handleSave = (formData: Partial<Novel>) => {
         >
           <div v-for="book in slotProps.items" :key="book.id" class="book-card group">
             <!-- 封面 -->
-            <div
-              class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-[rgba(255,255,255,0.05)] mb-2"
-            >
+            <div class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2">
               <img
                 :src="getCoverUrl(book)"
                 :alt="book.title"
@@ -846,18 +844,18 @@ const handleSave = (formData: Partial<Novel>) => {
 
 <style scoped>
 .book-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 8px;
   padding: 8px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .book-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--white-opacity-4);
+  border-color: var(--white-opacity-15);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--black-opacity-15);
 }
 
 .line-clamp-1 {

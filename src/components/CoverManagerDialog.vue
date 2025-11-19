@@ -328,7 +328,7 @@ const handleClose = () => {
       <!-- 当前选中的封面预览 -->
       <div v-if="selectedCover" class="space-y-3">
         <div class="text-sm font-medium text-moon/90">当前选中封面</div>
-        <div class="relative w-full aspect-[2/3] max-w-xs mx-auto overflow-hidden rounded-lg bg-[rgba(255,255,255,0.05)] border border-white/10">
+        <div class="relative w-full aspect-[2/3] max-w-xs mx-auto overflow-hidden rounded-lg bg-white/5 border border-white/10">
           <img
             :src="selectedCover.url"
             alt="封面预览"
