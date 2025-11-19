@@ -98,6 +98,7 @@
   --text-muted-color: var(--moon-opacity-70); /* moon-500 with lower opacity */
   --highlight-bg: rgba(240, 69, 139, 0.18); /* luna-500 with opacity - using rgba for custom opacity */
   --highlight-text-color: #ffffff;
+
 }
 
 /* Default (dark is on by config) - using TailwindCSS moon color */
@@ -340,6 +341,51 @@ body,
   display: flex !important;
   justify-content: flex-end !important;
   gap: 0.75rem !important;
+}
+
+.p-dialog-footer .p-button {
+  min-width: 5rem !important;
+  padding: 0.625rem 1.25rem !important;
+  font-weight: 500 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.p-dialog-footer .p-button-text {
+  background: transparent !important;
+  border-color: var(--white-opacity-10) !important;
+  color: var(--moon-opacity-85) !important;
+}
+
+.p-dialog-footer .p-button-text:hover {
+  background: var(--white-opacity-6) !important;
+  border-color: var(--white-opacity-18) !important;
+  color: var(--moon-opacity-95) !important;
+  box-shadow: 0 1px 3px var(--black-opacity-10) !important;
+}
+
+.p-dialog-footer .p-button:not(.p-button-text):not(.p-button-danger) {
+  background: var(--primary-opacity-15) !important;
+  border-color: var(--primary-opacity-40) !important;
+  color: var(--primary-opacity-90) !important;
+  box-shadow: 0 1px 2px var(--primary-opacity-20) !important;
+}
+
+.p-dialog-footer .p-button:not(.p-button-text):not(.p-button-danger):hover {
+  background: var(--primary-opacity-25) !important;
+  border-color: var(--primary-opacity-60) !important;
+  box-shadow: 0 2px 6px var(--primary-opacity-30) !important;
+  transform: translateY(-1px) !important;
+}
+
+.p-dialog-footer .p-button:not(.p-button-text):not(.p-button-danger):active {
+  background: var(--primary-opacity-30) !important;
+  transform: translateY(0) !important;
+  box-shadow: 0 1px 3px var(--primary-opacity-20) !important;
+}
+
+.p-dialog-footer .p-button:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
 }
 
 /* ============================================
@@ -1291,4 +1337,340 @@ body,
   background: var(--primary-opacity-15);
   border-color: var(--primary-opacity-40);
   box-shadow: 0 2px 6px var(--primary-opacity-20);
+}
+
+/* ============================================
+   全局 Breadcrumb/Menubar 样式 - 匹配主题
+   ============================================ */
+
+/* 面包屑容器 - 提供足够的空间避免裁剪 */
+.breadcrumb-wrapper {
+  position: relative;
+  z-index: 1;
+  padding-top: 1.5rem;
+  padding-bottom: 0.5rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  margin-top: -1.5rem;
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+  margin-bottom: 0.5rem;
+  overflow: visible;
+}
+
+/* 面包屑导航样式 - 匹配主题 */
+.p-breadcrumb {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.p-breadcrumb .p-breadcrumb-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.p-breadcrumb .p-breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.p-breadcrumb .p-menuitem-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  color: var(--moon-opacity-80) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.p-breadcrumb .p-menuitem-link:hover {
+  background: var(--primary-opacity-15) !important;
+  color: var(--moon-opacity-95) !important;
+  border-color: var(--primary-opacity-30) !important;
+  box-shadow: 0 2px 12px var(--black-opacity-20), 0 -2px 12px var(--primary-opacity-15), 0 0 20px var(--primary-opacity-10) !important;
+}
+
+.p-breadcrumb .p-menuitem-link:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
+}
+
+.p-breadcrumb .p-menuitem-link .p-menuitem-icon {
+  color: var(--primary-opacity-70) !important;
+  font-size: 0.875rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.p-breadcrumb .p-menuitem-link:hover .p-menuitem-icon {
+  color: var(--primary-opacity-90) !important;
+  transform: scale(1.1);
+}
+
+.p-breadcrumb .p-menuitem-text {
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* 分隔符样式 */
+.p-breadcrumb .p-breadcrumb-chevron {
+  color: var(--moon-opacity-60) !important;
+  font-size: 0.75rem;
+  margin: 0 0.5rem;
+}
+
+/* 最后一项（当前页）样式 - 不可点击 */
+.p-breadcrumb .p-breadcrumb-item:last-child .p-menuitem-link {
+  color: var(--moon-opacity-95) !important;
+  cursor: default;
+  pointer-events: none;
+}
+
+.p-breadcrumb .p-breadcrumb-item:last-child .p-menuitem-link:hover {
+  background: transparent !important;
+  border-color: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.p-breadcrumb .p-breadcrumb-item:last-child .p-menuitem-icon {
+  color: var(--primary-opacity-80) !important;
+}
+
+/* Menubar 作为面包屑导航的样式 */
+.breadcrumb-menubar.p-menubar {
+  background: var(--white-opacity-5) !important;
+  border: 1px solid var(--white-opacity-10) !important;
+  border-radius: 8px !important;
+  padding: 0.5rem 0.75rem !important;
+}
+
+.breadcrumb-menubar .p-menubar-root-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  color: var(--moon-opacity-80) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link:hover {
+  background: var(--primary-opacity-15) !important;
+  color: var(--moon-opacity-95) !important;
+  border-color: var(--primary-opacity-30) !important;
+  box-shadow: 0 2px 12px var(--black-opacity-20), 0 -2px 12px var(--primary-opacity-15), 0 0 20px var(--primary-opacity-10) !important;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link .p-menuitem-icon {
+  color: var(--primary-opacity-70) !important;
+  font-size: 0.875rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link:hover .p-menuitem-icon {
+  color: var(--primary-opacity-90) !important;
+  transform: scale(1.1);
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem > .p-menuitem-link .p-menuitem-text {
+  color: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* 最后一项（当前页）样式 - 不可点击 */
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem:last-child > .p-menuitem-link {
+  color: var(--moon-opacity-95) !important;
+  cursor: default;
+  pointer-events: none;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem:last-child > .p-menuitem-link:hover {
+  background: transparent !important;
+  border-color: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.breadcrumb-menubar .p-menubar-root-list > .p-menuitem:last-child > .p-menuitem-link .p-menuitem-icon {
+  color: var(--primary-opacity-80) !important;
+}
+
+/* ============================================
+   全局 PanelMenu 样式 - 匹配主题
+   ============================================ */
+
+.volume-panel-menu.p-panelmenu {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.volume-panel-menu .p-panelmenu-header {
+  background: var(--white-opacity-5) !important;
+  border: 1px solid var(--white-opacity-10) !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: hidden !important;
+}
+
+/* 确保 PanelMenu 容器本身没有额外的 margin */
+.volume-panel-menu.p-panelmenu > .p-panelmenu-list > .p-panelmenu-header {
+  margin-bottom: 0 !important;
+}
+
+.volume-panel-menu .p-panelmenu-header:hover {
+  background: var(--white-opacity-8) !important;
+  border-color: var(--primary-opacity-30) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header.p-highlight {
+  background: var(--primary-opacity-15) !important;
+  border-color: var(--primary-opacity-40) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header .p-panelmenu-header-content {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.volume-panel-menu .p-panelmenu-header .p-panelmenu-header-link,
+.volume-panel-menu .p-panelmenu-header .p-panelmenu-header-action {
+  color: var(--moon-opacity-90) !important;
+  text-decoration: none !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  font-weight: 500 !important;
+  font-size: 0.875rem !important;
+  width: 100% !important;
+  cursor: pointer !important;
+  padding: 0.75rem 1rem !important;
+  border: none !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header:hover .p-panelmenu-header-action {
+  background: var(--white-opacity-5) !important;
+  background-color: var(--white-opacity-5) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header.p-highlight .p-panelmenu-header-action {
+  background: var(--primary-opacity-10) !important;
+  background-color: var(--primary-opacity-10) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header .p-panelmenu-header-action .p-menuitem-icon {
+  color: var(--primary-opacity-70) !important;
+  font-size: 0.875rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header.p-highlight .p-panelmenu-header-action .p-menuitem-icon {
+  color: var(--primary-opacity-90) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header .p-panelmenu-header-action .p-panelmenu-toggle-icon {
+  color: var(--moon-opacity-70) !important;
+  font-size: 0.75rem !important;
+  margin-left: auto !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.volume-panel-menu .p-panelmenu-header.p-highlight .p-panelmenu-header-action .p-panelmenu-toggle-icon {
+  color: var(--primary-opacity-80) !important;
+  transform: rotate(90deg) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content {
+  background: transparent !important;
+  border: none !important;
+  padding: 0.5rem 0 0.5rem 1rem !important;
+  margin-left: 0.5rem !important;
+  border-left: 1px solid var(--white-opacity-10) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem {
+  margin-bottom: 0.25rem !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-link {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 6px !important;
+  color: var(--moon-opacity-80) !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  text-decoration: none !important;
+  font-size: 0.8125rem !important;
+  font-weight: 400 !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-link:hover {
+  background: var(--primary-opacity-15) !important;
+  color: var(--moon-opacity-95) !important;
+  border-color: var(--primary-opacity-30) !important;
+  transform: translateX(2px) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-link:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--primary-opacity-20) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-link .p-menuitem-icon {
+  color: var(--primary-opacity-60) !important;
+  font-size: 0.75rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-link:hover .p-menuitem-icon {
+  color: var(--primary-opacity-85) !important;
+  transform: scale(1.1) !important;
+}
+
+.volume-panel-menu .p-panelmenu-content .p-menuitem-text {
+  color: inherit !important;
+  font-size: 0.8125rem !important;
+  font-weight: 400 !important;
 }
