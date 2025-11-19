@@ -57,6 +57,29 @@ export interface TextGenerationResult {
 }
 
 /**
+ * 流式文本生成块
+ */
+export interface TextGenerationChunk {
+  text: string;
+  done: boolean;
+  model?: string;
+}
+
+/**
+ * 流式文本生成回调函数类型
+ */
+export type TextGenerationStreamCallback = (chunk: TextGenerationChunk) => void | Promise<void>;
+
+/**
+ * 可用模型列表获取结果
+ */
+export interface AvailableModelsResult {
+  success: boolean;
+  message: string;
+  models?: ModelInfo[];
+}
+
+/**
  * AI 服务抽象接口
  */
 export interface AIService {
@@ -67,13 +90,24 @@ export interface AIService {
   getConfig(config: AIServiceConfig): Promise<AIConfigResult>;
 
   /**
-   * 生成文本
+   * 生成文本（流式模式）
    * @param config 服务配置
    * @param request 文本生成请求
-   * @returns 生成的文本结果
+   * @param onChunk 流式数据回调函数，每次收到数据块时调用
+   * @returns 生成的完整文本结果
    */
   generateText(
     config: AIServiceConfig,
     request: TextGenerationRequest,
+    onChunk?: TextGenerationStreamCallback,
   ): Promise<TextGenerationResult>;
+
+  /**
+   * 获取可用的模型列表
+   * @param config 服务配置（至少需要 apiKey 和可选的 baseUrl）
+   * @returns 可用模型列表
+   */
+  getAvailableModels(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  ): Promise<AvailableModelsResult>;
 }

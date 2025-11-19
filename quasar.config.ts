@@ -4,6 +4,7 @@
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
+import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
 
 export default defineConfig((ctx) => {
   return {
@@ -157,11 +158,15 @@ export default defineConfig((ctx) => {
               });
             },
           },
+          // 注意：/api/ai 的动态代理现在由自定义插件 dynamicAIProxy 处理
+          // 不再使用传统的代理配置
         };
       },
       // viteVuePluginOptions: {},
 
       vitePlugins: [
+        // 动态 AI API 代理插件（必须在其他插件之前）
+        dynamicAIProxy(),
         [
           'unplugin-vue-components/vite',
           {
@@ -220,6 +225,7 @@ export default defineConfig((ctx) => {
       // https: true,
       open: true, // opens browser window automatically
       // 代理配置在 extendViteConf 中设置
+      port: 9000,
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

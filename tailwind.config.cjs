@@ -77,7 +77,7 @@ module.exports = {
           padding: '1rem 1.25rem',
         },
         '.card-content': {
-          backgroundColor: 'rgba(14, 21, 53, 0.95)',
+          backgroundColor: 'rgba(11, 16, 38, 0.98)',
           padding: '1.5rem',
         },
         '.card-footer': {

@@ -5,6 +5,8 @@ import type {
   ModelInfo,
   TextGenerationRequest,
   TextGenerationResult,
+  TextGenerationStreamCallback,
+  AvailableModelsResult,
 } from 'src/types/ai/ai-service';
 import type { ParsedResponse, ConfigJson, ConfigParseResult } from 'src/types/ai/interfaces';
 import { CONFIG_PROMPT, DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
@@ -92,14 +94,16 @@ export abstract class BaseAIService implements AIService {
   }
 
   /**
-   * 生成文本（子类需要实现）
+   * 生成文本（流式模式，子类需要实现）
    * @param config 服务配置
    * @param request 文本生成请求
-   * @returns 生成的文本结果
+   * @param onChunk 流式数据回调函数，每次收到数据块时调用
+   * @returns 生成的完整文本结果
    */
   async generateText(
     config: AIServiceConfig,
     request: TextGenerationRequest,
+    onChunk?: TextGenerationStreamCallback,
   ): Promise<TextGenerationResult> {
     // 验证配置
     this.validateConfig(config);
@@ -114,7 +118,7 @@ export abstract class BaseAIService implements AIService {
     // 如果 prompt 很长（比如超过 10000 字符），显示警告
     const promptLength = request.prompt.length;
     const estimatedTokens = this.estimateTokenCount(request.prompt);
-    
+
     // 如果估算的 token 数超过 10000，显示警告
     // 这是一个保守的阈值，大多数模型的 maxInputTokens 都远大于此
     if (estimatedTokens > 10000) {
@@ -123,17 +127,71 @@ export abstract class BaseAIService implements AIService {
       );
     }
 
-    // 调用子类实现（不截断文本）
-    return this.makeTextGenerationRequest(config, request);
+    // 调用子类实现（流式模式）
+    return this.makeTextGenerationRequest(config, request, onChunk);
   }
 
   /**
-   * 发送文本生成请求（子类需要实现）
+   * 发送文本生成请求（流式模式，子类需要实现）
    */
   protected abstract makeTextGenerationRequest(
     config: AIServiceConfig,
     request: TextGenerationRequest,
+    onChunk?: TextGenerationStreamCallback,
   ): Promise<TextGenerationResult>;
+
+  /**
+   * 获取可用的模型列表
+   * 子类需要实现 makeAvailableModelsRequest 方法
+   */
+  async getAvailableModels(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  ): Promise<AvailableModelsResult> {
+    try {
+      // 验证配置
+      if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim() === '') {
+        throw new Error('API Key 不能为空');
+      }
+
+      // 调用子类实现获取模型列表
+      const models = await this.makeAvailableModelsRequest(config);
+
+      return {
+        success: true,
+        message: '模型列表获取成功',
+        models,
+      };
+    } catch (error) {
+      return this.handleAvailableModelsError(error);
+    }
+  }
+
+  /**
+   * 获取可用模型列表（子类需要实现）
+   * @param config 服务配置（至少需要 apiKey 和可选的 baseUrl）
+   * @returns 模型信息列表
+   */
+  protected abstract makeAvailableModelsRequest(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  ): Promise<ModelInfo[]>;
+
+  /**
+   * 处理获取模型列表时的错误
+   */
+  protected handleAvailableModelsError(error: unknown): AvailableModelsResult {
+    let errorMessage = '获取模型列表失败：未知错误';
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (error && typeof error === 'object' && 'message' in error) {
+      errorMessage = String(error.message);
+    }
+
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  }
 
   /**
    * 构建模型信息

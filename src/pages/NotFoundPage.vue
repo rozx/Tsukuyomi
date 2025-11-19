@@ -3,7 +3,7 @@ import Button from 'primevue/button';
 </script>
 
 <template>
-  <div class="w-full h-full bg-primary-500 text-white text-center p-4 flex items-center justify-center">
+  <div class="w-full h-full bg-night-900 text-moon text-center p-4 flex items-center justify-center">
     <div>
       <div style="font-size: 30vh">404</div>
 

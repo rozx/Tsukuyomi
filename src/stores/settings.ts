@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { AppSettings } from 'src/types/settings';
+import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
 
 const STORAGE_KEY = 'luna-ai-settings';
 
@@ -8,6 +9,7 @@ const STORAGE_KEY = 'luna-ai-settings';
  */
 const DEFAULT_SETTINGS: AppSettings = {
   scraperConcurrencyLimit: 3,
+  taskDefaultModels: {},
 };
 
 /**
@@ -19,9 +21,14 @@ function loadSettingsFromStorage(): AppSettings {
     if (stored) {
       const settings = JSON.parse(stored) as Partial<AppSettings>;
       // 合并默认设置，确保所有字段都存在
+      // 特别处理 taskDefaultModels，需要深度合并
       return {
         ...DEFAULT_SETTINGS,
         ...settings,
+        taskDefaultModels: {
+          ...DEFAULT_SETTINGS.taskDefaultModels,
+          ...(settings.taskDefaultModels || {}),
+        },
       };
     }
   } catch (error) {
@@ -53,6 +60,15 @@ export const useSettingsStore = defineStore('settings', {
     scraperConcurrencyLimit: (state): number => {
       return state.settings.scraperConcurrencyLimit;
     },
+
+    /**
+     * 获取任务的默认模型 ID
+     */
+    getTaskDefaultModelId: (state) => {
+      return (task: keyof AIModelDefaultTasks): string | null | undefined => {
+        return state.settings.taskDefaultModels?.[task];
+      };
+    },
   },
 
   actions: {
@@ -78,6 +94,17 @@ export const useSettingsStore = defineStore('settings', {
         limit = 10;
       }
       this.updateSettings({ scraperConcurrencyLimit: limit });
+    },
+
+    /**
+     * 设置任务的默认模型 ID
+     */
+    setTaskDefaultModelId(task: keyof AIModelDefaultTasks, modelId: string | null): void {
+      const taskDefaultModels = {
+        ...this.settings.taskDefaultModels,
+        [task]: modelId,
+      };
+      this.updateSettings({ taskDefaultModels });
     },
 
     /**

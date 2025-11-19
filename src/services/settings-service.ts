@@ -215,15 +215,36 @@ export class SettingsService {
     let validAppSettings: AppSettings | undefined;
     if (settings.appSettings && typeof settings.appSettings === 'object') {
       const appSettings = settings.appSettings;
+      validAppSettings = {} as AppSettings;
+      
       // 验证并发数限制
       if (
         typeof appSettings.scraperConcurrencyLimit === 'number' &&
         appSettings.scraperConcurrencyLimit >= 1 &&
         appSettings.scraperConcurrencyLimit <= 10
       ) {
-        validAppSettings = {
-          scraperConcurrencyLimit: appSettings.scraperConcurrencyLimit,
-        };
+        validAppSettings.scraperConcurrencyLimit = appSettings.scraperConcurrencyLimit;
+      } else {
+        validAppSettings.scraperConcurrencyLimit = 3; // 默认值
+      }
+      
+      // 验证任务默认模型配置（如果存在）
+      if (appSettings.taskDefaultModels && typeof appSettings.taskDefaultModels === 'object') {
+        validAppSettings.taskDefaultModels = {};
+        const taskDefaultModels = appSettings.taskDefaultModels;
+        const validTaskKeys = ['translation', 'proofreading', 'polishing', 'characterExtraction', 'terminologyExtraction'];
+        
+        for (const taskKey of validTaskKeys) {
+          const modelId = taskDefaultModels[taskKey as keyof typeof taskDefaultModels];
+          if (modelId === null || (typeof modelId === 'string' && modelId.length > 0)) {
+            validAppSettings.taskDefaultModels[taskKey as keyof typeof validAppSettings.taskDefaultModels] = modelId;
+          }
+        }
+        
+        // 如果没有任何有效的任务配置，则不设置 taskDefaultModels
+        if (Object.keys(validAppSettings.taskDefaultModels).length === 0) {
+          delete validAppSettings.taskDefaultModels;
+        }
       }
     }
 

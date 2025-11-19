@@ -9,6 +9,7 @@ import InputSwitch from 'primevue/inputswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIProvider } from 'src/types/ai/ai-model';
+import type { ModelInfo } from 'src/types/ai/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
 
 const props = withDefaults(
@@ -19,7 +20,7 @@ const props = withDefaults(
   }>(),
   {
     model: null,
-  }
+  },
 );
 
 const emit = defineEmits<{
@@ -28,7 +29,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const idPrefix = computed(() => props.mode === 'add' ? '' : 'edit');
+const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
 const toast = useToastWithHistory();
 
 // 测试相关状态
@@ -39,6 +40,19 @@ const aiConfig = ref<{
   maxTokens?: number;
   contextWindow?: number;
 } | null>(null);
+
+// 可用模型列表
+const availableModels = ref<ModelInfo[]>([]);
+const isLoadingModels = ref(false);
+
+// 模型选项（用于 Dropdown）
+const modelOptions = computed(() => {
+  return availableModels.value.map((model) => ({
+    label: model.displayName || model.name || model.id,
+    value: model.id,
+    model: model,
+  }));
+});
 
 // 表单数据
 const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
@@ -112,7 +126,11 @@ const validateForm = (): boolean => {
     formErrors.value.baseUrl = '基础地址不能为空';
   }
 
-  if (formData.value.temperature === undefined || formData.value.temperature < 0 || formData.value.temperature > 2) {
+  if (
+    formData.value.temperature === undefined ||
+    formData.value.temperature < 0 ||
+    formData.value.temperature > 2
+  ) {
     formErrors.value.temperature = '温度值必须在 0-2 之间';
   }
 
@@ -151,9 +169,11 @@ const testModel = async () => {
 
   try {
     // Gemini 使用默认 baseUrl，其他提供商使用用户输入的 baseUrl
-    const baseUrl = formData.value.provider === 'gemini'
-      ? undefined
-      : formData.value.baseUrl;
+    // 确保 baseUrl 不为空字符串
+    const baseUrl =
+      formData.value.provider === 'gemini'
+        ? undefined
+        : formData.value.baseUrl?.trim() || undefined;
 
     const result = await AIServiceFactory.getConfig(formData.value.provider as AIProvider, {
       apiKey: formData.value.apiKey!,
@@ -168,9 +188,10 @@ const testModel = async () => {
 
     // 确保 maxTokens 是数字类型
     if (result.maxTokens !== undefined && result.maxTokens !== null) {
-      const maxTokensValue = typeof result.maxTokens === 'number'
-        ? result.maxTokens
-        : parseInt(String(result.maxTokens), 10);
+      const maxTokensValue =
+        typeof result.maxTokens === 'number'
+          ? result.maxTokens
+          : parseInt(String(result.maxTokens), 10);
       if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
         config.maxTokens = maxTokensValue;
       }
@@ -178,9 +199,10 @@ const testModel = async () => {
 
     // 确保 contextWindow 是数字类型
     if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
-      const contextWindowValue = typeof result.modelInfo.contextWindow === 'number'
-        ? result.modelInfo.contextWindow
-        : parseInt(String(result.modelInfo.contextWindow), 10);
+      const contextWindowValue =
+        typeof result.modelInfo.contextWindow === 'number'
+          ? result.modelInfo.contextWindow
+          : parseInt(String(result.modelInfo.contextWindow), 10);
       if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
         config.contextWindow = contextWindowValue;
       }
@@ -209,7 +231,8 @@ const testModel = async () => {
       details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
     }
 
-    const detailMessage = details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
+    const detailMessage =
+      details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
 
     toast.add({
       severity: result.success ? 'success' : 'error',
@@ -228,7 +251,6 @@ const testModel = async () => {
     isTesting.value = false;
   }
 };
-
 
 // 处理保存
 const handleSave = () => {
@@ -253,6 +275,44 @@ const getContextWindowDisplay = (): string => {
   return '-';
 };
 
+// 获取可用模型列表
+const fetchAvailableModels = async () => {
+  // 需要 API Key 才能获取模型列表
+  if (!formData.value.apiKey?.trim()) {
+    availableModels.value = [];
+    return;
+  }
+
+  // Gemini 不需要 baseUrl，其他提供商需要
+  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
+    availableModels.value = [];
+    return;
+  }
+
+  isLoadingModels.value = true;
+  try {
+    const baseUrl = formData.value.provider === 'gemini' ? undefined : formData.value.baseUrl;
+
+    const result = await AIServiceFactory.getAvailableModels(
+      formData.value.provider as AIProvider,
+      {
+        apiKey: formData.value.apiKey!,
+        baseUrl: baseUrl,
+      },
+    );
+
+    if (result.success && result.models) {
+      availableModels.value = result.models;
+    } else {
+      availableModels.value = [];
+    }
+  } catch (error) {
+    console.error('获取可用模型列表失败:', error);
+    availableModels.value = [];
+  } finally {
+    isLoadingModels.value = false;
+  }
+};
 
 // 监听 provider 变化，当切换到 Gemini 时清空 baseUrl
 watch(
@@ -266,8 +326,20 @@ watch(
         delete formErrors.value.baseUrl;
       }
     }
-  }
+    // 切换提供商时，清空模型列表并重新获取
+    availableModels.value = [];
+    void fetchAvailableModels();
+  },
 );
+
+// 监听 apiKey 和 baseUrl 变化，自动获取模型列表
+watch([() => formData.value.apiKey, () => formData.value.baseUrl], () => {
+  // 延迟获取，避免频繁请求
+  const timeoutId = setTimeout(() => {
+    void fetchAvailableModels();
+  }, 500);
+  return () => clearTimeout(timeoutId);
+});
 
 // 监听 visible 变化，初始化表单
 watch(
@@ -301,7 +373,7 @@ watch(
       resetForm();
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 </script>
 
@@ -317,14 +389,20 @@ watch(
   >
     <div class="space-y-5 py-2">
       <!-- 启用状态 -->
-      <div class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10">
-        <label :for="`${idPrefix}-enabled`" class="block text-sm font-medium text-moon/90">启用模型</label>
+      <div
+        class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10"
+      >
+        <label :for="`${idPrefix}-enabled`" class="block text-sm font-medium text-moon/90"
+          >启用模型</label
+        >
         <InputSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
       </div>
 
       <!-- 模型名称 -->
       <div class="space-y-2">
-        <label :for="`${idPrefix}-name`" class="block text-sm font-medium text-moon/90">模型名称 *</label>
+        <label :for="`${idPrefix}-name`" class="block text-sm font-medium text-moon/90"
+          >模型名称 *</label
+        >
         <InputText
           :id="`${idPrefix}-name`"
           v-model="formData.name"
@@ -335,9 +413,34 @@ watch(
         <small v-if="formErrors.name" class="p-error block mt-1">{{ formErrors.name }}</small>
       </div>
 
+      <!-- 温度 -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90"
+            >温度 (0-2) *</label
+          >
+          <span class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">{{
+            formData.temperature
+          }}</span>
+        </div>
+        <Slider
+          :id="`${idPrefix}-temperature`"
+          v-model="formData.temperature"
+          :min="0"
+          :max="2"
+          :step="0.1"
+          class="w-full mt-2"
+        />
+        <small v-if="formErrors.temperature" class="p-error block mt-1">{{
+          formErrors.temperature
+        }}</small>
+      </div>
+
       <!-- 提供商 -->
       <div class="space-y-2">
-        <label :for="`${idPrefix}-provider`" class="block text-sm font-medium text-moon/90">提供商 *</label>
+        <label :for="`${idPrefix}-provider`" class="block text-sm font-medium text-moon/90"
+          >提供商 *</label
+        >
         <Dropdown
           :id="`${idPrefix}-provider`"
           v-model="formData.provider"
@@ -349,39 +452,11 @@ watch(
         />
       </div>
 
-      <!-- 模型标识 -->
-      <div class="space-y-2">
-        <label :for="`${idPrefix}-model`" class="block text-sm font-medium text-moon/90">模型标识 *</label>
-        <InputText
-          :id="`${idPrefix}-model`"
-          v-model="formData.model"
-          placeholder="例如: gpt-4, gemini-pro"
-          class="w-full"
-          :class="{ 'p-invalid': formErrors.model }"
-        />
-        <small v-if="formErrors.model" class="p-error block mt-1">{{ formErrors.model }}</small>
-      </div>
-
-      <!-- 温度 -->
-      <div class="space-y-2">
-        <div class="flex items-center justify-between">
-          <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90">温度 (0-2) *</label>
-          <span class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">{{ formData.temperature }}</span>
-        </div>
-        <Slider
-          :id="`${idPrefix}-temperature`"
-          v-model="formData.temperature"
-          :min="0"
-          :max="2"
-          :step="0.1"
-          class="w-full mt-2"
-        />
-        <small v-if="formErrors.temperature" class="p-error block mt-1">{{ formErrors.temperature }}</small>
-      </div>
-
       <!-- API Key -->
       <div class="space-y-2">
-        <label :for="`${idPrefix}-apiKey`" class="block text-sm font-medium text-moon/90">API Key *</label>
+        <label :for="`${idPrefix}-apiKey`" class="block text-sm font-medium text-moon/90"
+          >API Key *</label
+        >
         <InputText
           :id="`${idPrefix}-apiKey`"
           v-model="formData.apiKey"
@@ -395,7 +470,9 @@ watch(
 
       <!-- 基础地址（Gemini 不需要） -->
       <div v-if="formData.provider !== 'gemini'" class="space-y-2">
-        <label :for="`${idPrefix}-baseUrl`" class="block text-sm font-medium text-moon/90">基础地址 *</label>
+        <label :for="`${idPrefix}-baseUrl`" class="block text-sm font-medium text-moon/90"
+          >基础地址 *</label
+        >
         <InputText
           :id="`${idPrefix}-baseUrl`"
           v-model="formData.baseUrl"
@@ -406,6 +483,54 @@ watch(
         <small v-if="formErrors.baseUrl" class="p-error block mt-1">{{ formErrors.baseUrl }}</small>
       </div>
 
+      <!-- 模型标识 -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label :for="`${idPrefix}-model`" class="block text-sm font-medium text-moon/90"
+            >模型标识 *</label
+          >
+          <Button
+            v-if="
+              formData.apiKey?.trim() &&
+              (formData.provider === 'gemini' || formData.baseUrl?.trim())
+            "
+            label="刷新列表"
+            icon="pi pi-refresh"
+            class="p-button-text p-button-sm icon-button-hover"
+            :loading="isLoadingModels"
+            @click="fetchAvailableModels"
+          />
+        </div>
+        <Dropdown
+          :id="`${idPrefix}-model`"
+          v-model="formData.model"
+          :options="modelOptions"
+          optionLabel="label"
+          optionValue="value"
+          :editable="true"
+          :loading="isLoadingModels"
+          placeholder="例如: gpt-4, gemini-pro"
+          class="w-full"
+          :class="{ 'p-invalid': formErrors.model }"
+          filter
+        >
+          <template #option="slotProps">
+            <div class="flex flex-col">
+              <span class="font-medium">{{ slotProps.option.label }}</span>
+              <span
+                v-if="slotProps.option.value !== slotProps.option.label"
+                class="text-xs text-moon/60"
+                >{{ slotProps.option.value }}</span
+              >
+            </div>
+          </template>
+        </Dropdown>
+        <small v-if="formErrors.model" class="p-error block mt-1">{{ formErrors.model }}</small>
+        <small v-if="availableModels.length > 0" class="text-moon/60 text-xs block mt-1">
+          找到 {{ availableModels.length }} 个可用模型
+        </small>
+      </div>
+
       <!-- AI 配置信息（只读） -->
       <div class="space-y-3 pt-3 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
@@ -414,7 +539,12 @@ watch(
             label="获取配置"
             icon="pi pi-download"
             class="p-button-text p-button-sm icon-button-hover"
-            :disabled="isTesting || !formData.apiKey?.trim() || !formData.model?.trim() || (formData.provider !== 'gemini' && !formData.baseUrl?.trim())"
+            :disabled="
+              isTesting ||
+              !formData.apiKey?.trim() ||
+              !formData.model?.trim() ||
+              (formData.provider !== 'gemini' && !formData.baseUrl?.trim())
+            "
             :loading="isTesting"
             @click="testModel"
           />
@@ -423,21 +553,28 @@ watch(
           <div class="space-y-1">
             <label class="text-xs text-moon/70">最大输入 Token</label>
             <InputText
-              :value="(formData.maxTokens ?? 0) === 0 ? '无限制' : (formData.maxTokens ?? 0).toLocaleString()"
+              :value="
+                (formData.maxTokens ?? 0) === 0
+                  ? '无限制'
+                  : (formData.maxTokens ?? 0).toLocaleString()
+              "
               disabled
               class="w-full"
             />
-            <small v-if="aiConfig?.maxTokens && aiConfig.maxTokens > 0 && formData.maxTokens !== aiConfig.maxTokens" class="text-xs text-moon/70 block mt-1">
+            <small
+              v-if="
+                aiConfig?.maxTokens &&
+                aiConfig.maxTokens > 0 &&
+                formData.maxTokens !== aiConfig.maxTokens
+              "
+              class="text-xs text-moon/70 block mt-1"
+            >
               从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
             </small>
           </div>
           <div class="space-y-1">
             <label class="text-xs text-moon/70">上下文窗口</label>
-            <InputText
-              :value="getContextWindowDisplay()"
-              disabled
-              class="w-full"
-            />
+            <InputText :value="getContextWindowDisplay()" disabled class="w-full" />
           </div>
         </div>
       </div>
@@ -451,7 +588,9 @@ watch(
             <div class="flex items-center justify-between mb-3">
               <div
                 class="flex items-center cursor-pointer"
-                @click="formData.isDefault.translation.enabled = !formData.isDefault.translation.enabled"
+                @click="
+                  formData.isDefault.translation.enabled = !formData.isDefault.translation.enabled
+                "
               >
                 <Checkbox
                   :id="`${idPrefix}-default-translation`"
@@ -459,9 +598,14 @@ watch(
                   :binary="true"
                   @click.stop
                 />
-                <label :for="`${idPrefix}-default-translation`" class="ml-2 text-sm cursor-pointer">翻译</label>
+                <label :for="`${idPrefix}-default-translation`" class="ml-2 text-sm cursor-pointer"
+                  >翻译</label
+                >
               </div>
-              <span v-if="formData.isDefault.translation.enabled" class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">
+              <span
+                v-if="formData.isDefault.translation.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
                 {{ formData.isDefault.translation.temperature }}
               </span>
             </div>
@@ -482,7 +626,9 @@ watch(
             <div class="flex items-center justify-between mb-3">
               <div
                 class="flex items-center cursor-pointer"
-                @click="formData.isDefault.proofreading.enabled = !formData.isDefault.proofreading.enabled"
+                @click="
+                  formData.isDefault.proofreading.enabled = !formData.isDefault.proofreading.enabled
+                "
               >
                 <Checkbox
                   :id="`${idPrefix}-default-proofreading`"
@@ -490,9 +636,14 @@ watch(
                   :binary="true"
                   @click.stop
                 />
-                <label :for="`${idPrefix}-default-proofreading`" class="ml-2 text-sm cursor-pointer">校对</label>
+                <label :for="`${idPrefix}-default-proofreading`" class="ml-2 text-sm cursor-pointer"
+                  >校对</label
+                >
               </div>
-              <span v-if="formData.isDefault.proofreading.enabled" class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">
+              <span
+                v-if="formData.isDefault.proofreading.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
                 {{ formData.isDefault.proofreading.temperature }}
               </span>
             </div>
@@ -513,7 +664,9 @@ watch(
             <div class="flex items-center justify-between mb-3">
               <div
                 class="flex items-center cursor-pointer"
-                @click="formData.isDefault.polishing.enabled = !formData.isDefault.polishing.enabled"
+                @click="
+                  formData.isDefault.polishing.enabled = !formData.isDefault.polishing.enabled
+                "
               >
                 <Checkbox
                   :id="`${idPrefix}-default-polishing`"
@@ -521,9 +674,14 @@ watch(
                   :binary="true"
                   @click.stop
                 />
-                <label :for="`${idPrefix}-default-polishing`" class="ml-2 text-sm cursor-pointer">润色</label>
+                <label :for="`${idPrefix}-default-polishing`" class="ml-2 text-sm cursor-pointer"
+                  >润色</label
+                >
               </div>
-              <span v-if="formData.isDefault.polishing.enabled" class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">
+              <span
+                v-if="formData.isDefault.polishing.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
                 {{ formData.isDefault.polishing.temperature }}
               </span>
             </div>
@@ -544,7 +702,10 @@ watch(
             <div class="flex items-center justify-between mb-3">
               <div
                 class="flex items-center cursor-pointer"
-                @click="formData.isDefault.characterExtraction.enabled = !formData.isDefault.characterExtraction.enabled"
+                @click="
+                  formData.isDefault.characterExtraction.enabled =
+                    !formData.isDefault.characterExtraction.enabled
+                "
               >
                 <Checkbox
                   :id="`${idPrefix}-default-characterExtraction`"
@@ -552,9 +713,16 @@ watch(
                   :binary="true"
                   @click.stop
                 />
-                <label :for="`${idPrefix}-default-characterExtraction`" class="ml-2 text-sm cursor-pointer">角色提取</label>
+                <label
+                  :for="`${idPrefix}-default-characterExtraction`"
+                  class="ml-2 text-sm cursor-pointer"
+                  >角色提取</label
+                >
               </div>
-              <span v-if="formData.isDefault.characterExtraction.enabled" class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">
+              <span
+                v-if="formData.isDefault.characterExtraction.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
                 {{ formData.isDefault.characterExtraction.temperature }}
               </span>
             </div>
@@ -575,7 +743,10 @@ watch(
             <div class="flex items-center justify-between mb-3">
               <div
                 class="flex items-center cursor-pointer"
-                @click="formData.isDefault.terminologyExtraction.enabled = !formData.isDefault.terminologyExtraction.enabled"
+                @click="
+                  formData.isDefault.terminologyExtraction.enabled =
+                    !formData.isDefault.terminologyExtraction.enabled
+                "
               >
                 <Checkbox
                   :id="`${idPrefix}-default-terminologyExtraction`"
@@ -583,9 +754,16 @@ watch(
                   :binary="true"
                   @click.stop
                 />
-                <label :for="`${idPrefix}-default-terminologyExtraction`" class="ml-2 text-sm cursor-pointer">术语提取</label>
+                <label
+                  :for="`${idPrefix}-default-terminologyExtraction`"
+                  class="ml-2 text-sm cursor-pointer"
+                  >术语提取</label
+                >
               </div>
-              <span v-if="formData.isDefault.terminologyExtraction.enabled" class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">
+              <span
+                v-if="formData.isDefault.terminologyExtraction.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
                 {{ formData.isDefault.terminologyExtraction.temperature }}
               </span>
             </div>
@@ -610,7 +788,12 @@ watch(
         class="p-button-text icon-button-hover"
         @click="handleCancel"
       />
-      <Button label="保存" icon="pi pi-check" class="p-button-primary icon-button-hover" @click="handleSave" />
+      <Button
+        label="保存"
+        icon="pi pi-check"
+        class="p-button-primary icon-button-hover"
+        @click="handleSave"
+      />
     </template>
   </Dialog>
 </template>

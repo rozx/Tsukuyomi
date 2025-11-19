@@ -16,6 +16,7 @@ declare module 'vue' {
     AppHeader: typeof import('./components/AppHeader.vue')['default']
     AppMessage: typeof import('./components/AppMessage.vue')['default']
     AppSideMenu: typeof import('./components/AppSideMenu.vue')['default']
+    AutoComplete: typeof import('primevue/autocomplete')['default']
     BookDialog: typeof import('./components/BookDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/CoverManagerDialog.vue')['default']
     Menu: typeof import('primevue/menu')['default']

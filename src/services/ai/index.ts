@@ -5,6 +5,7 @@ import type {
   AIConfigResult,
   TextGenerationRequest,
   TextGenerationResult,
+  AvailableModelsResult,
 } from 'src/types/ai/ai-service';
 import { OpenAIService } from './providers';
 import { GeminiService } from './providers';
@@ -40,19 +41,35 @@ export class AIServiceFactory {
   }
 
   /**
-   * 生成文本（统一接口）
+   * 生成文本（流式模式，统一接口）
    * @param provider AI 提供商
    * @param config 服务配置
    * @param request 文本生成请求
-   * @returns 生成的文本结果
+   * @param onChunk 流式数据回调函数，每次收到数据块时调用
+   * @returns 生成的完整文本结果
    */
   static async generateText(
     provider: AIProvider,
     config: AIServiceConfig,
     request: TextGenerationRequest,
+    onChunk?: import('src/types/ai/ai-service').TextGenerationStreamCallback,
   ): Promise<TextGenerationResult> {
     const service = this.getService(provider);
-    return service.generateText(config, request);
+    return service.generateText(config, request, onChunk);
+  }
+
+  /**
+   * 获取可用模型列表（统一接口）
+   * @param provider AI 提供商
+   * @param config 服务配置（至少需要 apiKey 和可选的 baseUrl）
+   * @returns 可用模型列表
+   */
+  static async getAvailableModels(
+    provider: AIProvider,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  ): Promise<AvailableModelsResult> {
+    const service = this.getService(provider);
+    return service.getAvailableModels(config);
   }
 }
 

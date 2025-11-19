@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { AIModel } from 'src/types/ai/ai-model';
+import { useSettingsStore } from './settings';
 
 const STORAGE_KEY = 'luna-ai-models';
 
@@ -53,9 +54,20 @@ export const useAIModelsStore = defineStore('aiModels', {
 
     /**
      * 获取默认用于特定任务的模型
+     * 优先使用设置中的配置，如果没有则回退到模型的 isDefault 配置
      */
     getDefaultModelForTask: (state) => {
       return (task: keyof AIModel['isDefault']): AIModel | undefined => {
+        // 优先使用设置中的配置
+        const settingsStore = useSettingsStore();
+        const modelIdFromSettings = settingsStore.getTaskDefaultModelId(task);
+        if (modelIdFromSettings) {
+          const model = state.models.find((m) => m.id === modelIdFromSettings && m.enabled);
+          if (model) {
+            return model;
+          }
+        }
+        // 回退到模型的 isDefault 配置（向后兼容）
         return state.models.find((model) => model.enabled && model.isDefault[task]?.enabled);
       };
     },

@@ -29,6 +29,9 @@
   --primary-opacity-60: rgba(240, 69, 139, 0.6);
   --primary-opacity-70: rgba(240, 69, 139, 0.7);
   --primary-opacity-80: rgba(240, 69, 139, 0.8);
+  --primary-opacity-85: rgba(240, 69, 139, 0.85);
+  --primary-opacity-90: rgba(240, 69, 139, 0.9);
+  --primary-opacity-95: rgba(240, 69, 139, 0.95);
   --primary-opacity-100: rgba(240, 69, 139, 1);
 
   /* Night colors - dark backgrounds */
@@ -63,15 +66,37 @@
   --white-opacity-20: rgba(255, 255, 255, 0.2);
   --white-opacity-25: rgba(255, 255, 255, 0.25);
 
+  /* Danger/Error colors - red */
+  --danger-color: #f87171; /* red-400 */
+  --danger-opacity-15: rgba(248, 113, 113, 0.15);
+  --danger-opacity-20: rgba(248, 113, 113, 0.2);
+  --danger-opacity-25: rgba(248, 113, 113, 0.25);
+  --danger-opacity-30: rgba(248, 113, 113, 0.3);
+  --danger-opacity-40: rgba(248, 113, 113, 0.4);
+  --danger-opacity-60: rgba(248, 113, 113, 0.6);
+  --danger-opacity-90: rgba(248, 113, 113, 0.9);
+  --danger-opacity-100: rgba(248, 113, 113, 1);
+
+  /* Warning colors - yellow/amber */
+  --warning-color: #fbbf24; /* amber-400 */
+  --warning-opacity-90: rgba(251, 191, 36, 0.9);
+
+  /* Black with opacity - for shadows */
+  --black-opacity-10: rgba(0, 0, 0, 0.1);
+  --black-opacity-15: rgba(0, 0, 0, 0.15);
+  --black-opacity-20: rgba(0, 0, 0, 0.2);
+  --black-opacity-30: rgba(0, 0, 0, 0.3);
+  --black-opacity-50: rgba(0, 0, 0, 0.5);
+
   /* PrimeVue surface tokens (aura) - aligned with TailwindCSS night colors */
-  --surface-ground: #0b1026; /* night-900 from TailwindCSS config */
-  --surface-section: #0b1026;
-  --surface-card: #0e1535; /* between night-900 and luna-950 */
-  --surface-overlay: rgba(7, 10, 26, 0.92); /* night-950 with alpha */
-  --surface-border: rgba(255, 255, 255, 0.1);
-  --text-color: rgba(246, 243, 209, 0.92); /* moon-500 with opacity */
-  --text-muted-color: rgba(246, 243, 209, 0.7); /* moon-500 with lower opacity */
-  --highlight-bg: rgba(240, 69, 139, 0.18); /* luna-500 with opacity */
+  --surface-ground: var(--night-900); /* night-900 from TailwindCSS config */
+  --surface-section: var(--night-900);
+  --surface-card: var(--night-900); /* night-900 from TailwindCSS config */
+  --surface-overlay: rgba(7, 10, 26, 0.92); /* night-950 with alpha - using rgba for opacity */
+  --surface-border: var(--white-opacity-10);
+  --text-color: var(--moon-opacity-92); /* moon-500 with opacity */
+  --text-muted-color: var(--moon-opacity-70); /* moon-500 with lower opacity */
+  --highlight-bg: rgba(240, 69, 139, 0.18); /* luna-500 with opacity - using rgba for custom opacity */
   --highlight-text-color: #ffffff;
 }
 
@@ -87,156 +112,156 @@ body,
 
 /* 基础按钮样式 */
 .p-button {
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--white-opacity-12) !important;
+  background: var(--white-opacity-4) !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   border-radius: 8px !important;
   padding: 0.625rem 1.25rem !important;
   font-weight: 500 !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 2px var(--black-opacity-10) !important;
 }
 
 .p-button:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) !important;
+  background: var(--white-opacity-8) !important;
+  border-color: var(--white-opacity-20) !important;
+  box-shadow: 0 2px 4px var(--black-opacity-15) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-button:active {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-10) !important;
   transform: translateY(0) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 2px var(--black-opacity-10) !important;
 }
 
 .p-button:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
 }
 
 /* 主按钮样式 */
 .p-button-primary {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 0.9) 0%, rgba(240, 69, 139, 0.85) 100%) !important;
-  border-color: rgba(240, 69, 139, 0.6) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-80) 0%, var(--primary-opacity-85) 100%) !important;
+  border-color: var(--primary-opacity-60) !important;
   color: white !important;
-  box-shadow: 0 2px 8px rgba(240, 69, 139, 0.3) !important;
+  box-shadow: 0 2px 8px var(--primary-opacity-30) !important;
 }
 
 .p-button-primary:hover {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 1) 0%, rgba(240, 69, 139, 0.95) 100%) !important;
-  border-color: rgba(240, 69, 139, 0.8) !important;
-  box-shadow: 0 4px 12px rgba(240, 69, 139, 0.4) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-100) 0%, var(--primary-opacity-95) 100%) !important;
+  border-color: var(--primary-opacity-80) !important;
+  box-shadow: 0 4px 12px var(--primary-opacity-40) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-button-primary:active {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 0.95) 0%, rgba(240, 69, 139, 0.9) 100%) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-95) 0%, var(--primary-opacity-80) 100%) !important;
   transform: translateY(0) !important;
-  box-shadow: 0 2px 6px rgba(240, 69, 139, 0.3) !important;
+  box-shadow: 0 2px 6px var(--primary-opacity-30) !important;
 }
 
 /* 文本按钮样式 */
 .p-button-text {
   background: transparent !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: rgba(246, 243, 209, 0.85) !important;
+  border-color: var(--white-opacity-10) !important;
+  color: var(--moon-opacity-85) !important;
   box-shadow: none !important;
 }
 
 .p-button-text:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  color: rgba(246, 243, 209, 0.95) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  background: var(--white-opacity-6) !important;
+  border-color: var(--white-opacity-18) !important;
+  color: var(--moon-opacity-95) !important;
+  box-shadow: 0 1px 3px var(--black-opacity-10) !important;
 }
 
 .p-button-text:active {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: var(--white-opacity-8) !important;
 }
 
 /* 危险按钮样式 */
 .p-button-danger {
-  background: rgba(248, 113, 113, 0.15) !important;
-  border-color: rgba(248, 113, 113, 0.4) !important;
-  color: rgba(248, 113, 113, 0.9) !important;
-  box-shadow: 0 1px 2px rgba(248, 113, 113, 0.2) !important;
+  background: var(--danger-opacity-15) !important;
+  border-color: var(--danger-opacity-40) !important;
+  color: var(--danger-opacity-90) !important;
+  box-shadow: 0 1px 2px var(--danger-opacity-20) !important;
 }
 
 .p-button-danger:hover {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.6) !important;
-  box-shadow: 0 2px 6px rgba(248, 113, 113, 0.3) !important;
+  background: var(--danger-opacity-25) !important;
+  border-color: var(--danger-opacity-60) !important;
+  box-shadow: 0 2px 6px var(--danger-opacity-30) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-button-danger:active {
-  background: rgba(248, 113, 113, 0.3) !important;
+  background: var(--danger-opacity-30) !important;
   transform: translateY(0) !important;
-  box-shadow: 0 1px 3px rgba(248, 113, 113, 0.2) !important;
+  box-shadow: 0 1px 3px var(--danger-opacity-20) !important;
 }
 
 /* 图标按钮样式 */
 .p-button-icon-only {
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--white-opacity-12) !important;
+  background: var(--white-opacity-4) !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   border-radius: 8px !important;
   min-width: 2rem !important;
   height: 2rem !important;
   padding: 0.5rem !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 2px var(--black-opacity-10) !important;
 }
 
 .p-button-icon-only:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) !important;
+  background: var(--white-opacity-8) !important;
+  border-color: var(--white-opacity-20) !important;
+  box-shadow: 0 2px 4px var(--black-opacity-15) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-button-icon-only:active {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-10) !important;
   transform: translateY(0) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 1px 2px var(--black-opacity-10) !important;
 }
 
 /* 图标按钮 - 文本按钮样式 */
 .p-button-icon-only.p-button-text {
   background: transparent !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: var(--white-opacity-10) !important;
   box-shadow: none !important;
 }
 
 .p-button-icon-only.p-button-text:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  background: var(--white-opacity-6) !important;
+  border-color: var(--white-opacity-18) !important;
+  box-shadow: 0 1px 3px var(--black-opacity-10) !important;
 }
 
 /* 图标按钮 - 危险按钮样式 */
 .p-button-icon-only.p-button-danger {
-  background: rgba(248, 113, 113, 0.15) !important;
-  border-color: rgba(248, 113, 113, 0.4) !important;
-  color: rgba(248, 113, 113, 0.9) !important;
-  box-shadow: 0 1px 2px rgba(248, 113, 113, 0.2) !important;
+  background: var(--danger-opacity-15) !important;
+  border-color: var(--danger-opacity-40) !important;
+  color: var(--danger-opacity-90) !important;
+  box-shadow: 0 1px 2px var(--danger-opacity-20) !important;
 }
 
 .p-button-icon-only.p-button-danger:hover {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.6) !important;
-  box-shadow: 0 2px 6px rgba(248, 113, 113, 0.3) !important;
+  background: var(--danger-opacity-25) !important;
+  border-color: var(--danger-opacity-60) !important;
+  box-shadow: 0 2px 6px var(--danger-opacity-30) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-button-icon-only.p-button-danger:active {
-  background: rgba(248, 113, 113, 0.3) !important;
+  background: var(--danger-opacity-30) !important;
   transform: translateY(0) !important;
-  box-shadow: 0 1px 3px rgba(248, 113, 113, 0.2) !important;
+  box-shadow: 0 1px 3px var(--danger-opacity-20) !important;
 }
 
 .p-button-icon-only:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
 }
 
 /* ============================================
@@ -269,8 +294,8 @@ body,
    ============================================ */
 
 .p-card {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-3) !important;
+  border: 1px solid var(--white-opacity-10) !important;
 }
 
 .p-card-body {
@@ -283,14 +308,14 @@ body,
 
 .p-dialog {
   border-radius: 12px !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 20px 60px var(--black-opacity-50) !important;
+  border: 1px solid var(--white-opacity-10) !important;
   overflow: hidden;
 }
 
 .p-dialog-header {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-5) !important;
+  border-bottom: 1px solid var(--white-opacity-10) !important;
   padding: 1.25rem 1.5rem !important;
   border-radius: 12px 12px 0 0 !important;
 }
@@ -298,18 +323,18 @@ body,
 .p-dialog-title {
   font-size: 1.25rem !important;
   font-weight: 600 !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  color: var(--moon-opacity-95) !important;
 }
 
 .p-dialog-content {
-  background: rgba(14, 21, 53, 0.95) !important;
+  background: rgba(11, 16, 38, 0.98) !important; /* Using rgba for custom opacity value */
   padding: 1.5rem !important;
   border-radius: 0;
 }
 
 .p-dialog-footer {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-3) !important;
+  border-top: 1px solid var(--white-opacity-10) !important;
   padding: 1rem 1.5rem !important;
   border-radius: 0 0 12px 12px !important;
   display: flex !important;
@@ -323,16 +348,16 @@ body,
 
 .p-confirm-dialog {
   border-radius: 12px !important;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 20px 60px var(--black-opacity-50) !important;
+  border: 1px solid var(--white-opacity-10) !important;
   overflow: hidden;
-  background: rgba(14, 21, 53, 0.98) !important;
+  background: rgba(11, 16, 38, 0.98) !important; /* Using rgba for custom opacity value */
   backdrop-filter: blur(10px) !important;
 }
 
 .p-confirm-dialog .p-dialog-header {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-5) !important;
+  border-bottom: 1px solid var(--white-opacity-10) !important;
   padding: 1.25rem 1.5rem !important;
   border-radius: 12px 12px 0 0 !important;
 }
@@ -340,7 +365,7 @@ body,
 .p-confirm-dialog .p-dialog-title {
   font-size: 1.25rem !important;
   font-weight: 600 !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  color: var(--moon-opacity-95) !important;
   display: flex !important;
   align-items: center !important;
   gap: 0.75rem !important;
@@ -348,11 +373,11 @@ body,
 
 .p-confirm-dialog .p-dialog-title .p-confirm-dialog-icon {
   font-size: 1.5rem !important;
-  color: rgba(251, 191, 36, 0.9) !important;
+  color: var(--warning-opacity-90) !important;
 }
 
 .p-confirm-dialog .p-dialog-content {
-  background: rgba(14, 21, 53, 0.95) !important;
+  background: rgba(11, 16, 38, 0.98) !important; /* Using rgba for custom opacity value */
   padding: 1.5rem !important;
   border-radius: 0;
   display: flex !important;
@@ -361,7 +386,7 @@ body,
 }
 
 .p-confirm-dialog .p-confirm-dialog-message {
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
   font-size: 0.9375rem !important;
   line-height: 1.6 !important;
   margin: 0 !important;
@@ -369,8 +394,8 @@ body,
 }
 
 .p-confirm-dialog .p-dialog-footer {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-3) !important;
+  border-top: 1px solid var(--white-opacity-10) !important;
   padding: 1rem 1.5rem !important;
   border-radius: 0 0 12px 12px !important;
   display: flex !important;
@@ -387,31 +412,31 @@ body,
 
 .p-confirm-dialog .p-dialog-footer .p-button-text {
   background: transparent !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: rgba(246, 243, 209, 0.85) !important;
+  border-color: var(--white-opacity-10) !important;
+  color: var(--moon-opacity-85) !important;
 }
 
 .p-confirm-dialog .p-dialog-footer .p-button-text:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  background: var(--white-opacity-6) !important;
+  border-color: var(--white-opacity-18) !important;
+  color: var(--moon-opacity-95) !important;
 }
 
 .p-confirm-dialog .p-dialog-footer .p-button-danger {
-  background: rgba(248, 113, 113, 0.15) !important;
-  border-color: rgba(248, 113, 113, 0.4) !important;
-  color: rgba(248, 113, 113, 0.9) !important;
+  background: var(--danger-opacity-15) !important;
+  border-color: var(--danger-opacity-40) !important;
+  color: var(--danger-opacity-90) !important;
 }
 
 .p-confirm-dialog .p-dialog-footer .p-button-danger:hover {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.6) !important;
-  color: rgba(248, 113, 113, 1) !important;
+  background: var(--danger-opacity-25) !important;
+  border-color: var(--danger-opacity-60) !important;
+  color: var(--danger-opacity-100) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-confirm-dialog .p-dialog-footer .p-button-danger:active {
-  background: rgba(248, 113, 113, 0.3) !important;
+  background: var(--danger-opacity-30) !important;
   transform: translateY(0) !important;
 }
 
@@ -419,34 +444,167 @@ body,
    全局输入框样式
    ============================================ */
 
-.p-inputtext,
-.p-dropdown {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+.p-inputtext {
+  background: var(--white-opacity-5) !important;
+  border: 1px solid var(--white-opacity-15) !important;
   border-radius: 8px !important;
   padding: 0.625rem 0.875rem !important;
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
   transition: all 0.2s ease !important;
   min-height: 2.5rem !important;
   display: flex !important;
   align-items: center !important;
 }
 
-.p-inputtext:hover,
-.p-dropdown:hover {
-  border-color: rgba(240, 69, 139, 0.5) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+.p-inputtext:hover {
+  border-color: var(--primary-opacity-50) !important;
+  background: var(--white-opacity-8) !important;
 }
 
-.p-inputtext:focus,
+.p-inputtext:focus {
+  border-color: var(--primary-opacity-80) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
+  background: var(--white-opacity-8) !important;
+}
+
+/* Dropdown 样式 - 更轻量简洁 */
+.p-dropdown {
+  background: var(--white-opacity-4) !important;
+  border: 1px solid var(--white-opacity-10) !important;
+  border-radius: 6px !important;
+  padding: 0 !important;
+  color: var(--moon-opacity-90) !important;
+  transition: all 0.2s ease !important;
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  display: flex !important;
+  align-items: center !important;
+  font-size: 0.875rem !important;
+}
+
+.p-dropdown:hover {
+  border-color: var(--primary-opacity-40) !important;
+  background: var(--white-opacity-6) !important;
+}
+
 .p-dropdown:not(.p-disabled).p-focus {
-  border-color: rgba(240, 69, 139, 0.8) !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--primary-opacity-70) !important;
+  box-shadow: 0 0 0 2px var(--primary-opacity-15) !important;
+  background: var(--white-opacity-6) !important;
+}
+
+.p-dropdown .p-dropdown-label {
+  padding: 0.625rem 0.875rem !important;
+  padding-right: 0.5rem !important;
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+  color: var(--moon-opacity-90) !important;
+  flex: 1 !important;
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  display: flex !important;
+  align-items: center !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.p-dropdown .p-dropdown-label.p-inputtext {
+  padding: 0.625rem 0.875rem !important;
+  padding-right: 0.5rem !important;
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.p-dropdown .p-dropdown-label:focus,
+.p-dropdown .p-dropdown-label.p-inputtext:focus {
+  box-shadow: none !important;
+  outline: none !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.p-dropdown .p-dropdown-trigger {
+  width: 1.5rem !important;
+  min-width: 1.5rem !important;
+  height: 2.5rem !important;
+  color: var(--moon-opacity-60) !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+
+.p-dropdown .p-dropdown-trigger:hover {
+  color: var(--moon-opacity-90) !important;
+}
+
+.p-dropdown .p-inputwrapper-content {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+/* ============================================
+   全局 Dropdown 面板样式
+   ============================================ */
+
+.p-dropdown-panel {
+  background: rgba(11, 16, 38, 0.98) !important; /* Using rgba for custom opacity value */
+  border: 1px solid var(--white-opacity-10) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px var(--black-opacity-30) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.p-dropdown-items-wrapper {
+  background: transparent !important;
+}
+
+.p-dropdown-item {
+  color: var(--moon-opacity-90) !important;
+  padding: 0.625rem 0.875rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.p-dropdown-item:hover {
+  background: var(--primary-opacity-15) !important;
+  color: var(--moon-opacity-100) !important;
+}
+
+.p-dropdown-item.p-highlight {
+  background: var(--primary-opacity-20) !important;
+  color: var(--moon-opacity-100) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.p-dropdown-empty-message {
+  color: var(--moon-opacity-60) !important;
+  padding: 0.75rem 0.875rem !important;
+  text-align: center !important;
+  font-size: 0.875rem !important;
+  background: transparent !important;
+}
+
+.p-dropdown-header {
+  color: var(--moon-opacity-60) !important;
+  padding: 0.75rem 0.875rem !important;
+  text-align: center !important;
+  font-size: 0.875rem !important;
+  background: transparent !important;
+  border-bottom: 1px solid var(--white-opacity-10) !important;
 }
 
 .p-inputtext::placeholder {
-  color: rgba(246, 243, 209, 0.4) !important;
+  color: var(--moon-opacity-40) !important;
 }
 
 /* ============================================
@@ -456,8 +614,8 @@ body,
 .p-inputnumber {
   width: 100%;
   display: flex !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-5) !important;
+  border: 1px solid var(--white-opacity-10) !important;
   border-radius: 8px !important;
   overflow: hidden !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -465,14 +623,14 @@ body,
 }
 
 .p-inputnumber:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
+  background: var(--white-opacity-8) !important;
+  border-color: var(--white-opacity-20) !important;
 }
 
 .p-inputnumber:focus-within {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(240, 69, 139, 0.5) !important;
-  box-shadow: 0 0 0 2px rgba(240, 69, 139, 0.2) !important;
+  background: var(--white-opacity-8) !important;
+  border-color: var(--primary-opacity-50) !important;
+  box-shadow: 0 0 0 2px var(--primary-opacity-20) !important;
 }
 
 .p-inputnumber .p-inputnumber-input-wrapper {
@@ -484,7 +642,7 @@ body,
 .p-inputnumber .p-inputnumber-input {
   background: transparent !important;
   border: none !important;
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
   padding: 0 1rem !important;
   font-size: 0.875rem !important;
   flex: 1 !important;
@@ -498,7 +656,7 @@ body,
 }
 
 .p-inputnumber .p-inputnumber-input::placeholder {
-  color: rgba(246, 243, 209, 0.4) !important;
+  color: var(--moon-opacity-40) !important;
 }
 
 /* 按钮组容器 */
@@ -507,7 +665,7 @@ body,
   flex-direction: column !important;
   background: transparent !important;
   border: none !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-left: 1px solid var(--white-opacity-10) !important;
   flex-shrink: 0 !important;
   width: 32px !important;
   margin: 0 !important;
@@ -518,7 +676,7 @@ body,
 .p-inputnumber .p-inputnumber-button {
   background: transparent !important;
   border: none !important;
-  color: rgba(246, 243, 209, 0.8) !important;
+  color: var(--moon-opacity-80) !important;
   width: 32px !important;
   flex: 1 !important;
   min-height: 0 !important;
@@ -532,12 +690,12 @@ body,
 }
 
 .p-inputnumber .p-inputnumber-button:hover {
-  background: rgba(240, 69, 139, 0.2) !important;
-  color: rgba(246, 243, 209, 1) !important;
+  background: var(--primary-opacity-20) !important;
+  color: var(--moon-opacity-100) !important;
 }
 
 .p-inputnumber .p-inputnumber-button:active {
-  background: rgba(240, 69, 139, 0.3) !important;
+  background: var(--primary-opacity-30) !important;
 }
 
 .p-inputnumber .p-inputnumber-button:focus {
@@ -547,7 +705,7 @@ body,
 
 /* 上按钮分隔线 */
 .p-inputnumber .p-inputnumber-button-up {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-bottom: 1px solid var(--white-opacity-10) !important;
 }
 
 /* 按钮图标样式 */
@@ -565,22 +723,22 @@ body,
   align-items: stretch !important;
   border-radius: 10px !important;
   overflow: hidden !important;
-  box-shadow: 0 2px 8px rgba(240, 69, 139, 0.15) !important;
+  box-shadow: 0 2px 8px var(--primary-opacity-15) !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .p-inputgroup:hover {
-  box-shadow: 0 4px 12px rgba(240, 69, 139, 0.25) !important;
+  box-shadow: 0 4px 12px var(--primary-opacity-25) !important;
   transform: translateY(-1px) !important;
 }
 
 .p-inputgroup .p-inputtext {
   border-radius: 0 !important;
-  border: 1px solid rgba(240, 69, 139, 0.2) !important;
+  border: 1px solid var(--primary-opacity-20) !important;
   border-right: none !important;
   flex: 1 !important;
   font-size: 0.9375rem !important;
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--white-opacity-5) !important;
 }
 
 .p-inputgroup .p-inputtext:first-child {
@@ -597,14 +755,14 @@ body,
 
 .p-inputgroup .p-inputtext:only-child {
   border-radius: 10px !important;
-  border: 1px solid rgba(240, 69, 139, 0.2) !important;
+  border: 1px solid var(--primary-opacity-20) !important;
 }
 
 .p-inputgroup .p-inputgroup-addon,
 .p-inputgroup-addon {
-  background: rgba(240, 69, 139, 0.2) !important;
-  border: 1px solid rgba(240, 69, 139, 0.3) !important;
-  color: rgba(246, 243, 209, 0.9) !important;
+  background: var(--primary-opacity-20) !important;
+  border: 1px solid var(--primary-opacity-30) !important;
+  color: var(--moon-opacity-90) !important;
   padding: 0.75rem 1rem !important;
   display: flex !important;
   align-items: center !important;
@@ -615,7 +773,7 @@ body,
 
 .p-inputgroup .p-inputgroup-addon i,
 .p-inputgroup-addon i {
-  color: rgba(246, 243, 209, 0.9) !important;
+  color: var(--moon-opacity-90) !important;
 }
 
 .p-inputgroup .p-inputgroup-addon:first-child {
@@ -632,39 +790,39 @@ body,
 
 .p-inputgroup:hover .p-inputtext,
 .p-inputgroup:hover .p-inputgroup-addon {
-  border-color: rgba(240, 69, 139, 0.6) !important;
+  border-color: var(--primary-opacity-60) !important;
 }
 
 .p-inputgroup:hover .p-inputtext {
-  background: rgba(240, 69, 139, 0.08) !important;
+  background: var(--primary-opacity-10) !important;
 }
 
 .p-inputgroup:hover .p-inputgroup-addon {
-  background: rgba(240, 69, 139, 0.25) !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  background: var(--primary-opacity-25) !important;
+  color: var(--moon-opacity-95) !important;
 }
 
 .p-inputgroup:hover .p-inputgroup-addon i {
-  color: rgba(246, 243, 209, 0.95) !important;
+  color: var(--moon-opacity-95) !important;
 }
 
 .p-inputgroup .p-inputtext:focus,
 .p-inputgroup.p-focus .p-inputtext {
-  border-color: rgba(240, 69, 139, 0.8) !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
-  background: rgba(240, 69, 139, 0.1) !important;
+  border-color: var(--primary-opacity-80) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
+  background: var(--primary-opacity-10) !important;
 }
 
 .p-inputgroup .p-inputtext:focus ~ .p-inputgroup-addon,
 .p-inputgroup.p-focus .p-inputgroup-addon {
-  border-color: rgba(240, 69, 139, 0.8) !important;
-  background: rgba(240, 69, 139, 0.3) !important;
-  color: rgba(246, 243, 209, 1) !important;
+  border-color: var(--primary-opacity-80) !important;
+  background: var(--primary-opacity-30) !important;
+  color: var(--moon-opacity-100) !important;
 }
 
 .p-inputgroup .p-inputtext:focus ~ .p-inputgroup-addon i,
 .p-inputgroup.p-focus .p-inputgroup-addon i {
-  color: rgba(246, 243, 209, 1) !important;
+  color: var(--moon-opacity-100) !important;
 }
 
 .p-inputgroup .p-inputgroup-addon .p-button {
@@ -683,20 +841,20 @@ body,
 }
 
 .p-inputgroup .p-inputgroup-addon .p-button:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-10) !important;
   border-radius: 6px !important;
   transform: scale(1.05) !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 2px 4px var(--black-opacity-10) !important;
 }
 
 .p-inputgroup .p-inputgroup-addon .p-button-icon {
-  color: rgba(246, 243, 209, 0.75) !important;
+  color: var(--moon-opacity-70) !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   font-size: 0.875rem !important;
 }
 
 .p-inputgroup .p-inputgroup-addon .p-button:hover .p-button-icon {
-  color: rgba(246, 243, 209, 1) !important;
+  color: var(--moon-opacity-100) !important;
   transform: scale(1.15) !important;
 }
 
@@ -711,7 +869,7 @@ body,
 }
 
 .search-input::placeholder {
-  color: rgba(246, 243, 209, 0.45) !important;
+  color: var(--moon-opacity-40) !important;
   font-weight: 400 !important;
 }
 
@@ -730,14 +888,14 @@ body,
    ============================================ */
 
 .p-slider {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-10) !important;
   border-radius: 6px !important;
   height: 8px !important;
 }
 
 .p-slider .p-slider-handle {
-  background: rgba(240, 69, 139, 1) !important;
-  border: 2px solid rgba(255, 255, 255, 0.2) !important;
+  background: var(--primary-opacity-100) !important;
+  border: 2px solid var(--white-opacity-20) !important;
   width: 18px !important;
   height: 18px !important;
   transition: all 0.2s ease !important;
@@ -745,11 +903,11 @@ body,
 
 .p-slider .p-slider-handle:hover {
   transform: scale(1.15) !important;
-  box-shadow: 0 0 0 4px rgba(240, 69, 139, 0.2) !important;
+  box-shadow: 0 0 0 4px var(--primary-opacity-20) !important;
 }
 
 .p-slider .p-slider-range {
-  background: rgba(240, 69, 139, 0.8) !important;
+  background: var(--primary-opacity-80) !important;
   border-radius: 6px !important;
 }
 
@@ -765,28 +923,28 @@ body,
 .p-checkbox-box {
   width: 1.25rem !important;
   height: 1.25rem !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  border: 2px solid rgba(255, 255, 255, 0.25) !important;
+  background: var(--white-opacity-6) !important;
+  border: 2px solid var(--white-opacity-25) !important;
   border-radius: 4px !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   position: relative !important;
 }
 
 .p-checkbox-box:hover {
-  border-color: rgba(240, 69, 139, 0.7) !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 0 0 2px rgba(240, 69, 139, 0.1) !important;
+  border-color: var(--primary-opacity-70) !important;
+  background: var(--white-opacity-10) !important;
+  box-shadow: 0 0 0 2px var(--primary-opacity-10) !important;
 }
 
 .p-checkbox-box.p-highlight {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 1) 0%, rgba(240, 69, 139, 0.95) 100%) !important;
-  border-color: rgba(240, 69, 139, 1) !important;
-  box-shadow: 0 2px 6px rgba(240, 69, 139, 0.4) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-100) 0%, var(--primary-opacity-95) 100%) !important;
+  border-color: var(--primary-opacity-100) !important;
+  box-shadow: 0 2px 6px var(--primary-opacity-40) !important;
 }
 
 .p-checkbox-box.p-highlight:hover {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 1) 0%, rgba(240, 69, 139, 0.9) 100%) !important;
-  box-shadow: 0 3px 8px rgba(240, 69, 139, 0.5) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-100) 0%, var(--primary-opacity-80) 100%) !important;
+  box-shadow: 0 3px 8px var(--primary-opacity-50) !important;
 }
 
 .p-checkbox-icon {
@@ -802,7 +960,7 @@ body,
 
 .p-checkbox:focus .p-checkbox-box {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
 }
 
 /* ============================================
@@ -810,12 +968,12 @@ body,
    ============================================ */
 
 .p-inputswitch-slider {
-  background: rgba(255, 255, 255, 0.2) !important;
+  background: var(--white-opacity-20) !important;
   border-radius: 30px !important;
 }
 
 .p-inputswitch.p-inputswitch-checked .p-inputswitch-slider {
-  background: rgba(240, 69, 139, 1) !important;
+  background: var(--primary-opacity-100) !important;
 }
 
 /* ============================================
@@ -823,7 +981,7 @@ body,
    ============================================ */
 
 .p-error {
-  color: #f87171 !important;
+  color: var(--danger-color) !important;
   font-size: 0.875rem !important;
   margin-top: 0.25rem !important;
 }
@@ -833,12 +991,12 @@ body,
    ============================================ */
 
 .p-paginator {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--white-opacity-3) !important;
+  border: 1px solid var(--white-opacity-10) !important;
   border-radius: 12px !important;
   padding: 0.75rem 1rem !important;
   backdrop-filter: blur(10px) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: 0 4px 12px var(--black-opacity-15) !important;
 }
 
 .p-paginator .p-paginator-first,
@@ -849,9 +1007,9 @@ body,
   min-width: 2.25rem !important;
   height: 2.25rem !important;
   margin: 0 0.25rem !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
-  color: rgba(246, 243, 209, 0.85) !important;
+  border: 1px solid var(--white-opacity-12) !important;
+  background: var(--white-opacity-4) !important;
+  color: var(--moon-opacity-85) !important;
   border-radius: 8px !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   font-weight: 500 !important;
@@ -862,11 +1020,11 @@ body,
 .p-paginator .p-paginator-next:hover,
 .p-paginator .p-paginator-last:hover,
 .p-paginator .p-paginator-page:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: rgba(240, 69, 139, 0.5) !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  background: var(--white-opacity-8) !important;
+  border-color: var(--primary-opacity-50) !important;
+  color: var(--moon-opacity-95) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 2px 4px var(--black-opacity-10) !important;
 }
 
 .p-paginator .p-paginator-first:focus,
@@ -875,20 +1033,20 @@ body,
 .p-paginator .p-paginator-last:focus,
 .p-paginator .p-paginator-page:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(240, 69, 139, 0.2) !important;
+  box-shadow: 0 0 0 3px var(--primary-opacity-20) !important;
 }
 
 .p-paginator .p-paginator-page.p-highlight {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 0.9) 0%, rgba(240, 69, 139, 0.85) 100%) !important;
-  border-color: rgba(240, 69, 139, 0.6) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-80) 0%, var(--primary-opacity-85) 100%) !important;
+  border-color: var(--primary-opacity-60) !important;
   color: white !important;
-  box-shadow: 0 2px 6px rgba(240, 69, 139, 0.3) !important;
+  box-shadow: 0 2px 6px var(--primary-opacity-30) !important;
 }
 
 .p-paginator .p-paginator-page.p-highlight:hover {
-  background: linear-gradient(135deg, rgba(240, 69, 139, 1) 0%, rgba(240, 69, 139, 0.95) 100%) !important;
-  border-color: rgba(240, 69, 139, 0.8) !important;
-  box-shadow: 0 3px 8px rgba(240, 69, 139, 0.4) !important;
+  background: linear-gradient(135deg, var(--primary-opacity-100) 0%, var(--primary-opacity-95) 100%) !important;
+  border-color: var(--primary-opacity-80) !important;
+  box-shadow: 0 3px 8px var(--primary-opacity-40) !important;
 }
 
 .p-paginator .p-paginator-first:disabled,
@@ -897,7 +1055,7 @@ body,
 .p-paginator .p-paginator-last:disabled {
   opacity: 0.4 !important;
   cursor: not-allowed !important;
-  background: rgba(255, 255, 255, 0.02) !important;
+  background: var(--white-opacity-3) !important;
 }
 
 .p-paginator .p-paginator-first:disabled:hover,
@@ -939,6 +1097,69 @@ body,
   line-height: 1.5 !important;
   display: flex !important;
   align-items: center !important;
+}
+
+/* ============================================
+   全局 TabView 样式
+   ============================================ */
+
+.p-tabview {
+  background: transparent !important;
+  border: none !important;
+}
+
+.p-tabview .p-tabview-nav {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--white-opacity-10) !important;
+  padding: 0 !important;
+  margin-bottom: 1rem !important;
+}
+
+.p-tabview .p-tabview-nav li {
+  margin-right: 0.5rem !important;
+}
+
+.p-tabview .p-tabview-nav li .p-tabview-nav-link {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  color: var(--moon-opacity-70) !important;
+  padding: 0.75rem 1.25rem !important;
+  font-weight: 500 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 8px 8px 0 0 !important;
+  margin-bottom: -1px !important;
+}
+
+.p-tabview .p-tabview-nav li .p-tabview-nav-link:hover {
+  background: var(--white-opacity-5) !important;
+  color: var(--moon-opacity-90) !important;
+  border-bottom-color: var(--primary-opacity-30) !important;
+}
+
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+  background: var(--white-opacity-5) !important;
+  color: var(--primary-color) !important;
+  border-bottom-color: var(--primary-color) !important;
+}
+
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link:hover {
+  background: var(--white-opacity-8) !important;
+  color: var(--primary-color) !important;
+}
+
+.p-tabview .p-tabview-panels {
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.p-tabview .p-tabview-panel {
+  padding: 0 !important;
+}
+
+.p-paginator .p-dropdown .p-dropdown-label {
   min-height: 2.25rem !important;
   height: auto !important;
   overflow: visible !important;
@@ -1017,9 +1238,9 @@ body,
 
 /* Chips token（标签）样式 */
 .p-chips-token {
-  background: rgba(240, 69, 139, 0.2) !important;
-  border: 1px solid rgba(240, 69, 139, 0.4) !important;
-  color: rgba(246, 243, 209, 0.95) !important;
+  background: var(--primary-opacity-20) !important;
+  border: 1px solid var(--primary-opacity-40) !important;
+  color: var(--moon-opacity-95) !important;
   padding: 0.375rem 0.625rem !important;
   border-radius: 6px !important;
   margin: 0.125rem !important;
@@ -1027,23 +1248,23 @@ body,
 }
 
 .p-chips-token:hover {
-  background: rgba(240, 69, 139, 0.3) !important;
-  border-color: rgba(240, 69, 139, 0.6) !important;
+  background: var(--primary-opacity-30) !important;
+  border-color: var(--primary-opacity-60) !important;
 }
 
 .p-chips-token .p-chips-token-label {
-  color: rgba(246, 243, 209, 0.95) !important;
+  color: var(--moon-opacity-95) !important;
   font-weight: 500 !important;
 }
 
 .p-chips-token .p-chips-token-icon {
-  color: rgba(246, 243, 209, 0.8) !important;
+  color: var(--moon-opacity-80) !important;
   margin-left: 0.375rem !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 .p-chips-token .p-chips-token-icon:hover {
-  color: rgba(248, 113, 113, 0.9) !important;
+  color: var(--danger-opacity-90) !important;
   transform: scale(1.1) !important;
 }
 
@@ -1054,20 +1275,20 @@ body,
 .list-item-base {
   padding: 0.75rem;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden; /* 防止内容溢出 */
 }
 
 .list-item-hover:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(240, 69, 139, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--white-opacity-6);
+  border-color: var(--primary-opacity-30);
+  box-shadow: 0 2px 4px var(--black-opacity-10);
 }
 
 .list-item-selected {
-  background: rgba(240, 69, 139, 0.15);
-  border-color: rgba(240, 69, 139, 0.4);
-  box-shadow: 0 2px 6px rgba(240, 69, 139, 0.2);
+  background: var(--primary-opacity-15);
+  border-color: var(--primary-opacity-40);
+  box-shadow: 0 2px 6px var(--primary-opacity-20);
 }

@@ -9,8 +9,9 @@ export const DEFAULT_CONTEXT_WINDOW_RATIO = 0.8;
 
 /**
  * 默认的最大输出 token 数（用于配置请求）
+ * 增加此值以确保配置 JSON 响应不会被截断
  */
-export const DEFAULT_MAX_OUTPUT_TOKENS = 200;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 1000;
 
 /**
  * 默认的温度值（用于配置请求）
