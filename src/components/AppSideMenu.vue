@@ -153,7 +153,7 @@ const bottomItems: MenuItem[] = [
             :key="book.id"
             class="w-full text-left px-3 py-2 rounded-lg text-sm text-moon/80 hover:bg-primary/15 hover:text-moon/95 hover:border-primary/30 border border-transparent transition-all duration-200 flex items-center gap-2 group min-w-0 overflow-hidden"
             style="max-width: 100%; box-sizing: border-box;"
-            @click="() => void router.push('/books')"
+            @click="() => void router.push(`/books/${book.id}`)"
           >
             <i class="pi pi-star-fill text-yellow-400 text-xs flex-shrink-0" />
             <span class="truncate flex-1 min-w-0 text-ellipsis whitespace-nowrap overflow-hidden">{{ book.title }}</span>
