@@ -99,6 +99,21 @@
   --highlight-bg: rgba(240, 69, 139, 0.18); /* luna-500 with opacity - using rgba for custom opacity */
   --highlight-text-color: #ffffff;
 
+  /* PrimeVue Aura theme variables - override indigo with Luna pink */
+  --p-primary-50: #fef2f7;
+  --p-primary-100: #fce7f0;
+  --p-primary-200: #f9cfe1;
+  --p-primary-300: #f4a7c8;
+  --p-primary-400: #ed6ba8;
+  --p-primary-500: #f0458b;
+  --p-primary-600: #d91d7a;
+  --p-primary-700: #b81666;
+  --p-primary-800: #961455;
+  --p-primary-900: #7a1145;
+  --p-primary-950: #4d0a2b;
+  --p-primary-color: #f0458b;
+  --p-primary-contrast: #ffffff;
+
 }
 
 /* Default (dark is on by config) - using TailwindCSS moon color */
@@ -1169,30 +1184,51 @@ body,
 .p-tabview .p-tabview-nav li .p-tabview-nav-link {
   background: transparent !important;
   border: none !important;
-  border-bottom: 2px solid transparent !important;
+  border-bottom: none !important;
   color: var(--moon-opacity-70) !important;
   padding: 0.75rem 1.25rem !important;
   font-weight: 500 !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
   border-radius: 8px 8px 0 0 !important;
-  margin-bottom: -1px !important;
+  margin-bottom: 0 !important;
 }
 
 .p-tabview .p-tabview-nav li .p-tabview-nav-link:hover {
   background: var(--white-opacity-5) !important;
   color: var(--moon-opacity-90) !important;
-  border-bottom-color: var(--primary-opacity-30) !important;
 }
 
 .p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
-  background: var(--white-opacity-5) !important;
-  color: var(--primary-color) !important;
-  border-bottom-color: var(--primary-color) !important;
+  background: var(--primary-opacity-10) !important;
+  color: var(--p-primary-color) !important;
+  font-weight: 600 !important;
 }
 
 .p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link:hover {
-  background: var(--white-opacity-8) !important;
-  color: var(--primary-color) !important;
+  background: var(--primary-opacity-15) !important;
+  color: var(--p-primary-color) !important;
+}
+
+/* PrimeVue TabView 动画指示器 - 覆盖蓝色为粉色 */
+.p-tabview .p-tabview-nav li .p-tabview-nav-link::before,
+.p-tabview .p-tabview-nav li .p-tabview-nav-link::after {
+  background-color: var(--p-primary-color) !important;
+  border-color: var(--p-primary-color) !important;
+}
+
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link::before,
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link::after {
+  background-color: var(--p-primary-color) !important;
+  border-color: var(--p-primary-color) !important;
+}
+
+/* 覆盖可能的滑动指示器元素 - 使用粉色 */
+.p-tabview .p-tabview-nav .p-tabview-ink-bar,
+.p-tabview .p-tabview-nav .p-ink,
+.p-tabview .p-tabview-nav .p-ink-ripple,
+.p-tabview .p-tabview-nav .p-tabview-nav-link::after {
+  background-color: var(--p-primary-color) !important;
+  color: var(--p-primary-color) !important;
 }
 
 .p-tabview .p-tabview-panels {

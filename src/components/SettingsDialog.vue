@@ -253,6 +253,19 @@ const handleClose = () => {
         </div>
       </TabPanel>
 
+      <!-- 同步设置 -->
+      <TabPanel header="同步设置">
+        <div class="p-4 space-y-3">
+          <div>
+            <h3 class="text-sm font-medium text-moon/90 mb-1">同步设置</h3>
+            <p class="text-xs text-moon/70">配置数据同步选项，将本地数据同步到云端</p>
+          </div>
+          <div class="p-4 rounded-lg border border-white/10 bg-white/5">
+            <p class="text-xs text-moon/60 text-center">同步设置功能即将推出</p>
+          </div>
+        </div>
+      </TabPanel>
+
       <!-- 导入/导出资料 -->
       <TabPanel header="导入/导出">
         <div class="p-4 space-y-4">

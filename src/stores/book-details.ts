@@ -145,3 +145,4 @@ if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useBookDetailsStore, import.meta.hot));
 }
 
+
