@@ -115,7 +115,13 @@ export class GeminiService extends BaseAIService {
 
       // 处理流式响应
       for await (const chunk of result.stream) {
+        // 检查是否已取消
+        if (config.signal?.aborted) {
+          throw new Error('请求已取消');
+        }
+
         const chunkText = chunk.text();
+        
         if (chunkText) {
           fullText += chunkText;
           

@@ -181,11 +181,17 @@ export class OpenAIService extends BaseAIService {
         temperature?: number;
         max_tokens?: number;
         stream: boolean;
+        signal?: AbortSignal;
       } = {
         model: config.model,
         messages: [{ role: 'user', content: request.prompt }],
         stream: true, // 启用流式模式
       };
+
+      // 如果提供了 signal，添加到请求参数中
+      if (config.signal) {
+        requestParams.signal = config.signal;
+      }
 
       const temperature = request.temperature ?? config.temperature;
       if (temperature !== undefined) {
@@ -209,14 +215,37 @@ export class OpenAIService extends BaseAIService {
       // 需要将其转换为异步迭代器
       if (Symbol.asyncIterator in stream) {
         for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            fullText += content;
+          // 检查是否已取消
+          if (config.signal?.aborted) {
+            throw new Error('请求已取消');
+          }
+
+          const delta = chunk.choices[0]?.delta;
+          if (!delta) {
+            continue;
+          }
+          
+          // 获取思考内容（reasoning_content）- 用于显示思考过程
+          const reasoningContent = (delta as any).reasoning_content || '';
+          
+          // 获取实际内容（content）- 用于最终输出
+          const content = delta.content || '';
+          
+          // 优先使用 reasoning_content 作为思考消息，如果没有则使用 content
+          const textToSend = reasoningContent || content;
+          
+          // 如果有内容（思考内容或实际内容），累积到 fullText 并调用回调
+          if (textToSend) {
+            // 只有实际内容（非思考内容）才累积到 fullText
+            if (content) {
+              fullText += content;
+            }
 
             // 如果提供了回调函数，调用它
+            // 传递思考内容或实际内容，让上层决定如何处理
             if (onChunk) {
               const chunkData = {
-                text: content,
+                text: textToSend, // 传递思考内容或实际内容
                 done: false,
                 model: chunk.model || modelId,
               };
@@ -231,6 +260,7 @@ export class OpenAIService extends BaseAIService {
         }
       } else {
         // 如果不是流式响应（不应该发生，因为 stream: true），回退到非流式处理
+        console.error('OpenAI: 流式响应格式错误，stream 不是异步迭代器');
         throw new Error('流式响应格式错误');
       }
 

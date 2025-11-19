@@ -7,6 +7,7 @@ export interface AIServiceConfig {
   model: string;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
+  signal?: AbortSignal | undefined; // 用于取消请求
 }
 
 /**

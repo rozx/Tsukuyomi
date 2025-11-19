@@ -70,6 +70,7 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
     polishing: { enabled: false, temperature: 0.7 },
     characterExtraction: { enabled: false, temperature: 0.7 },
     terminologyExtraction: { enabled: false, temperature: 0.7 },
+    termsTranslation: { enabled: false, temperature: 0.7 },
   },
 });
 
@@ -99,6 +100,7 @@ const resetForm = () => {
       polishing: { enabled: false, temperature: 0.7 },
       characterExtraction: { enabled: false, temperature: 0.7 },
       terminologyExtraction: { enabled: false, temperature: 0.7 },
+      termsTranslation: { enabled: false, temperature: 0.7 },
     },
   } as typeof formData.value;
   formErrors.value = {};
@@ -348,9 +350,48 @@ watch(
     if (newVisible) {
       if (props.mode === 'edit' && props.model) {
         // 编辑模式：填充现有数据
+        // 确保所有任务配置都存在，包括新添加的 termsTranslation
+        const defaultTasks: typeof formData.value.isDefault = {
+          translation: { enabled: false, temperature: 0.7 },
+          proofreading: { enabled: false, temperature: 0.7 },
+          polishing: { enabled: false, temperature: 0.7 },
+          characterExtraction: { enabled: false, temperature: 0.7 },
+          terminologyExtraction: { enabled: false, temperature: 0.7 },
+          termsTranslation: { enabled: false, temperature: 0.7 },
+        };
+
+        // 合并现有数据，确保新字段有默认值
         formData.value = {
           ...props.model,
-          isDefault: { ...props.model.isDefault },
+          isDefault: {
+            ...defaultTasks,
+            ...props.model.isDefault,
+            // 确保每个任务配置都有完整的结构
+            translation: {
+              enabled: props.model.isDefault.translation?.enabled ?? false,
+              temperature: props.model.isDefault.translation?.temperature ?? 0.7,
+            },
+            proofreading: {
+              enabled: props.model.isDefault.proofreading?.enabled ?? false,
+              temperature: props.model.isDefault.proofreading?.temperature ?? 0.7,
+            },
+            polishing: {
+              enabled: props.model.isDefault.polishing?.enabled ?? false,
+              temperature: props.model.isDefault.polishing?.temperature ?? 0.7,
+            },
+            characterExtraction: {
+              enabled: props.model.isDefault.characterExtraction?.enabled ?? false,
+              temperature: props.model.isDefault.characterExtraction?.temperature ?? 0.7,
+            },
+            terminologyExtraction: {
+              enabled: props.model.isDefault.terminologyExtraction?.enabled ?? false,
+              temperature: props.model.isDefault.terminologyExtraction?.temperature ?? 0.7,
+            },
+            termsTranslation: {
+              enabled: props.model.isDefault.termsTranslation?.enabled ?? false,
+              temperature: props.model.isDefault.termsTranslation?.temperature ?? 0.7,
+            },
+          },
         } as typeof formData.value;
 
         // 从已保存的模型数据中填充 aiConfig，以便显示
@@ -771,6 +812,47 @@ watch(
               <Slider
                 :id="`${idPrefix}-temperature-terminologyExtraction`"
                 v-model="formData.isDefault.terminologyExtraction.temperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                class="w-full"
+              />
+            </div>
+          </div>
+
+          <!-- 术语翻译 -->
+          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
+            <div class="flex items-center justify-between mb-3">
+              <div
+                class="flex items-center cursor-pointer"
+                @click="
+                  formData.isDefault.termsTranslation.enabled =
+                    !formData.isDefault.termsTranslation.enabled
+                "
+              >
+                <Checkbox
+                  :id="`${idPrefix}-default-termsTranslation`"
+                  v-model="formData.isDefault.termsTranslation.enabled"
+                  :binary="true"
+                  @click.stop
+                />
+                <label
+                  :for="`${idPrefix}-default-termsTranslation`"
+                  class="ml-2 text-sm cursor-pointer"
+                  >术语翻译</label
+                >
+              </div>
+              <span
+                v-if="formData.isDefault.termsTranslation?.enabled"
+                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+              >
+                {{ formData.isDefault.termsTranslation?.temperature }}
+              </span>
+            </div>
+            <div v-if="formData.isDefault.termsTranslation?.enabled" class="mt-2">
+              <Slider
+                :id="`${idPrefix}-temperature-termsTranslation`"
+                v-model="formData.isDefault.termsTranslation.temperature"
                 :min="0"
                 :max="2"
                 :step="0.1"

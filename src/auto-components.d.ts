@@ -19,6 +19,7 @@ declare module 'vue' {
     AutoComplete: typeof import('primevue/autocomplete')['default']
     BookDialog: typeof import('./components/BookDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/CoverManagerDialog.vue')['default']
+    Dialog: typeof import('primevue/dialog')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']
     NovelScraperDialog: typeof import('./components/NovelScraperDialog.vue')['default']

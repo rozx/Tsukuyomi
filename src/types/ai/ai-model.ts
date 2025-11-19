@@ -20,6 +20,7 @@ export interface AIModelDefaultTasks {
   polishing: TaskConfig;
   characterExtraction: TaskConfig;
   terminologyExtraction: TaskConfig;
+  termsTranslation: TaskConfig;
 }
 
 /**

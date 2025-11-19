@@ -6,7 +6,9 @@ import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
+import ProgressSpinner from 'primevue/progressspinner';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TranslationService } from 'src/services/ai';
 
@@ -34,19 +36,37 @@ const emit = defineEmits<{
 const inputId = computed<string | undefined>(() => props.id);
 
 const aiModelsStore = useAIModelsStore();
+const aiProcessingStore = useAIProcessingStore();
 const toast = useToastWithHistory();
 
 // 翻译状态
 const translating = ref(false);
+// 当前翻译任务 ID
+const currentTaskId = ref<string | null>(null);
+// 思考过程消息（只显示当前任务的）
+const thinkingMessage = computed(() => {
+  if (!currentTaskId.value) return null;
+  const task = aiProcessingStore.activeTasks.find((t) => t.id === currentTaskId.value);
+  if (!task) return null;
+  
+  // 优先使用实际的思考消息
+  if (task.thinkingMessage && task.thinkingMessage.trim()) {
+    // 获取最后一行
+    const lines = task.thinkingMessage.split('\n').filter((line) => line.trim());
+    return lines.length > 0 ? lines[lines.length - 1] : task.thinkingMessage;
+  }
+  
+  return task.message || `${task.modelName} 正在处理...`;
+});
 
 // 翻译结果对话框状态
 const showTranslationDialog = ref(false);
 const translationResult = ref('');
 
-// 获取所有可用的翻译模型
+// 获取所有可用的术语翻译模型
 const availableTranslationModels = computed(() => {
   return aiModelsStore.models.filter(
-    (model) => model.enabled && model.isDefault.translation?.enabled,
+    (model) => model.enabled && model.isDefault.termsTranslation?.enabled,
   );
 });
 
@@ -66,36 +86,59 @@ const handleTranslate = async () => {
   const originalText = props.modelValue.trim();
   translating.value = true;
 
-  try {
-    // 获取默认的翻译模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
+  // 获取默认的术语翻译模型
+  const selectedModel = aiModelsStore.getDefaultModelForTask('termsTranslation');
 
-    if (!selectedModel) {
+  if (!selectedModel) {
       toast.add({
         severity: 'error',
         summary: '翻译失败',
-        detail: '未找到可用的翻译模型，请在设置中配置',
+        detail: '未找到可用的术语翻译模型，请在设置中配置',
         life: 3000,
       });
-      return;
+    translating.value = false;
+    return;
+  }
+
+  try {
+    // 使用翻译服务进行翻译，服务会自动管理任务
+    const result = await TranslationService.translate(originalText, selectedModel, {
+      taskType: 'termsTranslation',
+      aiProcessingStore: {
+        addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+        updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+        appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+        activeTasks: aiProcessingStore.activeTasks,
+      },
+    });
+
+    // 保存任务 ID 以便跟踪
+    if (result.taskId) {
+      currentTaskId.value = result.taskId;
     }
 
-    // 使用翻译服务进行翻译
-    const translatedText = await TranslationService.translate(originalText, selectedModel);
-
     // 保存翻译结果并显示对话框
-    translationResult.value = translatedText;
+    translationResult.value = result.text;
     showTranslationDialog.value = true;
   } catch (error) {
     console.error('翻译失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '翻译失败',
-      detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-      life: 3000,
-    });
+    // 检查是否是被取消的
+    const isCancelled = error instanceof Error && error.message === '翻译已取消';
+
+    // 只有非取消的错误才显示 toast（任务状态已由服务管理）
+    if (!isCancelled) {
+      toast.add({
+        severity: 'error',
+        summary: '翻译失败',
+        detail: error instanceof Error ? error.message : '翻译时发生未知错误',
+        life: 3000,
+      });
+    }
   } finally {
     translating.value = false;
+    // 任务移除已由服务管理，这里只需要清理本地引用
+    currentTaskId.value = null;
   }
 };
 </script>
@@ -123,13 +166,19 @@ const handleTranslate = async () => {
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
     />
     <InputGroupAddon class="translatable-input-addon">
-      <Button
-        icon="pi pi-language"
-        :loading="translating"
-        :disabled="isTranslateDisabled"
-        class="translatable-input-button"
-        @click="handleTranslate"
-      />
+      <div class="translatable-input-addon-content">
+        <Button
+          icon="pi pi-language"
+          :loading="translating"
+          :disabled="isTranslateDisabled"
+          class="translatable-input-button"
+          @click="handleTranslate"
+        />
+        <div v-if="translating && thinkingMessage" class="translatable-input-thinking">
+          <ProgressSpinner style="width: 0.75rem; height: 0.75rem" stroke-width="3" />
+          <span class="translatable-input-thinking-text">{{ thinkingMessage }}</span>
+        </div>
+      </div>
     </InputGroupAddon>
   </InputGroup>
   <!-- Textarea Mode -->
@@ -183,15 +232,7 @@ const handleTranslate = async () => {
         label="取消"
         icon="pi pi-times"
         class="p-button-text"
-        @click="
-          showTranslationDialog = false;
-          toast.add({
-            severity: 'info',
-            summary: '已取消',
-            detail: '翻译结果未应用',
-            life: 2000,
-          });
-        "
+        @click="showTranslationDialog = false"
       />
       <Button
         label="应用"
@@ -219,6 +260,16 @@ const handleTranslate = async () => {
   display: flex !important;
   align-items: stretch !important;
   position: relative !important;
+}
+
+.translatable-input-addon-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .translatable-input-addon .translatable-input-button {
@@ -269,6 +320,31 @@ const handleTranslate = async () => {
 .translatable-input-addon .translatable-input-button:not(:disabled):focus :deep(.p-button-icon) {
   color: var(--moon-opacity-100) !important;
   transform: none !important;
+}
+
+.translatable-input-thinking {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--black-opacity-80);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  z-index: 1000;
+  font-size: 0.75rem;
+  color: var(--moon-opacity-90);
+  box-shadow: 0 2px 8px var(--black-opacity-50);
+}
+
+.translatable-input-thinking-text {
+  line-height: 1;
 }
 
 /* Textarea Mode Styles */

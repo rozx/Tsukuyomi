@@ -33,6 +33,7 @@ const getDefaultTasks = (model: AIModel) => {
   if (model.isDefault.polishing?.enabled) tasks.push('润色');
   if (model.isDefault.characterExtraction?.enabled) tasks.push('角色提取');
   if (model.isDefault.terminologyExtraction?.enabled) tasks.push('术语提取');
+  if (model.isDefault.termsTranslation?.enabled) tasks.push('术语翻译');
   return tasks.join('、') || '无';
 };
 
@@ -119,6 +120,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
         characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
         terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
+        termsTranslation: formData.isDefault?.termsTranslation ?? { enabled: false, temperature: 0.7 },
       },
     };
     aiModelsStore.addModel(newModel);
@@ -146,6 +148,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
         characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
         terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
+        termsTranslation: formData.isDefault?.termsTranslation ?? { enabled: false, temperature: 0.7 },
       },
     };
 
