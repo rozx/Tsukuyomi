@@ -1,5 +1,6 @@
 import type { Plugin } from 'vite';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import type { ServerResponse } from 'http';
 
 /**
  * 动态 AI API 代理插件
@@ -73,9 +74,9 @@ export function dynamicAIProxy(): Plugin {
                   proxyReq.removeHeader('x-forwarded-proto');
                 },
                 error: (err, req, res) => {
-                  if (!res.headersSent) {
-                    res.statusCode = 500;
-                    res.end(`Proxy error: ${err.message}`);
+                  if (res && 'headersSent' in res && !res.headersSent) {
+                    (res as ServerResponse).statusCode = 500;
+                    (res as ServerResponse).end(`Proxy error: ${err.message}`);
                   }
                 },
               },
@@ -87,9 +88,9 @@ export function dynamicAIProxy(): Plugin {
               proxy(req, res, next);
               return; // 重要：确保不会继续执行后面的代码
             } catch (error) {
-              if (!res.headersSent) {
-                res.statusCode = 500;
-                res.end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
+              if (res && 'headersSent' in res && !res.headersSent) {
+                (res as ServerResponse).statusCode = 500;
+                (res as ServerResponse).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
               }
               return;
             }
@@ -97,8 +98,10 @@ export function dynamicAIProxy(): Plugin {
         }
 
         // 如果没有匹配，返回 404
-        res.statusCode = 404;
-        res.end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
+        if (res && 'statusCode' in res) {
+          (res as ServerResponse).statusCode = 404;
+          (res as ServerResponse).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
+        }
       });
     },
   };

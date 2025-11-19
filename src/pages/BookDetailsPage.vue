@@ -231,6 +231,9 @@ const handleAddChapter = () => {
   }
 
   const volume = existingVolumes[volumeIndex];
+  if (!volume) {
+    return;
+  }
   const existingChapters = volume.chapters || [];
   const chapterIds = extractIds(existingChapters);
   const idGenerator = new UniqueIdGenerator(chapterIds);
@@ -245,10 +248,18 @@ const handleAddChapter = () => {
 
   const updatedChapters = [...existingChapters, newChapter];
   const updatedVolumes = [...existingVolumes];
-  updatedVolumes[volumeIndex] = {
-    ...volume,
+  const updatedVolume: Volume = {
+    id: volume.id,
+    title: volume.title,
     chapters: updatedChapters,
   };
+  if (volume.description !== undefined) {
+    updatedVolume.description = volume.description;
+  }
+  if (volume.cover !== undefined) {
+    updatedVolume.cover = volume.cover;
+  }
+  updatedVolumes[volumeIndex] = updatedVolume;
 
   booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
@@ -314,10 +325,24 @@ const handleEditVolume = () => {
   }
 
   const updatedVolumes = [...existingVolumes];
-  updatedVolumes[volumeIndex] = {
-    ...updatedVolumes[volumeIndex],
+  const volumeToUpdate = updatedVolumes[volumeIndex];
+  if (!volumeToUpdate) {
+    return;
+  }
+  const updatedVolume: Volume = {
+    id: volumeToUpdate.id,
     title: editingVolumeTitle.value.trim(),
   };
+  if (volumeToUpdate.description !== undefined) {
+    updatedVolume.description = volumeToUpdate.description;
+  }
+  if (volumeToUpdate.cover !== undefined) {
+    updatedVolume.cover = volumeToUpdate.cover;
+  }
+  if (volumeToUpdate.chapters !== undefined) {
+    updatedVolume.chapters = volumeToUpdate.chapters;
+  }
+  updatedVolumes[volumeIndex] = updatedVolume;
 
   booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
@@ -352,13 +377,17 @@ const handleEditChapter = () => {
   // 找到章节并移除
   for (let i = 0; i < existingVolumes.length; i++) {
     const volume = existingVolumes[i];
+    if (!volume) continue;
     if (volume.chapters) {
       const index = volume.chapters.findIndex((c) => c.id === editingChapterId.value);
       if (index !== -1) {
-        chapterToMove = { ...volume.chapters[index] };
-        sourceVolumeIndex = i;
-        chapterIndex = index;
-        break;
+        const chapter = volume.chapters[index];
+        if (chapter) {
+          chapterToMove = { ...chapter };
+          sourceVolumeIndex = i;
+          chapterIndex = index;
+          break;
+        }
       }
     }
   }
@@ -372,7 +401,10 @@ const handleEditChapter = () => {
   // 如果目标卷与源卷不同，需要移动章节
   if (editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value) {
     // 从源卷移除
-    existingVolumes[sourceVolumeIndex].chapters?.splice(chapterIndex, 1);
+    const sourceVolume = existingVolumes[sourceVolumeIndex];
+    if (sourceVolume?.chapters) {
+      sourceVolume.chapters.splice(chapterIndex, 1);
+    }
 
     // 添加到目标卷
     const targetVolumeIndex = existingVolumes.findIndex(
@@ -380,15 +412,18 @@ const handleEditChapter = () => {
     );
     if (targetVolumeIndex !== -1) {
       const targetVolume = existingVolumes[targetVolumeIndex];
-      if (!targetVolume.chapters) {
-        targetVolume.chapters = [];
+      if (targetVolume) {
+        if (!targetVolume.chapters) {
+          targetVolume.chapters = [];
+        }
+        targetVolume.chapters.push(chapterToMove);
       }
-      targetVolume.chapters.push(chapterToMove);
     }
   } else {
     // 同一卷内，只更新标题
-    if (existingVolumes[sourceVolumeIndex].chapters) {
-      existingVolumes[sourceVolumeIndex].chapters[chapterIndex] = chapterToMove;
+    const sourceVolume = existingVolumes[sourceVolumeIndex];
+    if (sourceVolume?.chapters && chapterIndex !== -1) {
+      sourceVolume.chapters[chapterIndex] = chapterToMove;
     }
   }
 
@@ -576,14 +611,19 @@ const handleDrop = (event: DragEvent, targetVolumeId: string, targetIndex?: numb
   const sourceVolume = volumes[sourceVolumeIndex];
   const targetVolume = volumes[targetVolumeIndex];
 
+  if (!sourceVolume || !targetVolume) return;
   if (!sourceVolume.chapters || sourceIndex >= sourceVolume.chapters.length) return;
 
   // 从源卷移除章节
   const [movedChapter] = sourceVolume.chapters.splice(sourceIndex, 1);
+  if (!movedChapter) return;
 
   // 添加到目标卷
   if (sourceVolumeId === targetVolumeId) {
     // 同一卷内重新排序
+    if (!targetVolume.chapters) {
+      targetVolume.chapters = [];
+    }
     const insertIndex =
       targetIndex !== undefined && targetIndex !== null
         ? targetIndex
@@ -639,13 +679,15 @@ const handleDragLeave = () => {
             <i class="pi pi-info-circle book-edit-icon"></i>
             <div class="book-cover-wrapper">
               <img
-                :src="getCoverUrl(book)"
-                :alt="book.title"
+                :src="book ? getCoverUrl(book) : ''"
+                :alt="book?.title || ''"
                 class="book-cover"
                 @error="
                   (e) => {
                     const target = e.target as HTMLImageElement;
-                    target.src = getCoverUrl(book);
+                    if (book) {
+                      target.src = getCoverUrl(book);
+                    }
                   }
                 "
               />

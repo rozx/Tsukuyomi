@@ -119,23 +119,29 @@ export class ChapterService {
             
             if (updateStrategy === 'replace') {
               // 替换整个章节
-              mergedChapters[existingChapterIndex] = {
+              const updatedChapter: Chapter = {
                 ...newChapter,
                 id: existingChapter.id, // 保留原有 ID
                 createdAt: existingChapter.createdAt, // 保留原有的创建时间
                 lastEdited: new Date(), // 内容更新，更新时间
-                lastUpdated, // 保留或更新 lastUpdated
               };
+              if (lastUpdated !== undefined) {
+                updatedChapter.lastUpdated = lastUpdated;
+              }
+              mergedChapters[existingChapterIndex] = updatedChapter;
             } else {
               // 合并章节属性
-              mergedChapters[existingChapterIndex] = {
+              const updatedChapter: Chapter = {
                 ...existingChapter,
                 ...newChapter,
                 id: existingChapter.id, // 保留原有 ID
                 createdAt: existingChapter.createdAt, // 保留原有的创建时间
                 lastEdited: new Date(), // 内容更新，更新时间
-                lastUpdated, // 保留或更新 lastUpdated
               };
+              if (lastUpdated !== undefined) {
+                updatedChapter.lastUpdated = lastUpdated;
+              }
+              mergedChapters[existingChapterIndex] = updatedChapter;
             }
           }
         } else {
