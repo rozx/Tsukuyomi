@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { v4 as uuidv4 } from 'uuid';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
@@ -22,6 +23,7 @@ import {
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
 
+const router = useRouter();
 const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
 const toast = useToastWithHistory();
@@ -499,6 +501,11 @@ const toggleStar = (book: Novel) => {
   });
 };
 
+// 导航到书籍详情页
+const navigateToBookDetails = (book: Novel) => {
+  void router.push(`/books/${book.id}`);
+};
+
 // 保存书籍（添加或编辑）
 const handleSave = (formData: Partial<Novel>) => {
   if (showAddDialog.value) {
@@ -669,7 +676,10 @@ const handleSave = (formData: Partial<Novel>) => {
         >
           <div v-for="book in slotProps.items" :key="book.id" class="book-card group">
             <!-- 封面 -->
-            <div class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2">
+            <div
+              class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
+              @click="navigateToBookDetails(book)"
+            >
               <img
                 :src="getCoverUrl(book)"
                 :alt="book.title"
@@ -687,6 +697,7 @@ const handleSave = (formData: Partial<Novel>) => {
               <h3
                 class="text-sm font-semibold line-clamp-2 group-hover:text-primary transition-colors cursor-pointer"
                 :title="book.title"
+                @click="navigateToBookDetails(book)"
               >
                 {{ book.title }}
               </h3>
