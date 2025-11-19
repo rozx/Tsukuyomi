@@ -25,6 +25,7 @@ declare module 'vue' {
     Menubar: typeof import('primevue/menubar')['default']
     NovelScraperDialog: typeof import('./components/NovelScraperDialog.vue')['default']
     PanelMenu: typeof import('primevue/panelmenu')['default']
+    ParagraphCard: typeof import('./components/ParagraphCard.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SettingsDialog: typeof import('./components/SettingsDialog.vue')['default']

@@ -121,10 +121,10 @@ export class GeminiService extends BaseAIService {
         }
 
         const chunkText = chunk.text();
-        
+
         if (chunkText) {
           fullText += chunkText;
-          
+
           // 如果提供了回调函数，调用它
           if (onChunk) {
             await onChunk({
@@ -166,11 +166,11 @@ export class GeminiService extends BaseAIService {
    * 获取可用的模型列表
    * Gemini API 不提供直接列出模型的接口，返回空列表
    */
-  protected async makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  protected makeAvailableModelsRequest(
+    _config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
   ): Promise<ModelInfo[]> {
     // Gemini API 没有提供列出所有模型的接口
     // 返回空列表
-    return [];
+    return Promise.resolve([]);
   }
 }

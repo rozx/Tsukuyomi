@@ -114,12 +114,17 @@ export class ChapterService {
           // 章节已存在，更新内容
           const existingChapter = mergedChapters[existingChapterIndex];
           if (existingChapter) {
+            // 保留 lastUpdated：如果新章节有 lastUpdated 则使用新的，否则保留原有的
+            const lastUpdated = newChapter.lastUpdated ?? existingChapter.lastUpdated;
+            
             if (updateStrategy === 'replace') {
               // 替换整个章节
               mergedChapters[existingChapterIndex] = {
                 ...newChapter,
                 id: existingChapter.id, // 保留原有 ID
-                lastEdited: new Date(),
+                createdAt: existingChapter.createdAt, // 保留原有的创建时间
+                lastEdited: new Date(), // 内容更新，更新时间
+                lastUpdated, // 保留或更新 lastUpdated
               };
             } else {
               // 合并章节属性
@@ -127,12 +132,14 @@ export class ChapterService {
                 ...existingChapter,
                 ...newChapter,
                 id: existingChapter.id, // 保留原有 ID
-                lastEdited: new Date(),
+                createdAt: existingChapter.createdAt, // 保留原有的创建时间
+                lastEdited: new Date(), // 内容更新，更新时间
+                lastUpdated, // 保留或更新 lastUpdated
               };
             }
           }
         } else {
-          // 章节不存在，添加新章节
+          // 章节不存在，添加新章节（保留 newChapter 的 lastEdited，应该等于 createdAt）
           mergedChapters.push(newChapter);
         }
       } else {
@@ -272,14 +279,17 @@ export class ChapterService {
     createdAt: Date;
   }> {
     const idGenerator = new UniqueIdGenerator();
-    return content.split('\n').map((text) => ({
-      id: idGenerator.generate(),
-      text: text, // 不使用 trim()，保留原始格式（包括开头空格和空行）
-      selectedTranslationId: '',
-      translations: [],
-      lastEdited: new Date(),
-      createdAt: new Date(),
-    }));
+    return content.split('\n').map((text) => {
+      const now = new Date();
+      return {
+        id: idGenerator.generate(),
+        text: text, // 不使用 trim()，保留原始格式（包括开头空格和空行）
+        selectedTranslationId: '',
+        translations: [],
+        lastEdited: now, // 初始创建时，lastEdited 等于 createdAt
+        createdAt: now,
+      };
+    });
   }
 
   /**

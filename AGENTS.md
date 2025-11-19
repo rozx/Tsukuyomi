@@ -39,3 +39,7 @@
 - 将Constants定义在src/constants目录下。
 - 将Services定义在src/services目录下。
 - 将Stores定义在src/stores目录下。
+- **TypeScript/ESLint 规范**：
+  - 避免在 async 方法中不使用 `await` 表达式。如果方法没有异步操作，应该移除 `async` 关键字，使用 `Promise.resolve()` 返回结果。
+  - 禁止使用内联 `import()` 类型注解（例如 `import('path').Type`）。应该在文件顶部导入所有需要的类型。
+  - 未使用的函数参数应使用下划线前缀（例如 `_config`）以符合 lint 规范。

@@ -5,6 +5,7 @@ import type {
   AIConfigResult,
   TextGenerationRequest,
   TextGenerationResult,
+  TextGenerationStreamCallback,
   AvailableModelsResult,
 } from 'src/types/ai/ai-service';
 import { OpenAIService } from './providers';
@@ -52,7 +53,7 @@ export class AIServiceFactory {
     provider: AIProvider,
     config: AIServiceConfig,
     request: TextGenerationRequest,
-    onChunk?: import('src/types/ai/ai-service').TextGenerationStreamCallback,
+    onChunk?: TextGenerationStreamCallback,
   ): Promise<TextGenerationResult> {
     const service = this.getService(provider);
     return service.generateText(config, request, onChunk);

@@ -238,7 +238,7 @@ export abstract class BaseScraper implements NovelScraper {
     }
 
     // 解析最后更新时间
-    // 在导入时，无论是否有 (改) 标记，只要从网站获取到了日期，都应该设置 lastUpdated
+    // 只有当网站明确提供了 lastUpdated 时才设置，否则保持为空
     let lastUpdatedDate: Date | undefined;
     if (chapterInfo.lastUpdated) {
       if (chapterInfo.lastUpdated instanceof Date) {
@@ -255,20 +255,8 @@ export abstract class BaseScraper implements NovelScraper {
           lastUpdatedDate = new Date(year, month, day);
         }
       }
-    } else if (chapterInfo.date) {
-      // 如果没有 lastUpdated 但有 date，使用 date 作为 lastUpdated（导入时从网站获取的最新信息）
-      if (chapterInfo.date instanceof Date) {
-        lastUpdatedDate = chapterInfo.date;
-      } else {
-        const dateMatch = chapterInfo.date.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-        if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-          const year = parseInt(dateMatch[1], 10);
-          const month = parseInt(dateMatch[2], 10) - 1;
-          const day = parseInt(dateMatch[3], 10);
-          lastUpdatedDate = new Date(year, month, day);
-        }
-      }
     }
+    // 注意：如果只有 date 而没有 lastUpdated，则不设置 lastUpdated（保持 undefined）
 
     const chapter: Chapter = {
       id: idGenerator.generate(),
@@ -278,7 +266,7 @@ export abstract class BaseScraper implements NovelScraper {
       createdAt: chapterDate,
     };
 
-    // 在导入时，始终设置 lastUpdated（如果从网站获取到了日期信息）
+    // 只有当网站明确提供了 lastUpdated 时才设置
     if (lastUpdatedDate) {
       chapter.lastUpdated = lastUpdatedDate;
     }
