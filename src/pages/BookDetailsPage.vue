@@ -18,8 +18,8 @@ import {
 import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Volume, Chapter, Novel } from 'src/types/novel';
-import BookDialog from 'src/components/BookDialog.vue';
-import ParagraphCard from 'src/components/ParagraphCard.vue';
+import BookDialog from 'src/components/dialogs/BookDialog.vue';
+import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 
 const route = useRoute();
 const router = useRouter();

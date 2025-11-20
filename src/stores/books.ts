@@ -1,43 +1,63 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { Novel } from 'src/types/novel';
-
-const STORAGE_KEY = 'luna-ai-books';
+import { getDB } from 'src/utils/indexed-db';
 
 /**
- * 从本地存储加载书籍
+ * 从 IndexedDB 加载所有书籍
  */
-function loadBooksFromStorage(): Novel[] {
+async function loadBooksFromDB(): Promise<Novel[]> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const books = JSON.parse(stored) as Novel[];
-      // 将日期字符串转换回 Date 对象
-      return books.map((book) => ({
-        ...book,
-        lastEdited: new Date(book.lastEdited),
-        createdAt: new Date(book.createdAt),
-      }));
-    }
-  } catch (error) {
-    console.error('Failed to load books from storage:', error);
+    const db = await getDB();
+    const books = await db.getAll('books');
+    return books;
+  } catch {
+    return [];
   }
-  return [];
 }
 
 /**
- * 保存书籍到本地存储
+ * 保存单本书籍到 IndexedDB
  */
-function saveBooksToStorage(books: Novel[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(books));
-  } catch (error) {
-    console.error('Failed to save books to storage:', error);
+async function saveBookToDB(book: Novel): Promise<void> {
+  const db = await getDB();
+  await db.put('books', book);
+}
+
+/**
+ * 从 IndexedDB 删除书籍
+ */
+async function deleteBookFromDB(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete('books', id);
+}
+
+/**
+ * 清空 IndexedDB 中的所有书籍
+ */
+async function clearBooksInDB(): Promise<void> {
+  const db = await getDB();
+  await db.clear('books');
+}
+
+/**
+ * 批量保存书籍到 IndexedDB
+ */
+async function bulkSaveBooksToDB(books: Novel[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction('books', 'readwrite');
+  const store = tx.objectStore('books');
+
+  for (const book of books) {
+    await store.put(book);
   }
+
+  await tx.done;
 }
 
 export const useBooksStore = defineStore('books', {
   state: () => ({
-    books: loadBooksFromStorage(),
+    books: [] as Novel[],
+    isLoaded: false,
   }),
 
   getters: {
@@ -53,17 +73,37 @@ export const useBooksStore = defineStore('books', {
 
   actions: {
     /**
+     * 从 IndexedDB 加载所有书籍
+     */
+    async loadBooks(): Promise<void> {
+      if (this.isLoaded) {
+        return; // 已加载，跳过
+      }
+
+      this.books = await loadBooksFromDB();
+      this.isLoaded = true;
+    },
+
+    /**
      * 添加新书籍
      */
-    addBook(book: Novel): void {
+    async addBook(book: Novel): Promise<void> {
       this.books.push(book);
-      saveBooksToStorage(this.books);
+      await saveBookToDB(book);
+    },
+
+    /**
+     * 批量添加书籍（一次性保存到 IndexedDB）
+     */
+    async bulkAddBooks(books: Novel[]): Promise<void> {
+      this.books.push(...books);
+      await bulkSaveBooksToDB(books);
     },
 
     /**
      * 更新书籍
      */
-    updateBook(id: string, updates: Partial<Novel>): void {
+    async updateBook(id: string, updates: Partial<Novel>): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
       if (index > -1) {
         const updatedBook = { ...this.books[index], ...updates } as Novel;
@@ -72,27 +112,27 @@ export const useBooksStore = defineStore('books', {
           delete updatedBook.cover;
         }
         this.books[index] = updatedBook;
-        saveBooksToStorage(this.books);
+        await saveBookToDB(updatedBook);
       }
     },
 
     /**
      * 删除书籍
      */
-    deleteBook(id: string): void {
+    async deleteBook(id: string): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
       if (index > -1) {
         this.books.splice(index, 1);
-        saveBooksToStorage(this.books);
+        await deleteBookFromDB(id);
       }
     },
 
     /**
      * 清空所有书籍（用于重置）
      */
-    clearBooks(): void {
+    async clearBooks(): Promise<void> {
       this.books = [];
-      saveBooksToStorage(this.books);
+      await clearBooksInDB();
     },
   },
 });

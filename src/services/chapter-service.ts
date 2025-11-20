@@ -281,19 +281,14 @@ export class ChapterService {
     text: string;
     selectedTranslationId: string;
     translations: never[];
-    lastEdited: Date;
-    createdAt: Date;
   }> {
     const idGenerator = new UniqueIdGenerator();
     return content.split('\n').map((text) => {
-      const now = new Date();
       return {
         id: idGenerator.generate(),
         text: text, // 不使用 trim()，保留原始格式（包括开头空格和空行）
         selectedTranslationId: '',
         translations: [],
-        lastEdited: now, // 初始创建时，lastEdited 等于 createdAt
-        createdAt: now,
       };
     });
   }

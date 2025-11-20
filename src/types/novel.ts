@@ -92,16 +92,12 @@ export interface Paragraph {
   text: string;
   selectedTranslationId: string; // id of Translation
   translations: Translation[];
-  lastEdited: Date;
-  createdAt: Date;
 }
 
 export interface Translation {
   id: string;
   translation: string;
   aiModelId: string; // id of AIModel
-  lastTranslatedAt: Date;
-  createdAt: Date;
 }
 
 export interface Note {
@@ -120,8 +116,6 @@ export interface Terminology {
   name: string;
   description?: string;
   translation: Translation;
-  lastEdited: Date;
-  createdAt: Date;
   occurrences: Occurrence[];
 }
 
@@ -132,8 +126,6 @@ export interface CharacterSetting {
   description?: string;
   translation: Translation[];
   aliases: CharacterSetting[];
-  lastEdited: Date;
-  createdAt: Date;
   occurrences: Occurrence[];
 }
 

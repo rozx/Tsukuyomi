@@ -4,7 +4,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/types/novel';
-import SettingsDialog from './SettingsDialog.vue';
+import SettingsDialog from '../dialogs/SettingsDialog.vue';
 
 const router = useRouter();
 const booksStore = useBooksStore();

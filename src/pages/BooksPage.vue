@@ -15,8 +15,8 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/types/novel';
-import BookDialog from 'src/components/BookDialog.vue';
-import NovelScraperDialog from 'src/components/NovelScraperDialog.vue';
+import BookDialog from 'src/components/dialogs/BookDialog.vue';
+import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import {
   formatWordCount,
   getNovelCharCount,
@@ -326,7 +326,7 @@ const handleFileSelect = async (event: Event) => {
           lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
         };
 
-        booksStore.addBook(newBook);
+        await booksStore.addBook(newBook);
 
         // 如果书籍有封面，添加到封面历史
         if (newBook.cover) {
@@ -370,7 +370,7 @@ const handleFileSelect = async (event: Event) => {
 };
 
 // 处理从网站导入的书籍
-const handleImportBook = (novel: Novel) => {
+const handleImportBook = async (novel: Novel) => {
   const now = new Date();
   const newBook: Novel = {
     ...novel,
@@ -378,7 +378,7 @@ const handleImportBook = (novel: Novel) => {
     createdAt: now,
     lastEdited: now,
   };
-  booksStore.addBook(newBook);
+  await booksStore.addBook(newBook);
 
   // 如果导入的书籍有封面，添加到封面历史
   if (newBook.cover) {
@@ -408,7 +408,7 @@ const deleteBook = (book: Novel) => {
 };
 
 // 确认删除书籍
-const confirmDeleteBook = () => {
+const confirmDeleteBook = async () => {
   if (!bookToDelete.value) {
     return;
   }
@@ -428,7 +428,7 @@ const confirmDeleteBook = () => {
   }
 
   // 执行删除
-  booksStore.deleteBook(bookToDelete.value.id);
+  await booksStore.deleteBook(bookToDelete.value.id);
 
   // 关闭对话框
   showDeleteConfirm.value = false;
@@ -490,9 +490,9 @@ const isDeleteDisabled = computed(() => {
 });
 
 // 切换收藏状态
-const toggleStar = (book: Novel) => {
+const toggleStar = async (book: Novel) => {
   const isStarred = book.starred || false;
-  booksStore.updateBook(book.id, { starred: !isStarred });
+  await booksStore.updateBook(book.id, { starred: !isStarred });
   toast.add({
     severity: 'success',
     summary: isStarred ? '已取消收藏' : '已收藏',
@@ -507,7 +507,7 @@ const navigateToBookDetails = (book: Novel) => {
 };
 
 // 保存书籍（添加或编辑）
-const handleSave = (formData: Partial<Novel>) => {
+const handleSave = async (formData: Partial<Novel>) => {
   if (showAddDialog.value) {
     // 添加新书籍
     const now = new Date();
@@ -526,7 +526,7 @@ const handleSave = (formData: Partial<Novel>) => {
       createdAt: now,
       lastEdited: now,
     };
-    booksStore.addBook(newBook);
+    await booksStore.addBook(newBook);
 
     // 如果新书有封面，添加到封面历史
     if (newBook.cover) {
@@ -569,7 +569,7 @@ const handleSave = (formData: Partial<Novel>) => {
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
     }
-    booksStore.updateBook(selectedBook.value.id, updates);
+    await booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;
     const bookTitle = updates.title || selectedBook.value.title;
     selectedBook.value = null;

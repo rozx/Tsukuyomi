@@ -26,6 +26,11 @@ export interface AppSettings {
    * 值为模型 ID 或 null（表示未设置）
    */
   taskDefaultModels?: TaskDefaultModels;
+  /**
+   * 最后打开的设置标签页索引
+   * 默认值：0（第一个标签页）
+   */
+  lastOpenedSettingsTab?: number;
 }
 
 export interface Settings {

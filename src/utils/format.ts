@@ -30,3 +30,39 @@ export function formatWordCount(count: number | null): string {
   return formatCharCount(count);
 }
 
+/**
+ * 格式化时间戳为相对时间（如：刚刚、x 分钟前、x 小时前等）
+ * @param timestamp 时间戳（毫秒）
+ * @returns 格式化后的相对时间字符串
+ */
+export function formatRelativeTime(timestamp: number | undefined | null): string {
+  if (!timestamp || timestamp === 0) {
+    return '从未';
+  }
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) {
+    return '刚刚';
+  } else if (minutes < 60) {
+    return `${minutes} 分钟前`;
+  } else if (hours < 24) {
+    return `${hours} 小时前`;
+  } else if (days < 7) {
+    return `${days} 天前`;
+  } else {
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+}
+

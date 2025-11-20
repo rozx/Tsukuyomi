@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import AppHeader from '../components/AppHeader.vue';
-import AppFooter from '../components/AppFooter.vue';
-import AppSideMenu from '../components/AppSideMenu.vue';
+import AppHeader from '../components/layout/AppHeader.vue';
+import AppFooter from '../components/layout/AppFooter.vue';
+import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import Toast from 'primevue/toast';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';

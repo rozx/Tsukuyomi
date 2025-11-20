@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import AppMessage, { type MessageDetail } from './AppMessage.vue';
+import AppMessage, { type MessageDetail } from '../common/AppMessage.vue';
 
 export interface TestResultLimits {
   rateLimit?: string;

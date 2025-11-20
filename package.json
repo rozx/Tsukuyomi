@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@octokit/rest": "^22.0.1",
     "@quasar/extras": "^1.16.4",
     "axios": "^1.2.1",
     "cheerio": "^1.1.2",
+    "idb": "^8.0.3",
     "lodash": "^4.17.21",
     "novel-downloader": "^2.0.40",
     "openai": "^6.9.0",

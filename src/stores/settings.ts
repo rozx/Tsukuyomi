@@ -1,8 +1,11 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { AppSettings } from 'src/types/settings';
+import type { SyncConfig } from 'src/types/sync';
+import { SyncType } from 'src/types/sync';
 import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
 
 const STORAGE_KEY = 'luna-ai-settings';
+const SYNC_STORAGE_KEY = 'luna-ai-sync';
 
 /**
  * 默认设置
@@ -10,7 +13,57 @@ const STORAGE_KEY = 'luna-ai-settings';
 const DEFAULT_SETTINGS: AppSettings = {
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
+  lastOpenedSettingsTab: 0,
 };
+
+/**
+ * 默认 Gist 同步配置
+ */
+function createDefaultGistSyncConfig(): SyncConfig {
+  return {
+    enabled: false,
+    lastSyncTime: 0,
+    syncInterval: 300000, // 5 分钟
+    syncType: SyncType.Gist,
+    syncParams: {},
+    secret: '',
+    apiEndpoint: '',
+  };
+}
+
+/**
+ * 从本地存储加载同步配置
+ */
+function loadSyncFromStorage(): SyncConfig[] {
+  try {
+    const stored = localStorage.getItem(SYNC_STORAGE_KEY);
+    if (stored) {
+      const syncs = JSON.parse(stored) as SyncConfig[];
+      return syncs.map((sync) => ({
+        ...createDefaultGistSyncConfig(),
+        ...sync,
+        syncParams: {
+          ...createDefaultGistSyncConfig().syncParams,
+          ...(sync.syncParams || {}),
+        },
+      }));
+    }
+  } catch (error) {
+    console.error('Failed to load sync from storage:', error);
+  }
+  return [];
+}
+
+/**
+ * 保存同步配置到本地存储
+ */
+function saveSyncToStorage(syncs: SyncConfig[]): void {
+  try {
+    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs));
+  } catch (error) {
+    console.error('Failed to save sync to storage:', error);
+  }
+}
 
 /**
  * 从本地存储加载设置
@@ -51,6 +104,7 @@ function saveSettingsToStorage(settings: AppSettings): void {
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     settings: loadSettingsFromStorage(),
+    syncs: loadSyncFromStorage(),
   }),
 
   getters: {
@@ -68,6 +122,21 @@ export const useSettingsStore = defineStore('settings', {
       return (task: keyof AIModelDefaultTasks): string | null | undefined => {
         return state.settings.taskDefaultModels?.[task];
       };
+    },
+
+    /**
+     * 获取最后打开的设置标签页索引
+     */
+    lastOpenedSettingsTab: (state): number => {
+      return state.settings.lastOpenedSettingsTab ?? 0;
+    },
+
+    /**
+     * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
+     */
+    gistSync: (state): SyncConfig => {
+      const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
+      return gistSync ?? createDefaultGistSyncConfig();
     },
   },
 
@@ -127,6 +196,96 @@ export const useSettingsStore = defineStore('settings', {
      */
     importSettings(settings: Partial<AppSettings>): void {
       this.updateSettings(settings);
+    },
+
+    /**
+     * 设置最后打开的设置标签页索引
+     */
+    setLastOpenedSettingsTab(tabIndex: number): void {
+      this.updateSettings({ lastOpenedSettingsTab: tabIndex });
+    },
+
+    /**
+     * 更新 Gist 同步配置
+     */
+    updateGistSync(updates: Partial<SyncConfig>): void {
+      const index = this.syncs.findIndex((sync) => sync.syncType === SyncType.Gist);
+      const defaultConfig = createDefaultGistSyncConfig();
+      const existingConfig = index >= 0 ? this.syncs[index] : undefined;
+
+      const updatedConfig: SyncConfig = {
+        enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
+        lastSyncTime: updates.lastSyncTime ?? existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime,
+        syncInterval: updates.syncInterval ?? existingConfig?.syncInterval ?? defaultConfig.syncInterval,
+        syncType: updates.syncType ?? existingConfig?.syncType ?? defaultConfig.syncType,
+        syncParams: {
+          ...(existingConfig?.syncParams ?? defaultConfig.syncParams),
+          ...(updates.syncParams || {}),
+        },
+        secret: updates.secret ?? existingConfig?.secret ?? defaultConfig.secret,
+        apiEndpoint: updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
+      };
+
+      if (index >= 0) {
+        this.syncs[index] = updatedConfig;
+      } else {
+        this.syncs.push(updatedConfig);
+      }
+
+      saveSyncToStorage(this.syncs);
+    },
+
+    /**
+     * 设置 Gist 同步启用状态
+     */
+    setGistSyncEnabled(enabled: boolean): void {
+      this.updateGistSync({ enabled });
+    },
+
+    /**
+     * 设置 Gist 用户名和 token
+     */
+    setGistSyncCredentials(username: string, token: string): void {
+      this.updateGistSync({
+        syncParams: {
+          username,
+        },
+        secret: token,
+      });
+    },
+
+    /**
+     * 设置 Gist ID
+     */
+    setGistId(gistId: string): void {
+      this.updateGistSync({
+        syncParams: {
+          gistId,
+        },
+      });
+    },
+
+    /**
+     * 更新最后同步时间
+     */
+    updateLastSyncTime(): void {
+      this.updateGistSync({ lastSyncTime: Date.now() });
+    },
+
+    /**
+     * 设置同步间隔（毫秒）
+     * 如果设置为 0，则禁用自动同步
+     */
+    setSyncInterval(intervalMs: number): void {
+      if (intervalMs < 0) {
+        intervalMs = 0;
+      }
+      // 最大 24 小时（1440 分钟）
+      const maxInterval = 1440 * 60000;
+      if (intervalMs > maxInterval) {
+        intervalMs = maxInterval;
+      }
+      this.updateGistSync({ syncInterval: intervalMs });
     },
   },
 });
