@@ -601,13 +601,14 @@ const handleSave = async (formData: Partial<Novel>) => {
             placeholder="搜索书籍标题、别名、作者、描述或标签..."
             class="search-input"
           />
-          <Button
-            v-if="searchQuery"
-            icon="pi pi-times"
-            class="p-button-text p-button-sm"
-            @click="searchQuery = ''"
-            title="清除搜索"
-          />
+          <InputGroupAddon v-if="searchQuery" class="input-action-addon">
+            <Button
+              icon="pi pi-times"
+              class="p-button-text p-button-sm input-action-button"
+              @click="searchQuery = ''"
+              title="清除搜索"
+            />
+          </InputGroupAddon>
         </InputGroup>
         <Button
           :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
@@ -672,9 +673,9 @@ const handleSave = async (formData: Partial<Novel>) => {
 
       <template #grid="slotProps">
         <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4"
+          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 items-stretch"
         >
-          <div v-for="book in slotProps.items" :key="book.id" class="book-card group">
+          <div v-for="book in slotProps.items" :key="book.id" class="book-card group flex flex-col h-full">
             <!-- 封面 -->
             <div
               class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
@@ -693,9 +694,9 @@ const handleSave = async (formData: Partial<Novel>) => {
               />
             </div>
             <!-- 内容 -->
-            <div class="px-1 pb-2 space-y-1.5">
+            <div class="px-1 pb-2 space-y-1.5 flex flex-col flex-1">
               <h3
-                class="text-sm font-semibold line-clamp-2 group-hover:text-primary transition-colors cursor-pointer"
+                class="text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
                 :title="book.title"
                 @click="navigateToBookDetails(book)"
               >
@@ -706,7 +707,7 @@ const handleSave = async (formData: Partial<Novel>) => {
               </p>
 
               <!-- 统计信息 -->
-              <div class="text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5">
+              <div class="text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto">
                 <div class="flex items-center justify-between">
                   <span>章节:</span>
                   <span class="font-medium">{{ getTotalChapters(book) }}</span>
@@ -810,10 +811,10 @@ const handleSave = async (formData: Partial<Novel>) => {
                   autofocus
                   @keyup.enter="if (!isDeleteDisabled) confirmDeleteBook();"
                 />
-                <InputGroupAddon>
+                <InputGroupAddon class="input-action-addon">
                   <Button
                     icon="pi pi-copy"
-                    class="p-button-text p-button-sm"
+                    class="p-button-text p-button-sm input-action-button"
                     title="复制标题"
                     @click="copyBookTitle"
                   />
@@ -854,6 +855,25 @@ const handleSave = async (formData: Partial<Novel>) => {
 </template>
 
 <style scoped>
+.delete-confirm-dialog :deep(.p-inputgroup-addon) {
+  padding: 0 !important;
+  display: flex !important;
+  align-items: stretch !important;
+  width: auto;
+}
+
+.delete-confirm-dialog :deep(.p-inputgroup-addon .p-button) {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.5rem !important;
+  min-width: 2.5rem;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+
 .book-card {
   background: var(--white-opacity-3);
   border: 1px solid var(--white-opacity-8);

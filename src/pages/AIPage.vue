@@ -230,10 +230,10 @@ const formatApiKey = (apiKey: string): string => {
               placeholder="搜索模型名称、提供商、模型类型或默认任务..."
               class="search-input"
             />
-            <InputGroupAddon v-if="searchQuery" class="clear-addon">
+            <InputGroupAddon v-if="searchQuery" class="input-action-addon">
               <Button
                 icon="pi pi-times"
-                class="p-button-text p-button-sm clear-button"
+                class="p-button-text p-button-sm input-action-button"
                 @click="searchQuery = ''"
                 title="清除搜索"
               />

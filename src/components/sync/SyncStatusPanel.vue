@@ -9,6 +9,12 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
+import ConflictResolutionDialog, {
+  type ConflictResolution,
+} from 'src/components/dialogs/ConflictResolutionDialog.vue';
+import { ConflictDetectionService } from 'src/services/conflict-detection-service';
+import type { ConflictItem } from 'src/services/conflict-detection-service';
+import { SyncDataService } from 'src/services/sync-data-service';
 
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();
@@ -19,7 +25,10 @@ const gistSyncService = new GistSyncService();
 
 // 同步相关
 const gistSync = computed(() => settingsStore.gistSync);
-const isSyncing = ref(false);
+const isSyncing = computed({
+  get: () => settingsStore.isSyncing,
+  set: (value: boolean) => settingsStore.setSyncing(value),
+});
 
 // 计算同步状态
 const syncStatus = computed(() => {
@@ -69,6 +78,16 @@ const formatNextSyncTime = computed(() => {
 const remoteStats = ref<{
   booksCount: number;
   aiModelsCount: number;
+} | null>(null);
+
+// 冲突相关
+const showConflictDialog = ref(false);
+const detectedConflicts = ref<ConflictItem[]>([]);
+const pendingRemoteData = ref<{
+  novels: any[];
+  aiModels: any[];
+  appSettings?: any;
+  coverHistory?: any[];
 } | null>(null);
 
 // 上传配置
@@ -130,6 +149,19 @@ const uploadConfig = async () => {
   }
 };
 
+// 应用下载的数据（根据冲突解决结果）
+const applyDownloadedData = async (
+  remoteData: {
+    novels?: any[] | null;
+    aiModels?: any[] | null;
+    appSettings?: any;
+    coverHistory?: any[] | null;
+  } | null,
+  resolutions: ConflictResolution[],
+) => {
+  await SyncDataService.applyDownloadedData(remoteData, resolutions);
+};
+
 // 下载配置
 const downloadConfig = async () => {
   const config = gistSync.value;
@@ -153,52 +185,23 @@ const downloadConfig = async () => {
     const result = await gistSyncService.downloadFromGist(config);
 
     if (result.success && result.data) {
-      // 覆盖当前的 AI 模型数据
-      if (result.data.aiModels && result.data.aiModels.length > 0) {
-        aiModelsStore.clearModels();
-        result.data.aiModels.forEach((model) => {
-          aiModelsStore.addModel(model);
-        });
+      // 检测冲突并创建安全的数据对象
+      const { hasConflicts, conflicts, safeRemoteData } =
+        SyncDataService.detectConflictsAndCreateSafeData(result.data);
+
+      if (hasConflicts) {
+        // 有冲突，显示冲突解决对话框
+        detectedConflicts.value = conflicts;
+        pendingRemoteData.value = safeRemoteData;
+        showConflictDialog.value = true;
+        isSyncing.value = false;
+        return;
       }
 
-      // 覆盖当前的书籍数据
-      if (result.data.novels && result.data.novels.length > 0) {
-        await booksStore.clearBooks();
-        try {
-          // 使用批量添加方法，只保存一次到 IndexedDB
-          await booksStore.bulkAddBooks(result.data.novels);
-        } catch (error) {
-          // 如果保存失败，给出明确的错误提示
-          const errorMessage =
-            error instanceof Error ? error.message : '保存书籍到本地存储时发生错误';
-          toast.add({
-            severity: 'error',
-            summary: '存储失败',
-            detail: errorMessage,
-            life: 10000,
-          });
-          throw error; // 重新抛出以中断后续操作
-        }
-      }
-
-      // 覆盖当前的封面历史数据
-      if (result.data.coverHistory && result.data.coverHistory.length > 0) {
-        coverHistoryStore.clearHistory();
-        result.data.coverHistory.forEach((cover) => {
-          coverHistoryStore.addCover(cover);
-        });
-      }
-
-      // 覆盖当前的应用设置（但保留 Gist 配置）
-      if (result.data.appSettings) {
-        const currentGistSync = settingsStore.gistSync;
-        settingsStore.importSettings(result.data.appSettings);
-        // 恢复 Gist 配置
-        settingsStore.updateGistSync(currentGistSync);
-      }
+      // 无冲突，直接应用
+      await applyDownloadedData(safeRemoteData, []);
 
       settingsStore.updateLastSyncTime();
-      // 更新远程统计数据（下载的数据）
       remoteStats.value = {
         booksCount: result.data.novels?.length || 0,
         aiModelsCount: result.data.aiModels?.length || 0,
@@ -227,6 +230,58 @@ const downloadConfig = async () => {
   } finally {
     isSyncing.value = false;
   }
+};
+
+// 处理冲突解决
+const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
+  if (!pendingRemoteData.value) {
+    showConflictDialog.value = false;
+    return;
+  }
+
+  // 确保 remoteData 不为 null 且包含必要的字段
+  const remoteData = pendingRemoteData.value;
+
+  // 确保 novels 和 aiModels 是数组（即使为空）
+  const safeRemoteData = SyncDataService.createSafeRemoteData(remoteData);
+
+  isSyncing.value = true;
+  showConflictDialog.value = false;
+
+  try {
+    await applyDownloadedData(safeRemoteData, resolutions);
+
+    settingsStore.updateLastSyncTime();
+    remoteStats.value = {
+      booksCount: safeRemoteData.novels?.length || 0,
+      aiModelsCount: safeRemoteData.aiModels?.length || 0,
+    };
+
+    toast.add({
+      severity: 'success',
+      summary: '同步完成',
+      detail: '冲突已解决，数据已同步',
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '同步失败',
+      detail: error instanceof Error ? error.message : '应用冲突解决时发生错误',
+      life: 5000,
+    });
+  } finally {
+    isSyncing.value = false;
+    pendingRemoteData.value = null;
+    detectedConflicts.value = [];
+  }
+};
+
+// 取消冲突解决
+const handleConflictCancel = () => {
+  showConflictDialog.value = false;
+  pendingRemoteData.value = null;
+  detectedConflicts.value = [];
 };
 
 // OverlayPanel ref
@@ -315,6 +370,14 @@ defineExpose({
       </div>
     </div>
   </OverlayPanel>
+
+  <!-- 冲突解决对话框 -->
+  <ConflictResolutionDialog
+    :visible="showConflictDialog"
+    :conflicts="detectedConflicts"
+    @resolve="handleConflictResolve"
+    @cancel="handleConflictCancel"
+  />
 </template>
 
 <style scoped>

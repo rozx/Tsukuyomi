@@ -3,13 +3,68 @@ import type { Novel } from 'src/types/novel';
 import { getDB } from 'src/utils/indexed-db';
 
 /**
+ * 将 Date 对象转换为可序列化的格式（用于 IndexedDB）
+ */
+function serializeDatesForDB<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (obj instanceof Date) {
+    return obj.toISOString() as unknown as T;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => serializeDatesForDB(item)) as unknown as T;
+  }
+
+  if (typeof obj === 'object') {
+    const serialized = {} as T;
+    for (const [key, value] of Object.entries(obj)) {
+      (serialized as Record<string, unknown>)[key] = serializeDatesForDB(value);
+    }
+    return serialized;
+  }
+
+  return obj;
+}
+
+/**
+ * 将序列化的日期字符串转换回 Date 对象（从 IndexedDB 加载）
+ */
+function deserializeDatesFromDB<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(obj)) {
+    return new Date(obj) as unknown as T;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => deserializeDatesFromDB(item)) as unknown as T;
+  }
+
+  if (typeof obj === 'object') {
+    const deserialized = {} as T;
+    for (const [key, value] of Object.entries(obj)) {
+      (deserialized as Record<string, unknown>)[key] = deserializeDatesFromDB(value);
+    }
+    return deserialized;
+  }
+
+  return obj;
+}
+
+/**
  * 从 IndexedDB 加载所有书籍
  */
 async function loadBooksFromDB(): Promise<Novel[]> {
   try {
     const db = await getDB();
     const books = await db.getAll('books');
-    return books;
+    // 反序列化日期
+    return books.map((book) => deserializeDatesFromDB(book) as Novel);
   } catch {
     return [];
   }
@@ -20,7 +75,9 @@ async function loadBooksFromDB(): Promise<Novel[]> {
  */
 async function saveBookToDB(book: Novel): Promise<void> {
   const db = await getDB();
-  await db.put('books', book);
+  // 序列化日期
+  const serializedBook = serializeDatesForDB(book);
+  await db.put('books', serializedBook);
 }
 
 /**
@@ -48,7 +105,9 @@ async function bulkSaveBooksToDB(books: Novel[]): Promise<void> {
   const store = tx.objectStore('books');
 
   for (const book of books) {
-    await store.put(book);
+    // 序列化日期
+    const serializedBook = serializeDatesForDB(book);
+    await store.put(serializedBook);
   }
 
   await tx.done;
@@ -96,8 +155,15 @@ export const useBooksStore = defineStore('books', {
      * 批量添加书籍（一次性保存到 IndexedDB）
      */
     async bulkAddBooks(books: Novel[]): Promise<void> {
-      this.books.push(...books);
-      await bulkSaveBooksToDB(books);
+      // 去重：使用 Map 确保每个 ID 只出现一次
+      const uniqueBooksMap = new Map<string, Novel>();
+      for (const book of books) {
+        uniqueBooksMap.set(book.id, book);
+      }
+      const uniqueBooks = Array.from(uniqueBooksMap.values());
+      
+      this.books = uniqueBooks;
+      await bulkSaveBooksToDB(uniqueBooks);
     },
 
     /**

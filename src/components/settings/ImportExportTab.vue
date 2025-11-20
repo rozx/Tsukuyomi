@@ -81,10 +81,8 @@ const handleFileSelect = async (event: Event) => {
 
     // 覆盖当前的书籍数据
     if (result.data.novels.length > 0) {
-      booksStore.clearBooks();
-      result.data.novels.forEach((novel) => {
-        booksStore.addBook(novel);
-      });
+      await booksStore.clearBooks();
+      await booksStore.bulkAddBooks(result.data.novels);
     }
 
     // 覆盖当前的封面历史数据
@@ -129,8 +127,7 @@ const handleFileSelect = async (event: Event) => {
         <div>
           <h3 class="text-sm font-medium text-moon/90 mb-1">导入资料</h3>
           <p class="text-xs text-moon/70">
-            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI
-            模型配置、书籍数据、封面历史和应用设置
+            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI 模型配置、书籍数据、封面历史和应用设置
           </p>
         </div>
         <Button
@@ -170,4 +167,3 @@ const handleFileSelect = async (event: Event) => {
     />
   </div>
 </template>
-

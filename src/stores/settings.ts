@@ -28,6 +28,7 @@ function createDefaultGistSyncConfig(): SyncConfig {
     syncParams: {},
     secret: '',
     apiEndpoint: '',
+    lastSyncedModelIds: [],
   };
 }
 
@@ -105,6 +106,7 @@ export const useSettingsStore = defineStore('settings', {
   state: () => ({
     settings: loadSettingsFromStorage(),
     syncs: loadSyncFromStorage(),
+    isSyncing: false, // 全局同步状态
   }),
 
   getters: {
@@ -143,12 +145,23 @@ export const useSettingsStore = defineStore('settings', {
   actions: {
     /**
      * 更新设置
+     * 需要深度合并 taskDefaultModels
      */
     updateSettings(updates: Partial<AppSettings>): void {
-      this.settings = {
+      // 深度合并 taskDefaultModels
+      const mergedSettings: AppSettings = {
         ...this.settings,
         ...updates,
       };
+      
+      if (updates.taskDefaultModels !== undefined) {
+        mergedSettings.taskDefaultModels = {
+          ...this.settings.taskDefaultModels,
+          ...updates.taskDefaultModels,
+        };
+      }
+      
+      this.settings = mergedSettings;
       saveSettingsToStorage(this.settings);
     },
 
@@ -193,9 +206,23 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 导入设置（用于导入）
+     * 需要深度合并 taskDefaultModels，避免覆盖现有配置
      */
     importSettings(settings: Partial<AppSettings>): void {
-      this.updateSettings(settings);
+      // 深度合并 taskDefaultModels，确保不会丢失本地配置
+      const mergedSettings: Partial<AppSettings> = {
+        ...settings,
+      };
+      
+      if (settings.taskDefaultModels !== undefined) {
+        // 如果远程有 taskDefaultModels，深度合并
+        mergedSettings.taskDefaultModels = {
+          ...this.settings.taskDefaultModels,
+          ...settings.taskDefaultModels,
+        };
+      }
+      
+      this.updateSettings(mergedSettings);
     },
 
     /**
@@ -215,8 +242,8 @@ export const useSettingsStore = defineStore('settings', {
 
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
-        lastSyncTime: updates.lastSyncTime ?? existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime,
-        syncInterval: updates.syncInterval ?? existingConfig?.syncInterval ?? defaultConfig.syncInterval,
+        lastSyncTime: updates.lastSyncTime !== undefined ? updates.lastSyncTime : (existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime),
+        syncInterval: updates.syncInterval !== undefined ? updates.syncInterval : (existingConfig?.syncInterval ?? defaultConfig.syncInterval),
         syncType: updates.syncType ?? existingConfig?.syncType ?? defaultConfig.syncType,
         syncParams: {
           ...(existingConfig?.syncParams ?? defaultConfig.syncParams),
@@ -224,10 +251,22 @@ export const useSettingsStore = defineStore('settings', {
         },
         secret: updates.secret ?? existingConfig?.secret ?? defaultConfig.secret,
         apiEndpoint: updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
+        lastSyncedModelIds: updates.lastSyncedModelIds ?? existingConfig?.lastSyncedModelIds ?? defaultConfig.lastSyncedModelIds,
       };
 
       if (index >= 0) {
-        this.syncs[index] = updatedConfig;
+        // 更新现有配置对象的所有属性，确保响应式更新
+        const existing = this.syncs[index];
+        if (existing) {
+          Object.keys(updatedConfig).forEach((key) => {
+            const typedKey = key as keyof SyncConfig;
+            if (updatedConfig[typedKey] !== undefined) {
+              (existing as Record<string, unknown>)[key] = updatedConfig[typedKey];
+            }
+          });
+        } else {
+          this.syncs[index] = updatedConfig;
+        }
       } else {
         this.syncs.push(updatedConfig);
       }
@@ -273,6 +312,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 更新上次同步时的模型 ID 列表
+     */
+    updateLastSyncedModelIds(modelIds: string[]): void {
+      this.updateGistSync({ lastSyncedModelIds: modelIds });
+    },
+
+    /**
      * 设置同步间隔（毫秒）
      * 如果设置为 0，则禁用自动同步
      */
@@ -286,6 +332,13 @@ export const useSettingsStore = defineStore('settings', {
         intervalMs = maxInterval;
       }
       this.updateGistSync({ syncInterval: intervalMs });
+    },
+
+    /**
+     * 设置同步状态
+     */
+    setSyncing(syncing: boolean): void {
+      this.isSyncing = syncing;
     },
   },
 });

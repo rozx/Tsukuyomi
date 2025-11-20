@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MenuItem } from 'primevue/menuitem';
-import { ref, computed, type ComponentPublicInstance } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import { useUiStore } from 'src/stores/ui';
@@ -84,11 +84,15 @@ const toggleSyncPanel = (event: Event) => {
 
 // 同步相关（仅用于按钮状态显示）
 const gistSync = computed(() => settingsStore.gistSync);
+const isSyncing = computed(() => settingsStore.isSyncing);
 
 // 计算同步状态（仅用于按钮图标）
 const syncStatus = computed(() => {
   if (!gistSync.value.enabled) {
     return { icon: 'pi pi-cloud', color: 'text-moon/50', label: '未启用' };
+  }
+  if (isSyncing.value) {
+    return { icon: 'pi pi-spin pi-spinner', color: 'text-primary', label: '同步中' };
   }
   if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
     return { icon: 'pi pi-cloud-upload', color: 'text-green-500', label: '已同步' };
@@ -104,12 +108,100 @@ const nextSyncTime = computed(() => {
   return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
 });
 
-// 格式化下次同步时间（仅用于按钮标签）
-const formatNextSyncTime = computed(() => {
+// 倒计时状态（秒数）
+const countdownSeconds = ref<number | null>(null);
+
+// 更新倒计时
+const updateCountdown = () => {
   const next = nextSyncTime.value;
   if (!next) {
-    return '未设置';
+    countdownSeconds.value = null;
+    return;
   }
+  const now = Date.now();
+  const diff = next - now;
+  if (diff <= 0) {
+    countdownSeconds.value = 0;
+    return;
+  }
+  const seconds = Math.floor(diff / 1000);
+  // 如果少于1分钟（60秒），显示倒计时
+  if (seconds < 60) {
+    countdownSeconds.value = seconds;
+  } else {
+    countdownSeconds.value = null;
+  }
+};
+
+// 定时器
+let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+// 启动倒计时定时器
+const startCountdown = () => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+  }
+  updateCountdown();
+  countdownInterval = setInterval(() => {
+    updateCountdown();
+    // 如果倒计时结束，清除定时器
+    if (countdownSeconds.value !== null && countdownSeconds.value <= 0) {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }
+  }, 1000);
+};
+
+// 停止倒计时定时器
+const stopCountdown = () => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+  countdownSeconds.value = null;
+};
+
+// 监听同步配置变化，重新启动倒计时
+const watchSyncConfig = () => {
+  stopCountdown();
+  if (gistSync.value.enabled && nextSyncTime.value) {
+    const now = Date.now();
+    const diff = nextSyncTime.value - now;
+    if (diff > 0 && diff < 60000) {
+      // 如果距离下次同步少于1分钟，启动倒计时
+      startCountdown();
+    }
+  }
+};
+
+// 格式化下次同步时间（仅用于按钮标签）
+const formatNextSyncTime = computed(() => {
+  // 如果正在同步，显示同步状态
+  if (isSyncing.value) {
+    return '同步中...';
+  }
+  
+  // 如果未启用同步，显示状态
+  if (!gistSync.value.enabled) {
+    return syncStatus.value.label;
+  }
+  
+  const next = nextSyncTime.value;
+  if (!next) {
+    // 如果没有下次同步时间，检查是否有最后同步时间
+    if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
+      return '已同步';
+    }
+    return '未同步';
+  }
+  
+  // 如果正在倒计时，显示倒计时
+  if (countdownSeconds.value !== null && countdownSeconds.value >= 0) {
+    return `${countdownSeconds.value}秒`;
+  }
+  
   const now = Date.now();
   const diff = next - now;
   if (diff <= 0) {
@@ -124,6 +216,34 @@ const formatNextSyncTime = computed(() => {
     return `${minutes} 分钟后`;
   }
   return '即将同步';
+});
+
+// 定期检查定时器
+let checkInterval: ReturnType<typeof setInterval> | null = null;
+
+// 监听同步配置和下次同步时间的变化
+watch(
+  [() => gistSync.value.enabled, () => gistSync.value.lastSyncTime, () => gistSync.value.syncInterval, nextSyncTime],
+  () => {
+    watchSyncConfig();
+  },
+  { immediate: true },
+);
+
+onMounted(() => {
+  watchSyncConfig();
+  // 定期检查是否需要启动倒计时
+  checkInterval = setInterval(() => {
+    watchSyncConfig();
+  }, 5000); // 每5秒检查一次
+});
+
+onUnmounted(() => {
+  stopCountdown();
+  if (checkInterval) {
+    clearInterval(checkInterval);
+    checkInterval = null;
+  }
 });
 </script>
 
@@ -168,7 +288,7 @@ const formatNextSyncTime = computed(() => {
             @click="toggleSyncPanel"
           >
             <i :class="[syncStatus.icon, syncStatus.color]" />
-            <span v-if="gistSync.enabled && nextSyncTime" class="sync-button-label">{{
+            <span v-if="gistSync.enabled" class="sync-button-label">{{
               formatNextSyncTime
             }}</span>
           </Button>

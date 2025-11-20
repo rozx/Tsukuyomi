@@ -189,7 +189,7 @@ const selectedChapterStats = computed(() => {
 });
 
 // 添加新卷
-const handleAddVolume = () => {
+const handleAddVolume = async () => {
   if (!book.value || !newVolumeTitle.value.trim()) {
     return;
   }
@@ -205,7 +205,7 @@ const handleAddVolume = () => {
   };
 
   const updatedVolumes = [...existingVolumes, newVolume];
-  booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
@@ -219,7 +219,7 @@ const handleAddVolume = () => {
 };
 
 // 添加新章节
-const handleAddChapter = () => {
+const handleAddChapter = async () => {
   if (!book.value || !newChapterTitle.value.trim() || !selectedVolumeId.value) {
     return;
   }
@@ -261,7 +261,7 @@ const handleAddChapter = () => {
   }
   updatedVolumes[volumeIndex] = updatedVolume;
 
-  booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
@@ -313,7 +313,7 @@ const openEditChapterDialog = (chapter: Chapter) => {
 };
 
 // 保存编辑的卷
-const handleEditVolume = () => {
+const handleEditVolume = async () => {
   if (!book.value || !editingVolumeId.value || !editingVolumeTitle.value.trim()) {
     return;
   }
@@ -344,7 +344,7 @@ const handleEditVolume = () => {
   }
   updatedVolumes[volumeIndex] = updatedVolume;
 
-  booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
@@ -359,7 +359,7 @@ const handleEditVolume = () => {
 };
 
 // 保存编辑的章节
-const handleEditChapter = () => {
+const handleEditChapter = async () => {
   if (
     !book.value ||
     !editingChapterId.value ||
@@ -427,7 +427,7 @@ const handleEditChapter = () => {
     }
   }
 
-  booksStore.updateBook(book.value.id, { volumes: existingVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: existingVolumes });
 
   const moveMessage =
     editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value ? '并移动到新卷' : '';
@@ -461,7 +461,7 @@ const openDeleteChapterConfirm = (chapter: Chapter) => {
 };
 
 // 确认删除卷
-const handleDeleteVolume = () => {
+const handleDeleteVolume = async () => {
   if (!book.value || !deletingVolumeId.value) {
     return;
   }
@@ -469,7 +469,7 @@ const handleDeleteVolume = () => {
   const existingVolumes = book.value.volumes || [];
   const updatedVolumes = existingVolumes.filter((v) => v.id !== deletingVolumeId.value);
 
-  booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
@@ -484,7 +484,7 @@ const handleDeleteVolume = () => {
 };
 
 // 确认删除章节
-const handleDeleteChapter = () => {
+const handleDeleteChapter = async () => {
   if (!book.value || !deletingChapterId.value) {
     return;
   }
@@ -508,7 +508,7 @@ const handleDeleteChapter = () => {
   });
 
   if (updated) {
-    booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+    await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
     toast.add({
       severity: 'success',
@@ -524,7 +524,7 @@ const handleDeleteChapter = () => {
 };
 
 // 保存书籍（编辑）
-const handleBookSave = (formData: Partial<Novel>) => {
+const handleBookSave = async (formData: Partial<Novel>) => {
   if (!book.value) return;
 
   const updates: Partial<Novel> = {
@@ -554,7 +554,7 @@ const handleBookSave = (formData: Partial<Novel>) => {
   if (formData.volumes !== undefined) {
     updates.volumes = formData.volumes;
   }
-  booksStore.updateBook(book.value.id, updates);
+  await booksStore.updateBook(book.value.id, updates);
   showBookDialog.value = false;
   const bookTitle = updates.title || book.value.title;
   toast.add({
@@ -595,7 +595,7 @@ const handleDragOver = (event: DragEvent, volumeId: string, index?: number) => {
   }
 };
 
-const handleDrop = (event: DragEvent, targetVolumeId: string, targetIndex?: number) => {
+const handleDrop = async (event: DragEvent, targetVolumeId: string, targetIndex?: number) => {
   event.preventDefault();
   if (!draggedChapter.value || !book.value) return;
 
@@ -642,7 +642,7 @@ const handleDrop = (event: DragEvent, targetVolumeId: string, targetIndex?: numb
   }
 
   // 更新书籍
-  booksStore.updateBook(book.value.id, { volumes });
+  await booksStore.updateBook(book.value.id, { volumes });
 
   toast.add({
     severity: 'success',

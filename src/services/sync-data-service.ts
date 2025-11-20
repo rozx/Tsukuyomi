@@ -1,0 +1,240 @@
+import { useAIModelsStore } from 'src/stores/ai-models';
+import { useBooksStore } from 'src/stores/books';
+import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { useSettingsStore } from 'src/stores/settings';
+import { ConflictDetectionService } from 'src/services/conflict-detection-service';
+import type { ConflictResolution } from 'src/components/dialogs/ConflictResolutionDialog.vue';
+import type { GistSyncData } from 'src/services/gist-sync-service';
+
+/**
+ * 同步数据服务
+ * 处理上传/下载配置的通用逻辑
+ */
+export class SyncDataService {
+  /**
+   * 应用下载的数据（根据冲突解决结果）
+   */
+  static async applyDownloadedData(
+    remoteData: {
+      novels?: any[] | null;
+      aiModels?: any[] | null;
+      appSettings?: any;
+      coverHistory?: any[] | null;
+    } | null,
+    resolutions: ConflictResolution[],
+  ): Promise<void> {
+    // 如果 remoteData 为 null，直接返回
+    if (!remoteData) {
+      return;
+    }
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    const resolutionMap = new Map(resolutions.map((r) => [r.conflictId, r.choice]));
+
+    // 处理 AI 模型（确保 aiModels 是数组）
+    if (
+      remoteData.aiModels &&
+      Array.isArray(remoteData.aiModels) &&
+      remoteData.aiModels.length > 0
+    ) {
+      const finalModels: any[] = [];
+
+      // 收集所有远程模型（根据冲突解决选择）
+      for (const remoteModel of remoteData.aiModels) {
+        const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
+        if (localModel) {
+          // 有冲突，根据用户选择
+          const resolution = resolutionMap.get(remoteModel.id);
+          if (resolution === 'remote') {
+            finalModels.push(remoteModel);
+          } else {
+            finalModels.push(localModel);
+          }
+        } else {
+          // 新模型，直接添加
+          finalModels.push(remoteModel);
+        }
+      }
+
+      // 添加本地独有的模型
+      // 如果用户选择了 'remote'（删除本地），则不添加本地模型
+      for (const localModel of aiModelsStore.models) {
+        if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
+          // 检查是否有冲突解决选择
+          const resolution = resolutionMap.get(localModel.id);
+          if (resolution === 'remote') {
+            // 用户选择删除本地模型，不添加
+            continue;
+          }
+          // 用户选择保留本地或没有冲突，添加本地模型
+          finalModels.push(localModel);
+        }
+      }
+
+      aiModelsStore.clearModels();
+      for (const model of finalModels) {
+        aiModelsStore.addModel(model);
+      }
+    }
+
+    // 处理书籍（确保 novels 是数组）
+    if (remoteData.novels && Array.isArray(remoteData.novels) && remoteData.novels.length > 0) {
+      const finalBooks: any[] = [];
+
+      // 收集所有远程书籍（根据冲突解决选择）
+      for (const remoteNovel of remoteData.novels) {
+        const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
+        if (localNovel) {
+          // 有冲突，根据用户选择
+          const resolution = resolutionMap.get(remoteNovel.id);
+          if (resolution === 'remote') {
+            finalBooks.push(remoteNovel);
+          } else {
+            finalBooks.push(localNovel);
+          }
+        } else {
+          // 新书籍，直接添加
+          finalBooks.push(remoteNovel);
+        }
+      }
+
+      // 添加本地独有的书籍
+      // 如果用户选择了 'remote'（删除本地），则不添加本地书籍
+      for (const localBook of booksStore.books) {
+        if (!remoteData.novels.find((n) => n.id === localBook.id)) {
+          // 检查是否有冲突解决选择
+          const resolution = resolutionMap.get(localBook.id);
+          if (resolution === 'remote') {
+            // 用户选择删除本地书籍，不添加
+            continue;
+          }
+          // 用户选择保留本地或没有冲突，添加本地书籍
+          finalBooks.push(localBook);
+        }
+      }
+
+      await booksStore.clearBooks();
+      await booksStore.bulkAddBooks(finalBooks);
+    }
+
+    // 处理封面历史（确保 coverHistory 是数组）
+    if (
+      remoteData.coverHistory &&
+      Array.isArray(remoteData.coverHistory) &&
+      remoteData.coverHistory.length > 0
+    ) {
+      const finalCovers: any[] = [];
+
+      for (const remoteCover of remoteData.coverHistory) {
+        const localCover = coverHistoryStore.covers.find((c) => c.id === remoteCover.id);
+        if (localCover) {
+          const resolution = resolutionMap.get(remoteCover.id);
+          if (resolution === 'remote') {
+            finalCovers.push(remoteCover);
+          } else {
+            finalCovers.push(localCover);
+          }
+        } else {
+          finalCovers.push(remoteCover);
+        }
+      }
+
+      // 添加本地独有的封面
+      // 如果用户选择了 'remote'（删除本地），则不添加本地封面
+      for (const localCover of coverHistoryStore.covers) {
+        if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
+          // 检查是否有冲突解决选择
+          const resolution = resolutionMap.get(localCover.id);
+          if (resolution === 'remote') {
+            // 用户选择删除本地封面，不添加
+            continue;
+          }
+          // 用户选择保留本地或没有冲突，添加本地封面
+          finalCovers.push(localCover);
+        }
+      }
+
+      coverHistoryStore.clearHistory();
+      for (const cover of finalCovers) {
+        coverHistoryStore.addCover(cover);
+      }
+    }
+
+    // 处理设置
+    if (remoteData.appSettings) {
+      const resolution = resolutionMap.get('app-settings');
+      if (resolution === 'remote' || resolutions.length === 0) {
+        // 无冲突时也应用远程设置
+        const currentGistSync = settingsStore.gistSync;
+        settingsStore.importSettings(remoteData.appSettings);
+        settingsStore.updateGistSync(currentGistSync);
+      }
+    }
+  }
+
+  /**
+   * 创建安全的远程数据对象（确保 novels 和 aiModels 是数组）
+   */
+  static createSafeRemoteData(data: GistSyncData | null | undefined): {
+    novels: any[];
+    aiModels: any[];
+    appSettings?: any;
+    coverHistory: any[];
+  } {
+    return {
+      novels: Array.isArray(data?.novels) ? data.novels : [],
+      aiModels: Array.isArray(data?.aiModels) ? data.aiModels : [],
+      appSettings: data?.appSettings,
+      coverHistory: Array.isArray(data?.coverHistory) ? data.coverHistory : [],
+    };
+  }
+
+  /**
+   * 检测冲突并返回安全的数据对象
+   */
+  static detectConflictsAndCreateSafeData(
+    remoteData: GistSyncData | null | undefined,
+  ): {
+    hasConflicts: boolean;
+    conflicts: any[];
+    safeRemoteData: {
+      novels: any[];
+      aiModels: any[];
+      appSettings?: any;
+      coverHistory: any[];
+    };
+  } {
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    const safeRemoteData = this.createSafeRemoteData(remoteData);
+
+    const conflictResult = ConflictDetectionService.detectConflicts(
+      {
+        novels: booksStore.books || [],
+        aiModels: aiModelsStore.models || [],
+        appSettings: settingsStore.getAllSettings(),
+        coverHistory: coverHistoryStore.covers || [],
+      },
+      {
+        novels: safeRemoteData.novels,
+        aiModels: safeRemoteData.aiModels,
+        ...(safeRemoteData.appSettings ? { appSettings: safeRemoteData.appSettings } : {}),
+        ...(safeRemoteData.coverHistory ? { coverHistory: safeRemoteData.coverHistory } : {}),
+      },
+    );
+
+    return {
+      hasConflicts: conflictResult.hasConflicts,
+      conflicts: conflictResult.conflicts,
+      safeRemoteData,
+    };
+  }
+}
+

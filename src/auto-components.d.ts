@@ -18,6 +18,7 @@ declare module 'vue' {
     AppMessage: typeof import('./components/common/AppMessage.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
+    ConflictResolutionDialog: typeof import('./components/dialogs/ConflictResolutionDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/dialogs/CoverManagerDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
     Menu: typeof import('primevue/menu')['default']

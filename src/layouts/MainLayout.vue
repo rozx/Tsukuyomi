@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
@@ -6,9 +7,13 @@ import Toast from 'primevue/toast';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
+import { useAutoSync } from 'src/composables/useAutoSync';
+import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 
 const ui = useUiStore();
 const { markAsReadByMessage } = useToastHistory();
+const toast = useToastWithHistory();
 
 // 处理 Toast 关闭事件
 const handleToastClose = (event: any) => {
@@ -16,6 +21,39 @@ const handleToastClose = (event: any) => {
     markAsReadByMessage(event.message);
   }
 };
+
+// 自动同步
+const {
+  showConflictDialog,
+  detectedConflicts,
+  handleConflictResolve,
+  handleConflictCancel,
+  setupAutoSync,
+  stopAutoSync,
+} = useAutoSync();
+
+// 处理冲突解决（带错误处理）
+const handleConflictResolveWithError = async (resolutions: any[]) => {
+  try {
+    await handleConflictResolve(resolutions);
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '同步失败',
+      detail: error instanceof Error ? error.message : '解决冲突时发生未知错误',
+      life: 5000,
+    });
+  }
+};
+
+onMounted(() => {
+  setupAutoSync();
+
+});
+
+onUnmounted(() => {
+  stopAutoSync();
+});
 </script>
 
 <template>
@@ -45,6 +83,14 @@ const handleToastClose = (event: any) => {
 
   <!-- Toast 组件 -->
   <Toast position="top-right" @close="handleToastClose" />
+
+  <!-- 冲突解决对话框 -->
+  <ConflictResolutionDialog
+    :visible="showConflictDialog"
+    :conflicts="detectedConflicts"
+    @resolve="handleConflictResolveWithError"
+    @cancel="handleConflictCancel"
+  />
 </template>
 
 <style scoped>

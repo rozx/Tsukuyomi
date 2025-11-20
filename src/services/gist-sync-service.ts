@@ -5,6 +5,7 @@ import type { AppSettings } from 'src/types/settings';
 import type { SyncConfig } from 'src/types/sync';
 import { SyncType } from 'src/types/sync';
 import type { CoverHistoryItem } from 'src/types/novel';
+import { extractNovelIdFromChunkFileName } from 'src/utils/gist-file-utils';
 
 /**
  * Gist 文件名称常量
@@ -279,7 +280,9 @@ export class GistSyncService {
       }
 
       // 准备文件内容
-      const files: Record<string, { content: string }> = {};
+      // 注意：要删除文件，GitHub API 要求使用 null 值
+      // 类型定义：Record<string, { content: string } | null>
+      const files: Record<string, { content: string } | null> = {};
 
       // 1. 设置文件（包含 aiModels 和 appSettings）
       const settingsData = {
@@ -384,6 +387,88 @@ export class GistSyncService {
       let isRecreated = false;
 
       if (gistId) {
+        // 获取当前 Gist 的所有文件，以找出需要删除的文件
+        try {
+          const currentGist = await this.octokit.rest.gists.get({
+            gist_id: gistId,
+          });
+
+          const currentFiles = currentGist.data.files || {};
+          const localNovelIds = new Set(data.novels.map((n) => n.id));
+
+          // 创建一个集合，包含所有本地已经添加到 files 中的文件名（排除 null 值）
+          const localFileNames = new Set<string>();
+          for (const [filename, file] of Object.entries(files)) {
+            if (file !== null) {
+              localFileNames.add(filename);
+            }
+          }
+
+          // 找出需要删除的文件（远程存在但本地已删除）
+          const filesToDelete: string[] = [];
+          for (const [filename, file] of Object.entries(currentFiles)) {
+            if (!file) {
+              continue;
+            }
+
+            // 跳过设置文件
+            if (filename === GIST_FILE_NAMES.SETTINGS) {
+              continue;
+            }
+
+            // 如果文件已经在本地 files 中（即将上传），则跳过
+            if (localFileNames.has(filename)) {
+              continue;
+            }
+
+            // 检查是否是书籍相关文件
+            // 首先检查是否是分块文件（优先处理，因为它们有特殊格式）
+            if (filename.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+              // 分块文件（新格式：novel-chunk-{id}#{index}.json 或旧格式：novel-chunk-{id}-{index}.json）
+              const chunkNovelId = extractNovelIdFromChunkFileName(filename);
+              if (chunkNovelId && !localNovelIds.has(chunkNovelId)) {
+                // GitHub API 要求使用 null 值来删除文件
+                files[filename] = null; // 删除文件（书籍已删除）
+                filesToDelete.push(filename);
+              }
+            } else if (
+              filename.endsWith('.meta.json') &&
+              filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX)
+            ) {
+              // 元数据文件（novel-{id}.meta.json）
+              const metaMatch = filename.match(/^novel-(.+)\.meta\.json$/);
+              if (metaMatch && metaMatch[1] && !localNovelIds.has(metaMatch[1])) {
+                files[filename] = null; // 删除文件（书籍已删除）
+                filesToDelete.push(filename);
+              }
+            } else if (
+              filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
+              filename.endsWith('.json')
+            ) {
+              // 普通书籍文件（novel-{id}.json）
+              const novelIdMatch = filename.match(/^novel-(.+)\.json$/);
+              if (novelIdMatch && novelIdMatch[1]) {
+                const novelId = novelIdMatch[1];
+                if (!localNovelIds.has(novelId)) {
+                  files[filename] = null; // 删除文件（书籍已删除）
+                  filesToDelete.push(filename);
+                }
+              }
+            }
+          }
+
+          // 确保所有要删除的文件都被明确设置为 null
+          // GitHub API 要求使用 { content: null } 格式来删除文件
+          for (const filename of filesToDelete) {
+            if (files[filename] !== null) {
+              files[filename] = null;
+            }
+          }
+        } catch (getError) {
+          // 如果获取失败（例如 Gist 不存在），继续使用原始 files
+          // 在更新时会处理创建新 Gist 的情况
+        }
+
         // 尝试更新现有 Gist
         try {
           const response = await this.octokit.rest.gists.update({
@@ -424,8 +509,15 @@ export class GistSyncService {
       }
 
       // 验证上传的文件（必须在返回成功之前验证）
+      // 只验证实际要上传的文件（排除 null 值，即要删除的文件）
       if (gistId) {
-        await this.verifyUploadedFiles(gistId, files, uploadStats);
+        const filesToVerify: Record<string, { content: string }> = {};
+        for (const [filename, file] of Object.entries(files)) {
+          if (file !== null) {
+            filesToVerify[filename] = file;
+          }
+        }
+        await this.verifyUploadedFiles(gistId, filesToVerify, uploadStats);
       }
 
       const message = gistId ? '数据已成功同步到 Gist' : 'Gist 已创建';
@@ -505,51 +597,9 @@ export class GistSyncService {
 
       for (const fileName of Object.keys(gistFiles)) {
         if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
-          // 提取书籍 ID（支持两种格式以保持向后兼容）
-          // 新格式：novel-chunk-{id}#{index}.json（使用 # 作为分隔符）
-          // 旧格式：novel-chunk-{id}-{index}.json（向后兼容）
-          const prefix = GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX; // "novel-chunk-"
-          const prefixLength = prefix.length; // 应该是 12
-          const dotIndex = fileName.lastIndexOf('.');
-
-          if (dotIndex > prefixLength) {
-            const beforeDot = fileName.substring(0, dotIndex);
-
-            // 优先尝试新格式（使用 # 分隔符）
-            const hashIndex = beforeDot.lastIndexOf('#');
-            if (hashIndex !== -1 && hashIndex > prefixLength && hashIndex < beforeDot.length - 1) {
-              const indexPart = beforeDot.substring(hashIndex + 1);
-              if (/^\d+$/.test(indexPart)) {
-                // 从 "novel-chunk-" 后面到 "#" 之前的部分就是 novelId
-                const novelId = beforeDot.substring(prefixLength, hashIndex);
-                // 验证提取的 novelId 不包含 # 或 -（在索引位置）
-                if (
-                  novelId &&
-                  novelId.length > 0 &&
-                  !novelId.includes('#') &&
-                  !novelId.endsWith('-')
-                ) {
-                  novelIds.add(novelId);
-                }
-              }
-            } else {
-              // 向后兼容：尝试旧格式（使用 - 分隔符）
-              const lastDashIndex = beforeDot.lastIndexOf('-');
-              if (
-                lastDashIndex !== -1 &&
-                lastDashIndex > prefixLength &&
-                lastDashIndex < beforeDot.length - 1
-              ) {
-                const indexPart = beforeDot.substring(lastDashIndex + 1);
-                if (/^\d+$/.test(indexPart)) {
-                  // 从 "novel-chunk-" 后面到最后一个 "-" 之前的部分就是 novelId
-                  const novelId = beforeDot.substring(prefixLength, lastDashIndex);
-                  if (novelId && novelId.length > 0) {
-                    novelIds.add(novelId);
-                  }
-                }
-              }
-            }
+          const novelId = extractNovelIdFromChunkFileName(fileName);
+          if (novelId) {
+            novelIds.add(novelId);
           }
         } else if (
           fileName.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
@@ -780,6 +830,543 @@ export class GistSyncService {
       return {
         valid: false,
         error: error instanceof Error ? error.message : 'Token 验证失败',
+      };
+    }
+  }
+
+  /**
+   * 获取 Gist 修订历史
+   */
+  async getGistRevisions(config: SyncConfig): Promise<
+    SyncResult & {
+      revisions?: Array<{
+        version: string;
+        committedAt: string;
+        changeStatus: {
+          total: number;
+          additions: number;
+          deletions: number;
+        };
+        files?: Array<{
+          filename: string;
+          status: 'added' | 'removed' | 'modified' | 'renamed';
+          additions?: number;
+          deletions?: number;
+          changes?: number;
+        }>;
+      }>;
+    }
+  > {
+    try {
+      this.validateConfig(config);
+      this.initializeOctokit(config);
+
+      if (!this.octokit) {
+        throw new Error('Octokit 客户端未初始化');
+      }
+
+      const params = this.getGistParams(config);
+      if (!params.gistId) {
+        throw new Error('Gist ID 未配置');
+      }
+
+      // 获取 Gist 修订历史
+      const response = await this.octokit.rest.gists.listCommits({
+        gist_id: params.gistId,
+      });
+
+      const revisions = await Promise.all(
+        response.data.map(async (commit, commitIndex) => {
+          // 获取该版本的详细信息以获取文件变更
+          let files: Array<{
+            filename: string;
+            status: 'added' | 'removed' | 'modified' | 'renamed';
+            additions?: number;
+            deletions?: number;
+            changes?: number;
+          }> = [];
+
+          try {
+            const revisionResponse = await this.octokit!.rest.gists.getRevision({
+              gist_id: params.gistId!,
+              sha: commit.version,
+            });
+
+            const currentFilesMap = revisionResponse.data.files || {};
+
+            // 获取前一个版本以比较文件变更
+            if (commitIndex > 0) {
+              const previousCommit = response.data[commitIndex - 1];
+              if (!previousCommit) {
+                // 如果前一个版本不存在，只列出当前版本的文件
+                files = Object.keys(currentFilesMap).map((filename) => {
+                  const file = currentFilesMap[filename];
+                  return {
+                    filename,
+                    status: 'modified' as const,
+                    size: file?.size,
+                  };
+                });
+              } else {
+                try {
+                  const previousRevisionResponse = await this.octokit!.rest.gists.getRevision({
+                    gist_id: params.gistId!,
+                    sha: previousCommit.version,
+                  });
+
+                  const previousFilesMap = previousRevisionResponse.data.files || {};
+
+                  const currentFiles = Object.keys(currentFilesMap);
+                  const previousFiles = Object.keys(previousFilesMap);
+
+                  // 找出新增、删除和修改的文件
+                  // 新增：在当前版本存在但不在前一个版本
+                  const addedFiles = currentFiles.filter((f) => !previousFiles.includes(f));
+
+                  // 删除：在前一个版本存在但不在当前版本
+                  const removedFiles = previousFiles.filter((f) => !currentFiles.includes(f));
+
+                  // 修改：在两个版本都存在，但内容不同
+                  // 通过比较文件的 SHA、大小或内容来判断
+                  const modifiedFiles = currentFiles.filter((f) => {
+                    if (!previousFiles.includes(f)) {
+                      return false; // 不在前一个版本，是新增的
+                    }
+                    const currentFile = currentFilesMap[f];
+                    const previousFile = previousFilesMap[f];
+
+                    if (!currentFile || !previousFile) {
+                      return false;
+                    }
+
+                    // 比较文件大小（GitHub Gist API 文件对象没有 SHA 属性）
+                    // 使用大小作为主要判断依据
+
+                    // 如果没有 SHA，比较文件大小
+                    const currentSize = currentFile.size || 0;
+                    const previousSize = previousFile.size || 0;
+
+                    if (currentSize !== previousSize) {
+                      return true;
+                    }
+
+                    // 检查文件是否被截断
+                    const currentTruncated = currentFile.truncated === true;
+                    const previousTruncated = previousFile.truncated === true;
+
+                    // 如果任一文件被截断，且大小相同，我们无法确定是否真的改变了
+                    // 但如果 change_status 显示有变更，我们假设可能被修改了
+                    if (currentTruncated || previousTruncated) {
+                      // 如果文件被截断，我们无法准确比较内容
+                      // 但如果大小不同，肯定有变化（已经在上面检查了）
+                      // 如果大小相同但被截断，我们暂时认为没有变化
+                      // 这会在后面的逻辑中处理
+                      return false;
+                    }
+
+                    // 如果大小相同且都没有被截断，比较文件内容
+                    const currentContent = currentFile.content || '';
+                    const previousContent = previousFile.content || '';
+
+                    // 如果内容不同，文件被修改了
+                    if (currentContent !== previousContent) {
+                      return true;
+                    }
+
+                    // 如果内容也相同，文件没有变化
+                    return false;
+                  });
+
+                  // 如果 change_status 显示有变更，但我们的检测没有找到变更的文件
+                  // 可能是某些文件的内容被截断了，我们需要更仔细地检查所有共同文件
+                  const hasChanges =
+                    commit.change_status &&
+                    ((commit.change_status.additions ?? 0) > 0 ||
+                      (commit.change_status.deletions ?? 0) > 0);
+
+                  // 如果检测到的变更文件数量为 0，但 change_status 显示有变更
+                  // 我们需要更仔细地检查所有共同文件，特别是那些被截断的文件
+                  if (
+                    hasChanges &&
+                    addedFiles.length === 0 &&
+                    removedFiles.length === 0 &&
+                    modifiedFiles.length === 0
+                  ) {
+                    // 列出所有在两个版本中都存在的文件，并尝试比较
+                    const allCommonFiles = currentFiles.filter((f) => previousFiles.includes(f));
+
+                    for (const filename of allCommonFiles) {
+                      // 如果已经在 modifiedFiles 中，跳过
+                      if (modifiedFiles.includes(filename)) {
+                        continue;
+                      }
+
+                      const currentFile = currentFilesMap[filename];
+                      const previousFile = previousFilesMap[filename];
+
+                      if (!currentFile || !previousFile) {
+                        continue;
+                      }
+
+                      // 检查文件是否被截断
+                      const currentTruncated = currentFile.truncated === true;
+                      const previousTruncated = previousFile.truncated === true;
+
+                      // 如果任一文件被截断，且 change_status 显示有变更
+                      // 我们假设文件可能被修改了（因为无法准确比较）
+                      if (currentTruncated || previousTruncated) {
+                        modifiedFiles.push(filename);
+                        continue;
+                      }
+
+                      // 文件没有被截断，比较内容
+                      const currentContent = currentFile.content || '';
+                      const previousContent = previousFile.content || '';
+                      if (currentContent !== previousContent) {
+                        modifiedFiles.push(filename);
+                      }
+                    }
+                  }
+
+                  files = [
+                    ...addedFiles.map((filename) => {
+                      const file = currentFilesMap[filename];
+                      return {
+                        filename,
+                        status: 'added' as const,
+                        size: file?.size,
+                      };
+                    }),
+                    ...removedFiles.map((filename) => {
+                      const file = previousFilesMap[filename];
+                      return {
+                        filename,
+                        status: 'removed' as const,
+                        size: file?.size,
+                      };
+                    }),
+                    ...modifiedFiles.map((filename) => {
+                      const file = currentFilesMap[filename];
+                      return {
+                        filename,
+                        status: 'modified' as const,
+                        size: file?.size,
+                      };
+                    }),
+                  ];
+                } catch {
+                  // 如果无法获取前一个版本，只列出当前版本的文件，标记为修改
+                  files = Object.keys(currentFilesMap).map((filename) => {
+                    const file = currentFilesMap[filename];
+                    return {
+                      filename,
+                      status: 'modified' as const,
+                      size: file?.size,
+                    };
+                  });
+                }
+              }
+            } else {
+              // 第一个版本，所有文件都是新增的
+              files = Object.keys(revisionResponse.data.files || {}).map((filename) => {
+                const file = currentFilesMap[filename];
+                return {
+                  filename,
+                  status: 'added' as const,
+                  size: file?.size,
+                };
+              });
+            }
+          } catch {
+            // 如果无法获取版本详情，继续但不包含文件信息
+          }
+
+          return {
+            version: commit.version,
+            committedAt: commit.committed_at,
+            changeStatus: {
+              total: commit.change_status?.total ?? 0,
+              additions: commit.change_status?.additions ?? 0,
+              deletions: commit.change_status?.deletions ?? 0,
+            },
+            files,
+          };
+        }),
+      );
+
+      return {
+        success: true,
+        message: `获取到 ${revisions.length} 个修订版本`,
+        revisions,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '获取 Gist 修订历史时发生未知错误',
+      };
+    }
+  }
+
+  /**
+   * 获取单个修订版本的详细信息（仅文件列表）
+   */
+  async getGistRevision(
+    config: SyncConfig,
+    version: string,
+  ): Promise<
+    SyncResult & {
+      data?: {
+        files: Record<
+          string,
+          { filename?: string; size?: number; content?: string; truncated?: boolean }
+        >;
+      };
+    }
+  > {
+    try {
+      this.validateConfig(config);
+      this.initializeOctokit(config);
+
+      const params = this.getGistParams(config);
+      if (!this.octokit || !params.gistId) {
+        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
+      }
+
+      // 获取特定版本的 Gist
+      const response = await this.octokit.rest.gists.getRevision({
+        gist_id: params.gistId,
+        sha: version,
+      });
+
+      // 过滤掉 null 值并转换类型
+      const files: Record<
+        string,
+        { filename?: string; size?: number; content?: string; truncated?: boolean }
+      > = {};
+      if (response.data.files) {
+        for (const [key, value] of Object.entries(response.data.files)) {
+          if (value) {
+            const fileInfo: {
+              filename?: string;
+              size?: number;
+              content?: string;
+              truncated?: boolean;
+            } = {};
+            if (value.filename !== undefined) fileInfo.filename = value.filename;
+            if (value.size !== undefined) fileInfo.size = value.size;
+            if (value.content !== undefined) fileInfo.content = value.content;
+            if (value.truncated !== undefined) fileInfo.truncated = value.truncated;
+            files[key] = fileInfo;
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: '获取修订版本详情成功',
+        data: {
+          files,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '获取修订版本详情失败',
+      };
+    }
+  }
+
+  /**
+   * 从特定修订版本下载数据
+   */
+  async downloadFromGistRevision(
+    config: SyncConfig,
+    version: string,
+  ): Promise<SyncResult & { data?: GistSyncData }> {
+    try {
+      this.validateConfig(config);
+      this.initializeOctokit(config);
+
+      const params = this.getGistParams(config);
+      if (!this.octokit || !params.gistId) {
+        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
+      }
+
+      // 获取特定版本的 Gist
+      const response = await this.octokit.rest.gists.getRevision({
+        gist_id: params.gistId,
+        sha: version,
+      });
+
+      const gistFiles = response.data.files;
+      if (!gistFiles) {
+        throw new Error('Gist 中没有文件');
+      }
+
+      const result: GistSyncData = {
+        aiModels: [],
+        novels: [],
+      };
+
+      // 读取设置文件
+      const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
+      if (settingsFile && settingsFile.content) {
+        try {
+          const settingsData = JSON.parse(settingsFile.content) as {
+            aiModels?: AIModel[];
+            appSettings?: AppSettings;
+            coverHistory?: CoverHistoryItem[];
+          };
+
+          if (settingsData.aiModels) {
+            result.aiModels = this.deserializeDates(settingsData.aiModels) as AIModel[];
+          }
+          if (settingsData.appSettings) {
+            result.appSettings = this.deserializeDates(settingsData.appSettings) as AppSettings;
+          }
+          if (settingsData.coverHistory) {
+            result.coverHistory = this.deserializeDates(
+              settingsData.coverHistory,
+            ) as CoverHistoryItem[];
+          }
+        } catch {
+          // 忽略设置文件解析错误
+        }
+      }
+
+      // 收集书籍 ID
+      const novelIds = new Set<string>();
+
+      for (const fileName of Object.keys(gistFiles)) {
+        if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+          const novelId = extractNovelIdFromChunkFileName(fileName);
+          if (novelId) {
+            novelIds.add(novelId);
+          }
+        } else if (
+          fileName.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
+          !fileName.endsWith('.meta.json')
+        ) {
+          const match = fileName.match(/^novel-(.+)\.json$/);
+          if (match && match[1]) {
+            novelIds.add(match[1]);
+          }
+        }
+      }
+
+      // 处理每本书（使用与 downloadFromGist 相同的逻辑）
+      for (const novelId of novelIds) {
+        try {
+          const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
+          const metadataFile = gistFiles[metadataFileName];
+          const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
+
+          const chunkFiles: Array<{
+            index: number;
+            content: string;
+            fileName: string;
+            size: number;
+          }> = [];
+
+          for (let i = 0; i < 100; i++) {
+            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+            let chunkFile = gistFiles[chunkFileName];
+
+            if (!chunkFile) {
+              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}-${i}.json`;
+              chunkFile = gistFiles[chunkFileName];
+            }
+            if (chunkFile) {
+              let chunkContent = chunkFile.content;
+              const isChunkTruncated = chunkFile.truncated === true || !chunkContent;
+
+              if (isChunkTruncated && chunkFile.raw_url) {
+                try {
+                  const rawResponse = await fetch(chunkFile.raw_url);
+                  if (rawResponse.ok) {
+                    chunkContent = await rawResponse.text();
+                  }
+                } catch {
+                  // 忽略获取失败
+                }
+              }
+
+              if (chunkContent) {
+                chunkFiles.push({
+                  index: i,
+                  content: chunkContent,
+                  fileName: chunkFileName,
+                  size: chunkFile.size || 0,
+                });
+              }
+            } else {
+              break;
+            }
+          }
+
+          if (chunkFiles.length > 0) {
+            try {
+              chunkFiles.sort((a, b) => a.index - b.index);
+              const fullContent = chunkFiles.map((chunk) => chunk.content).join('');
+
+              try {
+                const parsedContent = JSON.parse(fullContent);
+                const novel = this.deserializeDates(parsedContent) as Novel;
+                result.novels.push(novel);
+                continue;
+              } catch {
+                // 解析失败，尝试单文件
+              }
+            } catch {
+              // 重组失败，尝试单文件
+            }
+          }
+
+          if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+            continue;
+          }
+
+          const file = gistFiles[fileName];
+          if (file) {
+            let fileContent = file.content;
+            const truncated = file.truncated === true;
+
+            if (truncated && file.raw_url) {
+              try {
+                const rawResponse = await fetch(file.raw_url);
+                if (rawResponse.ok) {
+                  fileContent = await rawResponse.text();
+                }
+              } catch {
+                // 忽略获取失败
+              }
+            }
+
+            if (fileContent) {
+              try {
+                const parsedContent = JSON.parse(fileContent);
+                const novel = this.deserializeDates(parsedContent) as Novel;
+                result.novels.push(novel);
+              } catch {
+                // 忽略解析错误
+              }
+            }
+          }
+        } catch {
+          // 继续处理其他书籍
+        }
+      }
+
+      return {
+        success: true,
+        message: '从修订版本下载数据成功',
+        data: result,
+        ...(params.gistId ? { gistId: params.gistId } : {}),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '从修订版本下载数据时发生未知错误',
       };
     }
   }
