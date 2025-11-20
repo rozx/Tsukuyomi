@@ -89,15 +89,15 @@ const isSyncing = computed(() => settingsStore.isSyncing);
 // 计算同步状态（仅用于按钮图标）
 const syncStatus = computed(() => {
   if (!gistSync.value.enabled) {
-    return { icon: 'pi pi-cloud', color: 'text-moon/50', label: '未启用' };
+    return { icon: 'pi pi-cloud', color: 'text-moon-400/70', label: '未启用' };
   }
   if (isSyncing.value) {
-    return { icon: 'pi pi-spin pi-spinner', color: 'text-primary', label: '同步中' };
+    return { icon: 'pi pi-spin pi-spinner', color: 'text-primary-400', label: '同步中' };
   }
   if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-    return { icon: 'pi pi-cloud-upload', color: 'text-green-500', label: '已同步' };
+    return { icon: 'pi pi-cloud-upload', color: 'text-accent-300', label: '已同步' };
   }
-  return { icon: 'pi pi-cloud', color: 'text-moon/70', label: '未同步' };
+  return { icon: 'pi pi-cloud', color: 'text-moon-200', label: '未同步' };
 });
 
 // 计算下次同步时间（仅用于按钮标签）
@@ -248,33 +248,40 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <header class="sticky top-0 z-20 shadow-sm shrink-0">
-    <Menubar :model="menuItems" class="!rounded-none">
+  <header
+    class="sticky top-0 z-20 shrink-0 border-b border-white/5 bg-night-950/50 backdrop-blur-2xl shadow-[0_10px_40px_rgba(5,6,15,0.45)]"
+  >
+    <Menubar :model="menuItems" class="!rounded-none !border-0 bg-transparent px-4 py-3 text-moon-80">
       <template #start>
-        <div class="flex items-center gap-2 px-2 mr-3">
+        <div class="flex items-center gap-3 pr-4">
           <Button
             aria-label="切换侧边栏"
-            class="p-button-text p-button-rounded"
+            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
             icon="pi pi-bars"
             @click="ui.toggleSideMenu()"
           />
-          <i class="pi pi-moon text-primary-600" />
-          <span class="font-semibold">Luna AI Translator</span>
+          <div class="flex flex-col">
+            <span class="text-xs uppercase tracking-[0.3em] text-moon-50">Luna</span>
+            <span class="font-semibold text-moon-100 tracking-wide">AI Translator</span>
+          </div>
         </div>
       </template>
 
       <template #end>
-        <div class="flex items-center gap-2 px-2 mr-3">
+        <div class="flex items-center gap-3">
           <!-- AI 思考过程按钮 -->
           <Button
             ref="thinkingButtonRef"
             aria-label="AI 思考过程"
-            class="p-button-text p-button-rounded relative thinking-button"
+            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100"
             :class="{ 'thinking-active': aiProcessing.hasActiveTasks }"
             @click="toggleThinkingPanel"
           >
-            <i class="pi pi-sparkles" :class="{ 'animate-spin': aiProcessing.hasActiveTasks }" />
-            <span v-if="latestThinkingMessage" class="thinking-button-label">{{
+            <i
+              class="pi pi-sparkles text-accent-300"
+              :class="{ 'animate-spin': aiProcessing.hasActiveTasks }"
+            />
+            <span v-if="latestThinkingMessage" class="truncate text-sm text-moon-70">{{
               latestThinkingMessage
             }}</span>
           </Button>
@@ -283,12 +290,12 @@ onUnmounted(() => {
           <Button
             ref="syncButtonRef"
             aria-label="同步状态"
-            class="p-button-text p-button-rounded relative sync-button"
+            class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
             :class="{ 'sync-active': gistSync.enabled }"
             @click="toggleSyncPanel"
           >
-            <i :class="[syncStatus.icon, syncStatus.color]" />
-            <span v-if="gistSync.enabled" class="sync-button-label">{{
+            <i :class="[syncStatus.icon, syncStatus.color]" class="text-lg" />
+            <span v-if="gistSync.enabled" class="text-xs uppercase tracking-wide text-moon-60">{{
               formatNextSyncTime
             }}</span>
           </Button>
@@ -297,10 +304,10 @@ onUnmounted(() => {
           <Button
             ref="bellButtonRef"
             aria-label="消息历史"
-            class="p-button-text p-button-rounded relative bell-button"
+            class="p-button-text p-button-rounded relative text-moon-70 transition-colors hover:text-moon-100"
             @click="toggleHistoryDialog"
           >
-            <i class="pi pi-bell" />
+            <i class="pi pi-bell text-lg" />
             <Badge
               v-if="unreadCount > 0"
               :value="unreadCount > 99 ? '99+' : unreadCount"
@@ -322,98 +329,3 @@ onUnmounted(() => {
     <ThinkingProcessPanel ref="thinkingPanelRef" />
   </header>
 </template>
-
-<style scoped>
-.sync-button i {
-  color: var(--moon-opacity-85) !important;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-}
-
-.sync-button:hover i {
-  color: var(--moon-opacity-95) !important;
-}
-
-.sync-button.sync-active i {
-  color: var(--primary-color) !important;
-}
-
-.sync-button-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
-  display: inline-block;
-  color: var(--moon-opacity-90);
-  font-size: 0.875rem;
-  margin-left: 0.5rem;
-}
-
-.sync-button.sync-active .sync-button-label {
-  color: var(--primary-color);
-}
-
-.bell-button i {
-  color: var(--moon-opacity-85) !important;
-  font-size: 1rem;
-}
-
-.bell-button:hover i {
-  color: var(--moon-opacity-95) !important;
-}
-
-.thinking-button {
-  max-width: 500px;
-  overflow: visible;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.thinking-button i {
-  color: var(--moon-opacity-85) !important;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-  flex-shrink: 0;
-}
-
-.thinking-button:hover i {
-  color: var(--moon-opacity-95) !important;
-}
-
-.thinking-button.thinking-active i {
-  color: var(--primary-color) !important;
-}
-
-.thinking-button .animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-.thinking-button-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 400px;
-  display: inline-block;
-  color: var(--moon-opacity-90);
-  font-size: 0.875rem;
-  margin-left: 0.5rem;
-}
-
-.thinking-button.thinking-active .thinking-button-label {
-  color: var(--primary-color);
-}
-
-.thinking-overlay :deep(.p-overlaypanel-content) {
-  padding: 1rem;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

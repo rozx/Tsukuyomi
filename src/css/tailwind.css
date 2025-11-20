@@ -2,12 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base styles for the Luna theme using TailwindCSS */
+/* Base layer for the Luna theme */
 @layer base {
   html,
   body,
   #q-app {
     height: 100%;
-    @apply bg-night-900 text-moon-500;
+    @apply bg-night-950 text-moon-50;
+    background-image:
+      radial-gradient(circle at 18% 20%, rgba(37, 211, 209, 0.18), transparent 55%),
+      radial-gradient(circle at 78% -10%, rgba(138, 77, 255, 0.32), transparent 60%),
+      linear-gradient(135deg, #050818 0%, #0f1634 50%, #1b1f45 100%);
   }
 }

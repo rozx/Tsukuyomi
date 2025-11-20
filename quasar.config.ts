@@ -17,7 +17,7 @@ export default defineConfig((ctx) => {
     boot: ['i18n', 'axios', 'primevue', 'toast-history'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
-    css: ['tailwind.css', 'app.scss'],
+    css: ['tailwind.css'],
 
     // https://github.com/quasarframework/quasar/tree/dev/extras
     extras: [
