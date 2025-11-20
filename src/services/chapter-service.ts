@@ -1,4 +1,4 @@
-import type { Novel, Volume, Chapter } from 'src/types/novel';
+import type { Novel, Volume, Chapter, Paragraph } from 'src/types/novel';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import { getChapterContentText } from 'src/utils/novel-utils';
 
@@ -116,7 +116,7 @@ export class ChapterService {
           if (existingChapter) {
             // 保留 lastUpdated：如果新章节有 lastUpdated 则使用新的，否则保留原有的
             const lastUpdated = newChapter.lastUpdated ?? existingChapter.lastUpdated;
-            
+
             if (updateStrategy === 'replace') {
               // 替换整个章节
               const updatedChapter: Chapter = {
@@ -276,12 +276,7 @@ export class ChapterService {
    * @param content 章节内容文本
    * @returns 段落数组
    */
-  static convertContentToParagraphs(content: string): Array<{
-    id: string;
-    text: string;
-    selectedTranslationId: string;
-    translations: never[];
-  }> {
+  static convertContentToParagraphs(content: string): Paragraph[] {
     const idGenerator = new UniqueIdGenerator();
     return content.split('\n').map((text) => {
       return {

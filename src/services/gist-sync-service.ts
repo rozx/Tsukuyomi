@@ -474,7 +474,7 @@ export class GistSyncService {
           const response = await this.octokit.rest.gists.update({
             gist_id: gistId,
             description: 'Luna AI Translator - Settings and Novels',
-            files,
+            files: files as any,
           });
           gistId = response.data.id;
           gistUrl = response.data.html_url;
@@ -482,10 +482,16 @@ export class GistSyncService {
           // 如果更新失败（例如 Gist 不存在或已被删除），创建新的 Gist
           const errorStatus = (updateError as { status?: number })?.status;
           if (errorStatus === 404 || errorStatus === 403) {
+            const filesForCreate: Record<string, { content: string }> = {};
+            for (const [key, value] of Object.entries(files)) {
+              if (value !== null) {
+                filesForCreate[key] = value;
+              }
+            }
             const response = await this.octokit.rest.gists.create({
               description: 'Luna AI Translator - Settings and Novels',
               public: false,
-              files,
+              files: filesForCreate,
             });
             // 重新创建时，使用新创建的 Gist ID（GitHub 不允许指定 ID）
             // 但标记为重新创建，以便在 UI 中显示提示
@@ -499,10 +505,16 @@ export class GistSyncService {
         }
       } else {
         // 创建新 Gist
+        const filesForCreate: Record<string, { content: string }> = {};
+        for (const [key, value] of Object.entries(files)) {
+          if (value !== null) {
+            filesForCreate[key] = value;
+          }
+        }
         const response = await this.octokit.rest.gists.create({
           description: 'Luna AI Translator - Settings and Novels',
           public: false,
-          files,
+          files: filesForCreate,
         });
         gistId = response.data.id;
         gistUrl = response.data.html_url;

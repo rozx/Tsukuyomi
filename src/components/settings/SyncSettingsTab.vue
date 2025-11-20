@@ -285,12 +285,19 @@ const loadRevisionDetails = async (version: string) => {
       // 获取上一个版本的文件（用于计算 sizeDiff 和状态）
       let previousFilesMap: Map<string, { size?: number }> | null = null;
       if (revisionIndex < revisions.value.length - 1) {
-        const previousVersion = revisions.value[revisionIndex + 1].version;
-        const previousRevisionResponse = await gistSyncService.getGistRevision(config, previousVersion);
-        if (previousRevisionResponse.success && previousRevisionResponse.data) {
-          previousFilesMap = new Map();
-          for (const [filename, file] of Object.entries(previousRevisionResponse.data.files || {})) {
-            previousFilesMap.set(filename, { size: file?.size });
+        const previousRevision = revisions.value[revisionIndex + 1];
+        if (previousRevision) {
+          const previousVersion = previousRevision.version;
+          const previousRevisionResponse = await gistSyncService.getGistRevision(config, previousVersion);
+          if (previousRevisionResponse.success && previousRevisionResponse.data) {
+            previousFilesMap = new Map();
+            for (const [filename, file] of Object.entries(previousRevisionResponse.data.files || {})) {
+              if (file?.size !== undefined) {
+                previousFilesMap.set(filename, { size: file.size });
+              } else {
+                previousFilesMap.set(filename, {});
+              }
+            }
           }
         }
       }
@@ -298,7 +305,7 @@ const loadRevisionDetails = async (version: string) => {
       // 从 getGistRevisions 的结果中获取已有文件的变更状态（如果存在）
       const existingRevision = revisions.value[revisionIndex];
       const existingFilesMap = new Map(
-        (existingRevision.files || []).map((f) => [f.filename, f])
+        (existingRevision?.files || []).map((f) => [f.filename, f])
       );
 
       // 构建文件列表 - 显示该修订版本中存在的所有文件
@@ -346,7 +353,7 @@ const loadRevisionDetails = async (version: string) => {
           filename,
           status,
           size: currentSize,
-          sizeDiff,
+          ...(sizeDiff !== undefined ? { sizeDiff } : {}),
         };
       });
 
@@ -855,7 +862,7 @@ const deleteGist = () => {
         placeholder="输入您的 GitHub 用户名"
         class="w-full"
         :disabled="!gistEnabled"
-        @blur="saveGistConfig"
+        @blur="() => saveGistConfig()"
       />
     </div>
 
@@ -870,7 +877,7 @@ const deleteGist = () => {
         :disabled="!gistEnabled"
         :feedback="false"
         toggle-mask
-        @blur="saveGistConfig"
+        @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">
         在 GitHub Settings → Developer settings → Personal access tokens 中创建
@@ -886,7 +893,7 @@ const deleteGist = () => {
         placeholder="留空将自动创建新的 Gist"
         class="w-full"
         :disabled="!gistEnabled"
-        @blur="saveGistConfig"
+        @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">如果已有 Gist，请输入 Gist ID。留空将自动创建新的 Gist</p>
     </div>

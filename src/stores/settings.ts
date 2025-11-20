@@ -240,6 +240,8 @@ export const useSettingsStore = defineStore('settings', {
       const defaultConfig = createDefaultGistSyncConfig();
       const existingConfig = index >= 0 ? this.syncs[index] : undefined;
 
+      const lastSyncedModelIds = updates.lastSyncedModelIds ?? existingConfig?.lastSyncedModelIds ?? defaultConfig.lastSyncedModelIds;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime: updates.lastSyncTime !== undefined ? updates.lastSyncTime : (existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime),
@@ -251,7 +253,7 @@ export const useSettingsStore = defineStore('settings', {
         },
         secret: updates.secret ?? existingConfig?.secret ?? defaultConfig.secret,
         apiEndpoint: updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
-        lastSyncedModelIds: updates.lastSyncedModelIds ?? existingConfig?.lastSyncedModelIds ?? defaultConfig.lastSyncedModelIds,
+        ...(lastSyncedModelIds !== undefined ? { lastSyncedModelIds } : {}),
       };
 
       if (index >= 0) {
