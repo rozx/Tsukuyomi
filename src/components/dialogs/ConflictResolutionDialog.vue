@@ -4,7 +4,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import { ConflictType, type ConflictItem } from 'src/services/conflict-detection-service';
 import { formatRelativeTime } from 'src/utils/format';
 
@@ -166,7 +166,7 @@ const handleCancel = () => {
 
         <Column header="选择" style="width: 250px">
           <template #body="{ data }">
-            <Dropdown
+            <Select
               :model-value="selectedResolutions.get(data.id) || 'local'"
               :options="getConflictOptions(data)"
               option-label="label"

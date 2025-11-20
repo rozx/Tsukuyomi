@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import OverlayPanel from 'primevue/overlaypanel';
+import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToastHistory';
 
-const overlayPanelRef = ref<InstanceType<typeof OverlayPanel> | null>(null);
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, markAsRead } = useToastHistory();
 
@@ -53,7 +53,7 @@ const handleClear = () => {
 };
 
 const toggle = (event: Event) => {
-  overlayPanelRef.value?.toggle(event);
+  popoverRef.value?.toggle(event);
 };
 
 // 监听 popup 显示，标记为已读
@@ -68,8 +68,8 @@ defineExpose({
 </script>
 
 <template>
-  <OverlayPanel
-    ref="overlayPanelRef"
+  <Popover
+    ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
     style="width: 500px; max-height: 600px"
@@ -80,7 +80,7 @@ defineExpose({
       <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
         <div class="flex items-center gap-3">
           <h3 class="text-lg font-semibold text-moon/90">消息历史</h3>
-          <Dropdown
+          <Select
             v-model="selectedSeverity"
             :options="severityOptions"
             optionLabel="label"
@@ -164,11 +164,11 @@ defineExpose({
         </DataView>
       </div>
     </div>
-  </OverlayPanel>
+  </Popover>
 </template>
 
 <style scoped>
-.toast-history-overlay :deep(.p-overlaypanel-content) {
+.toast-history-overlay :deep(.p-popover-content) {
   padding: 1rem;
 }
 </style>

@@ -3,9 +3,9 @@ import { ref, computed, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
-import InputSwitch from 'primevue/inputswitch';
+import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIProvider } from 'src/types/ai/ai-model';
@@ -436,7 +436,7 @@ watch(
         <label :for="`${idPrefix}-enabled`" class="block text-sm font-medium text-moon/90"
           >启用模型</label
         >
-        <InputSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
+        <ToggleSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
       </div>
 
       <!-- 模型名称 -->
@@ -482,7 +482,7 @@ watch(
         <label :for="`${idPrefix}-provider`" class="block text-sm font-medium text-moon/90"
           >提供商 *</label
         >
-        <Dropdown
+        <Select
           :id="`${idPrefix}-provider`"
           v-model="formData.provider"
           :options="providerOptions"
@@ -542,7 +542,7 @@ watch(
             @click="fetchAvailableModels"
           />
         </div>
-        <Dropdown
+        <Select
           :id="`${idPrefix}-model`"
           v-model="formData.model"
           :options="modelOptions"
@@ -565,7 +565,7 @@ watch(
               >
             </div>
           </template>
-        </Dropdown>
+        </Select>
         <small v-if="formErrors.model" class="p-error block mt-1">{{ formErrors.model }}</small>
         <small v-if="availableModels.length > 0" class="text-moon/60 text-xs block mt-1">
           找到 {{ availableModels.length }} 个可用模型

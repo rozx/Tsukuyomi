@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
 import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
@@ -65,7 +65,7 @@ const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null)
       <template v-for="(label, task) in taskLabels" :key="task">
         <div class="space-y-2">
           <label class="text-xs text-moon/80">{{ label }}</label>
-          <Dropdown
+          <Select
             :model-value="getTaskModelId(task)"
             :options="getModelOptionsForTask(task)"
             option-label="label"

@@ -173,8 +173,8 @@ export default defineConfig((ctx) => {
             dts: 'src/auto-components.d.ts',
             resolvers: [
               PrimeVueResolver({
-                importStyle: true,
-                importIcons: true,
+                importStyle: false, // PrimeVue v4 使用预设系统，不需要自动导入样式
+                importIcons: false, // 图标已在 boot/primevue.ts 中全局导入
               }),
             ],
           },

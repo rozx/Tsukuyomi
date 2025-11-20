@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
-import OverlayPanel from 'primevue/overlaypanel';
+import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 
@@ -89,8 +89,8 @@ watch(
   { deep: true },
 );
 
-// OverlayPanel ref
-const popoverRef = ref<InstanceType<typeof OverlayPanel> | null>(null);
+// Popover ref
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 // 暴露方法供父组件调用
 defineExpose({
@@ -101,7 +101,7 @@ defineExpose({
 </script>
 
 <template>
-  <OverlayPanel
+  <Popover
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
@@ -234,11 +234,11 @@ defineExpose({
         </div>
       </div>
     </div>
-  </OverlayPanel>
+  </Popover>
 </template>
 
 <style scoped>
-.thinking-popover :deep(.p-overlaypanel-content) {
+.thinking-popover :deep(.p-popover-content) {
   padding: 1rem;
 }
 </style>

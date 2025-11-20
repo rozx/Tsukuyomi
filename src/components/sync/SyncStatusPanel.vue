@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import OverlayPanel from 'primevue/overlaypanel';
+import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
@@ -284,8 +284,8 @@ const handleConflictCancel = () => {
   detectedConflicts.value = [];
 };
 
-// OverlayPanel ref
-const popoverRef = ref<InstanceType<typeof OverlayPanel> | null>(null);
+// Popover ref
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 // 暴露方法供父组件调用
 defineExpose({
@@ -296,7 +296,7 @@ defineExpose({
 </script>
 
 <template>
-  <OverlayPanel
+  <Popover
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
@@ -369,7 +369,7 @@ defineExpose({
         />
       </div>
     </div>
-  </OverlayPanel>
+  </Popover>
 
   <!-- 冲突解决对话框 -->
   <ConflictResolutionDialog
@@ -381,7 +381,7 @@ defineExpose({
 </template>
 
 <style scoped>
-.sync-popover :deep(.p-overlaypanel-content) {
+.sync-popover :deep(.p-popover-content) {
   padding: 1rem;
 }
 </style>

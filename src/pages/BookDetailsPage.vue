@@ -5,7 +5,7 @@ import DataView from 'primevue/dataview';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
@@ -919,7 +919,7 @@ const handleDragLeave = () => {
       <div class="space-y-4">
         <div class="space-y-2">
           <label for="volume-select" class="block text-sm font-medium text-moon/90">选择卷</label>
-          <Dropdown
+          <Select
             id="volume-select"
             v-model="selectedVolumeId"
             :options="volumeOptions"
@@ -1006,7 +1006,7 @@ const handleDragLeave = () => {
           <label for="edit-chapter-volume" class="block text-sm font-medium text-moon/90"
             >所属卷</label
           >
-          <Dropdown
+          <Select
             id="edit-chapter-volume"
             v-model="editingChapterTargetVolumeId"
             :options="volumeOptions"
