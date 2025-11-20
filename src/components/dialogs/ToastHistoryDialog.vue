@@ -4,15 +4,32 @@ import OverlayPanel from 'primevue/overlaypanel';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
+import Dropdown from 'primevue/dropdown';
 import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToastHistory';
 
 const overlayPanelRef = ref<InstanceType<typeof OverlayPanel> | null>(null);
 
 const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, markAsRead } = useToastHistory();
 
-// 按时间倒序排列
+const selectedSeverity = ref<'all' | ToastHistoryItem['severity']>('all');
+
+const severityOptions = [
+  { label: '全部', value: 'all' },
+  { label: '错误', value: 'error' },
+  { label: '警告', value: 'warn' },
+  { label: '成功', value: 'success' },
+  { label: '信息', value: 'info' },
+];
+
+// 按时间倒序排列并过滤
 const sortedHistoryItems = computed(() => {
-  return [...historyItems.value].sort((a, b) => b.timestamp - a.timestamp);
+  let items = [...historyItems.value];
+
+  if (selectedSeverity.value !== 'all') {
+    items = items.filter((item) => item.severity === selectedSeverity.value);
+  }
+
+  return items.sort((a, b) => b.timestamp - a.timestamp);
 });
 
 // 严重程度图标映射
@@ -61,12 +78,22 @@ defineExpose({
   >
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
-        <h3 class="text-lg font-semibold text-moon/90">消息历史</h3>
+        <div class="flex items-center gap-3">
+          <h3 class="text-lg font-semibold text-moon/90">消息历史</h3>
+          <Dropdown
+            v-model="selectedSeverity"
+            :options="severityOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-28 p-inputtext-sm !h-8"
+            placeholder="筛选"
+          />
+        </div>
         <Button
-          v-if="sortedHistoryItems.length > 0"
+          v-if="historyItems.length > 0"
           icon="pi pi-trash"
           class="p-button-text p-button-danger p-button-sm"
-          title="清空历史"
+          title="清空所有历史"
           @click="handleClear"
         />
       </div>
