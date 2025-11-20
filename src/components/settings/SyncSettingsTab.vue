@@ -424,34 +424,26 @@ const revertToRevision = (version: string) => {
         const result = await gistSyncService.downloadFromGistRevision(config, version);
 
         if (result.success && result.data) {
-          // 直接应用下载的数据（无冲突解决，因为这是恢复修订版本，直接覆盖）
+          // 恢复模式：先清空本地数据，确保完全覆盖（Restore behavior）
+          // 这样 SyncDataService.applyDownloadedData 就会将远程数据视为"新数据"直接添加
+          // 从而实现"完全覆盖本地数据"的效果
+          await booksStore.clearBooks();
+          aiModelsStore.clearModels();
+          coverHistoryStore.clearHistory();
+
+          // 应用下载的数据
           await SyncDataService.applyDownloadedData(result.data, []);
 
-          // 覆盖当前的封面历史数据
-          if (result.data.coverHistory && result.data.coverHistory.length > 0) {
-            coverHistoryStore.clearHistory();
-            result.data.coverHistory.forEach((cover) => {
-              coverHistoryStore.addCover(cover);
-            });
-          }
-
-          // 覆盖当前的应用设置（但保留 Gist 配置）
-          if (result.data.appSettings) {
-            const currentGistSync = settingsStore.gistSync;
-            settingsStore.importSettings(result.data.appSettings);
-            settingsStore.updateGistSync(currentGistSync);
-          }
-
-      settingsStore.updateLastSyncTime();
-      gistLastSyncTime.value = Date.now();
-      // 重置自动同步定时器
-      setupAutoSync();
-      toast.add({
-        severity: 'success',
-        summary: '恢复成功',
-        detail: '已恢复到指定修订版本',
-        life: 3000,
-      });
+          settingsStore.updateLastSyncTime();
+          gistLastSyncTime.value = Date.now();
+          // 重置自动同步定时器
+          setupAutoSync();
+          toast.add({
+            severity: 'success',
+            summary: '恢复成功',
+            detail: '已恢复到指定修订版本',
+            life: 3000,
+          });
         } else {
           toast.add({
             severity: 'error',

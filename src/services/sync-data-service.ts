@@ -236,5 +236,74 @@ export class SyncDataService {
       safeRemoteData,
     };
   }
+
+  /**
+   * 检查本地数据相对于远程数据是否有变更（需要上传）
+   */
+  static hasChangesToUpload(
+    local: {
+      novels: any[];
+      aiModels: any[];
+      appSettings: any;
+      coverHistory: any[];
+    },
+    remote: {
+      novels: any[];
+      aiModels: any[];
+      appSettings?: any;
+      coverHistory?: any[];
+    },
+  ): boolean {
+    // 1. 检查书籍
+    if (local.novels.length !== (remote.novels || []).length) return true;
+
+    const remoteNovelMap = new Map((remote.novels || []).map((n) => [n.id, n]));
+    for (const localNovel of local.novels) {
+      const remoteNovel = remoteNovelMap.get(localNovel.id);
+      if (!remoteNovel) return true; // 本地有新书籍
+
+      // 检查更新时间
+      const localTime = new Date(localNovel.lastEdited).getTime();
+      const remoteTime = new Date(remoteNovel.lastEdited).getTime();
+
+      // 如果本地时间比远程时间新（甚至哪怕只差一点），就需要上传
+      if (Math.abs(localTime - remoteTime) > 1000) return true;
+    }
+
+    // 2. 检查 AI 模型
+    if (local.aiModels.length !== (remote.aiModels || []).length) return true;
+
+    const remoteModelMap = new Map((remote.aiModels || []).map((m) => [m.id, m]));
+    for (const localModel of local.aiModels) {
+      const remoteModel = remoteModelMap.get(localModel.id);
+      if (!remoteModel) return true;
+
+      // 比较内容 (简单比较)
+      if (JSON.stringify(localModel) !== JSON.stringify(remoteModel)) {
+        return true;
+      }
+    }
+
+    // 3. 检查设置
+    if (JSON.stringify(local.appSettings) !== JSON.stringify(remote.appSettings || {})) {
+      if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
+      if (remote.appSettings) return true;
+    }
+
+    // 4. 检查封面历史
+    if (local.coverHistory.length !== (remote.coverHistory || []).length) return true;
+
+    const remoteCoverMap = new Map((remote.coverHistory || []).map((c) => [c.id, c]));
+    for (const localCover of local.coverHistory) {
+      const remoteCover = remoteCoverMap.get(localCover.id);
+      if (!remoteCover) return true;
+
+      const localTime = new Date(localCover.addedAt).getTime();
+      const remoteTime = new Date(remoteCover.addedAt).getTime();
+      if (Math.abs(localTime - remoteTime) > 1000) return true;
+    }
+
+    return false;
+  }
 }
 

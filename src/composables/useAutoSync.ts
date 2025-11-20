@@ -221,16 +221,7 @@ export function useAutoSync() {
     try {
       settingsStore.setSyncing(true);
 
-      // 先上传本地更改
-      // 注意：上传时使用当前的模型列表，这样远程会包含本地删除后的状态
-      await gistSyncService.uploadToGist(config, {
-        aiModels: aiModelsStore.models,
-        appSettings: settingsStore.getAllSettings(),
-        novels: booksStore.books,
-        coverHistory: coverHistoryStore.covers,
-      });
-
-      // 然后下载远程更改
+      // 1. 先下载远程更改（避免覆盖）
       const result = await gistSyncService.downloadFromGist(config);
 
       if (result.success && result.data) {
@@ -273,7 +264,34 @@ export function useAutoSync() {
         settingsStore.updateLastSyncTime();
         // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
         settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+
+        // 检查是否需要上传（如果有本地更改）
+        const shouldUpload = SyncDataService.hasChangesToUpload(
+          {
+            novels: booksStore.books,
+            aiModels: aiModelsStore.models,
+            appSettings: settingsStore.getAllSettings(),
+            coverHistory: coverHistoryStore.covers,
+          },
+          result.data,
+        );
+
+        if (!shouldUpload) {
+          return;
+        }
+      } else if (!result.success) {
+        // 下载失败，不继续上传
+        return;
       }
+
+      // 2. 然后上传本地更改（包含刚刚合并的远程更改）
+      // 注意：上传时使用当前的模型列表，这样远程会包含本地删除后的状态
+      await gistSyncService.uploadToGist(config, {
+        aiModels: aiModelsStore.models,
+        appSettings: settingsStore.getAllSettings(),
+        novels: booksStore.books,
+        coverHistory: coverHistoryStore.covers,
+      });
     } catch {
       // 静默失败，避免干扰用户
     } finally {
@@ -310,6 +328,24 @@ export function useAutoSync() {
     showConflictDialog.value = false;
     pendingRemoteData.value = null;
     detectedConflicts.value = [];
+
+    // 冲突解决后，上传最终状态到 Gist
+    const config = settingsStore.gistSync;
+    if (config.enabled) {
+      try {
+        settingsStore.setSyncing(true);
+        await gistSyncService.uploadToGist(config, {
+          aiModels: aiModelsStore.models,
+          appSettings: settingsStore.getAllSettings(),
+          novels: booksStore.books,
+          coverHistory: coverHistoryStore.covers,
+        });
+      } catch {
+        // 静默失败
+      } finally {
+        settingsStore.setSyncing(false);
+      }
+    }
   };
 
   /**
