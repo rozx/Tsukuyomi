@@ -67,6 +67,13 @@ export const Theme = {
     full: 'rgba(246, 243, 209, 1)',
   },
 
+  // 翻译文本颜色（带主色色调的文本色）
+  translationText: {
+    DEFAULT: 'rgba(240, 69, 139, 0.9)', // primary with high opacity
+    light: 'rgba(240, 69, 139, 0.8)',
+    medium: 'rgba(240, 69, 139, 0.7)',
+  },
+
   // 圆角
   borderRadius: {
     sm: '6px',
@@ -118,6 +125,7 @@ export const ThemeClasses = {
   textMuted: 'text-moon/60',
   textDisabled: 'text-moon/40',
   textPrimaryColor: 'text-primary',
+  textTranslation: 'text-translation', // 翻译文本颜色（区别于原文，使用 Luna 粉色调）
 
   // 圆角
   roundedCard: 'rounded-lg',
@@ -130,5 +138,10 @@ export const ThemeClasses = {
   // 悬停效果
   hoverCard: 'hover:bg-white/10 hover:border-white/20',
   hoverPrimary: 'hover:bg-primary/20 hover:border-primary/50',
-} as const;
 
+  // 搜索输入组
+  searchInputGroup: 'search-input-group',
+  searchInput: 'search-input',
+  inputActionAddon: 'input-action-addon',
+  inputActionButton: 'input-action-button',
+} as const;

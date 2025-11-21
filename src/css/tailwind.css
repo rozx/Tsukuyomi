@@ -66,4 +66,35 @@
     color: var(--primary-opacity-80);
     font-weight: 500;
   }
+
+  /* 搜索输入组样式 - 确保搜索框可以收缩，所有按钮保持在同一行 */
+  .search-input-group {
+    min-width: 0;
+    flex: 1 1 auto;
+    max-width: 400px;
+  }
+
+  .search-input-group :deep(.p-inputtext) {
+    min-width: 0;
+  }
+
+  /* 输入操作按钮组样式 - 用于清除/复制按钮 */
+  .input-action-addon {
+    padding: 0 !important;
+    display: flex !important;
+    align-items: stretch !important;
+    width: auto;
+  }
+
+  .input-action-addon .input-action-button {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0.5rem !important;
+    min-width: 2.5rem;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
 }

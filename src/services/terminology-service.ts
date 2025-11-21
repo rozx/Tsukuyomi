@@ -172,13 +172,14 @@ export class TerminologyService {
       }
     }
 
-    // 过滤掉总出现次数少于3次的术语、包含汉字的术语、包含符号的术语、只包含长音符号的术语
+    // 过滤掉总出现次数少于3次的术语、包含汉字的术语、包含符号的术语、只包含长音符号的术语、单字符的术语
     const filteredTerms = new Map<string, ExtractedTermInfo>();
     for (const [key, value] of allTerms.entries()) {
       const totalCount = value.occurrences.reduce((sum, occ) => sum + occ.count, 0);
       // 应用所有过滤条件
       if (
         totalCount >= 3 &&
+        key.length > 1 &&
         !containsKanji(key) &&
         !containsSymbols(key) &&
         !containsOnlyLongVowel(key)
@@ -193,7 +194,7 @@ export class TerminologyService {
     );
     console.log('过滤前术语总数:', allTerms.size);
     console.log(
-      '从章节中提取的术语（过滤后，出现次数 >= 3，已过滤包含汉字、包含符号和只包含长音符号的术语）:',
+      '从章节中提取的术语（过滤后，出现次数 >= 3，已过滤单字符、包含汉字、包含符号和只包含长音符号的术语）:',
       Array.from(filteredTerms.entries()).sort((a, b) => a[0].localeCompare(b[0])),
     );
     console.log('过滤后术语总数:', filteredTerms.size);
@@ -342,7 +343,8 @@ export class TerminologyService {
         ) {
           // 使用表面形式（surface_form）作为单词
           const word = token.surface_form;
-          if (word && word.length > 0) {
+          // 过滤掉单字符的单词
+          if (word && word.length > 1) {
             const existing = terms.get(word);
             if (existing) {
               // 如果已存在，增加该章节的出现次数

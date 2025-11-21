@@ -21,15 +21,23 @@ interface Props {
   type?: 'input' | 'textarea';
   rows?: number;
   autoResize?: boolean;
+  /**
+   * 是否将翻译结果应用到输入框
+   * 如果为 false，翻译结果只会通过 translation-applied 事件传递，不会更新 modelValue
+   * @default true
+   */
+  applyTranslationToInput?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   type: 'input',
   autoResize: false,
+  applyTranslationToInput: true,
 });
 
 const emit = defineEmits<{
   'update:modelValue': [value: string];
+  'translation-applied': [value: string];
 }>();
 
 // 计算 id，如果未提供则返回 undefined
@@ -239,12 +247,15 @@ const handleTranslate = async () => {
         icon="pi pi-check"
         class="p-button-primary"
         @click="
-          emit('update:modelValue', translationResult);
+          emit('translation-applied', translationResult);
+          if (applyTranslationToInput) {
+            emit('update:modelValue', translationResult);
+          }
           showTranslationDialog = false;
           toast.add({
             severity: 'success',
             summary: '翻译已应用',
-            detail: '翻译结果已应用到输入框',
+            detail: applyTranslationToInput ? '翻译结果已应用到输入框' : '翻译完成',
             life: 3000,
           });
         "

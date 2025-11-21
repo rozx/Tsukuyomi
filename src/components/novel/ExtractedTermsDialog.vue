@@ -77,12 +77,18 @@ watch(minOccurrenceFilter, () => {
   );
 });
 
-// 监听 visible 变化，初始化数据
+// 监听 visible 变化，初始化数据或清空结果
 watch(
   () => props.visible,
   (visible) => {
     if (visible && props.book) {
       initializeData();
+    } else if (!visible) {
+      // 对话框关闭时清空提取结果
+      extractedTerms.value = new Map();
+      allExtractedTermsList.value = [];
+      selectedExtractedTerms.value = [];
+      minOccurrenceFilter.value = 3;
     }
   },
 );
@@ -296,6 +302,11 @@ const saveAllTerms = async () => {
 
 // 关闭对话框
 const closeDialog = () => {
+  // 清空提取结果
+  extractedTerms.value = new Map();
+  allExtractedTermsList.value = [];
+  selectedExtractedTerms.value = [];
+  minOccurrenceFilter.value = 3;
   dialogVisible.value = false;
 };
 </script>
