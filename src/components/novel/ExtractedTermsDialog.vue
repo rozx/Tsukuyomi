@@ -327,6 +327,13 @@ const closeDialog = () => {
             class="w-72 flex-shrink-0 flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-3"
           >
             <div class="flex flex-col gap-3 pb-3 border-b border-white/10">
+              <Button
+                :label="allExtractedTermsList.length > 0 ? '重新提取' : '提取术语'"
+                :icon="allExtractedTermsList.length > 0 ? 'pi pi-refresh' : 'pi pi-search'"
+                class="w-full"
+                :disabled="selectedChapters.length === 0"
+                @click="executeExtraction"
+              />
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm text-moon/80 font-medium">最小出现次数</span>
                 <InputNumber
@@ -352,6 +359,7 @@ const closeDialog = () => {
                 class="w-full"
               />
             </div>
+
             <div class="text-sm text-moon/80 font-medium">选择章节</div>
             <div class="flex-1 min-h-0">
               <Listbox
@@ -400,13 +408,6 @@ const closeDialog = () => {
                 @click="selectedChapters = []"
               />
             </div>
-            <Button
-              :label="allExtractedTermsList.length > 0 ? '重新提取' : '提取术语'"
-              :icon="allExtractedTermsList.length > 0 ? 'pi pi-refresh' : 'pi pi-search'"
-              class="w-full"
-              :disabled="selectedChapters.length === 0"
-              @click="executeExtraction"
-            />
           </div>
 
           <div
