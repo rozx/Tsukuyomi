@@ -301,20 +301,21 @@ onUnmounted(() => {
           </Button>
 
           <!-- 消息历史按钮 -->
-          <Button
-            ref="bellButtonRef"
-            aria-label="消息历史"
-            class="p-button-text p-button-rounded relative text-moon-70 transition-colors hover:text-moon-100"
-            @click="toggleHistoryDialog"
-          >
-            <i class="pi pi-bell text-lg" />
+          <div class="relative inline-flex items-center justify-center">
+            <Button
+              ref="bellButtonRef"
+              aria-label="消息历史"
+              class="p-button-text p-button-rounded text-moon-70 transition-colors hover:text-moon-100"
+              @click="toggleHistoryDialog"
+            >
+              <i class="pi pi-bell text-lg" />
+            </Button>
             <Badge
               v-if="unreadCount > 0"
               :value="unreadCount > 99 ? '99+' : unreadCount"
-              class="absolute top-0 right-0"
               severity="danger"
             />
-          </Button>
+          </div>
         </div>
       </template>
     </Menubar>
@@ -329,3 +330,4 @@ onUnmounted(() => {
     <ThinkingProcessPanel ref="thinkingPanelRef" />
   </header>
 </template>
+

@@ -136,11 +136,11 @@ const bottomItems: MenuItem[] = [
       <!-- 收藏小说独立区域 -->
       <div class="mt-4 min-w-0 max-w-full overflow-hidden">
         <!-- 标题区域 -->
-        <div class="px-3 py-2 mb-3 bg-white/5 rounded-lg border border-white/10 min-w-0 max-w-full overflow-hidden">
+        <div class="px-3 py-2 mb-3 bg-surface-subtle rounded-lg border border-surface-subtle min-w-0 max-w-full overflow-hidden">
           <div class="flex items-center gap-2 min-w-0">
-            <i class="pi pi-bookmark text-primary text-sm flex-shrink-0" />
-            <span class="text-xs font-semibold text-moon/90 uppercase tracking-wide flex-shrink-0">收藏小说</span>
-            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary flex-shrink-0">
+            <i class="pi pi-bookmark text-accent-400 text-sm flex-shrink-0" />
+            <span class="text-xs font-semibold text-textCharcoal dark:text-moon-50/90 uppercase tracking-wide flex-shrink-0">收藏小说</span>
+            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-accent-400/20 text-accent-400 flex-shrink-0">
               {{ starredNovels.length }}
             </span>
           </div>

@@ -213,15 +213,15 @@ const formatApiKey = (apiKey: string): string => {
 </script>
 
 <template>
-  <div class="p-6 space-y-6">
+  <div class="h-full flex flex-col p-6">
       <!-- 固定头部 -->
-      <div class="flex items-center justify-between">
-        <div>
+      <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
+        <div class="flex-shrink-0">
           <h1 class="text-2xl font-bold">AI 模型管理</h1>
           <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
         </div>
-        <div class="flex items-center gap-3">
-          <InputGroup class="search-input-group">
+        <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
+          <InputGroup class="search-input-group min-w-0 flex-shrink">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
@@ -243,20 +243,22 @@ const formatApiKey = (apiKey: string): string => {
             label="添加 AI 模型"
             icon="pi pi-plus"
             @click="addModel"
-            class="p-button-primary icon-button-hover"
+            class="p-button-primary icon-button-hover flex-shrink-0"
           />
         </div>
       </div>
 
       <!-- DataView 内容区域 -->
-      <DataView
-        :value="filteredModels"
-        data-key="id"
-        :rows="10"
-        :paginator="filteredModels.length > 0"
-        :rows-per-page-options="[5, 10, 20, 50]"
-        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
-      >
+      <div class="flex-1 flex flex-col min-h-0">
+        <DataView
+          :value="filteredModels"
+          data-key="id"
+          :rows="10"
+          :paginator="filteredModels.length > 0"
+          :rows-per-page-options="[5, 10, 20, 50]"
+          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+          class="flex-1 flex flex-col min-h-0"
+        >
       <template #empty>
         <div class="text-center py-12">
           <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
@@ -286,7 +288,7 @@ const formatApiKey = (apiKey: string): string => {
                 <div class="flex items-center gap-3">
                   <i
                     class="pi pi-sparkles text-xl icon-hover"
-                    :class="model.enabled ? 'text-primary' : 'text-moon/50'"
+                    :class="model.enabled ? 'text-accent-400' : 'text-moon/50'"
                   />
                   <div>
                     <h3 class="text-lg font-semibold">{{ model.name }}</h3>
@@ -347,7 +349,8 @@ const formatApiKey = (apiKey: string): string => {
           </div>
         </div>
       </template>
-      </DataView>
+        </DataView>
+      </div>
 
       <!-- 添加对话框 -->
       <AIModelDialog
@@ -373,4 +376,36 @@ const formatApiKey = (apiKey: string): string => {
 
 <style scoped>
 /* 所有组件样式已在全局 app.scss 中定义，确保整个应用样式一致 */
+
+/* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */
+:deep(.p-dataview) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: transparent !important;
+}
+
+:deep(.p-dataview-content) {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  background: transparent !important;
+}
+
+:deep(.p-paginator) {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+/* 确保搜索框可以收缩，所有按钮保持在同一行 */
+.search-input-group {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 400px;
+}
+
+.search-input-group :deep(.p-inputtext) {
+  min-width: 0;
+}
 </style>

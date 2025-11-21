@@ -10,8 +10,37 @@
     height: 100%;
     @apply bg-night-950 text-moon-50;
     background-image:
-      radial-gradient(circle at 18% 20%, rgba(37, 211, 209, 0.18), transparent 55%),
-      radial-gradient(circle at 78% -10%, rgba(138, 77, 255, 0.32), transparent 60%),
-      linear-gradient(135deg, #050818 0%, #0f1634 50%, #1b1f45 100%);
+      radial-gradient(circle at 18% 20%, rgba(128, 222, 234, 0.15), transparent 55%),
+      radial-gradient(circle at 78% -10%, rgba(179, 157, 219, 0.2), transparent 60%),
+      linear-gradient(135deg, #1a1a1a 0%, #263238 50%, #37474f 100%);
+  }
+}
+
+/* 全局样式：使所有 DataView 的分页器固定在底部 */
+@layer components {
+  .p-dataview {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: transparent !important;
+  }
+
+  .p-dataview-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    background: transparent !important;
+  }
+
+  .p-paginator {
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+
+  /* 确保在 flex 容器中的 DataView 正常工作 */
+  .flex.flex-col .p-dataview {
+    flex: 1;
+    min-height: 0;
   }
 }

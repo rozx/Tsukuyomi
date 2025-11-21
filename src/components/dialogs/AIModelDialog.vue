@@ -460,7 +460,7 @@ watch(
           <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90"
             >温度 (0-2) *</label
           >
-          <span class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded">{{
+          <span class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded">{{
             formData.temperature
           }}</span>
         </div>
@@ -645,7 +645,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.translation.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.translation.temperature }}
               </span>
@@ -683,7 +683,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.proofreading.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.proofreading.temperature }}
               </span>
@@ -721,7 +721,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.polishing.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.polishing.temperature }}
               </span>
@@ -762,7 +762,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.characterExtraction.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.characterExtraction.temperature }}
               </span>
@@ -803,7 +803,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.terminologyExtraction.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.terminologyExtraction.temperature }}
               </span>
@@ -844,7 +844,7 @@ watch(
               </div>
               <span
                 v-if="formData.isDefault.termsTranslation?.enabled"
-                class="text-sm font-medium text-primary px-2 py-0.5 bg-primary/10 rounded"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
               >
                 {{ formData.isDefault.termsTranslation?.temperature }}
               </span>

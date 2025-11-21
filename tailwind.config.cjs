@@ -6,31 +6,57 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#8a4dff',
-          50: '#f5f2ff',
-          100: '#ebe2ff',
-          200: '#d2beff',
-          300: '#b996ff',
-          400: '#a06eff',
-          500: '#8a4dff',
-          600: '#7434f5',
-          700: '#5e24d4',
-          800: '#4518a1',
-          900: '#2c0f6c',
-          950: '#1a0942',
+          DEFAULT: '#eceff1', // Soft gray
+          50: '#fdfdff', // Pearl white
+          100: '#fafbfd',
+          200: '#eceff1', // Soft gray
+          300: '#d5d9dd',
+          400: '#bdc4cb',
+          500: '#a5afb9',
+          600: '#8d9aa7',
+          700: '#758595',
+          800: '#5d7083',
+          900: '#455b71',
+          950: '#2d475f',
         },
         accent: {
-          DEFAULT: '#25d3d1',
-          50: '#e7fffb',
-          100: '#c0fff6',
-          200: '#8ff9ef',
-          300: '#5cefe5',
-          400: '#31ded7',
-          500: '#12c4c7',
-          600: '#0a9fb0',
-          700: '#097f8f',
-          800: '#086270',
-          900: '#06474f',
+          DEFAULT: '#b39ddb',
+          50: '#f3e5f5',
+          100: '#e1bee7',
+          200: '#ce93d8',
+          300: '#ba68c8',
+          400: '#b39ddb',
+          500: '#9575cd',
+          600: '#7e57c2',
+          700: '#673ab7',
+          800: '#5e35b1',
+          900: '#512da8',
+        },
+        accentTeal: {
+          DEFAULT: '#80deea',
+          50: '#e0f7fa',
+          100: '#b2ebf2',
+          200: '#80deea',
+          300: '#4dd0e1',
+          400: '#26c6da',
+          500: '#00bcd4',
+          600: '#00acc1',
+          700: '#0097a7',
+          800: '#00838f',
+          900: '#006064',
+        },
+        // Theme text colors
+        textCharcoal: {
+          DEFAULT: '#36454f',
+        },
+        textDeepNavy: {
+          DEFAULT: '#1a237e',
+        },
+        // Icon colors - for icons and highlights, use accent instead of primary
+        icon: {
+          DEFAULT: '#b39ddb', // Lavender - main icon color
+          teal: '#80deea', // Icy teal - secondary icon color
+          accent: '#b39ddb', // Alias for lavender
         },
         night: {
           50: '#f6f6ff',
@@ -60,7 +86,7 @@ module.exports = {
       },
       backgroundImage: {
         'luna-gradient':
-          'radial-gradient(900px circle at 75% -10%, rgba(138,77,255,0.35), transparent 60%), radial-gradient(720px circle at 12% 115%, rgba(37,211,209,0.22), transparent 45%)',
+          'radial-gradient(900px circle at 75% -10%, rgba(179,157,219,0.25), transparent 60%), radial-gradient(720px circle at 12% 115%, rgba(128,222,234,0.2), transparent 45%)',
       },
     },
   },
@@ -78,10 +104,10 @@ module.exports = {
           backgroundImage: 'linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%)',
         },
         '.card-base': {
-          backgroundColor: 'rgba(10, 13, 34, 0.82)',
-          border: '1px solid rgba(138, 77, 255, 0.18)',
-          borderRadius: '16px',
-          boxShadow: '0 35px 80px rgba(5, 8, 24, 0.75)',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)', // Transparent with subtle white overlay for dark theme
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '12px',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
         },
         '.card-header': {
           backgroundColor: 'rgba(255, 255, 255, 0.035)',
@@ -114,9 +140,44 @@ module.exports = {
           borderColor: 'rgba(37, 211, 209, 0.45)',
         },
         '.list-item-selected': {
-          backgroundColor: 'rgba(138, 77, 255, 0.22)',
-          borderColor: 'rgba(138, 77, 255, 0.6)',
-          boxShadow: '0 15px 40px rgba(138, 77, 255, 0.35)',
+          backgroundColor: 'rgba(179, 157, 219, 0.15)',
+          borderColor: 'rgba(179, 157, 219, 0.4)',
+          boxShadow: '0 8px 24px rgba(179, 157, 219, 0.25)',
+        },
+        // Theme-based surface colors using Soft gray (#ECEFF1) and Pearl white (#FDFDFD)
+        '.bg-surface-subtle': {
+          backgroundColor: 'rgba(236, 239, 241, 0.05)',
+        },
+        '.bg-surface-light': {
+          backgroundColor: 'rgba(236, 239, 241, 0.1)',
+        },
+        '.bg-surface-medium': {
+          backgroundColor: 'rgba(236, 239, 241, 0.15)',
+        },
+        '.bg-surface-strong': {
+          backgroundColor: 'rgba(236, 239, 241, 0.2)',
+        },
+        '.bg-surface-card': {
+          backgroundColor: 'rgba(253, 253, 255, 0.8)', // Pearl white with transparency
+        },
+        '.border-surface-subtle': {
+          borderColor: 'rgba(236, 239, 241, 0.2)',
+        },
+        '.border-surface-light': {
+          borderColor: 'rgba(236, 239, 241, 0.3)',
+        },
+        '.border-surface-medium': {
+          borderColor: 'rgba(236, 239, 241, 0.4)',
+        },
+        '.border-surface-strong': {
+          borderColor: 'rgba(236, 239, 241, 0.5)',
+        },
+        // Icon colors - use accent (Lavender) for icons instead of primary (Soft gray)
+        '.text-icon': {
+          color: '#b39ddb', // Lavender for icons
+        },
+        '.text-icon-teal': {
+          color: '#80deea', // Icy teal for secondary icons
         },
       };
       addUtilities(newUtilities, ['responsive', 'hover', 'focus']);
