@@ -1128,6 +1128,7 @@ const handleDragLeave = () => {
       v-model:visible="showScraperDialog"
       :current-book="book || null"
       :initial-url="book?.webUrl?.[0] || ''"
+      :show-novel-info="false"
       @apply="handleScraperUpdate"
     />
 

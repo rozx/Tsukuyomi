@@ -27,12 +27,18 @@ const formatDate = (date: Date | string | undefined): string => {
   return `${year}-${month}-${day}`;
 };
 
-const props = defineProps<{
-  visible: boolean;
-  currentBook?: Novel | null;
-  initialUrl?: string;
-  initialFilter?: 'all' | 'imported' | 'unimported' | 'updated';
-}>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    currentBook?: Novel | null;
+    initialUrl?: string;
+    initialFilter?: 'all' | 'imported' | 'unimported' | 'updated';
+    showNovelInfo?: boolean;
+  }>(),
+  {
+    showNovelInfo: true,
+  }
+);
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
@@ -591,10 +597,8 @@ watch(
       // 设置初始过滤选项
       if (props.initialFilter) {
         chapterFilter.value = props.initialFilter;
-      } else if (props.currentBook) {
-        // 如果有当前书籍，默认显示未导入的章节
-        chapterFilter.value = 'unimported';
       } else {
+        // 默认显示所有章节
         chapterFilter.value = 'all';
       }
 
@@ -695,7 +699,7 @@ watch(
       </div>
 
       <!-- 统计信息 -->
-      <div v-if="scrapedNovel && !loading" class="card-base p-4 flex-shrink-0">
+      <div v-if="scrapedNovel && !loading && showNovelInfo" class="card-base p-4 flex-shrink-0">
         <div class="flex items-center justify-between">
           <div>
             <h3 class="text-lg font-semibold text-moon/90 mb-1">{{ scrapedNovel.title }}</h3>
