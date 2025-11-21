@@ -293,13 +293,24 @@ const saveAllTerms = async () => {
     isSaving.value = false;
   }
 };
+
+// 关闭对话框
+const closeDialog = () => {
+  dialogVisible.value = false;
+};
 </script>
 
 <template>
   <Dialog
     v-model:visible="dialogVisible"
     :modal="true"
-    :style="{ width: '90vw', maxWidth: '1200px' }"
+    :style="{ width: '90vw', maxWidth: '1200px', height: '90vh' }"
+    :content-style="{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }"
     :closable="true"
     class="extracted-terms-dialog"
   >
@@ -360,7 +371,7 @@ const saveAllTerms = async () => {
                 filter
                 checkmark
                 class="w-full h-full"
-                :list-style="'max-height: 100%; height: 100%;'"
+                list-style="max-height: 50vh"
               >
                 <template #optiongroup="slotProps">
                   <div
@@ -416,7 +427,7 @@ const saveAllTerms = async () => {
               :rows-per-page-options="[10, 20, 50, 100]"
               paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
               :scrollable="true"
-              scroll-height="flex"
+              scroll-height="50vh"
               class="extracted-terms-table flex-1"
               empty-message="请先选择章节并点击提取术语"
             >
@@ -443,7 +454,7 @@ const saveAllTerms = async () => {
     </div>
 
     <template #footer>
-      <div class="flex items-center justify-end w-full mt-6">
+      <div class="flex items-center justify-between w-full">
         <Button
           label="保存所有术语"
           icon="pi pi-save"
@@ -452,6 +463,7 @@ const saveAllTerms = async () => {
           :loading="isSaving"
           @click="saveAllTerms"
         />
+        <Button label="关闭" icon="pi pi-times" class="p-button-text" @click="closeDialog" />
       </div>
     </template>
   </Dialog>
