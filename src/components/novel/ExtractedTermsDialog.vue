@@ -304,7 +304,7 @@ const closeDialog = () => {
   <Dialog
     v-model:visible="dialogVisible"
     :modal="true"
-    :style="{ width: '90vw', maxWidth: '1200px', maxHeight: '92vh' }"
+    :style="{ width: '90vw', maxWidth: '1200px', maxHeight: '97vh' }"
     :closable="true"
     class="extracted-terms-dialog"
   >
@@ -365,7 +365,7 @@ const closeDialog = () => {
                 filter
                 checkmark
                 class="w-full h-full"
-                list-style="max-height: 50vh"
+                list-style="max-height: 720px"
               >
                 <template #optiongroup="slotProps">
                   <div
@@ -421,7 +421,7 @@ const closeDialog = () => {
               :rows-per-page-options="[10, 20, 50, 100]"
               paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
               :scrollable="true"
-              scroll-height="50vh"
+              scroll-height="auto"
               class="extracted-terms-table flex-1"
               empty-message="请先选择章节并点击提取术语"
             >
