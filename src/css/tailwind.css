@@ -29,6 +29,7 @@
   .p-dataview-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     min-height: 0;
     background: transparent !important;
   }
@@ -42,5 +43,27 @@
   .flex.flex-col .p-dataview {
     flex: 1;
     min-height: 0;
+  }
+
+  /* 主题标签样式 */
+  .site-badge,
+  .novel-tag {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    background: var(--primary-opacity-10);
+    color: var(--primary-opacity-80);
+    border: 1px solid var(--primary-opacity-30);
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .novel-tag {
+    padding: 0.25rem 0.5rem;
+  }
+
+  /* 主题数字样式 */
+  .novel-word-count {
+    color: var(--primary-opacity-80);
+    font-weight: 500;
   }
 }

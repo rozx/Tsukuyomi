@@ -9,6 +9,7 @@ import Select from 'primevue/select';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
+import { ChapterService } from 'src/services/chapter-service';
 import {
   formatWordCount,
   getNovelCharCount,
@@ -19,6 +20,8 @@ import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Volume, Chapter, Novel } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
+import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
+import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 
 const route = useRoute();
@@ -54,6 +57,7 @@ const deletingChapterTitle = ref('');
 
 // 书籍编辑对话框状态
 const showBookDialog = ref(false);
+const showScraperDialog = ref(false);
 
 // 拖拽状态
 const draggedChapter = ref<{
@@ -143,6 +147,47 @@ const navigateToCharactersSetting = () => {
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
+  }
+};
+
+// 打开从在线获取更新对话框
+const openScraperDialog = () => {
+  showScraperDialog.value = true;
+};
+
+// 处理从在线获取的更新
+const handleScraperUpdate = async (novel: Novel) => {
+  if (!book.value) {
+    return;
+  }
+
+  try {
+    // 使用 ChapterService 合并卷和章节
+    const updatedBook = ChapterService.mergeNovelData(book.value, novel, {
+      chapterUpdateStrategy: 'merge',
+    });
+
+    // 更新书籍
+    await booksStore.updateBook(book.value.id, {
+      ...updatedBook,
+      lastEdited: new Date(),
+    });
+
+    showScraperDialog.value = false;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: '已从在线获取并更新章节数据',
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('更新失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '更新失败',
+      detail: error instanceof Error ? error.message : '从在线获取更新时发生错误',
+      life: 5000,
+    });
   }
 };
 
@@ -736,6 +781,10 @@ const handleDragLeave = () => {
               <i class="pi pi-users settings-menu-icon"></i>
               <span class="settings-menu-label">角色设置</span>
             </button>
+            <button class="settings-menu-item" @click="openScraperDialog">
+              <i class="pi pi-download settings-menu-icon"></i>
+              <span class="settings-menu-label">检查更新</span>
+            </button>
           </div>
           <div class="settings-menu-separator"></div>
         </div>
@@ -964,12 +1013,11 @@ const handleDragLeave = () => {
           <label for="edit-volume-title" class="block text-sm font-medium text-moon/90"
             >卷标题</label
           >
-          <InputText
+          <TranslatableInput
             id="edit-volume-title"
             v-model="editingVolumeTitle"
             placeholder="输入卷标题..."
-            class="w-full"
-            autofocus
+            type="input"
             @keyup.enter="handleEditVolume"
           />
         </div>
@@ -993,12 +1041,11 @@ const handleDragLeave = () => {
           <label for="edit-chapter-title" class="block text-sm font-medium text-moon/90"
             >章节标题</label
           >
-          <InputText
+          <TranslatableInput
             id="edit-chapter-title"
             v-model="editingChapterTitle"
             placeholder="输入章节标题..."
-            class="w-full"
-            autofocus
+            type="input"
             @keyup.enter="handleEditChapter"
           />
         </div>
@@ -1076,6 +1123,14 @@ const handleDragLeave = () => {
       @cancel="showBookDialog = false"
     />
 
+    <!-- 从在线获取更新对话框 -->
+    <NovelScraperDialog
+      v-model:visible="showScraperDialog"
+      :current-book="book || null"
+      :initial-url="book?.webUrl?.[0] || ''"
+      @apply="handleScraperUpdate"
+    />
+
     <!-- 主内容区域 -->
     <div class="book-main-content">
       <div class="page-container">
@@ -1115,7 +1170,7 @@ const handleDragLeave = () => {
               :href="selectedChapter.webUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="chapter-web-url text-primary hover:underline"
+              class="chapter-web-url"
             >
               <i class="pi pi-external-link"></i>
               <span>查看原文</span>
@@ -1405,6 +1460,10 @@ const handleDragLeave = () => {
 .volume-title {
   flex: 1;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .volume-chapter-count {
@@ -1782,16 +1841,39 @@ const handleDragLeave = () => {
 }
 
 .chapter-web-url {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
   font-size: 0.875rem;
   width: fit-content;
+  color: var(--primary-opacity-90);
+  text-decoration: underline;
+  text-decoration-color: var(--primary-opacity-50);
+  text-underline-offset: 2px;
+  background: var(--primary-opacity-10);
+  border: 1px solid var(--primary-opacity-30);
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chapter-web-url:hover {
+  color: var(--primary-opacity-100);
+  text-decoration-color: var(--primary-opacity-80);
+  background: var(--primary-opacity-15);
+  border-color: var(--primary-opacity-50);
+  transform: translateY(-1px);
 }
 
 .chapter-web-url .pi {
   font-size: 0.75rem;
+  color: var(--primary-opacity-85);
+  transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chapter-web-url:hover .pi {
+  color: var(--primary-opacity-100);
 }
 
 /* 段落容器 */

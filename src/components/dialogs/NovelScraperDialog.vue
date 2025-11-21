@@ -31,6 +31,7 @@ const props = defineProps<{
   visible: boolean;
   currentBook?: Novel | null;
   initialUrl?: string;
+  initialFilter?: 'all' | 'imported' | 'unimported' | 'updated';
 }>();
 
 const emit = defineEmits<{
@@ -50,7 +51,7 @@ const chapterErrors = ref<Map<string, string>>(new Map());
 const selectedChapters = ref<Set<string>>(new Set());
 
 // 章节过滤和折叠
-const chapterFilter = ref<'all' | 'imported' | 'unimported'>('all');
+const chapterFilter = ref<'all' | 'imported' | 'unimported' | 'updated'>('all');
 const collapsedVolumes = ref<Set<string>>(new Set());
 
 // 导入进度相关
@@ -93,10 +94,13 @@ const supportedSitesText = computed(() => {
 const filteredVolumes = computed(() => {
   if (!scrapedNovel.value?.volumes) return [];
   
-  return scrapedNovel.value.volumes
+      return scrapedNovel.value.volumes
     .map((volume) => {
       const filteredChapters = volume.chapters?.filter((chapter) => {
         if (chapterFilter.value === 'all') return true;
+        if (chapterFilter.value === 'updated') {
+          return ChapterService.shouldUpdateChapter(props.currentBook, chapter);
+        }
         const imported = isChapterImported(chapter);
         return chapterFilter.value === 'imported' ? imported : !imported;
       }) || [];
@@ -365,47 +369,49 @@ const toggleChapterSelection = (chapterId: string, event?: Event) => {
   }
 };
 
-// 全选/取消全选（所有章节）
+// 全选/取消全选（当前过滤的章节）
 const toggleSelectAll = () => {
   if (!scrapedNovel.value) {
     return;
   }
 
-  const allChapterIds = new Set<string>();
-  scrapedNovel.value.volumes?.forEach((volume) => {
+  // 获取当前过滤器中显示的章节 ID
+  const filteredChapterIds = new Set<string>();
+  filteredVolumes.value.forEach((volume) => {
     volume.chapters?.forEach((chapter) => {
-      allChapterIds.add(chapter.id);
+      filteredChapterIds.add(chapter.id);
     });
   });
 
-  // 检查是否所有章节都已选中
-  const allSelected = allChapterIds.size > 0 &&
-    Array.from(allChapterIds).every(id => selectedChapters.value.has(id));
+  // 检查是否所有过滤的章节都已选中
+  const allSelected = filteredChapterIds.size > 0 &&
+    Array.from(filteredChapterIds).every(id => selectedChapters.value.has(id));
 
   if (allSelected) {
-    // 如果已全选，则取消全选
-    selectedChapters.value.clear();
+    // 如果已全选，则取消全选（只取消当前过滤的章节）
+    filteredChapterIds.forEach(id => selectedChapters.value.delete(id));
   } else {
-    // 否则全选所有章节
-    allChapterIds.forEach(id => selectedChapters.value.add(id));
+    // 否则全选当前过滤的章节
+    filteredChapterIds.forEach(id => selectedChapters.value.add(id));
   }
 };
 
-// 是否全选（所有章节）
+// 是否全选（当前过滤的章节）
 const isAllSelected = computed(() => {
   if (!scrapedNovel.value) {
     return false;
   }
 
-  const allChapterIds = new Set<string>();
-  scrapedNovel.value.volumes?.forEach((volume) => {
+  // 获取当前过滤器中显示的章节 ID
+  const filteredChapterIds = new Set<string>();
+  filteredVolumes.value.forEach((volume) => {
     volume.chapters?.forEach((chapter) => {
-      allChapterIds.add(chapter.id);
+      filteredChapterIds.add(chapter.id);
     });
   });
 
-  return allChapterIds.size > 0 &&
-    Array.from(allChapterIds).every(id => selectedChapters.value.has(id));
+  return filteredChapterIds.size > 0 &&
+    Array.from(filteredChapterIds).every(id => selectedChapters.value.has(id));
 });
 
 // 切换卷的折叠状态
@@ -580,7 +586,18 @@ watch(
       selectedChapters.value.clear();
       selectedChapterId.value = null;
       loadingChapters.value.clear();
+      chapterFilter.value = 'all';
     } else {
+      // 设置初始过滤选项
+      if (props.initialFilter) {
+        chapterFilter.value = props.initialFilter;
+      } else if (props.currentBook) {
+        // 如果有当前书籍，默认显示未导入的章节
+        chapterFilter.value = 'unimported';
+      } else {
+        chapterFilter.value = 'all';
+      }
+
       // 只有当明确传入 initialUrl 时才自动填充并触发获取
       // 如果 initialUrl 为空字符串或未传入，则不自动填充（避免从 currentBook 自动填充）
       if (props.initialUrl && props.initialUrl.trim() !== '' && NovelScraperFactory.isValidUrl(props.initialUrl)) {
@@ -637,7 +654,7 @@ watch(
             <span
               v-for="site in supportedSites"
               :key="site"
-              class="px-2 py-0.5 text-xs bg-primary/10 text-primary rounded border border-primary/20 font-medium"
+              class="site-badge"
             >
               {{ site }}
             </span>
@@ -699,7 +716,7 @@ watch(
           <span
             v-for="tag in scrapedNovel.tags"
             :key="tag"
-            class="px-2 py-1 text-xs bg-primary/20 text-primary rounded border border-primary/30"
+            class="novel-tag"
           >
             {{ tag }}
           </span>
@@ -735,9 +752,15 @@ watch(
                         class="p-button-sm icon-button-hover"
                         @click="chapterFilter = 'unimported'"
                       />
+                      <Button
+                        label="有更新"
+                        :class="chapterFilter === 'updated' ? '' : 'p-button-outlined'"
+                        class="p-button-sm icon-button-hover"
+                        @click="chapterFilter = 'updated'"
+                      />
                     </div>
                     <Button
-                      :label="isAllSelected ? '取消全选' : '全选'"
+                      :label="isAllSelected ? '取消' : '全选'"
                       icon="pi pi-check-square"
                       class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
                       @click="toggleSelectAll"
@@ -794,7 +817,7 @@ watch(
                               v-if="chapterContents.has(chapter.id)"
                               class="text-moon/70 font-medium"
                             >
-                              字数: <span class="text-primary">{{ formatWordCount(getChapterWordCount(chapter.id)) }}</span>
+                              字数: <span class="novel-word-count">{{ formatWordCount(getChapterWordCount(chapter.id)) }}</span>
                             </span>
                             <span v-else-if="loadingChapters.has(chapter.id)" class="text-moon/50 italic">
                               计算中...
@@ -1016,5 +1039,6 @@ watch(
     </template>
   </Dialog>
 </template>
+
 
 
