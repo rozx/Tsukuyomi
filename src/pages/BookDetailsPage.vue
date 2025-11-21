@@ -1209,6 +1209,7 @@ const handleDragLeave = () => {
               v-for="paragraph in selectedChapterParagraphs"
               :key="paragraph.id"
               :paragraph="paragraph"
+              :terminologies="book?.terminologies || []"
             />
           </div>
 
