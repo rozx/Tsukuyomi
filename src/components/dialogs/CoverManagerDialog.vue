@@ -357,7 +357,7 @@ const handleClose = () => {
                 :href="selectedCover.url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-moon/90 break-all text-xs text-primary hover:underline cursor-pointer"
+                class="text-accent-400 hover:text-accent-300 hover:underline break-all text-xs cursor-pointer transition-colors"
               >
                 {{ selectedCover.url }}
               </a>

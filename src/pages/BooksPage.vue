@@ -584,15 +584,15 @@ const handleSave = async (formData: Partial<Novel>) => {
 </script>
 
 <template>
-  <div class="w-full h-full p-6 space-y-6">
+  <div class="w-full h-full flex flex-col p-6">
     <!-- 头部 -->
-    <div class="flex items-center justify-between">
-      <div>
+    <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
+      <div class="flex-shrink-0">
         <h1 class="text-2xl font-bold">书籍列表</h1>
         <p class="text-moon/70 mt-1">管理您的翻译书籍</p>
       </div>
-      <div class="flex items-center gap-3">
-        <InputGroup class="search-input-group">
+      <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
+        <InputGroup class="search-input-group min-w-0 flex-shrink">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
           </InputGroupAddon>
@@ -614,7 +614,7 @@ const handleSave = async (formData: Partial<Novel>) => {
           :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
           icon="pi pi-sort-alt"
           iconPos="right"
-          class="p-button-outlined icon-button-hover"
+          class="p-button-outlined icon-button-hover flex-shrink-0"
           @click="
             (e: Event) => {
               const menu = sortMenuRef;
@@ -627,134 +627,143 @@ const handleSave = async (formData: Partial<Novel>) => {
         <Button
           label="从网站导入"
           icon="pi pi-globe"
-          class="p-button-primary icon-button-hover"
+          class="p-button-primary icon-button-hover flex-shrink-0"
           @click="importBookFromWeb"
         />
         <Button
           label="从 JSON 导入"
           icon="pi pi-file-import"
-          class="p-button-primary icon-button-hover"
+          class="p-button-primary icon-button-hover flex-shrink-0"
           @click="importBookFromJson"
         />
         <Button
           label="添加书籍"
           icon="pi pi-plus"
-          class="p-button-primary icon-button-hover"
+          class="p-button-primary icon-button-hover flex-shrink-0"
           @click="addBook"
         />
       </div>
     </div>
 
     <!-- DataView 内容区域 -->
-    <DataView
-      :value="filteredBooks"
-      data-key="id"
-      :rows="20"
-      :paginator="filteredBooks.length > 0"
-      :rows-per-page-options="[10, 20, 50, 100]"
-      paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
-      layout="grid"
-    >
-      <template #empty>
-        <div class="text-center py-12">
-          <i class="pi pi-book text-4xl text-moon/50 mb-4 icon-hover" />
-          <p class="text-moon/70">
-            {{ searchQuery ? '未找到匹配的书籍' : '暂无书籍' }}
-          </p>
-          <Button
-            v-if="!searchQuery"
-            label="添加第一本书籍"
-            icon="pi pi-plus"
-            class="p-button-primary mt-4 icon-button-hover"
-            @click="addBook"
-          />
-        </div>
-      </template>
+    <div class="flex-1 flex flex-col min-h-0">
+      <DataView
+        :value="filteredBooks"
+        data-key="id"
+        :rows="20"
+        :paginator="filteredBooks.length > 0"
+        :rows-per-page-options="[10, 20, 50, 100]"
+        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+        layout="grid"
+        class="flex-1 flex flex-col min-h-0"
+      >
+        <template #empty>
+          <div class="text-center py-12">
+            <i class="pi pi-book text-4xl text-moon/50 mb-4 icon-hover" />
+            <p class="text-moon/70">
+              {{ searchQuery ? '未找到匹配的书籍' : '暂无书籍' }}
+            </p>
+            <Button
+              v-if="!searchQuery"
+              label="添加第一本书籍"
+              icon="pi pi-plus"
+              class="p-button-primary mt-4 icon-button-hover"
+              @click="addBook"
+            />
+          </div>
+        </template>
 
-      <template #grid="slotProps">
-        <div
-          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 items-stretch"
-        >
-          <div v-for="book in slotProps.items" :key="book.id" class="book-card group flex flex-col h-full">
-            <!-- 封面 -->
+        <template #grid="slotProps">
+          <div
+            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 items-stretch"
+          >
             <div
-              class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
-              @click="navigateToBookDetails(book)"
+              v-for="book in slotProps.items"
+              :key="book.id"
+              class="book-card group flex flex-col h-full"
             >
-              <img
-                :src="getCoverUrl(book)"
-                :alt="book.title"
-                class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                @error="
-                  (e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.src = getCoverUrl(book);
-                  }
-                "
-              />
-            </div>
-            <!-- 内容 -->
-            <div class="px-1 pb-2 space-y-1.5 flex flex-col flex-1">
-              <h3
-                class="text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
-                :title="book.title"
+              <!-- 封面 -->
+              <div
+                class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
                 @click="navigateToBookDetails(book)"
               >
-                {{ book.title }}
-              </h3>
-              <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
-                {{ book.author }}
-              </p>
-
-              <!-- 统计信息 -->
-              <div class="text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto">
-                <div class="flex items-center justify-between">
-                  <span>章节:</span>
-                  <span class="font-medium">{{ getTotalChapters(book) }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span>字数:</span>
-                  <span class="font-medium">{{ formatWordCount(getTotalWords(book)) }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span>创建:</span>
-                  <span class="font-medium">{{ formatDate(book.createdAt) }}</span>
-                </div>
-                <div class="flex items-center justify-between">
-                  <span>更新:</span>
-                  <span class="font-medium">{{ formatDate(book.lastEdited) }}</span>
-                </div>
+                <img
+                  :src="getCoverUrl(book)"
+                  :alt="book.title"
+                  class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  @error="
+                    (e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = getCoverUrl(book);
+                    }
+                  "
+                />
               </div>
+              <!-- 内容 -->
+              <div class="px-1 pb-2 space-y-1.5 flex flex-col flex-1">
+                <h3
+                  class="text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
+                  :title="book.title"
+                  @click="navigateToBookDetails(book)"
+                >
+                  {{ book.title }}
+                </h3>
+                <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
+                  {{ book.author }}
+                </p>
 
-              <!-- 操作按钮 -->
-              <div class="flex items-center gap-1 pt-1.5 border-t border-white/5">
-                <Button
-                  :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
-                  :class="[
-                    'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2',
-                    book.starred ? '!text-yellow-400' : '',
-                  ]"
-                  @click.stop="toggleStar(book)"
-                  :title="book.starred ? '取消收藏' : '收藏'"
-                />
-                <Button
-                  icon="pi pi-pencil"
-                  class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2"
-                  @click.stop="editBook(book)"
-                  title="编辑"
-                />
-                <Button
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-2"
-                  @click.stop="deleteBook(book)"
-                  title="删除"
-                />
+                <!-- 统计信息 -->
+                <div
+                  class="text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>章节:</span>
+                    <span class="font-medium">{{ getTotalChapters(book) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span>字数:</span>
+                    <span class="font-medium">{{ formatWordCount(getTotalWords(book)) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span>创建:</span>
+                    <span class="font-medium">{{ formatDate(book.createdAt) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <span>更新:</span>
+                    <span class="font-medium">{{ formatDate(book.lastEdited) }}</span>
+                  </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="flex items-center gap-1 pt-1.5 border-t border-white/5">
+                  <Button
+                    :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
+                    :class="[
+                      'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2',
+                      book.starred ? '!text-yellow-400' : '',
+                    ]"
+                    @click.stop="toggleStar(book)"
+                    :title="book.starred ? '取消收藏' : '收藏'"
+                  />
+                  <Button
+                    icon="pi pi-pencil"
+                    class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2"
+                    @click.stop="editBook(book)"
+                    title="编辑"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-2"
+                    @click.stop="deleteBook(book)"
+                    title="删除"
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </template>
-    </DataView>
+        </template>
+      </DataView>
+    </div>
 
     <!-- 添加对话框 -->
     <BookDialog
@@ -903,5 +912,37 @@ const handleSave = async (formData: Partial<Novel>) => {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */
+:deep(.p-dataview) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: transparent !important;
+}
+
+:deep(.p-dataview-content) {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  background: transparent !important;
+}
+
+:deep(.p-paginator) {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+/* 确保搜索框可以收缩，所有按钮保持在同一行 */
+.search-input-group {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 400px;
+}
+
+.search-input-group :deep(.p-inputtext) {
+  min-width: 0;
 }
 </style>

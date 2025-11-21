@@ -500,7 +500,7 @@ watch(
                 :href="url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-primary hover:underline text-sm break-all flex-1"
+                class="text-accent-400 hover:text-accent-300 hover:underline text-sm break-all flex-1 transition-colors"
               >
                 {{ url }}
               </a>
@@ -591,7 +591,7 @@ watch(
                           :href="chapter.webUrl"
                           target="_blank"
                           rel="noopener noreferrer"
-                          class="text-primary hover:underline break-all"
+                          class="text-accent-400 hover:text-accent-300 hover:underline break-all transition-colors"
                           @click.stop
                         >
                           {{ chapter.webUrl }}
@@ -659,7 +659,7 @@ watch(
                 :href="formData.cover.url"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-moon/90 break-all text-xs text-primary hover:underline cursor-pointer"
+                class="text-accent-400 hover:text-accent-300 hover:underline break-all text-xs cursor-pointer transition-colors"
               >
                 {{ formData.cover.url }}
               </a>
@@ -767,10 +767,20 @@ watch(
 </template>
 
 <style scoped>
-/* 确保清除封面按钮与普通按钮高度一致 */
+/* 确保清除封面按钮与普通按钮高度一致，并匹配深色主题 */
 :deep(.clear-cover-button.p-button-icon-only) {
   height: auto !important;
   padding: 0.625rem 1.25rem !important;
   min-width: 2.5rem !important;
+  background: transparent !important;
+}
+
+/* 确保 outlined danger 按钮在深色主题中正确显示 */
+:deep(.clear-cover-button.p-button-outlined.p-button-danger) {
+  background: transparent !important;
+}
+
+:deep(.clear-cover-button.p-button-outlined.p-button-danger:hover) {
+  background: rgba(255, 143, 163, 0.1) !important;
 }
 </style>

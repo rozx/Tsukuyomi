@@ -85,7 +85,7 @@ defineExpose({
             :options="severityOptions"
             optionLabel="label"
             optionValue="value"
-            class="w-28 p-inputtext-sm !h-8"
+            class="min-w-32 p-inputtext-sm"
             placeholder="筛选"
           />
         </div>
@@ -170,6 +170,24 @@ defineExpose({
 <style scoped>
 .toast-history-overlay :deep(.p-popover-content) {
   padding: 1rem;
+}
+
+/* 确保 Select 下拉框文本不被截断 */
+:deep(.p-select) {
+  min-width: 8rem;
+}
+
+:deep(.p-select .p-inputtext) {
+  padding: 0.5rem 0.75rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: ellipsis;
+}
+
+:deep(.p-select .p-select-label) {
+  white-space: nowrap;
+  overflow: visible;
 }
 </style>
 
