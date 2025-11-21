@@ -1137,15 +1137,26 @@ const handleDragLeave = () => {
     />
 
     <!-- 主内容区域 -->
-    <div class="book-main-content">
-      <div class="page-container">
+    <div
+      class="book-main-content"
+      :class="{ 'overflow-hidden': !!selectedSettingMenu }"
+    >
+      <div
+        class="page-container"
+        :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
+      >
         <!-- 术语设置面板 -->
-        <TerminologyPanel v-if="selectedSettingMenu === 'terms'" :book="book || null" />
+        <TerminologyPanel
+          v-if="selectedSettingMenu === 'terms'"
+          :book="book || null"
+          class="flex-1 min-h-0"
+        />
 
         <!-- 角色设置面板 -->
         <CharacterSettingPanel
           v-else-if="selectedSettingMenu === 'characters'"
           :book="book || null"
+          class="flex-1 min-h-0"
         />
 
         <!-- 章节内容 -->

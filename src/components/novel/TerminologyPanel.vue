@@ -371,7 +371,7 @@ const handleTranslationApplied = (result: string) => {
 
           <template #grid="slotProps">
             <div
-              class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 p-2 justify-items-center"
+              class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2 justify-items-center"
             >
               <div
                 v-for="terminology in slotProps.items"
