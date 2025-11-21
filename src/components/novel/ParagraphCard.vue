@@ -110,8 +110,12 @@ const handleTermMouseEnter = (event: Event, term: Terminology) => {
   }
 };
 
-// Popover 会在鼠标移开时自动关闭（dismissable=true）
-// 不需要在 mouseLeave 中手动关闭，让 Popover 自己处理
+// 处理术语鼠标离开
+const handleTermMouseLeave = () => {
+  if (popoverRef.value) {
+    popoverRef.value.hide();
+  }
+};
 
 // 当 Popover 关闭时清理状态
 const handlePopoverHide = () => {
@@ -136,6 +140,7 @@ const handlePopoverHide = () => {
             }"
             class="term-highlight"
             @mouseenter="handleTermMouseEnter($event, node.term!)"
+            @mouseleave="handleTermMouseLeave"
           >
             {{ node.content }}
           </span>

@@ -4,20 +4,16 @@ import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
-import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
-import Dialog from 'primevue/dialog';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import type { Novel, Terminology, Translation } from 'src/types/novel';
 import ExtractedTermsDialog from './ExtractedTermsDialog.vue';
-import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
+import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import { v4 as uuidv4 } from 'uuid';
 import { ThemeClasses } from 'src/constants/theme';
-import AppMessage from 'src/components/common/AppMessage.vue';
 
 const props = defineProps<{
   book: Novel | null;
@@ -64,20 +60,8 @@ const booksStore = useBooksStore();
 const toast = useToastWithHistory();
 const isSaving = ref(false);
 
-// 表单数据
-const formData = ref({
-  name: '',
-  description: '',
-  translation: '',
-});
-
 // 打开添加对话框
 const openAddDialog = () => {
-  formData.value = {
-    name: '',
-    description: '',
-    translation: '',
-  };
   showAddDialog.value = true;
 };
 
@@ -90,36 +74,11 @@ const openEditDialog = (terminology: (typeof terminologies.value)[number]) => {
     return;
   }
   selectedTerminology.value = fullTerminology;
-  formData.value = {
-    name: fullTerminology.name,
-    description: fullTerminology.description || '',
-    translation: fullTerminology.translation.translation,
-  };
   showEditDialog.value = true;
 };
 
-// 关闭对话框
-const closeAddDialog = () => {
-  showAddDialog.value = false;
-  formData.value = {
-    name: '',
-    description: '',
-    translation: '',
-  };
-};
-
-const closeEditDialog = () => {
-  showEditDialog.value = false;
-  selectedTerminology.value = null;
-  formData.value = {
-    name: '',
-    description: '',
-    translation: '',
-  };
-};
-
 // 实现保存逻辑
-const handleSave = async () => {
+const handleSave = async (data: { name: string; translation: string; description: string }) => {
   if (!props.book) {
     toast.add({
       severity: 'error',
@@ -131,7 +90,7 @@ const handleSave = async () => {
   }
 
   // 验证必填字段
-  if (!formData.value.name.trim()) {
+  if (!data.name) {
     toast.add({
       severity: 'error',
       summary: '保存失败',
@@ -152,12 +111,12 @@ const handleSave = async () => {
     if (showAddDialog.value) {
       // 添加新术语
       // 检查是否已存在同名术语
-      const existingTerm = currentTerminologies.find((t) => t.name === formData.value.name.trim());
+      const existingTerm = currentTerminologies.find((t) => t.name === data.name);
       if (existingTerm) {
         toast.add({
           severity: 'warn',
           summary: '保存失败',
-          detail: `术语 "${formData.value.name.trim()}" 已存在`,
+          detail: `术语 "${data.name}" 已存在`,
           life: 3000,
         });
         isSaving.value = false;
@@ -172,17 +131,15 @@ const handleSave = async () => {
       // 创建 Translation 对象
       const translation: Translation = {
         id: uuidv4(),
-        translation: formData.value.translation.trim(),
+        translation: data.translation,
         aiModelId: '', // 可以后续从默认模型获取
       };
 
       // 创建新术语
       const newTerminology: Terminology = {
         id: termId,
-        name: formData.value.name.trim(),
-        ...(formData.value.description.trim()
-          ? { description: formData.value.description.trim() }
-          : {}),
+        name: data.name,
+        ...(data.description ? { description: data.description } : {}),
         translation,
         occurrences: [],
       };
@@ -202,18 +159,18 @@ const handleSave = async () => {
         life: 3000,
       });
 
-      closeAddDialog();
+      showAddDialog.value = false;
     } else if (showEditDialog.value && selectedTerminology.value) {
       // 编辑现有术语
       // 检查名称是否与其他术语冲突（排除当前编辑的术语）
       const nameConflict = currentTerminologies.find(
-        (t) => t.id !== selectedTerminology.value!.id && t.name === formData.value.name.trim(),
+        (t) => t.id !== selectedTerminology.value!.id && t.name === data.name,
       );
       if (nameConflict) {
         toast.add({
           severity: 'warn',
           summary: '保存失败',
-          detail: `术语 "${formData.value.name.trim()}" 已存在`,
+          detail: `术语 "${data.name}" 已存在`,
           life: 3000,
         });
         isSaving.value = false;
@@ -225,15 +182,15 @@ const handleSave = async () => {
         if (term.id === selectedTerminology.value!.id) {
           const updated: Terminology = {
             ...term,
-            name: formData.value.name.trim(),
+            name: data.name,
             translation: {
               ...term.translation,
-              translation: formData.value.translation.trim(),
+              translation: data.translation,
             },
           };
           // 处理 description：如果有值则设置，如果为空则删除属性
-          if (formData.value.description.trim()) {
-            updated.description = formData.value.description.trim();
+          if (data.description) {
+            updated.description = data.description;
           } else {
             delete updated.description;
           }
@@ -251,11 +208,12 @@ const handleSave = async () => {
       toast.add({
         severity: 'success',
         summary: '保存成功',
-        detail: `已成功更新术语 "${formData.value.name.trim()}"`,
+        detail: `已成功更新术语 "${data.name}"`,
         life: 3000,
       });
 
-      closeEditDialog();
+      showEditDialog.value = false;
+      selectedTerminology.value = null;
     }
   } catch (error) {
     console.error('保存术语失败:', error);
@@ -286,15 +244,15 @@ const handleExtractTerms = () => {
 };
 
 // 处理术语名称更新
-const handleNameUpdate = (value: string) => {
-  formData.value.name = value;
-};
+// const handleNameUpdate = (value: string) => {
+//   formData.value.name = value;
+// };
 
 // 处理翻译应用（将翻译结果应用到翻译字段，不更新名称字段）
-const handleTranslationApplied = (result: string) => {
-  // 应用翻译结果到翻译字段
-  formData.value.translation = result;
-};
+// const handleTranslationApplied = (result: string) => {
+//   // 应用翻译结果到翻译字段
+//   formData.value.translation = result;
+// };
 </script>
 
 <template>
@@ -439,124 +397,21 @@ const handleTranslationApplied = (result: string) => {
     </div>
 
     <!-- 添加术语对话框 -->
-    <Dialog
+    <TermEditDialog
       v-model:visible="showAddDialog"
-      header="添加术语"
-      :modal="true"
-      :style="{ width: '600px' }"
-      :closable="true"
-      @hide="closeAddDialog"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">术语名称 *</label>
-          <TranslatableInput
-            v-model="formData.name"
-            placeholder="输入术语名称"
-            :apply-translation-to-input="false"
-            @translation-applied="handleTranslationApplied"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">翻译</label>
-          <InputText v-model="formData.translation" placeholder="输入翻译" class="w-full" />
-          <AppMessage
-            severity="info"
-            message="留空则让翻译 AI 在翻译章节时自动翻译此术语"
-            :closable="false"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">描述</label>
-          <Textarea
-            v-model="formData.description"
-            placeholder="输入描述（可选）"
-            :rows="3"
-            class="w-full"
-          />
-        </div>
-      </div>
-
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text"
-          :disabled="isSaving"
-          @click="closeAddDialog"
-        />
-        <Button
-          label="保存"
-          icon="pi pi-check"
-          class="p-button-primary"
-          :loading="isSaving"
-          :disabled="isSaving"
-          @click="handleSave"
-        />
-      </template>
-    </Dialog>
+      mode="add"
+      :loading="isSaving"
+      @save="handleSave"
+    />
 
     <!-- 编辑术语对话框 -->
-    <Dialog
+    <TermEditDialog
       v-model:visible="showEditDialog"
-      header="编辑术语"
-      :modal="true"
-      :style="{ width: '600px' }"
-      :closable="true"
-      @hide="closeEditDialog"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">术语名称 *</label>
-          <TranslatableInput
-            v-model="formData.name"
-            placeholder="输入术语名称"
-            :apply-translation-to-input="false"
-            @translation-applied="handleTranslationApplied"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">翻译</label>
-          <InputText v-model="formData.translation" placeholder="输入翻译" class="w-full" />
-          <AppMessage
-            severity="info"
-            message="留空则让翻译 AI 在翻译章节时自动翻译此术语"
-            :closable="false"
-          />
-        </div>
-
-        <div class="space-y-2">
-          <label class="text-sm text-moon/80">描述</label>
-          <Textarea
-            v-model="formData.description"
-            placeholder="输入描述（可选）"
-            :rows="3"
-            class="w-full"
-          />
-        </div>
-      </div>
-
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text"
-          :disabled="isSaving"
-          @click="closeEditDialog"
-        />
-        <Button
-          label="保存"
-          icon="pi pi-check"
-          class="p-button-primary"
-          :loading="isSaving"
-          :disabled="isSaving"
-          @click="handleSave"
-        />
-      </template>
-    </Dialog>
+      mode="edit"
+      :term="selectedTerminology"
+      :loading="isSaving"
+      @save="handleSave"
+    />
 
     <!-- 提取的术语对话框 -->
     <ExtractedTermsDialog

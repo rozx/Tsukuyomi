@@ -2,10 +2,9 @@
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import Dialog from 'primevue/dialog';
-import Select from 'primevue/select';
+import Popover from 'primevue/popover';
+import Textarea from 'primevue/textarea';
+import AppMessage from 'src/components/common/AppMessage.vue';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
@@ -15,13 +14,15 @@ import {
   getNovelCharCount,
   getTotalChapters,
   getChapterCharCount,
+  getChapterContentText,
 } from 'src/utils';
 import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
-import type { Volume, Chapter, Novel } from 'src/types/novel';
+import type { Volume, Chapter, Novel, Terminology } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
+import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
@@ -235,6 +236,218 @@ const selectedChapterStats = computed(() => {
     charCount,
   };
 });
+
+/**
+ * 转义正则表达式特殊字符
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 术语弹出框状态
+const termPopover = ref();
+const showEditTermDialog = ref(false);
+const editingTerm = ref<Terminology | null>(null);
+const isSavingTerm = ref(false);
+
+// 计算当前章节使用的术语列表
+const usedTerms = computed(() => {
+  if (!selectedChapter.value || !book.value?.terminologies?.length) {
+    return [];
+  }
+
+  const text = getChapterContentText(selectedChapter.value);
+  if (!text) return [];
+
+  const terms = book.value.terminologies;
+  // 按名称长度降序排序，优先匹配较长的术语
+  const sortedTerms = [...terms].sort((a, b) => b.name.length - a.name.length);
+
+  const termMap = new Map<string, Terminology>();
+  for (const term of sortedTerms) {
+    if (term.name && term.name.trim()) {
+      termMap.set(term.name.trim(), term);
+    }
+  }
+
+  const termNames = Array.from(termMap.keys())
+    .map((name) => escapeRegex(name))
+    .join('|');
+
+  if (!termNames) return [];
+
+  const regex = new RegExp(`(${termNames})`, 'g');
+  const matchedTerms = new Map<string, Terminology>();
+
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const matchedName = match[0];
+    const term = termMap.get(matchedName);
+    if (term) {
+      matchedTerms.set(term.id, term);
+    }
+  }
+
+  return Array.from(matchedTerms.values());
+});
+
+const usedTermCount = computed(() => usedTerms.value.length);
+
+const toggleTermPopover = (event: Event) => {
+  termPopover.value.toggle(event);
+};
+
+// 打开编辑术语对话框
+const openEditTermDialog = (term: Terminology) => {
+  editingTerm.value = term;
+  showEditTermDialog.value = true;
+  // Close popover
+  if (termPopover.value) {
+    termPopover.value.hide();
+  }
+};
+
+// 保存术语
+const handleSaveTerm = async (data: { name: string; translation: string; description: string }) => {
+  if (!book.value || !editingTerm.value) return;
+
+  if (!data.name) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '术语名称不能为空',
+      life: 3000,
+    });
+    return;
+  }
+
+  isSavingTerm.value = true;
+
+  try {
+    const currentTerminologies = book.value.terminologies || [];
+    
+    // 检查名称冲突 (排除自己)
+    const nameConflict = currentTerminologies.find(
+      (t) => t.id !== editingTerm.value!.id && t.name === data.name
+    );
+    
+    if (nameConflict) {
+      toast.add({
+        severity: 'warn',
+        summary: '保存失败',
+        detail: `术语 "${data.name}" 已存在`,
+        life: 3000,
+      });
+      isSavingTerm.value = false;
+      return;
+    }
+
+    const updatedTerminologies = currentTerminologies.map((term) => {
+      if (term.id === editingTerm.value!.id) {
+        const updated: Terminology = {
+          ...term,
+          name: data.name,
+          translation: {
+            ...term.translation,
+            translation: data.translation,
+          },
+        };
+        if (data.description) {
+          updated.description = data.description;
+        } else {
+          delete updated.description;
+        }
+        return updated;
+      }
+      return term;
+    });
+
+    await booksStore.updateBook(book.value.id, {
+      terminologies: updatedTerminologies,
+      lastEdited: new Date(),
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已更新术语 "${data.name}"`,
+      life: 3000,
+    });
+
+    showEditTermDialog.value = false;
+    editingTerm.value = null;
+  } catch (error) {
+    console.error('保存术语失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '保存术语时发生错误',
+      life: 3000,
+    });
+  } finally {
+    isSavingTerm.value = false;
+  }
+};
+
+// 删除术语
+const handleDeleteTerm = async (term: Terminology) => {
+  if (!book.value) return;
+
+  // Use browser confirm for simplicity or add another dialog. 
+  // Given the existing "delete confirm" dialogs, maybe I should reuse one or add a specific one?
+  // I'll use the toast confirm pattern or just a simple confirm for now to avoid adding too much boilerplate 
+  // if the user didn't ask for a custom dialog.
+  // Actually, let's use a confirm dialog component if PrimeVue has one, 
+  // but here we have custom dialogs. I'll add a simple confirm check.
+  
+  // Wait, I should follow the pattern of other delete actions.
+  // I'll just execute it for now, or maybe use the `confirm` function if available?
+  // The code uses custom dialogs `showDeleteVolumeConfirm`.
+  // I'll add `showDeleteTermConfirm` state.
+};
+
+// Add Delete Term Dialog State
+const showDeleteTermConfirm = ref(false);
+const deletingTerm = ref<Terminology | null>(null);
+
+const openDeleteTermConfirm = (term: Terminology) => {
+    deletingTerm.value = term;
+    showDeleteTermConfirm.value = true;
+    if (termPopover.value) {
+        termPopover.value.hide();
+    }
+};
+
+const confirmDeleteTerm = async () => {
+    if (!book.value || !deletingTerm.value) return;
+    
+    try {
+        const updatedTerminologies = (book.value.terminologies || []).filter(t => t.id !== deletingTerm.value!.id);
+        
+        await booksStore.updateBook(book.value.id, {
+            terminologies: updatedTerminologies,
+            lastEdited: new Date()
+        });
+        
+        toast.add({
+            severity: 'success',
+            summary: '删除成功',
+            detail: `已删除术语 "${deletingTerm.value.name}"`,
+            life: 3000
+        });
+        
+        showDeleteTermConfirm.value = false;
+        deletingTerm.value = null;
+    } catch (error) {
+        console.error('删除术语失败:', error);
+        toast.add({
+            severity: 'error',
+            summary: '删除失败',
+            detail: '删除术语时发生错误',
+            life: 3000
+        });
+    }
+};
 
 // 添加新卷
 const handleAddVolume = async () => {
@@ -1136,11 +1349,110 @@ const handleDragLeave = () => {
       @apply="handleScraperUpdate"
     />
 
+    <!-- 术语列表 Popover -->
+    <Popover ref="termPopover" style="width: 24rem; max-width: 90vw">
+      <div class="flex flex-col max-h-[60vh] overflow-hidden">
+        <div class="p-3 border-b border-white/10 flex-shrink-0">
+          <h4 class="font-medium text-moon-100">本章使用的术语</h4>
+          <p class="text-xs text-moon/60 mt-1">共 {{ usedTermCount }} 个</p>
+        </div>
+        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <DataView :value="usedTerms" data-key="id" layout="list" class="term-popover-dataview">
+            <template #list="slotProps">
+              <div class="flex flex-col gap-2 p-2">
+                <div
+                  v-for="term in slotProps.items"
+                  :key="term.id"
+                  class="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                >
+                  <div class="flex justify-between items-start gap-2 min-w-0">
+                    <div class="min-w-0 flex-1 overflow-hidden">
+                      <div class="font-medium text-sm text-moon-90 break-words">{{ term.name }}</div>
+                      <div class="text-xs text-primary-400 mt-0.5 break-words">{{ term.translation.translation }}</div>
+                      <div v-if="term.description" class="text-xs text-moon/50 mt-1 line-clamp-2 break-words">
+                        {{ term.description }}
+                      </div>
+                    </div>
+                    <div class="flex gap-1 flex-shrink-0">
+                      <Button
+                        icon="pi pi-pencil"
+                        class="p-button-text p-button-sm !p-1 !w-7 !h-7"
+                        @click="openEditTermDialog(term)"
+                      />
+                      <Button
+                        icon="pi pi-trash"
+                        class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
+                        @click="openDeleteTermConfirm(term)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template #empty>
+              <div class="text-center py-8 text-moon/50 text-sm">
+                本章暂无术语
+              </div>
+            </template>
+          </DataView>
+        </div>
+      </div>
+    </Popover>
+
+    <!-- 编辑术语对话框 -->
+    <TermEditDialog
+      v-model:visible="showEditTermDialog"
+      mode="edit"
+      :term="editingTerm"
+      :loading="isSavingTerm"
+      @save="handleSaveTerm"
+    />
+
+    <!-- 删除术语确认对话框 -->
+    <Dialog
+      v-model:visible="showDeleteTermConfirm"
+      modal
+      header="确认删除术语"
+      :style="{ width: '25rem' }"
+      :draggable="false"
+    >
+      <div class="space-y-4">
+        <p class="text-moon/90">
+          确定要删除术语 <strong>"{{ deletingTerm?.name }}"</strong> 吗？
+        </p>
+        <p class="text-sm text-moon/70">此操作无法撤销。</p>
+      </div>
+      <template #footer>
+        <Button label="取消" class="p-button-text" @click="showDeleteTermConfirm = false" />
+        <Button label="删除" class="p-button-danger" @click="confirmDeleteTerm" />
+      </template>
+    </Dialog>
+
     <!-- 主内容区域 -->
     <div
       class="book-main-content"
       :class="{ 'overflow-hidden': !!selectedSettingMenu }"
     >
+      <!-- 章节阅读工具栏 -->
+      <div v-if="selectedChapter && !selectedSettingMenu" class="chapter-toolbar">
+        <div class="toolbar-content">
+          <div class="toolbar-left">
+            <span class="toolbar-chapter-title">{{ selectedChapter.title }}</span>
+          </div>
+          <div class="toolbar-actions">
+            <Button
+              icon="pi pi-bookmark"
+              class="p-button-text p-button-rounded p-button-sm"
+              size="small"
+              :label="`本章术语 (${usedTermCount})`"
+              :title="`本章共使用了 ${usedTermCount} 个术语`"
+              @click="toggleTermPopover"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="scrollable-content">
       <div
         class="page-container"
         :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
@@ -1226,6 +1538,7 @@ const handleDragLeave = () => {
           <i class="pi pi-book-open no-selection-icon"></i>
           <p class="no-selection-text">请从左侧选择一个章节</p>
           <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
+        </div>
         </div>
       </div>
     </div>
@@ -1779,9 +2092,61 @@ const handleDragLeave = () => {
 /* 主内容区域 */
 .book-main-content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: hidden; /* Changed from auto to hidden */
   overflow-x: hidden;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 章节工具栏 */
+.chapter-toolbar {
+  flex-shrink: 0;
+  padding: 0.75rem 1.5rem;
+  background: var(--white-opacity-5);
+  border-bottom: 1px solid var(--white-opacity-10);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+
+.toolbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.toolbar-chapter-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scrollable-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 页面容器 - 确保有足够的空间 */
@@ -1964,5 +2329,23 @@ const handleDragLeave = () => {
 
 .no-selection-hint {
   margin: 0;
+}
+
+/* Term Popover DataView - ensure header stays fixed and content scrolls */
+:deep(.term-popover-dataview) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background: transparent !important;
+}
+
+:deep(.term-popover-dataview .p-dataview-content) {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  background: transparent !important;
 }
 </style>
