@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import { getDB } from 'src/utils/indexed-db';
+
+const STORAGE_KEY = 'luna-ai-book-details-ui';
 
 /**
  * 书籍详情页面 UI 状态
@@ -12,18 +13,16 @@ interface BookDetailsUiState {
 }
 
 /**
- * 从 IndexedDB 加载状态
+ * 从 localStorage 加载状态
  */
-async function loadStateFromDB(): Promise<BookDetailsUiState> {
+function loadStateFromStorage(): BookDetailsUiState {
   try {
-    const db = await getDB();
-    const stored = await db.get('book-details-ui', 'state');
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const { key: _key, ...state } = stored;
-      return state;
+      return JSON.parse(stored);
     }
   } catch (error) {
-    console.error('Failed to load book details UI state from DB:', error);
+    console.error('Failed to load book details UI state from storage:', error);
   }
   return {
     expandedVolumes: {},
@@ -32,17 +31,13 @@ async function loadStateFromDB(): Promise<BookDetailsUiState> {
 }
 
 /**
- * 保存状态到 IndexedDB
+ * 保存状态到 localStorage
  */
-async function saveStateToDB(state: BookDetailsUiState): Promise<void> {
+function saveStateToStorage(state: BookDetailsUiState): void {
   try {
-    const db = await getDB();
-    await db.put('book-details-ui', {
-      key: 'state',
-      ...state,
-    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
-    console.error('Failed to save book details UI state to DB:', error);
+    console.error('Failed to save book details UI state to storage:', error);
   }
 }
 
@@ -86,14 +81,14 @@ export const useBookDetailsStore = defineStore('book-details', {
 
   actions: {
     /**
-     * 从 IndexedDB 加载状态
+     * 从 localStorage 加载状态
      */
-    async loadState(): Promise<void> {
+    loadState(): void {
       if (this.isLoaded) {
         return;
       }
 
-      const state = await loadStateFromDB();
+      const state = loadStateFromStorage();
       this.expandedVolumes = state.expandedVolumes;
       this.selectedChapter = state.selectedChapter;
       this.isLoaded = true;
@@ -102,7 +97,7 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 切换卷的展开/折叠状态
      */
-    async toggleVolume(bookId: string, volumeId: string): Promise<void> {
+    toggleVolume(bookId: string, volumeId: string): void {
       const volumeIds = this.expandedVolumes[bookId] || [];
       const index = volumeIds.indexOf(volumeId);
       if (index > -1) {
@@ -111,7 +106,7 @@ export const useBookDetailsStore = defineStore('book-details', {
         volumeIds.push(volumeId);
       }
       this.expandedVolumes[bookId] = volumeIds;
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });
@@ -120,7 +115,7 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 设置卷的展开状态
      */
-    async setVolumeExpanded(bookId: string, volumeId: string, expanded: boolean): Promise<void> {
+    setVolumeExpanded(bookId: string, volumeId: string, expanded: boolean): void {
       const volumeIds = this.expandedVolumes[bookId] || [];
       const index = volumeIds.indexOf(volumeId);
       if (expanded && index === -1) {
@@ -129,7 +124,7 @@ export const useBookDetailsStore = defineStore('book-details', {
         volumeIds.splice(index, 1);
       }
       this.expandedVolumes[bookId] = volumeIds;
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });
@@ -138,9 +133,9 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 展开所有卷
      */
-    async expandAllVolumes(bookId: string, volumeIds: string[]): Promise<void> {
+    expandAllVolumes(bookId: string, volumeIds: string[]): void {
       this.expandedVolumes[bookId] = [...volumeIds];
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });
@@ -149,9 +144,9 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 折叠所有卷
      */
-    async collapseAllVolumes(bookId: string): Promise<void> {
+    collapseAllVolumes(bookId: string): void {
       this.expandedVolumes[bookId] = [];
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });
@@ -160,9 +155,9 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 设置选中的章节
      */
-    async setSelectedChapter(bookId: string, chapterId: string | null): Promise<void> {
+    setSelectedChapter(bookId: string, chapterId: string | null): void {
       this.selectedChapter[bookId] = chapterId;
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });
@@ -171,10 +166,10 @@ export const useBookDetailsStore = defineStore('book-details', {
     /**
      * 清除指定书籍的状态（当书籍被删除时）
      */
-    async clearBookState(bookId: string): Promise<void> {
+    clearBookState(bookId: string): void {
       delete this.expandedVolumes[bookId];
       delete this.selectedChapter[bookId];
-      await saveStateToDB({
+      saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
       });

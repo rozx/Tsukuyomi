@@ -300,31 +300,27 @@ export async function migrateFromLocalStorage(): Promise<void> {
     // 忽略迁移错误
   }
 
-  // 迁移 book-details-ui
+  // 迁移 book-details-ui：从 IndexedDB 迁移回 localStorage（如果存在）
   try {
-    const bookDetailsData = localStorage.getItem('luna-ai-book-details-ui');
-    if (bookDetailsData) {
-      const bookDetails = JSON.parse(bookDetailsData) as BookDetailsUiState;
-      await db.put('book-details-ui', {
-        key: 'state',
-        ...bookDetails,
-      });
-      localStorage.removeItem('luna-ai-book-details-ui');
+    const stored = await db.get('book-details-ui', 'state');
+    if (stored) {
+      const { key: _key, ...state } = stored;
+      localStorage.setItem('luna-ai-book-details-ui', JSON.stringify(state));
+      // 可选：从 IndexedDB 删除，因为现在使用 localStorage
+      // await db.delete('book-details-ui', 'state');
     }
   } catch {
     // 忽略迁移错误
   }
 
-  // 迁移 ui-state
+  // 迁移 ui-state：从 IndexedDB 迁移回 localStorage（如果存在）
   try {
-    const uiStateData = localStorage.getItem('luna-ai-ui-state');
-    if (uiStateData) {
-      const uiState = JSON.parse(uiStateData) as UiState;
-      await db.put('ui-state', {
-        key: 'state',
-        ...uiState,
-      });
-      localStorage.removeItem('luna-ai-ui-state');
+    const stored = await db.get('ui-state', 'state');
+    if (stored) {
+      const { key: _key, ...state } = stored;
+      localStorage.setItem('luna-ai-ui-state', JSON.stringify(state));
+      // 可选：从 IndexedDB 删除，因为现在使用 localStorage
+      // await db.delete('ui-state', 'state');
     }
   } catch {
     // 忽略迁移错误

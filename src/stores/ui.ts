@@ -1,21 +1,21 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import { getDB } from 'src/utils/indexed-db';
+
+const STORAGE_KEY = 'luna-ai-ui-state';
 
 /**
- * 从 IndexedDB 加载 UI 状态
+ * 从 localStorage 加载 UI 状态
  */
-async function loadUiStateFromDB(): Promise<{ sideMenuOpen: boolean }> {
+function loadUiStateFromStorage(): { sideMenuOpen: boolean } {
   try {
-    const db = await getDB();
-    const stored = await db.get('ui-state', 'state');
+    const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const { key: _key, ...state } = stored;
+      const state = JSON.parse(stored);
       return {
         sideMenuOpen: state.sideMenuOpen ?? true,
       };
     }
   } catch (error) {
-    console.error('Failed to load UI state from DB:', error);
+    console.error('Failed to load UI state from storage:', error);
   }
   return {
     sideMenuOpen: true,
@@ -23,17 +23,13 @@ async function loadUiStateFromDB(): Promise<{ sideMenuOpen: boolean }> {
 }
 
 /**
- * 保存 UI 状态到 IndexedDB
+ * 保存 UI 状态到 localStorage
  */
-async function saveUiStateToDB(state: { sideMenuOpen: boolean }): Promise<void> {
+function saveUiStateToStorage(state: { sideMenuOpen: boolean }): void {
   try {
-    const db = await getDB();
-    await db.put('ui-state', {
-      key: 'state',
-      ...state,
-    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
-    console.error('Failed to save UI state to DB:', error);
+    console.error('Failed to save UI state to storage:', error);
   }
 }
 
@@ -45,29 +41,29 @@ export const useUiStore = defineStore('ui', {
 
   actions: {
     /**
-     * 从 IndexedDB 加载 UI 状态
+     * 从 localStorage 加载 UI 状态
      */
-    async loadState(): Promise<void> {
+    loadState(): void {
       if (this.isLoaded) {
         return;
       }
 
-      const state = await loadUiStateFromDB();
+      const state = loadUiStateFromStorage();
       this.sideMenuOpen = state.sideMenuOpen;
       this.isLoaded = true;
     },
 
-    async toggleSideMenu() {
+    toggleSideMenu() {
       this.sideMenuOpen = !this.sideMenuOpen;
-      await saveUiStateToDB({ sideMenuOpen: this.sideMenuOpen });
+      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen });
     },
-    async openSideMenu() {
+    openSideMenu() {
       this.sideMenuOpen = true;
-      await saveUiStateToDB({ sideMenuOpen: this.sideMenuOpen });
+      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen });
     },
-    async closeSideMenu() {
+    closeSideMenu() {
       this.sideMenuOpen = false;
-      await saveUiStateToDB({ sideMenuOpen: this.sideMenuOpen });
+      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen });
     },
   },
 });

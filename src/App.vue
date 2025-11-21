@@ -32,9 +32,11 @@ onMounted(async () => {
     settingsStore.loadSettings(),
     toastHistoryStore.loadHistory(),
     coverHistoryStore.loadCoverHistory(),
-    bookDetailsStore.loadState(),
-    uiStore.loadState(),
   ]);
+
+  // 从 localStorage 加载 UI 状态（同步）
+  bookDetailsStore.loadState();
+  uiStore.loadState();
 });
 </script>
 
