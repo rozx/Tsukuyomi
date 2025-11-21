@@ -347,9 +347,9 @@ const handleTranslationApplied = (result: string) => {
           :value="terminologies"
           data-key="id"
           layout="grid"
-          :rows="48"
+          :rows="96"
           :paginator="terminologies.length > 0"
-          :rows-per-page-options="[48, 96, 144, 192]"
+          :rows-per-page-options="[96, 144, 192, 288]"
           paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
           class="flex-1 flex flex-col min-h-0"
         >

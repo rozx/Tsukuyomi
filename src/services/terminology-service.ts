@@ -1,10 +1,12 @@
 import type { Chapter, Paragraph, Occurrence } from 'src/types/novel';
 import {
   TokenizerBuilder,
-  type Tokenizer,
-  type IpadicFeatures,
   type LoaderConfig,
 } from '@patdx/kuromoji';
+
+// 使用 any 类型来避免 Tokenizer 类型的导入问题
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Tokenizer = any;
 
 /**
  * 允许的品词细分类1
@@ -311,6 +313,82 @@ export class TerminologyService {
   }
 
   /**
+   * 获取可用术语映射
+   * 支持从章节或段落中提取术语
+   * @param options 提取选项
+   * @param options.chapters 章节数组（可选）
+   * @param options.paragraphs 段落数组（可选，需提供 chapterId）
+   * @param options.chapterId 章节 ID（当提供 paragraphs 时必需）
+   * @returns 术语 Map，key 为表面形式，value 为术语信息（只包含总出现次数 >= 3 的术语）
+   */
+  static async getAvailableTerms(options: {
+    chapters?: Chapter[];
+    paragraphs?: Paragraph[];
+    chapterId?: string;
+  }): Promise<Map<string, ExtractedTermInfo>> {
+    const { chapters, paragraphs, chapterId } = options;
+
+    // 如果没有提供任何内容，返回空 Map
+    if ((!chapters || chapters.length === 0) && (!paragraphs || paragraphs.length === 0)) {
+      return new Map<string, ExtractedTermInfo>();
+    }
+
+    const allTerms = new Map<string, ExtractedTermInfo>();
+
+    // 处理章节
+    if (chapters && chapters.length > 0) {
+      const chapterTerms = await this.extractWordsFromChapters(chapters);
+      // 合并术语
+      for (const [key, value] of chapterTerms.entries()) {
+        allTerms.set(key, value);
+      }
+    }
+
+    // 处理段落
+    if (paragraphs && paragraphs.length > 0) {
+      if (!chapterId) {
+        throw new Error('当提供 paragraphs 时，必须提供 chapterId');
+      }
+      const paragraphTerms = await this.extractWordsFromParagraphs(paragraphs, chapterId);
+      // 合并术语
+      for (const [key, value] of paragraphTerms.entries()) {
+        const existing = allTerms.get(key);
+        if (existing) {
+          // 查找该章节是否已有记录
+          const chapterOccurrence = existing.occurrences.find((occ) => occ.chapterId === chapterId);
+          if (chapterOccurrence) {
+            // 累加该章节的出现次数
+            chapterOccurrence.count += value.occurrences[0]?.count || 0;
+          } else {
+            // 添加新章节记录
+            existing.occurrences.push(...value.occurrences);
+          }
+        } else {
+          allTerms.set(key, { ...value });
+        }
+      }
+    }
+
+    // 应用过滤条件：总出现次数 >= 3，且通过其他过滤条件
+    const filteredTerms = new Map<string, ExtractedTermInfo>();
+    for (const [key, value] of allTerms.entries()) {
+      const totalCount = value.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+      // 应用所有过滤条件
+      if (
+        totalCount >= 3 &&
+        key.length > 1 &&
+        !containsKanji(key) &&
+        !containsSymbols(key) &&
+        !containsOnlyLongVowel(key)
+      ) {
+        filteredTerms.set(key, value);
+      }
+    }
+
+    return filteredTerms;
+  }
+
+  /**
    * 拆分文本为单词
    * 使用 @patdx/kuromoji 进行日语形态素分析
    * @param text 要拆分的文本
@@ -372,15 +450,17 @@ export class TerminologyService {
       }
 
       // 在控制台输出详细信息（只显示符合条件的名词）
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const filteredNouns = tokens.filter(
-        (t) =>
+        (t: any) =>
           t.pos === '名詞' &&
           ALLOWED_POS_DETAIL_1.includes(t.pos_detail_1 as (typeof ALLOWED_POS_DETAIL_1)[number]),
       );
       console.log('文本:', text);
       console.log(
         '提取的名词:',
-        filteredNouns.map((t) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        filteredNouns.map((t: any) => ({
           表面形式: t.surface_form,
           基本形: t.basic_form,
           词性: t.pos,
