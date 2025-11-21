@@ -18,9 +18,12 @@ import {
 } from 'src/utils';
 import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useSettingsStore } from 'src/stores/settings';
 import type { Volume, Chapter, Novel } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
+import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
+import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 
@@ -740,19 +743,19 @@ const handleDragLeave = () => {
             <div class="book-info">
               <h3 class="book-title">{{ book.title }}</h3>
               <div v-if="stats" class="book-stats">
-                <div class="stat-item">
+                <div class="stat-item stat-item-volume">
                   <i class="pi pi-file stat-icon"></i>
                   <span class="stat-value">{{ stats.volumeCount }}</span>
                   <span class="stat-label">卷</span>
                 </div>
                 <span class="stat-separator">|</span>
-                <div class="stat-item">
+                <div class="stat-item stat-item-chapter">
                   <i class="pi pi-list stat-icon"></i>
                   <span class="stat-value">{{ stats.chapterCount }}</span>
                   <span class="stat-label">章</span>
                 </div>
                 <span class="stat-separator">|</span>
-                <div class="stat-item">
+                <div class="stat-item stat-item-wordcount">
                   <i class="pi pi-align-left stat-icon"></i>
                   <span class="stat-value">{{ formatWordCount(stats.wordCount) }}</span>
                 </div>
@@ -1129,13 +1132,24 @@ const handleDragLeave = () => {
       :current-book="book || null"
       :initial-url="book?.webUrl?.[0] || ''"
       :show-novel-info="false"
+      initialFilter="unimported"
       @apply="handleScraperUpdate"
     />
 
     <!-- 主内容区域 -->
     <div class="book-main-content">
       <div class="page-container">
-        <div v-if="selectedChapter" class="chapter-content-container">
+        <!-- 术语设置面板 -->
+        <TerminologyPanel v-if="selectedSettingMenu === 'terms'" :book="book || null" />
+
+        <!-- 角色设置面板 -->
+        <CharacterSettingPanel
+          v-else-if="selectedSettingMenu === 'characters'"
+          :book="book || null"
+        />
+
+        <!-- 章节内容 -->
+        <div v-else-if="selectedChapter" class="chapter-content-container">
           <!-- 章节标题 -->
           <div class="chapter-header">
             <h1 class="chapter-title">{{ selectedChapter.title }}</h1>
@@ -1323,25 +1337,26 @@ const handleDragLeave = () => {
   font-size: 0.8125rem;
 }
 
+/* 统一颜色主题 - 使用渐变色系 */
+.stat-item .stat-icon {
+  color: #60a5fa; /* blue-400 */
+  font-size: 0.75rem;
+}
+
+.stat-item .stat-value {
+  color: #93c5fd; /* blue-300 */
+  font-weight: 600;
+}
+
+.stat-item .stat-label {
+  color: #bfdbfe; /* blue-200 */
+  font-size: 0.75rem;
+}
+
 .stat-separator {
   color: var(--moon-opacity-40);
   font-size: 0.75rem;
   user-select: none;
-}
-
-.stat-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-70);
-}
-
-.stat-value {
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-}
-
-.stat-label {
-  color: var(--moon-opacity-70);
-  font-size: 0.75rem;
 }
 
 .book-separator {

@@ -83,6 +83,20 @@ module.exports = {
           800: '#4f4577',
           900: '#322c4f',
         },
+        luna: {
+          DEFAULT: '#f0458b',
+          50: '#fef2f7',
+          100: '#fce7f0',
+          200: '#f9cfe1',
+          300: '#f4a7c8',
+          400: '#ed6ba8',
+          500: '#f0458b',
+          600: '#d91d7a',
+          700: '#b81666',
+          800: '#961455',
+          900: '#7a1145',
+          950: '#4d0a2b',
+        },
       },
       backgroundImage: {
         'luna-gradient':
@@ -178,6 +192,16 @@ module.exports = {
         },
         '.text-icon-teal': {
           color: '#80deea', // Icy teal for secondary icons
+        },
+        // Luna theme colors
+        '.text-luna': {
+          color: '#f0458b', // Luna primary color
+        },
+        '.bg-luna': {
+          backgroundColor: '#f0458b', // Luna primary color
+        },
+        '.border-luna': {
+          borderColor: '#f0458b', // Luna primary color
         },
       };
       addUtilities(newUtilities, ['responsive', 'hover', 'focus']);

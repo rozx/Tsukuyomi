@@ -5,6 +5,7 @@ import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig((ctx) => {
   return {
@@ -68,6 +69,23 @@ export default defineConfig((ctx) => {
         // Suppress large chunk size warnings
         if (!viteConf.build) viteConf.build = {};
         viteConf.build.chunkSizeWarningLimit = 2000;
+
+        // 添加 Node.js polyfills 以支持 kuromojin
+        if (!viteConf.plugins) viteConf.plugins = [];
+        viteConf.plugins.push(
+          nodePolyfills({
+            // 包含 path 模块的 polyfill
+            globals: {
+              Buffer: true,
+              global: true,
+              process: true,
+            },
+            // 包含 path 和其他 Node.js 模块
+            include: ['path', 'util', 'stream', 'buffer'],
+            // 排除一些不需要的模块
+            exclude: [],
+          })
+        );
 
         // 配置代理以解决 CORS 问题
         if (!viteConf.server) viteConf.server = {};
