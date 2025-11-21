@@ -73,7 +73,7 @@ const bookId = computed(() => route.params.id as string);
 // 切换卷的展开/折叠状态
 const toggleVolume = (volumeId: string) => {
   if (!bookId.value) return;
-  bookDetailsStore.toggleVolume(bookId.value, volumeId);
+  void bookDetailsStore.toggleVolume(bookId.value, volumeId);
 };
 
 // 检查卷是否展开
@@ -123,7 +123,7 @@ const volumeOptions = computed(() => {
 const navigateToChapter = (chapter: Chapter) => {
   if (!bookId.value) return;
   // 设置选中的章节
-  bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
+  void bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
   // 清除设置菜单选中状态
   selectedSettingMenu.value = null;
 };
@@ -133,7 +133,7 @@ const navigateToTermsSetting = () => {
   selectedSettingMenu.value = 'terms';
   // 清除章节选中状态
   if (bookId.value) {
-    bookDetailsStore.setSelectedChapter(bookId.value, null);
+    void bookDetailsStore.setSelectedChapter(bookId.value, null);
   }
 };
 
@@ -142,7 +142,7 @@ const navigateToCharactersSetting = () => {
   selectedSettingMenu.value = 'characters';
   // 清除章节选中状态
   if (bookId.value) {
-    bookDetailsStore.setSelectedChapter(bookId.value, null);
+    void bookDetailsStore.setSelectedChapter(bookId.value, null);
   }
 };
 

@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import { getDB } from 'src/utils/indexed-db';
 
 export interface ToastHistoryItem {
   id: string;
@@ -10,64 +11,97 @@ export interface ToastHistoryItem {
   read?: boolean; // 标记该 toast 是否已被关闭/标记为已读
 }
 
-const STORAGE_KEY = 'luna-toast-history';
-const STORAGE_KEY_LAST_VIEWED = 'luna-toast-last-viewed';
 const MAX_HISTORY_ITEMS = 100;
 
 /**
- * 从本地存储加载 Toast 历史记录
+ * 从 IndexedDB 加载 Toast 历史记录
  */
-function loadHistoryFromStorage(): ToastHistoryItem[] {
+async function loadHistoryFromDB(): Promise<ToastHistoryItem[]> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const items = JSON.parse(stored) as ToastHistoryItem[];
-      // 确保所有旧数据都有 read 属性（向后兼容）
-      return items.map((item) => ({
-        ...item,
-        read: item.read ?? false,
-      }));
-    }
+    const db = await getDB();
+    const items = await db.getAll('toast-history');
+    // 确保所有旧数据都有 read 属性（向后兼容）
+    return items.map((item) => ({
+      ...item,
+      read: item.read ?? false,
+    }));
   } catch (error) {
-    console.error('Failed to load toast history from storage:', error);
-  }
-  return [];
-}
-
-/**
- * 保存 Toast 历史记录到本地存储
- */
-function saveHistoryToStorage(history: ToastHistoryItem[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
-  } catch (error) {
-    console.error('Failed to save toast history to storage:', error);
+    console.error('Failed to load toast history from DB:', error);
+    return [];
   }
 }
 
 /**
- * 从本地存储加载最后查看时间戳
+ * 保存单个 Toast 历史记录到 IndexedDB
  */
-function loadLastViewedTimestamp(): number {
+async function saveHistoryItemToDB(item: ToastHistoryItem): Promise<void> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY_LAST_VIEWED);
+    const db = await getDB();
+    await db.put('toast-history', item);
+  } catch (error) {
+    console.error('Failed to save toast history item to DB:', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 删除 Toast 历史记录
+ */
+async function deleteHistoryItemFromDB(id: string): Promise<void> {
+  try {
+    const db = await getDB();
+    await db.delete('toast-history', id);
+  } catch (error) {
+    console.error('Failed to delete toast history item from DB:', error);
+  }
+}
+
+/**
+ * 批量保存 Toast 历史记录到 IndexedDB
+ */
+async function bulkSaveHistoryToDB(items: ToastHistoryItem[]): Promise<void> {
+  try {
+    const db = await getDB();
+    const tx = db.transaction('toast-history', 'readwrite');
+    const store = tx.objectStore('toast-history');
+
+    for (const item of items) {
+      await store.put(item);
+    }
+
+    await tx.done;
+  } catch (error) {
+    console.error('Failed to bulk save toast history to DB:', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 加载最后查看时间戳
+ */
+async function loadLastViewedTimestampFromDB(): Promise<number> {
+  try {
+    const db = await getDB();
+    const stored = await db.get('toast-last-viewed', 'last-viewed');
     if (stored) {
-      return parseInt(stored, 10);
+      return stored.timestamp;
     }
   } catch (error) {
-    console.error('Failed to load last viewed timestamp from storage:', error);
+    console.error('Failed to load last viewed timestamp from DB:', error);
   }
   return 0;
 }
 
 /**
- * 保存最后查看时间戳到本地存储
+ * 保存最后查看时间戳到 IndexedDB
  */
-function saveLastViewedTimestamp(timestamp: number): void {
+async function saveLastViewedTimestampToDB(timestamp: number): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY_LAST_VIEWED, timestamp.toString());
+    const db = await getDB();
+    await db.put('toast-last-viewed', {
+      key: 'last-viewed',
+      timestamp,
+    });
   } catch (error) {
-    console.error('Failed to save last viewed timestamp to storage:', error);
+    console.error('Failed to save last viewed timestamp to DB:', error);
   }
 }
 
@@ -78,8 +112,9 @@ const messageToTimestampMap = new Map<string, number>();
 
 export const useToastHistoryStore = defineStore('toastHistory', {
   state: () => ({
-    historyItems: loadHistoryFromStorage(),
-    lastViewedTimestamp: loadLastViewedTimestamp(),
+    historyItems: [] as ToastHistoryItem[],
+    lastViewedTimestamp: 0,
+    isLoaded: false,
   }),
 
   getters: {
@@ -93,9 +128,22 @@ export const useToastHistoryStore = defineStore('toastHistory', {
 
   actions: {
     /**
+     * 从 IndexedDB 加载 Toast 历史记录和最后查看时间戳
+     */
+    async loadHistory(): Promise<void> {
+      if (this.isLoaded) {
+        return;
+      }
+
+      this.historyItems = await loadHistoryFromDB();
+      this.lastViewedTimestamp = await loadLastViewedTimestampFromDB();
+      this.isLoaded = true;
+    },
+
+    /**
      * 添加新的 toast 到历史记录
      */
-    addToHistory(item: Omit<ToastHistoryItem, 'id' | 'timestamp'>): void {
+    async addToHistory(item: Omit<ToastHistoryItem, 'id' | 'timestamp'>): Promise<void> {
       const historyItem: ToastHistoryItem = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         timestamp: Date.now(),
@@ -108,42 +156,49 @@ export const useToastHistoryStore = defineStore('toastHistory', {
 
       // 限制历史记录数量
       if (this.historyItems.length > MAX_HISTORY_ITEMS) {
+        // 删除超出限制的项目
+        const itemsToDelete = this.historyItems.slice(MAX_HISTORY_ITEMS);
         this.historyItems = this.historyItems.slice(0, MAX_HISTORY_ITEMS);
+        
+        // 从 IndexedDB 删除超出限制的项目
+        for (const itemToDelete of itemsToDelete) {
+          await deleteHistoryItemFromDB(itemToDelete.id);
+        }
       }
 
-      // 保存到本地存储
-      saveHistoryToStorage(this.historyItems);
+      // 保存到 IndexedDB
+      await saveHistoryItemToDB(historyItem);
     },
 
     /**
      * 标记为已读（打开历史对话框时，标记所有消息为已读）
      */
-    markAsRead(): void {
+    async markAsRead(): Promise<void> {
       // 标记所有消息为已读
       this.historyItems.forEach((item) => {
         item.read = true;
       });
       this.lastViewedTimestamp = Date.now();
-      saveLastViewedTimestamp(this.lastViewedTimestamp);
-      saveHistoryToStorage(this.historyItems);
+      await saveLastViewedTimestampToDB(this.lastViewedTimestamp);
+      await bulkSaveHistoryToDB(this.historyItems);
     },
 
     /**
      * 标记指定时间戳的消息为已读（已废弃，保留用于兼容）
      */
-    markAsReadByTimestamp(timestamp: number): void {
+    async markAsReadByTimestamp(timestamp: number): Promise<void> {
       // 找到对应时间戳的消息并标记为已读
       const item = this.historyItems.find((item) => item.timestamp === timestamp);
       if (item) {
         item.read = true;
-        saveHistoryToStorage(this.historyItems);
+        await saveHistoryItemToDB(item);
       }
     },
 
     /**
      * 根据消息内容标记为已读（关闭单个 toast 时调用）
      */
-    markAsReadByMessage(message: { summary?: string; detail?: string }): void {
+    async markAsReadByMessage(message: { summary?: string; detail?: string }): Promise<void> {
       const summary = message.summary || '';
       const detail = message.detail || '';
       const messageKey = `${summary}:${detail}`;
@@ -171,7 +226,7 @@ export const useToastHistoryStore = defineStore('toastHistory', {
 
         if (item) {
           item.read = true;
-          saveHistoryToStorage(this.historyItems);
+          await saveHistoryItemToDB(item);
         }
         // 清理映射（避免内存泄漏）
         messageToTimestampMap.delete(messageKey);
@@ -191,22 +246,23 @@ export const useToastHistoryStore = defineStore('toastHistory', {
     /**
      * 清空历史记录
      */
-    clearHistory(): void {
+    async clearHistory(): Promise<void> {
+      const db = await getDB();
+      await db.clear('toast-history');
       this.historyItems = [];
       this.lastViewedTimestamp = Date.now();
       messageToTimestampMap.clear();
-      saveHistoryToStorage(this.historyItems);
-      saveLastViewedTimestamp(this.lastViewedTimestamp);
+      await saveLastViewedTimestampToDB(this.lastViewedTimestamp);
     },
 
     /**
      * 删除指定的历史记录项
      */
-    removeHistoryItem(id: string): void {
+    async removeHistoryItem(id: string): Promise<void> {
       const index = this.historyItems.findIndex((item) => item.id === id);
       if (index > -1) {
         this.historyItems.splice(index, 1);
-        saveHistoryToStorage(this.historyItems);
+        await deleteHistoryItemFromDB(id);
       }
     },
   },

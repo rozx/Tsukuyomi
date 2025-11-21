@@ -482,7 +482,7 @@ watch(
             :id="`${idPrefix}-webUrl`"
             :model-value="formData.webUrl || []"
             @update:model-value="
-              (value) => {
+              (value: string[]) => {
                 formData.webUrl = value;
               }
             "

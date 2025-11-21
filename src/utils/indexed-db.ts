@@ -3,6 +3,23 @@ import type { Novel } from 'src/types/novel';
 import type { AIModel } from 'src/types/ai/ai-model';
 import type { AppSettings } from 'src/types/settings';
 import type { CoverHistoryItem } from 'src/types/novel';
+import type { SyncConfig } from 'src/types/sync';
+import type { ToastHistoryItem } from 'src/stores/toast-history';
+
+/**
+ * 书籍详情页面 UI 状态
+ */
+interface BookDetailsUiState {
+  expandedVolumes: Record<string, string[]>;
+  selectedChapter: Record<string, string | null>;
+}
+
+/**
+ * UI 状态
+ */
+interface UiState {
+  sideMenuOpen: boolean;
+}
 
 /**
  * IndexedDB 数据库架构定义
@@ -19,21 +36,37 @@ interface LunaAIDB extends DBSchema {
   };
   settings: {
     key: string;
-    value: AppSettings;
+    value: AppSettings & { key: string };
+  };
+  'sync-configs': {
+    key: string;
+    value: SyncConfig & { id: string };
   };
   'cover-history': {
     key: string;
     value: CoverHistoryItem;
-    indexes: { 'by-timestamp': number };
+    indexes: { 'by-addedAt': Date };
   };
   'toast-history': {
     key: string;
-    value: unknown; // Toast 消息类型
+    value: ToastHistoryItem;
+  };
+  'toast-last-viewed': {
+    key: string;
+    value: { key: string; timestamp: number };
+  };
+  'book-details-ui': {
+    key: string;
+    value: BookDetailsUiState & { key: string };
+  };
+  'ui-state': {
+    key: string;
+    value: UiState & { key: string };
   };
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
@@ -61,17 +94,37 @@ export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
           db.createObjectStore('settings', { keyPath: 'key' });
         }
 
+        // 创建 sync-configs 存储（版本 2 新增）
+        if (!db.objectStoreNames.contains('sync-configs')) {
+          db.createObjectStore('sync-configs', { keyPath: 'id' });
+        }
+
         // 创建 cover-history 存储
         if (!db.objectStoreNames.contains('cover-history')) {
           const coverStore = db.createObjectStore('cover-history', {
             keyPath: 'id',
           });
-          coverStore.createIndex('by-timestamp', 'timestamp');
+          coverStore.createIndex('by-addedAt', 'addedAt', { unique: false });
         }
 
         // 创建 toast-history 存储
         if (!db.objectStoreNames.contains('toast-history')) {
           db.createObjectStore('toast-history', { keyPath: 'id' });
+        }
+
+        // 创建 toast-last-viewed 存储（版本 2 新增）
+        if (!db.objectStoreNames.contains('toast-last-viewed')) {
+          db.createObjectStore('toast-last-viewed', { keyPath: 'key' });
+        }
+
+        // 创建 book-details-ui 存储（版本 2 新增）
+        if (!db.objectStoreNames.contains('book-details-ui')) {
+          db.createObjectStore('book-details-ui', { keyPath: 'key' });
+        }
+
+        // 创建 ui-state 存储（版本 2 新增）
+        if (!db.objectStoreNames.contains('ui-state')) {
+          db.createObjectStore('ui-state', { keyPath: 'key' });
         }
       },
       blocked() {
@@ -164,11 +217,114 @@ export async function migrateFromLocalStorage(): Promise<void> {
       const store = tx.objectStore('cover-history');
 
       for (const cover of coverHistory) {
-        await store.put(cover);
+        const migratedCover = {
+          ...cover,
+          addedAt: cover.addedAt instanceof Date ? cover.addedAt : new Date(cover.addedAt),
+        };
+        await store.put(migratedCover);
       }
 
       await tx.done;
       localStorage.removeItem('luna-ai-cover-history');
+    }
+  } catch {
+    // 忽略迁移错误
+  }
+
+  // 迁移 sync-configs
+  try {
+    const syncData = localStorage.getItem('luna-ai-sync');
+    if (syncData) {
+      const syncs = JSON.parse(syncData) as SyncConfig[];
+
+      const tx = db.transaction('sync-configs', 'readwrite');
+      const store = tx.objectStore('sync-configs');
+
+      for (let i = 0; i < syncs.length; i++) {
+        const sync = syncs[i];
+        if (!sync) continue;
+        await store.put({
+          id: `sync-${i}`,
+          enabled: sync.enabled,
+          lastSyncTime: sync.lastSyncTime,
+          syncInterval: sync.syncInterval,
+          syncType: sync.syncType,
+          syncParams: sync.syncParams,
+          secret: sync.secret,
+          apiEndpoint: sync.apiEndpoint,
+          ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
+        });
+      }
+
+      await tx.done;
+      localStorage.removeItem('luna-ai-sync');
+    }
+  } catch {
+    // 忽略迁移错误
+  }
+
+  // 迁移 toast-history
+  try {
+    const toastHistoryData = localStorage.getItem('luna-toast-history');
+    if (toastHistoryData) {
+      const toastHistory = JSON.parse(toastHistoryData) as ToastHistoryItem[];
+
+      const tx = db.transaction('toast-history', 'readwrite');
+      const store = tx.objectStore('toast-history');
+
+      for (const item of toastHistory) {
+        await store.put(item);
+      }
+
+      await tx.done;
+      localStorage.removeItem('luna-toast-history');
+    }
+  } catch {
+    // 忽略迁移错误
+  }
+
+  // 迁移 toast-last-viewed
+  try {
+    const lastViewedData = localStorage.getItem('luna-toast-last-viewed');
+    if (lastViewedData) {
+      const timestamp = parseInt(lastViewedData, 10);
+      if (!isNaN(timestamp)) {
+        await db.put('toast-last-viewed', {
+          key: 'last-viewed',
+          timestamp,
+        });
+      }
+      localStorage.removeItem('luna-toast-last-viewed');
+    }
+  } catch {
+    // 忽略迁移错误
+  }
+
+  // 迁移 book-details-ui
+  try {
+    const bookDetailsData = localStorage.getItem('luna-ai-book-details-ui');
+    if (bookDetailsData) {
+      const bookDetails = JSON.parse(bookDetailsData) as BookDetailsUiState;
+      await db.put('book-details-ui', {
+        key: 'state',
+        ...bookDetails,
+      });
+      localStorage.removeItem('luna-ai-book-details-ui');
+    }
+  } catch {
+    // 忽略迁移错误
+  }
+
+  // 迁移 ui-state
+  try {
+    const uiStateData = localStorage.getItem('luna-ai-ui-state');
+    if (uiStateData) {
+      const uiState = JSON.parse(uiStateData) as UiState;
+      await db.put('ui-state', {
+        key: 'state',
+        ...uiState,
+      });
+      localStorage.removeItem('luna-ai-ui-state');
     }
   } catch {
     // 忽略迁移错误
@@ -180,7 +336,17 @@ export async function migrateFromLocalStorage(): Promise<void> {
  */
 export async function clearAllData(): Promise<void> {
   const db = await getDB();
-  const storeNames = ['books', 'ai-models', 'settings', 'cover-history', 'toast-history'] as const;
+  const storeNames = [
+    'books',
+    'ai-models',
+    'settings',
+    'sync-configs',
+    'cover-history',
+    'toast-history',
+    'toast-last-viewed',
+    'book-details-ui',
+    'ui-state',
+  ] as const;
 
   for (const storeName of storeNames) {
     const tx = db.transaction(storeName, 'readwrite');

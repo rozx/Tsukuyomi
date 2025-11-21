@@ -18,7 +18,7 @@ const toast = useToastWithHistory();
 // 处理 Toast 关闭事件
 const handleToastClose = (event: any) => {
   if (event?.message) {
-    markAsReadByMessage(event.message);
+    void markAsReadByMessage(event.message);
   }
 };
 

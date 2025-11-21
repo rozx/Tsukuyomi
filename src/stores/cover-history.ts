@@ -1,42 +1,53 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { CoverHistoryItem, CoverImage } from 'src/types/novel';
-
-const STORAGE_KEY = 'luna-ai-cover-history';
+import { getDB } from 'src/utils/indexed-db';
 
 /**
- * 从本地存储加载封面历史
+ * 从 IndexedDB 加载封面历史
  */
-function loadCoverHistoryFromStorage(): CoverHistoryItem[] {
+async function loadCoverHistoryFromDB(): Promise<CoverHistoryItem[]> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const history = JSON.parse(stored) as CoverHistoryItem[];
-      // 将日期字符串转换回 Date 对象
-      return history.map((item) => ({
-        ...item,
-        addedAt: new Date(item.addedAt),
-      }));
-    }
+    const db = await getDB();
+    const history = await db.getAll('cover-history');
+    // 将日期字符串转换回 Date 对象
+    return history.map((item) => ({
+      ...item,
+      addedAt: item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt),
+    }));
   } catch (error) {
-    console.error('Failed to load cover history from storage:', error);
+    console.error('Failed to load cover history from DB:', error);
+    return [];
   }
-  return [];
 }
 
 /**
- * 保存封面历史到本地存储
+ * 保存单个封面历史到 IndexedDB
  */
-function saveCoverHistoryToStorage(history: CoverHistoryItem[]): void {
+async function saveCoverHistoryItemToDB(item: CoverHistoryItem): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    const db = await getDB();
+    await db.put('cover-history', item);
   } catch (error) {
-    console.error('Failed to save cover history to storage:', error);
+    console.error('Failed to save cover history item to DB:', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 删除封面历史
+ */
+async function deleteCoverHistoryItemFromDB(id: string): Promise<void> {
+  try {
+    const db = await getDB();
+    await db.delete('cover-history', id);
+  } catch (error) {
+    console.error('Failed to delete cover history item from DB:', error);
   }
 }
 
 export const useCoverHistoryStore = defineStore('coverHistory', {
   state: () => ({
-    covers: loadCoverHistoryFromStorage(),
+    covers: [] as CoverHistoryItem[],
+    isLoaded: false,
   }),
 
   getters: {
@@ -50,9 +61,21 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
 
   actions: {
     /**
+     * 从 IndexedDB 加载封面历史
+     */
+    async loadCoverHistory(): Promise<void> {
+      if (this.isLoaded) {
+        return;
+      }
+
+      this.covers = await loadCoverHistoryFromDB();
+      this.isLoaded = true;
+    },
+
+    /**
      * 添加封面到历史记录
      */
-    addCover(cover: CoverImage): void {
+    async addCover(cover: CoverImage): Promise<void> {
       // 检查是否已存在（通过 URL）
       const existingIndex = this.covers.findIndex((c) => c.url === cover.url);
 
@@ -61,6 +84,7 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
         const existingCover = this.covers[existingIndex];
         if (existingCover) {
           existingCover.addedAt = new Date();
+          await saveCoverHistoryItemToDB(existingCover);
         }
       } else {
         // 如果不存在，添加新记录
@@ -70,28 +94,28 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
           addedAt: new Date(),
         };
         this.covers.push(newItem);
+        await saveCoverHistoryItemToDB(newItem);
       }
-
-      saveCoverHistoryToStorage(this.covers);
     },
 
     /**
      * 从历史记录中删除封面
      */
-    removeCover(id: string): void {
+    async removeCover(id: string): Promise<void> {
       const index = this.covers.findIndex((c) => c.id === id);
       if (index > -1) {
         this.covers.splice(index, 1);
-        saveCoverHistoryToStorage(this.covers);
+        await deleteCoverHistoryItemFromDB(id);
       }
     },
 
     /**
      * 清空所有封面历史
      */
-    clearHistory(): void {
+    async clearHistory(): Promise<void> {
+      const db = await getDB();
+      await db.clear('cover-history');
       this.covers = [];
-      saveCoverHistoryToStorage(this.covers);
     },
   },
 });

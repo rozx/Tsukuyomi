@@ -40,7 +40,7 @@ const getTaskModelId = (task: keyof AIModelDefaultTasks): string | null | undefi
     const model = aiModelsStore.getModelById(modelId);
     if (!model || !model.enabled || !model.isDefault[task]?.enabled) {
       // 模型不存在、已禁用或不再支持该任务，清除设置
-      settingsStore.setTaskDefaultModelId(task, null);
+      void settingsStore.setTaskDefaultModelId(task, null);
       return null;
     }
   }
@@ -49,7 +49,7 @@ const getTaskModelId = (task: keyof AIModelDefaultTasks): string | null | undefi
 
 // 设置任务的默认模型 ID
 const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null) => {
-  settingsStore.setTaskDefaultModelId(task, modelId);
+  void settingsStore.setTaskDefaultModelId(task, modelId);
 };
 </script>
 

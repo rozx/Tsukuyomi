@@ -37,7 +37,7 @@ watch(
 
 // 监听标签页切换，保存到 store
 watch(activeTabIndex, (newIndex) => {
-  settingsStore.setLastOpenedSettingsTab(newIndex);
+  void settingsStore.setLastOpenedSettingsTab(newIndex);
 });
 
 // 关闭对话框
@@ -61,22 +61,22 @@ const handleClose = () => {
   >
     <TabView v-model:activeIndex="activeTabIndex" class="settings-tabview">
       <!-- AI 模型默认设置 -->
-      <TabPanel header="AI 模型">
+      <TabPanel value="0" header="AI 模型">
         <AIModelSettingsTab />
       </TabPanel>
 
       <!-- 爬虫设置 -->
-      <TabPanel header="爬虫设置">
+      <TabPanel value="1" header="爬虫设置">
         <ScraperSettingsTab />
       </TabPanel>
 
       <!-- 同步设置 -->
-      <TabPanel header="同步设置">
+      <TabPanel value="2" header="同步设置">
         <SyncSettingsTab :visible="visible" />
       </TabPanel>
 
       <!-- 导入/导出资料 -->
-      <TabPanel header="导入/导出">
+      <TabPanel value="3" header="导入/导出">
         <ImportExportTab />
       </TabPanel>
     </TabView>

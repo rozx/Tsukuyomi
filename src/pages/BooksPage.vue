@@ -330,7 +330,7 @@ const handleFileSelect = async (event: Event) => {
 
         // 如果书籍有封面，添加到封面历史
         if (newBook.cover) {
-          coverHistoryStore.addCover(newBook.cover);
+          void coverHistoryStore.addCover(newBook.cover);
         }
 
         successCount++;
@@ -382,7 +382,7 @@ const handleImportBook = async (novel: Novel) => {
 
   // 如果导入的书籍有封面，添加到封面历史
   if (newBook.cover) {
-    coverHistoryStore.addCover(newBook.cover);
+    void coverHistoryStore.addCover(newBook.cover);
   }
 
   showImportDialog.value = false;
@@ -530,7 +530,7 @@ const handleSave = async (formData: Partial<Novel>) => {
 
     // 如果新书有封面，添加到封面历史
     if (newBook.cover) {
-      coverHistoryStore.addCover(newBook.cover);
+      void coverHistoryStore.addCover(newBook.cover);
     }
 
     showAddDialog.value = false;

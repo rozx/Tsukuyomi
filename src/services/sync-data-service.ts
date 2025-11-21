@@ -75,9 +75,9 @@ export class SyncDataService {
         }
       }
 
-      aiModelsStore.clearModels();
+      void aiModelsStore.clearModels();
       for (const model of finalModels) {
-        aiModelsStore.addModel(model);
+        void aiModelsStore.addModel(model);
       }
     }
 
@@ -158,9 +158,9 @@ export class SyncDataService {
         }
       }
 
-      coverHistoryStore.clearHistory();
+      void coverHistoryStore.clearHistory();
       for (const cover of finalCovers) {
-        coverHistoryStore.addCover(cover);
+        void coverHistoryStore.addCover(cover);
       }
     }
 
@@ -170,8 +170,8 @@ export class SyncDataService {
       if (resolution === 'remote' || resolutions.length === 0) {
         // 无冲突时也应用远程设置
         const currentGistSync = settingsStore.gistSync;
-        settingsStore.importSettings(remoteData.appSettings);
-        settingsStore.updateGistSync(currentGistSync);
+        void settingsStore.importSettings(remoteData.appSettings);
+        void settingsStore.updateGistSync(currentGistSync);
       }
     }
   }
@@ -196,9 +196,7 @@ export class SyncDataService {
   /**
    * 检测冲突并返回安全的数据对象
    */
-  static detectConflictsAndCreateSafeData(
-    remoteData: GistSyncData | null | undefined,
-  ): {
+  static detectConflictsAndCreateSafeData(remoteData: GistSyncData | null | undefined): {
     hasConflicts: boolean;
     conflicts: any[];
     safeRemoteData: {
@@ -306,4 +304,3 @@ export class SyncDataService {
     return false;
   }
 }
-

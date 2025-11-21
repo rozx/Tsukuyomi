@@ -89,7 +89,7 @@ const duplicateModel = (model: AIModel) => {
     name: `${model.name} (副本)`,
     enabled: false, // 复制的模型默认禁用
   };
-  aiModelsStore.addModel(duplicatedModel);
+  void aiModelsStore.addModel(duplicatedModel);
   toast.add({
     severity: 'success',
     summary: '复制成功',
@@ -123,7 +123,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         termsTranslation: formData.isDefault?.termsTranslation ?? { enabled: false, temperature: 0.7 },
       },
     };
-    aiModelsStore.addModel(newModel);
+    void aiModelsStore.addModel(newModel);
     showAddDialog.value = false;
     toast.add({
       severity: 'success',
@@ -160,7 +160,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       updates.rateLimit = formData.rateLimit;
     }
 
-    aiModelsStore.updateModel(selectedModel.value.id, updates);
+    void aiModelsStore.updateModel(selectedModel.value.id, updates);
     showEditDialog.value = false;
     const modelName = updates.name || selectedModel.value.name;
     selectedModel.value = null;
@@ -185,7 +185,7 @@ const deleteModel = (model: AIModel) => {
     acceptLabel: '删除',
     accept: () => {
       const modelName = model.name;
-      aiModelsStore.deleteModel(model.id);
+      void aiModelsStore.deleteModel(model.id);
       toast.add({
         severity: 'success',
         summary: '删除成功',

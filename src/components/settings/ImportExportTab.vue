@@ -73,9 +73,9 @@ const handleFileSelect = async (event: Event) => {
   if (result.success && result.data) {
     // 覆盖当前的 AI 模型数据
     if (result.data.models.length > 0) {
-      aiModelsStore.clearModels();
+      void aiModelsStore.clearModels();
       result.data.models.forEach((model) => {
-        aiModelsStore.addModel(model);
+        void aiModelsStore.addModel(model);
       });
     }
 
@@ -88,15 +88,15 @@ const handleFileSelect = async (event: Event) => {
     // 覆盖当前的封面历史数据
     if (result.data.coverHistory.length > 0) {
       // 先清空现有封面历史，然后添加导入的数据
-      coverHistoryStore.clearHistory();
+      void coverHistoryStore.clearHistory();
       result.data.coverHistory.forEach((cover) => {
-        coverHistoryStore.addCover(cover);
+        void coverHistoryStore.addCover(cover);
       });
     }
 
     // 覆盖当前的应用设置
     if (result.data.appSettings) {
-      settingsStore.importSettings(result.data.appSettings);
+      void settingsStore.importSettings(result.data.appSettings);
     }
 
     toast.add({

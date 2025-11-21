@@ -92,9 +92,9 @@ export function useAutoSync() {
         }
       }
 
-      aiModelsStore.clearModels();
+      void aiModelsStore.clearModels();
       for (const model of finalModels) {
-        aiModelsStore.addModel(model);
+        void aiModelsStore.addModel(model);
       }
     }
 
@@ -186,9 +186,9 @@ export function useAutoSync() {
         }
       }
 
-      coverHistoryStore.clearHistory();
+      void coverHistoryStore.clearHistory();
       for (const cover of finalCovers) {
-        coverHistoryStore.addCover(cover);
+        void coverHistoryStore.addCover(cover);
       }
     }
 
@@ -198,8 +198,8 @@ export function useAutoSync() {
       if (resolution === 'remote' || resolutions.length === 0) {
         const currentGistSync = settingsStore.gistSync;
         // importSettings 已经实现了深度合并，直接调用即可
-        settingsStore.importSettings(remoteData.appSettings);
-        settingsStore.updateGistSync(currentGistSync);
+        void settingsStore.importSettings(remoteData.appSettings);
+        void settingsStore.updateGistSync(currentGistSync);
       }
     }
   };
@@ -261,9 +261,9 @@ export function useAutoSync() {
 
         // 无冲突，直接应用
         await applyDownloadedData(result.data, []);
-        settingsStore.updateLastSyncTime();
+        void settingsStore.updateLastSyncTime();
         // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
-        settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+        void settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
 
         // 检查是否需要上传（如果有本地更改）
         const shouldUpload = SyncDataService.hasChangesToUpload(
@@ -321,9 +321,9 @@ export function useAutoSync() {
     const safeRemoteData = SyncDataService.createSafeRemoteData(remoteData);
 
     await applyDownloadedData(safeRemoteData, resolutions);
-    settingsStore.updateLastSyncTime();
+    void settingsStore.updateLastSyncTime();
     // 更新上次同步时的模型 ID 列表
-    settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+    void settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
 
     showConflictDialog.value = false;
     pendingRemoteData.value = null;

@@ -115,9 +115,9 @@ const uploadConfig = async () => {
     if (result.success) {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
-        settingsStore.setGistId(result.gistId);
+        void settingsStore.setGistId(result.gistId);
       }
-      settingsStore.updateLastSyncTime();
+      void settingsStore.updateLastSyncTime();
       // 更新远程统计数据（上传的数据）
       remoteStats.value = {
         booksCount: booksStore.books.length,
@@ -201,7 +201,7 @@ const downloadConfig = async () => {
       // 无冲突，直接应用
       await applyDownloadedData(safeRemoteData, []);
 
-      settingsStore.updateLastSyncTime();
+      void settingsStore.updateLastSyncTime();
       remoteStats.value = {
         booksCount: result.data.novels?.length || 0,
         aiModelsCount: result.data.aiModels?.length || 0,
@@ -251,7 +251,7 @@ const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
   try {
     await applyDownloadedData(safeRemoteData, resolutions);
 
-    settingsStore.updateLastSyncTime();
+    void settingsStore.updateLastSyncTime();
     remoteStats.value = {
       booksCount: safeRemoteData.novels?.length || 0,
       aiModelsCount: safeRemoteData.aiModels?.length || 0,

@@ -130,7 +130,7 @@ const handleFileSelect = async (event: Event) => {
     };
 
     // 添加到历史记录
-    coverHistoryStore.addCover(newCover);
+    void coverHistoryStore.addCover(newCover);
 
     // 选中新上传的封面
     const addedCover = allCovers.value.find((c) => c.url === newCover.url);
@@ -208,7 +208,7 @@ const handleAddByUrl = () => {
   };
 
   // 添加到历史记录
-  coverHistoryStore.addCover(newCover);
+  void coverHistoryStore.addCover(newCover);
 
   // 选中新添加的封面
   const addedCover = allCovers.value.find((c) => c.url === newCover.url);
@@ -263,7 +263,7 @@ const handleDelete = async () => {
 
   // 从历史记录中删除
   if (selectedCoverId.value) {
-    coverHistoryStore.removeCover(selectedCoverId.value);
+    void coverHistoryStore.removeCover(selectedCoverId.value);
   }
 
   selectedCoverId.value = null;

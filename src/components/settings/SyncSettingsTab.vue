@@ -64,7 +64,7 @@ const getFileDisplayInfo = (filename: string): { displayName: string; icon: stri
       icon: 'pi pi-cog',
     };
   }
-  
+
   // 尝试提取小说 ID
   const novelId = extractNovelIdFromFilename(filename);
   if (!novelId) {
@@ -74,7 +74,7 @@ const getFileDisplayInfo = (filename: string): { displayName: string; icon: stri
       icon: 'pi pi-file',
     };
   }
-  
+
   // 查找小说
   const novel = booksStore.books.find((b) => b.id === novelId);
   if (novel) {
@@ -83,7 +83,7 @@ const getFileDisplayInfo = (filename: string): { displayName: string; icon: stri
       icon: 'pi pi-book',
     };
   }
-  
+
   // 找不到，显示"已删除"
   return {
     displayName: `[已删除] ${filename}`,
@@ -120,20 +120,20 @@ const getGroupedFiles = (
       icon: displayInfo.icon,
     };
   });
-  
+
   // 排序：设置文件始终在最前面，其他文件按显示名称排序
   return filesWithDisplayInfo.sort((a, b) => {
     // 设置文件优先
     const aIsSettings = a.filename === 'luna-ai-settings.json';
     const bIsSettings = b.filename === 'luna-ai-settings.json';
-    
+
     if (aIsSettings && !bIsSettings) {
       return -1;
     }
     if (!aIsSettings && bIsSettings) {
       return 1;
     }
-    
+
     // 其他文件按显示名称排序
     return a.displayName.localeCompare(b.displayName, 'zh-CN');
   });
@@ -176,15 +176,15 @@ const revisions = ref<
       additions: number;
       deletions: number;
     };
-        files?: Array<{
-          filename: string;
-          status: 'added' | 'removed' | 'modified' | 'renamed';
-          size?: number;
-          sizeDiff?: number;
-          additions?: number;
-          deletions?: number;
-          changes?: number;
-        }>;
+    files?: Array<{
+      filename: string;
+      status: 'added' | 'removed' | 'modified' | 'renamed';
+      size?: number;
+      sizeDiff?: number;
+      additions?: number;
+      deletions?: number;
+      changes?: number;
+    }>;
   }>
 >([]);
 const loadingRevisions = ref(false);
@@ -281,17 +281,22 @@ const loadRevisionDetails = async (version: string) => {
     if (revisionResponse.success && revisionResponse.data) {
       // 获取当前修订版本的所有文件（这就是该版本存在的所有文件）
       const currentFilesMap = revisionResponse.data.files || {};
-      
+
       // 获取上一个版本的文件（用于计算 sizeDiff 和状态）
       let previousFilesMap: Map<string, { size?: number }> | null = null;
       if (revisionIndex < revisions.value.length - 1) {
         const previousRevision = revisions.value[revisionIndex + 1];
         if (previousRevision) {
           const previousVersion = previousRevision.version;
-          const previousRevisionResponse = await gistSyncService.getGistRevision(config, previousVersion);
+          const previousRevisionResponse = await gistSyncService.getGistRevision(
+            config,
+            previousVersion,
+          );
           if (previousRevisionResponse.success && previousRevisionResponse.data) {
             previousFilesMap = new Map();
-            for (const [filename, file] of Object.entries(previousRevisionResponse.data.files || {})) {
+            for (const [filename, file] of Object.entries(
+              previousRevisionResponse.data.files || {},
+            )) {
               if (file?.size !== undefined) {
                 previousFilesMap.set(filename, { size: file.size });
               } else {
@@ -304,9 +309,7 @@ const loadRevisionDetails = async (version: string) => {
 
       // 从 getGistRevisions 的结果中获取已有文件的变更状态（如果存在）
       const existingRevision = revisions.value[revisionIndex];
-      const existingFilesMap = new Map(
-        (existingRevision?.files || []).map((f) => [f.filename, f])
-      );
+      const existingFilesMap = new Map((existingRevision?.files || []).map((f) => [f.filename, f]));
 
       // 构建文件列表 - 显示该修订版本中存在的所有文件
       const files = Object.keys(currentFilesMap).map((filename) => {
@@ -314,7 +317,7 @@ const loadRevisionDetails = async (version: string) => {
         const currentSize = file?.size || 0;
         const previousFile = previousFilesMap?.get(filename);
         const previousSize = previousFile?.size;
-        
+
         // 确定文件状态（优先使用已有状态）
         let status: 'added' | 'removed' | 'modified' | 'renamed' = 'modified';
         const existingFile = existingFilesMap.get(filename);
@@ -435,13 +438,13 @@ const revertToRevision = (version: string) => {
           // 这样 SyncDataService.applyDownloadedData 就会将远程数据视为"新数据"直接添加
           // 从而实现"完全覆盖本地数据"的效果
           await booksStore.clearBooks();
-          aiModelsStore.clearModels();
-          coverHistoryStore.clearHistory();
+          void aiModelsStore.clearModels();
+          void coverHistoryStore.clearHistory();
 
           // 应用下载的数据
           await SyncDataService.applyDownloadedData(result.data, []);
 
-          settingsStore.updateLastSyncTime();
+          void settingsStore.updateLastSyncTime();
           gistLastSyncTime.value = Date.now();
           // 重置自动同步定时器
           setupAutoSync();
@@ -475,14 +478,14 @@ const revertToRevision = (version: string) => {
 
 // 保存 Gist 配置
 const saveGistConfig = (shouldRestartAutoSync = false) => {
-  settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
+  void settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
   if (gistId.value) {
-    settingsStore.setGistId(gistId.value);
+    void settingsStore.setGistId(gistId.value);
   }
-  settingsStore.setGistSyncEnabled(gistEnabled.value);
+  void settingsStore.setGistSyncEnabled(gistEnabled.value);
   // 保存自动同步设置（注意：这不会覆盖已设置的 lastSyncTime）
-  settingsStore.setSyncInterval(autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0);
-  
+  void settingsStore.setSyncInterval(autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0);
+
   // 如果需要重新启动自动同步，延迟执行以确保配置已保存
   if (shouldRestartAutoSync) {
     // 使用 nextTick 确保状态更新完成后再重新启动
@@ -498,16 +501,16 @@ const handleAutoSyncEnabledChange = (value: boolean) => {
   stopAutoSync(); // 立即停止自动同步
   if (value) {
     // 如果启用自动同步，先保存同步间隔
-    settingsStore.setSyncInterval(syncIntervalMinutes.value * 60000);
+    void settingsStore.setSyncInterval(syncIntervalMinutes.value * 60000);
     // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
-    settingsStore.updateLastSyncTime();
+    void settingsStore.updateLastSyncTime();
     // 重新启动自动同步
     window.setTimeout(() => {
       setupAutoSync();
     }, 100);
   } else {
     // 如果禁用自动同步，设置间隔为 0
-    settingsStore.setSyncInterval(0);
+    void settingsStore.setSyncInterval(0);
   }
 };
 
@@ -516,19 +519,19 @@ const handleSyncIntervalChange = (value: number | null) => {
   const newValue = Number(value) || 5;
   if (newValue !== syncIntervalMinutes.value) {
     syncIntervalMinutes.value = newValue;
-    
+
     if (autoSyncEnabled.value) {
       // 先保存同步间隔
-      settingsStore.setSyncInterval(newValue * 60000);
+      void settingsStore.setSyncInterval(newValue * 60000);
       // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
-      settingsStore.updateLastSyncTime();
+      void settingsStore.updateLastSyncTime();
       // 重新启动自动同步（使用新的间隔和新的开始时间）
       window.setTimeout(() => {
         setupAutoSync();
       }, 100);
     } else {
       // 即使自动同步未启用，也保存值
-      settingsStore.setSyncInterval(0);
+      void settingsStore.setSyncInterval(0);
     }
   }
 };
@@ -624,7 +627,7 @@ const uploadToGist = async () => {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
         gistId.value = result.gistId;
-        settingsStore.setGistId(result.gistId);
+        void settingsStore.setGistId(result.gistId);
         // 如果重新创建了 Gist，显示提示信息
         if (result.isRecreated) {
           toast.add({
@@ -635,7 +638,7 @@ const uploadToGist = async () => {
           });
         }
       }
-      settingsStore.updateLastSyncTime();
+      void settingsStore.updateLastSyncTime();
       gistLastSyncTime.value = Date.now();
       saveGistConfig();
       // 重置自动同步定时器
@@ -708,11 +711,11 @@ const downloadFromGist = async () => {
       // 直接应用下载的数据（无冲突解决，因为这是手动下载，直接覆盖）
       await SyncDataService.applyDownloadedData(result.data, []);
 
-      settingsStore.updateLastSyncTime();
+      void settingsStore.updateLastSyncTime();
       gistLastSyncTime.value = Date.now();
       // 重置自动同步定时器
       setupAutoSync();
-      
+
       toast.add({
         severity: 'success',
         summary: '下载成功',
@@ -790,7 +793,7 @@ const deleteGist = () => {
         if (result.success) {
           // 清除本地 Gist ID
           gistId.value = '';
-          settingsStore.setGistId('');
+          void settingsStore.setGistId('');
           saveGistConfig();
           toast.add({
             severity: 'success',

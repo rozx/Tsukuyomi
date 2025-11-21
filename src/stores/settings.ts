@@ -3,9 +3,7 @@ import type { AppSettings } from 'src/types/settings';
 import type { SyncConfig } from 'src/types/sync';
 import { SyncType } from 'src/types/sync';
 import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
-
-const STORAGE_KEY = 'luna-ai-settings';
-const SYNC_STORAGE_KEY = 'luna-ai-sync';
+import { getDB } from 'src/utils/indexed-db';
 
 /**
  * 默认设置
@@ -33,49 +31,15 @@ function createDefaultGistSyncConfig(): SyncConfig {
 }
 
 /**
- * 从本地存储加载同步配置
+ * 从 IndexedDB 加载设置
  */
-function loadSyncFromStorage(): SyncConfig[] {
+async function loadSettingsFromDB(): Promise<AppSettings> {
   try {
-    const stored = localStorage.getItem(SYNC_STORAGE_KEY);
+    const db = await getDB();
+    const stored = await db.get('settings', 'app');
     if (stored) {
-      const syncs = JSON.parse(stored) as SyncConfig[];
-      return syncs.map((sync) => ({
-        ...createDefaultGistSyncConfig(),
-        ...sync,
-        syncParams: {
-          ...createDefaultGistSyncConfig().syncParams,
-          ...(sync.syncParams || {}),
-        },
-      }));
-    }
-  } catch (error) {
-    console.error('Failed to load sync from storage:', error);
-  }
-  return [];
-}
-
-/**
- * 保存同步配置到本地存储
- */
-function saveSyncToStorage(syncs: SyncConfig[]): void {
-  try {
-    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs));
-  } catch (error) {
-    console.error('Failed to save sync to storage:', error);
-  }
-}
-
-/**
- * 从本地存储加载设置
- */
-function loadSettingsFromStorage(): AppSettings {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const settings = JSON.parse(stored) as Partial<AppSettings>;
+      const { key: _key, ...settings } = stored;
       // 合并默认设置，确保所有字段都存在
-      // 特别处理 taskDefaultModels，需要深度合并
       return {
         ...DEFAULT_SETTINGS,
         ...settings,
@@ -86,27 +50,88 @@ function loadSettingsFromStorage(): AppSettings {
       };
     }
   } catch (error) {
-    console.error('Failed to load settings from storage:', error);
+    console.error('Failed to load settings from DB:', error);
   }
   return { ...DEFAULT_SETTINGS };
 }
 
 /**
- * 保存设置到本地存储
+ * 保存设置到 IndexedDB
  */
-function saveSettingsToStorage(settings: AppSettings): void {
+async function saveSettingsToDB(settings: AppSettings): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    const db = await getDB();
+    await db.put('settings', { key: 'app', ...settings });
   } catch (error) {
-    console.error('Failed to save settings to storage:', error);
+    console.error('Failed to save settings to DB:', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 加载同步配置
+ */
+async function loadSyncFromDB(): Promise<SyncConfig[]> {
+  try {
+    const db = await getDB();
+    const syncs = await db.getAll('sync-configs');
+    return syncs.map((sync) => {
+      const { id: _id, ...syncConfig } = sync;
+      return {
+        ...createDefaultGistSyncConfig(),
+        ...syncConfig,
+        syncParams: {
+          ...createDefaultGistSyncConfig().syncParams,
+          ...(syncConfig.syncParams || {}),
+        },
+      };
+    });
+  } catch (error) {
+    console.error('Failed to load sync from DB:', error);
+    return [];
+  }
+}
+
+/**
+ * 保存同步配置到 IndexedDB
+ */
+async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
+  try {
+    const db = await getDB();
+    const tx = db.transaction('sync-configs', 'readwrite');
+    const store = tx.objectStore('sync-configs');
+
+    // 先清空现有配置
+    await store.clear();
+
+    // 保存新配置
+    for (let i = 0; i < syncs.length; i++) {
+      const sync = syncs[i];
+      if (!sync) continue;
+      await store.put({
+        id: `sync-${i}`,
+        enabled: sync.enabled,
+        lastSyncTime: sync.lastSyncTime,
+        syncInterval: sync.syncInterval,
+        syncType: sync.syncType,
+        syncParams: sync.syncParams,
+        secret: sync.secret,
+        apiEndpoint: sync.apiEndpoint,
+        ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
+      });
+    }
+
+    await tx.done;
+  } catch (error) {
+    console.error('Failed to save sync to DB:', error);
   }
 }
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
-    settings: loadSettingsFromStorage(),
-    syncs: loadSyncFromStorage(),
+    settings: { ...DEFAULT_SETTINGS } as AppSettings,
+    syncs: [] as SyncConfig[],
     isSyncing: false, // 全局同步状态
+    isLoaded: false,
   }),
 
   getters: {
@@ -144,10 +169,23 @@ export const useSettingsStore = defineStore('settings', {
 
   actions: {
     /**
+     * 从 IndexedDB 加载设置和同步配置
+     */
+    async loadSettings(): Promise<void> {
+      if (this.isLoaded) {
+        return;
+      }
+
+      this.settings = await loadSettingsFromDB();
+      this.syncs = await loadSyncFromDB();
+      this.isLoaded = true;
+    },
+
+    /**
      * 更新设置
      * 需要深度合并 taskDefaultModels
      */
-    updateSettings(updates: Partial<AppSettings>): void {
+    async updateSettings(updates: Partial<AppSettings>): Promise<void> {
       // 深度合并 taskDefaultModels
       const mergedSettings: AppSettings = {
         ...this.settings,
@@ -162,39 +200,39 @@ export const useSettingsStore = defineStore('settings', {
       }
       
       this.settings = mergedSettings;
-      saveSettingsToStorage(this.settings);
+      await saveSettingsToDB(this.settings);
     },
 
     /**
      * 设置爬虫并发数限制
      */
-    setScraperConcurrencyLimit(limit: number): void {
+    async setScraperConcurrencyLimit(limit: number): Promise<void> {
       if (limit < 1) {
         limit = 1;
       }
       if (limit > 10) {
         limit = 10;
       }
-      this.updateSettings({ scraperConcurrencyLimit: limit });
+      await this.updateSettings({ scraperConcurrencyLimit: limit });
     },
 
     /**
      * 设置任务的默认模型 ID
      */
-    setTaskDefaultModelId(task: keyof AIModelDefaultTasks, modelId: string | null): void {
+    async setTaskDefaultModelId(task: keyof AIModelDefaultTasks, modelId: string | null): Promise<void> {
       const taskDefaultModels = {
         ...this.settings.taskDefaultModels,
         [task]: modelId,
       };
-      this.updateSettings({ taskDefaultModels });
+      await this.updateSettings({ taskDefaultModels });
     },
 
     /**
      * 重置为默认设置
      */
-    resetToDefaults(): void {
+    async resetToDefaults(): Promise<void> {
       this.settings = { ...DEFAULT_SETTINGS };
-      saveSettingsToStorage(this.settings);
+      await saveSettingsToDB(this.settings);
     },
 
     /**
@@ -208,7 +246,7 @@ export const useSettingsStore = defineStore('settings', {
      * 导入设置（用于导入）
      * 需要深度合并 taskDefaultModels，避免覆盖现有配置
      */
-    importSettings(settings: Partial<AppSettings>): void {
+    async importSettings(settings: Partial<AppSettings>): Promise<void> {
       // 深度合并 taskDefaultModels，确保不会丢失本地配置
       const mergedSettings: Partial<AppSettings> = {
         ...settings,
@@ -222,20 +260,20 @@ export const useSettingsStore = defineStore('settings', {
         };
       }
       
-      this.updateSettings(mergedSettings);
+      await this.updateSettings(mergedSettings);
     },
 
     /**
      * 设置最后打开的设置标签页索引
      */
-    setLastOpenedSettingsTab(tabIndex: number): void {
-      this.updateSettings({ lastOpenedSettingsTab: tabIndex });
+    async setLastOpenedSettingsTab(tabIndex: number): Promise<void> {
+      await this.updateSettings({ lastOpenedSettingsTab: tabIndex });
     },
 
     /**
      * 更新 Gist 同步配置
      */
-    updateGistSync(updates: Partial<SyncConfig>): void {
+    async updateGistSync(updates: Partial<SyncConfig>): Promise<void> {
       const index = this.syncs.findIndex((sync) => sync.syncType === SyncType.Gist);
       const defaultConfig = createDefaultGistSyncConfig();
       const existingConfig = index >= 0 ? this.syncs[index] : undefined;
@@ -273,21 +311,21 @@ export const useSettingsStore = defineStore('settings', {
         this.syncs.push(updatedConfig);
       }
 
-      saveSyncToStorage(this.syncs);
+      await saveSyncToDB(this.syncs);
     },
 
     /**
      * 设置 Gist 同步启用状态
      */
-    setGistSyncEnabled(enabled: boolean): void {
-      this.updateGistSync({ enabled });
+    async setGistSyncEnabled(enabled: boolean): Promise<void> {
+      await this.updateGistSync({ enabled });
     },
 
     /**
      * 设置 Gist 用户名和 token
      */
-    setGistSyncCredentials(username: string, token: string): void {
-      this.updateGistSync({
+    async setGistSyncCredentials(username: string, token: string): Promise<void> {
+      await this.updateGistSync({
         syncParams: {
           username,
         },
@@ -298,8 +336,8 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 设置 Gist ID
      */
-    setGistId(gistId: string): void {
-      this.updateGistSync({
+    async setGistId(gistId: string): Promise<void> {
+      await this.updateGistSync({
         syncParams: {
           gistId,
         },
@@ -309,22 +347,22 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 更新最后同步时间
      */
-    updateLastSyncTime(): void {
-      this.updateGistSync({ lastSyncTime: Date.now() });
+    async updateLastSyncTime(): Promise<void> {
+      await this.updateGistSync({ lastSyncTime: Date.now() });
     },
 
     /**
      * 更新上次同步时的模型 ID 列表
      */
-    updateLastSyncedModelIds(modelIds: string[]): void {
-      this.updateGistSync({ lastSyncedModelIds: modelIds });
+    async updateLastSyncedModelIds(modelIds: string[]): Promise<void> {
+      await this.updateGistSync({ lastSyncedModelIds: modelIds });
     },
 
     /**
      * 设置同步间隔（毫秒）
      * 如果设置为 0，则禁用自动同步
      */
-    setSyncInterval(intervalMs: number): void {
+    async setSyncInterval(intervalMs: number): Promise<void> {
       if (intervalMs < 0) {
         intervalMs = 0;
       }
@@ -333,7 +371,7 @@ export const useSettingsStore = defineStore('settings', {
       if (intervalMs > maxInterval) {
         intervalMs = maxInterval;
       }
-      this.updateGistSync({ syncInterval: intervalMs });
+      await this.updateGistSync({ syncInterval: intervalMs });
     },
 
     /**

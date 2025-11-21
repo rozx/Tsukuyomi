@@ -49,7 +49,7 @@ const severityTags: Record<ToastHistoryItem['severity'], 'success' | 'danger' | 
 };
 
 const handleClear = () => {
-  clearHistory();
+  void clearHistory();
 };
 
 const toggle = (event: Event) => {
@@ -58,7 +58,7 @@ const toggle = (event: Event) => {
 
 // 监听 popup 显示，标记为已读
 const handleShow = () => {
-  markAsRead();
+  void markAsRead();
 };
 
 // 暴露方法供父组件调用
@@ -151,7 +151,7 @@ defineExpose({
                       <Button
                         icon="pi pi-times"
                         class="p-button-text p-button-sm p-button-rounded flex-shrink-0"
-                        @click="removeHistoryItem(item.id)"
+                        @click="() => void removeHistoryItem(item.id)"
                       />
                     </div>
                     <p class="text-sm text-moon/70 mb-2">{{ item.detail }}</p>

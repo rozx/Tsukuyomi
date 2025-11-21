@@ -1,38 +1,68 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { AIModel } from 'src/types/ai/ai-model';
 import { useSettingsStore } from './settings';
-
-const STORAGE_KEY = 'luna-ai-models';
+import { getDB } from 'src/utils/indexed-db';
 
 /**
- * 从本地存储加载 AI 模型
+ * 从 IndexedDB 加载所有 AI 模型
  */
-function loadModelsFromStorage(): AIModel[] {
+async function loadModelsFromDB(): Promise<AIModel[]> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      return JSON.parse(stored) as AIModel[];
-    }
+    const db = await getDB();
+    return await db.getAll('ai-models');
   } catch (error) {
-    console.error('Failed to load AI models from storage:', error);
+    console.error('Failed to load AI models from DB:', error);
+    return [];
   }
-  return [];
 }
 
 /**
- * 保存 AI 模型到本地存储
+ * 保存单个 AI 模型到 IndexedDB
  */
-function saveModelsToStorage(models: AIModel[]): void {
+async function saveModelToDB(model: AIModel): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(models));
+    const db = await getDB();
+    await db.put('ai-models', model);
   } catch (error) {
-    console.error('Failed to save AI models to storage:', error);
+    console.error('Failed to save AI model to DB:', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 删除 AI 模型
+ */
+async function deleteModelFromDB(id: string): Promise<void> {
+  try {
+    const db = await getDB();
+    await db.delete('ai-models', id);
+  } catch (error) {
+    console.error('Failed to delete AI model from DB:', error);
+  }
+}
+
+/**
+ * 批量保存 AI 模型到 IndexedDB
+ */
+async function bulkSaveModelsToDB(models: AIModel[]): Promise<void> {
+  try {
+    const db = await getDB();
+    const tx = db.transaction('ai-models', 'readwrite');
+    const store = tx.objectStore('ai-models');
+
+    for (const model of models) {
+      await store.put(model);
+    }
+
+    await tx.done;
+  } catch (error) {
+    console.error('Failed to bulk save AI models to DB:', error);
   }
 }
 
 export const useAIModelsStore = defineStore('aiModels', {
   state: () => ({
-    models: loadModelsFromStorage(),
+    models: [] as AIModel[],
+    isLoaded: false,
   }),
 
   getters: {
@@ -75,59 +105,76 @@ export const useAIModelsStore = defineStore('aiModels', {
 
   actions: {
     /**
+     * 从 IndexedDB 加载所有 AI 模型
+     */
+    async loadModels(): Promise<void> {
+      if (this.isLoaded) {
+        return;
+      }
+
+      this.models = await loadModelsFromDB();
+      this.isLoaded = true;
+    },
+
+    /**
      * 添加新的 AI 模型
      */
-    addModel(model: AIModel): void {
+    async addModel(model: AIModel): Promise<void> {
       this.models.push(model);
-      saveModelsToStorage(this.models);
+      await saveModelToDB(model);
     },
 
     /**
      * 更新 AI 模型
      */
-    updateModel(id: string, updates: Partial<AIModel>): void {
+    async updateModel(id: string, updates: Partial<AIModel>): Promise<void> {
       const index = this.models.findIndex((model) => model.id === id);
       if (index > -1) {
-        this.models[index] = { ...this.models[index], ...updates } as AIModel;
-        saveModelsToStorage(this.models);
+        const updatedModel = { ...this.models[index], ...updates } as AIModel;
+        this.models[index] = updatedModel;
+        await saveModelToDB(updatedModel);
       }
     },
 
     /**
      * 删除 AI 模型
      */
-    deleteModel(id: string): void {
+    async deleteModel(id: string): Promise<void> {
       const index = this.models.findIndex((model) => model.id === id);
       if (index > -1) {
         this.models.splice(index, 1);
-        saveModelsToStorage(this.models);
+        await deleteModelFromDB(id);
       }
     },
 
     /**
      * 切换模型的启用状态
      */
-    toggleModelEnabled(id: string): void {
+    async toggleModelEnabled(id: string): Promise<void> {
       const model = this.models.find((m) => m.id === id);
       if (model) {
         model.enabled = !model.enabled;
-        saveModelsToStorage(this.models);
+        await saveModelToDB(model);
       }
     },
 
     /**
      * 设置模型为特定任务的默认模型
      */
-    setDefaultForTask(id: string, task: keyof AIModel['isDefault'], isDefault: boolean): void {
+    async setDefaultForTask(id: string, task: keyof AIModel['isDefault'], isDefault: boolean): Promise<void> {
       const model = this.models.find((m) => m.id === id);
       if (model) {
         // 如果设置为默认，先取消其他模型的默认状态
         if (isDefault) {
+          const modelsToUpdate: AIModel[] = [];
           this.models.forEach((m) => {
             if (m.id !== id && m.isDefault[task]) {
               m.isDefault[task] = { ...m.isDefault[task], enabled: false };
+              modelsToUpdate.push(m);
             }
           });
+          // 批量更新其他模型
+          await bulkSaveModelsToDB(modelsToUpdate);
         }
         // 保持现有的 temperature，只更新 enabled
         const currentConfig = model.isDefault[task];
@@ -135,16 +182,17 @@ export const useAIModelsStore = defineStore('aiModels', {
           enabled: isDefault,
           temperature: currentConfig?.temperature ?? 0.7,
         };
-        saveModelsToStorage(this.models);
+        await saveModelToDB(model);
       }
     },
 
     /**
      * 清空所有模型（用于重置）
      */
-    clearModels(): void {
+    async clearModels(): Promise<void> {
+      const db = await getDB();
+      await db.clear('ai-models');
       this.models = [];
-      saveModelsToStorage(this.models);
     },
   },
 });

@@ -74,20 +74,21 @@ export function useToastWithHistory() {
   const wrappedAdd = (message: ToastMessageOptions) => {
     // 保存到历史记录
     // 确保 severity 是有效的类型
-    const severity =
-      message.severity === 'success' ||
-      message.severity === 'error' ||
-      message.severity === 'info' ||
-      message.severity === 'warn'
-        ? message.severity
+    const severityValue = message.severity;
+    const severity: 'success' | 'error' | 'info' | 'warn' =
+      severityValue === 'success' ||
+      severityValue === 'error' ||
+      severityValue === 'info' ||
+      severityValue === 'warn'
+        ? (severityValue as 'success' | 'error' | 'info' | 'warn')
         : 'info';
 
     const timestamp = Date.now();
     const summary = message.summary || '';
     const detail = message.detail || '';
 
-    // 添加到历史记录（store 会自动保存到 localStorage）
-    store.addToHistory({
+    // 添加到历史记录（store 会自动保存到 IndexedDB）
+    void store.addToHistory({
       severity,
       summary,
       detail,
