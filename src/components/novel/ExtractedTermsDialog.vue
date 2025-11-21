@@ -448,16 +448,15 @@ const closeDialog = () => {
     </div>
 
     <template #footer>
-      <div class="flex items-center justify-between w-full">
+      <div class="flex items-center justify-end w-full">
         <Button
           label="保存所有术语"
           icon="pi pi-save"
-          class="p-button-primary"
+          class="p-button-primary mt-4"
           :disabled="extractedTermsList.length === 0 || isSaving"
           :loading="isSaving"
           @click="saveAllTerms"
         />
-        <Button label="关闭" icon="pi pi-times" class="p-button-text" @click="closeDialog" />
       </div>
     </template>
   </Dialog>
