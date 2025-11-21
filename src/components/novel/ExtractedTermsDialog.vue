@@ -304,13 +304,7 @@ const closeDialog = () => {
   <Dialog
     v-model:visible="dialogVisible"
     :modal="true"
-    :style="{ width: '90vw', maxWidth: '1200px', height: '90vh' }"
-    :content-style="{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }"
+    :style="{ width: '90vw', maxWidth: '1200px', maxHeight: '92vh' }"
     :closable="true"
     class="extracted-terms-dialog"
   >
@@ -325,7 +319,7 @@ const closeDialog = () => {
       </div>
     </template>
 
-    <div class="flex flex-col gap-4" style="max-height: 70vh">
+    <div class="flex flex-col gap-4">
       <div class="flex flex-col gap-4 flex-1 min-h-0">
         <!-- 章节选择与结果 -->
         <div class="flex gap-4 min-h-0 flex-1">
