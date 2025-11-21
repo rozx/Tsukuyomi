@@ -203,6 +203,34 @@ module.exports = {
         '.border-luna': {
           borderColor: '#f0458b', // Luna primary color
         },
+        // Translation text color (distinct from original text)
+        '.text-translation': {
+          color: 'rgba(240, 69, 139, 0.9)', // Luna pink with 90% opacity for translations
+        },
+        // Search input group - ensures search box can shrink and buttons stay on same line
+        '.search-input-group': {
+          minWidth: '0',
+          flex: '1 1 auto',
+          maxWidth: '400px',
+        },
+        // Input action addon - for clear/copy buttons in input groups
+        '.input-action-addon': {
+          padding: '0 !important',
+          display: 'flex !important',
+          alignItems: 'stretch !important',
+          width: 'auto',
+        },
+        '.input-action-addon .input-action-button': {
+          width: '100% !important',
+          height: '100% !important',
+          display: 'flex !important',
+          alignItems: 'center !important',
+          justifyContent: 'center !important',
+          padding: '0.5rem !important',
+          minWidth: '2.5rem',
+          margin: '0 !important',
+          borderRadius: '0 !important',
+        },
       };
       addUtilities(newUtilities, ['responsive', 'hover', 'focus']);
     },
