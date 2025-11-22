@@ -7,10 +7,26 @@ const props = defineProps<{
   paragraph: Paragraph;
   terminologies?: Terminology[];
   characterSettings?: CharacterSetting[];
+  isTranslating?: boolean;
 }>();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
+});
+
+// 获取当前段落的翻译文本
+const translationText = computed(() => {
+  if (!props.paragraph.selectedTranslationId || !props.paragraph.translations) {
+    return '';
+  }
+  const selectedTranslation = props.paragraph.translations.find(
+    (t) => t.id === props.paragraph.selectedTranslationId,
+  );
+  return selectedTranslation?.translation || '';
+});
+
+const hasTranslation = computed(() => {
+  return translationText.value.trim().length > 0;
 });
 
 // Popover refs
@@ -267,7 +283,7 @@ const handleCharacterPopoverHide = () => {
 </script>
 
 <template>
-  <div class="paragraph-card" :class="{ 'has-content': hasContent }">
+  <div class="paragraph-card" :class="{ 'has-content': hasContent, 'is-translating': props.isTranslating }">
     <span v-if="hasContent" class="paragraph-icon">¶</span>
     <div class="paragraph-content">
       <p class="paragraph-text">
@@ -300,6 +316,9 @@ const handleCharacterPopoverHide = () => {
             {{ node.content }}
           </span>
         </template>
+      </p>
+      <p v-if="hasTranslation" class="paragraph-translation">
+        {{ translationText }}
       </p>
     </div>
 
@@ -385,6 +404,25 @@ const handleCharacterPopoverHide = () => {
   transform: translateY(-2px);
 }
 
+/* 正在翻译的段落高亮 */
+.paragraph-card.is-translating {
+  background: var(--primary-opacity-10);
+  box-shadow: inset 3px 0 0 var(--primary-opacity-60);
+  border-radius: 4px;
+  animation: translating-pulse 2s ease-in-out infinite;
+}
+
+@keyframes translating-pulse {
+  0%, 100% {
+    background: var(--primary-opacity-10);
+    box-shadow: inset 3px 0 0 var(--primary-opacity-60);
+  }
+  50% {
+    background: var(--primary-opacity-15);
+    box-shadow: inset 3px 0 0 var(--primary-opacity-80);
+  }
+}
+
 .paragraph-content {
   width: 100%;
 }
@@ -396,6 +434,17 @@ const handleCharacterPopoverHide = () => {
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.paragraph-translation {
+  margin: 0.75rem 0 0 0;
+  color: var(--moon-opacity-70);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--white-opacity-10);
 }
 
 /* 术语高亮 */

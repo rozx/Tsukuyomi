@@ -24,6 +24,7 @@ const emit = defineEmits<{
       sex?: 'male' | 'female' | 'other' | undefined;
       translation: string;
       description: string;
+      speakingStyle: string;
       aliases: Array<{ name: string; translation: string }>;
     },
   ): void;
@@ -34,6 +35,7 @@ const formData = ref({
   name: '',
   sex: undefined as 'male' | 'female' | 'other' | undefined,
   description: '',
+  speakingStyle: '',
   translation: '',
   aliases: [] as Array<{ name: string; translation: string }>,
 });
@@ -56,6 +58,7 @@ watch(
           name: character.name,
           sex: character.sex,
           description: character.description || '',
+          speakingStyle: character.speakingStyle || '',
           translation: character.translation.translation,
           aliases: character.aliases.map((a: Alias) => ({
             name: a.name,
@@ -68,6 +71,7 @@ watch(
           name: '',
           sex: undefined,
           description: '',
+          speakingStyle: '',
           translation: '',
           aliases: [],
         };
@@ -82,6 +86,7 @@ const handleSave = () => {
     name: formData.value.name,
     sex: formData.value.sex,
     description: formData.value.description,
+    speakingStyle: formData.value.speakingStyle,
     translation: formData.value.translation,
     aliases: formData.value.aliases,
   });
@@ -113,7 +118,7 @@ const removeAlias = (index: number) => {
   >
     <div class="space-y-4">
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">角色名称 *</label>
+        <label class="text-sm text-moon-100/80">角色名称 *</label>
         <TranslatableInput
           v-model="formData.name"
           placeholder="输入角色名称"
@@ -126,11 +131,11 @@ const removeAlias = (index: number) => {
             }
           "
         />
-        <p class="text-xs text-moon/60">点击翻译图标可翻译名称，翻译结果将填入翻译字段</p>
+        <p class="text-xs text-moon-100/60">点击翻译图标可翻译名称，翻译结果将填入翻译字段</p>
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">性别</label>
+        <label class="text-sm text-moon-100/80">性别</label>
         <SelectButton
           v-model="formData.sex"
           :options="sexOptions"
@@ -142,7 +147,7 @@ const removeAlias = (index: number) => {
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">翻译</label>
+        <label class="text-sm text-moon-100/80">翻译</label>
         <InputText
           v-model="formData.translation"
           placeholder="输入翻译"
@@ -158,7 +163,7 @@ const removeAlias = (index: number) => {
 
       <div class="space-y-2">
         <div class="flex justify-between items-center">
-          <label class="text-sm text-moon/80">别名</label>
+          <label class="text-sm text-moon-100/80">别名</label>
           <Button
             icon="pi pi-plus"
             label="添加别名"
@@ -168,7 +173,7 @@ const removeAlias = (index: number) => {
             :disabled="loading || false"
           />
         </div>
-        <div v-if="formData.aliases.length === 0" class="text-xs text-moon/50 italic py-2 mb-2">
+        <div v-if="formData.aliases.length === 0" class="text-xs text-moon-100/50 italic py-2 mb-2">
           暂无别名，点击"添加别名"按钮添加
         </div>
         <div v-else class="space-y-2">
@@ -179,7 +184,7 @@ const removeAlias = (index: number) => {
           >
             <div class="flex-1 space-y-2">
               <div>
-                <label class="text-xs text-moon/60 block mb-1">别名名称</label>
+                <label class="text-xs text-moon-100/60 block mb-1">别名名称</label>
                 <TranslatableInput
                   v-model="alias.name"
                   placeholder="输入别名名称"
@@ -192,12 +197,12 @@ const removeAlias = (index: number) => {
                     }
                   "
                 />
-                <p class="text-xs text-moon/50 mt-1">
+                <p class="text-xs text-moon-100/50 mt-1">
                   点击翻译图标可翻译别名，翻译结果将填入别名翻译字段
                 </p>
               </div>
               <div>
-                <label class="text-xs text-moon/60 block mb-1">别名翻译</label>
+                <label class="text-xs text-moon-100/60 block mb-1">别名翻译</label>
                 <InputText
                   v-model="alias.translation"
                   placeholder="输入别名翻译"
@@ -223,7 +228,7 @@ const removeAlias = (index: number) => {
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">描述</label>
+        <label class="text-sm text-moon-100/80">描述</label>
         <Textarea
           v-model="formData.description"
           placeholder="输入描述（可选）"
@@ -234,6 +239,22 @@ const removeAlias = (index: number) => {
         <AppMessage
           severity="info"
           message="留空则让翻译 AI 在翻译章节时自动添加、更新或删除描述内容"
+          :closable="false"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-sm text-moon-100/80">说话口吻</label>
+        <Textarea
+          v-model="formData.speakingStyle"
+          placeholder="输入说话口吻（可选）。例如：傲娇、古风、口癖(desu/nya)等"
+          :rows="2"
+          class="w-full"
+          :disabled="loading || false"
+        />
+        <AppMessage
+          severity="info"
+          message="说话口吻有助于 AI 在翻译对话时保持角色个性一致"
           :closable="false"
         />
       </div>

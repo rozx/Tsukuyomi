@@ -133,6 +133,7 @@ export interface CharacterSetting {
   name: string;
   sex: 'male' | 'female' | 'other' | undefined;
   description?: string | undefined;
+  speakingStyle?: string | undefined;
   translation: Translation;
   aliases: Alias[];
   occurrences: Occurrence[];

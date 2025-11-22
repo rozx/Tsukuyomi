@@ -8,6 +8,7 @@ import { useToastHistoryStore } from 'src/stores/toast-history';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useUiStore } from 'src/stores/ui';
+import { useAIProcessingStore } from 'src/stores/ai-processing';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -16,6 +17,7 @@ const toastHistoryStore = useToastHistoryStore();
 const coverHistoryStore = useCoverHistoryStore();
 const bookDetailsStore = useBookDetailsStore();
 const uiStore = useUiStore();
+const aiProcessingStore = useAIProcessingStore();
 
 onMounted(async () => {
   // 首次运行时从 localStorage 迁移到 IndexedDB
@@ -32,6 +34,7 @@ onMounted(async () => {
     settingsStore.loadSettings(),
     toastHistoryStore.loadHistory(),
     coverHistoryStore.loadCoverHistory(),
+    aiProcessingStore.loadThinkingProcesses(),
   ]);
 
   // 从 localStorage 加载 UI 状态（同步）

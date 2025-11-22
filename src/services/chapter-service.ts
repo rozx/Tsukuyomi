@@ -862,7 +862,7 @@ export class ChapterService {
         volumeIndex--;
         chapterIndex =
           volumeIndex >= 0 && novel.volumes[volumeIndex]?.chapters
-            ? novel.volumes[volumeIndex].chapters!.length - 1
+            ? novel.volumes[volumeIndex]!.chapters!.length - 1
             : -1;
         paragraphIndex = -1;
         continue;

@@ -26,6 +26,7 @@ const characterSettings = computed(() => {
     name: char.name,
     sex: char.sex,
     description: char.description,
+    speakingStyle: char.speakingStyle,
     translations: char.translation.translation,
     aliases: char.aliases.map((a: Alias) => a.name),
     occurrences: char.occurrences.reduce((sum, occ) => sum + occ.count, 0),
@@ -56,6 +57,7 @@ const handleSave = async (data: {
   sex?: 'male' | 'female' | 'other' | undefined;
   translation: string;
   description: string;
+  speakingStyle: string;
   aliases: Array<{ name: string; translation: string }>;
 }) => {
   if (!props.book) return;
@@ -151,7 +153,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
     <!-- 标题区域 -->
     <div class="p-6 border-b border-white/10">
       <h1 class="text-2xl font-semibold text-moon-100 mb-2">角色设置</h1>
-      <p class="text-sm text-moon/70 mb-3">
+      <p class="text-sm text-moon-100/70 mb-3">
         管理小说中的角色及其翻译和别名，这些设定会在翻译过程中被优先使用
       </p>
       <AppMessage
@@ -180,7 +182,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
 
       <!-- 角色列表 (卡片视图) -->
       <div
-        class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-4"
+        class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
       >
         <SettingCard
           v-for="char in characterSettings"
@@ -188,6 +190,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
           :title="char.name"
           :sex="char.sex"
           :description="char.description"
+          :speaking-style="char.speakingStyle"
           :translations="char.translations"
           :aliases="char.aliases"
           :occurrences="char.occurrences"
@@ -198,7 +201,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
         <!-- 空状态 -->
         <div
           v-if="characterSettings.length === 0"
-          class="col-span-full py-12 text-center text-moon/50 border border-dashed border-white/10 rounded-lg"
+          class="col-span-full py-12 text-center text-moon-100/50 border border-dashed border-white/10 rounded-lg"
         >
           暂无角色设定
         </div>

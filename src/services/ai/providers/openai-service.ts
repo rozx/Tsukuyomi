@@ -348,14 +348,14 @@ export class OpenAIService extends BaseAIService {
           text: '',
           done: true,
           model: modelId,
-          toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
+          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {})
         });
       }
 
       return {
         text,
         model: modelId,
-        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
+        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {})
       };
     } catch (error) {
       if (error instanceof Error) {

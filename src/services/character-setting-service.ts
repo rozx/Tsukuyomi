@@ -209,6 +209,7 @@ export class CharacterSettingService {
       sex?: 'male' | 'female' | 'other' | undefined;
       translation?: string;
       description?: string;
+      speakingStyle?: string;
       aliases?: Array<{ name: string; translation: string }>;
     },
   ): Promise<CharacterSetting> {
@@ -274,6 +275,7 @@ export class CharacterSettingService {
       name: charData.name,
       sex: charData.sex,
       ...(charData.description ? { description: charData.description } : {}),
+      ...(charData.speakingStyle ? { speakingStyle: charData.speakingStyle } : {}),
       translation,
       aliases,
       occurrences,
@@ -304,6 +306,7 @@ export class CharacterSettingService {
       sex?: 'male' | 'female' | 'other' | undefined;
       translation?: string;
       description?: string;
+      speakingStyle?: string;
       aliases?: Array<{ name: string; translation: string }>;
     },
   ): Promise<CharacterSetting> {
@@ -440,6 +443,7 @@ export class CharacterSettingService {
       aliases: updatedAliases,
       occurrences: occurrences,
       description: existingChar.description, // 默认保留
+      speakingStyle: existingChar.speakingStyle, // 默认保留
     };
 
     // 处理 description
@@ -448,6 +452,15 @@ export class CharacterSettingService {
         updatedChar.description = updates.description;
       } else {
         delete updatedChar.description;
+      }
+    }
+
+    // 处理 speakingStyle
+    if (updates.speakingStyle !== undefined) {
+      if (updates.speakingStyle) {
+        updatedChar.speakingStyle = updates.speakingStyle;
+      } else {
+        delete updatedChar.speakingStyle;
       }
     }
 

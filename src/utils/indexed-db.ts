@@ -5,6 +5,7 @@ import type { AppSettings } from 'src/types/settings';
 import type { CoverHistoryItem } from 'src/types/novel';
 import type { SyncConfig } from 'src/types/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
+import type { AIProcessingTask } from 'src/stores/ai-processing';
 
 /**
  * 书籍详情页面 UI 状态
@@ -63,10 +64,15 @@ interface LunaAIDB extends DBSchema {
     key: string;
     value: UiState & { key: string };
   };
+  'thinking-processes': {
+    key: string;
+    value: AIProcessingTask;
+    indexes: { 'by-startTime': number };
+  };
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
@@ -125,6 +131,14 @@ export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
         // 创建 ui-state 存储（版本 2 新增）
         if (!db.objectStoreNames.contains('ui-state')) {
           db.createObjectStore('ui-state', { keyPath: 'key' });
+        }
+
+        // 创建 thinking-processes 存储（版本 3 新增）
+        if (!db.objectStoreNames.contains('thinking-processes')) {
+          const thinkingStore = db.createObjectStore('thinking-processes', {
+            keyPath: 'id',
+          });
+          thinkingStore.createIndex('by-startTime', 'startTime', { unique: false });
         }
       },
       blocked() {
@@ -342,6 +356,7 @@ export async function clearAllData(): Promise<void> {
     'toast-last-viewed',
     'book-details-ui',
     'ui-state',
+    'thinking-processes',
   ] as const;
 
   for (const storeName of storeNames) {

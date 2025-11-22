@@ -43,6 +43,11 @@ export interface TranslationServiceOptions {
    */
   onAction?: (action: ActionInfo) => void;
   /**
+   * 段落翻译回调函数，用于接收每个块完成后的段落翻译结果
+   * @param translations 段落翻译数组，包含段落ID和翻译文本
+   */
+  onParagraphTranslation?: (translations: { id: string; translation: string }[]) => void;
+  /**
    * 取消信号（可选）
    */
   signal?: AbortSignal;
@@ -51,15 +56,27 @@ export interface TranslationServiceOptions {
    */
   bookId?: string;
   /**
+   * 章节标题（可选），如果提供，将一起翻译
+   */
+  chapterTitle?: string;
+  /**
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
   aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => string;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => void;
-    appendThinkingMessage: (id: string, text: string) => void;
-    removeTask: (id: string) => void;
+    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
+    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
+    appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
+}
+
+export interface TranslationResult {
+  text: string;
+  taskId?: string;
+  paragraphTranslations?: { id: string; translation: string }[];
+  titleTranslation?: string;
+  actions?: ActionInfo[];
 }
 
 /**
@@ -68,6 +85,136 @@ export interface TranslationServiceOptions {
  */
 export class TranslationService {
   static readonly CHUNK_SIZE = 1500;
+  // 重复字符检测配置
+  private static readonly REPEAT_THRESHOLD = 80; // 连续重复字符的阈值
+  private static readonly REPEAT_CHECK_WINDOW = 100; // 检查窗口大小（最近N个字符）
+
+  /**
+   * 检查文本是否只包含符号（不是真正的文本内容）
+   * @param text 要检查的文本
+   * @returns 如果只包含符号，返回true
+   */
+  private static isOnlySymbols(text: string): boolean {
+    if (!text || text.trim().length === 0) {
+      return true;
+    }
+
+    // 移除所有空白字符
+    const trimmed = text.trim();
+
+    // 检查是否只包含标点符号、数字、特殊符号等
+    // 允许的字符：日文假名、汉字、英文字母
+    const hasContent =
+      /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF\u20000-\u2A6DFa-zA-Z]/.test(trimmed);
+
+    return !hasContent;
+  }
+
+  /**
+   * 检测文本中是否有过多的重复字符（AI降级检测）
+   * @param text 要检测的文本（翻译结果）
+   * @param originalText 原文（用于比较，如果原文也有重复则不认为是降级）
+   * @returns 如果检测到重复，返回true
+   */
+  private static detectRepeatingCharacters(text: string, originalText?: string): boolean {
+    if (!text || text.length < this.REPEAT_CHECK_WINDOW) {
+      return false;
+    }
+
+    // 检查最近N个字符
+    const recentText = text.slice(-this.REPEAT_CHECK_WINDOW);
+
+    // 检查是否有单个字符重复超过阈值
+    for (let i = 0; i < recentText.length; i++) {
+      const char = recentText[i];
+      if (!char) continue;
+
+      // 计算从当前位置开始的连续重复次数
+      let repeatCount = 1;
+      for (let j = i + 1; j < recentText.length; j++) {
+        if (recentText[j] === char) {
+          repeatCount++;
+        } else {
+          break;
+        }
+      }
+
+      // 如果连续重复超过阈值，检查原文是否也有类似重复
+      if (repeatCount >= this.REPEAT_THRESHOLD) {
+        // 如果提供了原文，检查原文中是否也有类似的重复
+        if (originalText) {
+          const originalRecent = originalText.slice(-this.REPEAT_CHECK_WINDOW);
+          let originalRepeatCount = 1;
+          for (let j = 1; j < originalRecent.length; j++) {
+            if (originalRecent[j] === originalRecent[j - 1]) {
+              originalRepeatCount++;
+            } else {
+              break;
+            }
+          }
+          // 如果原文也有类似的重复，不认为是降级
+          if (originalRepeatCount >= this.REPEAT_THRESHOLD * 0.5) {
+            continue;
+          }
+        }
+        console.warn(
+          `[TranslationService] 检测到AI降级：字符 "${char}" 连续重复 ${repeatCount} 次`,
+        );
+        return true;
+      }
+    }
+
+    // 检查是否有短模式重复（如 "ababab..." 或 "abcabc..."）
+    // 检查2-5字符的模式
+    const PATTERN_REPEAT_THRESHOLD = 30; // 模式重复阈值
+    for (let patternLen = 2; patternLen <= 5; patternLen++) {
+      if (recentText.length < patternLen * 10) continue;
+
+      const pattern = recentText.slice(-patternLen);
+      let patternRepeatCount = 1;
+
+      // 检查模式是否重复
+      for (let i = recentText.length - patternLen * 2; i >= 0; i -= patternLen) {
+        const candidate = recentText.slice(i, i + patternLen);
+        if (candidate === pattern) {
+          patternRepeatCount++;
+        } else {
+          break;
+        }
+      }
+
+      // 如果模式重复超过阈值，检查原文是否也有类似重复
+      if (patternRepeatCount >= PATTERN_REPEAT_THRESHOLD) {
+        // 如果提供了原文，检查原文中是否也有类似的重复模式
+        if (originalText) {
+          const originalRecent = originalText.slice(-this.REPEAT_CHECK_WINDOW);
+          let originalPatternRepeatCount = 1;
+
+          // 检查原文中是否有相同的模式重复
+          const originalPattern = originalRecent.slice(-patternLen);
+          for (let i = originalRecent.length - patternLen * 2; i >= 0; i -= patternLen) {
+            const candidate = originalRecent.slice(i, i + patternLen);
+            if (candidate === originalPattern) {
+              originalPatternRepeatCount++;
+            } else {
+              break;
+            }
+          }
+
+          // 如果原文也有类似的重复（至少是翻译的一半），不认为是降级
+          if (originalPatternRepeatCount >= PATTERN_REPEAT_THRESHOLD * 0.5) {
+            continue;
+          }
+        }
+        console.warn(
+          `[TranslationService] 检测到AI降级：模式 "${pattern}" 重复 ${patternRepeatCount} 次`,
+        );
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   /**
    * 获取术语 CRUD 工具定义
@@ -222,7 +369,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'create_character',
-          description: '创建新角色设定。当翻译过程中遇到新的角色时，可以使用此工具创建角色记录。',
+          description:
+            '创建新角色设定。⚠️ 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。',
           parameters: {
             type: 'object',
             properties: {
@@ -242,6 +390,10 @@ export class TranslationService {
               description: {
                 type: 'string',
                 description: '角色的详细描述（可选）',
+              },
+              speaking_style: {
+                type: 'string',
+                description: '角色的说话口吻（可选）。例如：傲娇、古风、口癖(desu/nya)等',
               },
               aliases: {
                 type: 'array',
@@ -313,6 +465,10 @@ export class TranslationService {
               description: {
                 type: 'string',
                 description: '新的描述（可选，设置为空字符串可删除描述）',
+              },
+              speaking_style: {
+                type: 'string',
+                description: '新的说话口吻（可选，设置为空字符串可删除口吻）',
               },
               aliases: {
                 type: 'array',
@@ -706,7 +862,7 @@ export class TranslationService {
         }
 
         case 'create_character': {
-          const { name, translation, sex, description, aliases } = args;
+          const { name, translation, sex, description, speaking_style, aliases } = args;
           if (!name || !translation) {
             throw new Error('角色名称和翻译不能为空');
           }
@@ -716,6 +872,7 @@ export class TranslationService {
             translation: string;
             sex?: 'male' | 'female' | 'other';
             description?: string;
+            speakingStyle?: string;
             aliases?: Array<{ name: string; translation: string }>;
           } = {
             name,
@@ -724,6 +881,7 @@ export class TranslationService {
 
           if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
           if (description) characterData.description = description;
+          if (speaking_style) characterData.speakingStyle = speaking_style;
           if (aliases)
             characterData.aliases = aliases as Array<{ name: string; translation: string }>;
 
@@ -753,6 +911,7 @@ export class TranslationService {
                 translation: character.translation.translation,
                 sex: character.sex,
                 description: character.description,
+                speaking_style: character.speakingStyle,
                 aliases: character.aliases?.map((alias) => ({
                   name: alias.name,
                   translation: alias.translation.translation,
@@ -801,6 +960,7 @@ export class TranslationService {
                 translation: character.translation.translation,
                 sex: character.sex,
                 description: character.description,
+                speaking_style: character.speakingStyle,
                 aliases: character.aliases?.map((alias) => ({
                   name: alias.name,
                   translation: alias.translation.translation,
@@ -812,7 +972,8 @@ export class TranslationService {
         }
 
         case 'update_character': {
-          const { character_id, name, translation, sex, description, aliases } = args;
+          const { character_id, name, translation, sex, description, speaking_style, aliases } =
+            args;
           if (!character_id) {
             throw new Error('角色 ID 不能为空');
           }
@@ -822,6 +983,7 @@ export class TranslationService {
             sex?: 'male' | 'female' | 'other' | undefined;
             translation?: string;
             description?: string;
+            speakingStyle?: string;
             aliases?: Array<{ name: string; translation: string }>;
           } = {};
 
@@ -836,6 +998,9 @@ export class TranslationService {
           }
           if (description !== undefined) {
             updates.description = description;
+          }
+          if (speaking_style !== undefined) {
+            updates.speakingStyle = speaking_style;
           }
           if (aliases !== undefined) {
             updates.aliases = aliases as Array<{ name: string; translation: string }>;
@@ -868,6 +1033,7 @@ export class TranslationService {
                 translation: character.translation.translation,
                 sex: character.sex,
                 description: character.description,
+                speaking_style: character.speakingStyle,
                 aliases: character.aliases?.map((alias) => ({
                   name: alias.name,
                   translation: alias.translation.translation,
@@ -930,6 +1096,7 @@ export class TranslationService {
                 translation: char.translation.translation,
                 sex: char.sex,
                 description: char.description,
+                speaking_style: char.speakingStyle,
                 aliases: char.aliases?.map((alias) => ({
                   name: alias.name,
                   translation: alias.translation.translation,
@@ -1117,14 +1284,32 @@ export class TranslationService {
     content: Paragraph[],
     model: AIModel,
     options?: TranslationServiceOptions,
-  ): Promise<{ text: string; taskId?: string }> {
-    console.debug('[TranslationService] 开始翻译', {
+  ): Promise<TranslationResult> {
+    console.log('[TranslationService] 开始翻译', {
       contentLength: content?.length,
       modelName: model.name,
       bookId: options?.bookId,
     });
 
-    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onAction } = options || {};
+    const {
+      onChunk,
+      onProgress,
+      signal,
+      bookId,
+      chapterTitle,
+      aiProcessingStore,
+      onParagraphTranslation,
+    } = options || {};
+    const actions: ActionInfo[] = [];
+    let titleTranslation: string | undefined;
+
+    // 内部 action 处理函数，收集 actions 并调用外部 callback
+    const handleAction = (action: ActionInfo) => {
+      actions.push(action);
+      if (options?.onAction) {
+        options.onAction(action);
+      }
+    };
 
     if (!content || content.length === 0) {
       throw new Error('要翻译的内容不能为空');
@@ -1139,7 +1324,7 @@ export class TranslationService {
     let abortController: AbortController | undefined;
 
     if (aiProcessingStore) {
-      taskId = aiProcessingStore.addTask({
+      taskId = await aiProcessingStore.addTask({
         type: 'translation',
         modelName: model.name,
         status: 'thinking',
@@ -1152,8 +1337,30 @@ export class TranslationService {
       abortController = task?.abortController;
     }
 
-    // 使用任务的 abortController 或提供的 signal
-    const finalSignal = signal || abortController?.signal;
+    // 创建一个合并的 AbortSignal，同时监听 signal 和 task.abortController
+    const internalController = new AbortController();
+    const finalSignal = internalController.signal;
+
+    // 监听信号并触发内部 controller
+    const abortHandler = () => {
+      internalController.abort();
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        internalController.abort();
+      } else {
+        signal.addEventListener('abort', abortHandler);
+      }
+    }
+
+    if (abortController) {
+      if (abortController.signal.aborted) {
+        internalController.abort();
+      } else {
+        abortController.signal.addEventListener('abort', abortHandler);
+      }
+    }
 
     try {
       const service = AIServiceFactory.getService(model.provider);
@@ -1172,31 +1379,155 @@ export class TranslationService {
       // 1. 系统提示词
       const systemPrompt =
         '你是一个专业的日轻小说翻译助手，擅长将日语小说翻译成流畅、优美的简体中文。\n' +
+        '\n' +
+        '【工具使用说明】\n' +
         '我会提供必要的工具（CRUD 术语/角色设定、查询段落等）来辅助你的翻译工作。\n' +
-        '你可以在需要时使用这些工具来查询、创建、更新或删除术语和角色设定。\n' +
-        '重要提示：你可以随时使用工具来获取更多关于术语、角色或段落的上下文信息，以确保翻译的准确性。\n' +
-        '特别是 "find_paragraph_by_keyword" 工具，你可以用它来搜索关键词在之前段落中的翻译，以保持用词一致。\n' +
-        '在决定是否添加新术语或角色时，可以使用 "get_occurrences_by_keywords" 工具查询其在全文中的出现频率。\n' +
-        '请注意：只在确实需要时才添加新术语（例如具有特殊含义的词汇），不要添加仅由汉字组成且无特殊含义的普通词汇。\n' +
-        '对于不确定的术语，务必先查询或查看上下文（使用 get_previous_paragraphs/get_next_paragraphs）。\n' +
-        '每次我给你一段文本（可能包含段落ID），你需要：\n' +
-        '1. 分析文本，如果发现可能的术语或角色，或者需要更多上下文，可以使用工具进行确认或查询。\n' +
-        '2. 将文本翻译成简体中文。\n' +
-        '3. 返回翻译结果，格式为 JSON：{ "translation": "翻译后的文本" }。\n' +
-        '4. 提取文本中的术语和角色，如果需要，使用工具进行确认或查询。\n' +
-        '5. 在每段翻译后，如果你发现需要更新术语表或角色设定，请使用工具进行操作。\n' +
+        '重要：在每个翻译块中，我会自动提供【相关术语参考】和【相关角色参考】，这些是当前段落中出现的术语和角色。\n' +
+        '- 你可以直接使用这些提供的术语和角色，无需调用工具查询。\n' +
+        '- 如果你需要查看所有术语或所有角色（而不仅仅是当前段落相关的），可以使用 list_terms 或 list_characters 工具。\n' +
+        '- 你可以随时使用工具来创建、更新或删除术语和角色设定。\n' +
+        '- ⚠️ 术语表和角色设定表必须严格分离：术语表中绝对不能有角色（人名），角色表中绝对不能有术语。如果发现混淆，必须立即纠正。\n' +
+        '\n' +
+        '【其他可用工具】\n' +
+        '- "find_paragraph_by_keyword" 工具：搜索关键词在之前段落中的翻译，以保持用词一致。\n' +
+        '- "get_occurrences_by_keywords" 工具：查询关键词在全文中的出现频率，帮助决定是否添加新术语或删除无用术语。\n' +
+        '- "get_previous_paragraphs" / "get_next_paragraphs" 工具：查看上下文段落，确保翻译准确性。\n' +
+        '\n' +
+        '【⚠️ 术语和角色严格分离 - 必须遵守】\n' +
+        '术语表和角色设定表是完全独立的两个表，绝对不能混淆！\n' +
+        '- 术语表中绝对不能包含任何角色名称或角色相关信息。\n' +
+        '- 角色设定表中绝对不能包含任何术语。\n' +
+        '- 如果你发现术语表中有角色（人名），必须立即使用 delete_term 工具删除它，然后使用 create_character 工具在角色表中创建。\n' +
+        '- 如果你发现角色表中有术语，必须立即使用 delete_character 工具删除它，然后使用 create_term 工具在术语表中创建。\n' +
+        '- 在每次翻译前，请检查提供的【相关术语参考】和【相关角色参考】，确保它们分类正确。如果发现错误，必须立即纠正。\n' +
+        '\n' +
+        '【术语管理原则 - 必须严格执行】\n' +
+        '1. 创建新术语：\n' +
+        '   - 只在确实需要时才添加新术语（例如具有特殊含义的词汇、专有名词、特殊概念等）。\n' +
+        '   - 不要添加仅由汉字组成且无特殊含义的普通词汇。\n' +
+        '   - 对于不确定的术语，务必先使用 get_occurrences_by_keywords 查询出现频率，或使用 find_paragraph_by_keyword 查看上下文。\n' +
+        '   - 人名、角色名称必须放在角色设定表中，不能放在术语表中。\n' +
+        '\n' +
+        '2. 更新空术语（必须执行）：\n' +
+        '   - 如果发现术语的翻译（translation）为空、空白或只有占位符（如"待翻译"、"TODO"等），必须立即使用 update_term 工具补充翻译。\n' +
+        '   - 如果发现术语的描述（description）为空但应该补充，可以使用 update_term 工具添加描述。\n' +
+        '   - 在翻译过程中，如果遇到术语但发现其翻译为空，必须根据上下文和翻译结果，使用 update_term 工具更新该术语的翻译。\n' +
+        '   - 优先使用 get_term 工具查询术语的当前状态，确认是否需要更新。\n' +
+        '\n' +
+        '3. 删除无用术语（必须执行）：\n' +
+        '   - 在翻译过程中，如果发现术语表中存在以下类型的无用术语，必须立即使用 delete_term 工具删除：\n' +
+        '     * 非固有名词、无特殊含义的普通词汇（如"的"、"了"、"在"等常见助词、介词）\n' +
+        '     * 仅由汉字组成且无特殊含义的普通词汇（如"学校"、"学生"等通用词汇）\n' +
+        '     * 出现次数少于3次的词汇（使用 get_occurrences_by_keywords 工具查询确认）\n' +
+        '     * 误分类的角色名称（人名），应删除后使用 create_character 在角色表中创建\n' +
+        '     * 重复的术语（相同含义但不同名称）\n' +
+        '   - 在每次翻译块处理前，建议使用 list_terms 工具查看所有术语，识别并删除无用术语。\n' +
+        '   - 如果提供的【相关术语参考】中包含无用术语，在翻译完成后应删除它们。\n' +
+        '\n' +
+        '4. 术语维护流程：\n' +
+        '   - 翻译前：检查【相关术语参考】，确认术语分类正确（术语/角色分离）。\n' +
+        '   - 翻译中：如发现术语翻译为空，立即更新；如发现无用术语，标记待删除。\n' +
+        '   - 翻译后：删除所有标记的无用术语，确保术语表干净整洁。\n' +
+        '\n' +
+        '【角色管理原则 - 必须严格执行】\n' +
+        '1. 创建新角色（⚠️ 必须检查是否为别名）：\n' +
+        '   - 当遇到新的人名或角色名称时，⚠️ 必须先使用 list_characters 或 get_character 工具检查该角色是否已存在。\n' +
+        '   - ⚠️ 如果发现该名称实际上是已存在角色的别名（例如：已存在"田中太郎"，新遇到"太郎"或"田中"），必须使用 update_character 工具将该名称添加为已存在角色的别名，而不是创建新角色。\n' +
+        '   - ⚠️ 如果发现已存在重复的角色记录（相同角色但不同名称），必须删除重复的角色，并将其中一个名称添加为另一个角色的别名。\n' +
+        '   - 只有在确认是真正的新角色（不是别名，也不存在重复）时，才使用 create_character 工具创建角色记录。\n' +
+        '   - 角色名称必须放在角色设定表中，不能放在术语表中。\n' +
+        '   - 创建角色时，应尽可能提供完整的翻译、性别、描述、说话口吻和别名信息。\n' +
+        '\n' +
+        '2. 更新空角色翻译（必须执行）：\n' +
+        '   - 如果发现角色的翻译（translation）为空、空白或只有占位符（如"待翻译"、"TODO"等），必须立即使用 update_character 工具补充翻译。\n' +
+        '   - 在翻译过程中，如果遇到角色但发现其翻译为空，必须根据上下文和翻译结果，使用 update_character 工具更新该角色的翻译。\n' +
+        '   - 优先使用 get_character 工具查询角色的当前状态，确认是否需要更新。\n' +
+        '\n' +
+        '3. 更新角色别名（必须执行）：\n' +
+        '   - 在翻译过程中，如果发现文本中出现了某个角色的别名（例如：角色原名是"田中太郎"，但文本中出现了"太郎"或"田中"等称呼），必须使用 update_character 工具将该别名添加到角色的别名列表中。\n' +
+        '   - 如果发现别名已经存在但翻译为空或不正确，必须使用 update_character 工具更新别名的翻译。\n' +
+        '   - 别名必须包含日文原文和中文翻译，确保翻译一致性。\n' +
+        '   - 使用 get_character 工具查询角色当前信息，确认别名是否已存在，避免重复添加。\n' +
+        '\n' +
+        '4. 更新角色描述（必须执行）：\n' +
+        '   - 在翻译过程中，如果发现角色的描述（description）为空但应该补充（例如：文本中提到了角色的身份、关系、特征等重要信息），必须使用 update_character 工具添加或更新描述。\n' +
+        '   - 如果发现现有描述不完整或不准确，应根据文本中的新信息使用 update_character 工具更新描述。\n' +
+        '   - 描述应包含角色的重要特征、身份、关系等信息，有助于后续翻译的一致性。\n' +
+        '\n' +
+        '5. 更新角色说话口吻（必须执行）：\n' +
+        '   - 在翻译过程中，如果发现角色的说话口吻（speaking_style）为空但应该补充（例如：角色有独特的语气、口癖、古风、方言等），必须使用 update_character 工具添加或更新说话口吻。\n' +
+        '   - 如果发现现有说话口吻不完整或不准确，应根据文本中的新信息使用 update_character 工具更新。\n' +
+        '   - 说话口吻有助于保持角色个性的一致性。\n' +
+        '\n' +
+        '6. 删除无用角色和合并重复角色（必须执行）：\n' +
+        '   - 如果发现角色表中存在误分类的术语（非人名），必须使用 delete_character 删除，然后使用 create_term 在术语表中创建。\n' +
+        '   - ⚠️ 如果发现重复的角色记录（相同角色但不同名称），必须删除其中一个角色，并将被删除角色的名称添加为保留角色的别名。例如：如果存在"田中太郎"和"太郎"两个角色记录，应删除"太郎"，并将"太郎"添加为"田中太郎"的别名。\n' +
+        '   - ⚠️ 如果发现新创建的角色实际上是已存在角色的别名，必须立即删除新创建的角色，并使用 update_character 将名称添加为已存在角色的别名。\n' +
+        '\n' +
+        '7. 角色维护流程：\n' +
+        '   - 翻译前：检查【相关角色参考】，确认角色分类正确（术语/角色分离）。\n' +
+        '   - 翻译中：\n' +
+        '     * ⚠️ 创建新角色前，必须先检查是否已存在该角色或是否为已存在角色的别名。\n' +
+        '     * 如发现角色翻译为空，立即更新。\n' +
+        '     * 如发现别名出现，立即添加。\n' +
+        '     * 如发现描述或说话口吻需要补充，立即更新。\n' +
+        '     * 如发现重复角色，删除重复项并添加为别名。\n' +
+        '   - 翻译后：检查所有角色信息是否完整，确保翻译、别名、描述、说话口吻都已正确更新；检查是否有重复角色需要合并。\n' +
+        '\n' +
+        '【重要格式要求】\n' +
+        '每次我给你一段文本（包含段落ID，格式为 [ID: xxx] 原文），你需要：\n' +
+        '1. 如果提供了【章节标题】，请先翻译章节标题，然后在 JSON 的 "titleTranslation" 字段中返回标题翻译。\n' +
+        '2. 检查【相关术语参考】和【相关角色参考】：\n' +
+        '   - 确认术语和角色分类正确（术语/角色分离）\n' +
+        '   - 检查是否有空翻译的术语或角色，如有则使用工具更新\n' +
+        '   - ⚠️ 创建新角色前，必须先使用 list_characters 检查是否已存在该角色或是否为已存在角色的别名\n' +
+        '   - 检查角色是否有别名出现，如有则使用 update_character 添加别名\n' +
+        '   - 检查是否有重复角色需要合并（删除重复项并添加为别名）\n' +
+        '   - 检查角色描述和说话口吻是否需要补充或更新，如有则使用 update_character 更新\n' +
+        '   - 识别无用术语，在翻译完成后删除\n' +
+        '3. 分析文本，使用提供的【相关术语参考】和【相关角色参考】进行翻译。\n' +
+        '4. 将文本翻译成简体中文，严格保证每个段落一一对应（1个原文段落 = 1个翻译段落）。\n' +
+        '5. 返回格式必须是有效的 JSON 对象，结构如下：\n' +
+        '   {\n' +
+        '     "titleTranslation": "章节标题的翻译（如果有标题）",\n' +
+        '     "translation": "完整的翻译文本（所有段落合并，段落之间用两个换行符分隔）",\n' +
+        '     "paragraphs": [\n' +
+        '       { "id": "段落ID1", "translation": "段落1的翻译" },\n' +
+        '       { "id": "段落ID2", "translation": "段落2的翻译" },\n' +
+        '       ...\n' +
+        '     ]\n' +
+        '   }\n' +
+        '6. 如果提供了章节标题，必须在 JSON 中包含 "titleTranslation" 字段。\n' +
+        '7. paragraphs 数组中的每个对象必须包含 "id" 和 "translation" 字段。\n' +
+        '8. paragraphs 数组中的段落ID必须与原文中的段落ID完全一致，且数量必须相等（1:1对应）。\n' +
+        '9. translation 字段包含所有段落的合并文本，段落之间用两个换行符（\\n\\n）分隔。\n' +
+        '10. 在翻译过程中，如果发现需要创建、更新或删除术语/角色，请使用相应的工具进行操作。\n' +
+        '11. ⚠️ 在创建或更新术语/角色前，必须检查它们是否在正确的表中。如果发现术语表中有角色（人名），必须立即删除并移到角色表；反之亦然。\n' +
+        '12. ⚠️ 在创建新角色前，必须使用 list_characters 或 get_character 检查该角色是否已存在，或是否为已存在角色的别名。如果是别名，应使用 update_character 添加为别名，而不是创建新角色。\n' +
+        '13. ⚠️ 翻译完成后，必须检查并删除所有无用术语，更新所有空翻译的术语；同时检查并更新所有空翻译的角色、添加出现的别名、补充或更新角色描述和说话口吻；检查并合并重复角色（删除重复项并添加为别名）。\n' +
+        '\n' +
         '请确保翻译风格符合轻小说习惯，自然流畅。';
 
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
       const initialUserPrompt =
-        '我将开始提供小说段落。请准备好。\n' +
-        '在每段翻译后，如果你发现需要更新术语表或角色设定，请使用工具进行操作。\n' +
+        '我将开始提供小说段落。请按照系统提示中的要求进行翻译。\n' +
+        '\n' +
+        '请记住：\n' +
+        '- 检查并更新空翻译的术语和角色\n' +
+        '- 删除无用术语\n' +
+        '- ⚠️ 创建新角色前，必须先检查是否已存在该角色或是否为已存在角色的别名\n' +
+        '- 当发现角色别名出现时，使用 update_character 添加别名\n' +
+        '- 当发现重复角色时，删除重复项并添加为别名\n' +
+        '- 当角色描述或说话口吻需要补充时，使用 update_character 更新\n' +
+        '- 确保术语和角色严格分离\n' +
+        '- 返回符合格式要求的 JSON\n' +
+        '\n' +
         '准备好了吗？';
 
       if (aiProcessingStore && taskId) {
-        aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
+        void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
       }
 
       // 切分文本
@@ -1233,7 +1564,7 @@ export class TranslationService {
         const relevantTerms =
           bookData.terminologies?.filter((t) => textContent.includes(t.name)) || [];
         if (relevantTerms.length > 0) {
-          console.debug(
+          console.log(
             '[TranslationService] 发现相关术语:',
             relevantTerms.map((t) => t.name),
           );
@@ -1255,7 +1586,7 @@ export class TranslationService {
               textContent.includes(c.name) || c.aliases.some((a) => textContent.includes(a.name)),
           ) || [];
         if (relevantCharacters.length > 0) {
-          console.debug(
+          console.log(
             '[TranslationService] 发现相关角色:',
             relevantCharacters.map((c) => c.name),
           );
@@ -1264,7 +1595,7 @@ export class TranslationService {
             relevantCharacters
               .map(
                 (c) =>
-                  `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}${c.description ? ` (${c.description})` : ''}`,
+                  `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}${c.description ? ` (${c.description})` : ''}${c.speakingStyle ? ` [口吻: ${c.speakingStyle}]` : ''}`,
               )
               .join('\n'),
           );
@@ -1274,6 +1605,11 @@ export class TranslationService {
       };
 
       for (const paragraph of content) {
+        // 跳过空段落（原始文本为空或只有空白字符）
+        if (!paragraph.text || paragraph.text.trim().length === 0) {
+          continue;
+        }
+
         // 格式化段落：[ID: {id}] {text}
         const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n\n`;
 
@@ -1306,16 +1642,23 @@ export class TranslationService {
         });
       }
 
-      console.debug('[TranslationService] 文本已切分为块:', chunks.length);
+      console.log('[TranslationService] 文本已切分为块:', chunks.length);
 
       let translatedText = '';
+      const paragraphTranslations: { id: string; translation: string }[] = [];
 
-      // 3. 循环处理每个块
+      // 3. 循环处理每个块（带重试机制）
+      const MAX_RETRIES = 2; // 最大重试次数
       for (let i = 0; i < chunks.length; i++) {
+        // 检查是否已取消
+        if (finalSignal.aborted) {
+          throw new Error('请求已取消');
+        }
+
         const chunk = chunks[i];
         if (!chunk) continue;
 
-        console.debug(`[TranslationService] 正在处理第 ${i + 1}/${chunks.length} 块`, {
+        console.log(`[TranslationService] 正在处理第 ${i + 1}/${chunks.length} 块`, {
           paragraphCount: chunk.paragraphIds?.length,
           contextLength: chunk.context?.length,
           textLength: chunk.text.length,
@@ -1325,7 +1668,7 @@ export class TranslationService {
         const chunkContext = chunk.context || '';
 
         if (aiProcessingStore && taskId) {
-          aiProcessingStore.updateTask(taskId, {
+          void aiProcessingStore.updateTask(taskId, {
             message: `正在翻译第 ${i + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
@@ -1348,131 +1691,336 @@ export class TranslationService {
 
         // 构建当前消息
         let content = '';
+        const maintenanceReminder =
+          '\n⚠️ 提醒：创建新角色前必须先检查是否已存在该角色或是否为已存在角色的别名；检查并更新空翻译的术语和角色，删除无用术语；当发现角色别名出现时添加别名，当发现重复角色时删除重复项并添加为别名；当角色描述或说话口吻需要补充时更新。\n';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}`;
+          // 如果有标题，在第一个块中包含标题翻译
+          const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkContext}${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容：\n\n${chunkContext}${chunkText}`;
+          content = `接下来的内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
         }
 
-        history.push({ role: 'user', content });
-
-        let currentTurnCount = 0;
-        const MAX_TURNS = 5; // 防止工具调用死循环
+        // 重试循环
+        let retryCount = 0;
+        let chunkProcessed = false;
         let finalResponseText = '';
 
-        // 工具调用循环
-        while (currentTurnCount < MAX_TURNS) {
-          currentTurnCount++;
-
-          const request: TextGenerationRequest = {
-            messages: history,
-          };
-
-          if (tools.length > 0) {
-            request.tools = tools;
-          }
-
-          // 调用 AI
-          let chunkReceived = false;
-          console.debug('[TranslationService] 发送请求给 AI', {
-            messagesCount: request.messages?.length,
-            toolsCount: request.tools?.length,
-          });
-
-          const result = await service.generateText(config, request, (c) => {
-            // 处理流式输出
-            if (c.text) {
-              if (!chunkReceived && aiProcessingStore && taskId) {
-                chunkReceived = true;
+        while (retryCount <= MAX_RETRIES && !chunkProcessed) {
+          try {
+            // 如果是重试，移除上次失败的消息
+            if (retryCount > 0) {
+              // 移除上次的用户消息和助手回复（如果有）
+              if (history.length > 0 && history[history.length - 1]?.role === 'user') {
+                history.pop();
               }
-              // 累积思考消息
+              if (history.length > 0 && history[history.length - 1]?.role === 'assistant') {
+                history.pop();
+              }
+
+              console.warn(
+                `[TranslationService] 检测到AI降级，重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+              );
+
               if (aiProcessingStore && taskId) {
-                aiProcessingStore.appendThinkingMessage(taskId, c.text);
+                void aiProcessingStore.updateTask(taskId, {
+                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+                  status: 'processing',
+                });
               }
             }
-            return Promise.resolve();
-          });
 
-          // 检查是否有工具调用
-          if (result.toolCalls && result.toolCalls.length > 0) {
-            console.debug('[TranslationService] AI 请求调用工具:', result.toolCalls);
-            // 将助手的回复（包含工具调用）添加到历史
-            history.push({
-              role: 'assistant',
-              content: result.text || null,
-              tool_calls: result.toolCalls,
-            });
+            history.push({ role: 'user', content });
 
-            // 执行工具
-            for (const toolCall of result.toolCalls) {
-              if (aiProcessingStore && taskId) {
-                aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `\n[调用工具: ${toolCall.function.name}]\n`,
-                );
+            let currentTurnCount = 0;
+            const MAX_TURNS = 5; // 防止工具调用死循环
+
+            // 工具调用循环
+            while (currentTurnCount < MAX_TURNS) {
+              currentTurnCount++;
+
+              const request: TextGenerationRequest = {
+                messages: history,
+              };
+
+              if (tools.length > 0) {
+                request.tools = tools;
               }
 
-              // 执行工具
-              const toolResult = await TranslationService.handleToolCall(
-                toolCall,
-                bookId || '',
-                onAction,
-              );
-              console.debug('[TranslationService] 工具执行结果:', toolResult);
-
-              // 添加工具结果到历史
-              history.push({
-                role: 'tool',
-                content: toolResult.content,
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name,
+              // 调用 AI
+              let chunkReceived = false;
+              let accumulatedText = ''; // 用于检测重复字符
+              console.log('[TranslationService] 发送请求给 AI', {
+                messagesCount: request.messages?.length,
+                toolsCount: request.tools?.length,
+                retryCount,
               });
 
-              if (aiProcessingStore && taskId) {
-                aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-                );
+              const result = await service.generateText(config, request, (c) => {
+                // 处理流式输出
+                if (c.text) {
+                  if (!chunkReceived && aiProcessingStore && taskId) {
+                    chunkReceived = true;
+                  }
+
+                  // 累积文本用于检测重复字符
+                  accumulatedText += c.text;
+
+                  // 检测重复字符（AI降级检测），传入原文进行比较
+                  if (this.detectRepeatingCharacters(accumulatedText, chunkText)) {
+                    throw new Error('AI降级检测：检测到重复字符，停止翻译');
+                  }
+
+                  // 累积思考消息
+                  if (aiProcessingStore && taskId) {
+                    void aiProcessingStore.appendThinkingMessage(taskId, c.text);
+                  }
+                }
+                return Promise.resolve();
+              });
+
+              // 检查是否有工具调用
+              if (result.toolCalls && result.toolCalls.length > 0) {
+                console.log('[TranslationService] AI 请求调用工具:', result.toolCalls);
+                // 将助手的回复（包含工具调用）添加到历史
+                history.push({
+                  role: 'assistant',
+                  content: result.text || null,
+                  tool_calls: result.toolCalls,
+                });
+
+                // 执行工具
+                for (const toolCall of result.toolCalls) {
+                  if (aiProcessingStore && taskId) {
+                    void aiProcessingStore.appendThinkingMessage(
+                      taskId,
+                      `\n[调用工具: ${toolCall.function.name}]\n`,
+                    );
+                  }
+
+                  // 执行工具
+                  const toolResult = await TranslationService.handleToolCall(
+                    toolCall,
+                    bookId || '',
+                    handleAction,
+                  );
+                  console.log('[TranslationService] 工具执行结果:', toolResult);
+
+                  // 添加工具结果到历史
+                  history.push({
+                    role: 'tool',
+                    content: toolResult.content,
+                    tool_call_id: toolCall.id,
+                    name: toolCall.function.name,
+                  });
+
+                  if (aiProcessingStore && taskId) {
+                    void aiProcessingStore.appendThinkingMessage(
+                      taskId,
+                      `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
+                    );
+                  }
+                }
+                // 继续循环，将工具结果发送给 AI
+              } else {
+                console.log('[TranslationService] 收到 AI 响应 (无工具调用)');
+                // 没有工具调用，这是最终回复
+                finalResponseText = result.text;
+
+                // 再次检测最终响应中的重复字符，传入原文进行比较
+                if (this.detectRepeatingCharacters(finalResponseText, chunkText)) {
+                  throw new Error('AI降级检测：最终响应中检测到重复字符');
+                }
+
+                history.push({ role: 'assistant', content: finalResponseText });
+                break;
               }
             }
-            // 继续循环，将工具结果发送给 AI
-          } else {
-            console.debug('[TranslationService] 收到 AI 响应 (无工具调用)');
-            // 没有工具调用，这是最终回复
-            finalResponseText = result.text;
-            history.push({ role: 'assistant', content: finalResponseText });
-            break;
-          }
-        }
 
-        // 解析 JSON 响应
-        try {
-          console.debug('[TranslationService] 解析 AI 响应:', finalResponseText);
-          // 尝试提取 JSON
-          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            const data = JSON.parse(jsonStr);
-            if (data.translation) {
-              const chunkTranslation = data.translation;
-              translatedText += chunkTranslation;
-              if (onChunk) {
-                await onChunk({ text: chunkTranslation, done: false });
+            // 标记块已成功处理
+            chunkProcessed = true;
+
+            // 解析 JSON 响应
+            try {
+              console.log('[TranslationService] 解析 AI 响应:', finalResponseText);
+              // 尝试提取 JSON
+              const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
+              let chunkTranslation = '';
+              const extractedTranslations: Map<string, string> = new Map();
+
+              if (jsonMatch) {
+                const jsonStr = jsonMatch[0];
+                try {
+                  const data = JSON.parse(jsonStr);
+
+                  // 如果是第一个块且有标题，提取标题翻译
+                  if (i === 0 && chapterTitle && data.titleTranslation) {
+                    titleTranslation = data.titleTranslation;
+                    console.log('[TranslationService] 提取到标题翻译:', titleTranslation);
+                  }
+
+                  // 优先使用 paragraphs 数组（结构化数据）
+                  if (data.paragraphs && Array.isArray(data.paragraphs)) {
+                    console.log('[TranslationService] 使用 paragraphs 数组解析翻译');
+                    for (const para of data.paragraphs) {
+                      if (para.id && para.translation) {
+                        extractedTranslations.set(para.id, para.translation);
+                      }
+                    }
+
+                    // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
+                    if (data.translation) {
+                      chunkTranslation = data.translation;
+                    } else if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+                      // 从 paragraphs 数组构建完整文本
+                      const orderedTexts: string[] = [];
+                      for (const paraId of chunk.paragraphIds) {
+                        const translation = extractedTranslations.get(paraId);
+                        if (translation) {
+                          orderedTexts.push(translation);
+                        }
+                      }
+                      chunkTranslation = orderedTexts.join('\n\n');
+                    }
+                  } else if (data.translation) {
+                    // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
+                    console.warn(
+                      '[TranslationService] JSON 中未找到 paragraphs 数组，尝试从 translation 字符串中提取',
+                    );
+                    chunkTranslation = data.translation;
+
+                    // 尝试从字符串中提取段落ID（兼容旧格式）
+                    const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
+                    idPattern.lastIndex = 0;
+                    let match;
+                    while ((match = idPattern.exec(chunkTranslation)) !== null) {
+                      const paragraphId = match[1]?.trim();
+                      const translation = match[2]?.trim();
+                      if (paragraphId && translation) {
+                        extractedTranslations.set(paragraphId, translation);
+                      }
+                    }
+                  } else {
+                    console.warn('AI 响应中未找到 translation 或 paragraphs 字段，使用原始文本');
+                    chunkTranslation = finalResponseText;
+                  }
+                } catch (e) {
+                  console.warn('解析 AI 响应 JSON 失败', e);
+                  // JSON 解析失败，回退到原始文本处理
+                  chunkTranslation = finalResponseText;
+                }
+              } else {
+                // 不是 JSON，直接使用原始文本
+                console.warn('[TranslationService] AI 响应不是 JSON 格式，使用原始文本');
+                chunkTranslation = finalResponseText;
               }
-            } else {
-              console.warn('AI 响应中未找到 translation 字段，使用原始文本');
+
+              // 验证：检查当前块中的所有段落是否都有翻译
+              const missingIds: string[] = [];
+              if (chunk.paragraphIds && chunk.paragraphIds.length > 0) {
+                for (const paraId of chunk.paragraphIds) {
+                  if (!extractedTranslations.has(paraId)) {
+                    missingIds.push(paraId);
+                  }
+                }
+              }
+
+              if (missingIds.length > 0) {
+                console.warn(
+                  `[TranslationService] 警告：以下段落ID在翻译结果中缺失: ${missingIds.join(', ')}`,
+                );
+                // 如果缺少段落ID，使用完整翻译文本作为后备方案
+                if (extractedTranslations.size === 0) {
+                  console.warn('[TranslationService] 未找到任何段落ID，将整个翻译文本作为后备方案');
+                  translatedText += chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: chunkTranslation, done: false });
+                  }
+                } else {
+                  // 部分段落有ID，按顺序处理
+                  const orderedTranslations: string[] = [];
+                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
+                  if (chunk.paragraphIds) {
+                    for (const paraId of chunk.paragraphIds) {
+                      const translation = extractedTranslations.get(paraId);
+                      if (translation) {
+                        orderedTranslations.push(translation);
+                        const paraTranslation = { id: paraId, translation };
+                        paragraphTranslations.push(paraTranslation);
+                        chunkParagraphTranslations.push(paraTranslation);
+                      }
+                    }
+                  }
+                  const orderedText = orderedTranslations.join('\n\n');
+                  translatedText += orderedText || chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: orderedText || chunkTranslation, done: false });
+                  }
+                  // 通知段落翻译完成（即使只有部分段落）
+                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
+                    onParagraphTranslation(chunkParagraphTranslations);
+                  }
+                }
+              } else {
+                // 所有段落都有翻译，按顺序组织
+                if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+                  const orderedTranslations: string[] = [];
+                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
+                  for (const paraId of chunk.paragraphIds) {
+                    const translation = extractedTranslations.get(paraId);
+                    if (translation) {
+                      orderedTranslations.push(translation);
+                      const paraTranslation = { id: paraId, translation };
+                      paragraphTranslations.push(paraTranslation);
+                      chunkParagraphTranslations.push(paraTranslation);
+                    }
+                  }
+                  const orderedText = orderedTranslations.join('\n\n');
+                  translatedText += orderedText;
+                  if (onChunk) {
+                    await onChunk({ text: orderedText, done: false });
+                  }
+                  // 通知段落翻译完成
+                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
+                    onParagraphTranslation(chunkParagraphTranslations);
+                  }
+                } else {
+                  // 没有提取到段落翻译，使用完整文本
+                  translatedText += chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: chunkTranslation, done: false });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('解析 AI 响应失败', e);
               translatedText += finalResponseText;
               if (onChunk) await onChunk({ text: finalResponseText, done: false });
             }
-          } else {
-            // 不是 JSON，直接追加
-            translatedText += finalResponseText;
-            if (onChunk) await onChunk({ text: finalResponseText, done: false });
+          } catch (error) {
+            // 检查是否是AI降级错误
+            const isDegradedError =
+              error instanceof Error &&
+              (error.message.includes('AI降级检测') || error.message.includes('重复字符'));
+
+            if (isDegradedError) {
+              retryCount++;
+              if (retryCount > MAX_RETRIES) {
+                // 重试次数用尽，抛出错误
+                console.error(
+                  `[TranslationService] AI降级检测失败，已重试 ${MAX_RETRIES} 次，停止翻译`,
+                );
+                throw new Error(
+                  `AI降级：检测到重复字符，已重试 ${MAX_RETRIES} 次仍失败。请检查AI服务状态或稍后重试。`,
+                );
+              }
+              // 继续重试循环
+              continue;
+            } else {
+              // 其他错误，直接抛出
+              throw error;
+            }
           }
-        } catch (e) {
-          console.warn('解析 AI 响应 JSON 失败', e);
-          translatedText += finalResponseText;
-          if (onChunk) await onChunk({ text: finalResponseText, done: false });
         }
       }
 
@@ -1480,17 +2028,184 @@ export class TranslationService {
         await onChunk({ text: '', done: true });
       }
 
+      // 最终验证：确保所有段落都有翻译（排除原始文本为空的段落或只包含符号的段落）
+      const paragraphsWithText = content.filter((p) => {
+        if (!p.text || p.text.trim().length === 0) {
+          return false;
+        }
+        // 排除只包含符号的段落
+        return !this.isOnlySymbols(p.text);
+      });
+      const allParagraphIds = new Set(paragraphsWithText.map((p) => p.id));
+      const translatedParagraphIds = new Set(paragraphTranslations.map((pt) => pt.id));
+      const missingParagraphIds = Array.from(allParagraphIds).filter(
+        (id) => !translatedParagraphIds.has(id),
+      );
+
+      // 如果有缺失翻译的段落，重新翻译它们
+      if (missingParagraphIds.length > 0) {
+        console.warn(
+          `[TranslationService] 警告：以下段落缺少翻译: ${missingParagraphIds.join(', ')}，将重新翻译`,
+        );
+
+        if (aiProcessingStore && taskId) {
+          void aiProcessingStore.updateTask(taskId, {
+            message: `发现 ${missingParagraphIds.length} 个段落缺少翻译，正在重新翻译...`,
+            status: 'processing',
+          });
+        }
+
+        // 获取需要重新翻译的段落
+        const missingParagraphs = paragraphsWithText.filter((p) =>
+          missingParagraphIds.includes(p.id),
+        );
+
+        // 重新翻译缺失的段落
+        try {
+          const missingChunkText = missingParagraphs
+            .map((p) => `[ID: ${p.id}] ${p.text}\n\n`)
+            .join('');
+          const missingChunkContext = getContext(missingParagraphs, book);
+
+          // 构建翻译请求
+          const retryContent = `以下段落缺少翻译，请为每个段落提供翻译：\n\n${missingChunkContext}${missingChunkText}`;
+          history.push({ role: 'user', content: retryContent });
+
+          let currentTurnCount = 0;
+          const MAX_TURNS = 5;
+          let finalResponseText = '';
+
+          while (currentTurnCount < MAX_TURNS) {
+            currentTurnCount++;
+
+            const request: TextGenerationRequest = {
+              messages: history,
+            };
+
+            if (tools.length > 0) {
+              request.tools = tools;
+            }
+
+            let accumulatedText = '';
+            const result = await service.generateText(config, request, (c) => {
+              if (c.text) {
+                accumulatedText += c.text;
+                if (this.detectRepeatingCharacters(accumulatedText, missingChunkText)) {
+                  throw new Error('AI降级检测：检测到重复字符，停止翻译');
+                }
+                if (aiProcessingStore && taskId) {
+                  void aiProcessingStore.appendThinkingMessage(taskId, c.text);
+                }
+              }
+              return Promise.resolve();
+            });
+
+            if (result.toolCalls && result.toolCalls.length > 0) {
+              history.push({
+                role: 'assistant',
+                content: result.text || null,
+                tool_calls: result.toolCalls,
+              });
+
+              for (const toolCall of result.toolCalls) {
+                if (aiProcessingStore && taskId) {
+                  void aiProcessingStore.appendThinkingMessage(
+                    taskId,
+                    `\n[调用工具: ${toolCall.function.name}]\n`,
+                  );
+                }
+
+                const toolResult = await TranslationService.handleToolCall(
+                  toolCall,
+                  bookId || '',
+                  handleAction,
+                );
+
+                history.push({
+                  role: 'tool',
+                  content: toolResult.content,
+                  tool_call_id: toolCall.id,
+                  name: toolCall.function.name,
+                });
+
+                if (aiProcessingStore && taskId) {
+                  void aiProcessingStore.appendThinkingMessage(
+                    taskId,
+                    `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
+                  );
+                }
+              }
+            } else {
+              finalResponseText = result.text;
+              if (this.detectRepeatingCharacters(finalResponseText, missingChunkText)) {
+                throw new Error('AI降级检测：最终响应中检测到重复字符');
+              }
+              history.push({ role: 'assistant', content: finalResponseText });
+              break;
+            }
+          }
+
+          // 解析重新翻译的结果
+          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
+          const retranslatedParagraphs: { id: string; translation: string }[] = [];
+          if (jsonMatch) {
+            try {
+              const data = JSON.parse(jsonMatch[0]);
+              if (data.paragraphs && Array.isArray(data.paragraphs)) {
+                for (const para of data.paragraphs) {
+                  if (para.id && para.translation && missingParagraphIds.includes(para.id)) {
+                    const paraTranslation = {
+                      id: para.id,
+                      translation: para.translation,
+                    };
+                    // 检查是否已存在，如果存在则更新，否则添加
+                    const existingIndex = paragraphTranslations.findIndex(
+                      (pt) => pt.id === para.id,
+                    );
+                    if (existingIndex >= 0) {
+                      paragraphTranslations[existingIndex] = paraTranslation;
+                    } else {
+                      paragraphTranslations.push(paraTranslation);
+                    }
+                    retranslatedParagraphs.push(paraTranslation);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('[TranslationService] 解析重新翻译结果失败', e);
+            }
+          }
+          // 通知重新翻译的段落完成
+          if (onParagraphTranslation && retranslatedParagraphs.length > 0) {
+            onParagraphTranslation(retranslatedParagraphs);
+          }
+
+          console.log(`[TranslationService] 已重新翻译 ${missingParagraphIds.length} 个缺失的段落`);
+        } catch (error) {
+          console.error('[TranslationService] 重新翻译缺失段落失败', error);
+          // 即使重新翻译失败，也继续执行，至少我们已经记录了警告
+        }
+      } else {
+        console.log(
+          `[TranslationService] 验证通过：所有 ${paragraphsWithText.length} 个有内容的段落都有翻译`,
+        );
+      }
+
       if (aiProcessingStore && taskId) {
-        aiProcessingStore.updateTask(taskId, {
+        void aiProcessingStore.updateTask(taskId, {
           status: 'completed',
           message: '翻译完成',
         });
-        setTimeout(() => {
-          if (taskId) aiProcessingStore.removeTask(taskId);
-        }, 1000);
+        // 不再自动删除任务，保留思考过程供用户查看
       }
 
-      return { text: translatedText, ...(taskId ? { taskId } : {}) };
+      return {
+        text: translatedText,
+        paragraphTranslations,
+        ...(titleTranslation ? { titleTranslation } : {}),
+        actions,
+        ...(taskId ? { taskId } : {}),
+      };
     } catch (error) {
       if (aiProcessingStore && taskId) {
         // 检查是否是取消错误
@@ -1499,18 +2214,26 @@ export class TranslationService {
           (error.message === '请求已取消' || error.message.includes('aborted'));
 
         if (isCancelled) {
-          aiProcessingStore.updateTask(taskId, {
+          void aiProcessingStore.updateTask(taskId, {
             status: 'cancelled',
             message: '已取消',
           });
         } else {
-          aiProcessingStore.updateTask(taskId, {
+          void aiProcessingStore.updateTask(taskId, {
             status: 'error',
             message: error instanceof Error ? error.message : '翻译出错',
           });
         }
       }
       throw error;
+    } finally {
+      // 清理事件监听器
+      if (signal) {
+        signal.removeEventListener('abort', abortHandler);
+      }
+      if (abortController) {
+        abortController.signal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 }

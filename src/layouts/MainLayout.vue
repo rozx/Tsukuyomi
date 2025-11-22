@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, watch, ref } from 'vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
@@ -10,10 +10,95 @@ import { useToastHistory } from 'src/composables/useToastHistory';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 
 const ui = useUiStore();
 const { markAsReadByMessage } = useToastHistory();
 const toast = useToastWithHistory();
+const aiProcessingStore = useAIProcessingStore();
+
+// 任务类型标签映射
+const taskTypeLabels: Record<AIProcessingTask['type'], string> = {
+  translation: '翻译',
+  proofreading: '校对',
+  polishing: '润色',
+  characterExtraction: '角色提取',
+  terminologyExtraction: '术语提取',
+  termsTranslation: '术语翻译',
+  config: '配置获取',
+  other: '其他',
+};
+
+// 跟踪之前的任务状态，用于检测状态变化
+const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
+
+// 监听 AI 任务状态变化
+watch(
+  () => aiProcessingStore.activeTasks,
+  (newTasks, oldTasks) => {
+    // 处理新添加的任务
+    for (const task of newTasks) {
+      const oldTask = previousTasks.value.get(task.id);
+      
+      // 如果是新任务（之前不存在），显示开始通知
+      if (!oldTask && (task.status === 'thinking' || task.status === 'processing')) {
+        const taskTypeLabel = taskTypeLabels[task.type] || task.type;
+        toast.add({
+          severity: 'info',
+          summary: 'AI 任务开始',
+          detail: `${task.modelName} 开始执行${taskTypeLabel}任务`,
+          life: 3000,
+        });
+      }
+      
+      // 如果任务状态发生变化
+      if (oldTask && oldTask.status !== task.status) {
+        const taskTypeLabel = taskTypeLabels[task.type] || task.type;
+        
+        if (task.status === 'completed') {
+          const duration = task.endTime
+            ? Math.floor((task.endTime - task.startTime) / 1000)
+            : 0;
+          const durationText =
+            duration < 60 ? `${duration}秒` : `${Math.floor(duration / 60)}分${duration % 60}秒`;
+          toast.add({
+            severity: 'success',
+            summary: 'AI 任务完成',
+            detail: `${task.modelName} 完成${taskTypeLabel}任务（耗时 ${durationText}）`,
+            life: 3000,
+          });
+        } else if (task.status === 'error') {
+          const errorMessage = task.message || '未知错误';
+          toast.add({
+            severity: 'error',
+            summary: 'AI 任务失败',
+            detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${errorMessage}`,
+            life: 5000,
+          });
+        } else if (task.status === 'cancelled') {
+          toast.add({
+            severity: 'warn',
+            summary: 'AI 任务已取消',
+            detail: `${task.modelName} 的${taskTypeLabel}任务已取消`,
+            life: 3000,
+          });
+        }
+      }
+      
+      // 更新任务记录
+      previousTasks.value.set(task.id, { ...task });
+    }
+    
+    // 清理已移除的任务记录
+    const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    for (const [taskId] of previousTasks.value) {
+      if (!currentTaskIds.has(taskId)) {
+        previousTasks.value.delete(taskId);
+      }
+    }
+  },
+  { deep: true },
+);
 
 // 处理 Toast 关闭事件
 const handleToastClose = (event: any) => {

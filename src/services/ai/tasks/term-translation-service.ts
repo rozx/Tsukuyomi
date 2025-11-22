@@ -31,10 +31,10 @@ export interface TermTranslationServiceOptions {
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
   aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => string;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => void;
-    appendThinkingMessage: (id: string, text: string) => void;
-    removeTask: (id: string) => void;
+    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
+    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
+    appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
 }
@@ -82,7 +82,7 @@ export class TermTranslationService {
     let abortController: AbortController | undefined;
 
     if (aiProcessingStore) {
-      taskId = aiProcessingStore.addTask({
+      taskId = await aiProcessingStore.addTask({
         type: taskType,
         modelName: model.name,
         status: 'thinking',
@@ -114,8 +114,30 @@ export class TermTranslationService {
         ? (model.isDefault.termsTranslation?.temperature ?? 0.7)
         : (model.isDefault.translation?.temperature ?? 0.7);
 
-    // 使用任务的 abortController 或提供的 signal
-    const finalSignal = signal || abortController?.signal;
+    // 创建一个合并的 AbortSignal，同时监听 signal 和 task.abortController
+    const internalController = new AbortController();
+    const finalSignal = internalController.signal;
+
+    // 监听信号并触发内部 controller
+    const abortHandler = () => {
+      internalController.abort();
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        internalController.abort();
+      } else {
+        signal.addEventListener('abort', abortHandler);
+      }
+    }
+
+    if (abortController) {
+      if (abortController.signal.aborted) {
+        internalController.abort();
+      } else {
+        abortController.signal.addEventListener('abort', abortHandler);
+      }
+    }
 
     const config: AIServiceConfig = {
       apiKey: model.apiKey,
@@ -138,7 +160,7 @@ export class TermTranslationService {
         // 如果使用了任务管理，自动更新任务状态
         if (aiProcessingStore && taskId) {
           if (!firstChunkReceived) {
-            aiProcessingStore.updateTask(taskId, {
+            void aiProcessingStore.updateTask(taskId, {
               status: 'processing',
               message: '正在生成翻译...',
             });
@@ -147,11 +169,11 @@ export class TermTranslationService {
 
           // 累积思考消息
           if (chunk.text) {
-            aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
+            void aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
           }
 
           if (chunk.done) {
-            aiProcessingStore.updateTask(taskId, {
+            void aiProcessingStore.updateTask(taskId, {
               status: 'completed',
               message: '翻译完成',
             });
@@ -175,14 +197,7 @@ export class TermTranslationService {
 
       const result = await service.generateText(config, request, wrappedOnChunk);
 
-      // 如果使用了任务管理，延迟移除任务
-      if (aiProcessingStore && taskId) {
-        setTimeout(() => {
-          if (taskId) {
-            aiProcessingStore.removeTask(taskId);
-          }
-        }, 1000);
-      }
+      // 不再自动删除任务，保留思考过程供用户查看
 
       return { text: result.text, ...(taskId ? { taskId } : {}) };
     } catch (error) {
@@ -192,13 +207,13 @@ export class TermTranslationService {
         if (isCancelled) {
           const currentTask = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
           if (currentTask && currentTask.status !== 'cancelled') {
-            aiProcessingStore.updateTask(taskId, {
+            void aiProcessingStore.updateTask(taskId, {
               status: 'cancelled',
               message: '已取消',
             });
           }
         } else {
-          aiProcessingStore.updateTask(taskId, {
+          void aiProcessingStore.updateTask(taskId, {
             status: 'error',
             message: error instanceof Error ? error.message : '翻译时发生未知错误',
           });
@@ -209,6 +224,14 @@ export class TermTranslationService {
         throw error;
       }
       throw new Error('翻译时发生未知错误');
+    } finally {
+      // 清理事件监听器
+      if (signal) {
+        signal.removeEventListener('abort', abortHandler);
+      }
+      if (abortController) {
+        abortController.signal.removeEventListener('abort', abortHandler);
+      }
     }
   }
 }

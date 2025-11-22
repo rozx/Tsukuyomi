@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onMounted } from 'vue';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
+import { useConfirm } from 'primevue/useconfirm';
+import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 
 const aiProcessing = useAIProcessingStore();
+const confirm = useConfirm();
+
+// 加载思考过程
+onMounted(async () => {
+  await aiProcessing.loadThinkingProcesses();
+});
 
 const taskTypeLabels: Record<string, string> = {
   translation: '翻译',
@@ -37,8 +45,29 @@ const formatDuration = (startTime: number, endTime?: number): string => {
 };
 
 // 停止任务
-const stopTask = (taskId: string) => {
-  aiProcessing.stopTask(taskId);
+const stopTask = async (taskId: string) => {
+  await aiProcessing.stopTask(taskId);
+};
+
+// 手动清空所有任务
+const clearAllTasks = () => {
+  confirm.require({
+    message: '确定要清空所有思考过程记录吗？此操作不可恢复。',
+    header: '确认清空',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+      outlined: true,
+    },
+    acceptProps: {
+      label: '清空',
+      severity: 'danger',
+    },
+    accept: async () => {
+      await aiProcessing.clearAllTasks();
+    },
+  });
 };
 
 // 思考消息滚动容器 refs（使用 Map 存储每个任务的滚动元素）
@@ -111,25 +140,31 @@ defineExpose({
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
         <h3 class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
-        <Button
-          v-if="
-            aiProcessing.activeTasks.filter(
-              (t: AIProcessingTask) => t.status === 'completed' || t.status === 'error',
-            ).length > 0
-          "
-          icon="pi pi-trash"
-          class="p-button-text p-button-danger p-button-sm"
-          title="清空已完成"
-          @click="aiProcessing.clearCompletedTasks()"
-        />
+        <div class="flex items-center gap-2">
+          <Button
+            v-if="aiProcessing.completedTasksList.length > 0"
+            icon="pi pi-trash"
+            class="p-button-text p-button-danger p-button-sm"
+            title="清空已完成"
+            @click="aiProcessing.clearCompletedTasks()"
+          />
+          <Button
+            v-if="aiProcessing.allTasksList.length > 0"
+            icon="pi pi-times-circle"
+            class="p-button-text p-button-danger p-button-sm"
+            title="清空所有"
+            @click="clearAllTasks"
+          />
+        </div>
       </div>
 
       <div class="flex-1 overflow-auto min-h-0 space-y-3" style="max-height: 500px">
-        <div v-if="aiProcessing.activeTasksList.length === 0" class="text-center py-8">
+        <div v-if="aiProcessing.allTasksList.length === 0" class="text-center py-8">
           <i class="pi pi-check-circle text-4xl text-moon/40 mb-4" />
-          <p class="text-moon/60">当前没有正在进行的任务</p>
+          <p class="text-moon/60">当前没有思考过程记录</p>
         </div>
 
+        <!-- 正在进行的任务 -->
         <div
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
@@ -193,31 +228,26 @@ defineExpose({
           </div>
         </div>
 
-        <!-- 最近完成的任务 -->
+        <!-- 已完成的任务 -->
         <div
-          v-if="
-            aiProcessing.activeTasks.filter(
-              (t: AIProcessingTask) => t.status === 'completed' || t.status === 'error',
-            ).length > 0
-          "
+          v-if="aiProcessing.completedTasksList.length > 0"
           class="mt-6"
         >
-          <h4 class="text-sm font-medium text-moon/70 mb-3">最近完成的任务</h4>
+          <h4 class="text-sm font-medium text-moon/70 mb-3">已完成的任务</h4>
           <div class="space-y-2">
             <div
-              v-for="task in aiProcessing.activeTasks
-                .filter((t: AIProcessingTask) => t.status === 'completed' || t.status === 'error')
-                .slice(0, 5)"
+              v-for="task in aiProcessing.completedTasksList.slice(0, 10)"
               :key="task.id"
               class="p-3 rounded-lg border border-white/5 bg-white/2"
             >
-              <div class="flex items-center justify-between">
+              <div class="flex items-start justify-between mb-2">
                 <div class="flex items-center gap-2">
                   <i
                     class="pi text-sm"
                     :class="{
                       'pi-check-circle text-green-500': task.status === 'completed',
                       'pi-times-circle text-red-500': task.status === 'error',
+                      'pi-ban text-orange-500': task.status === 'cancelled',
                     }"
                   />
                   <span class="text-sm text-moon/70">{{ task.modelName }}</span>
@@ -229,12 +259,31 @@ defineExpose({
                   formatDuration(task.startTime, task.endTime)
                 }}</span>
               </div>
+              <p v-if="task.message" class="text-xs text-moon/60 mb-2">{{ task.message }}</p>
+              <!-- 显示思考消息（如果有） -->
+              <div
+                v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                class="mt-2 p-2 rounded bg-white/3 border border-white/5"
+              >
+                <p class="text-xs text-moon/50 mb-1">思考过程：</p>
+                <p
+                  class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-24 overflow-y-auto"
+                >
+                  {{ task.thinkingMessage }}
+                </p>
+              </div>
+              <div class="flex items-center gap-2 mt-2 text-xs text-moon/50">
+                <span v-if="task.endTime">
+                  完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </Popover>
+  <ConfirmDialog />
 </template>
 
 <style scoped>

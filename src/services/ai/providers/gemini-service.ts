@@ -239,14 +239,14 @@ export class GeminiService extends BaseAIService {
           text: '',
           done: true,
           model: config.model,
-          toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
         });
       }
 
       return {
         text,
         model: config.model,
-        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
       };
     } catch (error) {
       if (error instanceof Error) {

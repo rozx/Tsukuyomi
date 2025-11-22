@@ -6,6 +6,7 @@ import Checkbox from 'primevue/checkbox';
 interface Props {
   title: string;
   description?: string | undefined;
+  speakingStyle?: string | undefined;
   sex?: 'male' | 'female' | 'other' | undefined;
   translations?: string | string[] | undefined;
   aliases?: string[] | undefined;
@@ -56,7 +57,7 @@ const isCharacterCard = computed(() => {
 
 <template>
   <div
-    class="group relative flex flex-col h-full rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors"
+    class="group relative flex flex-col h-full rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors overflow-hidden"
     :class="{ 'ring-2 ring-primary/50': showCheckbox && checked }"
   >
     <!-- 头部：复选框、头像、名称与操作 -->
@@ -81,13 +82,19 @@ const isCharacterCard = computed(() => {
         >
           {{ avatarText }}
         </div>
-        <div class="flex-1 min-w-0">
-          <h3 class="text-lg font-medium text-moon-100 truncate flex items-center gap-2" :title="title">
-            {{ title }}
-            <i v-if="sex === 'male'" class="pi pi-mars text-blue-400 text-sm" title="男性"></i>
-            <i v-else-if="sex === 'female'" class="pi pi-venus text-pink-400 text-sm" title="女性"></i>
-            <i v-else-if="sex === 'other'" class="pi pi-user text-purple-400 text-sm" title="其他/未知"></i>
-          </h3>
+        <div class="flex-1 min-w-0 pr-10">
+          <div class="flex items-center min-w-0 w-full">
+            <div class="flex-1 min-w-0 mr-2">
+              <h3 class="text-lg font-medium text-moon-100 truncate" :title="title">
+                {{ title }}
+              </h3>
+            </div>
+            <div v-if="sex" class="flex-shrink-0 flex items-center">
+              <i v-if="sex === 'male'" class="pi pi-mars text-blue-400 text-sm" title="男性"></i>
+              <i v-else-if="sex === 'female'" class="pi pi-venus text-pink-400 text-sm" title="女性"></i>
+              <i v-else-if="sex === 'other'" class="pi pi-user text-purple-400 text-sm" title="其他/未知"></i>
+            </div>
+          </div>
         </div>
       </div>
       <div
@@ -108,16 +115,32 @@ const isCharacterCard = computed(() => {
     </div>
 
     <!-- 描述 -->
-    <div v-if="description" class="mb-4">
-      <p class="text-sm text-moon/70 line-clamp-2 break-words" :title="description">
+    <div v-if="description" class="mb-4 w-full">
+      <p 
+        class="text-sm text-moon-100/70 break-words overflow-hidden" 
+        :title="description"
+        style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;"
+      >
         {{ description }}
       </p>
     </div>
-    <div v-else class="mb-4 text-sm text-moon/30 italic">暂无描述</div>
+    <div v-else class="mb-4 text-sm text-moon-100/30 italic">暂无描述</div>
+
+    <!-- 说话口吻 (仅 Character) -->
+    <div v-if="speakingStyle" class="mb-4">
+      <span class="text-xs text-moon-100/50 block mb-1.5">说话口吻</span>
+      <p 
+        class="text-sm text-moon-100/70 break-words overflow-hidden" 
+        :title="speakingStyle"
+        style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;"
+      >
+        {{ speakingStyle }}
+      </p>
+    </div>
 
     <!-- 翻译 -->
     <div class="mb-3">
-      <span class="text-xs text-moon/50 block mb-1.5">翻译</span>
+      <span class="text-xs text-moon-100/50 block mb-1.5">翻译</span>
       <!-- 数组情况 (Character) -->
       <div v-if="Array.isArray(translations)" class="flex flex-wrap gap-1.5">
         <span
@@ -127,18 +150,23 @@ const isCharacterCard = computed(() => {
         >
           {{ t }}
         </span>
-        <span v-if="translations.length === 0" class="text-moon/30 text-xs italic">无</span>
+        <span v-if="translations.length === 0" class="text-moon-100/30 text-xs italic">无</span>
       </div>
       <!-- 字符串情况 (Term) -->
       <div v-else-if="translations">
-        <p class="text-primary-200 text-sm break-words font-medium">{{ translations }}</p>
+        <p 
+          class="text-primary-200 text-sm break-words font-medium overflow-hidden leading-6"
+          style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; max-height: 3rem;"
+        >
+          {{ translations }}
+        </p>
       </div>
-      <div v-else class="text-moon/30 text-xs italic">无</div>
+      <div v-else class="text-moon-100/30 text-xs italic">无</div>
     </div>
 
     <!-- 别名 (仅 Character) -->
     <div v-if="aliases !== undefined" class="mb-auto">
-      <span class="text-xs text-moon/50 block mb-1.5">别名</span>
+      <span class="text-xs text-moon-100/50 block mb-1.5">别名</span>
       <div class="flex flex-wrap gap-1.5">
         <span
           v-for="(alias, index) in aliases"
@@ -147,17 +175,27 @@ const isCharacterCard = computed(() => {
         >
           {{ alias }}
         </span>
-        <span v-if="aliases.length === 0" class="text-moon/30 text-xs italic">无</span>
+        <span v-if="aliases.length === 0" class="text-moon-100/30 text-xs italic">无</span>
       </div>
     </div>
     <div v-else class="mb-auto"></div>
 
     <!-- 底部信息 -->
     <div
-      class="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-moon/50"
+      class="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-moon-100/50"
     >
       <span>出现次数: {{ occurrences || 0 }}</span>
     </div>
   </div>
 </template>
+
+<style scoped>
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>
 

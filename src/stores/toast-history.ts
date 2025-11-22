@@ -37,7 +37,17 @@ async function loadHistoryFromDB(): Promise<ToastHistoryItem[]> {
 async function saveHistoryItemToDB(item: ToastHistoryItem): Promise<void> {
   try {
     const db = await getDB();
-    await db.put('toast-history', item);
+    // 创建一个干净的、可序列化的副本，只包含 ToastHistoryItem 接口定义的属性
+    const cleanItem: ToastHistoryItem = {
+      id: item.id,
+      severity: item.severity,
+      summary: item.summary,
+      detail: item.detail,
+      timestamp: item.timestamp,
+      ...(item.life !== undefined ? { life: item.life } : {}),
+      ...(item.read !== undefined ? { read: item.read } : {}),
+    };
+    await db.put('toast-history', cleanItem);
   } catch (error) {
     console.error('Failed to save toast history item to DB:', error);
   }
@@ -65,7 +75,17 @@ async function bulkSaveHistoryToDB(items: ToastHistoryItem[]): Promise<void> {
     const store = tx.objectStore('toast-history');
 
     for (const item of items) {
-      await store.put(item);
+      // 创建一个干净的、可序列化的副本，只包含 ToastHistoryItem 接口定义的属性
+      const cleanItem: ToastHistoryItem = {
+        id: item.id,
+        severity: item.severity,
+        summary: item.summary,
+        detail: item.detail,
+        timestamp: item.timestamp,
+        ...(item.life !== undefined ? { life: item.life } : {}),
+        ...(item.read !== undefined ? { read: item.read } : {}),
+      };
+      await store.put(cleanItem);
     }
 
     await tx.done;
@@ -159,7 +179,7 @@ export const useToastHistoryStore = defineStore('toastHistory', {
         // 删除超出限制的项目
         const itemsToDelete = this.historyItems.slice(MAX_HISTORY_ITEMS);
         this.historyItems = this.historyItems.slice(0, MAX_HISTORY_ITEMS);
-        
+
         // 从 IndexedDB 删除超出限制的项目
         for (const itemToDelete of itemsToDelete) {
           await deleteHistoryItemFromDB(itemToDelete.id);
@@ -208,11 +228,11 @@ export const useToastHistoryStore = defineStore('toastHistory', {
         // 优先找到对应时间戳的未读消息并标记为已读
         // 如果找不到，则找最接近该时间戳的未读消息（处理相同内容的多条消息）
         let item = this.historyItems.find((item) => item.timestamp === timestamp && !item.read);
-        
+
         if (!item) {
           // 如果找不到精确匹配的未读项，找最接近时间戳的未读项
           const unreadItems = this.historyItems.filter(
-            (item) => !item.read && item.summary === summary && item.detail === detail
+            (item) => !item.read && item.summary === summary && item.detail === detail,
           );
           if (unreadItems.length > 0) {
             // 找时间戳最接近的项
