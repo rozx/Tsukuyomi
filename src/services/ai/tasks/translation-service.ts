@@ -3,50 +3,22 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
+  AITool,
+  AIToolCall,
+  AIToolCallResult,
+  ChatMessage,
 } from 'src/types/ai/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type { Terminology, CharacterSetting } from 'src/types/novel';
+import type { Terminology, CharacterSetting, Paragraph, Novel } from 'src/types/novel';
 import { AIServiceFactory } from '../index';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { ChapterService } from 'src/services/chapter-service';
 
-/**
- * AI 工具定义
- */
-export interface AITool {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: {
-      type: 'object';
-      properties: Record<string, unknown>;
-      required?: string[];
-    };
-  };
-}
-
-/**
- * AI 工具调用
- */
-export interface AIToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string; // JSON 字符串
-  };
-}
-
-/**
- * AI 工具调用结果
- */
-export interface AIToolCallResult {
-  tool_call_id: string;
-  role: 'tool';
-  name: string;
-  content: string; // JSON 字符串或文本
+export interface ActionInfo {
+  type: 'create' | 'update' | 'delete';
+  entity: 'term' | 'character';
+  data: Terminology | CharacterSetting | { id: string };
 }
 
 /**
@@ -61,6 +33,15 @@ export interface TranslationServiceOptions {
    * 流式数据回调函数，用于接收翻译过程中的数据块
    */
   onChunk?: TextGenerationStreamCallback;
+  /**
+   * 进度回调函数，用于接收翻译进度更新
+   * @param progress 进度信息
+   */
+  onProgress?: (progress: { total: number; current: number; currentParagraphs?: string[] }) => void;
+  /**
+   * AI 执行操作时的回调（如 CRUD 术语/角色）
+   */
+  onAction?: (action: ActionInfo) => void;
   /**
    * 取消信号（可选）
    */
@@ -86,6 +67,8 @@ export interface TranslationServiceOptions {
  * 使用 AI 服务进行文本翻译，支持术语 CRUD 工具
  */
 export class TranslationService {
+  static readonly CHUNK_SIZE = 1500;
+
   /**
    * 获取术语 CRUD 工具定义
    * @param bookId 书籍 ID（可选，如果提供则启用工具）
@@ -126,7 +109,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'get_term',
-          description: '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。',
+          description:
+            '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。',
           parameters: {
             type: 'object',
             properties: {
@@ -185,7 +169,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'list_terms',
-          description: '列出所有术语。在翻译开始前，可以使用此工具获取所有已存在的术语，以便在翻译时保持一致性。',
+          description:
+            '列出所有术语。在翻译开始前，可以使用此工具获取所有已存在的术语，以便在翻译时保持一致性。',
           parameters: {
             type: 'object',
             properties: {
@@ -202,7 +187,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'get_occurrences_by_keywords',
-          description: '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
+          description:
+            '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
           parameters: {
             type: 'object',
             properties: {
@@ -284,7 +270,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'get_character',
-          description: '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。',
+          description:
+            '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。',
           parameters: {
             type: 'object',
             properties: {
@@ -301,7 +288,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'update_character',
-          description: '更新现有角色的翻译、描述、性别或别名。当发现角色的信息需要修正时，可以使用此工具更新。',
+          description:
+            '更新现有角色的翻译、描述、性别或别名。当发现角色的信息需要修正时，可以使用此工具更新。',
           parameters: {
             type: 'object',
             properties: {
@@ -370,7 +358,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'list_characters',
-          description: '列出所有角色设定。在翻译开始前，可以使用此工具获取所有已存在的角色，以便在翻译时保持一致性。',
+          description:
+            '列出所有角色设定。在翻译开始前，可以使用此工具获取所有已存在的角色，以便在翻译时保持一致性。',
           parameters: {
             type: 'object',
             properties: {
@@ -401,7 +390,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'get_previous_paragraphs',
-          description: '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。',
+          description:
+            '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。',
           parameters: {
             type: 'object',
             properties: {
@@ -422,7 +412,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'get_next_paragraphs',
-          description: '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。',
+          description:
+            '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。',
           parameters: {
             type: 'object',
             properties: {
@@ -443,7 +434,8 @@ export class TranslationService {
         type: 'function',
         function: {
           name: 'find_paragraph_by_keyword',
-          description: '根据关键词查找包含该关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。',
+          description:
+            '根据关键词查找包含该关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。',
           parameters: {
             type: 'object',
             properties: {
@@ -453,7 +445,8 @@ export class TranslationService {
               },
               chapter_id: {
                 type: 'string',
-                description: '可选的章节 ID，如果提供则从该章节向前搜索（包括该章节及之前的所有章节）',
+                description:
+                  '可选的章节 ID，如果提供则从该章节向前搜索（包括该章节及之前的所有章节）',
               },
               max_paragraphs: {
                 type: 'number',
@@ -484,11 +477,13 @@ export class TranslationService {
    * 处理工具调用
    * @param toolCall 工具调用对象
    * @param bookId 书籍 ID
+   * @param onAction 操作回调
    * @returns 工具调用结果
    */
   static async handleToolCall(
     toolCall: AIToolCall,
     bookId: string,
+    onAction?: (action: ActionInfo) => void,
   ): Promise<AIToolCallResult> {
     try {
       const functionName = toolCall.function.name;
@@ -506,6 +501,14 @@ export class TranslationService {
             translation,
             description,
           });
+
+          if (onAction) {
+            onAction({
+              type: 'create',
+              entity: 'term',
+              data: term,
+            });
+          }
 
           return {
             tool_call_id: toolCall.id,
@@ -587,6 +590,14 @@ export class TranslationService {
 
           const term = await TerminologyService.updateTerminology(bookId, term_id, updates);
 
+          if (onAction) {
+            onAction({
+              type: 'update',
+              entity: 'term',
+              data: term,
+            });
+          }
+
           return {
             tool_call_id: toolCall.id,
             role: 'tool',
@@ -611,6 +622,14 @@ export class TranslationService {
           }
 
           await TerminologyService.deleteTerminology(bookId, term_id);
+
+          if (onAction) {
+            onAction({
+              type: 'delete',
+              entity: 'term',
+              data: { id: term_id },
+            });
+          }
 
           return {
             tool_call_id: toolCall.id,
@@ -663,14 +682,16 @@ export class TranslationService {
           const occurrencesMap = TerminologyService.getOccurrencesByKeywords(bookId, keywords);
 
           // 将 Map 转换为对象数组
-          const occurrences = Array.from(occurrencesMap.entries()).map(([keyword, occurrences]) => ({
-            keyword,
-            occurrences: occurrences.map((occ) => ({
-              chapterId: occ.chapterId,
-              count: occ.count,
-            })),
-            total_count: occurrences.reduce((sum, occ) => sum + occ.count, 0),
-          }));
+          const occurrences = Array.from(occurrencesMap.entries()).map(
+            ([keyword, occurrences]) => ({
+              keyword,
+              occurrences: occurrences.map((occ) => ({
+                chapterId: occ.chapterId,
+                count: occ.count,
+              })),
+              total_count: occurrences.reduce((sum, occ) => sum + occ.count, 0),
+            }),
+          );
 
           return {
             tool_call_id: toolCall.id,
@@ -690,13 +711,34 @@ export class TranslationService {
             throw new Error('角色名称和翻译不能为空');
           }
 
-          const character = await CharacterSettingService.addCharacterSetting(bookId, {
+          const characterData: {
+            name: string;
+            translation: string;
+            sex?: 'male' | 'female' | 'other';
+            description?: string;
+            aliases?: Array<{ name: string; translation: string }>;
+          } = {
             name,
             translation,
-            sex: sex as 'male' | 'female' | 'other' | undefined,
-            description,
-            aliases: aliases as Array<{ name: string; translation: string }> | undefined,
-          });
+          };
+
+          if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
+          if (description) characterData.description = description;
+          if (aliases)
+            characterData.aliases = aliases as Array<{ name: string; translation: string }>;
+
+          const character = await CharacterSettingService.addCharacterSetting(
+            bookId,
+            characterData,
+          );
+
+          if (onAction) {
+            onAction({
+              type: 'create',
+              entity: 'character',
+              data: character,
+            });
+          }
 
           return {
             tool_call_id: toolCall.id,
@@ -805,6 +847,14 @@ export class TranslationService {
             updates,
           );
 
+          if (onAction) {
+            onAction({
+              type: 'update',
+              entity: 'character',
+              data: character,
+            });
+          }
+
           return {
             tool_call_id: toolCall.id,
             role: 'tool',
@@ -835,6 +885,14 @@ export class TranslationService {
           }
 
           await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
+
+          if (onAction) {
+            onAction({
+              type: 'delete',
+              entity: 'character',
+              data: { id: character_id },
+            });
+          }
 
           return {
             tool_call_id: toolCall.id,
@@ -906,9 +964,12 @@ export class TranslationService {
               paragraphs: results.map((result) => ({
                 id: result.paragraph.id,
                 text: result.paragraph.text,
-                translation: result.paragraph.translations.find(
-                  (t) => t.id === result.paragraph.selectedTranslationId,
-                )?.translation || result.paragraph.translations[0]?.translation || '',
+                translation:
+                  result.paragraph.translations.find(
+                    (t) => t.id === result.paragraph.selectedTranslationId,
+                  )?.translation ||
+                  result.paragraph.translations[0]?.translation ||
+                  '',
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
@@ -951,9 +1012,12 @@ export class TranslationService {
               paragraphs: results.map((result) => ({
                 id: result.paragraph.id,
                 text: result.paragraph.text,
-                translation: result.paragraph.translations.find(
-                  (t) => t.id === result.paragraph.selectedTranslationId,
-                )?.translation || result.paragraph.translations[0]?.translation || '',
+                translation:
+                  result.paragraph.translations.find(
+                    (t) => t.id === result.paragraph.selectedTranslationId,
+                  )?.translation ||
+                  result.paragraph.translations[0]?.translation ||
+                  '',
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
@@ -1001,9 +1065,12 @@ export class TranslationService {
               paragraphs: results.map((result) => ({
                 id: result.paragraph.id,
                 text: result.paragraph.text,
-                translation: result.paragraph.translations.find(
-                  (t) => t.id === result.paragraph.selectedTranslationId,
-                )?.translation || result.paragraph.translations[0]?.translation || '',
+                translation:
+                  result.paragraph.translations.find(
+                    (t) => t.id === result.paragraph.selectedTranslationId,
+                  )?.translation ||
+                  result.paragraph.translations[0]?.translation ||
+                  '',
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
@@ -1041,21 +1108,409 @@ export class TranslationService {
 
   /**
    * 翻译文本
-   * @param text 要翻译的文本
+   * @param content 要翻译的段落列表
    * @param model AI 模型配置
    * @param options 翻译选项（可选）
    * @returns 翻译后的文本和任务 ID（如果使用了任务管理）
    */
   static async translate(
-    text: string,
+    content: Paragraph[],
     model: AIModel,
     options?: TranslationServiceOptions,
   ): Promise<{ text: string; taskId?: string }> {
-    // TODO: 实现翻译逻辑，包括工具调用处理
-    // 注意：此服务用于通用翻译（支持工具调用），如果需要术语翻译，请使用 TermTranslationService
-    throw new Error(
-      'TranslationService 尚未实现。如需术语翻译，请使用 TermTranslationService。通用翻译功能（支持工具调用）正在开发中。',
-    );
+    console.debug('[TranslationService] 开始翻译', {
+      contentLength: content?.length,
+      modelName: model.name,
+      bookId: options?.bookId,
+    });
+
+    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onAction } = options || {};
+
+    if (!content || content.length === 0) {
+      throw new Error('要翻译的内容不能为空');
+    }
+
+    if (!model.enabled) {
+      throw new Error('所选模型未启用');
+    }
+
+    // 任务管理
+    let taskId: string | undefined;
+    let abortController: AbortController | undefined;
+
+    if (aiProcessingStore) {
+      taskId = aiProcessingStore.addTask({
+        type: 'translation',
+        modelName: model.name,
+        status: 'thinking',
+        message: '正在初始化翻译会话...',
+        thinkingMessage: '',
+      });
+
+      // 获取任务的 abortController
+      const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
+      abortController = task?.abortController;
+    }
+
+    // 使用任务的 abortController 或提供的 signal
+    const finalSignal = signal || abortController?.signal;
+
+    try {
+      const service = AIServiceFactory.getService(model.provider);
+      const tools = this.getAllTools(bookId);
+      const config: AIServiceConfig = {
+        apiKey: model.apiKey,
+        baseUrl: model.baseUrl,
+        model: model.model,
+        temperature: model.isDefault.translation?.temperature ?? 0.7,
+        signal: finalSignal,
+      };
+
+      // 初始化消息历史
+      const history: ChatMessage[] = [];
+
+      // 1. 系统提示词
+      const systemPrompt =
+        '你是一个专业的日轻小说翻译助手，擅长将日语小说翻译成流畅、优美的简体中文。\n' +
+        '我会提供必要的工具（CRUD 术语/角色设定、查询段落等）来辅助你的翻译工作。\n' +
+        '你可以在需要时使用这些工具来查询、创建、更新或删除术语和角色设定。\n' +
+        '重要提示：你可以随时使用工具来获取更多关于术语、角色或段落的上下文信息，以确保翻译的准确性。\n' +
+        '特别是 "find_paragraph_by_keyword" 工具，你可以用它来搜索关键词在之前段落中的翻译，以保持用词一致。\n' +
+        '在决定是否添加新术语或角色时，可以使用 "get_occurrences_by_keywords" 工具查询其在全文中的出现频率。\n' +
+        '请注意：只在确实需要时才添加新术语（例如具有特殊含义的词汇），不要添加仅由汉字组成且无特殊含义的普通词汇。\n' +
+        '对于不确定的术语，务必先查询或查看上下文（使用 get_previous_paragraphs/get_next_paragraphs）。\n' +
+        '每次我给你一段文本（可能包含段落ID），你需要：\n' +
+        '1. 分析文本，如果发现可能的术语或角色，或者需要更多上下文，可以使用工具进行确认或查询。\n' +
+        '2. 将文本翻译成简体中文。\n' +
+        '3. 返回翻译结果，格式为 JSON：{ "translation": "翻译后的文本" }。\n' +
+        '4. 提取文本中的术语和角色，如果需要，使用工具进行确认或查询。\n' +
+        '5. 在每段翻译后，如果你发现需要更新术语表或角色设定，请使用工具进行操作。\n' +
+        '请确保翻译风格符合轻小说习惯，自然流畅。';
+
+      history.push({ role: 'system', content: systemPrompt });
+
+      // 2. 初始用户提示
+      const initialUserPrompt =
+        '我将开始提供小说段落。请准备好。\n' +
+        '在每段翻译后，如果你发现需要更新术语表或角色设定，请使用工具进行操作。\n' +
+        '准备好了吗？';
+
+      if (aiProcessingStore && taskId) {
+        aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
+      }
+
+      // 切分文本
+      const CHUNK_SIZE = TranslationService.CHUNK_SIZE;
+      const chunks: Array<{
+        text: string;
+        context?: string;
+        paragraphIds?: string[];
+      }> = [];
+
+      // 获取书籍数据以提取上下文（仅当提供了 bookId 时）
+      let book: Novel | undefined;
+      if (bookId) {
+        try {
+          // 动态导入 store 以避免循环依赖
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          book = booksStore.getBookById(bookId);
+        } catch (e) {
+          console.warn('获取书籍数据失败，将跳过上下文提取', e);
+        }
+      }
+
+      let currentChunkText = '';
+      let currentChunkParagraphs: Paragraph[] = [];
+
+      // 辅助函数：提取上下文
+      const getContext = (paragraphs: Paragraph[], bookData?: Novel): string => {
+        if (!bookData || paragraphs.length === 0) return '';
+
+        const textContent = paragraphs.map((p) => p.text).join('\n');
+        const contextParts: string[] = [];
+
+        // 查找相关术语
+        const relevantTerms =
+          bookData.terminologies?.filter((t) => textContent.includes(t.name)) || [];
+        if (relevantTerms.length > 0) {
+          console.debug(
+            '[TranslationService] 发现相关术语:',
+            relevantTerms.map((t) => t.name),
+          );
+          contextParts.push('【相关术语参考】');
+          contextParts.push(
+            relevantTerms
+              .map(
+                (t) =>
+                  `- [ID: ${t.id}] ${t.name}: ${t.translation.translation}${t.description ? ` (${t.description})` : ''}`,
+              )
+              .join('\n'),
+          );
+        }
+
+        // 查找相关角色
+        const relevantCharacters =
+          bookData.characterSettings?.filter(
+            (c) =>
+              textContent.includes(c.name) || c.aliases.some((a) => textContent.includes(a.name)),
+          ) || [];
+        if (relevantCharacters.length > 0) {
+          console.debug(
+            '[TranslationService] 发现相关角色:',
+            relevantCharacters.map((c) => c.name),
+          );
+          contextParts.push('【相关角色参考】');
+          contextParts.push(
+            relevantCharacters
+              .map(
+                (c) =>
+                  `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}${c.description ? ` (${c.description})` : ''}`,
+              )
+              .join('\n'),
+          );
+        }
+
+        return contextParts.length > 0 ? contextParts.join('\n') + '\n\n' : '';
+      };
+
+      for (const paragraph of content) {
+        // 格式化段落：[ID: {id}] {text}
+        const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n\n`;
+
+        // 预测加入新段落后的上下文
+        const nextParagraphs = [...currentChunkParagraphs, paragraph];
+        const nextContext = getContext(nextParagraphs, book);
+
+        // 如果当前块加上新段落和上下文超过限制，且当前块不为空，则先保存当前块
+        if (
+          currentChunkText.length + paragraphText.length + nextContext.length > CHUNK_SIZE &&
+          currentChunkText.length > 0
+        ) {
+          chunks.push({
+            text: currentChunkText,
+            context: getContext(currentChunkParagraphs, book),
+            paragraphIds: currentChunkParagraphs.map((p) => p.id),
+          });
+          currentChunkText = '';
+          currentChunkParagraphs = [];
+        }
+        currentChunkText += paragraphText;
+        currentChunkParagraphs.push(paragraph);
+      }
+      // 添加最后一个块
+      if (currentChunkText.length > 0) {
+        chunks.push({
+          text: currentChunkText,
+          context: getContext(currentChunkParagraphs, book),
+          paragraphIds: currentChunkParagraphs.map((p) => p.id),
+        });
+      }
+
+      console.debug('[TranslationService] 文本已切分为块:', chunks.length);
+
+      let translatedText = '';
+
+      // 3. 循环处理每个块
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (!chunk) continue;
+
+        console.debug(`[TranslationService] 正在处理第 ${i + 1}/${chunks.length} 块`, {
+          paragraphCount: chunk.paragraphIds?.length,
+          contextLength: chunk.context?.length,
+          textLength: chunk.text.length,
+        });
+
+        const chunkText = chunk.text;
+        const chunkContext = chunk.context || '';
+
+        if (aiProcessingStore && taskId) {
+          aiProcessingStore.updateTask(taskId, {
+            message: `正在翻译第 ${i + 1}/${chunks.length} 部分...`,
+            status: 'processing',
+          });
+        }
+
+        if (onProgress) {
+          const progress: {
+            total: number;
+            current: number;
+            currentParagraphs?: string[];
+          } = {
+            total: chunks.length,
+            current: i + 1,
+          };
+          if (chunk.paragraphIds) {
+            progress.currentParagraphs = chunk.paragraphIds;
+          }
+          onProgress(progress);
+        }
+
+        // 构建当前消息
+        let content = '';
+        if (i === 0) {
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}`;
+        } else {
+          content = `接下来的内容：\n\n${chunkContext}${chunkText}`;
+        }
+
+        history.push({ role: 'user', content });
+
+        let currentTurnCount = 0;
+        const MAX_TURNS = 5; // 防止工具调用死循环
+        let finalResponseText = '';
+
+        // 工具调用循环
+        while (currentTurnCount < MAX_TURNS) {
+          currentTurnCount++;
+
+          const request: TextGenerationRequest = {
+            messages: history,
+          };
+
+          if (tools.length > 0) {
+            request.tools = tools;
+          }
+
+          // 调用 AI
+          let chunkReceived = false;
+          console.debug('[TranslationService] 发送请求给 AI', {
+            messagesCount: request.messages?.length,
+            toolsCount: request.tools?.length,
+          });
+
+          const result = await service.generateText(config, request, (c) => {
+            // 处理流式输出
+            if (c.text) {
+              if (!chunkReceived && aiProcessingStore && taskId) {
+                chunkReceived = true;
+              }
+              // 累积思考消息
+              if (aiProcessingStore && taskId) {
+                aiProcessingStore.appendThinkingMessage(taskId, c.text);
+              }
+            }
+            return Promise.resolve();
+          });
+
+          // 检查是否有工具调用
+          if (result.toolCalls && result.toolCalls.length > 0) {
+            console.debug('[TranslationService] AI 请求调用工具:', result.toolCalls);
+            // 将助手的回复（包含工具调用）添加到历史
+            history.push({
+              role: 'assistant',
+              content: result.text || null,
+              tool_calls: result.toolCalls,
+            });
+
+            // 执行工具
+            for (const toolCall of result.toolCalls) {
+              if (aiProcessingStore && taskId) {
+                aiProcessingStore.appendThinkingMessage(
+                  taskId,
+                  `\n[调用工具: ${toolCall.function.name}]\n`,
+                );
+              }
+
+              // 执行工具
+              const toolResult = await TranslationService.handleToolCall(
+                toolCall,
+                bookId || '',
+                onAction,
+              );
+              console.debug('[TranslationService] 工具执行结果:', toolResult);
+
+              // 添加工具结果到历史
+              history.push({
+                role: 'tool',
+                content: toolResult.content,
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name,
+              });
+
+              if (aiProcessingStore && taskId) {
+                aiProcessingStore.appendThinkingMessage(
+                  taskId,
+                  `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
+                );
+              }
+            }
+            // 继续循环，将工具结果发送给 AI
+          } else {
+            console.debug('[TranslationService] 收到 AI 响应 (无工具调用)');
+            // 没有工具调用，这是最终回复
+            finalResponseText = result.text;
+            history.push({ role: 'assistant', content: finalResponseText });
+            break;
+          }
+        }
+
+        // 解析 JSON 响应
+        try {
+          console.debug('[TranslationService] 解析 AI 响应:', finalResponseText);
+          // 尝试提取 JSON
+          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const jsonStr = jsonMatch[0];
+            const data = JSON.parse(jsonStr);
+            if (data.translation) {
+              const chunkTranslation = data.translation;
+              translatedText += chunkTranslation;
+              if (onChunk) {
+                await onChunk({ text: chunkTranslation, done: false });
+              }
+            } else {
+              console.warn('AI 响应中未找到 translation 字段，使用原始文本');
+              translatedText += finalResponseText;
+              if (onChunk) await onChunk({ text: finalResponseText, done: false });
+            }
+          } else {
+            // 不是 JSON，直接追加
+            translatedText += finalResponseText;
+            if (onChunk) await onChunk({ text: finalResponseText, done: false });
+          }
+        } catch (e) {
+          console.warn('解析 AI 响应 JSON 失败', e);
+          translatedText += finalResponseText;
+          if (onChunk) await onChunk({ text: finalResponseText, done: false });
+        }
+      }
+
+      if (onChunk) {
+        await onChunk({ text: '', done: true });
+      }
+
+      if (aiProcessingStore && taskId) {
+        aiProcessingStore.updateTask(taskId, {
+          status: 'completed',
+          message: '翻译完成',
+        });
+        setTimeout(() => {
+          if (taskId) aiProcessingStore.removeTask(taskId);
+        }, 1000);
+      }
+
+      return { text: translatedText, ...(taskId ? { taskId } : {}) };
+    } catch (error) {
+      if (aiProcessingStore && taskId) {
+        // 检查是否是取消错误
+        const isCancelled =
+          error instanceof Error &&
+          (error.message === '请求已取消' || error.message.includes('aborted'));
+
+        if (isCancelled) {
+          aiProcessingStore.updateTask(taskId, {
+            status: 'cancelled',
+            message: '已取消',
+          });
+        } else {
+          aiProcessingStore.updateTask(taskId, {
+            status: 'error',
+            message: error instanceof Error ? error.message : '翻译出错',
+          });
+        }
+      }
+      throw error;
+    }
   }
 }
-

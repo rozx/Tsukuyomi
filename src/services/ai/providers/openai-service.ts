@@ -175,21 +175,61 @@ export class OpenAIService extends BaseAIService {
     try {
       const client = this.createClient(config);
 
-      const requestParams: {
-        model: string;
-        messages: Array<{ role: 'user'; content: string }>;
-        temperature?: number;
-        max_tokens?: number;
-        stream: boolean;
-        signal?: AbortSignal;
-      } = {
+      // 准备消息列表
+      let messages: Array<OpenAI.Chat.Completions.ChatCompletionMessageParam> = [];
+      if (request.messages && request.messages.length > 0) {
+        messages = request.messages.map((msg) => {
+          if (msg.role === 'tool') {
+            return {
+              role: 'tool',
+              content: msg.content || '',
+              tool_call_id: msg.tool_call_id!,
+            } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
+          }
+          if (msg.role === 'assistant' && msg.tool_calls) {
+            return {
+              role: 'assistant',
+              content: msg.content,
+              tool_calls: msg.tool_calls.map((tc) => ({
+                id: tc.id,
+                type: 'function',
+                function: tc.function,
+              })),
+            } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam;
+          }
+          return {
+            role: msg.role as 'system' | 'user' | 'assistant',
+            content: msg.content || '',
+            name: msg.name,
+          } as OpenAI.Chat.Completions.ChatCompletionMessageParam;
+        });
+      } else {
+        messages = [{ role: 'user', content: request.prompt || '' }];
+      }
+
+      // 准备工具列表
+      let tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined;
+      if (request.tools && request.tools.length > 0) {
+        tools = request.tools.map((tool) => ({
+          type: 'function',
+          function: tool.function,
+        }));
+      }
+
+      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
         model: config.model,
-        messages: [{ role: 'user', content: request.prompt }],
+        messages,
         stream: true, // 启用流式模式
       };
 
+      // 如果提供了工具，添加到请求参数中
+      if (tools && tools.length > 0) {
+        requestParams.tools = tools;
+      }
+
       // 如果提供了 signal，添加到请求参数中
       if (config.signal) {
+        // @ts-expect-error OpenAI 类型定义可能不完全匹配 AbortSignal，但实际支持
         requestParams.signal = config.signal;
       }
 
@@ -209,6 +249,9 @@ export class OpenAIService extends BaseAIService {
       const stream = await client.chat.completions.create(requestParams);
       let fullText = '';
       let modelId = config.model;
+      
+      // 用于收集工具调用的片段
+      const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
 
       // 处理流式响应
       // 当 stream: true 时，返回的是 Stream<ChatCompletionChunk>
@@ -225,6 +268,21 @@ export class OpenAIService extends BaseAIService {
             continue;
           }
           
+          // 处理工具调用
+          if (delta.tool_calls) {
+            for (const toolCall of delta.tool_calls) {
+              const index = toolCall.index;
+              if (!toolCallsMap.has(index)) {
+                toolCallsMap.set(index, { id: '', name: '', arguments: '' });
+              }
+              const current = toolCallsMap.get(index)!;
+              
+              if (toolCall.id) current.id = toolCall.id;
+              if (toolCall.function?.name) current.name = toolCall.function.name;
+              if (toolCall.function?.arguments) current.arguments += toolCall.function.arguments;
+            }
+          }
+
           // 获取思考内容（reasoning_content）- 用于显示思考过程
           const reasoningContent = (delta as any).reasoning_content || '';
           
@@ -244,11 +302,15 @@ export class OpenAIService extends BaseAIService {
             // 如果提供了回调函数，调用它
             // 传递思考内容或实际内容，让上层决定如何处理
             if (onChunk) {
-              const chunkData = {
+              const chunkData: any = {
                 text: textToSend, // 传递思考内容或实际内容
                 done: false,
                 model: chunk.model || modelId,
               };
+              
+              // 如果正在收集工具调用，也可以通知回调（虽然通常工具调用只在最后处理）
+              // 这里暂不传递部分工具调用，以免复杂化
+              
               await onChunk(chunkData);
             }
           }
@@ -264,8 +326,19 @@ export class OpenAIService extends BaseAIService {
         throw new Error('流式响应格式错误');
       }
 
+      // 构建工具调用结果
+      const finalToolCalls = Array.from(toolCallsMap.values()).map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.name,
+          arguments: tc.arguments
+        }
+      }));
+
       const text = fullText.trim();
-      if (!text) {
+      // 如果没有文本也没有工具调用，且不是空响应（虽然通常不应该发生），则报错
+      if (!text && finalToolCalls.length === 0) {
         throw new Error('AI 返回的文本为空');
       }
 
@@ -275,12 +348,14 @@ export class OpenAIService extends BaseAIService {
           text: '',
           done: true,
           model: modelId,
+          toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
         });
       }
 
       return {
         text,
         model: modelId,
+        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined
       };
     } catch (error) {
       if (error instanceof Error) {

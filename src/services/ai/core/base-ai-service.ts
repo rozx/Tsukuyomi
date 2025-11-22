@@ -109,15 +109,28 @@ export abstract class BaseAIService implements AIService {
     this.validateConfig(config);
 
     // 验证请求
-    if (!request.prompt?.trim()) {
-      throw new Error('提示词不能为空');
+    const hasPrompt = !!request.prompt?.trim();
+    const hasMessages = request.messages && request.messages.length > 0;
+
+    if (!hasPrompt && !hasMessages) {
+      throw new Error('提示词或消息列表不能为空');
     }
 
     // 检查 prompt 长度，如果可能超过限制则显示警告（但不截断）
     // 注意：这里我们无法准确知道模型的 maxInputTokens，所以只做粗略检查
     // 如果 prompt 很长（比如超过 10000 字符），显示警告
-    const promptLength = request.prompt.length;
-    const estimatedTokens = this.estimateTokenCount(request.prompt);
+    let estimatedTokens = 0;
+    let promptLength = 0;
+
+    if (hasPrompt) {
+      promptLength = request.prompt!.length;
+      estimatedTokens = this.estimateTokenCount(request.prompt!);
+    } else if (hasMessages) {
+      // 粗略估算消息的 token 数
+      const messagesContent = request.messages!.map((m) => m.content || '').join('\n');
+      promptLength = messagesContent.length;
+      estimatedTokens = this.estimateTokenCount(messagesContent);
+    }
 
     // 如果估算的 token 数超过 10000，显示警告
     // 这是一个保守的阈值，大多数模型的 maxInputTokens 都远大于此

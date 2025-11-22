@@ -101,17 +101,92 @@ export class GeminiService extends BaseAIService {
         generationConfig.maxOutputTokens = maxTokens;
       }
 
+      // 准备系统指令和消息内容
+      let systemInstruction: string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let contents: any[] = [];
+
+      if (request.messages && request.messages.length > 0) {
+        // 处理系统消息
+        const systemMsg = request.messages.find((m) => m.role === 'system');
+        if (systemMsg) {
+          systemInstruction = systemMsg.content || undefined;
+        }
+
+        // 映射其他消息
+        contents = request.messages
+          .filter((m) => m.role !== 'system')
+          .map((msg) => {
+            if (msg.role === 'user') {
+              return { role: 'user', parts: [{ text: msg.content || '' }] };
+            }
+            if (msg.role === 'assistant') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const parts: any[] = [];
+              if (msg.content) parts.push({ text: msg.content });
+              if (msg.tool_calls) {
+                msg.tool_calls.forEach((tc) => {
+                  parts.push({
+                    functionCall: {
+                      name: tc.function.name,
+                      args: JSON.parse(tc.function.arguments),
+                    },
+                  });
+                });
+              }
+              return { role: 'model', parts };
+            }
+            if (msg.role === 'tool') {
+              // Gemini 期望 functionResponse
+              return {
+                role: 'function',
+                parts: [
+                  {
+                    functionResponse: {
+                      name: msg.name, // 必须匹配函数调用名称
+                      response: JSON.parse(msg.content || '{}'),
+                    },
+                  },
+                ],
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
+      } else {
+        contents = [{ role: 'user', parts: [{ text: request.prompt || '' }] }];
+      }
+
+      // 准备工具
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let tools: any[] | undefined;
+      if (request.tools && request.tools.length > 0) {
+        tools = [
+          {
+            functionDeclarations: request.tools.map((t) => ({
+              name: t.function.name,
+              description: t.function.description,
+              parameters: t.function.parameters,
+            })),
+          },
+        ];
+      }
+
       const model = client.getGenerativeModel({
         model: modelName,
+        ...(systemInstruction && { systemInstruction }),
+        ...(tools && { tools }),
         ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
       });
 
       // 使用流式 API
       const result = await model.generateContentStream({
-        contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
+        contents,
       });
 
       let fullText = '';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const toolCalls: any[] = [];
 
       // 处理流式响应
       for await (const chunk of result.stream) {
@@ -121,6 +196,11 @@ export class GeminiService extends BaseAIService {
         }
 
         const chunkText = chunk.text();
+        const chunkFunctionCalls = chunk.functionCalls();
+
+        if (chunkFunctionCalls) {
+          toolCalls.push(...chunkFunctionCalls);
+        }
 
         if (chunkText) {
           fullText += chunkText;
@@ -137,9 +217,21 @@ export class GeminiService extends BaseAIService {
       }
 
       const text = fullText.trim();
-      if (!text) {
+      // 允许空文本，如果有工具调用
+      if (!text && toolCalls.length === 0) {
         throw new Error('AI 返回的文本为空');
       }
+
+      // 转换工具调用格式
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const finalToolCalls = toolCalls.map((tc: any) => ({
+        id: `call_${Math.random().toString(36).substr(2, 9)}`, // Gemini 不返回 ID，生成一个
+        type: 'function' as const,
+        function: {
+          name: tc.name,
+          arguments: JSON.stringify(tc.args),
+        },
+      }));
 
       // 发送完成回调
       if (onChunk) {
@@ -147,12 +239,14 @@ export class GeminiService extends BaseAIService {
           text: '',
           done: true,
           model: config.model,
+          toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
         });
       }
 
       return {
         text,
         model: config.model,
+        toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
       };
     } catch (error) {
       if (error instanceof Error) {

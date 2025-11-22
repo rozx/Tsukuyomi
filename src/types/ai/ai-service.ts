@@ -41,10 +41,61 @@ export interface AIConfigResult {
 }
 
 /**
+ * AI 工具定义
+ */
+export interface AITool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+  };
+}
+
+/**
+ * AI 工具调用
+ */
+export interface AIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string; // JSON 字符串
+  };
+}
+
+/**
+ * AI 工具调用结果
+ */
+export interface AIToolCallResult {
+  tool_call_id: string;
+  role: 'tool';
+  name: string;
+  content: string; // JSON 字符串或文本
+}
+
+/**
+ * 聊天消息接口
+ */
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: AIToolCall[];
+}
+
+/**
  * 文本生成请求参数
  */
 export interface TextGenerationRequest {
-  prompt: string;
+  prompt?: string; // 兼容旧接口，如果提供了 messages 则优先使用 messages
+  messages?: ChatMessage[];
+  tools?: AITool[];
   temperature?: number;
   maxTokens?: number;
 }
@@ -55,6 +106,8 @@ export interface TextGenerationRequest {
 export interface TextGenerationResult {
   text: string;
   model?: string;
+  toolCalls?: AIToolCall[]; // 如果有工具调用
+  finishReason?: string; // stop, length, tool_calls, content_filter, etc.
 }
 
 /**
@@ -64,6 +117,7 @@ export interface TextGenerationChunk {
   text: string;
   done: boolean;
   model?: string;
+  toolCalls?: AIToolCall[]; // 流式响应中可能包含工具调用片段（通常需要客户端拼接）
 }
 
 /**
