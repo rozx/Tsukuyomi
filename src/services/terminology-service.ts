@@ -7,6 +7,7 @@ import type {
   Novel,
 } from 'src/types/novel';
 import { TokenizerBuilder, type LoaderConfig } from '@patdx/kuromoji';
+import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils';
 
@@ -492,54 +493,46 @@ export class TerminologyService {
    */
   private static countTermOccurrences(book: Novel, termName: string): Occurrence[] {
     const occurrencesMap = new Map<string, number>();
+    const escapedTermName = termName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedTermName, 'g');
 
-    // 遍历所有卷和章节
-    if (book.volumes) {
-      for (const volume of book.volumes) {
-        if (volume.chapters) {
-          for (const chapter of volume.chapters) {
-            let chapterCount = 0;
+    // 扁平化所有章节
+    const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
 
-            // 从段落中统计
-            if (chapter.content && Array.isArray(chapter.content)) {
-              for (const paragraph of chapter.content) {
-                // 使用正则表达式统计出现次数（区分大小写）
-                const regex = new RegExp(termName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-                const matches = paragraph.text.match(regex);
-                if (matches) {
-                  chapterCount += matches.length;
-                }
-              }
-            }
+    // 遍历所有章节
+    for (const chapter of allChapters) {
+      let chapterCount = 0;
 
-            // 从原始内容中统计
-            if (chapter.originalContent) {
-              const regex = new RegExp(termName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-              const matches = chapter.originalContent.match(regex);
-              if (matches) {
-                chapterCount += matches.length;
-              }
-            }
-
-            // 如果该章节有出现，记录到 Map 中
-            if (chapterCount > 0) {
-              const existingCount = occurrencesMap.get(chapter.id) || 0;
-              occurrencesMap.set(chapter.id, existingCount + chapterCount);
-            }
+      // 从段落中统计
+      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
+        for (const paragraph of chapter.content) {
+          const matches = paragraph.text.match(regex);
+          if (matches) {
+            chapterCount += matches.length;
           }
         }
+      }
+
+      // 从原始内容中统计
+      if (chapter.originalContent) {
+        const matches = chapter.originalContent.match(regex);
+        if (matches) {
+          chapterCount += matches.length;
+        }
+      }
+
+      // 如果该章节有出现，记录到 Map 中
+      if (chapterCount > 0) {
+        const existingCount = occurrencesMap.get(chapter.id) || 0;
+        occurrencesMap.set(chapter.id, existingCount + chapterCount);
       }
     }
 
     // 转换为 Occurrence 数组
-    const occurrences: Occurrence[] = Array.from(occurrencesMap.entries()).map(
-      ([chapterId, count]) => ({
-        chapterId,
-        count,
-      }),
-    );
-
-    return occurrences;
+    return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
+      chapterId,
+      count,
+    }));
   }
 
   /**
@@ -727,5 +720,47 @@ export class TerminologyService {
       terminologies: updatedTerminologies,
       lastEdited: new Date(),
     });
+  }
+
+  /**
+   * 刷新所有术语的出现次数
+   * 当章节内容更新后调用此方法来重新统计所有术语的出现次数
+   * @param bookId 书籍 ID
+   */
+  static async refreshAllTermOccurrences(bookId: string): Promise<void> {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+
+    if (!book) {
+      throw new Error(`书籍不存在: ${bookId}`);
+    }
+
+    const terminologies = book.terminologies || [];
+    if (terminologies.length === 0) {
+      return;
+    }
+
+    const updatedTerminologies = terminologies.map((term) => {
+      const occurrences = this.countTermOccurrences(book, term.name);
+      const occurrencesChanged = !isEqual(term.occurrences, occurrences);
+      if (occurrencesChanged) {
+        return {
+          ...term,
+          occurrences,
+        };
+      }
+      return term;
+    });
+
+    // 检查是否有任何术语被更新
+    const hasChanges = updatedTerminologies.some((term, index) =>
+      !isEqual(term, terminologies[index]),
+    );
+    if (hasChanges) {
+      await booksStore.updateBook(bookId, {
+        terminologies: updatedTerminologies,
+        lastEdited: new Date(),
+      });
+    }
   }
 }

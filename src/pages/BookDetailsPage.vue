@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
 import Select from 'primevue/select';
-import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
@@ -13,6 +12,7 @@ import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
+import { TerminologyService } from 'src/services/terminology-service';
 import {
   formatWordCount,
   getNovelCharCount,
@@ -24,7 +24,14 @@ import {
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { Volume, Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/types/novel';
+import type {
+  Volume,
+  Chapter,
+  Novel,
+  Terminology,
+  CharacterSetting,
+  Paragraph,
+} from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
@@ -269,7 +276,7 @@ const getParagraphTranslationText = (paragraph: Paragraph): string => {
     return '';
   }
   const selectedTranslation = paragraph.translations.find(
-    (t) => t.id === paragraph.selectedTranslationId
+    (t) => t.id === paragraph.selectedTranslationId,
   );
   return selectedTranslation?.translation || '';
 };
@@ -308,19 +315,31 @@ const saveOriginalTextEdit = async () => {
   try {
     // 将文本按换行符分割为段落（允许空段落）
     const textLines = originalTextEditValue.value.split('\n');
-    
+
     // 获取现有段落以保留翻译
     const existingParagraphs = selectedChapter.value.content || [];
 
-    // 更新段落文本
+    // 更新段落文本，如果文本改变则清除翻译
     const updatedParagraphs: Paragraph[] = textLines.map((line, index) => {
       const existingParagraph = existingParagraphs[index];
       if (existingParagraph) {
-        // 保留现有段落（包括翻译）
-        return {
-          ...existingParagraph,
-          text: line,
-        };
+        // 检查文本是否改变
+        const textChanged = existingParagraph.text !== line;
+        if (textChanged) {
+          // 文本改变，清除翻译
+          return {
+            ...existingParagraph,
+            text: line,
+            selectedTranslationId: '',
+            translations: [],
+          };
+        } else {
+          // 文本未改变，保留翻译
+          return {
+            ...existingParagraph,
+            text: line,
+          };
+        }
       } else {
         // 创建新段落
         return {
@@ -333,16 +352,20 @@ const saveOriginalTextEdit = async () => {
     });
 
     // 更新章节内容
-    const updatedVolumes = ChapterService.updateChapter(
-      book.value,
-      selectedChapter.value.id,
-      {
-        content: updatedParagraphs,
-        lastEdited: new Date(),
-      }
-    );
+    const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
+      content: updatedParagraphs,
+      lastEdited: new Date(),
+    });
 
-    await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+    // 先保存章节内容
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+
+    // 刷新所有术语和角色的出现次数
+    await TerminologyService.refreshAllTermOccurrences(book.value.id);
+    await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
 
     toast.add({
       severity: 'success',
@@ -485,7 +508,7 @@ const usedCharacters = computed(() => {
   const characters = book.value.characterSettings;
   // 创建名称到角色的映射，包括角色名称和所有别名
   const nameToCharacterMap = new Map<string, CharacterSetting>();
-  
+
   for (const char of characters) {
     // 添加角色名称
     if (char.name && char.name.trim()) {
@@ -565,7 +588,7 @@ const handleSaveCharacter = async (data: {
 
     // 检查名称冲突 (排除自己)
     const nameConflict = currentCharacterSettings.find(
-      (c) => c.id !== editingCharacter.value!.id && c.name === data.name
+      (c) => c.id !== editingCharacter.value!.id && c.name === data.name,
     );
 
     if (nameConflict) {
@@ -582,7 +605,7 @@ const handleSaveCharacter = async (data: {
     await CharacterSettingService.updateCharacterSetting(
       book.value.id,
       editingCharacter.value.id,
-      data
+      data,
     );
 
     toast.add({
@@ -623,10 +646,7 @@ const confirmDeleteCharacter = async () => {
   if (!book.value || !deletingCharacter.value) return;
 
   try {
-    await CharacterSettingService.deleteCharacterSetting(
-      book.value.id,
-      deletingCharacter.value.id
-    );
+    await CharacterSettingService.deleteCharacterSetting(book.value.id, deletingCharacter.value.id);
 
     toast.add({
       severity: 'success',
@@ -676,12 +696,12 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
 
   try {
     const currentTerminologies = book.value.terminologies || [];
-    
+
     // 检查名称冲突 (排除自己)
     const nameConflict = currentTerminologies.find(
-      (t) => t.id !== editingTerm.value!.id && t.name === data.name
+      (t) => t.id !== editingTerm.value!.id && t.name === data.name,
     );
-    
+
     if (nameConflict) {
       toast.add({
         severity: 'warn',
@@ -745,42 +765,44 @@ const showDeleteTermConfirm = ref(false);
 const deletingTerm = ref<Terminology | null>(null);
 
 const openDeleteTermConfirm = (term: Terminology) => {
-    deletingTerm.value = term;
-    showDeleteTermConfirm.value = true;
-    if (termPopover.value) {
-        termPopover.value.hide();
-    }
+  deletingTerm.value = term;
+  showDeleteTermConfirm.value = true;
+  if (termPopover.value) {
+    termPopover.value.hide();
+  }
 };
 
 const confirmDeleteTerm = async () => {
-    if (!book.value || !deletingTerm.value) return;
-    
-    try {
-        const updatedTerminologies = (book.value.terminologies || []).filter(t => t.id !== deletingTerm.value!.id);
-        
-        await booksStore.updateBook(book.value.id, {
-            terminologies: updatedTerminologies,
-            lastEdited: new Date()
-        });
-        
-        toast.add({
-            severity: 'success',
-            summary: '删除成功',
-            detail: `已删除术语 "${deletingTerm.value.name}"`,
-            life: 3000
-        });
-        
-        showDeleteTermConfirm.value = false;
-        deletingTerm.value = null;
-    } catch (error) {
-        console.error('删除术语失败:', error);
-        toast.add({
-            severity: 'error',
-            summary: '删除失败',
-            detail: '删除术语时发生错误',
-            life: 3000
-        });
-    }
+  if (!book.value || !deletingTerm.value) return;
+
+  try {
+    const updatedTerminologies = (book.value.terminologies || []).filter(
+      (t) => t.id !== deletingTerm.value!.id,
+    );
+
+    await booksStore.updateBook(book.value.id, {
+      terminologies: updatedTerminologies,
+      lastEdited: new Date(),
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已删除术语 "${deletingTerm.value.name}"`,
+      life: 3000,
+    });
+
+    showDeleteTermConfirm.value = false;
+    deletingTerm.value = null;
+  } catch (error) {
+    console.error('删除术语失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: '删除术语时发生错误',
+      life: 3000,
+    });
+  }
 };
 
 // 添加新卷
@@ -790,7 +812,10 @@ const handleAddVolume = async () => {
   }
 
   const updatedVolumes = ChapterService.addVolume(book.value, newVolumeTitle.value);
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 
   toast.add({
     severity: 'success',
@@ -815,7 +840,14 @@ const handleAddChapter = async () => {
     newChapterTitle.value,
   );
 
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
+
+  // 刷新所有术语和角色的出现次数（新章节可能有内容）
+  await TerminologyService.refreshAllTermOccurrences(book.value.id);
+  await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
 
   toast.add({
     severity: 'success',
@@ -888,11 +920,11 @@ const handleEditVolume = async () => {
 
   // 获取当前卷以保留翻译 ID
   const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
-  
+
   // 兼容旧数据格式
   let translationId = '';
   let aiModelId = '';
-  
+
   if (currentVolume) {
     if (typeof currentVolume.title === 'string') {
       // 旧数据格式，创建新的翻译 ID
@@ -904,7 +936,7 @@ const handleEditVolume = async () => {
   } else {
     translationId = generateShortId();
   }
-  
+
   const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
     title: {
       original: editingVolumeTitle.value.trim(),
@@ -916,7 +948,10 @@ const handleEditVolume = async () => {
     },
   });
 
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 
   toast.add({
     severity: 'success',
@@ -984,7 +1019,10 @@ const handleEditChapter = async () => {
     editingChapterTargetVolumeId.value,
   );
 
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 
   const moveMessage =
     editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value ? '并移动到新卷' : '';
@@ -1026,7 +1064,10 @@ const handleDeleteVolume = async () => {
 
   const updatedVolumes = ChapterService.deleteVolume(book.value, deletingVolumeId.value);
 
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 
   toast.add({
     severity: 'success',
@@ -1048,7 +1089,14 @@ const handleDeleteChapter = async () => {
 
   const updatedVolumes = ChapterService.deleteChapter(book.value, deletingChapterId.value);
 
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
+
+  // 刷新所有术语和角色的出现次数（删除章节后需要更新）
+  await TerminologyService.refreshAllTermOccurrences(book.value.id);
+  await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
 
   toast.add({
     severity: 'success',
@@ -1154,7 +1202,10 @@ const handleDrop = async (event: DragEvent, targetVolumeId: string, targetIndex?
   );
 
   // 更新书籍
-  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 
   toast.add({
     severity: 'success',
@@ -1486,7 +1537,11 @@ const handleDragLeave = () => {
             placeholder="输入卷标题..."
             type="input"
             :apply-translation-to-input="false"
-            @translation-applied="(value: string) => { editingVolumeTranslation = value; }"
+            @translation-applied="
+              (value: string) => {
+                editingVolumeTranslation = value;
+              }
+            "
             @keyup.enter="handleEditVolume"
           />
         </div>
@@ -1528,7 +1583,11 @@ const handleDragLeave = () => {
             placeholder="输入章节标题..."
             type="input"
             :apply-translation-to-input="false"
-            @translation-applied="(value: string) => { editingChapterTranslation = value; }"
+            @translation-applied="
+              (value: string) => {
+                editingChapterTranslation = value;
+              }
+            "
             @keyup.enter="handleEditChapter"
           />
         </div>
@@ -1646,9 +1705,16 @@ const handleDragLeave = () => {
                 >
                   <div class="flex justify-between items-start gap-2 min-w-0">
                     <div class="min-w-0 flex-1 overflow-hidden">
-                      <div class="font-medium text-sm text-moon-90 break-words">{{ term.name }}</div>
-                      <div class="text-xs text-primary-400 mt-0.5 break-words">{{ term.translation.translation }}</div>
-                      <div v-if="term.description" class="text-xs text-moon/50 mt-1 line-clamp-2 break-words">
+                      <div class="font-medium text-sm text-moon-90 break-words">
+                        {{ term.name }}
+                      </div>
+                      <div class="text-xs text-primary-400 mt-0.5 break-words">
+                        {{ term.translation.translation }}
+                      </div>
+                      <div
+                        v-if="term.description"
+                        class="text-xs text-moon/50 mt-1 line-clamp-2 break-words"
+                      >
                         {{ term.description }}
                       </div>
                     </div>
@@ -1669,9 +1735,7 @@ const handleDragLeave = () => {
               </div>
             </template>
             <template #empty>
-              <div class="text-center py-8 text-moon/50 text-sm">
-                本章暂无术语
-              </div>
+              <div class="text-center py-8 text-moon/50 text-sm">本章暂无术语</div>
             </template>
           </DataView>
         </div>
@@ -1686,7 +1750,12 @@ const handleDragLeave = () => {
           <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
         </div>
         <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <DataView :value="usedCharacters" data-key="id" layout="list" class="character-popover-dataview">
+          <DataView
+            :value="usedCharacters"
+            data-key="id"
+            layout="list"
+            class="character-popover-dataview"
+          >
             <template #list="slotProps">
               <div class="flex flex-col gap-2 p-2">
                 <div
@@ -1697,19 +1766,35 @@ const handleDragLeave = () => {
                   <div class="flex justify-between items-start gap-2 min-w-0">
                     <div class="min-w-0 flex-1 overflow-hidden">
                       <div class="flex items-center gap-2">
-                        <div class="font-medium text-sm text-moon-90 break-words">{{ character.name }}</div>
+                        <div class="font-medium text-sm text-moon-90 break-words">
+                          {{ character.name }}
+                        </div>
                         <span
                           v-if="character.sex"
                           class="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary-400"
                         >
-                          {{ character.sex === 'male' ? '男' : character.sex === 'female' ? '女' : '其他' }}
+                          {{
+                            character.sex === 'male'
+                              ? '男'
+                              : character.sex === 'female'
+                                ? '女'
+                                : '其他'
+                          }}
                         </span>
                       </div>
-                      <div class="text-xs text-primary-400 mt-0.5 break-words">{{ character.translation.translation }}</div>
-                      <div v-if="character.description" class="text-xs text-moon/50 mt-1 line-clamp-2 break-words">
+                      <div class="text-xs text-primary-400 mt-0.5 break-words">
+                        {{ character.translation.translation }}
+                      </div>
+                      <div
+                        v-if="character.description"
+                        class="text-xs text-moon/50 mt-1 line-clamp-2 break-words"
+                      >
                         {{ character.description }}
                       </div>
-                      <div v-if="character.aliases && character.aliases.length > 0" class="text-xs text-moon/60 mt-1">
+                      <div
+                        v-if="character.aliases && character.aliases.length > 0"
+                        class="text-xs text-moon/60 mt-1"
+                      >
                         <span class="text-moon/50">别名：</span>
                         <span class="break-words">
                           {{ character.aliases.map((a: { name: string }) => a.name).join('、') }}
@@ -1733,9 +1818,7 @@ const handleDragLeave = () => {
               </div>
             </template>
             <template #empty>
-              <div class="text-center py-8 text-moon/50 text-sm">
-                本章暂无角色设定
-              </div>
+              <div class="text-center py-8 text-moon/50 text-sm">本章暂无角色设定</div>
             </template>
           </DataView>
         </div>
@@ -1800,10 +1883,7 @@ const handleDragLeave = () => {
     </Dialog>
 
     <!-- 主内容区域 -->
-    <div
-      class="book-main-content"
-      :class="{ 'overflow-hidden': !!selectedSettingMenu }"
-    >
+    <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
       <!-- 章节阅读工具栏 -->
       <div v-if="selectedChapter && !selectedSettingMenu" class="chapter-toolbar">
         <div class="toolbar-content">
@@ -1820,7 +1900,7 @@ const handleDragLeave = () => {
                 :title="option.title"
                 :class="[
                   'p-button-text p-button-sm p-button-rounded',
-                  { 'p-highlight': editMode === option.value }
+                  { 'p-highlight': editMode === option.value },
                 ]"
                 @click="editMode = option.value"
               />
@@ -1863,155 +1943,155 @@ const handleDragLeave = () => {
       </div>
 
       <div class="scrollable-content">
-      <div
-        class="page-container"
-        :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
-      >
-        <!-- 术语设置面板 -->
-        <TerminologyPanel
-          v-if="selectedSettingMenu === 'terms'"
-          :book="book || null"
-          class="flex-1 min-h-0"
-        />
+        <div
+          class="page-container"
+          :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
+        >
+          <!-- 术语设置面板 -->
+          <TerminologyPanel
+            v-if="selectedSettingMenu === 'terms'"
+            :book="book || null"
+            class="flex-1 min-h-0"
+          />
 
-        <!-- 角色设置面板 -->
-        <CharacterSettingPanel
-          v-else-if="selectedSettingMenu === 'characters'"
-          :book="book || null"
-          class="flex-1 min-h-0"
-        />
+          <!-- 角色设置面板 -->
+          <CharacterSettingPanel
+            v-else-if="selectedSettingMenu === 'characters'"
+            :book="book || null"
+            class="flex-1 min-h-0"
+          />
 
-        <!-- 章节内容 -->
-        <div v-else-if="selectedChapter" class="chapter-content-container">
-          <!-- 原始文本编辑模式 -->
-          <div v-if="editMode === 'original'" class="original-text-edit-container">
-            <div class="space-y-4">
-              <div class="space-y-2">
-                <label class="block text-sm font-medium text-moon/90">原始文本</label>
-                <Textarea
-                  v-model="originalTextEditValue"
-                  :auto-resize="true"
-                  rows="20"
-                  class="w-full original-text-textarea"
-                  placeholder="输入原始文本..."
-                />
-              </div>
-              <div class="flex gap-2 justify-end">
-                <Button
-                  label="取消"
-                  class="p-button-text"
-                  @click="cancelOriginalTextEdit"
-                />
-                <Button
-                  label="保存"
-                  @click="saveOriginalTextEdit"
-                />
+          <!-- 章节内容 -->
+          <div v-else-if="selectedChapter" class="chapter-content-container">
+            <!-- 原始文本编辑模式 -->
+            <div v-if="editMode === 'original'" class="original-text-edit-container">
+              <div class="space-y-4">
+                <div class="space-y-2">
+                  <label class="block text-sm font-medium text-moon/90">原始文本</label>
+                  <Textarea
+                    v-model="originalTextEditValue"
+                    :auto-resize="true"
+                    rows="20"
+                    class="w-full original-text-textarea"
+                    placeholder="输入原始文本..."
+                  />
+                </div>
+                <div class="flex gap-2 justify-end">
+                  <Button label="取消" class="p-button-text" @click="cancelOriginalTextEdit" />
+                  <Button label="保存" @click="saveOriginalTextEdit" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 翻译预览模式 -->
-          <div v-else-if="editMode === 'preview'" class="translation-preview-container">
-            <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-              <div
-                v-for="paragraph in selectedChapterParagraphs"
-                :key="paragraph.id"
-                class="translation-preview-paragraph"
-              >
-                <p class="translation-text">{{ getParagraphTranslationText(paragraph) || '(未翻译)' }}</p>
+            <!-- 翻译预览模式 -->
+            <div v-else-if="editMode === 'preview'" class="translation-preview-container">
+              <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
+                <div
+                  v-for="paragraph in selectedChapterParagraphs"
+                  :key="paragraph.id"
+                  class="translation-preview-paragraph"
+                >
+                  <p class="translation-text">
+                    {{ getParagraphTranslationText(paragraph) || '(未翻译)' }}
+                  </p>
+                </div>
+              </div>
+              <div v-else class="empty-chapter-content">
+                <i class="pi pi-file empty-icon"></i>
+                <p class="empty-text">该章节暂无内容</p>
+                <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
               </div>
             </div>
-            <div v-else class="empty-chapter-content">
-              <i class="pi pi-file empty-icon"></i>
-              <p class="empty-text">该章节暂无内容</p>
-              <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
-            </div>
-          </div>
 
-          <!-- 翻译模式（默认） -->
-          <template v-else>
-          <!-- 章节标题 -->
-          <div class="chapter-header">
-            <div class="flex items-center gap-2">
-              <h1 class="chapter-title flex-1">{{ getChapterDisplayTitle(selectedChapter) }}</h1>
-              <Button
-                icon="pi pi-pencil"
-                class="p-button-text p-button-sm p-button-rounded"
-                size="small"
-                title="编辑章节标题"
-                @click="openEditChapterDialog(selectedChapter)"
-              />
-            </div>
-            <div v-if="selectedChapterStats" class="chapter-stats">
-              <div class="chapter-stat-item">
-                <i class="pi pi-list chapter-stat-icon"></i>
-                <span class="chapter-stat-value">{{ selectedChapterStats.paragraphCount }}</span>
-                <span class="chapter-stat-label">段落</span>
+            <!-- 翻译模式（默认） -->
+            <template v-else>
+              <!-- 章节标题 -->
+              <div class="chapter-header">
+                <div class="flex items-center gap-2">
+                  <h1 class="chapter-title flex-1">
+                    {{ getChapterDisplayTitle(selectedChapter) }}
+                  </h1>
+                  <Button
+                    icon="pi pi-pencil"
+                    class="p-button-text p-button-sm p-button-rounded"
+                    size="small"
+                    title="编辑章节标题"
+                    @click="openEditChapterDialog(selectedChapter)"
+                  />
+                </div>
+                <div v-if="selectedChapterStats" class="chapter-stats">
+                  <div class="chapter-stat-item">
+                    <i class="pi pi-list chapter-stat-icon"></i>
+                    <span class="chapter-stat-value">{{
+                      selectedChapterStats.paragraphCount
+                    }}</span>
+                    <span class="chapter-stat-label">段落</span>
+                  </div>
+                  <span class="chapter-stat-separator">|</span>
+                  <div class="chapter-stat-item">
+                    <i class="pi pi-align-left chapter-stat-icon"></i>
+                    <span class="chapter-stat-value">{{
+                      formatWordCount(selectedChapterStats.charCount)
+                    }}</span>
+                  </div>
+                </div>
+                <div v-if="selectedChapter.lastUpdated" class="chapter-meta">
+                  <i class="pi pi-clock chapter-meta-icon"></i>
+                  <span class="chapter-meta-text"
+                    >发布于:
+                    {{ new Date(selectedChapter.lastUpdated).toLocaleString('zh-CN') }}</span
+                  >
+                </div>
+                <div v-if="selectedChapter.lastEdited" class="chapter-meta">
+                  <i class="pi pi-clock chapter-meta-icon"></i>
+                  <span class="chapter-meta-text"
+                    >本地最后编辑:
+                    {{ new Date(selectedChapter.lastEdited).toLocaleString('zh-CN') }}</span
+                  >
+                </div>
+                <a
+                  v-if="selectedChapter.webUrl"
+                  :href="selectedChapter.webUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="chapter-web-url"
+                >
+                  <i class="pi pi-external-link"></i>
+                  <span>查看原文</span>
+                </a>
               </div>
-              <span class="chapter-stat-separator">|</span>
-              <div class="chapter-stat-item">
-                <i class="pi pi-align-left chapter-stat-icon"></i>
-                <span class="chapter-stat-value">{{
-                  formatWordCount(selectedChapterStats.charCount)
-                }}</span>
+
+              <!-- 章节段落列表 -->
+              <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
+                <div
+                  v-for="(paragraph, index) in selectedChapterParagraphs"
+                  :key="paragraph.id"
+                  class="paragraph-with-line-number"
+                >
+                  <span class="line-number">{{ index + 1 }}</span>
+                  <ParagraphCard
+                    :paragraph="paragraph"
+                    :terminologies="book?.terminologies || []"
+                    :character-settings="book?.characterSettings || []"
+                  />
+                </div>
               </div>
-            </div>
-            <div v-if="selectedChapter.lastUpdated" class="chapter-meta">
-              <i class="pi pi-clock chapter-meta-icon"></i>
-              <span class="chapter-meta-text"
-                >发布于: {{ new Date(selectedChapter.lastUpdated).toLocaleString('zh-CN') }}</span
-              >
-            </div>
-            <div v-if="selectedChapter.lastEdited" class="chapter-meta">
-              <i class="pi pi-clock chapter-meta-icon"></i>
-              <span class="chapter-meta-text"
-                >本地最后编辑:
-                {{ new Date(selectedChapter.lastEdited).toLocaleString('zh-CN') }}</span
-              >
-            </div>
-            <a
-              v-if="selectedChapter.webUrl"
-              :href="selectedChapter.webUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="chapter-web-url"
-            >
-              <i class="pi pi-external-link"></i>
-              <span>查看原文</span>
-            </a>
+
+              <!-- 空状态 -->
+              <div v-else class="empty-chapter-content">
+                <i class="pi pi-file empty-icon"></i>
+                <p class="empty-text">该章节暂无内容</p>
+                <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
+              </div>
+            </template>
           </div>
 
-          <!-- 章节段落列表 -->
-          <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-            <div
-              v-for="(paragraph, index) in selectedChapterParagraphs"
-              :key="paragraph.id"
-              class="paragraph-with-line-number"
-            >
-              <span class="line-number">{{ index + 1 }}</span>
-              <ParagraphCard
-                :paragraph="paragraph"
-                :terminologies="book?.terminologies || []"
-                :character-settings="book?.characterSettings || []"
-              />
-            </div>
+          <!-- 未选择章节时的提示 -->
+          <div v-else class="no-chapter-selected">
+            <i class="pi pi-book-open no-selection-icon"></i>
+            <p class="no-selection-text">请从左侧选择一个章节</p>
+            <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
           </div>
-
-          <!-- 空状态 -->
-          <div v-else class="empty-chapter-content">
-            <i class="pi pi-file empty-icon"></i>
-            <p class="empty-text">该章节暂无内容</p>
-            <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
-          </div>
-          </template>
-        </div>
-
-        <!-- 未选择章节时的提示 -->
-        <div v-else class="no-chapter-selected">
-          <i class="pi pi-book-open no-selection-icon"></i>
-          <p class="no-selection-text">请从左侧选择一个章节</p>
-          <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
-        </div>
         </div>
       </div>
     </div>
@@ -2666,7 +2746,6 @@ const handleDragLeave = () => {
   border-color: var(--primary-opacity-50) !important;
   color: var(--primary-opacity-100) !important;
 }
-
 
 .scrollable-content {
   flex: 1;
