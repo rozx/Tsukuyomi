@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
+import ConfirmDialog from 'primevue/confirmdialog';
+import { useConfirm } from 'primevue/useconfirm';
+import Checkbox from 'primevue/checkbox';
+import InputText from 'primevue/inputtext';
+import SettingCard from './SettingCard.vue';
 import type { Novel, Terminology } from 'src/types/novel';
 import ExtractedTermsDialog from './ExtractedTermsDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
+import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
-import { ThemeClasses } from 'src/constants/theme';
 
 const props = defineProps<{
   book: Novel | null;
@@ -55,7 +58,12 @@ const showExtractedTermsDialog = ref(false);
 const selectedTerminology = ref<Terminology | null>(null);
 
 const toast = useToastWithHistory();
+const confirm = useConfirm();
 const isSaving = ref(false);
+
+// 批量操作相关状态
+const bulkActionMode = ref(false);
+const selectedTermIds = ref<Set<string>>(new Set());
 
 // 打开添加对话框
 const openAddDialog = () => {
@@ -171,7 +179,7 @@ const handleSave = async (data: { name: string; translation: string; description
 };
 
 // 删除术语
-const handleDelete = async (terminology: (typeof terminologies.value)[number]) => {
+const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
   if (!props.book) {
     toast.add({
       severity: 'error',
@@ -182,23 +190,36 @@ const handleDelete = async (terminology: (typeof terminologies.value)[number]) =
     return;
   }
 
-  try {
-    await TerminologyService.deleteTerminology(props.book.id, terminology.id);
-    toast.add({
-      severity: 'success',
-      summary: '删除成功',
-      detail: `已成功删除术语 "${terminology.name}"`,
-      life: 3000,
-    });
-  } catch (error) {
-    console.error('删除术语失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '删除失败',
-      detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
-      life: 3000,
-    });
-  }
+  confirm.require({
+    message: `确定要删除术语 "${terminology.name}" 吗？`,
+    header: '确认删除',
+    icon: 'pi pi-exclamation-triangle',
+    rejectClass: 'p-button-text',
+    acceptClass: 'p-button-danger',
+    rejectLabel: '取消',
+    acceptLabel: '删除',
+    accept: () => {
+      void (async () => {
+        try {
+          await TerminologyService.deleteTerminology(props.book!.id, terminology.id);
+          toast.add({
+            severity: 'success',
+            summary: '删除成功',
+            detail: `已成功删除术语 "${terminology.name}"`,
+            life: 3000,
+          });
+        } catch (error) {
+          console.error('删除术语失败:', error);
+          toast.add({
+            severity: 'error',
+            summary: '删除失败',
+            detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
+            life: 3000,
+          });
+        }
+      })();
+    },
+  });
 };
 
 // 打开提取术语对话框
@@ -208,6 +229,106 @@ const handleExtractTerms = () => {
     return;
   }
   showExtractedTermsDialog.value = true;
+};
+
+// 切换批量操作模式
+const toggleBulkActionMode = () => {
+  bulkActionMode.value = !bulkActionMode.value;
+  if (!bulkActionMode.value) {
+    selectedTermIds.value.clear();
+  }
+};
+
+// 处理单个术语的选中状态
+const handleTermCheck = (checked: boolean, termId?: string) => {
+  if (!termId) return;
+  if (checked) {
+    selectedTermIds.value.add(termId);
+  } else {
+    selectedTermIds.value.delete(termId);
+  }
+};
+
+// 全选/取消全选
+const toggleSelectAll = () => {
+  if (selectedTermIds.value.size === terminologies.value.length) {
+    selectedTermIds.value.clear();
+  } else {
+    selectedTermIds.value = new Set(terminologies.value.map((t) => t.id));
+  }
+};
+
+// 计算是否全选
+const isAllSelected = computed(() => {
+  return (
+    terminologies.value.length > 0 && selectedTermIds.value.size === terminologies.value.length
+  );
+});
+
+// 计算是否有部分选中
+const isIndeterminate = computed(() => {
+  return selectedTermIds.value.size > 0 && selectedTermIds.value.size < terminologies.value.length;
+});
+
+// 批量删除
+const handleBulkDelete = () => {
+  if (!props.book || selectedTermIds.value.size === 0) return;
+
+  const selectedCount = selectedTermIds.value.size;
+  const selectedNames = terminologies.value
+    .filter((t) => selectedTermIds.value.has(t.id))
+    .map((t) => t.name)
+    .slice(0, 3)
+    .join('、');
+  const moreText = selectedCount > 3 ? `等 ${selectedCount} 个` : '';
+
+  confirm.require({
+    message: `确定要删除选中的 ${selectedCount} 个术语吗？\n${selectedNames}${moreText}`,
+    header: '确认批量删除',
+    icon: 'pi pi-exclamation-triangle',
+    rejectClass: 'p-button-text',
+    acceptClass: 'p-button-danger',
+    rejectLabel: '取消',
+    acceptLabel: '删除',
+    accept: () => {
+      void (async () => {
+        const idsToDelete = Array.from(selectedTermIds.value);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const id of idsToDelete) {
+          try {
+            await TerminologyService.deleteTerminology(props.book!.id, id);
+            successCount++;
+          } catch (error) {
+            console.error('删除术语失败:', error);
+            failCount++;
+          }
+        }
+
+        if (successCount > 0) {
+          toast.add({
+            severity: 'success',
+            summary: '批量删除成功',
+            detail: `已成功删除 ${successCount} 个术语`,
+            life: 3000,
+          });
+        }
+
+        if (failCount > 0) {
+          toast.add({
+            severity: 'warn',
+            summary: '部分删除失败',
+            detail: `${failCount} 个术语删除失败`,
+            life: 3000,
+          });
+        }
+
+        selectedTermIds.value.clear();
+        bulkActionMode.value = false;
+      })();
+    },
+  });
 };
 
 // 处理术语名称更新
@@ -227,43 +348,94 @@ const handleExtractTerms = () => {
     <!-- 标题区域 -->
     <div class="p-6 border-b border-white/10">
       <h1 class="text-2xl font-semibold text-moon-100 mb-2">术语设置</h1>
-      <p class="text-sm text-moon/70">管理小说中的术语及其翻译，这些术语会在翻译过程中被优先使用</p>
+      <p class="text-sm text-moon/70 mb-3">
+        管理小说中的术语及其翻译，这些术语会在翻译过程中被优先使用
+      </p>
+      <AppMessage
+        severity="info"
+        message="提示：翻译和描述字段留空时，AI 在翻译章节时会自动填充或更新这些内容"
+        :closable="false"
+      />
+      <AppMessage
+        severity="info"
+        message="注意：AI 在翻译过程中会根据需要自动创建、更新或删除术语设置项目，以优化翻译质量"
+        :closable="false"
+      />
     </div>
 
     <!-- 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0 p-6">
       <!-- 操作栏 -->
-      <div class="flex-shrink-0 flex items-center justify-end gap-3 mb-4 flex-nowrap">
-        <InputGroup class="search-input-group min-w-0 flex-shrink">
-          <InputGroupAddon>
-            <i class="pi pi-search text-base" />
-          </InputGroupAddon>
-          <InputText
-            v-model="searchQuery"
-            placeholder="搜索术语名称、翻译或描述..."
-            class="search-input"
+      <div class="flex-shrink-0 flex items-center justify-between gap-3 mb-4 flex-nowrap">
+        <!-- 左侧：批量操作控制 -->
+        <div v-if="bulkActionMode" class="flex items-center gap-3 flex-shrink-0">
+          <Checkbox
+            :model-value="isAllSelected"
+            :binary="true"
+            :indeterminate="isIndeterminate"
+            @update:model-value="toggleSelectAll"
           />
-          <InputGroupAddon v-if="searchQuery" class="input-action-addon">
-            <Button
-              icon="pi pi-times"
-              class="p-button-text p-button-sm input-action-button"
-              @click="searchQuery = ''"
-              title="清除搜索"
+          <span class="text-sm text-moon/70">
+            已选择 {{ selectedTermIds.size }} / {{ terminologies.length }}
+          </span>
+          <Button
+            label="批量删除"
+            icon="pi pi-trash"
+            class="p-button-danger flex-shrink-0"
+            :disabled="selectedTermIds.size === 0"
+            @click="handleBulkDelete"
+          />
+          <Button
+            label="取消"
+            icon="pi pi-times"
+            class="p-button-text flex-shrink-0"
+            @click="toggleBulkActionMode"
+          />
+        </div>
+        <div v-else class="flex items-center gap-2">
+          <Button
+            label="批量操作"
+            icon="pi pi-check-square"
+            class="p-button-outlined flex-shrink-0"
+            @click="toggleBulkActionMode"
+          />
+        </div>
+
+        <!-- 右侧：搜索和其他操作 -->
+        <div class="flex items-center gap-3 flex-1 justify-end">
+          <InputGroup class="search-input-group min-w-0 flex-shrink">
+            <InputGroupAddon>
+              <i class="pi pi-search text-base" />
+            </InputGroupAddon>
+            <InputText
+              v-model="searchQuery"
+              placeholder="搜索术语名称、翻译或描述..."
+              class="search-input"
             />
-          </InputGroupAddon>
-        </InputGroup>
-        <Button
-          label="提取术语"
-          icon="pi pi-search"
-          class="p-button-outlined flex-shrink-0"
-          @click="handleExtractTerms"
-        />
-        <Button
-          label="添加术语"
-          icon="pi pi-plus"
-          class="p-button-primary flex-shrink-0"
-          @click="openAddDialog"
-        />
+            <InputGroupAddon v-if="searchQuery" class="input-action-addon">
+              <Button
+                icon="pi pi-times"
+                class="p-button-text p-button-sm input-action-button"
+                @click="searchQuery = ''"
+                title="清除搜索"
+              />
+            </InputGroupAddon>
+          </InputGroup>
+          <Button
+            label="提取术语"
+            icon="pi pi-search"
+            class="p-button-outlined flex-shrink-0"
+            :disabled="bulkActionMode"
+            @click="handleExtractTerms"
+          />
+          <Button
+            label="添加术语"
+            icon="pi pi-plus"
+            class="p-button-primary flex-shrink-0"
+            :disabled="bulkActionMode"
+            @click="openAddDialog"
+          />
+        </div>
       </div>
 
       <!-- 术语列表 -->
@@ -296,67 +468,22 @@ const handleExtractTerms = () => {
 
           <template #grid="slotProps">
             <div
-              class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 p-2 justify-items-center"
+              class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 pb-4"
             >
-              <div
+              <SettingCard
                 v-for="terminology in slotProps.items"
                 :key="terminology.id"
-                class="terminology-card rounded-lg border border-white/10 bg-white/5 p-2 hover:bg-white/10 transition-colors flex flex-col w-full max-w-[160px]"
-              >
-                <!-- 术语名称 -->
-                <div class="mb-1 min-w-0">
-                  <h4
-                    class="text-xs font-semibold text-moon/90 line-clamp-1 break-words"
-                    :title="terminology.name"
-                  >
-                    {{ terminology.name }}
-                  </h4>
-                </div>
-
-                <!-- 翻译 -->
-                <div class="mb-1 min-w-0">
-                  <p class="text-[10px] text-moon/60 mb-0.5">翻译</p>
-                  <p
-                    :class="[ThemeClasses.textTranslation, 'text-xs line-clamp-2 break-words']"
-                    :title="terminology.translation"
-                  >
-                    {{ terminology.translation }}
-                  </p>
-                </div>
-
-                <!-- 描述 -->
-                <div v-if="terminology.description" class="mb-1 flex-1 min-w-0">
-                  <p class="text-[10px] text-moon/60 mb-0.5">描述</p>
-                  <p
-                    class="text-[10px] text-moon/70 line-clamp-2 break-words"
-                    :title="terminology.description"
-                  >
-                    {{ terminology.description }}
-                  </p>
-                </div>
-
-                <!-- 出现次数 -->
-                <div class="mb-1 pt-1 border-t border-white/5">
-                  <div class="flex items-center justify-between text-[10px]">
-                    <span class="text-moon/60">出现次数</span>
-                    <span class="text-moon/80 font-medium">{{ terminology.occurrences }}</span>
-                  </div>
-                </div>
-
-                <!-- 操作按钮 -->
-                <div class="flex gap-1 mt-auto">
-                  <Button
-                    icon="pi pi-pencil"
-                    class="p-button-text p-button-sm flex-1 !p-1 !h-6"
-                    @click="openEditDialog(terminology)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger flex-1 !p-1 !h-6"
-                    @click="handleDelete(terminology)"
-                  />
-                </div>
-              </div>
+                :title="terminology.name"
+                :description="terminology.description"
+                :translations="terminology.translation.translation"
+                :occurrences="terminology.occurrences"
+                :show-checkbox="bulkActionMode"
+                :checked="selectedTermIds.has(terminology.id)"
+                :item-id="terminology.id"
+                @edit="openEditDialog(terminology)"
+                @delete="handleDelete(terminology)"
+                @check="handleTermCheck"
+              />
             </div>
           </template>
         </DataView>
@@ -383,9 +510,12 @@ const handleExtractTerms = () => {
     <!-- 提取的术语对话框 -->
     <ExtractedTermsDialog
       v-model:visible="showExtractedTermsDialog"
-      :book="book"
+      :book="props.book"
       @saved="() => {}"
     />
+
+    <!-- 确认删除对话框 -->
+    <ConfirmDialog />
   </div>
 </template>
 
@@ -394,24 +524,6 @@ const handleExtractTerms = () => {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.terminology-card {
-  min-height: 140px;
-  max-width: 160px;
-  width: 100%;
-  overflow: hidden;
-  word-wrap: break-word;
-  word-break: break-word;
-}
-
-.terminology-card > * {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.extracted-term-card {
-  min-height: 160px;
 }
 
 /* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */

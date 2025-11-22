@@ -64,20 +64,23 @@ describe('CharacterSettingService', () => {
     test('应该添加新角色', async () => {
       const charData = {
         name: 'Alice',
-        translations: ['爱丽丝'],
+        sex: 'female' as const,
+        translation: '爱丽丝',
         description: '主角',
-        aliases: ['Ally'],
+        aliases: [{ name: 'Ally', translation: '艾莉' }],
       };
 
       const result = await CharacterSettingService.addCharacterSetting(bookId, charData);
 
       expect(result).toBeTruthy();
       expect(result.name).toBe('Alice');
-      expect(result.translation).toHaveLength(1);
-      expect(result.translation[0]?.translation).toBe('爱丽丝');
+      expect(result.sex).toBe('female');
+      expect(result.translation).toBeTruthy();
+      expect(result.translation.translation).toBe('爱丽丝');
       expect(result.description).toBe('主角');
       expect(result.aliases).toHaveLength(1);
       expect(result.aliases[0]?.name).toBe('Ally');
+      expect(result.aliases[0]?.translation?.translation).toBe('艾莉');
       
       // 验证出现次数统计 (Alice appears twice in the mock text)
       const totalOccurrences = result.occurrences.reduce((sum, occ) => sum + occ.count, 0);
@@ -91,7 +94,7 @@ describe('CharacterSettingService', () => {
         {
           id: 'char-1',
           name: 'Alice',
-          translation: [],
+          translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
         },
@@ -99,7 +102,7 @@ describe('CharacterSettingService', () => {
 
       const charData = {
         name: 'Alice',
-        translations: ['爱丽丝'],
+        translation: '爱丽丝',
       };
 
       try {
@@ -117,7 +120,8 @@ describe('CharacterSettingService', () => {
         {
           id: charId,
           name: 'Alice',
-          translation: [{ id: 't1', translation: '爱丽丝', aiModelId: '' }],
+          sex: 'female',
+          translation: { id: 't1', translation: '爱丽丝', aiModelId: '' },
           aliases: [],
           occurrences: [],
           description: 'Old description',
@@ -126,14 +130,16 @@ describe('CharacterSettingService', () => {
 
       const updates = {
         description: 'New description',
-        translations: ['艾丽丝'],
+        sex: 'male' as const,
+        translation: '艾丽丝',
       };
 
       const result = await CharacterSettingService.updateCharacterSetting(bookId, charId, updates);
 
       expect(result.id).toBe(charId);
       expect(result.description).toBe('New description');
-      expect(result.translation?.[0]?.translation).toBe('艾丽丝');
+      expect(result.sex).toBe('male');
+      expect(result.translation?.translation).toBe('艾丽丝');
       expect(mockUpdateBook).toHaveBeenCalledTimes(1);
     });
 
@@ -143,14 +149,14 @@ describe('CharacterSettingService', () => {
         {
           id: charId,
           name: 'Alice',
-          translation: [],
+          translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
         },
         {
           id: 'char-2',
           name: 'Bob',
-          translation: [],
+          translation: { id: 't2', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
         },
@@ -175,7 +181,7 @@ describe('CharacterSettingService', () => {
         {
           id: charId,
           name: 'Alice',
-          translation: [],
+          translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
         },

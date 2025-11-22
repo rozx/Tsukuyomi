@@ -1,5 +1,6 @@
 import type {
   CharacterSetting,
+  Alias,
   Occurrence,
   Translation,
   Novel,
@@ -76,9 +77,10 @@ export class CharacterSettingService {
    * @param bookId 书籍 ID
    * @param charData 角色数据
    * @param charData.name 角色名称（必需）
-   * @param charData.translations 翻译文本数组（可选）
+   * @param charData.sex 性别（可选）
+   * @param charData.translation 翻译文本（可选）
    * @param charData.description 角色描述（可选）
-   * @param charData.aliases 别名数组（可选，字符串数组）
+   * @param charData.aliases 别名数组（可选，包含名称和翻译的对象数组）
    * @returns 创建的角色设定对象
    * @throws 如果角色名称已存在，抛出错误
    */
@@ -86,9 +88,10 @@ export class CharacterSettingService {
     bookId: string,
     charData: {
       name: string;
-      translations?: string[];
+      sex?: 'male' | 'female' | 'other' | undefined;
+      translation?: string;
       description?: string;
-      aliases?: string[];
+      aliases?: Array<{ name: string; translation: string }>;
     },
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
@@ -111,43 +114,34 @@ export class CharacterSettingService {
     // 还需要收集所有子项（别名）的 ID 以确保唯一性，虽然目前 UniqueIdGenerator 主要是针对顶层 ID
     // 为了安全起见，最好是全局唯一
     const allIds = new Set(existingIds);
-    currentSettings.forEach(c => {
-      if (c.aliases) {
-        c.aliases.forEach(a => allIds.add(a.id));
-      }
-    });
+    // Alias no longer has ID, so we don't need to collect alias IDs
     
     const idGenerator = new UniqueIdGenerator(Array.from(allIds));
     const charId = idGenerator.generate();
 
-    // 创建 Translation 对象数组
-    const translations: Translation[] = (charData.translations || []).map(text => ({
+    // 创建 Translation 对象
+    const translation: Translation = {
       id: generateShortId(),
-      translation: text,
+      translation: charData.translation || '',
       aiModelId: '', // 默认为空
-    }));
+    };
 
     // 统计角色出现次数
     const occurrences = this.countNameOccurrences(book, charData.name);
 
     // 处理别名
-    const aliases: CharacterSetting[] = [];
+    const aliases: Alias[] = [];
     if (charData.aliases && charData.aliases.length > 0) {
-      for (const aliasName of charData.aliases) {
-        if (!aliasName.trim()) continue;
-        
-        // 为别名生成 ID
-        const aliasId = idGenerator.generate();
-        
-        // 统计别名出现次数
-        const aliasOccurrences = this.countNameOccurrences(book, aliasName);
+      for (const aliasData of charData.aliases) {
+        if (!aliasData.name.trim()) continue;
         
         aliases.push({
-          id: aliasId,
-          name: aliasName,
-          translation: [], // 别名通常没有单独的翻译列表，或者可以继承主角色的？暂时为空
-          aliases: [], // 别名不嵌套别名
-          occurrences: aliasOccurrences,
+          name: aliasData.name,
+          translation: {
+            id: generateShortId(),
+            translation: aliasData.translation || aliasData.name, // 使用提供的翻译，如果没有则使用名称
+            aiModelId: '',
+          },
         });
       }
     }
@@ -156,8 +150,9 @@ export class CharacterSettingService {
     const newCharacter: CharacterSetting = {
       id: charId,
       name: charData.name,
+      sex: charData.sex,
       ...(charData.description ? { description: charData.description } : {}),
-      translation: translations,
+      translation,
       aliases,
       occurrences,
     };
@@ -184,9 +179,10 @@ export class CharacterSettingService {
     charId: string,
     updates: {
       name?: string;
-      translations?: string[];
+      sex?: 'male' | 'female' | 'other' | undefined;
+      translation?: string;
       description?: string;
-      aliases?: string[];
+      aliases?: Array<{ name: string; translation: string }>;
     },
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
@@ -224,57 +220,45 @@ export class CharacterSettingService {
     }
 
     // 处理翻译更新
-    let updatedTranslations = existingChar.translation;
-    if (updates.translations !== undefined) {
-      // 简单的全量替换策略：
-      // 保留已有的翻译对象如果文本匹配（为了保留 id 和 aiModelId），否则创建新的
-      // 但为了简化，这里我们重新创建 Translation 对象列表
-      // 如果需要保留 ID，逻辑会复杂一些。考虑到翻译只是简单的字符串列表展示在 UI，重新生成 ID 影响不大
-      // 除非有其他地方引用了具体的 Translation ID。
-      // 让我们尝试保留 ID：
-      updatedTranslations = updates.translations.map(text => {
-        const existing = existingChar.translation.find(t => t.translation === text);
-        if (existing) return existing;
-        return {
-          id: generateShortId(),
-          translation: text,
-          aiModelId: '',
-        };
-      });
+    let updatedTranslation = existingChar.translation;
+    if (updates.translation !== undefined) {
+      // 保留原有的 ID 和 aiModelId，只更新翻译文本
+      updatedTranslation = {
+        id: existingChar.translation.id,
+        translation: updates.translation,
+        aiModelId: existingChar.translation.aiModelId,
+      };
     }
 
     // 处理别名更新
     let updatedAliases = existingChar.aliases;
     if (updates.aliases !== undefined) {
-      // 收集所有现有 ID 以避免冲突
-      const existingIds = extractIds(currentSettings);
-       const allIds = new Set(existingIds);
-       currentSettings.forEach(c => {
-        if (c.aliases) {
-          c.aliases.forEach(a => allIds.add(a.id));
-        }
-      });
-      const idGenerator = new UniqueIdGenerator(Array.from(allIds));
-
       updatedAliases = [];
-      for (const aliasName of updates.aliases) {
-         if (!aliasName.trim()) continue;
+      for (const aliasData of updates.aliases) {
+         if (!aliasData.name.trim()) continue;
 
-         // 尝试查找现有的别名以保留 ID
-         const existingAlias = existingChar.aliases.find(a => a.name === aliasName);
+         // 尝试查找现有的别名（按名称匹配）
+         const existingAlias = existingChar.aliases.find(a => a.name === aliasData.name);
          
          if (existingAlias) {
-           updatedAliases.push(existingAlias);
+           // 保留现有别名，但更新翻译
+           updatedAliases.push({
+             name: aliasData.name,
+             translation: {
+               id: existingAlias.translation.id, // 保留原有 ID
+               translation: aliasData.translation || aliasData.name,
+               aiModelId: existingAlias.translation.aiModelId,
+             },
+           });
          } else {
            // 创建新别名
-           const aliasId = idGenerator.generate();
-           const aliasOccurrences = this.countNameOccurrences(book, aliasName);
            updatedAliases.push({
-             id: aliasId,
-             name: aliasName,
-             translation: [],
-             aliases: [],
-             occurrences: aliasOccurrences,
+             name: aliasData.name,
+             translation: {
+                id: generateShortId(),
+                translation: aliasData.translation || aliasData.name,
+                aiModelId: '',
+             },
            });
          }
       }
@@ -283,7 +267,8 @@ export class CharacterSettingService {
     const updatedChar: CharacterSetting = {
       id: existingChar.id,
       name: updatedName,
-      translation: updatedTranslations,
+      sex: updates.sex !== undefined ? updates.sex : existingChar.sex,
+      translation: updatedTranslation,
       aliases: updatedAliases,
       occurrences: occurrences,
       description: existingChar.description, // 默认保留

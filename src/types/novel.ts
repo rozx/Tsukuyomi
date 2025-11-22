@@ -14,13 +14,15 @@ export interface Novel {
   starred?: boolean | undefined;
   lastEdited: Date;
   createdAt: Date;
-  defaultAIModel?: {
-    translation: AIModel;
-    proofreading: AIModel;
-    polishing: AIModel;
-    characterExtraction: AIModel;
-    terminologyExtraction: AIModel;
-  } | undefined;
+  defaultAIModel?:
+    | {
+        translation: AIModel;
+        proofreading: AIModel;
+        polishing: AIModel;
+        characterExtraction: AIModel;
+        terminologyExtraction: AIModel;
+      }
+    | undefined;
   characterSettings?: CharacterSetting[] | undefined;
   terminologies?: Terminology[] | undefined;
   notes?: Note[] | undefined;
@@ -123,13 +125,19 @@ export interface Terminology {
 export interface CharacterSetting {
   id: string;
   name: string;
+  sex: 'male' | 'female' | 'other' | undefined;
   description?: string | undefined;
-  translation: Translation[];
-  aliases: CharacterSetting[];
+  translation: Translation;
+  aliases: Alias[];
   occurrences: Occurrence[];
 }
 
 export interface Occurrence {
   chapterId: string;
   count: number;
+}
+
+export interface Alias {
+  name: string;
+  translation: Translation;
 }

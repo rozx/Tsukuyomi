@@ -129,6 +129,11 @@ const handleClose = () => {
           :rows="3"
           class="w-full"
         />
+        <AppMessage
+          severity="info"
+          message="留空则让翻译 AI 在翻译章节时自动更新描述内容"
+          :closable="false"
+        />
       </div>
     </div>
 
