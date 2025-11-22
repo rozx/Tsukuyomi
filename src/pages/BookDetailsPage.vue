@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
+import Select from 'primevue/select';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
