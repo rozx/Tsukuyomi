@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Popover from 'primevue/popover';
-import type { Paragraph, Terminology } from 'src/types/novel';
+import type { Paragraph, Terminology, CharacterSetting } from 'src/types/novel';
 
 const props = defineProps<{
   paragraph: Paragraph;
   terminologies?: Terminology[];
+  characterSettings?: CharacterSetting[];
 }>();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
 });
 
-// Popover ref
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
+// Popover refs
+const termPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
+const hoveredCharacter = ref<CharacterSetting | null>(null);
 const termRefsMap = new Map<string, HTMLElement>();
+const characterRefsMap = new Map<string, HTMLElement>();
 
 /**
  * 转义正则表达式特殊字符
@@ -25,45 +29,159 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * 将文本转换为包含高亮术语的节点数组
+ * 将文本转换为包含高亮术语和角色的节点数组
  */
-const highlightedText = computed((): Array<{ type: 'text' | 'term'; content: string; term?: Terminology }> => {
-  if (!hasContent.value || !props.terminologies || props.terminologies.length === 0) {
+const highlightedText = computed((): Array<{
+  type: 'text' | 'term' | 'character';
+  content: string;
+  term?: Terminology;
+  character?: CharacterSetting;
+}> => {
+  if (!hasContent.value) {
     return [{ type: 'text', content: props.paragraph.text }];
   }
 
-  // 按名称长度降序排序，优先匹配较长的术语
-  const sortedTerms = [...props.terminologies].sort((a, b) => b.name.length - a.name.length);
+  const text = props.paragraph.text;
+  const nodes: Array<{
+    type: 'text' | 'term' | 'character';
+    content: string;
+    term?: Terminology;
+    character?: CharacterSetting;
+  }> = [];
 
-  // 创建术语映射（用于快速查找）
-  const termMap = new Map<string, Terminology>();
-  for (const term of sortedTerms) {
-    if (term.name && term.name.trim()) {
-      termMap.set(term.name.trim(), term);
+  // 收集所有匹配项（术语和角色）
+  interface Match {
+    index: number;
+    length: number;
+    type: 'term' | 'character';
+    term?: Terminology;
+    character?: CharacterSetting;
+    text: string;
+  }
+
+  const matches: Match[] = [];
+
+  // 处理术语
+  if (props.terminologies && props.terminologies.length > 0) {
+    const sortedTerms = [...props.terminologies].sort((a, b) => b.name.length - a.name.length);
+    const termMap = new Map<string, Terminology>();
+    for (const term of sortedTerms) {
+      if (term.name && term.name.trim()) {
+        termMap.set(term.name.trim(), term);
+      }
+    }
+
+    const termNames = Array.from(termMap.keys())
+      .map((name) => escapeRegex(name))
+      .join('|');
+
+    if (termNames) {
+      const regex = new RegExp(`(${termNames})`, 'g');
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(text)) !== null) {
+        const matchedText = match[0];
+        const term = termMap.get(matchedText);
+        if (term) {
+          matches.push({
+            index: match.index,
+            length: matchedText.length,
+            type: 'term',
+            term,
+            text: matchedText,
+          });
+        }
+      }
     }
   }
 
-  const text = props.paragraph.text;
-  const nodes: Array<{ type: 'text' | 'term'; content: string; term?: Terminology }> = [];
-  let lastIndex = 0;
+  // 处理角色（包括名称和别名）
+  if (props.characterSettings && props.characterSettings.length > 0) {
+    const nameToCharacterMap = new Map<string, CharacterSetting>();
+    for (const char of props.characterSettings) {
+      // 添加角色名称
+      if (char.name && char.name.trim()) {
+        nameToCharacterMap.set(char.name.trim(), char);
+      }
+      // 添加所有别名
+      if (char.aliases && char.aliases.length > 0) {
+        for (const alias of char.aliases) {
+          if (alias.name && alias.name.trim()) {
+            nameToCharacterMap.set(alias.name.trim(), char);
+          }
+        }
+      }
+    }
 
-  // 构建正则表达式：匹配所有术语名称
-  const termNames = Array.from(termMap.keys())
-    .map((name) => escapeRegex(name))
-    .join('|');
-  
-  if (!termNames) {
+    // 按名称长度降序排序，优先匹配较长的名称
+    const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
+
+    if (sortedNames.length > 0) {
+      const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
+      const regex = new RegExp(`(${namePatterns})`, 'g');
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(text)) !== null) {
+        const matchedText = match[0];
+        const char = nameToCharacterMap.get(matchedText);
+        if (char) {
+          matches.push({
+            index: match.index,
+            length: matchedText.length,
+            type: 'character',
+            character: char,
+            text: matchedText,
+          });
+        }
+      }
+    }
+  }
+
+  // 如果没有匹配项，直接返回文本
+  if (matches.length === 0) {
     return [{ type: 'text', content: text }];
   }
 
-  const regex = new RegExp(`(${termNames})`, 'g');
-  let match: RegExpExecArray | null;
+  // 按索引排序，然后处理重叠（优先保留较长的匹配）
+  matches.sort((a, b) => {
+    if (a.index !== b.index) {
+      return a.index - b.index;
+    }
+    // 如果索引相同，优先较长的匹配
+    return b.length - a.length;
+  });
 
-  while ((match = regex.exec(text)) !== null) {
-    const matchedText = match[0];
-    const term = termMap.get(matchedText);
+  // 移除重叠的匹配（保留第一个，即较长的）
+  const filteredMatches: Match[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    let hasOverlap = false;
 
-    // 如果匹配项前面还有普通文本
+    for (const existing of filteredMatches) {
+      const currentEnd = current.index + current.length;
+      const existingEnd = existing.index + existing.length;
+
+      // 检查是否有重叠
+      if (
+        (current.index >= existing.index && current.index < existingEnd) ||
+        (currentEnd > existing.index && currentEnd <= existingEnd) ||
+        (current.index <= existing.index && currentEnd >= existingEnd)
+      ) {
+        hasOverlap = true;
+        break;
+      }
+    }
+
+    if (!hasOverlap) {
+      filteredMatches.push(current);
+    }
+  }
+
+  // 再次按索引排序
+  filteredMatches.sort((a, b) => a.index - b.index);
+
+  // 构建节点数组
+  let lastIndex = 0;
+  for (const match of filteredMatches) {
+    // 添加匹配项前面的普通文本
     if (match.index > lastIndex) {
       nodes.push({
         type: 'text',
@@ -71,22 +189,22 @@ const highlightedText = computed((): Array<{ type: 'text' | 'term'; content: str
       });
     }
 
-    // 添加术语节点
-    if (term) {
+    // 添加匹配项
+    if (match.type === 'term' && match.term) {
       nodes.push({
         type: 'term',
-        content: matchedText,
-        term,
+        content: match.text,
+        term: match.term,
       });
-    } else {
-      // 如果没有找到对应的术语（理论上不应该发生），作为普通文本处理
+    } else if (match.type === 'character' && match.character) {
       nodes.push({
-        type: 'text',
-        content: matchedText,
+        type: 'character',
+        content: match.text,
+        character: match.character,
       });
     }
 
-    lastIndex = match.index + matchedText.length;
+    lastIndex = match.index + match.length;
   }
 
   // 添加剩余的普通文本
@@ -104,22 +222,44 @@ const highlightedText = computed((): Array<{ type: 'text' | 'term'; content: str
 const handleTermMouseEnter = (event: Event, term: Terminology) => {
   hoveredTerm.value = term;
   const target = event.currentTarget as HTMLElement;
-  if (target && popoverRef.value) {
+  if (target && termPopoverRef.value) {
     termRefsMap.set(term.id, target);
-    popoverRef.value.toggle(event);
+    termPopoverRef.value.toggle(event);
   }
 };
 
 // 处理术语鼠标离开
 const handleTermMouseLeave = () => {
-  if (popoverRef.value) {
-    popoverRef.value.hide();
+  if (termPopoverRef.value) {
+    termPopoverRef.value.hide();
   }
 };
 
-// 当 Popover 关闭时清理状态
-const handlePopoverHide = () => {
+// 当术语 Popover 关闭时清理状态
+const handleTermPopoverHide = () => {
   hoveredTerm.value = null;
+};
+
+// 处理角色悬停
+const handleCharacterMouseEnter = (event: Event, character: CharacterSetting) => {
+  hoveredCharacter.value = character;
+  const target = event.currentTarget as HTMLElement;
+  if (target && characterPopoverRef.value) {
+    characterRefsMap.set(character.id, target);
+    characterPopoverRef.value.toggle(event);
+  }
+};
+
+// 处理角色鼠标离开
+const handleCharacterMouseLeave = () => {
+  if (characterPopoverRef.value) {
+    characterPopoverRef.value.hide();
+  }
+};
+
+// 当角色 Popover 关闭时清理状态
+const handleCharacterPopoverHide = () => {
+  hoveredCharacter.value = null;
 };
 
 </script>
@@ -144,18 +284,31 @@ const handlePopoverHide = () => {
           >
             {{ node.content }}
           </span>
+          <span
+            v-else-if="node.type === 'character' && node.character"
+            :ref="(el) => {
+              if (el && node.character) {
+                characterRefsMap.set(node.character.id, el as HTMLElement);
+              }
+            }"
+            class="character-highlight"
+            @mouseenter="handleCharacterMouseEnter($event, node.character!)"
+            @mouseleave="handleCharacterMouseLeave"
+          >
+            {{ node.content }}
+          </span>
         </template>
       </p>
     </div>
 
     <!-- 术语提示框 - 使用 PrimeVue Popover -->
     <Popover
-      ref="popoverRef"
+      ref="termPopoverRef"
       :dismissable="true"
       :show-close-icon="false"
       style="width: 20rem; max-width: 90vw"
       class="term-popover"
-      @hide="handlePopoverHide"
+      @hide="handleTermPopoverHide"
     >
       <div v-if="hoveredTerm" class="term-popover-content">
         <div class="popover-header">
@@ -164,6 +317,40 @@ const handlePopoverHide = () => {
         </div>
         <div v-if="hoveredTerm.description" class="popover-description">
           {{ hoveredTerm.description }}
+        </div>
+      </div>
+    </Popover>
+
+    <!-- 角色提示框 - 使用 PrimeVue Popover -->
+    <Popover
+      ref="characterPopoverRef"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 20rem; max-width: 90vw"
+      class="character-popover"
+      @hide="handleCharacterPopoverHide"
+    >
+      <div v-if="hoveredCharacter" class="character-popover-content">
+        <div class="popover-header">
+          <div class="popover-character-name-row">
+            <span class="popover-character-name">{{ hoveredCharacter.name }}</span>
+            <span
+              v-if="hoveredCharacter.sex"
+              class="popover-character-sex"
+            >
+              {{ hoveredCharacter.sex === 'male' ? '男' : hoveredCharacter.sex === 'female' ? '女' : '其他' }}
+            </span>
+          </div>
+          <span class="popover-translation">{{ hoveredCharacter.translation.translation }}</span>
+        </div>
+        <div v-if="hoveredCharacter.description" class="popover-description">
+          {{ hoveredCharacter.description }}
+        </div>
+        <div v-if="hoveredCharacter.aliases && hoveredCharacter.aliases.length > 0" class="popover-aliases">
+          <span class="popover-aliases-label">别名：</span>
+          <span class="popover-aliases-list">
+            {{ hoveredCharacter.aliases.map(a => a.name).join('、') }}
+          </span>
         </div>
       </div>
     </Popover>
@@ -225,12 +412,30 @@ const handlePopoverHide = () => {
   color: var(--primary-opacity-100);
 }
 
+/* 角色高亮 */
+.character-highlight {
+  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.3) 60%);
+  color: var(--moon-opacity-95);
+  cursor: help;
+  padding: 0 0.125rem;
+  border-radius: 2px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.character-highlight:hover {
+  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.5) 60%);
+  color: rgba(196, 181, 253, 1);
+}
+
 /* 术语 Popover 样式 */
-:deep(.term-popover .p-popover-content) {
+:deep(.term-popover .p-popover-content),
+:deep(.character-popover .p-popover-content) {
   padding: 0.75rem 1rem;
 }
 
-.term-popover-content {
+.term-popover-content,
+.character-popover-content {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -242,11 +447,27 @@ const handlePopoverHide = () => {
   gap: 0.25rem;
 }
 
-.popover-term-name {
+.popover-term-name,
+.popover-character-name {
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--moon-opacity-100);
   line-height: 1.4;
+}
+
+.popover-character-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.popover-character-sex {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.2);
+  color: rgba(196, 181, 253, 1);
+  font-weight: 500;
 }
 
 .popover-translation {
@@ -263,6 +484,23 @@ const handlePopoverHide = () => {
   margin-top: 0.25rem;
   padding-top: 0.5rem;
   border-top: 1px solid var(--white-opacity-20);
+}
+
+.popover-aliases {
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-80);
+  line-height: 1.5;
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--white-opacity-20);
+}
+
+.popover-aliases-label {
+  color: var(--moon-opacity-70);
+}
+
+.popover-aliases-list {
+  color: var(--moon-opacity-90);
 }
 </style>
 

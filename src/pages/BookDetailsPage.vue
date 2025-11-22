@@ -8,6 +8,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
 import {
   formatWordCount,
   getNovelCharCount,
@@ -16,10 +17,11 @@ import {
   getChapterContentText,
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { Volume, Chapter, Novel, Terminology } from 'src/types/novel';
+import type { Volume, Chapter, Novel, Terminology, CharacterSetting } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
+import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
@@ -292,6 +294,187 @@ const usedTermCount = computed(() => usedTerms.value.length);
 
 const toggleTermPopover = (event: Event) => {
   termPopover.value.toggle(event);
+};
+
+// 角色设定弹出框状态
+const characterPopover = ref();
+const showEditCharacterDialog = ref(false);
+const editingCharacter = ref<CharacterSetting | null>(null);
+const isSavingCharacter = ref(false);
+
+// 计算当前章节使用的角色设定列表
+const usedCharacters = computed(() => {
+  if (!selectedChapter.value || !book.value?.characterSettings?.length) {
+    return [];
+  }
+
+  const text = getChapterContentText(selectedChapter.value);
+  if (!text) return [];
+
+  const characters = book.value.characterSettings;
+  // 创建名称到角色的映射，包括角色名称和所有别名
+  const nameToCharacterMap = new Map<string, CharacterSetting>();
+  
+  for (const char of characters) {
+    // 添加角色名称
+    if (char.name && char.name.trim()) {
+      nameToCharacterMap.set(char.name.trim(), char);
+    }
+    // 添加所有别名
+    if (char.aliases && char.aliases.length > 0) {
+      for (const alias of char.aliases) {
+        if (alias.name && alias.name.trim()) {
+          nameToCharacterMap.set(alias.name.trim(), char);
+        }
+      }
+    }
+  }
+
+  // 按名称长度降序排序，优先匹配较长的名称
+  const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
+
+  if (sortedNames.length === 0) return [];
+
+  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
+  const regex = new RegExp(`(${namePatterns})`, 'g');
+  const matchedCharacters = new Map<string, CharacterSetting>();
+
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const matchedName = match[0];
+    const char = nameToCharacterMap.get(matchedName);
+    if (char) {
+      matchedCharacters.set(char.id, char);
+    }
+  }
+
+  return Array.from(matchedCharacters.values());
+});
+
+const usedCharacterCount = computed(() => usedCharacters.value.length);
+
+const toggleCharacterPopover = (event: Event) => {
+  characterPopover.value.toggle(event);
+};
+
+// 打开编辑角色对话框
+const openEditCharacterDialog = (character: CharacterSetting) => {
+  editingCharacter.value = character;
+  showEditCharacterDialog.value = true;
+  // Close popover
+  if (characterPopover.value) {
+    characterPopover.value.hide();
+  }
+};
+
+// 保存角色设定
+const handleSaveCharacter = async (data: {
+  name: string;
+  sex?: 'male' | 'female' | 'other' | undefined;
+  translation: string;
+  description: string;
+  aliases: Array<{ name: string; translation: string }>;
+}) => {
+  if (!book.value || !editingCharacter.value) return;
+
+  if (!data.name) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '角色名称不能为空',
+      life: 3000,
+    });
+    return;
+  }
+
+  isSavingCharacter.value = true;
+
+  try {
+    const currentCharacterSettings = book.value.characterSettings || [];
+
+    // 检查名称冲突 (排除自己)
+    const nameConflict = currentCharacterSettings.find(
+      (c) => c.id !== editingCharacter.value!.id && c.name === data.name
+    );
+
+    if (nameConflict) {
+      toast.add({
+        severity: 'warn',
+        summary: '保存失败',
+        detail: `角色 "${data.name}" 已存在`,
+        life: 3000,
+      });
+      isSavingCharacter.value = false;
+      return;
+    }
+
+    await CharacterSettingService.updateCharacterSetting(
+      book.value.id,
+      editingCharacter.value.id,
+      data
+    );
+
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已更新角色 "${data.name}"`,
+      life: 3000,
+    });
+
+    showEditCharacterDialog.value = false;
+    editingCharacter.value = null;
+  } catch (error) {
+    console.error('保存角色失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '保存角色时发生错误',
+      life: 3000,
+    });
+  } finally {
+    isSavingCharacter.value = false;
+  }
+};
+
+// Add Delete Character Dialog State
+const showDeleteCharacterConfirm = ref(false);
+const deletingCharacter = ref<CharacterSetting | null>(null);
+
+const openDeleteCharacterConfirm = (character: CharacterSetting) => {
+  deletingCharacter.value = character;
+  showDeleteCharacterConfirm.value = true;
+  if (characterPopover.value) {
+    characterPopover.value.hide();
+  }
+};
+
+const confirmDeleteCharacter = async () => {
+  if (!book.value || !deletingCharacter.value) return;
+
+  try {
+    await CharacterSettingService.deleteCharacterSetting(
+      book.value.id,
+      deletingCharacter.value.id
+    );
+
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已删除角色 "${deletingCharacter.value.name}"`,
+      life: 3000,
+    });
+
+    showDeleteCharacterConfirm.value = false;
+    deletingCharacter.value = null;
+  } catch (error) {
+    console.error('删除角色失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: '删除角色时发生错误',
+      life: 3000,
+    });
+  }
 };
 
 // 打开编辑术语对话框
@@ -1219,6 +1402,70 @@ const handleDragLeave = () => {
       </div>
     </Popover>
 
+    <!-- 角色设定列表 Popover -->
+    <Popover ref="characterPopover" style="width: 24rem; max-width: 90vw">
+      <div class="flex flex-col max-h-[60vh] overflow-hidden">
+        <div class="p-3 border-b border-white/10 flex-shrink-0">
+          <h4 class="font-medium text-moon-100">本章使用的角色设定</h4>
+          <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
+        </div>
+        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <DataView :value="usedCharacters" data-key="id" layout="list" class="character-popover-dataview">
+            <template #list="slotProps">
+              <div class="flex flex-col gap-2 p-2">
+                <div
+                  v-for="character in slotProps.items"
+                  :key="character.id"
+                  class="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                >
+                  <div class="flex justify-between items-start gap-2 min-w-0">
+                    <div class="min-w-0 flex-1 overflow-hidden">
+                      <div class="flex items-center gap-2">
+                        <div class="font-medium text-sm text-moon-90 break-words">{{ character.name }}</div>
+                        <span
+                          v-if="character.sex"
+                          class="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary-400"
+                        >
+                          {{ character.sex === 'male' ? '男' : character.sex === 'female' ? '女' : '其他' }}
+                        </span>
+                      </div>
+                      <div class="text-xs text-primary-400 mt-0.5 break-words">{{ character.translation.translation }}</div>
+                      <div v-if="character.description" class="text-xs text-moon/50 mt-1 line-clamp-2 break-words">
+                        {{ character.description }}
+                      </div>
+                      <div v-if="character.aliases && character.aliases.length > 0" class="text-xs text-moon/60 mt-1">
+                        <span class="text-moon/50">别名：</span>
+                        <span class="break-words">
+                          {{ character.aliases.map(a => a.name).join('、') }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="flex gap-1 flex-shrink-0">
+                      <Button
+                        icon="pi pi-pencil"
+                        class="p-button-text p-button-sm !p-1 !w-7 !h-7"
+                        @click="openEditCharacterDialog(character)"
+                      />
+                      <Button
+                        icon="pi pi-trash"
+                        class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
+                        @click="openDeleteCharacterConfirm(character)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template #empty>
+              <div class="text-center py-8 text-moon/50 text-sm">
+                本章暂无角色设定
+              </div>
+            </template>
+          </DataView>
+        </div>
+      </div>
+    </Popover>
+
     <!-- 编辑术语对话框 -->
     <TermEditDialog
       v-model:visible="showEditTermDialog"
@@ -1248,6 +1495,34 @@ const handleDragLeave = () => {
       </template>
     </Dialog>
 
+    <!-- 编辑角色对话框 -->
+    <CharacterEditDialog
+      v-model:visible="showEditCharacterDialog"
+      :character="editingCharacter"
+      :loading="isSavingCharacter"
+      @save="handleSaveCharacter"
+    />
+
+    <!-- 删除角色确认对话框 -->
+    <Dialog
+      v-model:visible="showDeleteCharacterConfirm"
+      modal
+      header="确认删除角色"
+      :style="{ width: '25rem' }"
+      :draggable="false"
+    >
+      <div class="space-y-4">
+        <p class="text-moon/90">
+          确定要删除角色 <strong>"{{ deletingCharacter?.name }}"</strong> 吗？
+        </p>
+        <p class="text-sm text-moon/70">此操作无法撤销。</p>
+      </div>
+      <template #footer>
+        <Button label="取消" class="p-button-text" @click="showDeleteCharacterConfirm = false" />
+        <Button label="删除" class="p-button-danger" @click="confirmDeleteCharacter" />
+      </template>
+    </Dialog>
+
     <!-- 主内容区域 -->
     <div
       class="book-main-content"
@@ -1267,6 +1542,14 @@ const handleDragLeave = () => {
               :label="`本章术语 (${usedTermCount})`"
               :title="`本章共使用了 ${usedTermCount} 个术语`"
               @click="toggleTermPopover"
+            />
+            <Button
+              icon="pi pi-user"
+              class="p-button-text p-button-rounded p-button-sm"
+              size="small"
+              :label="`本章角色 (${usedCharacterCount})`"
+              :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
+              @click="toggleCharacterPopover"
             />
           </div>
         </div>
@@ -1342,6 +1625,7 @@ const handleDragLeave = () => {
               :key="paragraph.id"
               :paragraph="paragraph"
               :terminologies="book?.terminologies || []"
+              :character-settings="book?.characterSettings || []"
             />
           </div>
 
@@ -2152,7 +2436,8 @@ const handleDragLeave = () => {
 }
 
 /* Term Popover DataView - ensure header stays fixed and content scrolls */
-:deep(.term-popover-dataview) {
+:deep(.term-popover-dataview),
+:deep(.character-popover-dataview) {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2161,7 +2446,8 @@ const handleDragLeave = () => {
   background: transparent !important;
 }
 
-:deep(.term-popover-dataview .p-dataview-content) {
+:deep(.term-popover-dataview .p-dataview-content),
+:deep(.character-popover-dataview .p-dataview-content) {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
