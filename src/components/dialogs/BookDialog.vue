@@ -13,7 +13,7 @@ import TranslatableChips from '../translation/TranslatableChips.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { formatCharCount, getChapterCharCount } from 'src/utils';
+import { formatCharCount, getChapterCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -550,7 +550,7 @@ watch(
                     ]"
                   />
                   <span class="font-semibold text-sm text-moon/90">
-                    {{ volume.title || '未命名卷' }}
+                    {{ getVolumeDisplayTitle(volume) || '未命名卷' }}
                   </span>
                   <span class="text-xs text-moon/60">
                     ({{ volume.chapters?.length || 0 }} 章)
@@ -574,7 +574,7 @@ watch(
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between gap-2">
                       <div class="text-sm text-moon/80 line-clamp-2 flex-1">
-                        {{ chapter.title }}
+                        {{ getChapterDisplayTitle(chapter) || '未命名章节' }}
                       </div>
                       <span class="text-xs text-moon/60 flex-shrink-0">
                         {{ formatCharCount(getChapterCharCount(chapter)) }} 字

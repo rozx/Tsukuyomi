@@ -40,7 +40,10 @@ export interface CoverHistoryItem extends CoverImage {
 
 export interface Volume {
   id: string;
-  title: string;
+  title: {
+    original: string;
+    translation: Translation;
+  };
   description?: string | undefined;
   cover?: CoverImage | undefined;
   chapters?: Chapter[] | undefined;
@@ -48,7 +51,10 @@ export interface Volume {
 
 export interface Chapter {
   id: string;
-  title: string;
+  title: {
+    original: string;
+    translation: Translation;
+  };
   webUrl?: string | undefined; // 网络地址
   content?: Paragraph[] | undefined;
   originalContent?: string | undefined; // 原始爬取的内容文本（保留原始格式）

@@ -5,8 +5,8 @@ import type {
   ParsedChapterInfo,
   ParsedVolumeInfo,
 } from 'src/types/scraper';
-import type { Novel, Chapter, Volume } from 'src/types/novel';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
+import type { Novel, Chapter, Volume, Translation } from 'src/types/novel';
+import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 
 /**
  * 爬虫服务基类
@@ -258,9 +258,18 @@ export abstract class BaseScraper implements NovelScraper {
     }
     // 注意：如果只有 date 而没有 lastUpdated，则不设置 lastUpdated（保持 undefined）
 
+    const translation: Translation = {
+      id: generateShortId(),
+      translation: '',
+      aiModelId: '',
+    };
+
     const chapter: Chapter = {
       id: idGenerator.generate(),
-      title: chapterInfo.title,
+      title: {
+        original: chapterInfo.title,
+        translation,
+      },
       webUrl: chapterInfo.url,
       lastEdited: chapterDate,
       createdAt: chapterDate,
@@ -286,9 +295,18 @@ export abstract class BaseScraper implements NovelScraper {
     chapters: Chapter[],
     idGenerator: UniqueIdGenerator,
   ): Volume {
+    const translation: Translation = {
+      id: generateShortId(),
+      translation: '',
+      aiModelId: '',
+    };
+
     return {
       id: idGenerator.generate(),
-      title: volumeInfo.title,
+      title: {
+        original: volumeInfo.title,
+        translation,
+      },
       chapters,
     };
   }
@@ -313,9 +331,18 @@ export abstract class BaseScraper implements NovelScraper {
     // 如果有卷信息，按卷分组
     if (volumesInfo && volumesInfo.length > 0) {
       volumesInfo.forEach((volumeInfo, volumeIndex) => {
+        const volumeTranslation: Translation = {
+          id: generateShortId(),
+          translation: '',
+          aiModelId: '',
+        };
+
         const volume: Volume = {
           id: volumeIdGenerator.generate(),
-          title: volumeInfo.title,
+          title: {
+            original: volumeInfo.title,
+            translation: volumeTranslation,
+          },
           chapters: [],
         };
 
@@ -339,9 +366,18 @@ export abstract class BaseScraper implements NovelScraper {
       });
     } else {
       // 如果没有卷信息，使用默认卷
+      const defaultVolumeTranslation: Translation = {
+        id: generateShortId(),
+        translation: '',
+        aiModelId: '',
+      };
+
       const defaultVolume: Volume = {
         id: volumeIdGenerator.generate(),
-        title: defaultVolumeTitle,
+        title: {
+          original: defaultVolumeTitle,
+          translation: defaultVolumeTranslation,
+        },
         chapters: [],
       };
 

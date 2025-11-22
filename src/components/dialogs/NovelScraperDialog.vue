@@ -14,7 +14,7 @@ import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { formatWordCount, UniqueIdGenerator } from 'src/utils';
+import { formatWordCount, UniqueIdGenerator, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -123,7 +123,7 @@ const filteredVolumes = computed(() => {
 const displayVolumeChapters = computed(() => {
   return filteredVolumes.value.map((volume) => ({
     volumeId: volume.id,
-    volumeTitle: volume.title || '未命名卷',
+    volumeTitle: getVolumeDisplayTitle(volume) || '未命名卷',
     chapters: volume.chapters || [],
   }));
 });
@@ -480,7 +480,7 @@ const handleApply = async () => {
         .map((chapter) => ({
           chapterId: chapter.id,
           webUrl: chapter.webUrl!,
-          title: chapter.title,
+          title: chapter.title.original,
         }));
 
       // 使用 ScraperService 批量获取章节内容，使用设置中的并发数限制
@@ -808,7 +808,7 @@ watch(
                         <div class="flex-1 min-w-0 w-0 overflow-hidden">
                           <div class="flex items-start justify-between gap-2">
                             <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
-                              {{ chapter.title }}
+                              {{ getChapterDisplayTitle(chapter) }}
                             </div>
                             <template v-if="getChapterImportStatus(chapter)">
                               <span :class="getChapterImportStatus(chapter)!.class">
@@ -865,7 +865,7 @@ watch(
             <div class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden">
               <div v-if="selectedChapter" class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
                 <div class="flex items-start justify-between gap-2 mb-2">
-                  <h4 class="text-lg font-semibold text-moon/90 flex-1">{{ selectedChapter.title }}</h4>
+                  <h4 class="text-lg font-semibold text-moon/90 flex-1">{{ getChapterDisplayTitle(selectedChapter) }}</h4>
                   <span
                     v-if="selectedChapterImportStatus"
                     :class="selectedChapterImportStatus.class"

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
 import Select from 'primevue/select';
+import InputText from 'primevue/inputtext';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
@@ -15,7 +16,10 @@ import {
   getTotalChapters,
   getChapterCharCount,
   getChapterContentText,
+  getVolumeDisplayTitle,
+  getChapterDisplayTitle,
 } from 'src/utils';
+import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Volume, Chapter, Novel, Terminology, CharacterSetting } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
@@ -46,7 +50,9 @@ const showEditChapterDialog = ref(false);
 const editingVolumeId = ref<string | null>(null);
 const editingChapterId = ref<string | null>(null);
 const editingVolumeTitle = ref('');
+const editingVolumeTranslation = ref('');
 const editingChapterTitle = ref('');
+const editingChapterTranslation = ref('');
 const editingChapterSourceVolumeId = ref<string | null>(null);
 const editingChapterTargetVolumeId = ref<string | null>(null);
 
@@ -121,7 +127,7 @@ const volumes = computed(() => {
 // 卷选项（用于 Dropdown）
 const volumeOptions = computed(() => {
   return volumes.value.map((volume) => ({
-    label: volume.title,
+    label: getVolumeDisplayTitle(volume),
     value: volume.id,
   }));
 });
@@ -675,7 +681,14 @@ const openAddChapterDialog = () => {
 // 打开编辑卷对话框
 const openEditVolumeDialog = (volume: Volume) => {
   editingVolumeId.value = volume.id;
-  editingVolumeTitle.value = volume.title;
+  // 兼容旧数据格式
+  if (typeof volume.title === 'string') {
+    editingVolumeTitle.value = volume.title;
+    editingVolumeTranslation.value = '';
+  } else {
+    editingVolumeTitle.value = volume.title?.original || '';
+    editingVolumeTranslation.value = volume.title?.translation?.translation || '';
+  }
   showEditVolumeDialog.value = true;
 };
 
@@ -689,7 +702,14 @@ const openEditChapterDialog = (chapter: Chapter) => {
   );
 
   editingChapterId.value = chapter.id;
-  editingChapterTitle.value = chapter.title;
+  // 兼容旧数据格式
+  if (typeof chapter.title === 'string') {
+    editingChapterTitle.value = chapter.title;
+    editingChapterTranslation.value = '';
+  } else {
+    editingChapterTitle.value = chapter.title?.original || '';
+    editingChapterTranslation.value = chapter.title?.translation?.translation || '';
+  }
   editingChapterSourceVolumeId.value = sourceVolume?.id || null;
   editingChapterTargetVolumeId.value = sourceVolume?.id || null;
   showEditChapterDialog.value = true;
@@ -701,8 +721,34 @@ const handleEditVolume = async () => {
     return;
   }
 
+  // 获取当前卷以保留翻译 ID
+  const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
+  
+  // 兼容旧数据格式
+  let translationId = '';
+  let aiModelId = '';
+  
+  if (currentVolume) {
+    if (typeof currentVolume.title === 'string') {
+      // 旧数据格式，创建新的翻译 ID
+      translationId = generateShortId();
+    } else {
+      translationId = currentVolume.title.translation?.id || generateShortId();
+      aiModelId = currentVolume.title.translation?.aiModelId || '';
+    }
+  } else {
+    translationId = generateShortId();
+  }
+  
   const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
-    title: editingVolumeTitle.value.trim(),
+    title: {
+      original: editingVolumeTitle.value.trim(),
+      translation: {
+        id: translationId,
+        translation: editingVolumeTranslation.value.trim(),
+        aiModelId: aiModelId,
+      },
+    },
   });
 
   await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
@@ -717,6 +763,7 @@ const handleEditVolume = async () => {
   showEditVolumeDialog.value = false;
   editingVolumeId.value = null;
   editingVolumeTitle.value = '';
+  editingVolumeTranslation.value = '';
 };
 
 // 保存编辑的章节
@@ -730,10 +777,45 @@ const handleEditChapter = async () => {
     return;
   }
 
+  // 获取当前章节以保留翻译 ID
+  let currentChapter: Chapter | null = null;
+  for (const volume of book.value.volumes || []) {
+    const chapter = volume.chapters?.find((c) => c.id === editingChapterId.value);
+    if (chapter) {
+      currentChapter = chapter;
+      break;
+    }
+  }
+
+  // 兼容旧数据格式
+  let translationId = '';
+  let aiModelId = '';
+
+  if (currentChapter) {
+    if (typeof currentChapter.title === 'string') {
+      // 旧数据格式，创建新的翻译 ID
+      translationId = generateShortId();
+    } else {
+      translationId = currentChapter.title.translation?.id || generateShortId();
+      aiModelId = currentChapter.title.translation?.aiModelId || '';
+    }
+  } else {
+    translationId = generateShortId();
+  }
+
   const updatedVolumes = ChapterService.updateChapter(
     book.value,
     editingChapterId.value,
-    { title: editingChapterTitle.value.trim() },
+    {
+      title: {
+        original: editingChapterTitle.value.trim(),
+        translation: {
+          id: translationId,
+          translation: editingChapterTranslation.value.trim(),
+          aiModelId: aiModelId,
+        },
+      },
+    },
     editingChapterTargetVolumeId.value,
   );
 
@@ -752,6 +834,7 @@ const handleEditChapter = async () => {
   showEditChapterDialog.value = false;
   editingChapterId.value = null;
   editingChapterTitle.value = '';
+  editingChapterTranslation.value = '';
   editingChapterSourceVolumeId.value = null;
   editingChapterTargetVolumeId.value = null;
 };
@@ -759,14 +842,14 @@ const handleEditChapter = async () => {
 // 打开删除卷确认对话框
 const openDeleteVolumeConfirm = (volume: Volume) => {
   deletingVolumeId.value = volume.id;
-  deletingVolumeTitle.value = volume.title;
+  deletingVolumeTitle.value = getVolumeDisplayTitle(volume);
   showDeleteVolumeConfirm.value = true;
 };
 
 // 打开删除章节确认对话框
 const openDeleteChapterConfirm = (chapter: Chapter) => {
   deletingChapterId.value = chapter.id;
-  deletingChapterTitle.value = chapter.title;
+  deletingChapterTitle.value = getChapterDisplayTitle(chapter);
   showDeleteChapterConfirm.value = true;
 };
 
@@ -911,7 +994,7 @@ const handleDrop = async (event: DragEvent, targetVolumeId: string, targetIndex?
   toast.add({
     severity: 'success',
     summary: '移动成功',
-    detail: `已将章节 "${chapter.title}" ${sourceVolumeId === targetVolumeId ? '重新排序' : '移动到新卷'}`,
+    detail: `已将章节 "${getChapterDisplayTitle(chapter)}" ${sourceVolumeId === targetVolumeId ? '重新排序' : '移动到新卷'}`,
     life: 3000,
   });
 
@@ -1046,7 +1129,7 @@ const handleDragLeave = () => {
                         ]"
                       ></i>
                       <i class="pi pi-book volume-icon"></i>
-                      <span class="volume-title">{{ volume.title }}</span>
+                      <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
                       <span
                         v-if="volume.chapters && volume.chapters.length > 0"
                         class="volume-chapter-count"
@@ -1104,7 +1187,7 @@ const handleDragLeave = () => {
                         <div class="chapter-content" @click="navigateToChapter(chapter)">
                           <i class="pi pi-bars drag-handle"></i>
                           <i class="pi pi-file chapter-icon"></i>
-                          <span class="chapter-title">{{ chapter.title }}</span>
+                          <span class="chapter-title">{{ getChapterDisplayTitle(chapter) }}</span>
                         </div>
                         <div class="chapter-actions" @click.stop>
                           <Button
@@ -1224,19 +1307,33 @@ const handleDragLeave = () => {
       v-model:visible="showEditVolumeDialog"
       modal
       header="编辑卷标题"
-      :style="{ width: '25rem' }"
+      :style="{ width: '30rem' }"
       :draggable="false"
     >
       <div class="space-y-4">
         <div class="space-y-2">
           <label for="edit-volume-title" class="block text-sm font-medium text-moon/90"
-            >卷标题</label
+            >卷标题（原文）*</label
           >
           <TranslatableInput
             id="edit-volume-title"
             v-model="editingVolumeTitle"
             placeholder="输入卷标题..."
             type="input"
+            :apply-translation-to-input="false"
+            @translation-applied="(value: string) => { editingVolumeTranslation = value; }"
+            @keyup.enter="handleEditVolume"
+          />
+        </div>
+        <div class="space-y-2">
+          <label for="edit-volume-translation" class="block text-sm font-medium text-moon/90"
+            >翻译</label
+          >
+          <InputText
+            id="edit-volume-translation"
+            v-model="editingVolumeTranslation"
+            placeholder="输入翻译（可选）"
+            class="w-full"
             @keyup.enter="handleEditVolume"
           />
         </div>
@@ -1252,19 +1349,33 @@ const handleDragLeave = () => {
       v-model:visible="showEditChapterDialog"
       modal
       header="编辑章节"
-      :style="{ width: '25rem' }"
+      :style="{ width: '30rem' }"
       :draggable="false"
     >
       <div class="space-y-4">
         <div class="space-y-2">
           <label for="edit-chapter-title" class="block text-sm font-medium text-moon/90"
-            >章节标题</label
+            >章节标题（原文）*</label
           >
           <TranslatableInput
             id="edit-chapter-title"
             v-model="editingChapterTitle"
             placeholder="输入章节标题..."
             type="input"
+            :apply-translation-to-input="false"
+            @translation-applied="(value: string) => { editingChapterTranslation = value; }"
+            @keyup.enter="handleEditChapter"
+          />
+        </div>
+        <div class="space-y-2">
+          <label for="edit-chapter-translation" class="block text-sm font-medium text-moon/90"
+            >翻译</label
+          >
+          <InputText
+            id="edit-chapter-translation"
+            v-model="editingChapterTranslation"
+            placeholder="输入翻译（可选）"
+            class="w-full"
             @keyup.enter="handleEditChapter"
           />
         </div>
@@ -1436,7 +1547,7 @@ const handleDragLeave = () => {
                       <div v-if="character.aliases && character.aliases.length > 0" class="text-xs text-moon/60 mt-1">
                         <span class="text-moon/50">别名：</span>
                         <span class="break-words">
-                          {{ character.aliases.map(a => a.name).join('、') }}
+                          {{ character.aliases.map((a: { name: string }) => a.name).join('、') }}
                         </span>
                       </div>
                     </div>
@@ -1532,7 +1643,7 @@ const handleDragLeave = () => {
       <div v-if="selectedChapter && !selectedSettingMenu" class="chapter-toolbar">
         <div class="toolbar-content">
           <div class="toolbar-left">
-            <span class="toolbar-chapter-title">{{ selectedChapter.title }}</span>
+            <span class="toolbar-chapter-title">{{ getChapterDisplayTitle(selectedChapter) }}</span>
           </div>
           <div class="toolbar-actions">
             <Button
@@ -1578,7 +1689,16 @@ const handleDragLeave = () => {
         <div v-else-if="selectedChapter" class="chapter-content-container">
           <!-- 章节标题 -->
           <div class="chapter-header">
-            <h1 class="chapter-title">{{ selectedChapter.title }}</h1>
+            <div class="flex items-center gap-2">
+              <h1 class="chapter-title flex-1">{{ getChapterDisplayTitle(selectedChapter) }}</h1>
+              <Button
+                icon="pi pi-pencil"
+                class="p-button-text p-button-sm p-button-rounded"
+                size="small"
+                title="编辑章节标题"
+                @click="openEditChapterDialog(selectedChapter)"
+              />
+            </div>
             <div v-if="selectedChapterStats" class="chapter-stats">
               <div class="chapter-stat-item">
                 <i class="pi pi-list chapter-stat-icon"></i>

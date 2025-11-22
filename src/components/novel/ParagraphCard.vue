@@ -153,6 +153,8 @@ const highlightedText = computed((): Array<{
   const filteredMatches: Match[] = [];
   for (let i = 0; i < matches.length; i++) {
     const current = matches[i];
+    if (!current) continue;
+    
     let hasOverlap = false;
 
     for (const existing of filteredMatches) {

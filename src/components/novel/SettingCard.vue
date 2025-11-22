@@ -31,6 +31,7 @@ const avatarText = computed(() => {
   if (!props.title) return '?';
   // 获取第一个字符，如果是中文则直接使用，如果是英文则使用首字母大写
   const firstChar = props.title[0];
+  if (!firstChar) return '?';
   return firstChar.toUpperCase();
 });
 

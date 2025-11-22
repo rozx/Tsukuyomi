@@ -7,4 +7,6 @@ export {
   getNovelCharCount,
   getTotalChapters,
   getChapterContentText,
+  getVolumeDisplayTitle,
+  getChapterDisplayTitle,
 } from './novel-utils';

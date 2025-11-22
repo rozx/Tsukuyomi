@@ -1,5 +1,5 @@
-import type { Novel, Volume, Chapter, Paragraph } from 'src/types/novel';
-import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
+import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/types/novel';
+import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import { getChapterContentText } from 'src/utils/novel-utils';
 
 /**
@@ -163,6 +163,8 @@ export class ChapterService {
    * @param newNovel 新获取的小说数据
    * @param options 合并选项
    * @returns 合并后的小说数据
+   * @note 在合并卷时，通过比较 title.original（原始标题）来匹配现有卷，
+   *       确保即使卷标题被翻译了，也能正确匹配到相同的卷
    */
   static mergeNovelData(
     existingNovel: Partial<Novel>,
@@ -234,8 +236,16 @@ export class ChapterService {
         const mergedVolumes: Volume[] = [...existingVolumes];
 
         newNovel.volumes.forEach((newVolume) => {
-          // 查找同标题的现有卷
-          const existingVolumeIndex = mergedVolumes.findIndex((v) => v.title === newVolume.title);
+          // 查找同标题的现有卷（比较原文标题）
+          // 兼容旧数据格式：如果 title 是字符串，直接比较字符串；否则比较 original
+          const newVolumeOriginalTitle =
+            typeof newVolume.title === 'string' ? newVolume.title : newVolume.title.original;
+          const existingVolumeIndex = mergedVolumes.findIndex((v) => {
+            if (typeof v.title === 'string') {
+              return v.title === newVolumeOriginalTitle;
+            }
+            return v.title.original === newVolumeOriginalTitle;
+          });
 
           if (existingVolumeIndex >= 0) {
             // 卷已存在，合并章节
@@ -338,9 +348,19 @@ export class ChapterService {
     const volumeIds = extractIds(existingVolumes);
     const idGenerator = new UniqueIdGenerator(volumeIds);
 
+    const trimmedTitle = title.trim();
+    const translation: Translation = {
+      id: generateShortId(),
+      translation: '',
+      aiModelId: '',
+    };
+
     const newVolume: Volume = {
       id: idGenerator.generate(),
-      title: title.trim(),
+      title: {
+        original: trimmedTitle,
+        translation,
+      },
       chapters: [],
     };
 
@@ -351,10 +371,14 @@ export class ChapterService {
    * 更新卷信息
    * @param novel 小说对象
    * @param volumeId 卷 ID
-   * @param data 更新的数据
+   * @param data 更新的数据（如果 data.title 是字符串，则更新 title.original）
    * @returns 更新后的卷列表
    */
-  static updateVolume(novel: Novel, volumeId: string, data: Partial<Volume>): Volume[] {
+  static updateVolume(
+    novel: Novel,
+    volumeId: string,
+    data: Omit<Partial<Volume>, 'title'> & { title?: string | Volume['title'] },
+  ): Volume[] {
     const existingVolumes = novel.volumes || [];
     const index = existingVolumes.findIndex((v) => v.id === volumeId);
     if (index === -1) return existingVolumes;
@@ -362,7 +386,33 @@ export class ChapterService {
     const updatedVolumes = [...existingVolumes];
     const existingVolume = updatedVolumes[index];
     if (existingVolume) {
-      updatedVolumes[index] = { ...existingVolume, ...data };
+      // 处理 title 更新：如果传入的是字符串，更新 title.original
+      const { title: titleData, ...restData } = data;
+      const updateData: Partial<Volume> = { ...restData };
+      if (titleData) {
+        if (typeof titleData === 'string') {
+          // 兼容旧数据格式：如果现有 title 是字符串，创建新的翻译对象
+          let existingTranslation;
+          if (typeof existingVolume.title === 'string') {
+            // 旧数据格式，创建新的翻译对象
+            existingTranslation = {
+              id: generateShortId(),
+              translation: '',
+              aiModelId: '',
+            };
+          } else {
+            // 新数据格式，保留原有翻译
+            existingTranslation = existingVolume.title.translation;
+          }
+          updateData.title = {
+            original: titleData.trim(),
+            translation: existingTranslation,
+          };
+        } else {
+          updateData.title = titleData;
+        }
+      }
+      updatedVolumes[index] = { ...existingVolume, ...updateData };
     }
     return updatedVolumes;
   }
@@ -404,9 +454,19 @@ export class ChapterService {
     const idGenerator = new UniqueIdGenerator(chapterIds);
     const now = new Date();
 
+    const trimmedTitle = title.trim();
+    const translation: Translation = {
+      id: generateShortId(),
+      translation: '',
+      aiModelId: '',
+    };
+
     const newChapter: Chapter = {
       id: idGenerator.generate(),
-      title: title.trim(),
+      title: {
+        original: trimmedTitle,
+        translation,
+      },
       lastEdited: now,
       createdAt: now,
       content: content,
@@ -430,7 +490,7 @@ export class ChapterService {
   static updateChapter(
     novel: Novel,
     chapterId: string,
-    data: Partial<Chapter>,
+    data: Omit<Partial<Chapter>, 'title'> & { title?: string | Chapter['title'] },
     targetVolumeId?: string,
   ): Volume[] {
     const existingVolumes = [...(novel.volumes || [])];
@@ -454,10 +514,37 @@ export class ChapterService {
 
     if (!chapterToUpdate || sourceVolumeIndex === -1) return existingVolumes;
 
+    // 处理 title 更新：如果传入的是字符串，更新 title.original
+    const { title: titleData, ...restData } = data;
+    const updateData: Partial<Chapter> = { ...restData };
+    if (titleData) {
+      if (typeof titleData === 'string') {
+        // 兼容旧数据格式：如果现有 title 是字符串，创建新的翻译对象
+        let existingTranslation;
+        if (typeof chapterToUpdate.title === 'string') {
+          // 旧数据格式，创建新的翻译对象
+          existingTranslation = {
+            id: generateShortId(),
+            translation: '',
+            aiModelId: '',
+          };
+        } else {
+          // 新数据格式，保留原有翻译
+          existingTranslation = chapterToUpdate.title.translation;
+        }
+        updateData.title = {
+          original: titleData.trim(),
+          translation: existingTranslation,
+        };
+      } else {
+        updateData.title = titleData;
+      }
+    }
+
     // 更新基本信息
     const updatedChapter: Chapter = {
       ...chapterToUpdate,
-      ...data,
+      ...updateData,
       lastEdited: new Date(), // 总是更新编辑时间
     };
 

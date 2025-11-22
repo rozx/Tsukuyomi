@@ -33,11 +33,17 @@ describe('CharacterSettingService', () => {
       volumes: [
         {
           id: 'vol-1',
-          title: 'Volume 1',
+          title: {
+            original: 'Volume 1',
+            translation: { id: 't1', translation: '', aiModelId: '' },
+          },
           chapters: [
             {
               id: 'chap-1',
-              title: 'Chapter 1',
+              title: {
+                original: 'Chapter 1',
+                translation: { id: 't2', translation: '', aiModelId: '' },
+              },
               lastEdited: new Date(),
               createdAt: new Date(),
               content: [
@@ -94,6 +100,7 @@ describe('CharacterSettingService', () => {
         {
           id: 'char-1',
           name: 'Alice',
+          sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
@@ -149,6 +156,7 @@ describe('CharacterSettingService', () => {
         {
           id: charId,
           name: 'Alice',
+          sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
@@ -156,6 +164,7 @@ describe('CharacterSettingService', () => {
         {
           id: 'char-2',
           name: 'Bob',
+          sex: undefined,
           translation: { id: 't2', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],
@@ -181,6 +190,7 @@ describe('CharacterSettingService', () => {
         {
           id: charId,
           name: 'Alice',
+          sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
           occurrences: [],

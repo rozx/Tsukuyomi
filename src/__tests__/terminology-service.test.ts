@@ -35,7 +35,10 @@ describe('TerminologyService', () => {
 
     const chapter: Chapter = {
       id,
-      title: `Chapter ${id}`,
+      title: {
+        original: `Chapter ${id}`,
+        translation: { id: `t-${id}`, translation: '', aiModelId: '' },
+      },
       content: paragraphs,
       lastEdited: new Date(),
       createdAt: new Date(),
@@ -147,7 +150,10 @@ describe('TerminologyService', () => {
     test('应该正确处理没有内容的章节', async () => {
       const chapter: Chapter = {
         id: 'chapter-1',
-        title: 'Empty Chapter',
+        title: {
+          original: 'Empty Chapter',
+          translation: { id: 't1', translation: '', aiModelId: '' },
+        },
         lastEdited: new Date(),
         createdAt: new Date(),
       };
@@ -362,7 +368,10 @@ describe('TerminologyService', () => {
     test('应该正确处理 null 或 undefined 文本', async () => {
       const chapter: Chapter = {
         id: 'chapter-1',
-        title: 'Test Chapter',
+        title: {
+          original: 'Test Chapter',
+          translation: { id: 't1', translation: '', aiModelId: '' },
+        },
         content: [
           {
             id: 'para-1',
