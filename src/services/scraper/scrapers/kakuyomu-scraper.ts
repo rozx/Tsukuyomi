@@ -38,6 +38,17 @@ interface KakuyomuEpisode {
   publishedAt: string;
 }
 
+interface ParsedNovelInfo {
+  title: string;
+  author?: string | undefined;
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  cover?: string | undefined;
+  chapters: ParsedChapterInfo[];
+  volumes?: ParsedVolumeInfo[] | undefined;
+  webUrl: string;
+}
+
 /**
  * kakuyomu.jp 小说爬虫服务
  * 用于从 kakuyomu.jp 获取和解析小说信息
@@ -56,6 +67,7 @@ export class KakuyomuScraper extends BaseScraper {
   isValidUrl(url: string): boolean {
     return KakuyomuScraper.NOVEL_URL_PATTERN.test(url);
   }
+
 
   /**
    * 从 URL 中提取小说 ID
@@ -236,7 +248,7 @@ export class KakuyomuScraper extends BaseScraper {
    * 解析小说页面 HTML
    * Kakuyomu 使用 Next.js，数据嵌入在 <script id="__NEXT_DATA__"> 中
    */
-  private parseNovelPage(html: string, baseUrl: string): any {
+  private parseNovelPage(html: string, baseUrl: string): ParsedNovelInfo {
     const $ = cheerio.load(html);
 
     // 提取 Next.js 数据
@@ -248,11 +260,12 @@ export class KakuyomuScraper extends BaseScraper {
     let pageData;
     try {
       pageData = JSON.parse(nextDataScript);
-    } catch (error) {
+    } catch {
       throw new Error('解析 Kakuyomu 数据失败');
     }
 
     // 提取 Apollo State（包含所有数据）
+     
     const apolloState: ApolloState = pageData.props?.pageProps?.__APOLLO_STATE__;
     if (!apolloState) {
       throw new Error('无法找到 Apollo State 数据');
@@ -453,7 +466,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 转换为 Novel 格式
    */
-  private convertToNovel(info: any): Novel {
+  private convertToNovel(info: ParsedNovelInfo): Novel {
     const now = new Date();
     const parsedChapters: ParsedChapterInfo[] = info.chapters;
     const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes;

@@ -11,9 +11,10 @@ export function dynamicAIProxy(): Plugin {
     name: 'dynamic-ai-proxy',
     configureServer(server) {
       server.middlewares.use('/api/ai', (req, res, next) => {
-        const path = req.url || '';
+        (async () => {
+          const path = req.url || '';
 
-        // 提取 hostname: /api/ai/{hostname}/... 或 /{hostname}/...（如果路径已经被部分处理）
+          // 提取 hostname: /api/ai/{hostname}/... 或 /{hostname}/...（如果路径已经被部分处理）
         let match = path.match(/^\/api\/ai\/([^/]+)(\/.*)?$/);
         let hostname: string | undefined;
         let restPath: string | undefined;
@@ -66,17 +67,17 @@ export function dynamicAIProxy(): Plugin {
               secure: true,
               // 不需要 pathRewrite，因为我们已经修改了 req.url
               on: {
-                proxyReq: (proxyReq, req, res) => {
+                proxyReq: (proxyReq, _req, _res) => {
                   // 保留原始请求头，特别是 Authorization
                   // 移除可能暴露代理的头部
                   proxyReq.removeHeader('x-forwarded-for');
                   proxyReq.removeHeader('x-forwarded-host');
                   proxyReq.removeHeader('x-forwarded-proto');
                 },
-                error: (err, req, res) => {
+                error: (err, _req, res) => {
                   if (res && 'headersSent' in res && !res.headersSent) {
-                    (res as ServerResponse).statusCode = 500;
-                    (res as ServerResponse).end(`Proxy error: ${err.message}`);
+                    (res).statusCode = 500;
+                    (res).end(`Proxy error: ${err.message}`);
                   }
                 },
               },
@@ -85,12 +86,12 @@ export function dynamicAIProxy(): Plugin {
             // 使用代理中间件处理请求
             // 注意：createProxyMiddleware 返回的是一个中间件函数
             try {
-              proxy(req, res, next);
+              await proxy(req, res, next);
               return; // 重要：确保不会继续执行后面的代码
             } catch (error) {
               if (res && 'headersSent' in res && !res.headersSent) {
-                (res as ServerResponse).statusCode = 500;
-                (res as ServerResponse).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
+                (res).statusCode = 500;
+                (res).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
               }
               return;
             }
@@ -99,11 +100,19 @@ export function dynamicAIProxy(): Plugin {
 
         // 如果没有匹配，返回 404
         if (res && 'statusCode' in res) {
-          (res as ServerResponse).statusCode = 404;
-          (res as ServerResponse).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
+          (res).statusCode = 404;
+          (res).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
         }
+        })().catch((err) => {
+          console.error('Proxy middleware error:', err);
+          if (res && 'headersSent' in res && !res.headersSent) {
+            (res).statusCode = 500;
+            (res).end('Internal Server Error');
+          }
+          // Optionally call next(err) if you want Vite to handle it, 
+          // but usually for proxy we handle response directly.
+        });
       });
     },
   };
 }
-

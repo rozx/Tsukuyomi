@@ -178,9 +178,9 @@ const testModel = async () => {
         : formData.value.baseUrl?.trim() || undefined;
 
     const result = await AIServiceFactory.getConfig(formData.value.provider as AIProvider, {
-      apiKey: formData.value.apiKey!,
+      apiKey: formData.value.apiKey,
       baseUrl: baseUrl,
-      model: formData.value.model!,
+      model: formData.value.model,
       temperature: formData.value.temperature,
       maxTokens: formData.value.maxTokens,
     });
@@ -298,7 +298,7 @@ const fetchAvailableModels = async () => {
     const result = await AIServiceFactory.getAvailableModels(
       formData.value.provider as AIProvider,
       {
-        apiKey: formData.value.apiKey!,
+        apiKey: formData.value.apiKey,
         baseUrl: baseUrl,
       },
     );

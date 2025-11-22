@@ -3,12 +3,12 @@ import { BookService } from '../services/book-service';
 import type { Novel } from '../types/novel';
 
 // Mock objects
-const mockPut = mock(async () => undefined);
-const mockGetAll = mock(async () => []);
-const mockGet = mock(async () => undefined);
-const mockDelete = mock(async () => undefined);
-const mockClear = mock(async () => undefined);
-const mockStorePut = mock(async () => undefined);
+const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
+const mockGetAll = mock((_storeName: string) => Promise.resolve([]));
+const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
+const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
+const mockClear = mock((_storeName: string) => Promise.resolve(undefined));
+const mockStorePut = mock(() => Promise.resolve(undefined));
 const mockTransaction = mock(() => ({
   objectStore: () => ({
     put: mockStorePut,
@@ -26,8 +26,8 @@ const mockDb = {
 };
 
 // Mock the module
-mock.module('src/utils/indexed-db', () => ({
-  getDB: async () => mockDb,
+await mock.module('src/utils/indexed-db', () => ({
+  getDB: () => Promise.resolve(mockDb),
 }));
 
 describe('BookService', () => {
@@ -62,10 +62,10 @@ describe('BookService', () => {
     await BookService.saveBook(book);
     expect(mockPut).toHaveBeenCalled();
     // Check that the first argument to put was 'books'
-    expect(mockPut.mock.calls[0][0]).toBe('books');
+    expect(mockPut.mock.calls[0]?.[0]).toBe('books');
     // Check that dates were serialized
-    const savedBook = mockPut.mock.calls[0][1];
-    expect(typeof savedBook.createdAt).toBe('string');
+    const savedBook = mockPut.mock.calls[0]?.[1] as any;
+    expect(typeof savedBook?.createdAt).toBe('string');
   });
 
   it('should bulk save books', async () => {

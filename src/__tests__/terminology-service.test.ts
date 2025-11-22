@@ -1,11 +1,11 @@
 // Bun 测试框架提供全局函数，直接使用即可
 // 这些函数在运行时由 Bun 提供，无需导入
 // 使用函数签名类型避免 import() 类型注解（符合 ESLint 规范）
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 declare const describe: (name: string, fn: () => void) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 declare const test: (name: string, fn: () => void | Promise<void>) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 declare const expect: (actual: unknown) => {
   toBe: (expected: unknown) => void;
   toBeNull: () => void;

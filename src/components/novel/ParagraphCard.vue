@@ -27,7 +27,7 @@ function escapeRegex(str: string): string {
 /**
  * 将文本转换为包含高亮术语的节点数组
  */
-const highlightedText = computed(() => {
+const highlightedText = computed((): Array<{ type: 'text' | 'term'; content: string; term?: Terminology }> => {
   if (!hasContent.value || !props.terminologies || props.terminologies.length === 0) {
     return [{ type: 'text', content: props.paragraph.text }];
   }

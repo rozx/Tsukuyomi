@@ -5,7 +5,7 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node"],
+    "types": ["node", "bun"],
     "skipLibCheck": true
   }
 }

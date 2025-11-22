@@ -150,7 +150,7 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 从 LocalStorage 加载设置和同步配置
      */
-    loadSettings(): void {
+    async loadSettings(): Promise<void> {
       if (this.isLoaded) {
         return;
       }
@@ -158,6 +158,7 @@ export const useSettingsStore = defineStore('settings', {
       this.settings = loadSettingsFromLocalStorage();
       this.syncs = loadSyncFromLocalStorage();
       this.isLoaded = true;
+      await Promise.resolve();
     },
 
     /**
@@ -180,6 +181,7 @@ export const useSettingsStore = defineStore('settings', {
       
       this.settings = mergedSettings;
       saveSettingsToLocalStorage(this.settings);
+      await Promise.resolve();
     },
 
     /**
@@ -212,6 +214,7 @@ export const useSettingsStore = defineStore('settings', {
     async resetToDefaults(): Promise<void> {
       this.settings = { ...DEFAULT_SETTINGS };
       saveSettingsToLocalStorage(this.settings);
+      await Promise.resolve();
     },
 
     /**
@@ -291,6 +294,7 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       saveSyncToLocalStorage(this.syncs);
+      await Promise.resolve();
     },
 
     /**

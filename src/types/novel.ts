@@ -4,14 +4,14 @@ import type { AIModel } from './ai/ai-model';
 export interface Novel {
   id: string;
   title: string;
-  alternateTitles?: string[];
-  author?: string;
-  description?: string;
-  cover?: CoverImage;
-  tags?: string[];
-  volumes?: Volume[];
-  webUrl?: string[];
-  starred?: boolean;
+  alternateTitles?: string[] | undefined;
+  author?: string | undefined;
+  description?: string | undefined;
+  cover?: CoverImage | undefined;
+  tags?: string[] | undefined;
+  volumes?: Volume[] | undefined;
+  webUrl?: string[] | undefined;
+  starred?: boolean | undefined;
   lastEdited: Date;
   createdAt: Date;
   defaultAIModel?: {
@@ -20,15 +20,15 @@ export interface Novel {
     polishing: AIModel;
     characterExtraction: AIModel;
     terminologyExtraction: AIModel;
-  };
-  characterSettings?: CharacterSetting[];
-  terminologies?: Terminology[];
-  notes?: Note[];
+  } | undefined;
+  characterSettings?: CharacterSetting[] | undefined;
+  terminologies?: Terminology[] | undefined;
+  notes?: Note[] | undefined;
 }
 
 export interface CoverImage {
   url: string;
-  deleteUrl?: string;
+  deleteUrl?: string | undefined;
 }
 
 export interface CoverHistoryItem extends CoverImage {
@@ -39,17 +39,17 @@ export interface CoverHistoryItem extends CoverImage {
 export interface Volume {
   id: string;
   title: string;
-  description?: string;
-  cover?: CoverImage;
-  chapters?: Chapter[];
+  description?: string | undefined;
+  cover?: CoverImage | undefined;
+  chapters?: Chapter[] | undefined;
 }
 
 export interface Chapter {
   id: string;
   title: string;
-  webUrl?: string; // 网络地址
-  content?: Paragraph[];
-  originalContent?: string; // 原始爬取的内容文本（保留原始格式）
+  webUrl?: string | undefined; // 网络地址
+  content?: Paragraph[] | undefined;
+  originalContent?: string | undefined; // 原始爬取的内容文本（保留原始格式）
 
   /**
    * 章节最后编辑时间（本地）
@@ -82,9 +82,9 @@ export interface Chapter {
    *   - 如果远程没有 lastUpdated：不预选（无法判断是否有更新）
    *   - 如果本地没有 lastUpdated 但远程有：自动预选（认为远程更新）
    */
-  lastUpdated?: Date;
+  lastUpdated?: Date | undefined;
 
-  specialInstructions?: string; // 特殊指令，如：翻译时需要保留原文的格式
+  specialInstructions?: string | undefined; // 特殊指令，如：翻译时需要保留原文的格式
 }
 
 export interface Paragraph {
@@ -114,7 +114,7 @@ export interface Note {
 export interface Terminology {
   id: string;
   name: string;
-  description?: string;
+  description?: string | undefined;
   translation: Translation;
   occurrences: Occurrence[];
 }
@@ -123,7 +123,7 @@ export interface Terminology {
 export interface CharacterSetting {
   id: string;
   name: string;
-  description?: string;
+  description?: string | undefined;
   translation: Translation[];
   aliases: CharacterSetting[];
   occurrences: Occurrence[];

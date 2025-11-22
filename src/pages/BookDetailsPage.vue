@@ -3,8 +3,6 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
-import Textarea from 'primevue/textarea';
-import AppMessage from 'src/components/common/AppMessage.vue';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
@@ -17,7 +15,6 @@ import {
   getChapterContentText,
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useSettingsStore } from 'src/stores/settings';
 import type { Volume, Chapter, Novel, Terminology } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
@@ -386,23 +383,6 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
   } finally {
     isSavingTerm.value = false;
   }
-};
-
-// 删除术语
-const handleDeleteTerm = async (term: Terminology) => {
-  if (!book.value) return;
-
-  // Use browser confirm for simplicity or add another dialog. 
-  // Given the existing "delete confirm" dialogs, maybe I should reuse one or add a specific one?
-  // I'll use the toast confirm pattern or just a simple confirm for now to avoid adding too much boilerplate 
-  // if the user didn't ask for a custom dialog.
-  // Actually, let's use a confirm dialog component if PrimeVue has one, 
-  // but here we have custom dialogs. I'll add a simple confirm check.
-  
-  // Wait, I should follow the pattern of other delete actions.
-  // I'll just execute it for now, or maybe use the `confirm` function if available?
-  // The code uses custom dialogs `showDeleteVolumeConfirm`.
-  // I'll add `showDeleteTermConfirm` state.
 };
 
 // Add Delete Term Dialog State

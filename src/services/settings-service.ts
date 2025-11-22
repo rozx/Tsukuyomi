@@ -164,7 +164,7 @@ export class SettingsService {
         model.model &&
         model.apiKey
       ) {
-        validModels.push(model as AIModel);
+        validModels.push(model);
       }
     }
 

@@ -87,7 +87,7 @@ export interface ExtractedTermInfo {
  * 从章节/段落中提取和拆分单词
  */
 export class TerminologyService {
-  private static tokenizer: Tokenizer | null = null;
+  private static tokenizer: Tokenizer = null;
   private static initializing = false;
   private static initPromise: Promise<Tokenizer> | null = null;
 
@@ -456,7 +456,7 @@ export class TerminologyService {
       }
 
       // 在控制台输出详细信息（只显示符合条件的名词）
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const filteredNouns = tokens.filter(
         (t: any) =>
           t.pos === '名詞' &&

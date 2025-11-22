@@ -360,7 +360,10 @@ export class ChapterService {
     if (index === -1) return existingVolumes;
 
     const updatedVolumes = [...existingVolumes];
-    updatedVolumes[index] = { ...updatedVolumes[index], ...data };
+    const existingVolume = updatedVolumes[index];
+    if (existingVolume) {
+      updatedVolumes[index] = { ...existingVolume, ...data };
+    }
     return updatedVolumes;
   }
 
@@ -394,6 +397,8 @@ export class ChapterService {
     if (volumeIndex === -1) return existingVolumes;
 
     const volume = existingVolumes[volumeIndex];
+    if (!volume) return existingVolumes;
+
     const existingChapters = volume.chapters || [];
     const chapterIds = extractIds(existingChapters);
     const idGenerator = new UniqueIdGenerator(chapterIds);
@@ -436,12 +441,12 @@ export class ChapterService {
     // 查找章节
     for (let i = 0; i < existingVolumes.length; i++) {
       const volume = existingVolumes[i];
-      if (volume.chapters) {
+      if (volume && volume.chapters) {
         const index = volume.chapters.findIndex((c) => c.id === chapterId);
         if (index !== -1) {
           sourceVolumeIndex = i;
           chapterIndex = index;
-          chapterToUpdate = volume.chapters[index];
+          chapterToUpdate = volume.chapters[index] || null;
           break;
         }
       }
@@ -457,6 +462,7 @@ export class ChapterService {
     };
 
     const sourceVolume = existingVolumes[sourceVolumeIndex];
+    if (!sourceVolume) return existingVolumes;
     
     // 如果不需要移动，或者目标卷和源卷相同
     if (!targetVolumeId || targetVolumeId === sourceVolume.id) {
@@ -477,6 +483,8 @@ export class ChapterService {
 
     // 2. 添加到目标卷
     const targetVolume = existingVolumes[targetVolumeIndex];
+    if (!targetVolume) return existingVolumes;
+
     const targetChapters = [...(targetVolume.chapters || [])];
     targetChapters.push(updatedChapter);
     existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
@@ -525,12 +533,12 @@ export class ChapterService {
     // 查找并移除章节
     for (let i = 0; i < existingVolumes.length; i++) {
       const volume = existingVolumes[i];
-      if (volume.chapters) {
+      if (volume && volume.chapters) {
         const index = volume.chapters.findIndex((c) => c.id === chapterId);
         if (index !== -1) {
           sourceVolumeIndex = i;
           chapterIndex = index;
-          chapterToMove = volume.chapters[index];
+          chapterToMove = volume.chapters[index] || null;
           break;
         }
       }
@@ -544,6 +552,8 @@ export class ChapterService {
 
     // 2. 从源卷移除
     const sourceVolume = existingVolumes[sourceVolumeIndex];
+    if (!sourceVolume) return existingVolumes;
+
     const sourceChapters = [...(sourceVolume.chapters || [])];
     sourceChapters.splice(chapterIndex, 1);
     existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
@@ -553,6 +563,8 @@ export class ChapterService {
     // 因为上面已经修改了 existingVolumes[sourceVolumeIndex]
     
     const targetVolume = existingVolumes[targetVolumeIndex];
+    if (!targetVolume) return existingVolumes;
+
     const targetChapters = [...(targetVolume.chapters || [])];
     
     const insertIndex =

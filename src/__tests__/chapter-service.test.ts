@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { ChapterService } from '../services/chapter-service';
-import type { Novel, Volume, Chapter } from '../types/novel';
+import type { Novel, Volume } from '../types/novel';
 
 // 辅助函数：创建测试用小说
 function createTestNovel(volumes: Volume[] = []): Novel {
@@ -20,9 +20,9 @@ describe('ChapterService', () => {
       const updatedVolumes = ChapterService.addVolume(novel, 'New Volume');
 
       expect(updatedVolumes.length).toBe(1);
-      expect(updatedVolumes[0].title).toBe('New Volume');
-      expect(updatedVolumes[0].id).toBeDefined();
-      expect(updatedVolumes[0].chapters).toEqual([]);
+      expect(updatedVolumes[0]!.title).toBe('New Volume');
+      expect(updatedVolumes[0]!.id).toBeDefined();
+      expect(updatedVolumes[0]!.chapters).toEqual([]);
     });
 
     it('应该添加到现有卷列表', () => {
@@ -32,7 +32,7 @@ describe('ChapterService', () => {
 
       expect(updatedVolumes.length).toBe(2);
       expect(updatedVolumes[0]).toEqual(volume1);
-      expect(updatedVolumes[1].title).toBe('V2');
+      expect(updatedVolumes[1]!.title).toBe('V2');
     });
   });
 
@@ -44,8 +44,8 @@ describe('ChapterService', () => {
       const updatedVolumes = ChapterService.updateVolume(novel, 'v1', { title: 'Updated V1' });
 
       expect(updatedVolumes.length).toBe(1);
-      expect(updatedVolumes[0].id).toBe('v1');
-      expect(updatedVolumes[0].title).toBe('Updated V1');
+      expect(updatedVolumes[0]!.id).toBe('v1');
+      expect(updatedVolumes[0]!.title).toBe('Updated V1');
     });
 
     it('如果不更改则应保留其他属性', () => {
@@ -54,7 +54,7 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.updateVolume(novel, 'v1', { title: 'Updated V1' });
 
-      expect(updatedVolumes[0].description).toBe('Desc');
+      expect(updatedVolumes[0]!.description).toBe('Desc');
     });
 
     it('如果卷不存在则不做任何更改', () => {
@@ -76,7 +76,7 @@ describe('ChapterService', () => {
       const updatedVolumes = ChapterService.deleteVolume(novel, 'v1');
 
       expect(updatedVolumes.length).toBe(1);
-      expect(updatedVolumes[0].id).toBe('v2');
+      expect(updatedVolumes[0]!.id).toBe('v2');
     });
 
     it('如果卷不存在则不做任何更改', () => {
@@ -96,9 +96,9 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.addChapter(novel, 'v1', 'New Chapter');
 
-      expect(updatedVolumes[0].chapters?.length).toBe(1);
-      expect(updatedVolumes[0].chapters?.[0].title).toBe('New Chapter');
-      expect(updatedVolumes[0].chapters?.[0].id).toBeDefined();
+      expect(updatedVolumes[0]?.chapters?.length).toBe(1);
+      expect(updatedVolumes[0]?.chapters?.[0]?.title).toBe('New Chapter');
+      expect(updatedVolumes[0]?.chapters?.[0]?.id).toBeDefined();
     });
 
     it('如果卷不存在则不做任何更改', () => {
@@ -116,8 +116,8 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.updateChapter(novel, 'c1', { title: 'Updated C1' });
 
-      expect(updatedVolumes[0].chapters?.[0].title).toBe('Updated C1');
-      expect(updatedVolumes[0].chapters?.[0].id).toBe('c1');
+      expect(updatedVolumes[0]?.chapters?.[0]?.title).toBe('Updated C1');
+      expect(updatedVolumes[0]?.chapters?.[0]?.id).toBe('c1');
     });
 
     it('应该移动章节到另一个卷', () => {
@@ -128,9 +128,9 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.updateChapter(novel, 'c1', {}, 'v2');
 
-      expect(updatedVolumes[0].chapters?.length).toBe(0);
-      expect(updatedVolumes[1].chapters?.length).toBe(1);
-      expect(updatedVolumes[1].chapters?.[0].id).toBe('c1');
+      expect(updatedVolumes[0]?.chapters?.length).toBe(0);
+      expect(updatedVolumes[1]?.chapters?.length).toBe(1);
+      expect(updatedVolumes[1]?.chapters?.[0]?.id).toBe('c1');
     });
   });
 
@@ -142,7 +142,7 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.deleteChapter(novel, 'c1');
 
-      expect(updatedVolumes[0].chapters?.length).toBe(0);
+      expect(updatedVolumes[0]?.chapters?.length).toBe(0);
     });
   });
 
@@ -159,7 +159,7 @@ describe('ChapterService', () => {
       // remove c1 -> [c2, c3]. insert at 2 -> [c2, c3, c1]
       const updatedVolumes = ChapterService.moveChapter(novel, 'c1', 'v1', 2);
 
-      expect(updatedVolumes[0].chapters?.map(c => c.id)).toEqual(['c2', 'c3', 'c1']);
+      expect(updatedVolumes[0]?.chapters?.map(c => c.id)).toEqual(['c2', 'c3', 'c1']);
     });
 
     it('应该移动到另一个卷', () => {
@@ -170,9 +170,9 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.moveChapter(novel, 'c1', 'v2');
 
-      expect(updatedVolumes[0].chapters?.length).toBe(0);
-      expect(updatedVolumes[1].chapters?.length).toBe(1);
-      expect(updatedVolumes[1].chapters?.[0].id).toBe('c1');
+      expect(updatedVolumes[0]?.chapters?.length).toBe(0);
+      expect(updatedVolumes[1]?.chapters?.length).toBe(1);
+      expect(updatedVolumes[1]?.chapters?.[0]?.id).toBe('c1');
     });
   });
 });

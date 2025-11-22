@@ -102,7 +102,7 @@ export default defineConfig((ctx) => {
             rewrite: (path) => path.replace(/^\/api\/syosetu/, ''),
             secure: true,
             configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, req, _res) => {
+              proxy.on('proxyReq', (proxyReq, _req, _res) => {
                 // 确保请求头正确传递，覆盖客户端请求头
                 proxyReq.setHeader(
                   'User-Agent',
@@ -142,7 +142,7 @@ export default defineConfig((ctx) => {
             rewrite: (path) => path.replace(/^\/api\/kakuyomu/, ''),
             secure: true,
             configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, req, _res) => {
+              proxy.on('proxyReq', (proxyReq, _req, _res) => {
                 // 确保请求头正确传递，覆盖客户端请求头
                 proxyReq.setHeader(
                   'User-Agent',

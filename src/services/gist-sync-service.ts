@@ -464,7 +464,7 @@ export class GistSyncService {
               files[filename] = null;
             }
           }
-        } catch (getError) {
+        } catch {
           // 如果获取失败（例如 Gist 不存在），继续使用原始 files
           // 在更新时会处理创建新 Gist 的情况
         }
@@ -474,6 +474,7 @@ export class GistSyncService {
           const response = await this.octokit.rest.gists.update({
             gist_id: gistId,
             description: 'Luna AI Translator - Settings and Novels',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             files: files as any,
           });
           gistId = response.data.id;
@@ -588,15 +589,15 @@ export class GistSyncService {
           };
 
           if (settingsData.aiModels) {
-            result.aiModels = this.deserializeDates(settingsData.aiModels) as AIModel[];
+            result.aiModels = this.deserializeDates(settingsData.aiModels);
           }
           if (settingsData.appSettings) {
-            result.appSettings = this.deserializeDates(settingsData.appSettings) as AppSettings;
+            result.appSettings = this.deserializeDates(settingsData.appSettings);
           }
           if (settingsData.coverHistory) {
             result.coverHistory = this.deserializeDates(
               settingsData.coverHistory,
-            ) as CoverHistoryItem[];
+            );
           }
         } catch {
           // 忽略设置文件解析错误，继续处理书籍
@@ -1231,15 +1232,15 @@ export class GistSyncService {
           };
 
           if (settingsData.aiModels) {
-            result.aiModels = this.deserializeDates(settingsData.aiModels) as AIModel[];
+            result.aiModels = this.deserializeDates(settingsData.aiModels);
           }
           if (settingsData.appSettings) {
-            result.appSettings = this.deserializeDates(settingsData.appSettings) as AppSettings;
+            result.appSettings = this.deserializeDates(settingsData.appSettings);
           }
           if (settingsData.coverHistory) {
             result.coverHistory = this.deserializeDates(
               settingsData.coverHistory,
-            ) as CoverHistoryItem[];
+            );
           }
         } catch {
           // 忽略设置文件解析错误
@@ -1269,8 +1270,6 @@ export class GistSyncService {
       // 处理每本书（使用与 downloadFromGist 相同的逻辑）
       for (const novelId of novelIds) {
         try {
-          const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
-          const metadataFile = gistFiles[metadataFileName];
           const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
 
           const chunkFiles: Array<{

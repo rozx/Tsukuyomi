@@ -12,9 +12,11 @@ import { formatRelativeTime } from 'src/utils/format';
 import ConflictResolutionDialog, {
   type ConflictResolution,
 } from 'src/components/dialogs/ConflictResolutionDialog.vue';
-import { ConflictDetectionService } from 'src/services/conflict-detection-service';
 import type { ConflictItem } from 'src/services/conflict-detection-service';
 import { SyncDataService } from 'src/services/sync-data-service';
+import type { Novel, CoverHistoryItem } from 'src/types/novel';
+import type { AIModel } from 'src/types/ai/ai-model';
+import type { AppSettings } from 'src/types/settings';
 
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();

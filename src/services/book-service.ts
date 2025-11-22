@@ -67,7 +67,7 @@ export class BookService {
     try {
       const db = await getDB();
       const books = await db.getAll('books');
-      return books.map((book) => BookService.deserializeDatesFromDB(book) as Novel);
+      return books.map((book) => BookService.deserializeDatesFromDB(book));
     } catch (error) {
       console.error('Failed to load books:', error);
       return [];
