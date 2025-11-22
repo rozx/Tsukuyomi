@@ -16,7 +16,6 @@ import {
   getChapterCharCount,
   getChapterContentText,
 } from 'src/utils';
-import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Volume, Chapter, Novel, Terminology } from 'src/types/novel';
@@ -455,23 +454,13 @@ const handleAddVolume = async () => {
     return;
   }
 
-  const existingVolumes = book.value.volumes || [];
-  const volumeIds = extractIds(existingVolumes);
-  const idGenerator = new UniqueIdGenerator(volumeIds);
-
-  const newVolume: Volume = {
-    id: idGenerator.generate(),
-    title: newVolumeTitle.value.trim(),
-    chapters: [],
-  };
-
-  const updatedVolumes = [...existingVolumes, newVolume];
+  const updatedVolumes = ChapterService.addVolume(book.value, newVolumeTitle.value);
   await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
     summary: '添加成功',
-    detail: `已添加卷 "${newVolume.title}"`,
+    detail: `已添加卷 "${newVolumeTitle.value.trim()}"`,
     life: 3000,
   });
 
@@ -485,49 +474,18 @@ const handleAddChapter = async () => {
     return;
   }
 
-  const existingVolumes = book.value.volumes || [];
-  const volumeIndex = existingVolumes.findIndex((v) => v.id === selectedVolumeId.value);
-  if (volumeIndex === -1) {
-    return;
-  }
-
-  const volume = existingVolumes[volumeIndex];
-  if (!volume) {
-    return;
-  }
-  const existingChapters = volume.chapters || [];
-  const chapterIds = extractIds(existingChapters);
-  const idGenerator = new UniqueIdGenerator(chapterIds);
-
-  const now = new Date();
-  const newChapter: Chapter = {
-    id: idGenerator.generate(),
-    title: newChapterTitle.value.trim(),
-    lastEdited: now, // 初始创建时，lastEdited 等于 createdAt
-    createdAt: now,
-  };
-
-  const updatedChapters = [...existingChapters, newChapter];
-  const updatedVolumes = [...existingVolumes];
-  const updatedVolume: Volume = {
-    id: volume.id,
-    title: volume.title,
-    chapters: updatedChapters,
-  };
-  if (volume.description !== undefined) {
-    updatedVolume.description = volume.description;
-  }
-  if (volume.cover !== undefined) {
-    updatedVolume.cover = volume.cover;
-  }
-  updatedVolumes[volumeIndex] = updatedVolume;
+  const updatedVolumes = ChapterService.addChapter(
+    book.value,
+    selectedVolumeId.value,
+    newChapterTitle.value,
+  );
 
   await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',
     summary: '添加成功',
-    detail: `已添加章节 "${newChapter.title}"`,
+    detail: `已添加章节 "${newChapterTitle.value.trim()}"`,
     life: 3000,
   });
 
@@ -579,31 +537,9 @@ const handleEditVolume = async () => {
     return;
   }
 
-  const existingVolumes = book.value.volumes || [];
-  const volumeIndex = existingVolumes.findIndex((v) => v.id === editingVolumeId.value);
-  if (volumeIndex === -1) {
-    return;
-  }
-
-  const updatedVolumes = [...existingVolumes];
-  const volumeToUpdate = updatedVolumes[volumeIndex];
-  if (!volumeToUpdate) {
-    return;
-  }
-  const updatedVolume: Volume = {
-    id: volumeToUpdate.id,
+  const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
     title: editingVolumeTitle.value.trim(),
-  };
-  if (volumeToUpdate.description !== undefined) {
-    updatedVolume.description = volumeToUpdate.description;
-  }
-  if (volumeToUpdate.cover !== undefined) {
-    updatedVolume.cover = volumeToUpdate.cover;
-  }
-  if (volumeToUpdate.chapters !== undefined) {
-    updatedVolume.chapters = volumeToUpdate.chapters;
-  }
-  updatedVolumes[volumeIndex] = updatedVolume;
+  });
 
   await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
@@ -630,65 +566,14 @@ const handleEditChapter = async () => {
     return;
   }
 
-  const existingVolumes = [...(book.value.volumes || [])];
-  let chapterToMove: Chapter | null = null;
-  let sourceVolumeIndex = -1;
-  let chapterIndex = -1;
+  const updatedVolumes = ChapterService.updateChapter(
+    book.value,
+    editingChapterId.value,
+    { title: editingChapterTitle.value.trim() },
+    editingChapterTargetVolumeId.value,
+  );
 
-  // 找到章节并移除
-  for (let i = 0; i < existingVolumes.length; i++) {
-    const volume = existingVolumes[i];
-    if (!volume) continue;
-    if (volume.chapters) {
-      const index = volume.chapters.findIndex((c) => c.id === editingChapterId.value);
-      if (index !== -1) {
-        const chapter = volume.chapters[index];
-        if (chapter) {
-          chapterToMove = { ...chapter };
-          sourceVolumeIndex = i;
-          chapterIndex = index;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!chapterToMove) return;
-
-  // 更新章节标题
-  chapterToMove.title = editingChapterTitle.value.trim();
-  chapterToMove.lastEdited = new Date();
-
-  // 如果目标卷与源卷不同，需要移动章节
-  if (editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value) {
-    // 从源卷移除
-    const sourceVolume = existingVolumes[sourceVolumeIndex];
-    if (sourceVolume?.chapters) {
-      sourceVolume.chapters.splice(chapterIndex, 1);
-    }
-
-    // 添加到目标卷
-    const targetVolumeIndex = existingVolumes.findIndex(
-      (v) => v.id === editingChapterTargetVolumeId.value,
-    );
-    if (targetVolumeIndex !== -1) {
-      const targetVolume = existingVolumes[targetVolumeIndex];
-      if (targetVolume) {
-        if (!targetVolume.chapters) {
-          targetVolume.chapters = [];
-        }
-        targetVolume.chapters.push(chapterToMove);
-      }
-    }
-  } else {
-    // 同一卷内，只更新标题
-    const sourceVolume = existingVolumes[sourceVolumeIndex];
-    if (sourceVolume?.chapters && chapterIndex !== -1) {
-      sourceVolume.chapters[chapterIndex] = chapterToMove;
-    }
-  }
-
-  await booksStore.updateBook(book.value.id, { volumes: existingVolumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   const moveMessage =
     editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value ? '并移动到新卷' : '';
@@ -727,8 +612,7 @@ const handleDeleteVolume = async () => {
     return;
   }
 
-  const existingVolumes = book.value.volumes || [];
-  const updatedVolumes = existingVolumes.filter((v) => v.id !== deletingVolumeId.value);
+  const updatedVolumes = ChapterService.deleteVolume(book.value, deletingVolumeId.value);
 
   await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
@@ -750,38 +634,20 @@ const handleDeleteChapter = async () => {
     return;
   }
 
-  const existingVolumes = book.value.volumes || [];
-  let updated = false;
+  const updatedVolumes = ChapterService.deleteChapter(book.value, deletingChapterId.value);
 
-  const updatedVolumes = existingVolumes.map((volume) => {
-    if (volume.chapters) {
-      const chapterIndex = volume.chapters.findIndex((c) => c.id === deletingChapterId.value);
-      if (chapterIndex !== -1) {
-        updated = true;
-        const updatedChapters = volume.chapters.filter((c) => c.id !== deletingChapterId.value);
-        return {
-          ...volume,
-          chapters: updatedChapters,
-        };
-      }
-    }
-    return volume;
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+
+  toast.add({
+    severity: 'success',
+    summary: '删除成功',
+    detail: `已删除章节 "${deletingChapterTitle.value}"`,
+    life: 3000,
   });
 
-  if (updated) {
-    await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
-
-    toast.add({
-      severity: 'success',
-      summary: '删除成功',
-      detail: `已删除章节 "${deletingChapterTitle.value}"`,
-      life: 3000,
-    });
-
-    showDeleteChapterConfirm.value = false;
-    deletingChapterId.value = null;
-    deletingChapterTitle.value = '';
-  }
+  showDeleteChapterConfirm.value = false;
+  deletingChapterId.value = null;
+  deletingChapterTitle.value = '';
 };
 
 // 保存书籍（编辑）
@@ -860,50 +726,23 @@ const handleDrop = async (event: DragEvent, targetVolumeId: string, targetIndex?
   event.preventDefault();
   if (!draggedChapter.value || !book.value) return;
 
-  const { chapter, sourceVolumeId, sourceIndex } = draggedChapter.value;
-  const volumes = [...(book.value.volumes || [])];
+  const { chapter, sourceVolumeId } = draggedChapter.value;
 
-  // 找到源卷和目标卷
-  const sourceVolumeIndex = volumes.findIndex((v) => v.id === sourceVolumeId);
-  const targetVolumeIndex = volumes.findIndex((v) => v.id === targetVolumeId);
+  // 检查是否真的需要移动
+  // 如果只是在同一个位置放下，不需要操作
+  // 这里简单处理，只要 drop 就调用 service，service 会处理
+  // 但是我们可以先做个简单的检查：如果源和目标相同且 index 没有变（比较难判断 index，因为 DOM 列表可能和数据不完全对应）
+  // 还是交给 service 比较稳妥
 
-  if (sourceVolumeIndex === -1 || targetVolumeIndex === -1) return;
-
-  const sourceVolume = volumes[sourceVolumeIndex];
-  const targetVolume = volumes[targetVolumeIndex];
-
-  if (!sourceVolume || !targetVolume) return;
-  if (!sourceVolume.chapters || sourceIndex >= sourceVolume.chapters.length) return;
-
-  // 从源卷移除章节
-  const [movedChapter] = sourceVolume.chapters.splice(sourceIndex, 1);
-  if (!movedChapter) return;
-
-  // 添加到目标卷
-  if (sourceVolumeId === targetVolumeId) {
-    // 同一卷内重新排序
-    if (!targetVolume.chapters) {
-      targetVolume.chapters = [];
-    }
-    const insertIndex =
-      targetIndex !== undefined && targetIndex !== null
-        ? targetIndex
-        : targetVolume.chapters.length;
-    targetVolume.chapters.splice(insertIndex, 0, movedChapter);
-  } else {
-    // 移动到不同卷
-    if (!targetVolume.chapters) {
-      targetVolume.chapters = [];
-    }
-    const insertIndex =
-      targetIndex !== undefined && targetIndex !== null
-        ? targetIndex
-        : targetVolume.chapters.length;
-    targetVolume.chapters.splice(insertIndex, 0, movedChapter);
-  }
+  const updatedVolumes = ChapterService.moveChapter(
+    book.value,
+    chapter.id,
+    targetVolumeId,
+    targetIndex,
+  );
 
   // 更新书籍
-  await booksStore.updateBook(book.value.id, { volumes });
+  await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
 
   toast.add({
     severity: 'success',

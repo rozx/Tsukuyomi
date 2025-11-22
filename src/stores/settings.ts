@@ -3,7 +3,9 @@ import type { AppSettings } from 'src/types/settings';
 import type { SyncConfig } from 'src/types/sync';
 import { SyncType } from 'src/types/sync';
 import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
-import { getDB } from 'src/utils/indexed-db';
+
+const SETTINGS_STORAGE_KEY = 'luna-settings';
+const SYNC_STORAGE_KEY = 'luna-sync-configs';
 
 /**
  * 默认设置
@@ -31,14 +33,13 @@ function createDefaultGistSyncConfig(): SyncConfig {
 }
 
 /**
- * 从 IndexedDB 加载设置
+ * 从 LocalStorage 加载设置
  */
-async function loadSettingsFromDB(): Promise<AppSettings> {
+function loadSettingsFromLocalStorage(): AppSettings {
   try {
-    const db = await getDB();
-    const stored = await db.get('settings', 'app');
+    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (stored) {
-      const { key: _key, ...settings } = stored;
+      const settings = JSON.parse(stored);
       // 合并默认设置，确保所有字段都存在
       return {
         ...DEFAULT_SETTINGS,
@@ -50,79 +51,57 @@ async function loadSettingsFromDB(): Promise<AppSettings> {
       };
     }
   } catch (error) {
-    console.error('Failed to load settings from DB:', error);
+    console.error('Failed to load settings from LocalStorage:', error);
   }
   return { ...DEFAULT_SETTINGS };
 }
 
 /**
- * 保存设置到 IndexedDB
+ * 保存设置到 LocalStorage
  */
-async function saveSettingsToDB(settings: AppSettings): Promise<void> {
+function saveSettingsToLocalStorage(settings: AppSettings): void {
   try {
-    const db = await getDB();
-    await db.put('settings', { key: 'app', ...settings });
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch (error) {
-    console.error('Failed to save settings to DB:', error);
+    console.error('Failed to save settings to LocalStorage:', error);
   }
 }
 
 /**
- * 从 IndexedDB 加载同步配置
+ * 从 LocalStorage 加载同步配置
  */
-async function loadSyncFromDB(): Promise<SyncConfig[]> {
+function loadSyncFromLocalStorage(): SyncConfig[] {
   try {
-    const db = await getDB();
-    const syncs = await db.getAll('sync-configs');
-    return syncs.map((sync) => {
-      const { id: _id, ...syncConfig } = sync;
-      return {
-        ...createDefaultGistSyncConfig(),
-        ...syncConfig,
-        syncParams: {
-          ...createDefaultGistSyncConfig().syncParams,
-          ...(syncConfig.syncParams || {}),
-        },
-      };
-    });
-  } catch (error) {
-    console.error('Failed to load sync from DB:', error);
-    return [];
-  }
-}
-
-/**
- * 保存同步配置到 IndexedDB
- */
-async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
-  try {
-    const db = await getDB();
-    const tx = db.transaction('sync-configs', 'readwrite');
-    const store = tx.objectStore('sync-configs');
-
-    // 先清空现有配置
-    await store.clear();
-
-    // 保存新配置
-    for (let i = 0; i < syncs.length; i++) {
-      const sync = syncs[i];
-      if (!sync) continue;
-      await store.put({
-        id: `sync-${i}`,
-        enabled: sync.enabled,
-        lastSyncTime: sync.lastSyncTime,
-        syncInterval: sync.syncInterval,
-        syncType: sync.syncType,
-        syncParams: sync.syncParams,
-        secret: sync.secret,
-        apiEndpoint: sync.apiEndpoint,
-        ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
-      });
+    const stored = localStorage.getItem(SYNC_STORAGE_KEY);
+    if (stored) {
+      const syncs = JSON.parse(stored);
+      if (Array.isArray(syncs)) {
+        return syncs.map((syncConfig) => {
+          return {
+            ...createDefaultGistSyncConfig(),
+            ...syncConfig,
+            syncParams: {
+              ...createDefaultGistSyncConfig().syncParams,
+              ...(syncConfig.syncParams || {}),
+            },
+          };
+        });
+      }
     }
-
-    await tx.done;
   } catch (error) {
-    console.error('Failed to save sync to DB:', error);
+    console.error('Failed to load sync from LocalStorage:', error);
+  }
+  return [];
+}
+
+/**
+ * 保存同步配置到 LocalStorage
+ */
+function saveSyncToLocalStorage(syncs: SyncConfig[]): void {
+  try {
+    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs));
+  } catch (error) {
+    console.error('Failed to save sync to LocalStorage:', error);
   }
 }
 
@@ -169,15 +148,15 @@ export const useSettingsStore = defineStore('settings', {
 
   actions: {
     /**
-     * 从 IndexedDB 加载设置和同步配置
+     * 从 LocalStorage 加载设置和同步配置
      */
-    async loadSettings(): Promise<void> {
+    loadSettings(): void {
       if (this.isLoaded) {
         return;
       }
 
-      this.settings = await loadSettingsFromDB();
-      this.syncs = await loadSyncFromDB();
+      this.settings = loadSettingsFromLocalStorage();
+      this.syncs = loadSyncFromLocalStorage();
       this.isLoaded = true;
     },
 
@@ -200,7 +179,7 @@ export const useSettingsStore = defineStore('settings', {
       }
       
       this.settings = mergedSettings;
-      await saveSettingsToDB(this.settings);
+      saveSettingsToLocalStorage(this.settings);
     },
 
     /**
@@ -232,7 +211,7 @@ export const useSettingsStore = defineStore('settings', {
      */
     async resetToDefaults(): Promise<void> {
       this.settings = { ...DEFAULT_SETTINGS };
-      await saveSettingsToDB(this.settings);
+      saveSettingsToLocalStorage(this.settings);
     },
 
     /**
@@ -311,7 +290,7 @@ export const useSettingsStore = defineStore('settings', {
         this.syncs.push(updatedConfig);
       }
 
-      await saveSyncToDB(this.syncs);
+      saveSyncToLocalStorage(this.syncs);
     },
 
     /**

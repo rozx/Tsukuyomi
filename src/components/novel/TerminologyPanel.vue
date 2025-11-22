@@ -6,13 +6,11 @@ import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
-import type { Novel, Terminology, Translation } from 'src/types/novel';
+import type { Novel, Terminology } from 'src/types/novel';
 import ExtractedTermsDialog from './ExtractedTermsDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
-import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
-import { v4 as uuidv4 } from 'uuid';
+import { TerminologyService } from 'src/services/terminology-service';
 import { ThemeClasses } from 'src/constants/theme';
 
 const props = defineProps<{
@@ -56,7 +54,6 @@ const showEditDialog = ref(false);
 const showExtractedTermsDialog = ref(false);
 const selectedTerminology = ref<Terminology | null>(null);
 
-const booksStore = useBooksStore();
 const toast = useToastWithHistory();
 const isSaving = ref(false);
 
@@ -90,7 +87,7 @@ const handleSave = async (data: { name: string; translation: string; description
   }
 
   // 验证必填字段
-  if (!data.name) {
+  if (!data.name.trim()) {
     toast.add({
       severity: 'error',
       summary: '保存失败',
@@ -100,115 +97,60 @@ const handleSave = async (data: { name: string; translation: string; description
     return;
   }
 
-  // 翻译可以为空（留空时由 AI 自动翻译）
-
   isSaving.value = true;
 
   try {
-    const currentTerminologies = props.book.terminologies || [];
-    let updatedTerminologies: Terminology[];
-
     if (showAddDialog.value) {
       // 添加新术语
-      // 检查是否已存在同名术语
-      const existingTerm = currentTerminologies.find((t) => t.name === data.name);
-      if (existingTerm) {
-        toast.add({
-          severity: 'warn',
-          summary: '保存失败',
-          detail: `术语 "${data.name}" 已存在`,
-          life: 3000,
-        });
-        isSaving.value = false;
-        return;
+      const termData: {
+        name: string;
+        translation?: string;
+        description?: string;
+      } = {
+        name: data.name.trim(),
+      };
+      if (data.translation.trim()) {
+        termData.translation = data.translation.trim();
       }
-
-      // 生成唯一 ID
-      const existingTermIds = currentTerminologies.map((t) => t.id);
-      const idGenerator = new UniqueIdGenerator(existingTermIds);
-      const termId = idGenerator.generate();
-
-      // 创建 Translation 对象
-      const translation: Translation = {
-        id: uuidv4(),
-        translation: data.translation,
-        aiModelId: '', // 可以后续从默认模型获取
-      };
-
-      // 创建新术语
-      const newTerminology: Terminology = {
-        id: termId,
-        name: data.name,
-        ...(data.description ? { description: data.description } : {}),
-        translation,
-        occurrences: [],
-      };
-
-      updatedTerminologies = [...currentTerminologies, newTerminology];
-
-      // 更新书籍
-      await booksStore.updateBook(props.book.id, {
-        terminologies: updatedTerminologies,
-        lastEdited: new Date(),
-      });
+      if (data.description.trim()) {
+        termData.description = data.description.trim();
+      }
+      await TerminologyService.addTerminology(props.book.id, termData);
 
       toast.add({
         severity: 'success',
         summary: '保存成功',
-        detail: `已成功添加术语 "${newTerminology.name}"`,
+        detail: `已成功添加术语 "${data.name.trim()}"`,
         life: 3000,
       });
 
       showAddDialog.value = false;
     } else if (showEditDialog.value && selectedTerminology.value) {
       // 编辑现有术语
-      // 检查名称是否与其他术语冲突（排除当前编辑的术语）
-      const nameConflict = currentTerminologies.find(
-        (t) => t.id !== selectedTerminology.value!.id && t.name === data.name,
-      );
-      if (nameConflict) {
-        toast.add({
-          severity: 'warn',
-          summary: '保存失败',
-          detail: `术语 "${data.name}" 已存在`,
-          life: 3000,
-        });
-        isSaving.value = false;
-        return;
+      const updates: {
+        name?: string;
+        translation?: string;
+        description?: string;
+      } = {};
+      if (data.name.trim() !== selectedTerminology.value.name) {
+        updates.name = data.name.trim();
       }
-
-      // 更新术语
-      updatedTerminologies = currentTerminologies.map((term) => {
-        if (term.id === selectedTerminology.value!.id) {
-          const updated: Terminology = {
-            ...term,
-            name: data.name,
-            translation: {
-              ...term.translation,
-              translation: data.translation,
-            },
-          };
-          // 处理 description：如果有值则设置，如果为空则删除属性
-          if (data.description) {
-            updated.description = data.description;
-          } else {
-            delete updated.description;
-          }
-          return updated;
-        }
-        return term;
-      });
-
-      // 更新书籍
-      await booksStore.updateBook(props.book.id, {
-        terminologies: updatedTerminologies,
-        lastEdited: new Date(),
-      });
+      if (data.translation.trim() !== selectedTerminology.value.translation.translation) {
+        updates.translation = data.translation.trim();
+      }
+      if (data.description.trim() !== (selectedTerminology.value.description || '')) {
+        updates.description = data.description.trim();
+      }
+      await TerminologyService.updateTerminology(
+        props.book.id,
+        selectedTerminology.value.id,
+        updates,
+      );
 
       toast.add({
         severity: 'success',
         summary: '保存成功',
-        detail: `已成功更新术语 "${data.name}"`,
+        detail: `已成功更新术语 "${data.name.trim()}"`,
         life: 3000,
       });
 
@@ -228,10 +170,35 @@ const handleSave = async (data: { name: string; translation: string; description
   }
 };
 
-// TODO: 实现删除逻辑
-const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
-  // 占位符：删除术语
-  console.log('删除术语:', terminology.id);
+// 删除术语
+const handleDelete = async (terminology: (typeof terminologies.value)[number]) => {
+  if (!props.book) {
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: '没有选择书籍',
+      life: 3000,
+    });
+    return;
+  }
+
+  try {
+    await TerminologyService.deleteTerminology(props.book.id, terminology.id);
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已成功删除术语 "${terminology.name}"`,
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('删除术语失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
+      life: 3000,
+    });
+  }
 };
 
 // 打开提取术语对话框

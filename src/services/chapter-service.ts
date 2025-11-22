@@ -1,5 +1,5 @@
 import type { Novel, Volume, Chapter, Paragraph } from 'src/types/novel';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
+import { UniqueIdGenerator, extractIds } from 'src/utils/id-generator';
 import { getChapterContentText } from 'src/utils/novel-utils';
 
 /**
@@ -323,5 +323,246 @@ export class ChapterService {
         class: 'px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded flex-shrink-0',
       };
     }
+  }
+
+  // --- CRUD 操作 ---
+
+  /**
+   * 添加新卷
+   * @param novel 小说对象
+   * @param title 卷标题
+   * @returns 更新后的卷列表
+   */
+  static addVolume(novel: Novel, title: string): Volume[] {
+    const existingVolumes = novel.volumes || [];
+    const volumeIds = extractIds(existingVolumes);
+    const idGenerator = new UniqueIdGenerator(volumeIds);
+
+    const newVolume: Volume = {
+      id: idGenerator.generate(),
+      title: title.trim(),
+      chapters: [],
+    };
+
+    return [...existingVolumes, newVolume];
+  }
+
+  /**
+   * 更新卷信息
+   * @param novel 小说对象
+   * @param volumeId 卷 ID
+   * @param data 更新的数据
+   * @returns 更新后的卷列表
+   */
+  static updateVolume(novel: Novel, volumeId: string, data: Partial<Volume>): Volume[] {
+    const existingVolumes = novel.volumes || [];
+    const index = existingVolumes.findIndex((v) => v.id === volumeId);
+    if (index === -1) return existingVolumes;
+
+    const updatedVolumes = [...existingVolumes];
+    updatedVolumes[index] = { ...updatedVolumes[index], ...data };
+    return updatedVolumes;
+  }
+
+  /**
+   * 删除卷
+   * @param novel 小说对象
+   * @param volumeId 卷 ID
+   * @returns 更新后的卷列表
+   */
+  static deleteVolume(novel: Novel, volumeId: string): Volume[] {
+    const existingVolumes = novel.volumes || [];
+    return existingVolumes.filter((v) => v.id !== volumeId);
+  }
+
+  /**
+   * 添加新章节
+   * @param novel 小说对象
+   * @param volumeId 卷 ID
+   * @param title 章节标题
+   * @param content 章节内容（可选）
+   * @returns 更新后的卷列表
+   */
+  static addChapter(
+    novel: Novel,
+    volumeId: string,
+    title: string,
+    content?: Paragraph[],
+  ): Volume[] {
+    const existingVolumes = novel.volumes || [];
+    const volumeIndex = existingVolumes.findIndex((v) => v.id === volumeId);
+    if (volumeIndex === -1) return existingVolumes;
+
+    const volume = existingVolumes[volumeIndex];
+    const existingChapters = volume.chapters || [];
+    const chapterIds = extractIds(existingChapters);
+    const idGenerator = new UniqueIdGenerator(chapterIds);
+    const now = new Date();
+
+    const newChapter: Chapter = {
+      id: idGenerator.generate(),
+      title: title.trim(),
+      lastEdited: now,
+      createdAt: now,
+      content: content,
+    };
+
+    const updatedChapters = [...existingChapters, newChapter];
+    const updatedVolumes = [...existingVolumes];
+    updatedVolumes[volumeIndex] = { ...volume, chapters: updatedChapters };
+
+    return updatedVolumes;
+  }
+
+  /**
+   * 更新章节
+   * @param novel 小说对象
+   * @param chapterId 章节 ID
+   * @param data 更新的数据
+   * @param targetVolumeId 目标卷 ID（如果需要移动）
+   * @returns 更新后的卷列表
+   */
+  static updateChapter(
+    novel: Novel,
+    chapterId: string,
+    data: Partial<Chapter>,
+    targetVolumeId?: string,
+  ): Volume[] {
+    const existingVolumes = [...(novel.volumes || [])];
+    let sourceVolumeIndex = -1;
+    let chapterIndex = -1;
+    let chapterToUpdate: Chapter | null = null;
+
+    // 查找章节
+    for (let i = 0; i < existingVolumes.length; i++) {
+      const volume = existingVolumes[i];
+      if (volume.chapters) {
+        const index = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (index !== -1) {
+          sourceVolumeIndex = i;
+          chapterIndex = index;
+          chapterToUpdate = volume.chapters[index];
+          break;
+        }
+      }
+    }
+
+    if (!chapterToUpdate || sourceVolumeIndex === -1) return existingVolumes;
+
+    // 更新基本信息
+    const updatedChapter: Chapter = {
+      ...chapterToUpdate,
+      ...data,
+      lastEdited: new Date(), // 总是更新编辑时间
+    };
+
+    const sourceVolume = existingVolumes[sourceVolumeIndex];
+    
+    // 如果不需要移动，或者目标卷和源卷相同
+    if (!targetVolumeId || targetVolumeId === sourceVolume.id) {
+      const updatedChapters = [...(sourceVolume.chapters || [])];
+      updatedChapters[chapterIndex] = updatedChapter;
+      existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: updatedChapters };
+      return existingVolumes;
+    }
+
+    // 如果需要移动到不同卷
+    const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
+    if (targetVolumeIndex === -1) return existingVolumes;
+
+    // 1. 从源卷移除
+    const sourceChapters = [...(sourceVolume.chapters || [])];
+    sourceChapters.splice(chapterIndex, 1);
+    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+
+    // 2. 添加到目标卷
+    const targetVolume = existingVolumes[targetVolumeIndex];
+    const targetChapters = [...(targetVolume.chapters || [])];
+    targetChapters.push(updatedChapter);
+    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+
+    return existingVolumes;
+  }
+
+  /**
+   * 删除章节
+   * @param novel 小说对象
+   * @param chapterId 章节 ID
+   * @returns 更新后的卷列表
+   */
+  static deleteChapter(novel: Novel, chapterId: string): Volume[] {
+    const existingVolumes = novel.volumes || [];
+    return existingVolumes.map((volume) => {
+      if (volume.chapters && volume.chapters.some((c) => c.id === chapterId)) {
+        return {
+          ...volume,
+          chapters: volume.chapters.filter((c) => c.id !== chapterId),
+        };
+      }
+      return volume;
+    });
+  }
+
+  /**
+   * 移动章节（拖拽排序）
+   * @param novel 小说对象
+   * @param chapterId 章节 ID
+   * @param targetVolumeId 目标卷 ID
+   * @param targetIndex 目标索引（可选，如果不传则添加到末尾）
+   * @returns 更新后的卷列表
+   */
+  static moveChapter(
+    novel: Novel,
+    chapterId: string,
+    targetVolumeId: string,
+    targetIndex?: number,
+  ): Volume[] {
+    const existingVolumes = [...(novel.volumes || [])];
+    let sourceVolumeIndex = -1;
+    let chapterIndex = -1;
+    let chapterToMove: Chapter | null = null;
+
+    // 查找并移除章节
+    for (let i = 0; i < existingVolumes.length; i++) {
+      const volume = existingVolumes[i];
+      if (volume.chapters) {
+        const index = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (index !== -1) {
+          sourceVolumeIndex = i;
+          chapterIndex = index;
+          chapterToMove = volume.chapters[index];
+          break;
+        }
+      }
+    }
+
+    if (!chapterToMove || sourceVolumeIndex === -1) return existingVolumes;
+
+    // 1. 验证目标卷是否存在
+    const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
+    if (targetVolumeIndex === -1) return existingVolumes;
+
+    // 2. 从源卷移除
+    const sourceVolume = existingVolumes[sourceVolumeIndex];
+    const sourceChapters = [...(sourceVolume.chapters || [])];
+    sourceChapters.splice(chapterIndex, 1);
+    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+
+    // 3. 添加到目标卷
+    // 注意：如果源卷和目标卷相同，我们需要使用更新后的 existingVolumes[sourceVolumeIndex] 作为目标卷
+    // 因为上面已经修改了 existingVolumes[sourceVolumeIndex]
+    
+    const targetVolume = existingVolumes[targetVolumeIndex];
+    const targetChapters = [...(targetVolume.chapters || [])];
+    
+    const insertIndex =
+      targetIndex !== undefined && targetIndex !== null
+        ? targetIndex
+        : targetChapters.length;
+        
+    targetChapters.splice(insertIndex, 0, chapterToMove);
+    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+
+    return existingVolumes;
   }
 }

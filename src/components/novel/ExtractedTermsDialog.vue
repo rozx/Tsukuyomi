@@ -7,12 +7,9 @@ import Dialog from 'primevue/dialog';
 import Slider from 'primevue/slider';
 import InputNumber from 'primevue/inputnumber';
 import Listbox from 'primevue/listbox';
-import type { Novel, Chapter, Volume, Terminology, Translation } from 'src/types/novel';
+import type { Novel, Chapter, Volume } from 'src/types/novel';
 import { TerminologyService, type ExtractedTermInfo } from 'src/services/terminology-service';
-import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
-import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps<{
   visible: boolean;
@@ -41,7 +38,6 @@ const selectedChapters = ref<Chapter[]>([]);
 const allVolumes = ref<Volume[]>([]);
 const allChapters = ref<Chapter[]>([]);
 
-const booksStore = useBooksStore();
 const toast = useToastWithHistory();
 const isSaving = ref(false);
 
@@ -220,67 +216,51 @@ const saveAllTerms = async () => {
   isSaving.value = true;
 
   try {
-    // 获取现有的术语 ID，用于生成唯一 ID
-    const existingTermIds = props.book.terminologies?.map((t) => t.id) || [];
-    const idGenerator = new UniqueIdGenerator(existingTermIds);
-
     // 获取现有的术语名称集合，避免重复添加
     const existingNames = new Set(props.book.terminologies?.map((t) => t.name) || []);
 
-    // 将提取的术语转换为 Terminology 格式
-    const newTerminologies: Terminology[] = [];
+    // 批量添加术语
+    let successCount = 0;
+    let skippedCount = 0;
+
     for (const term of extractedTermsList.value) {
       // 跳过已存在的术语
       if (existingNames.has(term.word)) {
+        skippedCount++;
         continue;
       }
 
-      // 创建 Translation 对象（翻译为空，需要用户后续填写）
-      const translation: Translation = {
-        id: uuidv4(),
-        translation: '',
-        aiModelId: '',
-      };
-
-      // 创建 Terminology 对象
-      const terminology: Terminology = {
-        id: idGenerator.generate(),
-        name: term.word,
-        translation,
-        occurrences: term.occurrences,
-      };
-
-      newTerminologies.push(terminology);
-      existingNames.add(term.word);
+      try {
+        // 使用 TerminologyService 添加术语（会自动统计 occurrences）
+        await TerminologyService.addTerminology(props.book.id, {
+          name: term.word,
+          translation: '', // 翻译为空，需要用户后续填写
+          occurrences: term.occurrences, // 使用提取的 occurrences
+        });
+        successCount++;
+        existingNames.add(term.word); // 添加到已存在集合，避免后续重复
+      } catch (error) {
+        // 如果添加失败（例如名称冲突），跳过该术语
+        console.warn(`添加术语 "${term.word}" 失败:`, error);
+        skippedCount++;
+      }
     }
 
-    if (newTerminologies.length === 0) {
+    if (successCount === 0 && skippedCount > 0) {
       toast.add({
         severity: 'info',
         summary: '保存完成',
         detail: '所有术语已存在，无需重复添加',
         life: 3000,
       });
-      isSaving.value = false;
-      return;
+    } else if (successCount > 0) {
+      toast.add({
+        severity: 'success',
+        summary: '保存成功',
+        detail: `已成功保存 ${successCount} 个术语${skippedCount > 0 ? `，跳过 ${skippedCount} 个已存在的术语` : ''}`,
+        life: 3000,
+      });
     }
-
-    // 合并到现有术语列表
-    const currentTerminologies = props.book.terminologies || [];
-    const updatedTerminologies = [...currentTerminologies, ...newTerminologies];
-
-    // 更新书籍
-    await booksStore.updateBook(props.book.id, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
-    });
-
-    toast.add({
-      severity: 'success',
-      summary: '保存成功',
-      detail: `已成功保存 ${newTerminologies.length} 个术语`,
-      life: 3000,
-    });
 
     // 清空已选择的术语，因为已经保存
     selectedExtractedTerms.value = [];

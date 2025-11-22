@@ -45,7 +45,7 @@ watch(
         };
       }
     }
-  }
+  },
 );
 
 // Also watch term prop in case it changes while dialog is open (less likely but good practice)
@@ -59,7 +59,7 @@ watch(
         translation: newTerm.translation.translation,
       };
     }
-  }
+  },
 );
 
 const handleNameUpdate = (value: string) => {
@@ -71,8 +71,15 @@ const handleTranslationApplied = (result: string) => {
 };
 
 const handleSave = () => {
+  // 验证必填字段
+  const trimmedName = formData.value.name.trim();
+  if (!trimmedName) {
+    // 名称不能为空，但这里不显示错误，由父组件处理
+    return;
+  }
+
   emit('save', {
-    name: formData.value.name.trim(),
+    name: trimmedName,
     translation: formData.value.translation.trim(),
     description: formData.value.description.trim(),
   });
@@ -138,10 +145,9 @@ const handleClose = () => {
         icon="pi pi-check"
         class="p-button-primary"
         :loading="loading"
-        :disabled="loading"
+        :disabled="loading || !formData.name.trim()"
         @click="handleSave"
       />
     </template>
   </Dialog>
 </template>
-

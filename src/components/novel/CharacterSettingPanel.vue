@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -7,26 +7,36 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Dialog from 'primevue/dialog';
 import Chips from 'primevue/chips';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { CharacterSettingService } from 'src/services/character-setting-service';
 import type { Novel, CharacterSetting } from 'src/types/novel';
 
 const props = defineProps<{
   book: Novel | null;
 }>();
 
-// TODO: 实现角色设定管理逻辑
-// 当前为占位符数据
-const characterSettings = ref<Array<{
-  id: string;
-  name: string;
-  description?: string;
-  translations: string[];
-  aliases: string[];
-  occurrences: number;
-}>>([]);
+const toast = useToastWithHistory();
+
+// 角色设定列表数据
+const characterSettings = computed(() => {
+  if (!props.book?.characterSettings) return [];
+  
+  return props.book.characterSettings.map((char) => ({
+    id: char.id,
+    name: char.name,
+    description: char.description,
+    translations: char.translation.map((t) => t.translation),
+    aliases: char.aliases.map((a) => a.name),
+    occurrences: char.occurrences.reduce((sum, occ) => sum + occ.count, 0),
+    // 保留原始对象引用以便需要时使用
+    _original: char
+  }));
+});
 
 const showAddDialog = ref(false);
 const showEditDialog = ref(false);
-const selectedCharacter = ref<typeof characterSettings.value[0] | null>(null);
+// 存储当前编辑的角色的 ID
+const selectedCharacterId = ref<string | null>(null);
 
 // 表单数据
 const formData = ref({
@@ -49,7 +59,7 @@ const openAddDialog = () => {
 
 // 打开编辑对话框
 const openEditDialog = (character: typeof characterSettings.value[0]) => {
-  selectedCharacter.value = character;
+  selectedCharacterId.value = character.id;
   formData.value = {
     name: character.name,
     description: character.description || '',
@@ -62,17 +72,16 @@ const openEditDialog = (character: typeof characterSettings.value[0]) => {
 // 关闭对话框
 const closeAddDialog = () => {
   showAddDialog.value = false;
-  formData.value = {
-    name: '',
-    description: '',
-    translations: [],
-    aliases: [],
-  };
+  resetFormData();
 };
 
 const closeEditDialog = () => {
   showEditDialog.value = false;
-  selectedCharacter.value = null;
+  selectedCharacterId.value = null;
+  resetFormData();
+};
+
+const resetFormData = () => {
   formData.value = {
     name: '',
     description: '',
@@ -81,18 +90,111 @@ const closeEditDialog = () => {
   };
 };
 
-// TODO: 实现保存逻辑
-const handleSave = () => {
-  // 占位符：保存角色设定
-  console.log('保存角色设定:', formData.value);
-  closeAddDialog();
-  closeEditDialog();
+// 处理保存（添加）
+const handleAdd = async () => {
+  if (!props.book) return;
+  
+  if (!formData.value.name.trim()) {
+    toast.add({
+      severity: 'warn',
+      summary: '校验失败',
+      detail: '角色名称不能为空',
+      life: 3000,
+    });
+    return;
+  }
+
+  try {
+    await CharacterSettingService.addCharacterSetting(props.book.id, {
+      name: formData.value.name,
+      description: formData.value.description,
+      translations: formData.value.translations,
+      aliases: formData.value.aliases,
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '添加成功',
+      detail: `已添加角色 "${formData.value.name}"`,
+      life: 3000,
+    });
+    
+    closeAddDialog();
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '添加失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 5000,
+    });
+  }
 };
 
-// TODO: 实现删除逻辑
-const handleDelete = (character: typeof characterSettings.value[0]) => {
-  // 占位符：删除角色设定
-  console.log('删除角色设定:', character.id);
+// 处理保存（更新）
+const handleUpdate = async () => {
+  if (!props.book || !selectedCharacterId.value) return;
+
+  if (!formData.value.name.trim()) {
+    toast.add({
+      severity: 'warn',
+      summary: '校验失败',
+      detail: '角色名称不能为空',
+      life: 3000,
+    });
+    return;
+  }
+
+  try {
+    await CharacterSettingService.updateCharacterSetting(
+      props.book.id,
+      selectedCharacterId.value,
+      {
+        name: formData.value.name,
+        description: formData.value.description,
+        translations: formData.value.translations,
+        aliases: formData.value.aliases,
+      }
+    );
+
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已更新角色 "${formData.value.name}"`,
+      life: 3000,
+    });
+
+    closeEditDialog();
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '更新失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 5000,
+    });
+  }
+};
+
+// 处理删除
+const handleDelete = async (character: typeof characterSettings.value[0]) => {
+  if (!props.book) return;
+
+  try {
+    await CharacterSettingService.deleteCharacterSetting(props.book.id, character.id);
+    
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已删除角色 "${character.name}"`,
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 5000,
+    });
+  }
 };
 </script>
 
@@ -203,6 +305,7 @@ const handleDelete = (character: typeof characterSettings.value[0]) => {
             v-model="formData.name"
             placeholder="输入角色名称"
             class="w-full"
+            autofocus
           />
         </div>
 
@@ -248,7 +351,7 @@ const handleDelete = (character: typeof characterSettings.value[0]) => {
           label="保存"
           icon="pi pi-check"
           class="p-button-primary"
-          @click="handleSave"
+          @click="handleAdd"
         />
       </template>
     </Dialog>
@@ -269,6 +372,7 @@ const handleDelete = (character: typeof characterSettings.value[0]) => {
             v-model="formData.name"
             placeholder="输入角色名称"
             class="w-full"
+            autofocus
           />
         </div>
 
@@ -314,7 +418,7 @@ const handleDelete = (character: typeof characterSettings.value[0]) => {
           label="保存"
           icon="pi pi-check"
           class="p-button-primary"
-          @click="handleSave"
+          @click="handleUpdate"
         />
       </template>
     </Dialog>
@@ -349,4 +453,3 @@ const handleDelete = (character: typeof characterSettings.value[0]) => {
   background: rgba(255, 255, 255, 0.05);
 }
 </style>
-
