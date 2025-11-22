@@ -7,7 +7,7 @@ import Checkbox from 'primevue/checkbox';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { TranslationService } from 'src/services/ai';
+import { TermTranslationService } from 'src/services/ai';
 
 interface Props {
   modelValue: string[];
@@ -226,7 +226,7 @@ const handleTranslate = async () => {
     const originalText = props.modelValue.join('、');
 
     // 使用翻译服务进行翻译，服务会自动管理任务
-    const result = await TranslationService.translate(originalText, selectedModel, {
+    const result = await TermTranslationService.translate(originalText, selectedModel, {
       taskType: 'termsTranslation',
       aiProcessingStore: {
         addTask: aiProcessingStore.addTask.bind(aiProcessingStore),

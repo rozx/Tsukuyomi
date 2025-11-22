@@ -3,6 +3,18 @@ import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-gen
 import { getChapterContentText } from 'src/utils/novel-utils';
 
 /**
+ * 段落搜索结果接口
+ */
+export interface ParagraphSearchResult {
+  paragraph: Paragraph;
+  paragraphIndex: number;
+  chapter: Chapter;
+  chapterIndex: number;
+  volume: Volume;
+  volumeIndex: number;
+}
+
+/**
  * 章节服务
  * 提供章节获取、更新、合并等通用功能
  */
@@ -550,7 +562,7 @@ export class ChapterService {
 
     const sourceVolume = existingVolumes[sourceVolumeIndex];
     if (!sourceVolume) return existingVolumes;
-    
+
     // 如果不需要移动，或者目标卷和源卷相同
     if (!targetVolumeId || targetVolumeId === sourceVolume.id) {
       const updatedChapters = [...(sourceVolume.chapters || [])];
@@ -648,20 +660,360 @@ export class ChapterService {
     // 3. 添加到目标卷
     // 注意：如果源卷和目标卷相同，我们需要使用更新后的 existingVolumes[sourceVolumeIndex] 作为目标卷
     // 因为上面已经修改了 existingVolumes[sourceVolumeIndex]
-    
+
     const targetVolume = existingVolumes[targetVolumeIndex];
     if (!targetVolume) return existingVolumes;
 
     const targetChapters = [...(targetVolume.chapters || [])];
-    
+
     const insertIndex =
-      targetIndex !== undefined && targetIndex !== null
-        ? targetIndex
-        : targetChapters.length;
-        
+      targetIndex !== undefined && targetIndex !== null ? targetIndex : targetChapters.length;
+
     targetChapters.splice(insertIndex, 0, chapterToMove);
     existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
 
     return existingVolumes;
+  }
+
+  /**
+   * 按关键词搜索段落
+   * @param novel 小说对象
+   * @param keyword 搜索关键词
+   * @param chapterId 可选的章节 ID，如果提供则从该章节向前搜索（包括该章节及之前的所有章节）
+   * @param maxParagraphs 可选的最大返回段落数量，默认为 1
+   * @returns 搜索结果数组，包含匹配的段落及其所在位置信息
+   */
+  static searchParagraphsByKeyword(
+    novel: Novel | null | undefined,
+    keyword: string,
+    chapterId?: string,
+    maxParagraphs: number = 1,
+  ): ParagraphSearchResult[] {
+    if (!novel || !novel.volumes || !keyword.trim()) {
+      return [];
+    }
+
+    const results: ParagraphSearchResult[] = [];
+    const trimmedKeyword = keyword.trim().toLowerCase();
+
+    // 如果提供了 chapterId，需要找到该章节的位置
+    let targetVolumeIndex: number | null = null;
+    let targetChapterIndex: number | null = null;
+
+    if (chapterId) {
+      // 查找目标章节的位置
+      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+        const volume = novel.volumes[vIndex];
+        if (volume && volume.chapters) {
+          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+          if (cIndex !== -1) {
+            targetVolumeIndex = vIndex;
+            targetChapterIndex = cIndex;
+            break;
+          }
+        }
+      }
+
+      // 如果找不到指定的章节，返回空结果
+      if (targetVolumeIndex === null || targetChapterIndex === null) {
+        return [];
+      }
+    }
+
+    // 遍历所有卷
+    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      // 如果指定了章节，且当前卷在目标卷之后，停止搜索
+      if (chapterId && targetVolumeIndex !== null && vIndex > targetVolumeIndex) {
+        break;
+      }
+
+      // 遍历章节
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果指定了章节，且当前章节在目标章节之后，停止搜索
+        if (
+          chapterId &&
+          targetVolumeIndex !== null &&
+          targetChapterIndex !== null &&
+          vIndex === targetVolumeIndex &&
+          cIndex > targetChapterIndex
+        ) {
+          break;
+        }
+
+        // 搜索段落
+        if (chapter.content) {
+          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+            // 如果已达到最大返回数量，停止搜索
+            if (results.length >= maxParagraphs) {
+              break;
+            }
+
+            const paragraph = chapter.content[pIndex];
+            if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
+              results.push({
+                paragraph,
+                paragraphIndex: pIndex,
+                chapter,
+                chapterIndex: cIndex,
+                volume,
+                volumeIndex: vIndex,
+              });
+
+              // 如果已达到最大返回数量，停止搜索
+              if (results.length >= maxParagraphs) {
+                break;
+              }
+            }
+          }
+        }
+
+        // 如果已达到最大返回数量，停止搜索章节
+        if (results.length >= maxParagraphs) {
+          break;
+        }
+      }
+
+      // 如果已达到最大返回数量，停止搜索卷
+      if (results.length >= maxParagraphs) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 通过段落 ID 查找段落位置信息
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @returns 段落位置信息，如果未找到则返回 null
+   */
+  static findParagraphLocation(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+  ): ParagraphSearchResult | null {
+    if (!novel || !novel.volumes || !paragraphId) {
+      return null;
+    }
+
+    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter || !chapter.content) continue;
+
+        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+          const paragraph = chapter.content[pIndex];
+          if (paragraph && paragraph.id === paragraphId) {
+            return {
+              paragraph,
+              paragraphIndex: pIndex,
+              chapter,
+              chapterIndex: cIndex,
+              volume,
+              volumeIndex: vIndex,
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取指定段落之前的 x 个段落
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @param count 要获取的段落数量
+   * @returns 段落位置信息数组，按从远到近的顺序排列（最远的在前）
+   */
+  static getPreviousParagraphs(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): ParagraphSearchResult[] {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return [];
+    }
+
+    const location = ChapterService.findParagraphLocation(novel, paragraphId);
+    if (!location) {
+      return [];
+    }
+
+    const results: ParagraphSearchResult[] = [];
+    let { volumeIndex, chapterIndex, paragraphIndex } = location;
+
+    // 从当前段落的前一个开始，向前遍历
+    paragraphIndex--;
+
+    while (results.length < count && volumeIndex >= 0) {
+      const volume = novel.volumes[volumeIndex];
+      if (!volume || !volume.chapters) {
+        volumeIndex--;
+        chapterIndex =
+          volumeIndex >= 0 && novel.volumes[volumeIndex]?.chapters
+            ? novel.volumes[volumeIndex].chapters!.length - 1
+            : -1;
+        paragraphIndex = -1;
+        continue;
+      }
+
+      // 如果 chapterIndex 无效，移动到上一卷的最后一章
+      if (chapterIndex < 0) {
+        volumeIndex--;
+        if (volumeIndex < 0) break;
+        const prevVolume = novel.volumes[volumeIndex];
+        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+          chapterIndex = -1;
+          paragraphIndex = -1;
+          continue;
+        }
+        chapterIndex = prevVolume.chapters.length - 1;
+        const prevChapter = prevVolume.chapters[chapterIndex];
+        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      const chapter = volume.chapters[chapterIndex];
+      if (!chapter || !chapter.content) {
+        chapterIndex--;
+        paragraphIndex = -1;
+        continue;
+      }
+
+      // 如果 paragraphIndex 无效，移动到上一章的最后一个段落
+      if (paragraphIndex < 0) {
+        chapterIndex--;
+        if (chapterIndex < 0) {
+          // 移动到上一卷
+          volumeIndex--;
+          if (volumeIndex < 0) break;
+          const prevVolume = novel.volumes[volumeIndex];
+          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+            chapterIndex = -1;
+            paragraphIndex = -1;
+            continue;
+          }
+          chapterIndex = prevVolume.chapters.length - 1;
+          const prevChapter = prevVolume.chapters[chapterIndex];
+          paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+          continue;
+        }
+        const prevChapter = volume.chapters[chapterIndex];
+        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      // 获取当前段落
+      const paragraph = chapter.content[paragraphIndex];
+      if (paragraph) {
+        results.unshift({
+          paragraph,
+          paragraphIndex,
+          chapter,
+          chapterIndex,
+          volume,
+          volumeIndex,
+        });
+      }
+
+      paragraphIndex--;
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取指定段落之后的 x 个段落
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @param count 要获取的段落数量
+   * @returns 段落位置信息数组，按从近到远的顺序排列（最近的在前）
+   */
+  static getNextParagraphs(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): ParagraphSearchResult[] {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return [];
+    }
+
+    const location = ChapterService.findParagraphLocation(novel, paragraphId);
+    if (!location) {
+      return [];
+    }
+
+    const results: ParagraphSearchResult[] = [];
+    let { volumeIndex, chapterIndex, paragraphIndex } = location;
+
+    // 从当前段落的后一个开始，向后遍历
+    paragraphIndex++;
+
+    while (results.length < count && volumeIndex < novel.volumes.length) {
+      const volume = novel.volumes[volumeIndex];
+      if (!volume || !volume.chapters) {
+        volumeIndex++;
+        chapterIndex = 0;
+        paragraphIndex = 0;
+        continue;
+      }
+
+      // 如果 chapterIndex 超出范围，移动到下一卷的第一章
+      if (chapterIndex >= volume.chapters.length) {
+        volumeIndex++;
+        if (volumeIndex >= novel.volumes.length) break;
+        chapterIndex = 0;
+        paragraphIndex = 0;
+        continue;
+      }
+
+      const chapter = volume.chapters[chapterIndex];
+      if (!chapter || !chapter.content) {
+        chapterIndex++;
+        paragraphIndex = 0;
+        continue;
+      }
+
+      // 如果 paragraphIndex 超出范围，移动到下一章的第一个段落
+      if (paragraphIndex >= chapter.content.length) {
+        chapterIndex++;
+        if (chapterIndex >= volume.chapters.length) {
+          // 移动到下一卷
+          volumeIndex++;
+          if (volumeIndex >= novel.volumes.length) break;
+          chapterIndex = 0;
+        }
+        paragraphIndex = 0;
+        continue;
+      }
+
+      // 获取当前段落
+      const paragraph = chapter.content[paragraphIndex];
+      if (paragraph) {
+        results.push({
+          paragraph,
+          paragraphIndex,
+          chapter,
+          chapterIndex,
+          volume,
+          volumeIndex,
+        });
+      }
+
+      paragraphIndex++;
+    }
+
+    return results;
   }
 }

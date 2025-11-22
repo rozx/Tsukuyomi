@@ -763,4 +763,41 @@ export class TerminologyService {
       });
     }
   }
+
+  /**
+   * 根据提供的关键词获取出现次数
+   * 统计指定关键词在书籍所有章节中的出现次数
+   * @param bookId 书籍 ID
+   * @param keywords 关键词数组
+   * @returns 关键词出现次数 Map，key 为关键词，value 为出现记录数组
+   * @throws 如果书籍不存在，抛出错误
+   */
+  static getOccurrencesByKeywords(bookId: string, keywords: string[]): Map<string, Occurrence[]> {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+
+    if (!book) {
+      throw new Error(`书籍不存在: ${bookId}`);
+    }
+
+    // 如果关键词数组为空，返回空 Map
+    if (!keywords || keywords.length === 0) {
+      return new Map<string, Occurrence[]>();
+    }
+
+    const resultMap = new Map<string, Occurrence[]>();
+
+    // 为每个关键词统计出现次数
+    for (const keyword of keywords) {
+      if (!keyword || typeof keyword !== 'string' || keyword.trim().length === 0) {
+        // 跳过无效的关键词
+        continue;
+      }
+
+      const occurrences = this.countTermOccurrences(book, keyword);
+      resultMap.set(keyword, occurrences);
+    }
+
+    return resultMap;
+  }
 }
