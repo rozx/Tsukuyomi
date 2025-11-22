@@ -9,7 +9,7 @@ import type {
 import { TokenizerBuilder, type LoaderConfig } from '@patdx/kuromoji';
 import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
-import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils';
+import { UniqueIdGenerator, extractIds, generateShortId, normalizeTranslationQuotes } from 'src/utils';
 
 // 使用 any 类型来避免 Tokenizer 类型的导入问题
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -578,7 +578,7 @@ export class TerminologyService {
     // 创建 Translation 对象
     const translation: Translation = {
       id: generateShortId(),
-      translation: termData.translation || '',
+      translation: normalizeTranslationQuotes(termData.translation || ''),
       aiModelId: '', // 可以后续从默认模型获取
     };
 
@@ -664,7 +664,9 @@ export class TerminologyService {
       name: updates.name ?? existingTerm.name,
       translation: {
         id: existingTerm.translation.id,
-        translation: updates.translation ?? existingTerm.translation.translation,
+        translation: updates.translation !== undefined
+          ? normalizeTranslationQuotes(updates.translation)
+          : existingTerm.translation.translation,
         aiModelId: existingTerm.translation.aiModelId,
       },
       occurrences,

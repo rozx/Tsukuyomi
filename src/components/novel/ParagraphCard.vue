@@ -8,6 +8,7 @@ const props = defineProps<{
   terminologies?: Terminology[];
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
+  searchQuery?: string;
 }>();
 
 const hasContent = computed(() => {
@@ -27,6 +28,23 @@ const translationText = computed(() => {
 
 const hasTranslation = computed(() => {
   return translationText.value.trim().length > 0;
+});
+
+// 处理翻译文本的高亮
+const translationNodes = computed(() => {
+  const text = translationText.value;
+  if (!text || !props.searchQuery || !props.searchQuery.trim()) {
+    return [{ type: 'text', content: text }];
+  }
+
+  const query = props.searchQuery;
+  const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+  const parts = text.split(regex);
+  
+  return parts.map((part) => ({
+    type: part.toLowerCase() === query.toLowerCase() ? 'highlight' : 'text',
+    content: part
+  })).filter(node => node.content);
 });
 
 // Popover refs
@@ -326,7 +344,10 @@ const handleCharacterPopoverHide = () => {
         </template>
       </p>
       <p v-if="hasTranslation" class="paragraph-translation">
-        {{ translationText }}
+        <template v-for="(node, index) in translationNodes" :key="index">
+          <span v-if="node.type === 'text'">{{ node.content }}</span>
+          <mark v-else class="search-highlight">{{ node.content }}</mark>
+        </template>
       </p>
     </div>
 
@@ -567,5 +588,13 @@ const handleCharacterPopoverHide = () => {
 
 .popover-aliases-list {
   color: var(--moon-opacity-90);
+}
+
+/* 搜索高亮 */
+.search-highlight {
+  background-color: rgba(242, 192, 55, 0.3);
+  color: theme('colors.warning.DEFAULT');
+  border-radius: 2px;
+  padding: 0 1px;
 }
 </style>

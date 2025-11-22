@@ -97,6 +97,9 @@ module.exports = {
           900: '#7a1145',
           950: '#4d0a2b',
         },
+        warning: {
+          DEFAULT: '#f2c037',
+        },
       },
       backgroundImage: {
         'luna-gradient':

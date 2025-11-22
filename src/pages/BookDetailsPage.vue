@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
@@ -26,6 +26,9 @@ import {
   getChapterContentText,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
+  normalizeTranslationQuotes,
+  normalizeTranslationSymbols,
+  exportChapter as exportChapterUtil,
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -106,6 +109,203 @@ const isEditingOriginalText = ref(false);
 const originalTextEditValue = ref('');
 const originalTextEditBackup = ref('');
 const originalTextEditChapterId = ref<string | null>(null); // 跟踪正在编辑原始文本的章节 ID
+
+// 搜索与替换状态
+const isSearchVisible = ref(false);
+const showReplace = ref(false);
+const searchQuery = ref('');
+const replaceQuery = ref('');
+const currentSearchMatchIndex = ref(-1);
+
+// 搜索匹配项
+const searchMatches = computed(() => {
+  if (!searchQuery.value || !selectedChapterParagraphs.value) return [];
+  const matches: { index: number; id: string }[] = [];
+  selectedChapterParagraphs.value.forEach((p, index) => {
+    const text = getParagraphTranslationText(p);
+    if (text && text.toLowerCase().includes(searchQuery.value.toLowerCase())) {
+      matches.push({ index, id: p.id });
+    }
+  });
+  return matches;
+});
+
+// 切换搜索栏
+const toggleSearch = () => {
+  isSearchVisible.value = !isSearchVisible.value;
+  if (!isSearchVisible.value) {
+    searchQuery.value = '';
+    replaceQuery.value = '';
+    showReplace.value = false;
+    currentSearchMatchIndex.value = -1;
+  } else {
+    void nextTick(() => {
+      const input = document.querySelector('.search-toolbar input') as HTMLInputElement;
+      if (input) input.focus();
+    });
+  }
+};
+
+// 滚动到匹配项
+const scrollToMatch = (id: string) => {
+  const el = document.getElementById(`paragraph-${id}`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+};
+
+// 下一个匹配项
+const nextMatch = () => {
+  if (!searchMatches.value.length) return;
+  currentSearchMatchIndex.value = (currentSearchMatchIndex.value + 1) % searchMatches.value.length;
+  const match = searchMatches.value[currentSearchMatchIndex.value];
+  if (match) scrollToMatch(match.id);
+};
+
+// 上一个匹配项
+const prevMatch = () => {
+  if (!searchMatches.value.length) return;
+  currentSearchMatchIndex.value =
+    (currentSearchMatchIndex.value - 1 + searchMatches.value.length) % searchMatches.value.length;
+  const match = searchMatches.value[currentSearchMatchIndex.value];
+  if (match) scrollToMatch(match.id);
+};
+
+// 监听搜索词变化
+watch(searchQuery, () => {
+  currentSearchMatchIndex.value = -1;
+  if (searchMatches.value.length > 0) {
+    currentSearchMatchIndex.value = 0;
+    const match = searchMatches.value[0];
+    if (match) scrollToMatch(match.id);
+  }
+});
+
+// 更新段落翻译
+const updateParagraphTranslation = async (paragraphId: string, newTranslation: string) => {
+  const chapter = selectedChapter.value;
+  if (!book.value || !chapter || !chapter.content) return;
+
+  // 查找段落
+  const paragraph = chapter.content.find((p) => p.id === paragraphId);
+  if (!paragraph) return;
+
+  // 更新翻译
+  if (paragraph.selectedTranslationId && paragraph.translations) {
+    const translation = paragraph.translations.find(
+      (t) => t.id === paragraph.selectedTranslationId,
+    );
+    if (translation) {
+      translation.translation = newTranslation;
+    }
+  }
+
+  // 保存书籍
+  await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
+};
+
+// 替换当前
+const replaceCurrent = async () => {
+  const match = searchMatches.value[currentSearchMatchIndex.value];
+  if (!match) return;
+
+  const chapter = selectedChapter.value;
+  if (!chapter?.content) return;
+
+  const paragraph = chapter.content.find((p) => p.id === match.id);
+  if (!paragraph) return;
+
+  const text = getParagraphTranslationText(paragraph);
+  // 替换段落中的所有匹配项
+  const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
+  const newText = text.replace(regex, replaceQuery.value);
+
+  if (newText !== text) {
+    await updateParagraphTranslation(match.id, newText);
+    toast.add({ severity: 'success', summary: '已替换', life: 3000 });
+  }
+};
+
+// 替换所有
+const replaceAll = async () => {
+  if (!searchMatches.value.length) return;
+  const chapter = selectedChapter.value;
+  if (!chapter?.content) return;
+
+  let count = 0;
+  const matches = [...searchMatches.value];
+
+  // 批量更新内存中的数据
+  for (const match of matches) {
+    const paragraph = chapter.content.find((p) => p.id === match.id);
+    if (!paragraph) continue;
+
+    const text = getParagraphTranslationText(paragraph);
+    const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
+    const newText = text.replace(regex, replaceQuery.value);
+
+    if (newText !== text) {
+      if (paragraph.selectedTranslationId && paragraph.translations) {
+        const translation = paragraph.translations.find(
+          (t) => t.id === paragraph.selectedTranslationId,
+        );
+        if (translation) {
+          translation.translation = newText;
+          count++;
+        }
+      }
+    }
+  }
+
+  // 一次性保存到数据库
+  if (count > 0 && book.value) {
+    await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
+    toast.add({ severity: 'success', summary: `已替换 ${count} 处内容`, life: 3000 });
+  }
+};
+
+// 导出 Popover 状态
+const exportPopover = ref<InstanceType<typeof Popover> | null>(null);
+
+// 切换导出 Popover
+const toggleExportPopover = (event: Event) => {
+  exportPopover.value?.toggle(event);
+};
+
+// 导出章节内容
+const exportChapter = async (
+  type: 'original' | 'translation' | 'bilingual',
+  format: 'txt' | 'json' | 'clipboard',
+) => {
+  if (!selectedChapter.value || !selectedChapterParagraphs.value.length) return;
+
+  try {
+    await exportChapterUtil(selectedChapter.value, type, format);
+
+    // 显示成功消息
+    if (format === 'clipboard') {
+      toast.add({ severity: 'success', summary: '已复制到剪贴板', life: 3000 });
+    } else {
+      toast.add({
+        severity: 'success',
+        summary: '导出成功',
+        detail: `已导出为 ${format.toUpperCase()} 文件`,
+        life: 3000,
+      });
+    }
+  } catch (err) {
+    console.error('Export failed:', err);
+    toast.add({
+      severity: 'error',
+      summary: format === 'clipboard' ? '复制失败' : '导出失败',
+      detail: err instanceof Error ? err.message : '请重试或检查权限',
+      life: 3000,
+    });
+  }
+
+  // 关闭 Popover
+  exportPopover.value?.hide();
+};
 
 // 从路由参数获取书籍 ID
 const bookId = computed(() => route.params.id as string);
@@ -702,6 +902,132 @@ const formatTaskDuration = (startTime: number, endTime?: number): string => {
   return `${minutes}分${seconds}秒`;
 };
 
+// 规范化章节符号
+const normalizeChapterSymbols = async () => {
+  if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+    return;
+  }
+
+  try {
+    let updatedCount = 0;
+    let titleUpdated = false;
+
+    // 更新章节内容
+    const updatedVolumes = book.value.volumes?.map((volume) => {
+      if (!volume.chapters) return volume;
+
+      const updatedChapters = volume.chapters.map((chapter) => {
+        if (chapter.id !== selectedChapter.value!.id) return chapter;
+
+        // 规范化章节标题翻译
+        let updatedTitle = chapter.title;
+        if (chapter.title.translation.translation) {
+          const normalizedTitle = normalizeTranslationSymbols(
+            chapter.title.translation.translation,
+          );
+          if (normalizedTitle !== chapter.title.translation.translation) {
+            updatedTitle = {
+              original: chapter.title.original,
+              translation: {
+                ...chapter.title.translation,
+                translation: normalizedTitle,
+              },
+            };
+            titleUpdated = true;
+          }
+        }
+
+        // 规范化段落翻译
+        let updatedContent = chapter.content;
+        if (chapter.content) {
+          updatedContent = chapter.content.map((para) => {
+            if (!para.translations || para.translations.length === 0) {
+              return para;
+            }
+
+            const updatedTranslations = para.translations.map((trans) => {
+              const normalized = normalizeTranslationSymbols(trans.translation);
+              if (normalized !== trans.translation) {
+                updatedCount++;
+                return {
+                  ...trans,
+                  translation: normalized,
+                };
+              }
+              return trans;
+            });
+
+            // 如果翻译有更新，返回更新后的段落
+            if (
+              updatedTranslations.some(
+                (t, i) => t.translation !== para.translations?.[i]?.translation,
+              )
+            ) {
+              return {
+                ...para,
+                translations: updatedTranslations,
+              };
+            }
+
+            return para;
+          });
+        }
+
+        return {
+          ...chapter,
+          title: updatedTitle,
+          content: updatedContent,
+          lastEdited: new Date(),
+        };
+      });
+
+      return {
+        ...volume,
+        chapters: updatedChapters,
+      };
+    });
+
+    // 更新书籍
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+
+    // 显示成功消息
+    const updateDetails: string[] = [];
+    if (updatedCount > 0) {
+      updateDetails.push(`${updatedCount} 个段落翻译`);
+    }
+    if (titleUpdated) {
+      updateDetails.push('章节标题');
+    }
+
+    if (updateDetails.length > 0) {
+      toast.add({
+        severity: 'success',
+        summary: '规范化完成',
+        detail: `已规范化 ${updateDetails.join('和')} 中的符号`,
+        life: 3000,
+      });
+    } else {
+      toast.add({
+        severity: 'info',
+        summary: '无需更新',
+        detail: '所有翻译中的符号已经规范化',
+        life: 3000,
+      });
+    }
+  } catch (error) {
+    console.error('规范化符号失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '规范化失败',
+      detail: error instanceof Error ? error.message : '规范化符号时发生未知错误',
+      life: 3000,
+    });
+  }
+};
+
 const translateAllParagraphs = async () => {
   if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
     return;
@@ -768,7 +1094,7 @@ const translateAllParagraphs = async () => {
           // 创建新的翻译对象
           const newTranslation = {
             id: generateShortId(),
-            translation: translation.translation,
+            translation: normalizeTranslationQuotes(translation.translation),
             aiModelId: selectedModel.id,
           };
 
@@ -961,7 +1287,7 @@ const translateAllParagraphs = async () => {
               // 创建新的翻译对象
               const newTranslation = {
                 id: generateShortId(),
-                translation: translation,
+                translation: normalizeTranslationQuotes(translation),
                 aiModelId: selectedModel.id,
               };
 
@@ -983,7 +1309,7 @@ const translateAllParagraphs = async () => {
           if (hasTitleTranslation && result.titleTranslation) {
             const newTitleTranslation = {
               id: generateShortId(),
-              translation: result.titleTranslation.trim(),
+              translation: normalizeTranslationQuotes(result.titleTranslation.trim()),
               aiModelId: selectedModel.id,
             };
             updatedTitle = {
@@ -2246,6 +2572,57 @@ const handleDragLeave = () => {
       @apply="handleScraperUpdate"
     />
 
+    <!-- 导出选项 Popover -->
+    <Popover ref="exportPopover">
+      <div class="flex flex-col gap-2 p-2 w-48">
+        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出原文</div>
+        <Button
+          label="复制到剪贴板"
+          icon="pi pi-copy"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('original', 'clipboard')"
+        />
+        <Button
+          label="导出为 TXT"
+          icon="pi pi-file"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('original', 'txt')"
+        />
+
+        <div class="h-px bg-white/10 my-1"></div>
+
+        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出译文</div>
+        <Button
+          label="复制到剪贴板"
+          icon="pi pi-copy"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('translation', 'clipboard')"
+        />
+        <Button
+          label="导出为 TXT"
+          icon="pi pi-file"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('translation', 'txt')"
+        />
+
+        <div class="h-px bg-white/10 my-1"></div>
+
+        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出双语</div>
+        <Button
+          label="导出为 JSON"
+          icon="pi pi-code"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('bilingual', 'json')"
+        />
+        <Button
+          label="导出为 TXT"
+          icon="pi pi-file"
+          class="p-button-text p-button-sm justify-start !px-2"
+          @click="exportChapter('bilingual', 'txt')"
+        />
+      </div>
+    </Popover>
+
     <!-- 术语列表 Popover -->
     <Popover ref="termPopover" style="width: 24rem; max-width: 90vw">
       <div class="flex flex-col max-h-[60vh] overflow-hidden">
@@ -2448,34 +2825,76 @@ const handleDragLeave = () => {
     <!-- 主内容区域 -->
     <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
       <!-- 章节阅读工具栏 -->
-      <div v-if="selectedChapter && !selectedSettingMenu" class="chapter-toolbar">
-        <div class="toolbar-content">
-          <div class="toolbar-left">
-            <span class="toolbar-chapter-title">{{ getChapterDisplayTitle(selectedChapter) }}</span>
+      <Menubar
+        v-if="selectedChapter && !selectedSettingMenu"
+        :model="[]"
+        class="chapter-toolbar !border-none !rounded-none !bg-white/5 !backdrop-blur-md !border-b !border-white/10 !p-2 !px-6"
+      >
+        <template #start>
+          <div class="flex items-center gap-3 overflow-hidden max-w-md">
+            <span class="text-sm font-bold truncate opacity-90">
+              {{ getChapterDisplayTitle(selectedChapter) }}
+            </span>
           </div>
-          <div class="toolbar-separator"></div>
-          <div class="toolbar-center">
-            <div class="toolbar-edit-mode-buttons">
+        </template>
+
+        <template #end>
+          <div class="flex items-center gap-2">
+            <!-- 编辑模式切换 -->
+            <div class="flex items-center bg-white/5 rounded-lg p-1 gap-1 mr-2">
               <Button
                 v-for="option in editModeOptions"
                 :key="option.value"
                 :icon="option.icon"
                 :title="option.title"
+                rounded
+                text
+                size="small"
                 :class="[
-                  'p-button-text p-button-sm p-button-rounded',
-                  { 'p-highlight': editMode === option.value },
+                  '!w-8 !h-8',
+                  editMode === option.value
+                    ? '!bg-primary/20 !text-primary'
+                    : 'text-moon/70 hover:text-moon',
                 ]"
                 @click="editMode = option.value"
               />
             </div>
-          </div>
-          <div class="toolbar-separator"></div>
-          <div class="toolbar-right">
-            <div class="toolbar-button-with-badge">
+
+            <!-- 规范化按钮 -->
+            <Button
+              icon="pi pi-code"
+              rounded
+              text
+              size="small"
+              class="!w-8 !h-8 text-moon/70 hover:text-moon"
+              title="规范化符号：格式化本章所有翻译中的符号（引号、标点、空格等）"
+              :disabled="!selectedChapter || !selectedChapterParagraphs.length"
+              @click="normalizeChapterSymbols"
+            />
+
+            <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+            <!-- 导出按钮 -->
+            <Button
+              icon="pi pi-file-export"
+              rounded
+              text
+              size="small"
+              class="!w-8 !h-8 text-moon/70 hover:text-moon"
+              title="导出章节内容"
+              @click="toggleExportPopover"
+            />
+
+            <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+            <!-- 术语统计 -->
+            <div class="relative inline-flex">
               <Button
                 icon="pi pi-bookmark"
-                class="p-button-text p-button-rounded p-button-sm"
+                rounded
+                text
                 size="small"
+                class="!w-8 !h-8 text-moon/70 hover:text-moon"
                 :title="`本章共使用了 ${usedTermCount} 个术语`"
                 @click="toggleTermPopover"
               />
@@ -2483,14 +2902,18 @@ const handleDragLeave = () => {
                 v-if="usedTermCount > 0"
                 :value="usedTermCount > 99 ? '99+' : usedTermCount"
                 severity="info"
-                class="toolbar-badge"
+                class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
               />
             </div>
-            <div class="toolbar-button-with-badge">
+
+            <!-- 角色统计 -->
+            <div class="relative inline-flex">
               <Button
                 icon="pi pi-user"
-                class="p-button-text p-button-rounded p-button-sm"
+                rounded
+                text
                 size="small"
+                class="!w-8 !h-8 text-moon/70 hover:text-moon"
                 :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
                 @click="toggleCharacterPopover"
               />
@@ -2498,21 +2921,139 @@ const handleDragLeave = () => {
                 v-if="usedCharacterCount > 0"
                 :value="usedCharacterCount > 99 ? '99+' : usedCharacterCount"
                 severity="info"
-                class="toolbar-badge"
+                class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
               />
             </div>
-            <div class="toolbar-separator"></div>
+
+            <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+            <!-- 翻译按钮 -->
             <Button
               label="翻译本章"
               icon="pi pi-language"
-              class="p-button-sm"
               size="small"
+              class="!px-3"
               :loading="isTranslatingChapter"
               :disabled="isTranslatingChapter || !selectedChapterParagraphs.length"
               @click="translateAllParagraphs"
             />
+
+            <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+            <!-- 搜索按钮 -->
+            <Button
+              :icon="isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search'"
+              rounded
+              text
+              size="small"
+              class="!w-8 !h-8 text-moon/70 hover:text-moon"
+              :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
+              title="搜索与替换"
+              @click="toggleSearch"
+            />
+          </div>
+        </template>
+      </Menubar>
+
+      <!-- 搜索工具栏 -->
+      <div
+        v-if="isSearchVisible && selectedChapter && !selectedSettingMenu"
+        class="search-toolbar border-b border-white/10 bg-white/5 backdrop-blur-md p-2 px-6 flex items-center gap-4 animate-fade-in"
+      >
+        <!-- 搜索输入框 -->
+        <div class="flex items-center gap-2 flex-1 max-w-xl">
+          <div class="relative flex-1">
+            <i
+              class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
+            ></i>
+            <InputText
+              v-model="searchQuery"
+              placeholder="查找翻译内容..."
+              class="!pl-9 !py-1.5 !text-sm w-full"
+              @keydown.enter="nextMatch"
+            />
+            <span
+              v-if="searchMatches.length > 0"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-moon/50"
+            >
+              {{ currentSearchMatchIndex + 1 }}/{{ searchMatches.length }}
+            </span>
+          </div>
+
+          <div class="flex gap-1">
+            <Button
+              icon="pi pi-angle-up"
+              text
+              rounded
+              size="small"
+              class="!w-8 !h-8"
+              :disabled="searchMatches.length === 0"
+              @click="prevMatch"
+            />
+            <Button
+              icon="pi pi-angle-down"
+              text
+              rounded
+              size="small"
+              class="!w-8 !h-8"
+              :disabled="searchMatches.length === 0"
+              @click="nextMatch"
+            />
+          </div>
+
+          <Button
+            :icon="showReplace ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+            :label="showReplace ? '隐藏替换' : '替换'"
+            text
+            size="small"
+            class="!text-xs !px-2"
+            @click="showReplace = !showReplace"
+          />
+        </div>
+
+        <!-- 替换输入框 -->
+        <div v-if="showReplace" class="flex items-center gap-2 flex-1 max-w-xl animate-fade-in">
+          <div class="relative flex-1">
+            <i
+              class="pi pi-pencil absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
+            ></i>
+            <InputText
+              v-model="replaceQuery"
+              placeholder="替换为..."
+              class="!pl-9 !py-1.5 !text-sm w-full"
+              @keydown.enter="replaceCurrent"
+            />
+          </div>
+
+          <div class="flex gap-2">
+            <Button
+              label="替换"
+              size="small"
+              outlined
+              class="!text-xs !px-3 !py-1.5"
+              :disabled="searchMatches.length === 0 || !replaceQuery"
+              @click="replaceCurrent"
+            />
+            <Button
+              label="全部替换"
+              size="small"
+              outlined
+              class="!text-xs !px-3 !py-1.5"
+              :disabled="searchMatches.length === 0 || !replaceQuery"
+              @click="replaceAll"
+            />
           </div>
         </div>
+
+        <!-- 关闭按钮 -->
+        <Button
+          icon="pi pi-times"
+          text
+          rounded
+          size="small"
+          class="!w-8 !h-8 ml-auto text-moon/50 hover:text-moon"
+          @click="isSearchVisible = false"
+        />
       </div>
 
       <div class="scrollable-content">
@@ -2677,6 +3218,8 @@ const handleDragLeave = () => {
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
+                    :search-query="searchQuery"
+                    :id="`paragraph-${paragraph.id}`"
                   />
                 </div>
               </div>
@@ -2753,7 +3296,8 @@ const handleDragLeave = () => {
               <div
                 v-if="
                   recentAITasks.some(
-                    (t) => t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
+                    (t) =>
+                      t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
                   )
                 "
                 class="ai-history-clear-actions"
@@ -3411,102 +3955,6 @@ const handleDragLeave = () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* 章节工具栏 */
-.chapter-toolbar {
-  flex-shrink: 0;
-  padding: 0.75rem 1.5rem;
-  background: var(--white-opacity-5);
-  border-bottom: 1px solid var(--white-opacity-10);
-  backdrop-filter: blur(10px);
-  z-index: 10;
-}
-
-.toolbar-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  max-width: 56rem;
-  margin: 0 auto;
-}
-
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.75rem;
-  min-width: 0;
-  flex-shrink: 0;
-  width: 12rem;
-  max-width: 12rem;
-}
-
-.toolbar-chapter-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-}
-
-.toolbar-separator {
-  width: 1px;
-  height: 1.5rem;
-  background: var(--white-opacity-20);
-  flex-shrink: 0;
-  margin: 0 0.75rem;
-}
-
-.toolbar-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.toolbar-button-with-badge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.toolbar-badge {
-  position: absolute;
-  top: -0.25rem;
-  right: -0.25rem;
-  min-width: 1.25rem;
-  height: 1.25rem;
-  font-size: 0.75rem;
-  padding: 0 0.375rem;
-  z-index: 1;
-}
-
-.toolbar-edit-mode-buttons {
-  display: flex;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
-
-.toolbar-edit-mode-buttons .p-button.p-highlight {
-  background: var(--primary-opacity-20) !important;
-  border-color: var(--primary-opacity-50) !important;
-  color: var(--primary-opacity-100) !important;
 }
 
 .scrollable-content {

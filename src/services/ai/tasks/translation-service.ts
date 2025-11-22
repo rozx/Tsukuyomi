@@ -14,6 +14,7 @@ import { AIServiceFactory } from '../index';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
@@ -657,7 +658,7 @@ export class TranslationService {
 
           const term = await TerminologyService.addTerminology(bookId, {
             name,
-            translation,
+            translation: normalizeTranslationQuotes(translation),
             description,
           });
 
@@ -741,7 +742,7 @@ export class TranslationService {
           } = {};
 
           if (translation !== undefined) {
-            updates.translation = translation;
+            updates.translation = normalizeTranslationQuotes(translation);
           }
           if (description !== undefined) {
             updates.description = description;
@@ -879,14 +880,20 @@ export class TranslationService {
             aliases?: Array<{ name: string; translation: string }>;
           } = {
             name,
-            translation,
+            translation: normalizeTranslationQuotes(translation),
           };
+
+          // 规范化别名翻译
+          if (aliases && Array.isArray(aliases)) {
+            characterData.aliases = aliases.map((alias) => ({
+              name: alias.name,
+              translation: normalizeTranslationQuotes(alias.translation),
+            }));
+          }
 
           if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
           if (description) characterData.description = description;
           if (speaking_style) characterData.speakingStyle = speaking_style;
-          if (aliases)
-            characterData.aliases = aliases as Array<{ name: string; translation: string }>;
 
           const character = await CharacterSettingService.addCharacterSetting(
             bookId,
@@ -994,7 +1001,7 @@ export class TranslationService {
             updates.name = name;
           }
           if (translation !== undefined) {
-            updates.translation = translation;
+            updates.translation = normalizeTranslationQuotes(translation);
           }
           if (sex !== undefined) {
             updates.sex = sex as 'male' | 'female' | 'other' | undefined;
@@ -1006,7 +1013,12 @@ export class TranslationService {
             updates.speakingStyle = speaking_style;
           }
           if (aliases !== undefined) {
-            updates.aliases = aliases as Array<{ name: string; translation: string }>;
+            updates.aliases = (aliases as Array<{ name: string; translation: string }>).map(
+              (alias) => ({
+                name: alias.name,
+                translation: normalizeTranslationQuotes(alias.translation),
+              }),
+            );
           }
 
           const character = await CharacterSettingService.updateCharacterSetting(

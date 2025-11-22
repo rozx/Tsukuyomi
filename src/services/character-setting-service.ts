@@ -7,7 +7,7 @@ import type {
 } from 'src/types/novel';
 import { flatMap, isEmpty, isArray, isEqual, sortBy } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
-import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils';
+import { UniqueIdGenerator, extractIds, generateShortId, normalizeTranslationQuotes } from 'src/utils';
 
 /**
  * 角色设定服务
@@ -236,7 +236,7 @@ export class CharacterSettingService {
     // 创建 Translation 对象
     const translation: Translation = {
       id: generateShortId(),
-      translation: charData.translation || '',
+      translation: normalizeTranslationQuotes(charData.translation || ''),
       aiModelId: '', // 默认为空
     };
 
@@ -250,7 +250,7 @@ export class CharacterSettingService {
           name: aliasData.name,
           translation: {
             id: generateShortId(),
-            translation: aliasData.translation || aliasData.name, // 使用提供的翻译，如果没有则使用名称
+            translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name), // 使用提供的翻译，如果没有则使用名称
             aiModelId: '',
           },
         });
@@ -366,7 +366,7 @@ export class CharacterSettingService {
               name: aliasData.name,
               translation: {
                 id: generateShortId(),
-                translation: aliasData.translation || aliasData.name,
+                translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
                 aiModelId: '',
               },
             });
@@ -396,7 +396,7 @@ export class CharacterSettingService {
       // 保留原有的 ID 和 aiModelId，只更新翻译文本
       updatedTranslation = {
         id: existingChar.translation.id,
-        translation: updates.translation,
+        translation: normalizeTranslationQuotes(updates.translation),
         aiModelId: existingChar.translation.aiModelId,
       };
     }
@@ -435,7 +435,7 @@ export class CharacterSettingService {
              name: aliasData.name,
              translation: {
                id: existingAlias.translation.id, // 保留原有 ID
-               translation: aliasData.translation || aliasData.name,
+               translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
                aiModelId: existingAlias.translation.aiModelId,
              },
            });
@@ -445,7 +445,7 @@ export class CharacterSettingService {
              name: aliasData.name,
              translation: {
                 id: generateShortId(),
-                translation: aliasData.translation || aliasData.name,
+                translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
                 aiModelId: '',
              },
            });

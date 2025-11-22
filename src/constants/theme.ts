@@ -33,6 +33,11 @@ export const Theme = {
       400: '#f1e3a8',
       500: '#f6f3d1',
     },
+    // 警告色
+    warning: {
+      DEFAULT: '#f2c037',
+      opacity30: 'rgba(242, 192, 55, 0.3)',
+    },
   },
 
   // 背景透明度级别
