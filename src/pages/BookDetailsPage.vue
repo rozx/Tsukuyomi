@@ -7,6 +7,7 @@ import Select from 'primevue/select';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
+import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
@@ -605,6 +606,89 @@ const recentAITasks = computed(() => {
   // 按开始时间倒序排列，取最近 10 个
   return [...allTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
+
+// 自动滚动状态（按任务 ID 存储）
+const autoScrollEnabled = ref<Record<string, boolean>>({});
+
+// 任务折叠状态（按任务 ID 存储，默认展开）
+const taskFolded = ref<Record<string, boolean>>({});
+
+// 切换任务的折叠/展开状态
+const toggleTaskFold = (taskId: string) => {
+  taskFolded.value[taskId] = !taskFolded.value[taskId];
+};
+
+// 切换任务的自动滚动
+const toggleAutoScroll = (taskId: string) => {
+  autoScrollEnabled.value[taskId] = !autoScrollEnabled.value[taskId];
+  // 如果启用自动滚动，立即滚动到底部
+  if (autoScrollEnabled.value[taskId]) {
+    setTimeout(() => {
+      const container = thinkingContainers.value[taskId];
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }, 0);
+  }
+};
+
+// 清除已完成/已取消的任务
+const clearCompletedTasks = async () => {
+  try {
+    await aiProcessingStore.clearCompletedTasks();
+    toast.add({
+      severity: 'success',
+      summary: '清除成功',
+      detail: '已清除所有已完成和已取消的任务',
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('Failed to clear completed tasks:', error);
+    toast.add({
+      severity: 'error',
+      summary: '清除失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 3000,
+    });
+  }
+};
+
+// 思考过程容器的引用
+const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
+
+// 设置思考过程容器引用
+const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
+  if (el) {
+    thinkingContainers.value[taskId] = el;
+  } else {
+    // 清理卸载元素的引用，防止内存泄漏
+    delete thinkingContainers.value[taskId];
+  }
+};
+
+// 监听任务思考过程变化，自动滚动到底部
+watch(
+  () =>
+    recentAITasks.value.map((task) => ({
+      id: task.id,
+      message: task.thinkingMessage,
+      length: task.thinkingMessage?.length || 0,
+    })),
+  () => {
+    // 使用 nextTick 确保 DOM 已更新后再滚动
+    setTimeout(() => {
+      for (const task of recentAITasks.value) {
+        if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
+          const container = thinkingContainers.value[task.id];
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }
+    }, 0);
+  },
+  { deep: true, flush: 'post' },
+);
 
 // 格式化任务持续时间
 const formatTaskDuration = (startTime: number, endTime?: number): string => {
@@ -2417,6 +2501,7 @@ const handleDragLeave = () => {
                 class="toolbar-badge"
               />
             </div>
+            <div class="toolbar-separator"></div>
             <Button
               label="翻译本章"
               icon="pi pi-language"
@@ -2664,6 +2749,22 @@ const handleDragLeave = () => {
               <span>暂无 AI 任务记录</span>
             </div>
             <div v-else class="ai-history-tasks">
+              <!-- 清除已完成/已取消任务按钮 -->
+              <div
+                v-if="
+                  recentAITasks.some(
+                    (t) => t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
+                  )
+                "
+                class="ai-history-clear-actions"
+              >
+                <Button
+                  icon="pi pi-trash"
+                  label="清除已完成/已取消的任务"
+                  class="p-button-text p-button-sm ai-history-clear-button"
+                  @click="clearCompletedTasks"
+                />
+              </div>
               <div
                 v-for="task in recentAITasks"
                 :key="task.id"
@@ -2673,10 +2774,17 @@ const handleDragLeave = () => {
                   'task-completed': task.status === 'completed',
                   'task-error': task.status === 'error',
                   'task-cancelled': task.status === 'cancelled',
+                  'task-folded': taskFolded[task.id],
                 }"
               >
                 <div class="ai-task-header">
                   <div class="ai-task-info">
+                    <Button
+                      :icon="taskFolded[task.id] ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
+                      class="p-button-text p-button-sm ai-task-fold-toggle"
+                      @click="toggleTaskFold(task.id)"
+                      title="折叠/展开"
+                    />
                     <i
                       class="pi ai-task-status-icon"
                       :class="{
@@ -2710,14 +2818,38 @@ const handleDragLeave = () => {
                     />
                   </div>
                 </div>
-                <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
-                <div
-                  v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                  class="ai-task-thinking"
-                >
-                  <span class="ai-task-thinking-label">思考过程：</span>
-                  <span class="ai-task-thinking-text">{{ task.thinkingMessage }}</span>
-                </div>
+                <Transition name="task-content">
+                  <div v-if="!taskFolded[task.id]" class="ai-task-content">
+                    <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
+                    <div
+                      v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                      class="ai-task-thinking"
+                    >
+                      <div class="ai-task-thinking-header">
+                        <span class="ai-task-thinking-label">思考过程：</span>
+                        <Button
+                          :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
+                          :class="[
+                            'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                            { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                          ]"
+                          :title="
+                            autoScrollEnabled[task.id]
+                              ? '禁用自动滚动'
+                              : '启用自动滚动（新内容出现时自动滚动到底部）'
+                          "
+                          @click="toggleAutoScroll(task.id)"
+                        />
+                      </div>
+                      <div
+                        :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
+                        class="ai-task-thinking-text"
+                      >
+                        {{ task.thinkingMessage }}
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
               </div>
             </div>
           </div>
@@ -3328,6 +3460,7 @@ const handleDragLeave = () => {
   height: 1.5rem;
   background: var(--white-opacity-20);
   flex-shrink: 0;
+  margin: 0 0.75rem;
 }
 
 .toolbar-center {
@@ -3825,6 +3958,22 @@ const handleDragLeave = () => {
   gap: 0.75rem;
 }
 
+.ai-history-clear-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.ai-history-clear-button {
+  color: var(--moon-opacity-70);
+  font-size: 0.8125rem;
+}
+
+.ai-history-clear-button:hover {
+  color: var(--red-500);
+  background: var(--red-500-opacity-10);
+}
+
 .ai-history-task-item {
   padding: 0.75rem;
   border-radius: 6px;
@@ -3867,6 +4016,19 @@ const handleDragLeave = () => {
   gap: 0.5rem;
   flex: 1;
   min-width: 0;
+}
+
+.ai-task-fold-toggle {
+  padding: 0.25rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.ai-task-fold-toggle:hover {
+  color: var(--primary-opacity-80);
+  background: var(--white-opacity-5);
 }
 
 .ai-task-status-icon {
@@ -3927,11 +4089,33 @@ const handleDragLeave = () => {
   height: 1.5rem;
 }
 
+.ai-task-content {
+  overflow: hidden;
+}
+
 .ai-task-message {
   font-size: 0.8125rem;
   color: var(--moon-opacity-70);
   margin-top: 0.5rem;
   line-height: 1.4;
+}
+
+/* 折叠/展开过渡动画 */
+.task-content-enter-active,
+.task-content-leave-active {
+  transition: all 0.3s ease;
+  max-height: 2000px;
+  opacity: 1;
+}
+
+.task-content-enter-from,
+.task-content-leave-to {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .ai-task-thinking {
@@ -3944,19 +4128,45 @@ const handleDragLeave = () => {
   line-height: 1.5;
 }
 
+.ai-task-thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
 .ai-task-thinking-label {
   color: var(--moon-opacity-50);
   font-weight: 500;
   margin-right: 0.5rem;
 }
 
+.ai-task-auto-scroll-toggle {
+  color: var(--moon-opacity-50);
+  padding: 0.25rem;
+  min-width: auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: all 0.2s;
+}
+
+.ai-task-auto-scroll-toggle:hover {
+  color: var(--primary-opacity-80);
+  background: var(--white-opacity-5);
+}
+
+.ai-task-auto-scroll-toggle.auto-scroll-enabled {
+  color: var(--primary-opacity-80);
+}
+
 .ai-task-thinking-text {
   color: var(--moon-opacity-70);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 100px;
+  max-height: 200px;
   overflow-y: auto;
   display: block;
+  scroll-behavior: smooth;
 }
 
 /* Term Popover DataView - ensure header stays fixed and content scrolls */

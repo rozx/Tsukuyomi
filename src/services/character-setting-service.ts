@@ -408,6 +408,24 @@ export class CharacterSettingService {
       for (const aliasData of updates.aliases) {
          if (!aliasData.name.trim()) continue;
 
+         // 检查该别名是否属于其他角色（作为主名称或别名）
+         const aliasBelongsToOtherCharacter = currentSettings.some((c) => {
+           if (c.id === charId) return false; // 跳过当前角色
+           // 检查是否与其他角色的主名称冲突
+           if (c.name === aliasData.name) return true;
+           // 检查是否与其他角色的别名冲突
+           if (c.aliases?.some((a) => a.name === aliasData.name)) return true;
+           return false;
+         });
+
+         // 如果别名属于其他角色，跳过该别名
+         if (aliasBelongsToOtherCharacter) {
+           console.warn(
+             `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
+           );
+           continue;
+         }
+
          // 尝试查找现有的别名（按名称匹配）
          const existingAlias = (existingChar.aliases || []).find(a => a.name === aliasData.name);
          

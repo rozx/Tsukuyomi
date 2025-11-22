@@ -38,6 +38,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:modelValue': [value: string];
   'translation-applied': [value: string];
+  keyup: [event: KeyboardEvent];
 }>();
 
 // 计算 id，如果未提供则返回 undefined
@@ -163,6 +164,7 @@ const handleTranslate = async () => {
       :class="{ 'p-invalid': invalid }"
       :disabled="disabled || translating"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
+      @keyup="$emit('keyup', $event)"
     />
     <InputText
       v-else
@@ -172,6 +174,7 @@ const handleTranslate = async () => {
       :class="{ 'p-invalid': invalid }"
       :disabled="disabled || translating"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
+      @keyup="$emit('keyup', $event)"
     />
     <InputGroupAddon class="translatable-input-addon">
       <div class="translatable-input-addon-content">
@@ -202,6 +205,7 @@ const handleTranslate = async () => {
       :class="{ 'p-invalid': invalid }"
       :disabled="disabled || translating"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
+      @keyup="$emit('keyup', $event)"
     />
     <Textarea
       v-else
@@ -213,6 +217,7 @@ const handleTranslate = async () => {
       :class="{ 'p-invalid': invalid }"
       :disabled="disabled || translating"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
+      @keyup="$emit('keyup', $event)"
     />
     <Button
       icon="pi pi-language"

@@ -47,194 +47,196 @@ function escapeRegex(str: string): string {
 /**
  * 将文本转换为包含高亮术语和角色的节点数组
  */
-const highlightedText = computed((): Array<{
-  type: 'text' | 'term' | 'character';
-  content: string;
-  term?: Terminology;
-  character?: CharacterSetting;
-}> => {
-  if (!hasContent.value) {
-    return [{ type: 'text', content: props.paragraph.text }];
-  }
-
-  const text = props.paragraph.text;
-  const nodes: Array<{
+const highlightedText = computed(
+  (): Array<{
     type: 'text' | 'term' | 'character';
     content: string;
     term?: Terminology;
     character?: CharacterSetting;
-  }> = [];
-
-  // 收集所有匹配项（术语和角色）
-  interface Match {
-    index: number;
-    length: number;
-    type: 'term' | 'character';
-    term?: Terminology;
-    character?: CharacterSetting;
-    text: string;
-  }
-
-  const matches: Match[] = [];
-
-  // 处理术语
-  if (props.terminologies && props.terminologies.length > 0) {
-    const sortedTerms = [...props.terminologies].sort((a, b) => b.name.length - a.name.length);
-    const termMap = new Map<string, Terminology>();
-    for (const term of sortedTerms) {
-      if (term.name && term.name.trim()) {
-        termMap.set(term.name.trim(), term);
-      }
+  }> => {
+    if (!hasContent.value) {
+      return [{ type: 'text', content: props.paragraph.text }];
     }
 
-    const termNames = Array.from(termMap.keys())
-      .map((name) => escapeRegex(name))
-      .join('|');
+    const text = props.paragraph.text;
+    const nodes: Array<{
+      type: 'text' | 'term' | 'character';
+      content: string;
+      term?: Terminology;
+      character?: CharacterSetting;
+    }> = [];
 
-    if (termNames) {
-      const regex = new RegExp(`(${termNames})`, 'g');
-      let match: RegExpExecArray | null;
-      while ((match = regex.exec(text)) !== null) {
-        const matchedText = match[0];
-        const term = termMap.get(matchedText);
-        if (term) {
-          matches.push({
-            index: match.index,
-            length: matchedText.length,
-            type: 'term',
-            term,
-            text: matchedText,
-          });
+    // 收集所有匹配项（术语和角色）
+    interface Match {
+      index: number;
+      length: number;
+      type: 'term' | 'character';
+      term?: Terminology;
+      character?: CharacterSetting;
+      text: string;
+    }
+
+    const matches: Match[] = [];
+
+    // 处理术语
+    if (props.terminologies && props.terminologies.length > 0) {
+      const sortedTerms = [...props.terminologies].sort((a, b) => b.name.length - a.name.length);
+      const termMap = new Map<string, Terminology>();
+      for (const term of sortedTerms) {
+        if (term.name && term.name.trim()) {
+          termMap.set(term.name.trim(), term);
         }
       }
-    }
-  }
 
-  // 处理角色（包括名称和别名）
-  if (props.characterSettings && props.characterSettings.length > 0) {
-    const nameToCharacterMap = new Map<string, CharacterSetting>();
-    for (const char of props.characterSettings) {
-      // 添加角色名称
-      if (char.name && char.name.trim()) {
-        nameToCharacterMap.set(char.name.trim(), char);
-      }
-      // 添加所有别名
-      if (char.aliases && char.aliases.length > 0) {
-        for (const alias of char.aliases) {
-          if (alias.name && alias.name.trim()) {
-            nameToCharacterMap.set(alias.name.trim(), char);
+      const termNames = Array.from(termMap.keys())
+        .map((name) => escapeRegex(name))
+        .join('|');
+
+      if (termNames) {
+        const regex = new RegExp(`(${termNames})`, 'g');
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+          const matchedText = match[0];
+          const term = termMap.get(matchedText);
+          if (term) {
+            matches.push({
+              index: match.index,
+              length: matchedText.length,
+              type: 'term',
+              term,
+              text: matchedText,
+            });
           }
         }
       }
     }
 
-    // 按名称长度降序排序，优先匹配较长的名称
-    const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
+    // 处理角色（包括名称和别名）
+    if (props.characterSettings && props.characterSettings.length > 0) {
+      const nameToCharacterMap = new Map<string, CharacterSetting>();
+      for (const char of props.characterSettings) {
+        // 添加角色名称
+        if (char.name && char.name.trim()) {
+          nameToCharacterMap.set(char.name.trim(), char);
+        }
+        // 添加所有别名
+        if (char.aliases && char.aliases.length > 0) {
+          for (const alias of char.aliases) {
+            if (alias.name && alias.name.trim()) {
+              nameToCharacterMap.set(alias.name.trim(), char);
+            }
+          }
+        }
+      }
 
-    if (sortedNames.length > 0) {
-      const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-      const regex = new RegExp(`(${namePatterns})`, 'g');
-      let match: RegExpExecArray | null;
-      while ((match = regex.exec(text)) !== null) {
-        const matchedText = match[0];
-        const char = nameToCharacterMap.get(matchedText);
-        if (char) {
-          matches.push({
-            index: match.index,
-            length: matchedText.length,
-            type: 'character',
-            character: char,
-            text: matchedText,
-          });
+      // 按名称长度降序排序，优先匹配较长的名称
+      const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
+
+      if (sortedNames.length > 0) {
+        const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
+        const regex = new RegExp(`(${namePatterns})`, 'g');
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+          const matchedText = match[0];
+          const char = nameToCharacterMap.get(matchedText);
+          if (char) {
+            matches.push({
+              index: match.index,
+              length: matchedText.length,
+              type: 'character',
+              character: char,
+              text: matchedText,
+            });
+          }
         }
       }
     }
-  }
 
-  // 如果没有匹配项，直接返回文本
-  if (matches.length === 0) {
-    return [{ type: 'text', content: text }];
-  }
-
-  // 按索引排序，然后处理重叠（优先保留较长的匹配）
-  matches.sort((a, b) => {
-    if (a.index !== b.index) {
-      return a.index - b.index;
+    // 如果没有匹配项，直接返回文本
+    if (matches.length === 0) {
+      return [{ type: 'text', content: text }];
     }
-    // 如果索引相同，优先较长的匹配
-    return b.length - a.length;
-  });
 
-  // 移除重叠的匹配（保留第一个，即较长的）
-  const filteredMatches: Match[] = [];
-  for (let i = 0; i < matches.length; i++) {
-    const current = matches[i];
-    if (!current) continue;
-    
-    let hasOverlap = false;
+    // 按索引排序，然后处理重叠（优先保留较长的匹配）
+    matches.sort((a, b) => {
+      if (a.index !== b.index) {
+        return a.index - b.index;
+      }
+      // 如果索引相同，优先较长的匹配
+      return b.length - a.length;
+    });
 
-    for (const existing of filteredMatches) {
-      const currentEnd = current.index + current.length;
-      const existingEnd = existing.index + existing.length;
+    // 移除重叠的匹配（保留第一个，即较长的）
+    const filteredMatches: Match[] = [];
+    for (let i = 0; i < matches.length; i++) {
+      const current = matches[i];
+      if (!current) continue;
 
-      // 检查是否有重叠
-      if (
-        (current.index >= existing.index && current.index < existingEnd) ||
-        (currentEnd > existing.index && currentEnd <= existingEnd) ||
-        (current.index <= existing.index && currentEnd >= existingEnd)
-      ) {
-        hasOverlap = true;
-        break;
+      let hasOverlap = false;
+
+      for (const existing of filteredMatches) {
+        const currentEnd = current.index + current.length;
+        const existingEnd = existing.index + existing.length;
+
+        // 检查是否有重叠
+        if (
+          (current.index >= existing.index && current.index < existingEnd) ||
+          (currentEnd > existing.index && currentEnd <= existingEnd) ||
+          (current.index <= existing.index && currentEnd >= existingEnd)
+        ) {
+          hasOverlap = true;
+          break;
+        }
+      }
+
+      if (!hasOverlap) {
+        filteredMatches.push(current);
       }
     }
 
-    if (!hasOverlap) {
-      filteredMatches.push(current);
+    // 再次按索引排序
+    filteredMatches.sort((a, b) => a.index - b.index);
+
+    // 构建节点数组
+    let lastIndex = 0;
+    for (const match of filteredMatches) {
+      // 添加匹配项前面的普通文本
+      if (match.index > lastIndex) {
+        nodes.push({
+          type: 'text',
+          content: text.substring(lastIndex, match.index),
+        });
+      }
+
+      // 添加匹配项
+      if (match.type === 'term' && match.term) {
+        nodes.push({
+          type: 'term',
+          content: match.text,
+          term: match.term,
+        });
+      } else if (match.type === 'character' && match.character) {
+        nodes.push({
+          type: 'character',
+          content: match.text,
+          character: match.character,
+        });
+      }
+
+      lastIndex = match.index + match.length;
     }
-  }
 
-  // 再次按索引排序
-  filteredMatches.sort((a, b) => a.index - b.index);
-
-  // 构建节点数组
-  let lastIndex = 0;
-  for (const match of filteredMatches) {
-    // 添加匹配项前面的普通文本
-    if (match.index > lastIndex) {
+    // 添加剩余的普通文本
+    if (lastIndex < text.length) {
       nodes.push({
         type: 'text',
-        content: text.substring(lastIndex, match.index),
+        content: text.substring(lastIndex),
       });
     }
 
-    // 添加匹配项
-    if (match.type === 'term' && match.term) {
-      nodes.push({
-        type: 'term',
-        content: match.text,
-        term: match.term,
-      });
-    } else if (match.type === 'character' && match.character) {
-      nodes.push({
-        type: 'character',
-        content: match.text,
-        character: match.character,
-      });
-    }
-
-    lastIndex = match.index + match.length;
-  }
-
-  // 添加剩余的普通文本
-  if (lastIndex < text.length) {
-    nodes.push({
-      type: 'text',
-      content: text.substring(lastIndex),
-    });
-  }
-
-  return nodes.length > 0 ? nodes : [{ type: 'text', content: text }];
-});
+    return nodes.length > 0 ? nodes : [{ type: 'text', content: text }];
+  },
+);
 
 // 处理术语悬停
 const handleTermMouseEnter = (event: Event, term: Terminology) => {
@@ -279,11 +281,13 @@ const handleCharacterMouseLeave = () => {
 const handleCharacterPopoverHide = () => {
   hoveredCharacter.value = null;
 };
-
 </script>
 
 <template>
-  <div class="paragraph-card" :class="{ 'has-content': hasContent, 'is-translating': props.isTranslating }">
+  <div
+    class="paragraph-card"
+    :class="{ 'has-content': hasContent, 'is-translating': props.isTranslating }"
+  >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
     <div class="paragraph-content">
       <p class="paragraph-text">
@@ -291,11 +295,13 @@ const handleCharacterPopoverHide = () => {
           <span v-if="node.type === 'text'">{{ node.content }}</span>
           <span
             v-else-if="node.type === 'term' && node.term"
-            :ref="(el) => {
-              if (el && node.term) {
-                termRefsMap.set(node.term.id, el as HTMLElement);
+            :ref="
+              (el) => {
+                if (el && node.term) {
+                  termRefsMap.set(node.term.id, el as HTMLElement);
+                }
               }
-            }"
+            "
             class="term-highlight"
             @mouseenter="handleTermMouseEnter($event, node.term!)"
             @mouseleave="handleTermMouseLeave"
@@ -304,11 +310,13 @@ const handleCharacterPopoverHide = () => {
           </span>
           <span
             v-else-if="node.type === 'character' && node.character"
-            :ref="(el) => {
-              if (el && node.character) {
-                characterRefsMap.set(node.character.id, el as HTMLElement);
+            :ref="
+              (el) => {
+                if (el && node.character) {
+                  characterRefsMap.set(node.character.id, el as HTMLElement);
+                }
               }
-            }"
+            "
             class="character-highlight"
             @mouseenter="handleCharacterMouseEnter($event, node.character!)"
             @mouseleave="handleCharacterMouseLeave"
@@ -355,11 +363,14 @@ const handleCharacterPopoverHide = () => {
         <div class="popover-header">
           <div class="popover-character-name-row">
             <span class="popover-character-name">{{ hoveredCharacter.name }}</span>
-            <span
-              v-if="hoveredCharacter.sex"
-              class="popover-character-sex"
-            >
-              {{ hoveredCharacter.sex === 'male' ? '男' : hoveredCharacter.sex === 'female' ? '女' : '其他' }}
+            <span v-if="hoveredCharacter.sex" class="popover-character-sex">
+              {{
+                hoveredCharacter.sex === 'male'
+                  ? '男'
+                  : hoveredCharacter.sex === 'female'
+                    ? '女'
+                    : '其他'
+              }}
             </span>
           </div>
           <span class="popover-translation">{{ hoveredCharacter.translation.translation }}</span>
@@ -367,10 +378,13 @@ const handleCharacterPopoverHide = () => {
         <div v-if="hoveredCharacter.description" class="popover-description">
           {{ hoveredCharacter.description }}
         </div>
-        <div v-if="hoveredCharacter.aliases && hoveredCharacter.aliases.length > 0" class="popover-aliases">
+        <div
+          v-if="hoveredCharacter.aliases && hoveredCharacter.aliases.length > 0"
+          class="popover-aliases"
+        >
           <span class="popover-aliases-label">别名：</span>
           <span class="popover-aliases-list">
-            {{ hoveredCharacter.aliases.map(a => a.name).join('、') }}
+            {{ hoveredCharacter.aliases.map((a) => a.name).join('、') }}
           </span>
         </div>
       </div>
@@ -413,7 +427,8 @@ const handleCharacterPopoverHide = () => {
 }
 
 @keyframes translating-pulse {
-  0%, 100% {
+  0%,
+  100% {
     background: var(--primary-opacity-10);
     box-shadow: inset 3px 0 0 var(--primary-opacity-60);
   }
@@ -429,7 +444,7 @@ const handleCharacterPopoverHide = () => {
 
 .paragraph-text {
   margin: 0;
-  color: var(--moon-opacity-90);
+  color: var(--moon-opacity-60);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
@@ -438,7 +453,7 @@ const handleCharacterPopoverHide = () => {
 
 .paragraph-translation {
   margin: 0.75rem 0 0 0;
-  color: var(--moon-opacity-70);
+  color: var(--primary-opacity-90);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
@@ -554,4 +569,3 @@ const handleCharacterPopoverHide = () => {
   color: var(--moon-opacity-90);
 }
 </style>
-

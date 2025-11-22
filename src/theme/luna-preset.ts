@@ -194,6 +194,9 @@ const CUSTOM_CSS = `
   --accent-teal-color: ${ACCENT_TEAL[200]};
   --danger-color: #ff8fa3;
   --warning-color: #ffd27b;
+  
+  /* Translation text color - Luna pink */
+  --translation-text-color: rgba(240, 69, 139, 0.9);
 }
 
 /* Badge 样式优化 - Moonlight Glow 主题 */

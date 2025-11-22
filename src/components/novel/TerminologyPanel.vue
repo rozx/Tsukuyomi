@@ -15,6 +15,10 @@ import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
+import {
+  exportTerminologiesToJson,
+  importTerminologiesFromFile,
+} from 'src/utils';
 
 const props = defineProps<{
   book: Novel | null;
@@ -64,6 +68,9 @@ const isSaving = ref(false);
 // 批量操作相关状态
 const bulkActionMode = ref(false);
 const selectedTermIds = ref<Set<string>>(new Set());
+
+// 文件输入引用（用于导入 JSON）
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 // 打开添加对话框
 const openAddDialog = () => {
@@ -331,16 +338,125 @@ const handleBulkDelete = () => {
   });
 };
 
-// 处理术语名称更新
-// const handleNameUpdate = (value: string) => {
-//   formData.value.name = value;
-// };
+// 导出术语为 JSON
+const handleExport = () => {
+  if (!props.book?.terminologies || props.book.terminologies.length === 0) {
+    toast.add({
+      severity: 'warn',
+      summary: '导出失败',
+      detail: '当前没有可导出的术语',
+      life: 3000,
+    });
+    return;
+  }
 
-// 处理翻译应用（将翻译结果应用到翻译字段，不更新名称字段）
-// const handleTranslationApplied = (result: string) => {
-//   // 应用翻译结果到翻译字段
-//   formData.value.translation = result;
-// };
+  try {
+    exportTerminologiesToJson(props.book.terminologies);
+    toast.add({
+      severity: 'success',
+      summary: '导出成功',
+      detail: `已成功导出 ${props.book.terminologies.length} 个术语`,
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导出失败',
+      detail: error instanceof Error ? error.message : '导出术语时发生未知错误',
+      life: 5000,
+    });
+  }
+};
+
+// 导入术语
+const handleImport = () => {
+  fileInputRef.value?.click();
+};
+
+// 处理文件选择
+const handleFileSelect = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const importedTerminologies = await importTerminologiesFromFile(file);
+
+    if (importedTerminologies.length === 0) {
+      toast.add({
+        severity: 'warn',
+        summary: '导入失败',
+        detail: '文件中没有有效的术语数据',
+        life: 3000,
+      });
+      target.value = '';
+      return;
+    }
+
+    if (!props.book) {
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: '没有选择书籍',
+        life: 3000,
+      });
+      target.value = '';
+      return;
+    }
+
+    // 导入术语：合并现有术语，如果名称相同则更新，否则添加
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    for (const importedTerm of importedTerminologies) {
+      const existingTerm = props.book.terminologies?.find(
+        (t) => t.name === importedTerm.name,
+      );
+
+      if (existingTerm) {
+        // 更新现有术语
+        await TerminologyService.updateTerminology(
+          props.book.id,
+          existingTerm.id,
+          {
+            translation: importedTerm.translation.translation,
+            description: importedTerm.description,
+          },
+        );
+        updatedCount++;
+      } else {
+        // 添加新术语
+        await TerminologyService.addTerminology(props.book.id, {
+          name: importedTerm.name,
+          translation: importedTerm.translation.translation,
+          description: importedTerm.description,
+          occurrences: importedTerm.occurrences,
+        });
+        addedCount++;
+      }
+    }
+
+    toast.add({
+      severity: 'success',
+      summary: '导入成功',
+      detail: `已导入 ${importedTerminologies.length} 个术语（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '导入失败',
+      detail: error instanceof Error ? error.message : '导入术语时发生未知错误',
+      life: 5000,
+    });
+  }
+
+  // 清空输入
+  target.value = '';
+};
 </script>
 
 <template>
@@ -421,6 +537,20 @@ const handleBulkDelete = () => {
               />
             </InputGroupAddon>
           </InputGroup>
+          <Button
+            label="导出"
+            icon="pi pi-download"
+            class="p-button-outlined flex-shrink-0"
+            :disabled="bulkActionMode || !props.book?.terminologies || props.book.terminologies.length === 0"
+            @click="handleExport"
+          />
+          <Button
+            label="导入"
+            icon="pi pi-upload"
+            class="p-button-outlined flex-shrink-0"
+            :disabled="bulkActionMode"
+            @click="handleImport"
+          />
           <Button
             label="提取术语"
             icon="pi pi-search"
@@ -516,6 +646,15 @@ const handleBulkDelete = () => {
 
     <!-- 确认删除对话框 -->
     <ConfirmDialog />
+
+    <!-- 隐藏的文件输入 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept=".json,.txt"
+      class="hidden"
+      @change="handleFileSelect"
+    />
   </div>
 </template>
 

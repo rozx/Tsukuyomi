@@ -10,3 +10,9 @@ export {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from './novel-utils';
+export {
+  exportTerminologiesToJson,
+  exportCharacterSettingsToJson,
+  importTerminologiesFromFile,
+  importCharacterSettingsFromFile,
+} from './export-import';

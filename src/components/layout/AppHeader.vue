@@ -16,8 +16,8 @@ const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
 
-// 获取最新的思考消息（只显示最后一行）
-const latestThinkingMessage = computed(() => {
+// 获取 AI 任务状态（只显示状态，不显示思考消息内容）
+const aiTaskStatus = computed(() => {
   // 直接访问 store 的 state 以确保响应式
   const activeTasks = aiProcessing.activeTasks;
   const thinkingTasks = activeTasks.filter(
@@ -25,30 +25,22 @@ const latestThinkingMessage = computed(() => {
   );
 
   if (thinkingTasks.length === 0) {
-    return 'AI 思考过程';
+    return null; // 没有进行中的任务，不显示状态
   }
 
   const latest = thinkingTasks.sort((a, b) => b.startTime - a.startTime)[0];
   if (!latest) {
-    return 'AI 思考过程';
+    return null;
   }
 
-  // 优先使用实际的思考消息
-  if (latest.thinkingMessage && latest.thinkingMessage.trim()) {
-    // 获取最后一行
-    const lines = latest.thinkingMessage.split('\n').filter((line) => line.trim());
-    const lastLine =
-      lines.length > 0 ? lines[lines.length - 1] || latest.thinkingMessage : latest.thinkingMessage;
-
-    // 限制显示长度，避免按钮过长
-    if (lastLine && lastLine.length > 50) {
-      return lastLine.substring(0, 47) + '...';
-    }
-
-    return lastLine || latest.message || 'AI 思考过程';
+  // 根据任务状态返回对应的状态文本
+  if (latest.status === 'thinking') {
+    return '思考中';
+  } else if (latest.status === 'processing') {
+    return '处理中';
   }
 
-  return latest.message || `${latest.modelName} 正在思考...`;
+  return null;
 });
 
 const menuItems = ref<MenuItem[]>([
@@ -251,9 +243,12 @@ onUnmounted(() => {
   <header
     class="sticky top-0 z-20 shrink-0 border-b border-white/5 bg-night-950/50 backdrop-blur-2xl shadow-[0_10px_40px_rgba(5,6,15,0.45)]"
   >
-    <Menubar :model="menuItems" class="!rounded-none !border-0 bg-transparent px-4 py-3 text-moon-80">
+    <Menubar
+      :model="menuItems"
+      class="!rounded-none !border-0 bg-transparent px-4 py-3 text-moon-80 whitespace-nowrap"
+    >
       <template #start>
-        <div class="flex items-center gap-3 pr-4">
+        <div class="flex items-center gap-3 pr-4 whitespace-nowrap flex-shrink-0">
           <Button
             aria-label="切换侧边栏"
             class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
@@ -268,22 +263,21 @@ onUnmounted(() => {
       </template>
 
       <template #end>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 whitespace-nowrap flex-shrink-0">
           <!-- AI 思考过程按钮 -->
           <Button
             ref="thinkingButtonRef"
             aria-label="AI 思考过程"
-            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100"
+            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100 whitespace-nowrap h-auto min-h-[2.5rem]"
             :class="{ 'thinking-active': aiProcessing.hasActiveTasks }"
             @click="toggleThinkingPanel"
           >
             <i
-              class="pi pi-sparkles text-accent-300"
+              class="pi pi-sparkles text-accent-300 flex-shrink-0"
               :class="{ 'animate-spin': aiProcessing.hasActiveTasks }"
             />
-            <span v-if="latestThinkingMessage" class="truncate text-sm text-moon-70">{{
-              latestThinkingMessage
-            }}</span>
+            <span class="text-sm text-moon-70">AI 思考过程</span>
+            <span v-if="aiTaskStatus" class="text-xs text-moon-50 ml-1">({{ aiTaskStatus }})</span>
           </Button>
 
           <!-- 同步状态按钮 -->
@@ -295,7 +289,7 @@ onUnmounted(() => {
             @click="toggleSyncPanel"
           >
             <i :class="[syncStatus.icon, syncStatus.color]" class="text-lg" />
-            <span v-if="gistSync.enabled" class="text-xs uppercase tracking-wide text-moon-60">{{
+            <span v-if="gistSync.enabled" class="text-sm uppercase tracking-wide text-moon-60">{{
               formatNextSyncTime
             }}</span>
           </Button>
@@ -330,4 +324,29 @@ onUnmounted(() => {
     <ThinkingProcessPanel ref="thinkingPanelRef" />
   </header>
 </template>
+
+<style scoped>
+/* 确保 Menubar 始终显示为单行 */
+:deep(.p-menubar) {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+:deep(.p-menubar .p-menubar-root-list) {
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+:deep(.p-menubar .p-menubar-start),
+:deep(.p-menubar .p-menubar-end) {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+:deep(.p-menubar .p-menubar-start > *),
+:deep(.p-menubar .p-menubar-end > *) {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+</style>
 

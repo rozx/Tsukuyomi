@@ -180,9 +180,26 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         try {
           const tasks = await loadThinkingProcessesFromDB();
           // 将已加载的任务添加到 activeTasks（不包含 abortController）
-          this.activeTasks = tasks.map((task) => ({
-            ...task,
-          }));
+          this.activeTasks = tasks.map((task) => {
+            // 检查是否为异常中断的任务（状态为 thinking 或 processing）
+            // 这通常发生在应用刷新、关闭或崩溃后重新加载时
+            if (task.status === 'thinking' || task.status === 'processing') {
+              const interruptedTask = {
+                ...task,
+                status: 'error' as const,
+                message: '任务被中断（应用重启或刷新）',
+                endTime: Date.now(),
+              };
+              // 异步更新 DB 中的状态，确保持久化
+              void saveThinkingProcessToDB(interruptedTask).catch((error) => {
+                console.error('Failed to update interrupted task in IndexedDB:', error);
+              });
+              return interruptedTask;
+            }
+            return {
+              ...task,
+            };
+          });
           this.isLoaded = true;
         } catch (error) {
           // 如果加载失败，重置标志以便重试
