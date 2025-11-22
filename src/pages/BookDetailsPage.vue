@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
 import Select from 'primevue/select';
+import SelectButton from 'primevue/selectbutton';
 import InputText from 'primevue/inputtext';
+import Textarea from 'primevue/textarea';
+import Badge from 'primevue/badge';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { CoverService } from 'src/services/cover-service';
@@ -21,7 +24,7 @@ import {
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { Volume, Chapter, Novel, Terminology, CharacterSetting } from 'src/types/novel';
+import type { Volume, Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
@@ -79,6 +82,16 @@ const dragOverIndex = ref<number | null>(null);
 
 // 设置菜单状态
 const selectedSettingMenu = ref<'terms' | 'characters' | null>(null);
+
+// 编辑模式状态
+type EditMode = 'original' | 'translation' | 'preview';
+const editMode = ref<EditMode>('translation');
+
+// 原始文本编辑状态
+const isEditingOriginalText = ref(false);
+const originalTextEditValue = ref('');
+const originalTextEditBackup = ref('');
+const originalTextEditChapterId = ref<string | null>(null); // 跟踪正在编辑原始文本的章节 ID
 
 // 从路由参数获取书籍 ID
 const bookId = computed(() => route.params.id as string);
@@ -240,6 +253,158 @@ const selectedChapterStats = computed(() => {
     paragraphCount,
     charCount,
   };
+});
+
+// 获取章节的原始文本内容（用于编辑）
+const chapterOriginalText = computed(() => {
+  if (!selectedChapter.value || !selectedChapter.value.content) {
+    return '';
+  }
+  return selectedChapter.value.content.map((para) => para.text).join('\n');
+});
+
+// 获取段落的选中翻译文本
+const getParagraphTranslationText = (paragraph: Paragraph): string => {
+  if (!paragraph.selectedTranslationId || !paragraph.translations) {
+    return '';
+  }
+  const selectedTranslation = paragraph.translations.find(
+    (t) => t.id === paragraph.selectedTranslationId
+  );
+  return selectedTranslation?.translation || '';
+};
+
+// 开始编辑原始文本
+const startEditingOriginalText = () => {
+  if (!isEditingOriginalText.value && selectedChapter.value) {
+    originalTextEditValue.value = chapterOriginalText.value;
+    originalTextEditBackup.value = chapterOriginalText.value;
+    originalTextEditChapterId.value = selectedChapter.value.id;
+    isEditingOriginalText.value = true;
+  }
+};
+
+// 保存原始文本编辑
+const saveOriginalTextEdit = async () => {
+  if (!book.value || !selectedChapter.value) {
+    return;
+  }
+
+  // 安全检查：验证正在编辑的章节与当前选中的章节一致
+  if (originalTextEditChapterId.value !== selectedChapter.value.id) {
+    toast.add({
+      severity: 'warn',
+      summary: '章节已切换',
+      detail: '检测到章节已切换，请重新编辑当前章节',
+      life: 3000,
+    });
+    // 重置编辑状态
+    isEditingOriginalText.value = false;
+    originalTextEditChapterId.value = null;
+    editMode.value = 'translation';
+    return;
+  }
+
+  try {
+    // 将文本按换行符分割为段落（允许空段落）
+    const textLines = originalTextEditValue.value.split('\n');
+    
+    // 获取现有段落以保留翻译
+    const existingParagraphs = selectedChapter.value.content || [];
+
+    // 更新段落文本
+    const updatedParagraphs: Paragraph[] = textLines.map((line, index) => {
+      const existingParagraph = existingParagraphs[index];
+      if (existingParagraph) {
+        // 保留现有段落（包括翻译）
+        return {
+          ...existingParagraph,
+          text: line,
+        };
+      } else {
+        // 创建新段落
+        return {
+          id: generateShortId(),
+          text: line,
+          selectedTranslationId: '',
+          translations: [],
+        };
+      }
+    });
+
+    // 更新章节内容
+    const updatedVolumes = ChapterService.updateChapter(
+      book.value,
+      selectedChapter.value.id,
+      {
+        content: updatedParagraphs,
+        lastEdited: new Date(),
+      }
+    );
+
+    await booksStore.updateBook(book.value.id, { volumes: updatedVolumes });
+
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: '已更新原始文本',
+      life: 3000,
+    });
+
+    isEditingOriginalText.value = false;
+    originalTextEditChapterId.value = null;
+    // 切换回翻译模式
+    editMode.value = 'translation';
+  } catch (error) {
+    console.error('保存原始文本失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '保存原始文本时发生错误',
+      life: 3000,
+    });
+  }
+};
+
+// 取消原始文本编辑
+const cancelOriginalTextEdit = () => {
+  originalTextEditValue.value = originalTextEditBackup.value;
+  isEditingOriginalText.value = false;
+  originalTextEditChapterId.value = null;
+  // 切换回翻译模式
+  editMode.value = 'translation';
+};
+
+// 编辑模式选项（只用于图标，不显示标签）
+const editModeOptions = [
+  { value: 'original', icon: 'pi pi-pencil', title: '原文编辑' },
+  { value: 'translation', icon: 'pi pi-language', title: '翻译模式' },
+  { value: 'preview', icon: 'pi pi-eye', title: '译文预览' },
+] as const;
+
+// 监听编辑模式变化
+watch(editMode, (newMode: EditMode) => {
+  if (newMode === 'original') {
+    startEditingOriginalText();
+  } else {
+    if (isEditingOriginalText.value) {
+      isEditingOriginalText.value = false;
+      originalTextEditChapterId.value = null;
+    }
+  }
+});
+
+// 监听章节切换：当章节改变时，如果正在编辑，则重置编辑状态
+watch(selectedChapterId, (newChapterId, oldChapterId) => {
+  // 如果章节确实改变了，且正在编辑状态，则重置编辑状态
+  if (oldChapterId !== null && newChapterId !== oldChapterId && isEditingOriginalText.value) {
+    isEditingOriginalText.value = false;
+    originalTextEditChapterId.value = null;
+    // 如果当前在原始文本编辑模式，切换回翻译模式
+    if (editMode.value === 'original') {
+      editMode.value = 'translation';
+    }
+  }
 });
 
 /**
@@ -1645,23 +1810,54 @@ const handleDragLeave = () => {
           <div class="toolbar-left">
             <span class="toolbar-chapter-title">{{ getChapterDisplayTitle(selectedChapter) }}</span>
           </div>
-          <div class="toolbar-actions">
-            <Button
-              icon="pi pi-bookmark"
-              class="p-button-text p-button-rounded p-button-sm"
-              size="small"
-              :label="`本章术语 (${usedTermCount})`"
-              :title="`本章共使用了 ${usedTermCount} 个术语`"
-              @click="toggleTermPopover"
-            />
-            <Button
-              icon="pi pi-user"
-              class="p-button-text p-button-rounded p-button-sm"
-              size="small"
-              :label="`本章角色 (${usedCharacterCount})`"
-              :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
-              @click="toggleCharacterPopover"
-            />
+          <div class="toolbar-separator"></div>
+          <div class="toolbar-center">
+            <div class="toolbar-edit-mode-buttons">
+              <Button
+                v-for="option in editModeOptions"
+                :key="option.value"
+                :icon="option.icon"
+                :title="option.title"
+                :class="[
+                  'p-button-text p-button-sm p-button-rounded',
+                  { 'p-highlight': editMode === option.value }
+                ]"
+                @click="editMode = option.value"
+              />
+            </div>
+          </div>
+          <div class="toolbar-separator"></div>
+          <div class="toolbar-right">
+            <div class="toolbar-button-with-badge">
+              <Button
+                icon="pi pi-bookmark"
+                class="p-button-text p-button-rounded p-button-sm"
+                size="small"
+                :title="`本章共使用了 ${usedTermCount} 个术语`"
+                @click="toggleTermPopover"
+              />
+              <Badge
+                v-if="usedTermCount > 0"
+                :value="usedTermCount > 99 ? '99+' : usedTermCount"
+                severity="info"
+                class="toolbar-badge"
+              />
+            </div>
+            <div class="toolbar-button-with-badge">
+              <Button
+                icon="pi pi-user"
+                class="p-button-text p-button-rounded p-button-sm"
+                size="small"
+                :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
+                @click="toggleCharacterPopover"
+              />
+              <Badge
+                v-if="usedCharacterCount > 0"
+                :value="usedCharacterCount > 99 ? '99+' : usedCharacterCount"
+                severity="info"
+                class="toolbar-badge"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1687,6 +1883,53 @@ const handleDragLeave = () => {
 
         <!-- 章节内容 -->
         <div v-else-if="selectedChapter" class="chapter-content-container">
+          <!-- 原始文本编辑模式 -->
+          <div v-if="editMode === 'original'" class="original-text-edit-container">
+            <div class="space-y-4">
+              <div class="space-y-2">
+                <label class="block text-sm font-medium text-moon/90">原始文本</label>
+                <Textarea
+                  v-model="originalTextEditValue"
+                  :auto-resize="true"
+                  rows="20"
+                  class="w-full original-text-textarea"
+                  placeholder="输入原始文本..."
+                />
+              </div>
+              <div class="flex gap-2 justify-end">
+                <Button
+                  label="取消"
+                  class="p-button-text"
+                  @click="cancelOriginalTextEdit"
+                />
+                <Button
+                  label="保存"
+                  @click="saveOriginalTextEdit"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- 翻译预览模式 -->
+          <div v-else-if="editMode === 'preview'" class="translation-preview-container">
+            <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
+              <div
+                v-for="paragraph in selectedChapterParagraphs"
+                :key="paragraph.id"
+                class="translation-preview-paragraph"
+              >
+                <p class="translation-text">{{ getParagraphTranslationText(paragraph) || '(未翻译)' }}</p>
+              </div>
+            </div>
+            <div v-else class="empty-chapter-content">
+              <i class="pi pi-file empty-icon"></i>
+              <p class="empty-text">该章节暂无内容</p>
+              <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
+            </div>
+          </div>
+
+          <!-- 翻译模式（默认） -->
+          <template v-else>
           <!-- 章节标题 -->
           <div class="chapter-header">
             <div class="flex items-center gap-2">
@@ -1740,13 +1983,18 @@ const handleDragLeave = () => {
 
           <!-- 章节段落列表 -->
           <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-            <ParagraphCard
-              v-for="paragraph in selectedChapterParagraphs"
+            <div
+              v-for="(paragraph, index) in selectedChapterParagraphs"
               :key="paragraph.id"
-              :paragraph="paragraph"
-              :terminologies="book?.terminologies || []"
-              :character-settings="book?.characterSettings || []"
-            />
+              class="paragraph-with-line-number"
+            >
+              <span class="line-number">{{ index + 1 }}</span>
+              <ParagraphCard
+                :paragraph="paragraph"
+                :terminologies="book?.terminologies || []"
+                :character-settings="book?.characterSettings || []"
+              />
+            </div>
           </div>
 
           <!-- 空状态 -->
@@ -1755,6 +2003,7 @@ const handleDragLeave = () => {
             <p class="empty-text">该章节暂无内容</p>
             <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
           </div>
+          </template>
         </div>
 
         <!-- 未选择章节时的提示 -->
@@ -2345,8 +2594,12 @@ const handleDragLeave = () => {
 .toolbar-left {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.75rem;
   min-width: 0;
+  flex-shrink: 0;
+  width: 12rem;
+  max-width: 12rem;
 }
 
 .toolbar-chapter-title {
@@ -2356,13 +2609,64 @@ const handleDragLeave = () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
 }
 
-.toolbar-actions {
+.toolbar-separator {
+  width: 1px;
+  height: 1.5rem;
+  background: var(--white-opacity-20);
+  flex-shrink: 0;
+}
+
+.toolbar-center {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
 }
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.toolbar-button-with-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbar-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.75rem;
+  padding: 0 0.375rem;
+  z-index: 1;
+}
+
+.toolbar-edit-mode-buttons {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.toolbar-edit-mode-buttons .p-button.p-highlight {
+  background: var(--primary-opacity-20) !important;
+  border-color: var(--primary-opacity-50) !important;
+  color: var(--primary-opacity-100) !important;
+}
+
 
 .scrollable-content {
   flex: 1;
@@ -2498,6 +2802,85 @@ const handleDragLeave = () => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+/* 带行号的段落 */
+.paragraph-with-line-number {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  position: relative;
+}
+
+.line-number {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 3rem;
+  text-align: right;
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-40);
+  font-family: ui-monospace, 'Courier New', monospace;
+  padding-top: 1rem;
+  padding-right: 0.75rem;
+  user-select: none;
+  align-self: flex-start;
+  line-height: 1.8;
+  font-weight: 500;
+}
+
+.paragraph-with-line-number .paragraph-card {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+  position: relative;
+}
+
+/* 隐藏 ParagraphCard 中的原始段落符号 */
+.paragraph-with-line-number .paragraph-card :deep(.paragraph-icon) {
+  display: none !important;
+}
+
+/* 原始文本编辑容器 */
+.original-text-edit-container {
+  padding: 1.5rem;
+  background: var(--white-opacity-5);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 8px;
+}
+
+.original-text-textarea {
+  font-family: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  color: var(--moon-opacity-90);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
+}
+
+.original-text-textarea:focus {
+  border-color: var(--primary-opacity-50);
+  box-shadow: 0 0 0 0.125rem var(--primary-opacity-20);
+}
+
+/* 翻译预览容器 */
+.translation-preview-container {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.translation-preview-paragraph {
+  padding: 1rem 1.25rem;
+  width: 100%;
+  position: relative;
+}
+
+.translation-text {
+  margin: 0;
+  color: var(--moon-opacity-90);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* 空章节内容状态 */
