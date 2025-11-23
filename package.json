@@ -19,7 +19,9 @@
     "postinstall": "quasar prepare",
     "start:proxy": "bun run server/proxy-server.ts",
     "start:app": "bun run server/app-server.ts",
-    "start": "bun run start:app"
+    "start": "bun run start:app",
+    "build:deploy": "bash scripts/build.sh",
+    "start:deploy": "bash scripts/run.sh"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

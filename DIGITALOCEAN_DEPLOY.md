@@ -24,11 +24,39 @@ git push origin main
 - ✅ `bun.lock` (Bun 的锁文件)
 - ✅ `server/proxy-server.ts`
 - ✅ `server/app-server.ts` (如果使用完整应用部署)
+- ✅ `scripts/build.sh` (构建脚本)
+- ✅ `scripts/run.sh` (运行脚本)
 
 ### 2. 确保 GitHub 仓库已准备好
 
 - 代码已推送到 GitHub
 - 仓库是公开的，或者已授权 DigitalOcean 访问私有仓库
+
+### 3. 关于构建和运行脚本
+
+项目包含两个部署脚本，用于简化 DigitalOcean App Platform 的部署：
+
+- **`scripts/build.sh`**: 构建脚本
+  - 自动安装 Bun（如果尚未安装）
+  - 安装项目依赖
+  - 构建前端应用（SPA）
+  - 用于 `build_command`
+
+- **`scripts/run.sh`**: 运行脚本
+  - 自动安装 Bun（如果尚未安装）
+  - 启动应用服务器
+  - 用于 `run_command`
+
+这些脚本解决了 DigitalOcean App Platform 构建环境和运行环境分离的问题，确保 `bun` 在两个阶段都可用。
+
+**本地测试：**
+```bash
+# 测试构建脚本
+bun run build:deploy
+
+# 测试运行脚本
+bun run start:deploy
+```
 
 ## 部署方式选择
 
@@ -131,11 +159,19 @@ git push origin main
    - 配置：
      - **Build Command**: 
        ```bash
+       bash scripts/build.sh
+       ```
+       或者使用完整命令：
+       ```bash
        curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && bun run build:spa
        ```
      - **Run Command**: 
        ```bash
-       export PATH="$HOME/.bun/bin:$PATH" && bun run start:app
+       bash scripts/run.sh
+       ```
+       或者使用完整命令：
+       ```bash
+       command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash; export PATH="$HOME/.bun/bin:$PATH" && bun run start:app
        ```
      - **HTTP Port**: `8080`
      - **Routes**: `/` → 指向 Web Service
@@ -216,7 +252,17 @@ git push origin main
 
 ### 运行时错误
 
-**问题：** 应用无法启动
+**问题：** `bun: command not found` 或应用无法启动
+
+**原因：**
+DigitalOcean App Platform 的构建环境和运行环境是分离的。在构建时安装的 `bun` 不会自动在运行时可用。
+
+**解决方案：**
+- 确保 `run_command` 中包含 `bun` 的安装步骤
+- 在 `app.yaml.full` 中，`run_command` 应该包含：`command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash; export PATH="$HOME/.bun/bin:$PATH" && bun run start:app`
+- 如果使用手动配置，确保运行命令也安装 `bun`
+
+**问题：** 应用无法启动（其他原因）
 
 **解决方案：**
 - 检查运行命令是否正确

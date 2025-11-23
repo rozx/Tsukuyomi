@@ -10,13 +10,14 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    # 构建命令：安装依赖并构建前端
+    # 构建命令：使用构建脚本安装依赖并构建前端
     # 使用 Bun 作为包管理器
-    build_command: 'curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && bun run build:spa'
-    # 启动命令：运行完整的应用服务器（包含前端静态文件服务和 API 代理）
+    build_command: 'bash scripts/build.sh'
+    # 启动命令：使用运行脚本启动应用服务器（包含前端静态文件服务和 API 代理）
     # DigitalOcean 会自动设置 PORT 环境变量
     # Bun 原生支持 TypeScript，无需编译
-    run_command: 'export PATH="$HOME/.bun/bin:$PATH" && bun run start:app'
+    # 注意：运行脚本会在运行时安装 bun（如果需要），因为构建环境和运行环境是分离的
+    run_command: 'bash scripts/run.sh'
     http_port: 8080
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-0.5gb
