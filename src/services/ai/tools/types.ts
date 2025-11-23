@@ -5,6 +5,7 @@ export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
   entity: 'term' | 'character';
   data: Terminology | CharacterSetting | { id: string; name?: string };
+  previousData?: Terminology | CharacterSetting; // 用于 revert 的原始数据（仅用于 update 操作）
 }
 
 export interface ToolContext {

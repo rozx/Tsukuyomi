@@ -1,6 +1,6 @@
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
-import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
+import { getChapterDisplayTitle, getChapterContentText, getVolumeDisplayTitle } from 'src/utils/novel-utils';
 import type { ToolDefinition } from './types';
 
 export const paragraphTools: ToolDefinition[] = [
@@ -59,6 +59,98 @@ export const paragraphTools: ToolDefinition[] = [
             })) || [],
           volumeCount: book.volumes?.length || 0,
         },
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'list_chapters',
+        description:
+          '获取书籍的所有章节列表，包括每个章节的 ID、标题、翻译进度等。当需要查看所有可用章节并选择参考章节时使用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: '可选，限制返回的章节数量（默认返回所有章节）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { limit } = args;
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 收集所有章节
+      const allChapters: Array<{
+        id: string;
+        title: string;
+        title_original: string;
+        title_translation: string;
+        volumeIndex: number;
+        chapterIndex: number;
+        volumeId: string;
+        volumeTitle: string;
+        paragraphCount: number;
+        translatedCount: number;
+        translationProgress: number;
+      }> = [];
+
+      if (book.volumes) {
+        book.volumes.forEach((volume, volumeIndex) => {
+          if (volume.chapters) {
+            volume.chapters.forEach((chapter, chapterIndex) => {
+              const chapterTitle = getChapterDisplayTitle(chapter);
+              const titleOriginal =
+                typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+              const titleTranslation =
+                typeof chapter.title === 'string'
+                  ? ''
+                  : chapter.title.translation?.translation || '';
+              const paragraphCount = chapter.content?.length || 0;
+              const translatedCount =
+                chapter.content?.filter(
+                  (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
+                ).length || 0;
+              const translationProgress =
+                paragraphCount > 0 ? (translatedCount / paragraphCount) * 100 : 0;
+
+              allChapters.push({
+                id: chapter.id,
+                title: chapterTitle,
+                title_original: titleOriginal,
+                title_translation: titleTranslation,
+                volumeIndex,
+                chapterIndex,
+                volumeId: volume.id,
+                volumeTitle: getVolumeDisplayTitle(volume),
+                paragraphCount,
+                translatedCount,
+                translationProgress: Math.round(translationProgress * 100) / 100,
+              });
+            });
+          }
+        });
+      }
+
+      // 应用限制
+      const chapters = limit && limit > 0 ? allChapters.slice(0, limit) : allChapters;
+
+      return JSON.stringify({
+        success: true,
+        chapters,
+        totalCount: allChapters.length,
       });
     },
   },

@@ -190,7 +190,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'update_character',
         description:
-          '更新现有角色的翻译、描述、性别或别名。当发现角色的信息需要修正时，可以使用此工具更新。⚠️ 重要：在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。',
+          '更新现有角色的翻译、描述、性别或别名。⚠️ **重要**：当发现角色的信息需要修正时（如格式错误、翻译错误、描述格式不符合要求等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。',
         parameters: {
           type: 'object',
           properties: {
@@ -252,6 +252,14 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('角色 ID 不能为空');
       }
 
+      // 在更新前获取原始数据，用于 revert
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      const previousCharacter = book?.characterSettings?.find((c) => c.id === character_id);
+      const previousData = previousCharacter
+        ? (JSON.parse(JSON.stringify(previousCharacter)) as CharacterSetting)
+        : undefined;
+
       const updates: {
         name?: string;
         sex?: 'male' | 'female' | 'other' | undefined;
@@ -296,6 +304,7 @@ export const characterTools: ToolDefinition[] = [
           type: 'update',
           entity: 'character',
           data: character,
+          ...(previousData !== undefined ? { previousData } : {}),
         });
       }
 
@@ -345,10 +354,13 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('角色 ID 不能为空');
       }
 
-      // 在删除前获取角色信息，以便在 toast 中显示详细信息
+      // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const character = book?.characterSettings?.find((c) => c.id === character_id);
+      const previousData = character
+        ? (JSON.parse(JSON.stringify(character)) as CharacterSetting)
+        : undefined;
 
       await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
@@ -357,6 +369,7 @@ export const characterTools: ToolDefinition[] = [
           type: 'delete',
           entity: 'character',
           data: character ? { id: character_id, name: character.name } : { id: character_id },
+          ...(previousData !== undefined ? { previousData } : {}),
         });
       }
 

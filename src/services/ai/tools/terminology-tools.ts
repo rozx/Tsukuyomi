@@ -126,7 +126,7 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'update_term',
-        description: '更新现有术语的翻译或描述。当发现术语的翻译需要修正时，可以使用此工具更新。',
+        description: '更新现有术语的翻译或描述。⚠️ **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
         parameters: {
           type: 'object',
           properties: {
@@ -156,6 +156,14 @@ export const terminologyTools: ToolDefinition[] = [
         throw new Error('术语 ID 不能为空');
       }
 
+      // 在更新前获取原始数据，用于 revert
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
+      const previousData = previousTerm
+        ? (JSON.parse(JSON.stringify(previousTerm)) as Terminology)
+        : undefined;
+
       const updates: {
         translation?: string;
         description?: string;
@@ -175,6 +183,7 @@ export const terminologyTools: ToolDefinition[] = [
           type: 'update',
           entity: 'term',
           data: term,
+          ...(previousData !== undefined ? { previousData } : {}),
         });
       }
 
@@ -217,10 +226,11 @@ export const terminologyTools: ToolDefinition[] = [
         throw new Error('术语 ID 不能为空');
       }
 
-      // 在删除前获取术语信息，以便在 toast 中显示详细信息
+      // 在删除前获取术语信息，以便在 toast 中显示详细信息和 revert
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const term = book?.terminologies?.find((t) => t.id === term_id);
+      const previousData = term ? (JSON.parse(JSON.stringify(term)) as Terminology) : undefined;
 
       await TerminologyService.deleteTerminology(bookId, term_id);
 
@@ -229,6 +239,7 @@ export const terminologyTools: ToolDefinition[] = [
           type: 'delete',
           entity: 'term',
           data: term ? { id: term_id, name: term.name } : { id: term_id },
+          ...(previousData !== undefined ? { previousData } : {}),
         });
       }
 

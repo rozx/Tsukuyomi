@@ -18,6 +18,10 @@ import {
 import { AssistantService } from 'src/services/ai/tasks';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { ActionInfo } from 'src/services/ai/tools';
+import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import { TerminologyService } from 'src/services/terminology-service';
+import type { CharacterSetting, Alias, Terminology } from 'src/models/novel';
 
 const ui = useUiStore();
 const contextStore = useContextStore();
@@ -253,15 +257,32 @@ const sendMessage = async () => {
       const currentSession = chatSessionsStore.currentSession;
       const sessionSummary = currentSession?.summary;
 
-      // 调用 AssistantService
+      // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
+      const messageHistory: AIChatMessage[] | undefined = currentSession?.messages
+        ? currentSession.messages
+            .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+            .map((msg) => ({
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content,
+            }))
+        : undefined;
+
+      // 调用 AssistantService（内部会创建任务并获取 abortController signal）
       const result = await AssistantService.chat(assistantModel.value, message, {
         ...(sessionSummary ? { sessionSummary } : {}),
+        ...(messageHistory ? { messageHistory } : {}),
       onChunk: (chunk) => {
         // 更新助手消息内容
         const msg = messages.value.find((m) => m.id === assistantMessageId);
-        if (msg && chunk.text) {
-          msg.content += chunk.text;
-          scrollToBottom();
+        if (msg) {
+          if (chunk.text) {
+            msg.content += chunk.text;
+            scrollToBottom();
+          }
+          // 如果消息内容仍然为空，至少显示一个提示
+          if (!msg.content && !chunk.text) {
+            msg.content = '正在思考...';
+          }
         }
       },
       onAction: (action: ActionInfo) => {
@@ -285,19 +306,483 @@ const sendMessage = async () => {
           term: '术语',
           character: '角色',
         };
-        toast.add({
-          severity: 'success',
-          summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
-          detail: action.type === 'create' && 'name' in action.data 
-            ? `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`
-            : `${entityLabels[action.entity]}已${actionLabels[action.type]}`,
-          life: 2000,
-        });
+        
+        // 构建详细的 toast 消息
+        let detail = '';
+        let shouldShowRevertToast = false;
+        
+        if (action.type === 'create' && 'name' in action.data) {
+          // 创建操作：显示详细信息
+          if (action.entity === 'character' && 'id' in action.data) {
+            const character = action.data as CharacterSetting;
+            const parts: string[] = [];
+            
+            // 角色名称和翻译（主要信息）
+            if (character.name) {
+              const translation = character.translation?.translation;
+              if (translation) {
+                parts.push(`${character.name} → ${translation}`);
+              } else {
+                parts.push(character.name);
+              }
+            }
+            
+            // 其他详细信息
+            const details: string[] = [];
+            
+            // 性别
+            if (character.sex) {
+              const sexLabels: Record<string, string> = {
+                male: '男',
+                female: '女',
+                other: '其他',
+              };
+              details.push(`性别：${sexLabels[character.sex] || character.sex}`);
+            }
+            
+            // 说话口吻
+            if (character.speakingStyle) {
+              details.push(`口吻：${character.speakingStyle}`);
+            }
+            
+            // 别名数量
+            if (character.aliases && character.aliases.length > 0) {
+              details.push(`别名：${character.aliases.length} 个`);
+            }
+            
+            // 出现次数
+            if (character.occurrences && character.occurrences.length > 0) {
+              const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              details.push(`出现：${totalOccurrences} 次`);
+            }
+            
+            // 组合消息
+            const mainInfo = parts.join(' | ');
+            if (mainInfo && details.length > 0) {
+              detail = `${mainInfo} | ${details.join(' | ')}`;
+            } else if (mainInfo) {
+              detail = mainInfo;
+            } else if (details.length > 0) {
+              detail = details.join(' | ');
+            } else {
+              detail = `角色 "${character.name}" 已创建`;
+            }
+            
+            // 为创建操作添加 revert（删除）
+            if (contextStore.getContext.currentBookId) {
+              shouldShowRevertToast = true;
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                detail,
+                life: 3000,
+                onRevert: async () => {
+                  if (contextStore.getContext.currentBookId) {
+                    await CharacterSettingService.deleteCharacterSetting(
+                      contextStore.getContext.currentBookId,
+                      character.id,
+                    );
+                  }
+                },
+              });
+            }
+          } else if (action.entity === 'term' && 'id' in action.data) {
+            const term = action.data as Terminology;
+            const parts: string[] = [];
+            
+            // 术语名称和翻译（主要信息）
+            if (term.name) {
+              const translation = term.translation?.translation;
+              if (translation) {
+                parts.push(`${term.name} → ${translation}`);
+              } else {
+                parts.push(term.name);
+              }
+            }
+            
+            // 其他详细信息
+            const details: string[] = [];
+            
+            // 描述
+            if (term.description) {
+              details.push(`描述：${term.description}`);
+            }
+            
+            // 出现次数
+            if (term.occurrences && term.occurrences.length > 0) {
+              const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              details.push(`出现：${totalOccurrences} 次`);
+            }
+            
+            // 组合消息
+            const mainInfo = parts.join(' | ');
+            if (mainInfo && details.length > 0) {
+              detail = `${mainInfo} | ${details.join(' | ')}`;
+            } else if (mainInfo) {
+              detail = mainInfo;
+            } else if (details.length > 0) {
+              detail = details.join(' | ');
+            } else {
+              detail = `术语 "${term.name}" 已创建`;
+            }
+            
+            // 为创建操作添加 revert（删除）
+            if (contextStore.getContext.currentBookId) {
+              shouldShowRevertToast = true;
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                detail,
+                life: 3000,
+                onRevert: async () => {
+                  if (contextStore.getContext.currentBookId) {
+                    await TerminologyService.deleteTerminology(
+                      contextStore.getContext.currentBookId,
+                      term.id,
+                    );
+                  }
+                },
+              });
+            }
+          } else {
+            // 默认创建消息
+            detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
+          }
+        } else if (action.type === 'update' && action.entity === 'character' && 'name' in action.data) {
+          // 角色更新操作：显示详细信息
+          const character = action.data as import('src/models/novel').CharacterSetting;
+          const parts: string[] = [];
+          
+          // 角色名称和翻译（主要信息）
+          if (character.name) {
+            const translation = character.translation?.translation;
+            if (translation) {
+              parts.push(`${character.name} → ${translation}`);
+            } else {
+              parts.push(character.name);
+            }
+          }
+          
+          // 其他详细信息
+          const details: string[] = [];
+          
+          // 性别
+          if (character.sex) {
+            const sexLabels: Record<string, string> = {
+              male: '男',
+              female: '女',
+              other: '其他',
+            };
+            details.push(`性别：${sexLabels[character.sex] || character.sex}`);
+          }
+          
+          // 说话口吻
+          if (character.speakingStyle) {
+            details.push(`口吻：${character.speakingStyle}`);
+          }
+          
+          // 别名数量
+          if (character.aliases && character.aliases.length > 0) {
+            details.push(`别名：${character.aliases.length} 个`);
+          }
+          
+          // 出现次数
+          if (character.occurrences && character.occurrences.length > 0) {
+            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+            details.push(`出现：${totalOccurrences} 次`);
+          }
+          
+          // 组合消息
+          const mainInfo = parts.join(' | ');
+          if (mainInfo && details.length > 0) {
+            detail = `${mainInfo} | ${details.join(' | ')}`;
+          } else if (mainInfo) {
+            detail = mainInfo;
+          } else if (details.length > 0) {
+            detail = details.join(' | ');
+          } else {
+            detail = '角色已更新';
+          }
+          
+          // 添加 revert 功能
+          const previousCharacter = action.previousData as CharacterSetting | undefined;
+          
+          if (previousCharacter && contextStore.getContext.currentBookId) {
+            shouldShowRevertToast = true;
+            toast.add({
+              severity: 'success',
+              summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+              detail,
+              life: 3000,
+              onRevert: async () => {
+                if (previousCharacter && contextStore.getContext.currentBookId) {
+                  await CharacterSettingService.updateCharacterSetting(
+                    contextStore.getContext.currentBookId,
+                    previousCharacter.id,
+                    {
+                      name: previousCharacter.name,
+                      sex: previousCharacter.sex,
+                      translation: previousCharacter.translation.translation,
+                      ...(previousCharacter.description !== undefined
+                        ? { description: previousCharacter.description }
+                        : {}),
+                      ...(previousCharacter.speakingStyle !== undefined
+                        ? { speakingStyle: previousCharacter.speakingStyle }
+                        : {}),
+                      ...(previousCharacter.aliases !== undefined
+                        ? {
+                            aliases: previousCharacter.aliases.map((a: Alias) => ({
+                              name: a.name,
+                              translation: a.translation.translation,
+                            })),
+                          }
+                        : {}),
+                    },
+                  );
+                }
+              },
+            });
+          }
+        } else if (action.type === 'update' && action.entity === 'term' && 'name' in action.data) {
+          // 术语更新操作：显示详细信息
+          const term = action.data as import('src/models/novel').Terminology;
+          const parts: string[] = [];
+          
+          // 术语名称和翻译（主要信息）
+          if (term.name) {
+            const translation = term.translation?.translation;
+            if (translation) {
+              parts.push(`${term.name} → ${translation}`);
+            } else {
+              parts.push(term.name);
+            }
+          }
+          
+          // 其他详细信息
+          const details: string[] = [];
+          
+          // 描述
+          if (term.description) {
+            details.push(`描述：${term.description}`);
+          }
+          
+          // 出现次数
+          if (term.occurrences && term.occurrences.length > 0) {
+            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+            details.push(`出现：${totalOccurrences} 次`);
+          }
+          
+          // 组合消息
+          const mainInfo = parts.join(' | ');
+          if (mainInfo && details.length > 0) {
+            detail = `${mainInfo} | ${details.join(' | ')}`;
+          } else if (mainInfo) {
+            detail = mainInfo;
+          } else if (details.length > 0) {
+            detail = details.join(' | ');
+          } else {
+            detail = `术语 "${term.name}" 已更新`;
+          }
+          
+          // 添加 revert 功能
+          const previousTerm = action.previousData as Terminology | undefined;
+          
+          if (previousTerm && contextStore.getContext.currentBookId) {
+            shouldShowRevertToast = true;
+            toast.add({
+              severity: 'success',
+              summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+              detail,
+              life: 3000,
+              onRevert: async () => {
+                if (previousTerm && contextStore.getContext.currentBookId) {
+                  await TerminologyService.updateTerminology(
+                    contextStore.getContext.currentBookId,
+                    previousTerm.id,
+                    {
+                      name: previousTerm.name,
+                      translation: previousTerm.translation.translation,
+                      ...(previousTerm.description !== undefined
+                        ? { description: previousTerm.description }
+                        : {}),
+                    },
+                  );
+                }
+              },
+            });
+          }
+        } else if (action.type === 'delete' && 'name' in action.data) {
+          // 删除操作：显示详细信息（从 previousData 获取）
+          if (action.entity === 'character' && action.previousData) {
+            const previousCharacter = action.previousData as CharacterSetting;
+            const parts: string[] = [];
+            
+            // 角色名称和翻译（主要信息）
+            if (previousCharacter.name) {
+              const translation = previousCharacter.translation?.translation;
+              if (translation) {
+                parts.push(`${previousCharacter.name} → ${translation}`);
+              } else {
+                parts.push(previousCharacter.name);
+              }
+            }
+            
+            // 其他详细信息
+            const details: string[] = [];
+            
+            // 性别
+            if (previousCharacter.sex) {
+              const sexLabels: Record<string, string> = {
+                male: '男',
+                female: '女',
+                other: '其他',
+              };
+              details.push(`性别：${sexLabels[previousCharacter.sex] || previousCharacter.sex}`);
+            }
+            
+            // 说话口吻
+            if (previousCharacter.speakingStyle) {
+              details.push(`口吻：${previousCharacter.speakingStyle}`);
+            }
+            
+            // 别名数量
+            if (previousCharacter.aliases && previousCharacter.aliases.length > 0) {
+              details.push(`别名：${previousCharacter.aliases.length} 个`);
+            }
+            
+            // 出现次数
+            if (previousCharacter.occurrences && previousCharacter.occurrences.length > 0) {
+              const totalOccurrences = previousCharacter.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              details.push(`出现：${totalOccurrences} 次`);
+            }
+            
+            // 组合消息
+            const mainInfo = parts.join(' | ');
+            if (mainInfo && details.length > 0) {
+              detail = `已删除：${mainInfo} | ${details.join(' | ')}`;
+            } else if (mainInfo) {
+              detail = `已删除：${mainInfo}`;
+            } else if (details.length > 0) {
+              detail = `已删除角色 | ${details.join(' | ')}`;
+            } else {
+              detail = `角色 "${previousCharacter.name}" 已删除`;
+            }
+            
+            // 为删除操作添加 revert（恢复）
+            if (contextStore.getContext.currentBookId) {
+              shouldShowRevertToast = true;
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                detail,
+                life: 3000,
+                onRevert: async () => {
+                  if (previousCharacter && contextStore.getContext.currentBookId) {
+                    const booksStore = useBooksStore();
+                    const book = booksStore.getBookById(contextStore.getContext.currentBookId);
+                    if (book) {
+                      const current = book.characterSettings || [];
+                      // 检查是否存在（避免重复）
+                      if (!current.some((c) => c.id === previousCharacter.id)) {
+                        await booksStore.updateBook(book.id, {
+                          characterSettings: [...current, previousCharacter],
+                          lastEdited: new Date(),
+                        });
+                      }
+                    }
+                  }
+                },
+              });
+            }
+          } else if (action.entity === 'term' && action.previousData) {
+            const previousTerm = action.previousData as Terminology;
+            const parts: string[] = [];
+            
+            // 术语名称和翻译（主要信息）
+            if (previousTerm.name) {
+              const translation = previousTerm.translation?.translation;
+              if (translation) {
+                parts.push(`${previousTerm.name} → ${translation}`);
+              } else {
+                parts.push(previousTerm.name);
+              }
+            }
+            
+            // 其他详细信息
+            const details: string[] = [];
+            
+            // 描述
+            if (previousTerm.description) {
+              details.push(`描述：${previousTerm.description}`);
+            }
+            
+            // 出现次数
+            if (previousTerm.occurrences && previousTerm.occurrences.length > 0) {
+              const totalOccurrences = previousTerm.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              details.push(`出现：${totalOccurrences} 次`);
+            }
+            
+            // 组合消息
+            const mainInfo = parts.join(' | ');
+            if (mainInfo && details.length > 0) {
+              detail = `已删除：${mainInfo} | ${details.join(' | ')}`;
+            } else if (mainInfo) {
+              detail = `已删除：${mainInfo}`;
+            } else if (details.length > 0) {
+              detail = `已删除术语 | ${details.join(' | ')}`;
+            } else {
+              detail = `术语 "${previousTerm.name}" 已删除`;
+            }
+            
+            // 为删除操作添加 revert（恢复）
+            if (contextStore.getContext.currentBookId) {
+              shouldShowRevertToast = true;
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                detail,
+                life: 3000,
+                onRevert: async () => {
+                  if (previousTerm && contextStore.getContext.currentBookId) {
+                    const booksStore = useBooksStore();
+                    const book = booksStore.getBookById(contextStore.getContext.currentBookId);
+                    if (book) {
+                      const current = book.terminologies || [];
+                      // 检查是否存在（避免重复）
+                      if (!current.some((t) => t.id === previousTerm.id)) {
+                        await booksStore.updateBook(book.id, {
+                          terminologies: [...current, previousTerm],
+                          lastEdited: new Date(),
+                        });
+                      }
+                    }
+                  }
+                },
+              });
+            }
+          } else {
+            // 默认删除消息
+            detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
+          }
+        } else {
+          // 默认消息
+          detail = `${entityLabels[action.entity]}已${actionLabels[action.type]}`;
+        }
+        
+        // 如果没有显示带 revert 的 toast，显示通用 toast
+        if (!shouldShowRevertToast) {
+          toast.add({
+            severity: 'success',
+            summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+            detail,
+            life: 3000,
+          });
+        }
       },
       aiProcessingStore: {
         addTask: async (task) => {
+          // AssistantService 内部会调用此方法来创建任务
           const id = await aiProcessingStore.addTask(task);
-          currentTaskId.value = id;
           return id;
         },
         updateTask: async (id, updates) => {
@@ -309,19 +794,36 @@ const sendMessage = async () => {
         removeTask: async (id) => {
           await aiProcessingStore.removeTask(id);
         },
+        activeTasks: aiProcessingStore.activeTasks,
       },
     });
+
+    // 保存 taskId（从 result 中获取，因为任务是在 AssistantService 内部创建的）
+    if (result.taskId) {
+      currentTaskId.value = result.taskId;
+    }
 
     // 更新最终消息内容
     const msg = messages.value.find((m) => m.id === assistantMessageId);
     if (msg) {
+      // 如果 result.text 有内容，使用它（这会覆盖流式累积的内容，确保最终一致性）
+      // 如果 result.text 为空但 msg.content 有内容（来自流式更新），保留流式内容
+      // 如果两者都为空，显示错误提示
       if (result.text) {
         msg.content = result.text;
+      } else if (!msg.content) {
+        // 如果既没有流式内容也没有最终内容，可能是响应为空
+        msg.content = '抱歉，我没有收到有效的回复。请重试。';
       }
       // 添加操作信息到消息
       if (currentMessageActions.value.length > 0) {
         msg.actions = [...currentMessageActions.value];
       }
+    }
+
+    // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
+    if (currentSession) {
+      chatSessionsStore.updateCurrentSessionMessages(messages.value);
     }
     
     // 清空操作列表（消息完成后）
