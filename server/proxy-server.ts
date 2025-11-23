@@ -140,6 +140,10 @@ proxyConfigs.forEach((config) => {
     target: proxyOptions.target,
     changeOrigin: proxyOptions.changeOrigin,
     pathRewrite: proxyOptions.pathRewrite,
+    // 设置超时时间为 60 秒（比前端的 30 秒更长，确保有足够时间处理）
+    timeout: 60000,
+    // 设置代理请求超时
+    proxyTimeout: 60000,
     on: {
       proxyReq: (
         proxyReq: ClientRequest,
@@ -164,8 +168,10 @@ proxyConfigs.forEach((config) => {
         if (res && 'status' in res && 'headersSent' in res) {
           const expressRes = res as unknown as Response;
           if (!expressRes.headersSent) {
-            expressRes.status(500).json({
-              error: '代理请求失败',
+            // 检查是否是超时错误
+            const isTimeout = err.message.includes('timeout') || err.message.includes('ETIMEDOUT');
+            expressRes.status(isTimeout ? 504 : 500).json({
+              error: isTimeout ? '代理请求超时' : '代理请求失败',
               message: err.message,
             });
           }

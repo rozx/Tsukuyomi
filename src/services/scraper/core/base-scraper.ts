@@ -110,7 +110,7 @@ export abstract class BaseScraper implements NovelScraper {
           }
 
           const response = await axios.get(finalUrl, {
-            timeout: 30000, // 30 秒超时
+            timeout: 60000, // 60 秒超时（与代理服务器超时时间一致）
             headers,
             validateStatus: (status) => status >= 200 && status < 400,
           });

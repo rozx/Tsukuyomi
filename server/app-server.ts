@@ -150,6 +150,10 @@ proxyConfigs.forEach((config) => {
     target: proxyOptions.target,
     changeOrigin: proxyOptions.changeOrigin,
     pathRewrite: proxyOptions.pathRewrite,
+    // 设置超时时间为 60 秒（比前端的 30 秒更长，确保有足够时间处理）
+    timeout: 60000,
+    // 设置代理请求超时
+    proxyTimeout: 60000,
     on: {
       proxyReq: (
         proxyReq: ClientRequest,
@@ -174,8 +178,10 @@ proxyConfigs.forEach((config) => {
         if (res && 'status' in res && 'headersSent' in res) {
           const expressRes = res as unknown as Response;
           if (!expressRes.headersSent) {
-            expressRes.status(500).json({
-              error: '代理请求失败',
+            // 检查是否是超时错误
+            const isTimeout = err.message.includes('timeout') || err.message.includes('ETIMEDOUT');
+            expressRes.status(isTimeout ? 504 : 500).json({
+              error: isTimeout ? '代理请求超时' : '代理请求失败',
               message: err.message,
             });
           }
@@ -222,7 +228,7 @@ if (isProduction) {
 } else {
   // 开发环境：代理到 Vite 开发服务器
   const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
-  
+
   // 代理所有非 API 请求到 Vite 开发服务器
   const viteProxy = createProxyMiddleware({
     target: viteTarget,
@@ -261,7 +267,7 @@ if (isProduction) {
       },
     },
   });
-  
+
   // 代理所有非 API 路由到 Vite
   app.use((req, res, next) => {
     if (req.path.startsWith('/api')) {
@@ -269,13 +275,17 @@ if (isProduction) {
     }
     viteProxy(req, res, next);
   });
-  
+
   console.log(`开发模式: 代理到 Vite 开发服务器 ${viteTarget}`);
 }
 
 // 健康检查端点
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'luna-ai-translator', mode: isProduction ? 'production' : 'development' });
+  res.json({
+    status: 'ok',
+    service: 'luna-ai-translator',
+    mode: isProduction ? 'production' : 'development',
+  });
 });
 
 // 启动服务器
@@ -289,4 +299,3 @@ app.listen(PORT, () => {
     });
   }
 });
-
