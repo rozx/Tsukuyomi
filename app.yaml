@@ -1,46 +1,29 @@
 name: luna-ai-translator
 region: nyc
 
-# API 代理服务配置（处理 /api/* 请求）
+# 完整 Node.js 应用部署配置（前端 + 后端）
+# 使用此配置将前端和后端整合在一个服务中
 services:
-  - name: api-proxy
+  - name: luna-app
     github:
       repo: rozx/luna-ai-translator
       branch: main
       deploy_on_push: true
     source_dir: /
+    # 构建命令：安装依赖并构建前端
     # 使用 Bun 作为包管理器
-    # 注意：DigitalOcean 会自动设置 PORT 环境变量，无需在代码中硬编码
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && test -f server/proxy-server.ts || (echo "Error: server/proxy-server.ts not found" && exit 1)
-    # 使用 Bun 运行 TypeScript（Bun 原生支持 TypeScript）
-    run_command: export PATH="$HOME/.bun/bin:$PATH" && bun run server/proxy-server.ts
+    build_command: 'curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && bun run build:spa'
+    # 启动命令：运行完整的应用服务器（包含前端静态文件服务和 API 代理）
+    # DigitalOcean 会自动设置 PORT 环境变量
+    # Bun 原生支持 TypeScript，无需编译
+    run_command: 'export PATH="$HOME/.bun/bin:$PATH" && bun run start:app'
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xxs
     routes:
-      - path: /api
+      - path: /
     envs:
       - key: NODE_ENV
         value: production
         scope: RUN_TIME
-
-# 静态站点配置（处理其他所有请求）
-static_sites:
-  - name: web
-    github:
-      repo: rozx/luna-ai-translator
-      branch: main
-      deploy_on_push: true
-    source_dir: /
-    # 使用 Bun 作为包管理器
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && bun run build:spa
-    output_dir: dist/spa
-    envs:
-      - key: NODE_ENV
-        value: production
-        scope: BUILD_TIME
-    routes:
-      - path: /
-    # History 路由模式需要 catchall_document 将所有路由重定向到 index.html
-    catchall_document: index.html
 
