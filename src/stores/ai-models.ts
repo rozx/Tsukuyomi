@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { AIModel } from 'src/types/ai/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import { useSettingsStore } from './settings';
 import { aiModelService } from 'src/services/ai-model-service';
 

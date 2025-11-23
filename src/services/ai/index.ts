@@ -1,4 +1,4 @@
-import type { AIProvider } from 'src/types/ai/ai-model';
+import type { AIProvider } from 'src/services/ai/types/ai-model';
 import type {
   AIService,
   AIServiceConfig,
@@ -7,7 +7,7 @@ import type {
   TextGenerationResult,
   TextGenerationStreamCallback,
   AvailableModelsResult,
-} from 'src/types/ai/ai-service';
+} from 'src/services/ai/types/ai-service';
 import { OpenAIService } from './providers';
 import { GeminiService } from './providers';
 
@@ -75,8 +75,8 @@ export class AIServiceFactory {
 }
 
 // 导出类型和接口
-export * from 'src/types/ai/ai-service';
-export * from 'src/types/ai/interfaces';
+export * from 'src/services/ai/types/ai-service';
+export * from 'src/services/ai/types/interfaces';
 export * from 'src/constants/ai';
 
 // 导出核心服务

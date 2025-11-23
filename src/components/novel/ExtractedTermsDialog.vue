@@ -7,7 +7,7 @@ import Dialog from 'primevue/dialog';
 import Slider from 'primevue/slider';
 import InputNumber from 'primevue/inputnumber';
 import Listbox from 'primevue/listbox';
-import type { Novel, Chapter, Volume } from 'src/types/novel';
+import type { Novel, Chapter, Volume } from 'src/models/novel';
 import { TerminologyService, type ExtractedTermInfo } from 'src/services/terminology-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 

@@ -1,9 +1,9 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { Novel } from 'src/types/novel';
-import type { AIModel } from 'src/types/ai/ai-model';
-import type { AppSettings } from 'src/types/settings';
-import type { CoverHistoryItem } from 'src/types/novel';
-import type { SyncConfig } from 'src/types/sync';
+import type { Novel } from 'src/models/novel';
+import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { AppSettings } from 'src/models/settings';
+import type { CoverHistoryItem } from 'src/models/novel';
+import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 

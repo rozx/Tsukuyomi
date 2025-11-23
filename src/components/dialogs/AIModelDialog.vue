@@ -8,8 +8,8 @@ import Checkbox from 'primevue/checkbox';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { AIModel, AIProvider } from 'src/types/ai/ai-model';
-import type { ModelInfo } from 'src/types/ai/ai-service';
+import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
+import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
 
 const props = withDefaults(

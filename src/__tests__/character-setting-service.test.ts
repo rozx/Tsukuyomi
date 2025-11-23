@@ -1,6 +1,6 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
 import { CharacterSettingService } from 'src/services/character-setting-service';
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 
 const mockUpdateBook = mock(() => Promise.resolve());
 const mockGetBookById = mock((_id: string) => null as Novel | null);

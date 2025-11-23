@@ -1,4 +1,4 @@
-import type { Terminology, CharacterSetting } from 'src/types/novel';
+import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { getCharacterNameVariants } from './novel-utils';
 
 // 转义正则表达式特殊字符

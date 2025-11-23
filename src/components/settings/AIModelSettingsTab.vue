@@ -2,7 +2,7 @@
 import Select from 'primevue/select';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
-import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
+import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 
 const aiModelsStore = useAIModelsStore();
 const settingsStore = useSettingsStore();

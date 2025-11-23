@@ -1,4 +1,4 @@
-import type { Novel } from './novel';
+import type { Novel } from '../../models/novel';
 
 /**
  * 爬虫服务接口

@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 
 export const useBooksStore = defineStore('books', {

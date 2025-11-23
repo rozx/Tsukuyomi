@@ -14,9 +14,9 @@ import ConflictResolutionDialog, {
 } from 'src/components/dialogs/ConflictResolutionDialog.vue';
 import type { ConflictItem } from 'src/services/conflict-detection-service';
 import { SyncDataService } from 'src/services/sync-data-service';
-import type { Novel, CoverHistoryItem } from 'src/types/novel';
-import type { AIModel } from 'src/types/ai/ai-model';
-import type { AppSettings } from 'src/types/settings';
+import type { Novel, CoverHistoryItem } from 'src/models/novel';
+import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { AppSettings } from 'src/models/settings';
 
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();

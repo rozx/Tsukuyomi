@@ -3,7 +3,7 @@ import type { MenuItem } from 'primevue/menuitem';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 import SettingsDialog from '../dialogs/SettingsDialog.vue';
 
 const router = useRouter();

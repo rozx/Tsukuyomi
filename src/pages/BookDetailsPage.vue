@@ -32,7 +32,7 @@ import {
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/types/novel';
+import type { Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';

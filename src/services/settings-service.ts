@@ -3,11 +3,11 @@ import type {
   ExportResult,
   ImportResult,
   AppSettings,
-} from 'src/types/settings';
-import type { AIModel } from 'src/types/ai/ai-model';
-import type { Novel, CoverHistoryItem } from 'src/types/novel';
-import type { SyncConfig } from 'src/types/sync';
-import { SyncType } from 'src/types/sync';
+} from 'src/models/settings';
+import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { Novel, CoverHistoryItem } from 'src/models/novel';
+import type { SyncConfig } from 'src/models/sync';
+import { SyncType } from 'src/models/sync';
 
 /**
  * 设置服务

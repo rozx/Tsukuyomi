@@ -7,8 +7,8 @@ import type {
   TextGenerationResult,
   TextGenerationStreamCallback,
   AvailableModelsResult,
-} from 'src/types/ai/ai-service';
-import type { ParsedResponse, ConfigJson, ConfigParseResult } from 'src/types/ai/interfaces';
+} from 'src/services/ai/types/ai-service';
+import type { ParsedResponse, ConfigJson, ConfigParseResult } from 'src/services/ai/types/interfaces';
 import { CONFIG_PROMPT, DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
 
 /**

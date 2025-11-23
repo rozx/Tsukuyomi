@@ -4,8 +4,8 @@ import type {
   FetchNovelResult,
   ParsedChapterInfo,
   ParsedVolumeInfo,
-} from 'src/types/scraper';
-import type { Novel, Chapter, Volume, Translation } from 'src/types/novel';
+} from 'src/services/scraper/types';
+import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 
 /**

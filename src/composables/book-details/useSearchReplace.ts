@@ -1,7 +1,7 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
-import type { Chapter, Paragraph, Novel } from 'src/types/novel';
+import type { Chapter, Paragraph, Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 
 export function useSearchReplace(

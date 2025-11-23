@@ -5,7 +5,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Chips from 'primevue/chips';
-import type { Novel, Chapter } from 'src/types/novel';
+import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
 import TranslatableInput from '../translation/TranslatableInput.vue';

@@ -1,5 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
-import type { AIModel } from 'src/types/ai/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 
 export class AIModelService {
   /**

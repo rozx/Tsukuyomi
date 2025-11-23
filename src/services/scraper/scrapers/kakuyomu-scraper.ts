@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
-import type { Novel } from 'src/types/novel';
-import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/types/scraper';
+import type { Novel } from 'src/models/novel';
+import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
 
 /**

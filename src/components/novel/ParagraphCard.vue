@@ -5,7 +5,7 @@ import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
 import Textarea from 'primevue/textarea';
 import Button from 'primevue/button';
-import type { Paragraph, Terminology, CharacterSetting } from 'src/types/novel';
+import type { Paragraph, Terminology, CharacterSetting } from 'src/models/novel';
 import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';

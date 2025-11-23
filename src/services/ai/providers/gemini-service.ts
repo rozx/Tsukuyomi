@@ -5,8 +5,8 @@ import type {
   TextGenerationResult,
   TextGenerationStreamCallback,
   ModelInfo,
-} from 'src/types/ai/ai-service';
-import type { ParsedResponse } from 'src/types/ai/interfaces';
+} from 'src/services/ai/types/ai-service';
+import type { ParsedResponse } from 'src/services/ai/types/interfaces';
 import { BaseAIService } from '../core';
 import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
 

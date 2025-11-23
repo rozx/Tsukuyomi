@@ -1,5 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 
 /**
  * 书籍服务

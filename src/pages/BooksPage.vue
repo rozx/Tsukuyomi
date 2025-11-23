@@ -14,7 +14,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CoverService } from 'src/services/cover-service';
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import {

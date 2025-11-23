@@ -1,7 +1,7 @@
-import type { Novel } from 'src/types/novel';
-import type { AIModel, AIProvider, AIModelDefaultTasks } from 'src/types/ai/ai-model';
-import type { AppSettings } from 'src/types/settings';
-import type { CoverHistoryItem } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
+import type { AIModel, AIProvider, AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
+import type { AppSettings } from 'src/models/settings';
+import type { CoverHistoryItem } from 'src/models/novel';
 
 /**
  * 冲突类型

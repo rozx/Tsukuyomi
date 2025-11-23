@@ -4,7 +4,7 @@ import type {
   Occurrence,
   Translation,
   Novel,
-} from 'src/types/novel';
+} from 'src/models/novel';
 import { flatMap, isEmpty, isArray, isEqual, sortBy } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import {

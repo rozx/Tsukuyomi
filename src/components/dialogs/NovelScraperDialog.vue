@@ -9,7 +9,7 @@ import SplitterPanel from 'primevue/splitterpanel';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
 // 不再需要 words-count 包，直接使用字符串长度计算字符数
-import type { Novel, Chapter } from 'src/types/novel';
+import type { Novel, Chapter } from 'src/models/novel';
 import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';

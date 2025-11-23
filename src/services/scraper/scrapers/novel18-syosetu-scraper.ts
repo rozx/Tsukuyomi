@@ -1,4 +1,4 @@
-import type { FetchNovelResult } from 'src/types/scraper';
+import type { FetchNovelResult } from 'src/services/scraper/types';
 import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
 
 /**

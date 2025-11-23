@@ -1,4 +1,4 @@
-import type { AIModel } from './ai/ai-model';
+import type { AIModel } from '../services/ai/types/ai-model';
 
 // 小说
 export interface Novel {

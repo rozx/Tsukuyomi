@@ -5,7 +5,7 @@ import type {
   Terminology,
   Translation,
   Novel,
-} from 'src/types/novel';
+} from 'src/models/novel';
 import { TokenizerBuilder, type LoaderConfig } from '@patdx/kuromoji';
 import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';

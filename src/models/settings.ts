@@ -1,4 +1,4 @@
-import type { AIModel } from './ai/ai-model';
+import type { AIModel } from '../services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from './novel';
 import type { SyncConfig } from './sync';
 import type { AIModelDefaultTasks } from './ai/ai-model';

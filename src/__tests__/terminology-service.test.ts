@@ -20,7 +20,7 @@ declare const expect: (actual: unknown) => {
   };
 };
 
-import type { Chapter, Paragraph } from 'src/types/novel';
+import type { Chapter, Paragraph } from 'src/models/novel';
 import { TerminologyService, type ExtractedTermInfo } from 'src/services/terminology-service';
 
 // Mock FileReader for import tests

@@ -6,7 +6,7 @@ import Textarea from 'primevue/textarea';
 import Dialog from 'primevue/dialog';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
-import type { Terminology } from 'src/types/novel';
+import type { Terminology } from 'src/models/novel';
 
 const props = defineProps<{
   visible: boolean;

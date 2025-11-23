@@ -11,7 +11,7 @@ import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue'
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
-import type { Novel, Alias } from 'src/types/novel';
+import type { Novel, Alias } from 'src/models/novel';
 
 const props = defineProps<{
   book: Novel | null;

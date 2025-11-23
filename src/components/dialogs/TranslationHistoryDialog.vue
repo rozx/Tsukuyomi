@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
-import type { Paragraph, Translation } from 'src/types/novel';
+import type { Paragraph, Translation } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
 
 const props = defineProps<{

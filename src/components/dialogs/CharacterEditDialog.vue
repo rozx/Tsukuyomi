@@ -7,7 +7,7 @@ import Dialog from 'primevue/dialog';
 import SelectButton from 'primevue/selectbutton';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
-import type { CharacterSetting, Alias } from 'src/types/novel';
+import type { CharacterSetting, Alias } from 'src/models/novel';
 
 const props = defineProps<{
   visible: boolean;

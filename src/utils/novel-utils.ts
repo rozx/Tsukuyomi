@@ -1,4 +1,4 @@
-import type { Novel, Chapter, Volume } from 'src/types/novel';
+import type { Novel, Chapter, Volume } from 'src/models/novel';
 
 /**
  * 获取卷的显示标题（优先使用翻译，否则使用原文）

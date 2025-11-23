@@ -1,9 +1,9 @@
-import type { AIModel } from 'src/types/ai/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
-} from 'src/types/ai/ai-service';
+} from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { AIServiceFactory } from '../index';
 

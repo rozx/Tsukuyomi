@@ -6,7 +6,7 @@ import InputText from 'primevue/inputtext';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import type { CoverImage } from 'src/types/novel';
+import type { CoverImage } from 'src/models/novel';
 
 const props = defineProps<{
   visible: boolean;

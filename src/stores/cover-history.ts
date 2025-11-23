@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { CoverHistoryItem, CoverImage } from 'src/types/novel';
+import type { CoverHistoryItem, CoverImage } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
 
 /**

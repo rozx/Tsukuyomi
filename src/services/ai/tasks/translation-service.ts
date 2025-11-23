@@ -1,4 +1,4 @@
-import type { AIModel } from 'src/types/ai/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIServiceConfig,
   TextGenerationRequest,
@@ -7,9 +7,9 @@ import type {
   AIToolCall,
   AIToolCallResult,
   ChatMessage,
-} from 'src/types/ai/ai-service';
+} from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type { Terminology, CharacterSetting, Paragraph, Novel } from 'src/types/novel';
+import type { Terminology, CharacterSetting, Paragraph, Novel } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';

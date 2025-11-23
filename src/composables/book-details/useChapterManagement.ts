@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import { useToast } from 'primevue/usetoast';
-import type { Volume, Chapter, Novel } from 'src/types/novel';
+import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { TerminologyService } from 'src/services/terminology-service';

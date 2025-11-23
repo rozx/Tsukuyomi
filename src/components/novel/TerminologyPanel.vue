@@ -9,7 +9,7 @@ import { useConfirm } from 'primevue/useconfirm';
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
 import SettingCard from './SettingCard.vue';
-import type { Novel, Terminology } from 'src/types/novel';
+import type { Novel, Terminology } from 'src/models/novel';
 import ExtractedTermsDialog from './ExtractedTermsDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';

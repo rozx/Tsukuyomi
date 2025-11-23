@@ -1,4 +1,4 @@
-import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/types/novel';
+import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import { getChapterContentText, getChapterDisplayTitle } from 'src/utils/novel-utils';
 

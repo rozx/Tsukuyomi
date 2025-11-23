@@ -1,4 +1,4 @@
-import type { NovelScraper, ScraperType } from 'src/types/scraper';
+import type { NovelScraper, ScraperType } from 'src/services/scraper/types';
 import { SyosetuScraper } from './scrapers';
 import { KakuyomuScraper } from './scrapers';
 import { NcodeSyosetuScraper } from './scrapers';
@@ -114,7 +114,7 @@ export class NovelScraperFactory {
 }
 
 // 导出类型和接口
-export type { NovelScraper, FetchNovelResult, ScraperType } from 'src/types/scraper';
+export type { NovelScraper, FetchNovelResult, ScraperType } from 'src/services/scraper/types';
 
 // 导出具体实现（供需要时直接使用）
 export { SyosetuScraper } from './scrapers';

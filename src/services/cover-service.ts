@@ -1,4 +1,4 @@
-import type { Novel } from 'src/types/novel';
+import type { Novel } from 'src/models/novel';
 
 /**
  * 封面服务

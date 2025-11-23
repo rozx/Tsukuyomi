@@ -1,8 +1,8 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { AppSettings } from 'src/types/settings';
-import type { SyncConfig } from 'src/types/sync';
-import { SyncType } from 'src/types/sync';
-import type { AIModelDefaultTasks } from 'src/types/ai/ai-model';
+import type { AppSettings } from 'src/models/settings';
+import type { SyncConfig } from 'src/models/sync';
+import { SyncType } from 'src/models/sync';
+import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 
 const SETTINGS_STORAGE_KEY = 'luna-settings';
 const SYNC_STORAGE_KEY = 'luna-sync-configs';
