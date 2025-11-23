@@ -128,6 +128,16 @@ Quasar 构建 SPA 时，默认输出到 `dist/spa` 目录。确保 `app.yaml` �
    - 尝试使用 npm 作为备选方案：修改构建命令为 `npm install && npx quasar build -m spa`
    - 确保构建环境有足够的权限安装 Bun
 
+### 构建警告
+
+**`Warning: no analyzed metadata found at path '/layers/analyzed.toml'`**
+
+这是一个常见的警告，通常可以**安全忽略**。这个警告出现在 DigitalOcean App Platform 尝试分析构建层元数据时，对于静态站点部署不会影响功能。
+
+- **原因**：DigitalOcean 的 Buildpacks 系统会尝试查找构建分析的元数据文件，但静态站点构建可能不会生成这个文件
+- **影响**：无影响，构建和部署会正常进行
+- **解决方案**：无需处理，可以忽略此警告。如果警告过多，可以联系 DigitalOcean 支持团队
+
 ### 应用无法访问
 
 1. 检查路由配置是否正确
