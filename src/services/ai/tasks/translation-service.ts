@@ -612,6 +612,11 @@ export class TranslationService {
                 type: 'number',
                 description: '可选的最大返回段落数量（默认 1）',
               },
+              only_with_translation: {
+                type: 'boolean',
+                description:
+                  '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落，用于查看之前如何翻译某个关键词，确保翻译一致性。',
+              },
             },
             required: ['keyword'],
           },
@@ -1220,7 +1225,7 @@ export class TranslationService {
         }
 
         case 'find_paragraph_by_keyword': {
-          const { keyword, chapter_id, max_paragraphs = 1 } = args;
+          const { keyword, chapter_id, max_paragraphs = 1, only_with_translation = false } = args;
           if (!keyword) {
             throw new Error('关键词不能为空');
           }
@@ -1236,6 +1241,7 @@ export class TranslationService {
             keyword,
             chapter_id,
             max_paragraphs,
+            only_with_translation,
           );
 
           return {
@@ -1447,7 +1453,7 @@ export class TranslationService {
         '- ⚠️ 术语表和角色设定表必须严格分离：术语表中绝对不能有角色（人名），角色表中绝对不能有术语。如果发现混淆，必须立即纠正。\n' +
         '\n' +
         '【其他可用工具】\n' +
-        '- "find_paragraph_by_keyword" 工具：搜索关键词在之前段落中的翻译，以保持用词一致。⚠️ 特别重要：在翻译敬语时，必须使用此工具搜索角色名称（带或不带敬语）在之前段落中的翻译，确保敬语翻译的一致性。例如：翻译"田中さん"前，应搜索"田中"或"田中さん"查看之前的翻译方式。\n' +
+        '- "find_paragraph_by_keyword" 工具：搜索关键词在之前段落中的翻译，以保持用词一致。⚠️ 特别重要：在翻译敬语时，必须使用此工具搜索角色名称（带或不带敬语）在之前段落中的翻译，确保敬语翻译的一致性。例如：翻译"田中さん"前，应搜索"田中"或"田中さん"查看之前的翻译方式。可以使用 "only_with_translation" 参数（设置为 true）来只搜索已翻译的段落，这样可以确保找到的是之前如何翻译该关键词的，而不是未翻译的原文。\n' +
         '- "get_occurrences_by_keywords" 工具：查询关键词在全文中的出现频率，帮助决定是否添加新术语或删除无用术语。\n' +
         '- "get_previous_paragraphs" / "get_next_paragraphs" 工具：查看上下文段落，确保翻译准确性。\n' +
         '\n' +
@@ -1591,7 +1597,7 @@ export class TranslationService {
         '- ⚠️ 正确翻译日语敬语（"さん"、"くん"、"ちゃん"等）：\n' +
         '  * 第一优先级：必须首先检查【相关角色参考】中该角色的别名（aliases）列表，如果文本中的角色名称（带敬语）与某个别名完全匹配且该别名已有翻译，必须直接使用该翻译，不得重新翻译\n' +
         '  * 第二优先级：如果别名中没有匹配的翻译，查看【相关角色参考】中角色的描述（description），了解角色之间的关系\n' +
-        '  * 第三优先级：使用 find_paragraph_by_keyword 工具搜索该角色名称在之前段落中的翻译，确保敬语翻译的一致性\n' +
+        '  * 第三优先级：使用 find_paragraph_by_keyword 工具搜索该角色名称在之前段落中的翻译，确保敬语翻译的一致性（建议使用 only_with_translation=true 参数，只搜索已翻译的段落）\n' +
         '  * 最后：根据角色关系和上下文准确处理，不要直接保留日文\n' +
         '  * ⚠️ 重要：不要自动添加新的别名用于敬语翻译，只使用已存在的别名。如果别名不存在，只进行翻译，不要添加为别名\n' +
         '  * 如果角色描述中缺少关系信息，应使用 update_character 工具补充\n' +

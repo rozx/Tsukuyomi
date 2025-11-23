@@ -681,6 +681,7 @@ export class ChapterService {
    * @param keyword 搜索关键词
    * @param chapterId 可选的章节 ID，如果提供则从该章节向前搜索（包括该章节及之前的所有章节）
    * @param maxParagraphs 可选的最大返回段落数量，默认为 1
+   * @param onlyWithTranslation 是否只返回有翻译的段落，默认为 false
    * @returns 搜索结果数组，包含匹配的段落及其所在位置信息
    */
   static searchParagraphsByKeyword(
@@ -688,6 +689,7 @@ export class ChapterService {
     keyword: string,
     chapterId?: string,
     maxParagraphs: number = 1,
+    onlyWithTranslation: boolean = false,
   ): ParagraphSearchResult[] {
     if (!novel || !novel.volumes || !keyword.trim()) {
       return [];
@@ -756,6 +758,19 @@ export class ChapterService {
 
             const paragraph = chapter.content[pIndex];
             if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
+              // 如果要求只返回有翻译的段落，检查段落是否有翻译
+              if (onlyWithTranslation) {
+                const hasTranslation =
+                  paragraph.translations &&
+                  paragraph.translations.length > 0 &&
+                  paragraph.translations.some(
+                    (t) => t.translation && t.translation.trim().length > 0,
+                  );
+                if (!hasTranslation) {
+                  continue; // 跳过没有翻译的段落
+                }
+              }
+
               results.push({
                 paragraph,
                 paragraphIndex: pIndex,
