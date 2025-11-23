@@ -1,7 +1,8 @@
-import { createProxyMiddleware, Options } from 'http-proxy-middleware';
-import express from 'express';
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { ClientRequest } from 'http';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -136,33 +137,41 @@ const proxyConfigs: ProxyConfig[] = [
 // 为每个代理路径创建代理中间件
 proxyConfigs.forEach((config) => {
   const { path, headers, ...proxyOptions } = config;
-  const proxyMiddlewareOptions: Options<IncomingMessage, ServerResponse<IncomingMessage>> = {
+  const proxyMiddlewareOptions = {
     target: proxyOptions.target,
     changeOrigin: proxyOptions.changeOrigin,
     pathRewrite: proxyOptions.pathRewrite,
-    onProxyReq: (proxyReq, req, res) => {
-      // 设置自定义请求头
-      if (headers) {
-        Object.entries(headers).forEach(([key, value]) => {
-          proxyReq.setHeader(key, value);
-        });
-      }
-      // 移除可能暴露代理的头部
-      proxyReq.removeHeader('x-forwarded-for');
-      proxyReq.removeHeader('x-forwarded-host');
-      proxyReq.removeHeader('x-forwarded-proto');
-    },
-    onError: (err, req, res) => {
-      console.error(`[Proxy Error] ${req.path}:`, err.message);
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: '代理请求失败',
-          message: err.message,
-        });
-      }
+    on: {
+      proxyReq: (
+        proxyReq: ClientRequest,
+        _req: IncomingMessage,
+        _res: ServerResponse<IncomingMessage>,
+      ) => {
+        // 设置自定义请求头
+        if (headers) {
+          Object.entries(headers).forEach(([key, value]) => {
+            proxyReq.setHeader(key, value);
+          });
+        }
+        // 移除可能暴露代理的头部
+        proxyReq.removeHeader('x-forwarded-for');
+        proxyReq.removeHeader('x-forwarded-host');
+        proxyReq.removeHeader('x-forwarded-proto');
+      },
+      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+        const expressReq = req as unknown as Request;
+        const expressRes = res as unknown as Response;
+        console.error(`[Proxy Error] ${expressReq.path || req.url}:`, err.message);
+        if (expressRes && !expressRes.headersSent) {
+          expressRes.status(500).json({
+            error: '代理请求失败',
+            message: err.message,
+          });
+        }
+      },
     },
   };
-  
+
   app.use(path, createProxyMiddleware(proxyMiddlewareOptions));
 });
 
@@ -179,4 +188,3 @@ app.listen(PORT, () => {
     console.log(`  - ${config.path} -> ${config.target}`);
   });
 });
-
