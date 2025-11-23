@@ -2,7 +2,7 @@
   "name": "luna-ai-translator",
   "version": "0.5.0",
   "description": "Luna AI translator",
-  "productName": "luna App",
+  "productName": "Luna AI translator",
   "author": "rozx <rozx@heavyskymobile.com>",
   "type": "module",
   "private": true,
@@ -10,9 +10,10 @@
     "lint": "bunx vue-tsc --noEmit",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",
-    "dev": "quasar dev",
-    "build": "quasar build",
-    "build:spa": "quasar build -m spa",
+    "sync-version": "bun scripts/sync-version.ts",
+    "dev": "bun run sync-version && quasar dev",
+    "build": "bun run sync-version && quasar build",
+    "build:spa": "bun run sync-version && quasar build -m spa",
     "postinstall": "quasar prepare"
   },
   "dependencies": {

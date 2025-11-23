@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     "types": ["node", "bun"],
     "skipLibCheck": true
   }
