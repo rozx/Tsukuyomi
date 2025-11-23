@@ -15,10 +15,7 @@ import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
-import {
-  exportTerminologiesToJson,
-  importTerminologiesFromFile,
-} from 'src/utils';
+import { exportTerminologiesToJson, importTerminologiesFromFile } from 'src/utils';
 
 const props = defineProps<{
   book: Novel | null;
@@ -412,27 +409,25 @@ const handleFileSelect = async (event: Event) => {
     let updatedCount = 0;
 
     for (const importedTerm of importedTerminologies) {
-      const existingTerm = props.book.terminologies?.find(
-        (t) => t.name === importedTerm.name,
-      );
+      const existingTerm = props.book.terminologies?.find((t) => t.name === importedTerm.name);
 
       if (existingTerm) {
         // 更新现有术语
-        await TerminologyService.updateTerminology(
-          props.book.id,
-          existingTerm.id,
-          {
-            translation: importedTerm.translation.translation,
-            description: importedTerm.description,
-          },
-        );
+        await TerminologyService.updateTerminology(props.book.id, existingTerm.id, {
+          translation: importedTerm.translation.translation,
+          ...(importedTerm.description !== undefined
+            ? { description: importedTerm.description }
+            : {}),
+        });
         updatedCount++;
       } else {
         // 添加新术语
         await TerminologyService.addTerminology(props.book.id, {
           name: importedTerm.name,
           translation: importedTerm.translation.translation,
-          description: importedTerm.description,
+          ...(importedTerm.description !== undefined
+            ? { description: importedTerm.description }
+            : {}),
           occurrences: importedTerm.occurrences,
         });
         addedCount++;
@@ -541,7 +536,9 @@ const handleFileSelect = async (event: Event) => {
             label="导出"
             icon="pi pi-download"
             class="p-button-outlined flex-shrink-0"
-            :disabled="bulkActionMode || !props.book?.terminologies || props.book.terminologies.length === 0"
+            :disabled="
+              bulkActionMode || !props.book?.terminologies || props.book.terminologies.length === 0
+            "
             @click="handleExport"
           />
           <Button
@@ -597,9 +594,7 @@ const handleFileSelect = async (event: Event) => {
           </template>
 
           <template #grid="slotProps">
-            <div
-              class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
-            >
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4">
               <SettingCard
                 v-for="terminology in slotProps.items"
                 :key="terminology.id"

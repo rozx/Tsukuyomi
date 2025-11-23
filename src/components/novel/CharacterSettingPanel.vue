@@ -267,10 +267,14 @@ const handleFileSelect = async (event: Event) => {
           props.book.id,
           existingChar.id,
           {
-            sex: importedChar.sex,
+            ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
             translation: importedChar.translation.translation,
-            description: importedChar.description,
-            speakingStyle: importedChar.speakingStyle,
+            ...(importedChar.description !== undefined
+              ? { description: importedChar.description }
+              : {}),
+            ...(importedChar.speakingStyle !== undefined
+              ? { speakingStyle: importedChar.speakingStyle }
+              : {}),
             aliases: importedChar.aliases.map((a) => ({
               name: a.name,
               translation: a.translation.translation,
@@ -282,10 +286,14 @@ const handleFileSelect = async (event: Event) => {
         // 添加新角色
         await CharacterSettingService.addCharacterSetting(props.book.id, {
           name: importedChar.name,
-          sex: importedChar.sex,
+          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
           translation: importedChar.translation.translation,
-          description: importedChar.description,
-          speakingStyle: importedChar.speakingStyle,
+          ...(importedChar.description !== undefined
+            ? { description: importedChar.description }
+            : {}),
+          ...(importedChar.speakingStyle !== undefined
+            ? { speakingStyle: importedChar.speakingStyle }
+            : {}),
           aliases: importedChar.aliases.map((a) => ({
             name: a.name,
             translation: a.translation.translation,

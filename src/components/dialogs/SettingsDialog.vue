@@ -44,6 +44,11 @@ watch(activeTabIndex, (newIndex) => {
 const handleClose = () => {
   emit('update:visible', false);
 };
+
+// 处理标签页切换
+const handleTabChange = (val: string | number) => {
+  activeTabIndex.value = typeof val === 'number' ? val : Number(val);
+};
 </script>
 
 <template>
@@ -59,24 +64,24 @@ const handleClose = () => {
     @update:visible="$emit('update:visible', $event)"
     @hide="handleClose"
   >
-    <Tabs v-model:activeIndex="activeTabIndex" class="settings-tabview">
+    <Tabs :value="activeTabIndex" @update:value="handleTabChange" class="settings-tabview">
       <!-- AI 模型默认设置 -->
-      <Tab header="AI 模型">
+      <Tab :value="0" header="AI 模型">
         <AIModelSettingsTab />
       </Tab>
 
       <!-- 爬虫设置 -->
-      <Tab header="爬虫设置">
+      <Tab :value="1" header="爬虫设置">
         <ScraperSettingsTab />
       </Tab>
 
       <!-- 同步设置 -->
-      <Tab header="同步设置">
+      <Tab :value="2" header="同步设置">
         <SyncSettingsTab :visible="visible" />
       </Tab>
 
       <!-- 导入/导出资料 -->
-      <Tab header="导入/导出">
+      <Tab :value="3" header="导入/导出">
         <ImportExportTab />
       </Tab>
     </Tabs>

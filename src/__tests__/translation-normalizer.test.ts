@@ -138,11 +138,11 @@ describe('normalizeTranslationSymbols', () => {
   test('应该处理复杂的标点组合', () => {
     const input = '他说："这是测试（内容）[注释]...';
     const result = normalizeTranslationSymbols(input);
-    expect(result).toContain('：');
-    expect(result).toContain('（');
-    expect(result).toContain('）');
-    expect(result).toContain('【');
-    expect(result).toContain('】');
+    expect(result.includes('：')).toBe(true);
+    expect(result.includes('（')).toBe(true);
+    expect(result.includes('）')).toBe(true);
+    expect(result.includes('【')).toBe(true);
+    expect(result.includes('】')).toBe(true);
   });
 
   test('应该处理全角半角混合的标点', () => {
