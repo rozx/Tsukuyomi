@@ -6,6 +6,7 @@ import type { SyncConfig } from 'src/types/sync';
 import { SyncType } from 'src/types/sync';
 import type { CoverHistoryItem } from 'src/types/novel';
 import { extractNovelIdFromChunkFileName } from 'src/utils/gist-file-utils';
+import { compressString, decompressString } from 'src/utils/compression';
 
 /**
  * Gist 文件名称常量
@@ -18,9 +19,9 @@ const GIST_FILE_NAMES = {
 
 /**
  * GitHub Gist 单个文件大小限制（字节）
- * 实际限制约为 1MB，我们使用 600KB 作为安全边界
+ * 实际限制约为 1MB，我们使用 900KB 作为安全边界
  */
-const MAX_FILE_SIZE = 600 * 1024; // 600KB
+const MAX_FILE_SIZE = 900 * 1024; // 900KB
 
 /**
  * 分块大小（字节）
@@ -102,6 +103,23 @@ export class GistSyncService {
       throw new Error('同步类型必须是 gist');
     }
     this.getGistParams(config); // 这会验证参数
+  }
+
+  /**
+   * 解析 Gist 内容（支持 gzip 压缩）
+   */
+  private async parseGistContent(content: string): Promise<any> {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === 'object' && parsed.format === 'gzip' && parsed.data) {
+        const decompressed = await decompressString(parsed.data);
+        return JSON.parse(decompressed);
+      }
+      return parsed;
+    } catch (error) {
+      // 如果不是 JSON 或解压失败，抛出错误
+      throw error;
+    }
   }
 
   /**
@@ -291,8 +309,22 @@ export class GistSyncService {
         appSettings: this.serializeDates(data.appSettings),
         coverHistory: data.coverHistory ? this.serializeDates(data.coverHistory) : undefined,
       };
+      
+      const settingsJson = JSON.stringify(settingsData);
+      // 尝试压缩设置文件
+      let settingsContent = settingsJson;
+      try {
+        const compressed = await compressString(settingsJson);
+        settingsContent = JSON.stringify({
+          format: 'gzip',
+          data: compressed,
+        });
+      } catch (e) {
+        console.warn('压缩设置文件失败，将使用未压缩格式', e);
+      }
+
       files[GIST_FILE_NAMES.SETTINGS] = {
-        content: JSON.stringify(settingsData),
+        content: settingsContent,
       };
 
       // 2. 为每本书创建单独的 JSON 文件
@@ -312,14 +344,27 @@ export class GistSyncService {
         const serializedNovel = this.serializeDates(novel);
         // 使用压缩格式（去除空格和换行）以减少文件大小
         const jsonContent = JSON.stringify(serializedNovel);
-        const contentSize = new Blob([jsonContent]).size;
+        
+        // 尝试压缩书籍数据
+        let finalContent = jsonContent;
+        try {
+          const compressed = await compressString(jsonContent);
+          finalContent = JSON.stringify({
+            format: 'gzip',
+            data: compressed,
+          });
+        } catch (e) {
+          console.warn(`压缩书籍 ${novel.title} 失败，将使用未压缩格式`, e);
+        }
+
+        const contentSize = new Blob([finalContent]).size;
 
         if (contentSize <= MAX_FILE_SIZE) {
           // 文件足够小，直接存储
           novelFormats.set(novel.id, 'single');
           const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novel.id}.json`;
           files[fileName] = {
-            content: jsonContent,
+            content: finalContent,
           };
           uploadStats.push({
             novelId: novel.id,
@@ -336,8 +381,8 @@ export class GistSyncService {
           const chunks: string[] = [];
           let position = 0;
 
-          while (position < jsonContent.length) {
-            const remaining = jsonContent.length - position;
+          while (position < finalContent.length) {
+            const remaining = finalContent.length - position;
 
             // 使用二分查找找到最大的字符数，使得字节数不超过 CHUNK_SIZE
             let left = 1;
@@ -346,7 +391,7 @@ export class GistSyncService {
 
             while (left <= right) {
               const mid = Math.floor((left + right) / 2);
-              const candidate = jsonContent.substring(position, position + mid);
+              const candidate = finalContent.substring(position, position + mid);
               const candidateBytes = encoder.encode(candidate).length;
 
               if (candidateBytes <= CHUNK_SIZE) {
@@ -357,7 +402,7 @@ export class GistSyncService {
               }
             }
 
-            const chunk = jsonContent.substring(position, position + bestLength);
+            const chunk = finalContent.substring(position, position + bestLength);
             chunks.push(chunk);
             position += bestLength;
           }
@@ -461,23 +506,32 @@ export class GistSyncService {
           for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
             
-        try {
-          const response = await this.octokit.rest.gists.update({
-            gist_id: gistId,
-            description: 'Luna AI Translator - Settings and Novels',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            try {
+              const response = await this.octokit.rest.gists.update({
+                gist_id: gistId,
+                description: 'Luna AI Translator - Settings and Novels',
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 files: batchFiles as any,
-          });
+              });
               // 更新 gistId 和 gistUrl（虽然通常不会变）
               if (i === 0) {
-          gistId = response.data.id;
-          gistUrl = response.data.html_url;
+                gistId = response.data.id;
+                gistUrl = response.data.html_url;
               }
             } catch (batchError) {
               // 记录详细的错误信息
               console.error('Gist batch update failed:', batchError);
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const errorData = (batchError as any).response?.data;
+              const errorResponse = (batchError as any).response;
+              const errorData = errorResponse?.data;
+              
+              if (errorResponse?.status === 409) {
+                 // 409 Conflict: 通常意味着 Gist 在我们读取后被修改了，或者并发更新冲突
+                 // 尝试重新获取最新的 Gist 内容并重试可能会解决问题，但这是一个复杂的操作
+                 // 暂时抛出一个更友好的错误
+                 throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
+              }
+
               if (errorData) {
                 console.error('Validation errors:', JSON.stringify(errorData, null, 2));
                 throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
@@ -487,7 +541,7 @@ export class GistSyncService {
           }
         } catch (error) {
           // 如果是更新失败，我们希望中断并报错
-          if (error instanceof Error && error.message.includes('Gist 更新失败')) {
+          if (error instanceof Error && (error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突'))) {
             throw error;
           }
           // 如果获取失败（例如 Gist 不存在），继续使用原始 files (尝试创建新 Gist)
@@ -597,7 +651,7 @@ export class GistSyncService {
       const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
       if (settingsFile && settingsFile.content) {
         try {
-          const settingsData = JSON.parse(settingsFile.content) as {
+          const settingsData = (await this.parseGistContent(settingsFile.content)) as {
             aiModels?: AIModel[];
             appSettings?: AppSettings;
             coverHistory?: CoverHistoryItem[];
@@ -760,7 +814,7 @@ export class GistSyncService {
 
               // 尝试解析完整的 JSON
               try {
-                const parsedContent = JSON.parse(fullContent);
+                const parsedContent = await this.parseGistContent(fullContent);
                 const novel = this.deserializeDates(parsedContent) as Novel;
                 result.novels.push(novel);
                 continue; // 成功重组，继续处理下一本书
@@ -806,7 +860,7 @@ export class GistSyncService {
             }
 
             try {
-              const parsedContent = JSON.parse(fileContent);
+              const parsedContent = await this.parseGistContent(fileContent);
               const novel = this.deserializeDates(parsedContent) as Novel;
               result.novels.push(novel);
             } catch {
@@ -1246,7 +1300,7 @@ export class GistSyncService {
       const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
       if (settingsFile && settingsFile.content) {
         try {
-          const settingsData = JSON.parse(settingsFile.content) as {
+          const settingsData = (await this.parseGistContent(settingsFile.content)) as {
             aiModels?: AIModel[];
             appSettings?: AppSettings;
             coverHistory?: CoverHistoryItem[];
@@ -1350,7 +1404,7 @@ export class GistSyncService {
               const fullContent = chunkFiles.map((chunk) => chunk.content).join('');
 
               try {
-                const parsedContent = JSON.parse(fullContent);
+                const parsedContent = await this.parseGistContent(fullContent);
                 const novel = this.deserializeDates(parsedContent) as Novel;
                 result.novels.push(novel);
                 continue;
@@ -1384,7 +1438,7 @@ export class GistSyncService {
 
             if (fileContent) {
               try {
-                const parsedContent = JSON.parse(fileContent);
+                const parsedContent = await this.parseGistContent(fileContent);
                 const novel = this.deserializeDates(parsedContent) as Novel;
                 result.novels.push(novel);
               } catch {

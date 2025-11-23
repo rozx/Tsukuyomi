@@ -26,7 +26,15 @@ async function loadCoverHistoryFromDB(): Promise<CoverHistoryItem[]> {
 async function saveCoverHistoryItemToDB(item: CoverHistoryItem): Promise<void> {
   try {
     const db = await getDB();
-    await db.put('cover-history', item);
+    // 创建一个纯净的对象以避免 Proxy 相关的克隆错误
+    // 使用 structuredClone 进行深拷贝，或者手动构建对象
+    const plainItem: CoverHistoryItem = {
+      id: item.id,
+      url: item.url,
+      addedAt: item.addedAt,
+      ...(item.deleteUrl ? { deleteUrl: item.deleteUrl } : {}),
+    };
+    await db.put('cover-history', plainItem);
   } catch (error) {
     console.error('Failed to save cover history item to DB:', error);
   }

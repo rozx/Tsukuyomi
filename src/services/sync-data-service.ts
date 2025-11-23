@@ -75,9 +75,9 @@ export class SyncDataService {
         }
       }
 
-      void aiModelsStore.clearModels();
+      await aiModelsStore.clearModels();
       for (const model of finalModels) {
-        void aiModelsStore.addModel(model);
+        await aiModelsStore.addModel(model);
       }
     }
 
@@ -158,9 +158,9 @@ export class SyncDataService {
         }
       }
 
-      void coverHistoryStore.clearHistory();
+      await coverHistoryStore.clearHistory();
       for (const cover of finalCovers) {
-        void coverHistoryStore.addCover(cover);
+        await coverHistoryStore.addCover(cover);
       }
     }
 
@@ -170,8 +170,8 @@ export class SyncDataService {
       if (resolution === 'remote' || resolutions.length === 0) {
         // 无冲突时也应用远程设置
         const currentGistSync = settingsStore.gistSync;
-        void settingsStore.importSettings(remoteData.appSettings);
-        void settingsStore.updateGistSync(currentGistSync);
+        await settingsStore.importSettings(remoteData.appSettings);
+        await settingsStore.updateGistSync(currentGistSync);
       }
     }
   }
