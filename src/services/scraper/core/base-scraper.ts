@@ -63,6 +63,7 @@ export abstract class BaseScraper implements NovelScraper {
       // 在浏览器环境中，检查是否需要使用 Vite 代理
       const isBrowser = typeof window !== 'undefined';
       let finalUrl = url;
+      let forceUseProxy = false; // 在浏览器环境中，如果直接请求会被 CORS 阻止，强制使用代理
 
       if (isBrowser && !this.useProxy) {
         // 在浏览器环境中且不使用 AllOrigins 代理时，使用 Vite 代理
@@ -70,6 +71,12 @@ export abstract class BaseScraper implements NovelScraper {
         if (urlObj.hostname === 'kakuyomu.jp') {
           // 使用 Vite 代理路径
           finalUrl = `/api/kakuyomu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+        } else if (urlObj.hostname === 'ncode.syosetu.com') {
+          // 使用 Vite 代理路径
+          finalUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+        } else if (urlObj.hostname === 'novel18.syosetu.com') {
+          // 使用 Vite 代理路径
+          finalUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
         }
       }
 

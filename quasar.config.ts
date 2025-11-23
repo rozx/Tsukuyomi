@@ -84,7 +84,7 @@ export default defineConfig((ctx) => {
             include: ['path', 'util', 'stream', 'buffer'],
             // 排除一些不需要的模块
             exclude: [],
-          })
+          }),
         );
 
         // 配置代理以解决 CORS 问题
@@ -170,6 +170,62 @@ export default defineConfig((ctx) => {
                 proxyReq.setHeader('sec-ch-ua-mobile', '?0');
                 proxyReq.setHeader('sec-ch-ua-platform', '"Windows"');
                 // 移除可能暴露代理的头部
+                proxyReq.removeHeader('x-forwarded-for');
+                proxyReq.removeHeader('x-forwarded-host');
+                proxyReq.removeHeader('x-forwarded-proto');
+              });
+            },
+          },
+          '/api/ncode': {
+            target: 'https://ncode.syosetu.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/ncode/, ''),
+            secure: true,
+            configure: (proxy, _options) => {
+              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+                proxyReq.setHeader(
+                  'User-Agent',
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                );
+                proxyReq.setHeader('Referer', 'https://ncode.syosetu.com/');
+                proxyReq.setHeader('Origin', 'https://ncode.syosetu.com');
+                proxyReq.setHeader(
+                  'Accept',
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                );
+                proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
+                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                proxyReq.setHeader('Cache-Control', 'max-age=0');
+                proxyReq.setHeader('Connection', 'keep-alive');
+                proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
+                proxyReq.removeHeader('x-forwarded-for');
+                proxyReq.removeHeader('x-forwarded-host');
+                proxyReq.removeHeader('x-forwarded-proto');
+              });
+            },
+          },
+          '/api/novel18': {
+            target: 'https://novel18.syosetu.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/novel18/, ''),
+            secure: true,
+            configure: (proxy, _options) => {
+              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+                proxyReq.setHeader(
+                  'User-Agent',
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                );
+                proxyReq.setHeader('Referer', 'https://novel18.syosetu.com/');
+                proxyReq.setHeader('Origin', 'https://novel18.syosetu.com');
+                proxyReq.setHeader(
+                  'Accept',
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                );
+                proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
+                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                proxyReq.setHeader('Cache-Control', 'max-age=0');
+                proxyReq.setHeader('Connection', 'keep-alive');
+                proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
                 proxyReq.removeHeader('x-forwarded-for');
                 proxyReq.removeHeader('x-forwarded-host');
                 proxyReq.removeHeader('x-forwarded-proto');

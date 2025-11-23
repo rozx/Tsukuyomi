@@ -1,6 +1,8 @@
 import type { NovelScraper, ScraperType } from 'src/types/scraper';
 import { SyosetuScraper } from './scrapers';
 import { KakuyomuScraper } from './scrapers';
+import { NcodeSyosetuScraper } from './scrapers';
+import { Novel18SyosetuScraper } from './scrapers';
 
 /**
  * 爬虫服务工厂
@@ -9,10 +11,14 @@ import { KakuyomuScraper } from './scrapers';
  * 支持的网站：
  * - syosetu.org (自定义中文翻译站) -> 自定义 SyosetuScraper
  * - kakuyomu.jp (カクヨム) -> 自定义 KakuyomuScraper
+ * - ncode.syosetu.com (小説家になろう) -> NcodeSyosetuScraper
+ * - novel18.syosetu.com (小説家になろう R18) -> Novel18SyosetuScraper
  */
 export class NovelScraperFactory {
   private static syosetuScraper: NovelScraper = new SyosetuScraper();
   private static kakuyomuScraper: NovelScraper = new KakuyomuScraper();
+  private static ncodeSyosetuScraper: NovelScraper = new NcodeSyosetuScraper();
+  private static novel18SyosetuScraper: NovelScraper = new Novel18SyosetuScraper();
 
   /**
    * 根据 URL 获取对应的爬虫服务
@@ -25,7 +31,17 @@ export class NovelScraperFactory {
       return this.kakuyomuScraper.isValidUrl(url) ? this.kakuyomuScraper : null;
     }
 
-    // Syosetu.org
+    // novel18.syosetu.com (小説家になろう R18)
+    if (url.includes('novel18.syosetu.com')) {
+      return this.novel18SyosetuScraper.isValidUrl(url) ? this.novel18SyosetuScraper : null;
+    }
+
+    // ncode.syosetu.com (小説家になろう)
+    if (url.includes('ncode.syosetu.com')) {
+      return this.ncodeSyosetuScraper.isValidUrl(url) ? this.ncodeSyosetuScraper : null;
+    }
+
+    // Syosetu.org (注意：这是不同的网站)
     if (url.includes('syosetu.org')) {
       return this.syosetuScraper.isValidUrl(url) ? this.syosetuScraper : null;
     }
@@ -52,6 +68,14 @@ export class NovelScraperFactory {
       return 'kakuyomu';
     }
 
+    if (url.includes('novel18.syosetu.com')) {
+      return 'ncode'; // novel18 和 ncode 使用相同的类型
+    }
+
+    if (url.includes('ncode.syosetu.com')) {
+      return 'ncode';
+    }
+
     if (url.includes('syosetu.org')) {
       return 'syosetu';
     }
@@ -64,7 +88,12 @@ export class NovelScraperFactory {
    * @returns 爬虫服务列表
    */
   static getAllScrapers(): NovelScraper[] {
-    return [this.syosetuScraper, this.kakuyomuScraper];
+    return [
+      this.syosetuScraper,
+      this.kakuyomuScraper,
+      this.ncodeSyosetuScraper,
+      this.novel18SyosetuScraper,
+    ];
   }
 
   /**
@@ -72,7 +101,7 @@ export class NovelScraperFactory {
    * @returns 支持的网站名称数组
    */
   static getSupportedSites(): string[] {
-    return ['syosetu.org', 'kakuyomu.jp'];
+    return ['syosetu.org', 'kakuyomu.jp', 'ncode.syosetu.com', 'novel18.syosetu.com'];
   }
 
   /**
@@ -90,6 +119,8 @@ export type { NovelScraper, FetchNovelResult, ScraperType } from 'src/types/scra
 // 导出具体实现（供需要时直接使用）
 export { SyosetuScraper } from './scrapers';
 export { KakuyomuScraper } from './scrapers';
+export { NcodeSyosetuScraper } from './scrapers';
+export { Novel18SyosetuScraper } from './scrapers';
 export { BaseScraper } from './core';
 export { ScraperService } from './services';
 export type { ChapterContentResult, BatchFetchResult } from './services';
