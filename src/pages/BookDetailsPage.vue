@@ -566,12 +566,33 @@ const navigateToChapter = (chapter: Chapter) => {
   });
 };
 
+// 打开书籍编辑对话框
+const openBookDialog = () => {
+  showBookDialog.value = true;
+  // 更新上下文：保留书籍，清除章节和段落
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
+  }
+};
+
 // 导航到术语设置
 const navigateToTermsSetting = () => {
   selectedSettingMenu.value = 'terms';
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
+  }
+  // 更新上下文：清除章节和段落，保留书籍
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
   }
 };
 
@@ -582,11 +603,27 @@ const navigateToCharactersSetting = () => {
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
   }
+  // 更新上下文：清除章节和段落，保留书籍
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
+  }
 };
 
 // 打开从在线获取更新对话框
 const openScraperDialog = () => {
   showScraperDialog.value = true;
+  // 更新上下文：清除章节和段落，保留书籍
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
+  }
 };
 
 // 处理从在线获取的更新
@@ -1638,6 +1675,14 @@ const openEditCharacterDialog = (character: CharacterSetting) => {
   if (characterPopover.value) {
     characterPopover.value.hide();
   }
+  // 更新上下文：保留书籍，清除章节和段落
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
+  }
 };
 
 // 保存角色设定
@@ -1754,6 +1799,14 @@ const openEditTermDialog = (term: Terminology) => {
   // Close popover
   if (termPopover.value) {
     termPopover.value.hide();
+  }
+  // 更新上下文：保留书籍，清除章节和段落
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+    });
   }
 };
 
@@ -2012,7 +2065,7 @@ const handleDragLeave = () => {
       <div class="sidebar-content">
         <!-- 书籍封面和标题 -->
         <div v-if="book" class="book-header">
-          <div class="book-header-content" @click="showBookDialog = true">
+          <div class="book-header-content" @click="openBookDialog">
             <i class="pi pi-info-circle book-edit-icon"></i>
             <div class="book-cover-wrapper">
               <img

@@ -74,141 +74,84 @@ export class AssistantService {
     currentChapterId: string | null;
     hoveredParagraphId: string | null;
   }): string {
-    let prompt = `你是一个专业的日语小说翻译助手，名为 Luna AI Assistant。你的职责是帮助用户进行日语小说的翻译工作，提供翻译建议、术语管理、角色设定管理等功能。
+    let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
 
-**重要**：除了翻译相关的任务，你还可以回答用户的一般性问题。你可以：
-1. 使用你的内置知识库回答各种问题，包括但不限于：
-   - 历史、科学、技术、文学、语言、文化等知识性问题
-   - 翻译技巧、语言学习建议
-   - 一般性的咨询和建议
-2. 使用 search_web 工具搜索网络以获取最新信息（如当前事件、实时数据等）
-3. 如果搜索工具不可用，优先使用你的内置知识库提供最佳答案
+## 能力范围
+- 翻译相关：术语管理、角色设定、翻译建议
+- 知识问答：使用内置知识库回答历史、科学、技术、文学、语言、文化等问题
+- 实时信息：使用 search_web 获取最新信息（当前事件、实时数据等）
 
-## 可用工具概览
+## 工具使用规则
 
-你可以使用以下工具来帮助用户完成各种任务：
+### 术语管理（7个工具）
+- **create_term**: 创建术语（创建前用 list_terms/search_terms_by_keyword 检查是否已存在）
+- **get_term**: 获取术语（需完整名称，否则用 search_terms_by_keyword）
+- **update_term**: 更新术语
+- **delete_term**: 删除术语
+- **list_terms**: 列出所有术语
+- **search_terms_by_keyword**: 关键词搜索（支持 translationOnly 参数）
+- **get_occurrences_by_keywords**: 统计关键词出现次数
 
-### 1. 术语管理工具（7个工具）
+### 角色管理（6个工具）
+- **create_character**: 创建角色（创建前检查是否已存在或应为别名，如是别名则用 update_character 添加）
+- **get_character**: 获取角色（需完整名称，否则用 search_characters_by_keyword）
+- **update_character**: 更新角色（发现问题必须修复；更新别名时只包含该角色的别名）
+- **delete_character**: 删除角色
+- **search_characters_by_keyword**: 关键词搜索（支持 translationOnly 参数）
+- **list_characters**: 列出所有角色
 
-- **create_term**: 创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。⚠️ 重要：在创建新术语之前，应该使用 list_terms 或 search_terms_by_keyword 工具检查该术语是否已存在。
-- **get_term**: 根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。⚠️ 注意：如果术语名称不确定或只记得部分名称，应该使用 search_terms_by_keyword 工具进行搜索。
-- **update_term**: 更新现有术语的翻译或描述。⚠️ **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。
-- **delete_term**: 删除术语。当确定某个术语不再需要时，可以使用此工具删除。
-- **list_terms**: 列出所有术语。在翻译开始前，可以使用此工具获取所有已存在的术语，以便在翻译时保持一致性。
-- **search_terms_by_keyword**: 根据关键词搜索术语。可以搜索术语名称或翻译。支持可选参数 translationOnly 只返回有翻译的术语。⚠️ 重要：当用户询问术语信息但只提供了部分名称或翻译时，应该优先使用此工具进行搜索，而不是直接使用 get_term（需要完整名称）。
-- **get_occurrences_by_keywords**: 根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。
+### 内容管理（7个工具）
+- **get_book_info**: 获取书籍信息
+- **list_chapters**: 列出章节（查看所有章节时先调用此工具）
+- **get_chapter_info**: 获取章节详情
+- **get_paragraph_info**: 获取段落信息
+- **get_previous_paragraphs**: 获取前文段落
+- **get_next_paragraphs**: 获取后文段落
+- **find_paragraph_by_keyword**: 关键词查找段落（支持 only_with_translation 参数）
 
-### 2. 角色设定管理工具（6个工具）
+### 网络搜索（2个工具）
+- **search_web**: 搜索最新信息
+  - ⚠️ **禁止**用于修复本地数据（角色/术语格式问题）
+  - 仅用于需要外部知识的问题（历史事实、最新技术、实时数据等）
+  - **必须使用搜索结果**：返回 results 时必须从 title/snippet 提取信息回答，不要忽略
+- **fetch_webpage**: 直接访问指定网页
+  - 当用户提供了具体的网页 URL 或需要查看特定网页的详细内容时使用
+  - 提取网页的标题和主要内容文本供分析
+  - **必须使用返回内容**：仔细阅读返回的 text 内容，从中提取关键信息回答用户问题
 
-- **create_character**: 创建新角色设定。⚠️ 重要：在创建新角色之前，必须使用 list_characters、get_character 或 search_characters_by_keyword 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。
-- **get_character**: 根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。⚠️ 注意：如果角色名称不确定或只记得部分名称，应该使用 search_characters_by_keyword 工具进行搜索。
-- **update_character**: 更新现有角色的翻译、描述、性别或别名。⚠️ **重要**：当发现角色的信息需要修正时（如格式错误、翻译错误、描述格式不符合要求等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。
-- **delete_character**: 删除角色设定。当确定某个角色不再需要时，可以使用此工具删除。
-- **search_characters_by_keyword**: 根据关键词搜索角色。可以搜索角色主名称、别名或翻译。支持可选参数 translationOnly 只返回有翻译的角色。⚠️ 重要：当用户询问角色信息但只提供了部分名称、别名或翻译时，应该优先使用此工具进行搜索，而不是直接使用 get_character（需要完整名称）。
-- **list_characters**: 列出所有角色设定。在翻译开始前，可以使用此工具获取所有已存在的角色，以便在翻译时保持一致性。
-
-### 3. 书籍和内容管理工具（7个工具）
-
-- **get_book_info**: 获取书籍的详细信息，包括标题、作者、描述、标签、术语列表、角色设定列表等。当需要了解当前书籍的完整信息时使用此工具。
-- **list_chapters**: 获取书籍的所有章节列表，包括每个章节的 ID、标题、翻译进度等。⚠️ 重要：当需要查看所有可用章节并选择参考章节时，应该先使用此工具获取章节列表，然后使用 get_chapter_info 获取具体章节的详细信息。
-- **get_chapter_info**: 获取章节的详细信息，包括标题、原文内容、段落列表、翻译进度等。当需要了解特定章节的完整信息时使用此工具。⚠️ 注意：如果需要查看所有章节，应该先使用 list_chapters 获取章节列表。
-- **get_paragraph_info**: 获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。
-- **get_previous_paragraphs**: 获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。
-- **get_next_paragraphs**: 获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。
-- **find_paragraph_by_keyword**: 根据关键词查找包含该关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。支持可选参数 only_with_translation 只返回有翻译的段落。
-
-### 4. 网络搜索工具（1个工具）
-
-- **search_web**: 搜索网络以获取最新信息或回答一般性问题。当用户询问需要最新信息、实时数据、当前事件、技术文档、历史事实或其他超出 AI 模型训练数据范围的问题时，可以使用此工具。
-
-⚠️ **重要限制**：
-- **不要**使用 search_web 工具来修复角色信息、术语信息或其他本地数据问题
-- **不要**使用 search_web 工具来查找如何修复角色描述格式、术语翻译等本地数据格式问题
-- 对于修复角色信息格式问题，应该使用 get_character 获取角色信息，然后使用 update_character 修复格式
-- 对于修复术语信息格式问题，应该使用 get_term 获取术语信息，然后使用 update_term 修复格式
-- search_web 工具只应用于需要外部知识或最新信息的问题，不应用于操作本地数据
-
-**⚠️ 使用搜索结果的强制要求**：
-1. **必须使用搜索结果**：当 search_web 工具返回结果时，你必须仔细阅读并分析搜索结果的内容，并基于这些信息回答用户的问题。绝对不要忽略搜索结果！
-2. **处理即时答案**：如果搜索结果包含即时答案（answer 字段），必须直接使用这个答案回答用户。
-3. **处理搜索结果列表**：如果返回了 results 数组（即使没有 answer 字段），你必须：
-   - 仔细阅读每个结果的 title（标题）和 snippet（摘要）
-   - 从这些结果中提取关键信息来回答用户的问题
-   - 即使结果看起来不是最直接的答案，也必须基于搜索结果提供信息
-   - 示例：如果用户问"今天几号"，搜索结果可能包含日期信息在 title 或 snippet 中，你必须从这些信息中提取日期并回答用户
-4. **搜索失败时的处理**：只有当搜索失败（success: false）或没有返回任何结果时，才使用 AI 模型的内置知识库来回答问题。
-
-**重要提示**：
-- 你可以使用你的内置知识库回答一般性问题，包括但不限于：历史、科学、技术、文学、语言、文化、翻译技巧等。
-- 对于需要最新信息的问题（如当前日期、实时新闻、最新技术等），优先使用 search_web 工具。
-- **关键原则**：如果 search_web 工具返回了 results 数组（即使没有 answer 字段），你必须从这些结果中提取信息来回答用户的问题。不要因为结果格式不是直接的答案就忽略它们！
-- 如果 search_web 工具不可用或失败（success: false），使用你的内置知识库提供最佳答案。
+## 关键原则
+1. **发现问题必须修复**：识别到数据问题（格式错误、翻译错误等）时，必须使用 update_* 工具修复，不要只告知问题
+2. **修复工作流程**：
+   - 角色问题：get_character/search_characters_by_keyword → update_character（不要用 search_web）
+   - 术语问题：get_term/search_terms_by_keyword → update_term（不要用 search_web）
+3. **搜索优先**：部分名称/翻译时优先用 search_*_by_keyword，完整名称时用 get_*
+4. **创建前检查**：创建术语/角色前必须检查是否已存在
 
 `;
 
-    // 添加上下文信息（只提供 ID，让 AI 使用工具获取详细信息）
+    // 添加上下文信息
     if (context.currentBookId || context.currentChapterId || context.hoveredParagraphId) {
-      prompt += `\n## 当前工作上下文\n\n`;
-      prompt += `用户当前的工作上下文如下（你可以使用相应的工具来获取详细信息）：\n\n`;
-
+      prompt += `## 当前工作上下文\n\n`;
       if (context.currentBookId) {
-        prompt += `- **当前书籍 ID**：\`${context.currentBookId}\`\n`;
-        prompt += `  - 使用 \`get_book_info\` 工具可以获取书籍的完整信息（标题、作者、描述、术语列表、角色设定等）\n`;
+        prompt += `- 书籍 ID: \`${context.currentBookId}\` → 使用 get_book_info 获取详情\n`;
       }
-
       if (context.currentChapterId) {
-        prompt += `- **当前章节 ID**：\`${context.currentChapterId}\`\n`;
-        prompt += `  - 使用 \`get_chapter_info\` 工具可以获取章节的完整信息（标题、内容、段落列表、翻译进度等）\n`;
-        prompt += `  - 使用 \`list_chapters\` 工具可以查看所有可用章节并选择其他章节作为参考\n`;
-      } else {
-        prompt += `- 使用 \`list_chapters\` 工具可以查看所有可用章节并选择参考章节\n`;
+        prompt += `- 章节 ID: \`${context.currentChapterId}\` → 使用 get_chapter_info 获取详情\n`;
+        prompt += `- 使用 list_chapters 查看所有章节\n`;
+      } else if (context.currentBookId) {
+        prompt += `- 使用 list_chapters 查看所有章节\n`;
       }
-
       if (context.hoveredParagraphId) {
-        prompt += `- **当前段落 ID**：\`${context.hoveredParagraphId}\`\n`;
-        prompt += `  - 使用 \`get_paragraph_info\` 工具可以获取段落的完整信息（原文、所有翻译版本等）\n`;
+        prompt += `- 段落 ID: \`${context.hoveredParagraphId}\` → 使用 get_paragraph_info 获取详情\n`;
       }
-
-      prompt += `\n`;
-      prompt += `**重要提示**：当用户询问关于当前书籍、章节或段落的问题时，请先使用相应的工具获取详细信息，然后基于获取的信息回答用户的问题。\n\n`;
+      prompt += `\n询问上下文相关问题时，先使用工具获取信息再回答。\n\n`;
     }
 
     prompt += `## 使用指南
-
-1. **回答用户问题**：用户可以询问关于当前书籍、章节、段落的任何问题，包括：
-   - 书籍的基本信息（标题、作者、描述、标签等）
-   - 章节的内容、翻译进度、段落信息
-   - 段落的原文、翻译、翻译历史
-   - 术语的含义、用法、翻译
-   - 角色的设定、名称、翻译
-   - 翻译建议、术语建议、角色名称建议
-   - 任何与当前工作上下文相关的问题
-
-2. **理解用户意图**：仔细理解用户的问题或需求，提供准确、有用的回答。基于上述上下文信息，你可以回答用户关于当前书籍、章节、段落的所有问题。
-
-3. **使用工具**：当用户需要执行操作（如创建术语、更新翻译等）时，主动使用相应的工具。
-   - **术语搜索**：当用户询问术语信息但只提供了部分名称或翻译时，优先使用 search_terms_by_keyword 工具进行搜索，而不是直接使用 get_term（需要完整名称）。
-   - **术语创建前检查**：在创建新术语之前，使用 search_terms_by_keyword 或 list_terms 检查术语是否已存在。
-   - **角色搜索**：当用户询问角色信息但只提供了部分名称、别名或翻译时，优先使用 search_characters_by_keyword 工具进行搜索，而不是直接使用 get_character（需要完整名称）。
-   - **角色创建前检查**：在创建新角色之前，使用 search_characters_by_keyword 或 list_characters 检查角色是否已存在。
-   - **章节选择**：当用户需要参考其他章节时，使用 list_chapters 工具获取所有章节列表，然后使用 get_chapter_info 获取具体章节的详细信息。这样可以查看任意章节的内容作为翻译参考。
-   - **⚠️ 重要：发现问题必须修复**：当你识别到任何数据问题（如格式错误、翻译错误、描述格式不符合要求等）时，**必须**使用相应的工具（如 update_character、update_term 等）进行修复，而不是仅仅告诉用户问题所在。只有在无法修复或需要用户确认的情况下，才应该只告知问题。
-   - **⚠️ 修复角色/术语信息的工作流程**：
-     * 当用户要求修复角色信息格式问题时：
-       1. 首先使用 get_character 或 search_characters_by_keyword 工具获取角色信息
-       2. 然后使用 update_character 工具修复格式问题（如将 markdown 格式转换为纯文本）
-       3. **绝对不要**使用 search_web 工具来搜索如何修复格式，直接使用 update_character 工具即可
-     * 当用户要求修复术语信息格式问题时：
-       1. 首先使用 get_term 或 search_terms_by_keyword 工具获取术语信息
-       2. 然后使用 update_term 工具修复格式问题
-       3. **绝对不要**使用 search_web 工具来搜索如何修复格式，直接使用 update_term 工具即可
-   - **网络搜索的使用场景**：search_web 工具只应用于需要外部知识的问题（如历史事实、最新技术、实时数据等），**不应用于修复本地数据格式问题**。
-
-4. **提供建议**：基于当前上下文，提供翻译建议、术语建议、角色名称建议等。
-
-5. **友好交流**：使用友好、专业的语气与用户交流，使用简体中文回复。
-
-请始终记住：你的目标是帮助用户更高效、更准确地进行日语小说翻译工作。你可以回答用户关于当前书籍、章节、段落的任何问题，并基于上下文信息提供准确的回答。`;
+- 回答用户关于书籍、章节、段落、术语、角色的任何问题
+- 提供翻译建议、术语建议、角色名称建议
+- 使用简体中文，友好专业地交流
+- 目标是帮助用户更高效、准确地完成翻译工作`;
 
     return prompt;
   }
@@ -465,40 +408,19 @@ ${messages
       let fullText = '';
       let toolCalls: AIToolCall[] = [];
       const allActions: ActionInfo[] = [];
-      let chunkCount = 0;
-
-      console.log('[AssistantService] 开始生成响应', {
-        model: model.model,
-        provider: model.provider,
-        hasTools: tools.length > 0,
-        messageLength: userMessage.length,
-      });
 
       const result = await aiService.generateText(config, request, async (chunk) => {
-        chunkCount++;
         // 累积流式文本
         if (chunk.text) {
           fullText += chunk.text;
-          console.log(`[AssistantService] 收到文本块 #${chunkCount}`, {
-            chunkLength: chunk.text.length,
-            accumulatedLength: fullText.length,
-            preview: chunk.text.substring(0, 50) + (chunk.text.length > 50 ? '...' : ''),
-          });
         }
         if (chunk.toolCalls) {
           toolCalls.push(...chunk.toolCalls);
-          console.log(`[AssistantService] 收到工具调用 #${chunkCount}`, {
-            toolCallCount: chunk.toolCalls.length,
-            toolNames: chunk.toolCalls.map((tc) => tc.function.name),
-            totalToolCalls: toolCalls.length,
-          });
         }
 
-        // 更新任务状态
-        if (aiProcessingStore && taskId) {
-          if (chunk.text) {
-            await aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
-          }
+        // 更新任务状态（保存思考过程）
+        if (aiProcessingStore && taskId && chunk.text) {
+          await aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
         }
 
         // 调用用户回调
@@ -507,56 +429,34 @@ ${messages
         }
       });
 
-      console.log('[AssistantService] 流式响应完成', {
-        chunkCount,
-        accumulatedTextLength: fullText.length,
-        resultTextLength: result.text?.length || 0,
-        resultTextPreview: result.text?.substring(0, 100) || '(empty)',
-        hasToolCalls: !!result.toolCalls,
-        toolCallsCount: toolCalls.length,
-      });
-
       // 使用 result.text 如果存在且不为空，否则使用累积的 fullText
-      // 这样可以确保即使流式响应中断，也能获取最终结果
+      // 注意：如果 result.text 和累积的 fullText 不一致，需要补充保存缺失的部分
       if (result.text && result.text.trim()) {
-        console.log('[AssistantService] 使用 result.text 作为最终文本', {
-          resultTextLength: result.text.length,
-          accumulatedTextLength: fullText.length,
-        });
+        // 如果 result.text 比累积的 fullText 更长，说明有缺失的部分，需要补充保存
+        if (result.text.length > fullText.length) {
+          const missingText = result.text.slice(fullText.length);
+          if (aiProcessingStore && taskId && missingText) {
+            await aiProcessingStore.appendThinkingMessage(taskId, missingText);
+          }
+        }
         fullText = result.text;
-      } else if (fullText.trim()) {
-        console.log('[AssistantService] result.text 为空，使用累积的流式文本', {
-          accumulatedTextLength: fullText.length,
-        });
-      } else if (toolCalls.length > 0) {
-        // 如果有工具调用，即使没有文本也是正常的（AI 可能只调用工具而不提供文本）
-        console.log('[AssistantService] 第一次响应只有工具调用，没有文本（这是正常的）', {
-          toolCallsCount: toolCalls.length,
-          toolNames: toolCalls.map((tc) => tc.function.name),
-        });
-      } else {
-        // 只有在没有工具调用且没有文本时才警告
-        console.warn(
-          '[AssistantService] ⚠️ 警告：result.text 和累积的 fullText 都为空，且没有工具调用',
-          {
-            resultText: result.text,
-            resultTextLength: result.text?.length || 0,
-            accumulatedTextLength: fullText.length,
-            chunkCount,
-          },
-        );
       }
 
       if (result.toolCalls) {
         toolCalls = result.toolCalls;
-        console.log('[AssistantService] 从 result 获取工具调用', {
-          toolCallsCount: toolCalls.length,
+      }
+
+      // 只有在没有工具调用且没有文本时才警告
+      if (!fullText.trim() && toolCalls.length === 0) {
+        console.warn('[AssistantService] 警告：响应文本和工具调用都为空', {
+          resultTextLength: result.text?.length || 0,
+          accumulatedLength: fullText.length,
         });
       }
 
       // 处理工具调用 - 使用循环处理，像 translation-service.ts 一样
       let currentTurnCount = 0;
-      const MAX_TURNS = 10; // 最大工具调用轮数
+      const MAX_TURNS = 50; // 最大工具调用轮数
       let finalResponseText = fullText;
 
       // 将第一次响应添加到历史
@@ -642,8 +542,6 @@ ${messages
           let reminderContent = '';
 
           if (hasWebSearch && shouldUseLocalTools) {
-            // 如果错误地使用了 search_web 来修复本地数据
-            console.log('[AssistantService] 检测到错误使用 search_web 修复本地数据，添加提醒');
             reminderContent =
               '⚠️ 重要错误：你刚才在响应中提到要修复/更新/修正角色或术语信息格式问题，但错误地使用了 search_web 工具来搜索网络。这是不对的！\n\n' +
               '对于修复本地数据（角色信息、术语信息）的格式问题，你应该：\n' +
@@ -652,8 +550,6 @@ ${messages
               '3. 然后使用 update_character 或 update_term 工具直接修复格式问题\n\n' +
               'search_web 工具只应用于需要外部知识的问题，不应用于修复本地数据格式。请立即使用正确的工具（get_character + update_character 或 get_term + update_term）来完成修复。';
           } else {
-            // 如果只调用了查询工具但没有调用更新工具
-            console.log('[AssistantService] 添加修复提醒到 follow-up 请求');
             reminderContent =
               '⚠️ 重要：你刚才在响应中提到要修复/更新/修正问题（例如："让我将其更新"、"我来修正"等），但只调用了查询工具来查看信息。现在你必须使用相应的更新工具（如 update_character、update_term 等）来实际执行修复操作，而不是仅仅告诉用户问题所在。请立即调用更新工具来完成修复。';
           }
@@ -674,11 +570,6 @@ ${messages
           maxTokens: model.maxTokens,
         };
 
-        console.log(`[AssistantService] 工具调用轮次 ${currentTurnCount}/${MAX_TURNS}`, {
-          toolCallsCount: toolCalls.length,
-          messageHistoryLength: messages.length,
-        });
-
         let followUpText = '';
         toolCalls = []; // 重置工具调用列表
 
@@ -693,7 +584,7 @@ ${messages
               toolCalls.push(...chunk.toolCalls);
             }
 
-            // 更新任务状态
+            // 更新任务状态（保存思考过程）
             if (aiProcessingStore && taskId && chunk.text) {
               await aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
             }
@@ -706,7 +597,15 @@ ${messages
         );
 
         // 使用 result.text 如果存在，否则使用累积的文本
+        // 注意：如果 followUpResult.text 和累积的 followUpText 不一致，需要补充保存缺失的部分
         if (followUpResult.text && followUpResult.text.trim()) {
+          // 如果 followUpResult.text 比累积的 followUpText 更长，说明有缺失的部分，需要补充保存
+          if (followUpResult.text.length > followUpText.length) {
+            const missingText = followUpResult.text.slice(followUpText.length);
+            if (aiProcessingStore && taskId && missingText) {
+              await aiProcessingStore.appendThinkingMessage(taskId, missingText);
+            }
+          }
           followUpText = followUpResult.text;
         }
 
@@ -776,14 +675,7 @@ ${messages
 
       if (!finalResponseText.trim()) {
         console.error('[AssistantService] ❌ 错误：最终回复文本为空', {
-          finalResponseText,
           currentTurnCount,
-        });
-      } else {
-        console.log('[AssistantService] ✅ 成功生成最终回复', {
-          finalTextLength: finalText.length,
-          actionsCount: allActions.length,
-          turnsCount: currentTurnCount,
         });
       }
 
@@ -796,7 +688,9 @@ ${messages
     } catch (error) {
       console.error('[AssistantService] ❌ 发生错误', {
         error: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined,
+        ...(import.meta.env.DEV && {
+          errorStack: error instanceof Error ? error.stack : undefined,
+        }),
         model: model.model,
         provider: model.provider,
         taskId,

@@ -13,8 +13,8 @@ import {
   generateShortId,
   normalizeTranslationQuotes,
   getCharacterNameVariants,
-  countNamesInText,
 } from 'src/utils';
+import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
 
 /**
  * 角色设定服务
@@ -23,7 +23,7 @@ import {
 export class CharacterSettingService {
   /**
    * 统计角色（包括主名称和所有别名）在书籍所有章节中的出现次数
-   * 优先匹配较长的名称，避免子串重复计数问题
+   * 使用 text-matcher.ts 中的 matchCharactersInText 进行匹配，支持名称消歧义
    * @param book 书籍对象
    * @param character 角色对象
    * @returns 出现记录数组
@@ -34,52 +34,65 @@ export class CharacterSettingService {
   ): Occurrence[] {
     const occurrencesMap = new Map<string, number>();
 
-    // 收集所有名称（主名称 + 所有别名）
-    const nameSet = new Set<string>();
-
-    // 主名称及其变体
-    getCharacterNameVariants(character.name).forEach((v) => nameSet.add(v));
-
-    // 别名及其变体
-    if (character.aliases && character.aliases.length > 0) {
-      for (const alias of character.aliases) {
-        getCharacterNameVariants(alias.name).forEach((v) => nameSet.add(v));
-      }
-    }
-
-    const allNames: Array<{ name: string; escaped: string }> = Array.from(nameSet)
-      .filter((name) => name && name.trim().length > 0)
-      .map((name) => ({
-        name: name,
-        escaped: name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-      }));
-
-    // 按长度降序排序，优先匹配较长的名称
-    allNames.sort((a, b) => b.name.length - a.name.length);
-
     // 扁平化所有章节
     const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
 
-    // 遍历所有章节
+    // 为了更好的消歧义，先计算所有章节的上下文得分
+    // 收集所有章节的文本内容
+    let fullText = '';
     for (const chapter of allChapters) {
-      let chapterCount = 0;
+      // 处理段落内容
+      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
+        for (const paragraph of chapter.content) {
+          fullText += paragraph.text + '\n';
+        }
+      }
+      // 处理原始内容
+      if (chapter.originalContent) {
+        fullText += chapter.originalContent + '\n';
+      }
+    }
+
+    // 计算上下文得分（使用所有角色，以便更好地消歧义）
+    const allCharacters = book.characterSettings || [];
+    // 确保当前角色包含在匹配列表中（可能尚未添加到 book.characterSettings）
+    const charactersToMatch = allCharacters.some((c) => c.id === character.id)
+      ? allCharacters
+      : [...allCharacters, character];
+    const contextScores = calculateCharacterScores(fullText, charactersToMatch);
+
+    // 遍历所有章节，统计当前角色的出现次数
+    for (const chapter of allChapters) {
+      let chapterText = '';
 
       // 处理段落内容
       if (isArray(chapter.content) && !isEmpty(chapter.content)) {
         for (const paragraph of chapter.content) {
-          chapterCount += this.countNamesInText(paragraph.text, allNames);
+          chapterText += paragraph.text + '\n';
         }
       }
 
       // 处理原始内容
       if (chapter.originalContent) {
-        chapterCount += this.countNamesInText(chapter.originalContent, allNames);
+        chapterText += chapter.originalContent + '\n';
       }
+
+      if (!chapterText.trim()) {
+        continue;
+      }
+
+      // 使用 matchCharactersInText 匹配所有角色（包括主名称和所有别名）
+      // 传入所有角色和上下文得分以支持名称消歧义
+      // 然后过滤出当前角色的匹配
+      const allMatches = matchCharactersInText(chapterText, charactersToMatch, contextScores);
+
+      // 只统计当前角色的匹配次数
+      const characterMatches = allMatches.filter((m) => m.item.id === character.id);
+      const chapterCount = characterMatches.length;
 
       // 如果该章节有出现，记录到 Map 中
       if (chapterCount > 0) {
-        const existingCount = occurrencesMap.get(chapter.id) || 0;
-        occurrencesMap.set(chapter.id, existingCount + chapterCount);
+        occurrencesMap.set(chapter.id, chapterCount);
       }
     }
 
@@ -88,25 +101,6 @@ export class CharacterSettingService {
       chapterId,
       count,
     }));
-  }
-
-  /**
-   * 在文本中统计名称出现次数，优先匹配较长的名称以避免重复计数
-   * @param text 要搜索的文本
-   * @param names 名称数组（已按长度降序排序）
-   * @returns 出现次数
-   */
-  private static countNamesInText(
-    text: string,
-    names: Array<{ name: string; escaped: string }>,
-  ): number {
-    if (!text || text.length === 0) {
-      return 0;
-    }
-    return countNamesInText(
-      text,
-      names.map((n) => n.name),
-    );
   }
 
   /**

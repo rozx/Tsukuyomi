@@ -13,6 +13,7 @@ import ConfirmDialog from 'primevue/confirmdialog';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
@@ -26,6 +27,7 @@ import {
 const router = useRouter();
 const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
+const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
 // 对话框状态
@@ -209,6 +211,8 @@ const formatDate = (date: Date): string => {
 const addBook = () => {
   selectedBook.value = null;
   showAddDialog.value = true;
+  // 清除上下文（添加新书籍时没有当前书籍）
+  contextStore.clearContext();
 };
 
 // 从网站导入书籍
@@ -407,6 +411,12 @@ const handleImportBook = async (novel: Novel) => {
 const editBook = (book: Novel) => {
   selectedBook.value = { ...book };
   showEditDialog.value = true;
+  // 更新上下文：设置当前书籍，清除章节和段落
+  contextStore.setContext({
+    currentBookId: book.id,
+    currentChapterId: null,
+    hoveredParagraphId: null,
+  });
 };
 
 // 删除书籍

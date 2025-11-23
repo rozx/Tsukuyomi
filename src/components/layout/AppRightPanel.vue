@@ -129,6 +129,60 @@ const scrollToBottom = () => {
   });
 };
 
+// 聚焦输入框
+const focusInput = () => {
+  // 使用 nextTick 确保 DOM 已更新，然后添加小延迟确保组件状态已更新
+  nextTick(() => {
+    // 添加小延迟确保 PrimeVue 组件状态已更新（特别是 disabled 状态）
+    setTimeout(() => {
+      if (inputRef.value) {
+        // PrimeVue Textarea 组件的聚焦方法
+        // 尝试多种方式访问 textarea 元素
+        const component = inputRef.value as any;
+        
+        // 方法1: 直接调用 focus 方法（如果组件暴露了）
+        if (typeof component.focus === 'function') {
+          component.focus();
+          return;
+        }
+        
+        // 方法2: 通过 $el 访问（Vue 3 组件实例）
+        if (component.$el) {
+          const textarea = component.$el.querySelector?.('textarea') as HTMLTextAreaElement | null;
+          if (textarea) {
+            textarea.focus();
+            return;
+          }
+          // 如果 $el 本身就是 textarea
+          if (component.$el instanceof HTMLTextAreaElement) {
+            component.$el.focus();
+            return;
+          }
+        }
+        
+        // 方法3: 通过 el 属性访问（PrimeVue 可能使用）
+        if (component.el) {
+          const textarea = component.el.querySelector?.('textarea') as HTMLTextAreaElement | null;
+          if (textarea) {
+            textarea.focus();
+            return;
+          }
+          if (component.el instanceof HTMLTextAreaElement) {
+            component.el.focus();
+            return;
+          }
+        }
+        
+        // 方法4: 直接通过 DOM 查询（最后手段）
+        const textareaElement = document.querySelector('textarea[placeholder*="输入消息"]') as HTMLTextAreaElement | null;
+        if (textareaElement && !textareaElement.disabled) {
+          textareaElement.focus();
+        }
+      }
+    }, 50); // 50ms 延迟，确保组件状态已更新
+  });
+};
+
 // 发送消息
 const sendMessage = async () => {
   const message = inputMessage.value.trim();
@@ -851,18 +905,7 @@ const sendMessage = async () => {
     currentMessageActions.value = [];
     scrollToBottom();
     // 聚焦输入框
-    nextTick(() => {
-      if (inputRef.value) {
-        // PrimeVue Textarea 组件可能通过 $el 暴露原生元素，或直接有 focus 方法
-        const component = inputRef.value as unknown as { $el?: HTMLElement; focus?: () => void };
-        if (component.focus) {
-          component.focus();
-        } else if (component.$el) {
-          const textarea = component.$el.querySelector('textarea') as HTMLTextAreaElement | null;
-          textarea?.focus();
-        }
-      }
-    });
+    focusInput();
   }
 };
 
