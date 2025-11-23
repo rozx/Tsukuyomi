@@ -152,6 +152,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
   if (!props.book) return;
 
   confirm.require({
+    group: 'character',
     message: `确定要删除角色 "${character.name}" 吗？`,
     header: '确认删除',
     icon: 'pi pi-exclamation-triangle',
@@ -343,9 +344,8 @@ const handleFileSelect = async (event: Event) => {
       />
     </div>
 
-    <!-- 内容区域 -->
-    <div class="flex-1 p-6 space-y-4 overflow-y-auto">
       <!-- 操作栏 -->
+    <div class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10">
       <div class="flex items-center justify-between gap-3 flex-nowrap">
         <!-- 左侧：搜索栏 -->
         <div class="flex-1 flex items-center gap-3">
@@ -391,11 +391,15 @@ const handleFileSelect = async (event: Event) => {
             @click="openAddDialog"
           />
         </div>
+        </div>
       </div>
 
+    <!-- 内容区域 -->
+    <div class="flex-1 p-6 overflow-y-auto">
       <!-- 角色列表 (卡片视图) -->
       <div
         class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
+        style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)));"
       >
         <SettingCard
           v-for="char in characterSettings"
@@ -430,7 +434,7 @@ const handleFileSelect = async (event: Event) => {
     />
 
     <!-- 确认删除对话框 -->
-    <ConfirmDialog />
+    <ConfirmDialog group="character" />
 
     <!-- 隐藏的文件输入 -->
     <input

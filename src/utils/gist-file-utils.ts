@@ -30,7 +30,28 @@ export function extractNovelIdFromChunkFileName(fileName: string): string | null
 
   const beforeDot = fileName.substring(0, dotIndex);
 
-  // 优先尝试新格式（使用 # 分隔符）
+  // 优先尝试最新格式（使用 _ 作为分隔符，为了兼容 Gist 文件名限制）
+  const underscoreIndex = beforeDot.lastIndexOf('_');
+  if (
+    underscoreIndex !== -1 &&
+    underscoreIndex > prefixLength &&
+    underscoreIndex < beforeDot.length - 1
+  ) {
+    const indexPart = beforeDot.substring(underscoreIndex + 1);
+    if (/^\d+$/.test(indexPart)) {
+      const novelId = beforeDot.substring(prefixLength, underscoreIndex);
+      if (
+        novelId &&
+        novelId.length > 0 &&
+        !novelId.includes('#') &&
+        !novelId.endsWith('-')
+      ) {
+        return novelId;
+      }
+    }
+  }
+
+  // 尝试旧格式（使用 # 分隔符）
   const hashIndex = beforeDot.lastIndexOf('#');
   if (hashIndex !== -1 && hashIndex > prefixLength && hashIndex < beforeDot.length - 1) {
     const indexPart = beforeDot.substring(hashIndex + 1);

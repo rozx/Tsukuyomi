@@ -18,9 +18,9 @@ const GIST_FILE_NAMES = {
 
 /**
  * GitHub Gist 单个文件大小限制（字节）
- * 实际限制约为 1MB，我们使用 900KB 作为安全边界
+ * 实际限制约为 1MB，我们使用 600KB 作为安全边界
  */
-const MAX_FILE_SIZE = 900 * 1024; // 900KB
+const MAX_FILE_SIZE = 600 * 1024; // 600KB
 
 /**
  * 分块大小（字节）
@@ -221,7 +221,8 @@ export class GistSyncService {
     for (const stat of uploadStats) {
       if (stat.chunked && stat.chunkCount) {
         for (let i = 0; i < stat.chunkCount; i++) {
-          const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}#${i}.json`;
+          // 使用 _ 作为分隔符
+          const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
           const chunkFile = uploadedFiles[chunkFileName];
 
           if (!chunkFile) {
@@ -291,7 +292,7 @@ export class GistSyncService {
         coverHistory: data.coverHistory ? this.serializeDates(data.coverHistory) : undefined,
       };
       files[GIST_FILE_NAMES.SETTINGS] = {
-        content: JSON.stringify(settingsData, null, 2),
+        content: JSON.stringify(settingsData),
       };
 
       // 2. 为每本书创建单独的 JSON 文件
@@ -303,14 +304,19 @@ export class GistSyncService {
         chunked: boolean;
         chunkCount?: number;
       }> = [];
+      
+      // 记录每本书的存储格式（分块或单文件），以便清理旧格式文件
+      const novelFormats = new Map<string, 'chunked' | 'single'>();
 
       for (const novel of data.novels) {
         const serializedNovel = this.serializeDates(novel);
-        const jsonContent = JSON.stringify(serializedNovel, null, 2);
+        // 使用压缩格式（去除空格和换行）以减少文件大小
+        const jsonContent = JSON.stringify(serializedNovel);
         const contentSize = new Blob([jsonContent]).size;
 
         if (contentSize <= MAX_FILE_SIZE) {
           // 文件足够小，直接存储
+          novelFormats.set(novel.id, 'single');
           const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novel.id}.json`;
           files[fileName] = {
             content: jsonContent,
@@ -323,6 +329,7 @@ export class GistSyncService {
           });
         } else {
           // 文件过大，分割成多个块
+          novelFormats.set(novel.id, 'chunked');
           // 按字节安全分割（确保不在多字节字符中间切断）
           // 使用二分查找来高效确定分块大小
           const encoder = new TextEncoder();
@@ -356,9 +363,9 @@ export class GistSyncService {
           }
 
           // 存储每个块
-          // 使用 # 作为分隔符，避免与 UUID 中的连字符冲突
+          // 使用 _ 作为分隔符，避免与 UUID 中的连字符冲突，也避免 # 可能引起的 URL 编码问题
           chunks.forEach((chunk, index) => {
-            const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novel.id}#${index}.json`;
+            const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novel.id}_${index}.json`;
             files[chunkFileName] = {
               content: chunk,
             };
@@ -404,56 +411,35 @@ export class GistSyncService {
             }
           }
 
-          // 找出需要删除的文件（远程存在但本地已删除）
+          // 找出需要删除的文件（远程存在但本地已删除，或者格式已改变，或者分块数量减少）
+          // 简单的逻辑：如果文件在 currentFiles 中存在，但在 files（即将上传的文件列表）中不存在，
+          // 且该文件看起来像是我们生成的（以特定的前缀开头），则将其删除。
           const filesToDelete: string[] = [];
           for (const [filename, file] of Object.entries(currentFiles)) {
             if (!file) {
               continue;
             }
 
-            // 跳过设置文件
-            if (filename === GIST_FILE_NAMES.SETTINGS) {
-              continue;
-            }
-
-            // 如果文件已经在本地 files 中（即将上传），则跳过
+            // 检查文件是否在即将上传的列表中
             if (localFileNames.has(filename)) {
               continue;
             }
 
-            // 检查是否是书籍相关文件
-            // 首先检查是否是分块文件（优先处理，因为它们有特殊格式）
-            if (filename.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
-              // 分块文件（新格式：novel-chunk-{id}#{index}.json 或旧格式：novel-chunk-{id}-{index}.json）
-              const chunkNovelId = extractNovelIdFromChunkFileName(filename);
-              if (chunkNovelId && !localNovelIds.has(chunkNovelId)) {
-                // GitHub API 要求使用 null 值来删除文件
-                files[filename] = null; // 删除文件（书籍已删除）
+            // 检查文件名是否符合我们的命名规范
+            const isLunaFile =
+              filename === GIST_FILE_NAMES.SETTINGS ||
+              filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) ||
+              filename.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX);
+
+            if (isLunaFile) {
+              // 如果是我们的文件，且不在上传列表中，说明应该删除
+              // 这涵盖了：
+              // 1. 书籍被删除
+              // 2. 书籍格式改变（单文件 <-> 分块）
+              // 3. 分块数量减少（例如以前有 10 个块，现在只有 8 个，第 8、9 个块会被删除）
+              // 4. 文件重命名（例如分隔符从 # 变为 _，旧文件会被删除）
+              files[filename] = null; // 删除文件
                 filesToDelete.push(filename);
-              }
-            } else if (
-              filename.endsWith('.meta.json') &&
-              filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX)
-            ) {
-              // 元数据文件（novel-{id}.meta.json）
-              const metaMatch = filename.match(/^novel-(.+)\.meta\.json$/);
-              if (metaMatch && metaMatch[1] && !localNovelIds.has(metaMatch[1])) {
-                files[filename] = null; // 删除文件（书籍已删除）
-                filesToDelete.push(filename);
-              }
-            } else if (
-              filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
-              filename.endsWith('.json')
-            ) {
-              // 普通书籍文件（novel-{id}.json）
-              const novelIdMatch = filename.match(/^novel-(.+)\.json$/);
-              if (novelIdMatch && novelIdMatch[1]) {
-                const novelId = novelIdMatch[1];
-                if (!localNovelIds.has(novelId)) {
-                  files[filename] = null; // 删除文件（书籍已删除）
-                  filesToDelete.push(filename);
-                }
-              }
             }
           }
 
@@ -464,44 +450,73 @@ export class GistSyncService {
               files[filename] = null;
             }
           }
-        } catch {
-          // 如果获取失败（例如 Gist 不存在），继续使用原始 files
-          // 在更新时会处理创建新 Gist 的情况
-        }
 
-        // 尝试更新现有 Gist
+          // 批量更新 Gist，避免 payload 过大导致 422 错误
+          // 将文件分为多个批次，每个批次包含一部分更新和删除
+          const allFiles = Object.entries(files);
+          const BATCH_SIZE = 10; // 每个请求最多处理 10 个文件
+          
+          // 优先处理删除操作，以释放配额（如果有配额限制的话）
+          // 但为了原子性，混合处理可能更好，这里简单按顺序分批
+          for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+            const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
+            
         try {
           const response = await this.octokit.rest.gists.update({
             gist_id: gistId,
             description: 'Luna AI Translator - Settings and Novels',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            files: files as any,
+                files: batchFiles as any,
           });
+              // 更新 gistId 和 gistUrl（虽然通常不会变）
+              if (i === 0) {
           gistId = response.data.id;
           gistUrl = response.data.html_url;
-        } catch (updateError: unknown) {
-          // 如果更新失败（例如 Gist 不存在或已被删除），创建新的 Gist
-          const errorStatus = (updateError as { status?: number })?.status;
-          if (errorStatus === 404 || errorStatus === 403) {
+              }
+            } catch (batchError) {
+              // 记录详细的错误信息
+              console.error('Gist batch update failed:', batchError);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const errorData = (batchError as any).response?.data;
+              if (errorData) {
+                console.error('Validation errors:', JSON.stringify(errorData, null, 2));
+                throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
+              }
+              throw batchError;
+            }
+          }
+        } catch (error) {
+          // 如果是更新失败，我们希望中断并报错
+          if (error instanceof Error && error.message.includes('Gist 更新失败')) {
+            throw error;
+          }
+          // 如果获取失败（例如 Gist 不存在），继续使用原始 files (尝试创建新 Gist)
+          // 注意：如果是 batch update 失败，也会进入这里，但会被上面的 if 重新抛出
+        }
+
+        // 如果已经有了 gistUrl，说明 batch update 成功了（或者部分成功），不需要再创建
+        if (!gistUrl) {
+          // 尝试创建新 Gist
+          try {
+            // ... (这里实际上是把 files 用于 create)
+            // 但是 create 不能使用 null 值，需要过滤掉
             const filesForCreate: Record<string, { content: string }> = {};
             for (const [key, value] of Object.entries(files)) {
               if (value !== null) {
                 filesForCreate[key] = value;
               }
             }
+            
             const response = await this.octokit.rest.gists.create({
               description: 'Luna AI Translator - Settings and Novels',
               public: false,
               files: filesForCreate,
             });
-            // 重新创建时，使用新创建的 Gist ID（GitHub 不允许指定 ID）
-            // 但标记为重新创建，以便在 UI 中显示提示
             gistId = response.data.id;
-            isRecreated = true;
             gistUrl = response.data.html_url;
-          } else {
-            // 其他错误，重新抛出
-            throw updateError;
+            isRecreated = true;
+          } catch (createError) {
+             throw createError;
           }
         }
       } else {
@@ -649,9 +664,15 @@ export class GistSyncService {
           }> = [];
 
           for (let i = 0; i < 100; i++) {
-            // 优先尝试新格式（使用 # 分隔符）
-            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+            // 优先尝试最新格式（使用 _ 分隔符）
+            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
             let chunkFile = gistFiles[chunkFileName];
+
+            // 尝试旧格式（使用 # 分隔符）
+            if (!chunkFile) {
+              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+              chunkFile = gistFiles[chunkFileName];
+            }
 
             // 向后兼容：如果新格式不存在，尝试旧格式
             if (!chunkFile) {
@@ -1280,9 +1301,17 @@ export class GistSyncService {
           }> = [];
 
           for (let i = 0; i < 100; i++) {
-            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+            // 优先尝试最新格式（使用 _ 分隔符）
+            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
             let chunkFile = gistFiles[chunkFileName];
 
+            // 尝试旧格式（使用 # 分隔符）
+            if (!chunkFile) {
+              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+              chunkFile = gistFiles[chunkFileName];
+            }
+
+            // 向后兼容：如果新格式不存在，尝试旧格式
             if (!chunkFile) {
               chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}-${i}.json`;
               chunkFile = gistFiles[chunkFileName];

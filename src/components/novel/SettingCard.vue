@@ -57,7 +57,7 @@ const isCharacterCard = computed(() => {
 
 <template>
   <div
-    class="group relative flex flex-col h-full rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors overflow-hidden"
+    class="group relative flex flex-col h-full rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors overflow-hidden w-full max-w-full"
     :class="{ 'ring-2 ring-primary/50': showCheckbox && checked }"
   >
     <!-- 头部：复选框、头像、名称与操作 -->
@@ -82,10 +82,10 @@ const isCharacterCard = computed(() => {
         >
           {{ avatarText }}
         </div>
-        <div class="flex-1 min-w-0 pr-10">
+        <div class="flex-1 min-w-0 pr-10 max-w-full">
           <div class="flex items-center min-w-0 w-full">
-            <div class="flex-1 min-w-0 mr-2">
-              <h3 class="text-lg font-medium text-moon-100 truncate" :title="title">
+            <div class="flex-1 min-w-0 mr-2 max-w-full overflow-hidden">
+              <h3 class="text-lg font-medium text-moon-100 line-clamp-2 break-words w-full" :title="title">
                 {{ title }}
               </h3>
             </div>
@@ -153,10 +153,10 @@ const isCharacterCard = computed(() => {
         <span v-if="translations.length === 0" class="text-moon-100/30 text-xs italic">无</span>
       </div>
       <!-- 字符串情况 (Term) -->
-      <div v-else-if="translations">
+      <div v-else-if="translations" class="min-w-0 max-w-full overflow-hidden">
         <p 
-          class="text-primary-200 text-sm break-words font-medium overflow-hidden leading-6"
-          style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; max-height: 3rem;"
+          class="text-primary-200 text-sm break-words font-medium overflow-hidden leading-6 w-full max-w-full line-clamp-2"
+          :title="typeof translations === 'string' ? translations : ''"
         >
           {{ translations }}
         </p>

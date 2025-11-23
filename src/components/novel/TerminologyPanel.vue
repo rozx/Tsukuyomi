@@ -195,6 +195,7 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
   }
 
   confirm.require({
+    group: 'terminology',
     message: `确定要删除术语 "${terminology.name}" 吗？`,
     header: '确认删除',
     icon: 'pi pi-exclamation-triangle',
@@ -287,6 +288,7 @@ const handleBulkDelete = () => {
   const moreText = selectedCount > 3 ? `等 ${selectedCount} 个` : '';
 
   confirm.require({
+    group: 'terminology',
     message: `确定要删除选中的 ${selectedCount} 个术语吗？\n${selectedNames}${moreText}`,
     header: '确认批量删除',
     icon: 'pi pi-exclamation-triangle',
@@ -477,7 +479,9 @@ const handleFileSelect = async (event: Event) => {
     <!-- 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0 p-6">
       <!-- 操作栏 -->
-      <div class="flex-shrink-0 flex items-center justify-between gap-3 mb-4 flex-nowrap">
+      <div
+        class="flex-shrink-0 flex items-center justify-between gap-3 mb-4 pb-4 border-b border-white/10 flex-nowrap"
+      >
         <!-- 左侧：批量操作控制 -->
         <div v-if="bulkActionMode" class="flex items-center gap-3 flex-shrink-0">
           <Checkbox
@@ -594,13 +598,20 @@ const handleFileSelect = async (event: Event) => {
           </template>
 
           <template #grid="slotProps">
-            <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4">
+            <div
+              class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
+              style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)))"
+            >
               <SettingCard
                 v-for="terminology in slotProps.items"
                 :key="terminology.id"
                 :title="terminology.name"
                 :description="terminology.description"
-                :translations="terminology.translation.translation"
+                :translations="
+                  terminology.translation && typeof terminology.translation === 'object'
+                    ? terminology.translation.translation
+                    : terminology.translation
+                "
                 :occurrences="terminology.occurrences"
                 :show-checkbox="bulkActionMode"
                 :checked="selectedTermIds.has(terminology.id)"
@@ -640,7 +651,7 @@ const handleFileSelect = async (event: Event) => {
     />
 
     <!-- 确认删除对话框 -->
-    <ConfirmDialog />
+    <ConfirmDialog group="terminology" />
 
     <!-- 隐藏的文件输入 -->
     <input

@@ -63,7 +63,7 @@ export abstract class BaseScraper implements NovelScraper {
       // 在浏览器环境中，检查是否需要使用 Vite 代理
       const isBrowser = typeof window !== 'undefined';
       let finalUrl = url;
-      let forceUseProxy = false; // 在浏览器环境中，如果直接请求会被 CORS 阻止，强制使用代理
+      const forceUseProxy = false; // 在浏览器环境中，如果直接请求会被 CORS 阻止，强制使用代理
 
       if (isBrowser && !this.useProxy) {
         // 在浏览器环境中且不使用 AllOrigins 代理时，使用 Vite 代理

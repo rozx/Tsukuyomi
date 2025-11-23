@@ -212,7 +212,35 @@ const loadRevisions = async () => {
 
     const result = await gistSyncService.getGistRevisions(config);
     if (result.success && result.revisions) {
-      revisions.value = result.revisions;
+      // Combine revisions that are within 2 minutes of each other
+      const combinedRevisions: typeof result.revisions = [];
+      let currentBatch: typeof result.revisions = [];
+
+      result.revisions.forEach((rev, index) => {
+        if (currentBatch.length === 0) {
+          currentBatch.push(rev);
+        } else {
+          const lastRev = currentBatch[currentBatch.length - 1];
+          const timeDiff =
+            new Date(lastRev.committedAt).getTime() - new Date(rev.committedAt).getTime();
+
+          // If within 2 minutes (120000 ms), add to current batch
+          if (Math.abs(timeDiff) <= 120000) {
+            currentBatch.push(rev);
+          } else {
+            // Batch complete, add the latest revision from the batch (which is the first one in the list since it's sorted by date desc)
+            combinedRevisions.push(currentBatch[0]);
+            currentBatch = [rev];
+          }
+        }
+
+        // If it's the last revision, finalize the batch
+        if (index === result.revisions!.length - 1) {
+          combinedRevisions.push(currentBatch[0]);
+        }
+      });
+
+      revisions.value = combinedRevisions;
     } else {
       toast.add({
         severity: 'warn',
