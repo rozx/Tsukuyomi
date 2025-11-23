@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { aiModelService } from '../services/ai-model-service';
-import type { AIModel } from '../types/ai/ai-model';
+import type { AIModel } from '../services/ai/types/ai-model';
 
 // Mock objects
 const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));

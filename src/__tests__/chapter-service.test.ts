@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { ChapterService } from '../services/chapter-service';
-import type { Novel, Volume, Chapter } from '../types/novel';
+import type { Novel, Volume, Chapter } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
 // 辅助函数：创建测试用小说

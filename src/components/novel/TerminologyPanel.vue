@@ -476,7 +476,7 @@ const handleFileSelect = async (event: Event) => {
           id: existingTerm.id,
           name: existingTerm.name,
           translation: existingTerm.translation.translation,
-          description: existingTerm.description,
+          ...(existingTerm.description !== undefined ? { description: existingTerm.description } : {}),
         });
         // 更新现有术语
         await TerminologyService.updateTerminology(props.book.id, existingTerm.id, {

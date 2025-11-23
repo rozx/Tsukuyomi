@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { BookService } from '../services/book-service';
-import type { Novel } from '../types/novel';
+import type { Novel } from '../models/novel';
 
 // Mock objects
 const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));

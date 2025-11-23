@@ -319,10 +319,10 @@ const handleFileSelect = async (event: Event) => {
         updatedCharsSnapshot.push({
           id: existingChar.id,
           name: existingChar.name,
-          sex: existingChar.sex,
+          ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
           translation: existingChar.translation.translation,
-          description: existingChar.description,
-          speakingStyle: existingChar.speakingStyle,
+          ...(existingChar.description !== undefined ? { description: existingChar.description } : {}),
+          ...(existingChar.speakingStyle !== undefined ? { speakingStyle: existingChar.speakingStyle } : {}),
           aliases: existingChar.aliases.map((a: Alias) => ({
             name: a.name,
             translation: a.translation.translation,

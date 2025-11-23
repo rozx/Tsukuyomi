@@ -53,7 +53,7 @@ describe('matchCharactersInText', () => {
       
       // Without context, defaults to first char (charA)
       const matchesDefault = matchCharactersInText(text, [charA, charB]);
-      expect(matchesDefault[0].item.id).toBe('1');
+      expect(matchesDefault[0]?.item.id).toBe('1');
 
       // With context preferring B (Alfred)
       const contextScores = new Map<string, number>();
@@ -62,7 +62,7 @@ describe('matchCharactersInText', () => {
       
       const matchesWithContext = matchCharactersInText(text, [charA, charB], contextScores);
       expect(matchesWithContext).toHaveLength(1);
-      expect(matchesWithContext[0].item.id).toBe('2'); // Should be Alfred due to context
+      expect(matchesWithContext[0]?.item.id).toBe('2'); // Should be Alfred due to context
   });
 
   test('should handle tie by preserving original order', () => {
@@ -73,11 +73,11 @@ describe('matchCharactersInText', () => {
     const matches = matchCharactersInText(text, [charA, charB]);
     
     expect(matches).toHaveLength(1);
-    expect(matches[0].item.id).toBe('1');
+    expect(matches[0]?.item.id).toBe('1');
 
     const matchesSwapped = matchCharactersInText(text, [charB, charA]);
     expect(matchesSwapped).toHaveLength(1);
-    expect(matchesSwapped[0].item.id).toBe('2');
+    expect(matchesSwapped[0]?.item.id).toBe('2');
   });
   
   test('should count multiple occurrences correctly', () => {
@@ -126,7 +126,7 @@ describe('findUniqueCharactersInText', () => {
     // So charA wins.
     const uniqueDefault = findUniqueCharactersInText(text, [charA, charB]);
     expect(uniqueDefault).toHaveLength(1);
-    expect(uniqueDefault[0].id).toBe('1');
+    expect(uniqueDefault[0]?.id).toBe('1');
 
     // Context: Alfred wins
     const contextScores = new Map<string, number>();
@@ -134,6 +134,6 @@ describe('findUniqueCharactersInText', () => {
     
     const uniqueContext = findUniqueCharactersInText(text, [charA, charB], contextScores);
     expect(uniqueContext).toHaveLength(1);
-    expect(uniqueContext[0].id).toBe('2');
+    expect(uniqueContext[0]?.id).toBe('2');
   });
 });

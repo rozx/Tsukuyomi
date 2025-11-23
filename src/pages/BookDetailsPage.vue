@@ -333,7 +333,7 @@ const retranslateParagraph = async (paragraphId: string) => {
               await TerminologyService.updateTerminology(book.value.id, previousTerm.id, {
                 name: previousTerm.name,
                 translation: previousTerm.translation.translation,
-                description: previousTerm.description,
+                ...(previousTerm.description !== undefined ? { description: previousTerm.description } : {}),
               });
             } else {
               const previousChar = action.previousData as CharacterSetting;
@@ -342,10 +342,10 @@ const retranslateParagraph = async (paragraphId: string) => {
                 previousChar.id,
                 {
                   name: previousChar.name,
-                  sex: previousChar.sex,
+                  ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
                   translation: previousChar.translation.translation,
-                  description: previousChar.description,
-                  speakingStyle: previousChar.speakingStyle,
+                  ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
+                  ...(previousChar.speakingStyle !== undefined ? { speakingStyle: previousChar.speakingStyle } : {}),
                   aliases: previousChar.aliases.map((a) => ({
                     name: a.name,
                     translation: a.translation.translation,
@@ -1268,7 +1268,7 @@ const translateAllParagraphs = async () => {
               await TerminologyService.updateTerminology(book.value.id, previousTerm.id, {
                 name: previousTerm.name,
                 translation: previousTerm.translation.translation,
-                description: previousTerm.description,
+                ...(previousTerm.description !== undefined ? { description: previousTerm.description } : {}),
               });
             } else {
               const previousChar = action.previousData as CharacterSetting;
@@ -1277,10 +1277,10 @@ const translateAllParagraphs = async () => {
                 previousChar.id,
                 {
                   name: previousChar.name,
-                  sex: previousChar.sex,
+                  ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
                   translation: previousChar.translation.translation,
-                  description: previousChar.description,
-                  speakingStyle: previousChar.speakingStyle,
+                  ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
+                  ...(previousChar.speakingStyle !== undefined ? { speakingStyle: previousChar.speakingStyle } : {}),
                   aliases: previousChar.aliases.map((a) => ({
                     name: a.name,
                     translation: a.translation.translation,
@@ -2974,7 +2974,7 @@ const handleDragLeave = () => {
                     :paragraph="paragraph"
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
-                    :character-scores="chapterCharacterScores"
+                    v-bind="chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
                     :search-query="searchQuery"
                     :id="`paragraph-${paragraph.id}`"
