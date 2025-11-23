@@ -17,5 +17,6 @@ static_sites:
         scope: BUILD_TIME
     routes:
       - path: /
+    # History 路由模式需要 catchall_document 将所有路由重定向到 index.html
     catchall_document: index.html
 
