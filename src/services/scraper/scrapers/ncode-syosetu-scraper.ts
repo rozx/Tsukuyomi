@@ -533,23 +533,29 @@ export class NcodeSyosetuScraper extends BaseScraper {
     const chapters: ParsedChapterInfo[] = [];
     const volumeInfo: Array<{ title: string; startIndex: number }> = [];
 
-    // 查找章节列表容器
-    const indexBox = $('.index_box');
+    // 使用提供的选择器：body > div.l-container > main > article > div.p-eplist
+    // 直接查找 div.p-eplist 容器
+    const eplistContainer = $('body > div.l-container > main > article > div.p-eplist');
 
-    if (indexBox.length > 0) {
+    if (eplistContainer.length > 0) {
       let currentVolumeTitle: string | null = null;
       let currentVolumeStartIndex = 0;
       let chapterIndex = 0;
 
-      // 使用与 novel-downloader 相同的方式查找元素
-      // 查找：直接子元素中的 .chapter_title 和所有 .novel_sublist2（可能是嵌套的）
-      const table = indexBox.find('> .chapter_title, .novel_sublist2');
+      // 遍历 .p-eplist 内的所有元素，查找卷标题和章节
+      // 卷标题：.p-eplist__chapter-title
+      // 章节容器：.p-eplist__sublist
+      // 章节链接：.p-eplist__subtitle
+      // 日期信息：.p-eplist__update
 
-      table.each((_, element) => {
+      // 查找所有卷标题和章节容器
+      const allElements = eplistContainer.find('.p-eplist__chapter-title, .p-eplist__sublist');
+
+      allElements.each((_, element) => {
         const $el = $(element);
 
         // 检查是否是卷标题
-        if ($el.hasClass('chapter_title')) {
+        if ($el.hasClass('p-eplist__chapter-title')) {
           const volumeTitle = $el.text().trim();
           if (volumeTitle) {
             // 保存当前卷的信息（如果有的话）
@@ -564,42 +570,13 @@ export class NcodeSyosetuScraper extends BaseScraper {
             currentVolumeStartIndex = chapterIndex;
           }
         }
-        // 检查是否是章节列表项
-        else if ($el.hasClass('novel_sublist2')) {
-          // 检查是否有 .bookmarker_now，如果有则跳过（这是当前阅读位置的标记）
-          if ($el.find('.bookmarker_now').length > 0) {
-            return; // 跳过这个元素
-          }
-
-          // 尝试多种方式查找章节链接
-          let link = $el.find('.subtitle a').first();
-          if (link.length === 0) {
-            // 如果没有找到 .subtitle a，尝试直接查找 a 标签
-            link = $el.find('a').first();
-          }
-
-          if (link.length > 0) {
-            // 使用 prop('href') 获取完整的 URL（包括相对路径的解析）
-            // 如果 prop 返回 undefined，则使用 attr
-            let href = link.prop('href');
-            if (!href) {
-              href = link.attr('href');
-            }
-
-            // 如果没有 href 属性，尝试从 data 属性或其他方式获取
-            if (!href) {
-              return; // 跳过没有链接的项
-            }
-
-            // 获取章节标题
-            let chapterTitle = link.text().trim();
-            // 如果链接中没有文本，尝试从父元素获取
-            if (!chapterTitle) {
-              chapterTitle = $el.find('.subtitle').text().trim();
-            }
-            if (!chapterTitle) {
-              chapterTitle = $el.text().trim();
-            }
+        // 检查是否是章节容器
+        else if ($el.hasClass('p-eplist__sublist')) {
+          // 查找章节链接
+          const chapterLink = $el.find('a.p-eplist__subtitle').first();
+          if (chapterLink.length > 0) {
+            const href = chapterLink.prop('href') || chapterLink.attr('href');
+            const chapterTitle = chapterLink.text().trim();
 
             if (href && chapterTitle) {
               // 构建完整 URL
@@ -607,70 +584,62 @@ export class NcodeSyosetuScraper extends BaseScraper {
               if (href.startsWith('http')) {
                 fullUrl = href;
               } else if (href.startsWith('/')) {
-                // 使用当前实例的 BASE_URL（可能是 ncode 或 novel18）
                 const baseUrlObj = new URL(baseUrl);
                 fullUrl = `${baseUrlObj.origin}${href}`;
               } else {
-                // 相对路径，需要基于 baseUrl 解析
                 const baseUrlObj = new URL(baseUrl);
                 fullUrl = new URL(href, baseUrlObj.href).href;
               }
 
               // 验证 URL 是否包含章节 ID（数字）
-              // ncode.syosetu.com 的章节 URL 格式：/{novel_id}/{chapter_id}
               const novelId = this.extractNovelId(baseUrl);
               if (novelId) {
-                // 检查 URL 是否包含有效的章节 ID
                 const chapterIdMatch = fullUrl.match(new RegExp(`/${novelId}/(\\d+)`));
-                if (!chapterIdMatch) {
-                  // 如果 URL 不包含章节 ID，跳过这个章节
-                  return;
+                if (chapterIdMatch) {
+                  // 提取日期信息
+                  let date: string | Date | undefined;
+                  let lastUpdated: string | Date | undefined;
+                  const dateElement = $el.find('.p-eplist__update');
+                  if (dateElement.length > 0) {
+                    // 首先尝试从 span[title] 中获取改稿日期
+                    const updateSpan = dateElement.find('span[title*="/"]');
+                    if (updateSpan.length > 0) {
+                      const dateTitle = updateSpan.attr('title');
+                      if (dateTitle) {
+                        // 提取日期部分（格式：YYYY/MM/DD HH:mm 改稿）
+                        const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
+                        const parsedDate = this.parseDateString(cleanedDate);
+                        lastUpdated = parsedDate || cleanedDate;
+                      }
+                    }
+
+                    // 从文本中提取原始日期
+                    // 移除 span 标签后获取日期文本
+                    const dateText = dateElement.clone().find('span').remove().end().text().trim();
+                    if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
+                      const parsedDate = this.parseDateString(dateText);
+                      date = parsedDate || dateText;
+                      // 如果没有找到改稿日期，使用原始日期作为 lastUpdated
+                      if (!lastUpdated) {
+                        lastUpdated = parsedDate || dateText;
+                      }
+                    }
+                  }
+
+                  const chapter: ParsedChapterInfo = {
+                    title: chapterTitle,
+                    url: fullUrl,
+                  };
+                  if (date) {
+                    chapter.date = date;
+                  }
+                  if (lastUpdated) {
+                    chapter.lastUpdated = lastUpdated;
+                  }
+                  chapters.push(chapter);
+                  chapterIndex++;
                 }
               }
-
-              // 提取日期
-              // ncode.syosetu.com 的日期格式：YYYY/MM/DD HH:mm
-              let date: string | Date | undefined;
-              let lastUpdated: string | Date | undefined;
-              const dateElement = $el.find('.long_update');
-              if (dateElement.length > 0) {
-                // 尝试从 title 属性中获取日期（格式：YYYY/MM/DD HH:mm）
-                const dateTitle = dateElement.find('span[title*="/"]').attr('title');
-                if (dateTitle) {
-                  const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
-                  // 解析日期字符串为 Date 对象
-                  const parsedDate = this.parseDateString(cleanedDate);
-                  // 检查是否包含 "改稿" 标记
-                  if (dateTitle.includes('改稿')) {
-                    lastUpdated = parsedDate || cleanedDate;
-                  } else {
-                    date = parsedDate || cleanedDate;
-                    lastUpdated = parsedDate || cleanedDate; // 导入时，所有从网站获取的日期都作为 lastUpdated
-                  }
-                } else {
-                  // 如果没有 title 属性，从文本中提取
-                  dateElement.find('*').remove();
-                  const dateText = dateElement.text().trim();
-                  if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
-                    const parsedDate = this.parseDateString(dateText);
-                    date = parsedDate || dateText;
-                    lastUpdated = parsedDate || dateText;
-                  }
-                }
-              }
-
-              const chapter: ParsedChapterInfo = {
-                title: chapterTitle,
-                url: fullUrl,
-              };
-              if (date) {
-                chapter.date = date;
-              }
-              if (lastUpdated) {
-                chapter.lastUpdated = lastUpdated;
-              }
-              chapters.push(chapter);
-              chapterIndex++;
             }
           }
         }
@@ -689,50 +658,6 @@ export class NcodeSyosetuScraper extends BaseScraper {
         volumeInfo.push({
           title: '正文',
           startIndex: 0,
-        });
-      }
-    }
-
-    // 如果没有找到章节，尝试备用方法：从所有链接中查找章节
-    if (chapters.length === 0) {
-      const novelId = this.extractNovelId(baseUrl);
-      if (novelId) {
-        // 查找所有包含 novel_id 和数字的链接
-        $(`a[href*="${novelId}"]`).each((_, el) => {
-          const link = $(el);
-          const href = link.prop('href') || link.attr('href');
-          const text = link.text().trim();
-
-          if (href && text) {
-            // 检查是否是章节链接（包含 novel_id 和数字，但不包含 index 或 novelview）
-            if (
-              href.includes(novelId) &&
-              /\d+/.test(href) &&
-              !href.includes('index') &&
-              !href.includes('novelview') &&
-              !href.includes('novelview/infotop')
-            ) {
-              // 构建完整 URL
-              let fullUrl: string;
-              if (href.startsWith('http')) {
-                fullUrl = href;
-              } else if (href.startsWith('/')) {
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = `${baseUrlObj.origin}${href}`;
-              } else {
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              }
-
-              // 验证 URL 格式
-              if (fullUrl.match(new RegExp(`/${novelId}/\\d+`))) {
-                chapters.push({
-                  title: text,
-                  url: fullUrl,
-                });
-              }
-            }
-          }
         });
       }
     }
@@ -770,7 +695,22 @@ export class NcodeSyosetuScraper extends BaseScraper {
     }
 
     // 提取作者
-    let author: string | undefined = $('#novel_writername').text().trim();
+    // 优先从 .p-novel__author 中提取
+    let author: string | undefined = $('.p-novel__author a').first().text().trim();
+    if (!author) {
+      // 如果没有找到链接，尝试从 .p-novel__author 的文本中提取（移除"作者："前缀）
+      const authorText = $('.p-novel__author').text().trim();
+      if (authorText) {
+        author = authorText.replace(/^作者[：:]\s*/, '').trim();
+        if (author === '') {
+          author = undefined;
+        }
+      }
+    }
+    if (!author) {
+      // 回退到旧的选择器
+      author = $('#novel_writername').text().trim();
+    }
     if (!author) {
       author = $('a[href*="/user/"]').first().text().trim();
     }

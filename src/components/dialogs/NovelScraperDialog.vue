@@ -699,7 +699,7 @@ watch(
       </div>
 
       <!-- 统计信息 -->
-      <div v-if="scrapedNovel && !loading && showNovelInfo" class="card-base p-4 flex-shrink-0">
+      <div v-if="scrapedNovel && !loading && showNovelInfo" class="card-base p-4 flex-shrink-0 max-h-[40vh] overflow-y-auto">
         <div class="flex items-center justify-between">
           <div>
             <h3 class="text-lg font-semibold text-moon/90 mb-1">{{ scrapedNovel.title }}</h3>
@@ -772,7 +772,7 @@ watch(
                   </div>
                 </div>
               </div>
-              <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+              <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3 max-h-[70vh]">
                 <div v-for="volumeGroup in displayVolumeChapters" :key="volumeGroup.volumeId" class="space-y-2">
                   <div
                     class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
@@ -901,7 +901,7 @@ watch(
               <div v-else class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
                 <h4 class="text-lg font-semibold text-moon/60">请从左侧选择章节</h4>
               </div>
-              <div class="flex-1 overflow-y-auto px-6 py-4">
+              <div class="flex-1 overflow-y-auto px-6 py-4 max-h-[70vh]">
                 <!-- 加载中 - 使用骨架屏 -->
                 <div v-if="loadingChapters.has(selectedChapterId || '')" class="py-4 space-y-2">
                   <Skeleton width="100%" height="1rem" v-for="i in 15" :key="i" />
