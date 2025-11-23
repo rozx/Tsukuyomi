@@ -348,12 +348,14 @@ const sendMessage = async () => {
   // 注意：不在这里重置操作列表，因为操作可能在消息发送过程中发生
   // 操作列表会在消息完成或失败时处理
 
+  // 获取当前会话的总结（如果有）
+  // 保存会话 ID，确保在异步操作期间即使会话切换，消息也会保存到正确的会话
+  // 在 try 块外定义，以便在 catch 块中也能访问
+  const currentSession = chatSessionsStore.currentSession;
+  const sessionId = currentSession?.id ?? null;
+  const sessionSummary = currentSession?.summary;
+
   try {
-      // 获取当前会话的总结（如果有）
-      // 保存会话 ID，确保在异步操作期间即使会话切换，消息也会保存到正确的会话
-      const currentSession = chatSessionsStore.currentSession;
-      const sessionId = currentSession?.id ?? null;
-      const sessionSummary = currentSession?.summary;
 
       // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
       const messageHistory: AIChatMessage[] | undefined = currentSession?.messages
@@ -1463,7 +1465,7 @@ const handleActionPopoverHide = () => {
                   :ref="(el) => {
                     const actionKey = `${message.id}-${action.timestamp}`;
                     if (el) {
-                      actionPopoverRefs.set(actionKey, el as InstanceType<typeof Popover>);
+                      actionPopoverRefs.set(actionKey, el as unknown as InstanceType<typeof Popover>);
                     }
                   }"
                   :target="`action-${message.id}-${action.timestamp}`"
