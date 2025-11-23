@@ -3,7 +3,7 @@
 <template>
   <footer class="border-t border-white/10 py-3 text-xs text-moon/70 shrink-0">
     <div class="px-3 flex items-center justify-between">
-      <span>© 2025 Luna AI Translator v0.1</span>
+      <span>© 2025 Luna AI Translator v0.5</span>
       <a
         href="https://github.com/rozx"
         target="_blank"

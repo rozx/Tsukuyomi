@@ -1,7 +1,8 @@
 name: luna-ai-translator
 region: nyc
 
-# 静态站点配置
+# 静态站点配置（使用 npm 作为备选方案）
+# 如果 Bun 安装有问题，可以使用此配置
 static_sites:
   - name: web
     github:
@@ -9,7 +10,7 @@ static_sites:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bun run build:spa
+    build_command: npm install && npm run build:spa
     output_dir: dist/spa
     envs:
       - key: NODE_ENV

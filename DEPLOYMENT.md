@@ -10,7 +10,43 @@
 
 ## 部署步骤
 
-### 方法一：使用 app.yaml 配置文件（推荐）
+### 方法一：在控制台中手动配置（强烈推荐）
+
+由于 DigitalOcean 可能会自动检测 `package.json` 并使用 Node.js Buildpack（导致需要启动命令的错误），**强烈建议在控制台中手动配置为静态站点**：
+
+1. **在 DigitalOcean 控制台创建应用**
+   - 登录 [DigitalOcean 控制台](https://cloud.digitalocean.com/apps)
+   - 点击 "Create App"
+   - 选择 "GitHub" 作为源代码来源
+   - 授权 DigitalOcean 访问你的 GitHub 账户
+   - 选择你的仓库 `luna-ai-translator`
+   - 选择分支（通常是 `main`）
+
+2. **重要：手动配置为静态站点**
+   - 在 "Configure App" 页面，**不要**使用自动检测的配置
+   - 点击 "Edit" 或 "Add Component"
+   - **选择 "Static Site" 类型**（不是 Web Service）
+   - 配置以下设置：
+     - **Build Command**: `curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bun run build:spa`
+       - 或者使用 npm：`npm install && npm run build:spa`
+     - **Output Directory**: `dist/spa`
+     - **HTTP Port**: 8080（默认，静态站点会自动处理）
+     - **Routes**: `/` → 指向静态站点
+     - **Catchall Document**: `index.html`
+
+3. **配置环境变量**
+   - 在 "Environment Variables" 部分，添加：
+     - Key: `NODE_ENV`
+     - Value: `production`
+     - Scope: `Build Time`
+
+4. **部署**
+   - 点击 "Create Resources" 或 "Deploy"
+   - DigitalOcean 会自动构建并部署你的应用
+
+### 方法二：使用 app.yaml 配置文件
+
+**注意**：如果使用 `app.yaml`，DigitalOcean 可能会自动检测 `package.json` 并使用 Node.js Buildpack，导致需要启动命令的错误。如果遇到此问题，请使用方法一（手动配置）。
 
 1. **确保 app.yaml 配置正确**
    - 打开 `app.yaml` 文件
@@ -25,7 +61,7 @@
    - 选择你的仓库 `luna-ai-translator`
    - 选择分支（通常是 `main`）
    - 在 "Configure App" 页面，选择 "Edit app.yaml" 或直接使用项目根目录的 `app.yaml` 文件
-   - DigitalOcean 会自动检测并加载 `app.yaml` 配置
+   - **重要**：如果看到自动检测为 "Web Service"，请手动改为 "Static Site"
 
 3. **配置环境变量（可选）**
    - 在 App Platform 控制台中，进入你的应用
@@ -152,22 +188,63 @@ Quasar 构建 SPA 时，默认输出到 `dist/spa` 目录。确保 `app.yaml` �
 
 **解决方案：**
 
+#### 方案 1：在控制台中手动配置（推荐）
+
+如果 `app.yaml` 配置无法正常工作，可以在 DigitalOcean 控制台中手动配置：
+
+1. **删除当前应用**（如果已创建）
+2. **创建新应用**：
+   - 登录 [DigitalOcean 控制台](https://cloud.digitalocean.com/apps)
+   - 点击 "Create App"
+   - 选择 "GitHub" 作为源代码来源
+   - 选择你的仓库和分支
+
+3. **配置静态站点**：
+   - 在 "Components" 部分，点击 "Edit" 或 "Add Component"
+   - 选择 **"Static Site"** 类型（不是 Web Service）
+   - 配置以下设置：
+     - **Build Command**: `curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bun run build:spa`
+     - **Output Directory**: `dist/spa`
+     - **HTTP Port**: 8080（默认）
+     - **Routes**: `/` → 指向静态站点
+     - **Catchall Document**: `index.html`
+
+4. **环境变量**：
+   - 添加 `NODE_ENV=production`（Scope: Build Time）
+
+5. **部署**：
+   - 点击 "Create Resources" 或 "Deploy"
+
+#### 方案 2：检查 app.yaml 配置
+
 1. **确认配置格式正确**：
    - 确保使用 `static_sites` 而不是 `services`
-   - 确保 `output_dir` 指向正确的构建输出目录
-   - 确保 `source_dir` 已设置（通常为 `/`）
+   - 确保 `output_dir` 指向正确的构建输出目录（`dist/spa`）
+   - 确保 `source_dir` 已设置（`/`）
 
 2. **检查构建是否成功**：
    - 查看构建日志，确认构建命令成功执行
-   - 确认 `dist/spa` 目录中有构建输出文件
+   - 确认 `dist/spa` 目录中有构建输出文件（`index.html` 等）
 
 3. **重新部署**：
    - 如果配置已更新，重新触发部署
    - 确保 `app.yaml` 文件已正确提交到 GitHub
 
-4. **如果问题持续**：
-   - 尝试在 DigitalOcean 控制台中手动创建静态站点
-   - 或者联系 DigitalOcean 支持团队
+#### 方案 3：使用 npm 作为备选
+
+如果 Bun 安装有问题，可以尝试使用 npm：
+
+修改 `app.yaml` 中的构建命令为：
+```yaml
+build_command: npm install && npm run build:spa
+```
+
+或者如果 `build:spa` 脚本不存在，使用：
+```yaml
+build_command: npm install && npx quasar build -m spa
+```
+
+**注意**：确保 `package.json` 中有 `build:spa` 脚本，或者使用 `npx quasar build -m spa` 命令。
 
 ### API 调用失败
 
