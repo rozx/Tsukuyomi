@@ -73,10 +73,7 @@ const handleFileSelect = async (event: Event) => {
   if (result.success && result.data) {
     // 覆盖当前的 AI 模型数据
     if (result.data.models.length > 0) {
-      void aiModelsStore.clearModels();
-      result.data.models.forEach((model) => {
-        void aiModelsStore.addModel(model);
-      });
+      await aiModelsStore.bulkImportModels(result.data.models);
     }
 
     // 覆盖当前的书籍数据

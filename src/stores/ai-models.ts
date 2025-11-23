@@ -137,6 +137,23 @@ export const useAIModelsStore = defineStore('aiModels', {
       await aiModelService.clearModels();
       this.models = [];
     },
+
+    /**
+     * 批量导入模型（用于导入配置）
+     * 先清空现有模型，然后批量添加新模型
+     */
+    async bulkImportModels(models: AIModel[]): Promise<void> {
+      // 先清空现有模型
+      await aiModelService.clearModels();
+      this.models = [];
+      
+      // 批量保存到 IndexedDB
+      if (models.length > 0) {
+        await aiModelService.bulkSaveModels(models);
+        // 更新 store 状态
+        this.models = [...models];
+      }
+    },
   },
 });
 
