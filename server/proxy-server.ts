@@ -147,9 +147,25 @@ proxyConfigs.forEach((config) => {
     on: {
       proxyReq: (
         proxyReq: ClientRequest,
-        _req: IncomingMessage,
+        req: IncomingMessage,
         _res: ServerResponse<IncomingMessage>,
       ) => {
+        const expressReq = req as unknown as Request;
+        const startTime = Date.now();
+        const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // 存储请求开始时间到请求对象，以便在响应时计算耗时
+        (req as any).proxyStartTime = startTime;
+        (req as any).proxyRequestId = requestId;
+        
+        // 记录请求开始
+        const targetUrl = `${proxyOptions.target}${expressReq.path}${expressReq.url?.split('?')[1] ? '?' + expressReq.url.split('?')[1] : ''}`;
+        console.log(`[Proxy Request Start] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${targetUrl}`, {
+          originalUrl: expressReq.url,
+          target: proxyOptions.target,
+          timestamp: new Date().toISOString(),
+        });
+
         // 设置自定义请求头
         if (headers) {
           Object.entries(headers).forEach(([key, value]) => {
@@ -161,18 +177,53 @@ proxyConfigs.forEach((config) => {
         proxyReq.removeHeader('x-forwarded-host');
         proxyReq.removeHeader('x-forwarded-proto');
       },
+      proxyRes: (
+        proxyRes: IncomingMessage,
+        req: IncomingMessage,
+        res: ServerResponse<IncomingMessage>,
+      ) => {
+        const expressReq = req as unknown as Request;
+        const startTime = (req as any).proxyStartTime;
+        const requestId = (req as any).proxyRequestId || 'unknown';
+        const duration = startTime ? Date.now() - startTime : 0;
+        
+        // 记录成功响应
+        console.log(`[Proxy Response] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${proxyRes.statusCode}`, {
+          statusCode: proxyRes.statusCode,
+          duration: `${duration}ms`,
+          timestamp: new Date().toISOString(),
+        });
+      },
       error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
         const expressReq = req as unknown as Request;
-        console.error(`[Proxy Error] ${expressReq.path || req.url}:`, err.message);
+        const startTime = (req as any).proxyStartTime;
+        const requestId = (req as any).proxyRequestId || 'unknown';
+        const duration = startTime ? Date.now() - startTime : 0;
+        
+        // 检查是否是超时错误
+        const isTimeout = err.message.includes('timeout') || err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET');
+        const errorType = isTimeout ? 'TIMEOUT' : 'ERROR';
+        
+        // 详细错误日志
+        console.error(`[Proxy ${errorType}] [${requestId}] ${expressReq.method} ${expressReq.path}`, {
+          error: err.message,
+          errorCode: (err as any).code,
+          errorStack: err.stack,
+          duration: `${duration}ms`,
+          target: proxyOptions.target,
+          originalUrl: expressReq.url,
+          timestamp: new Date().toISOString(),
+        });
+        
         // 只有当 res 是 ServerResponse 时才发送响应
         if (res && 'status' in res && 'headersSent' in res) {
           const expressRes = res as unknown as Response;
           if (!expressRes.headersSent) {
-            // 检查是否是超时错误
-            const isTimeout = err.message.includes('timeout') || err.message.includes('ETIMEDOUT');
             expressRes.status(isTimeout ? 504 : 500).json({
               error: isTimeout ? '代理请求超时' : '代理请求失败',
               message: err.message,
+              requestId,
+              duration: `${duration}ms`,
             });
           }
         }
