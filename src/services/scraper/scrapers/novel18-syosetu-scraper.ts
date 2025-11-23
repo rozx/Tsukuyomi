@@ -10,7 +10,7 @@ import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
  * 都会自动应用到 Novel18SyosetuScraper
  */
 export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
-  protected override useProxy: boolean = false; // novel18.syosetu.com 不使用 AllOrigins 代理
+  protected override useProxy: boolean = false; // novel18.syosetu.com 不使用代理
 
   protected static override readonly BASE_URL = 'https://novel18.syosetu.com';
   // 匹配 novel18.syosetu.com 的小说 URL

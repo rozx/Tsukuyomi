@@ -1,6 +1,5 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import express, { type Request, type Response } from 'express';
-import cors from 'cors';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { ClientRequest } from 'http';
 import type { Socket } from 'net';
@@ -18,8 +17,7 @@ const PORT = Number(process.env.PORT) || 8080;
 // DigitalOcean 会自动设置 NODE_ENV=production
 const isProduction = process.env.NODE_ENV === 'production';
 
-// 启用 CORS
-app.use(cors());
+// 注意：由于前端和后端都在同一个服务器上运行，不需要启用 CORS
 
 // 代理配置类型
 interface ProxyConfig {
@@ -189,8 +187,11 @@ proxyConfigs.forEach((config) => {
   app.use(path, createProxyMiddleware(proxyMiddlewareOptions));
 });
 
-// 生产环境：提供静态文件服务
+// Vite 开发服务器端口（在开发环境中使用）
+const VITE_DEV_PORT = Number(process.env.VITE_PORT) || 9000;
+
 if (isProduction) {
+  // 生产环境：提供静态文件服务
   const distPath = join(__dirname, '../dist/spa');
   if (existsSync(distPath)) {
     // 提供静态文件
@@ -218,6 +219,46 @@ if (isProduction) {
   } else {
     console.warn(`警告: 未找到构建目录 ${distPath}，仅提供 API 代理服务`);
   }
+} else {
+  // 开发环境：代理到 Vite 开发服务器
+  const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
+  
+  // 代理所有非 API 请求到 Vite 开发服务器
+  const viteProxy = createProxyMiddleware({
+    target: viteTarget,
+    changeOrigin: true,
+    ws: true, // 支持 WebSocket（用于 HMR）
+    logLevel: 'warn',
+    onError: (err, req, res) => {
+      // 如果 Vite 开发服务器未启动，返回提示信息
+      if ((err as { code?: string }).code === 'ECONNREFUSED') {
+        const response = res as Response;
+        response.status(503).send(`
+          <html>
+            <head><title>Vite Dev Server Not Running</title></head>
+            <body>
+              <h1>Vite 开发服务器未运行</h1>
+              <p>请确保 Vite 开发服务器正在 ${viteTarget} 上运行。</p>
+              <p>Vite 开发服务器应该会自动启动。如果未启动，请检查控制台输出。</p>
+            </body>
+          </html>
+        `);
+      } else {
+        const response = res as Response;
+        response.status(500).send('代理错误: ' + (err as Error).message);
+      }
+    },
+  });
+  
+  // 代理所有非 API 路由到 Vite
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    viteProxy(req, res, next);
+  });
+  
+  console.log(`开发模式: 代理到 Vite 开发服务器 ${viteTarget}`);
 }
 
 // 健康检查端点

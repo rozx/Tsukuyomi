@@ -87,8 +87,19 @@ export default defineConfig((ctx) => {
           }),
         );
 
-        // 配置代理以解决 CORS 问题
+        // 配置开发服务器端口（避免与 Node.js 应用服务器冲突）
         if (!viteConf.server) viteConf.server = {};
+        // 开发环境：使用端口 9000，Node.js 应用服务器在 8080
+        if (!viteConf.server.port) {
+          viteConf.server.port = Number(process.env.VITE_PORT) || 9000;
+        }
+        if (!viteConf.server.host) {
+          viteConf.server.host = 'localhost';
+        }
+        // 禁用自动打开浏览器（因为使用 Node.js 应用服务器作为入口）
+        viteConf.server.open = false;
+        
+        // 配置代理以解决 CORS 问题
         viteConf.server.proxy = {
           '/api/sda1': {
             target: 'https://p.sda1.dev',
@@ -325,7 +336,8 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#devserver
     devServer: {
       // https: true,
-      open: true, // opens browser window automatically
+      // 禁用自动打开浏览器（因为使用 Node.js 应用服务器作为入口）
+      open: false,
       // 代理配置在 extendViteConf 中设置
       port: 9000,
     },

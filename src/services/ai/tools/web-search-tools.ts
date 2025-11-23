@@ -253,8 +253,8 @@ async function searchWeb(query: string): Promise<{
 
 /**
  * 直接访问网页并提取内容
- * 在浏览器中使用 allOrigins 代理以避免 CORS 问题
- * 在 Electron/Node.js 中直接访问
+ * 在浏览器环境中使用服务器代理路径（如需要）
+ * 在 Electron/Node.js/Bun 中直接访问
  */
 async function fetchWebpage(url: string): Promise<{
   success: boolean;
@@ -277,19 +277,20 @@ async function fetchWebpage(url: string): Promise<{
     }
 
     const isBrowser = typeof window !== 'undefined';
-    let fetchUrl: string;
+    let fetchUrl: string = url;
     let headers: Record<string, string>;
 
+    // 在 Node.js/Bun 环境中直接访问
+    // 在浏览器环境中也可以直接访问，因为现在有服务器代理
     if (isBrowser) {
-      // 浏览器环境：使用 allOrigins 代理
-      // allOrigins API: https://api.allorigins.win/get?url=ENCODED_URL
-      fetchUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      // 浏览器环境：直接访问 URL，浏览器会自动通过服务器的代理
+      // 如果需要特定代理，可以使用 /api/... 路径
       headers = {
-        Accept: 'application/json',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
       };
     } else {
-      // Electron/Node.js 环境：直接访问
-      fetchUrl = url;
+      // Electron/Node.js/Bun 环境：直接访问
       headers = {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -316,19 +317,8 @@ async function fetchWebpage(url: string): Promise<{
       }
 
       // 处理响应数据
-      let html: string;
-      if (isBrowser) {
-        // allOrigins 返回 JSON，内容在 contents 字段中
-        const data = response.data;
-        if (data && data.contents) {
-          html = data.contents;
-        } else {
-          throw new Error('allOrigins 返回的数据格式不正确');
-        }
-      } else {
-        // 直接访问返回 HTML
-        html = response.data;
-      }
+      // 直接访问返回 HTML
+      const html: string = response.data;
 
       // 解析 HTML
       const $ = cheerio.load(html);

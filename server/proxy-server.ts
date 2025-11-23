@@ -1,6 +1,5 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import express, { type Request, type Response } from 'express';
-import cors from 'cors';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { ClientRequest } from 'http';
 import type { Socket } from 'net';
@@ -8,8 +7,7 @@ import type { Socket } from 'net';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// 启用 CORS
-app.use(cors());
+// 注意：在 Node.js/Bun 服务器模式下，不需要启用 CORS
 
 // 代理配置类型
 interface ProxyConfig {

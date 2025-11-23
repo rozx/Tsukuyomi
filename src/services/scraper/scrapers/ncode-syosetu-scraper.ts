@@ -12,7 +12,7 @@ import { generateShortId } from 'src/utils/id-generator';
  * 注意：ncode.syosetu.com 和 syosetu.org 是两个不同的网站
  */
 export class NcodeSyosetuScraper extends BaseScraper {
-  protected override useProxy: boolean = false; // ncode.syosetu.com 不使用 AllOrigins 代理
+  protected override useProxy: boolean = false; // ncode.syosetu.com 不使用代理
 
   protected static readonly BASE_URL: string = 'https://ncode.syosetu.com';
   // 匹配 ncode.syosetu.com 的小说 URL
@@ -765,84 +765,52 @@ export class NcodeSyosetuScraper extends BaseScraper {
       const html = await this.fetchPage(url);
       return { html, statusCode: 200 };
     } catch {
-      // 如果使用 AllOrigins 代理，尝试从响应中提取状态码
-      if (this.useProxy) {
-        try {
-          const axios = (await import('axios')).default;
-          const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-          const response = await axios.get<{
-            contents: string;
-            status: {
-              http_code: number;
-              content_type: string;
-              url: string;
-            };
-          }>(allOriginsUrl, {
-            timeout: 60000,
-            validateStatus: () => true, // 接受所有状态码
-          });
+      // 尝试直接请求以获取状态码
+      // 在浏览器环境中，使用服务器代理路径
+      try {
+        const axios = (await import('axios')).default;
+        const isBrowser = typeof window !== 'undefined';
+        let finalUrl = url;
 
-          // 检查 AllOrigins 返回的状态码
-          if (response.data.status.http_code === 404) {
-            return { html: '', statusCode: 404 };
+        // 在浏览器环境中，使用服务器代理路径
+        if (isBrowser) {
+          const urlObj = new URL(url);
+          if (urlObj.hostname === 'ncode.syosetu.com') {
+            finalUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+          } else if (urlObj.hostname === 'novel18.syosetu.com') {
+            finalUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
           }
-          // 如果状态码是 200，返回内容
-          if (response.data.status.http_code === 200 && response.data.contents) {
-            return { html: response.data.contents, statusCode: 200 };
-          }
-          // 其他状态码
-          return { html: '', statusCode: response.data.status.http_code };
-        } catch {
-          // 忽略错误
         }
-      } else {
-        // 不使用 AllOrigins 代理时，尝试直接请求以获取状态码
-        // 在浏览器环境中，使用 Vite 代理路径
-        try {
-          const axios = (await import('axios')).default;
-          const isBrowser = typeof window !== 'undefined';
-          let finalUrl = url;
 
-          // 在浏览器环境中，使用 Vite 代理路径
-          if (isBrowser) {
-            const urlObj = new URL(url);
-            if (urlObj.hostname === 'ncode.syosetu.com') {
-              finalUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-            } else if (urlObj.hostname === 'novel18.syosetu.com') {
-              finalUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-            }
-          }
+        const headers: Record<string, string> = {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+        };
 
-          const headers: Record<string, string> = {
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-          };
-
-          if (!isBrowser) {
-            headers['User-Agent'] =
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-            headers['Accept-Encoding'] = 'gzip, deflate, br';
-            headers['Referer'] = url.startsWith('https://')
-              ? new URL(url).origin
-              : 'https://ncode.syosetu.com/';
-          }
-
-          const response = await axios.get(finalUrl, {
-            timeout: 30000,
-            headers,
-            validateStatus: () => true, // 接受所有状态码
-          });
-
-          if (response.status === 404) {
-            return { html: '', statusCode: 404 };
-          }
-          if (response.status === 200 && response.data) {
-            return { html: response.data, statusCode: 200 };
-          }
-          return { html: '', statusCode: response.status };
-        } catch {
-          // 忽略错误
+        if (!isBrowser) {
+          headers['User-Agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          headers['Accept-Encoding'] = 'gzip, deflate, br';
+          headers['Referer'] = url.startsWith('https://')
+            ? new URL(url).origin
+            : 'https://ncode.syosetu.com/';
         }
+
+        const response = await axios.get(finalUrl, {
+          timeout: 30000,
+          headers,
+          validateStatus: () => true, // 接受所有状态码
+        });
+
+        if (response.status === 404) {
+          return { html: '', statusCode: 404 };
+        }
+        if (response.status === 200 && response.data) {
+          return { html: response.data, statusCode: 200 };
+        }
+        return { html: '', statusCode: response.status };
+      } catch {
+        // 忽略错误
       }
 
       // 如果无法获取状态码，返回 null
