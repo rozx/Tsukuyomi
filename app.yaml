@@ -1,0 +1,38 @@
+name: luna-ai-translator
+region: nyc
+
+# 静态站点配置
+static_sites:
+  - name: web
+    github:
+      repo: rozx/luna-ai-translator  # 替换为你的 GitHub 仓库
+      branch: main
+      deploy_on_push: true
+    
+    # 构建命令（明确指定 SPA 模式）
+    # 首先安装 Bun（如果未预装），然后安装依赖并构建
+    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bunx quasar build -m spa
+    
+    # 输出目录（Quasar SPA 构建输出到 dist/spa）
+    output_dir: dist/spa
+    
+    # 环境变量（如果需要）
+    envs:
+      - key: NODE_ENV
+        value: production
+      # 如果需要配置 API 端点，可以在这里添加
+      # - key: VITE_API_BASE_URL
+      #   value: https://your-api-domain.com
+      #   scope: BUILD_TIME
+    
+    # HTTP 路由配置
+    routes:
+      - path: /
+    
+    # Hash 路由模式说明：
+    # 应用使用 Hash 路由模式（vueRouterMode: 'hash'），URL 格式为 /#/path
+    # 这种模式对静态站点部署非常友好，因为所有路由都在客户端处理，
+    # 不需要服务器端配置来重定向路由到 index.html
+    # catchall_document 在 Hash 模式下不是必需的，但保留也无妨
+    catchall_document: index.html
+
