@@ -95,14 +95,32 @@
 
 ## 重要注意事项
 
-### 1. 代理配置限制
+### 1. 代理配置
 
-⚠️ **重要**：当前应用在开发环境中使用了多个代理配置（`quasar.config.ts` 中的 `server.proxy`）。这些代理配置**仅在开发环境中有效**，在生产环境的静态站点中**不会工作**。
+✅ **已配置生产环境代理**：应用现在包含一个代理服务器（`server/proxy-server.ts`），在 DigitalOcean App Platform 上作为 Web Service 运行，处理所有 `/api/*` 请求。
 
-如果应用需要调用这些 API：
-- **选项 A**：在客户端直接调用 API（如果支持 CORS）
-- **选项 B**：创建一个后端服务来处理代理请求
-- **选项 C**：使用 DigitalOcean Functions 或 App Platform 的 Web Service 组件来处理代理
+**工作原理：**
+- 开发环境：使用 Vite 开发服务器的代理功能（`quasar.config.ts` 中的 `server.proxy`）
+- 生产环境：使用独立的 Node.js 代理服务（`server/proxy-server.ts`），作为 DigitalOcean App Platform 的 Web Service 组件运行
+
+**代理路径：**
+- `/api/sda1` → `https://p.sda1.dev`
+- `/api/syosetu` → `https://syosetu.org`
+- `/api/kakuyomu` → `https://kakuyomu.jp`
+- `/api/ncode` → `https://ncode.syosetu.com`
+- `/api/novel18` → `https://novel18.syosetu.com`
+- `/api/search` → `https://html.duckduckgo.com/html`
+
+**路由配置：**
+- `/api/*` 请求 → 路由到 `api-proxy` Web Service
+- 其他所有请求 → 路由到静态站点
+
+**本地测试代理服务器：**
+```bash
+bun run start:proxy
+```
+
+代理服务器将在 `http://localhost:8080` 启动，你可以测试各个代理端点。
 
 ### 2. 构建输出目录
 

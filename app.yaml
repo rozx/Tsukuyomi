@@ -1,7 +1,27 @@
 name: luna-ai-translator
 region: nyc
 
-# 静态站点配置
+# API 代理服务配置（处理 /api/* 请求）
+services:
+  - name: api-proxy
+    github:
+      repo: rozx/luna-ai-translator
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install
+    run_command: bun run server/proxy-server.ts
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /api
+    envs:
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+
+# 静态站点配置（处理其他所有请求）
 static_sites:
   - name: web
     github:
