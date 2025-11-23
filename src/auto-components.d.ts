@@ -29,6 +29,7 @@ declare module 'vue' {
     Dialog: typeof import('primevue/dialog')['default']
     ExtractedTermsDialog: typeof import('./components/novel/ExtractedTermsDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
+    Inplace: typeof import('primevue/inplace')['default']
     InputText: typeof import('primevue/inputtext')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']

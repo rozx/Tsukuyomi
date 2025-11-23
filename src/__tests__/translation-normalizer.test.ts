@@ -50,6 +50,15 @@ describe('normalizeTranslationQuotes', () => {
     expect(normalizeTranslationQuotes(null as unknown as string)).toBe(null);
     expect(normalizeTranslationQuotes(undefined as unknown as string)).toBe(undefined);
   });
+
+  test('应该保留已存在的「」引号，不转换为『』', () => {
+    // 「让我做一下心理准备」应该保持不变
+    expect(normalizeTranslationQuotes('「让我做一下心理准备」')).toBe('「让我做一下心理准备」');
+    // 「「噫——」」应该保持不变（嵌套的「」引号）
+    expect(normalizeTranslationQuotes('「「噫——」」')).toBe('「「噫——」」');
+    // 多个嵌套的「」引号应该保持不变
+    expect(normalizeTranslationQuotes('「「「测试」」」')).toBe('「「「测试」」」');
+  });
 });
 
 describe('normalizeTranslationSymbols', () => {
@@ -172,6 +181,19 @@ describe('normalizeTranslationSymbols', () => {
     // 单引号的不匹配
     expect(normalizeTranslationSymbols('『………………嗯？『')).toBe('『………………嗯？』');
     expect(normalizeTranslationSymbols('』………………嗯？』')).toBe('『………………嗯？』');
+  });
+
+  test('应该保留已存在的「」引号，不转换为『』', () => {
+    // 「让我做一下心理准备」应该保持不变
+    expect(normalizeTranslationSymbols('「让我做一下心理准备」')).toBe('「让我做一下心理准备」');
+    // 「「噫——」」应该保持不变（嵌套的「」引号）
+    expect(normalizeTranslationSymbols('「「噫——」」')).toBe('「「噫——」」');
+    // 多个嵌套的「」引号应该保持不变
+    expect(normalizeTranslationSymbols('「「「测试」」」')).toBe('「「「测试」」」');
+    // 混合情况：外层的「」应该保持不变，内层的半角引号应该转换
+    expect(normalizeTranslationSymbols('「让我做一下心理准备"test"」')).toBe('「让我做一下心理准备「test」」');
+    // 确保「」引号不会被转换为『』，即使与其他引号混合
+    expect(normalizeTranslationSymbols('「让我做一下心理准备」和"其他内容"')).toBe('「让我做一下心理准备」和「其他内容」');
   });
 });
 

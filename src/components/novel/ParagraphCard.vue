@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Popover from 'primevue/popover';
+import Inplace from 'primevue/inplace';
+import Skeleton from 'primevue/skeleton';
+import Textarea from 'primevue/textarea';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/types/novel';
 
 const props = defineProps<{
@@ -9,6 +12,10 @@ const props = defineProps<{
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
   searchQuery?: string;
+}>();
+
+const emit = defineEmits<{
+  'update-translation': [paragraphId: string, newTranslation: string];
 }>();
 
 const hasContent = computed(() => {
@@ -299,12 +306,40 @@ const handleCharacterMouseLeave = () => {
 const handleCharacterPopoverHide = () => {
   hoveredCharacter.value = null;
 };
+
+// 翻译编辑状态
+const editingTranslationValue = ref('');
+
+// 开始编辑翻译
+const onTranslationOpen = () => {
+  editingTranslationValue.value = translationText.value;
+};
+
+// 保存翻译
+const onTranslationClose = () => {
+  if (editingTranslationValue.value !== translationText.value) {
+    emit('update-translation', props.paragraph.id, editingTranslationValue.value);
+  }
+};
+
+// 处理键盘事件
+const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => void) => {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    onTranslationClose();
+    closeCallback();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    editingTranslationValue.value = translationText.value;
+    closeCallback();
+  }
+};
 </script>
 
 <template>
   <div
     class="paragraph-card"
-    :class="{ 'has-content': hasContent, 'is-translating': props.isTranslating }"
+    :class="{ 'has-content': hasContent }"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
     <div class="paragraph-content">
@@ -343,12 +378,44 @@ const handleCharacterPopoverHide = () => {
           </span>
         </template>
       </p>
-      <p v-if="hasTranslation" class="paragraph-translation">
-        <template v-for="(node, index) in translationNodes" :key="index">
-          <span v-if="node.type === 'text'">{{ node.content }}</span>
-          <mark v-else class="search-highlight">{{ node.content }}</mark>
-        </template>
-      </p>
+      <div v-if="hasTranslation || props.isTranslating" class="paragraph-translation-wrapper">
+        <!-- 正在翻译但还没有翻译文本时显示 skeleton -->
+        <div v-if="props.isTranslating && !hasTranslation" class="paragraph-translation-skeleton">
+          <Skeleton width="100%" height="1.5rem" />
+          <Skeleton width="85%" height="1.5rem" />
+          <Skeleton width="70%" height="1.5rem" />
+        </div>
+        <!-- 有翻译文本时显示可编辑的翻译 -->
+        <Inplace
+          v-else-if="hasTranslation"
+          class="translation-inplace"
+          @open="onTranslationOpen"
+          @close="onTranslationClose"
+        >
+          <template #display>
+            <p class="paragraph-translation">
+              <template v-for="(node, index) in translationNodes" :key="index">
+                <span v-if="node.type === 'text'">{{ node.content }}</span>
+                <mark v-else class="search-highlight">{{ node.content }}</mark>
+              </template>
+            </p>
+          </template>
+          <template #content="{ closeCallback }">
+            <div class="paragraph-translation-edit">
+              <Textarea
+                v-model="editingTranslationValue"
+                class="translation-textarea"
+                :auto-resize="true"
+                @keydown="(e) => handleTranslationKeydown(e, closeCallback)"
+                @blur="() => { onTranslationClose(); closeCallback(); }"
+              />
+              <div class="translation-edit-hints">
+                <span class="hint-text">Ctrl+Enter 保存，Esc 取消</span>
+              </div>
+            </div>
+          </template>
+        </Inplace>
+      </div>
     </div>
 
     <!-- 术语提示框 - 使用 PrimeVue Popover -->
@@ -439,25 +506,6 @@ const handleCharacterPopoverHide = () => {
   transform: translateY(-2px);
 }
 
-/* 正在翻译的段落高亮 */
-.paragraph-card.is-translating {
-  background: var(--primary-opacity-10);
-  box-shadow: inset 3px 0 0 var(--primary-opacity-60);
-  border-radius: 4px;
-  animation: translating-pulse 2s ease-in-out infinite;
-}
-
-@keyframes translating-pulse {
-  0%,
-  100% {
-    background: var(--primary-opacity-10);
-    box-shadow: inset 3px 0 0 var(--primary-opacity-60);
-  }
-  50% {
-    background: var(--primary-opacity-15);
-    box-shadow: inset 3px 0 0 var(--primary-opacity-80);
-  }
-}
 
 .paragraph-content {
   width: 100%;
@@ -472,15 +520,90 @@ const handleCharacterPopoverHide = () => {
   word-break: break-word;
 }
 
-.paragraph-translation {
+.paragraph-translation-wrapper {
   margin: 0.75rem 0 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--white-opacity-10);
+}
+
+.translation-inplace {
+  width: 100%;
+}
+
+.translation-inplace :deep(.p-inplace-display) {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: text;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.translation-inplace :deep(.p-inplace-display:hover) {
+  background-color: var(--white-opacity-5);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  margin: -0.25rem -0.5rem;
+}
+
+.paragraph-translation {
+  margin: 0;
   color: var(--primary-opacity-90);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--white-opacity-10);
+}
+
+.paragraph-translation-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.paragraph-translation-skeleton :deep(.p-skeleton) {
+  background: var(--white-opacity-10);
+  border-radius: 4px;
+}
+
+.paragraph-translation-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 300px;
+}
+
+.translation-textarea {
+  width: 100%;
+}
+
+.translation-textarea :deep(textarea) {
+  color: var(--primary-opacity-90);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  font-family: inherit;
+  background: var(--white-opacity-5);
+  border: 1px solid var(--primary-opacity-30);
+  border-radius: 4px;
+  padding: 0.5rem;
+  resize: vertical;
+  min-height: 3rem;
+}
+
+.translation-textarea :deep(textarea:focus) {
+  outline: none;
+  border-color: var(--primary-opacity-60);
+  background: var(--white-opacity-8);
+}
+
+.translation-edit-hints {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hint-text {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-60);
+  font-style: italic;
 }
 
 /* 术语高亮 */

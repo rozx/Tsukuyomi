@@ -6,6 +6,8 @@ import type {
 } from 'src/types/settings';
 import type { AIModel } from 'src/types/ai/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/types/novel';
+import type { SyncConfig } from 'src/types/sync';
+import { SyncType } from 'src/types/sync';
 
 /**
  * 设置服务
@@ -153,6 +155,14 @@ export class SettingsService {
       };
     }
 
+    // 验证 sync 数组（如果存在）
+    if (settings.sync !== undefined && !Array.isArray(settings.sync)) {
+      return {
+        success: false,
+        error: '设置数据中的 sync 字段格式无效',
+      };
+    }
+
     // 验证每个模型的必需字段
     const validModels: AIModel[] = [];
     for (const model of settings.aiModels) {
@@ -211,6 +221,37 @@ export class SettingsService {
       }
     }
 
+    // 验证同步配置
+    const validSync: SyncConfig[] = [];
+    if (settings.sync && Array.isArray(settings.sync)) {
+      for (const syncConfig of settings.sync) {
+        if (
+          typeof syncConfig === 'object' &&
+          typeof syncConfig.enabled === 'boolean' &&
+          typeof syncConfig.lastSyncTime === 'number' &&
+          typeof syncConfig.syncInterval === 'number' &&
+          typeof syncConfig.syncType === 'string' &&
+          Object.values(SyncType).includes(syncConfig.syncType as SyncType) &&
+          typeof syncConfig.syncParams === 'object' &&
+          typeof syncConfig.secret === 'string' &&
+          typeof syncConfig.apiEndpoint === 'string'
+        ) {
+          validSync.push({
+            enabled: syncConfig.enabled,
+            lastSyncTime: syncConfig.lastSyncTime,
+            syncInterval: syncConfig.syncInterval,
+            syncType: syncConfig.syncType as SyncType,
+            syncParams: syncConfig.syncParams || {},
+            secret: syncConfig.secret,
+            apiEndpoint: syncConfig.apiEndpoint,
+            ...(syncConfig.lastSyncedModelIds && Array.isArray(syncConfig.lastSyncedModelIds)
+              ? { lastSyncedModelIds: syncConfig.lastSyncedModelIds }
+              : {}),
+          });
+        }
+      }
+    }
+
     // 验证应用设置（如果存在）
     let validAppSettings: AppSettings | undefined;
     if (settings.appSettings && typeof settings.appSettings === 'object') {
@@ -252,11 +293,12 @@ export class SettingsService {
       validModels.length === 0 &&
       validNovels.length === 0 &&
       validCoverHistory.length === 0 &&
+      validSync.length === 0 &&
       !validAppSettings
     ) {
       return {
         success: false,
-        error: '设置数据中没有有效的 AI 模型、书籍、封面历史或应用设置',
+        error: '设置数据中没有有效的 AI 模型、书籍、封面历史、同步设置或应用设置',
       };
     }
 
@@ -271,6 +313,9 @@ export class SettingsService {
     if (validCoverHistory.length > 0) {
       messages.push(`${validCoverHistory.length} 个封面历史记录`);
     }
+    if (validSync.length > 0) {
+      messages.push(`${validSync.length} 个同步配置`);
+    }
     if (validAppSettings) {
       messages.push('应用设置');
     }
@@ -282,6 +327,7 @@ export class SettingsService {
         models: validModels,
         novels: validNovels,
         coverHistory: validCoverHistory,
+        ...(validSync.length > 0 ? { sync: validSync } : {}),
         ...(validAppSettings ? { appSettings: validAppSettings } : {}),
       },
     };

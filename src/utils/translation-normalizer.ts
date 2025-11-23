@@ -9,6 +9,8 @@
  * - 半角双引号 "" → 日语引号 「」
  * - 半角单引号 '' → 日语单引号 『』
  * - 反之亦然（日语引号 → 全角普通引号）
+ * 
+ * 重要：已存在的「」引号永远不会被转换为『』，以保持原文的引号风格
  * @param text 要规范化的文本
  * @returns 规范化后的文本
  */
@@ -18,6 +20,9 @@ export function normalizeTranslationQuotes(text: string): string {
   }
 
   let normalized = text;
+  
+  // 重要：保护已存在的「」引号，确保它们永远不会被转换为『』
+  // 我们只转换半角引号和其他类型的引号，不改变已存在的「」引号
 
   // 先处理成对的引号
   // 将成对的半角普通引号 "" 替换为日语引号 「」（全角）
@@ -34,7 +39,8 @@ export function normalizeTranslationQuotes(text: string): string {
   // 处理剩余的单个引号（不成对的情况），采用基于上下文状态的替换策略
   // 我们需要扫描整个字符串来决定替换为开引号还是闭引号，因为需要考虑已经存在的日语引号
 
-  // 处理双引号 " 和 “” -> 「」
+  // 处理双引号 " 和 "" -> 「」
+  // 注意：已存在的「」引号会被保留，不会被转换
   let inDoubleQuote = false;
   // 先统计已有的开引号数量，决定初始状态
   // 但这比较复杂，不如直接重构字符串
@@ -42,12 +48,15 @@ export function normalizeTranslationQuotes(text: string): string {
   for (let i = 0; i < normalized.length; i++) {
     const char = normalized[i];
     if (char === '「') {
+      // 已存在的「引号，直接保留
       inDoubleQuote = true;
       result += char;
     } else if (char === '」') {
+      // 已存在的」引号，直接保留
       inDoubleQuote = false;
       result += char;
-    } else if (char === '"' || char === '“' || char === '”') {
+    } else if (char === '"' || char === '"' || char === '"') {
+      // 只转换半角或全角普通引号，不改变已存在的「」引号
       if (inDoubleQuote) {
         result += '」';
         inDoubleQuote = false;
@@ -61,18 +70,26 @@ export function normalizeTranslationQuotes(text: string): string {
   }
   normalized = result;
 
-  // 处理单引号 ' 和 ‘’ -> 『』
+  // 处理单引号 ' 和 '' -> 『』
+  // 注意：已存在的「」引号不会被转换为『』，只有半角单引号会被转换
   let inSingleQuote = false;
   result = '';
   for (let i = 0; i < normalized.length; i++) {
     const char = normalized[i];
     if (char === '『') {
+      // 已存在的『引号，直接保留
       inSingleQuote = true;
       result += char;
     } else if (char === '』') {
+      // 已存在的』引号，直接保留
       inSingleQuote = false;
       result += char;
-    } else if (char === "'" || char === '‘' || char === '’') {
+    } else if (char === '「' || char === '」') {
+      // 已存在的「」引号，直接保留，不参与单引号的处理逻辑
+      // 这确保「」引号永远不会被转换为『』
+      result += char;
+    } else if (char === "'" || char === '\u2018' || char === '\u2019') {
+      // 只转换半角或全角普通单引号，不改变已存在的「」引号
       if (inSingleQuote) {
         result += '』';
         inSingleQuote = false;
@@ -150,8 +167,29 @@ export function normalizeTranslationQuotes(text: string): string {
 }
 
 /**
+ * 检查引号是否已正确嵌套
+ * @param text 要检查的文本
+ * @returns 如果引号已正确嵌套，返回 true
+ */
+function areQuotesProperlyNested(text: string, openChar: string, closeChar: string): boolean {
+  let depth = 0;
+  for (const char of text) {
+    if (char === openChar) {
+      depth++;
+    } else if (char === closeChar) {
+      depth--;
+      if (depth < 0) {
+        return false; // 闭引号出现在开引号之前
+      }
+    }
+  }
+  return depth === 0; // 所有引号都已正确闭合
+}
+
+/**
  * 修复不匹配的引号对
  * 例如：将「…「修复为「…」，将」…」修复为「…」
+ * 注意：不会修改已正确嵌套的引号（如「「噫——」」）
  * @param text 要修复的文本
  * @returns 修复后的文本
  */
@@ -162,74 +200,84 @@ function fixMismatchedQuotes(text: string): string {
 
   let result = text;
 
-  // 修复双引号「」的不匹配
-  // 统计开引号和闭引号的数量
-  const openDoubleQuotes = (result.match(/「/g) || []).length;
-  const closeDoubleQuotes = (result.match(/」/g) || []).length;
+  // 检查双引号「」是否已正确嵌套，如果是则跳过修复
+  if (areQuotesProperlyNested(result, '「', '」')) {
+    // 引号已正确嵌套，不需要修复
+  } else {
+    // 修复双引号「」的不匹配
+    // 统计开引号和闭引号的数量
+    const openDoubleQuotes = (result.match(/「/g) || []).length;
+    const closeDoubleQuotes = (result.match(/」/g) || []).length;
 
-  // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
-  if (openDoubleQuotes > closeDoubleQuotes) {
-    const diff = openDoubleQuotes - closeDoubleQuotes;
-    // 从后往前找到最后一个开引号，将其改为闭引号
-    let count = 0;
-    const chars = result.split('');
-    // 从后往前遍历，找到需要修改的开引号
-    for (let i = chars.length - 1; i >= 0 && count < diff / 2; i--) {
-      if (chars[i] === '「') {
-        chars[i] = '」';
-        count++;
-      }
-    }
-    result = chars.join('');
-  }
-  // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
-  else if (closeDoubleQuotes > openDoubleQuotes) {
-    const diff = closeDoubleQuotes - openDoubleQuotes;
-    // 从前往后找到第一个闭引号，将其改为开引号
-    let count = 0;
-    result = result
-      .split('')
-      .map((char) => {
-        if (char === '」' && count < diff / 2) {
+    // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
+    if (openDoubleQuotes > closeDoubleQuotes) {
+      const diff = openDoubleQuotes - closeDoubleQuotes;
+      // 从后往前找到最后一个开引号，将其改为闭引号
+      let count = 0;
+      const chars = result.split('');
+      // 从后往前遍历，找到需要修改的开引号
+      for (let i = chars.length - 1; i >= 0 && count < diff / 2; i--) {
+        if (chars[i] === '「') {
+          chars[i] = '」';
           count++;
-          return '「';
         }
-        return char;
-      })
-      .join('');
-  }
-
-  // 修复单引号『』的不匹配
-  const openSingleQuotes = (result.match(/『/g) || []).length;
-  const closeSingleQuotes = (result.match(/』/g) || []).length;
-
-  // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
-  if (openSingleQuotes > closeSingleQuotes) {
-    const diff = openSingleQuotes - closeSingleQuotes;
-    let count = 0;
-    const chars = result.split('');
-    for (let i = chars.length - 1; i >= 0; i--) {
-      if (chars[i] === '『' && count < diff / 2) {
-        chars[i] = '』';
-        count++;
       }
+      result = chars.join('');
     }
-    result = chars.join('');
+    // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
+    else if (closeDoubleQuotes > openDoubleQuotes) {
+      const diff = closeDoubleQuotes - openDoubleQuotes;
+      // 从前往后找到第一个闭引号，将其改为开引号
+      let count = 0;
+      result = result
+        .split('')
+        .map((char) => {
+          if (char === '」' && count < diff / 2) {
+            count++;
+            return '「';
+          }
+          return char;
+        })
+        .join('');
+    }
   }
-  // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
-  else if (closeSingleQuotes > openSingleQuotes) {
-    const diff = closeSingleQuotes - openSingleQuotes;
-    let count = 0;
-    result = result
-      .split('')
-      .map((char) => {
-        if (char === '』' && count < diff / 2) {
+
+  // 检查单引号『』是否已正确嵌套，如果是则跳过修复
+  if (areQuotesProperlyNested(result, '『', '』')) {
+    // 引号已正确嵌套，不需要修复
+  } else {
+    // 修复单引号『』的不匹配
+    const openSingleQuotes = (result.match(/『/g) || []).length;
+    const closeSingleQuotes = (result.match(/』/g) || []).length;
+
+    // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
+    if (openSingleQuotes > closeSingleQuotes) {
+      const diff = openSingleQuotes - closeSingleQuotes;
+      let count = 0;
+      const chars = result.split('');
+      for (let i = chars.length - 1; i >= 0; i--) {
+        if (chars[i] === '『' && count < diff / 2) {
+          chars[i] = '』';
           count++;
-          return '『';
         }
-        return char;
-      })
-      .join('');
+      }
+      result = chars.join('');
+    }
+    // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
+    else if (closeSingleQuotes > openSingleQuotes) {
+      const diff = closeSingleQuotes - openSingleQuotes;
+      let count = 0;
+      result = result
+        .split('')
+        .map((char) => {
+          if (char === '』' && count < diff / 2) {
+            count++;
+            return '『';
+          }
+          return char;
+        })
+        .join('');
+    }
   }
 
   return result;

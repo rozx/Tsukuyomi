@@ -20,10 +20,10 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
  * 导出设置到 JSON 文件
  */
 const exportSettings = () => {
-  // 同步最新的 AI 模型、书籍数据、封面历史和应用设置
+  // 同步最新的 AI 模型、书籍数据、封面历史、同步设置和应用设置
   const settings = {
     aiModels: [...aiModelsStore.models],
-    sync: [],
+    sync: [...settingsStore.syncs],
     novels: [...booksStore.books],
     coverHistory: [...coverHistoryStore.covers],
     appSettings: settingsStore.getAllSettings(),
@@ -99,6 +99,11 @@ const handleFileSelect = async (event: Event) => {
       void settingsStore.importSettings(result.data.appSettings);
     }
 
+    // 覆盖当前的同步设置
+    if (result.data.sync && result.data.sync.length > 0) {
+      await settingsStore.importSyncs(result.data.sync);
+    }
+
     toast.add({
       severity: 'success',
       summary: '导入成功',
@@ -127,7 +132,7 @@ const handleFileSelect = async (event: Event) => {
         <div>
           <h3 class="text-sm font-medium text-moon/90 mb-1">导入资料</h3>
           <p class="text-xs text-moon/70">
-            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI 模型配置、书籍数据、封面历史和应用设置
+            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI 模型配置、书籍数据、封面历史、同步设置和应用设置
           </p>
         </div>
         <Button
@@ -145,7 +150,7 @@ const handleFileSelect = async (event: Event) => {
         <div>
           <h3 class="text-sm font-medium text-moon/90 mb-1">导出资料</h3>
           <p class="text-xs text-moon/70">
-            将当前设置（包括 AI 模型配置、书籍数据、封面历史和应用设置）导出为 JSON 文件
+            将当前设置（包括 AI 模型配置、书籍数据、封面历史、同步设置和应用设置）导出为 JSON 文件
           </p>
         </div>
         <Button

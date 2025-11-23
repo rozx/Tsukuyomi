@@ -1166,22 +1166,62 @@ const translateAllParagraphs = async () => {
         const typeLabel =
           action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
 
+        let summary = '';
         let detail = '';
+
         if (action.type === 'delete') {
-          // 删除操作时，data 可能是 { id: string }
-          detail = `已删除${entityLabel}`;
+          // 删除操作时，data 可能是 { id: string, name?: string }
+          const deleteData = action.data as { id: string; name?: string };
+          const name = deleteData.name || '未知';
+          summary = `已删除${entityLabel}`;
+          detail = `${entityLabel} "${name}" 已被删除`;
         } else {
           // create 或 update 操作时，data 是 Terminology 或 CharacterSetting
           const data = action.data as Terminology | CharacterSetting;
-          const name = data.name || '';
-          detail = `${entityLabel} "${name}" 已${typeLabel}`;
+          const name = data.name || '未知';
+
+          if (action.entity === 'term') {
+            const term = data as Terminology;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (term.translation?.translation) {
+              parts.push(`翻译: "${term.translation.translation}"`);
+            }
+            if (term.description) {
+              parts.push(`描述: ${term.description}`);
+            }
+            detail = parts.join('，');
+          } else {
+            const character = data as CharacterSetting;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (character.translation?.translation) {
+              parts.push(`翻译: "${character.translation.translation}"`);
+            }
+            if (character.sex) {
+              const sexLabel =
+                character.sex === 'male' ? '男' : character.sex === 'female' ? '女' : '其他';
+              parts.push(`性别: ${sexLabel}`);
+            }
+            if (character.description) {
+              parts.push(`描述: ${character.description}`);
+            }
+            if (character.speakingStyle) {
+              parts.push(`说话风格: ${character.speakingStyle}`);
+            }
+            if (character.aliases && character.aliases.length > 0) {
+              const aliasNames = character.aliases.map((a) => a.name).join('、');
+              parts.push(`别名: ${aliasNames}`);
+            }
+            detail = parts.join('，');
+          }
         }
 
         toast.add({
           severity: 'success',
-          summary: 'AI 操作完成',
+          summary,
           detail,
-          life: 3000,
+          life: 4000,
         });
       },
       onParagraphTranslation: (translations) => {
@@ -3220,6 +3260,7 @@ const handleDragLeave = () => {
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
                     :search-query="searchQuery"
                     :id="`paragraph-${paragraph.id}`"
+                    @update-translation="updateParagraphTranslation"
                   />
                 </div>
               </div>

@@ -363,6 +363,24 @@ export const useSettingsStore = defineStore('settings', {
     setSyncing(syncing: boolean): void {
       this.isSyncing = syncing;
     },
+
+    /**
+     * 导入同步配置（用于导入）
+     */
+    async importSyncs(syncs: SyncConfig[]): Promise<void> {
+      this.syncs = syncs.map((syncConfig) => {
+        return {
+          ...createDefaultGistSyncConfig(),
+          ...syncConfig,
+          syncParams: {
+            ...createDefaultGistSyncConfig().syncParams,
+            ...(syncConfig.syncParams || {}),
+          },
+        };
+      });
+      saveSyncToLocalStorage(this.syncs);
+      await Promise.resolve();
+    },
   },
 });
 

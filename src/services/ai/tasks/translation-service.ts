@@ -19,7 +19,7 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
   entity: 'term' | 'character';
-  data: Terminology | CharacterSetting | { id: string };
+  data: Terminology | CharacterSetting | { id: string; name?: string };
 }
 
 /**
@@ -786,13 +786,18 @@ export class TranslationService {
             throw new Error('术语 ID 不能为空');
           }
 
+          // 在删除前获取术语信息，以便在 toast 中显示详细信息
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          const book = booksStore.getBookById(bookId);
+          const term = book?.terminologies?.find((t) => t.id === term_id);
+
           await TerminologyService.deleteTerminology(bookId, term_id);
 
           if (onAction) {
             onAction({
               type: 'delete',
               entity: 'term',
-              data: { id: term_id },
+              data: term ? { id: term_id, name: term.name } : { id: term_id },
             });
           }
 
@@ -1070,13 +1075,18 @@ export class TranslationService {
             throw new Error('角色 ID 不能为空');
           }
 
+          // 在删除前获取角色信息，以便在 toast 中显示详细信息
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          const book = booksStore.getBookById(bookId);
+          const character = book?.characterSettings?.find((c) => c.id === character_id);
+
           await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
           if (onAction) {
             onAction({
               type: 'delete',
               entity: 'character',
-              data: { id: character_id },
+              data: character ? { id: character_id, name: character.name } : { id: character_id },
             });
           }
 
@@ -1475,6 +1485,7 @@ export class TranslationService {
         '2. 更新空术语（必须执行）：\n' +
         '   - 如果发现术语的翻译（translation）为空、空白或只有占位符（如"待翻译"、"TODO"等），必须立即使用 update_term 工具补充翻译。\n' +
         '   - 如果发现术语的描述（description）为空但应该补充，可以使用 update_term 工具添加描述。\n' +
+        '   - ⚠️ 如果发现术语的描述（description）与当前上下文不匹配（例如：描述中的信息与文本中实际出现的情况不符），必须使用 update_term 工具更新描述，确保描述准确反映术语在当前上下文中的含义和用法。\n' +
         '   - 在翻译过程中，如果遇到术语但发现其翻译为空，必须根据上下文和翻译结果，使用 update_term 工具更新该术语的翻译。\n' +
         '   - 优先使用 get_term 工具查询术语的当前状态，确认是否需要更新。\n' +
         '\n' +
@@ -1524,6 +1535,7 @@ export class TranslationService {
         '4. 更新角色描述（必须执行）：\n' +
         '   - 在翻译过程中，如果发现角色的描述（description）为空但应该补充（例如：文本中提到了角色的身份、关系、特征等重要信息），必须使用 update_character 工具添加或更新描述。\n' +
         '   - 如果发现现有描述不完整或不准确，应根据文本中的新信息使用 update_character 工具更新描述。\n' +
+        '   - ⚠️ 如果发现角色的描述（description）与当前上下文不匹配（例如：描述中的角色关系、身份、特征等信息与文本中实际出现的情况不符），必须使用 update_character 工具更新描述，确保描述准确反映角色在当前上下文中的实际情况。\n' +
         '   - 描述应包含角色的重要特征、身份、关系等信息，有助于后续翻译的一致性。\n' +
         '\n' +
         '5. 更新角色说话口吻（必须执行）：\n' +
@@ -1553,6 +1565,7 @@ export class TranslationService {
         '2. 检查【相关术语参考】和【相关角色参考】：\n' +
         '   - 确认术语和角色分类正确（术语/角色分离）\n' +
         '   - 检查是否有空翻译的术语或角色，如有则使用工具更新\n' +
+        '   - ⚠️ 检查术语和角色的描述是否与当前上下文匹配，如果不匹配则使用 update_term 或 update_character 工具更新描述\n' +
         '   - ⚠️ 创建新角色前，必须先使用 list_characters 检查是否已存在该角色或是否为已存在角色的别名\n' +
         '   - 检查角色是否有别名出现，如有则使用 update_character 添加别名（⚠️ 添加别名前必须使用 list_characters 检查该别名是否属于其他角色）\n' +
         '   - 检查是否有重复角色需要合并（删除重复项并添加为别名）\n' +
@@ -1583,7 +1596,7 @@ export class TranslationService {
         '10. 在翻译过程中，如果发现需要创建、更新或删除术语/角色，请使用相应的工具进行操作。\n' +
         '11. ⚠️ 在创建或更新术语/角色前，必须检查它们是否在正确的表中。如果发现术语表中有角色（人名），必须立即删除并移到角色表；反之亦然。\n' +
         '12. ⚠️ 在创建新角色前，必须使用 list_characters 或 get_character 检查该角色是否已存在，或是否为已存在角色的别名。如果是别名，应使用 update_character 添加为别名，而不是创建新角色。\n' +
-        '13. ⚠️ 翻译完成后，必须检查并删除所有无用术语，更新所有空翻译的术语；同时检查并更新所有空翻译的角色、添加出现的别名、补充或更新角色描述和说话口吻；检查并合并重复角色（删除重复项并添加为别名）。\n' +
+        '13. ⚠️ 翻译完成后，必须检查并删除所有无用术语，更新所有空翻译的术语；同时检查并更新所有空翻译的角色、添加出现的别名、补充或更新角色描述和说话口吻；检查并合并重复角色（删除重复项并添加为别名）；⚠️ 检查术语和角色的描述是否与当前上下文匹配，如果不匹配则更新描述。\n' +
         '\n' +
         '请确保翻译风格符合轻小说习惯，自然流畅。';
 
@@ -1603,6 +1616,7 @@ export class TranslationService {
         '  * 如果角色描述中缺少关系信息，应使用 update_character 工具补充\n' +
         '- ⚠️ 角色主名称必须是全名（例如"田中太郎"），别名应包括名字和姓氏的单独部分（例如"田中"、"太郎"）\n' +
         '- 检查并更新空翻译的术语和角色\n' +
+        '- ⚠️ 检查术语和角色的描述是否与当前上下文匹配，如果不匹配则使用 update_term 或 update_character 工具更新描述\n' +
         '- 删除无用术语\n' +
         '- ⚠️ 创建新角色前，必须先检查是否已存在该角色或是否为已存在角色的别名。如果遇到全名应创建角色，如果遇到名字或姓氏的单独部分应添加为别名\n' +
         '- 当发现角色别名出现时，使用 update_character 添加别名（⚠️ 添加前必须检查该别名是否属于其他角色）\n' +
@@ -1807,7 +1821,7 @@ export class TranslationService {
         // 构建当前消息
         let content = '';
         const maintenanceReminder =
-          '\n⚠️ 提醒：正确翻译日语敬语（"さん"、"くん"、"ちゃん"等）- 第一优先级：必须首先检查【相关角色参考】中该角色的别名（aliases）列表，如果文本中的角色名称（带敬语）与某个别名完全匹配且该别名已有翻译，必须直接使用该翻译，不得重新翻译；⚠️ 重要：不要自动添加新的别名用于敬语翻译，只使用已存在的别名；如果别名中没有匹配的翻译，再查看角色描述了解角色关系，使用 find_paragraph_by_keyword 工具搜索该角色名称在之前段落中的翻译确保一致性，根据角色关系和上下文准确处理；角色主名称必须是全名（例如"田中太郎"），别名应包括名字和姓氏的单独部分（例如"田中"、"太郎"）；创建新角色前必须先检查是否已存在该角色或是否为已存在角色的别名（全名应创建角色，名字或姓氏的单独部分应添加为别名）；检查并更新空翻译的术语和角色，删除无用术语；当发现角色别名出现时添加别名（⚠️ 添加前必须使用 list_characters 检查该别名是否属于其他角色），当发现重复角色时删除重复项并添加为别名；当角色描述或说话口吻需要补充时更新（特别是角色关系信息，这对敬语翻译很重要）。\n';
+          '\n⚠️ 提醒：正确翻译日语敬语（"さん"、"くん"、"ちゃん"等）- 第一优先级：必须首先检查【相关角色参考】中该角色的别名（aliases）列表，如果文本中的角色名称（带敬语）与某个别名完全匹配且该别名已有翻译，必须直接使用该翻译，不得重新翻译；⚠️ 重要：不要自动添加新的别名用于敬语翻译，只使用已存在的别名；如果别名中没有匹配的翻译，再查看角色描述了解角色关系，使用 find_paragraph_by_keyword 工具搜索该角色名称在之前段落中的翻译确保一致性，根据角色关系和上下文准确处理；角色主名称必须是全名（例如"田中太郎"），别名应包括名字和姓氏的单独部分（例如"田中"、"太郎"）；创建新角色前必须先检查是否已存在该角色或是否为已存在角色的别名（全名应创建角色，名字或姓氏的单独部分应添加为别名）；检查并更新空翻译的术语和角色，删除无用术语；⚠️ 检查术语和角色的描述是否与当前上下文匹配，如果不匹配则更新描述；当发现角色别名出现时添加别名（⚠️ 添加前必须使用 list_characters 检查该别名是否属于其他角色），当发现重复角色时删除重复项并添加为别名；当角色描述或说话口吻需要补充时更新（特别是角色关系信息，这对敬语翻译很重要）。\n';
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';

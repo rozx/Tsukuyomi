@@ -53,6 +53,7 @@ export interface ImportResult {
   error?: string;
   data?: {
     models: AIModel[];
+    sync?: SyncConfig[];
     novels: Novel[];
     coverHistory: CoverHistoryItem[];
     appSettings?: AppSettings;
