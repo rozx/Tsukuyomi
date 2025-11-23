@@ -228,25 +228,37 @@ if (isProduction) {
     target: viteTarget,
     changeOrigin: true,
     ws: true, // 支持 WebSocket（用于 HMR）
-    logLevel: 'warn',
-    onError: (err, req, res) => {
-      // 如果 Vite 开发服务器未启动，返回提示信息
-      if ((err as { code?: string }).code === 'ECONNREFUSED') {
-        const response = res as Response;
-        response.status(503).send(`
-          <html>
-            <head><title>Vite Dev Server Not Running</title></head>
-            <body>
-              <h1>Vite 开发服务器未运行</h1>
-              <p>请确保 Vite 开发服务器正在 ${viteTarget} 上运行。</p>
-              <p>Vite 开发服务器应该会自动启动。如果未启动，请检查控制台输出。</p>
-            </body>
-          </html>
-        `);
-      } else {
-        const response = res as Response;
-        response.status(500).send('代理错误: ' + (err as Error).message);
-      }
+    on: {
+      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
+        // 如果 Vite 开发服务器未启动，返回提示信息
+        if ((err as { code?: string }).code === 'ECONNREFUSED') {
+          // 只有当 res 是 ServerResponse 时才发送响应
+          if (res && 'status' in res && 'headersSent' in res) {
+            const response = res as unknown as Response;
+            if (!response.headersSent) {
+              response.status(503).send(`
+                <html>
+                  <head><title>Vite Dev Server Not Running</title></head>
+                  <body>
+                    <h1>Vite 开发服务器未运行</h1>
+                    <p>请确保 Vite 开发服务器正在 ${viteTarget} 上运行。</p>
+                    <p>Vite 开发服务器应该会自动启动。如果未启动，请检查控制台输出。</p>
+                  </body>
+                </html>
+              `);
+            }
+          }
+        } else {
+          // 只有当 res 是 ServerResponse 时才发送响应
+          if (res && 'status' in res && 'headersSent' in res) {
+            const response = res as unknown as Response;
+            if (!response.headersSent) {
+              response.status(500).send('代理错误: ' + err.message);
+            }
+          }
+          console.error('[Vite Proxy Error]', err.message);
+        }
+      },
     },
   });
   

@@ -277,7 +277,7 @@ async function fetchWebpage(url: string): Promise<{
     }
 
     const isBrowser = typeof window !== 'undefined';
-    let fetchUrl: string = url;
+    const fetchUrl: string = url;
     let headers: Record<string, string>;
 
     // 在 Node.js/Bun 环境中直接访问
