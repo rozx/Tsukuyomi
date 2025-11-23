@@ -15,7 +15,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
-import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
+import { findUniqueTermsInText, findUniqueCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
 
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
@@ -126,6 +126,7 @@ export class TranslationService {
     // 检查最近N个字符
     const recentText = text.slice(-this.REPEAT_CHECK_WINDOW);
 
+    // 1. 单个字符重复检测
     // 检查是否有单个字符重复超过阈值
     for (let i = 0; i < recentText.length; i++) {
       const char = recentText[i];
@@ -145,17 +146,22 @@ export class TranslationService {
       if (repeatCount >= this.REPEAT_THRESHOLD) {
         // 如果提供了原文，检查原文中是否也有类似的重复
         if (originalText) {
-          const originalRecent = originalText.slice(-this.REPEAT_CHECK_WINDOW);
-          let originalRepeatCount = 1;
-          for (let j = 1; j < originalRecent.length; j++) {
-            if (originalRecent[j] === originalRecent[j - 1]) {
-              originalRepeatCount++;
+          // 扫描整个原文，寻找该字符的最大连续重复次数
+          let maxOriginalRepeat = 0;
+          let currentOriginalRepeat = 0;
+
+          for (let k = 0; k < originalText.length; k++) {
+            if (originalText[k] === char) {
+              currentOriginalRepeat++;
             } else {
-              break;
+              maxOriginalRepeat = Math.max(maxOriginalRepeat, currentOriginalRepeat);
+              currentOriginalRepeat = 0;
             }
           }
-          // 如果原文也有类似的重复，不认为是降级
-          if (originalRepeatCount >= this.REPEAT_THRESHOLD * 0.5) {
+          maxOriginalRepeat = Math.max(maxOriginalRepeat, currentOriginalRepeat);
+
+          // 如果原文也有类似的重复（至少是阈值的一半），不认为是降级
+          if (maxOriginalRepeat >= this.REPEAT_THRESHOLD * 0.5) {
             continue;
           }
         }
@@ -166,6 +172,7 @@ export class TranslationService {
       }
     }
 
+    // 2. 模式重复检测
     // 检查是否有短模式重复（如 "ababab..." 或 "abcabc..."）
     // 检查2-5字符的模式
     const PATTERN_REPEAT_THRESHOLD = 30; // 模式重复阈值
@@ -189,22 +196,28 @@ export class TranslationService {
       if (patternRepeatCount >= PATTERN_REPEAT_THRESHOLD) {
         // 如果提供了原文，检查原文中是否也有类似的重复模式
         if (originalText) {
-          const originalRecent = originalText.slice(-this.REPEAT_CHECK_WINDOW);
-          let originalPatternRepeatCount = 1;
+          let maxOriginalPatternRepeat = 0;
 
-          // 检查原文中是否有相同的模式重复
-          const originalPattern = originalRecent.slice(-patternLen);
-          for (let i = originalRecent.length - patternLen * 2; i >= 0; i -= patternLen) {
-            const candidate = originalRecent.slice(i, i + patternLen);
-            if (candidate === originalPattern) {
-              originalPatternRepeatCount++;
-            } else {
-              break;
+          // 扫描整个原文，寻找该模式的最大连续重复次数
+          for (let k = 0; k <= originalText.length - patternLen; k++) {
+            if (originalText.slice(k, k + patternLen) === pattern) {
+              let currentRun = 1;
+              let nextIdx = k + patternLen;
+              while (
+                nextIdx <= originalText.length - patternLen &&
+                originalText.slice(nextIdx, nextIdx + patternLen) === pattern
+              ) {
+                currentRun++;
+                nextIdx += patternLen;
+              }
+              maxOriginalPatternRepeat = Math.max(maxOriginalPatternRepeat, currentRun);
+              // 跳过已检测的部分
+              k = nextIdx - 1;
             }
           }
 
-          // 如果原文也有类似的重复（至少是翻译的一半），不认为是降级
-          if (originalPatternRepeatCount >= PATTERN_REPEAT_THRESHOLD * 0.5) {
+          // 如果原文也有类似的重复（至少是阈值的一半），不认为是降级
+          if (maxOriginalPatternRepeat >= PATTERN_REPEAT_THRESHOLD * 0.5) {
             continue;
           }
         }
@@ -1655,6 +1668,13 @@ export class TranslationService {
         }
       }
 
+      // 计算全文的角色出现得分，用于消歧义
+      let characterScores: Map<string, number> | undefined;
+      if (book && book.characterSettings) {
+        const fullText = content.map((p) => p.text).join('\n');
+        characterScores = calculateCharacterScores(fullText, book.characterSettings);
+      }
+
       let currentChunkText = '';
       let currentChunkParagraphs: Paragraph[] = [];
 
@@ -1687,6 +1707,7 @@ export class TranslationService {
         const relevantCharacters = findUniqueCharactersInText(
           textContent,
           bookData.characterSettings || [],
+          characterScores,
         );
         if (relevantCharacters.length > 0) {
           console.log(

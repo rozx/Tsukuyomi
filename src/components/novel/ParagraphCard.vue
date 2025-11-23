@@ -16,6 +16,7 @@ const props = defineProps<{
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
   searchQuery?: string;
+  characterScores?: Map<string, number>;
 }>();
 
 const emit = defineEmits<{
@@ -90,6 +91,7 @@ const highlightedText = computed(
       props.paragraph.text,
       props.terminologies,
       props.characterSettings,
+      props.characterScores,
     );
   },
 );

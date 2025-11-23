@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
@@ -29,6 +29,7 @@ import {
   normalizeTranslationSymbols,
   findUniqueTermsInText,
   findUniqueCharactersInText,
+  calculateCharacterScores,
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -571,6 +572,16 @@ const selectedChapter = computed(() => {
   return null;
 });
 
+// 计算章节范围内的角色出现频率，用于消歧义
+const chapterCharacterScores = computed(() => {
+  if (!selectedChapter.value || !book.value?.characterSettings) {
+    return undefined;
+  }
+
+  const chapterText = getChapterContentText(selectedChapter.value);
+  return calculateCharacterScores(chapterText, book.value.characterSettings);
+});
+
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
   if (!selectedChapter.value || !selectedChapter.value.content) {
@@ -824,7 +835,11 @@ const usedCharacters = computed(() => {
   const text = getChapterContentText(selectedChapter.value);
   if (!text) return [];
 
-  return findUniqueCharactersInText(text, book.value.characterSettings);
+  return findUniqueCharactersInText(
+    text,
+    book.value.characterSettings,
+    chapterCharacterScores.value,
+  );
 });
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
@@ -2816,6 +2831,7 @@ const handleDragLeave = () => {
                     :paragraph="paragraph"
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
+                    :character-scores="chapterCharacterScores"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
                     :search-query="searchQuery"
                     :id="`paragraph-${paragraph.id}`"

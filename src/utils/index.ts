@@ -23,4 +23,5 @@ export {
   findUniqueTermsInText,
   findUniqueCharactersInText,
   countNamesInText,
+  calculateCharacterScores,
 } from './text-matcher';
