@@ -10,12 +10,15 @@
     "lint": "bunx vue-tsc --noEmit",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",
-    "sync-version": "bun scripts/sync-version.ts || tsx scripts/sync-version.ts",
-    "dev": "bun run sync-version && quasar dev || (npm run sync-version && quasar dev)",
-    "build": "bun run sync-version && quasar build || (npm run sync-version && quasar build)",
-    "build:spa": "bun run sync-version && quasar build -m spa || (npm run sync-version && quasar build -m spa)",
+    "sync-version": "bun scripts/sync-version.ts",
+    "dev": "bun run sync-version && quasar dev",
+    "build": "bun run sync-version && quasar build",
+    "build:spa": "bun run sync-version && quasar build -m spa",
+    "build:electron": "bun run sync-version && quasar build -m electron",
     "postinstall": "quasar prepare",
-    "start:proxy": "tsx server/proxy-server.ts"
+    "start:proxy": "bun run server/proxy-server.ts",
+    "start:app": "bun run server/app-server.ts",
+    "start": "bun run start:app"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -76,6 +79,6 @@
     "vue-tsc": "^3.0.7"
   },
   "engines": {
-    "node": "^28 || ^26 || ^24 || ^22 || ^20"
+    "bun": ">=1.0.0"
   }
 }

@@ -5,37 +5,43 @@ Luna AI translator
 ## Install the dependencies
 
 ```bash
-yarn
-# or
-npm install
+bun install
 ```
 
 ### Start the app in development mode (hot-code reloading, error reporting, etc.)
 
 ```bash
-quasar dev
+bun run dev
 ```
 
 ### Lint the files
 
 ```bash
-yarn lint
-# or
-npm run lint
+bun run lint
 ```
 
 ### Format the files
 
 ```bash
-yarn format
-# or
-npm run format
+bun run format
 ```
 
 ### Build the app for production
 
 ```bash
-quasar build
+bun run build
+```
+
+### Build SPA for production
+
+```bash
+bun run build:spa
+```
+
+### Build Electron desktop app
+
+```bash
+bun run build:electron
 ```
 
 ### Customize the configuration

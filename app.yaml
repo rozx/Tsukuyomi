@@ -9,12 +9,11 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    # 使用 npm 安装依赖（更可靠，DigitalOcean 原生支持）
-    build_command: npm install
-    # 使用 node 运行 TypeScript（通过 tsx 或 ts-node）
-    # 注意：需要先安装 tsx 或使用 node --loader ts-node/esm
-    # 或者编译 TypeScript 为 JavaScript
-    run_command: npm run start:proxy
+    # 使用 Bun 作为包管理器
+    # 注意：DigitalOcean 会自动设置 PORT 环境变量，无需在代码中硬编码
+    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && test -f server/proxy-server.ts || (echo "Error: server/proxy-server.ts not found" && exit 1)
+    # 使用 Bun 运行 TypeScript（Bun 原生支持 TypeScript）
+    run_command: export PATH="$HOME/.bun/bin:$PATH" && bun run server/proxy-server.ts
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xxs
@@ -33,8 +32,8 @@ static_sites:
       branch: main
       deploy_on_push: true
     source_dir: /
-    # 使用 npm 构建（更可靠，DigitalOcean 原生支持）
-    build_command: npm install && npm run build:spa
+    # 使用 Bun 作为包管理器
+    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install --frozen-lockfile && bun run build:spa
     output_dir: dist/spa
     envs:
       - key: NODE_ENV
