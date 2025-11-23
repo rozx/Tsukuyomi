@@ -44,6 +44,8 @@ declare module 'vue' {
     Slider: typeof import('primevue/slider')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
+    TabPanel: typeof import('primevue/tabpanel')['default']
+    TabView: typeof import('primevue/tabview')['default']
     TermEditDialog: typeof import('./components/dialogs/TermEditDialog.vue')['default']
     TerminologyDialog: typeof import('./components/dialogs/TerminologyDialog.vue')['default']
     TerminologyPanel: typeof import('./components/novel/TerminologyPanel.vue')['default']

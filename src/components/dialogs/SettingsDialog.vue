@@ -2,8 +2,8 @@
 import { ref, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import ConfirmDialog from 'primevue/confirmdialog';
-import TabView from 'primevue/tabview';
-import TabPanel from 'primevue/tabpanel';
+import Tabs from 'primevue/tabs';
+import Tab from 'primevue/tab';
 import { useSettingsStore } from 'src/stores/settings';
 import AIModelSettingsTab from '../settings/AIModelSettingsTab.vue';
 import ScraperSettingsTab from '../settings/ScraperSettingsTab.vue';
@@ -59,27 +59,27 @@ const handleClose = () => {
     @update:visible="$emit('update:visible', $event)"
     @hide="handleClose"
   >
-    <TabView v-model:activeIndex="activeTabIndex" class="settings-tabview">
+    <Tabs v-model:activeIndex="activeTabIndex" class="settings-tabview">
       <!-- AI 模型默认设置 -->
-      <TabPanel value="0" header="AI 模型">
+      <Tab header="AI 模型">
         <AIModelSettingsTab />
-      </TabPanel>
+      </Tab>
 
       <!-- 爬虫设置 -->
-      <TabPanel value="1" header="爬虫设置">
+      <Tab header="爬虫设置">
         <ScraperSettingsTab />
-      </TabPanel>
+      </Tab>
 
       <!-- 同步设置 -->
-      <TabPanel value="2" header="同步设置">
+      <Tab header="同步设置">
         <SyncSettingsTab :visible="visible" />
-      </TabPanel>
+      </Tab>
 
       <!-- 导入/导出资料 -->
-      <TabPanel value="3" header="导入/导出">
+      <Tab header="导入/导出">
         <ImportExportTab />
-      </TabPanel>
-    </TabView>
+      </Tab>
+    </Tabs>
   </Dialog>
 
   <!-- 确认对话框（放在 Dialog 外部，避免重复渲染） -->
@@ -91,12 +91,12 @@ const handleClose = () => {
   height: 100%;
 }
 
-.settings-tabview :deep(.p-tabview-panels) {
+.settings-tabview :deep(.p-tabs-panels) {
   height: calc(100% - 3rem);
   overflow-y: auto;
 }
 
-.settings-tabview :deep(.p-tabview-panel) {
+.settings-tabview :deep(.p-tab-panel) {
   height: 100%;
 }
 </style>

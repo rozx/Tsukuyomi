@@ -1170,12 +1170,12 @@ export class TranslationService {
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
-                  title_translation: result.chapter.title.translation.translation,
+                  title_translation: result.chapter.title.translation?.translation || '',
                 },
                 volume: {
                   id: result.volume.id,
                   title: result.volume.title.original,
-                  title_translation: result.volume.title.translation.translation,
+                  title_translation: result.volume.title.translation?.translation || '',
                 },
                 paragraph_index: result.paragraphIndex,
                 chapter_index: result.chapterIndex,
@@ -1218,12 +1218,12 @@ export class TranslationService {
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
-                  title_translation: result.chapter.title.translation.translation,
+                  title_translation: result.chapter.title.translation?.translation || '',
                 },
                 volume: {
                   id: result.volume.id,
                   title: result.volume.title.original,
-                  title_translation: result.volume.title.translation.translation,
+                  title_translation: result.volume.title.translation?.translation || '',
                 },
                 paragraph_index: result.paragraphIndex,
                 chapter_index: result.chapterIndex,
@@ -1272,12 +1272,12 @@ export class TranslationService {
                 chapter: {
                   id: result.chapter.id,
                   title: result.chapter.title.original,
-                  title_translation: result.chapter.title.translation.translation,
+                  title_translation: result.chapter.title.translation?.translation || '',
                 },
                 volume: {
                   id: result.volume.id,
                   title: result.volume.title.original,
-                  title_translation: result.volume.title.translation.translation,
+                  title_translation: result.volume.title.translation?.translation || '',
                 },
                 paragraph_index: result.paragraphIndex,
                 chapter_index: result.chapterIndex,
@@ -1929,6 +1929,14 @@ export class TranslationService {
 
                 // 执行工具
                 for (const toolCall of result.toolCalls) {
+                  // 解析工具参数用于日志
+                  let toolArgs: Record<string, unknown> = {};
+                  try {
+                    toolArgs = JSON.parse(toolCall.function.arguments);
+                  } catch {
+                    // 参数解析失败，忽略
+                  }
+
                   if (aiProcessingStore && taskId) {
                     void aiProcessingStore.appendThinkingMessage(
                       taskId,
@@ -1942,19 +1950,73 @@ export class TranslationService {
                     bookId || '',
                     handleAction,
                   );
-                  let toolResultObj: { success?: boolean } | null = null;
+                  let toolResultObj: {
+                    success?: boolean;
+                    count?: number;
+                    paragraphs?: unknown[];
+                  } | null = null;
                   try {
                     toolResultObj = JSON.parse(toolResult.content);
                   } catch {
                     // JSON解析失败，使用原始内容
                   }
-                  console.log(`[TranslationService] ✅ 工具 ${toolCall.function.name} 执行完成`, {
+
+                  // 根据工具类型生成更详细的日志
+                  let logDetails: Record<string, unknown> = {
                     成功: toolResultObj?.success ?? false,
-                    结果摘要:
-                      toolResult.content.length > 200
-                        ? `${toolResult.content.slice(0, 200)}...`
-                        : toolResult.content,
-                  });
+                  };
+
+                  if (toolCall.function.name === 'find_paragraph_by_keyword') {
+                    logDetails = {
+                      ...logDetails,
+                      关键词: toolArgs.keyword,
+                      只搜索已翻译: toolArgs.only_with_translation ?? false,
+                      找到段落数: toolResultObj?.count ?? 0,
+                    };
+                    if (
+                      toolResultObj?.paragraphs &&
+                      Array.isArray(toolResultObj.paragraphs) &&
+                      toolResultObj.paragraphs.length > 0
+                    ) {
+                      const firstParagraph = toolResultObj.paragraphs[0] as {
+                        translation?: string;
+                        chapter?: { title?: string };
+                      };
+                      logDetails.示例翻译 = firstParagraph.translation
+                        ? `${firstParagraph.translation.slice(0, 50)}${firstParagraph.translation.length > 50 ? '...' : ''}`
+                        : '无翻译';
+                      logDetails.章节 = firstParagraph.chapter?.title || '未知';
+                    }
+                  } else if (toolCall.function.name === 'get_occurrences_by_keywords') {
+                    logDetails = {
+                      ...logDetails,
+                      关键词: Array.isArray(toolArgs.keywords)
+                        ? toolArgs.keywords.join(', ')
+                        : toolArgs.keywords,
+                      出现次数: toolResultObj?.count ?? 0,
+                    };
+                  } else if (
+                    toolCall.function.name === 'get_term_translation' ||
+                    toolCall.function.name === 'add_term'
+                  ) {
+                    logDetails = {
+                      ...logDetails,
+                      术语: toolArgs.term,
+                    };
+                  } else if (
+                    toolCall.function.name === 'list_characters' ||
+                    toolCall.function.name === 'get_character_setting'
+                  ) {
+                    logDetails = {
+                      ...logDetails,
+                      角色名称: toolArgs.character_name || toolArgs.name || '全部',
+                    };
+                  }
+
+                  console.log(
+                    `[TranslationService] ✅ 工具 ${toolCall.function.name} 执行完成`,
+                    logDetails,
+                  );
 
                   // 添加工具结果到历史
                   history.push({
