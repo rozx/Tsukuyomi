@@ -255,6 +255,11 @@ onUnmounted(() => {
             icon="pi pi-bars"
             @click="ui.toggleSideMenu()"
           />
+          <img
+            src="/icons/favicon-32x32.png"
+            alt="Luna AI Translator"
+            class="w-8 h-8 flex-shrink-0"
+          />
           <div class="flex flex-col">
             <span class="text-xs uppercase tracking-[0.3em] text-moon-50">Luna</span>
             <span class="font-semibold text-moon-100 tracking-wide">AI Translator</span>
