@@ -100,6 +100,9 @@ const dragOverIndex = ref<number | null>(null);
 // 设置菜单状态
 const selectedSettingMenu = ref<'terms' | 'characters' | null>(null);
 
+// 滚动容器引用
+const scrollableContentRef = ref<HTMLElement | null>(null);
+
 // 编辑模式状态
 type EditMode = 'original' | 'translation' | 'preview';
 const editMode = ref<EditMode>('translation');
@@ -611,6 +614,12 @@ const navigateToChapter = (chapter: Chapter) => {
   void bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
   // 清除设置菜单选中状态
   selectedSettingMenu.value = null;
+  // 重置滚动位置到顶部
+  void nextTick(() => {
+    if (scrollableContentRef.value) {
+      scrollableContentRef.value.scrollTop = 0;
+    }
+  });
 };
 
 // 导航到术语设置
@@ -3347,7 +3356,7 @@ const handleDragLeave = () => {
         />
       </div>
 
-      <div class="scrollable-content">
+      <div ref="scrollableContentRef" class="scrollable-content">
         <div
           class="page-container"
           :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
