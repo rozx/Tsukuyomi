@@ -95,6 +95,7 @@ const duplicateModel = (model: AIModel) => {
     summary: '复制成功',
     detail: `已成功复制模型 "${model.name}"`,
     life: 3000,
+    onRevert: () => aiModelsStore.deleteModel(duplicatedModel.id),
   });
 };
 
@@ -109,8 +110,12 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       model: formData.model!,
       temperature: formData.temperature!,
       maxTokens: formData.maxTokens!,
-      ...(formData.contextWindow !== undefined && formData.contextWindow !== null ? { contextWindow: formData.contextWindow } : {}),
-      ...(formData.rateLimit !== undefined && formData.rateLimit !== null ? { rateLimit: formData.rateLimit } : {}),
+      ...(formData.contextWindow !== undefined && formData.contextWindow !== null
+        ? { contextWindow: formData.contextWindow }
+        : {}),
+      ...(formData.rateLimit !== undefined && formData.rateLimit !== null
+        ? { rateLimit: formData.rateLimit }
+        : {}),
       apiKey: formData.apiKey!,
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
@@ -118,9 +123,18 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
         polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
-        characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
-        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
-        termsTranslation: formData.isDefault?.termsTranslation ?? { enabled: false, temperature: 0.7 },
+        characterExtraction: formData.isDefault?.characterExtraction ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
+        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
+        termsTranslation: formData.isDefault?.termsTranslation ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
       },
     };
     void aiModelsStore.addModel(newModel);
@@ -130,6 +144,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       summary: '添加成功',
       detail: `已成功添加模型 "${newModel.name}"`,
       life: 3000,
+      onRevert: () => aiModelsStore.deleteModel(newModel.id),
     });
   } else if (showEditDialog.value && selectedModel.value) {
     // 更新现有模型
@@ -146,9 +161,18 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
         polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
-        characterExtraction: formData.isDefault?.characterExtraction ?? { enabled: false, temperature: 0.7 },
-        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? { enabled: false, temperature: 0.7 },
-        termsTranslation: formData.isDefault?.termsTranslation ?? { enabled: false, temperature: 0.7 },
+        characterExtraction: formData.isDefault?.characterExtraction ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
+        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
+        termsTranslation: formData.isDefault?.termsTranslation ?? {
+          enabled: false,
+          temperature: 0.7,
+        },
       },
     };
 
@@ -160,6 +184,8 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       updates.rateLimit = formData.rateLimit;
     }
 
+    // 深拷贝保存原始数据用于撤销
+    const oldModel = JSON.parse(JSON.stringify(selectedModel.value));
     void aiModelsStore.updateModel(selectedModel.value.id, updates);
     showEditDialog.value = false;
     const modelName = updates.name || selectedModel.value.name;
@@ -169,6 +195,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       summary: '更新成功',
       detail: `已成功更新模型 "${modelName}"`,
       life: 3000,
+      onRevert: () => aiModelsStore.updateModel(oldModel.id, oldModel),
     });
   }
 };
@@ -185,12 +212,15 @@ const deleteModel = (model: AIModel) => {
     acceptLabel: '删除',
     accept: () => {
       const modelName = model.name;
+      // 深拷贝保存原始数据用于撤销
+      const modelToRestore = JSON.parse(JSON.stringify(model));
       void aiModelsStore.deleteModel(model.id);
       toast.add({
         severity: 'success',
         summary: '删除成功',
         detail: `已成功删除模型 "${modelName}"`,
         life: 3000,
+        onRevert: () => aiModelsStore.addModel(modelToRestore),
       });
     },
   });
@@ -214,160 +244,160 @@ const formatApiKey = (apiKey: string): string => {
 
 <template>
   <div class="h-full flex flex-col p-6">
-      <!-- 固定头部 -->
-      <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
-        <div class="flex-shrink-0">
-          <h1 class="text-2xl font-bold">AI 模型管理</h1>
-          <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
-        </div>
-        <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
-          <InputGroup class="search-input-group min-w-0 flex-shrink">
-            <InputGroupAddon>
-              <i class="pi pi-search text-base" />
-            </InputGroupAddon>
-            <InputText
-              v-model="searchQuery"
-              placeholder="搜索模型名称、提供商、模型类型或默认任务..."
-              class="search-input"
-            />
-            <InputGroupAddon v-if="searchQuery" class="input-action-addon">
-              <Button
-                icon="pi pi-times"
-                class="p-button-text p-button-sm input-action-button"
-                @click="searchQuery = ''"
-                title="清除搜索"
-              />
-            </InputGroupAddon>
-          </InputGroup>
-          <Button
-            label="添加 AI 模型"
-            icon="pi pi-plus"
-            @click="addModel"
-            class="p-button-primary icon-button-hover flex-shrink-0"
-          />
-        </div>
+    <!-- 固定头部 -->
+    <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
+      <div class="flex-shrink-0">
+        <h1 class="text-2xl font-bold">AI 模型管理</h1>
+        <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
       </div>
-
-      <!-- DataView 内容区域 -->
-      <div class="flex-1 flex flex-col min-h-0">
-        <DataView
-          :value="filteredModels"
-          data-key="id"
-          :rows="10"
-          :paginator="filteredModels.length > 0"
-          :rows-per-page-options="[5, 10, 20, 50]"
-          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
-          class="flex-1 flex flex-col min-h-0"
-        >
-      <template #empty>
-        <div class="text-center py-12">
-          <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
-          <p class="text-moon/70">
-            {{ searchQuery ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型' }}
-          </p>
-          <Button
-            v-if="!searchQuery"
-            label="添加第一个 AI 模型"
-            icon="pi pi-plus"
-            @click="addModel"
-            class="p-button-primary mt-4 icon-button-hover"
+      <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
+        <InputGroup class="search-input-group min-w-0 flex-shrink">
+          <InputGroupAddon>
+            <i class="pi pi-search text-base" />
+          </InputGroupAddon>
+          <InputText
+            v-model="searchQuery"
+            placeholder="搜索模型名称、提供商、模型类型或默认任务..."
+            class="search-input"
           />
-        </div>
-      </template>
+          <InputGroupAddon v-if="searchQuery" class="input-action-addon">
+            <Button
+              icon="pi pi-times"
+              class="p-button-text p-button-sm input-action-button"
+              @click="searchQuery = ''"
+              title="清除搜索"
+            />
+          </InputGroupAddon>
+        </InputGroup>
+        <Button
+          label="添加 AI 模型"
+          icon="pi pi-plus"
+          @click="addModel"
+          class="p-button-primary icon-button-hover flex-shrink-0"
+        />
+      </div>
+    </div>
 
-      <template #list="slotProps">
-        <div class="grid grid-cols-1 gap-4">
-          <div
-            v-for="model in slotProps.items"
-            :key="model.id"
-            class="bg-white/3 border border-white/10 rounded-lg overflow-hidden hover:bg-white/5 transition-colors"
-          >
-            <!-- 卡片头部 -->
-            <div class="p-4 border-b border-white/10">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <i
-                    class="pi pi-sparkles text-xl icon-hover"
-                    :class="model.enabled ? 'text-accent-400' : 'text-moon/50'"
-                  />
-                  <div>
-                    <h3 class="text-lg font-semibold">{{ model.name }}</h3>
-                    <p class="text-sm text-moon/70">
-                      {{ getProviderLabel(model.provider) }} · {{ model.model }}
-                    </p>
+    <!-- DataView 内容区域 -->
+    <div class="flex-1 flex flex-col min-h-0">
+      <DataView
+        :value="filteredModels"
+        data-key="id"
+        :rows="10"
+        :paginator="filteredModels.length > 0"
+        :rows-per-page-options="[5, 10, 20, 50]"
+        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+        class="flex-1 flex flex-col min-h-0"
+      >
+        <template #empty>
+          <div class="text-center py-12">
+            <i class="pi pi-sparkles text-4xl text-moon/50 mb-4 icon-hover" />
+            <p class="text-moon/70">
+              {{ searchQuery ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型' }}
+            </p>
+            <Button
+              v-if="!searchQuery"
+              label="添加第一个 AI 模型"
+              icon="pi pi-plus"
+              @click="addModel"
+              class="p-button-primary mt-4 icon-button-hover"
+            />
+          </div>
+        </template>
+
+        <template #list="slotProps">
+          <div class="grid grid-cols-1 gap-4">
+            <div
+              v-for="model in slotProps.items"
+              :key="model.id"
+              class="bg-white/3 border border-white/10 rounded-lg overflow-hidden hover:bg-white/5 transition-colors"
+            >
+              <!-- 卡片头部 -->
+              <div class="p-4 border-b border-white/10">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <i
+                      class="pi pi-sparkles text-xl icon-hover"
+                      :class="model.enabled ? 'text-accent-400' : 'text-moon/50'"
+                    />
+                    <div>
+                      <h3 class="text-lg font-semibold">{{ model.name }}</h3>
+                      <p class="text-sm text-moon/70">
+                        {{ getProviderLabel(model.provider) }} · {{ model.model }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Tag
+                      :value="model.enabled ? '已启用' : '已禁用'"
+                      :severity="model.enabled ? 'success' : 'secondary'"
+                    />
+                    <Button
+                      icon="pi pi-copy"
+                      class="p-button-text p-button-sm icon-button-hover"
+                      @click="duplicateModel(model)"
+                    />
+                    <Button
+                      icon="pi pi-pencil"
+                      class="p-button-text p-button-sm icon-button-hover"
+                      @click="editModel(model)"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      class="p-button-text p-button-sm p-button-danger icon-button-hover"
+                      @click="deleteModel(model)"
+                    />
                   </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <Tag
-                    :value="model.enabled ? '已启用' : '已禁用'"
-                    :severity="model.enabled ? 'success' : 'secondary'"
-                  />
-                  <Button
-                    icon="pi pi-copy"
-                    class="p-button-text p-button-sm icon-button-hover"
-                    @click="duplicateModel(model)"
-                  />
-                  <Button
-                    icon="pi pi-pencil"
-                    class="p-button-text p-button-sm icon-button-hover"
-                    @click="editModel(model)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger icon-button-hover"
-                    @click="deleteModel(model)"
-                  />
-                </div>
               </div>
-            </div>
 
-            <!-- 卡片内容 -->
-            <div class="p-4 space-y-3">
-              <div class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span class="text-moon/70">温度:</span>
-                  <span class="ml-2">{{ model.temperature }}</span>
+              <!-- 卡片内容 -->
+              <div class="p-4 space-y-3">
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span class="text-moon/70">温度:</span>
+                    <span class="ml-2">{{ model.temperature }}</span>
+                  </div>
+                  <div>
+                    <span class="text-moon/70">最大 Token:</span>
+                    <span class="ml-2">{{ model.maxTokens }}</span>
+                  </div>
+                  <div>
+                    <span class="text-moon/70">API Key:</span>
+                    <span class="ml-2 font-mono text-xs">{{ formatApiKey(model.apiKey) }}</span>
+                  </div>
+                  <div>
+                    <span class="text-moon/70">基础地址:</span>
+                    <span class="ml-2 font-mono text-xs">{{ model.baseUrl }}</span>
+                  </div>
                 </div>
-                <div>
-                  <span class="text-moon/70">最大 Token:</span>
-                  <span class="ml-2">{{ model.maxTokens }}</span>
+                <div class="pt-2 border-t border-white/10">
+                  <span class="text-moon/70 text-sm">默认任务:</span>
+                  <span class="ml-2 text-sm">{{ getDefaultTasks(model) }}</span>
                 </div>
-                <div>
-                  <span class="text-moon/70">API Key:</span>
-                  <span class="ml-2 font-mono text-xs">{{ formatApiKey(model.apiKey) }}</span>
-                </div>
-                <div>
-                  <span class="text-moon/70">基础地址:</span>
-                  <span class="ml-2 font-mono text-xs">{{ model.baseUrl }}</span>
-                </div>
-              </div>
-              <div class="pt-2 border-t border-white/10">
-                <span class="text-moon/70 text-sm">默认任务:</span>
-                <span class="ml-2 text-sm">{{ getDefaultTasks(model) }}</span>
               </div>
             </div>
           </div>
-        </div>
-      </template>
-        </DataView>
-      </div>
+        </template>
+      </DataView>
+    </div>
 
-      <!-- 添加对话框 -->
-      <AIModelDialog
-        v-model:visible="showAddDialog"
-        mode="add"
-        @save="handleSave"
-        @cancel="showAddDialog = false"
-      />
+    <!-- 添加对话框 -->
+    <AIModelDialog
+      v-model:visible="showAddDialog"
+      mode="add"
+      @save="handleSave"
+      @cancel="showAddDialog = false"
+    />
 
-      <!-- 编辑对话框 -->
-      <AIModelDialog
-        v-model:visible="showEditDialog"
-        mode="edit"
-        :model="selectedModel"
-        @save="handleSave"
-        @cancel="showEditDialog = false"
-      />
+    <!-- 编辑对话框 -->
+    <AIModelDialog
+      v-model:visible="showEditDialog"
+      mode="edit"
+      :model="selectedModel"
+      @save="handleSave"
+      @cancel="showEditDialog = false"
+    />
 
     <!-- 确认对话框 -->
     <ConfirmDialog />

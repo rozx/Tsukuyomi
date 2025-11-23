@@ -21,6 +21,7 @@ export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
   entity: 'term' | 'character';
   data: Terminology | CharacterSetting | { id: string; name?: string };
+  previousData?: Terminology | CharacterSetting; // 用于撤销操作（update 和 delete）
 }
 
 /**
@@ -755,6 +756,14 @@ export class TranslationService {
             throw new Error('术语 ID 不能为空');
           }
 
+          // 在更新前保存原始数据用于撤销
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          const book = booksStore.getBookById(bookId);
+          const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
+          const previousTermSnapshot = previousTerm
+            ? JSON.parse(JSON.stringify(previousTerm))
+            : undefined;
+
           const updates: {
             translation?: string;
             description?: string;
@@ -774,6 +783,7 @@ export class TranslationService {
               type: 'update',
               entity: 'term',
               data: term,
+              previousData: previousTermSnapshot,
             });
           }
 
@@ -800,10 +810,11 @@ export class TranslationService {
             throw new Error('术语 ID 不能为空');
           }
 
-          // 在删除前获取术语信息，以便在 toast 中显示详细信息
+          // 在删除前获取术语信息，以便在 toast 中显示详细信息和撤销
           const booksStore = (await import('src/stores/books')).useBooksStore();
           const book = booksStore.getBookById(bookId);
           const term = book?.terminologies?.find((t) => t.id === term_id);
+          const previousTermSnapshot = term ? JSON.parse(JSON.stringify(term)) : undefined;
 
           await TerminologyService.deleteTerminology(bookId, term_id);
 
@@ -812,6 +823,7 @@ export class TranslationService {
               type: 'delete',
               entity: 'term',
               data: term ? { id: term_id, name: term.name } : { id: term_id },
+              previousData: previousTermSnapshot,
             });
           }
 
@@ -1012,6 +1024,14 @@ export class TranslationService {
             throw new Error('角色 ID 不能为空');
           }
 
+          // 在更新前保存原始数据用于撤销
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          const book = booksStore.getBookById(bookId);
+          const previousCharacter = book?.characterSettings?.find((c) => c.id === character_id);
+          const previousCharacterSnapshot = previousCharacter
+            ? JSON.parse(JSON.stringify(previousCharacter))
+            : undefined;
+
           const updates: {
             name?: string;
             sex?: 'male' | 'female' | 'other' | undefined;
@@ -1056,6 +1076,7 @@ export class TranslationService {
               type: 'update',
               entity: 'character',
               data: character,
+              previousData: previousCharacterSnapshot,
             });
           }
 
@@ -1089,10 +1110,13 @@ export class TranslationService {
             throw new Error('角色 ID 不能为空');
           }
 
-          // 在删除前获取角色信息，以便在 toast 中显示详细信息
+          // 在删除前获取角色信息，以便在 toast 中显示详细信息和撤销
           const booksStore = (await import('src/stores/books')).useBooksStore();
           const book = booksStore.getBookById(bookId);
           const character = book?.characterSettings?.find((c) => c.id === character_id);
+          const previousCharacterSnapshot = character
+            ? JSON.parse(JSON.stringify(character))
+            : undefined;
 
           await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
@@ -1101,6 +1125,7 @@ export class TranslationService {
               type: 'delete',
               entity: 'character',
               data: character ? { id: character_id, name: character.name } : { id: character_id },
+              previousData: previousCharacterSnapshot,
             });
           }
 

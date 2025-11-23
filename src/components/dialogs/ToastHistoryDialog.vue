@@ -9,7 +9,7 @@ import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToast
 
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
-const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, markAsRead } = useToastHistory();
+const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, markAsRead, revert, canRevert } = useToastHistory();
 
 const selectedSeverity = ref<'all' | ToastHistoryItem['severity']>('all');
 
@@ -50,6 +50,10 @@ const severityTags: Record<ToastHistoryItem['severity'], 'success' | 'danger' | 
 
 const handleClear = () => {
   void clearHistory();
+};
+
+const handleRevert = async (id: string) => {
+  await revert(id);
 };
 
 const toggle = (event: Event) => {
@@ -147,14 +151,30 @@ defineExpose({
                           :severity="severityTags[item.severity as ToastHistoryItem['severity']]"
                           class="text-xs"
                         />
+                        <Tag
+                          v-if="item.reverted"
+                          value="已撤销"
+                          severity="info"
+                          class="text-xs opacity-70"
+                        />
                       </div>
-                      <Button
-                        icon="pi pi-times"
-                        class="p-button-text p-button-sm p-button-rounded flex-shrink-0"
-                        @click="() => void removeHistoryItem(item.id)"
-                      />
+                      <div class="flex items-center gap-1">
+                        <Button
+                          v-if="canRevert(item.id)"
+                          icon="pi pi-undo"
+                          class="p-button-text p-button-sm p-button-rounded flex-shrink-0 text-primary-400 hover:text-primary-300"
+                          title="撤销操作"
+                          @click="() => handleRevert(item.id)"
+                        />
+                        <Button
+                          icon="pi pi-times"
+                          class="p-button-text p-button-sm p-button-rounded flex-shrink-0 text-moon/50 hover:text-red-400"
+                          title="删除记录"
+                          @click="() => void removeHistoryItem(item.id)"
+                        />
+                      </div>
                     </div>
-                    <p class="text-sm text-moon/70 mb-2">{{ item.detail }}</p>
+                    <p class="text-sm text-moon/70 mb-2 break-words">{{ item.detail }}</p>
                     <p class="text-xs text-moon/50">{{ formatTimestamp(item.timestamp) }}</p>
                   </div>
                 </div>
@@ -190,4 +210,3 @@ defineExpose({
   overflow: visible;
 }
 </style>
-

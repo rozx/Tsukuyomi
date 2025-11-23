@@ -6,6 +6,10 @@ import { useToastHistoryStore } from 'src/stores/toast-history';
 // 重新导出类型供外部使用
 export type { ToastHistoryItem } from 'src/stores/toast-history';
 
+export interface ToastMessageWithHistoryOptions extends ToastMessageOptions {
+  onRevert?: () => void | Promise<void>;
+}
+
 /**
  * Toast 历史记录管理 Composable
  */
@@ -57,6 +61,8 @@ export function useToastHistory() {
       store.markAsReadByMessage(message),
     clearHistory: () => store.clearHistory(),
     removeHistoryItem: (id: string) => store.removeHistoryItem(id),
+    revert: (id: string) => store.revert(id),
+    canRevert: (id: string) => store.canRevert(id),
     formatTimestamp,
   };
 }
@@ -71,7 +77,7 @@ export function useToastWithHistory() {
 
   // 包装 add 方法，自动保存历史记录
   const originalAdd = toast.add.bind(toast);
-  const wrappedAdd = (message: ToastMessageOptions) => {
+  const wrappedAdd = (message: ToastMessageWithHistoryOptions) => {
     // 保存到历史记录
     // 确保 severity 是有效的类型
     const severityValue = message.severity;
@@ -83,17 +89,23 @@ export function useToastWithHistory() {
         ? (severityValue as 'success' | 'error' | 'info' | 'warn')
         : 'info';
 
+    // 计算一次时间戳，确保在 composable 和 store 中使用一致
     const timestamp = Date.now();
     const summary = message.summary || '';
     const detail = message.detail || '';
 
     // 添加到历史记录（store 会自动保存到 IndexedDB）
-    void store.addToHistory({
-      severity,
-      summary,
-      detail,
-      ...(message.life !== undefined ? { life: message.life } : {}),
-    });
+    // 传递时间戳以确保一致性
+    void store.addToHistory(
+      {
+        severity,
+        summary,
+        detail,
+        ...(message.life !== undefined ? { life: message.life } : {}),
+      },
+      message.onRevert,
+      timestamp,
+    );
 
     // 将消息映射到时间戳（用于关闭时标记为已读）
     store.setMessageTimestamp({ summary, detail }, timestamp);

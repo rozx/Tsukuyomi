@@ -9,9 +9,14 @@ export interface ToastHistoryItem {
   timestamp: number;
   life?: number;
   read?: boolean; // 标记该 toast 是否已被关闭/标记为已读
+  reverted?: boolean; // 标记是否已撤销
 }
 
 const MAX_HISTORY_ITEMS = 100;
+
+// 存储撤销回调函数 (ID -> Callback)
+// 不持久化到 IndexedDB，仅在当前会话有效
+const revertCallbacks = new Map<string, () => void | Promise<void>>();
 
 /**
  * 从 IndexedDB 加载 Toast 历史记录
@@ -24,6 +29,7 @@ async function loadHistoryFromDB(): Promise<ToastHistoryItem[]> {
     return items.map((item) => ({
       ...item,
       read: item.read ?? false,
+      reverted: item.reverted ?? false,
     }));
   } catch (error) {
     console.error('Failed to load toast history from DB:', error);
@@ -46,6 +52,7 @@ async function saveHistoryItemToDB(item: ToastHistoryItem): Promise<void> {
       timestamp: item.timestamp,
       ...(item.life !== undefined ? { life: item.life } : {}),
       ...(item.read !== undefined ? { read: item.read } : {}),
+      ...(item.reverted !== undefined ? { reverted: item.reverted } : {}),
     };
     await db.put('toast-history', cleanItem);
   } catch (error) {
@@ -84,6 +91,7 @@ async function bulkSaveHistoryToDB(items: ToastHistoryItem[]): Promise<void> {
         timestamp: item.timestamp,
         ...(item.life !== undefined ? { life: item.life } : {}),
         ...(item.read !== undefined ? { read: item.read } : {}),
+        ...(item.reverted !== undefined ? { reverted: item.reverted } : {}),
       };
       await store.put(cleanItem);
     }
@@ -144,6 +152,15 @@ export const useToastHistoryStore = defineStore('toastHistory', {
     unreadCount(state): number {
       return state.historyItems.filter((item) => !item.read).length;
     },
+
+    /**
+     * 检查项目是否可以撤销
+     */
+    canRevert: (state) => (id: string): boolean => {
+      // 必须有回调函数，且未被撤销
+      const item = state.historyItems.find(i => i.id === id);
+      return revertCallbacks.has(id) && item?.reverted !== true;
+    },
   },
 
   actions: {
@@ -163,13 +180,24 @@ export const useToastHistoryStore = defineStore('toastHistory', {
     /**
      * 添加新的 toast 到历史记录
      */
-    async addToHistory(item: Omit<ToastHistoryItem, 'id' | 'timestamp'>): Promise<void> {
+    async addToHistory(
+      item: Omit<ToastHistoryItem, 'id' | 'timestamp'>,
+      onRevert?: () => void | Promise<void>,
+      timestamp?: number
+    ): Promise<string> {
+      const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const historyItem: ToastHistoryItem = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: Date.now(),
+        id,
+        timestamp: timestamp ?? Date.now(),
         read: false, // 新消息默认为未读
+        reverted: false,
         ...item,
       };
+
+      // 如果提供了撤销回调，存储它
+      if (onRevert) {
+        revertCallbacks.set(id, onRevert);
+      }
 
       // 添加到数组开头
       this.historyItems.unshift(historyItem);
@@ -183,11 +211,43 @@ export const useToastHistoryStore = defineStore('toastHistory', {
         // 从 IndexedDB 删除超出限制的项目
         for (const itemToDelete of itemsToDelete) {
           await deleteHistoryItemFromDB(itemToDelete.id);
+          revertCallbacks.delete(itemToDelete.id); // 清理回调
         }
       }
 
       // 保存到 IndexedDB
       await saveHistoryItemToDB(historyItem);
+
+      return id;
+    },
+
+    /**
+     * 执行撤销操作
+     */
+    async revert(id: string): Promise<boolean> {
+      const callback = revertCallbacks.get(id);
+      if (!callback) {
+        return false;
+      }
+
+      try {
+        await callback();
+        
+        // 标记为已撤销
+        const item = this.historyItems.find((item) => item.id === id);
+        if (item) {
+          item.reverted = true;
+          await saveHistoryItemToDB(item);
+        }
+        
+        // 移除回调（撤销通常是一次性的）
+        revertCallbacks.delete(id);
+        
+        return true;
+      } catch (error) {
+        console.error('Failed to revert action:', error);
+        return false;
+      }
     },
 
     /**
@@ -272,6 +332,7 @@ export const useToastHistoryStore = defineStore('toastHistory', {
       this.historyItems = [];
       this.lastViewedTimestamp = Date.now();
       messageToTimestampMap.clear();
+      revertCallbacks.clear(); // 清空撤销回调
       await saveLastViewedTimestampToDB(this.lastViewedTimestamp);
     },
 
@@ -283,6 +344,7 @@ export const useToastHistoryStore = defineStore('toastHistory', {
       if (index > -1) {
         this.historyItems.splice(index, 1);
         await deleteHistoryItemFromDB(id);
+        revertCallbacks.delete(id); // 清理回调
       }
     },
   },

@@ -11,6 +11,7 @@ import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue'
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
+import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
 
 const props = defineProps<{
@@ -109,6 +110,13 @@ const handleSave = async (data: {
   try {
     if (selectedCharacter.value) {
       // 更新
+      const charId = selectedCharacter.value.id;
+      const originalChar = props.book.characterSettings?.find((c) => c.id === charId);
+      // 深拷贝保留原始数据用于撤销
+      const previousCharData = originalChar
+        ? JSON.parse(JSON.stringify(originalChar))
+        : null;
+
       await CharacterSettingService.updateCharacterSetting(
         props.book.id,
         selectedCharacter.value.id,
@@ -119,15 +127,36 @@ const handleSave = async (data: {
         summary: '更新成功',
         detail: `已更新角色 "${data.name}"`,
         life: 3000,
+        onRevert: async () => {
+          if (previousCharData && props.book) {
+            await CharacterSettingService.updateCharacterSetting(
+              props.book.id,
+              previousCharData.id,
+              {
+                name: previousCharData.name,
+                sex: previousCharData.sex,
+                translation: previousCharData.translation.translation,
+                description: previousCharData.description,
+                speakingStyle: previousCharData.speakingStyle,
+                aliases: previousCharData.aliases.map((a: Alias) => ({
+                  name: a.name,
+                  translation: a.translation.translation,
+                })),
+              }
+            );
+          }
+        },
       });
     } else {
       // 添加
-      await CharacterSettingService.addCharacterSetting(props.book.id, data);
+      const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, data);
       toast.add({
         severity: 'success',
         summary: '添加成功',
         detail: `已添加角色 "${data.name}"`,
         life: 3000,
+        onRevert: () =>
+          CharacterSettingService.deleteCharacterSetting(props.book!.id, newChar.id),
       });
     }
     showDialog.value = false;
@@ -159,6 +188,9 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
     accept: () => {
       void (async () => {
         try {
+          // 保存要删除的角色数据用于撤销
+          const charToRestore = JSON.parse(JSON.stringify(character._original));
+          
           await CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
 
           toast.add({
@@ -166,6 +198,20 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
             summary: '删除成功',
             detail: `已删除角色 "${character.name}"`,
             life: 3000,
+            onRevert: async () => {
+              const booksStore = useBooksStore();
+              const book = booksStore.getBookById(props.book!.id);
+              if (book) {
+                const current = book.characterSettings || [];
+                // 检查是否存在（避免重复）
+                if (!current.some((c) => c.id === charToRestore.id)) {
+                  await booksStore.updateBook(book.id, {
+                    characterSettings: [...current, charToRestore],
+                    lastEdited: new Date(),
+                  });
+                }
+              }
+            },
           });
         } catch (error) {
           toast.add({
@@ -252,6 +298,16 @@ const handleFileSelect = async (event: Event) => {
     // 导入角色设定：合并现有角色，如果名称相同则更新，否则添加
     let addedCount = 0;
     let updatedCount = 0;
+    const addedCharIds: string[] = [];
+    const updatedCharsSnapshot: Array<{
+      id: string;
+      name: string;
+      sex?: 'male' | 'female' | 'other';
+      translation: string;
+      description?: string;
+      speakingStyle?: string;
+      aliases: Array<{ name: string; translation: string }>;
+    }> = [];
 
     for (const importedChar of importedCharacters) {
       const existingChar = props.book.characterSettings?.find(
@@ -259,6 +315,19 @@ const handleFileSelect = async (event: Event) => {
       );
 
       if (existingChar) {
+        // 保存更新前的状态用于撤销
+        updatedCharsSnapshot.push({
+          id: existingChar.id,
+          name: existingChar.name,
+          sex: existingChar.sex,
+          translation: existingChar.translation.translation,
+          description: existingChar.description,
+          speakingStyle: existingChar.speakingStyle,
+          aliases: existingChar.aliases.map((a: Alias) => ({
+            name: a.name,
+            translation: a.translation.translation,
+          })),
+        });
         // 更新现有角色
         await CharacterSettingService.updateCharacterSetting(
           props.book.id,
@@ -281,7 +350,7 @@ const handleFileSelect = async (event: Event) => {
         updatedCount++;
       } else {
         // 添加新角色
-        await CharacterSettingService.addCharacterSetting(props.book.id, {
+        const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, {
           name: importedChar.name,
           ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
           translation: importedChar.translation.translation,
@@ -296,6 +365,7 @@ const handleFileSelect = async (event: Event) => {
             translation: a.translation.translation,
           })),
         });
+        addedCharIds.push(newChar.id);
         addedCount++;
       }
     }
@@ -305,6 +375,31 @@ const handleFileSelect = async (event: Event) => {
       summary: '导入成功',
       detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
       life: 3000,
+      onRevert: async () => {
+        if (!props.book) return;
+        const booksStore = useBooksStore();
+        const book = booksStore.getBookById(props.book.id);
+        if (!book) return;
+
+        // 删除新添加的角色
+        for (const id of addedCharIds) {
+          await CharacterSettingService.deleteCharacterSetting(book.id, id);
+        }
+
+        // 恢复被更新的角色
+        for (const snapshot of updatedCharsSnapshot) {
+          await CharacterSettingService.updateCharacterSetting(book.id, snapshot.id, {
+            name: snapshot.name,
+            sex: snapshot.sex,
+            translation: snapshot.translation,
+            ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
+            ...(snapshot.speakingStyle !== undefined
+              ? { speakingStyle: snapshot.speakingStyle }
+              : {}),
+            aliases: snapshot.aliases,
+          });
+        }
+      },
     });
   } catch (error) {
     toast.add({

@@ -291,6 +291,7 @@ const handleFileSelect = async (event: Event) => {
     const now = new Date();
     let successCount = 0;
     let errorCount = 0;
+    const importedIds: string[] = [];
 
     for (const bookData of importedBooks) {
       try {
@@ -327,6 +328,7 @@ const handleFileSelect = async (event: Event) => {
         };
 
         await booksStore.addBook(newBook);
+        importedIds.push(newBook.id);
 
         // 如果书籍有封面，添加到封面历史
         if (newBook.cover) {
@@ -342,11 +344,17 @@ const handleFileSelect = async (event: Event) => {
 
     // 显示结果
     if (successCount > 0) {
+      const idsToDelete = [...importedIds];
       toast.add({
         severity: 'success',
         summary: '导入成功',
         detail: `成功导入 ${successCount} 本书籍${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
         life: 3000,
+        onRevert: async () => {
+          for (const id of idsToDelete) {
+            await booksStore.deleteBook(id);
+          }
+        },
       });
     } else {
       toast.add({
@@ -391,6 +399,7 @@ const handleImportBook = async (novel: Novel) => {
     summary: '导入成功',
     detail: `已成功从网站导入书籍 "${newBook.title}"`,
     life: 3000,
+    onRevert: () => booksStore.deleteBook(newBook.id),
   });
 };
 
@@ -428,6 +437,8 @@ const confirmDeleteBook = async () => {
   }
 
   // 执行删除
+  // 深拷贝保存原始数据用于撤销
+  const bookToRestore = JSON.parse(JSON.stringify(bookToDelete.value));
   await booksStore.deleteBook(bookToDelete.value.id);
 
   // 关闭对话框
@@ -440,6 +451,7 @@ const confirmDeleteBook = async () => {
     summary: '删除成功',
     detail: `已成功删除书籍 "${bookTitle}"`,
     life: 3000,
+    onRevert: () => booksStore.addBook(bookToRestore),
   });
 };
 
@@ -539,6 +551,7 @@ const handleSave = async (formData: Partial<Novel>) => {
       summary: '添加成功',
       detail: `已成功添加书籍 "${newBook.title}"`,
       life: 3000,
+      onRevert: () => booksStore.deleteBook(newBook.id),
     });
   } else if (showEditDialog.value && selectedBook.value) {
     // 更新现有书籍
@@ -569,6 +582,9 @@ const handleSave = async (formData: Partial<Novel>) => {
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
     }
+    
+    // 深拷贝保存原始数据用于撤销
+    const oldBook = JSON.parse(JSON.stringify(selectedBook.value));
     await booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;
     const bookTitle = updates.title || selectedBook.value.title;
@@ -578,6 +594,7 @@ const handleSave = async (formData: Partial<Novel>) => {
       summary: '更新成功',
       detail: `已成功更新书籍 "${bookTitle}"`,
       life: 3000,
+      onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
     });
   }
 };
@@ -808,7 +825,7 @@ const handleSave = async (formData: Partial<Novel>) => {
               确定要删除书籍 <strong class="text-moon/95">"{{ bookToDelete?.title }}"</strong> 吗？
             </p>
             <p class="text-sm text-moon/70 mb-4">
-              此操作无法撤销。请在下方的输入框中输入书籍标题以确认删除。
+              请在下方的输入框中输入书籍标题以确认删除。
             </p>
             <div class="space-y-2">
               <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
