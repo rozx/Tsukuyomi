@@ -12,11 +12,11 @@ import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
 export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
   protected override useProxy: boolean = false; // novel18.syosetu.com 不使用 AllOrigins 代理
 
-  protected static readonly BASE_URL = 'https://novel18.syosetu.com';
+  protected static override readonly BASE_URL = 'https://novel18.syosetu.com';
   // 匹配 novel18.syosetu.com 的小说 URL
   // 格式：https://novel18.syosetu.com/{novel_id}/ 或 https://novel18.syosetu.com/{novel_id}/{chapter_id}
   // novel_id 格式：n + 5-6 位字符（如 n7637dj）
-  protected static readonly NOVEL_URL_PATTERN = /^https?:\/\/novel18\.syosetu\.com\/(n\w{5,6})(?:\/(\d+))?(?:\/.*)?$/;
+  protected static override readonly NOVEL_URL_PATTERN = /^https?:\/\/novel18\.syosetu\.com\/(n\w{5,6})(?:\/(\d+))?(?:\/.*)?$/;
 
   /**
    * 验证 URL 是否为有效的 novel18.syosetu.com 小说 URL

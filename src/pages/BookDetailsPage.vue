@@ -27,7 +27,6 @@ import {
   getChapterDisplayTitle,
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
-  exportChapter as exportChapterUtil,
   findUniqueTermsInText,
   findUniqueCharactersInText,
 } from 'src/utils';
@@ -368,7 +367,7 @@ const exportChapter = async (
   if (!selectedChapter.value || !selectedChapterParagraphs.value.length) return;
 
   try {
-    await exportChapterUtil(selectedChapter.value, type, format);
+    await ChapterService.exportChapter(selectedChapter.value, type, format);
 
     // 显示成功消息
     if (format === 'clipboard') {
@@ -2514,8 +2513,11 @@ const handleDragLeave = () => {
         class="chapter-toolbar !border-none !rounded-none !bg-white/5 !backdrop-blur-md !border-b !border-white/10 !p-2 !px-6"
       >
         <template #start>
-          <div class="flex items-center gap-3 overflow-hidden max-w-md">
-            <span class="text-sm font-bold truncate opacity-90">
+          <div class="flex items-center gap-3 overflow-hidden max-w-[15rem]">
+            <span
+              class="text-sm font-bold truncate opacity-90"
+              :title="getChapterDisplayTitle(selectedChapter)"
+            >
               {{ getChapterDisplayTitle(selectedChapter) }}
             </span>
           </div>

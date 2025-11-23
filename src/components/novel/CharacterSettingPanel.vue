@@ -12,10 +12,6 @@ import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import type { Novel, Alias } from 'src/types/novel';
-import {
-  exportCharacterSettingsToJson,
-  importCharacterSettingsFromFile,
-} from 'src/utils';
 
 const props = defineProps<{
   book: Novel | null;
@@ -197,7 +193,7 @@ const handleExport = () => {
   }
 
   try {
-    exportCharacterSettingsToJson(props.book.characterSettings);
+    CharacterSettingService.exportCharacterSettingsToJson(props.book.characterSettings);
     toast.add({
       severity: 'success',
       summary: '导出成功',
@@ -229,7 +225,7 @@ const handleFileSelect = async (event: Event) => {
   }
 
   try {
-    const importedCharacters = await importCharacterSettingsFromFile(file);
+    const importedCharacters = await CharacterSettingService.importCharacterSettingsFromFile(file);
 
     if (importedCharacters.length === 0) {
       toast.add({

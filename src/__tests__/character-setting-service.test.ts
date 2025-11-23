@@ -15,6 +15,27 @@ await mock.module('src/stores/books', () => {
   };
 });
 
+// Mock FileReader for import tests
+class MockFileReader {
+  onload: ((e: any) => void) | null = null;
+  onerror: ((e: any) => void) | null = null;
+
+  readAsText(file: File) {
+    file.text().then((text) => {
+      if (this.onload) {
+        this.onload({ target: { result: text } });
+      }
+    }).catch((e) => {
+        if (this.onerror) {
+            this.onerror(e);
+        }
+    });
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(global as any).FileReader = MockFileReader;
+
 describe('CharacterSettingService', () => {
   const bookId = 'book-1';
   let mockBook: Novel;
@@ -209,6 +230,28 @@ describe('CharacterSettingService', () => {
         await CharacterSettingService.deleteCharacterSetting(bookId, 'non-existent');
       } catch (error: any) {
         expect(error.message).toContain('角色不存在: non-existent');
+      }
+    });
+  });
+
+  describe('importCharacterSettingsFromFile', () => {
+    test('should reject malformed translation object', async () => {
+      const malformedData = [
+        {
+          id: '1',
+          name: 'test',
+          translation: {}, // Empty object
+        },
+      ];
+      const file = new File([JSON.stringify(malformedData)], 'test.json', {
+        type: 'application/json',
+      });
+
+      try {
+        await CharacterSettingService.importCharacterSettingsFromFile(file);
+        expect(true).toBe(false); // Should not reach here
+      } catch (e: any) {
+        expect(e.message).toBe('文件格式错误：角色设定数据不完整');
       }
     });
   });

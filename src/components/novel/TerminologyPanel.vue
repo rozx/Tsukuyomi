@@ -15,7 +15,6 @@ import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
-import { exportTerminologiesToJson, importTerminologiesFromFile } from 'src/utils';
 
 const props = defineProps<{
   book: Novel | null;
@@ -350,7 +349,7 @@ const handleExport = () => {
   }
 
   try {
-    exportTerminologiesToJson(props.book.terminologies);
+    TerminologyService.exportTerminologiesToJson(props.book.terminologies);
     toast.add({
       severity: 'success',
       summary: '导出成功',
@@ -382,7 +381,7 @@ const handleFileSelect = async (event: Event) => {
   }
 
   try {
-    const importedTerminologies = await importTerminologiesFromFile(file);
+    const importedTerminologies = await TerminologyService.importTerminologiesFromFile(file);
 
     if (importedTerminologies.length === 0) {
       toast.add({

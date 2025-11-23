@@ -28,13 +28,10 @@ export async function compressString(input: string): Promise<string> {
   } else {
     // Node/Bun implementation
     try {
-      // @ts-expect-error
       const { gzip } = await import('node:zlib');
-      // @ts-expect-error
       const { promisify } = await import('node:util');
       const gzipAsync = promisify(gzip);
       const buffer = await gzipAsync(input);
-      // @ts-expect-error
       return buffer.toString('base64');
     } catch (e) {
       console.error('Compression fallback failed:', e);
@@ -67,9 +64,7 @@ export async function decompressString(input: string): Promise<string> {
   } else {
     // Node/Bun implementation
     try {
-      // @ts-expect-error
       const { gunzip } = await import('node:zlib');
-      // @ts-expect-error
       const { promisify } = await import('node:util');
       const gunzipAsync = promisify(gunzip);
       const buffer = Buffer.from(input, 'base64');

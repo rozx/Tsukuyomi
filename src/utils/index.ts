@@ -12,13 +12,6 @@ export {
   getCharacterNameVariants,
 } from './novel-utils';
 export {
-  exportTerminologiesToJson,
-  exportCharacterSettingsToJson,
-  importTerminologiesFromFile,
-  importCharacterSettingsFromFile,
-  exportChapter,
-} from './export-import';
-export {
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
 } from './translation-normalizer';
