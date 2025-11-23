@@ -10,8 +10,8 @@ static_sites:
       deploy_on_push: true
     
     # 构建命令（明确指定 SPA 模式）
-    # 首先安装 Bun（如果未预装），然后安装依赖并构建
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bunx quasar build -m spa
+    # 首先安装 Bun（如果未预装），然后安装依赖并使用 build:spa 脚本构建
+    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bun run build:spa
     
     # 输出目录（Quasar SPA 构建输出到 dist/spa）
     output_dir: dist/spa

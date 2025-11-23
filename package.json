@@ -12,6 +12,7 @@
     "test": "bun test",
     "dev": "quasar dev",
     "build": "quasar build",
+    "build:spa": "quasar build -m spa",
     "postinstall": "quasar prepare"
   },
   "dependencies": {

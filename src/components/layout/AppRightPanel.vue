@@ -610,7 +610,7 @@ const sendMessage = async () => {
           }
         } else if (action.type === 'update' && action.entity === 'character' && 'name' in action.data) {
           // 角色更新操作：显示详细信息
-          const character = action.data as import('src/models/novel').CharacterSetting;
+          const character = action.data as CharacterSetting;
           const parts: string[] = [];
           
           // 角色名称和翻译（主要信息）
@@ -705,7 +705,7 @@ const sendMessage = async () => {
           }
         } else if (action.type === 'update' && action.entity === 'term' && 'name' in action.data) {
           // 术语更新操作：显示详细信息
-          const term = action.data as import('src/models/novel').Terminology;
+          const term = action.data as Terminology;
           const parts: string[] = [];
           
           // 术语名称和翻译（主要信息）
