@@ -9,8 +9,12 @@ services:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install
-    run_command: bun run server/proxy-server.ts
+    # 使用 npm 安装依赖（更可靠，DigitalOcean 原生支持）
+    build_command: npm install
+    # 使用 node 运行 TypeScript（通过 tsx 或 ts-node）
+    # 注意：需要先安装 tsx 或使用 node --loader ts-node/esm
+    # 或者编译 TypeScript 为 JavaScript
+    run_command: npm run start:proxy
     http_port: 8080
     instance_count: 1
     instance_size_slug: basic-xxs
@@ -29,7 +33,8 @@ static_sites:
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install && bun run build:spa
+    # 使用 npm 构建（更可靠，DigitalOcean 原生支持）
+    build_command: npm install && npm run build:spa
     output_dir: dist/spa
     envs:
       - key: NODE_ENV
