@@ -3,6 +3,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { ClientRequest } from 'http';
+import type { Socket } from 'net';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -158,15 +159,18 @@ proxyConfigs.forEach((config) => {
         proxyReq.removeHeader('x-forwarded-host');
         proxyReq.removeHeader('x-forwarded-proto');
       },
-      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage>) => {
+      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
         const expressReq = req as unknown as Request;
-        const expressRes = res as unknown as Response;
         console.error(`[Proxy Error] ${expressReq.path || req.url}:`, err.message);
-        if (expressRes && !expressRes.headersSent) {
-          expressRes.status(500).json({
-            error: '代理请求失败',
-            message: err.message,
-          });
+        // 只有当 res 是 ServerResponse 时才发送响应
+        if (res && 'status' in res && 'headersSent' in res) {
+          const expressRes = res as unknown as Response;
+          if (!expressRes.headersSent) {
+            expressRes.status(500).json({
+              error: '代理请求失败',
+              message: err.message,
+            });
+          }
         }
       },
     },
