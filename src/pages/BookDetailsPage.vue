@@ -204,6 +204,251 @@ const updateParagraphTranslation = async (paragraphId: string, newTranslation: s
   await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
 };
 
+// 选择段落翻译
+const selectParagraphTranslation = async (paragraphId: string, translationId: string) => {
+  const chapter = selectedChapter.value;
+  if (!book.value || !chapter || !chapter.content) return;
+
+  // 查找段落
+  const paragraph = chapter.content.find((p) => p.id === paragraphId);
+  if (!paragraph) return;
+
+  // 验证翻译ID是否存在
+  const translation = paragraph.translations?.find((t) => t.id === translationId);
+  if (!translation) {
+    toast.add({
+      severity: 'error',
+      summary: '选择失败',
+      detail: '未找到指定的翻译版本',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 更新选中的翻译ID
+  const updatedVolumes = book.value.volumes?.map((volume) => {
+    if (!volume.chapters) return volume;
+
+    const updatedChapters = volume.chapters.map((ch) => {
+      if (ch.id !== chapter.id) return ch;
+
+      if (!ch.content) return ch;
+
+      const updatedContent = ch.content.map((para) => {
+        if (para.id !== paragraphId) return para;
+
+        return {
+          ...para,
+          selectedTranslationId: translationId,
+        };
+      });
+
+      return {
+        ...ch,
+        content: updatedContent,
+        lastEdited: new Date(),
+      };
+    });
+
+    return {
+      ...volume,
+      chapters: updatedChapters,
+    };
+  });
+
+  // 保存书籍
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
+
+  toast.add({
+    severity: 'success',
+    summary: '已切换翻译',
+    detail: '已切换到选中的翻译版本',
+    life: 2000,
+  });
+};
+
+// 重新翻译单个段落
+const retranslateParagraph = async (paragraphId: string) => {
+  if (!book.value || !selectedChapter.value || !selectedChapter.value.content) {
+    return;
+  }
+
+  // 查找段落
+  const paragraph = selectedChapter.value.content.find((p) => p.id === paragraphId);
+  if (!paragraph) {
+    toast.add({
+      severity: 'error',
+      summary: '翻译失败',
+      detail: '未找到要翻译的段落',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 检查是否有可用的翻译模型
+  const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
+  if (!selectedModel) {
+    toast.add({
+      severity: 'error',
+      summary: '翻译失败',
+      detail: '未找到可用的翻译模型，请在设置中配置',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 添加段落 ID 到正在翻译的集合中
+  translatingParagraphIds.value.add(paragraphId);
+
+  // 创建 AbortController 用于取消翻译
+  const abortController = new AbortController();
+
+  try {
+    // 调用翻译服务
+    await TranslationService.translate([paragraph], selectedModel, {
+      bookId: book.value.id,
+      signal: abortController.signal,
+      aiProcessingStore: {
+        addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+        updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+        appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+        activeTasks: aiProcessingStore.activeTasks,
+      },
+      onParagraphTranslation: (paragraphTranslations) => {
+        if (!book.value || !selectedChapter.value) return;
+
+        // 更新段落翻译
+        const updatedVolumes = book.value.volumes?.map((volume) => {
+          if (!volume.chapters) return volume;
+
+          const updatedChapters = volume.chapters.map((chapter) => {
+            if (chapter.id !== selectedChapter.value!.id) return chapter;
+
+            if (!chapter.content) return chapter;
+
+            const updatedContent = chapter.content.map((para) => {
+              const translation = paragraphTranslations.find((pt) => pt.id === para.id);
+              if (!translation) return para;
+
+              // 创建新的翻译对象
+              const newTranslation = {
+                id: generateShortId(),
+                translation: normalizeTranslationQuotes(translation.translation),
+                aiModelId: selectedModel.id,
+              };
+
+              // 添加到翻译列表（限制最多5个）
+              const updatedTranslations = ChapterService.addParagraphTranslation(
+                para.translations || [],
+                newTranslation,
+              );
+
+              return {
+                id: para.id,
+                text: para.text,
+                translations: updatedTranslations,
+                selectedTranslationId: newTranslation.id,
+              };
+            });
+
+            return {
+              ...chapter,
+              content: updatedContent,
+              lastEdited: new Date(),
+            };
+          });
+
+          return {
+            ...volume,
+            chapters: updatedChapters,
+          };
+        });
+
+        // 更新书籍（使用 void 忽略 Promise）
+        void booksStore.updateBook(book.value.id, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+      },
+      onAction: (action) => {
+        // 显示 CRUD 操作的 toast 通知
+        const entityLabel = action.entity === 'term' ? '术语' : '角色';
+        const typeLabel =
+          action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
+
+        let summary = '';
+        let detail = '';
+
+        if (action.type === 'delete') {
+          const deleteData = action.data as { id: string; name?: string };
+          const name = deleteData.name || '未知';
+          summary = `已删除${entityLabel}`;
+          detail = `${entityLabel} "${name}" 已被删除`;
+        } else {
+          const data = action.data as Terminology | CharacterSetting;
+          const name = data.name || '未知';
+
+          if (action.entity === 'term') {
+            const term = data as Terminology;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (term.translation?.translation) {
+              parts.push(`翻译: "${term.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          } else {
+            const character = data as CharacterSetting;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (character.translation?.translation) {
+              parts.push(`翻译: "${character.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          }
+        }
+
+        toast.add({
+          severity: 'info',
+          summary,
+          detail,
+          life: 3000,
+        });
+      },
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '翻译完成',
+      detail: '段落已重新翻译',
+      life: 3000,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      toast.add({
+        severity: 'info',
+        summary: '已取消',
+        detail: '翻译已取消',
+        life: 2000,
+      });
+    } else {
+      console.error('重新翻译段落时出错:', error);
+      toast.add({
+        severity: 'error',
+        summary: '翻译失败',
+        detail: error instanceof Error ? error.message : '重新翻译段落时发生未知错误',
+        life: 5000,
+      });
+    }
+  } finally {
+    // 从正在翻译的集合中移除段落 ID
+    translatingParagraphIds.value.delete(paragraphId);
+  }
+};
+
 // 替换当前
 const replaceCurrent = async () => {
   const match = searchMatches.value[currentSearchMatchIndex.value];
@@ -1098,8 +1343,11 @@ const translateAllParagraphs = async () => {
             aiModelId: selectedModel.id,
           };
 
-          // 添加到翻译列表
-          const updatedTranslations = [...(para.translations || []), newTranslation];
+          // 添加到翻译列表（限制最多5个）
+          const updatedTranslations = ChapterService.addParagraphTranslation(
+            para.translations || [],
+            newTranslation,
+          );
 
           // 只更新翻译相关字段，确保不修改原文（text 字段）
           return {
@@ -1331,8 +1579,11 @@ const translateAllParagraphs = async () => {
                 aiModelId: selectedModel.id,
               };
 
-              // 添加到翻译列表
-              const updatedTranslations = [...(para.translations || []), newTranslation];
+              // 添加到翻译列表（限制最多5个）
+              const updatedTranslations = ChapterService.addParagraphTranslation(
+                para.translations || [],
+                newTranslation,
+              );
 
               // 只更新翻译相关字段，确保不修改原文（text 字段）
               return {
@@ -3261,6 +3512,8 @@ const handleDragLeave = () => {
                     :search-query="searchQuery"
                     :id="`paragraph-${paragraph.id}`"
                     @update-translation="updateParagraphTranslation"
+                    @retranslate="retranslateParagraph"
+                    @select-translation="selectParagraphTranslation"
                   />
                 </div>
               </div>

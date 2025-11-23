@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onUnmounted } from 'vue';
 import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
 import Textarea from 'primevue/textarea';
+import Button from 'primevue/button';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/types/novel';
+import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
+import { useAIModelsStore } from 'src/stores/ai-models';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -16,7 +19,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update-translation': [paragraphId: string, newTranslation: string];
+  'retranslate': [paragraphId: string];
+  'select-translation': [paragraphId: string, translationId: string];
 }>();
+
+const aiModelsStore = useAIModelsStore();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
@@ -57,6 +64,8 @@ const translationNodes = computed(() => {
 // Popover refs
 const termPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const paragraphCardRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
 const termRefsMap = new Map<string, HTMLElement>();
@@ -334,14 +343,119 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
     closeCallback();
   }
 };
+
+// 处理上下文菜单图标点击
+const contextMenuButtonRef = ref<HTMLElement | null>(null);
+const contextMenuTargetRef = ref<HTMLElement | null>(null);
+
+const handleContextMenuClick = (event: Event) => {
+  if (contextMenuButtonRef.value && contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.toggle(event);
+  }
+};
+
+// 处理右键点击段落卡片
+const handleParagraphContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+  
+  // 创建或获取临时目标元素在鼠标位置
+  let target = contextMenuTargetRef.value;
+  
+  if (!target || !document.body.contains(target)) {
+    target = document.createElement('div');
+    target.style.position = 'fixed';
+    target.style.width = '1px';
+    target.style.height = '1px';
+    target.style.pointerEvents = 'none';
+    target.style.zIndex = '-1';
+    target.style.opacity = '0';
+    document.body.appendChild(target);
+    contextMenuTargetRef.value = target;
+  }
+  
+  // 设置临时元素位置为鼠标光标位置
+  target.style.left = `${event.clientX}px`;
+  target.style.top = `${event.clientY}px`;
+  
+  // 使用 nextTick 确保 DOM 更新后再显示菜单
+  setTimeout(() => {
+    if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
+      contextMenuPopoverRef.value.show(event, target);
+    }
+  }, 0);
+};
+
+// 当上下文菜单 Popover 关闭时清理状态
+const handleContextMenuPopoverHide = () => {
+  // 保留目标元素以便下次使用，只在组件卸载时清理
+};
+
+// 处理按钮点击（占位函数，暂不实现逻辑）
+const handleProofread = () => {
+  // TODO: 实现校对段落逻辑
+};
+
+const handlePolish = () => {
+  // TODO: 实现润色段落逻辑
+};
+
+const handleRetranslate = () => {
+  emit('retranslate', props.paragraph.id);
+};
+
+// 翻译历史对话框
+const showTranslationHistoryDialog = ref(false);
+
+// 获取可用的翻译历史数量（用于显示按钮文本）
+const translationHistoryCount = computed(() => {
+  if (!props.paragraph.translations || props.paragraph.translations.length === 0) {
+    return 0;
+  }
+  return Math.min(props.paragraph.translations.length, 5);
+});
+
+// 打开翻译历史对话框
+const openTranslationHistory = () => {
+  showTranslationHistoryDialog.value = true;
+  if (contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.hide();
+  }
+};
+
+// 处理对话框中选择翻译
+const handleDialogSelectTranslation = (translationId: string) => {
+  emit('select-translation', props.paragraph.id, translationId);
+};
+
+// 组件卸载时清理临时元素
+onUnmounted(() => {
+  if (contextMenuTargetRef.value) {
+    try {
+      document.body.removeChild(contextMenuTargetRef.value);
+    } catch {
+      // 元素可能已经被移除，忽略错误
+    }
+    contextMenuTargetRef.value = null;
+  }
+});
 </script>
 
 <template>
   <div
+    ref="paragraphCardRef"
     class="paragraph-card"
     :class="{ 'has-content': hasContent }"
+    @contextmenu="handleParagraphContextMenu"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
+    <button
+      v-if="hasContent"
+      ref="contextMenuButtonRef"
+      class="context-menu-icon-button"
+      @click="handleContextMenuClick"
+    >
+      <i class="pi pi-ellipsis-v" />
+    </button>
     <div class="paragraph-content">
       <p class="paragraph-text">
         <template v-for="(node, nodeIndex) in highlightedText" :key="nodeIndex">
@@ -379,13 +493,13 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
         </template>
       </p>
       <div v-if="hasTranslation || props.isTranslating" class="paragraph-translation-wrapper">
-        <!-- 正在翻译但还没有翻译文本时显示 skeleton -->
-        <div v-if="props.isTranslating && !hasTranslation" class="paragraph-translation-skeleton">
+        <!-- 正在翻译时显示 skeleton（覆盖现有翻译） -->
+        <div v-if="props.isTranslating" class="paragraph-translation-skeleton">
           <Skeleton width="100%" height="1.5rem" />
           <Skeleton width="85%" height="1.5rem" />
           <Skeleton width="70%" height="1.5rem" />
         </div>
-        <!-- 有翻译文本时显示可编辑的翻译 -->
+        <!-- 有翻译文本且不在翻译时显示可编辑的翻译 -->
         <Inplace
           v-else-if="hasTranslation"
           class="translation-inplace"
@@ -477,6 +591,65 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
         </div>
       </div>
     </Popover>
+
+    <!-- 上下文菜单 - 使用 PrimeVue Popover -->
+    <Popover
+      ref="contextMenuPopoverRef"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 16rem"
+      class="context-menu-popover"
+      @hide="handleContextMenuPopoverHide"
+    >
+      <div class="context-menu-content">
+        <Button
+          label="校对段落"
+          icon="pi pi-check-circle"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handleProofread"
+        />
+        <Button
+          label="润色段落"
+          icon="pi pi-pencil"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handlePolish"
+        />
+        <Button
+          label="重新翻译"
+          icon="pi pi-refresh"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handleRetranslate"
+        />
+        
+        <!-- 翻译历史分隔线 -->
+        <div v-if="translationHistoryCount > 0" class="context-menu-divider" />
+        
+        <!-- 翻译历史按钮 -->
+        <Button
+          v-if="translationHistoryCount > 0"
+          :label="`翻译历史 (${translationHistoryCount})`"
+          icon="pi pi-history"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="openTranslationHistory"
+        />
+      </div>
+    </Popover>
+
+    <!-- 翻译历史对话框 -->
+    <TranslationHistoryDialog
+      :visible="showTranslationHistoryDialog"
+      :paragraph="paragraph"
+      @update:visible="(val) => (showTranslationHistoryDialog = val)"
+      @select-translation="handleDialogSelectTranslation"
+    />
   </div>
 </template>
 
@@ -504,6 +677,35 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
   opacity: 1;
   color: var(--primary-opacity-70);
   transform: translateY(-2px);
+}
+
+.context-menu-icon-button {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--white-opacity-20);
+  border-radius: 4px;
+  color: var(--moon-opacity-40);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+}
+
+.context-menu-icon-button:hover {
+  background-color: var(--white-opacity-10);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-opacity-100);
+}
+
+.paragraph-card.has-content:hover .context-menu-icon-button {
+  opacity: 1;
 }
 
 
@@ -719,5 +921,107 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
   color: theme('colors.warning.DEFAULT');
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* 上下文菜单 Popover 样式 */
+:deep(.context-menu-popover .p-popover-content) {
+  padding: 0.5rem;
+}
+
+.context-menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.context-menu-button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-90);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.context-menu-button:hover {
+  background-color: var(--white-opacity-10);
+  color: var(--primary-opacity-100);
+}
+
+.context-menu-button :deep(.p-button-label) {
+  font-weight: 500;
+}
+
+/* 上下文菜单分隔线 */
+.context-menu-divider {
+  height: 1px;
+  background: var(--white-opacity-20);
+  margin: 0.5rem 0;
+}
+
+/* 上下文菜单分隔线 */
+.context-menu-divider {
+  height: 1px;
+  background: var(--white-opacity-20);
+  margin: 0.5rem 0;
+}
+
+/* 翻译历史部分 */
+.translation-history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.translation-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+}
+
+.translation-history-item {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.translation-history-item:hover {
+  background-color: var(--white-opacity-10);
+  border-color: var(--primary-opacity-30);
+}
+
+.translation-history-item.is-selected {
+  background-color: var(--primary-opacity-20);
+  border-color: var(--primary-opacity-50);
+}
+
+.translation-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.translation-history-model {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-70);
+  font-weight: 500;
+}
+
+.translation-history-check {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-100);
+}
+
+.translation-history-text {
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-90);
+  line-height: 1.4;
+  word-break: break-word;
 }
 </style>

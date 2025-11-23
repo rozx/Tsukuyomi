@@ -1031,4 +1031,21 @@ export class ChapterService {
 
     return results;
   }
+
+  /**
+   * 添加段落翻译，并限制最多保留5个翻译版本
+   * 新翻译添加到末尾，如果超过5个则删除最旧的（数组开头的）
+   * @param existingTranslations 现有的翻译数组
+   * @param newTranslation 新的翻译对象
+   * @returns 更新后的翻译数组（最多5个）
+   */
+  static addParagraphTranslation(
+    existingTranslations: Translation[],
+    newTranslation: Translation,
+  ): Translation[] {
+    const MAX_TRANSLATIONS = 5;
+    const updated = [...(existingTranslations || []), newTranslation];
+    // 如果超过最大数量，只保留最后5个（最新的）
+    return updated.slice(-MAX_TRANSLATIONS);
+  }
 }

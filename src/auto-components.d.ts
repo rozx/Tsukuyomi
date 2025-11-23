@@ -53,5 +53,6 @@ declare module 'vue' {
     ToastHistoryDialog: typeof import('./components/dialogs/ToastHistoryDialog.vue')['default']
     TranslatableChips: typeof import('./components/translation/TranslatableChips.vue')['default']
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
+    TranslationHistoryDialog: typeof import('./components/dialogs/TranslationHistoryDialog.vue')['default']
   }
 }
