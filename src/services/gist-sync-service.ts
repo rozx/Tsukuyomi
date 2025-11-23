@@ -109,6 +109,7 @@ export class GistSyncService {
    * 解析 Gist 内容（支持 gzip 压缩）
    */
   private async parseGistContent(content: string): Promise<any> {
+    // eslint-disable-next-line no-useless-catch
     try {
       const parsed = JSON.parse(content);
       if (parsed && typeof parsed === 'object' && parsed.format === 'gzip' && parsed.data) {
@@ -507,6 +508,7 @@ export class GistSyncService {
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
             
             try {
+              if (!gistId) throw new Error('Gist ID is undefined during batch update');
               const response = await this.octokit.rest.gists.update({
                 gist_id: gistId,
                 description: 'Luna AI Translator - Settings and Novels',
@@ -551,27 +553,23 @@ export class GistSyncService {
         // 如果已经有了 gistUrl，说明 batch update 成功了（或者部分成功），不需要再创建
         if (!gistUrl) {
           // 尝试创建新 Gist
-          try {
-            // ... (这里实际上是把 files 用于 create)
-            // 但是 create 不能使用 null 值，需要过滤掉
-            const filesForCreate: Record<string, { content: string }> = {};
-            for (const [key, value] of Object.entries(files)) {
-              if (value !== null) {
-                filesForCreate[key] = value;
-              }
+          // ... (这里实际上是把 files 用于 create)
+          // 但是 create 不能使用 null 值，需要过滤掉
+          const filesForCreate: Record<string, { content: string }> = {};
+          for (const [key, value] of Object.entries(files)) {
+            if (value !== null) {
+              filesForCreate[key] = value;
             }
-            
-            const response = await this.octokit.rest.gists.create({
-              description: 'Luna AI Translator - Settings and Novels',
-              public: false,
-              files: filesForCreate,
-            });
-            gistId = response.data.id;
-            gistUrl = response.data.html_url;
-            isRecreated = true;
-          } catch (createError) {
-             throw createError;
           }
+          
+          const response = await this.octokit.rest.gists.create({
+            description: 'Luna AI Translator - Settings and Novels',
+            public: false,
+            files: filesForCreate,
+          });
+          gistId = response.data.id;
+          gistUrl = response.data.html_url;
+          isRecreated = true;
         }
       } else {
         // 创建新 Gist

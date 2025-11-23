@@ -8,7 +8,6 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
-import ProgressBar from 'primevue/progressbar';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -29,17 +28,12 @@ import {
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
   exportChapter as exportChapterUtil,
+  findUniqueTermsInText,
+  findUniqueCharactersInText,
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type {
-  Volume,
-  Chapter,
-  Novel,
-  Terminology,
-  CharacterSetting,
-  Paragraph,
-} from 'src/types/novel';
+import type { Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/types/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
@@ -48,6 +42,10 @@ import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
+import SearchToolbar from 'src/components/book-details/SearchToolbar.vue';
+import TranslationProgress from 'src/components/book-details/TranslationProgress.vue';
+import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
+import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 
 const route = useRoute();
 const router = useRouter();
@@ -56,33 +54,6 @@ const bookDetailsStore = useBookDetailsStore();
 const aiModelsStore = useAIModelsStore();
 const aiProcessingStore = useAIProcessingStore();
 const toast = useToastWithHistory();
-
-// 添加卷/章节对话框状态
-const showAddVolumeDialog = ref(false);
-const showAddChapterDialog = ref(false);
-const newVolumeTitle = ref('');
-const newChapterTitle = ref('');
-const selectedVolumeId = ref<string | null>(null);
-
-// 编辑卷/章节对话框状态
-const showEditVolumeDialog = ref(false);
-const showEditChapterDialog = ref(false);
-const editingVolumeId = ref<string | null>(null);
-const editingChapterId = ref<string | null>(null);
-const editingVolumeTitle = ref('');
-const editingVolumeTranslation = ref('');
-const editingChapterTitle = ref('');
-const editingChapterTranslation = ref('');
-const editingChapterSourceVolumeId = ref<string | null>(null);
-const editingChapterTargetVolumeId = ref<string | null>(null);
-
-// 删除确认对话框状态
-const showDeleteVolumeConfirm = ref(false);
-const showDeleteChapterConfirm = ref(false);
-const deletingVolumeId = ref<string | null>(null);
-const deletingChapterId = ref<string | null>(null);
-const deletingVolumeTitle = ref('');
-const deletingChapterTitle = ref('');
 
 // 书籍编辑对话框状态
 const showBookDialog = ref(false);
@@ -112,77 +83,6 @@ const isEditingOriginalText = ref(false);
 const originalTextEditValue = ref('');
 const originalTextEditBackup = ref('');
 const originalTextEditChapterId = ref<string | null>(null); // 跟踪正在编辑原始文本的章节 ID
-
-// 搜索与替换状态
-const isSearchVisible = ref(false);
-const showReplace = ref(false);
-const searchQuery = ref('');
-const replaceQuery = ref('');
-const currentSearchMatchIndex = ref(-1);
-
-// 搜索匹配项
-const searchMatches = computed(() => {
-  if (!searchQuery.value || !selectedChapterParagraphs.value) return [];
-  const matches: { index: number; id: string }[] = [];
-  selectedChapterParagraphs.value.forEach((p, index) => {
-    const text = getParagraphTranslationText(p);
-    if (text && text.toLowerCase().includes(searchQuery.value.toLowerCase())) {
-      matches.push({ index, id: p.id });
-    }
-  });
-  return matches;
-});
-
-// 切换搜索栏
-const toggleSearch = () => {
-  isSearchVisible.value = !isSearchVisible.value;
-  if (!isSearchVisible.value) {
-    searchQuery.value = '';
-    replaceQuery.value = '';
-    showReplace.value = false;
-    currentSearchMatchIndex.value = -1;
-  } else {
-    void nextTick(() => {
-      const input = document.querySelector('.search-toolbar input') as HTMLInputElement;
-      if (input) input.focus();
-    });
-  }
-};
-
-// 滚动到匹配项
-const scrollToMatch = (id: string) => {
-  const el = document.getElementById(`paragraph-${id}`);
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-};
-
-// 下一个匹配项
-const nextMatch = () => {
-  if (!searchMatches.value.length) return;
-  currentSearchMatchIndex.value = (currentSearchMatchIndex.value + 1) % searchMatches.value.length;
-  const match = searchMatches.value[currentSearchMatchIndex.value];
-  if (match) scrollToMatch(match.id);
-};
-
-// 上一个匹配项
-const prevMatch = () => {
-  if (!searchMatches.value.length) return;
-  currentSearchMatchIndex.value =
-    (currentSearchMatchIndex.value - 1 + searchMatches.value.length) % searchMatches.value.length;
-  const match = searchMatches.value[currentSearchMatchIndex.value];
-  if (match) scrollToMatch(match.id);
-};
-
-// 监听搜索词变化
-watch(searchQuery, () => {
-  currentSearchMatchIndex.value = -1;
-  if (searchMatches.value.length > 0) {
-    currentSearchMatchIndex.value = 0;
-    const match = searchMatches.value[0];
-    if (match) scrollToMatch(match.id);
-  }
-});
 
 // 更新段落翻译
 const updateParagraphTranslation = async (paragraphId: string, newTranslation: string) => {
@@ -452,66 +352,6 @@ const retranslateParagraph = async (paragraphId: string) => {
   }
 };
 
-// 替换当前
-const replaceCurrent = async () => {
-  const match = searchMatches.value[currentSearchMatchIndex.value];
-  if (!match) return;
-
-  const chapter = selectedChapter.value;
-  if (!chapter?.content) return;
-
-  const paragraph = chapter.content.find((p) => p.id === match.id);
-  if (!paragraph) return;
-
-  const text = getParagraphTranslationText(paragraph);
-  // 替换段落中的所有匹配项
-  const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
-  const newText = text.replace(regex, replaceQuery.value);
-
-  if (newText !== text) {
-    await updateParagraphTranslation(match.id, newText);
-    toast.add({ severity: 'success', summary: '已替换', life: 3000 });
-  }
-};
-
-// 替换所有
-const replaceAll = async () => {
-  if (!searchMatches.value.length) return;
-  const chapter = selectedChapter.value;
-  if (!chapter?.content) return;
-
-  let count = 0;
-  const matches = [...searchMatches.value];
-
-  // 批量更新内存中的数据
-  for (const match of matches) {
-    const paragraph = chapter.content.find((p) => p.id === match.id);
-    if (!paragraph) continue;
-
-    const text = getParagraphTranslationText(paragraph);
-    const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
-    const newText = text.replace(regex, replaceQuery.value);
-
-    if (newText !== text) {
-      if (paragraph.selectedTranslationId && paragraph.translations) {
-        const translation = paragraph.translations.find(
-          (t) => t.id === paragraph.selectedTranslationId,
-        );
-        if (translation) {
-          translation.translation = newText;
-          count++;
-        }
-      }
-    }
-  }
-
-  // 一次性保存到数据库
-  if (count > 0 && book.value) {
-    await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
-    toast.add({ severity: 'success', summary: `已替换 ${count} 处内容`, life: 3000 });
-  }
-};
-
 // 导出 Popover 状态
 const exportPopover = ref<InstanceType<typeof Popover> | null>(null);
 
@@ -575,6 +415,36 @@ const book = computed(() => {
   if (!bookId.value) return undefined;
   return booksStore.getBookById(bookId.value);
 });
+
+const {
+  showAddVolumeDialog,
+  showAddChapterDialog,
+  newVolumeTitle,
+  newChapterTitle,
+  selectedVolumeId,
+  handleAddVolume,
+  handleAddChapter,
+  openAddChapterDialog,
+  showEditVolumeDialog,
+  showEditChapterDialog,
+  editingVolumeTitle,
+  editingVolumeTranslation,
+  editingChapterTitle,
+  editingChapterTranslation,
+  editingChapterTargetVolumeId,
+  openEditVolumeDialog,
+  openEditChapterDialog,
+  handleEditVolume,
+  handleEditChapter,
+  showDeleteVolumeConfirm,
+  showDeleteChapterConfirm,
+  deletingVolumeTitle,
+  deletingChapterTitle,
+  openDeleteVolumeConfirm,
+  openDeleteChapterConfirm,
+  handleDeleteVolume,
+  handleDeleteChapter,
+} = useChapterManagement(book);
 
 // 获取封面图片 URL
 const getCoverUrl = (book: Novel): string => {
@@ -709,6 +579,20 @@ const selectedChapterParagraphs = computed(() => {
   }
   return selectedChapter.value.content;
 });
+
+const {
+  isSearchVisible,
+  showReplace,
+  searchQuery,
+  replaceQuery,
+  searchMatches,
+  currentSearchMatchIndex,
+  toggleSearch,
+  nextMatch,
+  prevMatch,
+  replaceCurrent,
+  replaceAll,
+} = useSearchReplace(book, selectedChapter, selectedChapterParagraphs, updateParagraphTranslation);
 
 // 获取选中章节的统计信息
 const selectedChapterStats = computed(() => {
@@ -902,13 +786,6 @@ watch(selectedChapterId, (newChapterId, oldChapterId) => {
   }
 });
 
-/**
- * 转义正则表达式特殊字符
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 // 术语弹出框状态
 const termPopover = ref();
 const showEditTermDialog = ref(false);
@@ -924,36 +801,7 @@ const usedTerms = computed(() => {
   const text = getChapterContentText(selectedChapter.value);
   if (!text) return [];
 
-  const terms = book.value.terminologies;
-  // 按名称长度降序排序，优先匹配较长的术语
-  const sortedTerms = [...terms].sort((a, b) => b.name.length - a.name.length);
-
-  const termMap = new Map<string, Terminology>();
-  for (const term of sortedTerms) {
-    if (term.name && term.name.trim()) {
-      termMap.set(term.name.trim(), term);
-    }
-  }
-
-  const termNames = Array.from(termMap.keys())
-    .map((name) => escapeRegex(name))
-    .join('|');
-
-  if (!termNames) return [];
-
-  const regex = new RegExp(`(${termNames})`, 'g');
-  const matchedTerms = new Map<string, Terminology>();
-
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const matchedName = match[0];
-    const term = termMap.get(matchedName);
-    if (term) {
-      matchedTerms.set(term.id, term);
-    }
-  }
-
-  return Array.from(matchedTerms.values());
+  return findUniqueTermsInText(text, book.value.terminologies);
 });
 
 const usedTermCount = computed(() => usedTerms.value.length);
@@ -977,44 +825,7 @@ const usedCharacters = computed(() => {
   const text = getChapterContentText(selectedChapter.value);
   if (!text) return [];
 
-  const characters = book.value.characterSettings;
-  // 创建名称到角色的映射，包括角色名称和所有别名
-  const nameToCharacterMap = new Map<string, CharacterSetting>();
-
-  for (const char of characters) {
-    // 添加角色名称
-    if (char.name && char.name.trim()) {
-      nameToCharacterMap.set(char.name.trim(), char);
-    }
-    // 添加所有别名
-    if (char.aliases && char.aliases.length > 0) {
-      for (const alias of char.aliases) {
-        if (alias.name && alias.name.trim()) {
-          nameToCharacterMap.set(alias.name.trim(), char);
-        }
-      }
-    }
-  }
-
-  // 按名称长度降序排序，优先匹配较长的名称
-  const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
-
-  if (sortedNames.length === 0) return [];
-
-  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-  const regex = new RegExp(`(${namePatterns})`, 'g');
-  const matchedCharacters = new Map<string, CharacterSetting>();
-
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const matchedName = match[0];
-    const char = nameToCharacterMap.get(matchedName);
-    if (char) {
-      matchedCharacters.set(char.id, char);
-    }
-  }
-
-  return Array.from(matchedCharacters.values());
+  return findUniqueCharactersInText(text, book.value.characterSettings);
 });
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
@@ -1032,129 +843,6 @@ const translationProgress = ref({
 });
 const translationAbortController = ref<AbortController | null>(null);
 const translatingParagraphIds = ref<Set<string>>(new Set());
-const showAITaskHistory = ref(false);
-
-// AI 任务类型和状态标签映射
-const taskTypeLabels: Record<string, string> = {
-  translation: '翻译',
-  proofreading: '校对',
-  polishing: '润色',
-  characterExtraction: '角色提取',
-  terminologyExtraction: '术语提取',
-  termsTranslation: '术语翻译',
-  config: '配置获取',
-  other: '其他',
-};
-
-const taskStatusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  completed: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
-
-// 获取最近的 AI 任务（包括进行中的和最近完成的）
-const recentAITasks = computed(() => {
-  const allTasks = aiProcessingStore.activeTasks;
-  // 按开始时间倒序排列，取最近 10 个
-  return [...allTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
-});
-
-// 自动滚动状态（按任务 ID 存储）
-const autoScrollEnabled = ref<Record<string, boolean>>({});
-
-// 任务折叠状态（按任务 ID 存储，默认展开）
-const taskFolded = ref<Record<string, boolean>>({});
-
-// 切换任务的折叠/展开状态
-const toggleTaskFold = (taskId: string) => {
-  taskFolded.value[taskId] = !taskFolded.value[taskId];
-};
-
-// 切换任务的自动滚动
-const toggleAutoScroll = (taskId: string) => {
-  autoScrollEnabled.value[taskId] = !autoScrollEnabled.value[taskId];
-  // 如果启用自动滚动，立即滚动到底部
-  if (autoScrollEnabled.value[taskId]) {
-    setTimeout(() => {
-      const container = thinkingContainers.value[taskId];
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-    }, 0);
-  }
-};
-
-// 清除已完成/已取消的任务
-const clearCompletedTasks = async () => {
-  try {
-    await aiProcessingStore.clearCompletedTasks();
-    toast.add({
-      severity: 'success',
-      summary: '清除成功',
-      detail: '已清除所有已完成和已取消的任务',
-      life: 3000,
-    });
-  } catch (error) {
-    console.error('Failed to clear completed tasks:', error);
-    toast.add({
-      severity: 'error',
-      summary: '清除失败',
-      detail: error instanceof Error ? error.message : '未知错误',
-      life: 3000,
-    });
-  }
-};
-
-// 思考过程容器的引用
-const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
-
-// 设置思考过程容器引用
-const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
-  if (el) {
-    thinkingContainers.value[taskId] = el;
-  } else {
-    // 清理卸载元素的引用，防止内存泄漏
-    delete thinkingContainers.value[taskId];
-  }
-};
-
-// 监听任务思考过程变化，自动滚动到底部
-watch(
-  () =>
-    recentAITasks.value.map((task) => ({
-      id: task.id,
-      message: task.thinkingMessage,
-      length: task.thinkingMessage?.length || 0,
-    })),
-  () => {
-    // 使用 nextTick 确保 DOM 已更新后再滚动
-    setTimeout(() => {
-      for (const task of recentAITasks.value) {
-        if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
-          const container = thinkingContainers.value[task.id];
-          if (container) {
-            container.scrollTop = container.scrollHeight;
-          }
-        }
-      }
-    }, 0);
-  },
-  { deep: true, flush: 'post' },
-);
-
-// 格式化任务持续时间
-const formatTaskDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || Date.now();
-  const duration = Math.floor((end - startTime) / 1000);
-  if (duration < 60) {
-    return `${duration}秒`;
-  }
-  const minutes = Math.floor(duration / 60);
-  const seconds = duration % 60;
-  return `${minutes}分${seconds}秒`;
-};
 
 // 规范化章节符号
 const normalizeChapterSymbols = async () => {
@@ -1988,311 +1676,6 @@ const confirmDeleteTerm = async () => {
       life: 3000,
     });
   }
-};
-
-// 添加新卷
-const handleAddVolume = async () => {
-  if (!book.value || !newVolumeTitle.value.trim()) {
-    return;
-  }
-
-  const updatedVolumes = ChapterService.addVolume(book.value, newVolumeTitle.value);
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  toast.add({
-    severity: 'success',
-    summary: '添加成功',
-    detail: `已添加卷 "${newVolumeTitle.value.trim()}"`,
-    life: 3000,
-  });
-
-  showAddVolumeDialog.value = false;
-  newVolumeTitle.value = '';
-};
-
-// 添加新章节
-const handleAddChapter = async () => {
-  if (!book.value || !newChapterTitle.value.trim() || !selectedVolumeId.value) {
-    return;
-  }
-
-  const updatedVolumes = ChapterService.addChapter(
-    book.value,
-    selectedVolumeId.value,
-    newChapterTitle.value,
-  );
-
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  // 刷新所有术语和角色的出现次数（新章节可能有内容）
-  await TerminologyService.refreshAllTermOccurrences(book.value.id);
-  await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
-
-  toast.add({
-    severity: 'success',
-    summary: '添加成功',
-    detail: `已添加章节 "${newChapterTitle.value.trim()}"`,
-    life: 3000,
-  });
-
-  showAddChapterDialog.value = false;
-  newChapterTitle.value = '';
-  selectedVolumeId.value = null;
-};
-
-// 打开添加章节对话框
-const openAddChapterDialog = () => {
-  if (!book.value || !book.value.volumes || book.value.volumes.length === 0) {
-    toast.add({
-      severity: 'warn',
-      summary: '无法添加章节',
-      detail: '请先添加至少一个卷',
-      life: 3000,
-    });
-    return;
-  }
-  showAddChapterDialog.value = true;
-};
-
-// 打开编辑卷对话框
-const openEditVolumeDialog = (volume: Volume) => {
-  editingVolumeId.value = volume.id;
-  // 兼容旧数据格式
-  if (typeof volume.title === 'string') {
-    editingVolumeTitle.value = volume.title;
-    editingVolumeTranslation.value = '';
-  } else {
-    editingVolumeTitle.value = volume.title?.original || '';
-    editingVolumeTranslation.value = volume.title?.translation?.translation || '';
-  }
-  showEditVolumeDialog.value = true;
-};
-
-// 打开编辑章节对话框
-const openEditChapterDialog = (chapter: Chapter) => {
-  if (!book.value) return;
-
-  // 找到章节所在的卷
-  const sourceVolume = book.value.volumes?.find((volume) =>
-    volume.chapters?.some((c) => c.id === chapter.id),
-  );
-
-  editingChapterId.value = chapter.id;
-  // 兼容旧数据格式
-  if (typeof chapter.title === 'string') {
-    editingChapterTitle.value = chapter.title;
-    editingChapterTranslation.value = '';
-  } else {
-    editingChapterTitle.value = chapter.title?.original || '';
-    editingChapterTranslation.value = chapter.title?.translation?.translation || '';
-  }
-  editingChapterSourceVolumeId.value = sourceVolume?.id || null;
-  editingChapterTargetVolumeId.value = sourceVolume?.id || null;
-  showEditChapterDialog.value = true;
-};
-
-// 保存编辑的卷
-const handleEditVolume = async () => {
-  if (!book.value || !editingVolumeId.value || !editingVolumeTitle.value.trim()) {
-    return;
-  }
-
-  // 获取当前卷以保留翻译 ID
-  const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
-
-  // 兼容旧数据格式
-  let translationId = '';
-  let aiModelId = '';
-
-  if (currentVolume) {
-    if (typeof currentVolume.title === 'string') {
-      // 旧数据格式，创建新的翻译 ID
-      translationId = generateShortId();
-    } else {
-      translationId = currentVolume.title.translation?.id || generateShortId();
-      aiModelId = currentVolume.title.translation?.aiModelId || '';
-    }
-  } else {
-    translationId = generateShortId();
-  }
-
-  const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
-    title: {
-      original: editingVolumeTitle.value.trim(),
-      translation: {
-        id: translationId,
-        translation: editingVolumeTranslation.value.trim(),
-        aiModelId: aiModelId,
-      },
-    },
-  });
-
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  toast.add({
-    severity: 'success',
-    summary: '更新成功',
-    detail: `已更新卷标题`,
-    life: 3000,
-  });
-
-  showEditVolumeDialog.value = false;
-  editingVolumeId.value = null;
-  editingVolumeTitle.value = '';
-  editingVolumeTranslation.value = '';
-};
-
-// 保存编辑的章节
-const handleEditChapter = async () => {
-  if (
-    !book.value ||
-    !editingChapterId.value ||
-    !editingChapterTitle.value.trim() ||
-    !editingChapterTargetVolumeId.value
-  ) {
-    return;
-  }
-
-  // 获取当前章节以保留翻译 ID
-  let currentChapter: Chapter | null = null;
-  for (const volume of book.value.volumes || []) {
-    const chapter = volume.chapters?.find((c) => c.id === editingChapterId.value);
-    if (chapter) {
-      currentChapter = chapter;
-      break;
-    }
-  }
-
-  // 兼容旧数据格式
-  let translationId = '';
-  let aiModelId = '';
-
-  if (currentChapter) {
-    if (typeof currentChapter.title === 'string') {
-      // 旧数据格式，创建新的翻译 ID
-      translationId = generateShortId();
-    } else {
-      translationId = currentChapter.title.translation?.id || generateShortId();
-      aiModelId = currentChapter.title.translation?.aiModelId || '';
-    }
-  } else {
-    translationId = generateShortId();
-  }
-
-  const updatedVolumes = ChapterService.updateChapter(
-    book.value,
-    editingChapterId.value,
-    {
-      title: {
-        original: editingChapterTitle.value.trim(),
-        translation: {
-          id: translationId,
-          translation: editingChapterTranslation.value.trim(),
-          aiModelId: aiModelId,
-        },
-      },
-    },
-    editingChapterTargetVolumeId.value,
-  );
-
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  const moveMessage =
-    editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value ? '并移动到新卷' : '';
-
-  toast.add({
-    severity: 'success',
-    summary: '更新成功',
-    detail: `已更新章节标题${moveMessage}`,
-    life: 3000,
-  });
-
-  showEditChapterDialog.value = false;
-  editingChapterId.value = null;
-  editingChapterTitle.value = '';
-  editingChapterTranslation.value = '';
-  editingChapterSourceVolumeId.value = null;
-  editingChapterTargetVolumeId.value = null;
-};
-
-// 打开删除卷确认对话框
-const openDeleteVolumeConfirm = (volume: Volume) => {
-  deletingVolumeId.value = volume.id;
-  deletingVolumeTitle.value = getVolumeDisplayTitle(volume);
-  showDeleteVolumeConfirm.value = true;
-};
-
-// 打开删除章节确认对话框
-const openDeleteChapterConfirm = (chapter: Chapter) => {
-  deletingChapterId.value = chapter.id;
-  deletingChapterTitle.value = getChapterDisplayTitle(chapter);
-  showDeleteChapterConfirm.value = true;
-};
-
-// 确认删除卷
-const handleDeleteVolume = async () => {
-  if (!book.value || !deletingVolumeId.value) {
-    return;
-  }
-
-  const updatedVolumes = ChapterService.deleteVolume(book.value, deletingVolumeId.value);
-
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  toast.add({
-    severity: 'success',
-    summary: '删除成功',
-    detail: `已删除卷 "${deletingVolumeTitle.value}"`,
-    life: 3000,
-  });
-
-  showDeleteVolumeConfirm.value = false;
-  deletingVolumeId.value = null;
-  deletingVolumeTitle.value = '';
-};
-
-// 确认删除章节
-const handleDeleteChapter = async () => {
-  if (!book.value || !deletingChapterId.value) {
-    return;
-  }
-
-  const updatedVolumes = ChapterService.deleteChapter(book.value, deletingChapterId.value);
-
-  await booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
-
-  // 刷新所有术语和角色的出现次数（删除章节后需要更新）
-  await TerminologyService.refreshAllTermOccurrences(book.value.id);
-  await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
-
-  toast.add({
-    severity: 'success',
-    summary: '删除成功',
-    detail: `已删除章节 "${deletingChapterTitle.value}"`,
-    life: 3000,
-  });
-
-  showDeleteChapterConfirm.value = false;
-  deletingChapterId.value = null;
-  deletingChapterTitle.value = '';
 };
 
 // 保存书籍（编辑）
@@ -3256,105 +2639,19 @@ const handleDragLeave = () => {
       </Menubar>
 
       <!-- 搜索工具栏 -->
-      <div
-        v-if="isSearchVisible && selectedChapter && !selectedSettingMenu"
-        class="search-toolbar border-b border-white/10 bg-white/5 backdrop-blur-md p-2 px-6 flex items-center gap-4 animate-fade-in"
-      >
-        <!-- 搜索输入框 -->
-        <div class="flex items-center gap-2 flex-1 max-w-xl">
-          <div class="relative flex-1">
-            <i
-              class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
-            ></i>
-            <InputText
-              v-model="searchQuery"
-              placeholder="查找翻译内容..."
-              class="!pl-9 !py-1.5 !text-sm w-full"
-              @keydown.enter="nextMatch"
-            />
-            <span
-              v-if="searchMatches.length > 0"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-moon/50"
-            >
-              {{ currentSearchMatchIndex + 1 }}/{{ searchMatches.length }}
-            </span>
-          </div>
-
-          <div class="flex gap-1">
-            <Button
-              icon="pi pi-angle-up"
-              text
-              rounded
-              size="small"
-              class="!w-8 !h-8"
-              :disabled="searchMatches.length === 0"
-              @click="prevMatch"
-            />
-            <Button
-              icon="pi pi-angle-down"
-              text
-              rounded
-              size="small"
-              class="!w-8 !h-8"
-              :disabled="searchMatches.length === 0"
-              @click="nextMatch"
-            />
-          </div>
-
-          <Button
-            :icon="showReplace ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
-            :label="showReplace ? '隐藏替换' : '替换'"
-            text
-            size="small"
-            class="!text-xs !px-2"
-            @click="showReplace = !showReplace"
-          />
-        </div>
-
-        <!-- 替换输入框 -->
-        <div v-if="showReplace" class="flex items-center gap-2 flex-1 max-w-xl animate-fade-in">
-          <div class="relative flex-1">
-            <i
-              class="pi pi-pencil absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
-            ></i>
-            <InputText
-              v-model="replaceQuery"
-              placeholder="替换为..."
-              class="!pl-9 !py-1.5 !text-sm w-full"
-              @keydown.enter="replaceCurrent"
-            />
-          </div>
-
-          <div class="flex gap-2">
-            <Button
-              label="替换"
-              size="small"
-              outlined
-              class="!text-xs !px-3 !py-1.5"
-              :disabled="searchMatches.length === 0 || !replaceQuery"
-              @click="replaceCurrent"
-            />
-            <Button
-              label="全部替换"
-              size="small"
-              outlined
-              class="!text-xs !px-3 !py-1.5"
-              :disabled="searchMatches.length === 0 || !replaceQuery"
-              @click="replaceAll"
-            />
-          </div>
-        </div>
-
-        <!-- 关闭按钮 -->
-        <Button
-          icon="pi pi-times"
-          text
-          rounded
-          size="small"
-          class="!w-8 !h-8 ml-auto text-moon/50 hover:text-moon"
-          @click="isSearchVisible = false"
-        />
-      </div>
+      <SearchToolbar
+        v-if="selectedChapter && !selectedSettingMenu"
+        v-model:visible="isSearchVisible"
+        v-model:search-query="searchQuery"
+        v-model:replace-query="replaceQuery"
+        v-model:show-replace="showReplace"
+        :matches-count="searchMatches.length"
+        :current-match-index="currentSearchMatchIndex"
+        @next="nextMatch"
+        @prev="prevMatch"
+        @replace="replaceCurrent"
+        @replace-all="replaceAll"
+      />
 
       <div ref="scrollableContentRef" class="scrollable-content">
         <div
@@ -3546,162 +2843,11 @@ const handleDragLeave = () => {
       </div>
 
       <!-- 翻译进度工具栏 -->
-      <div v-if="isTranslatingChapter" class="translation-progress-toolbar">
-        <div class="translation-progress-content">
-          <div class="translation-progress-info">
-            <div class="translation-progress-header">
-              <i class="pi pi-language translation-progress-icon"></i>
-              <span class="translation-progress-title">正在翻译章节</span>
-            </div>
-            <div class="translation-progress-message">
-              {{ translationProgress.message || '正在处理...' }}
-            </div>
-          </div>
-          <div class="translation-progress-bar-wrapper">
-            <ProgressBar
-              :value="
-                translationProgress.total > 0
-                  ? (translationProgress.current / translationProgress.total) * 100
-                  : 0
-              "
-              :show-value="false"
-              class="translation-progress-bar"
-            />
-            <div class="translation-progress-text">
-              {{ translationProgress.current }} / {{ translationProgress.total }}
-            </div>
-          </div>
-          <Button
-            icon="pi pi-list"
-            :class="[
-              'p-button-text p-button-sm translation-progress-history-toggle',
-              { 'p-highlight': showAITaskHistory },
-            ]"
-            :title="showAITaskHistory ? '隐藏 AI 任务历史' : '显示 AI 任务历史'"
-            @click="showAITaskHistory = !showAITaskHistory"
-          />
-          <Button
-            icon="pi pi-times"
-            label="取消"
-            class="p-button-text p-button-sm translation-progress-cancel"
-            @click="cancelTranslation"
-          />
-        </div>
-        <!-- AI 任务历史 -->
-        <div v-if="showAITaskHistory" class="translation-progress-ai-history">
-          <div class="ai-history-content">
-            <div v-if="recentAITasks.length === 0" class="ai-history-empty">
-              <i class="pi pi-info-circle"></i>
-              <span>暂无 AI 任务记录</span>
-            </div>
-            <div v-else class="ai-history-tasks">
-              <!-- 清除已完成/已取消任务按钮 -->
-              <div
-                v-if="
-                  recentAITasks.some(
-                    (t) =>
-                      t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
-                  )
-                "
-                class="ai-history-clear-actions"
-              >
-                <Button
-                  icon="pi pi-trash"
-                  label="清除已完成/已取消的任务"
-                  class="p-button-text p-button-sm ai-history-clear-button"
-                  @click="clearCompletedTasks"
-                />
-              </div>
-              <div
-                v-for="task in recentAITasks"
-                :key="task.id"
-                class="ai-history-task-item"
-                :class="{
-                  'task-active': task.status === 'thinking' || task.status === 'processing',
-                  'task-completed': task.status === 'completed',
-                  'task-error': task.status === 'error',
-                  'task-cancelled': task.status === 'cancelled',
-                  'task-folded': taskFolded[task.id],
-                }"
-              >
-                <div class="ai-task-header">
-                  <div class="ai-task-info">
-                    <Button
-                      :icon="taskFolded[task.id] ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
-                      class="p-button-text p-button-sm ai-task-fold-toggle"
-                      @click="toggleTaskFold(task.id)"
-                      title="折叠/展开"
-                    />
-                    <i
-                      class="pi ai-task-status-icon"
-                      :class="{
-                        'pi-spin pi-spinner':
-                          task.status === 'thinking' || task.status === 'processing',
-                        'pi-check-circle': task.status === 'completed',
-                        'pi-times-circle': task.status === 'error',
-                        'pi-ban': task.status === 'cancelled',
-                      }"
-                    ></i>
-                    <span class="ai-task-model">{{ task.modelName }}</span>
-                    <Badge
-                      :value="taskTypeLabels[task.type] || task.type"
-                      severity="info"
-                      class="ai-task-type-badge"
-                    />
-                    <span class="ai-task-status">{{
-                      taskStatusLabels[task.status] || task.status
-                    }}</span>
-                  </div>
-                  <div class="ai-task-meta">
-                    <span class="ai-task-duration">{{
-                      formatTaskDuration(task.startTime, task.endTime)
-                    }}</span>
-                    <Button
-                      v-if="task.status === 'thinking' || task.status === 'processing'"
-                      icon="pi pi-stop"
-                      class="p-button-text p-button-sm p-button-danger ai-task-stop"
-                      @click="void aiProcessingStore.stopTask(task.id)"
-                      title="停止任务"
-                    />
-                  </div>
-                </div>
-                <Transition name="task-content">
-                  <div v-if="!taskFolded[task.id]" class="ai-task-content">
-                    <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
-                    <div
-                      v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                      class="ai-task-thinking"
-                    >
-                      <div class="ai-task-thinking-header">
-                        <span class="ai-task-thinking-label">思考过程：</span>
-                        <Button
-                          :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
-                          :class="[
-                            'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                            { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
-                          ]"
-                          :title="
-                            autoScrollEnabled[task.id]
-                              ? '禁用自动滚动'
-                              : '启用自动滚动（新内容出现时自动滚动到底部）'
-                          "
-                          @click="toggleAutoScroll(task.id)"
-                        />
-                      </div>
-                      <div
-                        :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
-                        class="ai-task-thinking-text"
-                      >
-                        {{ task.thinkingMessage }}
-                      </div>
-                    </div>
-                  </div>
-                </Transition>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <TranslationProgress
+        :is-translating="isTranslatingChapter"
+        :progress="translationProgress"
+        @cancel="cancelTranslation"
+      />
     </div>
   </div>
 </template>
@@ -4597,327 +3743,6 @@ const handleDragLeave = () => {
 
 .no-selection-hint {
   margin: 0;
-}
-
-/* 翻译进度工具栏 */
-.translation-progress-toolbar {
-  flex-shrink: 0;
-  padding: 0.75rem 1.5rem;
-  background: var(--white-opacity-95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--white-opacity-20);
-  box-shadow: 0 -2px 12px var(--black-opacity-10);
-  z-index: 10;
-}
-
-.translation-progress-content {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  max-width: 56rem;
-  margin: 0 auto;
-}
-
-.translation-progress-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.translation-progress-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.translation-progress-icon {
-  font-size: 1.125rem;
-  color: var(--primary-opacity-80);
-}
-
-.translation-progress-title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.translation-progress-message {
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-70);
-  line-height: 1.4;
-}
-
-.translation-progress-bar-wrapper {
-  flex: 1;
-  min-width: 200px;
-  max-width: 400px;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.translation-progress-bar {
-  flex: 1;
-  height: 0.5rem;
-}
-
-.translation-progress-text {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--moon-opacity-80);
-  white-space: nowrap;
-  min-width: 4rem;
-  text-align: right;
-}
-
-.translation-progress-history-toggle {
-  flex-shrink: 0;
-}
-
-.translation-progress-cancel {
-  flex-shrink: 0;
-}
-
-/* AI 任务历史 */
-.translation-progress-ai-history {
-  border-top: 1px solid var(--white-opacity-20);
-  background: var(--white-opacity-3);
-  max-height: 400px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-.ai-history-content {
-  padding: 1rem 1.5rem;
-}
-
-.ai-history-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 2rem;
-  color: var(--moon-opacity-60);
-  font-size: 0.875rem;
-}
-
-.ai-history-tasks {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.ai-history-clear-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.5rem;
-}
-
-.ai-history-clear-button {
-  color: var(--moon-opacity-70);
-  font-size: 0.8125rem;
-}
-
-.ai-history-clear-button:hover {
-  color: var(--red-500);
-  background: var(--red-500-opacity-10);
-}
-
-.ai-history-task-item {
-  padding: 0.75rem;
-  border-radius: 6px;
-  border: 1px solid var(--white-opacity-10);
-  background: var(--white-opacity-5);
-  transition: all 0.2s;
-}
-
-.ai-history-task-item.task-active {
-  border-color: var(--primary-opacity-30);
-  background: var(--primary-opacity-10);
-}
-
-.ai-history-task-item.task-completed {
-  border-color: var(--green-500-opacity-30);
-  background: var(--green-500-opacity-10);
-}
-
-.ai-history-task-item.task-error {
-  border-color: var(--red-500-opacity-30);
-  background: var(--red-500-opacity-10);
-}
-
-.ai-history-task-item.task-cancelled {
-  border-color: var(--orange-500-opacity-30);
-  background: var(--orange-500-opacity-10);
-}
-
-.ai-task-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.ai-task-info {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.ai-task-fold-toggle {
-  padding: 0.25rem;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  color: var(--moon-opacity-60);
-  transition: all 0.2s;
-}
-
-.ai-task-fold-toggle:hover {
-  color: var(--primary-opacity-80);
-  background: var(--white-opacity-5);
-}
-
-.ai-task-status-icon {
-  font-size: 0.875rem;
-  flex-shrink: 0;
-}
-
-.ai-task-status-icon.pi-spinner {
-  color: var(--primary-opacity-80);
-}
-
-.ai-task-status-icon.pi-check-circle {
-  color: var(--green-500);
-}
-
-.ai-task-status-icon.pi-times-circle {
-  color: var(--red-500);
-}
-
-.ai-task-status-icon.pi-ban {
-  color: var(--orange-500);
-}
-
-.ai-task-model {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--moon-opacity-90);
-  white-space: nowrap;
-}
-
-.ai-task-type-badge {
-  font-size: 0.75rem;
-  padding: 0.125rem 0.5rem;
-}
-
-.ai-task-status {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-  white-space: nowrap;
-}
-
-.ai-task-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.ai-task-duration {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-  white-space: nowrap;
-}
-
-.ai-task-stop {
-  padding: 0.25rem;
-  min-width: 1.5rem;
-  height: 1.5rem;
-}
-
-.ai-task-content {
-  overflow: hidden;
-}
-
-.ai-task-message {
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-70);
-  margin-top: 0.5rem;
-  line-height: 1.4;
-}
-
-/* 折叠/展开过渡动画 */
-.task-content-enter-active,
-.task-content-leave-active {
-  transition: all 0.3s ease;
-  max-height: 2000px;
-  opacity: 1;
-}
-
-.task-content-enter-from,
-.task-content-leave-to {
-  max-height: 0;
-  opacity: 0;
-  margin-top: 0;
-  margin-bottom: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.ai-task-thinking {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 4px;
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-5);
-  font-size: 0.75rem;
-  line-height: 1.5;
-}
-
-.ai-task-thinking-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.ai-task-thinking-label {
-  color: var(--moon-opacity-50);
-  font-weight: 500;
-  margin-right: 0.5rem;
-}
-
-.ai-task-auto-scroll-toggle {
-  color: var(--moon-opacity-50);
-  padding: 0.25rem;
-  min-width: auto;
-  width: 1.5rem;
-  height: 1.5rem;
-  transition: all 0.2s;
-}
-
-.ai-task-auto-scroll-toggle:hover {
-  color: var(--primary-opacity-80);
-  background: var(--white-opacity-5);
-}
-
-.ai-task-auto-scroll-toggle.auto-scroll-enabled {
-  color: var(--primary-opacity-80);
-}
-
-.ai-task-thinking-text {
-  color: var(--moon-opacity-70);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-  display: block;
-  scroll-behavior: smooth;
 }
 
 /* Term Popover DataView - ensure header stays fixed and content scrolls */

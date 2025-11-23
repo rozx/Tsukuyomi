@@ -8,6 +8,7 @@ import Button from 'primevue/button';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/types/novel';
 import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -72,13 +73,6 @@ const termRefsMap = new Map<string, HTMLElement>();
 const characterRefsMap = new Map<string, HTMLElement>();
 
 /**
- * 转义正则表达式特殊字符
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
  * 将文本转换为包含高亮术语和角色的节点数组
  */
 const highlightedText = computed(
@@ -92,183 +86,11 @@ const highlightedText = computed(
       return [{ type: 'text', content: props.paragraph.text }];
     }
 
-    const text = props.paragraph.text;
-    const nodes: Array<{
-      type: 'text' | 'term' | 'character';
-      content: string;
-      term?: Terminology;
-      character?: CharacterSetting;
-    }> = [];
-
-    // 收集所有匹配项（术语和角色）
-    interface Match {
-      index: number;
-      length: number;
-      type: 'term' | 'character';
-      term?: Terminology;
-      character?: CharacterSetting;
-      text: string;
-    }
-
-    const matches: Match[] = [];
-
-    // 处理术语
-    if (props.terminologies && props.terminologies.length > 0) {
-      const sortedTerms = [...props.terminologies].sort((a, b) => b.name.length - a.name.length);
-      const termMap = new Map<string, Terminology>();
-      for (const term of sortedTerms) {
-        if (term.name && term.name.trim()) {
-          termMap.set(term.name.trim(), term);
-        }
-      }
-
-      const termNames = Array.from(termMap.keys())
-        .map((name) => escapeRegex(name))
-        .join('|');
-
-      if (termNames) {
-        const regex = new RegExp(`(${termNames})`, 'g');
-        let match: RegExpExecArray | null;
-        while ((match = regex.exec(text)) !== null) {
-          const matchedText = match[0];
-          const term = termMap.get(matchedText);
-          if (term) {
-            matches.push({
-              index: match.index,
-              length: matchedText.length,
-              type: 'term',
-              term,
-              text: matchedText,
-            });
-          }
-        }
-      }
-    }
-
-    // 处理角色（包括名称和别名）
-    if (props.characterSettings && props.characterSettings.length > 0) {
-      const nameToCharacterMap = new Map<string, CharacterSetting>();
-      for (const char of props.characterSettings) {
-        // 添加角色名称
-        if (char.name && char.name.trim()) {
-          nameToCharacterMap.set(char.name.trim(), char);
-        }
-        // 添加所有别名
-        if (char.aliases && char.aliases.length > 0) {
-          for (const alias of char.aliases) {
-            if (alias.name && alias.name.trim()) {
-              nameToCharacterMap.set(alias.name.trim(), char);
-            }
-          }
-        }
-      }
-
-      // 按名称长度降序排序，优先匹配较长的名称
-      const sortedNames = Array.from(nameToCharacterMap.keys()).sort((a, b) => b.length - a.length);
-
-      if (sortedNames.length > 0) {
-        const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-        const regex = new RegExp(`(${namePatterns})`, 'g');
-        let match: RegExpExecArray | null;
-        while ((match = regex.exec(text)) !== null) {
-          const matchedText = match[0];
-          const char = nameToCharacterMap.get(matchedText);
-          if (char) {
-            matches.push({
-              index: match.index,
-              length: matchedText.length,
-              type: 'character',
-              character: char,
-              text: matchedText,
-            });
-          }
-        }
-      }
-    }
-
-    // 如果没有匹配项，直接返回文本
-    if (matches.length === 0) {
-      return [{ type: 'text', content: text }];
-    }
-
-    // 按索引排序，然后处理重叠（优先保留较长的匹配）
-    matches.sort((a, b) => {
-      if (a.index !== b.index) {
-        return a.index - b.index;
-      }
-      // 如果索引相同，优先较长的匹配
-      return b.length - a.length;
-    });
-
-    // 移除重叠的匹配（保留第一个，即较长的）
-    const filteredMatches: Match[] = [];
-    for (let i = 0; i < matches.length; i++) {
-      const current = matches[i];
-      if (!current) continue;
-
-      let hasOverlap = false;
-
-      for (const existing of filteredMatches) {
-        const currentEnd = current.index + current.length;
-        const existingEnd = existing.index + existing.length;
-
-        // 检查是否有重叠
-        if (
-          (current.index >= existing.index && current.index < existingEnd) ||
-          (currentEnd > existing.index && currentEnd <= existingEnd) ||
-          (current.index <= existing.index && currentEnd >= existingEnd)
-        ) {
-          hasOverlap = true;
-          break;
-        }
-      }
-
-      if (!hasOverlap) {
-        filteredMatches.push(current);
-      }
-    }
-
-    // 再次按索引排序
-    filteredMatches.sort((a, b) => a.index - b.index);
-
-    // 构建节点数组
-    let lastIndex = 0;
-    for (const match of filteredMatches) {
-      // 添加匹配项前面的普通文本
-      if (match.index > lastIndex) {
-        nodes.push({
-          type: 'text',
-          content: text.substring(lastIndex, match.index),
-        });
-      }
-
-      // 添加匹配项
-      if (match.type === 'term' && match.term) {
-        nodes.push({
-          type: 'term',
-          content: match.text,
-          term: match.term,
-        });
-      } else if (match.type === 'character' && match.character) {
-        nodes.push({
-          type: 'character',
-          content: match.text,
-          character: match.character,
-        });
-      }
-
-      lastIndex = match.index + match.length;
-    }
-
-    // 添加剩余的普通文本
-    if (lastIndex < text.length) {
-      nodes.push({
-        type: 'text',
-        content: text.substring(lastIndex),
-      });
-    }
-
-    return nodes.length > 0 ? nodes : [{ type: 'text', content: text }];
+    return parseTextForHighlighting(
+      props.paragraph.text,
+      props.terminologies,
+      props.characterSettings,
+    );
   },
 );
 

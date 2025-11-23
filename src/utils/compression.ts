@@ -28,13 +28,13 @@ export async function compressString(input: string): Promise<string> {
   } else {
     // Node/Bun implementation
     try {
-      // @ts-ignore
+      // @ts-expect-error
       const { gzip } = await import('node:zlib');
-      // @ts-ignore
+      // @ts-expect-error
       const { promisify } = await import('node:util');
       const gzipAsync = promisify(gzip);
       const buffer = await gzipAsync(input);
-      // @ts-ignore
+      // @ts-expect-error
       return buffer.toString('base64');
     } catch (e) {
       console.error('Compression fallback failed:', e);
@@ -67,9 +67,9 @@ export async function decompressString(input: string): Promise<string> {
   } else {
     // Node/Bun implementation
     try {
-      // @ts-ignore
+      // @ts-expect-error
       const { gunzip } = await import('node:zlib');
-      // @ts-ignore
+      // @ts-expect-error
       const { promisify } = await import('node:util');
       const gunzipAsync = promisify(gunzip);
       const buffer = Buffer.from(input, 'base64');
@@ -88,7 +88,7 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary);
 }

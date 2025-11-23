@@ -113,3 +113,42 @@ export function getChapterContentText(chapter: Chapter): string {
   return chapter.content.map(para => para.text).join('\n');
 }
 
+/**
+ * 获取角色名称的所有变体（用于匹配）
+ * 包括：原文、去空格版本、分割后的部分
+ * @param name 角色名称
+ * @returns 名称变体数组
+ */
+export function getCharacterNameVariants(name: string): string[] {
+  if (!name || !name.trim()) {
+    return [];
+  }
+
+  const variants = new Set<string>();
+  const trimmedName = name.trim();
+  
+  // 1. 添加原文
+  variants.add(trimmedName);
+  
+  // 2. 添加去空格/符号版本 (只移除空格和常见分隔符，保留其他内容)
+  // 移除空格 (全角/半角)、点、中间点
+  const noSeparatorName = trimmedName.replace(/[\s\u3000・.,]+/g, '');
+  if (noSeparatorName && noSeparatorName !== trimmedName) {
+    variants.add(noSeparatorName);
+  }
+
+  // 3. 分割部分
+  // 按空格、中间点等分割
+  const parts = trimmedName.split(/[\s\u3000・.,]+/);
+  if (parts.length > 1) {
+    parts.forEach(part => {
+      if (part && part.trim().length > 0) { // 避免空字符串
+         // 过滤掉过短的纯数字/符号部分可能更好，但名字部分可能只有1-2个字，如 "桜"
+         // 这里不做过多的长度过滤，相信用户输入的名称
+        variants.add(part.trim());
+      }
+    });
+  }
+
+  return Array.from(variants);
+}

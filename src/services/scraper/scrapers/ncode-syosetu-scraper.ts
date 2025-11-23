@@ -14,7 +14,7 @@ import { generateShortId } from 'src/utils/id-generator';
 export class NcodeSyosetuScraper extends BaseScraper {
   protected override useProxy: boolean = false; // ncode.syosetu.com 不使用 AllOrigins 代理
 
-  protected static readonly BASE_URL = 'https://ncode.syosetu.com';
+  protected static readonly BASE_URL: string = 'https://ncode.syosetu.com';
   // 匹配 ncode.syosetu.com 的小说 URL
   // 格式：https://ncode.syosetu.com/{novel_id}/ 或 https://ncode.syosetu.com/{novel_id}/{chapter_id}
   // novel_id 格式：n + 5-6 位字符（如 n7637dj）

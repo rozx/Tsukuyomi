@@ -7,7 +7,14 @@ import type {
 } from 'src/types/novel';
 import { flatMap, isEmpty, isArray, isEqual, sortBy } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
-import { UniqueIdGenerator, extractIds, generateShortId, normalizeTranslationQuotes } from 'src/utils';
+import {
+  UniqueIdGenerator,
+  extractIds,
+  generateShortId,
+  normalizeTranslationQuotes,
+  getCharacterNameVariants,
+  countNamesInText,
+} from 'src/utils';
 
 /**
  * 角色设定服务
@@ -28,21 +35,24 @@ export class CharacterSettingService {
     const occurrencesMap = new Map<string, number>();
 
     // 收集所有名称（主名称 + 所有别名）
-    const allNames: Array<{ name: string; escaped: string }> = [
-      {
-        name: character.name,
-        escaped: character.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-      },
-    ];
+    const nameSet = new Set<string>();
 
+    // 主名称及其变体
+    getCharacterNameVariants(character.name).forEach((v) => nameSet.add(v));
+
+    // 别名及其变体
     if (character.aliases && character.aliases.length > 0) {
       for (const alias of character.aliases) {
-        allNames.push({
-          name: alias.name,
-          escaped: alias.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-        });
+        getCharacterNameVariants(alias.name).forEach((v) => nameSet.add(v));
       }
     }
+
+    const allNames: Array<{ name: string; escaped: string }> = Array.from(nameSet)
+      .filter((name) => name && name.trim().length > 0)
+      .map((name) => ({
+        name: name,
+        escaped: name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      }));
 
     // 按长度降序排序，优先匹配较长的名称
     allNames.sort((a, b) => b.name.length - a.name.length);
@@ -93,51 +103,10 @@ export class CharacterSettingService {
     if (!text || text.length === 0) {
       return 0;
     }
-
-    let count = 0;
-    // 用于标记已匹配的位置，避免重复计数
-    const matchedPositions = new Set<number>();
-
-    // 从左到右扫描文本
-    let i = 0;
-    while (i < text.length) {
-      // 如果当前位置已被匹配，跳过
-      if (matchedPositions.has(i)) {
-        i++;
-        continue;
-      }
-
-      let matched = false;
-
-      // 按顺序尝试匹配所有名称（已按长度降序排序）
-      for (const nameInfo of names) {
-        // 使用预编译的正则表达式，但需要从当前位置开始匹配
-        const remainingText = text.substring(i);
-        const matchPattern = new RegExp(`^${nameInfo.escaped}`);
-        const match = remainingText.match(matchPattern);
-        
-        if (match && match.index === 0) {
-          // 找到匹配
-          count++;
-          const matchLength = nameInfo.name.length;
-          // 标记这个匹配的所有位置为已使用
-          for (let j = i; j < i + matchLength; j++) {
-            matchedPositions.add(j);
-          }
-          // 跳过匹配的长度，继续扫描
-          i += matchLength;
-          matched = true;
-          break; // 只匹配第一个找到的（最长的）
-        }
-      }
-
-      // 如果没有匹配任何名称，移动到下一个位置
-      if (!matched) {
-        i++;
-      }
-    }
-
-    return count;
+    return countNamesInText(
+      text,
+      names.map((n) => n.name),
+    );
   }
 
   /**

@@ -15,6 +15,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
+import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete';
@@ -1665,8 +1666,7 @@ export class TranslationService {
         const contextParts: string[] = [];
 
         // 查找相关术语
-        const relevantTerms =
-          bookData.terminologies?.filter((t) => textContent.includes(t.name)) || [];
+        const relevantTerms = findUniqueTermsInText(textContent, bookData.terminologies || []);
         if (relevantTerms.length > 0) {
           console.log(
             `[TranslationService] 📚 发现相关术语 (${relevantTerms.length} 个):`,
@@ -1684,11 +1684,10 @@ export class TranslationService {
         }
 
         // 查找相关角色
-        const relevantCharacters =
-          bookData.characterSettings?.filter(
-            (c) =>
-              textContent.includes(c.name) || c.aliases.some((a) => textContent.includes(a.name)),
-          ) || [];
+        const relevantCharacters = findUniqueCharactersInText(
+          textContent,
+          bookData.characterSettings || [],
+        );
         if (relevantCharacters.length > 0) {
           console.log(
             `[TranslationService] 👥 发现相关角色 (${relevantCharacters.length} 个):`,

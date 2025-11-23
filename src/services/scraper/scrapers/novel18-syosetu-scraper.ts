@@ -23,7 +23,7 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
-  isValidUrl(url: string): boolean {
+  override isValidUrl(url: string): boolean {
     return Novel18SyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }
 
@@ -32,7 +32,7 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url novel18.syosetu.com 小说 URL
    * @returns 小说 ID，如果无效则返回 null
    */
-  extractNovelId(url: string): string | null {
+  override extractNovelId(url: string): string | null {
     const match = url.match(Novel18SyosetuScraper.NOVEL_URL_PATTERN);
     return match?.[1] ?? null;
   }
@@ -42,7 +42,7 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url novel18.syosetu.com 小说 URL（可能是章节 URL）
    * @returns 小说主页 URL
    */
-  protected getNovelIndexUrl(url: string): string {
+  protected override getNovelIndexUrl(url: string): string {
     const novelId = this.extractNovelId(url);
     if (novelId) {
       return `${Novel18SyosetuScraper.BASE_URL}/${novelId}/`;
@@ -56,7 +56,7 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url novel18.syosetu.com 小说 URL（可以是章节 URL，会自动提取小说主页）
    * @returns Promise<FetchNovelResult> 获取结果
    */
-  async fetchNovel(url: string): Promise<FetchNovelResult> {
+  override async fetchNovel(url: string): Promise<FetchNovelResult> {
     try {
       // 验证 URL
       if (!this.isValidUrl(url)) {

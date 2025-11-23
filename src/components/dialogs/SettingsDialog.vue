@@ -70,9 +70,10 @@ watch(
 );
 
 // 处理标签页切换
-const handleTabChange = (value: string) => {
-  activeTab.value = value;
-  const tabIndex = tabStringToIndex(value);
+const handleTabChange = (value: string | number) => {
+  const stringValue = String(value);
+  activeTab.value = stringValue;
+  const tabIndex = tabStringToIndex(stringValue);
   // 只有当值有效时才保存（0-3）
   if (tabIndex >= 0 && tabIndex <= 3) {
     void settingsStore.setLastOpenedSettingsTab(tabIndex);
