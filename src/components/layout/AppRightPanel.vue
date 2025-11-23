@@ -2,7 +2,9 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
+import Popover from 'primevue/popover';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { useUiStore } from 'src/stores/ui';
 import { useContextStore } from 'src/stores/context';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -37,14 +39,50 @@ marked.setOptions({
   gfm: true, // 支持 GitHub Flavored Markdown
 });
 
-// 渲染 Markdown 为 HTML
+// 渲染 Markdown 为 HTML（使用 DOMPurify 清理以防止 XSS）
 const renderMarkdown = (text: string): string => {
   if (!text) return '';
   try {
-    return marked.parse(text) as string;
+    // 使用 marked 解析 Markdown
+    const html = marked.parse(text) as string;
+    // 使用 DOMPurify 清理 HTML，防止 XSS 攻击
+    // 允许常见的 Markdown HTML 标签，但阻止脚本执行
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        'p',
+        'br',
+        'strong',
+        'em',
+        'u',
+        's',
+        'code',
+        'pre',
+        'ul',
+        'ol',
+        'li',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'blockquote',
+        'a',
+        'hr',
+        'table',
+        'thead',
+        'tbody',
+        'tr',
+        'th',
+        'td',
+      ],
+      ALLOWED_ATTR: ['href', 'title', 'alt', 'class'],
+      ALLOW_DATA_ATTR: false,
+    });
   } catch (error) {
     console.error('Markdown rendering error:', error);
-    return text; // 如果渲染失败，返回原始文本
+    // 如果渲染失败，返回转义的原始文本
+    return DOMPurify.sanitize(text, { ALLOWED_TAGS: [] });
   }
 };
 
@@ -91,6 +129,10 @@ const inputMessage = ref('');
 const isSending = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
+
+// Popover refs for action details
+const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
+const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
 
 // 获取默认助手模型
 const assistantModel = computed(() => {
@@ -308,7 +350,9 @@ const sendMessage = async () => {
 
   try {
       // 获取当前会话的总结（如果有）
+      // 保存会话 ID，确保在异步操作期间即使会话切换，消息也会保存到正确的会话
       const currentSession = chatSessionsStore.currentSession;
+      const sessionId = currentSession?.id ?? null;
       const sessionSummary = currentSession?.summary;
 
       // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
@@ -347,19 +391,79 @@ const sendMessage = async () => {
           entity: action.entity,
           ...(actionName ? { name: actionName } : {}),
           timestamp: Date.now(),
+          // 网络操作相关信息
+          ...(action.type === 'web_search' && 'query' in action.data
+            ? { query: action.data.query }
+            : {}),
+          ...(action.type === 'web_fetch' && 'url' in action.data
+            ? { url: action.data.url }
+            : {}),
         };
+        
+        // 立即将操作添加到临时数组（用于后续保存）
         currentMessageActions.value.push(messageAction);
+        
+        // 立即将操作添加到当前助手消息，使其立即显示在 UI 中
+        const assistantMsg = messages.value.find((m) => m.id === assistantMessageId);
+        if (assistantMsg) {
+          if (!assistantMsg.actions) {
+            assistantMsg.actions = [];
+          }
+          // 检查是否已经添加过（避免重复）
+          const existingAction = assistantMsg.actions.find(
+            (a) => a.timestamp === messageAction.timestamp && a.type === messageAction.type,
+          );
+          if (!existingAction) {
+            assistantMsg.actions.push(messageAction);
+            // 触发响应式更新并滚动到底部
+            nextTick(() => {
+              scrollToBottom();
+            });
+          }
+        }
 
         // 显示操作通知
         const actionLabels: Record<ActionInfo['type'], string> = {
           create: '创建',
           update: '更新',
           delete: '删除',
+          web_search: '网络搜索',
+          web_fetch: '网页获取',
         };
         const entityLabels: Record<ActionInfo['entity'], string> = {
           term: '术语',
           character: '角色',
+          web: '网络',
         };
+
+        // 处理网络搜索和网页获取操作
+        if (action.type === 'web_search') {
+          const query = 'query' in action.data ? action.data.query : undefined;
+          if (query) {
+            toast.add({
+              severity: 'info',
+              summary: actionLabels[action.type],
+              detail: `搜索查询：${query}`,
+              life: 3000,
+            });
+          }
+          // 不继续处理其他逻辑，直接返回
+          return;
+        }
+
+        if (action.type === 'web_fetch') {
+          const url = 'url' in action.data ? action.data.url : undefined;
+          if (url) {
+            toast.add({
+              severity: 'info',
+              summary: actionLabels[action.type],
+              detail: `获取网页：${url}`,
+              life: 3000,
+            });
+          }
+          // 不继续处理其他逻辑，直接返回
+          return;
+        }
         
         // 构建详细的 toast 消息
         let detail = '';
@@ -857,6 +961,59 @@ const sendMessage = async () => {
       currentTaskId.value = result.taskId;
     }
 
+    // 检查是否需要重置（token 限制或错误导致）
+    if (result.needsReset && result.summary) {
+      // 保存总结并重置消息（使用保存的会话 ID，确保即使会话切换，总结也会保存到原始会话）
+      if (sessionId) {
+        chatSessionsStore.summarizeAndReset(result.summary, sessionId);
+      }
+
+      // 显示总结信息
+      toast.add({
+        severity: 'info',
+        summary: '会话已总结',
+        detail: '由于达到 token 限制或发生错误，会话历史已自动总结并重置。之前的对话内容已保存为总结。',
+        life: 5000,
+      });
+
+      // 更新本地消息列表（使用标记避免触发 watch）
+      isUpdatingFromStore = true;
+      const session = chatSessionsStore.currentSession;
+      if (session) {
+        messages.value = [...session.messages];
+      }
+      // 使用 nextTick 确保在下一个 tick 重置标记
+      await nextTick();
+      isUpdatingFromStore = false;
+
+      // 移除占位符助手消息（因为需要重置）
+      const assistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
+      if (assistantMsgIndex >= 0) {
+        messages.value.splice(assistantMsgIndex, 1);
+      }
+
+      // 重新发送用户消息（使用总结后的上下文）
+      // 注意：这里不自动重新发送，让用户决定是否继续
+      // 但我们可以显示一个提示消息
+      const summaryMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `**会话已总结**\n\n由于达到 token 限制，之前的对话历史已自动总结。总结内容：\n\n${result.summary}\n\n您可以继续提问，我会基于总结内容继续对话。`,
+        timestamp: Date.now(),
+      };
+      messages.value.push(summaryMessage);
+
+      // 更新 store 中的消息历史
+      // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
+      if (sessionId) {
+        chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+      }
+
+      // 清空操作列表
+      currentMessageActions.value = [];
+      return; // 提前返回，不继续处理
+    }
+
     // 更新最终消息内容
     const msg = messages.value.find((m) => m.id === assistantMessageId);
     if (msg) {
@@ -869,16 +1026,18 @@ const sendMessage = async () => {
         // 如果既没有流式内容也没有最终内容，可能是响应为空
         msg.content = '抱歉，我没有收到有效的回复。请重试。';
       }
-      // 添加操作信息到消息
-      if (currentMessageActions.value.length > 0) {
-        msg.actions = [...currentMessageActions.value];
+      // 操作信息已经在 onAction 回调中立即添加了，这里不需要再次添加
+      // 但我们需要确保操作数组存在（如果没有任何操作，保持为 undefined 或空数组）
+      if (!msg.actions) {
+        msg.actions = [];
       }
     }
 
-    // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
-    if (currentSession) {
-      chatSessionsStore.updateCurrentSessionMessages(messages.value);
-    }
+      // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
+      // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
+      if (sessionId) {
+        chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+      }
     
     // 清空操作列表（消息完成后）
     currentMessageActions.value = [];
@@ -892,6 +1051,12 @@ const sendMessage = async () => {
         msg.actions = [...currentMessageActions.value];
       }
     }
+    
+    // 保存错误消息到正确的会话（使用保存的会话 ID）
+    if (sessionId && messages.value.length > 0) {
+      chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+    }
+    
     toast.add({
       severity: 'error',
       summary: '助手回复失败',
@@ -1003,6 +1168,171 @@ watch(
     scrollToBottom();
   },
 );
+
+// 获取操作详细信息（用于 popover）
+const getActionDetails = (action: MessageAction) => {
+  const actionLabels: Record<MessageAction['type'], string> = {
+    create: '创建',
+    update: '更新',
+    delete: '删除',
+    web_search: '网络搜索',
+    web_fetch: '网页获取',
+  };
+  const entityLabels: Record<MessageAction['entity'], string> = {
+    term: '术语',
+    character: '角色',
+    web: '网络',
+  };
+
+  const details: {
+    label: string;
+    value: string;
+  }[] = [
+    {
+      label: '操作类型',
+      value: actionLabels[action.type],
+    },
+    {
+      label: '实体类型',
+      value: entityLabels[action.entity],
+    },
+  ];
+
+  if (action.name) {
+    details.push({
+      label: '名称',
+      value: action.name,
+    });
+  }
+
+  // 尝试从当前书籍获取详细信息
+  const currentBookId = contextStore.getContext.currentBookId;
+  if (currentBookId && action.name) {
+    const book = booksStore.getBookById(currentBookId);
+    if (book) {
+      if (action.entity === 'term') {
+        const term = book.terminologies?.find((t) => t.name === action.name);
+        if (term) {
+          if (term.translation?.translation) {
+            details.push({
+              label: '翻译',
+              value: term.translation.translation,
+            });
+          }
+          if (term.description) {
+            details.push({
+              label: '描述',
+              value: term.description,
+            });
+          }
+          if (term.occurrences && term.occurrences.length > 0) {
+            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+            details.push({
+              label: '出现次数',
+              value: `${totalOccurrences} 次`,
+            });
+          }
+        }
+      } else if (action.entity === 'character') {
+        const character = book.characterSettings?.find((c) => c.name === action.name);
+        if (character) {
+          if (character.translation?.translation) {
+            details.push({
+              label: '翻译',
+              value: character.translation.translation,
+            });
+          }
+          if (character.sex) {
+            const sexLabels: Record<string, string> = {
+              male: '男',
+              female: '女',
+              other: '其他',
+            };
+            details.push({
+              label: '性别',
+              value: sexLabels[character.sex] || character.sex,
+            });
+          }
+          if (character.description) {
+            details.push({
+              label: '描述',
+              value: character.description,
+            });
+          }
+          if (character.speakingStyle) {
+            details.push({
+              label: '说话口吻',
+              value: character.speakingStyle,
+            });
+          }
+          if (character.aliases && character.aliases.length > 0) {
+            details.push({
+              label: '别名',
+              value: character.aliases.map((a) => a.name).join('、'),
+            });
+          }
+          if (character.occurrences && character.occurrences.length > 0) {
+            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+            details.push({
+              label: '出现次数',
+              value: `${totalOccurrences} 次`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 处理网络搜索操作
+  if (action.type === 'web_search' && action.entity === 'web') {
+    if (action.query) {
+      details.push({
+        label: '搜索查询',
+        value: action.query,
+      });
+    }
+  }
+
+  // 处理网页获取操作
+  if (action.type === 'web_fetch' && action.entity === 'web') {
+    if (action.url) {
+      details.push({
+        label: '网页 URL',
+        value: action.url,
+      });
+    }
+  }
+
+  details.push({
+    label: '操作时间',
+    value: new Date(action.timestamp).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }),
+  });
+
+  return details;
+};
+
+// 切换操作详情 Popover
+const toggleActionPopover = (event: Event, action: MessageAction, message: ChatMessage) => {
+  const actionKey = `${message.id}-${action.timestamp}`;
+  const popoverRef = actionPopoverRefs.value.get(actionKey);
+  
+  if (popoverRef) {
+    hoveredAction.value = { action, message };
+    popoverRef.toggle(event);
+  }
+};
+
+// 处理 Popover 关闭
+const handleActionPopoverHide = () => {
+  hoveredAction.value = null;
+};
 </script>
 
 <template>
@@ -1077,30 +1407,112 @@ watch(
           >
             <!-- 操作结果高亮显示 -->
             <div v-if="message.actions && message.actions.length > 0" class="mb-2 space-y-1 flex flex-wrap gap-1">
-              <div
-                v-for="(action, idx) in message.actions"
-                :key="idx"
-                class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300"
-                :class="{
-                  'bg-green-500/25 text-green-200 border border-green-500/40 shadow-lg shadow-green-500/20': action.type === 'create',
-                  'bg-blue-500/25 text-blue-200 border border-blue-500/40 shadow-lg shadow-blue-500/20': action.type === 'update',
-                  'bg-red-500/25 text-red-200 border border-red-500/40 shadow-lg shadow-red-500/20': action.type === 'delete',
-                }"
-              >
-                <i
-                  class="text-sm"
+              <template v-for="(action, idx) in message.actions" :key="idx">
+                <div
+                  :id="`action-${message.id}-${action.timestamp}`"
+                  class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
                   :class="{
-                    'pi pi-plus-circle': action.type === 'create',
-                    'pi pi-pencil': action.type === 'update',
-                    'pi pi-trash': action.type === 'delete',
+                    'bg-green-500/25 text-green-200 border border-green-500/40 shadow-lg shadow-green-500/20 hover:bg-green-500/35': action.type === 'create',
+                    'bg-blue-500/25 text-blue-200 border border-blue-500/40 shadow-lg shadow-blue-500/20 hover:bg-blue-500/35': action.type === 'update',
+                    'bg-red-500/25 text-red-200 border border-red-500/40 shadow-lg shadow-red-500/20 hover:bg-red-500/35': action.type === 'delete',
+                    'bg-purple-500/25 text-purple-200 border border-purple-500/40 shadow-lg shadow-purple-500/20 hover:bg-purple-500/35': action.type === 'web_search',
+                    'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/35': action.type === 'web_fetch',
                   }"
-                />
-                <span>
-                  {{ action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除' }}
-                  {{ action.entity === 'term' ? '术语' : '角色' }}
-                  <span v-if="action.name" class="font-semibold">"{{ action.name }}"</span>
-                </span>
-              </div>
+                  @mouseenter="(e) => toggleActionPopover(e, action, message)"
+                >
+                  <i
+                    class="text-sm"
+                    :class="{
+                      'pi pi-plus-circle': action.type === 'create',
+                      'pi pi-pencil': action.type === 'update',
+                      'pi pi-trash': action.type === 'delete',
+                      'pi pi-search': action.type === 'web_search',
+                      'pi pi-link': action.type === 'web_fetch',
+                    }"
+                  />
+                  <span>
+                    {{
+                      action.type === 'create'
+                        ? '创建'
+                        : action.type === 'update'
+                          ? '更新'
+                          : action.type === 'delete'
+                            ? '删除'
+                            : action.type === 'web_search'
+                              ? '网络搜索'
+                              : action.type === 'web_fetch'
+                                ? '网页获取'
+                                : ''
+                    }}
+                    {{
+                      action.entity === 'term'
+                        ? '术语'
+                        : action.entity === 'character'
+                          ? '角色'
+                          : action.entity === 'web'
+                            ? '网络'
+                            : ''
+                    }}
+                    <span v-if="action.name" class="font-semibold">"{{ action.name }}"</span>
+                    <span v-else-if="action.query" class="font-semibold">"{{ action.query }}"</span>
+                    <span v-else-if="action.url" class="font-semibold text-xs">{{ action.url }}</span>
+                  </span>
+                </div>
+                <!-- Action Details Popover -->
+                <Popover
+                  :ref="(el) => {
+                    const actionKey = `${message.id}-${action.timestamp}`;
+                    if (el) {
+                      actionPopoverRefs.set(actionKey, el as InstanceType<typeof Popover>);
+                    }
+                  }"
+                  :target="`action-${message.id}-${action.timestamp}`"
+                  :dismissable="true"
+                  :show-close-icon="false"
+                  style="width: 18rem; max-width: 90vw"
+                  class="action-popover"
+                  @hide="handleActionPopoverHide"
+                >
+                  <div v-if="hoveredAction && hoveredAction.action.timestamp === action.timestamp && hoveredAction.message.id === message.id" class="action-popover-content">
+                    <div class="popover-header">
+                      <span class="popover-title">
+                        {{
+                          action.type === 'create'
+                            ? '创建'
+                            : action.type === 'update'
+                              ? '更新'
+                              : action.type === 'delete'
+                                ? '删除'
+                                : action.type === 'web_search'
+                                  ? '网络搜索'
+                                  : action.type === 'web_fetch'
+                                    ? '网页获取'
+                                    : ''
+                        }}
+                        {{
+                          action.entity === 'term'
+                            ? '术语'
+                            : action.entity === 'character'
+                              ? '角色'
+                              : action.entity === 'web'
+                                ? '网络'
+                                : ''
+                        }}
+                      </span>
+                    </div>
+                    <div class="popover-details">
+                      <div
+                        v-for="(detail, detailIdx) in getActionDetails(action)"
+                        :key="detailIdx"
+                        class="popover-detail-item"
+                      >
+                        <span class="popover-detail-label">{{ detail.label }}：</span>
+                        <span class="popover-detail-value">{{ detail.value }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Popover>
+              </template>
             </div>
             <div
               class="text-sm break-words overflow-wrap-anywhere markdown-content"
@@ -1309,6 +1721,55 @@ watch(
 
 .messages-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Action Popover 样式 */
+:deep(.action-popover .p-popover-content) {
+  padding: 0.75rem 1rem;
+}
+
+.action-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.popover-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.popover-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--moon-opacity-100);
+}
+
+.popover-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.popover-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.popover-detail-label {
+  color: var(--moon-opacity-70);
+  font-weight: 500;
+}
+
+.popover-detail-value {
+  color: var(--moon-opacity-90);
+  word-break: break-word;
+  line-height: 1.5;
 }
 </style>
 

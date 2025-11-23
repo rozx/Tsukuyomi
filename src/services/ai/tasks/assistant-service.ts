@@ -58,6 +58,14 @@ export interface AssistantResult {
    * 更新后的对话历史（包含本次对话的所有消息）
    */
   messageHistory?: ChatMessage[];
+  /**
+   * 是否需要重置会话（当达到 token 限制或发生错误时）
+   */
+  needsReset?: boolean;
+  /**
+   * 会话总结（当需要重置时提供）
+   */
+  summary?: string;
 }
 
 /**
@@ -154,6 +162,55 @@ export class AssistantService {
 - 目标是帮助用户更高效、准确地完成翻译工作`;
 
     return prompt;
+  }
+
+  /**
+   * 估算消息历史的 token 数
+   * 使用保守估算：每个字符 2 tokens（对于日文和中文）
+   */
+  private static estimateTokenCount(messages: ChatMessage[]): number {
+    if (!messages || messages.length === 0) return 0;
+    const totalContent = messages
+      .map((msg) => {
+        if (msg.content) {
+          return msg.content;
+        }
+        // 如果有 tool_calls，估算其 token 数
+        if ('tool_calls' in msg && msg.tool_calls) {
+          return JSON.stringify(msg.tool_calls);
+        }
+        return '';
+      })
+      .join('\n');
+    // 保守估算：每个字符 2 tokens（对于日文和中文）
+    return Math.ceil(totalContent.length * 2);
+  }
+
+  /**
+   * 检查错误是否是 token 限制相关的错误
+   */
+  private static isTokenLimitError(error: unknown): boolean {
+    if (!error) return false;
+    let errorMessage = '';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object' && 'message' in error) {
+      errorMessage = String(error.message);
+    } else {
+      errorMessage = JSON.stringify(error);
+    }
+    const lowerMessage = errorMessage.toLowerCase();
+    // 检查常见的 token 限制错误关键词
+    return (
+      lowerMessage.includes('token') &&
+      (lowerMessage.includes('limit') ||
+        lowerMessage.includes('exceed') ||
+        lowerMessage.includes('maximum') ||
+        lowerMessage.includes('too long') ||
+        lowerMessage.includes('context length'))
+    );
   }
 
   /**
@@ -382,6 +439,71 @@ ${messages
         role: 'user',
         content: userMessage,
       });
+
+      // 检查 token 限制（在发送请求前）
+      // 如果模型有 maxTokens 限制（不是 UNLIMITED_TOKENS），检查是否接近或超过限制
+      const estimatedTokens = this.estimateTokenCount(messages);
+      const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
+      const shouldSummarizeBeforeRequest =
+        model.maxTokens > 0 && estimatedTokens >= model.maxTokens * TOKEN_THRESHOLD_RATIO;
+
+      if (
+        shouldSummarizeBeforeRequest &&
+        options.messageHistory &&
+        options.messageHistory.length > 2
+      ) {
+        // 需要总结并重置
+        // 构建要总结的消息（排除系统消息和当前用户消息）
+        const messagesToSummarize = options.messageHistory
+          .filter((msg) => msg.role !== 'system')
+          .slice(0, -1) // 排除最后一条（当前用户消息）
+          .map((msg) => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content || '',
+          }));
+
+        if (messagesToSummarize.length > 0) {
+          // 调用总结功能
+          const summaryOptions: {
+            signal?: AbortSignal;
+            onChunk?: TextGenerationStreamCallback;
+          } = {};
+          if (finalSignal) {
+            summaryOptions.signal = finalSignal;
+          }
+          summaryOptions.onChunk = (chunk) => {
+            // 更新任务状态显示总结进度
+            if (aiProcessingStore && taskId && chunk.text) {
+              void aiProcessingStore.updateTask(taskId, {
+                message: `正在总结会话历史... ${chunk.text.slice(0, 50)}`,
+              });
+            }
+            if (onChunk) {
+              void onChunk(chunk);
+            }
+          };
+          const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+
+          // 返回特殊结果，指示需要重置
+          return {
+            text: '',
+            ...(taskId ? { taskId: taskId } : {}),
+            actions: [],
+            messageHistory: [
+              {
+                role: 'system',
+                content: systemPrompt,
+              },
+              {
+                role: 'user',
+                content: userMessage,
+              },
+            ],
+            needsReset: true,
+            summary,
+          } as AssistantResult & { needsReset: true; summary: string };
+        }
+      }
 
       // 获取 AI 服务
       const aiService = AIServiceFactory.getService(model.provider);
@@ -662,13 +784,7 @@ ${messages
         }
       }
 
-      // 更新任务状态
-      if (aiProcessingStore && taskId) {
-        await aiProcessingStore.updateTask(taskId, {
-          status: 'completed',
-          message: '助手回复完成',
-        });
-      }
+      // 注意：任务状态已在循环退出后更新（第 766-772 行），此处不再重复更新
 
       // 确保返回的文本不为空
       const finalText = finalResponseText.trim() || '抱歉，我没有收到有效的回复。请重试。';
@@ -695,6 +811,84 @@ ${messages
         provider: model.provider,
         taskId,
       });
+
+      // 检查是否是 token 限制错误，如果是，尝试总结并重置
+      if (
+        this.isTokenLimitError(error) &&
+        options.messageHistory &&
+        options.messageHistory.length > 2
+      ) {
+        try {
+          // 更新任务状态
+          if (aiProcessingStore && taskId) {
+            await aiProcessingStore.updateTask(taskId, {
+              status: 'processing',
+              message: '检测到 token 限制错误，正在总结会话历史...',
+            });
+          }
+
+          // 构建要总结的消息（排除系统消息）
+          const messagesToSummarize = options.messageHistory
+            .filter((msg) => msg.role !== 'system')
+            .map((msg) => ({
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content || '',
+            }));
+
+          if (messagesToSummarize.length > 0) {
+            // 调用总结功能
+            const summaryOptions: {
+              signal?: AbortSignal;
+              onChunk?: TextGenerationStreamCallback;
+            } = {};
+            if (finalSignal) {
+              summaryOptions.signal = finalSignal;
+            }
+            summaryOptions.onChunk = (chunk) => {
+              // 更新任务状态显示总结进度
+              if (aiProcessingStore && taskId && chunk.text) {
+                void aiProcessingStore.updateTask(taskId, {
+                  message: `正在总结会话历史... ${chunk.text.slice(0, 50)}`,
+                });
+              }
+              if (onChunk) {
+                void onChunk(chunk);
+              }
+            };
+            const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+
+            // 更新任务状态
+            if (aiProcessingStore && taskId) {
+              await aiProcessingStore.updateTask(taskId, {
+                status: 'completed',
+                message: '会话已总结并重置',
+              });
+            }
+
+            // 返回特殊结果，指示需要重置
+            return {
+              text: '',
+              ...(taskId ? { taskId: taskId } : {}),
+              actions: [],
+              messageHistory: [
+                {
+                  role: 'system',
+                  content: systemPrompt,
+                },
+                {
+                  role: 'user',
+                  content: userMessage,
+                },
+              ],
+              needsReset: true,
+              summary,
+            } as AssistantResult & { needsReset: true; summary: string };
+          }
+        } catch (summaryError) {
+          console.error('[AssistantService] ❌ 总结会话失败', summaryError);
+          // 如果总结失败，继续抛出原始错误
+        }
+      }
 
       // 更新任务状态
       if (aiProcessingStore && taskId) {

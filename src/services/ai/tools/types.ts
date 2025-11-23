@@ -2,9 +2,13 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 
 export interface ActionInfo {
-  type: 'create' | 'update' | 'delete';
-  entity: 'term' | 'character';
-  data: Terminology | CharacterSetting | { id: string; name?: string };
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch';
+  entity: 'term' | 'character' | 'web';
+  data:
+    | Terminology
+    | CharacterSetting
+    | { id: string; name?: string }
+    | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean };
   previousData?: Terminology | CharacterSetting; // 用于 revert 的原始数据（仅用于 update 操作）
 }
 

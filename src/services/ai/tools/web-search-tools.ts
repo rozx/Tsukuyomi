@@ -1,6 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import type { ToolDefinition } from './types';
+import type { ToolDefinition, ToolContext } from './types';
 
 /**
  * 使用 DuckDuckGo 搜索（通过 Vite 代理）
@@ -427,8 +427,9 @@ export const webSearchTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args) => {
+    handler: async (args, context: ToolContext) => {
       const { query } = args;
+      const { onAction } = context;
 
       if (!query || typeof query !== 'string') {
         console.error('[WebSearch] ❌ 无效的搜索查询', {
@@ -442,6 +443,19 @@ export const webSearchTools: ToolDefinition[] = [
       }
 
       const result = await searchWeb(query);
+
+      // 报告操作
+      if (onAction) {
+        onAction({
+          type: 'web_search',
+          entity: 'web',
+          data: {
+            query,
+            results: result.results || [],
+          },
+        });
+      }
+
       return JSON.stringify(result);
     },
   },
@@ -464,8 +478,9 @@ export const webSearchTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args) => {
+    handler: async (args, context: ToolContext) => {
       const { url } = args;
+      const { onAction } = context;
 
       if (!url || typeof url !== 'string') {
         console.error('[WebPage] ❌ 无效的 URL', {
@@ -479,6 +494,23 @@ export const webSearchTools: ToolDefinition[] = [
       }
 
       const result = await fetchWebpage(url);
+
+      // 报告操作
+      if (onAction) {
+        const actionData: { url: string; title?: string; success: boolean } = {
+          url,
+          success: result.success,
+        };
+        if (result.title) {
+          actionData.title = result.title;
+        }
+        onAction({
+          type: 'web_fetch',
+          entity: 'web',
+          data: actionData,
+        });
+      }
+
       return JSON.stringify(result);
     },
   },

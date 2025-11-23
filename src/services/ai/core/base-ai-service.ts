@@ -136,11 +136,12 @@ export abstract class BaseAIService implements AIService {
       estimatedTokens = this.estimateTokenCount(messagesContent);
     }
 
-    // 如果估算的 token 数超过 100000，显示警告
-    // 这是一个保守的阈值，大多数模型的 maxInputTokens 都远大于此
-    if (estimatedTokens > (config.maxTokens ?? 100000)) {
+    // 如果估算的 token 数超过限制，显示警告
+    // 只有当 maxTokens 是有效正数时才进行检查（UNLIMITED_TOKENS = -1 表示无限制）
+    const maxTokens = config.maxTokens ?? 100000;
+    if (maxTokens > 0 && estimatedTokens > maxTokens) {
       console.warn(
-        `[AI Service] 警告：提示词可能超过模型限制。估算 token 数: ${estimatedTokens}，字符数: ${promptLength}。文本将完整发送，但可能被模型截断。`,
+        `[AI Service] 警告：提示词可能超过模型限制。估算 token 数: ${estimatedTokens}，字符数: ${promptLength}，模型限制: ${maxTokens}。文本将完整发送，但可能被模型截断。`,
       );
     }
 

@@ -10,10 +10,13 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  * 操作信息（用于在消息中标记 CRUD 操作）
  */
 export interface MessageAction {
-  type: 'create' | 'update' | 'delete';
-  entity: 'term' | 'character';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch';
+  entity: 'term' | 'character' | 'web';
   name?: string;
   timestamp: number;
+  // 网络搜索相关信息
+  query?: string; // 搜索查询（用于 web_search）
+  url?: string; // 网页 URL（用于 web_fetch）
 }
 
 /**
@@ -191,6 +194,24 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     },
 
     /**
+     * 更新指定会话的消息（用于异步操作期间会话可能切换的情况）
+     */
+    updateSessionMessages(sessionId: string, messages: ChatMessage[]): void {
+      const session = this.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.messages = messages;
+        session.updatedAt = Date.now();
+
+        // 如果消息列表不为空且标题还是"新会话"，生成新标题
+        if (messages.length > 0 && session.title === '新会话') {
+          session.title = generateSessionTitle(messages);
+        }
+
+        saveSessionsToStorage(this.sessions);
+      }
+    },
+
+    /**
      * 添加消息到当前会话
      */
     addMessageToCurrentSession(message: ChatMessage): void {
@@ -271,11 +292,14 @@ export const useChatSessionsStore = defineStore('chatSessions', {
 
     /**
      * 设置会话总结并重置消息
+     * @param summary 会话总结
+     * @param sessionId 可选的会话 ID，如果不提供则使用当前会话
      */
-    summarizeAndReset(summary: string): void {
-      if (!this.currentSessionId) return;
+    summarizeAndReset(summary: string, sessionId?: string): void {
+      const targetSessionId = sessionId ?? this.currentSessionId;
+      if (!targetSessionId) return;
 
-      const session = this.sessions.find((s) => s.id === this.currentSessionId);
+      const session = this.sessions.find((s) => s.id === targetSessionId);
       if (session) {
         // 保存总结
         session.summary = summary;
