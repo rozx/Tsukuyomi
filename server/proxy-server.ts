@@ -1,6 +1,7 @@
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 import express from 'express';
 import cors from 'cors';
+import type { IncomingMessage, ServerResponse } from 'http';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -8,8 +9,17 @@ const PORT = process.env.PORT || 8080;
 // 启用 CORS
 app.use(cors());
 
+// 代理配置类型
+interface ProxyConfig {
+  path: string;
+  target: string;
+  changeOrigin: boolean;
+  pathRewrite: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
 // 代理配置 - 与 quasar.config.ts 中的配置保持一致
-const proxyConfigs = [
+const proxyConfigs: ProxyConfig[] = [
   {
     path: '/api/sda1',
     target: 'https://p.sda1.dev',
@@ -126,31 +136,34 @@ const proxyConfigs = [
 // 为每个代理路径创建代理中间件
 proxyConfigs.forEach((config) => {
   const { path, headers, ...proxyOptions } = config;
-  app.use(
-    path,
-    createProxyMiddleware({
-      ...proxyOptions,
-      onProxyReq: (proxyReq, req, res) => {
-        // 设置自定义请求头
-        if (headers) {
-          Object.entries(headers).forEach(([key, value]) => {
-            proxyReq.setHeader(key, value);
-          });
-        }
-        // 移除可能暴露代理的头部
-        proxyReq.removeHeader('x-forwarded-for');
-        proxyReq.removeHeader('x-forwarded-host');
-        proxyReq.removeHeader('x-forwarded-proto');
-      },
-      onError: (err, req, res) => {
-        console.error(`[Proxy Error] ${req.path}:`, err.message);
+  const proxyMiddlewareOptions: Options<IncomingMessage, ServerResponse<IncomingMessage>> = {
+    target: proxyOptions.target,
+    changeOrigin: proxyOptions.changeOrigin,
+    pathRewrite: proxyOptions.pathRewrite,
+    onProxyReq: (proxyReq, req, res) => {
+      // 设置自定义请求头
+      if (headers) {
+        Object.entries(headers).forEach(([key, value]) => {
+          proxyReq.setHeader(key, value);
+        });
+      }
+      // 移除可能暴露代理的头部
+      proxyReq.removeHeader('x-forwarded-for');
+      proxyReq.removeHeader('x-forwarded-host');
+      proxyReq.removeHeader('x-forwarded-proto');
+    },
+    onError: (err, req, res) => {
+      console.error(`[Proxy Error] ${req.path}:`, err.message);
+      if (!res.headersSent) {
         res.status(500).json({
           error: '代理请求失败',
           message: err.message,
         });
-      },
-    }),
-  );
+      }
+    },
+  };
+  
+  app.use(path, createProxyMiddleware(proxyMiddlewareOptions));
 });
 
 // 健康检查端点

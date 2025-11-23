@@ -1331,6 +1331,16 @@ const toggleActionPopover = (event: Event, action: MessageAction, message: ChatM
   }
 };
 
+// 处理鼠标离开事件，关闭 Popover
+const handleActionMouseLeave = (action: MessageAction, message: ChatMessage) => {
+  const actionKey = `${message.id}-${action.timestamp}`;
+  const popoverRef = actionPopoverRefs.value.get(actionKey);
+  
+  if (popoverRef) {
+    popoverRef.hide();
+  }
+};
+
 // 处理 Popover 关闭
 const handleActionPopoverHide = () => {
   hoveredAction.value = null;
@@ -1421,6 +1431,7 @@ const handleActionPopoverHide = () => {
                     'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/35': action.type === 'web_fetch',
                   }"
                   @mouseenter="(e) => toggleActionPopover(e, action, message)"
+                  @mouseleave="() => handleActionMouseLeave(action, message)"
                 >
                   <i
                     class="text-sm"
