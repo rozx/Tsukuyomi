@@ -2,6 +2,7 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
+import { marked } from 'marked';
 import { useUiStore } from 'src/stores/ui';
 import { useContextStore } from 'src/stores/context';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -25,6 +26,23 @@ const booksStore = useBooksStore();
 const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
+
+// 配置 marked 以支持更好的 Markdown 渲染
+marked.setOptions({
+  breaks: true, // 支持换行
+  gfm: true, // 支持 GitHub Flavored Markdown
+});
+
+// 渲染 Markdown 为 HTML
+const renderMarkdown = (text: string): string => {
+  if (!text) return '';
+  try {
+    return marked.parse(text) as string;
+  } catch (error) {
+    console.error('Markdown rendering error:', error);
+    return text; // 如果渲染失败，返回原始文本
+  }
+};
 
 const panelContainerRef = ref<HTMLElement | null>(null);
 const messagesContainerRef = ref<HTMLElement | null>(null);
@@ -539,7 +557,10 @@ watch(
                 </span>
               </div>
             </div>
-            <p class="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">{{ message.content || '思考中...' }}</p>
+            <div
+              class="text-sm break-words overflow-wrap-anywhere markdown-content"
+              v-html="renderMarkdown(message.content || '思考中...')"
+            ></div>
           </div>
           <span class="text-xs text-moon-40">
             {{ new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
@@ -627,6 +648,105 @@ watch(
 .messages-container {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* Markdown 内容样式 */
+.markdown-content {
+  line-height: 1.6;
+}
+
+.markdown-content :deep(p) {
+  margin: 0.5em 0;
+}
+
+.markdown-content :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-content :deep(strong) {
+  font-weight: 600;
+  color: inherit;
+}
+
+.markdown-content :deep(em) {
+  font-style: italic;
+}
+
+.markdown-content :deep(code) {
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 0.125em 0.25em;
+  border-radius: 0.25rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-content :deep(pre) {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 0.75em;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.markdown-content :deep(pre code) {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-content :deep(li) {
+  margin: 0.25em 0;
+}
+
+.markdown-content :deep(blockquote) {
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+  padding-left: 1em;
+  margin: 0.75em 0;
+  opacity: 0.8;
+}
+
+.markdown-content :deep(a) {
+  color: var(--primary-400);
+  text-decoration: underline;
+}
+
+.markdown-content :deep(a:hover) {
+  color: var(--primary-300);
+}
+
+.markdown-content :deep(h1),
+.markdown-content :deep(h2),
+.markdown-content :deep(h3),
+.markdown-content :deep(h4),
+.markdown-content :deep(h5),
+.markdown-content :deep(h6) {
+  font-weight: 600;
+  margin: 0.75em 0 0.5em 0;
+}
+
+.markdown-content :deep(h1:first-child),
+.markdown-content :deep(h2:first-child),
+.markdown-content :deep(h3:first-child),
+.markdown-content :deep(h4:first-child),
+.markdown-content :deep(h5:first-child),
+.markdown-content :deep(h6:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin: 1em 0;
 }
 
 .messages-container::-webkit-scrollbar {
