@@ -1,5 +1,5 @@
 name: luna-ai-translator
-region: nyc
+region: sgp
 
 # 完整 Node.js 应用部署配置（前端 + 后端）
 # 使用此配置将前端和后端整合在一个服务中
@@ -19,7 +19,7 @@ services:
     run_command: 'export PATH="$HOME/.bun/bin:$PATH" && bun run start:app'
     http_port: 8080
     instance_count: 1
-    instance_size_slug: basic-xxs
+    instance_size_slug: apps-s-1vcpu-0.5gb
     routes:
       - path: /
     envs:
