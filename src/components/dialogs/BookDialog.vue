@@ -335,6 +335,38 @@ const handleCopyBookTitle = async () => {
   }
 };
 
+// 复制所有标签
+const handleCopyTags = async () => {
+  const tags = formData.value.tags || [];
+  if (tags.length === 0) {
+    toast.add({
+      severity: 'warn',
+      summary: '无标签',
+      detail: '当前没有标签可复制',
+      life: 2000,
+    });
+    return;
+  }
+
+  const tagsText = tags.join(',');
+  try {
+    await navigator.clipboard.writeText(tagsText);
+    toast.add({
+      severity: 'success',
+      summary: '已复制',
+      detail: '所有标签已复制到剪贴板',
+      life: 2000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '复制失败',
+      detail: '无法复制标签到剪贴板',
+      life: 3000,
+    });
+  }
+};
+
 // 监听 visible 变化，初始化表单
 watch(
   () => props.visible,
@@ -448,9 +480,19 @@ watch(
 
         <!-- 标签 -->
         <div class="space-y-2">
-          <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
-            >标签</label
-          >
+          <div class="flex items-center justify-between">
+            <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
+              >标签</label
+            >
+            <Button
+              icon="pi pi-copy"
+              label="复制标签"
+              class="p-button-text p-button-sm"
+              size="small"
+              :disabled="!formData.tags || formData.tags.length === 0"
+              @click="handleCopyTags"
+            />
+          </div>
           <TranslatableChips
             :id="`${idPrefix}-tags`"
             :model-value="formData.tags || []"
