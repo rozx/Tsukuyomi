@@ -5,6 +5,7 @@ import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToast } from 'primevue/usetoast';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const props = defineProps<{
   isTranslating: boolean;
@@ -23,18 +24,6 @@ const aiProcessingStore = useAIProcessingStore();
 const toast = useToast();
 
 const showAITaskHistory = ref(false);
-
-// AI Task Types and Status Labels
-const taskTypeLabels: Record<string, string> = {
-  translation: '翻译',
-  proofreading: '校对',
-  polishing: '润色',
-  characterExtraction: '角色提取',
-  terminologyExtraction: '术语提取',
-  termsTranslation: '术语翻译',
-  config: '配置获取',
-  other: '其他',
-};
 
 const taskStatusLabels: Record<string, string> = {
   thinking: '思考中',
@@ -237,7 +226,7 @@ watch(
                 ></i>
                 <span class="ai-task-model">{{ task.modelName }}</span>
                 <Badge
-                  :value="taskTypeLabels[task.type] || task.type"
+                  :value="TASK_TYPE_LABELS[task.type] || task.type"
                   severity="info"
                   class="ai-task-type-badge"
                 />

@@ -18,9 +18,8 @@ export interface Novel {
     | {
         translation: AIModel;
         proofreading: AIModel;
-        polishing: AIModel;
-        characterExtraction: AIModel;
-        terminologyExtraction: AIModel;
+        termsTranslation: AIModel;
+        assistant: AIModel;
       }
     | undefined;
   characterSettings?: CharacterSetting[] | undefined;

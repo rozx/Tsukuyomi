@@ -67,10 +67,8 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
   isDefault: {
     translation: { enabled: false, temperature: 0.7 },
     proofreading: { enabled: false, temperature: 0.7 },
-    polishing: { enabled: false, temperature: 0.7 },
-    characterExtraction: { enabled: false, temperature: 0.7 },
-    terminologyExtraction: { enabled: false, temperature: 0.7 },
     termsTranslation: { enabled: false, temperature: 0.7 },
+    assistant: { enabled: false, temperature: 0.7 },
   },
 });
 
@@ -97,10 +95,8 @@ const resetForm = () => {
     isDefault: {
       translation: { enabled: false, temperature: 0.7 },
       proofreading: { enabled: false, temperature: 0.7 },
-      polishing: { enabled: false, temperature: 0.7 },
-      characterExtraction: { enabled: false, temperature: 0.7 },
-      terminologyExtraction: { enabled: false, temperature: 0.7 },
       termsTranslation: { enabled: false, temperature: 0.7 },
+      assistant: { enabled: false, temperature: 0.7 },
     },
   } as typeof formData.value;
   formErrors.value = {};
@@ -350,14 +346,12 @@ watch(
     if (newVisible) {
       if (props.mode === 'edit' && props.model) {
         // 编辑模式：填充现有数据
-        // 确保所有任务配置都存在，包括新添加的 termsTranslation
+        // 确保所有任务配置都存在
         const defaultTasks: typeof formData.value.isDefault = {
           translation: { enabled: false, temperature: 0.7 },
           proofreading: { enabled: false, temperature: 0.7 },
-          polishing: { enabled: false, temperature: 0.7 },
-          characterExtraction: { enabled: false, temperature: 0.7 },
-          terminologyExtraction: { enabled: false, temperature: 0.7 },
           termsTranslation: { enabled: false, temperature: 0.7 },
+          assistant: { enabled: false, temperature: 0.7 },
         };
 
         // 合并现有数据，确保新字段有默认值
@@ -375,21 +369,13 @@ watch(
               enabled: props.model.isDefault.proofreading?.enabled ?? false,
               temperature: props.model.isDefault.proofreading?.temperature ?? 0.7,
             },
-            polishing: {
-              enabled: props.model.isDefault.polishing?.enabled ?? false,
-              temperature: props.model.isDefault.polishing?.temperature ?? 0.7,
-            },
-            characterExtraction: {
-              enabled: props.model.isDefault.characterExtraction?.enabled ?? false,
-              temperature: props.model.isDefault.characterExtraction?.temperature ?? 0.7,
-            },
-            terminologyExtraction: {
-              enabled: props.model.isDefault.terminologyExtraction?.enabled ?? false,
-              temperature: props.model.isDefault.terminologyExtraction?.temperature ?? 0.7,
-            },
             termsTranslation: {
               enabled: props.model.isDefault.termsTranslation?.enabled ?? false,
               temperature: props.model.isDefault.termsTranslation?.temperature ?? 0.7,
+            },
+            assistant: {
+              enabled: props.model.isDefault.assistant?.enabled ?? false,
+              temperature: props.model.isDefault.assistant?.temperature ?? 0.7,
             },
           },
         } as typeof formData.value;
@@ -700,126 +686,6 @@ watch(
             </div>
           </div>
 
-          <!-- 润色 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.polishing.enabled = !formData.isDefault.polishing.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-polishing`"
-                  v-model="formData.isDefault.polishing.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label :for="`${idPrefix}-default-polishing`" class="ml-2 text-sm cursor-pointer"
-                  >润色</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.polishing.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.polishing.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.polishing.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-polishing`"
-                v-model="formData.isDefault.polishing.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
-          <!-- 角色提取 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.characterExtraction.enabled =
-                    !formData.isDefault.characterExtraction.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-characterExtraction`"
-                  v-model="formData.isDefault.characterExtraction.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label
-                  :for="`${idPrefix}-default-characterExtraction`"
-                  class="ml-2 text-sm cursor-pointer"
-                  >角色提取</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.characterExtraction.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.characterExtraction.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.characterExtraction.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-characterExtraction`"
-                v-model="formData.isDefault.characterExtraction.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
-          <!-- 术语提取 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.terminologyExtraction.enabled =
-                    !formData.isDefault.terminologyExtraction.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-terminologyExtraction`"
-                  v-model="formData.isDefault.terminologyExtraction.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label
-                  :for="`${idPrefix}-default-terminologyExtraction`"
-                  class="ml-2 text-sm cursor-pointer"
-                  >术语提取</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.terminologyExtraction.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.terminologyExtraction.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.terminologyExtraction.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-terminologyExtraction`"
-                v-model="formData.isDefault.terminologyExtraction.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
           <!-- 术语翻译 -->
           <div class="p-3 rounded-lg border border-white/10 bg-white/5">
             <div class="flex items-center justify-between mb-3">
@@ -853,6 +719,44 @@ watch(
               <Slider
                 :id="`${idPrefix}-temperature-termsTranslation`"
                 v-model="formData.isDefault.termsTranslation.temperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                class="w-full"
+              />
+            </div>
+          </div>
+
+          <!-- 助手 -->
+          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
+            <div class="flex items-center justify-between mb-3">
+              <div
+                class="flex items-center cursor-pointer"
+                @click="
+                  formData.isDefault.assistant.enabled = !formData.isDefault.assistant.enabled
+                "
+              >
+                <Checkbox
+                  :id="`${idPrefix}-default-assistant`"
+                  v-model="formData.isDefault.assistant.enabled"
+                  :binary="true"
+                  @click.stop
+                />
+                <label :for="`${idPrefix}-default-assistant`" class="ml-2 text-sm cursor-pointer"
+                  >助手</label
+                >
+              </div>
+              <span
+                v-if="formData.isDefault.assistant.enabled"
+                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
+              >
+                {{ formData.isDefault.assistant.temperature }}
+              </span>
+            </div>
+            <div v-if="formData.isDefault.assistant.enabled" class="mt-2">
+              <Slider
+                :id="`${idPrefix}-temperature-assistant`"
+                v-model="formData.isDefault.assistant.temperature"
                 :min="0"
                 :max="2"
                 :step="0.1"

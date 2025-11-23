@@ -1,7 +1,6 @@
-import type { AIModel } from '../services/ai/types/ai-model';
+import type { AIModel, AIModelDefaultTasks } from '../services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from './novel';
 import type { SyncConfig } from './sync';
-import type { AIModelDefaultTasks } from './ai/ai-model';
 
 /**
  * 任务默认模型配置
@@ -22,7 +21,7 @@ export interface AppSettings {
   scraperConcurrencyLimit: number;
   /**
    * 各任务的默认 AI 模型配置
-   * 键为任务类型（translation、proofreading、polishing、characterExtraction、terminologyExtraction、termsTranslation）
+   * 键为任务类型（translation、proofreading、termsTranslation、assistant）
    * 值为模型 ID 或 null（表示未设置）
    */
   taskDefaultModels?: TaskDefaultModels;

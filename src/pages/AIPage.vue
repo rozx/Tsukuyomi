@@ -13,6 +13,7 @@ import ConfirmDialog from 'primevue/confirmdialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import AIModelDialog from 'src/components/dialogs/AIModelDialog.vue';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const aiModelsStore = useAIModelsStore();
 const confirm = useConfirm();
@@ -28,12 +29,10 @@ const getProviderLabel = (provider: string) => {
 
 const getDefaultTasks = (model: AIModel) => {
   const tasks: string[] = [];
-  if (model.isDefault.translation?.enabled) tasks.push('翻译');
-  if (model.isDefault.proofreading?.enabled) tasks.push('校对');
-  if (model.isDefault.polishing?.enabled) tasks.push('润色');
-  if (model.isDefault.characterExtraction?.enabled) tasks.push('角色提取');
-  if (model.isDefault.terminologyExtraction?.enabled) tasks.push('术语提取');
-  if (model.isDefault.termsTranslation?.enabled) tasks.push('术语翻译');
+  if (model.isDefault.translation?.enabled) tasks.push(TASK_TYPE_LABELS.translation);
+  if (model.isDefault.proofreading?.enabled) tasks.push(TASK_TYPE_LABELS.proofreading);
+  if (model.isDefault.termsTranslation?.enabled) tasks.push(TASK_TYPE_LABELS.termsTranslation);
+  if (model.isDefault.assistant?.enabled) tasks.push(TASK_TYPE_LABELS.assistant);
   return tasks.join('、') || '无';
 };
 
@@ -122,19 +121,11 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       isDefault: {
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
-        polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
-        characterExtraction: formData.isDefault?.characterExtraction ?? {
-          enabled: false,
-          temperature: 0.7,
-        },
-        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? {
-          enabled: false,
-          temperature: 0.7,
-        },
         termsTranslation: formData.isDefault?.termsTranslation ?? {
           enabled: false,
           temperature: 0.7,
         },
+        assistant: formData.isDefault?.assistant ?? { enabled: false, temperature: 0.7 },
       },
     };
     void aiModelsStore.addModel(newModel);
@@ -160,19 +151,11 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       isDefault: {
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
-        polishing: formData.isDefault?.polishing ?? { enabled: false, temperature: 0.7 },
-        characterExtraction: formData.isDefault?.characterExtraction ?? {
-          enabled: false,
-          temperature: 0.7,
-        },
-        terminologyExtraction: formData.isDefault?.terminologyExtraction ?? {
-          enabled: false,
-          temperature: 0.7,
-        },
         termsTranslation: formData.isDefault?.termsTranslation ?? {
           enabled: false,
           temperature: 0.7,
         },
+        assistant: formData.isDefault?.assistant ?? { enabled: false, temperature: 0.7 },
       },
     };
 

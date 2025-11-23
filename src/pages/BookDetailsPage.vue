@@ -801,7 +801,8 @@ const saveOriginalTextEdit = async () => {
       lastEdited: new Date(),
     });
 
-    // 刷新所有术语和角色的出现次数
+    // 重新计算该章节中出现的术语和角色的出现次数
+    // 这会更新所有术语和角色在整个书籍中的出现记录，包括刚刚更新的章节
     await TerminologyService.refreshAllTermOccurrences(book.value.id);
     await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
 

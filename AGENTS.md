@@ -35,11 +35,5 @@
 - 使用pinia管理状态。
 - 使用primevue组件库。
 - 使用useToastWithHistory来展示各种行为的结果，使其可以自动保存toast历史记录。
-- 总是将数据类型定义在src/types目录下。
-- 将Constants定义在src/constants目录下。
-- 将Services定义在src/services目录下。
-- 将Stores定义在src/stores目录下。
-- **TypeScript/Lint 规范**：
-  - 禁止使用内联 `import()` 类型注解（例如 `import('path').Type`）。应该在文件顶部导入所有需要的类型。
-  - 未使用的函数参数应使用下划线前缀（例如 `_config`）以符合 lint 规范。
-  - 确保所有代码都通过了vue-tsc和eslint的类型检查。
+- 确保所有代码都通过了vue-tsc和eslint的类型检查。
+- 当任务完成时，永远再次检查任务结果，确保任务结果正确。

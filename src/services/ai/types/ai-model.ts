@@ -16,11 +16,9 @@ export interface TaskConfig {
  */
 export interface AIModelDefaultTasks {
   translation: TaskConfig;
-  proofreading: TaskConfig;
-  polishing: TaskConfig;
-  characterExtraction: TaskConfig;
-  terminologyExtraction: TaskConfig;
+  proofreading: TaskConfig; // 校对和润色合并为一个任务
   termsTranslation: TaskConfig;
+  assistant: TaskConfig;
 }
 
 /**
@@ -40,4 +38,3 @@ export interface AIModel {
   isDefault: AIModelDefaultTasks;
   enabled: boolean;
 }
-

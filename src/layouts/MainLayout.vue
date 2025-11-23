@@ -11,23 +11,12 @@ import { useAutoSync } from 'src/composables/useAutoSync';
 import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const ui = useUiStore();
 const { markAsReadByMessage } = useToastHistory();
 const toast = useToastWithHistory();
 const aiProcessingStore = useAIProcessingStore();
-
-// 任务类型标签映射
-const taskTypeLabels: Record<AIProcessingTask['type'], string> = {
-  translation: '翻译',
-  proofreading: '校对',
-  polishing: '润色',
-  characterExtraction: '角色提取',
-  terminologyExtraction: '术语提取',
-  termsTranslation: '术语翻译',
-  config: '配置获取',
-  other: '其他',
-};
 
 // 跟踪之前的任务状态，用于检测状态变化
 const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
@@ -39,10 +28,10 @@ watch(
     // 处理新添加的任务
     for (const task of newTasks) {
       const oldTask = previousTasks.value.get(task.id);
-      
+
       // 如果是新任务（之前不存在），显示开始通知
       if (!oldTask && (task.status === 'thinking' || task.status === 'processing')) {
-        const taskTypeLabel = taskTypeLabels[task.type] || task.type;
+        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
         toast.add({
           severity: 'info',
           summary: 'AI 任务开始',
@@ -50,15 +39,13 @@ watch(
           life: 3000,
         });
       }
-      
+
       // 如果任务状态发生变化
       if (oldTask && oldTask.status !== task.status) {
-        const taskTypeLabel = taskTypeLabels[task.type] || task.type;
-        
+        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
+
         if (task.status === 'completed') {
-          const duration = task.endTime
-            ? Math.floor((task.endTime - task.startTime) / 1000)
-            : 0;
+          const duration = task.endTime ? Math.floor((task.endTime - task.startTime) / 1000) : 0;
           const durationText =
             duration < 60 ? `${duration}秒` : `${Math.floor(duration / 60)}分${duration % 60}秒`;
           toast.add({
@@ -84,11 +71,11 @@ watch(
           });
         }
       }
-      
+
       // 更新任务记录
       previousTasks.value.set(task.id, { ...task });
     }
-    
+
     // 清理已移除的任务记录
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
     for (const [taskId] of previousTasks.value) {
@@ -133,7 +120,6 @@ const handleConflictResolveWithError = async (resolutions: any[]) => {
 
 onMounted(() => {
   setupAutoSync();
-
 });
 
 onUnmounted(() => {
@@ -158,7 +144,9 @@ onUnmounted(() => {
           <AppSideMenu />
         </div>
       </div>
-      <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/80 backdrop-blur-xl">
+      <main
+        class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/80 backdrop-blur-xl"
+      >
         <RouterView />
       </main>
     </div>

@@ -1,15 +1,14 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { getDB } from 'src/utils/indexed-db';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 export interface AIProcessingTask {
   id: string;
   type:
     | 'translation'
     | 'proofreading'
-    | 'polishing'
-    | 'characterExtraction'
-    | 'terminologyExtraction'
     | 'termsTranslation'
+    | 'assistant'
     | 'config'
     | 'other';
   modelName: string;
@@ -218,17 +217,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
      * 获取任务类型的中文标签
      */
     getTaskTypeLabel(type: AIProcessingTask['type']): string {
-      const labels: Record<AIProcessingTask['type'], string> = {
-        translation: '翻译',
-        proofreading: '校对',
-        polishing: '润色',
-        characterExtraction: '角色提取',
-        terminologyExtraction: '术语提取',
-        termsTranslation: '术语翻译',
-        config: '配置获取',
-        other: '其他',
-      };
-      return labels[type] || type;
+      return TASK_TYPE_LABELS[type] || type;
     },
 
     /**

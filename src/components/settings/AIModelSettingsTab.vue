@@ -3,18 +3,17 @@ import Select from 'primevue/select';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const aiModelsStore = useAIModelsStore();
 const settingsStore = useSettingsStore();
 
-// 任务配置
+// 任务配置（使用集中化的标签常量）
 const taskLabels: Record<keyof AIModelDefaultTasks, string> = {
-  translation: '翻译',
-  proofreading: '校对',
-  polishing: '润色',
-  characterExtraction: '角色提取',
-  terminologyExtraction: '术语提取',
-  termsTranslation: '术语翻译',
+  translation: TASK_TYPE_LABELS.translation,
+  proofreading: TASK_TYPE_LABELS.proofreading,
+  termsTranslation: TASK_TYPE_LABELS.termsTranslation,
+  assistant: TASK_TYPE_LABELS.assistant,
 };
 
 // 获取指定任务的可用模型选项（只显示该任务 isDefault 中 enabled 为 true 的模型）

@@ -27,3 +27,18 @@ export const UNLIMITED_TOKENS = -1;
  * 导出所有提示词
  */
 export * from './prompts';
+
+/**
+ * AI 任务类型标签映射
+ */
+export const TASK_TYPE_LABELS: Record<
+  'translation' | 'proofreading' | 'termsTranslation' | 'assistant' | 'config' | 'other',
+  string
+> = {
+  translation: '翻译',
+  proofreading: '校对',
+  termsTranslation: '术语翻译',
+  assistant: '助手',
+  config: '配置获取',
+  other: '其他',
+} as const;

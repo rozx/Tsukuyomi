@@ -273,7 +273,7 @@ export class SettingsService {
       if (appSettings.taskDefaultModels && typeof appSettings.taskDefaultModels === 'object') {
         validAppSettings.taskDefaultModels = {};
         const taskDefaultModels = appSettings.taskDefaultModels;
-        const validTaskKeys = ['translation', 'proofreading', 'polishing', 'characterExtraction', 'terminologyExtraction', 'termsTranslation'];
+        const validTaskKeys = ['translation', 'proofreading', 'termsTranslation', 'assistant'];
         
         for (const taskKey of validTaskKeys) {
           const modelId = taskDefaultModels[taskKey as keyof typeof taskDefaultModels];

@@ -5,6 +5,7 @@ import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const aiProcessing = useAIProcessingStore();
 const confirm = useConfirm();
@@ -13,17 +14,6 @@ const confirm = useConfirm();
 onMounted(async () => {
   await aiProcessing.loadThinkingProcesses();
 });
-
-const taskTypeLabels: Record<string, string> = {
-  translation: '翻译',
-  proofreading: '校对',
-  polishing: '润色',
-  characterExtraction: '角色提取',
-  terminologyExtraction: '术语提取',
-  termsTranslation: '术语翻译',
-  config: '配置获取',
-  other: '其他',
-};
 
 const statusLabels: Record<string, string> = {
   thinking: '思考中',
@@ -184,7 +174,7 @@ defineExpose({
               />
               <span class="font-medium text-moon/90">{{ task.modelName }}</span>
               <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary">{{
-                taskTypeLabels[task.type] || task.type
+                TASK_TYPE_LABELS[task.type] || task.type
               }}</span>
             </div>
             <div class="flex items-center gap-2">
@@ -252,7 +242,7 @@ defineExpose({
                   />
                   <span class="text-sm text-moon/70">{{ task.modelName }}</span>
                   <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 text-moon/50">{{
-                    taskTypeLabels[task.type] || task.type
+                    TASK_TYPE_LABELS[task.type] || task.type
                   }}</span>
                 </div>
                 <span class="text-xs text-moon/50">{{
