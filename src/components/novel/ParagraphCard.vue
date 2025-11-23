@@ -8,6 +8,9 @@ import Button from 'primevue/button';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/models/novel';
 import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import { useContextStore } from 'src/stores/context';
+import { useBooksStore } from 'src/stores/books';
+import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
 
 const props = defineProps<{
@@ -17,6 +20,8 @@ const props = defineProps<{
   isTranslating?: boolean;
   searchQuery?: string;
   characterScores?: Map<string, number>;
+  bookId?: string;
+  chapterId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +31,8 @@ const emit = defineEmits<{
 }>();
 
 const aiModelsStore = useAIModelsStore();
+const contextStore = useContextStore();
+const booksStore = useBooksStore();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
@@ -138,6 +145,37 @@ const handleCharacterMouseLeave = () => {
 // 当角色 Popover 关闭时清理状态
 const handleCharacterPopoverHide = () => {
   hoveredCharacter.value = null;
+};
+
+// 处理段落悬停
+const handleParagraphMouseEnter = () => {
+  // 如果提供了 bookId 和 chapterId，同时更新书籍、章节和段落
+  if (props.bookId && props.chapterId) {
+    contextStore.setContext({
+      currentBookId: props.bookId,
+      currentChapterId: props.chapterId,
+      hoveredParagraphId: props.paragraph.id,
+    });
+  } else {
+    // 如果没有提供 bookId 和 chapterId，尝试通过段落 ID 查找
+    const currentBookId = contextStore.getContext.currentBookId;
+    if (currentBookId) {
+      const book = booksStore.getBookById(currentBookId);
+      if (book) {
+        const location = ChapterService.findParagraphLocation(book, props.paragraph.id);
+        if (location) {
+          contextStore.setContext({
+            currentBookId: currentBookId,
+            currentChapterId: location.chapter.id,
+            hoveredParagraphId: props.paragraph.id,
+          });
+          return;
+        }
+      }
+    }
+    // 如果找不到位置信息，只设置段落
+    contextStore.setHoveredParagraph(props.paragraph.id);
+  }
 };
 
 // 翻译编辑状态
@@ -270,6 +308,7 @@ onUnmounted(() => {
     class="paragraph-card"
     :class="{ 'has-content': hasContent }"
     @contextmenu="handleParagraphContextMenu"
+    @mouseenter="handleParagraphMouseEnter"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
     <button

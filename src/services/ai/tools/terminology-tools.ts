@@ -32,6 +32,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { name, translation, description } = args;
       if (!name || !translation) {
         throw new Error('术语名称和翻译不能为空');
@@ -83,6 +86,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { name } = args;
       if (!name) {
         throw new Error('术语名称不能为空');
@@ -142,6 +148,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { term_id, translation, description } = args;
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
@@ -200,6 +209,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { term_id } = args;
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
@@ -246,6 +258,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { limit } = args;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
@@ -295,6 +310,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { keyword, translation_only = false } = args;
       if (keyword === undefined || keyword === null) {
         throw new Error('关键词不能为空');
@@ -362,6 +380,9 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { keywords } = args;
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new Error('关键词数组不能为空');

@@ -1,8 +1,262 @@
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
+import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import type { ToolDefinition } from './types';
 
 export const paragraphTools: ToolDefinition[] = [
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_book_info',
+        description:
+          '获取书籍的详细信息，包括标题、作者、描述、标签、术语列表、角色设定列表等。当需要了解当前书籍的完整信息时使用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+    },
+    handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      return JSON.stringify({
+        success: true,
+        book: {
+          id: book.id,
+          title: book.title,
+          author: book.author || '',
+          description: book.description || '',
+          tags: book.tags || [],
+          alternateTitles: book.alternateTitles || [],
+          terminologies:
+            book.terminologies?.map((t) => ({
+              id: t.id,
+              name: t.name,
+              translation: t.translation.translation,
+              description: t.description || '',
+            })) || [],
+          characterSettings:
+            book.characterSettings?.map((c) => ({
+              id: c.id,
+              name: c.name,
+              translation: c.translation.translation,
+              sex: c.sex || '',
+              description: c.description || '',
+              aliases:
+                c.aliases?.map((a) => ({
+                  name: a.name,
+                  translation: a.translation.translation,
+                })) || [],
+            })) || [],
+          volumeCount: book.volumes?.length || 0,
+        },
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_chapter_info',
+        description:
+          '获取章节的详细信息，包括标题、原文内容、段落列表、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '章节 ID',
+            },
+          },
+          required: ['chapter_id'],
+        },
+      },
+    },
+    handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { chapter_id } = args;
+      if (!chapter_id) {
+        throw new Error('章节 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 查找章节
+      let chapter = null;
+      let volume = null;
+      if (book.volumes) {
+        for (const vol of book.volumes) {
+          if (vol.chapters) {
+            const found = vol.chapters.find((ch) => ch.id === chapter_id);
+            if (found) {
+              chapter = found;
+              volume = vol;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!chapter) {
+        return JSON.stringify({
+          success: false,
+          error: `章节不存在: ${chapter_id}`,
+        });
+      }
+
+      const chapterTitle = getChapterDisplayTitle(chapter);
+      const chapterContent = getChapterContentText(chapter);
+      const paragraphCount = chapter.content?.length || 0;
+      const translatedCount =
+        chapter.content?.filter(
+          (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
+        ).length || 0;
+
+      // 构建段落信息
+      const paragraphs =
+        chapter.content?.map((para) => {
+          const selectedTranslation = para.translations?.find(
+            (t) => t.id === para.selectedTranslationId,
+          );
+          return {
+            id: para.id,
+            text: para.text,
+            translation: selectedTranslation?.translation || '',
+            hasTranslation: !!selectedTranslation,
+            translationCount: para.translations?.length || 0,
+          };
+        }) || [];
+
+      return JSON.stringify({
+        success: true,
+        chapter: {
+          id: chapter.id,
+          title: chapterTitle,
+          title_original:
+            typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+          title_translation:
+            typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+          content: chapterContent,
+          paragraphCount,
+          translatedCount,
+          paragraphs,
+          volume: volume
+            ? {
+                id: volume.id,
+                title:
+                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
+                title_translation:
+                  typeof volume.title === 'string'
+                    ? ''
+                    : volume.title.translation?.translation || '',
+              }
+            : null,
+        },
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_paragraph_info',
+        description:
+          '获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+          },
+          required: ['paragraph_id'],
+        },
+      },
+    },
+    handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { paragraph_id } = args;
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 查找段落
+      const location = ChapterService.findParagraphLocation(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph, chapter, volume } = location;
+      const chapterTitle = getChapterDisplayTitle(chapter);
+
+      // 构建翻译信息
+      const translations =
+        paragraph.translations?.map((t) => ({
+          id: t.id,
+          translation: t.translation,
+          isSelected: t.id === paragraph.selectedTranslationId,
+        })) || [];
+
+      return JSON.stringify({
+        success: true,
+        paragraph: {
+          id: paragraph.id,
+          text: paragraph.text,
+          selectedTranslationId: paragraph.selectedTranslationId || '',
+          translations,
+          chapter: {
+            id: chapter.id,
+            title: chapterTitle,
+            title_original:
+              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+            title_translation:
+              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+          },
+          volume: volume
+            ? {
+                id: volume.id,
+                title:
+                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
+                title_translation:
+                  typeof volume.title === 'string'
+                    ? ''
+                    : volume.title.translation?.translation || '',
+              }
+            : null,
+          paragraphIndex: location.paragraphIndex,
+          chapterIndex: location.chapterIndex,
+          volumeIndex: location.volumeIndex,
+        },
+      });
+    },
+  },
   {
     definition: {
       type: 'function',
@@ -27,6 +281,9 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { paragraph_id, count = 3 } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
@@ -93,6 +350,9 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { paragraph_id, count = 3 } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
@@ -169,6 +429,9 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { keyword, chapter_id, max_paragraphs = 1, only_with_translation = false } = args;
       if (!keyword) {
         throw new Error('关键词不能为空');

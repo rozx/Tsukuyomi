@@ -258,13 +258,67 @@ export class GeminiService extends BaseAIService {
 
   /**
    * 获取可用的模型列表
-   * Gemini API 不提供直接列出模型的接口，返回空列表
+   * 使用 Google Generative AI API 的 REST 端点获取模型列表
    */
-  protected makeAvailableModelsRequest(
-    _config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+  protected async makeAvailableModelsRequest(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
   ): Promise<ModelInfo[]> {
-    // Gemini API 没有提供列出所有模型的接口
-    // 返回空列表
-    return Promise.resolve([]);
+    try {
+      if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim() === '') {
+        throw new Error('API Key 不能为空');
+      }
+
+      // 使用 Google Generative AI API 的 REST 端点
+      // 文档：https://ai.google.dev/api/rest
+      const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
+      const apiUrl = `${baseUrl}/v1beta/models?key=${encodeURIComponent(config.apiKey)}`;
+
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `获取模型列表失败: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`,
+        );
+      }
+
+      const data = await response.json();
+
+      // 解析响应数据
+      // 响应格式：{ models: [{ name: "models/gemini-pro", displayName: "Gemini Pro", ... }, ...] }
+      if (!data.models || !Array.isArray(data.models)) {
+        return [];
+      }
+
+      // 过滤出可用的生成模型（排除 embedding 等模型）
+      const generationModels = data.models.filter((model: { supportedGenerationMethods?: string[] }) => {
+        return (
+          model.supportedGenerationMethods &&
+          model.supportedGenerationMethods.includes('generateContent')
+        );
+      });
+
+      // 转换为 ModelInfo 格式
+      return generationModels.map((model: { name: string; displayName?: string; description?: string }) => {
+        // 移除 "models/" 前缀
+        const modelId = model.name.replace(/^models\//, '');
+        return {
+          id: modelId,
+          name: modelId,
+          displayName: model.displayName || modelId,
+          ownedBy: 'Google',
+        };
+      });
+    } catch (error) {
+      // 如果 API 调用失败，返回空列表而不是抛出错误
+      // 这样用户仍然可以手动输入模型名称
+      console.warn('获取 Gemini 模型列表失败:', error);
+      return [];
+    }
   }
 }

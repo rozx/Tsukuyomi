@@ -3,6 +3,7 @@ import type { ActionInfo } from './types';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
+import { webSearchTools } from './web-search-tools';
 
 export type { ActionInfo };
 
@@ -22,13 +23,26 @@ export class ToolRegistry {
     return paragraphTools.map((t) => t.definition);
   }
 
+  static getWebSearchTools(): AITool[] {
+    return webSearchTools.map((t) => t.definition);
+  }
+
   static getAllTools(bookId?: string): AITool[] {
-    if (!bookId) return [];
-    return [
-      ...this.getTerminologyTools(bookId),
-      ...this.getCharacterSettingTools(bookId),
-      ...this.getParagraphTools(bookId),
+    const tools: AITool[] = [
+      // 网络搜索工具始终可用（不需要 bookId）
+      ...this.getWebSearchTools(),
     ];
+
+    // 其他工具需要 bookId
+    if (bookId) {
+      tools.push(
+        ...this.getTerminologyTools(bookId),
+        ...this.getCharacterSettingTools(bookId),
+        ...this.getParagraphTools(bookId),
+      );
+    }
+
+    return tools;
   }
 
   static async handleToolCall(
@@ -37,7 +51,7 @@ export class ToolRegistry {
     onAction?: (action: ActionInfo) => void,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
-    const allTools = [...terminologyTools, ...characterTools, ...paragraphTools];
+    const allTools = [...terminologyTools, ...characterTools, ...paragraphTools, ...webSearchTools];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 
     if (!tool) {
@@ -60,8 +74,9 @@ export class ToolRegistry {
         throw new Error(`无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`);
       }
 
+      // 网络搜索工具不需要 bookId
       const result = await tool.handler(args, {
-        bookId,
+        ...(bookId ? { bookId } : {}),
         ...(onAction ? { onAction } : {}),
       });
       return {

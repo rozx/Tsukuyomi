@@ -232,6 +232,34 @@ export default defineConfig((ctx) => {
               });
             },
           },
+          '/api/search': {
+            target: 'https://html.duckduckgo.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/search/, '/html'),
+            secure: true,
+            configure: (proxy, _options) => {
+              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+                proxyReq.setHeader(
+                  'User-Agent',
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                );
+                proxyReq.setHeader('Referer', 'https://duckduckgo.com/');
+                proxyReq.setHeader('Origin', 'https://duckduckgo.com');
+                proxyReq.setHeader(
+                  'Accept',
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                );
+                proxyReq.setHeader('Accept-Language', 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7');
+                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                proxyReq.setHeader('Cache-Control', 'max-age=0');
+                proxyReq.setHeader('Connection', 'keep-alive');
+                proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
+                proxyReq.removeHeader('x-forwarded-for');
+                proxyReq.removeHeader('x-forwarded-host');
+                proxyReq.removeHeader('x-forwarded-proto');
+              });
+            },
+          },
           // 注意：/api/ai 的动态代理现在由自定义插件 dynamicAIProxy 处理
           // 不再使用传统的代理配置
         };

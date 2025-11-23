@@ -30,32 +30,12 @@ watch(
     for (const task of newTasks) {
       const oldTask = previousTasks.value.get(task.id);
 
-      // 如果是新任务（之前不存在），显示开始通知
-      if (!oldTask && (task.status === 'thinking' || task.status === 'processing')) {
-        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-        toast.add({
-          severity: 'info',
-          summary: 'AI 任务开始',
-          detail: `${task.modelName} 开始执行${taskTypeLabel}任务`,
-          life: 3000,
-        });
-      }
-
       // 如果任务状态发生变化
       if (oldTask && oldTask.status !== task.status) {
         const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
 
-        if (task.status === 'completed') {
-          const duration = task.endTime ? Math.floor((task.endTime - task.startTime) / 1000) : 0;
-          const durationText =
-            duration < 60 ? `${duration}秒` : `${Math.floor(duration / 60)}分${duration % 60}秒`;
-          toast.add({
-            severity: 'success',
-            summary: 'AI 任务完成',
-            detail: `${task.modelName} 完成${taskTypeLabel}任务（耗时 ${durationText}）`,
-            life: 3000,
-          });
-        } else if (task.status === 'error') {
+        // 不显示任务开始和完成的 toast，只显示错误和取消
+        if (task.status === 'error') {
           const errorMessage = task.message || '未知错误';
           toast.add({
             severity: 'error',
@@ -152,11 +132,12 @@ onUnmounted(() => {
       </main>
       <div
         class="right-panel-wrapper flex-shrink-0 flex flex-col"
-        :style="{ width: ui.rightPanelOpen ? '16rem' : '0' }"
+        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '0' }"
         :inert="!ui.rightPanelOpen"
       >
         <div
-          class="h-full w-64 transform transition duration-200 flex flex-col"
+          class="h-full transform transition duration-200 flex flex-col"
+          :style="{ width: `${ui.rightPanelWidth}px` }"
           :class="ui.rightPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'"
         >
           <AppRightPanel />

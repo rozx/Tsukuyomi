@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
@@ -12,6 +12,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -53,6 +54,7 @@ const booksStore = useBooksStore();
 const bookDetailsStore = useBookDetailsStore();
 const aiModelsStore = useAIModelsStore();
 const aiProcessingStore = useAIProcessingStore();
+const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
 // 书籍编辑对话框状态
@@ -660,6 +662,53 @@ const selectedChapterParagraphs = computed(() => {
     return [];
   }
   return selectedChapter.value.content;
+});
+
+// 实时更新 context store - 监听书籍变化
+watch(
+  bookId,
+  (newBookId) => {
+    if (newBookId) {
+      contextStore.setCurrentBook(newBookId);
+    } else {
+      contextStore.setCurrentBook(null);
+    }
+  },
+  { immediate: true },
+);
+
+// 实时更新 context store - 监听章节变化
+watch(
+  selectedChapterId,
+  (newChapterId) => {
+    if (newChapterId && bookId.value) {
+      contextStore.setCurrentChapter(newChapterId);
+    } else {
+      contextStore.setCurrentChapter(null);
+    }
+  },
+  { immediate: true },
+);
+
+// 监听路由变化，离开书籍详情页时清除上下文
+watch(
+  () => route.path,
+  (newPath, oldPath) => {
+    // 如果从书籍详情页（/books/:id）导航到其他页面，清除上下文
+    // 注意：从一本书切换到另一本书时，bookId watch 会处理，这里不需要清除
+    const isBookDetailsPage = /^\/books\/[^/]+$/.test(newPath);
+    const wasBookDetailsPage = oldPath && /^\/books\/[^/]+$/.test(oldPath);
+    
+    // 如果之前是书籍详情页，但现在不是了，清除上下文
+    if (wasBookDetailsPage && !isBookDetailsPage) {
+      contextStore.clearContext();
+    }
+  },
+);
+
+// 组件卸载时清除上下文
+onUnmounted(() => {
+  contextStore.clearContext();
 });
 
 const {
@@ -2974,9 +3023,13 @@ const handleDragLeave = () => {
                     :paragraph="paragraph"
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
-                    v-bind="chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}"
+                    v-bind="{
+                      ...(chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}),
+                      ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
+                    }"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
                     :search-query="searchQuery"
+                    :book-id="bookId"
                     :id="`paragraph-${paragraph.id}`"
                     @update-translation="updateParagraphTranslation"
                     @retranslate="retranslateParagraph"

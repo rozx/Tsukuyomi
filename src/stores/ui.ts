@@ -5,7 +5,11 @@ const STORAGE_KEY = 'luna-ai-ui-state';
 /**
  * 从 localStorage 加载 UI 状态
  */
-function loadUiStateFromStorage(): { sideMenuOpen: boolean; rightPanelOpen: boolean } {
+function loadUiStateFromStorage(): {
+  sideMenuOpen: boolean;
+  rightPanelOpen: boolean;
+  rightPanelWidth: number;
+} {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -13,6 +17,7 @@ function loadUiStateFromStorage(): { sideMenuOpen: boolean; rightPanelOpen: bool
       return {
         sideMenuOpen: state.sideMenuOpen ?? true,
         rightPanelOpen: state.rightPanelOpen ?? false,
+        rightPanelWidth: state.rightPanelWidth ?? 384, // 默认 384px (w-96)
       };
     }
   } catch (error) {
@@ -21,13 +26,18 @@ function loadUiStateFromStorage(): { sideMenuOpen: boolean; rightPanelOpen: bool
   return {
     sideMenuOpen: true,
     rightPanelOpen: false,
+    rightPanelWidth: 384, // 默认 384px (w-96)
   };
 }
 
 /**
  * 保存 UI 状态到 localStorage
  */
-function saveUiStateToStorage(state: { sideMenuOpen: boolean; rightPanelOpen: boolean }): void {
+function saveUiStateToStorage(state: {
+  sideMenuOpen: boolean;
+  rightPanelOpen: boolean;
+  rightPanelWidth: number;
+}): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
@@ -36,9 +46,15 @@ function saveUiStateToStorage(state: { sideMenuOpen: boolean; rightPanelOpen: bo
 }
 
 export const useUiStore = defineStore('ui', {
-  state: (): { sideMenuOpen: boolean; rightPanelOpen: boolean; isLoaded: boolean } => ({
+  state: (): {
+    sideMenuOpen: boolean;
+    rightPanelOpen: boolean;
+    rightPanelWidth: number;
+    isLoaded: boolean;
+  } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
+    rightPanelWidth: 384, // 默认 384px (w-96)
     isLoaded: false,
   }),
 
@@ -54,32 +70,45 @@ export const useUiStore = defineStore('ui', {
       const state = loadUiStateFromStorage();
       this.sideMenuOpen = state.sideMenuOpen;
       this.rightPanelOpen = state.rightPanelOpen;
+      this.rightPanelWidth = state.rightPanelWidth;
       this.isLoaded = true;
     },
 
     toggleSideMenu() {
       this.sideMenuOpen = !this.sideMenuOpen;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
     },
     openSideMenu() {
       this.sideMenuOpen = true;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
     },
     closeSideMenu() {
       this.sideMenuOpen = false;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
     },
     toggleRightPanel() {
       this.rightPanelOpen = !this.rightPanelOpen;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
     },
     openRightPanel() {
       this.rightPanelOpen = true;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
     },
     closeRightPanel() {
       this.rightPanelOpen = false;
-      saveUiStateToStorage({ sideMenuOpen: this.sideMenuOpen, rightPanelOpen: this.rightPanelOpen });
+      this.saveState();
+    },
+    setRightPanelWidth(width: number) {
+      // 限制宽度范围：最小 256px，最大 1024px
+      this.rightPanelWidth = Math.max(256, Math.min(1024, width));
+      this.saveState();
+    },
+    saveState() {
+      saveUiStateToStorage({
+        sideMenuOpen: this.sideMenuOpen,
+        rightPanelOpen: this.rightPanelOpen,
+        rightPanelWidth: this.rightPanelWidth,
+      });
     },
   },
 });

@@ -9,6 +9,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useContextStore } from 'src/stores/context';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -18,6 +19,7 @@ const coverHistoryStore = useCoverHistoryStore();
 const bookDetailsStore = useBookDetailsStore();
 const uiStore = useUiStore();
 const aiProcessingStore = useAIProcessingStore();
+const contextStore = useContextStore();
 
 onMounted(async () => {
   // 首次运行时从 localStorage 迁移到 IndexedDB
@@ -40,6 +42,7 @@ onMounted(async () => {
   // 从 localStorage 加载 UI 状态（同步）
   bookDetailsStore.loadState();
   uiStore.loadState();
+  contextStore.loadState();
 });
 </script>
 

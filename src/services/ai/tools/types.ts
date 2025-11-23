@@ -8,7 +8,7 @@ export interface ActionInfo {
 }
 
 export interface ToolContext {
-  bookId: string;
+  bookId?: string; // 某些工具（如网络搜索）不需要 bookId
   onAction?: (action: ActionInfo) => void;
 }
 

@@ -62,6 +62,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { name, translation, sex, description, speaking_style, aliases } = args;
       if (!name || !translation) {
         throw new Error('角色名称和翻译不能为空');
@@ -140,6 +143,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { name } = args;
       if (!name) {
         throw new Error('角色名称不能为空');
@@ -238,6 +244,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { character_id, name, translation, sex, description, speaking_style, aliases } = args;
       if (!character_id) {
         throw new Error('角色 ID 不能为空');
@@ -328,6 +337,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { character_id } = args;
       if (!character_id) {
         throw new Error('角色 ID 不能为空');
@@ -378,6 +390,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { keyword, translation_only = false } = args;
       if (keyword === undefined || keyword === null) {
         throw new Error('关键词不能为空');
@@ -454,6 +469,9 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: (args, { bookId }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { limit } = args;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);

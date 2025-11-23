@@ -264,14 +264,6 @@ onUnmounted(() => {
 
       <template #end>
         <div class="flex items-center gap-3 whitespace-nowrap flex-shrink-0">
-          <!-- 右侧面板切换按钮 -->
-          <Button
-            aria-label="切换右侧面板"
-            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-            :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-angle-left'"
-            @click="ui.toggleRightPanel()"
-          />
-
           <!-- AI 思考过程按钮 -->
           <Button
             ref="thinkingButtonRef"
@@ -318,6 +310,14 @@ onUnmounted(() => {
               severity="danger"
             />
           </div>
+
+          <!-- 右侧面板切换按钮 -->
+          <Button
+            aria-label="切换右侧面板"
+            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+            :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-comments'"
+            @click="ui.toggleRightPanel()"
+          />
         </div>
       </template>
     </Menubar>
