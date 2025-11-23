@@ -144,6 +144,31 @@ Quasar 构建 SPA 时，默认输出到 `dist/spa` 目录。确保 `app.yaml` �
 2. 确认 `catchall_document` 设置为 `index.html`
 3. 验证输出目录路径是否正确
 
+### 启动命令错误
+
+**`ERROR: failed to launch: determine start command: when there is no default process a command is required`**
+
+这个错误通常表示 DigitalOcean 没有正确识别这是一个静态站点。
+
+**解决方案：**
+
+1. **确认配置格式正确**：
+   - 确保使用 `static_sites` 而不是 `services`
+   - 确保 `output_dir` 指向正确的构建输出目录
+   - 确保 `source_dir` 已设置（通常为 `/`）
+
+2. **检查构建是否成功**：
+   - 查看构建日志，确认构建命令成功执行
+   - 确认 `dist/spa` 目录中有构建输出文件
+
+3. **重新部署**：
+   - 如果配置已更新，重新触发部署
+   - 确保 `app.yaml` 文件已正确提交到 GitHub
+
+4. **如果问题持续**：
+   - 尝试在 DigitalOcean 控制台中手动创建静态站点
+   - 或者联系 DigitalOcean 支持团队
+
 ### API 调用失败
 
 1. 检查浏览器控制台的 CORS 错误
