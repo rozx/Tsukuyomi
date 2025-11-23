@@ -11,30 +11,30 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'create_character',
         description:
-          '鍒涘缓鏂拌鑹茶瀹氥€傗殸锔?閲嶈锛氬湪鍒涘缓鏂拌鑹蹭箣鍓嶏紝蹇呴』浣跨敤 list_characters 鎴?get_character 宸ュ叿妫€鏌ヨ瑙掕壊鏄惁宸插瓨鍦紝鎴栬€呮槸鍚﹀簲璇ユ槸宸插瓨鍦ㄨ鑹茬殑鍒悕銆傚鏋滃彂鐜拌瑙掕壊瀹為檯涓婃槸宸插瓨鍦ㄨ鑹茬殑鍒悕锛屽簲璇ヤ娇鐢?update_character 宸ュ叿灏嗘柊鍚嶇О娣诲姞涓哄埆鍚嶏紝鑰屼笉鏄垱寤烘柊瑙掕壊銆?,
+          '创建新角色设定。⚠️ 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。',
         parameters: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: '瑙掕壊鍚嶇О锛堟棩鏂囧師鏂囷紝蹇呴』鏄叏鍚嶏紝渚嬪"鐢颁腑澶儙"鑰屼笉鏄?鐢颁腑"鎴?澶儙"锛?,
+              description: '角色名称（日文原文，必须是全名，例如"田中太郎"而不是"田中"或"太郎"）',
             },
             translation: {
               type: 'string',
-              description: '瑙掕壊鐨勪腑鏂囩炕璇戯紙鍏ㄥ悕鐨勭炕璇戯級',
+              description: '角色的中文翻译（全名的翻译）',
             },
             sex: {
               type: 'string',
               enum: ['male', 'female', 'other'],
-              description: '瑙掕壊鎬у埆锛堝彲閫夛級',
+              description: '角色性别（可选）',
             },
             description: {
               type: 'string',
-              description: '瑙掕壊鐨勮缁嗘弿杩帮紙鍙€夛級',
+              description: '角色的详细描述（可选）',
             },
             speaking_style: {
               type: 'string',
-              description: '瑙掕壊鐨勮璇濆彛鍚伙紙鍙€夛級銆備緥濡傦細鍌插▏銆佸彜椋庛€佸彛鐧?desu/nya)绛?,
+              description: '角色的说话口吻（可选）。例如：粗鲁、古风、口癖(desu/nya)等',
             },
             aliases: {
               type: 'array',
@@ -44,17 +44,17 @@ export const characterTools: ToolDefinition[] = [
                   name: {
                     type: 'string',
                     description:
-                      '鍒悕鍚嶇О锛堟棩鏂囧師鏂囷紝閫氬父鏄悕瀛楁垨濮撴皬鐨勫崟鐙儴鍒嗭紝渚嬪"鐢颁腑"銆?澶儙"锛?,
+                      '别名名称（日文原文，通常是名字或姓氏的单独部分，例如"田中"、"太郎"）',
                   },
                   translation: {
                     type: 'string',
-                    description: '鍒悕鐨勪腑鏂囩炕璇?,
+                    description: '别名的中文翻译',
                   },
                 },
                 required: ['name', 'translation'],
               },
               description:
-                '瑙掕壊鍒悕鏁扮粍锛堝彲閫夛級銆傚埆鍚嶅簲璇ュ寘鎷鑹茬殑鍚嶅瓧鍜屽姘忕殑鍗曠嫭閮ㄥ垎锛屼緥濡傚鏋滆鑹插叏鍚嶆槸"鐢颁腑澶儙"锛屽埆鍚嶅簲璇ュ寘鎷?鐢颁腑"鍜?澶儙"',
+                '角色别名数组（可选）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"',
             },
           },
           required: ['name', 'translation'],
@@ -64,7 +64,7 @@ export const characterTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { name, translation, sex, description, speaking_style, aliases } = args;
       if (!name || !translation) {
-        throw new Error('瑙掕壊鍚嶇О鍜岀炕璇戜笉鑳戒负绌?);
+        throw new Error('角色名称和翻译不能为空');
       }
 
       const characterData: {
@@ -79,7 +79,8 @@ export const characterTools: ToolDefinition[] = [
         translation: normalizeTranslationQuotes(translation),
       };
 
-      // 瑙勮寖鍖栧埆鍚嶇炕璇?      if (aliases && Array.isArray(aliases)) {
+      // 规范化别名翻译
+      if (aliases && Array.isArray(aliases)) {
         characterData.aliases = aliases.map((alias) => ({
           name: alias.name,
           translation: normalizeTranslationQuotes(alias.translation),
@@ -102,7 +103,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '瑙掕壊鍒涘缓鎴愬姛',
+        message: '角色创建成功',
         character: {
           id: character.id,
           name: character.name,
@@ -125,13 +126,13 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'get_character',
         description:
-          '鏍规嵁瑙掕壊鍚嶇О鑾峰彇瑙掕壊淇℃伅銆傚湪缈昏瘧杩囩▼涓紝濡傛灉閬囧埌宸插瓨鍦ㄧ殑瑙掕壊锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鏌ヨ鍏剁炕璇戝拰璁惧畾銆?,
+          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。',
         parameters: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: '瑙掕壊鍚嶇О锛堟棩鏂囧師鏂囷級',
+              description: '角色名称（日文原文）',
             },
           },
           required: ['name'],
@@ -141,13 +142,13 @@ export const characterTools: ToolDefinition[] = [
     handler: (args, { bookId }) => {
       const { name } = args;
       if (!name) {
-        throw new Error('瑙掕壊鍚嶇О涓嶈兘涓虹┖');
+        throw new Error('角色名称不能为空');
       }
 
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
-        throw new Error(`涔︾睄涓嶅瓨鍦? ${bookId}`);
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
       const character = book.characterSettings?.find((c) => c.name === name);
@@ -155,7 +156,7 @@ export const characterTools: ToolDefinition[] = [
       if (!character) {
         return JSON.stringify({
           success: false,
-          message: `瑙掕壊 "${name}" 涓嶅瓨鍦╜,
+          message: `角色 "${name}" 不存在`,
         });
       }
 
@@ -183,34 +184,34 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'update_character',
         description:
-          '鏇存柊鐜版湁瑙掕壊鐨勭炕璇戙€佹弿杩般€佹€у埆鎴栧埆鍚嶃€傚綋鍙戠幇瑙掕壊鐨勪俊鎭渶瑕佷慨姝ｆ椂锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鏇存柊銆傗殸锔?閲嶈锛氬湪鏇存柊鍒悕鏃讹紝蹇呴』纭繚鎻愪緵鐨勫埆鍚嶆暟缁勫彧鍖呭惈璇ヨ鑹茶嚜宸辩殑鍒悕锛屼笉鑳藉寘鍚叾浠栬鑹茬殑鍚嶇О鎴栧埆鍚嶃€傚湪鏇存柊鍓嶏紝搴斾娇鐢?list_characters 鎴?get_character 宸ュ叿妫€鏌ユ瘡涓埆鍚嶆槸鍚﹀睘浜庡叾浠栬鑹层€?,
+          '更新现有角色的翻译、描述、性别或别名。当发现角色的信息需要修正时，可以使用此工具更新。⚠️ 重要：在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。',
         parameters: {
           type: 'object',
           properties: {
             character_id: {
               type: 'string',
-              description: '瑙掕壊 ID锛堜粠 get_character 鎴?list_characters 鑾峰彇锛?,
+              description: '角色 ID（从 get_character 或 list_characters 获取）',
             },
             name: {
               type: 'string',
-              description: '鏂扮殑瑙掕壊鍚嶇О锛堝彲閫夛紝蹇呴』鏄叏鍚嶏紝渚嬪"鐢颁腑澶儙"鑰屼笉鏄?鐢颁腑"鎴?澶儙"锛?,
+              description: '新的角色名称（可选，必须是全名，例如"田中太郎"而不是"田中"或"太郎"）',
             },
             translation: {
               type: 'string',
-              description: '鏂扮殑缈昏瘧鏂囨湰锛堝彲閫夛級',
+              description: '新的翻译文本（可选）',
             },
             sex: {
               type: 'string',
               enum: ['male', 'female', 'other'],
-              description: '鏂扮殑鎬у埆锛堝彲閫夛級',
+              description: '新的性别（可选）',
             },
             description: {
               type: 'string',
-              description: '鏂扮殑鎻忚堪锛堝彲閫夛紝璁剧疆涓虹┖瀛楃涓插彲鍒犻櫎鎻忚堪锛?,
+              description: '新的描述（可选，设置为空字符串可删除描述）',
             },
             speaking_style: {
               type: 'string',
-              description: '鏂扮殑璇磋瘽鍙ｅ惢锛堝彲閫夛紝璁剧疆涓虹┖瀛楃涓插彲鍒犻櫎鍙ｅ惢锛?,
+              description: '新的说话口吻（可选，设置为空字符串可删除口吻）',
             },
             aliases: {
               type: 'array',
@@ -219,17 +220,17 @@ export const characterTools: ToolDefinition[] = [
                 properties: {
                   name: {
                     type: 'string',
-                    description: '鍒悕鍚嶇О锛堟棩鏂囧師鏂囷級',
+                    description: '别名名称（日文原文）',
                   },
                   translation: {
                     type: 'string',
-                    description: '鍒悕鐨勪腑鏂囩炕璇?,
+                    description: '别名的中文翻译',
                   },
                 },
                 required: ['name', 'translation'],
               },
               description:
-                '鏂扮殑鍒悕鏁扮粍锛堝彲閫夛紝灏嗘浛鎹㈡墍鏈夌幇鏈夊埆鍚嶏級銆傚埆鍚嶅簲璇ュ寘鎷鑹茬殑鍚嶅瓧鍜屽姘忕殑鍗曠嫭閮ㄥ垎锛屼緥濡傚鏋滆鑹插叏鍚嶆槸"鐢颁腑澶儙"锛屽埆鍚嶅簲璇ュ寘鎷?鐢颁腑"鍜?澶儙"銆傗殸锔?閲嶈锛氬繀椤荤‘淇濇暟缁勪腑鐨勬瘡涓埆鍚嶉兘灞炰簬褰撳墠瑙掕壊锛屼笉鑳藉寘鍚叾浠栬鑹茬殑鍚嶇О鎴栧埆鍚嶃€傚湪鏇存柊鍓嶅簲浣跨敤 list_characters 妫€鏌ユ瘡涓埆鍚嶆槸鍚﹀睘浜庡叾浠栬鑹层€?,
+                '新的别名数组（可选，将替换所有现有别名）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"。⚠️ 重要：必须确保数组中的每个别名都属于当前角色，不能包含其他角色的名称或别名。在更新前应使用 list_characters 检查每个别名是否属于其他角色。',
             },
           },
           required: ['character_id'],
@@ -239,7 +240,7 @@ export const characterTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { character_id, name, translation, sex, description, speaking_style, aliases } = args;
       if (!character_id) {
-        throw new Error('瑙掕壊 ID 涓嶈兘涓虹┖');
+        throw new Error('角色 ID 不能为空');
       }
 
       const updates: {
@@ -291,7 +292,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '瑙掕壊鏇存柊鎴愬姛',
+        message: '角色更新成功',
         character: {
           id: character.id,
           name: character.name,
@@ -313,13 +314,13 @@ export const characterTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'delete_character',
-        description: '鍒犻櫎瑙掕壊璁惧畾銆傚綋纭畾鏌愪釜瑙掕壊涓嶅啀闇€瑕佹椂锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鍒犻櫎銆?,
+        description: '删除角色设定。当确定某个角色不再需要时，可以使用此工具删除。',
         parameters: {
           type: 'object',
           properties: {
             character_id: {
               type: 'string',
-              description: '瑙掕壊 ID锛堜粠 get_character 鎴?list_characters 鑾峰彇锛?,
+              description: '角色 ID（从 get_character 或 list_characters 获取）',
             },
           },
           required: ['character_id'],
@@ -329,10 +330,11 @@ export const characterTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { character_id } = args;
       if (!character_id) {
-        throw new Error('瑙掕壊 ID 涓嶈兘涓虹┖');
+        throw new Error('角色 ID 不能为空');
       }
 
-      // 鍦ㄥ垹闄ゅ墠鑾峰彇瑙掕壊淇℃伅锛屼互渚垮湪 toast 涓樉绀鸿缁嗕俊鎭?      const booksStore = useBooksStore();
+      // 在删除前获取角色信息，以便在 toast 中显示详细信息
+      const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const character = book?.characterSettings?.find((c) => c.id === character_id);
 
@@ -348,7 +350,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '瑙掕壊鍒犻櫎鎴愬姛',
+        message: '角色删除成功',
       });
     },
   },
@@ -358,17 +360,17 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'search_characters_by_keyword',
         description:
-          '鏍规嵁鍏抽敭璇嶆悳绱㈣鑹层€傚彲浠ユ悳绱㈣鑹蹭富鍚嶇О銆佸埆鍚嶆垨缈昏瘧銆傛敮鎸佸彲閫夊弬鏁?translationOnly 鍙繑鍥炴湁缈昏瘧鐨勮鑹层€?,
+          '根据关键词搜索角色。可以搜索角色主名称、别名或翻译。支持可选参数 translationOnly 只返回有翻译的角色。',
         parameters: {
           type: 'object',
           properties: {
             keyword: {
               type: 'string',
-              description: '鎼滅储鍏抽敭璇?,
+              description: '搜索关键词',
             },
             translation_only: {
               type: 'boolean',
-              description: '鏄惁鍙繑鍥炴湁缈昏瘧鐨勮鑹诧紙榛樿 false锛?,
+              description: '是否只返回有翻译的角色（默认 false）',
             },
           },
           required: ['keyword'],
@@ -378,16 +380,44 @@ export const characterTools: ToolDefinition[] = [
     handler: (args, { bookId }) => {
       const { keyword, translation_only = false } = args;
       if (keyword === undefined || keyword === null) {
-        throw new Error('鍏抽敭璇嶄笉鑳戒负绌?);
+        throw new Error('关键词不能为空');
       }
 
-      const characters = CharacterSettingService.searchByKeyword(bookId, keyword, {
-        translationOnly: translation_only,
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      const allCharacters = book.characterSettings || [];
+      const keywordLower = keyword.toLowerCase();
+
+      const filteredCharacters = allCharacters.filter((char) => {
+        // 搜索角色名称
+        const nameMatch = char.name.toLowerCase().includes(keywordLower);
+        // 搜索翻译
+        const translationMatch = char.translation?.translation
+          ?.toLowerCase()
+          .includes(keywordLower);
+        // 搜索别名
+        const aliasMatch = char.aliases?.some(
+          (alias) =>
+            alias.name.toLowerCase().includes(keywordLower) ||
+            alias.translation?.translation?.toLowerCase().includes(keywordLower),
+        );
+
+        if (translation_only) {
+          // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
+          return (translationMatch || aliasMatch) && char.translation?.translation;
+        }
+
+        // 否则只要名称、翻译或别名匹配即可
+        return nameMatch || translationMatch || aliasMatch;
       });
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) => ({
+        characters: filteredCharacters.map((char: CharacterSetting) => ({
           id: char.id,
           name: char.name,
           translation: char.translation.translation,
@@ -400,7 +430,7 @@ export const characterTools: ToolDefinition[] = [
           })),
           occurrences_count: char.occurrences.length,
         })),
-        count: characters.length,
+        count: filteredCharacters.length,
       });
     },
   },
@@ -410,13 +440,13 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'list_characters',
         description:
-          '鍒楀嚭鎵€鏈夎鑹茶瀹氥€傚湪缈昏瘧寮€濮嬪墠锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鑾峰彇鎵€鏈夊凡瀛樺湪鐨勮鑹诧紝浠ヤ究鍦ㄧ炕璇戞椂淇濇寔涓€鑷存€с€?,
+          '列出所有角色设定。在翻译开始前，可以使用此工具获取所有已存在的角色，以便在翻译时保持一致性。',
         parameters: {
           type: 'object',
           properties: {
             limit: {
               type: 'number',
-              description: '杩斿洖鐨勮鑹叉暟閲忛檺鍒讹紙鍙€夛紝榛樿杩斿洖鎵€鏈夛級',
+              description: '返回的角色数量限制（可选，默认返回所有）',
             },
           },
           required: [],
@@ -428,7 +458,7 @@ export const characterTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
-        throw new Error(`涔︾睄涓嶅瓨鍦? ${bookId}`);
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
       let characters: CharacterSetting[] = book.characterSettings || [];

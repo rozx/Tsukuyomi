@@ -47,7 +47,7 @@ export class ToolRegistry {
         name: functionName,
         content: JSON.stringify({
           success: false,
-          error: `鏈煡鐨勫伐鍏? ${functionName}`,
+          error: `未知的工具: ${functionName}`,
         }),
       };
     }
@@ -57,10 +57,13 @@ export class ToolRegistry {
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch (e) {
-        throw new Error(`鏃犳硶瑙ｆ瀽宸ュ叿鍙傛暟: ${e instanceof Error ? e.message : String(e)}`);
+        throw new Error(`无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`);
       }
 
-      const result = await tool.handler(args, { bookId, onAction });
+      const result = await tool.handler(args, {
+        bookId,
+        ...(onAction ? { onAction } : {}),
+      });
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -74,10 +77,9 @@ export class ToolRegistry {
         name: functionName,
         content: JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : '鏈煡閿欒',
+          error: error instanceof Error ? error.message : '未知错误',
         }),
       };
     }
   }
 }
-

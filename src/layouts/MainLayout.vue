@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, watch, ref } from 'vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
+import AppRightPanel from '../components/layout/AppRightPanel.vue';
 import Toast from 'primevue/toast';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
@@ -149,6 +150,18 @@ onUnmounted(() => {
       >
         <RouterView />
       </main>
+      <div
+        class="right-panel-wrapper flex-shrink-0 flex flex-col"
+        :style="{ width: ui.rightPanelOpen ? '16rem' : '0' }"
+        :inert="!ui.rightPanelOpen"
+      >
+        <div
+          class="h-full w-64 transform transition duration-200 flex flex-col"
+          :class="ui.rightPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'"
+        >
+          <AppRightPanel />
+        </div>
+      </div>
     </div>
 
     <AppFooter />
@@ -167,7 +180,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.sidebar-wrapper {
+.sidebar-wrapper,
+.right-panel-wrapper {
   transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: width;
   height: 100%;

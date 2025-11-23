@@ -10,21 +10,21 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'create_term',
-        description: '鍒涘缓鏂版湳璇€傚綋缈昏瘧杩囩▼涓亣鍒版柊鐨勬湳璇椂锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鍒涘缓鏈璁板綍銆?,
+        description: '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。',
         parameters: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: '鏈鍚嶇О锛堟棩鏂囧師鏂囷級',
+              description: '术语名称（日文原文）',
             },
             translation: {
               type: 'string',
-              description: '鏈鐨勪腑鏂囩炕璇?,
+              description: '术语的中文翻译',
             },
             description: {
               type: 'string',
-              description: '鏈鐨勮缁嗘弿杩帮紙鍙€夛級',
+              description: '术语的详细描述（可选）',
             },
           },
           required: ['name', 'translation'],
@@ -34,7 +34,7 @@ export const terminologyTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { name, translation, description } = args;
       if (!name || !translation) {
-        throw new Error('鏈鍚嶇О鍜岀炕璇戜笉鑳戒负绌?);
+        throw new Error('术语名称和翻译不能为空');
       }
 
       const term = await TerminologyService.addTerminology(bookId, {
@@ -53,7 +53,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '鏈鍒涘缓鎴愬姛',
+        message: '术语创建成功',
         term: {
           id: term.id,
           name: term.name,
@@ -69,13 +69,13 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_term',
         description:
-          '鏍规嵁鏈鍚嶇О鑾峰彇鏈淇℃伅銆傚湪缈昏瘧杩囩▼涓紝濡傛灉閬囧埌宸插瓨鍦ㄧ殑鏈锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鏌ヨ鍏剁炕璇戙€?,
+          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。',
         parameters: {
           type: 'object',
           properties: {
             name: {
               type: 'string',
-              description: '鏈鍚嶇О锛堟棩鏂囧師鏂囷級',
+              description: '术语名称（日文原文）',
             },
           },
           required: ['name'],
@@ -85,13 +85,13 @@ export const terminologyTools: ToolDefinition[] = [
     handler: (args, { bookId }) => {
       const { name } = args;
       if (!name) {
-        throw new Error('鏈鍚嶇О涓嶈兘涓虹┖');
+        throw new Error('术语名称不能为空');
       }
 
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
-        throw new Error(`涔︾睄涓嶅瓨鍦? ${bookId}`);
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
       const term = book.terminologies?.find((t) => t.name === name);
@@ -99,7 +99,7 @@ export const terminologyTools: ToolDefinition[] = [
       if (!term) {
         return JSON.stringify({
           success: false,
-          message: `鏈 "${name}" 涓嶅瓨鍦╜,
+          message: `术语 "${name}" 不存在`,
         });
       }
 
@@ -120,21 +120,21 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'update_term',
-        description: '鏇存柊鐜版湁鏈鐨勭炕璇戞垨鎻忚堪銆傚綋鍙戠幇鏈鐨勭炕璇戦渶瑕佷慨姝ｆ椂锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鏇存柊銆?,
+        description: '更新现有术语的翻译或描述。当发现术语的翻译需要修正时，可以使用此工具更新。',
         parameters: {
           type: 'object',
           properties: {
             term_id: {
               type: 'string',
-              description: '鏈 ID锛堜粠 get_term 鎴?list_terms 鑾峰彇锛?,
+              description: '术语 ID（从 get_term 或 list_terms 获取）',
             },
             translation: {
               type: 'string',
-              description: '鏂扮殑缈昏瘧鏂囨湰锛堝彲閫夛級',
+              description: '新的翻译文本（可选）',
             },
             description: {
               type: 'string',
-              description: '鏂扮殑鎻忚堪锛堝彲閫夛紝璁剧疆涓虹┖瀛楃涓插彲鍒犻櫎鎻忚堪锛?,
+              description: '新的描述（可选，设置为空字符串可删除描述）',
             },
           },
           required: ['term_id'],
@@ -144,7 +144,7 @@ export const terminologyTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { term_id, translation, description } = args;
       if (!term_id) {
-        throw new Error('鏈 ID 涓嶈兘涓虹┖');
+        throw new Error('术语 ID 不能为空');
       }
 
       const updates: {
@@ -171,7 +171,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '鏈鏇存柊鎴愬姛',
+        message: '术语更新成功',
         term: {
           id: term.id,
           name: term.name,
@@ -186,13 +186,13 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'delete_term',
-        description: '鍒犻櫎鏈銆傚綋纭畾鏌愪釜鏈涓嶅啀闇€瑕佹椂锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鍒犻櫎銆?,
+        description: '删除术语。当确定某个术语不再需要时，可以使用此工具删除。',
         parameters: {
           type: 'object',
           properties: {
             term_id: {
               type: 'string',
-              description: '鏈 ID锛堜粠 get_term 鎴?list_terms 鑾峰彇锛?,
+              description: '术语 ID（从 get_term 或 list_terms 获取）',
             },
           },
           required: ['term_id'],
@@ -202,10 +202,10 @@ export const terminologyTools: ToolDefinition[] = [
     handler: async (args, { bookId, onAction }) => {
       const { term_id } = args;
       if (!term_id) {
-        throw new Error('鏈 ID 涓嶈兘涓虹┖');
+        throw new Error('术语 ID 不能为空');
       }
 
-      // 鍦ㄥ垹闄ゅ墠鑾峰彇鏈淇℃伅锛屼互渚垮湪 toast 涓樉绀鸿缁嗕俊鎭?
+      // 在删除前获取术语信息，以便在 toast 中显示详细信息
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const term = book?.terminologies?.find((t) => t.id === term_id);
@@ -222,7 +222,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '鏈鍒犻櫎鎴愬姛',
+        message: '术语删除成功',
       });
     },
   },
@@ -232,13 +232,13 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'list_terms',
         description:
-          '鍒楀嚭鎵€鏈夋湳璇€傚湪缈昏瘧寮€濮嬪墠锛屽彲浠ヤ娇鐢ㄦ宸ュ叿鑾峰彇鎵€鏈夊凡瀛樺湪鐨勬湳璇紝浠ヤ究鍦ㄧ炕璇戞椂淇濇寔涓€鑷存€с€?,
+          '列出所有术语。在翻译开始前，可以使用此工具获取所有已存在的术语，以便在翻译时保持一致性。',
         parameters: {
           type: 'object',
           properties: {
             limit: {
               type: 'number',
-              description: '杩斿洖鐨勬湳璇暟閲忛檺鍒讹紙鍙€夛紝榛樿杩斿洖鎵€鏈夛級',
+              description: '返回的术语数量限制（可选，默认返回所有）',
             },
           },
           required: [],
@@ -250,7 +250,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
-        throw new Error(`涔︾睄涓嶅瓨鍦? ${bookId}`);
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
       let terms: Terminology[] = book.terminologies || [];
@@ -277,17 +277,17 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'search_terms_by_keyword',
         description:
-          '鏍规嵁鍏抽敭璇嶆悳绱㈡湳璇€傚彲浠ユ悳绱㈡湳璇悕绉版垨缈昏瘧銆傛敮鎸佸彲閫夊弬鏁?translationOnly 鍙繑鍥炴湁缈昏瘧鐨勬湳璇€?,
+          '根据关键词搜索术语。可以搜索术语名称或翻译。支持可选参数 translationOnly 只返回有翻译的术语。',
         parameters: {
           type: 'object',
           properties: {
             keyword: {
               type: 'string',
-              description: '鎼滅储鍏抽敭璇?,
+              description: '搜索关键词',
             },
             translation_only: {
               type: 'boolean',
-              description: '鏄惁鍙繑鍥炴湁缈昏瘧鐨勬湳璇紙榛樿 false锛?,
+              description: '是否只返回有翻译的术语（默认 false）',
             },
           },
           required: ['keyword'],
@@ -297,23 +297,45 @@ export const terminologyTools: ToolDefinition[] = [
     handler: (args, { bookId }) => {
       const { keyword, translation_only = false } = args;
       if (keyword === undefined || keyword === null) {
-        throw new Error('鍏抽敭璇嶄笉鑳戒负绌?);
+        throw new Error('关键词不能为空');
       }
 
-      const terms = TerminologyService.searchByKeyword(bookId, keyword, {
-        translationOnly: translation_only,
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      const allTerms = book.terminologies || [];
+      const keywordLower = keyword.toLowerCase();
+
+      const filteredTerms = allTerms.filter((term) => {
+        // 搜索术语名称
+        const nameMatch = term.name.toLowerCase().includes(keywordLower);
+        // 搜索翻译
+        const translationMatch = term.translation?.translation
+          ?.toLowerCase()
+          .includes(keywordLower);
+
+        if (translation_only) {
+          // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
+          return translationMatch && term.translation?.translation;
+        }
+
+        // 否则只要名称或翻译匹配即可
+        return nameMatch || translationMatch;
       });
 
       return JSON.stringify({
         success: true,
-        terms: terms.map((term) => ({
+        terms: filteredTerms.map((term: Terminology) => ({
           id: term.id,
           name: term.name,
           translation: term.translation.translation,
           description: term.description,
           occurrences_count: term.occurrences.length,
         })),
-        count: terms.length,
+        count: filteredTerms.length,
       });
     },
   },
@@ -323,7 +345,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_occurrences_by_keywords',
         description:
-          '鏍规嵁鎻愪緵鐨勫叧閿瘝鑾峰彇鍏跺湪涔︾睄鍚勭珷鑺備腑鐨勫嚭鐜版鏁般€傜敤浜庣粺璁＄壒瀹氳瘝姹囧湪鏂囨湰涓殑鍒嗗竷鎯呭喌锛屽府鍔╃悊瑙ｈ瘝姹囩殑浣跨敤棰戠巼鍜屼笂涓嬫枃銆?,
+          '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
         parameters: {
           type: 'object',
           properties: {
@@ -332,7 +354,7 @@ export const terminologyTools: ToolDefinition[] = [
               items: {
                 type: 'string',
               },
-              description: '鍏抽敭璇嶆暟缁勶紝鍙互鍖呭惈涓€涓垨澶氫釜鍏抽敭璇?,
+              description: '关键词数组，可以包含一个或多个关键词',
             },
           },
           required: ['keywords'],
@@ -342,12 +364,12 @@ export const terminologyTools: ToolDefinition[] = [
     handler: (args, { bookId }) => {
       const { keywords } = args;
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('鍏抽敭璇嶆暟缁勪笉鑳戒负绌?);
+        throw new Error('关键词数组不能为空');
       }
 
       const occurrencesMap = TerminologyService.getOccurrencesByKeywords(bookId, keywords);
 
-      // 灏?Map 杞崲涓哄璞℃暟缁?
+      // 将 Map 转换为对象数组
       const occurrences = Array.from(occurrencesMap.entries()).map(([keyword, occurrences]) => ({
         keyword,
         occurrences: occurrences.map((occ) => ({

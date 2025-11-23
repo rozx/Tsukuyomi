@@ -16,6 +16,7 @@ declare module 'vue' {
     AppFooter: typeof import('./components/layout/AppFooter.vue')['default']
     AppHeader: typeof import('./components/layout/AppHeader.vue')['default']
     AppMessage: typeof import('./components/common/AppMessage.vue')['default']
+    AppRightPanel: typeof import('./components/layout/AppRightPanel.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
     Button: typeof import('primevue/button')['default']
