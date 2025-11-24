@@ -197,8 +197,8 @@ const onTranslationClose = () => {
 const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => void) => {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
-    onTranslationClose();
     closeCallback();
+    onTranslationClose();
   } else if (event.key === 'Escape') {
     event.preventDefault();
     editingTranslationValue.value = translationText.value;
@@ -384,7 +384,7 @@ onUnmounted(() => {
                 class="translation-textarea"
                 :auto-resize="true"
                 @keydown="(e) => handleTranslationKeydown(e, closeCallback)"
-                @blur="() => { onTranslationClose(); closeCallback(); }"
+                @blur="() => { closeCallback(); onTranslationClose(); }"
               />
               <div class="translation-edit-hints">
                 <span class="hint-text">Ctrl+Enter 保存，Esc 取消</span>

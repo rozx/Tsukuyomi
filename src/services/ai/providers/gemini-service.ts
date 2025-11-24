@@ -47,14 +47,19 @@ export class GeminiService extends BaseAIService {
         },
       });
 
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: this.CONFIG_PROMPT }],
-          },
-        ],
-      });
+      const result = await model.generateContent(
+        {
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: this.CONFIG_PROMPT }],
+            },
+          ],
+        },
+        {
+          signal: config.signal ?? AbortSignal.timeout(100000),
+        },
+      );
 
       const response = result.response;
       const text = response.text();
@@ -180,9 +185,14 @@ export class GeminiService extends BaseAIService {
       });
 
       // 使用流式 API
-      const result = await model.generateContentStream({
-        contents,
-      });
+      const result = await model.generateContentStream(
+        {
+          contents,
+        },
+        {
+          signal: config.signal ?? AbortSignal.timeout(100000),
+        },
+      );
 
       let fullText = '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -296,24 +306,28 @@ export class GeminiService extends BaseAIService {
       }
 
       // 过滤出可用的生成模型（排除 embedding 等模型）
-      const generationModels = data.models.filter((model: { supportedGenerationMethods?: string[] }) => {
-        return (
-          model.supportedGenerationMethods &&
-          model.supportedGenerationMethods.includes('generateContent')
-        );
-      });
+      const generationModels = data.models.filter(
+        (model: { supportedGenerationMethods?: string[] }) => {
+          return (
+            model.supportedGenerationMethods &&
+            model.supportedGenerationMethods.includes('generateContent')
+          );
+        },
+      );
 
       // 转换为 ModelInfo 格式
-      return generationModels.map((model: { name: string; displayName?: string; description?: string }) => {
-        // 移除 "models/" 前缀
-        const modelId = model.name.replace(/^models\//, '');
-        return {
-          id: modelId,
-          name: modelId,
-          displayName: model.displayName || modelId,
-          ownedBy: 'Google',
-        };
-      });
+      return generationModels.map(
+        (model: { name: string; displayName?: string; description?: string }) => {
+          // 移除 "models/" 前缀
+          const modelId = model.name.replace(/^models\//, '');
+          return {
+            id: modelId,
+            name: modelId,
+            displayName: model.displayName || modelId,
+            ownedBy: 'Google',
+          };
+        },
+      );
     } catch (error) {
       // 如果 API 调用失败，返回空列表而不是抛出错误
       // 这样用户仍然可以手动输入模型名称
