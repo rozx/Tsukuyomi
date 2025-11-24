@@ -2,11 +2,7 @@ import express, { type Request, type Response } from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { gotScraping } from 'got-scraping';
-import { pipeline } from 'stream';
-import { promisify } from 'util';
-
-const streamPipeline = promisify(pipeline);
+import { Impit } from 'impit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,50 +31,42 @@ const TARGETS: Record<string, TargetConfig> = {
 
 // --- Proxy Handlers ---
 
+// Create a shared Impit instance
+const impit = new Impit({
+  browser: 'chrome',
+});
+
 const handleDirectProxy = async (
   req: Request,
   res: Response,
   targetUrl: string,
   requestId: string,
 ) => {
-  const stream = gotScraping.stream({
-    url: targetUrl,
-    method: req.method as any,
+  const response = await impit.fetch(targetUrl, {
+    method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
     body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
-    http2: false, // Disable HTTP/2 to prevent origin mismatch errors
-    headerGeneratorOptions: {
-      browsers: [{ name: 'chrome', minVersion: 110 }],
-      devices: ['desktop'],
-      locales: ['ja-JP', 'en-US'],
-      operatingSystems: ['windows'],
-    },
-    timeout: { request: 90000 },
-    retry: { limit: 2 },
   });
 
-  stream.on('response', (response) => {
-    res.status(response.statusCode);
-    const headersToSkip = [
-      'content-encoding',
-      'transfer-encoding',
-      'connection',
-      'set-cookie',
-      'content-security-policy',
-      'x-frame-options',
-      'content-length',
-    ];
-    Object.entries(response.headers).forEach(([key, value]) => {
-      if (!headersToSkip.includes(key.toLowerCase()) && value) {
-        if (typeof value === 'string' || typeof value === 'number') {
-          res.setHeader(key, value);
-        } else if (Array.isArray(value)) {
-          res.setHeader(key, value.join(', '));
-        }
-      }
-    });
+  res.status(response.status);
+
+  const headersToSkip = [
+    'content-encoding',
+    'transfer-encoding',
+    'connection',
+    'set-cookie',
+    'content-security-policy',
+    'x-frame-options',
+    'content-length',
+  ];
+
+  response.headers.forEach((value, key) => {
+    if (!headersToSkip.includes(key.toLowerCase())) {
+      res.setHeader(key, value);
+    }
   });
 
-  await streamPipeline(stream, res);
+  const body = await response.arrayBuffer();
+  res.send(Buffer.from(body));
   console.log(`[Proxy Direct] [${requestId}] Completed`);
 };
 
@@ -92,16 +80,11 @@ const handleAllOriginsProxy = async (
   const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
   console.log(`[Proxy AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
 
-  // We use gotScraping here too just to be safe, but we expect JSON back
-  const response = await gotScraping({
-    url: allOriginsUrl,
-    responseType: 'json',
-    http2: false, // Fix: Disable HTTP/2 for AllOrigins request as well
-    timeout: { request: 90000 },
-    retry: { limit: 2 },
-  });
-
-  const data = response.body as any;
+  const response = await impit.fetch(allOriginsUrl);
+  const data = (await response.json()) as {
+    status?: { http_code?: number };
+    contents?: string;
+  };
 
   if (data.status?.http_code) {
     res.status(data.status.http_code);
@@ -135,16 +118,19 @@ const handleProxyRequest = async (
     } else {
       await handleDirectProxy(req, res, targetUrl, requestId);
     }
-  } catch (error: any) {
-    const isTimeout = error.code === 'ETIMEDOUT';
-    console.error(`[Proxy Error] [${requestId}] ${error.message}`);
+  } catch (error: unknown) {
+    const isTimeout = error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT';
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const code =
+      error instanceof Error && 'code' in error ? (error as { code: string }).code : undefined;
+    console.error(`[Proxy Error] [${requestId}] ${message}`);
 
     if (!res.headersSent) {
       res.status(isTimeout ? 504 : 500).json({
         error: 'Proxy Request Failed',
         mode: config.mode,
-        message: error.message,
-        code: error.code,
+        message,
+        code,
       });
     }
   }
@@ -187,13 +173,12 @@ if (isProduction) {
   void import('http-proxy-middleware')
     .then(({ createProxyMiddleware }) => {
       const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
-      app.use(
-        createProxyMiddleware({
-          target: viteTarget,
-          changeOrigin: true,
-          ws: true,
-        }),
-      );
+      const middleware = createProxyMiddleware({
+        target: viteTarget,
+        changeOrigin: true,
+        ws: true,
+      }) as express.RequestHandler;
+      app.use(middleware);
       console.log(`Dev Mode: Proxying non-API requests to ${viteTarget}`);
     })
     .catch((err) => {
