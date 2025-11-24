@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { v4 as uuidv4 } from 'uuid';
 import Button from 'primevue/button';
+import SplitButton from 'primevue/splitbutton';
 import DataView from 'primevue/dataview';
 import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
@@ -145,6 +146,24 @@ const sortOptions: SortOption[] = [
 ];
 
 const selectedSort = ref(sortOptions[0]?.value || 'default');
+
+// 分割按钮菜单项
+const addBookMenuItems = computed(() => [
+  {
+    label: '从网站导入',
+    icon: 'pi pi-globe',
+    command: () => {
+      importBookFromWeb();
+    },
+  },
+  {
+    label: '从 JSON 导入',
+    icon: 'pi pi-file-import',
+    command: () => {
+      importBookFromJson();
+    },
+  },
+]);
 
 // 过滤和排序后的书籍列表
 const filteredBooks = computed(() => {
@@ -651,21 +670,10 @@ const handleSave = async (formData: Partial<Novel>) => {
             }
           "
         />
-        <Button
-          label="从网站导入"
-          icon="pi pi-globe"
-          class="p-button-primary icon-button-hover flex-shrink-0"
-          @click="importBookFromWeb"
-        />
-        <Button
-          label="从 JSON 导入"
-          icon="pi pi-file-import"
-          class="p-button-primary icon-button-hover flex-shrink-0"
-          @click="importBookFromJson"
-        />
-        <Button
+        <SplitButton
           label="添加书籍"
           icon="pi pi-plus"
+          :model="addBookMenuItems"
           class="p-button-primary icon-button-hover flex-shrink-0"
           @click="addBook"
         />

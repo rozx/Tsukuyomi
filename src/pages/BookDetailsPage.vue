@@ -1,7 +1,6 @@
 ﻿<script setup lang="ts">
-import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
+import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import DataView from 'primevue/dataview';
 import Popover from 'primevue/popover';
 import Select from 'primevue/select';
 import InputText from 'primevue/inputtext';
@@ -9,6 +8,7 @@ import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
+import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -411,12 +411,7 @@ const retranslateParagraph = async (paragraphId: string) => {
     });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      toast.add({
-        severity: 'info',
-        summary: '已取消',
-        detail: '翻译已取消',
-        life: 2000,
-      });
+      // Cancelled - no need to show toast
     } else {
       console.error('重新翻译段落时出错:', error);
       toast.add({
@@ -531,15 +526,43 @@ const getCoverUrl = (book: Novel): string => {
   return CoverService.getCoverUrl(book);
 };
 
-// 计算统计信息
-const stats = computed(() => {
-  if (!book.value) return null;
-  return {
+// 页面加载状态
+const isPageLoading = ref(true);
+const isStatsCalculating = ref(false);
+
+// 计算统计信息（延迟计算以提升初始加载速度）
+const stats = ref<{
+  wordCount: number;
+  chapterCount: number;
+  volumeCount: number;
+} | null>(null);
+
+// 延迟计算统计信息
+const calculateStats = async () => {
+  if (!book.value || isStatsCalculating.value) return;
+
+  isStatsCalculating.value = true;
+
+  // 使用 setTimeout 将计算推迟到下一个事件循环，避免阻塞渲染
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  stats.value = {
     wordCount: getNovelCharCount(book.value),
     chapterCount: getTotalChapters(book.value),
     volumeCount: book.value.volumes?.length || 0,
   };
-});
+
+  isStatsCalculating.value = false;
+};
+
+// 监听书籍变化，重新计算统计信息
+watch(book, (newBook) => {
+  if (newBook) {
+    void calculateStats();
+  } else {
+    stats.value = null;
+  }
+}, { immediate: false });
 
 // 获取卷列表
 const volumes = computed(() => {
@@ -788,6 +811,15 @@ watch(
     }
   },
 );
+
+// 组件挂载时初始化
+onMounted(() => {
+  // 延迟计算统计信息，优先渲染 UI
+  setTimeout(() => {
+    isPageLoading.value = false;
+    void calculateStats();
+  }, 100);
+});
 
 // 组件卸载时清除上下文
 onUnmounted(() => {
@@ -1720,12 +1752,6 @@ const cancelTranslation = () => {
     message: '',
   };
   translatingParagraphIds.value.clear();
-  toast.add({
-    severity: 'info',
-    summary: '已取消',
-    detail: '翻译已取消',
-    life: 2000,
-  });
 };
 
 // 打开编辑角色对话框
@@ -2163,6 +2189,9 @@ const handleDragLeave = () => {
                   <span class="stat-value">{{ formatWordCount(stats.wordCount) }}</span>
                 </div>
               </div>
+              <div v-else-if="isStatsCalculating" class="book-stats">
+                <Skeleton width="120px" height="20px" />
+              </div>
             </div>
           </div>
           <div class="book-separator"></div>
@@ -2220,12 +2249,19 @@ const handleDragLeave = () => {
 
         <!-- 卷和章节列表 -->
         <div class="volumes-container">
-          <DataView v-if="volumes.length > 0" :value="volumes" data-key="id" layout="list">
-            <template #list="slotProps">
-              <div class="volumes-list">
-                <div v-for="volume in slotProps.items" :key="volume.id" class="volume-item">
-                  <div class="volume-header">
-                    <div class="volume-header-content" @click="toggleVolume(volume.id)">
+          <!-- 加载状态 -->
+          <div v-if="isPageLoading" class="volumes-loading">
+            <Skeleton height="60px" class="mb-2" />
+            <Skeleton height="40px" class="mb-2" />
+            <Skeleton height="40px" class="mb-2" />
+            <Skeleton height="40px" />
+          </div>
+          <!-- 卷列表 -->
+          <div v-else-if="volumes.length > 0" class="volumes-list">
+            <div v-for="volume in volumes" :key="volume.id" class="volume-item">
+              <div class="volume-item">
+                <div class="volume-header">
+                  <div class="volume-header-content" @click="toggleVolume(volume.id)">
                       <i
                         :class="[
                           'pi volume-toggle-icon',
@@ -2240,9 +2276,9 @@ const handleDragLeave = () => {
                       >
                         ({{ volume.chapters.length }} 章)
                       </span>
-                    </div>
-                    <div class="volume-actions" @click.stop>
-                      <Button
+                  </div>
+                  <div class="volume-actions" @click.stop>
+                    <Button
                         icon="pi pi-pencil"
                         class="p-button-text p-button-sm p-button-rounded action-button"
                         size="small"
@@ -2259,41 +2295,41 @@ const handleDragLeave = () => {
                     </div>
                   </div>
                   <Transition name="slide-down">
+                  <div
+                    v-if="
+                      volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)
+                    "
+                    class="chapters-list"
+                    @dragover.prevent="handleDragOver($event, volume.id)"
+                    @drop="handleDrop($event, volume.id)"
+                    @dragleave="handleDragLeave"
+                    :class="{
+                      'drag-over': dragOverVolumeId === volume.id && dragOverIndex === null,
+                    }"
+                  >
                     <div
-                      v-if="
-                        volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)
-                      "
-                      class="chapters-list"
-                      @dragover.prevent="handleDragOver($event, volume.id)"
-                      @drop="handleDrop($event, volume.id)"
-                      @dragleave="handleDragLeave"
-                      :class="{
-                        'drag-over': dragOverVolumeId === volume.id && dragOverIndex === null,
-                      }"
+                      v-for="(chapter, index) in volume.chapters"
+                      :key="chapter.id"
+                      :class="[
+                        'chapter-item',
+                        { 'chapter-item-selected': selectedChapterId === chapter.id },
+                        {
+                          'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
+                        },
+                        { dragging: draggedChapter?.chapter.id === chapter.id },
+                      ]"
+                      draggable="true"
+                      @dragstart="handleDragStart($event, chapter, volume.id, index)"
+                      @dragend="handleDragEnd($event)"
+                      @dragover.prevent="handleDragOver($event, volume.id, index)"
+                      @drop="handleDrop($event, volume.id, index)"
                     >
-                      <div
-                        v-for="(chapter, index) in volume.chapters"
-                        :key="chapter.id"
-                        :class="[
-                          'chapter-item',
-                          { 'chapter-item-selected': selectedChapterId === chapter.id },
-                          {
-                            'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
-                          },
-                          { dragging: draggedChapter?.chapter.id === chapter.id },
-                        ]"
-                        draggable="true"
-                        @dragstart="handleDragStart($event, chapter, volume.id, index)"
-                        @dragend="handleDragEnd($event)"
-                        @dragover.prevent="handleDragOver($event, volume.id, index)"
-                        @drop="handleDrop($event, volume.id, index)"
-                      >
-                        <div class="chapter-content" @click="navigateToChapter(chapter)">
-                          <i class="pi pi-bars drag-handle"></i>
-                          <i class="pi pi-file chapter-icon"></i>
-                          <span class="chapter-title">{{ getChapterDisplayTitle(chapter) }}</span>
-                        </div>
-                        <div class="chapter-actions" @click.stop>
+                      <div class="chapter-content" @click="navigateToChapter(chapter)">
+                        <i class="pi pi-bars drag-handle"></i>
+                        <i class="pi pi-file chapter-icon"></i>
+                        <span class="chapter-title">{{ getChapterDisplayTitle(chapter) }}</span>
+                      </div>
+                      <div class="chapter-actions" @click.stop>
                           <Button
                             icon="pi pi-pencil"
                             class="p-button-text p-button-sm p-button-rounded action-button"
@@ -2314,14 +2350,8 @@ const handleDragLeave = () => {
                   </Transition>
                 </div>
               </div>
-            </template>
-            <template #empty>
-              <div class="empty-state">
-                <p class="text-moon/60 text-sm">暂无卷和章节</p>
-              </div>
-            </template>
-          </DataView>
-          <div v-else class="empty-state">
+            </div>
+          <div v-else-if="!isPageLoading" class="empty-state">
             <p class="text-moon/60 text-sm">暂无卷和章节</p>
           </div>
         </div>
@@ -3363,6 +3393,15 @@ const handleDragLeave = () => {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+}
+
+/* 加载状态 */
+.volumes-loading {
+  padding: 1rem;
+}
+
+.volumes-loading .mb-2 {
+  margin-bottom: 0.5rem;
 }
 
 .volumes-list {

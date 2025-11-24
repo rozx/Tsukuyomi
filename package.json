@@ -7,7 +7,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "bunx vue-tsc --noEmit",
+    "lint": "bunx eslint",
+    "type-check": "bunx vue-tsc --noEmit",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",
     "sync-version": "bun scripts/sync-version.ts",

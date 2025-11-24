@@ -23,6 +23,7 @@ declare module 'vue' {
     CharacterSettingPanel: typeof import('./components/novel/CharacterSettingPanel.vue')['default']
     ConflictResolutionDialog: typeof import('./components/dialogs/ConflictResolutionDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/dialogs/CoverManagerDialog.vue')['default']
+    DataView: typeof import('primevue/dataview')['default']
     Dialog: typeof import('primevue/dialog')['default']
     ExtractedTermsDialog: typeof import('./components/novel/ExtractedTermsDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
