@@ -290,6 +290,8 @@ function createMenu() {
               });
 
               if (!result.canceled && result.filePath) {
+                // 重新检查 mainWindow 是否仍然存在（可能在对话框打开期间窗口被关闭）
+                if (!mainWindow) return;
                 // 通过 IPC 请求渲染进程的设置数据
                 mainWindow.webContents.send('export-settings-request', result.filePath);
               }
@@ -317,6 +319,8 @@ function createMenu() {
                 if (filePath) {
                   try {
                     const content = readFileSync(filePath, 'utf-8');
+                    // 重新检查 mainWindow 是否仍然存在（可能在对话框打开期间窗口被关闭）
+                    if (!mainWindow) return;
                     // 发送内容到渲染进程处理
                     mainWindow.webContents.send('import-settings-data', content);
                   } catch (error) {

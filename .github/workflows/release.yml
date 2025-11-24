@@ -44,8 +44,8 @@ jobs:
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
           git fetch --tags
-          if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
-            echo "Tag v${{ steps.get_version.outputs.version }} already exists"
+          if git rev-parse "${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.get_version.outputs.version }} already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT

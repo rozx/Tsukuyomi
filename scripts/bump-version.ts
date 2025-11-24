@@ -27,8 +27,30 @@ try {
     throw new Error('Version not found in package.json');
   }
 
-  const parts = version.split('.');
+  // Validate version format before parsing
+  // Remove any pre-release or build metadata (e.g., "1.0.0-alpha" -> "1.0.0")
+  const cleanVersion = version.split('-')[0].split('+')[0];
+  const versionRegex = /^\d+\.\d+\.\d+$/;
+
+  if (!versionRegex.test(cleanVersion)) {
+    throw new Error(
+      `Invalid version format in package.json: "${version}". ` +
+        `Expected format: x.y.z (e.g., "1.0.0"). ` +
+        `Current version must be a valid semver format before bumping.`,
+    );
+  }
+
+  const parts = cleanVersion.split('.');
   const [major, minor, patch] = parts.map(Number);
+
+  // Validate parsed numbers are not NaN
+  if (isNaN(major) || isNaN(minor) || isNaN(patch)) {
+    throw new Error(
+      `Failed to parse version "${version}". ` +
+        `Parsed values: major=${major}, minor=${minor}, patch=${patch}. ` +
+        `Please ensure the version is in x.y.z format.`,
+    );
+  }
 
   if (bumpType === 'major') {
     version = `${major + 1}.0.0`;
