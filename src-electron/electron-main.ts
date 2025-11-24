@@ -322,8 +322,8 @@ function createMenu() {
                   try {
                     const content = readFileSync(filePath, 'utf-8');
                     // 重新检查 mainWindow 是否仍然存在（可能在对话框打开期间窗口被关闭）
+                    // 在发送前再次检查，确保窗口仍然存在
                     if (!mainWindow) return;
-                    // 发送内容到渲染进程处理
                     mainWindow.webContents.send('import-settings-data', content);
                   } catch (error) {
                     dialog.showErrorBox(
