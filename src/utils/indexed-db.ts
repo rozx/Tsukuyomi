@@ -27,7 +27,7 @@ interface UiState {
  */
 interface ChapterContent {
   chapterId: string;
-  content: unknown[]; // Paragraph[]，但为了避免循环依赖使用 unknown
+  content: string; // 序列化为 JSON 字符串的段落数组
   lastModified: string; // ISO 日期字符串
 }
 

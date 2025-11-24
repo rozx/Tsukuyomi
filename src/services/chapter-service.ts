@@ -317,12 +317,13 @@ export class ChapterService {
   static convertContentToParagraphs(content: string): Paragraph[] {
     const idGenerator = new UniqueIdGenerator();
     return content.split('\n').map((text) => {
-      return {
+      const paragraph: Paragraph = {
         id: idGenerator.generate(),
         text: text, // 不使用 trim()，保留原始格式（包括开头空格和空行）
         selectedTranslationId: '',
         translations: [],
       };
+      return paragraph;
     });
   }
 

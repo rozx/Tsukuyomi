@@ -6,7 +6,7 @@ import type { Paragraph } from 'src/models/novel';
  */
 interface ChapterContent {
   chapterId: string;
-  content: Paragraph[];
+  content: string; // 序列化为 JSON 字符串的段落数组
   lastModified: string; // ISO 日期字符串
 }
 
@@ -26,7 +26,7 @@ export class ChapterContentService {
 
       const chapterContent: ChapterContent = {
         chapterId,
-        content,
+        content: JSON.stringify(content), // 序列化为 JSON 字符串
         lastModified: new Date().toISOString(),
       };
 
@@ -46,7 +46,11 @@ export class ChapterContentService {
     try {
       const db = await getDB();
       const chapterContent = await db.get('chapter-contents', chapterId);
-      return chapterContent?.content as Paragraph[] | undefined;
+      if (!chapterContent?.content) {
+        return undefined;
+      }
+      // 反序列化 JSON 字符串为段落数组
+      return JSON.parse(chapterContent.content) as Paragraph[];
     } catch (error) {
       console.error(`Failed to load chapter content for ${chapterId}:`, error);
       return undefined;

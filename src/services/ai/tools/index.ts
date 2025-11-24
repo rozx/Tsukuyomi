@@ -4,6 +4,7 @@ import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
 import { webSearchTools } from './web-search-tools';
+import { bookTools } from './book-tools';
 
 export type { ActionInfo };
 
@@ -23,6 +24,11 @@ export class ToolRegistry {
     return paragraphTools.map((t) => t.definition);
   }
 
+  static getBookTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+    return bookTools.map((t) => t.definition);
+  }
+
   static getWebSearchTools(): AITool[] {
     return webSearchTools.map((t) => t.definition);
   }
@@ -39,6 +45,7 @@ export class ToolRegistry {
         ...this.getTerminologyTools(bookId),
         ...this.getCharacterSettingTools(bookId),
         ...this.getParagraphTools(bookId),
+        ...this.getBookTools(bookId),
       );
     }
 
@@ -51,7 +58,13 @@ export class ToolRegistry {
     onAction?: (action: ActionInfo) => void,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
-    const allTools = [...terminologyTools, ...characterTools, ...paragraphTools, ...webSearchTools];
+    const allTools = [
+      ...terminologyTools,
+      ...characterTools,
+      ...paragraphTools,
+      ...webSearchTools,
+      ...bookTools,
+    ];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 
     if (!tool) {

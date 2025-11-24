@@ -34,7 +34,7 @@ export class BookService {
       ...novel,
       volumes: novel.volumes.map((volume) => ({
         ...volume,
-        chapters: volume.chapters?.map(BookService.stripChapterContent),
+        chapters: volume.chapters?.map((chapter) => BookService.stripChapterContent(chapter)),
       })),
     };
   }

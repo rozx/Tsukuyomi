@@ -2,6 +2,8 @@
 import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Popover from 'primevue/popover';
+import TieredMenu from 'primevue/tieredmenu';
+import type { MenuItem } from 'primevue/menuitem';
 import Select from 'primevue/select';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -178,7 +180,11 @@ const selectParagraphTranslation = async (paragraphId: string, translationId: st
 
 // 重新翻译单个段落
 const retranslateParagraph = async (paragraphId: string) => {
-  if (!book.value || !selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
+  if (
+    !book.value ||
+    !selectedChapterWithContent.value ||
+    !selectedChapterWithContent.value.content
+  ) {
     return;
   }
 
@@ -235,9 +241,10 @@ const retranslateParagraph = async (paragraphId: string) => {
             if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
             // 使用已加载的章节内容
-            const content = chapter.id === selectedChapterWithContent.value!.id
-              ? selectedChapterWithContent.value!.content
-              : chapter.content;
+            const content =
+              chapter.id === selectedChapterWithContent.value!.id
+                ? selectedChapterWithContent.value!.content
+                : chapter.content;
 
             if (!content) return chapter;
 
@@ -341,25 +348,27 @@ const retranslateParagraph = async (paragraphId: string) => {
               await TerminologyService.updateTerminology(book.value.id, previousTerm.id, {
                 name: previousTerm.name,
                 translation: previousTerm.translation.translation,
-                ...(previousTerm.description !== undefined ? { description: previousTerm.description } : {}),
+                ...(previousTerm.description !== undefined
+                  ? { description: previousTerm.description }
+                  : {}),
               });
             } else {
               const previousChar = action.previousData as CharacterSetting;
-              await CharacterSettingService.updateCharacterSetting(
-                book.value.id,
-                previousChar.id,
-                {
-                  name: previousChar.name,
-                  ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
-                  translation: previousChar.translation.translation,
-                  ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
-                  ...(previousChar.speakingStyle !== undefined ? { speakingStyle: previousChar.speakingStyle } : {}),
-                  aliases: previousChar.aliases.map((a) => ({
-                    name: a.name,
-                    translation: a.translation.translation,
-                  })),
-                },
-              );
+              await CharacterSettingService.updateCharacterSetting(book.value.id, previousChar.id, {
+                name: previousChar.name,
+                ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
+                translation: previousChar.translation.translation,
+                ...(previousChar.description !== undefined
+                  ? { description: previousChar.description }
+                  : {}),
+                ...(previousChar.speakingStyle !== undefined
+                  ? { speakingStyle: previousChar.speakingStyle }
+                  : {}),
+                aliases: previousChar.aliases.map((a) => ({
+                  name: a.name,
+                  translation: a.translation.translation,
+                })),
+              });
             }
           } else if (action.type === 'delete' && action.previousData) {
             // 撤销删除：恢复删除的项目
@@ -427,12 +436,12 @@ const retranslateParagraph = async (paragraphId: string) => {
   }
 };
 
-// 导出 Popover 状态
-const exportPopover = ref<InstanceType<typeof Popover> | null>(null);
+// 导出菜单状态
+const exportMenuRef = ref<InstanceType<typeof TieredMenu> | null>(null);
 
-// 切换导出 Popover
-const toggleExportPopover = (event: Event) => {
-  exportPopover.value?.toggle(event);
+// 切换导出菜单
+const toggleExportMenu = (event: Event) => {
+  exportMenuRef.value?.toggle(event);
 };
 
 // 导出章节内容
@@ -465,10 +474,74 @@ const exportChapter = async (
       life: 3000,
     });
   }
-
-  // 关闭 Popover
-  exportPopover.value?.hide();
 };
+
+// 导出菜单项
+const exportMenuItems = computed<MenuItem[]>(() => [
+  {
+    label: '导出原文',
+    icon: 'pi pi-file',
+    items: [
+      {
+        label: '复制到剪贴板',
+        icon: 'pi pi-copy',
+        command: () => void exportChapter('original', 'clipboard'),
+      },
+      {
+        label: '导出为 JSON',
+        icon: 'pi pi-code',
+        command: () => void exportChapter('original', 'json'),
+      },
+      {
+        label: '导出为 TXT',
+        icon: 'pi pi-file',
+        command: () => void exportChapter('original', 'txt'),
+      },
+    ],
+  },
+  {
+    label: '导出译文',
+    icon: 'pi pi-language',
+    items: [
+      {
+        label: '复制到剪贴板',
+        icon: 'pi pi-copy',
+        command: () => void exportChapter('translation', 'clipboard'),
+      },
+      {
+        label: '导出为 JSON',
+        icon: 'pi pi-code',
+        command: () => void exportChapter('translation', 'json'),
+      },
+      {
+        label: '导出为 TXT',
+        icon: 'pi pi-file',
+        command: () => void exportChapter('translation', 'txt'),
+      },
+    ],
+  },
+  {
+    label: '导出双语',
+    icon: 'pi pi-book',
+    items: [
+      {
+        label: '复制到剪贴板',
+        icon: 'pi pi-copy',
+        command: () => void exportChapter('bilingual', 'clipboard'),
+      },
+      {
+        label: '导出为 JSON',
+        icon: 'pi pi-code',
+        command: () => void exportChapter('bilingual', 'json'),
+      },
+      {
+        label: '导出为 TXT',
+        icon: 'pi pi-file',
+        command: () => void exportChapter('bilingual', 'txt'),
+      },
+    ],
+  },
+]);
 
 // 从路由参数获取书籍 ID
 const bookId = computed(() => route.params.id as string);
@@ -556,13 +629,17 @@ const calculateStats = async () => {
 };
 
 // 监听书籍变化，重新计算统计信息
-watch(book, (newBook) => {
-  if (newBook) {
-    void calculateStats();
-  } else {
-    stats.value = null;
-  }
-}, { immediate: false });
+watch(
+  book,
+  (newBook) => {
+    if (newBook) {
+      void calculateStats();
+    } else {
+      stats.value = null;
+    }
+  },
+  { immediate: false },
+);
 
 // 获取卷列表
 const volumes = computed(() => {
@@ -954,10 +1031,14 @@ const saveOriginalTextEdit = async () => {
     });
 
     // 更新章节内容
-    const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapterWithContent.value.id, {
-      content: updatedParagraphs,
-      lastEdited: new Date(),
-    });
+    const updatedVolumes = ChapterService.updateChapter(
+      book.value,
+      selectedChapterWithContent.value.id,
+      {
+        content: updatedParagraphs,
+        lastEdited: new Date(),
+      },
+    );
 
     // 先保存章节内容
     await booksStore.updateBook(book.value.id, {
@@ -1131,9 +1212,10 @@ const normalizeChapterSymbols = async () => {
         }
 
         // 使用已加载的章节内容
-        const content = chapter.id === selectedChapterWithContent.value!.id
-          ? selectedChapterWithContent.value!.content
-          : chapter.content;
+        const content =
+          chapter.id === selectedChapterWithContent.value!.id
+            ? selectedChapterWithContent.value!.content
+            : chapter.content;
 
         // 规范化段落翻译
         let updatedContent = content;
@@ -1284,9 +1366,10 @@ const translateAllParagraphs = async () => {
         if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
         // 使用已加载的章节内容
-        const content = chapter.id === selectedChapterWithContent.value!.id
-          ? selectedChapterWithContent.value!.content
-          : chapter.content;
+        const content =
+          chapter.id === selectedChapterWithContent.value!.id
+            ? selectedChapterWithContent.value!.content
+            : chapter.content;
 
         if (!content) return chapter;
 
@@ -1442,25 +1525,27 @@ const translateAllParagraphs = async () => {
               await TerminologyService.updateTerminology(book.value.id, previousTerm.id, {
                 name: previousTerm.name,
                 translation: previousTerm.translation.translation,
-                ...(previousTerm.description !== undefined ? { description: previousTerm.description } : {}),
+                ...(previousTerm.description !== undefined
+                  ? { description: previousTerm.description }
+                  : {}),
               });
             } else {
               const previousChar = action.previousData as CharacterSetting;
-              await CharacterSettingService.updateCharacterSetting(
-                book.value.id,
-                previousChar.id,
-                {
-                  name: previousChar.name,
-                  ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
-                  translation: previousChar.translation.translation,
-                  ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
-                  ...(previousChar.speakingStyle !== undefined ? { speakingStyle: previousChar.speakingStyle } : {}),
-                  aliases: previousChar.aliases.map((a) => ({
-                    name: a.name,
-                    translation: a.translation.translation,
-                  })),
-                },
-              );
+              await CharacterSettingService.updateCharacterSetting(book.value.id, previousChar.id, {
+                name: previousChar.name,
+                ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
+                translation: previousChar.translation.translation,
+                ...(previousChar.description !== undefined
+                  ? { description: previousChar.description }
+                  : {}),
+                ...(previousChar.speakingStyle !== undefined
+                  ? { speakingStyle: previousChar.speakingStyle }
+                  : {}),
+                aliases: previousChar.aliases.map((a) => ({
+                  name: a.name,
+                  translation: a.translation.translation,
+                })),
+              });
             }
           } else if (action.type === 'delete' && action.previousData) {
             // 撤销删除：恢复删除的项目
@@ -1595,9 +1680,10 @@ const translateAllParagraphs = async () => {
           if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
           // 使用已加载的章节内容
-          const content = chapter.id === selectedChapterWithContent.value!.id
-            ? selectedChapterWithContent.value!.content
-            : chapter.content;
+          const content =
+            chapter.id === selectedChapterWithContent.value!.id
+              ? selectedChapterWithContent.value!.content
+              : chapter.content;
 
           let updatedContent = content;
           if (hasRemainingParagraphs && content) {
@@ -2262,39 +2348,39 @@ const handleDragLeave = () => {
               <div class="volume-item">
                 <div class="volume-header">
                   <div class="volume-header-content" @click="toggleVolume(volume.id)">
-                      <i
-                        :class="[
-                          'pi volume-toggle-icon',
-                          isVolumeExpanded(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
-                        ]"
-                      ></i>
-                      <i class="pi pi-book volume-icon"></i>
-                      <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
-                      <span
-                        v-if="volume.chapters && volume.chapters.length > 0"
-                        class="volume-chapter-count"
-                      >
-                        ({{ volume.chapters.length }} 章)
-                      </span>
+                    <i
+                      :class="[
+                        'pi volume-toggle-icon',
+                        isVolumeExpanded(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
+                      ]"
+                    ></i>
+                    <i class="pi pi-book volume-icon"></i>
+                    <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
+                    <span
+                      v-if="volume.chapters && volume.chapters.length > 0"
+                      class="volume-chapter-count"
+                    >
+                      ({{ volume.chapters.length }} 章)
+                    </span>
                   </div>
                   <div class="volume-actions" @click.stop>
                     <Button
-                        icon="pi pi-pencil"
-                        class="p-button-text p-button-sm p-button-rounded action-button"
-                        size="small"
-                        title="编辑"
-                        @click="openEditVolumeDialog(volume)"
-                      />
-                      <Button
-                        icon="pi pi-trash"
-                        class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
-                        size="small"
-                        title="删除"
-                        @click="openDeleteVolumeConfirm(volume)"
-                      />
-                    </div>
+                      icon="pi pi-pencil"
+                      class="p-button-text p-button-sm p-button-rounded action-button"
+                      size="small"
+                      title="编辑"
+                      @click="openEditVolumeDialog(volume)"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
+                      size="small"
+                      title="删除"
+                      @click="openDeleteVolumeConfirm(volume)"
+                    />
                   </div>
-                  <Transition name="slide-down">
+                </div>
+                <Transition name="slide-down">
                   <div
                     v-if="
                       volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)
@@ -2330,27 +2416,27 @@ const handleDragLeave = () => {
                         <span class="chapter-title">{{ getChapterDisplayTitle(chapter) }}</span>
                       </div>
                       <div class="chapter-actions" @click.stop>
-                          <Button
-                            icon="pi pi-pencil"
-                            class="p-button-text p-button-sm p-button-rounded action-button"
-                            size="small"
-                            title="编辑"
-                            @click="openEditChapterDialog(chapter)"
-                          />
-                          <Button
-                            icon="pi pi-trash"
-                            class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
-                            size="small"
-                            title="删除"
-                            @click="openDeleteChapterConfirm(chapter)"
-                          />
-                        </div>
+                        <Button
+                          icon="pi pi-pencil"
+                          class="p-button-text p-button-sm p-button-rounded action-button"
+                          size="small"
+                          title="编辑"
+                          @click="openEditChapterDialog(chapter)"
+                        />
+                        <Button
+                          icon="pi pi-trash"
+                          class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
+                          size="small"
+                          title="删除"
+                          @click="openDeleteChapterConfirm(chapter)"
+                        />
                       </div>
                     </div>
-                  </Transition>
-                </div>
+                  </div>
+                </Transition>
               </div>
             </div>
+          </div>
           <div v-else-if="!isPageLoading" class="empty-state">
             <p class="text-moon/60 text-sm">暂无卷和章节</p>
           </div>
@@ -2605,56 +2691,8 @@ const handleDragLeave = () => {
       @apply="handleScraperUpdate"
     />
 
-    <!-- 导出选项 Popover -->
-    <Popover ref="exportPopover">
-      <div class="flex flex-col gap-2 p-2 w-48">
-        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出原文</div>
-        <Button
-          label="复制到剪贴板"
-          icon="pi pi-copy"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('original', 'clipboard')"
-        />
-        <Button
-          label="导出为 TXT"
-          icon="pi pi-file"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('original', 'txt')"
-        />
-
-        <div class="h-px bg-white/10 my-1"></div>
-
-        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出译文</div>
-        <Button
-          label="复制到剪贴板"
-          icon="pi pi-copy"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('translation', 'clipboard')"
-        />
-        <Button
-          label="导出为 TXT"
-          icon="pi pi-file"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('translation', 'txt')"
-        />
-
-        <div class="h-px bg-white/10 my-1"></div>
-
-        <div class="text-xs font-medium text-moon/50 px-2 mb-1">导出双语</div>
-        <Button
-          label="导出为 JSON"
-          icon="pi pi-code"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('bilingual', 'json')"
-        />
-        <Button
-          label="导出为 TXT"
-          icon="pi pi-file"
-          class="p-button-text p-button-sm justify-start !px-2"
-          @click="exportChapter('bilingual', 'txt')"
-        />
-      </div>
-    </Popover>
+    <!-- 导出菜单 -->
+    <TieredMenu ref="exportMenuRef" :model="exportMenuItems" popup />
 
     <!-- 术语列表 Popover -->
     <Popover ref="termPopover" style="width: 24rem; max-width: 90vw">
@@ -2918,7 +2956,7 @@ const handleDragLeave = () => {
               size="small"
               class="!w-8 !h-8 text-moon/70 hover:text-moon"
               title="导出章节内容"
-              @click="toggleExportPopover"
+              @click="toggleExportMenu"
             />
 
             <div class="w-px h-4 bg-white/20 mx-2"></div>
@@ -3178,7 +3216,9 @@ const handleDragLeave = () => {
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
                     v-bind="{
-                      ...(chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}),
+                      ...(chapterCharacterScores
+                        ? { characterScores: chapterCharacterScores }
+                        : {}),
                       ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
                     }"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
