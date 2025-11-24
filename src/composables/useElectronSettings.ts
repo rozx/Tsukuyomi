@@ -90,13 +90,18 @@ export function useElectronSettings() {
     }
   };
 
+  // 存储清理函数
+  let cleanupExport: (() => void) | null = null;
+  let cleanupImport: (() => void) | null = null;
+
   onMounted(() => {
     // 只在 Electron 环境中注册监听器
     if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
       try {
         if (window.electronAPI.settings) {
-          window.electronAPI.settings.onExportRequest(handleExportRequest);
-          window.electronAPI.settings.onImportData(handleImportData);
+          // 保存清理函数，以便在卸载时调用
+          cleanupExport = window.electronAPI.settings.onExportRequest(handleExportRequest);
+          cleanupImport = window.electronAPI.settings.onImportData(handleImportData);
         }
       } catch (error) {
         console.error('Failed to setup Electron IPC:', error);
@@ -106,8 +111,13 @@ export function useElectronSettings() {
 
   onUnmounted(() => {
     // 清理监听器
-    if (typeof window !== 'undefined' && window.electronAPI?.settings) {
-      window.electronAPI.settings.removeListeners();
+    if (cleanupExport) {
+      cleanupExport();
+      cleanupExport = null;
+    }
+    if (cleanupImport) {
+      cleanupImport();
+      cleanupImport = null;
     }
   });
 }

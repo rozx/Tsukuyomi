@@ -41,8 +41,18 @@ export interface ElectronAPI {
    * 设置相关的 IPC 通信
    */
   settings: {
-    onExportRequest: (callback: (filePath: string) => void) => void;
-    onImportData: (callback: (content: string) => void) => void;
+    /**
+     * 注册导出设置请求监听器
+     * @param callback 回调函数
+     * @returns 清理函数，调用它来移除这个监听器
+     */
+    onExportRequest: (callback: (filePath: string) => void) => () => void;
+    /**
+     * 注册导入设置数据监听器
+     * @param callback 回调函数
+     * @returns 清理函数，调用它来移除这个监听器
+     */
+    onImportData: (callback: (content: string) => void) => () => void;
     saveExport: (filePath: string, data: string) => void;
     removeListeners: () => void;
   };

@@ -42,10 +42,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   settings: {
     onExportRequest: (callback: (filePath: string) => void) => {
-      ipcRenderer.on('export-settings-request', (_event, filePath) => callback(filePath));
+      const handler = (_event: Electron.IpcRendererEvent, filePath: string) => callback(filePath);
+      ipcRenderer.on('export-settings-request', handler);
+      // 返回清理函数，用于移除这个特定的监听器
+      return () => {
+        ipcRenderer.removeListener('export-settings-request', handler);
+      };
     },
     onImportData: (callback: (content: string) => void) => {
-      ipcRenderer.on('import-settings-data', (_event, content) => callback(content));
+      const handler = (_event: Electron.IpcRendererEvent, content: string) => callback(content);
+      ipcRenderer.on('import-settings-data', handler);
+      // 返回清理函数，用于移除这个特定的监听器
+      return () => {
+        ipcRenderer.removeListener('import-settings-data', handler);
+      };
     },
     saveExport: (filePath: string, data: string) => {
       ipcRenderer.send('export-settings-save', filePath, data);
