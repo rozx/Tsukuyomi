@@ -34,9 +34,10 @@
   - 示例：`const idGenerator = new UniqueIdGenerator(); const id = idGenerator.generate();`
 - 使用pinia管理状态。
 - 使用primevue组件库。
-- 使用useToastWithHistory来展示各种行为的结果，使其可以自动保存toast历史记录。
+- 使用useToastWithHistory来展示各种重要行为（如保存、删除、更新章节内容）的结果，使其可以自动保存toast历史记录。
 - 确保所有代码都通过了vue-tsc和eslint的类型检查。
+- 所有数据的CRUD操作必须在Service层完成，组件层不允许直接操作数据。
 
-## 非常重要！！！
+## 非常重要
 
 **永远再次检查任务结果，确保任务结果正确。**

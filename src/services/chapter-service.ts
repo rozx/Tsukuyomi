@@ -1,6 +1,7 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import { getChapterContentText, getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { ChapterContentService } from './chapter-content-service';
 
 /**
  * 段落搜索结果接口
@@ -1135,7 +1136,9 @@ export class ChapterService {
         await navigator.clipboard.writeText(content);
       } catch (err) {
         throw new Error(
-          err instanceof Error ? `复制到剪贴板失败：${err.message}` : '复制到剪贴板失败：请重试或检查权限',
+          err instanceof Error
+            ? `复制到剪贴板失败：${err.message}`
+            : '复制到剪贴板失败：请重试或检查权限',
         );
       }
     } else {
@@ -1151,5 +1154,46 @@ export class ChapterService {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     }
+  }
+
+  // --- 懒加载相关方法 ---
+
+  /**
+   * 加载章节内容（懒加载）
+   * @param chapter 章节对象（可能没有内容）
+   * @returns 包含内容的章节对象
+   */
+  static async loadChapterContent(chapter: Chapter): Promise<Chapter> {
+    // 如果内容已存在，直接返回
+    if (chapter.content !== undefined) {
+      return chapter;
+    }
+
+    // 从独立存储加载
+    const content = await ChapterContentService.loadChapterContent(chapter.id);
+
+    return {
+      ...chapter,
+      content: content || [],
+      contentLoaded: true,
+    };
+  }
+
+  /**
+   * 保存章节内容到独立存储
+   * @param chapter 章节对象
+   */
+  static async saveChapterContent(chapter: Chapter): Promise<void> {
+    if (chapter.content && chapter.content.length > 0) {
+      await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
+    }
+  }
+
+  /**
+   * 删除章节内容（从独立存储）
+   * @param chapterId 章节 ID
+   */
+  static async deleteChapterContent(chapterId: string): Promise<void> {
+    await ChapterContentService.deleteChapterContent(chapterId);
   }
 }

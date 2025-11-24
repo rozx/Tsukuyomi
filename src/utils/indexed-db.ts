@@ -23,6 +23,15 @@ interface UiState {
 }
 
 /**
+ * 章节内容存储结构
+ */
+interface ChapterContent {
+  chapterId: string;
+  content: unknown[]; // Paragraph[]，但为了避免循环依赖使用 unknown
+  lastModified: string; // ISO 日期字符串
+}
+
+/**
  * IndexedDB 数据库架构定义
  */
 interface LunaAIDB extends DBSchema {
@@ -69,10 +78,15 @@ interface LunaAIDB extends DBSchema {
     value: AIProcessingTask;
     indexes: { 'by-startTime': number };
   };
+  'chapter-contents': {
+    key: string;
+    value: ChapterContent;
+    indexes: { 'by-lastModified': string };
+  };
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 3;
+const DB_VERSION = 4; // 升级到版本 4 以添加 chapter-contents 存储
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
@@ -139,6 +153,14 @@ export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
             keyPath: 'id',
           });
           thinkingStore.createIndex('by-startTime', 'startTime', { unique: false });
+        }
+
+        // 创建 chapter-contents 存储（版本 4 新增）
+        if (!db.objectStoreNames.contains('chapter-contents')) {
+          const chapterContentStore = db.createObjectStore('chapter-contents', {
+            keyPath: 'chapterId',
+          });
+          chapterContentStore.createIndex('by-lastModified', 'lastModified', { unique: false });
         }
       },
       blocked() {
@@ -266,7 +288,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
           syncParams: sync.syncParams,
           secret: sync.secret,
           apiEndpoint: sync.apiEndpoint,
-          ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
+          ...(sync.lastSyncedModelIds !== undefined
+            ? { lastSyncedModelIds: sync.lastSyncedModelIds }
+            : {}),
         });
       }
 
@@ -357,6 +381,7 @@ export async function clearAllData(): Promise<void> {
     'book-details-ui',
     'ui-state',
     'thinking-processes',
+    'chapter-contents',
   ] as const;
 
   for (const storeName of storeNames) {
@@ -365,4 +390,3 @@ export async function clearAllData(): Promise<void> {
     await tx.done;
   }
 }
-

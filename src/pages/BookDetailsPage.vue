@@ -8,6 +8,7 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
+import ProgressSpinner from 'primevue/progressspinner';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -88,7 +89,7 @@ const originalTextEditChapterId = ref<string | null>(null); // 跟踪正在编�
 
 // 更新段落翻译
 const updateParagraphTranslation = async (paragraphId: string, newTranslation: string) => {
-  const chapter = selectedChapter.value;
+  const chapter = selectedChapterWithContent.value;
   if (!book.value || !chapter || !chapter.content) return;
 
   // 查找段落
@@ -111,7 +112,7 @@ const updateParagraphTranslation = async (paragraphId: string, newTranslation: s
 
 // 选择段落翻译
 const selectParagraphTranslation = async (paragraphId: string, translationId: string) => {
-  const chapter = selectedChapter.value;
+  const chapter = selectedChapterWithContent.value;
   if (!book.value || !chapter || !chapter.content) return;
 
   // 查找段落
@@ -177,12 +178,12 @@ const selectParagraphTranslation = async (paragraphId: string, translationId: st
 
 // 重新翻译单个段落
 const retranslateParagraph = async (paragraphId: string) => {
-  if (!book.value || !selectedChapter.value || !selectedChapter.value.content) {
+  if (!book.value || !selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
     return;
   }
 
   // 查找段落
-  const paragraph = selectedChapter.value.content.find((p) => p.id === paragraphId);
+  const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
   if (!paragraph) {
     toast.add({
       severity: 'error',
@@ -224,18 +225,23 @@ const retranslateParagraph = async (paragraphId: string) => {
         activeTasks: aiProcessingStore.activeTasks,
       },
       onParagraphTranslation: (paragraphTranslations) => {
-        if (!book.value || !selectedChapter.value) return;
+        if (!book.value || !selectedChapterWithContent.value) return;
 
         // 更新段落翻译
         const updatedVolumes = book.value.volumes?.map((volume) => {
           if (!volume.chapters) return volume;
 
           const updatedChapters = volume.chapters.map((chapter) => {
-            if (chapter.id !== selectedChapter.value!.id) return chapter;
+            if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
-            if (!chapter.content) return chapter;
+            // 使用已加载的章节内容
+            const content = chapter.id === selectedChapterWithContent.value!.id
+              ? selectedChapterWithContent.value!.content
+              : chapter.content;
 
-            const updatedContent = chapter.content.map((para) => {
+            if (!content) return chapter;
+
+            const updatedContent = content.map((para) => {
               const translation = paragraphTranslations.find((pt) => pt.id === para.id);
               if (!translation) return para;
 
@@ -439,10 +445,10 @@ const exportChapter = async (
   type: 'original' | 'translation' | 'bilingual',
   format: 'txt' | 'json' | 'clipboard',
 ) => {
-  if (!selectedChapter.value || !selectedChapterParagraphs.value.length) return;
+  if (!selectedChapterWithContent.value || !selectedChapterParagraphs.value.length) return;
 
   try {
-    await ChapterService.exportChapter(selectedChapter.value, type, format);
+    await ChapterService.exportChapter(selectedChapterWithContent.value, type, format);
 
     // 显示成功消息
     if (format === 'clipboard') {
@@ -668,7 +674,11 @@ const selectedChapterId = computed(() => {
   return bookDetailsStore.getSelectedChapter(bookId.value);
 });
 
-// 获取选中的章节对象
+// 选中章节的完整数据（包含已加载的内容）
+const selectedChapterWithContent = ref<Chapter | null>(null);
+const isLoadingChapterContent = ref(false);
+
+// 获取选中的章节对象（不包含内容）
 const selectedChapter = computed(() => {
   if (!book.value || !selectedChapterId.value) return null;
 
@@ -683,22 +693,58 @@ const selectedChapter = computed(() => {
   return null;
 });
 
+// 监听选中章节变化，懒加载内容
+watch(
+  selectedChapterId,
+  async (newChapterId) => {
+    if (!newChapterId || !selectedChapter.value) {
+      selectedChapterWithContent.value = null;
+      return;
+    }
+
+    // 如果内容已加载，直接使用
+    if (selectedChapter.value.content !== undefined) {
+      selectedChapterWithContent.value = selectedChapter.value;
+      return;
+    }
+
+    // 加载章节内容
+    isLoadingChapterContent.value = true;
+    try {
+      const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
+      selectedChapterWithContent.value = chapterWithContent;
+    } catch (error) {
+      console.error('Failed to load chapter content:', error);
+      toast.add({
+        severity: 'error',
+        summary: '加载失败',
+        detail: '无法加载章节内容',
+        life: 3000,
+      });
+      selectedChapterWithContent.value = null;
+    } finally {
+      isLoadingChapterContent.value = false;
+    }
+  },
+  { immediate: true },
+);
+
 // 计算章节范围内的角色出现频率，用于消歧义
 const chapterCharacterScores = computed(() => {
-  if (!selectedChapter.value || !book.value?.characterSettings) {
+  if (!selectedChapterWithContent.value || !book.value?.characterSettings) {
     return undefined;
   }
 
-  const chapterText = getChapterContentText(selectedChapter.value);
+  const chapterText = getChapterContentText(selectedChapterWithContent.value);
   return calculateCharacterScores(chapterText, book.value.characterSettings);
 });
 
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
-  if (!selectedChapter.value || !selectedChapter.value.content) {
+  if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
     return [];
   }
-  return selectedChapter.value.content;
+  return selectedChapterWithContent.value.content;
 });
 
 // 实时更新 context store - 监听书籍变化
@@ -735,7 +781,7 @@ watch(
     // 注意：从一本书切换到另一本书时，bookId watch 会处理，这里不需要清除
     const isBookDetailsPage = /^\/books\/[^/]+$/.test(newPath);
     const wasBookDetailsPage = oldPath && /^\/books\/[^/]+$/.test(oldPath);
-    
+
     // 如果之前是书籍详情页，但现在不是了，清除上下文
     if (wasBookDetailsPage && !isBookDetailsPage) {
       contextStore.clearContext();
@@ -764,10 +810,10 @@ const {
 
 // 获取选中章节的统计信息
 const selectedChapterStats = computed(() => {
-  if (!selectedChapter.value) return null;
+  if (!selectedChapterWithContent.value) return null;
 
   const paragraphCount = selectedChapterParagraphs.value.length;
-  const charCount = getChapterCharCount(selectedChapter.value);
+  const charCount = getChapterCharCount(selectedChapterWithContent.value);
 
   return {
     paragraphCount,
@@ -777,10 +823,10 @@ const selectedChapterStats = computed(() => {
 
 // 获取章节的原始文本内容（用于编辑）
 const chapterOriginalText = computed(() => {
-  if (!selectedChapter.value || !selectedChapter.value.content) {
+  if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
     return '';
   }
-  return selectedChapter.value.content.map((para) => para.text).join('\n');
+  return selectedChapterWithContent.value.content.map((para) => para.text).join('\n');
 });
 
 // 获取段落的选中翻译文本
@@ -807,22 +853,22 @@ const translatedCharCount = computed(() => {
 
 // 开始编辑原始文本
 const startEditingOriginalText = () => {
-  if (!isEditingOriginalText.value && selectedChapter.value) {
+  if (!isEditingOriginalText.value && selectedChapterWithContent.value) {
     originalTextEditValue.value = chapterOriginalText.value;
     originalTextEditBackup.value = chapterOriginalText.value;
-    originalTextEditChapterId.value = selectedChapter.value.id;
+    originalTextEditChapterId.value = selectedChapterWithContent.value.id;
     isEditingOriginalText.value = true;
   }
 };
 
 // 保存原始文本编辑
 const saveOriginalTextEdit = async () => {
-  if (!book.value || !selectedChapter.value) {
+  if (!book.value || !selectedChapterWithContent.value) {
     return;
   }
 
   // 安全检查：验证正在编辑的章节与当前选中的章节一致
-  if (originalTextEditChapterId.value !== selectedChapter.value.id) {
+  if (originalTextEditChapterId.value !== selectedChapterWithContent.value.id) {
     toast.add({
       severity: 'warn',
       summary: '章节已切换',
@@ -841,7 +887,7 @@ const saveOriginalTextEdit = async () => {
     const textLines = originalTextEditValue.value.split('\n');
 
     // 获取现有段落以保留翻译
-    const existingParagraphs = selectedChapter.value.content || [];
+    const existingParagraphs = selectedChapterWithContent.value.content || [];
 
     // 更新段落文本，如果文本改变则清除翻译
     const updatedParagraphs: Paragraph[] = textLines.map((line, index) => {
@@ -876,7 +922,7 @@ const saveOriginalTextEdit = async () => {
     });
 
     // 更新章节内容
-    const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
+    const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapterWithContent.value.id, {
       content: updatedParagraphs,
       lastEdited: new Date(),
     });
@@ -963,11 +1009,11 @@ const isSavingTerm = ref(false);
 
 // 计算当前章节使用的术语列表
 const usedTerms = computed(() => {
-  if (!selectedChapter.value || !book.value?.terminologies?.length) {
+  if (!selectedChapterWithContent.value || !book.value?.terminologies?.length) {
     return [];
   }
 
-  const text = getChapterContentText(selectedChapter.value);
+  const text = getChapterContentText(selectedChapterWithContent.value);
   if (!text) return [];
 
   return findUniqueTermsInText(text, book.value.terminologies);
@@ -987,11 +1033,11 @@ const isSavingCharacter = ref(false);
 
 // 计算当前章节使用的角色设定列表
 const usedCharacters = computed(() => {
-  if (!selectedChapter.value || !book.value?.characterSettings?.length) {
+  if (!selectedChapterWithContent.value || !book.value?.characterSettings?.length) {
     return [];
   }
 
-  const text = getChapterContentText(selectedChapter.value);
+  const text = getChapterContentText(selectedChapterWithContent.value);
   if (!text) return [];
 
   return findUniqueCharactersInText(
@@ -1019,7 +1065,7 @@ const translatingParagraphIds = ref<Set<string>>(new Set());
 
 // 规范化章节符号
 const normalizeChapterSymbols = async () => {
-  if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+  if (!book.value || !selectedChapterWithContent.value || !selectedChapterParagraphs.value.length) {
     return;
   }
 
@@ -1032,7 +1078,7 @@ const normalizeChapterSymbols = async () => {
       if (!volume.chapters) return volume;
 
       const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapter.value!.id) return chapter;
+        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
         // 规范化章节标题翻译
         let updatedTitle = chapter.title;
@@ -1052,10 +1098,15 @@ const normalizeChapterSymbols = async () => {
           }
         }
 
+        // 使用已加载的章节内容
+        const content = chapter.id === selectedChapterWithContent.value!.id
+          ? selectedChapterWithContent.value!.content
+          : chapter.content;
+
         // 规范化段落翻译
-        let updatedContent = chapter.content;
-        if (chapter.content) {
-          updatedContent = chapter.content.map((para) => {
+        let updatedContent = content;
+        if (content) {
+          updatedContent = content.map((para) => {
             if (!para.translations || para.translations.length === 0) {
               return para;
             }
@@ -1181,7 +1232,7 @@ const translateAllParagraphs = async () => {
   const updateParagraphsIncrementally = async (
     paragraphTranslations: { id: string; translation: string }[],
   ) => {
-    if (!book.value || !selectedChapter.value) return;
+    if (!book.value || !selectedChapterWithContent.value) return;
 
     // 过滤出尚未更新的段落
     const newTranslations = paragraphTranslations.filter(
@@ -1198,11 +1249,16 @@ const translateAllParagraphs = async () => {
       if (!volume.chapters) return volume;
 
       const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapter.value!.id) return chapter;
+        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
-        if (!chapter.content) return chapter;
+        // 使用已加载的章节内容
+        const content = chapter.id === selectedChapterWithContent.value!.id
+          ? selectedChapterWithContent.value!.content
+          : chapter.content;
 
-        const updatedContent = chapter.content.map((para) => {
+        if (!content) return chapter;
+
+        const updatedContent = content.map((para) => {
           const translation = newTranslations.find((pt) => pt.id === para.id);
           if (!translation) return para;
 
@@ -1504,11 +1560,16 @@ const translateAllParagraphs = async () => {
         if (!volume.chapters) return volume;
 
         const updatedChapters = volume.chapters.map((chapter) => {
-          if (chapter.id !== selectedChapter.value!.id) return chapter;
+          if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
-          let updatedContent = chapter.content;
-          if (hasRemainingParagraphs && chapter.content) {
-            updatedContent = chapter.content.map((para) => {
+          // 使用已加载的章节内容
+          const content = chapter.id === selectedChapterWithContent.value!.id
+            ? selectedChapterWithContent.value!.content
+            : chapter.content;
+
+          let updatedContent = content;
+          if (hasRemainingParagraphs && content) {
+            updatedContent = content.map((para) => {
               const translation = translationMap.get(para.id);
               if (!translation) return para;
 
@@ -2936,8 +2997,18 @@ const handleDragLeave = () => {
 
           <!-- 章节内容 -->
           <div v-else-if="selectedChapter" class="chapter-content-container">
+            <!-- 加载中状态 -->
+            <div v-if="isLoadingChapterContent" class="loading-container">
+              <ProgressSpinner
+                style="width: 3rem; height: 3rem"
+                stroke-width="4"
+                animation-duration="1s"
+              />
+              <p class="loading-text">正在加载章节内容...</p>
+            </div>
+
             <!-- 原始文本编辑模式 -->
-            <div v-if="editMode === 'original'" class="original-text-edit-container">
+            <div v-else-if="editMode === 'original'" class="original-text-edit-container">
               <div class="space-y-4">
                 <div class="space-y-2">
                   <label class="block text-sm font-medium text-moon/90">原始文本</label>
@@ -4009,6 +4080,23 @@ const handleDragLeave = () => {
 }
 
 .no-selection-hint {
+  margin: 0;
+}
+
+/* 加载中状态 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  min-height: 30rem;
+  gap: 1.5rem;
+}
+
+.loading-text {
+  font-size: 1rem;
+  color: var(--moon-opacity-70);
   margin: 0;
 }
 

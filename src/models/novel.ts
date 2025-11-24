@@ -55,7 +55,21 @@ export interface Chapter {
     translation: Translation;
   };
   webUrl?: string | undefined; // 网络地址
+
+  /**
+   * 章节内容（懒加载）
+   * - 列表视图时为 undefined，节省内存
+   * - 查看章节详情时才加载内容
+   */
   content?: Paragraph[] | undefined;
+
+  /**
+   * 内容是否已加载（用于判断是否需要加载）
+   * - true: 内容已加载（content 可能为空数组或有内容）
+   * - false/undefined: 内容未加载
+   */
+  contentLoaded?: boolean | undefined;
+
   originalContent?: string | undefined; // 原始爬取的内容文本（保留原始格式）
 
   /**
