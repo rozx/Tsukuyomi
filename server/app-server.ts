@@ -6,6 +6,7 @@ import type { Socket } from 'net';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
+import got from 'got';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,32 +36,6 @@ const proxyConfigs: ProxyConfig[] = [
     target: 'https://p.sda1.dev',
     changeOrigin: true,
     pathRewrite: { '^/api/sda1': '' },
-  },
-  {
-    path: '/api/syosetu',
-    target: 'https://syosetu.org',
-    changeOrigin: true,
-    pathRewrite: { '^/api/syosetu': '' },
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: 'https://syosetu.org/',
-      Origin: 'https://syosetu.org',
-      Accept:
-        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      Connection: 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    },
   },
   {
     path: '/api/kakuyomu',
@@ -143,6 +118,85 @@ const proxyConfigs: ProxyConfig[] = [
   },
 ];
 
+// 使用 AllOrigins 公共 API 代理 syosetu 请求（绕过 Cloudflare）
+// AllOrigins 是一个可靠的 CORS 代理服务，可以绕过 Cloudflare 检测
+app.get('/api/syosetu/*', async (req, res) => {
+  const startTime = Date.now();
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  try {
+    const path = req.path.replace('/api/syosetu', '');
+    const targetUrl = `https://syosetu.org${path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+    
+    console.log(`[AllOrigins] [${requestId}] GET ${req.path} -> ${targetUrl}`, {
+      originalUrl: req.url,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 使用 AllOrigins 公共 API
+    // AllOrigins API: https://api.allorigins.win/get?url=ENCODED_URL
+    const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    
+    const response = await got(allOriginsUrl, {
+      timeout: {
+        request: 60000,
+      },
+      retry: {
+        limit: 2,
+        methods: ['GET'],
+      },
+    });
+
+    const duration = Date.now() - startTime;
+    
+    // AllOrigins 返回 JSON 格式: { status: { http_code: 200 }, contents: "HTML内容" }
+    const data = JSON.parse(response.body);
+    
+    if (data.status?.http_code && data.status.http_code >= 200 && data.status.http_code < 300) {
+      console.log(`[AllOrigins] [${requestId}] GET ${req.path} -> ${data.status.http_code}`, {
+        statusCode: data.status.http_code,
+        duration: `${duration}ms`,
+        contentsLength: data.contents?.length || 0,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 设置响应头
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.status(data.status.http_code);
+      res.send(data.contents);
+    } else {
+      throw new Error(`AllOrigins 返回错误: ${data.status?.http_code || 'unknown'} - ${data.status?.message || ''}`);
+    }
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    
+    console.error(`[AllOrigins Error] [${requestId}] GET ${req.path}`, {
+      error: error.message,
+      errorCode: error.code,
+      statusCode: error.response?.statusCode,
+      duration: `${duration}ms`,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (error.response) {
+      // 尝试解析 AllOrigins 的错误响应
+      try {
+        const errorData = JSON.parse(error.response.body);
+        res.status(error.response.statusCode || 500);
+        res.send(errorData.contents || error.message);
+      } catch {
+        res.status(error.response.statusCode || 500);
+        res.send(error.response.body || error.message);
+      }
+    } else {
+      res.status(500).json({
+        error: '代理请求失败',
+        message: error.message,
+      });
+    }
+  }
+});
+
 // 为每个代理路径创建代理中间件
 proxyConfigs.forEach((config) => {
   const { path, headers, ...proxyOptions } = config;
@@ -170,22 +224,52 @@ proxyConfigs.forEach((config) => {
         
         // 记录请求开始
         const targetUrl = `${proxyOptions.target}${expressReq.path}${expressReq.url?.split('?')[1] ? '?' + expressReq.url.split('?')[1] : ''}`;
-        console.log(`[Proxy Request Start] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${targetUrl}`, {
-          originalUrl: expressReq.url,
-          target: proxyOptions.target,
-          timestamp: new Date().toISOString(),
-        });
-
-        // 设置自定义请求头
+        
+        // 移除客户端可能发送的 Sec-Fetch-* 和 Client Hints 头部（AllOrigins 风格）
+        // 这些头部是浏览器自动添加的，不应该从服务器端发送
+        proxyReq.removeHeader('sec-fetch-dest');
+        proxyReq.removeHeader('sec-fetch-mode');
+        proxyReq.removeHeader('sec-fetch-site');
+        proxyReq.removeHeader('sec-fetch-user');
+        proxyReq.removeHeader('sec-ch-ua');
+        proxyReq.removeHeader('sec-ch-ua-mobile');
+        proxyReq.removeHeader('sec-ch-ua-platform');
+        proxyReq.removeHeader('sec-ch-ua-arch');
+        proxyReq.removeHeader('sec-ch-ua-bitness');
+        proxyReq.removeHeader('sec-ch-ua-full-version');
+        proxyReq.removeHeader('sec-ch-ua-full-version-list');
+        proxyReq.removeHeader('sec-ch-ua-platform-version');
+        proxyReq.removeHeader('sec-ch-ua-model');
+        proxyReq.removeHeader('accept-ch');
+        
+        // 移除可能暴露代理的头部
+        proxyReq.removeHeader('x-forwarded-for');
+        proxyReq.removeHeader('x-forwarded-host');
+        proxyReq.removeHeader('x-forwarded-proto');
+        
+        // 设置自定义请求头（AllOrigins 风格：只设置基本头部）
         if (headers) {
           Object.entries(headers).forEach(([key, value]) => {
             proxyReq.setHeader(key, value);
           });
         }
-        // 移除可能暴露代理的头部
-        proxyReq.removeHeader('x-forwarded-for');
-        proxyReq.removeHeader('x-forwarded-host');
-        proxyReq.removeHeader('x-forwarded-proto');
+        
+        // 记录请求详情（包括实际发送的请求头）
+        const requestHeaders: Record<string, string> = {};
+        proxyReq.getHeaders && Object.entries(proxyReq.getHeaders()).forEach(([key, value]) => {
+          if (typeof value === 'string') {
+            requestHeaders[key] = value;
+          } else if (Array.isArray(value)) {
+            requestHeaders[key] = value.join(', ');
+          }
+        });
+        
+        console.log(`[Proxy Request Start] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${targetUrl}`, {
+          originalUrl: expressReq.url,
+          target: proxyOptions.target,
+          requestHeaders: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
+          timestamp: new Date().toISOString(),
+        });
       },
       proxyRes: (
         proxyRes: IncomingMessage,
@@ -197,12 +281,38 @@ proxyConfigs.forEach((config) => {
         const requestId = (req as any).proxyRequestId || 'unknown';
         const duration = startTime ? Date.now() - startTime : 0;
         
-        // 记录成功响应
-        console.log(`[Proxy Response] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${proxyRes.statusCode}`, {
-          statusCode: proxyRes.statusCode,
-          duration: `${duration}ms`,
-          timestamp: new Date().toISOString(),
+        // 提取响应头
+        const responseHeaders: Record<string, string> = {};
+        Object.keys(proxyRes.headers).forEach((key) => {
+          const value = proxyRes.headers[key];
+          if (typeof value === 'string') {
+            responseHeaders[key] = value;
+          } else if (Array.isArray(value)) {
+            responseHeaders[key] = value.join(', ');
+          }
         });
+        
+        // 对于错误状态码（4xx, 5xx），记录更详细的信息
+        const statusCode = proxyRes.statusCode || 0;
+        const isError = statusCode >= 400;
+        
+        if (isError) {
+          console.error(`[Proxy Response Error] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${statusCode}`, {
+            statusCode,
+            duration: `${duration}ms`,
+            responseHeaders: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
+            target: proxyOptions.target,
+            originalUrl: expressReq.url,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          // 记录成功响应
+          console.log(`[Proxy Response] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${statusCode}`, {
+            statusCode,
+            duration: `${duration}ms`,
+            timestamp: new Date().toISOString(),
+          });
+        }
       },
       error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
         const expressReq = req as unknown as Request;

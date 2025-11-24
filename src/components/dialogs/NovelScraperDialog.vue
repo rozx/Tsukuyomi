@@ -461,12 +461,12 @@ const handleApply = async () => {
     });
   });
 
-  // 检查哪些章节还没有加载内容
+  // 检查哪些章节需要加载内容（包括已导入的章节，确保重新获取最新内容）
   const chaptersNeedingContent = chaptersToImport.filter(
-    (chapter) => !chapterContents.value.has(chapter.id) && chapter.webUrl
+    (chapter) => chapter.webUrl
   );
 
-  // 如果有章节需要加载内容，先批量加载
+  // 如果有章节需要加载内容，先批量加载（即使已导入也要重新获取）
   if (chaptersNeedingContent.length > 0) {
     importing.value = true;
     importTotal.value = chaptersNeedingContent.length;
