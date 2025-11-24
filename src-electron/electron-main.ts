@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, net, Menu, shell, dialog } from 'electron'
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { gunzip, inflate, brotliDecompress } from 'zlib';
+import { promisify } from 'util';
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -491,33 +493,51 @@ ipcMain.handle(
           clearTimeout(timeoutId);
           const buffer = Buffer.concat(chunks);
 
-          // 处理响应编码
-          let data: string;
+          // 处理响应编码和解压缩
           const encoding = response.headers['content-encoding'];
 
-          if (encoding === 'gzip' || encoding === 'deflate' || encoding === 'br') {
-            // 让 axios 在 BaseScraper 中处理解压缩
-            data = buffer.toString('utf-8');
-          } else {
-            data = buffer.toString('utf-8');
-          }
+          // 使用立即执行的异步函数来处理解压缩
+          void (async () => {
+            let data: string;
 
-          // 提取响应头
-          const responseHeaders: Record<string, string> = {};
-          Object.entries(response.headers).forEach(([key, value]) => {
-            if (Array.isArray(value)) {
-              responseHeaders[key] = value.join(', ');
-            } else if (value !== undefined) {
-              responseHeaders[key] = String(value);
+            try {
+              let decompressedBuffer: Buffer;
+
+              if (encoding === 'gzip') {
+                decompressedBuffer = await promisify(gunzip)(buffer);
+              } else if (encoding === 'deflate') {
+                decompressedBuffer = await promisify(inflate)(buffer);
+              } else if (encoding === 'br') {
+                decompressedBuffer = await promisify(brotliDecompress)(buffer);
+              } else {
+                // 未压缩的数据，直接使用原始 buffer
+                decompressedBuffer = buffer;
+              }
+
+              data = decompressedBuffer.toString('utf-8');
+            } catch (error) {
+              // 如果解压缩失败，尝试直接转换为字符串（可能是误报的 content-encoding）
+              console.warn('[Electron] 解压缩失败，尝试直接解析:', error);
+              data = buffer.toString('utf-8');
             }
-          });
 
-          resolve({
-            status: response.statusCode,
-            statusText: response.statusMessage || '',
-            headers: responseHeaders,
-            data,
-          });
+            // 提取响应头
+            const responseHeaders: Record<string, string> = {};
+            Object.entries(response.headers).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                responseHeaders[key] = value.join(', ');
+              } else if (value !== undefined) {
+                responseHeaders[key] = String(value);
+              }
+            });
+
+            resolve({
+              status: response.statusCode,
+              statusText: response.statusMessage || '',
+              headers: responseHeaders,
+              data,
+            });
+          })();
         });
 
         response.on('error', (err) => {
