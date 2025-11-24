@@ -11,10 +11,7 @@ export {
   getChapterDisplayTitle,
   getCharacterNameVariants,
 } from './novel-utils';
-export {
-  normalizeTranslationQuotes,
-  normalizeTranslationSymbols,
-} from './translation-normalizer';
+export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
 export {
   escapeRegex,
   matchTermsInText,
@@ -25,3 +22,4 @@ export {
   countNamesInText,
   calculateCharacterScores,
 } from './text-matcher';
+export { getAssetUrl } from './assets';

@@ -10,11 +10,14 @@ import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import { getAssetUrl } from 'src/utils';
 
 const ui = useUiStore();
 const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
+
+const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 // 获取 AI 任务状态（只显示状态，不显示思考消息内容）
 const aiTaskStatus = computed(() => {
@@ -215,7 +218,12 @@ let checkInterval: ReturnType<typeof setInterval> | null = null;
 
 // 监听同步配置和下次同步时间的变化
 watch(
-  [() => gistSync.value.enabled, () => gistSync.value.lastSyncTime, () => gistSync.value.syncInterval, nextSyncTime],
+  [
+    () => gistSync.value.enabled,
+    () => gistSync.value.lastSyncTime,
+    () => gistSync.value.syncInterval,
+    nextSyncTime,
+  ],
   () => {
     watchSyncConfig();
   },
@@ -255,11 +263,7 @@ onUnmounted(() => {
             icon="pi pi-bars"
             @click="ui.toggleSideMenu()"
           />
-          <img
-            src="/icons/android-chrome-512x512.png"
-            alt="Luna AI Translator"
-            class="w-8 h-8 flex-shrink-0"
-          />
+          <img :src="logoPath" alt="Luna AI Translator" class="w-8 h-8 flex-shrink-0" />
           <div class="flex flex-col">
             <span class="text-xs uppercase tracking-[0.3em] text-moon-50">Luna</span>
             <span class="font-semibold text-moon-100 tracking-wide">AI Translator</span>
@@ -362,4 +366,3 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 </style>
-
