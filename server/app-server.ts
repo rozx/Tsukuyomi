@@ -17,99 +17,132 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // --- Configuration ---
 
+interface TargetConfig {
+  baseUrl: string;
+  mode: 'direct' | 'allorigins';
+}
+
 // Define your targets here
-const TARGETS: Record<string, string> = {
-  '/api/sda1': 'https://p.sda1.dev',
-  '/api/kakuyomu': 'https://kakuyomu.jp',
-  '/api/ncode': 'https://ncode.syosetu.com',
-  '/api/novel18': 'https://novel18.syosetu.com',
-  '/api/syosetu': 'https://syosetu.org', // Replaces the AllOrigins hack
-  '/api/search': 'https://html.duckduckgo.com/html',
+const TARGETS: Record<string, TargetConfig> = {
+  '/api/sda1': { baseUrl: 'https://p.sda1.dev', mode: 'direct' },
+  '/api/kakuyomu': { baseUrl: 'https://kakuyomu.jp', mode: 'direct' },
+  '/api/ncode': { baseUrl: 'https://ncode.syosetu.com', mode: 'direct' },
+  '/api/novel18': { baseUrl: 'https://novel18.syosetu.com', mode: 'direct' },
+  // syosetu.org often requires JS/Cookies (Cloudflare), so we use AllOrigins to bypass
+  '/api/syosetu': { baseUrl: 'https://syosetu.org', mode: 'allorigins' },
+  '/api/search': { baseUrl: 'https://html.duckduckgo.com/html', mode: 'direct' },
 };
 
-// --- Proxy Logic using Got-Scraping ---
+// --- Proxy Handlers ---
+
+const handleDirectProxy = async (
+  req: Request,
+  res: Response,
+  targetUrl: string,
+  requestId: string,
+) => {
+  const stream = gotScraping.stream({
+    url: targetUrl,
+    method: req.method as any,
+    body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
+    http2: false, // Disable HTTP/2 to prevent origin mismatch errors
+    headerGeneratorOptions: {
+      browsers: [{ name: 'chrome', minVersion: 110 }],
+      devices: ['desktop'],
+      locales: ['ja-JP', 'en-US'],
+      operatingSystems: ['windows'],
+    },
+    timeout: { request: 90000 },
+    retry: { limit: 2 },
+  });
+
+  stream.on('response', (response) => {
+    res.status(response.statusCode);
+    const headersToSkip = [
+      'content-encoding',
+      'transfer-encoding',
+      'connection',
+      'set-cookie',
+      'content-security-policy',
+      'x-frame-options',
+      'content-length',
+    ];
+    Object.entries(response.headers).forEach(([key, value]) => {
+      if (!headersToSkip.includes(key.toLowerCase()) && value) {
+        if (typeof value === 'string' || typeof value === 'number') {
+          res.setHeader(key, value);
+        } else if (Array.isArray(value)) {
+          res.setHeader(key, value.join(', '));
+        }
+      }
+    });
+  });
+
+  await streamPipeline(stream, res);
+  console.log(`[Proxy Direct] [${requestId}] Completed`);
+};
+
+const handleAllOriginsProxy = async (
+  req: Request,
+  res: Response,
+  targetUrl: string,
+  requestId: string,
+) => {
+  // AllOrigins API format: https://api.allorigins.win/get?url=...
+  const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+  console.log(`[Proxy AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
+
+  // We use gotScraping here too just to be safe, but we expect JSON back
+  const response = await gotScraping({
+    url: allOriginsUrl,
+    responseType: 'json',
+    http2: false, // Fix: Disable HTTP/2 for AllOrigins request as well
+    timeout: { request: 90000 },
+    retry: { limit: 2 },
+  });
+
+  const data = response.body as any;
+
+  if (data.status?.http_code) {
+    res.status(data.status.http_code);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // AllOrigins returns the HTML content in the 'contents' field
+    res.send(data.contents);
+    console.log(`[Proxy AllOrigins] [${requestId}] Completed (Status: ${data.status.http_code})`);
+  } else {
+    throw new Error(`AllOrigins returned invalid data: ${JSON.stringify(data).substring(0, 100)}`);
+  }
+};
 
 const handleProxyRequest = async (
   req: Request,
   res: Response,
-  targetBaseUrl: string,
+  config: TargetConfig,
   pathPrefix: string,
 ) => {
-  // 1. Calculate the final URL
-  // Removes the prefix (e.g., /api/kakuyomu) and appends the rest to the target
   const pathPart = req.path.replace(pathPrefix, '');
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-
-  // Special case for DuckDuckGo which needs the /html path maintained or adjusted based on your specific logic
-  // For this specific mapping, we just join them.
-  const targetUrl = `${targetBaseUrl}${pathPart}${queryString}`;
-
+  const targetUrl = `${config.baseUrl}${pathPart}${queryString}`;
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-  console.log(`[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl}`);
+
+  console.log(
+    `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Mode: ${config.mode})`,
+  );
 
   try {
-    // 2. Create the stream using got-scraping
-    // This mimics a real Chrome browser on Windows to bypass blocking
-    const stream = gotScraping.stream({
-      url: targetUrl,
-      method: req.method as any, // GET, POST, etc.
-      // Pass body for POST requests if needed, though usually novel APIs are GET
-      body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
-
-      // Key Configuration for Bypassing Blocks:
-      headerGeneratorOptions: {
-        browsers: [{ name: 'chrome', minVersion: 110 }],
-        devices: ['desktop'],
-        locales: ['ja-JP', 'en-US'], // Important for Japanese sites
-        operatingSystems: ['windows'],
-      },
-
-      // Timeout configuration (internal request timeout)
-      timeout: {
-        request: 90000, // 90s to beat Cloudflare 100s
-      },
-      retry: { limit: 2 },
-    });
-
-    // 3. Handle Response Headers
-    stream.on('response', (response) => {
-      // Forward status code
-      res.status(response.statusCode);
-
-      // Forward relevant headers, remove problematic ones
-      const headersToSkip = [
-        'content-encoding', // We let the stream handle decompression
-        'transfer-encoding',
-        'connection',
-        'set-cookie', // Optional: skip cookies to prevent cross-domain issues
-        'content-security-policy', // Remove CSP to allow frontend rendering
-        'x-frame-options',
-      ];
-
-      Object.entries(response.headers).forEach(([key, value]) => {
-        if (!headersToSkip.includes(key.toLowerCase()) && value) {
-          if (typeof value === 'string' || typeof value === 'number') {
-            res.setHeader(key, value);
-          } else if (Array.isArray(value)) {
-            res.setHeader(key, value.join(', '));
-          }
-        }
-      });
-    });
-
-    // 4. Pipe the data (Streaming)
-    // using streamPipeline ensures proper error handling and cleanup
-    await streamPipeline(stream, res);
-
-    console.log(`[Proxy] [${requestId}] Completed`);
+    if (config.mode === 'allorigins') {
+      await handleAllOriginsProxy(req, res, targetUrl, requestId);
+    } else {
+      await handleDirectProxy(req, res, targetUrl, requestId);
+    }
   } catch (error: any) {
-    // Check for common error codes
     const isTimeout = error.code === 'ETIMEDOUT';
     console.error(`[Proxy Error] [${requestId}] ${error.message}`);
 
     if (!res.headersSent) {
       res.status(isTimeout ? 504 : 500).json({
         error: 'Proxy Request Failed',
+        mode: config.mode,
         message: error.message,
         code: error.code,
       });
@@ -119,13 +152,9 @@ const handleProxyRequest = async (
 
 // --- Register API Routes ---
 
-// Register routes based on the TARGETS map
-Object.entries(TARGETS).forEach(([pathPrefix, targetBase]) => {
+Object.entries(TARGETS).forEach(([pathPrefix, config]) => {
   app.use(pathPrefix, (req, res) => {
-    // We intentionally do not await this async function here to avoid blocking the event loop,
-    // but express handles async route handlers correctly in newer versions.
-    // To satisfy linter for this specific call if strict:
-    void handleProxyRequest(req, res, targetBase, pathPrefix);
+    void handleProxyRequest(req, res, config, pathPrefix);
   });
 });
 
@@ -139,15 +168,11 @@ app.get('/health', (req, res) => {
 const VITE_DEV_PORT = Number(process.env.VITE_PORT) || 9000;
 
 if (isProduction) {
-  // Production: Serve built files
   const distPath = join(__dirname, '../dist/spa');
   if (existsSync(distPath)) {
     app.use(express.static(distPath));
-
-    // SPA Catch-all
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api')) return next();
-
       const indexPath = join(distPath, 'index.html');
       if (existsSync(indexPath)) {
         res.send(readFileSync(indexPath, 'utf-8'));
@@ -159,23 +184,21 @@ if (isProduction) {
     console.warn(`Warning: Dist directory ${distPath} not found.`);
   }
 } else {
-  // Development: Proxy to Vite
-  void (async () => {
-    try {
-      const { createProxyMiddleware } = await import('http-proxy-middleware');
+  void import('http-proxy-middleware')
+    .then(({ createProxyMiddleware }) => {
       const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
-      const middleware = createProxyMiddleware({
-        target: viteTarget,
-        changeOrigin: true,
-        ws: true,
-      });
-      // Type assertion needed because Express types don't fully support async middleware
-      app.use(middleware as express.RequestHandler);
+      app.use(
+        createProxyMiddleware({
+          target: viteTarget,
+          changeOrigin: true,
+          ws: true,
+        }),
+      );
       console.log(`Dev Mode: Proxying non-API requests to ${viteTarget}`);
-    } catch (err) {
+    })
+    .catch((err) => {
       console.error('Failed to start Vite proxy:', err);
-    }
-  })();
+    });
 }
 
 // --- Start Server ---
@@ -183,5 +206,5 @@ if (isProduction) {
 app.listen(PORT, () => {
   console.log(`Luna AI Translator Server running on port ${PORT}`);
   console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
-  console.log('Proxy Targets Configured using Got-Scraping (Anti-Bot Bypass Active)');
+  console.log('Proxy Targets Configured (Mixed Mode: Direct + AllOrigins)');
 });
