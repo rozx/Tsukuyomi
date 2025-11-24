@@ -3,7 +3,6 @@ import { NcodeSyosetuScraper } from '../services/scraper/scrapers/ncode-syosetu-
 
 class TestScraper extends NcodeSyosetuScraper {
   public exposeNext(html: string, url: string) {
-    // @ts-expect-error accessing protected method for test
     return this.getNextPageUrl(html, url) as string | null;
   }
 }
@@ -11,9 +10,7 @@ class TestScraper extends NcodeSyosetuScraper {
 const baseUrl = 'https://ncode.syosetu.com/n2032iz/';
 
 describe('NcodeSyosetuScraper pagination', () => {
-  const scraper = new TestScraper({
-    // BaseScraper options not required for this unit of logic
-  } as any);
+  const scraper = new TestScraper();
 
   it('detects next via rel="next"', () => {
     const html = `

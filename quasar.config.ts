@@ -55,7 +55,8 @@ export default defineConfig((ctx) => {
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
       // 在 Electron 模式下使用相对路径，确保 file:// 协议能正确加载资源
-      publicPath: 'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
+      publicPath:
+        'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
       // analyze: true,
       // env: {},
       // rawDefine: {}
@@ -435,8 +436,7 @@ export default defineConfig((ctx) => {
       // extendPackageJson (json) {},
 
       // Electron preload scripts (if any) from /src-electron, WITHOUT file extension
-      // Explicitly set to empty array to disable preload scripts
-      preloadScripts: [],
+      preloadScripts: ['electron-preload'],
 
       // specify the debugging port to use for the Electron app when running in development mode
       inspectPort: 5858,
