@@ -105,7 +105,11 @@ export const useAIModelsStore = defineStore('aiModels', {
     /**
      * 设置模型为特定任务的默认模型
      */
-    async setDefaultForTask(id: string, task: keyof AIModel['isDefault'], isDefault: boolean): Promise<void> {
+    async setDefaultForTask(
+      id: string,
+      task: keyof AIModel['isDefault'],
+      isDefault: boolean,
+    ): Promise<void> {
       const model = this.models.find((m) => m.id === id);
       if (model) {
         // 如果设置为默认，先取消其他模型的默认状态
@@ -146,13 +150,14 @@ export const useAIModelsStore = defineStore('aiModels', {
       // 先清空现有模型
       await aiModelService.clearModels();
       this.models = [];
-      
+
       // 批量保存到 IndexedDB
       if (models.length > 0) {
         await aiModelService.bulkSaveModels(models);
-        // 更新 store 状态
-        this.models = [...models];
+        // 重新从 DB 加载，确保状态一致
+        this.models = await aiModelService.getAllModels();
       }
+      this.isLoaded = true;
     },
   },
 });
