@@ -1,462 +1,187 @@
-import { createProxyMiddleware } from 'http-proxy-middleware';
 import express, { type Request, type Response } from 'express';
-import type { IncomingMessage, ServerResponse } from 'http';
-import type { ClientRequest } from 'http';
-import type { Socket } from 'net';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import got from 'got';
+import { gotScraping } from 'got-scraping';
+import { pipeline } from 'stream';
+import { promisify } from 'util';
+
+const streamPipeline = promisify(pipeline);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-// DigitalOcean App Platform 会自动设置 PORT 环境变量
-// 如果没有设置，默认使用 8080
 const PORT = Number(process.env.PORT) || 8080;
-// DigitalOcean 会自动设置 NODE_ENV=production
 const isProduction = process.env.NODE_ENV === 'production';
 
-// 注意：由于前端和后端都在同一个服务器上运行，不需要启用 CORS
+// --- Configuration ---
 
-// 代理配置类型
-interface ProxyConfig {
-  path: string;
-  target: string;
-  changeOrigin: boolean;
-  pathRewrite: Record<string, string>;
-  headers?: Record<string, string>;
-}
+// Define your targets here
+const TARGETS: Record<string, string> = {
+  '/api/sda1': 'https://p.sda1.dev',
+  '/api/kakuyomu': 'https://kakuyomu.jp',
+  '/api/ncode': 'https://ncode.syosetu.com',
+  '/api/novel18': 'https://novel18.syosetu.com',
+  '/api/syosetu': 'https://syosetu.org', // Replaces the AllOrigins hack
+  '/api/search': 'https://html.duckduckgo.com/html',
+};
 
-// 代理配置 - 与 quasar.config.ts 中的配置保持一致
-const proxyConfigs: ProxyConfig[] = [
-  {
-    path: '/api/sda1',
-    target: 'https://p.sda1.dev',
-    changeOrigin: true,
-    pathRewrite: { '^/api/sda1': '' },
-  },
-  {
-    path: '/api/kakuyomu',
-    target: 'https://kakuyomu.jp',
-    changeOrigin: true,
-    pathRewrite: { '^/api/kakuyomu': '' },
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: 'https://kakuyomu.jp/',
-      Origin: 'https://kakuyomu.jp',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      Connection: 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    },
-  },
-  {
-    path: '/api/ncode',
-    target: 'https://ncode.syosetu.com',
-    changeOrigin: true,
-    pathRewrite: { '^/api/ncode': '' },
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: 'https://ncode.syosetu.com/',
-      Origin: 'https://ncode.syosetu.com',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      Connection: 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-    },
-  },
-  {
-    path: '/api/novel18',
-    target: 'https://novel18.syosetu.com',
-    changeOrigin: true,
-    pathRewrite: { '^/api/novel18': '' },
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: 'https://novel18.syosetu.com/',
-      Origin: 'https://novel18.syosetu.com',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      Connection: 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-    },
-  },
-  {
-    path: '/api/search',
-    target: 'https://html.duckduckgo.com',
-    changeOrigin: true,
-    pathRewrite: { '^/api/search': '/html' },
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Referer: 'https://duckduckgo.com/',
-      Origin: 'https://duckduckgo.com',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'max-age=0',
-      Connection: 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-    },
-  },
-];
+// --- Proxy Logic using Got-Scraping ---
 
-// 使用 AllOrigins 公共 API 代理 syosetu 请求（绕过 Cloudflare）
-// AllOrigins 是一个可靠的 CORS 代理服务，可以绕过 Cloudflare 检测
-app.get('/api/syosetu/*', async (req, res) => {
-  const startTime = Date.now();
-  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
+const handleProxyRequest = async (
+  req: Request,
+  res: Response,
+  targetBaseUrl: string,
+  pathPrefix: string,
+) => {
+  // 1. Calculate the final URL
+  // Removes the prefix (e.g., /api/kakuyomu) and appends the rest to the target
+  const pathPart = req.path.replace(pathPrefix, '');
+  const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+
+  // Special case for DuckDuckGo which needs the /html path maintained or adjusted based on your specific logic
+  // For this specific mapping, we just join them.
+  const targetUrl = `${targetBaseUrl}${pathPart}${queryString}`;
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  console.log(`[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl}`);
+
   try {
-    const path = req.path.replace('/api/syosetu', '');
-    const targetUrl = `https://syosetu.org${path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
-    
-    console.log(`[AllOrigins] [${requestId}] GET ${req.path} -> ${targetUrl}`, {
-      originalUrl: req.url,
-      timestamp: new Date().toISOString(),
-    });
+    // 2. Create the stream using got-scraping
+    // This mimics a real Chrome browser on Windows to bypass blocking
+    const stream = gotScraping.stream({
+      url: targetUrl,
+      method: req.method as any, // GET, POST, etc.
+      // Pass body for POST requests if needed, though usually novel APIs are GET
+      body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
 
-    // 使用 AllOrigins 公共 API
-    // AllOrigins API: https://api.allorigins.win/get?url=ENCODED_URL
-    const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-    
-    const response = await got(allOriginsUrl, {
+      // Key Configuration for Bypassing Blocks:
+      headerGeneratorOptions: {
+        browsers: [{ name: 'chrome', minVersion: 110 }],
+        devices: ['desktop'],
+        locales: ['ja-JP', 'en-US'], // Important for Japanese sites
+        operatingSystems: ['windows'],
+      },
+
+      // Timeout configuration (internal request timeout)
       timeout: {
-        request: 60000,
+        request: 90000, // 90s to beat Cloudflare 100s
       },
-      retry: {
-        limit: 2,
-        methods: ['GET'],
-      },
+      retry: { limit: 2 },
     });
 
-    const duration = Date.now() - startTime;
-    
-    // AllOrigins 返回 JSON 格式: { status: { http_code: 200 }, contents: "HTML内容" }
-    const data = JSON.parse(response.body);
-    
-    if (data.status?.http_code && data.status.http_code >= 200 && data.status.http_code < 300) {
-      console.log(`[AllOrigins] [${requestId}] GET ${req.path} -> ${data.status.http_code}`, {
-        statusCode: data.status.http_code,
-        duration: `${duration}ms`,
-        contentsLength: data.contents?.length || 0,
-        timestamp: new Date().toISOString(),
+    // 3. Handle Response Headers
+    stream.on('response', (response) => {
+      // Forward status code
+      res.status(response.statusCode);
+
+      // Forward relevant headers, remove problematic ones
+      const headersToSkip = [
+        'content-encoding', // We let the stream handle decompression
+        'transfer-encoding',
+        'connection',
+        'set-cookie', // Optional: skip cookies to prevent cross-domain issues
+        'content-security-policy', // Remove CSP to allow frontend rendering
+        'x-frame-options',
+      ];
+
+      Object.entries(response.headers).forEach(([key, value]) => {
+        if (!headersToSkip.includes(key.toLowerCase()) && value) {
+          if (typeof value === 'string' || typeof value === 'number') {
+            res.setHeader(key, value);
+          } else if (Array.isArray(value)) {
+            res.setHeader(key, value.join(', '));
+          }
+        }
       });
-
-      // 设置响应头
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.status(data.status.http_code);
-      res.send(data.contents);
-    } else {
-      throw new Error(`AllOrigins 返回错误: ${data.status?.http_code || 'unknown'} - ${data.status?.message || ''}`);
-    }
-  } catch (error: any) {
-    const duration = Date.now() - startTime;
-    
-    console.error(`[AllOrigins Error] [${requestId}] GET ${req.path}`, {
-      error: error.message,
-      errorCode: error.code,
-      statusCode: error.response?.statusCode,
-      duration: `${duration}ms`,
-      timestamp: new Date().toISOString(),
     });
 
-    if (error.response) {
-      // 尝试解析 AllOrigins 的错误响应
-      try {
-        const errorData = JSON.parse(error.response.body);
-        res.status(error.response.statusCode || 500);
-        res.send(errorData.contents || error.message);
-      } catch {
-        res.status(error.response.statusCode || 500);
-        res.send(error.response.body || error.message);
-      }
-    } else {
-      res.status(500).json({
-        error: '代理请求失败',
+    // 4. Pipe the data (Streaming)
+    // using streamPipeline ensures proper error handling and cleanup
+    await streamPipeline(stream, res);
+
+    console.log(`[Proxy] [${requestId}] Completed`);
+  } catch (error: any) {
+    // Check for common error codes
+    const isTimeout = error.code === 'ETIMEDOUT';
+    console.error(`[Proxy Error] [${requestId}] ${error.message}`);
+
+    if (!res.headersSent) {
+      res.status(isTimeout ? 504 : 500).json({
+        error: 'Proxy Request Failed',
         message: error.message,
+        code: error.code,
       });
     }
   }
+};
+
+// --- Register API Routes ---
+
+// Register routes based on the TARGETS map
+Object.entries(TARGETS).forEach(([pathPrefix, targetBase]) => {
+  app.use(pathPrefix, (req, res) => {
+    // We intentionally do not await this async function here to avoid blocking the event loop,
+    // but express handles async route handlers correctly in newer versions.
+    // To satisfy linter for this specific call if strict:
+    void handleProxyRequest(req, res, targetBase, pathPrefix);
+  });
 });
 
-// 为每个代理路径创建代理中间件
-proxyConfigs.forEach((config) => {
-  const { path, headers, ...proxyOptions } = config;
-  const proxyMiddlewareOptions = {
-    target: proxyOptions.target,
-    changeOrigin: proxyOptions.changeOrigin,
-    pathRewrite: proxyOptions.pathRewrite,
-    // 设置超时时间为 60 秒（比前端的 30 秒更长，确保有足够时间处理）
-    timeout: 60000,
-    // 设置代理请求超时
-    proxyTimeout: 60000,
-    on: {
-      proxyReq: (
-        proxyReq: ClientRequest,
-        req: IncomingMessage,
-        _res: ServerResponse<IncomingMessage>,
-      ) => {
-        const expressReq = req as unknown as Request;
-        const startTime = Date.now();
-        const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        
-        // 存储请求开始时间到请求对象，以便在响应时计算耗时
-        (req as any).proxyStartTime = startTime;
-        (req as any).proxyRequestId = requestId;
-        
-        // 记录请求开始
-        const targetUrl = `${proxyOptions.target}${expressReq.path}${expressReq.url?.split('?')[1] ? '?' + expressReq.url.split('?')[1] : ''}`;
-        
-        // 移除客户端可能发送的 Sec-Fetch-* 和 Client Hints 头部（AllOrigins 风格）
-        // 这些头部是浏览器自动添加的，不应该从服务器端发送
-        proxyReq.removeHeader('sec-fetch-dest');
-        proxyReq.removeHeader('sec-fetch-mode');
-        proxyReq.removeHeader('sec-fetch-site');
-        proxyReq.removeHeader('sec-fetch-user');
-        proxyReq.removeHeader('sec-ch-ua');
-        proxyReq.removeHeader('sec-ch-ua-mobile');
-        proxyReq.removeHeader('sec-ch-ua-platform');
-        proxyReq.removeHeader('sec-ch-ua-arch');
-        proxyReq.removeHeader('sec-ch-ua-bitness');
-        proxyReq.removeHeader('sec-ch-ua-full-version');
-        proxyReq.removeHeader('sec-ch-ua-full-version-list');
-        proxyReq.removeHeader('sec-ch-ua-platform-version');
-        proxyReq.removeHeader('sec-ch-ua-model');
-        proxyReq.removeHeader('accept-ch');
-        
-        // 移除可能暴露代理的头部
-        proxyReq.removeHeader('x-forwarded-for');
-        proxyReq.removeHeader('x-forwarded-host');
-        proxyReq.removeHeader('x-forwarded-proto');
-        
-        // 设置自定义请求头（AllOrigins 风格：只设置基本头部）
-        if (headers) {
-          Object.entries(headers).forEach(([key, value]) => {
-            proxyReq.setHeader(key, value);
-          });
-        }
-        
-        // 记录请求详情（包括实际发送的请求头）
-        const requestHeaders: Record<string, string> = {};
-        proxyReq.getHeaders && Object.entries(proxyReq.getHeaders()).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            requestHeaders[key] = value;
-          } else if (Array.isArray(value)) {
-            requestHeaders[key] = value.join(', ');
-          }
-        });
-        
-        console.log(`[Proxy Request Start] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${targetUrl}`, {
-          originalUrl: expressReq.url,
-          target: proxyOptions.target,
-          requestHeaders: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
-          timestamp: new Date().toISOString(),
-        });
-      },
-      proxyRes: (
-        proxyRes: IncomingMessage,
-        req: IncomingMessage,
-        res: ServerResponse<IncomingMessage>,
-      ) => {
-        const expressReq = req as unknown as Request;
-        const startTime = (req as any).proxyStartTime;
-        const requestId = (req as any).proxyRequestId || 'unknown';
-        const duration = startTime ? Date.now() - startTime : 0;
-        
-        // 提取响应头
-        const responseHeaders: Record<string, string> = {};
-        Object.keys(proxyRes.headers).forEach((key) => {
-          const value = proxyRes.headers[key];
-          if (typeof value === 'string') {
-            responseHeaders[key] = value;
-          } else if (Array.isArray(value)) {
-            responseHeaders[key] = value.join(', ');
-          }
-        });
-        
-        // 对于错误状态码（4xx, 5xx），记录更详细的信息
-        const statusCode = proxyRes.statusCode || 0;
-        const isError = statusCode >= 400;
-        
-        if (isError) {
-          console.error(`[Proxy Response Error] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${statusCode}`, {
-            statusCode,
-            duration: `${duration}ms`,
-            responseHeaders: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
-            target: proxyOptions.target,
-            originalUrl: expressReq.url,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          // 记录成功响应
-          console.log(`[Proxy Response] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${statusCode}`, {
-            statusCode,
-            duration: `${duration}ms`,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      },
-      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
-        const expressReq = req as unknown as Request;
-        const startTime = (req as any).proxyStartTime;
-        const requestId = (req as any).proxyRequestId || 'unknown';
-        const duration = startTime ? Date.now() - startTime : 0;
-        
-        // 检查是否是超时错误
-        const isTimeout = err.message.includes('timeout') || err.message.includes('ETIMEDOUT') || err.message.includes('ECONNRESET');
-        const errorType = isTimeout ? 'TIMEOUT' : 'ERROR';
-        
-        // 详细错误日志
-        console.error(`[Proxy ${errorType}] [${requestId}] ${expressReq.method} ${expressReq.path}`, {
-          error: err.message,
-          errorCode: (err as any).code,
-          errorStack: err.stack,
-          duration: `${duration}ms`,
-          target: proxyOptions.target,
-          originalUrl: expressReq.url,
-          timestamp: new Date().toISOString(),
-        });
-        
-        // 只有当 res 是 ServerResponse 时才发送响应
-        if (res && 'status' in res && 'headersSent' in res) {
-          const expressRes = res as unknown as Response;
-          if (!expressRes.headersSent) {
-            expressRes.status(isTimeout ? 504 : 500).json({
-              error: isTimeout ? '代理请求超时' : '代理请求失败',
-              message: err.message,
-              requestId,
-              duration: `${duration}ms`,
-            });
-          }
-        }
-      },
-    },
-  };
-
-  app.use(path, createProxyMiddleware(proxyMiddlewareOptions));
+// Health Check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', mode: isProduction ? 'production' : 'development' });
 });
 
-// Vite 开发服务器端口（在开发环境中使用）
+// --- Static Files & Frontend Serving ---
+
 const VITE_DEV_PORT = Number(process.env.VITE_PORT) || 9000;
 
 if (isProduction) {
-  // 生产环境：提供静态文件服务
+  // Production: Serve built files
   const distPath = join(__dirname, '../dist/spa');
   if (existsSync(distPath)) {
-    // 提供静态文件
     app.use(express.static(distPath));
 
-    // History 路由支持：所有非 API 路由都返回 index.html
+    // SPA Catch-all
     app.get('*', (req, res, next) => {
-      // 跳过 API 路由
-      if (req.path.startsWith('/api')) {
-        return next();
-      }
-      // 跳过静态资源
-      if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$/)) {
-        return next();
-      }
-      // 返回 index.html
+      if (req.path.startsWith('/api')) return next();
+
       const indexPath = join(distPath, 'index.html');
       if (existsSync(indexPath)) {
-        const html = readFileSync(indexPath, 'utf-8');
-        res.send(html);
+        res.send(readFileSync(indexPath, 'utf-8'));
       } else {
         res.status(404).send('Not found');
       }
     });
   } else {
-    console.warn(`警告: 未找到构建目录 ${distPath}，仅提供 API 代理服务`);
+    console.warn(`Warning: Dist directory ${distPath} not found.`);
   }
 } else {
-  // 开发环境：代理到 Vite 开发服务器
-  const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
-
-  // 代理所有非 API 请求到 Vite 开发服务器
-  const viteProxy = createProxyMiddleware({
-    target: viteTarget,
-    changeOrigin: true,
-    ws: true, // 支持 WebSocket（用于 HMR）
-    on: {
-      error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
-        // 如果 Vite 开发服务器未启动，返回提示信息
-        if ((err as { code?: string }).code === 'ECONNREFUSED') {
-          // 只有当 res 是 ServerResponse 时才发送响应
-          if (res && 'status' in res && 'headersSent' in res) {
-            const response = res as unknown as Response;
-            if (!response.headersSent) {
-              response.status(503).send(`
-                <html>
-                  <head><title>Vite Dev Server Not Running</title></head>
-                  <body>
-                    <h1>Vite 开发服务器未运行</h1>
-                    <p>请确保 Vite 开发服务器正在 ${viteTarget} 上运行。</p>
-                    <p>Vite 开发服务器应该会自动启动。如果未启动，请检查控制台输出。</p>
-                  </body>
-                </html>
-              `);
-            }
-          }
-        } else {
-          // 只有当 res 是 ServerResponse 时才发送响应
-          if (res && 'status' in res && 'headersSent' in res) {
-            const response = res as unknown as Response;
-            if (!response.headersSent) {
-              response.status(500).send('代理错误: ' + err.message);
-            }
-          }
-          console.error('[Vite Proxy Error]', err.message);
-        }
-      },
-    },
-  });
-
-  // 代理所有非 API 路由到 Vite
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      return next();
+  // Development: Proxy to Vite
+  void (async () => {
+    try {
+      const { createProxyMiddleware } = await import('http-proxy-middleware');
+      const viteTarget = `http://localhost:${VITE_DEV_PORT}`;
+      const middleware = createProxyMiddleware({
+        target: viteTarget,
+        changeOrigin: true,
+        ws: true,
+      });
+      // Type assertion needed because Express types don't fully support async middleware
+      app.use(middleware as express.RequestHandler);
+      console.log(`Dev Mode: Proxying non-API requests to ${viteTarget}`);
+    } catch (err) {
+      console.error('Failed to start Vite proxy:', err);
     }
-    viteProxy(req, res, next);
-  });
-
-  console.log(`开发模式: 代理到 Vite 开发服务器 ${viteTarget}`);
+  })();
 }
 
-// 健康检查端点
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'luna-ai-translator',
-    mode: isProduction ? 'production' : 'development',
-  });
-});
+// --- Start Server ---
 
-// 启动服务器
 app.listen(PORT, () => {
-  console.log(`Luna AI Translator 服务器运行在端口 ${PORT}`);
-  console.log(`模式: ${isProduction ? '生产' : '开发'}`);
-  if (isProduction) {
-    console.log('已配置的代理路径:');
-    proxyConfigs.forEach((config) => {
-      console.log(`  - ${config.path} -> ${config.target}`);
-    });
-  }
+  console.log(`Luna AI Translator Server running on port ${PORT}`);
+  console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
+  console.log('Proxy Targets Configured using Got-Scraping (Anti-Bot Bypass Active)');
 });

@@ -36,6 +36,7 @@
     "dompurify": "^3.3.0",
     "express": "^4.18.2",
     "got": "^14.6.5",
+    "got-scraping": "^4.1.2",
     "http-proxy-middleware": "^3.0.5",
     "idb": "^8.0.3",
     "lodash": "^4.17.21",
