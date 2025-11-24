@@ -431,7 +431,7 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
       // extendElectronMainConf (esbuildConf) {},
-      extendElectronPreloadConf(esbuildConf) {
+      extendElectronPreloadConf(_esbuildConf) {
         // 确保 preload 脚本被正确打包
         console.log('Building Electron preload script...');
       },
@@ -448,6 +448,7 @@ export default defineConfig((ctx) => {
 
       packager: {
         // https://github.com/electron-userland/electron-packager/blob/master/docs/api.md#options
+        // Note: This section is ignored when bundler is set to 'builder'
         // Disable asar to ensure preload script is accessible
         asar: false,
         // Icon configuration for packager
@@ -468,6 +469,8 @@ export default defineConfig((ctx) => {
       builder: {
         // https://www.electron.build/configuration/configuration
         appId: 'luna',
+        // Disable asar to ensure preload script is accessible
+        asar: false,
         // Icon configuration for builder
         // Icons should be placed in src-electron/icons/
         mac: {
