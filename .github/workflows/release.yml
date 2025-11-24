@@ -52,6 +52,15 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Create Tag
+        id: create_tag
+        if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag ${{ steps.get_version.outputs.version }}
+          git push origin ${{ steps.get_version.outputs.version }}
+
       - name: Create Release
         id: create_release
         if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
