@@ -54,7 +54,8 @@ export default defineConfig((ctx) => {
 
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
-      // publicPath: '/',
+      // 在 Electron 模式下使用相对路径，确保 file:// 协议能正确加载资源
+      publicPath: 'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
       // analyze: true,
       // env: {},
       // rawDefine: {}
@@ -98,7 +99,7 @@ export default defineConfig((ctx) => {
         }
         // 禁用自动打开浏览器（因为使用 Node.js 应用服务器作为入口）
         viteConf.server.open = false;
-        
+
         // 配置代理以解决 CORS 问题
         viteConf.server.proxy = {
           '/api/sda1': {
@@ -434,7 +435,8 @@ export default defineConfig((ctx) => {
       // extendPackageJson (json) {},
 
       // Electron preload scripts (if any) from /src-electron, WITHOUT file extension
-      // preloadScripts: ['electron-preload'],
+      // Explicitly set to empty array to disable preload scripts
+      preloadScripts: [],
 
       // specify the debugging port to use for the Electron app when running in development mode
       inspectPort: 5858,
@@ -443,6 +445,12 @@ export default defineConfig((ctx) => {
 
       packager: {
         // https://github.com/electron-userland/electron-packager/blob/master/docs/api.md#options
+        // Icon configuration for packager
+        // Icons should be placed in src-electron/icons/
+        // - macOS: icon.icns (512x512 or larger)
+        // - Windows: icon.ico (256x256 or larger)
+        // - Linux: icon.png (512x512 or larger)
+        // icon: 'src-electron/icons/icon', // Path without extension, packager will auto-detect format
         // OS X / Mac App Store
         // appBundleId: '',
         // appCategoryType: '',
@@ -454,8 +462,18 @@ export default defineConfig((ctx) => {
 
       builder: {
         // https://www.electron.build/configuration/configuration
-
         appId: 'luna',
+        // Icon configuration for builder
+        // Icons should be placed in src-electron/icons/
+        mac: {
+          icon: 'src-electron/icons/icon.icns',
+        },
+        win: {
+          icon: 'src-electron/icons/icon.ico',
+        },
+        linux: {
+          icon: 'src-electron/icons/icon.png',
+        },
       },
     },
 

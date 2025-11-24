@@ -174,12 +174,12 @@ const formatNextSyncTime = computed(() => {
   if (isSyncing.value) {
     return '同步中...';
   }
-  
+
   // 如果未启用同步，显示状态
   if (!gistSync.value.enabled) {
     return syncStatus.value.label;
   }
-  
+
   const next = nextSyncTime.value;
   if (!next) {
     // 如果没有下次同步时间，检查是否有最后同步时间
@@ -188,12 +188,12 @@ const formatNextSyncTime = computed(() => {
     }
     return '未同步';
   }
-  
+
   // 如果正在倒计时，显示倒计时
   if (countdownSeconds.value !== null && countdownSeconds.value >= 0) {
     return `${countdownSeconds.value}秒`;
   }
-  
+
   const now = Date.now();
   const diff = next - now;
   if (diff <= 0) {
@@ -256,7 +256,7 @@ onUnmounted(() => {
             @click="ui.toggleSideMenu()"
           />
           <img
-            src="/icons/favicon-32x32.png"
+            src="/icons/android-chrome-512x512.png"
             alt="Luna AI Translator"
             class="w-8 h-8 flex-shrink-0"
           />
