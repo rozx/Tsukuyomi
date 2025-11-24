@@ -1,7 +1,9 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain, net, Menu, shell, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { gunzip, inflate, brotliDecompress } from 'zlib';
+import { promisify } from 'util';
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -26,24 +28,53 @@ function handleLoadError(window: BrowserWindow | null, err: unknown, path: strin
   if (window) {
     const fileUrl = `file://${path}`;
     console.log(`[Electron] Trying alternative: ${fileUrl}`);
-    (window.loadURL(fileUrl) as Promise<void>).catch((urlErr) => {
+    void window.loadURL(fileUrl).catch((urlErr) => {
       console.error('[Electron] Failed to load via URL:', urlErr);
     });
   }
 }
 
+function resolvePreloadPath(): string | null {
+  const candidates = [
+    // Packaged layout (Quasar places it under preload/ and .cjs extension)
+    join(__dirname, 'preload', 'electron-preload.cjs'),
+    // UnPackaged dev build (sometimes .cjs or .js)
+    join(__dirname, 'electron-preload.cjs'),
+    join(__dirname, 'electron-preload.js'),
+    // Fallback relative parent (rare, but keep for safety)
+    join(__dirname, '../preload/electron-preload.cjs'),
+    join(__dirname, '../electron-preload.cjs'),
+    join(__dirname, '../electron-preload.js'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      console.log('[Electron] Using preload script:', p);
+      return p;
+    }
+  }
+  console.error('[Electron] No preload script found in candidates:', candidates);
+  return null;
+}
+
 function createWindow() {
+  const preloadPath = resolvePreloadPath();
+  if (!preloadPath) {
+    console.warn('[Electron] Proceeding without preload. electronAPI will be unavailable.');
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     backgroundColor: '#ffffff', // 设置背景色以减少白屏闪烁
     show: false, // 先不显示窗口，等内容加载完成后再显示
     webPreferences: {
-      // preload: join(__dirname, 'electron-preload.js'),
+      // 仅当找到 preload 文件时才设置
+      ...(preloadPath ? { preload: preloadPath } : {}),
       nodeIntegration: false,
       contextIsolation: true,
-      // 在开发环境中禁用 webSecurity 以绕过 CORS 限制
-      webSecurity: !isDev,
+      // 禁用 webSecurity 以允许爬虫服务通过 Electron fetch API 绕过 CORS 限制
+      // 这是安全的，因为我们控制所有请求的来源
+      webSecurity: false,
     },
   });
 
@@ -51,15 +82,14 @@ function createWindow() {
   if (isDev) {
     const devUrl = 'http://localhost:9000';
     console.log(`[Electron] Loading dev server: ${devUrl}`);
-    // 使用 Promise 处理，但通过类型断言确保类型正确
-    (mainWindow.loadURL(devUrl) as Promise<void>).catch((err) => {
+    void mainWindow.loadURL(devUrl).catch((err) => {
       console.error('[Electron] Failed to load dev server:', err);
       console.error('[Electron] Make sure Vite dev server is running on port 9000');
       // 如果开发服务器不可用，尝试加载生产构建
       if (mainWindow) {
         const indexPath = join(__dirname, '../index.html');
         console.log(`[Electron] Falling back to: ${indexPath}`);
-        (mainWindow.loadFile(indexPath) as Promise<void>).catch((fileErr) => {
+        void mainWindow.loadFile(indexPath).catch((fileErr) => {
           console.error('[Electron] Failed to load file:', fileErr);
         });
       }
@@ -93,7 +123,7 @@ function createWindow() {
       console.log(`[Electron] Alternative exists: ${existsSync(altPath)}`);
       if (existsSync(altPath)) {
         const finalPath = altPath;
-        (mainWindow.loadFile(finalPath) as Promise<void>).catch((err) => {
+        void mainWindow.loadFile(finalPath).catch((err) => {
           console.error('[Electron] Failed to load index.html:', err);
           handleLoadError(mainWindow, err, finalPath);
         });
@@ -120,8 +150,7 @@ function createWindow() {
         }
       }
     } else {
-      // 使用类型断言确保类型正确
-      (mainWindow.loadFile(indexPath) as Promise<void>).catch((err) => {
+      void mainWindow.loadFile(indexPath).catch((err) => {
         console.error('[Electron] Failed to load index.html:', err);
         handleLoadError(mainWindow, err, indexPath);
       });
@@ -214,7 +243,358 @@ function createWindow() {
   });
 }
 
+// 创建应用菜单
+function createMenu() {
+  const isMac = process.platform === 'darwin';
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    // macOS 应用菜单
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              {
+                label: `关于 ${app.name}`,
+                click: () => {
+                  app.showAboutPanel();
+                },
+              },
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    // 文件菜单
+    {
+      label: '文件',
+      submenu: [
+        {
+          label: '导出设置...',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => {
+            void (async () => {
+              if (!mainWindow) return;
+              const result = await dialog.showSaveDialog(mainWindow, {
+                title: '导出设置',
+                defaultPath: `luna-ai-settings-${new Date().toISOString().split('T')[0]}.json`,
+                filters: [
+                  { name: 'JSON Files', extensions: ['json'] },
+                  { name: 'All Files', extensions: ['*'] },
+                ],
+              });
+
+              if (!result.canceled && result.filePath) {
+                // 重新检查 mainWindow 是否仍然存在（可能在对话框打开期间窗口被关闭）
+                if (!mainWindow) return;
+                // 通过 IPC 请求渲染进程的设置数据
+                mainWindow.webContents.send('export-settings-request', result.filePath);
+              }
+            })();
+          },
+        },
+        {
+          label: '导入设置...',
+          accelerator: 'CmdOrCtrl+I',
+          click: () => {
+            void (async () => {
+              if (!mainWindow) return;
+              const result = await dialog.showOpenDialog(mainWindow, {
+                title: '导入设置',
+                filters: [
+                  { name: 'JSON Files', extensions: ['json'] },
+                  { name: 'Text Files', extensions: ['txt'] },
+                  { name: 'All Files', extensions: ['*'] },
+                ],
+                properties: ['openFile'],
+              });
+
+              if (!result.canceled && result.filePaths.length > 0) {
+                const filePath = result.filePaths[0];
+                if (filePath) {
+                  try {
+                    const content = readFileSync(filePath, 'utf-8');
+                    // 重新检查 mainWindow 是否仍然存在（可能在对话框打开期间窗口被关闭）
+                    // 在发送前再次检查，确保窗口仍然存在
+                    if (!mainWindow) return;
+                    mainWindow.webContents.send('import-settings-data', content);
+                  } catch (error) {
+                    dialog.showErrorBox(
+                      '导入失败',
+                      error instanceof Error ? error.message : '读取文件时发生错误',
+                    );
+                  }
+                }
+              }
+            })();
+          },
+        },
+        { type: 'separator' as const },
+        isMac ? { role: 'close' as const } : { role: 'quit' as const },
+      ],
+    },
+    // 编辑菜单
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        ...(isMac
+          ? [
+              { role: 'pasteAndMatchStyle' as const },
+              { role: 'delete' as const },
+              { role: 'selectAll' as const },
+              { type: 'separator' as const },
+              {
+                label: '语音',
+                submenu: [{ role: 'startSpeaking' as const }, { role: 'stopSpeaking' as const }],
+              },
+            ]
+          : [
+              { role: 'delete' as const },
+              { type: 'separator' as const },
+              { role: 'selectAll' as const },
+            ]),
+      ],
+    },
+    // 视图菜单
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload' as const },
+        { role: 'forceReload' as const },
+        { role: 'toggleDevTools' as const },
+        { type: 'separator' as const },
+        { role: 'resetZoom' as const },
+        { role: 'zoomIn' as const },
+        { role: 'zoomOut' as const },
+        { type: 'separator' as const },
+        { role: 'togglefullscreen' as const },
+      ],
+    },
+    // 窗口菜单
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize' as const },
+        { role: 'zoom' as const },
+        ...(isMac
+          ? [
+              { type: 'separator' as const },
+              { role: 'front' as const },
+              { type: 'separator' as const },
+              { role: 'window' as const },
+            ]
+          : [{ role: 'close' as const }]),
+      ],
+    },
+    // 帮助菜单
+    {
+      label: '帮助',
+      submenu: [
+        {
+          label: '了解更多',
+          click: () => {
+            void shell.openExternal('https://github.com/rozx/luna-ai-translator');
+          },
+        },
+        ...(!isMac
+          ? [
+              { type: 'separator' as const },
+              {
+                label: `关于 ${app.name}`,
+                click: () => {
+                  app.showAboutPanel();
+                },
+              },
+            ]
+          : []),
+      ],
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+// IPC handler for electron-fetch
+ipcMain.handle(
+  'electron-fetch',
+  async (
+    _event,
+    url: string,
+    options?: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      timeout?: number;
+    },
+  ) => {
+    return new Promise((resolve, reject) => {
+      const request = net.request({
+        method: options?.method || 'GET',
+        url,
+      });
+
+      // 设置超时
+      const timeout = options?.timeout || 60000;
+      const timeoutId = setTimeout(() => {
+        request.abort();
+        reject(new Error(`Request timeout after ${timeout}ms`));
+      }, timeout);
+
+      // 设置请求头
+      if (options?.headers) {
+        Object.entries(options.headers).forEach(([key, value]) => {
+          request.setHeader(key, value);
+        });
+      }
+
+      // 设置默认请求头（如果未提供）
+      if (!request.getHeader('User-Agent')) {
+        request.setHeader(
+          'User-Agent',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        );
+      }
+      if (!request.getHeader('Accept')) {
+        request.setHeader(
+          'Accept',
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        );
+      }
+      if (!request.getHeader('Accept-Language')) {
+        request.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
+      }
+      if (!request.getHeader('Accept-Encoding')) {
+        request.setHeader('Accept-Encoding', 'gzip, deflate, br');
+      }
+
+      // 处理响应
+      request.on('response', (response) => {
+        const chunks: Buffer[] = [];
+
+        response.on('data', (chunk) => {
+          chunks.push(Buffer.from(chunk));
+        });
+
+        response.on('end', () => {
+          clearTimeout(timeoutId);
+          const buffer = Buffer.concat(chunks);
+
+          // 处理响应编码和解压缩
+          const encoding = response.headers['content-encoding'];
+
+          // 使用立即执行的异步函数来处理解压缩
+          void (async () => {
+            let data: string;
+
+            try {
+              let decompressedBuffer: Buffer;
+
+              if (encoding === 'gzip') {
+                decompressedBuffer = await promisify(gunzip)(buffer);
+              } else if (encoding === 'deflate') {
+                decompressedBuffer = await promisify(inflate)(buffer);
+              } else if (encoding === 'br') {
+                decompressedBuffer = await promisify(brotliDecompress)(buffer);
+              } else {
+                // 未压缩的数据，直接使用原始 buffer
+                decompressedBuffer = buffer;
+              }
+
+              data = decompressedBuffer.toString('utf-8');
+            } catch (error) {
+              // 如果解压缩失败，尝试直接转换为字符串（可能是误报的 content-encoding）
+              console.warn('[Electron] 解压缩失败，尝试直接解析:', error);
+              data = buffer.toString('utf-8');
+            }
+
+            // 提取响应头
+            const responseHeaders: Record<string, string> = {};
+            Object.entries(response.headers).forEach(([key, value]) => {
+              if (Array.isArray(value)) {
+                responseHeaders[key] = value.join(', ');
+              } else if (value !== undefined) {
+                responseHeaders[key] = String(value);
+              }
+            });
+
+            resolve({
+              status: response.statusCode,
+              statusText: response.statusMessage || '',
+              headers: responseHeaders,
+              data,
+            });
+          })();
+        });
+
+        response.on('error', (err) => {
+          clearTimeout(timeoutId);
+          reject(err);
+        });
+      });
+
+      request.on('error', (err) => {
+        clearTimeout(timeoutId);
+        reject(err);
+      });
+
+      // 发送请求体（如果有）
+      if (options?.body) {
+        request.write(options.body);
+      }
+
+      request.end();
+    });
+  },
+);
+
+// IPC handler for saving exported settings
+ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {
+  try {
+    writeFileSync(filePath, data, 'utf-8');
+    if (mainWindow) {
+      void dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '导出成功',
+        message: '设置已成功导出',
+        detail: `文件已保存到:\n${filePath}`,
+      });
+    }
+  } catch (error) {
+    if (mainWindow) {
+      dialog.showErrorBox(
+        '导出失败',
+        error instanceof Error ? error.message : '保存文件时发生错误',
+      );
+    }
+  }
+});
+
 void app.whenReady().then(() => {
+  // 设置 About 面板信息
+  app.setAboutPanelOptions({
+    applicationName: 'Luna AI Translator',
+    applicationVersion: app.getVersion(),
+    version: `Version ${app.getVersion()}`,
+    copyright: '© 2025 rozx',
+    credits: 'Built with Electron, Quasar, and Vue 3',
+    website: 'https://github.com/rozx/luna-ai-translator',
+  });
+
+  createMenu();
   createWindow();
 
   app.on('activate', () => {

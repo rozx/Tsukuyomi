@@ -1,7 +1,11 @@
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import type { Novel, Chapter, Translation } from 'src/models/novel';
-import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
+import type {
+  FetchNovelResult,
+  ParsedChapterInfo,
+  ParsedVolumeInfo,
+} from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
 import type { UniqueIdGenerator } from 'src/utils/id-generator';
 import { generateShortId } from 'src/utils/id-generator';
@@ -413,73 +417,73 @@ export class NcodeSyosetuScraper extends BaseScraper {
   protected getNextPageUrl(html: string, currentUrl: string): string | null {
     const $ = cheerio.load(html);
 
-    // 策略 1: 查找 .c-pager__item--next (新的类名)
-    let nextLink = $('.c-pager__item--next');
-    if (nextLink.length === 0) {
-      // 策略 2: 查找旧的 .novelview_pager-next
-      nextLink = $('.novelview_pager-next');
-    }
-    if (nextLink.length === 0) {
-      // 策略 3: 通过文本内容查找 "次へ"
-      nextLink = $('a').filter((_, el) => $(el).text().trim() === '次へ');
-    }
+    const resolveHref = (href: string): string => {
+      const baseUrlObj = new URL(currentUrl);
+      if (href.startsWith('http')) return href;
+      if (href.startsWith('/')) return `${baseUrlObj.origin}${href}`;
+      return new URL(href, baseUrlObj.href).href;
+    };
 
-    if (nextLink.length > 0) {
-      // 使用 prop('href') 获取完整的 URL（包括相对路径的解析）
-      let href = nextLink.first().prop('href');
-      if (!href) {
-        href = nextLink.first().attr('href');
+    const extractIfNext = (href: string | undefined | null): string | null => {
+      if (!href) return null;
+      const url = resolveHref(String(href));
+      // Skip same-page anchors
+      if (url === currentUrl || href.startsWith('#')) return null;
+      const nextMatch = url.match(/[?&]p=(\d+)/);
+      const currentMatch = currentUrl.match(/[?&]p=(\d+)/);
+      const nextPage = nextMatch && nextMatch[1] ? parseInt(nextMatch[1], 10) : null;
+      const currentPage = currentMatch && currentMatch[1] ? parseInt(currentMatch[1], 10) : 1;
+      if (nextPage === null) {
+        // If no explicit p param, but URL differs, treat as candidate
+        return url !== currentUrl ? url : null;
       }
+      return nextPage > currentPage ? url : null;
+    };
 
-      if (href) {
-        // 从 href 中提取页码参数
-        // 支持格式：?p=2 或 &p=2
-        const pageMatch = href.toString().match(/[?&]p=(\d+)/);
-        if (pageMatch && pageMatch[1]) {
-          const nextPage = parseInt(pageMatch[1], 10);
-          const currentPageMatch = currentUrl.match(/[?&]p=(\d+)/);
-          const currentPage =
-            currentPageMatch && currentPageMatch[1] ? parseInt(currentPageMatch[1], 10) : 1;
+    // 1) rel="next"
+    const relNext = $('a[rel="next"]').first();
+    let hrefCandidate = relNext.prop('href') || relNext.attr('href');
+    let candidate = extractIfNext(hrefCandidate);
+    if (candidate) return candidate;
 
-          // 如果下一页页码大于当前页，返回下一页 URL
-          if (nextPage > currentPage) {
-            // 构建完整 URL
-            if (href.startsWith('http')) {
-              return href.toString();
-            } else if (href.startsWith('/')) {
-              const baseUrlObj = new URL(currentUrl);
-              return `${baseUrlObj.origin}${href}`;
-            } else {
-              const baseUrlObj = new URL(currentUrl);
-              return new URL(href, baseUrlObj.href).href;
-            }
-          }
-        } else {
-          // 如果没有页码参数，但链接存在，可能是相对路径
-          // 检查链接是否指向不同的页面
-          if (href && !href.startsWith('#')) {
-            // 构建完整 URL
-            if (href.startsWith('http')) {
-              return href.toString();
-            } else if (href.startsWith('/')) {
-              const baseUrlObj = new URL(currentUrl);
-              return `${baseUrlObj.origin}${href}`;
-            } else {
-              const baseUrlObj = new URL(currentUrl);
-              const fullUrl = new URL(href, baseUrlObj.href).href;
-              // 如果 URL 不同，可能是下一页
-              if (fullUrl !== currentUrl) {
-                return fullUrl;
-              }
-            }
-          }
-        }
+    // 2) Known classnames that may wrap the anchor or be the anchor
+    const selectors = [
+      '.c-pager__item--next a',
+      '.c-pager__item--next',
+      '.novelview_pager-next a',
+      '.novelview_pager-next',
+      '.pagination .next a',
+      'li.next a',
+      'nav[aria-label*="pagination"] a[aria-label*="next"]',
+      '.p-eplist__pager a',
+    ];
+    for (const sel of selectors) {
+      const el = $(sel).first();
+      if (el.length) {
+        hrefCandidate = el.prop('href') || el.attr('href');
+        candidate = extractIfNext(hrefCandidate);
+        if (candidate) return candidate;
       }
     }
 
-    // 如果上述方法都失败，回退到查找所有分页链接
-    const allPagerLinks = $('.c-pager a, .novelview_pager a');
+    // 3) Text match variants for "next"
+    const textVariants = ['次へ', '次', '次の', 'Next', '»', '›', '＞'];
+    const textLink = $('a')
+      .filter((_, el) => {
+        const t = $(el).text().trim();
+        return textVariants.some((v) => t === v || t.includes(v));
+      })
+      .first();
+    if (textLink.length) {
+      hrefCandidate = textLink.prop('href') || textLink.attr('href');
+      candidate = extractIfNext(hrefCandidate);
+      if (candidate) return candidate;
+    }
 
+    // 4) Fallback: pick smallest page number greater than current
+    const allPagerLinks = $(
+      '.c-pager a, .novelview_pager a, .pagination a, .p-eplist__pager a, nav a',
+    );
     const currentPageMatch = currentUrl.match(/[?&]p=(\d+)/);
     const currentPage =
       currentPageMatch && currentPageMatch[1] ? parseInt(currentPageMatch[1], 10) : 1;
@@ -490,23 +494,13 @@ export class NcodeSyosetuScraper extends BaseScraper {
     allPagerLinks.each((_, el) => {
       const $link = $(el);
       const href = $link.prop('href') || $link.attr('href');
-      if (href) {
-        const pageMatch = href.toString().match(/[?&]p=(\d+)/);
-        if (pageMatch && pageMatch[1]) {
-          const page = parseInt(pageMatch[1], 10);
-          if (page > currentPage && page < minNextPage) {
-            minNextPage = page;
-            // 构建完整 URL
-            if (href.startsWith('http')) {
-              nextPageUrl = href.toString();
-            } else if (href.startsWith('/')) {
-              const baseUrlObj = new URL(currentUrl);
-              nextPageUrl = `${baseUrlObj.origin}${href}`;
-            } else {
-              const baseUrlObj = new URL(currentUrl);
-              nextPageUrl = new URL(href, baseUrlObj.href).href;
-            }
-          }
+      if (!href) return;
+      const pageMatch = href.toString().match(/[?&]p=(\d+)/);
+      if (pageMatch && pageMatch[1]) {
+        const page = parseInt(pageMatch[1], 10);
+        if (page > currentPage && page < minNextPage) {
+          minNextPage = page;
+          nextPageUrl = resolveHref(String(href));
         }
       }
     });
@@ -591,54 +585,62 @@ export class NcodeSyosetuScraper extends BaseScraper {
                 fullUrl = new URL(href, baseUrlObj.href).href;
               }
 
-              // 验证 URL 是否包含章节 ID（数字）
+              // 验证 URL 是否包含章节 ID（数字），并提供宽松的回退规则
               const novelId = this.extractNovelId(baseUrl);
-              if (novelId) {
-                const chapterIdMatch = fullUrl.match(new RegExp(`/${novelId}/(\\d+)`));
-                if (chapterIdMatch) {
-                  // 提取日期信息
-                  let date: string | Date | undefined;
-                  let lastUpdated: string | Date | undefined;
-                  const dateElement = $el.find('.p-eplist__update');
-                  if (dateElement.length > 0) {
-                    // 首先尝试从 span[title] 中获取改稿日期
-                    const updateSpan = dateElement.find('span[title*="/"]');
-                    if (updateSpan.length > 0) {
-                      const dateTitle = updateSpan.attr('title');
-                      if (dateTitle) {
-                        // 提取日期部分（格式：YYYY/MM/DD HH:mm 改稿）
-                        const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
-                        const parsedDate = this.parseDateString(cleanedDate);
-                        lastUpdated = parsedDate || cleanedDate;
-                      }
-                    }
+              let accept = false;
+              try {
+                const u = new URL(fullUrl);
+                const path = u.pathname;
+                if (/\/\d+\/?$/.test(path)) accept = true;
+                if (!accept && novelId && path.includes(`/${novelId}/`)) accept = true;
+              } catch {
+                // 如果 URL 解析失败，保守接受
+                accept = true;
+              }
 
-                    // 从文本中提取原始日期
-                    // 移除 span 标签后获取日期文本
-                    const dateText = dateElement.clone().find('span').remove().end().text().trim();
-                    if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
-                      const parsedDate = this.parseDateString(dateText);
-                      date = parsedDate || dateText;
-                      // 如果没有找到改稿日期，使用原始日期作为 lastUpdated
-                      if (!lastUpdated) {
-                        lastUpdated = parsedDate || dateText;
-                      }
+              if (accept) {
+                // 提取日期信息
+                let date: string | Date | undefined;
+                let lastUpdated: string | Date | undefined;
+                const dateElement = $el.find('.p-eplist__update');
+                if (dateElement.length > 0) {
+                  // 首先尝试从 span[title] 中获取改稿日期
+                  const updateSpan = dateElement.find('span[title*="/"]');
+                  if (updateSpan.length > 0) {
+                    const dateTitle = updateSpan.attr('title');
+                    if (dateTitle) {
+                      // 提取日期部分（格式：YYYY/MM/DD HH:mm 改稿）
+                      const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
+                      const parsedDate = this.parseDateString(cleanedDate);
+                      lastUpdated = parsedDate || cleanedDate;
                     }
                   }
 
-                  const chapter: ParsedChapterInfo = {
-                    title: chapterTitle,
-                    url: fullUrl,
-                  };
-                  if (date) {
-                    chapter.date = date;
+                  // 从文本中提取原始日期
+                  // 移除 span 标签后获取日期文本
+                  const dateText = dateElement.clone().find('span').remove().end().text().trim();
+                  if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
+                    const parsedDate = this.parseDateString(dateText);
+                    date = parsedDate || dateText;
+                    // 如果没有找到改稿日期，使用原始日期作为 lastUpdated
+                    if (!lastUpdated) {
+                      lastUpdated = parsedDate || dateText;
+                    }
                   }
-                  if (lastUpdated) {
-                    chapter.lastUpdated = lastUpdated;
-                  }
-                  chapters.push(chapter);
-                  chapterIndex++;
                 }
+
+                const chapter: ParsedChapterInfo = {
+                  title: chapterTitle,
+                  url: fullUrl,
+                };
+                if (date) {
+                  chapter.date = date;
+                }
+                if (lastUpdated) {
+                  chapter.lastUpdated = lastUpdated;
+                }
+                chapters.push(chapter);
+                chapterIndex++;
               }
             }
           }
@@ -846,137 +848,46 @@ export class NcodeSyosetuScraper extends BaseScraper {
     const allVolumes: Array<{ title: string; startIndex: number }> = [...firstPageData.volumes];
     let currentChapterIndex = firstPageData.chapters.length;
 
-    // 获取下一页并继续解析
-    let currentUrl = baseUrl;
-    let _currentPage = 1;
-    const visitedUrls = new Set<string>([this.normalizeUrl(baseUrl)]); // 跟踪已访问的 URL，避免重复
-    let nextPageUrl: string | null = this.getNextPageUrl(firstPageHtml, currentUrl);
+    // 使用稳健的方式按页遍历：依次尝试 ?p=2,3,...，直到 404 或无内容
+    const visitedUrls = new Set<string>([this.normalizeUrl(baseUrl)]);
+    const baseObj = new URL(baseUrl);
+    let pageNum = 2;
+    const MAX_PAGES = 500; // 安全上限，防止意外循环
 
-    // 规范化 nextPageUrl
-    if (nextPageUrl) {
-      nextPageUrl = this.normalizeUrl(nextPageUrl);
-    }
+    while (pageNum <= MAX_PAGES) {
+      const urlObj = new URL(baseObj.toString());
+      urlObj.searchParams.set('p', String(pageNum));
+      const pageUrl = this.normalizeUrl(urlObj.toString());
 
-    // 如果第一页没有找到下一页链接，尝试手动构建第二页 URL
-    if (!nextPageUrl) {
-      // 尝试构建第二页 URL（添加 ?p=2 参数）
-      const baseUrlObj = new URL(baseUrl);
-      baseUrlObj.searchParams.set('p', '2');
-      const secondPageUrl = this.normalizeUrl(baseUrlObj.toString());
-
-      // 检查是否已访问过
-      if (!visitedUrls.has(secondPageUrl)) {
-        // 尝试获取第二页，如果成功则说明有分页
-        const secondPageResult = await this.fetchPageWithStatus(secondPageUrl);
-        if (secondPageResult.statusCode === 404) {
-          // 404 错误，说明没有更多页面了，nextPageUrl 保持为 null，不会进入循环
-        } else if (secondPageResult.statusCode === 200) {
-          const testData = this.parseNovelPageSingle(secondPageResult.html, secondPageUrl);
-          if (testData.chapters.length > 0) {
-            // 存在第二页，直接合并数据
-            if (testData.volumes.length > 0) {
-              const updatedVolumes = testData.volumes.map((volume) => ({
-                title: volume.title,
-                startIndex: volume.startIndex + currentChapterIndex,
-              }));
-              allVolumes.push(...updatedVolumes);
-            }
-            allChapters.push(...testData.chapters);
-            currentChapterIndex += testData.chapters.length;
-
-            // 标记为已访问并更新页码
-            visitedUrls.add(secondPageUrl);
-            _currentPage = 2;
-            currentUrl = secondPageUrl;
-
-            // 准备下一页（第三页）的 URL，供循环使用
-            // 先尝试从第二页 HTML 中解析下一页链接
-            const nextLinkFromPage2 = this.getNextPageUrl(secondPageResult.html, secondPageUrl);
-            if (nextLinkFromPage2) {
-              nextPageUrl = this.normalizeUrl(nextLinkFromPage2);
-            } else {
-              // 如果没解析到，手动构建第三页 URL
-              const page3UrlObj = new URL(baseUrl);
-              page3UrlObj.searchParams.set('p', '3');
-              nextPageUrl = this.normalizeUrl(page3UrlObj.toString());
-            }
-          }
-        }
-      }
-    } else {
-      // 如果找到了下一页链接，检查是否已访问过
-      if (visitedUrls.has(nextPageUrl)) {
-        nextPageUrl = null; // 避免重复访问
-      }
-    }
-
-    while (nextPageUrl) {
-      // 检查是否已访问过（防止重复）
-      if (visitedUrls.has(nextPageUrl)) {
+      if (visitedUrls.has(pageUrl)) {
         break;
       }
-      visitedUrls.add(nextPageUrl);
+      visitedUrls.add(pageUrl);
 
-      // 更新当前页码（从 URL 中解析）
-      const pageMatch = nextPageUrl.match(/[?&]p=(\d+)/);
-      if (pageMatch && pageMatch[1]) {
-        _currentPage = parseInt(pageMatch[1], 10);
+      const pageRes = await this.fetchPageWithStatus(pageUrl);
+      if (pageRes.statusCode === 404) {
+        break; // 明确无更多页面
+      }
+      if (pageRes.statusCode !== 200 || !pageRes.html) {
+        break; // 其他异常情况，停止
       }
 
-      // 获取下一页并检查状态码
-      const nextPageResult = await this.fetchPageWithStatus(nextPageUrl);
-
-      // 如果返回 404，说明没有更多页面了
-      if (nextPageResult.statusCode === 404) {
-        break;
+      const pageData = this.parseNovelPageSingle(pageRes.html, pageUrl);
+      if (pageData.chapters.length === 0) {
+        break; // 无章节，认为结束
       }
 
-      // 如果状态码不是 200，跳过这一页
-      if (nextPageResult.statusCode !== 200) {
-        break;
-      }
-
-      const nextPageHtml = nextPageResult.html;
-      const nextPageData = this.parseNovelPageSingle(nextPageHtml, nextPageUrl);
-
-      // 如果这一页没有章节，说明已经到最后一页了
-      if (nextPageData.chapters.length === 0) {
-        break;
-      }
-
-      // 合并章节（需要更新卷的起始索引）
-      if (nextPageData.volumes.length > 0) {
-        // 更新卷的起始索引（基于当前章节总数）
-        const updatedVolumes = nextPageData.volumes.map((volume) => ({
+      if (pageData.volumes.length > 0) {
+        const updatedVolumes = pageData.volumes.map((volume) => ({
           title: volume.title,
           startIndex: volume.startIndex + currentChapterIndex,
         }));
         allVolumes.push(...updatedVolumes);
       }
 
-      allChapters.push(...nextPageData.chapters);
-      currentChapterIndex += nextPageData.chapters.length;
-
-      // 检查是否还有下一页
-      currentUrl = nextPageUrl;
-      const extractedNextLink = this.getNextPageUrl(nextPageHtml, currentUrl);
-
-      nextPageUrl = extractedNextLink;
-
-      // 规范化 nextPageUrl
-      if (nextPageUrl) {
-        nextPageUrl = this.normalizeUrl(nextPageUrl);
-      }
-
-      // 如果 getNextPageUrl 没有找到下一页链接，说明已经到最后一页了
-      if (!nextPageUrl) {
-        break;
-      } else {
-        // 如果找到了下一页链接，检查是否已访问过
-        if (visitedUrls.has(nextPageUrl)) {
-          nextPageUrl = null; // 避免重复访问
-        }
-      }
+      allChapters.push(...pageData.chapters);
+      currentChapterIndex += pageData.chapters.length;
+      pageNum += 1;
     }
 
     // 构建结果

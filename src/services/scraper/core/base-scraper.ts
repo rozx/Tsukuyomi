@@ -53,6 +53,7 @@ export abstract class BaseScraper implements NovelScraper {
   /**
    * 获取页面 HTML（通用方法）
    * 在浏览器环境中，使用服务器提供的 /api/... 代理路径
+   * 在 Electron 环境中，使用 Electron 的 net 模块直接请求
    * 在 Node.js/Bun 环境中，直接访问 URL
    * @param url 页面 URL
    * @param _proxyPath 代理路径（可选，已弃用）
@@ -61,11 +62,13 @@ export abstract class BaseScraper implements NovelScraper {
    */
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
     try {
-      // 在浏览器环境中，使用服务器提供的代理路径
+      // 检测环境
       const isBrowser = typeof window !== 'undefined';
+      const isElectron = isBrowser && window.electronAPI?.isElectron;
       let finalUrl = url;
 
-      if (isBrowser) {
+      // 在 Web 浏览器环境中（非 Electron），使用服务器代理路径
+      if (isBrowser && !isElectron) {
         // 在浏览器环境中，使用服务器代理路径（不再使用 AllOrigins）
         const urlObj = new URL(url);
         if (urlObj.hostname === 'kakuyomu.jp') {
@@ -91,6 +94,42 @@ export abstract class BaseScraper implements NovelScraper {
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
+          // 在 Electron 环境中，使用 Electron 的 net 模块
+          if (isElectron) {
+            if (!window.electronAPI?.fetch) {
+              throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+            }
+
+            const headers: Record<string, string> = {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+              'Accept-Encoding': 'gzip, deflate, br',
+            };
+
+            // 设置 Referer
+            const urlObj = new URL(url);
+            headers['Referer'] = urlObj.origin;
+
+            const response = await window.electronAPI.fetch(url, {
+              method: 'GET',
+              headers,
+              timeout: 60000,
+            });
+
+            if (response.status >= 400) {
+              throw new Error(`目标网站返回错误: ${response.status}`);
+            }
+
+            if (response.data) {
+              return response.data;
+            }
+
+            throw new Error('返回的内容为空');
+          }
+
+          // 在浏览器环境（非 Electron）或 Node.js/Bun 环境中，使用 axios
           // 直接请求，在浏览器环境中使用服务器代理路径，在 Node.js/Bun 环境中直接访问
           // 在浏览器环境中，某些请求头（如 User-Agent、Accept-Encoding、Referer）不能手动设置
           // 这些请求头会被浏览器自动设置，或者由服务器代理设置
@@ -99,7 +138,7 @@ export abstract class BaseScraper implements NovelScraper {
             'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
           };
 
-          // 只在非浏览器环境（如 Electron 或 Node.js/Bun）中设置这些请求头
+          // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
           if (!isBrowser) {
             headers['User-Agent'] =
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';

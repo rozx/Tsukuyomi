@@ -55,7 +55,8 @@ export default defineConfig((ctx) => {
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
       // 在 Electron 模式下使用相对路径，确保 file:// 协议能正确加载资源
-      publicPath: 'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
+      publicPath:
+        'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
       // analyze: true,
       // env: {},
       // rawDefine: {}
@@ -430,21 +431,26 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
       // extendElectronMainConf (esbuildConf) {},
-      // extendElectronPreloadConf (esbuildConf) {},
+      extendElectronPreloadConf(_esbuildConf) {
+        // 确保 preload 脚本被正确打包
+        console.log('Building Electron preload script...');
+      },
 
       // extendPackageJson (json) {},
 
       // Electron preload scripts (if any) from /src-electron, WITHOUT file extension
-      // Explicitly set to empty array to disable preload scripts
-      preloadScripts: [],
+      preloadScripts: ['electron-preload'],
 
       // specify the debugging port to use for the Electron app when running in development mode
       inspectPort: 5858,
 
-      bundler: 'packager', // 'packager' or 'builder'
+      bundler: 'builder', // 'packager' or 'builder'
 
       packager: {
         // https://github.com/electron-userland/electron-packager/blob/master/docs/api.md#options
+        // Note: This section is ignored when bundler is set to 'builder'
+        // Disable asar to ensure preload script is accessible
+        asar: false,
         // Icon configuration for packager
         // Icons should be placed in src-electron/icons/
         // - macOS: icon.icns (512x512 or larger)
@@ -463,6 +469,8 @@ export default defineConfig((ctx) => {
       builder: {
         // https://www.electron.build/configuration/configuration
         appId: 'luna',
+        // Disable asar to ensure preload script is accessible
+        asar: false,
         // Icon configuration for builder
         // Icons should be placed in src-electron/icons/
         mac: {

@@ -80,20 +80,47 @@ const handleAllOriginsProxy = async (
   const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
   console.log(`[Proxy AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
 
-  const response = await impit.fetch(allOriginsUrl);
-  const data = (await response.json()) as {
-    status?: { http_code?: number };
-    contents?: string;
-  };
+  try {
+    const response = await impit.fetch(allOriginsUrl);
+    const text = await response.text();
 
-  if (data.status?.http_code) {
-    res.status(data.status.http_code);
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // AllOrigins returns the HTML content in the 'contents' field
-    res.send(data.contents);
-    console.log(`[Proxy AllOrigins] [${requestId}] Completed (Status: ${data.status.http_code})`);
-  } else {
-    throw new Error(`AllOrigins returned invalid data: ${JSON.stringify(data).substring(0, 100)}`);
+    let data: { status?: { http_code?: number }; contents?: string };
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error(`[Proxy AllOrigins] [${requestId}] JSON Parse Error: ${(e as Error).message}`);
+      console.error(
+        `[Proxy AllOrigins] [${requestId}] Response length: ${text.length}. End of response: ${text.slice(
+          -100,
+        )}`,
+      );
+      // If JSON parsing fails, it might be because AllOrigins failed or returned raw content?
+      // Or maybe we can fallback to direct proxy?
+      console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
+      await handleDirectProxy(req, res, targetUrl, requestId);
+      return;
+    }
+
+    if (data.status?.http_code) {
+      res.status(data.status.http_code);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // AllOrigins returns the HTML content in the 'contents' field
+      res.send(data.contents);
+      console.log(`[Proxy AllOrigins] [${requestId}] Completed (Status: ${data.status.http_code})`);
+    } else {
+      throw new Error(
+        `AllOrigins returned invalid data: ${JSON.stringify(data).substring(0, 100)}`,
+      );
+    }
+  } catch (error) {
+    console.error(`[Proxy AllOrigins] [${requestId}] Error: ${(error as Error).message}`);
+    // Only fallback to direct proxy if headers haven't been sent yet
+    if (!res.headersSent) {
+      console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
+      await handleDirectProxy(req, res, targetUrl, requestId);
+    } else {
+      console.error(`[Proxy AllOrigins] [${requestId}] Cannot fallback: headers already sent`);
+    }
   }
 };
 

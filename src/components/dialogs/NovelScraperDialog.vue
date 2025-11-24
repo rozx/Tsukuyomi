@@ -14,7 +14,12 @@ import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { formatWordCount, UniqueIdGenerator, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import {
+  formatWordCount,
+  UniqueIdGenerator,
+  getVolumeDisplayTitle,
+  getChapterDisplayTitle,
+} from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -37,7 +42,7 @@ const props = withDefaults(
   }>(),
   {
     showNovelInfo: true,
-  }
+  },
 );
 
 const emit = defineEmits<{
@@ -55,6 +60,8 @@ const chapterContents = ref<Map<string, string>>(new Map());
 const loadingChapters = ref<Set<string>>(new Set());
 const chapterErrors = ref<Map<string, string>>(new Map());
 const selectedChapters = ref<Set<string>>(new Set());
+// 本地（已导入）章节内容缓存：key 使用爬取章节的 id，value 为拼接后的文本
+const importedChapterContents = ref<Map<string, string>>(new Map());
 
 // 章节过滤和折叠
 const chapterFilter = ref<'all' | 'imported' | 'unimported' | 'updated'>('all');
@@ -74,10 +81,7 @@ const stats = computed(() => {
   }
   const volumes = scrapedNovel.value.volumes?.length || 0;
   const chapters =
-    scrapedNovel.value.volumes?.reduce(
-      (sum, vol) => sum + (vol.chapters?.length || 0),
-      0
-    ) || 0;
+    scrapedNovel.value.volumes?.reduce((sum, vol) => sum + (vol.chapters?.length || 0), 0) || 0;
   return { volumes, chapters };
 });
 
@@ -99,18 +103,19 @@ const supportedSitesText = computed(() => {
 // 过滤后的卷和章节
 const filteredVolumes = computed(() => {
   if (!scrapedNovel.value?.volumes) return [];
-  
-      return scrapedNovel.value.volumes
+
+  return scrapedNovel.value.volumes
     .map((volume) => {
-      const filteredChapters = volume.chapters?.filter((chapter) => {
-        if (chapterFilter.value === 'all') return true;
-        if (chapterFilter.value === 'updated') {
-          return ChapterService.shouldUpdateChapter(props.currentBook, chapter);
-        }
-        const imported = isChapterImported(chapter);
-        return chapterFilter.value === 'imported' ? imported : !imported;
-      }) || [];
-      
+      const filteredChapters =
+        volume.chapters?.filter((chapter) => {
+          if (chapterFilter.value === 'all') return true;
+          if (chapterFilter.value === 'updated') {
+            return ChapterService.shouldUpdateChapter(props.currentBook, chapter);
+          }
+          const imported = isChapterImported(chapter);
+          return chapterFilter.value === 'imported' ? imported : !imported;
+        }) || [];
+
       return {
         ...volume,
         chapters: filteredChapters,
@@ -204,15 +209,19 @@ const handleFetch = async () => {
 };
 
 // 使用 ChapterService 的方法
-const findImportedChapterByUrl = (chapterUrl: string): Chapter | null => {
-  return ChapterService.findChapterByUrl(props.currentBook, chapterUrl);
-};
+// 已不直接使用包装函数，改为直接调用 ChapterService.findChapterByUrl
 
 const isChapterImported = (chapter: Chapter): boolean => {
   return ChapterService.isChapterImported(props.currentBook, chapter);
 };
 
 const getImportedChapterContent = (chapter: Chapter): string | null => {
+  // 先读缓存
+  if (importedChapterContents.value.has(chapter.id)) {
+    // 缓存中可能是空字符串，代表已加载但内容为空
+    return importedChapterContents.value.get(chapter.id) ?? '';
+  }
+  // 未缓存时，尝试同步读取（如果本地章节已把 content 载入内存）
   if (!props.currentBook || !chapter.webUrl) {
     return null;
   }
@@ -220,7 +229,11 @@ const getImportedChapterContent = (chapter: Chapter): string | null => {
   if (!importedChapter) {
     return null;
   }
-  return ChapterService.getChapterContentText(importedChapter);
+  // 若本地章节已含有 content，则直接返回拼接文本；否则返回 null 等待异步加载
+  if (importedChapter.content && importedChapter.content.length > 0) {
+    return ChapterService.getChapterContentText(importedChapter);
+  }
+  return null;
 };
 
 const shouldAutoSelectChapter = (chapter: Chapter): boolean => {
@@ -288,6 +301,10 @@ const selectChapter = (chapter: Chapter) => {
   // 如果是已导入的章节，也需要加载新内容以进行对比
   if (!chapterContents.value.has(chapter.id) && chapter.webUrl) {
     void loadChapterContent(chapter);
+  }
+  // 异步加载本地（已导入）章节内容用于比对
+  if (isChapterImported(chapter)) {
+    void loadImportedChapterContent(chapter);
   }
 };
 
@@ -390,15 +407,16 @@ const toggleSelectAll = () => {
   });
 
   // 检查是否所有过滤的章节都已选中
-  const allSelected = filteredChapterIds.size > 0 &&
-    Array.from(filteredChapterIds).every(id => selectedChapters.value.has(id));
+  const allSelected =
+    filteredChapterIds.size > 0 &&
+    Array.from(filteredChapterIds).every((id) => selectedChapters.value.has(id));
 
   if (allSelected) {
     // 如果已全选，则取消全选（只取消当前过滤的章节）
-    filteredChapterIds.forEach(id => selectedChapters.value.delete(id));
+    filteredChapterIds.forEach((id) => selectedChapters.value.delete(id));
   } else {
     // 否则全选当前过滤的章节
-    filteredChapterIds.forEach(id => selectedChapters.value.add(id));
+    filteredChapterIds.forEach((id) => selectedChapters.value.add(id));
   }
 };
 
@@ -416,8 +434,10 @@ const isAllSelected = computed(() => {
     });
   });
 
-  return filteredChapterIds.size > 0 &&
-    Array.from(filteredChapterIds).every(id => selectedChapters.value.has(id));
+  return (
+    filteredChapterIds.size > 0 &&
+    Array.from(filteredChapterIds).every((id) => selectedChapters.value.has(id))
+  );
 });
 
 // 切换卷的折叠状态
@@ -432,6 +452,22 @@ const toggleVolumeCollapse = (volumeId: string) => {
 // 检查卷是否折叠
 const isVolumeCollapsed = (volumeId: string) => {
   return collapsedVolumes.value.has(volumeId);
+};
+
+// 异步加载本地章节内容并写入缓存
+const loadImportedChapterContent = async (chapter: Chapter) => {
+  try {
+    if (!props.currentBook || !chapter.webUrl) return;
+    // 缓存命中则跳过
+    if (importedChapterContents.value.has(chapter.id)) return;
+    const importedChapter = ChapterService.findChapterByUrl(props.currentBook, chapter.webUrl);
+    if (!importedChapter) return;
+    const loaded = await ChapterService.loadChapterContent(importedChapter);
+    const text = ChapterService.getChapterContentText(loaded);
+    importedChapterContents.value.set(chapter.id, text);
+  } catch {
+    // 静默失败：未能加载本地内容时不影响右侧新内容显示
+  }
 };
 
 // 应用更改
@@ -462,9 +498,7 @@ const handleApply = async () => {
   });
 
   // 检查哪些章节需要加载内容（包括已导入的章节，确保重新获取最新内容）
-  const chaptersNeedingContent = chaptersToImport.filter(
-    (chapter) => chapter.webUrl
-  );
+  const chaptersNeedingContent = chaptersToImport.filter((chapter) => chapter.webUrl);
 
   // 如果有章节需要加载内容，先批量加载（即使已导入也要重新获取）
   if (chaptersNeedingContent.length > 0) {
@@ -563,7 +597,11 @@ const handleApply = async () => {
   };
 
   // 如果用户输入的 URL 有效且不在小说数据的 webUrl 中，添加到列表中
-  if (urlInput.value && urlInput.value.trim() !== '' && NovelScraperFactory.isValidUrl(urlInput.value)) {
+  if (
+    urlInput.value &&
+    urlInput.value.trim() !== '' &&
+    NovelScraperFactory.isValidUrl(urlInput.value)
+  ) {
     const inputUrl = urlInput.value.trim();
     const existingUrls = filteredNovel.webUrl || [];
     if (!existingUrls.includes(inputUrl)) {
@@ -592,6 +630,7 @@ watch(
       selectedChapters.value.clear();
       selectedChapterId.value = null;
       loadingChapters.value.clear();
+      importedChapterContents.value.clear();
       chapterFilter.value = 'all';
     } else {
       // 设置初始过滤选项
@@ -604,7 +643,11 @@ watch(
 
       // 只有当明确传入 initialUrl 时才自动填充并触发获取
       // 如果 initialUrl 为空字符串或未传入，则不自动填充（避免从 currentBook 自动填充）
-      if (props.initialUrl && props.initialUrl.trim() !== '' && NovelScraperFactory.isValidUrl(props.initialUrl)) {
+      if (
+        props.initialUrl &&
+        props.initialUrl.trim() !== '' &&
+        NovelScraperFactory.isValidUrl(props.initialUrl)
+      ) {
         urlInput.value = props.initialUrl;
         // 如果提供了 initialUrl，自动触发获取
         void nextTick(() => {
@@ -615,7 +658,7 @@ watch(
         urlInput.value = '';
       }
     }
-  }
+  },
 );
 </script>
 
@@ -655,11 +698,7 @@ watch(
         <div class="flex items-center gap-2 flex-wrap">
           <small class="text-moon/60">支持的网站：</small>
           <div class="flex gap-2 flex-wrap">
-            <span
-              v-for="site in supportedSites"
-              :key="site"
-              class="site-badge"
-            >
+            <span v-for="site in supportedSites" :key="site" class="site-badge">
               {{ site }}
             </span>
           </div>
@@ -699,7 +738,10 @@ watch(
       </div>
 
       <!-- 统计信息 -->
-      <div v-if="scrapedNovel && !loading && showNovelInfo" class="card-base p-4 flex-shrink-0 max-h-[40vh] overflow-y-auto">
+      <div
+        v-if="scrapedNovel && !loading && showNovelInfo"
+        class="card-base p-4 flex-shrink-0 max-h-[40vh] overflow-y-auto"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h3 class="text-lg font-semibold text-moon/90 mb-1">{{ scrapedNovel.title }}</h3>
@@ -710,18 +752,14 @@ watch(
             </div>
           </div>
         </div>
-        <div
-          v-if="scrapedNovel.description"
-          class="mt-3 text-sm text-moon/80 whitespace-pre-wrap"
-        >
+        <div v-if="scrapedNovel.description" class="mt-3 text-sm text-moon/80 whitespace-pre-wrap">
           {{ scrapedNovel.description }}
         </div>
-        <div v-if="scrapedNovel.tags && scrapedNovel.tags.length > 0" class="mt-3 flex flex-wrap gap-2">
-          <span
-            v-for="tag in scrapedNovel.tags"
-            :key="tag"
-            class="novel-tag"
-          >
+        <div
+          v-if="scrapedNovel.tags && scrapedNovel.tags.length > 0"
+          class="mt-3 flex flex-wrap gap-2"
+        >
+          <span v-for="tag in scrapedNovel.tags" :key="tag" class="novel-tag">
             {{ tag }}
           </span>
         </div>
@@ -732,7 +770,9 @@ watch(
         <Splitter style="height: 100%">
           <!-- 左侧：章节列表 -->
           <SplitterPanel :size="40" :min-size="30">
-            <div class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden">
+            <div
+              class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+            >
               <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2">
                 <div class="flex items-center justify-between min-w-0 gap-2">
                   <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
@@ -773,16 +813,28 @@ watch(
                 </div>
               </div>
               <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3 max-h-[70vh]">
-                <div v-for="volumeGroup in displayVolumeChapters" :key="volumeGroup.volumeId" class="space-y-2">
+                <div
+                  v-for="volumeGroup in displayVolumeChapters"
+                  :key="volumeGroup.volumeId"
+                  class="space-y-2"
+                >
                   <div
                     class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
                     @click="toggleVolumeCollapse(volumeGroup.volumeId)"
                   >
                     <span class="flex-1">
-                      {{ volumeGroup.volumeTitle }} ({{ filteredVolumes.find(v => v.id === volumeGroup.volumeId)?.chapters?.length || 0 }} 章)
+                      {{ volumeGroup.volumeTitle }} ({{
+                        filteredVolumes.find((v) => v.id === volumeGroup.volumeId)?.chapters
+                          ?.length || 0
+                      }}
+                      章)
                     </span>
                     <i
-                      :class="isVolumeCollapsed(volumeGroup.volumeId) ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
+                      :class="
+                        isVolumeCollapsed(volumeGroup.volumeId)
+                          ? 'pi pi-chevron-right'
+                          : 'pi pi-chevron-down'
+                      "
                       class="text-xs text-moon/60"
                     />
                   </div>
@@ -821,15 +873,22 @@ watch(
                               v-if="chapterContents.has(chapter.id)"
                               class="text-moon/70 font-medium"
                             >
-                              字数: <span class="novel-word-count">{{ formatWordCount(getChapterWordCount(chapter.id)) }}</span>
+                              字数:
+                              <span class="novel-word-count">{{
+                                formatWordCount(getChapterWordCount(chapter.id))
+                              }}</span>
                             </span>
-                            <span v-else-if="loadingChapters.has(chapter.id)" class="text-moon/50 italic">
+                            <span
+                              v-else-if="loadingChapters.has(chapter.id)"
+                              class="text-moon/50 italic"
+                            >
                               计算中...
                             </span>
-                            <span v-else class="text-moon/40">
-                              未加载
-                            </span>
-                            <span v-if="chapter.lastUpdated" class="text-moon/50 flex items-center gap-1">
+                            <span v-else class="text-moon/40"> 未加载 </span>
+                            <span
+                              v-if="chapter.lastUpdated"
+                              class="text-moon/50 flex items-center gap-1"
+                            >
                               <i class="pi pi-clock text-[10px]" />
                               {{ formatDate(chapter.lastUpdated) }}
                             </span>
@@ -840,7 +899,7 @@ watch(
                               target="_blank"
                               rel="noopener noreferrer"
                               class="text-xs text-primary/80 hover:text-primary hover:underline block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
-                              style="max-width: 100%;"
+                              style="max-width: 100%"
                               @click.stop
                             >
                               {{ chapter.webUrl }}
@@ -851,10 +910,11 @@ watch(
                     </div>
                   </div>
                 </div>
-                <div v-if="displayVolumeChapters.length === 0" class="flex items-center justify-center py-8">
-                  <div class="text-center text-moon/60">
-                    没有找到章节
-                  </div>
+                <div
+                  v-if="displayVolumeChapters.length === 0"
+                  class="flex items-center justify-center py-8"
+                >
+                  <div class="text-center text-moon/60">没有找到章节</div>
                 </div>
               </div>
             </div>
@@ -862,10 +922,17 @@ watch(
 
           <!-- 右侧：章节内容 -->
           <SplitterPanel :size="60" :min-size="40">
-            <div class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden">
-              <div v-if="selectedChapter" class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
+            <div
+              class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+            >
+              <div
+                v-if="selectedChapter"
+                class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5"
+              >
                 <div class="flex items-start justify-between gap-2 mb-2">
-                  <h4 class="text-lg font-semibold text-moon/90 flex-1">{{ getChapterDisplayTitle(selectedChapter) }}</h4>
+                  <h4 class="text-lg font-semibold text-moon/90 flex-1">
+                    {{ getChapterDisplayTitle(selectedChapter) }}
+                  </h4>
                   <span
                     v-if="selectedChapterImportStatus"
                     :class="selectedChapterImportStatus.class"
@@ -873,7 +940,10 @@ watch(
                     {{ selectedChapterImportStatus.text }}
                   </span>
                 </div>
-                <div v-if="selectedChapter.webUrl || selectedChapter.lastUpdated" class="flex items-center gap-2 flex-wrap">
+                <div
+                  v-if="selectedChapter.webUrl || selectedChapter.lastUpdated"
+                  class="flex items-center gap-2 flex-wrap"
+                >
                   <a
                     v-if="selectedChapter.webUrl"
                     :href="selectedChapter.webUrl"
@@ -883,10 +953,7 @@ watch(
                   >
                     {{ selectedChapter.webUrl }}
                   </a>
-                  <span
-                    v-if="chapterContents.has(selectedChapter.id)"
-                    class="text-xs text-moon/60"
-                  >
+                  <span v-if="chapterContents.has(selectedChapter.id)" class="text-xs text-moon/60">
                     · {{ formatWordCount(getChapterWordCount(selectedChapter.id)) }} 字
                   </span>
                   <span
@@ -925,7 +992,11 @@ watch(
                 </div>
                 <!-- 已导入章节的差异对比 -->
                 <div
-                  v-else-if="isSelectedChapterImported && selectedChapterImportedContent !== null && selectedChapterContent"
+                  v-else-if="
+                    isSelectedChapterImported &&
+                    selectedChapterImportedContent !== null &&
+                    selectedChapterContent
+                  "
                   class="h-full"
                 >
                   <div class="flex gap-4 h-full">
@@ -938,7 +1009,9 @@ watch(
                         </span>
                       </div>
                       <div class="flex-1 overflow-y-auto">
-                        <div class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none">
+                        <div
+                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
+                        >
                           {{ selectedChapterImportedContent }}
                         </div>
                       </div>
@@ -952,7 +1025,9 @@ watch(
                         </span>
                       </div>
                       <div class="flex-1 overflow-y-auto">
-                        <div class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none">
+                        <div
+                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
+                        >
                           {{ selectedChapterContent }}
                         </div>
                       </div>
@@ -961,7 +1036,11 @@ watch(
                 </div>
                 <!-- 已导入章节但新内容未加载 -->
                 <div
-                  v-else-if="isSelectedChapterImported && selectedChapterImportedContent !== null && !selectedChapterContent"
+                  v-else-if="
+                    isSelectedChapterImported &&
+                    selectedChapterImportedContent !== null &&
+                    !selectedChapterContent
+                  "
                   class="h-full"
                 >
                   <div class="flex gap-4 h-full">
@@ -974,7 +1053,9 @@ watch(
                         </span>
                       </div>
                       <div class="flex-1 overflow-y-auto">
-                        <div class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none">
+                        <div
+                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
+                        >
                           {{ selectedChapterImportedContent }}
                         </div>
                       </div>
@@ -1043,6 +1124,3 @@ watch(
     </template>
   </Dialog>
 </template>
-
-
-

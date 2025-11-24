@@ -10,6 +10,7 @@ import { useBookDetailsStore } from 'src/stores/book-details';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useContextStore } from 'src/stores/context';
+import { useElectronSettings } from 'src/composables/useElectronSettings';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -20,6 +21,9 @@ const bookDetailsStore = useBookDetailsStore();
 const uiStore = useUiStore();
 const aiProcessingStore = useAIProcessingStore();
 const contextStore = useContextStore();
+
+// 初始化 Electron 设置处理
+useElectronSettings();
 
 onMounted(async () => {
   // 首次运行时从 localStorage 迁移到 IndexedDB
