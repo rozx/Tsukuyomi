@@ -114,8 +114,13 @@ const handleAllOriginsProxy = async (
     }
   } catch (error) {
     console.error(`[Proxy AllOrigins] [${requestId}] Error: ${(error as Error).message}`);
-    console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
-    await handleDirectProxy(req, res, targetUrl, requestId);
+    // Only fallback to direct proxy if headers haven't been sent yet
+    if (!res.headersSent) {
+      console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
+      await handleDirectProxy(req, res, targetUrl, requestId);
+    } else {
+      console.error(`[Proxy AllOrigins] [${requestId}] Cannot fallback: headers already sent`);
+    }
   }
 };
 
