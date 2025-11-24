@@ -65,6 +65,13 @@ export abstract class BaseScraper implements NovelScraper {
       // 检测环境
       const isBrowser = typeof window !== 'undefined';
       const isElectron = isBrowser && window.electronAPI?.isElectron;
+
+      // 调试日志：在生产环境中帮助诊断问题
+      if (isBrowser && !isElectron) {
+        console.log('[BaseScraper] Running in browser, not Electron');
+      } else if (isElectron) {
+        console.log('[BaseScraper] Running in Electron environment');
+      }
       let finalUrl = url;
 
       // 在 Web 浏览器环境中（非 Electron），使用服务器代理路径
@@ -96,6 +103,10 @@ export abstract class BaseScraper implements NovelScraper {
         try {
           // 在 Electron 环境中，使用 Electron 的 net 模块
           if (isElectron) {
+            if (!window.electronAPI?.fetch) {
+              throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+            }
+
             const headers: Record<string, string> = {
               'User-Agent':
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -108,11 +119,15 @@ export abstract class BaseScraper implements NovelScraper {
             const urlObj = new URL(url);
             headers['Referer'] = urlObj.origin;
 
-            const response = await window.electronAPI!.fetch(url, {
+            console.log(`[BaseScraper] Fetching via Electron API: ${url}`);
+
+            const response = await window.electronAPI.fetch(url, {
               method: 'GET',
               headers,
               timeout: 60000,
             });
+
+            console.log(`[BaseScraper] Electron fetch response status: ${response.status}`);
 
             if (response.status >= 400) {
               throw new Error(`目标网站返回错误: ${response.status}`);

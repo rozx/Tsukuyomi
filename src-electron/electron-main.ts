@@ -26,7 +26,7 @@ function handleLoadError(window: BrowserWindow | null, err: unknown, path: strin
   if (window) {
     const fileUrl = `file://${path}`;
     console.log(`[Electron] Trying alternative: ${fileUrl}`);
-    (window.loadURL(fileUrl) as Promise<void>).catch((urlErr) => {
+    void window.loadURL(fileUrl).catch((urlErr) => {
       console.error('[Electron] Failed to load via URL:', urlErr);
     });
   }
@@ -42,8 +42,9 @@ function createWindow() {
       preload: join(__dirname, 'electron-preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      // 在开发环境中禁用 webSecurity 以绕过 CORS 限制
-      webSecurity: !isDev,
+      // 禁用 webSecurity 以允许爬虫服务通过 Electron fetch API 绕过 CORS 限制
+      // 这是安全的，因为我们控制所有请求的来源
+      webSecurity: false,
     },
   });
 
@@ -51,15 +52,14 @@ function createWindow() {
   if (isDev) {
     const devUrl = 'http://localhost:9000';
     console.log(`[Electron] Loading dev server: ${devUrl}`);
-    // 使用 Promise 处理，但通过类型断言确保类型正确
-    (mainWindow.loadURL(devUrl) as Promise<void>).catch((err) => {
+    void mainWindow.loadURL(devUrl).catch((err) => {
       console.error('[Electron] Failed to load dev server:', err);
       console.error('[Electron] Make sure Vite dev server is running on port 9000');
       // 如果开发服务器不可用，尝试加载生产构建
       if (mainWindow) {
         const indexPath = join(__dirname, '../index.html');
         console.log(`[Electron] Falling back to: ${indexPath}`);
-        (mainWindow.loadFile(indexPath) as Promise<void>).catch((fileErr) => {
+        void mainWindow.loadFile(indexPath).catch((fileErr) => {
           console.error('[Electron] Failed to load file:', fileErr);
         });
       }
@@ -93,7 +93,7 @@ function createWindow() {
       console.log(`[Electron] Alternative exists: ${existsSync(altPath)}`);
       if (existsSync(altPath)) {
         const finalPath = altPath;
-        (mainWindow.loadFile(finalPath) as Promise<void>).catch((err) => {
+        void mainWindow.loadFile(finalPath).catch((err) => {
           console.error('[Electron] Failed to load index.html:', err);
           handleLoadError(mainWindow, err, finalPath);
         });
@@ -120,8 +120,7 @@ function createWindow() {
         }
       }
     } else {
-      // 使用类型断言确保类型正确
-      (mainWindow.loadFile(indexPath) as Promise<void>).catch((err) => {
+      void mainWindow.loadFile(indexPath).catch((err) => {
         console.error('[Electron] Failed to load index.html:', err);
         handleLoadError(mainWindow, err, indexPath);
       });
