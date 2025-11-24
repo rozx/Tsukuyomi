@@ -32,14 +32,42 @@ function handleLoadError(window: BrowserWindow | null, err: unknown, path: strin
   }
 }
 
+function resolvePreloadPath(): string | null {
+  const candidates = [
+    // Packaged layout (Quasar places it under preload/ and .cjs extension)
+    join(__dirname, 'preload', 'electron-preload.cjs'),
+    // UnPackaged dev build (sometimes .cjs or .js)
+    join(__dirname, 'electron-preload.cjs'),
+    join(__dirname, 'electron-preload.js'),
+    // Fallback relative parent (rare, but keep for safety)
+    join(__dirname, '../preload/electron-preload.cjs'),
+    join(__dirname, '../electron-preload.cjs'),
+    join(__dirname, '../electron-preload.js'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      console.log('[Electron] Using preload script:', p);
+      return p;
+    }
+  }
+  console.error('[Electron] No preload script found in candidates:', candidates);
+  return null;
+}
+
 function createWindow() {
+  const preloadPath = resolvePreloadPath();
+  if (!preloadPath) {
+    console.warn('[Electron] Proceeding without preload. electronAPI will be unavailable.');
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     backgroundColor: '#ffffff', // 设置背景色以减少白屏闪烁
     show: false, // 先不显示窗口，等内容加载完成后再显示
     webPreferences: {
-      preload: join(__dirname, 'electron-preload.js'),
+      // 仅当找到 preload 文件时才设置
+      ...(preloadPath ? { preload: preloadPath } : {}),
       nodeIntegration: false,
       contextIsolation: true,
       // 禁用 webSecurity 以允许爬虫服务通过 Electron fetch API 绕过 CORS 限制

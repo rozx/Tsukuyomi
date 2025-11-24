@@ -36,6 +36,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chrome: () => process.versions.chrome,
     electron: () => process.versions.electron,
   },
+
+  /**
+   * 设置相关的 IPC 通信
+   */
+  settings: {
+    onExportRequest: (callback: (filePath: string) => void) => {
+      ipcRenderer.on('export-settings-request', (_event, filePath) => callback(filePath));
+    },
+    onImportData: (callback: (content: string) => void) => {
+      ipcRenderer.on('import-settings-data', (_event, content) => callback(content));
+    },
+    saveExport: (filePath: string, data: string) => {
+      ipcRenderer.send('export-settings-save', filePath, data);
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('export-settings-request');
+      ipcRenderer.removeAllListeners('import-settings-data');
+    },
+  },
 });
 
 // 类型声明已移至 src/types/electron.d.ts

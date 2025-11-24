@@ -36,6 +36,16 @@ export interface ElectronAPI {
     chrome: () => string;
     electron: () => string;
   };
+
+  /**
+   * 设置相关的 IPC 通信
+   */
+  settings: {
+    onExportRequest: (callback: (filePath: string) => void) => void;
+    onImportData: (callback: (content: string) => void) => void;
+    saveExport: (filePath: string, data: string) => void;
+    removeListeners: () => void;
+  };
 }
 
 declare global {

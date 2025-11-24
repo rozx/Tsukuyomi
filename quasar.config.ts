@@ -431,7 +431,10 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
       // extendElectronMainConf (esbuildConf) {},
-      // extendElectronPreloadConf (esbuildConf) {},
+      extendElectronPreloadConf(esbuildConf) {
+        // 确保 preload 脚本被正确打包
+        console.log('Building Electron preload script...');
+      },
 
       // extendPackageJson (json) {},
 
@@ -445,6 +448,8 @@ export default defineConfig((ctx) => {
 
       packager: {
         // https://github.com/electron-userland/electron-packager/blob/master/docs/api.md#options
+        // Disable asar to ensure preload script is accessible
+        asar: false,
         // Icon configuration for packager
         // Icons should be placed in src-electron/icons/
         // - macOS: icon.icns (512x512 or larger)

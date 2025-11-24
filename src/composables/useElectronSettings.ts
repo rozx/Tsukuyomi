@@ -14,20 +14,9 @@ export function useElectronSettings() {
   const coverHistoryStore = useCoverHistoryStore();
   const settingsStore = useSettingsStore();
 
-  let ipcRenderer: {
-    send: (channel: string, ...args: unknown[]) => void;
-    on: (channel: string, listener: (...args: unknown[]) => void | Promise<void>) => void;
-    removeListener: (
-      channel: string,
-      listener: (...args: unknown[]) => void | Promise<void>,
-    ) => void;
-  } | null = null;
-
   // 处理导出设置请求
-  const handleExportRequest = (...args: unknown[]) => {
+  const handleExportRequest = (filePath: string) => {
     try {
-      const filePath = args[1] as string;
-
       // 获取当前设置
       const settings = {
         aiModels: aiModelsStore.models,
@@ -41,8 +30,8 @@ export function useElectronSettings() {
       const jsonString = JSON.stringify(settings, null, 2);
 
       // 通过 IPC 发送给主进程保存
-      if (ipcRenderer) {
-        ipcRenderer.send('export-settings-save', filePath, jsonString);
+      if (window.electronAPI?.settings) {
+        window.electronAPI.settings.saveExport(filePath, jsonString);
       }
     } catch (error) {
       console.error('Export settings error:', error);
@@ -50,9 +39,8 @@ export function useElectronSettings() {
   };
 
   // 处理导入设置数据
-  const handleImportData = async (...args: unknown[]) => {
+  const handleImportData = async (content: string) => {
     try {
-      const content = args[1] as string;
       // 解析 JSON
       const settings = JSON.parse(content);
 
@@ -102,14 +90,14 @@ export function useElectronSettings() {
     }
   };
 
-  onMounted(async () => {
+  onMounted(() => {
     // 只在 Electron 环境中注册监听器
     if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
       try {
-        const electron = await import('electron');
-        ipcRenderer = electron.ipcRenderer;
-        ipcRenderer.on('export-settings-request', handleExportRequest);
-        ipcRenderer.on('import-settings-data', handleImportData);
+        if (window.electronAPI.settings) {
+          window.electronAPI.settings.onExportRequest(handleExportRequest);
+          window.electronAPI.settings.onImportData(handleImportData);
+        }
       } catch (error) {
         console.error('Failed to setup Electron IPC:', error);
       }
@@ -118,9 +106,8 @@ export function useElectronSettings() {
 
   onUnmounted(() => {
     // 清理监听器
-    if (ipcRenderer) {
-      ipcRenderer.removeListener('export-settings-request', handleExportRequest);
-      ipcRenderer.removeListener('import-settings-data', handleImportData);
+    if (typeof window !== 'undefined' && window.electronAPI?.settings) {
+      window.electronAPI.settings.removeListeners();
     }
   });
 }
