@@ -12,6 +12,9 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -64,20 +67,31 @@ jobs:
       - name: Create Release
         id: create_release
         if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          name: Release ${{ steps.get_version.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases \
+            -X POST \
+            -f tag_name="${{ steps.get_version.outputs.version }}" \
+            -f name="Release ${{ steps.get_version.outputs.version }}" \
+            -f draft=false \
+            -f prerelease=false \
+            -f generate_release_notes=true \
+            --jq '.upload_url' || echo "")
+          if [ -n "$RELEASE_RESPONSE" ]; then
+            echo "upload_url=$RELEASE_RESPONSE" >> $GITHUB_OUTPUT
+            echo "✅ Release created successfully"
+          else
+            echo "❌ Failed to create release"
+            exit 1
+          fi
 
   build:
     needs: create-release
     if: needs.create-release.outputs.release_created == 'true'
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
@@ -114,7 +128,7 @@ jobs:
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: |
@@ -125,7 +139,7 @@ jobs:
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: |
@@ -135,7 +149,7 @@ jobs:
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: |
