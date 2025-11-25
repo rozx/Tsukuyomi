@@ -27,6 +27,10 @@ echo "✅ Bun 版本: $(bun --version)"
 echo "📦 安装依赖..."
 bun install --frozen-lockfile
 
+# 安装 Puppeteer Chrome 浏览器
+echo "🌐 安装 Puppeteer Chrome 浏览器..."
+bunx puppeteer browsers install chrome || echo "⚠️  Chrome 安装失败，将在运行时重试"
+
 # 构建前端应用
 echo "🏗️  构建前端应用..."
 bun run build:spa

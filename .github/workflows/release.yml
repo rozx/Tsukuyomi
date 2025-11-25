@@ -16,6 +16,7 @@ jobs:
       contents: write
       pull-requests: read
     outputs:
+      release_id: ${{ steps.create_release.outputs.release_id }}
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
       release_created: ${{ steps.create_release.outcome == 'success' }}
@@ -76,11 +77,13 @@ jobs:
             -f name="Release ${{ steps.get_version.outputs.version }}" \
             -f draft=false \
             -f prerelease=false \
-            -f generate_release_notes=true \
-            --jq '.upload_url' || echo "")
+            -f generate_release_notes=true || echo "")
           if [ -n "$RELEASE_RESPONSE" ]; then
-            echo "upload_url=$RELEASE_RESPONSE" >> $GITHUB_OUTPUT
-            echo "✅ Release created successfully"
+            RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
+            UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
+            echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+            echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+            echo "✅ Release created successfully (ID: $RELEASE_ID)"
           else
             echo "❌ Failed to create release"
             exit 1
@@ -128,33 +131,33 @@ jobs:
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          files: |
-            dist/electron/*.dmg
-            dist/electron/*.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上传所有 .dmg 和 .zip 文件（排除 .blockmap 文件）
+          gh release upload ${{ needs.create-release.outputs.version }} \
+            dist/electron/Packaged/*.dmg \
+            dist/electron/Packaged/*.zip \
+            --clobber || echo "⚠️ Some files may not have been uploaded"
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          files: |
-            dist/electron/*.exe
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上传所有 .exe 文件
+          gh release upload ${{ needs.create-release.outputs.version }} \
+            dist/electron/Packaged/*.exe \
+            --clobber || echo "⚠️ Some files may not have been uploaded"
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.create-release.outputs.version }}
-          files: |
-            dist/electron/*.AppImage
-            dist/electron/*.deb
-            dist/electron/*.snap
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 上传所有 Linux 构建文件
+          gh release upload ${{ needs.create-release.outputs.version }} \
+            dist/electron/Packaged/*.AppImage \
+            dist/electron/Packaged/*.deb \
+            dist/electron/Packaged/*.snap \
+            --clobber || echo "⚠️ Some files may not have been uploaded"

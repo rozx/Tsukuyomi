@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'fs';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import type { Browser, Page } from 'puppeteer';
+import { executablePath } from 'puppeteer';
 
 puppeteer.use(StealthPlugin());
 
@@ -40,11 +41,33 @@ let browserPromise: Promise<Browser> | null = null;
 const getBrowser = async (): Promise<Browser> => {
   if (!browserPromise) {
     console.log('[Puppeteer] Launching browser...');
-    // Store the promise before awaiting to prevent race conditions
-    browserPromise = puppeteer.launch({
+
+    // 配置 Puppeteer 启动选项
+    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
+    };
+
+    // 尝试获取 Chrome 可执行文件路径
+    try {
+      const chromePath = executablePath();
+      if (chromePath && existsSync(chromePath)) {
+        launchOptions.executablePath = chromePath;
+        console.log(`[Puppeteer] Using Chrome executable: ${chromePath}`);
+      } else {
+        console.warn(`[Puppeteer] Chrome executable not found at ${chromePath}, using default`);
+      }
+    } catch (error) {
+      console.warn('[Puppeteer] Could not determine Chrome executable path:', error);
+    }
+
+    // 如果设置了 PUPPETEER_CACHE_DIR 环境变量，使用它
+    if (process.env.PUPPETEER_CACHE_DIR) {
+      console.log(`[Puppeteer] Using cache directory: ${process.env.PUPPETEER_CACHE_DIR}`);
+    }
+
+    // Store the promise before awaiting to prevent race conditions
+    browserPromise = puppeteer.launch(launchOptions);
 
     // Set up disconnected handler after browser is created
     browserPromise

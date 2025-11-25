@@ -23,6 +23,12 @@ fi
 
 echo "✅ Bun 版本: $(bun --version)"
 
+# 确保 Puppeteer Chrome 浏览器已安装
+echo "🌐 检查 Puppeteer Chrome 浏览器..."
+set +e  # 临时禁用错误退出，允许 Chrome 安装失败
+bunx puppeteer browsers install chrome 2>/dev/null || echo "⚠️  Chrome 安装失败，尝试继续运行..."
+set -e  # 重新启用错误退出
+
 # 启动应用服务器
 echo "🌐 启动应用服务器..."
 bun run start:app
