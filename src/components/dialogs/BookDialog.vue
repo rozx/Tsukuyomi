@@ -12,6 +12,7 @@ import TranslatableInput from '../translation/TranslatableInput.vue';
 import TranslatableChips from '../translation/TranslatableChips.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import {
   formatCharCount,
@@ -139,18 +140,30 @@ const handleSave = () => {
 };
 
 // 导出 JSON
-const handleExportJson = () => {
+const handleExportJson = async () => {
   try {
-    // 准备要导出的数据
-    const exportData: Partial<Novel> = {
-      ...formData.value,
-    };
+    let exportData: Novel;
 
-    // 如果有 book 数据，包含 id 和时间戳
+    // 如果有 book 数据，使用完整的书籍数据（包含所有字段）
     if (props.mode === 'edit' && props.book) {
-      exportData.id = props.book.id;
-      exportData.createdAt = props.book.createdAt;
-      exportData.lastEdited = props.book.lastEdited;
+      // 加载所有章节内容
+      exportData = await ChapterContentService.loadAllChapterContentsForNovel(props.book);
+    } else {
+      // 添加模式，使用表单数据（不包含章节内容）
+      exportData = {
+        id: '',
+        title: formData.value.title || '',
+        ...(formData.value.alternateTitles ? { alternateTitles: formData.value.alternateTitles } : {}),
+        ...(formData.value.author ? { author: formData.value.author } : {}),
+        ...(formData.value.description ? { description: formData.value.description } : {}),
+        ...(formData.value.tags ? { tags: formData.value.tags } : {}),
+        ...(formData.value.webUrl ? { webUrl: formData.value.webUrl } : {}),
+        ...(formData.value.cover ? { cover: formData.value.cover } : {}),
+        ...(formData.value.volumes ? { volumes: formData.value.volumes } : {}),
+        ...(formData.value.starred !== undefined ? { starred: formData.value.starred } : {}),
+        createdAt: new Date(),
+        lastEdited: new Date(),
+      } as Novel;
     }
 
     // 创建 JSON 字符串

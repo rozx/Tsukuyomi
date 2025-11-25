@@ -1,5 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
-import type { Paragraph } from 'src/models/novel';
+import type { Paragraph, Novel } from 'src/models/novel';
 
 /**
  * 章节内容存储结构
@@ -117,5 +117,62 @@ export class ChapterContentService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * 为小说加载所有章节内容（用于同步等场景）
+   * @param novel 小说对象
+   * @returns 包含所有章节内容的小说对象
+   */
+  static async loadAllChapterContentsForNovel(novel: Novel): Promise<Novel> {
+    if (!novel.volumes) {
+      return novel;
+    }
+
+    const volumes = await Promise.all(
+      novel.volumes.map(async (volume) => {
+        if (!volume.chapters) {
+          return volume;
+        }
+
+        const chapters = await Promise.all(
+          volume.chapters.map(async (chapter) => {
+            // 如果内容已加载，直接返回
+            if (chapter.content !== undefined) {
+              return chapter;
+            }
+
+            // 从独立存储加载内容
+            const content = await ChapterContentService.loadChapterContent(chapter.id);
+            return {
+              ...chapter,
+              content: content || [],
+              contentLoaded: true,
+            };
+          }),
+        );
+
+        return {
+          ...volume,
+          chapters,
+        };
+      }),
+    );
+
+    return {
+      ...novel,
+      volumes,
+    };
+  }
+
+  /**
+   * 为多个小说加载所有章节内容（用于同步等场景）
+   * @param novels 小说数组
+   * @returns 包含所有章节内容的小说数组
+   */
+  static async loadAllChapterContentsForNovels(novels: Novel[]): Promise<Novel[]> {
+    return Promise.all(
+      novels.map((novel) => ChapterContentService.loadAllChapterContentsForNovel(novel)),
+    );
   }
 }

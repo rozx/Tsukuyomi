@@ -2,12 +2,8 @@ import express, { type Request, type Response } from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import type { Browser, Page } from 'puppeteer';
-import { executablePath } from 'puppeteer';
-
-puppeteer.use(StealthPlugin());
+import { handlePuppeteerProxy } from './proxy/puppeteer-proxy';
+import { handleDirectProxy, handleAllOriginsProxy } from './proxy/http-proxy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,12 +11,13 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
 const isProduction = process.env.NODE_ENV === 'production';
+const PROXY_MODE = process.env.PROXY_MODE || 'allorigins'; // 'puppeteer' or 'allorigins'
 
 // --- Configuration ---
 
 interface TargetConfig {
   baseUrl: string;
-  mode: 'direct';
+  mode: 'direct' | 'allorigins';
 }
 
 // Define your targets here
@@ -29,97 +26,12 @@ const TARGETS: Record<string, TargetConfig> = {
   '/api/kakuyomu': { baseUrl: 'https://kakuyomu.jp', mode: 'direct' },
   '/api/ncode': { baseUrl: 'https://ncode.syosetu.com', mode: 'direct' },
   '/api/novel18': { baseUrl: 'https://novel18.syosetu.com', mode: 'direct' },
-  // Puppeteer + Stealth handles Cloudflare, so we use direct mode for syosetu.org too
-  '/api/syosetu': { baseUrl: 'https://syosetu.org', mode: 'direct' },
+  // syosetu.org often requires JS/Cookies (Cloudflare), so we use AllOrigins to bypass
+  '/api/syosetu': { baseUrl: 'https://syosetu.org', mode: 'allorigins' },
   '/api/search': { baseUrl: 'https://html.duckduckgo.com/html', mode: 'direct' },
 };
 
-// --- Puppeteer Instance ---
-
-let browserPromise: Promise<Browser> | null = null;
-
-const getBrowser = async (): Promise<Browser> => {
-  if (!browserPromise) {
-    console.log('[Puppeteer] Launching browser...');
-
-    // 配置 Puppeteer 启动选项
-    const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    };
-
-    // 尝试获取 Chrome 可执行文件路径
-    try {
-      const chromePath = executablePath();
-      if (chromePath && existsSync(chromePath)) {
-        launchOptions.executablePath = chromePath;
-        console.log(`[Puppeteer] Using Chrome executable: ${chromePath}`);
-      } else {
-        console.warn(`[Puppeteer] Chrome executable not found at ${chromePath}, using default`);
-      }
-    } catch (error) {
-      console.warn('[Puppeteer] Could not determine Chrome executable path:', error);
-    }
-
-    // 如果设置了 PUPPETEER_CACHE_DIR 环境变量，使用它
-    if (process.env.PUPPETEER_CACHE_DIR) {
-      console.log(`[Puppeteer] Using cache directory: ${process.env.PUPPETEER_CACHE_DIR}`);
-    }
-
-    // Store the promise before awaiting to prevent race conditions
-    browserPromise = puppeteer.launch(launchOptions);
-
-    // Set up disconnected handler after browser is created
-    browserPromise
-      .then((browser) => {
-        browser.on('disconnected', () => {
-          console.log('[Puppeteer] Browser disconnected.');
-          browserPromise = null;
-        });
-      })
-      .catch((error) => {
-        console.error('[Puppeteer] Failed to launch browser:', error);
-        browserPromise = null;
-        throw error;
-      });
-  }
-  return await browserPromise;
-};
-
-// --- Proxy Handlers ---
-
-const handleDirectProxy = async (
-  req: Request,
-  res: Response,
-  targetUrl: string,
-  requestId: string,
-) => {
-  let page: Page | null = null;
-  try {
-    const browser = await getBrowser();
-    page = await browser.newPage();
-
-    console.log(`[Puppeteer] [${requestId}] Navigating to ${targetUrl}`);
-
-    await page.goto(targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
-    });
-
-    const content = await page.content();
-    console.log(`[Puppeteer] [${requestId}] Page loaded. Content length: ${content.length}`);
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(content);
-  } catch (error) {
-    console.error(`[Puppeteer Error] [${requestId}]`, error);
-    throw error;
-  } finally {
-    if (page) {
-      await page.close().catch((e) => console.error(`[Puppeteer] Error closing page:`, e));
-    }
-  }
-};
+// --- Proxy Handlers (imported from separate modules) ---
 
 const handleProxyRequest = async (
   req: Request,
@@ -133,11 +45,22 @@ const handleProxyRequest = async (
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
   console.log(
-    `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Mode: ${config.mode})`,
+    `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Mode: ${config.mode}, Proxy: ${PROXY_MODE})`,
   );
 
   try {
-    await handleDirectProxy(req, res, targetUrl, requestId);
+    // Use Puppeteer only when PROXY_MODE='puppeteer'
+    if (PROXY_MODE === 'puppeteer') {
+      await handlePuppeteerProxy(req, res, targetUrl, requestId);
+      return;
+    }
+
+    // Otherwise, use the configured mode (direct or allorigins)
+    if (config.mode === 'allorigins') {
+      await handleAllOriginsProxy(req, res, targetUrl, requestId);
+    } else {
+      await handleDirectProxy(req, res, targetUrl, requestId);
+    }
   } catch (error: unknown) {
     const isTimeout = error instanceof Error && error.message.includes('Timeout');
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -149,6 +72,7 @@ const handleProxyRequest = async (
       res.status(isTimeout ? 504 : 500).json({
         error: 'Proxy Request Failed',
         mode: config.mode,
+        proxyMode: PROXY_MODE,
         message,
         code,
       });
@@ -168,7 +92,11 @@ const handleGenericProxy = async (req: Request, res: Response) => {
   console.log(`[Proxy Generic] [${requestId}] Fetching ${url}`);
 
   try {
-    await handleDirectProxy(req, res, url, requestId);
+    if (PROXY_MODE === 'puppeteer') {
+      await handlePuppeteerProxy(req, res, url, requestId);
+    } else {
+      await handleAllOriginsProxy(req, res, url, requestId);
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Proxy Generic Error] [${requestId}] ${message}`);
@@ -193,7 +121,11 @@ Object.entries(TARGETS).forEach(([pathPrefix, config]) => {
 
 // Health Check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', mode: isProduction ? 'production' : 'development' });
+  res.json({
+    status: 'ok',
+    mode: isProduction ? 'production' : 'development',
+    proxyMode: PROXY_MODE,
+  });
 });
 
 // --- Static Files & Frontend Serving ---
@@ -238,5 +170,8 @@ if (isProduction) {
 app.listen(PORT, () => {
   console.log(`Luna AI Translator Server running on port ${PORT}`);
   console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
-  console.log('Proxy Targets Configured (Puppeteer Direct Mode)');
+  console.log(
+    `Proxy Mode: ${PROXY_MODE === 'puppeteer' ? 'Puppeteer (high CPU/memory)' : 'AllOrigins/got-scraping (lightweight)'}`,
+  );
+  console.log('Proxy Targets Configured');
 });

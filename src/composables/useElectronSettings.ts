@@ -4,6 +4,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 
 /**
  * Electron 环境下的设置导入/导出处理
@@ -15,12 +16,17 @@ export function useElectronSettings() {
   const settingsStore = useSettingsStore();
 
   // 处理导出设置请求
-  const handleExportRequest = (filePath: string) => {
+  const handleExportRequest = async (filePath: string) => {
     try {
+      // 加载所有书籍的章节内容
+      const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+        booksStore.books,
+      );
+
       // 获取当前设置
       const settings = {
         aiModels: aiModelsStore.models,
-        novels: booksStore.books,
+        novels: novelsWithContent,
         coverHistory: coverHistoryStore.covers,
         sync: settingsStore.syncs,
         appSettings: settingsStore.settings,

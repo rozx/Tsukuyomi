@@ -7,6 +7,7 @@ import { SyncType } from 'src/models/sync';
 import type { CoverHistoryItem } from 'src/models/novel';
 import { extractNovelIdFromChunkFileName } from 'src/utils/gist-file-utils';
 import { compressString, decompressString } from 'src/utils/compression';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 
 /**
  * Gist 文件名称常量
@@ -299,6 +300,11 @@ export class GistSyncService {
         throw new Error('Octokit 客户端未初始化');
       }
 
+      // 在同步前加载所有章节内容
+      const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+        data.novels,
+      );
+
       // 准备文件内容
       // 注意：要删除文件，GitHub API 要求使用 null 值
       // 类型定义：Record<string, { content: string } | null>
@@ -310,7 +316,7 @@ export class GistSyncService {
         appSettings: this.serializeDates(data.appSettings),
         coverHistory: data.coverHistory ? this.serializeDates(data.coverHistory) : undefined,
       };
-      
+
       const settingsJson = JSON.stringify(settingsData);
       // 尝试压缩设置文件
       let settingsContent = settingsJson;
@@ -337,15 +343,15 @@ export class GistSyncService {
         chunked: boolean;
         chunkCount?: number;
       }> = [];
-      
+
       // 记录每本书的存储格式（分块或单文件），以便清理旧格式文件
       const novelFormats = new Map<string, 'chunked' | 'single'>();
 
-      for (const novel of data.novels) {
+      for (const novel of novelsWithContent) {
         const serializedNovel = this.serializeDates(novel);
         // 使用压缩格式（去除空格和换行）以减少文件大小
         const jsonContent = JSON.stringify(serializedNovel);
-        
+
         // 尝试压缩书籍数据
         let finalContent = jsonContent;
         try {
@@ -447,7 +453,7 @@ export class GistSyncService {
           });
 
           const currentFiles = currentGist.data.files || {};
-          const localNovelIds = new Set(data.novels.map((n) => n.id));
+          const localNovelIds = new Set(novelsWithContent.map((n) => n.id));
 
           // 创建一个集合，包含所有本地已经添加到 files 中的文件名（排除 null 值）
           const localFileNames = new Set<string>();
@@ -485,7 +491,7 @@ export class GistSyncService {
               // 3. 分块数量减少（例如以前有 10 个块，现在只有 8 个，第 8、9 个块会被删除）
               // 4. 文件重命名（例如分隔符从 # 变为 _，旧文件会被删除）
               files[filename] = null; // 删除文件
-                filesToDelete.push(filename);
+              filesToDelete.push(filename);
             }
           }
 
@@ -501,12 +507,12 @@ export class GistSyncService {
           // 将文件分为多个批次，每个批次包含一部分更新和删除
           const allFiles = Object.entries(files);
           const BATCH_SIZE = 10; // 每个请求最多处理 10 个文件
-          
+
           // 优先处理删除操作，以释放配额（如果有配额限制的话）
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
           for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
-            
+
             try {
               if (!gistId) throw new Error('Gist ID is undefined during batch update');
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -527,12 +533,12 @@ export class GistSyncService {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const errorResponse = (batchError as any).response;
               const errorData = errorResponse?.data;
-              
+
               if (errorResponse?.status === 409) {
-                 // 409 Conflict: 通常意味着 Gist 在我们读取后被修改了，或者并发更新冲突
-                 // 尝试重新获取最新的 Gist 内容并重试可能会解决问题，但这是一个复杂的操作
-                 // 暂时抛出一个更友好的错误
-                 throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
+                // 409 Conflict: 通常意味着 Gist 在我们读取后被修改了，或者并发更新冲突
+                // 尝试重新获取最新的 Gist 内容并重试可能会解决问题，但这是一个复杂的操作
+                // 暂时抛出一个更友好的错误
+                throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
               }
 
               if (errorData) {
@@ -544,7 +550,10 @@ export class GistSyncService {
           }
         } catch (error) {
           // 如果是更新失败，我们希望中断并报错
-          if (error instanceof Error && (error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突'))) {
+          if (
+            error instanceof Error &&
+            (error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突'))
+          ) {
             throw error;
           }
           // 如果获取失败（例如 Gist 不存在），继续使用原始 files (尝试创建新 Gist)
@@ -562,7 +571,7 @@ export class GistSyncService {
               filesForCreate[key] = value;
             }
           }
-          
+
           const response = await this.octokit.rest.gists.create({
             description: 'Luna AI Translator - Settings and Novels',
             public: false,
@@ -663,9 +672,7 @@ export class GistSyncService {
             result.appSettings = this.deserializeDates(settingsData.appSettings);
           }
           if (settingsData.coverHistory) {
-            result.coverHistory = this.deserializeDates(
-              settingsData.coverHistory,
-            );
+            result.coverHistory = this.deserializeDates(settingsData.coverHistory);
           }
         } catch {
           // 忽略设置文件解析错误，继续处理书籍
@@ -1312,9 +1319,7 @@ export class GistSyncService {
             result.appSettings = this.deserializeDates(settingsData.appSettings);
           }
           if (settingsData.coverHistory) {
-            result.coverHistory = this.deserializeDates(
-              settingsData.coverHistory,
-            );
+            result.coverHistory = this.deserializeDates(settingsData.coverHistory);
           }
         } catch {
           // 忽略设置文件解析错误

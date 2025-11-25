@@ -43,10 +43,10 @@ export interface ElectronAPI {
   settings: {
     /**
      * 注册导出设置请求监听器
-     * @param callback 回调函数
+     * @param callback 回调函数（可以是异步的）
      * @returns 清理函数，调用它来移除这个监听器
      */
-    onExportRequest: (callback: (filePath: string) => void) => () => void;
+    onExportRequest: (callback: (filePath: string) => void | Promise<void>) => () => void;
     /**
      * 注册导入设置数据监听器
      * @param callback 回调函数
