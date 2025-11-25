@@ -3,7 +3,6 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
-  AITool,
   AIToolCall,
   AIToolCallResult,
   ChatMessage,
@@ -362,11 +361,17 @@ export class TranslationService {
    (4) **语境**: 根据上下文判断。
    *禁止自动创建敬语别名。*
 3. **数据管理**:
-   - **工具使用**: 相关术语和角色已包含在输入中。**除非必要（如查找未提供的特定条目），否则禁止调用 list_terms 或 list_characters。**
+   - **工具使用**: 相关术语和角色已包含在输入中，请先使用上下文中的术语/角色，如果上下文中没有，再调用 list_terms,get_term 或 list_characters,get_character。
    - **分离**: 术语表(物/事) vs 角色表(人)。
    - **创建**: 查重 -> 全名建角色/部分名=别名。
    - **维护**: 填补空缺(翻译/描述)，删除无用/重复。
-4. **输出**: 有效 JSON，段落 1:1 对应。`;
+4. **输出**: 必须返回有效 JSON 格式:
+   {
+     "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
+     "translation": "完整翻译文本",
+     "titleTranslation": "章节标题翻译(仅当提供标题时)"
+   }
+   确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译。`;
 
       history.push({ role: 'system', content: systemPrompt });
 
