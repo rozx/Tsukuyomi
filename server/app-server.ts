@@ -35,22 +35,32 @@ const TARGETS: Record<string, TargetConfig> = {
 
 // --- Puppeteer Instance ---
 
-let browserInstance: Browser | null = null;
+let browserPromise: Promise<Browser> | null = null;
 
 const getBrowser = async (): Promise<Browser> => {
-  if (!browserInstance) {
+  if (!browserPromise) {
     console.log('[Puppeteer] Launching browser...');
-    browserInstance = (await puppeteer.launch({
+    // Store the promise before awaiting to prevent race conditions
+    browserPromise = puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    })) as unknown as Browser;
-
-    browserInstance.on('disconnected', () => {
-      console.log('[Puppeteer] Browser disconnected.');
-      browserInstance = null;
     });
+
+    // Set up disconnected handler after browser is created
+    browserPromise
+      .then((browser) => {
+        browser.on('disconnected', () => {
+          console.log('[Puppeteer] Browser disconnected.');
+          browserPromise = null;
+        });
+      })
+      .catch((error) => {
+        console.error('[Puppeteer] Failed to launch browser:', error);
+        browserPromise = null;
+        throw error;
+      });
   }
-  return browserInstance;
+  return await browserPromise;
 };
 
 // --- Proxy Handlers ---

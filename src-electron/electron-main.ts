@@ -462,6 +462,12 @@ ipcMain.handle(
         // Note: pie.connect returns a Browser instance that controls the Electron app
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         browserPromise = pie.connect(app, puppeteer as any);
+
+        // Handle connection failures: reset browserPromise if it rejects
+        browserPromise.catch((error) => {
+          console.error('[Electron Fetch] Browser connection failed:', error);
+          browserPromise = null; // Reset to allow retry on next call
+        });
       }
       const browser = await browserPromise;
 
@@ -506,6 +512,19 @@ ipcMain.handle(
       return response;
     } catch (err) {
       console.error('[Electron Fetch] Puppeteer error:', err);
+
+      // If the error is related to browser connection, reset browserPromise to allow retry
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (
+        errorMessage.includes('connect') ||
+        errorMessage.includes('browser') ||
+        errorMessage.includes('disconnected') ||
+        errorMessage.includes('target closed')
+      ) {
+        console.log('[Electron Fetch] Resetting browserPromise due to connection error');
+        browserPromise = null;
+      }
+
       if (window && !window.isDestroyed()) {
         window.close();
       }
