@@ -44,8 +44,16 @@ const handleProxyRequest = async (
   const targetUrl = `${config.baseUrl}${pathPart}${queryString}`;
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
+  // Determine the actual proxy method that will be used
+  let actualProxyMethod: string;
+  if (PROXY_MODE === 'puppeteer') {
+    actualProxyMethod = 'puppeteer';
+  } else {
+    actualProxyMethod = config.mode; // 'direct' or 'allorigins'
+  }
+
   console.log(
-    `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Mode: ${config.mode}, Proxy: ${PROXY_MODE})`,
+    `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Using: ${actualProxyMethod})`,
   );
 
   try {
@@ -89,13 +97,32 @@ const handleGenericProxy = async (req: Request, res: Response) => {
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-  console.log(`[Proxy Generic] [${requestId}] Fetching ${url}`);
+
+  // Determine proxy method based on target URL
+  // Only syosetu.org should use allorigins, others use direct
+  let proxyMethod: 'puppeteer' | 'direct' | 'allorigins';
+  if (PROXY_MODE === 'puppeteer') {
+    proxyMethod = 'puppeteer';
+  } else {
+    try {
+      const urlObj = new URL(url);
+      // Only syosetu.org requires allorigins due to Cloudflare protection
+      proxyMethod = urlObj.hostname === 'syosetu.org' ? 'allorigins' : 'direct';
+    } catch {
+      // If URL parsing fails, default to direct
+      proxyMethod = 'direct';
+    }
+  }
+
+  console.log(`[Proxy Generic] [${requestId}] Fetching ${url} (Using: ${proxyMethod})`);
 
   try {
-    if (PROXY_MODE === 'puppeteer') {
+    if (proxyMethod === 'puppeteer') {
       await handlePuppeteerProxy(req, res, url, requestId);
-    } else {
+    } else if (proxyMethod === 'allorigins') {
       await handleAllOriginsProxy(req, res, url, requestId);
+    } else {
+      await handleDirectProxy(req, res, url, requestId);
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
