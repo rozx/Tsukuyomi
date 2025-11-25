@@ -477,6 +477,8 @@ ipcMain.handle(
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
+          // 禁用 webSecurity 以允许爬虫服务绕过 CORS 限制
+          webSecurity: false,
         },
       });
 
