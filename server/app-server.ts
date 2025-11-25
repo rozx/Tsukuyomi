@@ -135,11 +135,22 @@ const VITE_DEV_PORT = Number(process.env.VITE_PORT) || 9000;
 if (isProduction) {
   const distPath = join(__dirname, '../dist/spa');
   if (existsSync(distPath)) {
-    app.use(express.static(distPath));
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api')) return next();
+    // Serve static files (CSS, JS, images, etc.)
+    // index: false prevents automatic index.html serving for root path
+    app.use(express.static(distPath, { index: false }));
+
+    // Catch-all handler: serve index.html for all non-API, non-static routes
+    // This is required for Vue Router history mode to work correctly
+    app.get('*', (req, res) => {
+      // Skip API routes (they should be handled by earlier middleware)
+      if (req.path.startsWith('/api') || req.path === '/health') {
+        res.status(404).json({ error: 'Route not found' });
+        return;
+      }
+
       const indexPath = join(distPath, 'index.html');
       if (existsSync(indexPath)) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(readFileSync(indexPath, 'utf-8'));
       } else {
         res.status(404).send('Not found');
