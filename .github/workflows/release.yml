@@ -1,10 +1,6 @@
 name: Release
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
   push:
     branches:
       - main
@@ -31,30 +27,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # For pull_request events, check the PR directly
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            if [ "${{ github.event.pull_request.merged }}" == "true" ]; then
-              PR_NUMBER="${{ github.event.pull_request.number }}"
-              LABELS=$(gh pr view $PR_NUMBER --json labels --jq '.labels[].name' || echo "")
-              echo "PR #$PR_NUMBER labels found: $LABELS"
-              if echo "$LABELS" | grep -q "release"; then
-                echo "has_release_label=true" >> $GITHUB_OUTPUT
-              else
-                echo "has_release_label=false" >> $GITHUB_OUTPUT
-              fi
-            else
-              echo "PR was not merged, skipping release"
-              echo "has_release_label=false" >> $GITHUB_OUTPUT
-            fi
-          # For push events, try to find associated PRs
+          # Get associated PRs for this commit
+          LABELS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[].labels[].name' 2>/dev/null || echo "")
+          echo "Labels found from commit PRs: $LABELS"
+          if echo "$LABELS" | grep -q "release"; then
+            echo "has_release_label=true" >> $GITHUB_OUTPUT
           else
-            LABELS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[].labels[].name' || echo "")
-            echo "Labels found from commit PRs: $LABELS"
-            if echo "$LABELS" | grep -q "release"; then
-              echo "has_release_label=true" >> $GITHUB_OUTPUT
-            else
-              echo "has_release_label=false" >> $GITHUB_OUTPUT
-            fi
+            echo "has_release_label=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Get version from package.json
