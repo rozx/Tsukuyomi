@@ -1,4 +1,4 @@
-# 使用官方 Node.js 镜像作为基础（包含构建工具）
+# 使用官方 Bun 镜像作为基础
 FROM oven/bun:1 AS builder
 
 # 安装 Chrome 系统依赖
@@ -31,18 +31,24 @@ RUN apt-get update && apt-get install -y -qq \
 WORKDIR /app
 
 # 复制依赖文件和 Quasar 配置文件（postinstall 需要这些文件来识别项目）
+# 注意：复制顺序很重要，先复制 package.json 和 lockfile 可以更好地利用 Docker 缓存
 COPY package.json bun.lock ./
 COPY quasar.config.ts index.html ./
 # 复制 vite-plugins 目录（quasar.config.ts 需要导入它）
 COPY vite-plugins ./vite-plugins
+# 复制 TypeScript 配置文件
+COPY tsconfig.json ./
+COPY eslint.config.js ./
 
-# 安装依赖
+# 安装依赖（这会运行 postinstall，执行 quasar prepare）
 RUN bun install --frozen-lockfile
 
 # 安装 Puppeteer Chrome 浏览器
 RUN bunx puppeteer browsers install chrome
 
-# 复制源代码
+# 复制源代码（在所有其他文件之后，以便更好地利用缓存）
+# 这会复制所有剩余的文件，包括 src/, public/, 配置文件等
+# .dockerignore 确保不会复制不必要的文件（如 node_modules, .git 等）
 COPY . .
 
 # 构建前端应用
