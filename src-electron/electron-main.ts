@@ -1,9 +1,18 @@
-import { app, BrowserWindow, ipcMain, net, Menu, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { gunzip, inflate, brotliDecompress } from 'zlib';
-import { promisify } from 'util';
+import puppeteer from 'puppeteer-extra';
+import type { Browser } from 'puppeteer';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import pie from 'puppeteer-in-electron';
+
+// Configure Puppeteer Stealth
+puppeteer.use(StealthPlugin());
+
+// Initialize puppeteer-in-electron
+await pie.initialize(app);
+app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -11,11 +20,14 @@ const __dirname = dirname(__filename);
 
 // 保持对窗口对象的全局引用，否则窗口会被自动关闭
 let mainWindow: BrowserWindow | null = null;
+let browserPromise: Promise<Browser> | null = null;
 
 // 检测是否为开发环境
 const isDev = process.env.DEV === 'true' || process.env.NODE_ENV !== 'production';
 // 调试模式：通过环境变量控制是否打开开发者工具（用于调试构建）
 const isDebugMode = process.env.ELECTRON_DEBUG === 'true' || isDev;
+
+// Normal App Logic
 
 // 处理加载错误的辅助函数
 function handleLoadError(window: BrowserWindow | null, err: unknown, path: string) {
@@ -428,7 +440,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// IPC handler for electron-fetch
+// IPC handler for electron-fetch using Puppeteer (Stealth)
 ipcMain.handle(
   'electron-fetch',
   async (
@@ -441,123 +453,83 @@ ipcMain.handle(
       timeout?: number;
     },
   ) => {
-    return new Promise((resolve, reject) => {
-      const request = net.request({
-        method: options?.method || 'GET',
-        url,
+    let window: BrowserWindow | null = null;
+    try {
+      console.log(`[Electron Fetch] Launching Puppeteer for ${url}`);
+
+      if (!browserPromise) {
+        // Connect to the Electron app
+        // Note: pie.connect returns a Browser instance that controls the Electron app
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        browserPromise = pie.connect(app, puppeteer as any);
+
+        // Handle connection failures: reset browserPromise if it rejects
+        browserPromise.catch((error) => {
+          console.error('[Electron Fetch] Browser connection failed:', error);
+          browserPromise = null; // Reset to allow retry on next call
+        });
+      }
+      const browser = await browserPromise;
+
+      // Create a hidden window for scraping
+      window = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
       });
 
-      // 设置超时
-      const timeout = options?.timeout || 60000;
-      const timeoutId = setTimeout(() => {
-        request.abort();
-        reject(new Error(`Request timeout after ${timeout}ms`));
-      }, timeout);
+      const page = await pie.getPage(browser, window);
 
-      // 设置请求头
+      // Set timeout
+      const timeoutMs = options?.timeout || 60000;
+      page.setDefaultNavigationTimeout(timeoutMs);
+
+      // Setup request headers if needed
       if (options?.headers) {
-        Object.entries(options.headers).forEach(([key, value]) => {
-          request.setHeader(key, value);
-        });
+        await page.setExtraHTTPHeaders(options.headers);
       }
 
-      // 设置默认请求头（如果未提供）
-      if (!request.getHeader('User-Agent')) {
-        request.setHeader(
-          'User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        );
-      }
-      if (!request.getHeader('Accept')) {
-        request.setHeader(
-          'Accept',
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        );
-      }
-      if (!request.getHeader('Accept-Language')) {
-        request.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-      }
-      if (!request.getHeader('Accept-Encoding')) {
-        request.setHeader('Accept-Encoding', 'gzip, deflate, br');
-      }
+      console.log(`[Electron Fetch] Navigating to ${url}`);
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-      // 处理响应
-      request.on('response', (response) => {
-        const chunks: Buffer[] = [];
+      // Wait for content (Cloudflare check handled by Stealth Plugin mostly, but we can add a small wait)
+      await new Promise((r) => setTimeout(r, 2000));
 
-        response.on('data', (chunk) => {
-          chunks.push(Buffer.from(chunk));
-        });
+      const content = await page.content();
+      const title = await page.title();
+      console.log(`[Electron Fetch] Page loaded: ${title}`);
 
-        response.on('end', () => {
-          clearTimeout(timeoutId);
-          const buffer = Buffer.concat(chunks);
+      const response = {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        data: content,
+      };
 
-          // 处理响应编码和解压缩
-          const encoding = response.headers['content-encoding'];
+      window.close();
+      return response;
+    } catch (err) {
+      console.error('[Electron Fetch] Puppeteer error:', err);
 
-          // 使用立即执行的异步函数来处理解压缩
-          void (async () => {
-            let data: string;
-
-            try {
-              let decompressedBuffer: Buffer;
-
-              if (encoding === 'gzip') {
-                decompressedBuffer = await promisify(gunzip)(buffer);
-              } else if (encoding === 'deflate') {
-                decompressedBuffer = await promisify(inflate)(buffer);
-              } else if (encoding === 'br') {
-                decompressedBuffer = await promisify(brotliDecompress)(buffer);
-              } else {
-                // 未压缩的数据，直接使用原始 buffer
-                decompressedBuffer = buffer;
-              }
-
-              data = decompressedBuffer.toString('utf-8');
-            } catch (error) {
-              // 如果解压缩失败，尝试直接转换为字符串（可能是误报的 content-encoding）
-              console.warn('[Electron] 解压缩失败，尝试直接解析:', error);
-              data = buffer.toString('utf-8');
-            }
-
-            // 提取响应头
-            const responseHeaders: Record<string, string> = {};
-            Object.entries(response.headers).forEach(([key, value]) => {
-              if (Array.isArray(value)) {
-                responseHeaders[key] = value.join(', ');
-              } else if (value !== undefined) {
-                responseHeaders[key] = String(value);
-              }
-            });
-
-            resolve({
-              status: response.statusCode,
-              statusText: response.statusMessage || '',
-              headers: responseHeaders,
-              data,
-            });
-          })();
-        });
-
-        response.on('error', (err) => {
-          clearTimeout(timeoutId);
-          reject(err);
-        });
-      });
-
-      request.on('error', (err) => {
-        clearTimeout(timeoutId);
-        reject(err);
-      });
-
-      // 发送请求体（如果有）
-      if (options?.body) {
-        request.write(options.body);
+      // If the error is related to browser connection, reset browserPromise to allow retry
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (
+        errorMessage.includes('connect') ||
+        errorMessage.includes('browser') ||
+        errorMessage.includes('disconnected') ||
+        errorMessage.includes('target closed')
+      ) {
+        console.log('[Electron Fetch] Resetting browserPromise due to connection error');
+        browserPromise = null;
       }
 
-      request.end();
-    });
+      if (window && !window.isDestroyed()) {
+        window.close();
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
   },
 );
 
@@ -570,7 +542,8 @@ ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {
         type: 'info',
         title: '导出成功',
         message: '设置已成功导出',
-        detail: `文件已保存到:\n${filePath}`,
+        detail: `文件已保存到:
+${filePath}`,
       });
     }
   } catch (error) {

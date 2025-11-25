@@ -128,7 +128,7 @@ export default defineConfig((ctx) => {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
                 );
                 proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                // proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
                 proxyReq.setHeader('Cache-Control', 'max-age=0');
                 proxyReq.setHeader('Connection', 'keep-alive');
                 proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
@@ -168,7 +168,7 @@ export default defineConfig((ctx) => {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 );
                 proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                // proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
                 proxyReq.setHeader('Cache-Control', 'max-age=0');
                 proxyReq.setHeader('Connection', 'keep-alive');
                 proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
@@ -207,7 +207,7 @@ export default defineConfig((ctx) => {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 );
                 proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                // proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
                 proxyReq.setHeader('Cache-Control', 'max-age=0');
                 proxyReq.setHeader('Connection', 'keep-alive');
                 proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
@@ -235,7 +235,7 @@ export default defineConfig((ctx) => {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 );
                 proxyReq.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                // proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
                 proxyReq.setHeader('Cache-Control', 'max-age=0');
                 proxyReq.setHeader('Connection', 'keep-alive');
                 proxyReq.setHeader('Upgrade-Insecure-Requests', '1');
@@ -263,7 +263,7 @@ export default defineConfig((ctx) => {
                   'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 );
                 proxyReq.setHeader('Accept-Language', 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7');
-                proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
+                // proxyReq.setHeader('Accept-Encoding', 'gzip, deflate, br');
                 proxyReq.setHeader('Cache-Control', 'max-age=0');
                 proxyReq.setHeader('Connection', 'keep-alive');
                 proxyReq.setHeader('Upgrade-Insecure-Requests', '1');

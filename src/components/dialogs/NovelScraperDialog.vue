@@ -8,6 +8,7 @@ import Splitter from 'primevue/splitter';
 import SplitterPanel from 'primevue/splitterpanel';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
+import VirtualScroller from 'primevue/virtualscroller';
 // 不再需要 words-count 包，直接使用字符串长度计算字符数
 import type { Novel, Chapter } from 'src/models/novel';
 import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
@@ -131,6 +132,35 @@ const displayVolumeChapters = computed(() => {
     volumeTitle: getVolumeDisplayTitle(volume) || '未命名卷',
     chapters: volume.chapters || [],
   }));
+});
+
+// 虚拟列表数据
+const virtualList = computed(() => {
+  const list: any[] = [];
+  displayVolumeChapters.value.forEach((group) => {
+    // 卷头
+    const chapterCount =
+      filteredVolumes.value.find((v) => v.id === group.volumeId)?.chapters?.length || 0;
+    list.push({
+      type: 'header',
+      id: `vol-${group.volumeId}`,
+      data: group,
+      chapterCount,
+    });
+
+    // 章节
+    if (!isVolumeCollapsed(group.volumeId)) {
+      group.chapters.forEach((chapter) => {
+        list.push({
+          type: 'chapter',
+          id: chapter.id,
+          data: chapter,
+          volumeId: group.volumeId,
+        });
+      });
+    }
+  });
+  return list;
 });
 
 // 获取小说信息
@@ -452,6 +482,31 @@ const toggleVolumeCollapse = (volumeId: string) => {
 // 检查卷是否折叠
 const isVolumeCollapsed = (volumeId: string) => {
   return collapsedVolumes.value.has(volumeId);
+};
+
+// 切换卷的选择
+const toggleVolumeSelection = (volumeId: string) => {
+  const volume = filteredVolumes.value.find((v) => v.id === volumeId);
+  if (!volume || !volume.chapters || volume.chapters.length === 0) return;
+
+  const chapterIds = volume.chapters.map((c) => c.id);
+  const allSelected = chapterIds.every((id) => selectedChapters.value.has(id));
+
+  if (allSelected) {
+    // 取消全选
+    chapterIds.forEach((id) => selectedChapters.value.delete(id));
+  } else {
+    // 全选
+    chapterIds.forEach((id) => selectedChapters.value.add(id));
+  }
+};
+
+// 检查卷是否全选
+const isVolumeSelected = (volumeId: string) => {
+  const volume = filteredVolumes.value.find((v) => v.id === volumeId);
+  if (!volume || !volume.chapters || volume.chapters.length === 0) return false;
+
+  return volume.chapters.every((c) => selectedChapters.value.has(c.id));
 };
 
 // 异步加载本地章节内容并写入缓存
@@ -812,104 +867,117 @@ watch(
                   </div>
                 </div>
               </div>
-              <div class="flex-1 overflow-y-auto px-3 py-2 space-y-3 max-h-[70vh]">
-                <div
-                  v-for="volumeGroup in displayVolumeChapters"
-                  :key="volumeGroup.volumeId"
-                  class="space-y-2"
+              <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden">
+                <VirtualScroller
+                  :items="virtualList"
+                  :itemSize="80"
+                  class="border-0"
+                  style="height: calc(90vh - 300px); max-height: calc(90vh - 300px)"
                 >
-                  <div
-                    class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
-                    @click="toggleVolumeCollapse(volumeGroup.volumeId)"
-                  >
-                    <span class="flex-1">
-                      {{ volumeGroup.volumeTitle }} ({{
-                        filteredVolumes.find((v) => v.id === volumeGroup.volumeId)?.chapters
-                          ?.length || 0
-                      }}
-                      章)
-                    </span>
-                    <i
-                      :class="
-                        isVolumeCollapsed(volumeGroup.volumeId)
-                          ? 'pi pi-chevron-right'
-                          : 'pi pi-chevron-down'
-                      "
-                      class="text-xs text-moon/60"
-                    />
-                  </div>
-                  <div v-show="!isVolumeCollapsed(volumeGroup.volumeId)" class="space-y-2">
-                    <div
-                      v-for="chapter in volumeGroup.chapters"
-                      :key="chapter.id"
-                      class="list-item-base cursor-pointer min-w-0"
-                      :class="
-                        selectedChapterId === chapter.id
-                          ? 'list-item-selected'
-                          : 'hover:list-item-hover'
-                      "
-                      @click="selectChapter(chapter)"
-                    >
-                      <div class="flex items-start gap-3 min-w-0">
-                        <Checkbox
-                          :model-value="selectedChapters.has(chapter.id)"
-                          :binary="true"
-                          class="flex-shrink-0 mt-0.5"
-                          @click="toggleChapterSelection(chapter.id, $event)"
+                  <template #item="{ item }">
+                    <!-- 卷头 -->
+                    <div v-if="item.type === 'header'" class="pb-2">
+                      <div
+                        class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
+                        @click="toggleVolumeCollapse(item.data.volumeId)"
+                      >
+                        <div class="flex-shrink-0" @click.stop>
+                          <Checkbox
+                            :model-value="isVolumeSelected(item.data.volumeId)"
+                            :binary="true"
+                            @update:model-value="toggleVolumeSelection(item.data.volumeId)"
+                          />
+                        </div>
+                        <span class="flex-1">
+                          {{ item.data.volumeTitle }} ({{ item.chapterCount }} 章)
+                        </span>
+                        <i
+                          :class="
+                            isVolumeCollapsed(item.data.volumeId)
+                              ? 'pi pi-chevron-right'
+                              : 'pi pi-chevron-down'
+                          "
+                          class="text-xs text-moon/60"
                         />
-                        <div class="flex-1 min-w-0 w-0 overflow-hidden">
-                          <div class="flex items-start justify-between gap-2">
-                            <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
-                              {{ getChapterDisplayTitle(chapter) }}
+                      </div>
+                    </div>
+
+                    <!-- 章节 -->
+                    <div v-else class="pb-2">
+                      <div
+                        class="list-item-base cursor-pointer min-w-0"
+                        :class="
+                          selectedChapterId === item.data.id
+                            ? 'list-item-selected'
+                            : 'hover:list-item-hover'
+                        "
+                        @click="selectChapter(item.data)"
+                      >
+                        <div class="flex items-start gap-3 min-w-0">
+                          <div class="flex-shrink-0 mt-0.5" @click.stop>
+                            <Checkbox
+                              :model-value="selectedChapters.has(item.data.id)"
+                              :binary="true"
+                              @update:model-value="toggleChapterSelection(item.data.id)"
+                            />
+                          </div>
+                          <div class="flex-1 min-w-0 w-0 overflow-hidden">
+                            <div class="flex items-start justify-between gap-2">
+                              <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
+                                {{ getChapterDisplayTitle(item.data) }}
+                              </div>
+                              <template v-if="getChapterImportStatus(item.data)">
+                                <span :class="getChapterImportStatus(item.data)!.class">
+                                  {{ getChapterImportStatus(item.data)!.text }}
+                                </span>
+                              </template>
                             </div>
-                            <template v-if="getChapterImportStatus(chapter)">
-                              <span :class="getChapterImportStatus(chapter)!.class">
-                                {{ getChapterImportStatus(chapter)!.text }}
+                            <div class="flex items-center gap-3 mt-2 text-xs">
+                              <span
+                                v-if="chapterContents.has(item.data.id)"
+                                class="text-moon/70 font-medium"
+                              >
+                                字数:
+                                <span class="novel-word-count">{{
+                                  formatWordCount(getChapterWordCount(item.data.id))
+                                }}</span>
                               </span>
-                            </template>
-                          </div>
-                          <div class="flex items-center gap-3 mt-2 text-xs">
-                            <span
-                              v-if="chapterContents.has(chapter.id)"
-                              class="text-moon/70 font-medium"
+                              <span
+                                v-else-if="loadingChapters.has(item.data.id)"
+                                class="text-moon/50 italic"
+                              >
+                                计算中...
+                              </span>
+                              <span v-else class="text-moon/40"> 未加载 </span>
+                              <span
+                                v-if="item.data.lastUpdated"
+                                class="text-moon/50 flex items-center gap-1"
+                              >
+                                <i class="pi pi-clock text-[10px]" />
+                                {{ formatDate(item.data.lastUpdated) }}
+                              </span>
+                            </div>
+                            <div
+                              v-if="item.data.webUrl"
+                              class="mt-2 w-full max-w-full overflow-hidden"
                             >
-                              字数:
-                              <span class="novel-word-count">{{
-                                formatWordCount(getChapterWordCount(chapter.id))
-                              }}</span>
-                            </span>
-                            <span
-                              v-else-if="loadingChapters.has(chapter.id)"
-                              class="text-moon/50 italic"
-                            >
-                              计算中...
-                            </span>
-                            <span v-else class="text-moon/40"> 未加载 </span>
-                            <span
-                              v-if="chapter.lastUpdated"
-                              class="text-moon/50 flex items-center gap-1"
-                            >
-                              <i class="pi pi-clock text-[10px]" />
-                              {{ formatDate(chapter.lastUpdated) }}
-                            </span>
-                          </div>
-                          <div v-if="chapter.webUrl" class="mt-2 w-full max-w-full overflow-hidden">
-                            <a
-                              :href="chapter.webUrl"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="text-xs text-primary/80 hover:text-primary hover:underline block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
-                              style="max-width: 100%"
-                              @click.stop
-                            >
-                              {{ chapter.webUrl }}
-                            </a>
+                              <a
+                                :href="item.data.webUrl"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-xs text-primary/80 hover:text-primary hover:underline block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
+                                style="max-width: 100%"
+                                @click.stop
+                              >
+                                {{ item.data.webUrl }}
+                              </a>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </template>
+                </VirtualScroller>
                 <div
                   v-if="displayVolumeChapters.length === 0"
                   class="flex items-center justify-center py-8"

@@ -144,7 +144,9 @@ proxyConfigs.forEach((config) => {
         const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
         // 存储请求开始时间到请求对象，以便在响应时计算耗时
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (req as any).proxyStartTime = startTime;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (req as any).proxyRequestId = requestId;
         
         // 记录请求开始
@@ -181,13 +183,15 @@ proxyConfigs.forEach((config) => {
         
         // 记录请求详情（包括实际发送的请求头）
         const requestHeaders: Record<string, string> = {};
-        proxyReq.getHeaders && Object.entries(proxyReq.getHeaders()).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            requestHeaders[key] = value;
-          } else if (Array.isArray(value)) {
-            requestHeaders[key] = value.join(', ');
-          }
-        });
+        if (proxyReq.getHeaders) {
+          Object.entries(proxyReq.getHeaders()).forEach(([key, value]) => {
+            if (typeof value === 'string') {
+              requestHeaders[key] = value;
+            } else if (Array.isArray(value)) {
+              requestHeaders[key] = value.join(', ');
+            }
+          });
+        }
         
         console.log(`[Proxy Request Start] [${requestId}] ${expressReq.method} ${expressReq.path} -> ${targetUrl}`, {
           originalUrl: expressReq.url,
@@ -199,10 +203,12 @@ proxyConfigs.forEach((config) => {
       proxyRes: (
         proxyRes: IncomingMessage,
         req: IncomingMessage,
-        res: ServerResponse<IncomingMessage>,
+        _res: ServerResponse<IncomingMessage>,
       ) => {
         const expressReq = req as unknown as Request;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const startTime = (req as any).proxyStartTime;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const requestId = (req as any).proxyRequestId || 'unknown';
         const duration = startTime ? Date.now() - startTime : 0;
         
@@ -241,7 +247,9 @@ proxyConfigs.forEach((config) => {
       },
       error: (err: Error, req: IncomingMessage, res: ServerResponse<IncomingMessage> | Socket) => {
         const expressReq = req as unknown as Request;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const startTime = (req as any).proxyStartTime;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const requestId = (req as any).proxyRequestId || 'unknown';
         const duration = startTime ? Date.now() - startTime : 0;
         
@@ -252,6 +260,7 @@ proxyConfigs.forEach((config) => {
         // 详细错误日志
         console.error(`[Proxy ${errorType}] [${requestId}] ${expressReq.method} ${expressReq.path}`, {
           error: err.message,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           errorCode: (err as any).code,
           errorStack: err.stack,
           duration: `${duration}ms`,
@@ -276,7 +285,7 @@ proxyConfigs.forEach((config) => {
     },
   };
 
-  app.use(path, createProxyMiddleware(proxyMiddlewareOptions));
+  app.use(path, createProxyMiddleware(proxyMiddlewareOptions) as express.RequestHandler);
 });
 
 // 健康检查端点

@@ -84,10 +84,6 @@ export abstract class BaseScraper implements NovelScraper {
         }
       }
 
-      // 添加随机延迟，模拟人类行为（1-3秒）
-      const delay = Math.floor(Math.random() * 2000) + 1000;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
       // 重试机制：最多重试 3 次
       let lastError: Error | null = null;
       const maxRetries = 3;

@@ -107,7 +107,7 @@ const handleResizeStart = (event: MouseEvent) => {
 
 const handleResizeMove = (event: MouseEvent) => {
   if (!isResizing.value) return;
-  
+
   const deltaX = startX.value - event.clientX; // 向左拖拽时 deltaX 为正
   const newWidth = startWidth.value + deltaX;
   ui.setRightPanelWidth(newWidth);
@@ -143,7 +143,7 @@ const assistantModel = computed(() => {
 const contextInfo = computed(() => {
   const context = contextStore.getContext;
   const info: string[] = [];
-  
+
   if (context.currentBookId) {
     const book = booksStore.getBookById(context.currentBookId);
     if (book) {
@@ -158,7 +158,7 @@ const contextInfo = computed(() => {
   if (context.hoveredParagraphId) {
     info.push('当前段落');
   }
-  
+
   return info.length > 0 ? info.join(' | ') : '无上下文';
 });
 
@@ -181,13 +181,13 @@ const focusInput = () => {
         // PrimeVue Textarea 组件的聚焦方法
         // 尝试多种方式访问 textarea 元素
         const component = inputRef.value as any;
-        
+
         // 方法1: 直接调用 focus 方法（如果组件暴露了）
         if (typeof component.focus === 'function') {
           component.focus();
           return;
         }
-        
+
         // 方法2: 通过 $el 访问（Vue 3 组件实例）
         if (component.$el) {
           const textarea = component.$el.querySelector?.('textarea') as HTMLTextAreaElement | null;
@@ -201,7 +201,7 @@ const focusInput = () => {
             return;
           }
         }
-        
+
         // 方法3: 通过 el 属性访问（PrimeVue 可能使用）
         if (component.el) {
           const textarea = component.el.querySelector?.('textarea') as HTMLTextAreaElement | null;
@@ -214,9 +214,11 @@ const focusInput = () => {
             return;
           }
         }
-        
+
         // 方法4: 直接通过 DOM 查询（最后手段）
-        const textareaElement = document.querySelector('textarea[placeholder*="输入消息"]') as HTMLTextAreaElement | null;
+        const textareaElement = document.querySelector(
+          'textarea[placeholder*="输入消息"]',
+        ) as HTMLTextAreaElement | null;
         if (textareaElement && !textareaElement.disabled) {
           textareaElement.focus();
         }
@@ -229,7 +231,7 @@ const focusInput = () => {
 const sendMessage = async () => {
   const message = inputMessage.value.trim();
   if (!message || isSending.value) return;
-  
+
   if (!assistantModel.value) {
     toast.add({
       severity: 'warn',
@@ -302,7 +304,7 @@ const sendMessage = async () => {
         detail: error instanceof Error ? error.message : '未知错误',
         life: 5000,
       });
-      
+
       // 总结失败时，再次检查是否达到限制
       const currentMessageCount = messages.value.length + 1;
       if (currentMessageCount >= MAX_MESSAGES_PER_SESSION) {
@@ -344,7 +346,7 @@ const sendMessage = async () => {
     timestamp: Date.now(),
   };
   messages.value.push(assistantMessage);
-  
+
   // 注意：不在这里重置操作列表，因为操作可能在消息发送过程中发生
   // 操作列表会在消息完成或失败时处理
 
@@ -356,21 +358,20 @@ const sendMessage = async () => {
   const sessionSummary = currentSession?.summary;
 
   try {
+    // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
+    const messageHistory: AIChatMessage[] | undefined = currentSession?.messages
+      ? currentSession.messages
+          .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+          .map((msg) => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content,
+          }))
+      : undefined;
 
-      // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
-      const messageHistory: AIChatMessage[] | undefined = currentSession?.messages
-        ? currentSession.messages
-            .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
-            .map((msg) => ({
-              role: msg.role as 'user' | 'assistant',
-              content: msg.content,
-            }))
-        : undefined;
-
-      // 调用 AssistantService（内部会创建任务并获取 abortController signal）
-      const result = await AssistantService.chat(assistantModel.value, message, {
-        ...(sessionSummary ? { sessionSummary } : {}),
-        ...(messageHistory ? { messageHistory } : {}),
+    // 调用 AssistantService（内部会创建任务并获取 abortController signal）
+    const result = await AssistantService.chat(assistantModel.value, message, {
+      ...(sessionSummary ? { sessionSummary } : {}),
+      ...(messageHistory ? { messageHistory } : {}),
       onChunk: (chunk) => {
         // 更新助手消息内容
         const msg = messages.value.find((m) => m.id === assistantMessageId);
@@ -397,14 +398,12 @@ const sendMessage = async () => {
           ...(action.type === 'web_search' && 'query' in action.data
             ? { query: action.data.query }
             : {}),
-          ...(action.type === 'web_fetch' && 'url' in action.data
-            ? { url: action.data.url }
-            : {}),
+          ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
         };
-        
+
         // 立即将操作添加到临时数组（用于后续保存）
         currentMessageActions.value.push(messageAction);
-        
+
         // 立即将操作添加到当前助手消息，使其立即显示在 UI 中
         const assistantMsg = messages.value.find((m) => m.id === assistantMessageId);
         if (assistantMsg) {
@@ -440,43 +439,25 @@ const sendMessage = async () => {
 
         // 处理网络搜索和网页获取操作
         if (action.type === 'web_search') {
-          const query = 'query' in action.data ? action.data.query : undefined;
-          if (query) {
-            toast.add({
-              severity: 'info',
-              summary: actionLabels[action.type],
-              detail: `搜索查询：${query}`,
-              life: 3000,
-            });
-          }
-          // 不继续处理其他逻辑，直接返回
+          // 不显示 toast，也不继续处理其他逻辑
           return;
         }
 
         if (action.type === 'web_fetch') {
-          const url = 'url' in action.data ? action.data.url : undefined;
-          if (url) {
-            toast.add({
-              severity: 'info',
-              summary: actionLabels[action.type],
-              detail: `获取网页：${url}`,
-              life: 3000,
-            });
-          }
-          // 不继续处理其他逻辑，直接返回
+          // 不显示 toast，也不继续处理其他逻辑
           return;
         }
-        
+
         // 构建详细的 toast 消息
         let detail = '';
         let shouldShowRevertToast = false;
-        
+
         if (action.type === 'create' && 'name' in action.data) {
           // 创建操作：显示详细信息
           if (action.entity === 'character' && 'id' in action.data) {
             const character = action.data as CharacterSetting;
             const parts: string[] = [];
-            
+
             // 角色名称和翻译（主要信息）
             if (character.name) {
               const translation = character.translation?.translation;
@@ -486,10 +467,10 @@ const sendMessage = async () => {
                 parts.push(character.name);
               }
             }
-            
+
             // 其他详细信息
             const details: string[] = [];
-            
+
             // 性别
             if (character.sex) {
               const sexLabels: Record<string, string> = {
@@ -499,23 +480,26 @@ const sendMessage = async () => {
               };
               details.push(`性别：${sexLabels[character.sex] || character.sex}`);
             }
-            
+
             // 说话口吻
             if (character.speakingStyle) {
               details.push(`口吻：${character.speakingStyle}`);
             }
-            
+
             // 别名数量
             if (character.aliases && character.aliases.length > 0) {
               details.push(`别名：${character.aliases.length} 个`);
             }
-            
+
             // 出现次数
             if (character.occurrences && character.occurrences.length > 0) {
-              const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              const totalOccurrences = character.occurrences.reduce(
+                (sum, occ) => sum + occ.count,
+                0,
+              );
               details.push(`出现：${totalOccurrences} 次`);
             }
-            
+
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -527,7 +511,7 @@ const sendMessage = async () => {
             } else {
               detail = `角色 "${character.name}" 已创建`;
             }
-            
+
             // 为创建操作添加 revert（删除）
             if (contextStore.getContext.currentBookId) {
               shouldShowRevertToast = true;
@@ -549,7 +533,7 @@ const sendMessage = async () => {
           } else if (action.entity === 'term' && 'id' in action.data) {
             const term = action.data as Terminology;
             const parts: string[] = [];
-            
+
             // 术语名称和翻译（主要信息）
             if (term.name) {
               const translation = term.translation?.translation;
@@ -559,21 +543,21 @@ const sendMessage = async () => {
                 parts.push(term.name);
               }
             }
-            
+
             // 其他详细信息
             const details: string[] = [];
-            
+
             // 描述
             if (term.description) {
               details.push(`描述：${term.description}`);
             }
-            
+
             // 出现次数
             if (term.occurrences && term.occurrences.length > 0) {
               const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
               details.push(`出现：${totalOccurrences} 次`);
             }
-            
+
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -585,7 +569,7 @@ const sendMessage = async () => {
             } else {
               detail = `术语 "${term.name}" 已创建`;
             }
-            
+
             // 为创建操作添加 revert（删除）
             if (contextStore.getContext.currentBookId) {
               shouldShowRevertToast = true;
@@ -608,11 +592,15 @@ const sendMessage = async () => {
             // 默认创建消息
             detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
           }
-        } else if (action.type === 'update' && action.entity === 'character' && 'name' in action.data) {
+        } else if (
+          action.type === 'update' &&
+          action.entity === 'character' &&
+          'name' in action.data
+        ) {
           // 角色更新操作：显示详细信息
           const character = action.data as CharacterSetting;
           const parts: string[] = [];
-          
+
           // 角色名称和翻译（主要信息）
           if (character.name) {
             const translation = character.translation?.translation;
@@ -622,10 +610,10 @@ const sendMessage = async () => {
               parts.push(character.name);
             }
           }
-          
+
           // 其他详细信息
           const details: string[] = [];
-          
+
           // 性别
           if (character.sex) {
             const sexLabels: Record<string, string> = {
@@ -635,23 +623,23 @@ const sendMessage = async () => {
             };
             details.push(`性别：${sexLabels[character.sex] || character.sex}`);
           }
-          
+
           // 说话口吻
           if (character.speakingStyle) {
             details.push(`口吻：${character.speakingStyle}`);
           }
-          
+
           // 别名数量
           if (character.aliases && character.aliases.length > 0) {
             details.push(`别名：${character.aliases.length} 个`);
           }
-          
+
           // 出现次数
           if (character.occurrences && character.occurrences.length > 0) {
             const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
             details.push(`出现：${totalOccurrences} 次`);
           }
-          
+
           // 组合消息
           const mainInfo = parts.join(' | ');
           if (mainInfo && details.length > 0) {
@@ -663,10 +651,10 @@ const sendMessage = async () => {
           } else {
             detail = '角色已更新';
           }
-          
+
           // 添加 revert 功能
           const previousCharacter = action.previousData as CharacterSetting | undefined;
-          
+
           if (previousCharacter && contextStore.getContext.currentBookId) {
             shouldShowRevertToast = true;
             toast.add({
@@ -707,7 +695,7 @@ const sendMessage = async () => {
           // 术语更新操作：显示详细信息
           const term = action.data as Terminology;
           const parts: string[] = [];
-          
+
           // 术语名称和翻译（主要信息）
           if (term.name) {
             const translation = term.translation?.translation;
@@ -717,21 +705,21 @@ const sendMessage = async () => {
               parts.push(term.name);
             }
           }
-          
+
           // 其他详细信息
           const details: string[] = [];
-          
+
           // 描述
           if (term.description) {
             details.push(`描述：${term.description}`);
           }
-          
+
           // 出现次数
           if (term.occurrences && term.occurrences.length > 0) {
             const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
             details.push(`出现：${totalOccurrences} 次`);
           }
-          
+
           // 组合消息
           const mainInfo = parts.join(' | ');
           if (mainInfo && details.length > 0) {
@@ -743,10 +731,10 @@ const sendMessage = async () => {
           } else {
             detail = `术语 "${term.name}" 已更新`;
           }
-          
+
           // 添加 revert 功能
           const previousTerm = action.previousData as Terminology | undefined;
-          
+
           if (previousTerm && contextStore.getContext.currentBookId) {
             shouldShowRevertToast = true;
             toast.add({
@@ -776,7 +764,7 @@ const sendMessage = async () => {
           if (action.entity === 'character' && action.previousData) {
             const previousCharacter = action.previousData as CharacterSetting;
             const parts: string[] = [];
-            
+
             // 角色名称和翻译（主要信息）
             if (previousCharacter.name) {
               const translation = previousCharacter.translation?.translation;
@@ -786,10 +774,10 @@ const sendMessage = async () => {
                 parts.push(previousCharacter.name);
               }
             }
-            
+
             // 其他详细信息
             const details: string[] = [];
-            
+
             // 性别
             if (previousCharacter.sex) {
               const sexLabels: Record<string, string> = {
@@ -799,23 +787,26 @@ const sendMessage = async () => {
               };
               details.push(`性别：${sexLabels[previousCharacter.sex] || previousCharacter.sex}`);
             }
-            
+
             // 说话口吻
             if (previousCharacter.speakingStyle) {
               details.push(`口吻：${previousCharacter.speakingStyle}`);
             }
-            
+
             // 别名数量
             if (previousCharacter.aliases && previousCharacter.aliases.length > 0) {
               details.push(`别名：${previousCharacter.aliases.length} 个`);
             }
-            
+
             // 出现次数
             if (previousCharacter.occurrences && previousCharacter.occurrences.length > 0) {
-              const totalOccurrences = previousCharacter.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              const totalOccurrences = previousCharacter.occurrences.reduce(
+                (sum, occ) => sum + occ.count,
+                0,
+              );
               details.push(`出现：${totalOccurrences} 次`);
             }
-            
+
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -827,7 +818,7 @@ const sendMessage = async () => {
             } else {
               detail = `角色 "${previousCharacter.name}" 已删除`;
             }
-            
+
             // 为删除操作添加 revert（恢复）
             if (contextStore.getContext.currentBookId) {
               shouldShowRevertToast = true;
@@ -857,7 +848,7 @@ const sendMessage = async () => {
           } else if (action.entity === 'term' && action.previousData) {
             const previousTerm = action.previousData as Terminology;
             const parts: string[] = [];
-            
+
             // 术语名称和翻译（主要信息）
             if (previousTerm.name) {
               const translation = previousTerm.translation?.translation;
@@ -867,21 +858,24 @@ const sendMessage = async () => {
                 parts.push(previousTerm.name);
               }
             }
-            
+
             // 其他详细信息
             const details: string[] = [];
-            
+
             // 描述
             if (previousTerm.description) {
               details.push(`描述：${previousTerm.description}`);
             }
-            
+
             // 出现次数
             if (previousTerm.occurrences && previousTerm.occurrences.length > 0) {
-              const totalOccurrences = previousTerm.occurrences.reduce((sum, occ) => sum + occ.count, 0);
+              const totalOccurrences = previousTerm.occurrences.reduce(
+                (sum, occ) => sum + occ.count,
+                0,
+              );
               details.push(`出现：${totalOccurrences} 次`);
             }
-            
+
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -893,7 +887,7 @@ const sendMessage = async () => {
             } else {
               detail = `术语 "${previousTerm.name}" 已删除`;
             }
-            
+
             // 为删除操作添加 revert（恢复）
             if (contextStore.getContext.currentBookId) {
               shouldShowRevertToast = true;
@@ -928,7 +922,7 @@ const sendMessage = async () => {
           // 默认消息
           detail = `${entityLabels[action.entity]}已${actionLabels[action.type]}`;
         }
-        
+
         // 如果没有显示带 revert 的 toast，显示通用 toast
         if (!shouldShowRevertToast) {
           toast.add({
@@ -974,7 +968,8 @@ const sendMessage = async () => {
       toast.add({
         severity: 'info',
         summary: '会话已总结',
-        detail: '由于达到 token 限制或发生错误，会话历史已自动总结并重置。之前的对话内容已保存为总结。',
+        detail:
+          '由于达到 token 限制或发生错误，会话历史已自动总结并重置。之前的对话内容已保存为总结。',
         life: 5000,
       });
 
@@ -1035,12 +1030,12 @@ const sendMessage = async () => {
       }
     }
 
-      // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
-      // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
-      if (sessionId) {
-        chatSessionsStore.updateSessionMessages(sessionId, messages.value);
-      }
-    
+    // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
+    // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
+    if (sessionId) {
+      chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+    }
+
     // 清空操作列表（消息完成后）
     currentMessageActions.value = [];
   } catch (error) {
@@ -1053,12 +1048,12 @@ const sendMessage = async () => {
         msg.actions = [...currentMessageActions.value];
       }
     }
-    
+
     // 保存错误消息到正确的会话（使用保存的会话 ID）
     if (sessionId && messages.value.length > 0) {
       chatSessionsStore.updateSessionMessages(sessionId, messages.value);
     }
-    
+
     toast.add({
       severity: 'error',
       summary: '助手回复失败',
@@ -1324,7 +1319,7 @@ const getActionDetails = (action: MessageAction) => {
 const toggleActionPopover = (event: Event, action: MessageAction, message: ChatMessage) => {
   const actionKey = `${message.id}-${action.timestamp}`;
   const popoverRef = actionPopoverRefs.value.get(actionKey);
-  
+
   if (popoverRef) {
     hoveredAction.value = { action, message };
     popoverRef.toggle(event);
@@ -1335,7 +1330,7 @@ const toggleActionPopover = (event: Event, action: MessageAction, message: ChatM
 const handleActionMouseLeave = (action: MessageAction, message: ChatMessage) => {
   const actionKey = `${message.id}-${action.timestamp}`;
   const popoverRef = actionPopoverRefs.value.get(actionKey);
-  
+
   if (popoverRef) {
     popoverRef.hide();
   }
@@ -1366,7 +1361,9 @@ const handleActionPopoverHide = () => {
     />
 
     <!-- Header with new chat button -->
-    <div class="shrink-0 px-4 pt-6 pb-4 relative z-10 flex items-center justify-between border-b border-white/10">
+    <div
+      class="shrink-0 px-4 pt-6 pb-4 relative z-10 flex items-center justify-between border-b border-white/10"
+    >
       <h2 class="text-sm font-semibold text-moon-100 uppercase tracking-wide">AI 助手</h2>
       <div class="flex items-center gap-2">
         <Button
@@ -1388,7 +1385,10 @@ const handleActionPopoverHide = () => {
     </div>
 
     <!-- Context info -->
-    <div v-if="contextInfo !== '无上下文'" class="shrink-0 px-4 py-2 relative z-10 border-b border-white/10">
+    <div
+      v-if="contextInfo !== '无上下文'"
+      class="shrink-0 px-4 py-2 relative z-10 border-b border-white/10"
+    >
       <p class="text-xs text-moon-50">{{ contextInfo }}</p>
     </div>
 
@@ -1397,7 +1397,10 @@ const handleActionPopoverHide = () => {
       ref="messagesContainerRef"
       class="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-2 min-h-0 min-w-0 relative z-10 messages-container"
     >
-      <div v-if="messages.length === 0" class="flex flex-col items-center justify-center h-full text-center">
+      <div
+        v-if="messages.length === 0"
+        class="flex flex-col items-center justify-center h-full text-center"
+      >
         <i class="pi pi-comments text-4xl text-moon-40 mb-4" />
         <p class="text-sm text-moon-60 mb-2">开始与 AI 助手对话</p>
         <p class="text-xs text-moon-40">助手可以帮你管理术语、角色设定，并提供翻译建议</p>
@@ -1418,17 +1421,25 @@ const handleActionPopoverHide = () => {
             "
           >
             <!-- 操作结果高亮显示 -->
-            <div v-if="message.actions && message.actions.length > 0" class="mb-2 space-y-1 flex flex-wrap gap-1">
+            <div
+              v-if="message.actions && message.actions.length > 0"
+              class="mb-2 space-y-1 flex flex-wrap gap-1"
+            >
               <template v-for="(action, idx) in message.actions" :key="idx">
                 <div
                   :id="`action-${message.id}-${action.timestamp}`"
                   class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
                   :class="{
-                    'bg-green-500/25 text-green-200 border border-green-500/40 shadow-lg shadow-green-500/20 hover:bg-green-500/35': action.type === 'create',
-                    'bg-blue-500/25 text-blue-200 border border-blue-500/40 shadow-lg shadow-blue-500/20 hover:bg-blue-500/35': action.type === 'update',
-                    'bg-red-500/25 text-red-200 border border-red-500/40 shadow-lg shadow-red-500/20 hover:bg-red-500/35': action.type === 'delete',
-                    'bg-purple-500/25 text-purple-200 border border-purple-500/40 shadow-lg shadow-purple-500/20 hover:bg-purple-500/35': action.type === 'web_search',
-                    'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/35': action.type === 'web_fetch',
+                    'bg-green-500/25 text-green-200 border border-green-500/40 shadow-lg shadow-green-500/20 hover:bg-green-500/35':
+                      action.type === 'create',
+                    'bg-blue-500/25 text-blue-200 border border-blue-500/40 shadow-lg shadow-blue-500/20 hover:bg-blue-500/35':
+                      action.type === 'update',
+                    'bg-red-500/25 text-red-200 border border-red-500/40 shadow-lg shadow-red-500/20 hover:bg-red-500/35':
+                      action.type === 'delete',
+                    'bg-purple-500/25 text-purple-200 border border-purple-500/40 shadow-lg shadow-purple-500/20 hover:bg-purple-500/35':
+                      action.type === 'web_search',
+                    'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/35':
+                      action.type === 'web_fetch',
                   }"
                   @mouseenter="(e) => toggleActionPopover(e, action, message)"
                   @mouseleave="() => handleActionMouseLeave(action, message)"
@@ -1468,17 +1479,24 @@ const handleActionPopoverHide = () => {
                     }}
                     <span v-if="action.name" class="font-semibold">"{{ action.name }}"</span>
                     <span v-else-if="action.query" class="font-semibold">"{{ action.query }}"</span>
-                    <span v-else-if="action.url" class="font-semibold text-xs">{{ action.url }}</span>
+                    <span v-else-if="action.url" class="font-semibold text-xs">{{
+                      action.url
+                    }}</span>
                   </span>
                 </div>
                 <!-- Action Details Popover -->
                 <Popover
-                  :ref="(el) => {
-                    const actionKey = `${message.id}-${action.timestamp}`;
-                    if (el) {
-                      actionPopoverRefs.set(actionKey, el as unknown as InstanceType<typeof Popover>);
+                  :ref="
+                    (el) => {
+                      const actionKey = `${message.id}-${action.timestamp}`;
+                      if (el) {
+                        actionPopoverRefs.set(
+                          actionKey,
+                          el as unknown as InstanceType<typeof Popover>,
+                        );
+                      }
                     }
-                  }"
+                  "
                   :target="`action-${message.id}-${action.timestamp}`"
                   :dismissable="true"
                   :show-close-icon="false"
@@ -1486,7 +1504,14 @@ const handleActionPopoverHide = () => {
                   class="action-popover"
                   @hide="handleActionPopoverHide"
                 >
-                  <div v-if="hoveredAction && hoveredAction.action.timestamp === action.timestamp && hoveredAction.message.id === message.id" class="action-popover-content">
+                  <div
+                    v-if="
+                      hoveredAction &&
+                      hoveredAction.action.timestamp === action.timestamp &&
+                      hoveredAction.message.id === message.id
+                    "
+                    class="action-popover-content"
+                  >
                     <div class="popover-header">
                       <span class="popover-title">
                         {{
@@ -1533,7 +1558,12 @@ const handleActionPopoverHide = () => {
             ></div>
           </div>
           <span class="text-xs text-moon-40">
-            {{ new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
+            {{
+              new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }}
           </span>
         </div>
       </div>
@@ -1554,7 +1584,9 @@ const handleActionPopoverHide = () => {
         />
         <div class="flex items-center justify-between">
           <span v-if="!assistantModel" class="text-xs text-moon-50">未配置助手模型</span>
-          <span v-else class="text-xs text-moon-50">{{ assistantModel.name || assistantModel.id }}</span>
+          <span v-else class="text-xs text-moon-50">{{
+            assistantModel.name || assistantModel.id
+          }}</span>
           <Button
             :disabled="!inputMessage.trim() || isSending || !assistantModel"
             label="发送"
@@ -1785,4 +1817,3 @@ const handleActionPopoverHide = () => {
   line-height: 1.5;
 }
 </style>
-

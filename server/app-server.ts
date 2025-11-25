@@ -2,7 +2,11 @@ import express, { type Request, type Response } from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { Impit } from 'impit';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import type { Browser, Page } from 'puppeteer';
+
+puppeteer.use(StealthPlugin());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,7 +19,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 interface TargetConfig {
   baseUrl: string;
-  mode: 'direct' | 'allorigins';
+  mode: 'direct';
 }
 
 // Define your targets here
@@ -24,17 +28,42 @@ const TARGETS: Record<string, TargetConfig> = {
   '/api/kakuyomu': { baseUrl: 'https://kakuyomu.jp', mode: 'direct' },
   '/api/ncode': { baseUrl: 'https://ncode.syosetu.com', mode: 'direct' },
   '/api/novel18': { baseUrl: 'https://novel18.syosetu.com', mode: 'direct' },
-  // syosetu.org often requires JS/Cookies (Cloudflare), so we use AllOrigins to bypass
-  '/api/syosetu': { baseUrl: 'https://syosetu.org', mode: 'allorigins' },
+  // Puppeteer + Stealth handles Cloudflare, so we use direct mode for syosetu.org too
+  '/api/syosetu': { baseUrl: 'https://syosetu.org', mode: 'direct' },
   '/api/search': { baseUrl: 'https://html.duckduckgo.com/html', mode: 'direct' },
 };
 
-// --- Proxy Handlers ---
+// --- Puppeteer Instance ---
 
-// Create a shared Impit instance
-const impit = new Impit({
-  browser: 'chrome',
-});
+let browserPromise: Promise<Browser> | null = null;
+
+const getBrowser = async (): Promise<Browser> => {
+  if (!browserPromise) {
+    console.log('[Puppeteer] Launching browser...');
+    // Store the promise before awaiting to prevent race conditions
+    browserPromise = puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+
+    // Set up disconnected handler after browser is created
+    browserPromise
+      .then((browser) => {
+        browser.on('disconnected', () => {
+          console.log('[Puppeteer] Browser disconnected.');
+          browserPromise = null;
+        });
+      })
+      .catch((error) => {
+        console.error('[Puppeteer] Failed to launch browser:', error);
+        browserPromise = null;
+        throw error;
+      });
+  }
+  return await browserPromise;
+};
+
+// --- Proxy Handlers ---
 
 const handleDirectProxy = async (
   req: Request,
@@ -42,84 +71,29 @@ const handleDirectProxy = async (
   targetUrl: string,
   requestId: string,
 ) => {
-  const response = await impit.fetch(targetUrl, {
-    method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
-    body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
-  });
-
-  res.status(response.status);
-
-  const headersToSkip = [
-    'content-encoding',
-    'transfer-encoding',
-    'connection',
-    'set-cookie',
-    'content-security-policy',
-    'x-frame-options',
-    'content-length',
-  ];
-
-  response.headers.forEach((value, key) => {
-    if (!headersToSkip.includes(key.toLowerCase())) {
-      res.setHeader(key, value);
-    }
-  });
-
-  const body = await response.arrayBuffer();
-  res.send(Buffer.from(body));
-  console.log(`[Proxy Direct] [${requestId}] Completed`);
-};
-
-const handleAllOriginsProxy = async (
-  req: Request,
-  res: Response,
-  targetUrl: string,
-  requestId: string,
-) => {
-  // AllOrigins API format: https://api.allorigins.win/get?url=...
-  const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-  console.log(`[Proxy AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
-
+  let page: Page | null = null;
   try {
-    const response = await impit.fetch(allOriginsUrl);
-    const text = await response.text();
+    const browser = await getBrowser();
+    page = await browser.newPage();
 
-    let data: { status?: { http_code?: number }; contents?: string };
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      console.error(`[Proxy AllOrigins] [${requestId}] JSON Parse Error: ${(e as Error).message}`);
-      console.error(
-        `[Proxy AllOrigins] [${requestId}] Response length: ${text.length}. End of response: ${text.slice(
-          -100,
-        )}`,
-      );
-      // If JSON parsing fails, it might be because AllOrigins failed or returned raw content?
-      // Or maybe we can fallback to direct proxy?
-      console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
-      await handleDirectProxy(req, res, targetUrl, requestId);
-      return;
-    }
+    console.log(`[Puppeteer] [${requestId}] Navigating to ${targetUrl}`);
 
-    if (data.status?.http_code) {
-      res.status(data.status.http_code);
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      // AllOrigins returns the HTML content in the 'contents' field
-      res.send(data.contents);
-      console.log(`[Proxy AllOrigins] [${requestId}] Completed (Status: ${data.status.http_code})`);
-    } else {
-      throw new Error(
-        `AllOrigins returned invalid data: ${JSON.stringify(data).substring(0, 100)}`,
-      );
-    }
+    await page.goto(targetUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    });
+
+    const content = await page.content();
+    console.log(`[Puppeteer] [${requestId}] Page loaded. Content length: ${content.length}`);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(content);
   } catch (error) {
-    console.error(`[Proxy AllOrigins] [${requestId}] Error: ${(error as Error).message}`);
-    // Only fallback to direct proxy if headers haven't been sent yet
-    if (!res.headersSent) {
-      console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
-      await handleDirectProxy(req, res, targetUrl, requestId);
-    } else {
-      console.error(`[Proxy AllOrigins] [${requestId}] Cannot fallback: headers already sent`);
+    console.error(`[Puppeteer Error] [${requestId}]`, error);
+    throw error;
+  } finally {
+    if (page) {
+      await page.close().catch((e) => console.error(`[Puppeteer] Error closing page:`, e));
     }
   }
 };
@@ -140,13 +114,9 @@ const handleProxyRequest = async (
   );
 
   try {
-    if (config.mode === 'allorigins') {
-      await handleAllOriginsProxy(req, res, targetUrl, requestId);
-    } else {
-      await handleDirectProxy(req, res, targetUrl, requestId);
-    }
+    await handleDirectProxy(req, res, targetUrl, requestId);
   } catch (error: unknown) {
-    const isTimeout = error instanceof Error && 'code' in error && error.code === 'ETIMEDOUT';
+    const isTimeout = error instanceof Error && error.message.includes('Timeout');
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code =
       error instanceof Error && 'code' in error ? (error as { code: string }).code : undefined;
@@ -163,7 +133,34 @@ const handleProxyRequest = async (
   }
 };
 
+// Generic Proxy Handler for arbitrary URLs
+const handleGenericProxy = async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url) {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  console.log(`[Proxy Generic] [${requestId}] Fetching ${url}`);
+
+  try {
+    await handleDirectProxy(req, res, url, requestId);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Proxy Generic Error] [${requestId}] ${message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Proxy Request Failed', message });
+    }
+  }
+};
+
 // --- Register API Routes ---
+
+// Register generic proxy route
+app.get('/api/proxy', (req, res) => {
+  void handleGenericProxy(req, res);
+});
 
 Object.entries(TARGETS).forEach(([pathPrefix, config]) => {
   app.use(pathPrefix, (req, res) => {
@@ -218,5 +215,5 @@ if (isProduction) {
 app.listen(PORT, () => {
   console.log(`Luna AI Translator Server running on port ${PORT}`);
   console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
-  console.log('Proxy Targets Configured (Mixed Mode: Direct + AllOrigins)');
+  console.log('Proxy Targets Configured (Puppeteer Direct Mode)');
 });

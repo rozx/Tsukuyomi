@@ -756,71 +756,6 @@ export class NcodeSyosetuScraper extends BaseScraper {
   }
 
   /**
-   * 获取页面并返回状态码（用于检查 404）
-   * @param url 页面 URL
-   * @returns Promise<{ html: string; statusCode: number | null }> HTML 内容和状态码
-   */
-  protected async fetchPageWithStatus(
-    url: string,
-  ): Promise<{ html: string; statusCode: number | null }> {
-    try {
-      const html = await this.fetchPage(url);
-      return { html, statusCode: 200 };
-    } catch {
-      // 尝试直接请求以获取状态码
-      // 在浏览器环境中，使用服务器代理路径
-      try {
-        const axios = (await import('axios')).default;
-        const isBrowser = typeof window !== 'undefined';
-        let finalUrl = url;
-
-        // 在浏览器环境中，使用服务器代理路径
-        if (isBrowser) {
-          const urlObj = new URL(url);
-          if (urlObj.hostname === 'ncode.syosetu.com') {
-            finalUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-          } else if (urlObj.hostname === 'novel18.syosetu.com') {
-            finalUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-          }
-        }
-
-        const headers: Record<string, string> = {
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-        };
-
-        if (!isBrowser) {
-          headers['User-Agent'] =
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-          headers['Accept-Encoding'] = 'gzip, deflate, br';
-          headers['Referer'] = url.startsWith('https://')
-            ? new URL(url).origin
-            : 'https://ncode.syosetu.com/';
-        }
-
-        const response = await axios.get(finalUrl, {
-          timeout: 30000,
-          headers,
-          validateStatus: () => true, // 接受所有状态码
-        });
-
-        if (response.status === 404) {
-          return { html: '', statusCode: 404 };
-        }
-        if (response.status === 200 && response.data) {
-          return { html: response.data, statusCode: 200 };
-        }
-        return { html: '', statusCode: response.status };
-      } catch {
-        // 忽略错误
-      }
-
-      // 如果无法获取状态码，返回 null
-      return { html: '', statusCode: null };
-    }
-  }
-
-  /**
    * 解析小说页面（支持分页获取所有章节）
    * @param baseUrl 小说主页 URL
    * @returns 解析后的小说信息（包含所有页面的章节）
@@ -835,11 +770,17 @@ export class NcodeSyosetuScraper extends BaseScraper {
     webUrl: string;
   }> {
     // 获取第一页
-    const firstPageResult = await this.fetchPageWithStatus(baseUrl);
-    if (firstPageResult.statusCode === 404) {
-      throw new Error('小说页面不存在 (404)');
+    let firstPageHtml: string;
+    try {
+      firstPageHtml = await this.fetchPage(baseUrl);
+    } catch (error) {
+      // 检查是否是 404 错误
+      if (error instanceof Error && error.message.includes('404')) {
+        throw new Error('小说页面不存在 (404)');
+      }
+      throw error;
     }
-    const firstPageHtml = firstPageResult.html;
+
     const basicInfo = this.parseNovelPage(firstPageHtml, baseUrl);
     const firstPageData = this.parseNovelPageSingle(firstPageHtml, baseUrl);
 
@@ -848,46 +789,54 @@ export class NcodeSyosetuScraper extends BaseScraper {
     const allVolumes: Array<{ title: string; startIndex: number }> = [...firstPageData.volumes];
     let currentChapterIndex = firstPageData.chapters.length;
 
-    // 使用稳健的方式按页遍历：依次尝试 ?p=2,3,...，直到 404 或无内容
+    // 使用 getNextPageUrl 遍历后续页面
     const visitedUrls = new Set<string>([this.normalizeUrl(baseUrl)]);
-    const baseObj = new URL(baseUrl);
-    let pageNum = 2;
-    const MAX_PAGES = 500; // 安全上限，防止意外循环
+    let currentUrl = baseUrl;
+    let currentHtml = firstPageHtml;
 
-    while (pageNum <= MAX_PAGES) {
-      const urlObj = new URL(baseObj.toString());
-      urlObj.searchParams.set('p', String(pageNum));
-      const pageUrl = this.normalizeUrl(urlObj.toString());
+    // 安全上限，防止意外循环
+    const MAX_PAGES = 500;
+    let pageCount = 1;
 
-      if (visitedUrls.has(pageUrl)) {
-        break;
-      }
-      visitedUrls.add(pageUrl);
+    while (pageCount < MAX_PAGES) {
+      const nextUrl = this.getNextPageUrl(currentHtml, currentUrl);
 
-      const pageRes = await this.fetchPageWithStatus(pageUrl);
-      if (pageRes.statusCode === 404) {
-        break; // 明确无更多页面
-      }
-      if (pageRes.statusCode !== 200 || !pageRes.html) {
-        break; // 其他异常情况，停止
+      if (!nextUrl) {
+        break; // 没有下一页
       }
 
-      const pageData = this.parseNovelPageSingle(pageRes.html, pageUrl);
-      if (pageData.chapters.length === 0) {
-        break; // 无章节，认为结束
+      const normalizedNextUrl = this.normalizeUrl(nextUrl);
+      if (visitedUrls.has(normalizedNextUrl)) {
+        break; // 已经访问过
       }
+      visitedUrls.add(normalizedNextUrl);
 
-      if (pageData.volumes.length > 0) {
-        const updatedVolumes = pageData.volumes.map((volume) => ({
-          title: volume.title,
-          startIndex: volume.startIndex + currentChapterIndex,
-        }));
-        allVolumes.push(...updatedVolumes);
+      try {
+        currentUrl = nextUrl;
+        currentHtml = await this.fetchPage(currentUrl);
+
+        const pageData = this.parseNovelPageSingle(currentHtml, currentUrl);
+
+        if (pageData.chapters.length === 0) {
+          // 如果页面没有章节，可能是空页或错误页，停止
+          break;
+        }
+
+        if (pageData.volumes.length > 0) {
+          const updatedVolumes = pageData.volumes.map((volume) => ({
+            title: volume.title,
+            startIndex: volume.startIndex + currentChapterIndex,
+          }));
+          allVolumes.push(...updatedVolumes);
+        }
+
+        allChapters.push(...pageData.chapters);
+        currentChapterIndex += pageData.chapters.length;
+        pageCount++;
+      } catch (error) {
+        console.warn(`Failed to fetch page ${currentUrl}:`, error);
+        break; // 获取失败，停止
       }
-
-      allChapters.push(...pageData.chapters);
-      currentChapterIndex += pageData.chapters.length;
-      pageNum += 1;
     }
 
     // 构建结果
