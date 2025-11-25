@@ -25,7 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -35,7 +35,7 @@ jobs:
       - name: Extract version from branch name
         id: extract_version
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           # Try to get branch name from associated PR
           BRANCH_NAME=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[0].head.ref' 2>/dev/null || echo "")
@@ -65,7 +65,7 @@ jobs:
         id: check_version
         if: steps.extract_version.outputs.version_found == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           CURRENT_VERSION=$(jq -r .version package.json)
           EXPECTED_VERSION="${{ steps.extract_version.outputs.expected_version }}"
@@ -99,7 +99,7 @@ jobs:
       - name: Commit version update
         if: steps.check_version.outputs.version_updated == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -112,7 +112,7 @@ jobs:
       - name: Check for release label
         id: check_label
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           # Get associated PRs for this commit
           LABELS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[].labels[].name' 2>/dev/null || echo "")
@@ -152,7 +152,7 @@ jobs:
       - name: Create Tag
         if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -172,7 +172,9 @@ jobs:
           prerelease: false
           make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 优先使用 PAT（如果存在），否则使用默认的 GITHUB_TOKEN
+          # 对于私有仓库，PAT 通常更可靠
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Set Final Outputs
         id: set_final_outputs
@@ -199,7 +201,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -213,19 +215,19 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: bun run build:electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest'
         run: bun run build:electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Build for Linux
         if: matrix.os == 'ubuntu-latest'
         run: bun run build:electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
@@ -236,7 +238,7 @@ jobs:
             dist/electron/Packaged/*.dmg
             dist/electron/Packaged/*.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
@@ -245,7 +247,7 @@ jobs:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: dist/electron/Packaged/*.exe
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -257,4 +259,4 @@ jobs:
             dist/electron/Packaged/*.deb
             dist/electron/Packaged/*.snap
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
