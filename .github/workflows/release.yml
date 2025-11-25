@@ -119,12 +119,10 @@ jobs:
           
           # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
           set +e
-          RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases \
+          RELEASE_RESPONSE=$(echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
+            gh api repos/${{ github.repository }}/releases \
             -X POST \
-            -f tag_name="$VERSION" \
-            -f name="Release $VERSION" \
-            -f body="Automated release" \
-            -f generate_release_notes=true 2>&1 | tee /tmp/release_output.txt)
+            --input - 2>&1 | tee /tmp/release_output.txt)
           EXIT_CODE=$?
           set -e
           
@@ -173,12 +171,10 @@ jobs:
           
           # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
           set +e
-          RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases \
+          RELEASE_RESPONSE=$(echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
+            gh api repos/${{ github.repository }}/releases \
             -X POST \
-            -f tag_name="$VERSION" \
-            -f name="Release $VERSION" \
-            -f body="Automated release" \
-            -f generate_release_notes=true 2>&1 | tee /tmp/release_output.txt)
+            --input - 2>&1 | tee /tmp/release_output.txt)
           EXIT_CODE=$?
           set -e
           
@@ -283,12 +279,10 @@ jobs:
           # 检查 release 是否存在
           if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
             echo "❌ Release $VERSION not found. Creating release..."
+            echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
             gh api repos/${{ github.repository }}/releases \
               -X POST \
-              -f tag_name="$VERSION" \
-              -f name="Release $VERSION" \
-              -f body="Automated release" \
-              -f generate_release_notes=true || echo "⚠️ Failed to create release"
+              --input - || echo "⚠️ Failed to create release"
           fi
           # 上传所有 .dmg 和 .zip 文件（排除 .blockmap 文件）
           if ls dist/electron/Packaged/*.dmg dist/electron/Packaged/*.zip 2>/dev/null; then
@@ -311,12 +305,13 @@ jobs:
           $releaseExists = gh release view $version --json id 2>$null
           if (-not $releaseExists) {
             Write-Host "❌ Release $version not found. Creating release..."
-            gh api repos/${{ github.repository }}/releases `
-              -X POST `
-              -f tag_name=$version `
-              -f name="Release $version" `
-              -f body="Automated release" `
-              -f generate_release_notes=true
+            $jsonBody = @{
+              tag_name = $version
+              name = "Release $version"
+              body = "Automated release"
+              generate_release_notes = $true
+            } | ConvertTo-Json
+            echo $jsonBody | gh api repos/${{ github.repository }}/releases -X POST --input -
             if ($LASTEXITCODE -ne 0) {
               Write-Host "⚠️ Failed to create release"
             }
@@ -344,12 +339,10 @@ jobs:
           # 检查 release 是否存在
           if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
             echo "❌ Release $VERSION not found. Creating release..."
+            echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
             gh api repos/${{ github.repository }}/releases \
               -X POST \
-              -f tag_name="$VERSION" \
-              -f name="Release $VERSION" \
-              -f body="Automated release" \
-              -f generate_release_notes=true || echo "⚠️ Failed to create release"
+              --input - || echo "⚠️ Failed to create release"
           fi
           # 上传所有 Linux 构建文件
           if ls dist/electron/Packaged/*.AppImage dist/electron/Packaged/*.deb dist/electron/Packaged/*.snap 2>/dev/null; then

@@ -51,11 +51,13 @@ export const useUiStore = defineStore('ui', {
     rightPanelOpen: boolean;
     rightPanelWidth: number;
     isLoaded: boolean;
+    isInitialDataLoading: boolean;
   } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
     isLoaded: false,
+    isInitialDataLoading: false,
   }),
 
   actions: {
@@ -109,6 +111,9 @@ export const useUiStore = defineStore('ui', {
         rightPanelOpen: this.rightPanelOpen,
         rightPanelWidth: this.rightPanelWidth,
       });
+    },
+    setInitialDataLoading(loading: boolean) {
+      this.isInitialDataLoading = loading;
     },
   },
 });

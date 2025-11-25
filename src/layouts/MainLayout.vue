@@ -5,6 +5,7 @@ import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import AppRightPanel from '../components/layout/AppRightPanel.vue';
 import Toast from 'primevue/toast';
+import ProgressSpinner from 'primevue/progressspinner';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
@@ -110,6 +111,22 @@ onUnmounted(() => {
 
 <template>
   <div class="h-screen overflow-hidden bg-luna-sky text-moon-100 flex flex-col">
+    <!-- 初始数据加载指示器 -->
+    <div
+      v-if="ui.isInitialDataLoading"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-night-900/90 backdrop-blur-sm"
+    >
+      <div class="flex flex-col items-center gap-4">
+        <ProgressSpinner
+          style="width: 4rem; height: 4rem"
+          stroke-width="4"
+          animation-duration="1s"
+        />
+        <p class="text-moon/90 text-lg font-medium">正在加载应用数据...</p>
+        <p class="text-moon/60 text-sm">请稍候</p>
+      </div>
+    </div>
+
     <AppHeader />
 
     <div class="flex flex-1 overflow-hidden min-h-0">
