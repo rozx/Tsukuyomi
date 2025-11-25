@@ -33,7 +33,7 @@ export const handleDirectProxy = async (
       url: targetUrl,
       method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH',
       body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
-      http2: false,
+      http2: false, // Disable HTTP/2 to avoid origin matching issues
       headerGeneratorOptions: {
         browsers: [{ name: 'chrome', minVersion: 110 }],
         devices: ['desktop'],
@@ -58,7 +58,6 @@ export const handleDirectProxy = async (
           'set-cookie',
           'content-security-policy',
           'x-frame-options',
-          'content-length',
         ];
         Object.entries(response.headers).forEach(([key, value]) => {
           if (!headersToSkip.includes(key.toLowerCase()) && value) {
@@ -98,7 +97,7 @@ export const handleAllOriginsProxy = async (
     const response = await gotScraping({
       url: allOriginsUrl,
       responseType: 'json',
-      http2: false,
+      http2: false, // Disable HTTP/2 to avoid origin matching issues
       timeout: { request: 90000 },
       retry: { limit: 2 },
     });
