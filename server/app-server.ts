@@ -276,7 +276,7 @@ app.listen(PORT, () => {
   console.log(`Luna AI Translator Server running on port ${PORT}`);
   console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
   console.log(
-    `Proxy Mode: ${PROXY_MODE === 'puppeteer' ? 'Puppeteer (high CPU/memory)' : 'AllOrigins/got-scraping (lightweight)'}`,
+    `Proxy Mode: ${PROXY_MODE === 'puppeteer' ? 'Puppeteer (high CPU/memory)' : 'AllOrigins/axios (lightweight)'}`,
   );
   console.log('Proxy Targets Configured');
 });
