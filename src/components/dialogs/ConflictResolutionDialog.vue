@@ -5,14 +5,8 @@ import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Select from 'primevue/select';
-import { ConflictType, type ConflictItem } from 'src/services/conflict-detection-service';
+import { ConflictType, type ConflictItem, type ConflictResolution } from 'src/services/conflict-detection-service';
 import { formatRelativeTime } from 'src/utils/format';
-
-export interface ConflictResolution {
-  conflictId: string;
-  type: ConflictType;
-  choice: 'local' | 'remote';
-}
 
 const props = defineProps<{
   visible: boolean;

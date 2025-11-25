@@ -3,7 +3,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { ConflictDetectionService } from 'src/services/conflict-detection-service';
-import type { ConflictResolution } from 'src/components/dialogs/ConflictResolutionDialog.vue';
+import type { ConflictResolution } from 'src/services/conflict-detection-service';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 
 /**

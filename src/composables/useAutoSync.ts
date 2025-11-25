@@ -6,8 +6,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { ConflictDetectionService } from 'src/services/conflict-detection-service';
 import { SyncDataService } from 'src/services/sync-data-service';
-import type { ConflictResolution } from 'src/components/dialogs/ConflictResolutionDialog.vue';
-import type { ConflictItem } from 'src/services/conflict-detection-service';
+import type { ConflictResolution, ConflictItem } from 'src/services/conflict-detection-service';
 
 // 单例状态（在模块级别共享）
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
