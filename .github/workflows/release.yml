@@ -72,6 +72,8 @@ jobs:
       - name: Create Tag
         id: create_tag
         if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -85,14 +87,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Creating release for tag: ${{ steps.get_version.outputs.version }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
           VERSION="${{ steps.get_version.outputs.version }}"
+          
+          # 验证 token 权限
+          echo "Verifying token permissions..."
+          gh auth status || echo "⚠️ gh auth status check failed"
           
           # 使用 gh release create 命令，它更简单且正确处理布尔值
           set +e
           gh release create "$VERSION" \
             --title "Release $VERSION" \
             --notes "Automated release" \
-            --generate-notes 2>&1
+            --generate-notes 2>&1 | tee /tmp/release_output.txt
           EXIT_CODE=$?
           set -e
           
@@ -119,6 +127,15 @@ jobs:
             fi
           else
             echo "❌ Failed to create release. Exit code: $EXIT_CODE"
+            if [ -f /tmp/release_output.txt ]; then
+              echo "Error output:"
+              cat /tmp/release_output.txt
+            fi
+            echo ""
+            echo "💡 Troubleshooting tips:"
+            echo "1. Check repository Settings > Actions > General > Workflow permissions"
+            echo "2. Ensure 'Read and write permissions' is selected"
+            echo "3. Verify that GITHUB_TOKEN has 'contents: write' permission"
             echo "release_created=false" >> $GITHUB_OUTPUT
             exit 1
           fi
@@ -130,14 +147,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Tag exists but release doesn't. Creating release for tag: ${{ steps.get_version.outputs.version }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
           VERSION="${{ steps.get_version.outputs.version }}"
+          
+          # 验证 token 权限
+          echo "Verifying token permissions..."
+          gh auth status || echo "⚠️ gh auth status check failed"
           
           # 使用 gh release create 命令，它更简单且正确处理布尔值
           set +e
           gh release create "$VERSION" \
             --title "Release $VERSION" \
             --notes "Automated release" \
-            --generate-notes 2>&1
+            --generate-notes 2>&1 | tee /tmp/release_output.txt
           EXIT_CODE=$?
           set -e
           
@@ -164,6 +187,15 @@ jobs:
             fi
           else
             echo "❌ Failed to create release for existing tag. Exit code: $EXIT_CODE"
+            if [ -f /tmp/release_output.txt ]; then
+              echo "Error output:"
+              cat /tmp/release_output.txt
+            fi
+            echo ""
+            echo "💡 Troubleshooting tips:"
+            echo "1. Check repository Settings > Actions > General > Workflow permissions"
+            echo "2. Ensure 'Read and write permissions' is selected"
+            echo "3. Verify that GITHUB_TOKEN has 'contents: write' permission"
             echo "release_created=false" >> $GITHUB_OUTPUT
             exit 1
           fi

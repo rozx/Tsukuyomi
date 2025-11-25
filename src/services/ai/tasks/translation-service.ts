@@ -3,7 +3,6 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
-  AITool,
   AIToolCall,
   AIToolCallResult,
   ChatMessage,
@@ -362,10 +361,17 @@ export class TranslationService {
    (4) **语境**: 根据上下文判断。
    *禁止自动创建敬语别名。*
 3. **数据管理**:
+   - **工具使用**: 相关术语和角色已包含在输入中，请先使用上下文中的术语/角色，如果上下文中没有，再调用 list_terms,get_term 或 list_characters,get_character。
    - **分离**: 术语表(物/事) vs 角色表(人)。
    - **创建**: 查重 -> 全名建角色/部分名=别名。
    - **维护**: 填补空缺(翻译/描述)，删除无用/重复。
-4. **输出**: 有效 JSON，段落 1:1 对应。`;
+4. **输出**: 必须返回有效 JSON 格式:
+   {
+     "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
+     "translation": "完整翻译文本",
+     "titleTranslation": "章节标题翻译(仅当提供标题时)"
+   }
+   确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译。`;
 
       history.push({ role: 'system', content: systemPrompt });
 
@@ -427,10 +433,6 @@ export class TranslationService {
         // 查找相关术语
         const relevantTerms = findUniqueTermsInText(textContent, bookData.terminologies || []);
         if (relevantTerms.length > 0) {
-          console.log(
-            `[TranslationService] 📚 发现相关术语 (${relevantTerms.length} 个):`,
-            relevantTerms.map((t) => `${t.name}(${t.translation.translation})`).join(', '),
-          );
           contextParts.push('【相关术语参考】');
           contextParts.push(
             relevantTerms
@@ -449,17 +451,6 @@ export class TranslationService {
           characterScores,
         );
         if (relevantCharacters.length > 0) {
-          console.log(
-            `[TranslationService] 👥 发现相关角色 (${relevantCharacters.length} 个):`,
-            relevantCharacters
-              .map((c) => {
-                const aliases = c.aliases?.length
-                  ? ` [别名: ${c.aliases.map((a) => a.name).join(', ')}]`
-                  : '';
-                return `${c.name}(${c.translation.translation})${aliases}`;
-              })
-              .join(', '),
-          );
           contextParts.push('【相关角色参考】');
           contextParts.push(
             relevantCharacters
@@ -524,10 +515,6 @@ export class TranslationService {
         });
       }
 
-      console.log(
-        `[TranslationService] 📦 文本切分完成：将 ${content.length} 个段落切分为 ${chunks.length} 个块（每块约 ${CHUNK_SIZE} 字符）`,
-      );
-
       let translatedText = '';
       const paragraphTranslations: { id: string; translation: string }[] = [];
 
@@ -541,16 +528,6 @@ export class TranslationService {
 
         const chunk = chunks[i];
         if (!chunk) continue;
-
-        console.log(`[TranslationService] 🔄 开始处理块 ${i + 1}/${chunks.length}`, {
-          段落数: chunk.paragraphIds?.length || 0,
-          段落ID:
-            chunk.paragraphIds?.slice(0, 3).join(', ') +
-            (chunk.paragraphIds && chunk.paragraphIds.length > 3 ? '...' : ''),
-          上下文长度: `${(chunk.context?.length || 0).toLocaleString()} 字符`,
-          文本长度: `${chunk.text.length.toLocaleString()} 字符`,
-          总大小: `${((chunk.context?.length || 0) + chunk.text.length).toLocaleString()} 字符`,
-        });
 
         const chunkText = chunk.text;
         const chunkContext = chunk.context || '';
@@ -584,6 +561,7 @@ export class TranslationService {
 - **敬语**: 优先匹配别名。勿自动创建别名。
 - **角色**: 创建前查重。
 - **维护**: 补全空数据，删无用数据。
+- **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
 - **一致性**: 搜历史。`;
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
@@ -642,14 +620,6 @@ export class TranslationService {
               // 调用 AI
               let chunkReceived = false;
               let accumulatedText = ''; // 用于检测重复字符
-              console.log(
-                `[TranslationService] 📤 发送AI请求 (块 ${i + 1}/${chunks.length}, 回合 ${currentTurnCount}/${MAX_TURNS}${retryCount > 0 ? `, 重试 ${retryCount}` : ''})`,
-                {
-                  消息历史: request.messages?.length || 0,
-                  可用工具数: request.tools?.length || 0,
-                  工具列表: request.tools?.map((t) => t.function?.name).join(', ') || '无',
-                },
-              );
 
               // 确保 AI 请求完全完成后再继续
               const result = await service.generateText(config, request, (c) => {
@@ -677,12 +647,6 @@ export class TranslationService {
 
               // 检查是否有工具调用
               if (result.toolCalls && result.toolCalls.length > 0) {
-                console.log(
-                  `[TranslationService] 🔧 AI请求调用 ${result.toolCalls.length} 个工具:`,
-                  result.toolCalls
-                    .map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 50)}...)`)
-                    .join(', '),
-                );
                 // 将助手的回复（包含工具调用）添加到历史
                 history.push({
                   role: 'assistant',
@@ -724,63 +688,6 @@ export class TranslationService {
                     // JSON解析失败，使用原始内容
                   }
 
-                  // 根据工具类型生成更详细的日志
-                  let logDetails: Record<string, unknown> = {
-                    成功: toolResultObj?.success ?? false,
-                  };
-
-                  if (toolCall.function.name === 'find_paragraph_by_keyword') {
-                    logDetails = {
-                      ...logDetails,
-                      关键词: toolArgs.keyword,
-                      只搜索已翻译: toolArgs.only_with_translation ?? false,
-                      找到段落数: toolResultObj?.count ?? 0,
-                    };
-                    if (
-                      toolResultObj?.paragraphs &&
-                      Array.isArray(toolResultObj.paragraphs) &&
-                      toolResultObj.paragraphs.length > 0
-                    ) {
-                      const firstParagraph = toolResultObj.paragraphs[0] as {
-                        translation?: string;
-                        chapter?: { title?: string };
-                      };
-                      logDetails.示例翻译 = firstParagraph.translation
-                        ? `${firstParagraph.translation.slice(0, 50)}${firstParagraph.translation.length > 50 ? '...' : ''}`
-                        : '无翻译';
-                      logDetails.章节 = firstParagraph.chapter?.title || '未知';
-                    }
-                  } else if (toolCall.function.name === 'get_occurrences_by_keywords') {
-                    logDetails = {
-                      ...logDetails,
-                      关键词: Array.isArray(toolArgs.keywords)
-                        ? toolArgs.keywords.join(', ')
-                        : toolArgs.keywords,
-                      出现次数: toolResultObj?.count ?? 0,
-                    };
-                  } else if (
-                    toolCall.function.name === 'get_term_translation' ||
-                    toolCall.function.name === 'add_term'
-                  ) {
-                    logDetails = {
-                      ...logDetails,
-                      术语: toolArgs.term,
-                    };
-                  } else if (
-                    toolCall.function.name === 'list_characters' ||
-                    toolCall.function.name === 'get_character_setting'
-                  ) {
-                    logDetails = {
-                      ...logDetails,
-                      角色名称: toolArgs.character_name || toolArgs.name || '全部',
-                    };
-                  }
-
-                  console.log(
-                    `[TranslationService] ✅ 工具 ${toolCall.function.name} 执行完成`,
-                    logDetails,
-                  );
-
                   // 添加工具结果到历史
                   history.push({
                     role: 'tool',
@@ -804,9 +711,6 @@ export class TranslationService {
                 });
                 // 继续循环，将工具结果和提示发送给 AI
               } else {
-                console.log(
-                  `[TranslationService] ✅ 收到AI最终响应 (块 ${i + 1}/${chunks.length})，响应长度: ${finalResponseText.length.toLocaleString()} 字符`,
-                );
                 // 没有工具调用，这是最终回复
                 finalResponseText = result.text;
 
@@ -829,9 +733,6 @@ export class TranslationService {
 
             // 解析 JSON 响应
             try {
-              console.log(
-                `[TranslationService] 🔍 解析AI响应 (块 ${i + 1}/${chunks.length})，响应长度: ${finalResponseText.length.toLocaleString()} 字符`,
-              );
               // 尝试提取 JSON
               const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
               let chunkTranslation = '';
@@ -846,9 +747,6 @@ export class TranslationService {
                     const data = JSON.parse(jsonStr);
                     if (data.titleTranslation) {
                       titleTranslation = data.titleTranslation;
-                      console.log(
-                        `[TranslationService] 📝 从JSON提取到章节标题翻译: "${chapterTitle}" → "${titleTranslation}"`,
-                      );
                     }
                   } catch {
                     // JSON 解析失败，稍后在外部 try-catch 中处理
@@ -861,9 +759,6 @@ export class TranslationService {
                   const titleMatch = finalResponseText.match(/"titleTranslation"\s*:\s*"([^"]+)"/);
                   if (titleMatch && titleMatch[1]) {
                     titleTranslation = titleMatch[1];
-                    console.log(
-                      `[TranslationService] 📝 从文本中提取到章节标题翻译: "${chapterTitle}" → "${titleTranslation}"`,
-                    );
                   }
                 }
               }
@@ -876,9 +771,6 @@ export class TranslationService {
                   // 如果是第一个块且有标题，再次尝试提取标题翻译（确保提取到最新值）
                   if (i === 0 && chapterTitle && data.titleTranslation) {
                     titleTranslation = data.titleTranslation;
-                    console.log(
-                      `[TranslationService] 📝 从解析后的JSON提取到章节标题翻译: "${chapterTitle}" → "${titleTranslation}"`,
-                    );
                   }
 
                   // 优先使用 paragraphs 数组（结构化数据）
@@ -888,9 +780,6 @@ export class TranslationService {
                         extractedTranslations.set(para.id, para.translation);
                       }
                     }
-                    console.log(
-                      `[TranslationService] ✅ 从JSON的paragraphs数组解析翻译，提取到 ${extractedTranslations.size}/${chunk.paragraphIds?.length || 0} 个段落翻译`,
-                    );
 
                     // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
                     if (data.translation) {
@@ -1043,7 +932,6 @@ export class TranslationService {
 
             // 标记块已成功处理（在所有处理完成后）
             chunkProcessed = true;
-            console.log(`[TranslationService] ✅ 块 ${i + 1}/${chunks.length} 处理完成`);
           } catch (error) {
             // 检查是否是AI降级错误
             const isDegradedError =
@@ -1255,10 +1143,6 @@ export class TranslationService {
           if (onParagraphTranslation && retranslatedParagraphs.length > 0) {
             onParagraphTranslation(retranslatedParagraphs);
           }
-
-          console.log(
-            `[TranslationService] ✅ 已重新翻译 ${retranslatedParagraphs.length}/${missingParagraphIds.length} 个缺失的段落`,
-          );
         } catch (error) {
           console.error(
             `[TranslationService] ❌ 重新翻译缺失段落失败，${missingParagraphIds.length} 个段落未翻译`,
@@ -1273,14 +1157,6 @@ export class TranslationService {
       } else {
         console.log(
           `[TranslationService] ✅ 翻译完成：所有 ${paragraphsWithText.length} 个有效段落都有翻译`,
-          {
-            总段落数: content.length,
-            有效段落数: paragraphsWithText.length,
-            翻译段落数: paragraphTranslations.length,
-            总翻译长度: `${translatedText.length.toLocaleString()} 字符`,
-            执行操作数: actions.length,
-            操作详情: actions.map((a) => `${a.type}_${a.entity}`).join(', ') || '无',
-          },
         );
       }
 
