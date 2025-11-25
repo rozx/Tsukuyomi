@@ -20,8 +20,6 @@ jobs:
       contents: write
       pull-requests: read
     outputs:
-      release_id: ${{ steps.set_final_outputs.outputs.release_id }}
-      upload_url: ${{ steps.set_final_outputs.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
       release_created: ${{ steps.set_final_outputs.outputs.release_created }}
     steps:
@@ -69,33 +67,17 @@ jobs:
       - name: Check if tag exists
         id: check_tag
         if: steps.check_label.outputs.has_release_label == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git fetch --tags
           if git rev-parse "${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
             echo "Tag ${{ steps.get_version.outputs.version }} already exists"
             echo "exists=true" >> $GITHUB_OUTPUT
-            # 检查 release 是否已存在，如果存在则获取 release 信息
-            RELEASE_INFO=$(gh api repos/${{ github.repository }}/releases/tags/${{ steps.get_version.outputs.version }} 2>/dev/null || echo "")
-            if [ -n "$RELEASE_INFO" ]; then
-              RELEASE_ID=$(echo "$RELEASE_INFO" | jq -r '.id')
-              UPLOAD_URL=$(echo "$RELEASE_INFO" | jq -r '.upload_url')
-              echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-              echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-              echo "release_created=true" >> $GITHUB_OUTPUT
-            else
-              echo "release_created=false" >> $GITHUB_OUTPUT
-            fi
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Tag
-        id: create_tag
         if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -104,127 +86,23 @@ jobs:
 
       - name: Create Release
         id: create_release
-        if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'false'
+        if: steps.check_label.outputs.has_release_label == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Creating release for tag: ${{ steps.get_version.outputs.version }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Actor: ${{ github.actor }}"
-          VERSION="${{ steps.get_version.outputs.version }}"
-          
-          # 验证 token 权限
-          echo "Verifying token permissions..."
-          gh auth status || echo "⚠️ gh auth status check failed"
-          
-          # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
-          set +e
-          RELEASE_RESPONSE=$(echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
-            gh api repos/${{ github.repository }}/releases \
-            -X POST \
-            --input - 2>&1 | tee /tmp/release_output.txt)
-          EXIT_CODE=$?
-          set -e
-          
-          if [ $EXIT_CODE -eq 0 ] && [ -n "$RELEASE_RESPONSE" ]; then
-            RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
-            UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
-            if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
-              echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-              echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-              echo "release_created=true" >> $GITHUB_OUTPUT
-              echo "✅ Release created successfully (ID: $RELEASE_ID)"
-            else
-              echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
-              echo "release_created=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          else
-            echo "❌ Failed to create release. Exit code: $EXIT_CODE"
-            if [ -f /tmp/release_output.txt ]; then
-              echo "Error output:"
-              cat /tmp/release_output.txt
-            fi
-            echo ""
-            echo "💡 Troubleshooting tips:"
-            echo "1. Check repository Settings > Actions > General > Workflow permissions"
-            echo "2. Ensure 'Read and write permissions' is selected"
-            echo "3. Verify that GITHUB_TOKEN has 'contents: write' permission"
-            echo "release_created=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-      - name: Create Release for Existing Tag
-        id: create_existing_release
-        if: steps.check_label.outputs.has_release_label == 'true' && steps.check_tag.outputs.exists == 'true' && steps.check_tag.outputs.release_created != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Tag exists but release doesn't. Creating release for tag: ${{ steps.get_version.outputs.version }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Actor: ${{ github.actor }}"
-          VERSION="${{ steps.get_version.outputs.version }}"
-          
-          # 验证 token 权限
-          echo "Verifying token permissions..."
-          gh auth status || echo "⚠️ gh auth status check failed"
-          
-          # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
-          set +e
-          RELEASE_RESPONSE=$(echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
-            gh api repos/${{ github.repository }}/releases \
-            -X POST \
-            --input - 2>&1 | tee /tmp/release_output.txt)
-          EXIT_CODE=$?
-          set -e
-          
-          if [ $EXIT_CODE -eq 0 ] && [ -n "$RELEASE_RESPONSE" ]; then
-            RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
-            UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
-            if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
-              echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-              echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-              echo "release_created=true" >> $GITHUB_OUTPUT
-              echo "✅ Release created successfully for existing tag (ID: $RELEASE_ID)"
-            else
-              echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
-              echo "release_created=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          else
-            echo "❌ Failed to create release for existing tag. Exit code: $EXIT_CODE"
-            if [ -f /tmp/release_output.txt ]; then
-              echo "Error output:"
-              cat /tmp/release_output.txt
-            fi
-            echo ""
-            echo "💡 Troubleshooting tips:"
-            echo "1. Check repository Settings > Actions > General > Workflow permissions"
-            echo "2. Ensure 'Read and write permissions' is selected"
-            echo "3. Verify that GITHUB_TOKEN has 'contents: write' permission"
-            echo "release_created=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Final Outputs
         id: set_final_outputs
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
-          # 优先使用 create_release 的输出
-          if [ -n "${{ steps.create_release.outputs.release_id }}" ]; then
-            echo "release_id=${{ steps.create_release.outputs.release_id }}" >> $GITHUB_OUTPUT
-            echo "upload_url=${{ steps.create_release.outputs.upload_url }}" >> $GITHUB_OUTPUT
-            echo "release_created=${{ steps.create_release.outputs.release_created }}" >> $GITHUB_OUTPUT
-          # 其次使用 create_existing_release 的输出
-          elif [ -n "${{ steps.create_existing_release.outputs.release_id }}" ]; then
-            echo "release_id=${{ steps.create_existing_release.outputs.release_id }}" >> $GITHUB_OUTPUT
-            echo "upload_url=${{ steps.create_existing_release.outputs.upload_url }}" >> $GITHUB_OUTPUT
-            echo "release_created=${{ steps.create_existing_release.outputs.release_created }}" >> $GITHUB_OUTPUT
-          # 最后使用 check_tag 的输出（已存在的 release）
-          elif [ -n "${{ steps.check_tag.outputs.release_id }}" ]; then
-            echo "release_id=${{ steps.check_tag.outputs.release_id }}" >> $GITHUB_OUTPUT
-            echo "upload_url=${{ steps.check_tag.outputs.upload_url }}" >> $GITHUB_OUTPUT
-            echo "release_created=${{ steps.check_tag.outputs.release_created }}" >> $GITHUB_OUTPUT
+          if [ "${{ steps.create_release.outcome }}" == "success" ]; then
+            echo "release_created=true" >> $GITHUB_OUTPUT
           else
             echo "release_created=false" >> $GITHUB_OUTPUT
           fi
@@ -271,86 +149,32 @@ jobs:
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
-        shell: bash
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: |
+            dist/electron/Packaged/*.dmg
+            dist/electron/Packaged/*.zip
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.create-release.outputs.version }}"
-          # 检查 release 是否存在
-          if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
-            echo "❌ Release $VERSION not found. Creating release..."
-            echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
-            gh api repos/${{ github.repository }}/releases \
-              -X POST \
-              --input - || echo "⚠️ Failed to create release"
-          fi
-          # 上传所有 .dmg 和 .zip 文件（排除 .blockmap 文件）
-          if ls dist/electron/Packaged/*.dmg dist/electron/Packaged/*.zip 2>/dev/null; then
-            gh release upload "$VERSION" \
-              dist/electron/Packaged/*.dmg \
-              dist/electron/Packaged/*.zip \
-              --clobber || echo "⚠️ Some files may not have been uploaded"
-          else
-            echo "⚠️ No .dmg or .zip files found to upload"
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
-        shell: pwsh
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: dist/electron/Packaged/*.exe
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 检查 release 是否存在
-          $version = "${{ needs.create-release.outputs.version }}"
-          $releaseExists = gh release view $version --json id 2>$null
-          if (-not $releaseExists) {
-            Write-Host "❌ Release $version not found. Creating release..."
-            $jsonBody = @{
-              tag_name = $version
-              name = "Release $version"
-              body = "Automated release"
-              generate_release_notes = $true
-            } | ConvertTo-Json
-            echo $jsonBody | gh api repos/${{ github.repository }}/releases -X POST --input -
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "⚠️ Failed to create release"
-            }
-          }
-          # 上传所有 .exe 文件
-          $exeFiles = Get-ChildItem -Path "dist/electron/Packaged/*.exe" -ErrorAction SilentlyContinue
-          if ($exeFiles) {
-            foreach ($file in $exeFiles) {
-              gh release upload $version $file.FullName --clobber
-              if ($LASTEXITCODE -ne 0) {
-                Write-Host "⚠️ Failed to upload $($file.Name)"
-              }
-            }
-          } else {
-            Write-Host "⚠️ No .exe files found to upload"
-          }
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
-        shell: bash
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: |
+            dist/electron/Packaged/*.AppImage
+            dist/electron/Packaged/*.deb
+            dist/electron/Packaged/*.snap
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.create-release.outputs.version }}"
-          # 检查 release 是否存在
-          if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
-            echo "❌ Release $VERSION not found. Creating release..."
-            echo '{"tag_name":"'"$VERSION"'","name":"Release '"$VERSION"'","body":"Automated release","generate_release_notes":true}' | \
-            gh api repos/${{ github.repository }}/releases \
-              -X POST \
-              --input - || echo "⚠️ Failed to create release"
-          fi
-          # 上传所有 Linux 构建文件
-          if ls dist/electron/Packaged/*.AppImage dist/electron/Packaged/*.deb dist/electron/Packaged/*.snap 2>/dev/null; then
-            gh release upload "$VERSION" \
-              dist/electron/Packaged/*.AppImage \
-              dist/electron/Packaged/*.deb \
-              dist/electron/Packaged/*.snap \
-              --clobber || echo "⚠️ Some files may not have been uploaded"
-          else
-            echo "⚠️ No Linux build files found to upload"
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
