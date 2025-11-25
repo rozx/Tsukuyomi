@@ -827,7 +827,28 @@ export class NcodeSyosetuScraper extends BaseScraper {
             title: volume.title,
             startIndex: volume.startIndex + currentChapterIndex,
           }));
-          allVolumes.push(...updatedVolumes);
+
+          updatedVolumes.forEach((vol) => {
+            const lastVol = allVolumes[allVolumes.length - 1];
+            // console.log(`Processing volume: ${vol.title} at ${vol.startIndex} (currentChapterIndex: ${currentChapterIndex})`);
+            // console.log(`Last volume: ${lastVol?.title}`);
+
+            // 如果该卷从当前页面的起始位置开始
+            if (vol.startIndex === currentChapterIndex) {
+              if (lastVol) {
+                // 如果标题与上一卷相同，视为重复（分页导致的标题重复）
+                if (lastVol.title === vol.title) {
+                  return;
+                }
+                // 如果标题是默认的"正文"，视为上一卷的延续（分页导致的无标题）
+                if (vol.title === '正文') {
+                  return;
+                }
+              }
+            }
+
+            allVolumes.push(vol);
+          });
         }
 
         allChapters.push(...pageData.chapters);
