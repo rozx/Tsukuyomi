@@ -101,16 +101,41 @@ export const handleAllOriginsProxy = async (
     const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
     console.log(`[AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
 
-    const response = await axios.get<AllOriginsResponse>(allOriginsUrl, {
+    const response = await axios.get<string>(allOriginsUrl, {
       timeout: 120000, // 120 seconds to match server timeout
+      responseType: 'text', // Get as text to check for HTML error pages
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'application/json',
       },
+      validateStatus: () => true, // Don't throw on any status code
     });
 
-    const data = response.data;
+    // Check if AllOrigins API itself returned an error
+    if (response.status >= 400) {
+      const errorMessage =
+        response.status === 502
+          ? 'AllOrigins service is temporarily unavailable (502 Bad Gateway). Please try again later.'
+          : `AllOrigins API returned error: ${response.status} ${response.statusText}`;
+      console.error(`[AllOrigins Error] [${requestId}] ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+
+    // Check if response is HTML (like Cloudflare error page), it means AllOrigins is down
+    if (response.data.includes('Bad gateway') || response.data.includes('502')) {
+      const errorMessage = 'AllOrigins service is temporarily unavailable. Please try again later.';
+      console.error(`[AllOrigins Error] [${requestId}] ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+
+    // Parse JSON response
+    let data: AllOriginsResponse;
+    try {
+      data = JSON.parse(response.data) as AllOriginsResponse;
+    } catch {
+      throw new Error('AllOrigins returned invalid response format');
+    }
 
     if (data.status?.http_code) {
       res.status(data.status.http_code);
@@ -124,7 +149,18 @@ export const handleAllOriginsProxy = async (
       );
     }
   } catch (error) {
-    console.error(`[AllOrigins Error] [${requestId}]`, error);
+    // Log only essential error information, not the entire error object
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const statusText = error.response?.statusText;
+      const message = error.message;
+      console.error(
+        `[AllOrigins Error] [${requestId}] ${message}${status ? ` (Status: ${status} ${statusText})` : ''}`,
+      );
+    } else {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[AllOrigins Error] [${requestId}] ${message}`);
+    }
     throw error;
   }
 };
