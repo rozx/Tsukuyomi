@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import Chips from 'primevue/chips';
+import InputChips from 'primevue/inputchips';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import Checkbox from 'primevue/checkbox';
@@ -39,14 +39,14 @@ const thinkingMessage = computed(() => {
   if (!currentTaskId.value) return null;
   const task = aiProcessingStore.activeTasks.find((t) => t.id === currentTaskId.value);
   if (!task) return null;
-  
+
   // 优先使用实际的思考消息
   if (task.thinkingMessage && task.thinkingMessage.trim()) {
     // 获取最后一行
     const lines = task.thinkingMessage.split('\n').filter((line) => line.trim());
     return lines.length > 0 ? lines[lines.length - 1] : task.thinkingMessage;
   }
-  
+
   return task.message || `${task.modelName} 正在处理...`;
 });
 
@@ -317,7 +317,7 @@ const handleTranslate = async () => {
 
 <template>
   <div class="translatable-chips-wrapper" :class="$attrs.class">
-    <Chips
+    <InputChips
       :id="id"
       :model-value="modelValue"
       :placeholder="placeholder"
@@ -405,12 +405,15 @@ const handleTranslate = async () => {
   width: 100%;
 }
 
-.translatable-chips-wrapper :deep(.p-chips) {
+.translatable-chips-wrapper :deep(.p-inputchips) {
   width: 100%;
 }
 
-.translatable-chips-wrapper :deep(.p-chips-multiple-container) {
+.translatable-chips-wrapper :deep(.p-inputchips-input-token) {
   width: 100% !important;
+}
+
+.translatable-chips-wrapper :deep(.p-inputchips-input) {
   padding-right: 3rem !important;
 }
 

@@ -4,7 +4,7 @@ import { cloneDeep } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Chips from 'primevue/chips';
+import InputChips from 'primevue/inputchips';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
@@ -13,7 +13,12 @@ import TranslatableChips from '../translation/TranslatableChips.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { formatCharCount, getChapterCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import {
+  formatCharCount,
+  getChapterCharCount,
+  getVolumeDisplayTitle,
+  getChapterDisplayTitle,
+} from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -158,7 +163,7 @@ const handleExportJson = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    
+
     // 生成文件名（使用书名或默认名称）
     const title = formData.value.title || props.book?.title || 'book';
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
@@ -442,7 +447,11 @@ watch(
           <TranslatableChips
             :id="`${idPrefix}-alternateTitles`"
             :model-value="formData.alternateTitles || []"
-            @update:model-value="(value) => { formData.alternateTitles = value; }"
+            @update:model-value="
+              (value) => {
+                formData.alternateTitles = value;
+              }
+            "
             placeholder="输入别名标题后按回车"
             class="w-full"
           />
@@ -470,7 +479,11 @@ watch(
           <TranslatableInput
             :id="`${idPrefix}-description`"
             :model-value="formData.description || ''"
-            @update:model-value="(value) => { formData.description = value; }"
+            @update:model-value="
+              (value) => {
+                formData.description = value;
+              }
+            "
             type="textarea"
             :rows="4"
             :auto-resize="true"
@@ -496,7 +509,11 @@ watch(
           <TranslatableChips
             :id="`${idPrefix}-tags`"
             :model-value="formData.tags || []"
-            @update:model-value="(value) => { formData.tags = value; }"
+            @update:model-value="
+              (value) => {
+                formData.tags = value;
+              }
+            "
             placeholder="输入标签后按回车，或用逗号分隔输入多个标签"
             class="w-full"
             separator=","
@@ -520,7 +537,7 @@ watch(
               @click="openScraper()"
             />
           </div>
-          <Chips
+          <InputChips
             :id="`${idPrefix}-webUrl`"
             :model-value="formData.webUrl || []"
             @update:model-value="

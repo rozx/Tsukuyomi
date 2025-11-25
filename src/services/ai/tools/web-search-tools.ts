@@ -277,14 +277,14 @@ async function fetchWebpage(url: string): Promise<{
     }
 
     const isBrowser = typeof window !== 'undefined';
-    const fetchUrl: string = url;
+    let fetchUrl: string = url;
     let headers: Record<string, string>;
 
     // 在 Node.js/Bun 环境中直接访问
     // 在浏览器环境中也可以直接访问，因为现在有服务器代理
     if (isBrowser) {
-      // 浏览器环境：直接访问 URL，浏览器会自动通过服务器的代理
-      // 如果需要特定代理，可以使用 /api/... 路径
+      // 浏览器环境：使用通用代理 endpoint
+      fetchUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
       headers = {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',

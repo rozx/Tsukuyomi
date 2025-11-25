@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { Impit } from 'impit';
+import { gotScraping } from 'got-scraping';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,43 +31,52 @@ const TARGETS: Record<string, TargetConfig> = {
 
 // --- Proxy Handlers ---
 
-// Create a shared Impit instance
-const impit = new Impit({
-  browser: 'chrome',
-});
-
 const handleDirectProxy = async (
   req: Request,
   res: Response,
   targetUrl: string,
   requestId: string,
 ) => {
-  const response = await impit.fetch(targetUrl, {
-    method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
-    body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
-  });
+  try {
+    // Use got-scraping to mimic a real browser
+    const response = await gotScraping({
+      url: targetUrl,
+      method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD',
+      headers: {
+        ...(req.headers.referer ? { Referer: req.headers.referer as string } : {}),
+      },
+      body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? (req.body as string) : undefined,
+      responseType: 'buffer',
+      throwHttpErrors: false, // Don't throw on 4xx/5xx
+      http2: false, // Disable HTTP/2 to avoid origin mismatch errors
+    });
 
-  res.status(response.status);
+    res.status(response.statusCode);
 
-  const headersToSkip = [
-    'content-encoding',
-    'transfer-encoding',
-    'connection',
-    'set-cookie',
-    'content-security-policy',
-    'x-frame-options',
-    'content-length',
-  ];
+    const headersToSkip = [
+      'content-encoding',
+      'transfer-encoding',
+      'connection',
+      'set-cookie',
+      'content-security-policy',
+      'x-frame-options',
+      'content-length',
+    ];
 
-  response.headers.forEach((value, key) => {
-    if (!headersToSkip.includes(key.toLowerCase())) {
-      res.setHeader(key, value);
-    }
-  });
+    Object.entries(response.headers).forEach(([key, value]) => {
+      if (!headersToSkip.includes(key.toLowerCase()) && value !== undefined) {
+        res.setHeader(key, value);
+      }
+    });
 
-  const body = await response.arrayBuffer();
-  res.send(Buffer.from(body));
-  console.log(`[Proxy Direct] [${requestId}] Completed`);
+    const buffer = response.body;
+    console.log(`[Proxy Direct] [${requestId}] Body size: ${buffer.length}`);
+    res.send(buffer);
+    console.log(`[Proxy Direct] [${requestId}] Completed`);
+  } catch (error) {
+    console.error(`[Proxy Direct Error] [${requestId}]`, error);
+    throw error;
+  }
 };
 
 const handleAllOriginsProxy = async (
@@ -81,19 +90,18 @@ const handleAllOriginsProxy = async (
   console.log(`[Proxy AllOrigins] [${requestId}] Fetching via ${allOriginsUrl}`);
 
   try {
-    const response = await impit.fetch(allOriginsUrl);
-    const text = await response.text();
+    const response = await gotScraping({
+      url: allOriginsUrl,
+      responseType: 'text',
+      http2: false, // Disable HTTP/2 to avoid origin mismatch errors
+    });
+    const text = response.body;
 
     let data: { status?: { http_code?: number }; contents?: string };
     try {
       data = JSON.parse(text);
     } catch (e) {
       console.error(`[Proxy AllOrigins] [${requestId}] JSON Parse Error: ${(e as Error).message}`);
-      console.error(
-        `[Proxy AllOrigins] [${requestId}] Response length: ${text.length}. End of response: ${text.slice(
-          -100,
-        )}`,
-      );
       // If JSON parsing fails, it might be because AllOrigins failed or returned raw content?
       // Or maybe we can fallback to direct proxy?
       console.log(`[Proxy AllOrigins] [${requestId}] Falling back to Direct Proxy...`);
@@ -163,7 +171,34 @@ const handleProxyRequest = async (
   }
 };
 
+// Generic Proxy Handler for arbitrary URLs
+const handleGenericProxy = async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url) {
+    res.status(400).json({ error: 'Missing url parameter' });
+    return;
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  console.log(`[Proxy Generic] [${requestId}] Fetching ${url}`);
+
+  try {
+    await handleDirectProxy(req, res, url, requestId);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Proxy Generic Error] [${requestId}] ${message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Proxy Request Failed', message });
+    }
+  }
+};
+
 // --- Register API Routes ---
+
+// Register generic proxy route
+app.get('/api/proxy', (req, res) => {
+  void handleGenericProxy(req, res);
+});
 
 Object.entries(TARGETS).forEach(([pathPrefix, config]) => {
   app.use(pathPrefix, (req, res) => {

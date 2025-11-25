@@ -20,25 +20,23 @@ class TestNovel18Scraper extends Novel18SyosetuScraper {
     this.pages.set('chapter', chapterPage);
   }
 
-  protected override fetchPageWithStatus(
-    url: string,
-  ): Promise<{ html: string; statusCode: number | null }> {
+  protected override fetchPage(url: string): Promise<string> {
     const u = new URL(url);
     const p = u.searchParams.get('p');
 
-    if (!p || p === '1') {
-      return Promise.resolve({ html: this.pages.get('p1') || '', statusCode: 200 });
+    // Handle pagination
+    if (p) {
+      if (p === '1') return Promise.resolve(this.pages.get('p1') || '');
+      if (p === '2') return Promise.resolve(this.pages.get('p2') || '');
+      return Promise.reject(new Error('404'));
     }
-    if (p === '2') {
-      return Promise.resolve({ html: this.pages.get('p2') || '', statusCode: 200 });
-    }
-    return Promise.resolve({ html: '', statusCode: 404 });
-  }
 
-  protected override fetchPage(url: string): Promise<string> {
+    // Handle chapter content
     if (url.includes('/1/') || url.includes('/2/') || url.includes('/3/')) {
       return Promise.resolve(this.pages.get('chapter') || '');
     }
+
+    // Default to page 1
     return Promise.resolve(this.pages.get('p1') || '');
   }
 }
