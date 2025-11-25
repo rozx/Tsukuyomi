@@ -290,6 +290,17 @@ const retranslateParagraph = async (paragraphId: string) => {
         void booksStore.updateBook(book.value.id, {
           volumes: updatedVolumes,
           lastEdited: new Date(),
+        }).then(() => {
+          // 更新 selectedChapterWithContent 以反映保存的更改
+          const updatedChapter = updatedVolumes
+            .flatMap((v) => v.chapters || [])
+            .find((c) => c.id === selectedChapterWithContent.value?.id);
+          if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+            selectedChapterWithContent.value = {
+              ...selectedChapterWithContent.value,
+              content: updatedChapter.content,
+            };
+          }
         });
       },
       onAction: (action) => {
@@ -1417,6 +1428,17 @@ const translateAllParagraphs = async () => {
       volumes: updatedVolumes,
       lastEdited: new Date(),
     });
+
+    // 更新 selectedChapterWithContent 以反映保存的更改
+    const updatedChapter = updatedVolumes
+      .flatMap((v) => v.chapters || [])
+      .find((c) => c.id === selectedChapterWithContent.value!.id);
+    if (updatedChapter && updatedChapter.content) {
+      selectedChapterWithContent.value = {
+        ...selectedChapterWithContent.value,
+        content: updatedChapter.content,
+      };
+    }
   };
 
   try {
@@ -1747,6 +1769,17 @@ const translateAllParagraphs = async () => {
         volumes: updatedVolumes,
         lastEdited: new Date(),
       });
+
+      // 更新 selectedChapterWithContent 以反映保存的更改
+      const updatedChapter = updatedVolumes
+        .flatMap((v) => v.chapters || [])
+        .find((c) => c.id === selectedChapterWithContent.value?.id);
+      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+        selectedChapterWithContent.value = {
+          ...selectedChapterWithContent.value,
+          content: updatedChapter.content,
+        };
+      }
     }
 
     // 构建成功消息
