@@ -43,6 +43,7 @@ const handleProxyRequest = async (
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
   const targetUrl = `${config.baseUrl}${pathPart}${queryString}`;
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  const startTime = Date.now();
 
   // Determine the actual proxy method that will be used
   let actualProxyMethod: string;
@@ -56,10 +57,35 @@ const handleProxyRequest = async (
     `[Proxy] [${requestId}] ${req.method} ${req.path} -> ${targetUrl} (Using: ${actualProxyMethod})`,
   );
 
+  // Immediately set headers to keep connection alive and prevent load balancer timeout
+  // This is critical for DigitalOcean App Platform which may timeout after 5-10 seconds
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering if present
+
+  // Set response timeout to 120 seconds
+  res.setTimeout(120000, () => {
+    if (!res.headersSent) {
+      const duration = Date.now() - startTime;
+      console.error(
+        `[Proxy Timeout] [${requestId}] Request timed out after ${duration}ms (120s limit)`,
+      );
+      res.status(504).json({
+        error: 'Gateway Timeout',
+        mode: config.mode,
+        proxyMode: PROXY_MODE,
+        message: 'Request timeout after 120 seconds',
+        duration,
+      });
+    }
+  });
+
   try {
     // Use Puppeteer only when PROXY_MODE='puppeteer'
     if (PROXY_MODE === 'puppeteer') {
       await handlePuppeteerProxy(req, res, targetUrl, requestId);
+      const duration = Date.now() - startTime;
+      console.log(`[Proxy] [${requestId}] Completed in ${duration}ms`);
       return;
     }
 
@@ -69,12 +95,20 @@ const handleProxyRequest = async (
     } else {
       await handleDirectProxy(req, res, targetUrl, requestId);
     }
+    const duration = Date.now() - startTime;
+    console.log(`[Proxy] [${requestId}] Completed in ${duration}ms`);
   } catch (error: unknown) {
-    const isTimeout = error instanceof Error && error.message.includes('Timeout');
+    const duration = Date.now() - startTime;
+    const isTimeout =
+      error instanceof Error &&
+      (error.message.includes('Timeout') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('timeout') ||
+        ('code' in error && (error as { code: string }).code === 'ETIMEDOUT'));
     const message = error instanceof Error ? error.message : 'Unknown error';
     const code =
       error instanceof Error && 'code' in error ? (error as { code: string }).code : undefined;
-    console.error(`[Proxy Error] [${requestId}] ${message}`);
+    console.error(`[Proxy Error] [${requestId}] ${message} (Duration: ${duration}ms)`);
 
     if (!res.headersSent) {
       res.status(isTimeout ? 504 : 500).json({
@@ -83,6 +117,7 @@ const handleProxyRequest = async (
         proxyMode: PROXY_MODE,
         message,
         code,
+        duration,
       });
     }
   }
@@ -97,6 +132,7 @@ const handleGenericProxy = async (req: Request, res: Response) => {
   }
 
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+  const startTime = Date.now();
 
   // Determine proxy method based on target URL
   // Only syosetu.org should use allorigins, others use direct
@@ -116,6 +152,21 @@ const handleGenericProxy = async (req: Request, res: Response) => {
 
   console.log(`[Proxy Generic] [${requestId}] Fetching ${url} (Using: ${proxyMethod})`);
 
+  // Set response timeout to 120 seconds
+  res.setTimeout(120000, () => {
+    if (!res.headersSent) {
+      const duration = Date.now() - startTime;
+      console.error(
+        `[Proxy Generic Timeout] [${requestId}] Request timed out after ${duration}ms (120s limit)`,
+      );
+      res.status(504).json({
+        error: 'Gateway Timeout',
+        message: 'Request timeout after 120 seconds',
+        duration,
+      });
+    }
+  });
+
   try {
     if (proxyMethod === 'puppeteer') {
       await handlePuppeteerProxy(req, res, url, requestId);
@@ -124,11 +175,27 @@ const handleGenericProxy = async (req: Request, res: Response) => {
     } else {
       await handleDirectProxy(req, res, url, requestId);
     }
+    const duration = Date.now() - startTime;
+    console.log(`[Proxy Generic] [${requestId}] Completed in ${duration}ms`);
   } catch (error: unknown) {
+    const duration = Date.now() - startTime;
+    const isTimeout =
+      error instanceof Error &&
+      (error.message.includes('Timeout') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('timeout') ||
+        ('code' in error && (error as { code: string }).code === 'ETIMEDOUT'));
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[Proxy Generic Error] [${requestId}] ${message}`);
+    const code =
+      error instanceof Error && 'code' in error ? (error as { code: string }).code : undefined;
+    console.error(`[Proxy Generic Error] [${requestId}] ${message} (Duration: ${duration}ms)`);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Proxy Request Failed', message });
+      res.status(isTimeout ? 504 : 500).json({
+        error: 'Proxy Request Failed',
+        message,
+        code,
+        duration,
+      });
     }
   }
 };

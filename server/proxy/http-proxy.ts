@@ -29,6 +29,12 @@ export const handleDirectProxy = async (
   try {
     console.log(`[Direct] [${requestId}] Fetching ${targetUrl}`);
 
+    // Immediately set headers to prevent timeout
+    // This tells the load balancer that the connection is active
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering if present
+
     const stream = gotScraping.stream({
       url: targetUrl,
       method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH',
@@ -40,9 +46,11 @@ export const handleDirectProxy = async (
         locales: ['ja-JP', 'en-US'],
         operatingSystems: ['windows'],
       },
-      timeout: { request: 90000 },
+      timeout: { request: 120000 }, // 120 seconds to match server timeout
       retry: { limit: 2 },
     });
+
+    let headersSent = false;
 
     stream.on(
       'response',
@@ -50,31 +58,50 @@ export const handleDirectProxy = async (
         statusCode: number;
         headers: Record<string, string | string[] | undefined>;
       }) => {
-        res.status(response.statusCode);
-        const headersToSkip = [
-          'content-encoding',
-          'transfer-encoding',
-          'connection',
-          'set-cookie',
-          'content-security-policy',
-          'x-frame-options',
-        ];
-        Object.entries(response.headers).forEach(([key, value]) => {
-          if (!headersToSkip.includes(key.toLowerCase()) && value) {
-            if (typeof value === 'string' || typeof value === 'number') {
-              res.setHeader(key, value);
-            } else if (Array.isArray(value)) {
-              res.setHeader(key, value.join(', '));
+        if (!headersSent) {
+          res.status(response.statusCode);
+          const headersToSkip = [
+            'content-encoding',
+            'transfer-encoding',
+            'connection',
+            'set-cookie',
+            'content-security-policy',
+            'x-frame-options',
+          ];
+          Object.entries(response.headers).forEach(([key, value]) => {
+            if (!headersToSkip.includes(key.toLowerCase()) && value) {
+              if (typeof value === 'string' || typeof value === 'number') {
+                res.setHeader(key, value);
+              } else if (Array.isArray(value)) {
+                res.setHeader(key, value.join(', '));
+              }
             }
-          }
-        });
+          });
+          headersSent = true;
+        }
       },
     );
+
+    stream.on('error', (error: Error) => {
+      console.error(`[Direct Stream Error] [${requestId}]`, error);
+      if (!headersSent && !res.headersSent) {
+        res.status(500).json({
+          error: 'Stream Error',
+          message: error.message,
+        });
+      }
+    });
 
     await streamPipeline(stream, res);
     console.log(`[Direct] [${requestId}] Completed`);
   } catch (error) {
     console.error(`[Direct Error] [${requestId}]`, error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Proxy Error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
     throw error;
   }
 };
@@ -98,7 +125,7 @@ export const handleAllOriginsProxy = async (
       url: allOriginsUrl,
       responseType: 'json',
       http2: false, // Disable HTTP/2 to avoid origin matching issues
-      timeout: { request: 90000 },
+      timeout: { request: 120000 }, // 120 seconds to match server timeout
       retry: { limit: 2 },
     });
 
