@@ -30,8 +30,9 @@ RUN apt-get update && apt-get install -y -qq \
 # 设置工作目录
 WORKDIR /app
 
-# 复制依赖文件
+# 复制依赖文件和 Quasar 配置文件（postinstall 需要这些文件来识别项目）
 COPY package.json bun.lock ./
+COPY quasar.config.ts index.html ./
 
 # 安装依赖
 RUN bun install --frozen-lockfile

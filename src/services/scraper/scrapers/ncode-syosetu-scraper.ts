@@ -471,7 +471,13 @@ export class NcodeSyosetuScraper extends BaseScraper {
     const textLink = $('a')
       .filter((_, el) => {
         const t = $(el).text().trim();
-        return textVariants.some((v) => t === v || t.includes(v));
+        return textVariants.some((v) => {
+          // Symbols and short words should be strict match to avoid matching titles
+          if (['»', '›', '＞', '次'].includes(v)) {
+            return t === v;
+          }
+          return t === v || t.includes(v);
+        });
       })
       .first();
     if (textLink.length) {
@@ -827,7 +833,26 @@ export class NcodeSyosetuScraper extends BaseScraper {
             title: volume.title,
             startIndex: volume.startIndex + currentChapterIndex,
           }));
-          allVolumes.push(...updatedVolumes);
+
+          updatedVolumes.forEach((vol) => {
+            const lastVol = allVolumes[allVolumes.length - 1];
+
+            // 如果该卷从当前页面的起始位置开始
+            if (vol.startIndex === currentChapterIndex) {
+              if (lastVol) {
+                // 如果标题与上一卷相同，视为重复（分页导致的标题重复）
+                if (lastVol.title === vol.title) {
+                  return;
+                }
+                // 如果标题是默认的"正文"，视为上一卷的延续（分页导致的无标题）
+                if (vol.title === '正文') {
+                  return;
+                }
+              }
+            }
+
+            allVolumes.push(vol);
+          });
         }
 
         allChapters.push(...pageData.chapters);
