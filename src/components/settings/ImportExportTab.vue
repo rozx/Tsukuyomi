@@ -7,6 +7,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 
 const toast = useToastWithHistory();
 const aiModelsStore = useAIModelsStore();
@@ -19,12 +20,17 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 /**
  * 导出设置到 JSON 文件
  */
-const exportSettings = () => {
+const exportSettings = async () => {
+  // 加载所有书籍的章节内容
+  const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+    booksStore.books,
+  );
+
   // 同步最新的 AI 模型、书籍数据、封面历史、同步设置和应用设置
   const settings = {
     aiModels: [...aiModelsStore.models],
     sync: [...settingsStore.syncs],
-    novels: [...booksStore.books],
+    novels: novelsWithContent,
     coverHistory: [...coverHistoryStore.covers],
     appSettings: settingsStore.getAllSettings(),
   };
