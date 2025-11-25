@@ -477,12 +477,18 @@ export default defineConfig((ctx) => {
         // Icons should be placed in src-electron/icons/
         mac: {
           icon: 'src-electron/icons/icon.icns',
+          // 只生成 zip 便携版，不生成 dmg 安装程序
+          target: ['zip'],
         },
         win: {
           icon: 'src-electron/icons/icon.ico',
+          // 只生成 zip 便携版，不生成 exe 安装程序
+          target: ['zip'],
         },
         linux: {
           icon: 'src-electron/icons/icon.png',
+          // 只生成 AppImage 便携版，不生成 deb/snap 安装程序
+          target: ['AppImage'],
         },
       },
     },

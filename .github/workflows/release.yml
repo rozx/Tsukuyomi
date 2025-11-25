@@ -234,9 +234,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: |
-            dist/electron/Packaged/*.dmg
-            dist/electron/Packaged/*.zip
+          files: dist/electron/Packaged/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
@@ -245,7 +243,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: dist/electron/Packaged/*.exe
+          files: dist/electron/Packaged/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
@@ -254,9 +252,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: |
-            dist/electron/Packaged/*.AppImage
-            dist/electron/Packaged/*.deb
-            dist/electron/Packaged/*.snap
+          files: dist/electron/Packaged/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
