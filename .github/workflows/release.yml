@@ -131,6 +131,7 @@ jobs:
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -142,16 +143,21 @@ jobs:
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # 上传所有 .exe 文件
-          gh release upload ${{ needs.create-release.outputs.version }} \
-            dist/electron/Packaged/*.exe \
-            --clobber || echo "⚠️ Some files may not have been uploaded"
+          gh release upload ${{ needs.create-release.outputs.version }} `
+            dist/electron/Packaged/*.exe `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️ Some files may not have been uploaded"
+          }
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
