@@ -822,6 +822,9 @@ export class NcodeSyosetuScraper extends BaseScraper {
           break;
         }
 
+        console.log(`Page ${pageCount} stats: chapters=${pageData.chapters.length}, volumes=${pageData.volumes.length}`);
+        pageData.volumes.forEach(v => console.log(`  - Vol: "${v.title}" start=${v.startIndex}`));
+
         if (pageData.volumes.length > 0) {
           const updatedVolumes = pageData.volumes.map((volume) => ({
             title: volume.title,
@@ -835,6 +838,17 @@ export class NcodeSyosetuScraper extends BaseScraper {
 
             // 如果该卷从当前页面的起始位置开始
             if (vol.startIndex === currentChapterIndex) {
+              if (lastVol) {
+                // 如果标题与上一卷相同，视为重复（分页导致的标题重复）
+                if (lastVol.title === vol.title) {
+                  return;
+                }
+                // 如果标题是默认的"正文"，视为上一卷的延续（分页导致的无标题）
+                if (vol.title === '正文') {
+                  return;
+                }
+              }
+            }
               if (lastVol) {
                 // 如果标题与上一卷相同，视为重复（分页导致的标题重复）
                 if (lastVol.title === vol.title) {
