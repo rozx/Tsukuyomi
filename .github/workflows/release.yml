@@ -95,33 +95,27 @@ jobs:
           echo "Verifying token permissions..."
           gh auth status || echo "⚠️ gh auth status check failed"
           
-          # 使用 gh release create 命令，它更简单且正确处理布尔值
+          # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
           set +e
-          gh release create "$VERSION" \
-            --title "Release $VERSION" \
-            --notes "Automated release" \
-            --generate-notes 2>&1 | tee /tmp/release_output.txt
+          RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases \
+            -X POST \
+            -f tag_name="$VERSION" \
+            -f name="Release $VERSION" \
+            -f body="Automated release" \
+            -f generate_release_notes=true 2>&1 | tee /tmp/release_output.txt)
           EXIT_CODE=$?
           set -e
           
-          if [ $EXIT_CODE -eq 0 ]; then
-            # 获取刚创建的 release 信息
-            RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases/tags/$VERSION 2>&1)
-            if [ -n "$RELEASE_RESPONSE" ]; then
-              RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
-              UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
-              if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
-                echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-                echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-                echo "release_created=true" >> $GITHUB_OUTPUT
-                echo "✅ Release created successfully (ID: $RELEASE_ID)"
-              else
-                echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
-                echo "release_created=false" >> $GITHUB_OUTPUT
-                exit 1
-              fi
+          if [ $EXIT_CODE -eq 0 ] && [ -n "$RELEASE_RESPONSE" ]; then
+            RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
+            UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
+            if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
+              echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+              echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+              echo "release_created=true" >> $GITHUB_OUTPUT
+              echo "✅ Release created successfully (ID: $RELEASE_ID)"
             else
-              echo "❌ Failed to get release info after creation"
+              echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
               echo "release_created=false" >> $GITHUB_OUTPUT
               exit 1
             fi
@@ -155,33 +149,27 @@ jobs:
           echo "Verifying token permissions..."
           gh auth status || echo "⚠️ gh auth status check failed"
           
-          # 使用 gh release create 命令，它更简单且正确处理布尔值
+          # 使用 GitHub API 直接创建 release，避免 author_id 权限问题
           set +e
-          gh release create "$VERSION" \
-            --title "Release $VERSION" \
-            --notes "Automated release" \
-            --generate-notes 2>&1 | tee /tmp/release_output.txt
+          RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases \
+            -X POST \
+            -f tag_name="$VERSION" \
+            -f name="Release $VERSION" \
+            -f body="Automated release" \
+            -f generate_release_notes=true 2>&1 | tee /tmp/release_output.txt)
           EXIT_CODE=$?
           set -e
           
-          if [ $EXIT_CODE -eq 0 ]; then
-            # 获取刚创建的 release 信息
-            RELEASE_RESPONSE=$(gh api repos/${{ github.repository }}/releases/tags/$VERSION 2>&1)
-            if [ -n "$RELEASE_RESPONSE" ]; then
-              RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
-              UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
-              if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
-                echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
-                echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
-                echo "release_created=true" >> $GITHUB_OUTPUT
-                echo "✅ Release created successfully for existing tag (ID: $RELEASE_ID)"
-              else
-                echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
-                echo "release_created=false" >> $GITHUB_OUTPUT
-                exit 1
-              fi
+          if [ $EXIT_CODE -eq 0 ] && [ -n "$RELEASE_RESPONSE" ]; then
+            RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
+            UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url')
+            if [ "$RELEASE_ID" != "null" ] && [ -n "$RELEASE_ID" ]; then
+              echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+              echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+              echo "release_created=true" >> $GITHUB_OUTPUT
+              echo "✅ Release created successfully for existing tag (ID: $RELEASE_ID)"
             else
-              echo "❌ Failed to get release info after creation"
+              echo "❌ Failed to parse release response: $RELEASE_RESPONSE"
               echo "release_created=false" >> $GITHUB_OUTPUT
               exit 1
             fi
@@ -273,10 +261,12 @@ jobs:
           # 检查 release 是否存在
           if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
             echo "❌ Release $VERSION not found. Creating release..."
-            gh release create "$VERSION" \
-              --title "Release $VERSION" \
-              --notes "Automated release" \
-              --generate-notes
+            gh api repos/${{ github.repository }}/releases \
+              -X POST \
+              -f tag_name="$VERSION" \
+              -f name="Release $VERSION" \
+              -f body="Automated release" \
+              -f generate_release_notes=true || echo "⚠️ Failed to create release"
           fi
           # 上传所有 .dmg 和 .zip 文件（排除 .blockmap 文件）
           if ls dist/electron/Packaged/*.dmg dist/electron/Packaged/*.zip 2>/dev/null; then
@@ -299,10 +289,15 @@ jobs:
           $releaseExists = gh release view $version --json id 2>$null
           if (-not $releaseExists) {
             Write-Host "❌ Release $version not found. Creating release..."
-            gh release create $version `
-              --title "Release $version" `
-              --notes "Automated release" `
-              --generate-notes
+            gh api repos/${{ github.repository }}/releases `
+              -X POST `
+              -f tag_name=$version `
+              -f name="Release $version" `
+              -f body="Automated release" `
+              -f generate_release_notes=true
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "⚠️ Failed to create release"
+            }
           }
           # 上传所有 .exe 文件
           $exeFiles = Get-ChildItem -Path "dist/electron/Packaged/*.exe" -ErrorAction SilentlyContinue
@@ -327,10 +322,12 @@ jobs:
           # 检查 release 是否存在
           if ! gh release view "$VERSION" --json id >/dev/null 2>&1; then
             echo "❌ Release $VERSION not found. Creating release..."
-            gh release create "$VERSION" \
-              --title "Release $VERSION" \
-              --notes "Automated release" \
-              --generate-notes
+            gh api repos/${{ github.repository }}/releases \
+              -X POST \
+              -f tag_name="$VERSION" \
+              -f name="Release $VERSION" \
+              -f body="Automated release" \
+              -f generate_release_notes=true || echo "⚠️ Failed to create release"
           fi
           # 上传所有 Linux 构建文件
           if ls dist/electron/Packaged/*.AppImage dist/electron/Packaged/*.deb dist/electron/Packaged/*.snap 2>/dev/null; then
