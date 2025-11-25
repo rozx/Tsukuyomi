@@ -1,9 +1,7 @@
-import { app, BrowserWindow, ipcMain, net, Menu, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { gunzip, inflate, brotliDecompress } from 'zlib';
-import { promisify } from 'util';
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -428,7 +426,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// IPC handler for electron-fetch
+// IPC handler for electron-fetch using hidden BrowserWindow (Puppeteer-like behavior)
 ipcMain.handle(
   'electron-fetch',
   async (
@@ -442,121 +440,98 @@ ipcMain.handle(
     },
   ) => {
     return new Promise((resolve, reject) => {
-      const request = net.request({
-        method: options?.method || 'GET',
-        url,
+      // Create a hidden window to perform the scraping
+      const fetchWindow = new BrowserWindow({
+        show: false,
+        width: 800,
+        height: 600,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: false, // Disable web security to avoid CORS issues
+        },
       });
 
-      // 设置超时
-      const timeout = options?.timeout || 60000;
+      const timeoutMs = options?.timeout || 60000;
+      let isResolved = false;
+
+      // Set timeout
       const timeoutId = setTimeout(() => {
-        request.abort();
-        reject(new Error(`Request timeout after ${timeout}ms`));
-      }, timeout);
+        if (!isResolved) {
+          isResolved = true;
+          fetchWindow.destroy();
+          reject(new Error(`Request timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
 
-      // 设置请求头
+      // Handle window closed unexpectedly
+      fetchWindow.on('closed', () => {
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeoutId);
+          reject(new Error('Fetch window closed unexpectedly'));
+        }
+      });
+
+      // Setup request headers if needed
       if (options?.headers) {
-        Object.entries(options.headers).forEach(([key, value]) => {
-          request.setHeader(key, value);
+        const session = fetchWindow.webContents.session;
+        session.webRequest.onBeforeSendHeaders((details, callback) => {
+          const requestHeaders = { ...details.requestHeaders, ...options.headers };
+          callback({ requestHeaders });
         });
       }
 
-      // 设置默认请求头（如果未提供）
-      if (!request.getHeader('User-Agent')) {
-        request.setHeader(
-          'User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        );
-      }
-      if (!request.getHeader('Accept')) {
-        request.setHeader(
-          'Accept',
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        );
-      }
-      if (!request.getHeader('Accept-Language')) {
-        request.setHeader('Accept-Language', 'ja,en-US;q=0.9,en;q=0.8');
-      }
-      if (!request.getHeader('Accept-Encoding')) {
-        request.setHeader('Accept-Encoding', 'gzip, deflate, br');
-      }
+      // Load the URL
+      console.log(`[Electron Fetch] Navigating to ${url}`);
+      fetchWindow
+        .loadURL(url, {
+          userAgent:
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        })
+        .then(async () => {
+          // Wait for content to be available
+          try {
+            const content = await fetchWindow.webContents.executeJavaScript(
+              'document.documentElement.outerHTML',
+            );
+            const title = await fetchWindow.webContents.executeJavaScript('document.title');
 
-      // 处理响应
-      request.on('response', (response) => {
-        const chunks: Buffer[] = [];
+            console.log(`[Electron Fetch] Page loaded: ${title}`);
 
-        response.on('data', (chunk) => {
-          chunks.push(Buffer.from(chunk));
-        });
+            if (!isResolved) {
+              isResolved = true;
+              clearTimeout(timeoutId);
 
-        response.on('end', () => {
-          clearTimeout(timeoutId);
-          const buffer = Buffer.concat(chunks);
+              // Construct a response object similar to what axios/net.request would return
+              const response = {
+                status: 200, // We assume 200 if loadURL succeeded
+                statusText: 'OK',
+                headers: {}, // We can't easily get response headers from executeJavaScript
+                data: content,
+              };
 
-          // 处理响应编码和解压缩
-          const encoding = response.headers['content-encoding'];
-
-          // 使用立即执行的异步函数来处理解压缩
-          void (async () => {
-            let data: string;
-
-            try {
-              let decompressedBuffer: Buffer;
-
-              if (encoding === 'gzip') {
-                decompressedBuffer = await promisify(gunzip)(buffer);
-              } else if (encoding === 'deflate') {
-                decompressedBuffer = await promisify(inflate)(buffer);
-              } else if (encoding === 'br') {
-                decompressedBuffer = await promisify(brotliDecompress)(buffer);
-              } else {
-                // 未压缩的数据，直接使用原始 buffer
-                decompressedBuffer = buffer;
-              }
-
-              data = decompressedBuffer.toString('utf-8');
-            } catch (error) {
-              // 如果解压缩失败，尝试直接转换为字符串（可能是误报的 content-encoding）
-              console.warn('[Electron] 解压缩失败，尝试直接解析:', error);
-              data = buffer.toString('utf-8');
+              fetchWindow.destroy();
+              resolve(response);
             }
-
-            // 提取响应头
-            const responseHeaders: Record<string, string> = {};
-            Object.entries(response.headers).forEach(([key, value]) => {
-              if (Array.isArray(value)) {
-                responseHeaders[key] = value.join(', ');
-              } else if (value !== undefined) {
-                responseHeaders[key] = String(value);
-              }
-            });
-
-            resolve({
-              status: response.statusCode,
-              statusText: response.statusMessage || '',
-              headers: responseHeaders,
-              data,
-            });
-          })();
+          } catch (err) {
+            if (!isResolved) {
+              isResolved = true;
+              clearTimeout(timeoutId);
+              fetchWindow.destroy();
+              reject(err instanceof Error ? err : new Error(String(err)));
+            }
+          }
+        })
+        .catch((err) => {
+          console.error('[Electron Fetch] Load failed:', err);
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timeoutId);
+            fetchWindow.destroy();
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
         });
-
-        response.on('error', (err) => {
-          clearTimeout(timeoutId);
-          reject(err);
-        });
-      });
-
-      request.on('error', (err) => {
-        clearTimeout(timeoutId);
-        reject(err);
-      });
-
-      // 发送请求体（如果有）
-      if (options?.body) {
-        request.write(options.body);
-      }
-
-      request.end();
     });
   },
 );
