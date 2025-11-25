@@ -10,6 +10,8 @@ export {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
   getCharacterNameVariants,
+  isEmptyParagraph,
+  hasParagraphTranslation,
 } from './novel-utils';
 export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
 export {
