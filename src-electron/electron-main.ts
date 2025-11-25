@@ -2,6 +2,17 @@ import { app, BrowserWindow, ipcMain, Menu, shell, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import puppeteer from 'puppeteer-extra';
+import type { Browser } from 'puppeteer';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import pie from 'puppeteer-in-electron';
+
+// Configure Puppeteer Stealth
+puppeteer.use(StealthPlugin());
+
+// Initialize puppeteer-in-electron
+await pie.initialize(app);
+app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -9,11 +20,14 @@ const __dirname = dirname(__filename);
 
 // 保持对窗口对象的全局引用，否则窗口会被自动关闭
 let mainWindow: BrowserWindow | null = null;
+let browserPromise: Promise<Browser> | null = null;
 
 // 检测是否为开发环境
 const isDev = process.env.DEV === 'true' || process.env.NODE_ENV !== 'production';
 // 调试模式：通过环境变量控制是否打开开发者工具（用于调试构建）
 const isDebugMode = process.env.ELECTRON_DEBUG === 'true' || isDev;
+
+// Normal App Logic
 
 // 处理加载错误的辅助函数
 function handleLoadError(window: BrowserWindow | null, err: unknown, path: string) {
@@ -426,7 +440,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// IPC handler for electron-fetch using hidden BrowserWindow (Puppeteer-like behavior)
+// IPC handler for electron-fetch using Puppeteer (Stealth)
 ipcMain.handle(
   'electron-fetch',
   async (
@@ -439,100 +453,64 @@ ipcMain.handle(
       timeout?: number;
     },
   ) => {
-    return new Promise((resolve, reject) => {
-      // Create a hidden window to perform the scraping
-      const fetchWindow = new BrowserWindow({
+    let window: BrowserWindow | null = null;
+    try {
+      console.log(`[Electron Fetch] Launching Puppeteer for ${url}`);
+
+      if (!browserPromise) {
+        // Connect to the Electron app
+        // Note: pie.connect returns a Browser instance that controls the Electron app
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        browserPromise = pie.connect(app, puppeteer as any);
+      }
+      const browser = await browserPromise;
+
+      // Create a hidden window for scraping
+      window = new BrowserWindow({
         show: false,
-        width: 800,
-        height: 600,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: false, // Disable web security to avoid CORS issues
         },
       });
 
-      const timeoutMs = options?.timeout || 60000;
-      let isResolved = false;
+      const page = await pie.getPage(browser, window);
 
       // Set timeout
-      const timeoutId = setTimeout(() => {
-        if (!isResolved) {
-          isResolved = true;
-          fetchWindow.destroy();
-          reject(new Error(`Request timeout after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
-
-      // Handle window closed unexpectedly
-      fetchWindow.on('closed', () => {
-        if (!isResolved) {
-          isResolved = true;
-          clearTimeout(timeoutId);
-          reject(new Error('Fetch window closed unexpectedly'));
-        }
-      });
+      const timeoutMs = options?.timeout || 60000;
+      page.setDefaultNavigationTimeout(timeoutMs);
 
       // Setup request headers if needed
       if (options?.headers) {
-        const session = fetchWindow.webContents.session;
-        session.webRequest.onBeforeSendHeaders((details, callback) => {
-          const requestHeaders = { ...details.requestHeaders, ...options.headers };
-          callback({ requestHeaders });
-        });
+        await page.setExtraHTTPHeaders(options.headers);
       }
 
-      // Load the URL
       console.log(`[Electron Fetch] Navigating to ${url}`);
-      fetchWindow
-        .loadURL(url, {
-          userAgent:
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        })
-        .then(async () => {
-          // Wait for content to be available
-          try {
-            const content = await fetchWindow.webContents.executeJavaScript(
-              'document.documentElement.outerHTML',
-            );
-            const title = await fetchWindow.webContents.executeJavaScript('document.title');
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-            console.log(`[Electron Fetch] Page loaded: ${title}`);
+      // Wait for content (Cloudflare check handled by Stealth Plugin mostly, but we can add a small wait)
+      await new Promise((r) => setTimeout(r, 2000));
 
-            if (!isResolved) {
-              isResolved = true;
-              clearTimeout(timeoutId);
+      const content = await page.content();
+      const title = await page.title();
+      console.log(`[Electron Fetch] Page loaded: ${title}`);
 
-              // Construct a response object similar to what axios/net.request would return
-              const response = {
-                status: 200, // We assume 200 if loadURL succeeded
-                statusText: 'OK',
-                headers: {}, // We can't easily get response headers from executeJavaScript
-                data: content,
-              };
+      const response = {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        data: content,
+      };
 
-              fetchWindow.destroy();
-              resolve(response);
-            }
-          } catch (err) {
-            if (!isResolved) {
-              isResolved = true;
-              clearTimeout(timeoutId);
-              fetchWindow.destroy();
-              reject(err instanceof Error ? err : new Error(String(err)));
-            }
-          }
-        })
-        .catch((err) => {
-          console.error('[Electron Fetch] Load failed:', err);
-          if (!isResolved) {
-            isResolved = true;
-            clearTimeout(timeoutId);
-            fetchWindow.destroy();
-            reject(err instanceof Error ? err : new Error(String(err)));
-          }
-        });
-    });
+      window.close();
+      return response;
+    } catch (err) {
+      console.error('[Electron Fetch] Puppeteer error:', err);
+      if (window && !window.isDestroyed()) {
+        window.close();
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
   },
 );
 
@@ -545,7 +523,8 @@ ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {
         type: 'info',
         title: '导出成功',
         message: '设置已成功导出',
-        detail: `文件已保存到:\n${filePath}`,
+        detail: `文件已保存到:
+${filePath}`,
       });
     }
   } catch (error) {
