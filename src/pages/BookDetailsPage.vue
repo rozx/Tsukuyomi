@@ -287,21 +287,23 @@ const retranslateParagraph = async (paragraphId: string) => {
         });
 
         // 更新书籍（使用 void 忽略 Promise）
-        void booksStore.updateBook(book.value.id, {
-          volumes: updatedVolumes,
-          lastEdited: new Date(),
-        }).then(() => {
-          // 更新 selectedChapterWithContent 以反映保存的更改
-          const updatedChapter = updatedVolumes
-            .flatMap((v) => v.chapters || [])
-            .find((c) => c.id === selectedChapterWithContent.value?.id);
-          if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-            selectedChapterWithContent.value = {
-              ...selectedChapterWithContent.value,
-              content: updatedChapter.content,
-            };
-          }
-        });
+        void booksStore
+          .updateBook(book.value.id, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          })
+          .then(() => {
+            // 更新 selectedChapterWithContent 以反映保存的更改
+            const updatedChapter = (updatedVolumes || [])
+              .flatMap((v) => v.chapters || [])
+              .find((c) => c.id === selectedChapterWithContent.value?.id);
+            if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+              selectedChapterWithContent.value = {
+                ...selectedChapterWithContent.value,
+                content: updatedChapter.content,
+              };
+            }
+          });
       },
       onAction: (action) => {
         // 显示 CRUD 操作的 toast 通知
@@ -1430,7 +1432,7 @@ const translateAllParagraphs = async () => {
     });
 
     // 更新 selectedChapterWithContent 以反映保存的更改
-    const updatedChapter = updatedVolumes
+    const updatedChapter = (updatedVolumes || [])
       .flatMap((v) => v.chapters || [])
       .find((c) => c.id === selectedChapterWithContent.value!.id);
     if (updatedChapter && updatedChapter.content) {
@@ -1771,7 +1773,7 @@ const translateAllParagraphs = async () => {
       });
 
       // 更新 selectedChapterWithContent 以反映保存的更改
-      const updatedChapter = updatedVolumes
+      const updatedChapter = (updatedVolumes || [])
         .flatMap((v) => v.chapters || [])
         .find((c) => c.id === selectedChapterWithContent.value?.id);
       if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {

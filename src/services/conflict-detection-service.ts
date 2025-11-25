@@ -36,6 +36,15 @@ export interface ConflictDetectionResult {
 }
 
 /**
+ * 冲突解决选择
+ */
+export interface ConflictResolution {
+  conflictId: string;
+  type: ConflictType;
+  choice: 'local' | 'remote';
+}
+
+/**
  * 冲突检测服务
  */
 export class ConflictDetectionService {
