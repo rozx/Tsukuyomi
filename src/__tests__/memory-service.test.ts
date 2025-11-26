@@ -253,7 +253,10 @@ describe('MemoryService', () => {
       // Mock: 返回所有 Memory
       mockIndexGetAll.mockResolvedValue(memories);
 
-      const results = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
+        bookId,
+        keyword,
+      ) as Promise<Memory[]>);
 
       expect(results).toHaveLength(2);
       expect(results[0]?.summary).toContain('测试');
@@ -273,7 +276,10 @@ describe('MemoryService', () => {
 
       mockIndexGetAll.mockResolvedValue(memories);
 
-      const results = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
+        bookId,
+        keyword,
+      ) as Promise<Memory[]>);
 
       expect(results).toHaveLength(1);
       expect(results[0]?.summary).toContain('test');
@@ -290,7 +296,10 @@ describe('MemoryService', () => {
 
       mockIndexGetAll.mockResolvedValue(memories);
 
-      const results = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
+        bookId,
+        keyword,
+      ) as Promise<Memory[]>);
 
       expect(results).toHaveLength(0);
     });
@@ -311,14 +320,15 @@ describe('MemoryService', () => {
       const bookId = 'book-1';
       const keyword = '测试';
 
-      const memories = [
-        createTestMemory('id-1', bookId, '内容1', '测试摘要', 1000, 1000),
-      ];
+      const memories = [createTestMemory('id-1', bookId, '内容1', '测试摘要', 1000, 1000)];
 
       mockIndexGetAll.mockResolvedValue(memories);
 
       const beforeSearch = Date.now();
-      const results = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
+        bookId,
+        keyword,
+      ) as Promise<Memory[]>);
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
@@ -451,9 +461,7 @@ describe('MemoryService', () => {
         createTestMemory('id-2', bookId1, '内容2', '摘要2'),
       ];
 
-      const memories2 = [
-        createTestMemory('id-3', bookId2, '内容3', '摘要3'),
-      ];
+      const memories2 = [createTestMemory('id-3', bookId2, '内容3', '摘要3')];
 
       // Mock: 根据 bookId 返回不同的 Memory
       mockIndexGetAll.mockImplementation((bookId: string) => {
@@ -510,7 +518,10 @@ describe('MemoryService', () => {
       mockIndexGetAll.mockResolvedValue(memories);
 
       const beforeSearch = Date.now();
-      const results = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
+        bookId,
+        keyword,
+      ) as Promise<Memory[]>);
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
@@ -519,4 +530,3 @@ describe('MemoryService', () => {
     });
   });
 });
-
