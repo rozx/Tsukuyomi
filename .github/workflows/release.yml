@@ -73,6 +73,36 @@ jobs:
           echo "Current version in package.json: $CURRENT_VERSION"
           echo "Expected version from branch: $EXPECTED_VERSION"
           
+          # Normalize versions to ensure they have 3 parts (major.minor.patch)
+          normalize_version() {
+            local ver=$1
+            # Remove any pre-release or build metadata
+            ver=$(echo "$ver" | sed 's/-.*//' | sed 's/+.*//')
+            # Split by dots
+            IFS='.' read -r -a parts <<< "$ver"
+            # Ensure we have at least 2 parts (major.minor)
+            if [ ${#parts[@]} -lt 2 ]; then
+              echo "Error: Invalid version format: $ver" >&2
+              return 1
+            fi
+            # Add patch version if missing
+            if [ ${#parts[@]} -eq 2 ]; then
+              ver="${ver}.0"
+            fi
+            echo "$ver"
+          }
+          
+          CURRENT_VERSION_NORM=$(normalize_version "$CURRENT_VERSION")
+          EXPECTED_VERSION_NORM=$(normalize_version "$EXPECTED_VERSION")
+          
+          if [ -z "$CURRENT_VERSION_NORM" ] || [ -z "$EXPECTED_VERSION_NORM" ]; then
+            echo "❌ Failed to normalize versions"
+            exit 1
+          fi
+          
+          echo "Normalized current version: $CURRENT_VERSION_NORM"
+          echo "Normalized expected version: $EXPECTED_VERSION_NORM"
+          
           # Function to compare semantic versions
           # Returns: 0 if v1 == v2, 1 if v1 > v2, 2 if v1 < v2
           compare_versions() {
@@ -82,6 +112,14 @@ jobs:
             # Split versions into major.minor.patch
             IFS='.' read -r -a v1_parts <<< "$v1"
             IFS='.' read -r -a v2_parts <<< "$v2"
+            
+            # Ensure both versions have 3 parts
+            while [ ${#v1_parts[@]} -lt 3 ]; do
+              v1_parts+=("0")
+            done
+            while [ ${#v2_parts[@]} -lt 3 ]; do
+              v2_parts+=("0")
+            done
             
             # Compare major version
             if [ "${v1_parts[0]}" -gt "${v2_parts[0]}" ]; then
@@ -107,8 +145,8 @@ jobs:
             return 0
           }
           
-          # Compare versions
-          compare_versions "$CURRENT_VERSION" "$EXPECTED_VERSION"
+          # Compare versions using normalized versions
+          compare_versions "$CURRENT_VERSION_NORM" "$EXPECTED_VERSION_NORM"
           COMPARE_RESULT=$?
           
           if [ $COMPARE_RESULT -eq 0 ]; then
@@ -128,16 +166,27 @@ jobs:
             echo "Updating version from $CURRENT_VERSION to $EXPECTED_VERSION"
             
             # Update version using bump script
+            echo "Running: bun run bump \"$EXPECTED_VERSION\""
             bun run bump "$EXPECTED_VERSION"
+            
+            if [ $? -ne 0 ]; then
+              echo "❌ Failed to run bump script"
+              exit 1
+            fi
             
             # Verify the update
             NEW_VERSION=$(jq -r .version package.json)
-            if [ "$NEW_VERSION" == "$EXPECTED_VERSION" ]; then
+            NEW_VERSION_NORM=$(normalize_version "$NEW_VERSION")
+            EXPECTED_NORM=$(normalize_version "$EXPECTED_VERSION")
+            
+            if [ "$NEW_VERSION_NORM" == "$EXPECTED_NORM" ]; then
               echo "✅ Version updated successfully to $NEW_VERSION"
               echo "version_updated=true" >> $GITHUB_OUTPUT
               echo "final_version=$NEW_VERSION" >> $GITHUB_OUTPUT
             else
-              echo "❌ Failed to update version. New version is: $NEW_VERSION"
+              echo "❌ Failed to update version."
+              echo "   Expected: $EXPECTED_VERSION (normalized: $EXPECTED_NORM)"
+              echo "   Got: $NEW_VERSION (normalized: $NEW_VERSION_NORM)"
               exit 1
             fi
           fi
