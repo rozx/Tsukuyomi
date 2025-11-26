@@ -1,10 +1,11 @@
-﻿import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
+import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo } from './types';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
 import { webSearchTools } from './web-search-tools';
 import { bookTools } from './book-tools';
+import { memoryTools } from './memory-tools';
 
 export type { ActionInfo };
 
@@ -29,6 +30,11 @@ export class ToolRegistry {
     return bookTools.map((t) => t.definition);
   }
 
+  static getMemoryTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+    return memoryTools.map((t) => t.definition);
+  }
+
   static getWebSearchTools(): AITool[] {
     return webSearchTools.map((t) => t.definition);
   }
@@ -46,6 +52,7 @@ export class ToolRegistry {
         ...this.getCharacterSettingTools(bookId),
         ...this.getParagraphTools(bookId),
         ...this.getBookTools(bookId),
+        ...this.getMemoryTools(bookId),
       );
     }
 
@@ -64,6 +71,7 @@ export class ToolRegistry {
       ...paragraphTools,
       ...webSearchTools,
       ...bookTools,
+      ...memoryTools,
     ];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 

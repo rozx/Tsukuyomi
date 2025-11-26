@@ -11,7 +11,7 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  */
 export interface MessageAction {
   type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read';
-  entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book';
+  entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book' | 'memory';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
@@ -25,6 +25,9 @@ export interface MessageAction {
   chapter_title?: string; // 章节标题（用于 read chapter）
   character_name?: string; // 角色名称（用于 read character）
   tool_name?: string; // 工具名称（用于 read 操作）
+  // Memory 相关信息
+  memory_id?: string; // Memory ID（用于 memory 操作）
+  keyword?: string; // 搜索关键词（用于 search_memory_by_keyword）
 }
 
 /**

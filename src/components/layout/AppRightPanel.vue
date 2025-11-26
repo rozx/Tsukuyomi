@@ -424,6 +424,16 @@ const sendMessage = async () => {
           ...(action.type === 'read' && 'tool_name' in action.data
             ? { tool_name: action.data.tool_name }
             : {}),
+          // Memory 相关信息
+          ...(action.entity === 'memory' && 'memory_id' in action.data
+            ? { memory_id: action.data.memory_id }
+            : {}),
+          ...(action.entity === 'memory' && 'keyword' in action.data
+            ? { keyword: action.data.keyword }
+            : {}),
+          ...(action.entity === 'memory' && 'summary' in action.data
+            ? { name: action.data.summary }
+            : {}),
         };
 
         // 立即将操作添加到临时数组（用于后续保存）
@@ -482,6 +492,7 @@ const sendMessage = async () => {
           chapter: '章节',
           paragraph: '段落',
           book: '书籍',
+          memory: '记忆',
         };
 
         // 处理网络搜索和网页获取操作（不显示 toast 通知）
@@ -1050,13 +1061,16 @@ const sendMessage = async () => {
             // 默认删除消息
             detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
           }
+        } else if (action.entity === 'memory') {
+          // Memory 操作：不显示 toast（根据需求）
+          // 只记录到 action info，不显示 toast 消息
         } else {
           // 默认消息
           detail = `${entityLabels[action.entity]}已${actionLabels[action.type]}`;
         }
 
-        // 如果没有显示带 revert 的 toast，显示通用 toast
-        if (!shouldShowRevertToast) {
+        // 如果没有显示带 revert 的 toast，且不是 memory 操作，显示通用 toast
+        if (!shouldShowRevertToast && action.entity !== 'memory') {
           toast.add({
             severity: 'success',
             summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
@@ -1415,6 +1429,7 @@ const getActionDetails = (action: MessageAction) => {
     chapter: '章节',
     paragraph: '段落',
     book: '书籍',
+    memory: '记忆',
   };
 
   const details: {
@@ -1548,6 +1563,28 @@ const getActionDetails = (action: MessageAction) => {
       details.push({
         label: '翻译 ID',
         value: action.translation_id,
+      });
+    }
+  }
+
+  // 处理 Memory 操作
+  if (action.entity === 'memory') {
+    if (action.memory_id) {
+      details.push({
+        label: 'Memory ID',
+        value: action.memory_id,
+      });
+    }
+    if (action.keyword) {
+      details.push({
+        label: '搜索关键词',
+        value: action.keyword,
+      });
+    }
+    if (action.name) {
+      details.push({
+        label: '摘要',
+        value: action.name,
       });
     }
   }
@@ -1888,7 +1925,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                     ? '段落'
                                     : item.action.entity === 'book'
                                       ? '书籍'
-                                      : ''
+                                      : item.action.entity === 'memory'
+                                        ? '记忆'
+                                        : ''
                       }}
                       <span v-if="item.action.name" class="font-semibold"
                         >"{{ item.action.name }}"</span
@@ -1922,6 +1961,18 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         class="font-semibold text-xs"
                       >
                         {{ item.action.tool_name }}
+                      </span>
+                      <span
+                        v-else-if="item.action.entity === 'memory' && item.action.memory_id"
+                        class="font-semibold text-xs"
+                      >
+                        Memory ID: {{ item.action.memory_id }}
+                      </span>
+                      <span
+                        v-else-if="item.action.entity === 'memory' && item.action.keyword"
+                        class="font-semibold text-xs"
+                      >
+                        搜索: "{{ item.action.keyword }}"
                       </span>
                     </span>
                   </div>
@@ -1985,7 +2036,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                         ? '段落'
                                         : item.action.entity === 'book'
                                           ? '书籍'
-                                          : ''
+                                          : item.action.entity === 'memory'
+                                            ? '记忆'
+                                            : ''
                           }}
                         </span>
                       </div>

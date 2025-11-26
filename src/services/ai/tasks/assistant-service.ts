@@ -120,6 +120,17 @@ export class AssistantService {
 - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
 - **select_translation**: 选择段落中的某个翻译版本作为当前选中的翻译（用于在翻译历史中切换不同的翻译版本）
 
+### 记忆管理（4个工具）
+- **create_memory**: 创建新的 Memory 记录，用于存储大块内容（如背景设定、章节摘要等）
+  - 需要提供 content（实际内容）和 summary（摘要，由 AI 生成）
+  - 当需要保存重要信息供后续参考时使用此工具
+- **get_memory**: 根据 Memory ID 获取指定的 Memory 内容
+  - 当需要查看之前存储的背景设定、章节摘要等记忆内容时使用
+- **search_memory_by_keyword**: 根据关键词搜索 Memory 的摘要
+  - 当需要查找包含特定关键词的记忆内容时使用
+- **delete_memory**: 删除指定的 Memory 记录
+  - 当确定某个 Memory 不再需要时使用
+
 ### 网络搜索（2个工具）
 - **search_web**: 搜索最新信息
   - ⚠️ **禁止**用于修复本地数据（角色/术语格式问题）
@@ -328,6 +339,10 @@ ${messages
       'get_previous_paragraphs',
       'get_next_paragraphs',
       'find_paragraph_by_keyword',
+      'get_memory',
+      'search_memory_by_keyword',
+      'create_memory',
+      'delete_memory',
     ];
 
     const results = [];

@@ -83,10 +83,22 @@ interface LunaAIDB extends DBSchema {
     value: ChapterContent;
     indexes: { 'by-lastModified': string };
   };
+  memories: {
+    key: string;
+    value: {
+      id: string;
+      bookId: string;
+      content: string;
+      summary: string;
+      createdAt: number;
+      lastAccessedAt: number;
+    };
+    indexes: { 'by-bookId': string; 'by-lastAccessedAt': number };
+  };
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 4; // 升级到版本 4 以添加 chapter-contents 存储
+const DB_VERSION = 5; // 升级到版本 5 以添加 memories 存储
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
@@ -161,6 +173,15 @@ export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
             keyPath: 'chapterId',
           });
           chapterContentStore.createIndex('by-lastModified', 'lastModified', { unique: false });
+        }
+
+        // 创建 memories 存储（版本 5 新增）
+        if (!db.objectStoreNames.contains('memories')) {
+          const memoriesStore = db.createObjectStore('memories', {
+            keyPath: 'id',
+          });
+          memoriesStore.createIndex('by-bookId', 'bookId', { unique: false });
+          memoriesStore.createIndex('by-lastAccessedAt', 'lastAccessedAt', { unique: false });
         }
       },
       blocked() {
@@ -382,6 +403,7 @@ export async function clearAllData(): Promise<void> {
     'ui-state',
     'thinking-processes',
     'chapter-contents',
+    'memories',
   ] as const;
 
   for (const storeName of storeNames) {
