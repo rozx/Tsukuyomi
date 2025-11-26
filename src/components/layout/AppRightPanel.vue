@@ -1246,7 +1246,7 @@ const stopCurrentTask = async () => {
       .find((msg) => msg.role === 'assistant');
     if (lastAssistantMsg && !lastAssistantMsg.content.trim()) {
       lastAssistantMsg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
-    } else if (lastAssistantMsg) {
+    } else if (lastAssistantMsg && !lastAssistantMsg.content.includes('**已取消**')) {
       lastAssistantMsg.content += '\n\n**已取消**';
     }
 
