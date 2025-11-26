@@ -5,6 +5,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputChips from 'primevue/inputchips';
+import Skeleton from 'primevue/skeleton';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
@@ -17,6 +18,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import {
   formatCharCount,
   getChapterCharCount,
+  getChapterCharCountAsync,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from 'src/utils';
@@ -105,6 +107,86 @@ const toggleVolume = (volumeId: string) => {
 
 // 使用工具函数计算和格式化
 // getChapterCharCount 和 formatCharCount 已从 utils 导入
+
+// 章节字符数缓存和加载状态
+const chapterCharCounts = ref<Record<string, number>>({});
+const loadingChapterCharCounts = ref<Set<string>>(new Set());
+
+// 异步加载章节字符数
+const loadChapterCharCount = async (chapter: Chapter) => {
+  // 如果已缓存，直接返回
+  if (chapterCharCounts.value[chapter.id] !== undefined) {
+    return chapterCharCounts.value[chapter.id] || 0;
+  }
+
+  // 先尝试同步计算（如果内容已加载）
+  const syncCount = getChapterCharCount(chapter);
+  // 如果章节内容已加载，使用同步结果
+  if (chapter.content !== undefined) {
+    chapterCharCounts.value[chapter.id] = syncCount;
+    return syncCount;
+  }
+
+  // 异步加载（从 IndexedDB）
+  loadingChapterCharCounts.value.add(chapter.id);
+  try {
+    const count = await getChapterCharCountAsync(chapter);
+    chapterCharCounts.value[chapter.id] = count;
+    return count;
+  } catch (error) {
+    console.error(`Failed to load char count for chapter ${chapter.id}:`, error);
+    // 如果异步加载失败，使用同步结果作为后备
+    chapterCharCounts.value[chapter.id] = syncCount;
+    return syncCount;
+  } finally {
+    loadingChapterCharCounts.value.delete(chapter.id);
+  }
+};
+
+// 获取章节字符数（带缓存）
+const getChapterCharCountDisplay = (chapter: Chapter): number => {
+  return chapterCharCounts.value[chapter.id] ?? getChapterCharCount(chapter);
+};
+
+// 检查章节是否正在加载字符数
+const isLoadingChapterCharCount = (chapter: Chapter): boolean => {
+  return loadingChapterCharCounts.value.has(chapter.id);
+};
+
+// 加载所有可见章节的字符数
+const loadAllVisibleChapterCharCounts = async () => {
+  const volumes = availableVolumes.value;
+  const loadPromises: Promise<void>[] = [];
+  
+  for (const volume of volumes) {
+    if (expandedVolumes.value.has(volume.id) && volume.chapters) {
+      for (const chapter of volume.chapters) {
+        loadPromises.push(loadChapterCharCount(chapter).then(() => {}));
+      }
+    }
+  }
+  
+  await Promise.all(loadPromises);
+};
+
+// 当展开的卷变化时，加载字符数
+watch(
+  () => expandedVolumes.value,
+  async () => {
+    await loadAllVisibleChapterCharCounts();
+  },
+  { deep: true },
+);
+
+// 当章节列表变化时，清除缓存并重新加载
+watch(
+  () => availableVolumes.value,
+  async () => {
+    chapterCharCounts.value = {};
+    await loadAllVisibleChapterCharCounts();
+  },
+  { deep: true },
+);
 
 // 重置表单
 const resetForm = () => {
@@ -388,7 +470,7 @@ const handleCopyTags = async () => {
 // 监听 visible 变化，初始化表单
 watch(
   () => props.visible,
-  (newVisible) => {
+  async (newVisible) => {
     if (newVisible) {
       if (props.mode === 'edit' && props.book) {
         // 编辑模式：填充现有数据
@@ -413,6 +495,9 @@ watch(
         resetForm();
       }
       formErrors.value = {};
+      // 等待 DOM 更新后加载字符数
+      await nextTick();
+      await loadAllVisibleChapterCharCounts();
     } else {
       // 关闭时重置
       resetForm();
@@ -649,7 +734,14 @@ watch(
                         {{ getChapterDisplayTitle(chapter) || '未命名章节' }}
                       </div>
                       <span class="text-xs text-moon/60 flex-shrink-0">
-                        {{ formatCharCount(getChapterCharCount(chapter)) }} 字
+                        <Skeleton
+                          v-if="isLoadingChapterCharCount(chapter)"
+                          width="40px"
+                          height="12px"
+                        />
+                        <span v-else>
+                          {{ formatCharCount(getChapterCharCountDisplay(chapter)) }} 字
+                        </span>
                       </span>
                     </div>
                     <div class="flex items-center gap-3 mt-1 text-xs text-moon/50">
