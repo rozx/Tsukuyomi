@@ -9,7 +9,7 @@ const mockStorePut = mock(() => Promise.resolve(undefined));
 const mockStoreDelete = mock(() => Promise.resolve(undefined));
 const mockStoreClear = mock(() => Promise.resolve(undefined));
 
-const mockTransaction = mock((mode: 'readonly' | 'readwrite') => ({
+const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
   objectStore: () => ({
     get: mockStoreGet,
     put: mockStorePut,
@@ -106,11 +106,14 @@ describe('ChapterContentService', () => {
 
       await ChapterContentService.saveChapterContent(chapterId, content);
 
-      expect(mockPut).toHaveBeenCalledWith('chapter-contents', expect.objectContaining({
-        chapterId,
-        content: JSON.stringify(content),
-        lastModified: expect.any(String),
-      }));
+      expect(mockPut).toHaveBeenCalledWith(
+        'chapter-contents',
+        expect.objectContaining({
+          chapterId,
+          content: JSON.stringify(content),
+          lastModified: expect.any(String),
+        }),
+      );
     });
 
     it('应该更新缓存', async () => {
@@ -131,7 +134,9 @@ describe('ChapterContentService', () => {
       const content = [createTestParagraph()];
       mockPut.mockRejectedValueOnce(new Error('DB Error'));
 
-      await expect(ChapterContentService.saveChapterContent(chapterId, content)).rejects.toThrow('DB Error');
+      await (expect(ChapterContentService.saveChapterContent(chapterId, content)).rejects.toThrow(
+        'DB Error',
+      ) as unknown as Promise<void>);
     });
   });
 
@@ -235,9 +240,9 @@ describe('ChapterContentService', () => {
       const result = await ChapterContentService.loadChapterContentsBatch(chapterIds);
 
       expect(result.size).toBe(3);
-      expect(result.get(chapterIds[0])).toEqual(contents[0]);
-      expect(result.get(chapterIds[1])).toEqual(contents[1]);
-      expect(result.get(chapterIds[2])).toEqual(contents[2]);
+      expect(result.get(chapterIds[0]!)).toEqual(contents[0]);
+      expect(result.get(chapterIds[1]!)).toEqual(contents[1]);
+      expect(result.get(chapterIds[2]!)).toEqual(contents[2]);
       expect(mockTransaction).toHaveBeenCalledWith('chapter-contents', 'readonly');
     });
 
@@ -350,8 +355,8 @@ describe('ChapterContentService', () => {
 
       expect(result.size).toBe(2);
       // 验证结果正确（从 DB 加载）
-      const result1 = result.get(chapterIds[0]);
-      const result2 = result.get(chapterIds[1]);
+      const result1 = result.get(chapterIds[0]!);
+      const result2 = result.get(chapterIds[1]!);
       expect(result1).toBeDefined();
       expect(result2).toBeDefined();
       // 验证内容长度匹配
@@ -420,7 +425,7 @@ describe('ChapterContentService', () => {
       ChapterContentService.clearAllCache();
 
       const CACHE_MAX_SIZE = 100;
-      const entriesToDelete = Math.floor(CACHE_MAX_SIZE * 0.2); // 20
+      const _entriesToDelete = Math.floor(CACHE_MAX_SIZE * 0.2); // 20
 
       // 填充缓存到最大值（不访问任何条目，确保按插入顺序）
       // 注意：每次 saveChapterContent 都会将条目添加到缓存末尾
@@ -431,18 +436,20 @@ describe('ChapterContentService', () => {
       }
 
       // 添加一个额外的条目，应该触发清理（清理前 20 个，即 chapter-1 到 chapter-20）
-      await ChapterContentService.saveChapterContent(`chapter-${CACHE_MAX_SIZE + 1}`, [createTestParagraph()]);
+      await ChapterContentService.saveChapterContent(`chapter-${CACHE_MAX_SIZE + 1}`, [
+        createTestParagraph(),
+      ]);
 
       // 前 20 个条目应该被清理，需要从 DB 重新加载
       // 但是，由于我们之前保存了这些章节，它们可能还在缓存中
       // 实际上，清理逻辑会删除 Map 开头的条目
       // 由于我们按顺序保存，chapter-1 应该在开头，会被清理
-      
+
       // 设置 mockGet 返回 undefined（表示 DB 中没有，因为这是测试环境）
       mockGet.mockResolvedValueOnce(undefined);
-      
+
       // chapter-1 应该被清理了，需要从 DB 加载（但 DB 中没有，返回 undefined）
-      const result1 = await ChapterContentService.loadChapterContent('chapter-1');
+      const _result1 = await ChapterContentService.loadChapterContent('chapter-1');
       // 由于缓存被清理，会尝试从 DB 加载，但 DB 中没有，所以返回 undefined
       // 但是，如果缓存中还有（因为清理逻辑可能有问题），则从缓存返回
       // 为了测试清理逻辑，我们验证至少尝试从 DB 加载了
@@ -481,7 +488,9 @@ describe('ChapterContentService', () => {
       const chapterId = 'chapter-1';
       mockDelete.mockRejectedValueOnce(new Error('Delete failed'));
 
-      await expect(ChapterContentService.deleteChapterContent(chapterId)).rejects.toThrow('Delete failed');
+      await (expect(ChapterContentService.deleteChapterContent(chapterId)).rejects.toThrow(
+        'Delete failed',
+      ) as unknown as Promise<void>);
     });
   });
 
@@ -512,7 +521,7 @@ describe('ChapterContentService', () => {
 
       expect(mockClear).toHaveBeenCalledWith('chapter-contents');
       // 缓存应该被清除
-      expect(ChapterContentService.clearAllCache).toBeDefined();
+      expect(typeof ChapterContentService.clearAllCache).toBe('function');
     });
   });
 
@@ -819,4 +828,3 @@ describe('ChapterContentService', () => {
     });
   });
 });
-

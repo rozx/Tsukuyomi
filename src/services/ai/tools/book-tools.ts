@@ -167,10 +167,12 @@ export const bookTools: ToolDefinition[] = [
 
           for (let volumeIndex = 0; volumeIndex < book.volumes.length; volumeIndex++) {
             const volume = book.volumes[volumeIndex];
-            if (!volume.chapters) continue;
+            if (!volume || !volume.chapters) continue;
 
             for (let chapterIndex = 0; chapterIndex < volume.chapters.length; chapterIndex++) {
               const chapter = volume.chapters[chapterIndex];
+              if (!chapter) continue;
+              
               // 如果已达到限制，停止处理
               if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
                 break;
