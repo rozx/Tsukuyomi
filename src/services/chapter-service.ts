@@ -1562,15 +1562,18 @@ export class ChapterService {
           vIdx++;
           if (vIdx >= novel.volumes.length) break;
           cIdx = 0;
+          pIdx = 0;
+          continue;
+        } else {
+          const nextChapter = volume.chapters[cIdx];
+          if (nextChapter && nextChapter.content === undefined) {
+            chaptersToLoad.add(nextChapter.id);
+            chapterMap.set(nextChapter.id, { chapter: nextChapter, vIndex: vIdx, cIndex: cIdx });
+            collected++;
+          }
+          pIdx = 0;
+          continue;
         }
-        const nextChapter = volume.chapters[cIdx];
-        if (nextChapter && nextChapter.content === undefined) {
-          chaptersToLoad.add(nextChapter.id);
-          chapterMap.set(nextChapter.id, { chapter: nextChapter, vIndex: vIdx, cIndex: cIdx });
-          collected++;
-        }
-        pIdx = 0;
-        continue;
       }
 
       pIdx++;
