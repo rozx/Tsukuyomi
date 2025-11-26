@@ -162,7 +162,6 @@ export const bookTools: ToolDefinition[] = [
         if (book.volumes) {
           // 如果提供了 limit，只加载前 N 个章节的内容以提升性能
           // 否则加载所有章节内容（用于统计）
-          const shouldLoadAll = !limit || limit <= 0;
           let chaptersProcessed = 0;
           const maxChaptersToLoad = limit && limit > 0 ? limit : undefined;
 
