@@ -1171,27 +1171,47 @@ const sendMessage = async () => {
     // 清空操作列表（消息完成后）
     currentMessageActions.value = [];
   } catch (error) {
-    // 更新错误消息
+    // 检查是否是用户主动取消的错误
+    const isAborted =
+      error instanceof Error &&
+      (error.name === 'AbortError' ||
+        error.message.includes('aborted') ||
+        error.message.includes('cancelled'));
+
+    // 更新错误消息（如果是取消，不显示错误）
     const msg = messages.value.find((m) => m.id === assistantMessageId);
     if (msg) {
-      msg.content = `错误：${error instanceof Error ? error.message : '未知错误'}`;
+      if (isAborted) {
+        // 如果是用户取消，更新消息显示已取消
+        if (!msg.content.trim()) {
+          msg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
+        } else {
+          msg.content += '\n\n**已取消**';
+        }
+      } else {
+        // 其他错误，显示错误信息
+        msg.content = `错误：${error instanceof Error ? error.message : '未知错误'}`;
+      }
       // 即使出错，也保存已记录的操作（如果有的话）
       if (currentMessageActions.value.length > 0) {
         msg.actions = [...currentMessageActions.value];
       }
     }
 
-    // 保存错误消息到正确的会话（使用保存的会话 ID）
+    // 保存消息到正确的会话（使用保存的会话 ID）
     if (sessionId && messages.value.length > 0) {
       chatSessionsStore.updateSessionMessages(sessionId, messages.value);
     }
 
-    toast.add({
-      severity: 'error',
-      summary: '助手回复失败',
-      detail: error instanceof Error ? error.message : '未知错误',
-      life: 5000,
-    });
+    // 如果不是用户主动取消，显示错误提示
+    if (!isAborted) {
+      toast.add({
+        severity: 'error',
+        summary: '助手回复失败',
+        detail: error instanceof Error ? error.message : '未知错误',
+        life: 5000,
+      });
+    }
   } finally {
     isSending.value = false;
     currentTaskId.value = null;
@@ -1208,6 +1228,55 @@ const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     void sendMessage();
+  }
+};
+
+// 停止当前任务
+const stopCurrentTask = async () => {
+  if (!currentTaskId.value) return;
+
+  try {
+    // 停止任务（这会触发 abortController.abort()）
+    await aiProcessingStore.stopTask(currentTaskId.value);
+
+    // 更新最后一条助手消息，显示已取消
+    const lastAssistantMsg = messages.value
+      .slice()
+      .reverse()
+      .find((msg) => msg.role === 'assistant');
+    if (lastAssistantMsg && !lastAssistantMsg.content.trim()) {
+      lastAssistantMsg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
+    } else if (lastAssistantMsg && !lastAssistantMsg.content.includes('**已取消**')) {
+      lastAssistantMsg.content += '\n\n**已取消**';
+    }
+
+    // 保存消息到会话
+    const currentSession = chatSessionsStore.currentSession;
+    if (currentSession?.id && messages.value.length > 0) {
+      chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+    }
+
+    toast.add({
+      severity: 'info',
+      summary: '已停止',
+      detail: 'AI 思考过程已停止',
+      life: 2000,
+    });
+  } catch (error) {
+    console.error('Failed to stop task:', error);
+    toast.add({
+      severity: 'error',
+      summary: '停止失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 3000,
+    });
+  } finally {
+    // 重置状态，重新启用输入
+    isSending.value = false;
+    currentTaskId.value = null;
+    currentMessageActions.value = [];
+    scrollToBottom();
+    focusInput();
   }
 };
 
@@ -1969,13 +2038,23 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           <span v-else class="text-xs text-moon-50">{{
             assistantModel.name || assistantModel.id
           }}</span>
-          <Button
-            :disabled="!inputMessage.trim() || isSending || !assistantModel"
-            label="发送"
-            icon="pi pi-send"
-            size="small"
-            @click="sendMessage"
-          />
+          <div class="flex items-center gap-2">
+            <Button
+              v-if="isSending && currentTaskId"
+              label="停止"
+              icon="pi pi-stop"
+              size="small"
+              severity="danger"
+              @click="stopCurrentTask"
+            />
+            <Button
+              :disabled="!inputMessage.trim() || isSending || !assistantModel"
+              label="发送"
+              icon="pi pi-send"
+              size="small"
+              @click="sendMessage"
+            />
+          </div>
         </div>
       </div>
     </div>

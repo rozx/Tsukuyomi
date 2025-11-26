@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onUnmounted } from 'vue';
+import { computed, ref, onUnmounted, nextTick } from 'vue';
 import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -221,10 +221,41 @@ const handleParagraphMouseEnter = () => {
 
 // 翻译编辑状态
 const editingTranslationValue = ref('');
+const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 
 // 开始编辑翻译
 const onTranslationOpen = () => {
   editingTranslationValue.value = translationText.value;
+  // 使用 nextTick 确保 DOM 更新后再聚焦
+  nextTick(() => {
+    if (translationTextareaRef.value) {
+      // PrimeVue Textarea 组件内部使用 textarea 元素
+      // 尝试多种方式访问 textarea 元素
+      let textareaElement: HTMLTextAreaElement | null = null;
+      
+      // 方式1: 通过 $el 访问
+      if (translationTextareaRef.value.$el) {
+        textareaElement = translationTextareaRef.value.$el.querySelector('textarea');
+      }
+      
+      // 方式2: 如果 $el 是 textarea 本身
+      if (!textareaElement && translationTextareaRef.value.$el instanceof HTMLTextAreaElement) {
+        textareaElement = translationTextareaRef.value.$el;
+      }
+      
+      // 方式3: 通过组件实例的 input 属性（某些 PrimeVue 版本）
+      if (!textareaElement && (translationTextareaRef.value as any).input) {
+        textareaElement = (translationTextareaRef.value as any).input;
+      }
+      
+      if (textareaElement) {
+        textareaElement.focus();
+        // 将光标移到文本末尾
+        const textLength = textareaElement.value.length;
+        textareaElement.setSelectionRange(textLength, textLength);
+      }
+    }
+  });
 };
 
 // 保存翻译
@@ -471,6 +502,7 @@ onUnmounted(() => {
           <template #content="{ closeCallback }">
             <div class="paragraph-translation-edit">
               <Textarea
+                ref="translationTextareaRef"
                 v-model="editingTranslationValue"
                 class="translation-textarea"
                 :auto-resize="true"

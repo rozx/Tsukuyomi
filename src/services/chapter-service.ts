@@ -711,6 +711,191 @@ export class ChapterService {
    * @param onlyWithTranslation 是否只返回有翻译的段落，默认为 false
    * @returns 搜索结果数组，包含匹配的段落及其所在位置信息
    */
+  /**
+   * 根据关键词搜索段落（异步版本，按需加载章节内容，使用批量加载优化）
+   * @param novel 小说对象
+   * @param keyword 搜索关键词
+   * @param chapterId 可选的章节 ID，如果提供则从该章节向前搜索
+   * @param maxParagraphs 最大返回段落数量
+   * @param onlyWithTranslation 是否只返回有翻译的段落
+   * @returns 段落位置信息数组
+   */
+  static async searchParagraphsByKeywordAsync(
+    novel: Novel | null | undefined,
+    keyword: string,
+    chapterId?: string,
+    maxParagraphs: number = 1,
+    onlyWithTranslation: boolean = false,
+  ): Promise<ParagraphSearchResult[]> {
+    if (!novel || !novel.volumes || !keyword.trim()) {
+      return [];
+    }
+
+    const trimmedKeyword = keyword.trim().toLowerCase();
+
+    // 如果提供了 chapterId，需要找到该章节的位置
+    let targetVolumeIndex: number | null = null;
+    let targetChapterIndex: number | null = null;
+
+    if (chapterId) {
+      // 查找目标章节的位置
+      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+        const volume = novel.volumes[vIndex];
+        if (volume && volume.chapters) {
+          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+          if (cIndex !== -1) {
+            targetVolumeIndex = vIndex;
+            targetChapterIndex = cIndex;
+            break;
+          }
+        }
+      }
+
+      // 如果找不到指定的章节，返回空结果
+      if (targetVolumeIndex === null || targetChapterIndex === null) {
+        return [];
+      }
+    }
+
+    // 收集需要加载的章节（批量加载优化）
+    const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+
+    // 第一遍：收集需要加载的章节
+    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      // 如果指定了章节，且当前卷在目标卷之后，停止搜索
+      if (chapterId && targetVolumeIndex !== null && vIndex > targetVolumeIndex) {
+        break;
+      }
+
+      // 遍历章节
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果指定了章节，且当前章节在目标章节之后，停止搜索
+        if (
+          chapterId &&
+          targetVolumeIndex !== null &&
+          targetChapterIndex !== null &&
+          vIndex === targetVolumeIndex &&
+          cIndex > targetChapterIndex
+        ) {
+          break;
+        }
+
+        // 如果需要加载，添加到列表
+        if (chapter.content === undefined) {
+          chaptersToLoad.push({ chapter, vIndex, cIndex });
+        }
+      }
+    }
+
+    // 批量加载需要的章节
+    if (chaptersToLoad.length > 0) {
+      const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+      // 更新章节内容
+      for (const { chapter } of chaptersToLoad) {
+        const content = contentsMap.get(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+    }
+
+    // 第二遍：在加载的章节中搜索
+    const results: ParagraphSearchResult[] = [];
+
+    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      // 如果指定了章节，且当前卷在目标卷之后，停止搜索
+      if (chapterId && targetVolumeIndex !== null && vIndex > targetVolumeIndex) {
+        break;
+      }
+
+      // 遍历章节
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果指定了章节，且当前章节在目标章节之后，停止搜索
+        if (
+          chapterId &&
+          targetVolumeIndex !== null &&
+          targetChapterIndex !== null &&
+          vIndex === targetVolumeIndex &&
+          cIndex > targetChapterIndex
+        ) {
+          break;
+        }
+
+        // 如果仍未加载，按需加载（可能是在第一遍之后添加的新章节）
+        if (chapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(chapter.id);
+          chapter.content = content || [];
+          chapter.contentLoaded = true;
+        }
+
+        // 搜索段落
+        if (chapter.content) {
+          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+            // 如果已达到最大返回数量，停止搜索
+            if (results.length >= maxParagraphs) {
+              break;
+            }
+
+            const paragraph = chapter.content[pIndex];
+            if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
+              // 如果要求只返回有翻译的段落，检查段落是否有翻译
+              if (onlyWithTranslation) {
+                const hasTranslation =
+                  paragraph.translations &&
+                  paragraph.translations.length > 0 &&
+                  paragraph.translations.some(
+                    (t) => t.translation && t.translation.trim().length > 0,
+                  );
+                if (!hasTranslation) {
+                  continue; // 跳过没有翻译的段落
+                }
+              }
+
+              results.push({
+                paragraph,
+                paragraphIndex: pIndex,
+                chapter,
+                chapterIndex: cIndex,
+                volume,
+                volumeIndex: vIndex,
+              });
+
+              // 如果已达到最大返回数量，停止搜索
+              if (results.length >= maxParagraphs) {
+                break;
+              }
+            }
+          }
+        }
+
+        // 如果已达到最大返回数量，停止搜索章节
+        if (results.length >= maxParagraphs) {
+          break;
+        }
+      }
+
+      // 如果已达到最大返回数量，停止搜索卷
+      if (results.length >= maxParagraphs) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
   static searchParagraphsByKeyword(
     novel: Novel | null | undefined,
     keyword: string,
@@ -836,6 +1021,93 @@ export class ChapterService {
    * @param paragraphId 段落 ID
    * @returns 段落位置信息，如果未找到则返回 null
    */
+  /**
+   * 查找段落位置（按需加载章节内容，优化性能，使用批量加载）
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @returns 段落位置信息，如果不存在则返回 null
+   */
+  static async findParagraphLocationAsync(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+  ): Promise<ParagraphSearchResult | null> {
+    if (!novel || !novel.volumes || !paragraphId) {
+      return null;
+    }
+
+    // 收集需要加载的章节 ID（批量加载优化）
+    const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+
+    // 第一遍：收集需要加载的章节
+    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果章节内容已加载，直接检查
+        if (chapter.content !== undefined) {
+          if (chapter.content) {
+            for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+              const paragraph = chapter.content[pIndex];
+              if (paragraph && paragraph.id === paragraphId) {
+                return {
+                  paragraph,
+                  paragraphIndex: pIndex,
+                  chapter,
+                  chapterIndex: cIndex,
+                  volume,
+                  volumeIndex: vIndex,
+                };
+              }
+            }
+          }
+        } else {
+          // 需要加载的章节
+          chaptersToLoad.push({ chapter, vIndex, cIndex });
+        }
+      }
+    }
+
+    // 如果所有章节都已加载但没找到，返回 null
+    if (chaptersToLoad.length === 0) {
+      return null;
+    }
+
+    // 批量加载章节内容
+    const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+    // 第二遍：在加载的章节中查找
+    for (const { chapter, vIndex, cIndex } of chaptersToLoad) {
+      const content = contentsMap.get(chapter.id);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+
+      if (chapter.content) {
+        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+          const paragraph = chapter.content[pIndex];
+          if (paragraph && paragraph.id === paragraphId) {
+            const volume = novel.volumes[vIndex];
+            if (!volume) continue;
+            return {
+              paragraph,
+              paragraphIndex: pIndex,
+              chapter,
+              chapterIndex: cIndex,
+              volume,
+              volumeIndex: vIndex,
+            };
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
   static findParagraphLocation(
     novel: Novel | null | undefined,
     paragraphId: string,
@@ -869,6 +1141,246 @@ export class ChapterService {
     }
 
     return null;
+  }
+
+  /**
+   * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @param count 要获取的段落数量
+   * @returns 段落位置信息数组，按从远到近的顺序排列（最远的在前）
+   */
+  static async getPreviousParagraphsAsync(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): Promise<ParagraphSearchResult[]> {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return [];
+    }
+
+    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
+    if (!location) {
+      return [];
+    }
+
+    const results: ParagraphSearchResult[] = [];
+    const { volumeIndex, chapterIndex } = location;
+    let { paragraphIndex } = location;
+
+    // 从当前段落的前一个开始，向前遍历
+    paragraphIndex--;
+
+    // 收集需要加载的章节（批量加载优化）
+    const chaptersToLoad = new Set<string>();
+    const chapterMap = new Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>();
+
+    // 第一遍：收集需要加载的章节
+    let vIdx = volumeIndex;
+    let cIdx = chapterIndex;
+    let pIdx = paragraphIndex;
+    let collected = 0;
+
+    while (collected < count * 2 && vIdx >= 0) {
+      // 限制收集的章节数量，避免加载过多
+      const volume = novel.volumes[vIdx];
+      if (!volume || !volume.chapters) {
+        vIdx--;
+        cIdx =
+          vIdx >= 0 && novel.volumes[vIdx]?.chapters
+            ? novel.volumes[vIdx]!.chapters!.length - 1
+            : -1;
+        pIdx = -1;
+        continue;
+      }
+
+      if (cIdx < 0) {
+        vIdx--;
+        if (vIdx < 0) break;
+        const prevVolume = novel.volumes[vIdx];
+        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+          cIdx = -1;
+          pIdx = -1;
+          continue;
+        }
+        cIdx = prevVolume.chapters.length - 1;
+        const prevChapter = prevVolume.chapters[cIdx];
+        if (prevChapter && prevChapter.content === undefined) {
+          chaptersToLoad.add(prevChapter.id);
+          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+          collected++;
+        }
+        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      const chapter = volume.chapters[cIdx];
+      if (!chapter) {
+        cIdx--;
+        pIdx = -1;
+        continue;
+      }
+
+      if (chapter.content === undefined) {
+        chaptersToLoad.add(chapter.id);
+        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
+        collected++;
+      }
+
+      if (pIdx < 0) {
+        cIdx--;
+        if (cIdx < 0) {
+          vIdx--;
+          if (vIdx < 0) break;
+          const prevVolume = novel.volumes[vIdx];
+          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+            cIdx = -1;
+            pIdx = -1;
+            continue;
+          }
+          cIdx = prevVolume.chapters.length - 1;
+          const prevChapter = prevVolume.chapters[cIdx];
+          if (prevChapter && prevChapter.content === undefined) {
+            chaptersToLoad.add(prevChapter.id);
+            chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+            collected++;
+          }
+          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+          continue;
+        }
+        const prevChapter = volume.chapters[cIdx];
+        if (prevChapter && prevChapter.content === undefined) {
+          chaptersToLoad.add(prevChapter.id);
+          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+          collected++;
+        }
+        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      pIdx--;
+    }
+
+    // 批量加载需要的章节
+    if (chaptersToLoad.size > 0) {
+      const chapterIds = Array.from(chaptersToLoad);
+      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+      // 更新章节内容
+      for (const [chapterId, content] of contentsMap) {
+        const chapterInfo = chapterMap.get(chapterId);
+        if (chapterInfo) {
+          chapterInfo.chapter.content = content || [];
+          chapterInfo.chapter.contentLoaded = true;
+        }
+      }
+    }
+
+    // 第二遍：重新遍历，这次所有需要的章节都已加载
+    vIdx = volumeIndex;
+    cIdx = chapterIndex;
+    pIdx = paragraphIndex;
+
+    while (results.length < count && vIdx >= 0) {
+      const volume = novel.volumes[vIdx];
+      if (!volume || !volume.chapters) {
+        vIdx--;
+        cIdx =
+          vIdx >= 0 && novel.volumes[vIdx]?.chapters
+            ? novel.volumes[vIdx]!.chapters!.length - 1
+            : -1;
+        pIdx = -1;
+        continue;
+      }
+
+      if (cIdx < 0) {
+        vIdx--;
+        if (vIdx < 0) break;
+        const prevVolume = novel.volumes[vIdx];
+        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+          cIdx = -1;
+          pIdx = -1;
+          continue;
+        }
+        cIdx = prevVolume.chapters.length - 1;
+        const prevChapter = prevVolume.chapters[cIdx];
+        // 如果仍未加载，按需加载
+        if (prevChapter && prevChapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
+          prevChapter.content = content || [];
+          prevChapter.contentLoaded = true;
+        }
+        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      const chapter = volume.chapters[cIdx];
+      if (!chapter) {
+        cIdx--;
+        pIdx = -1;
+        continue;
+      }
+
+      // 如果仍未加载，按需加载
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+
+      if (!chapter.content) {
+        cIdx--;
+        pIdx = -1;
+        continue;
+      }
+
+      if (pIdx < 0) {
+        cIdx--;
+        if (cIdx < 0) {
+          vIdx--;
+          if (vIdx < 0) break;
+          const prevVolume = novel.volumes[vIdx];
+          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+            cIdx = -1;
+            pIdx = -1;
+            continue;
+          }
+          cIdx = prevVolume.chapters.length - 1;
+          const prevChapter = prevVolume.chapters[cIdx];
+          if (prevChapter && prevChapter.content === undefined) {
+            const content = await ChapterContentService.loadChapterContent(prevChapter.id);
+            prevChapter.content = content || [];
+            prevChapter.contentLoaded = true;
+          }
+          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+          continue;
+        }
+        const prevChapter = volume.chapters[cIdx];
+        if (prevChapter && prevChapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
+          prevChapter.content = content || [];
+          prevChapter.contentLoaded = true;
+        }
+        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        continue;
+      }
+
+      const paragraph = chapter.content[pIdx];
+      if (paragraph) {
+        results.push({
+          paragraph,
+          paragraphIndex: pIdx,
+          chapter,
+          chapterIndex: cIdx,
+          volume,
+          volumeIndex: vIdx,
+        });
+      }
+
+      pIdx--;
+    }
+
+    return results;
   }
 
   /**
@@ -970,6 +1482,190 @@ export class ChapterService {
       }
 
       paragraphIndex--;
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取指定段落之后的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
+   * @param novel 小说对象
+   * @param paragraphId 段落 ID
+   * @param count 要获取的段落数量
+   * @returns 段落位置信息数组，按从近到远的顺序排列（最近的在前）
+   */
+  static async getNextParagraphsAsync(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): Promise<ParagraphSearchResult[]> {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return [];
+    }
+
+    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
+    if (!location) {
+      return [];
+    }
+
+    const results: ParagraphSearchResult[] = [];
+    const { volumeIndex, chapterIndex } = location;
+    let { paragraphIndex } = location;
+
+    // 从当前段落的后一个开始，向后遍历
+    paragraphIndex++;
+
+    // 收集需要加载的章节（批量加载优化）
+    const chaptersToLoad = new Set<string>();
+    const chapterMap = new Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>();
+    let collected = 0;
+
+    // 第一遍：收集需要加载的章节
+    let vIdx = volumeIndex;
+    let cIdx = chapterIndex;
+    let pIdx = paragraphIndex;
+
+    while (collected < count * 2 && vIdx < novel.volumes.length) {
+      // 限制收集的章节数量，避免加载过多
+      const volume = novel.volumes[vIdx];
+      if (!volume || !volume.chapters) {
+        vIdx++;
+        cIdx = 0;
+        pIdx = 0;
+        continue;
+      }
+
+      if (cIdx >= volume.chapters.length) {
+        vIdx++;
+        if (vIdx >= novel.volumes.length) break;
+        cIdx = 0;
+        pIdx = 0;
+        continue;
+      }
+
+      const chapter = volume.chapters[cIdx];
+      if (!chapter) {
+        cIdx++;
+        pIdx = 0;
+        continue;
+      }
+
+      if (chapter.content === undefined) {
+        chaptersToLoad.add(chapter.id);
+        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
+        collected++;
+      }
+
+      if (pIdx >= (chapter.content?.length || 0)) {
+        cIdx++;
+        if (cIdx >= volume.chapters.length) {
+          vIdx++;
+          if (vIdx >= novel.volumes.length) break;
+          cIdx = 0;
+          pIdx = 0;
+          continue;
+        } else {
+          const nextChapter = volume.chapters[cIdx];
+          if (nextChapter && nextChapter.content === undefined) {
+            chaptersToLoad.add(nextChapter.id);
+            chapterMap.set(nextChapter.id, { chapter: nextChapter, vIndex: vIdx, cIndex: cIdx });
+            collected++;
+          }
+          pIdx = 0;
+          continue;
+        }
+      }
+
+      pIdx++;
+    }
+
+    // 批量加载需要的章节
+    if (chaptersToLoad.size > 0) {
+      const chapterIds = Array.from(chaptersToLoad);
+      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+      // 更新章节内容
+      for (const [chapterId, content] of contentsMap) {
+        const chapterInfo = chapterMap.get(chapterId);
+        if (chapterInfo) {
+          chapterInfo.chapter.content = content || [];
+          chapterInfo.chapter.contentLoaded = true;
+        }
+      }
+    }
+
+    // 第二遍：重新遍历，这次所有需要的章节都已加载
+    vIdx = volumeIndex;
+    cIdx = chapterIndex;
+    pIdx = paragraphIndex;
+
+    while (results.length < count && vIdx < novel.volumes.length) {
+      const volume = novel.volumes[vIdx];
+      if (!volume || !volume.chapters) {
+        vIdx++;
+        cIdx = 0;
+        pIdx = 0;
+        continue;
+      }
+
+      if (cIdx >= volume.chapters.length) {
+        vIdx++;
+        if (vIdx >= novel.volumes.length) break;
+        cIdx = 0;
+        pIdx = 0;
+        continue;
+      }
+
+      const chapter = volume.chapters[cIdx];
+      if (!chapter) {
+        cIdx++;
+        pIdx = 0;
+        continue;
+      }
+
+      // 如果仍未加载，按需加载
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+
+      if (!chapter.content) {
+        cIdx++;
+        pIdx = 0;
+        continue;
+      }
+
+      if (pIdx >= chapter.content.length) {
+        cIdx++;
+        if (cIdx >= volume.chapters.length) {
+          vIdx++;
+          if (vIdx >= novel.volumes.length) break;
+          cIdx = 0;
+        }
+        const nextChapter = volume.chapters[cIdx];
+        if (nextChapter && nextChapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(nextChapter.id);
+          nextChapter.content = content || [];
+          nextChapter.contentLoaded = true;
+        }
+        pIdx = 0;
+        continue;
+      }
+
+      const paragraph = chapter.content[pIdx];
+      if (paragraph) {
+        results.push({
+          paragraph,
+          paragraphIndex: pIdx,
+          chapter,
+          chapterIndex: cIdx,
+          volume,
+          volumeIndex: vIdx,
+        });
+      }
+
+      pIdx++;
     }
 
     return results;

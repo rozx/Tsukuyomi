@@ -198,7 +198,7 @@ export class OpenAIService extends BaseAIService {
             } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam;
           }
           return {
-            role: msg.role as 'system' | 'user' | 'assistant',
+            role: msg.role,
             content: msg.content || '',
             name: msg.name,
           } as OpenAI.Chat.Completions.ChatCompletionMessageParam;

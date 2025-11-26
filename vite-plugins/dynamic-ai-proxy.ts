@@ -28,8 +28,8 @@ export function dynamicAIProxy(): Plugin {
           },
           error: (err, _req, res) => {
             if (res && 'headersSent' in res && !res.headersSent) {
-              (res as ServerResponse).statusCode = 500;
-              (res as ServerResponse).end(`Proxy error: ${err.message}`);
+              (res).statusCode = 500;
+              (res).end(`Proxy error: ${err.message}`);
             }
           },
         },
@@ -93,8 +93,8 @@ export function dynamicAIProxy(): Plugin {
                 return;
               } catch (error) {
                 if (res && 'headersSent' in res && !res.headersSent) {
-                  (res as ServerResponse).statusCode = 500;
-                  (res as ServerResponse).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
+                  (res).statusCode = 500;
+                  (res).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
                 }
                 return;
               }
@@ -103,14 +103,14 @@ export function dynamicAIProxy(): Plugin {
 
           // 如果没有匹配，返回 404
           if (res && 'statusCode' in res) {
-            (res as ServerResponse).statusCode = 404;
-            (res as ServerResponse).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
+            (res).statusCode = 404;
+            (res).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
           }
         })().catch((err) => {
           console.error('Proxy middleware error:', err);
           if (res && 'headersSent' in res && !res.headersSent) {
-            (res as ServerResponse).statusCode = 500;
-            (res as ServerResponse).end('Internal Server Error');
+            (res).statusCode = 500;
+            (res).end('Internal Server Error');
           }
         });
       });
