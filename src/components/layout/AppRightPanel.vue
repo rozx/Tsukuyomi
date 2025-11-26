@@ -1592,8 +1592,16 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     return items;
   }
 
-  // 按时间戳排序操作
-  const sortedActions = [...message.actions].sort((a, b) => a.timestamp - b.timestamp);
+  // 按时间戳排序操作，同时保留原始索引用于相同时间戳时的排序
+  const actionsWithIndex = message.actions.map((action, index) => ({ action, index }));
+  const sortedActions = actionsWithIndex.sort((a, b) => {
+    // 首先按时间戳排序
+    if (a.action.timestamp !== b.action.timestamp) {
+      return a.action.timestamp - b.action.timestamp;
+    }
+    // 如果时间戳相同，按原始索引排序（保持操作添加的顺序）
+    return a.index - b.index;
+  });
 
   // 将消息内容按操作时间戳分段
   // 第一个内容段：从消息开始到第一个操作之前
@@ -1614,8 +1622,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     });
   }
 
-  // 添加所有操作（按时间戳排序）
-  for (const action of sortedActions) {
+  // 添加所有操作（按时间戳排序，相同时间戳时按添加顺序）
+  for (const { action } of sortedActions) {
     items.push({
       type: 'action',
       action,
@@ -1625,16 +1633,34 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     });
   }
 
-  // 按时间戳排序（内容在操作之前，如果时间戳相同）
+  // 按时间戳排序，相同时间戳时使用更精确的排序策略
+  // 为了更准确地反映实际执行顺序，我们需要考虑操作的执行时间
+  // 操作是在流式输出过程中添加的，所以操作的 timestamp 应该反映其实际执行时间
   return items.sort((a, b) => {
     if (a.timestamp !== b.timestamp) {
       return a.timestamp - b.timestamp;
     }
-    // 如果时间戳相同，内容优先于操作
+    // 如果时间戳相同，需要更精确的排序：
+    // 1. 如果都是操作，保持它们在数组中的顺序（已通过 sortedActions 保证）
+    // 2. 如果一个是内容一个是操作，根据操作的实际执行时间来判断
+    //    由于操作是在流式输出过程中添加的，如果时间戳相同（可能是精度问题），
+    //    我们应该将操作放在内容之后，因为操作发生在消息开始输出之后
+    if (a.type === 'action' && b.type === 'action') {
+      // 都是操作，保持它们在 sortedActions 中的顺序
+      // 由于我们已经按索引排序，这里不需要额外处理
+      return 0;
+    }
+    // 处理内容和操作混合的情况
+    // 由于操作是在流式输出过程中添加的，如果时间戳相同（可能是时间戳精度问题），
+    // 操作应该被视为发生在消息开始输出之后，因此操作应该在内容之后
     if (a.type === 'content' && b.type === 'action') {
+      // a 是内容，b 是操作
+      // 如果时间戳相同，内容应该在操作之前（因为操作发生在流式输出过程中）
       return -1;
     }
     if (a.type === 'action' && b.type === 'content') {
+      // a 是操作，b 是内容
+      // 如果时间戳相同，操作应该在内容之后（因为操作发生在流式输出过程中）
       return 1;
     }
     return 0;
