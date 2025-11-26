@@ -1,15 +1,16 @@
-﻿import type { Terminology, CharacterSetting } from 'src/models/novel';
+﻿import type { Terminology, CharacterSetting, Translation } from 'src/models/novel';
 import type { AITool } from 'src/services/ai/types/ai-service';
 
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch';
-  entity: 'term' | 'character' | 'web';
+  entity: 'term' | 'character' | 'web' | 'translation';
   data:
     | Terminology
     | CharacterSetting
     | { id: string; name?: string }
-    | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean };
-  previousData?: Terminology | CharacterSetting; // 用于 revert 的原始数据（仅用于 update 操作）
+    | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean }
+    | { paragraph_id: string; translation_id: string; old_translation: string; new_translation: string };
+  previousData?: Terminology | CharacterSetting | Translation; // 用于 revert 的原始数据（仅用于 update 操作）
 }
 
 export interface ToolContext {

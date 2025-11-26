@@ -452,7 +452,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -510,8 +510,20 @@ export const paragraphTools: ToolDefinition[] = [
       // 更新书籍（保存更改）
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
-      // 注意：翻译更新操作不通过 onAction 回调，因为 ActionInfo 类型中没有 translation 实体类型
-      // 如果需要撤销功能，可以在 UI 层面实现
+      // 报告操作
+      if (onAction) {
+        onAction({
+          type: 'update',
+          entity: 'translation',
+          data: {
+            paragraph_id,
+            translation_id,
+            old_translation: originalTranslation.translation,
+            new_translation: new_translation.trim(),
+          },
+          previousData: originalTranslation,
+        });
+      }
 
       return JSON.stringify({
         success: true,

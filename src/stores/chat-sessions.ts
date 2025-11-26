@@ -11,12 +11,15 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  */
 export interface MessageAction {
   type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch';
-  entity: 'term' | 'character' | 'web';
+  entity: 'term' | 'character' | 'web' | 'translation';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
   query?: string; // 搜索查询（用于 web_search）
   url?: string; // 网页 URL（用于 web_fetch）
+  // 翻译相关信息
+  paragraph_id?: string; // 段落 ID（用于 translation）
+  translation_id?: string; // 翻译 ID（用于 translation）
 }
 
 /**
