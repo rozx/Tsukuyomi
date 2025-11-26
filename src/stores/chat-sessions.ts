@@ -10,8 +10,8 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  * 操作信息（用于在消息中标记 CRUD 操作）
  */
 export interface MessageAction {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch';
-  entity: 'term' | 'character' | 'web' | 'translation';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read';
+  entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
@@ -20,6 +20,11 @@ export interface MessageAction {
   // 翻译相关信息
   paragraph_id?: string; // 段落 ID（用于 translation）
   translation_id?: string; // 翻译 ID（用于 translation）
+  // 读取操作相关信息
+  chapter_id?: string; // 章节 ID（用于 read chapter）
+  chapter_title?: string; // 章节标题（用于 read chapter）
+  character_name?: string; // 角色名称（用于 read character）
+  tool_name?: string; // 工具名称（用于 read 操作）
 }
 
 /**

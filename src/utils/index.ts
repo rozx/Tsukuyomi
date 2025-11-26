@@ -3,8 +3,11 @@ export { runWithConcurrencyLimit } from './concurrency';
 export { formatNumber, formatCharCount, formatWordCount } from './format';
 export {
   getChapterCharCount,
+  getChapterCharCountAsync,
   getVolumeCharCount,
+  getVolumeCharCountAsync,
   getNovelCharCount,
+  getNovelCharCountAsync,
   getTotalChapters,
   getChapterContentText,
   getVolumeDisplayTitle,

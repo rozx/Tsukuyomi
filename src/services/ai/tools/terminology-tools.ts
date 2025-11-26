@@ -85,7 +85,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -106,6 +106,18 @@ export const terminologyTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           message: `术语 "${name}" 不存在`,
+        });
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'term',
+          data: {
+            name,
+            tool_name: 'get_term',
+          },
         });
       }
 
@@ -268,7 +280,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -277,6 +289,17 @@ export const terminologyTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       if (!book) {
         throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'term',
+          data: {
+            tool_name: 'list_terms',
+          },
+        });
       }
 
       let terms: Terminology[] = book.terminologies || [];
@@ -320,7 +343,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -333,6 +356,17 @@ export const terminologyTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       if (!book) {
         throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'term',
+          data: {
+            tool_name: 'search_terms_by_keyword',
+          },
+        });
       }
 
       const allTerms = book.terminologies || [];
@@ -390,7 +424,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -399,7 +433,18 @@ export const terminologyTools: ToolDefinition[] = [
         throw new Error('关键词数组不能为空');
       }
 
-      const occurrencesMap = TerminologyService.getOccurrencesByKeywords(bookId, keywords);
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'term',
+          data: {
+            tool_name: 'get_occurrences_by_keywords',
+          },
+        });
+      }
+
+      const occurrencesMap = await TerminologyService.getOccurrencesByKeywords(bookId, keywords);
 
       // 将 Map 转换为对象数组
       const occurrences = Array.from(occurrencesMap.entries()).map(([keyword, occurrences]) => ({

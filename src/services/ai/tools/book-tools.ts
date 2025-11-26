@@ -1,10 +1,12 @@
 import { BookService } from 'src/services/book-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 import {
   getChapterDisplayTitle,
   getChapterContentText,
   getVolumeDisplayTitle,
 } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
+import type { Chapter } from 'src/models/novel';
 
 export const bookTools: ToolDefinition[] = [
   {
@@ -22,7 +24,7 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (_args, context: ToolContext) => {
-      const { bookId } = context;
+      const { bookId, onAction } = context;
 
       if (!bookId) {
         return JSON.stringify({
@@ -37,6 +39,18 @@ export const bookTools: ToolDefinition[] = [
           return JSON.stringify({
             success: false,
             error: `书籍不存在: ${bookId}`,
+          });
+        }
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'book',
+            data: {
+              book_id: bookId,
+              tool_name: 'get_book_info',
+            },
           });
         }
 
@@ -106,7 +120,7 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
@@ -116,6 +130,18 @@ export const bookTools: ToolDefinition[] = [
         const book = await BookService.getBookById(bookId);
         if (!book) {
           return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        }
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'chapter',
+            data: {
+              book_id: bookId,
+              tool_name: 'list_chapters',
+            },
+          });
         }
 
         // 收集所有章节
@@ -134,6 +160,23 @@ export const bookTools: ToolDefinition[] = [
         }> = [];
 
         if (book.volumes) {
+          // 加载所有章节的内容（如果需要）
+          for (const volume of book.volumes) {
+            if (volume.chapters) {
+              for (let i = 0; i < volume.chapters.length; i++) {
+                const chapter = volume.chapters[i];
+                if (chapter && chapter.content === undefined) {
+                  const content = await ChapterContentService.loadChapterContent(chapter.id);
+                  volume.chapters[i] = {
+                    ...chapter,
+                    content: content || [],
+                    contentLoaded: true,
+                  };
+                }
+              }
+            }
+          }
+
           book.volumes.forEach((volume, volumeIndex) => {
             if (volume.chapters) {
               volume.chapters.forEach((chapter, chapterIndex) => {
@@ -205,7 +248,7 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
@@ -221,7 +264,7 @@ export const bookTools: ToolDefinition[] = [
         }
 
         // 查找章节
-        let chapter = null;
+        let chapter: Chapter | null = null;
         let volume = null;
         if (book.volumes) {
           for (const vol of book.volumes) {
@@ -243,7 +286,39 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
+        // 如果章节内容未加载，从 IndexedDB 加载
+        if (chapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(chapter.id);
+          if (content) {
+            chapter = {
+              ...chapter,
+              content,
+              contentLoaded: true,
+            };
+          } else {
+            // 如果加载失败，设置为空数组
+            chapter = {
+              ...chapter,
+              content: [],
+              contentLoaded: true,
+            };
+          }
+        }
+
         const chapterTitle = getChapterDisplayTitle(chapter);
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'chapter',
+            data: {
+              chapter_id,
+              chapter_title: chapterTitle,
+              tool_name: 'get_chapter_info',
+            },
+          });
+        }
         const chapterContent = getChapterContentText(chapter);
         const paragraphCount = chapter.content?.length || 0;
         const translatedCount =

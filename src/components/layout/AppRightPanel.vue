@@ -408,6 +408,22 @@ const sendMessage = async () => {
                 translation_id: action.data.translation_id,
               }
             : {}),
+          // 读取操作相关信息
+          ...(action.type === 'read' && 'chapter_id' in action.data
+            ? { chapter_id: action.data.chapter_id }
+            : {}),
+          ...(action.type === 'read' && 'chapter_title' in action.data
+            ? { chapter_title: action.data.chapter_title }
+            : {}),
+          ...(action.type === 'read' && 'paragraph_id' in action.data
+            ? { paragraph_id: action.data.paragraph_id }
+            : {}),
+          ...(action.type === 'read' && 'character_name' in action.data
+            ? { character_name: action.data.character_name }
+            : {}),
+          ...(action.type === 'read' && 'tool_name' in action.data
+            ? { tool_name: action.data.tool_name }
+            : {}),
         };
 
         // 立即将操作添加到临时数组（用于后续保存）
@@ -456,12 +472,16 @@ const sendMessage = async () => {
           delete: '删除',
           web_search: '网络搜索',
           web_fetch: '网页获取',
+          read: '读取',
         };
         const entityLabels: Record<ActionInfo['entity'], string> = {
           term: '术语',
           character: '角色',
           web: '网络',
           translation: '翻译',
+          chapter: '章节',
+          paragraph: '段落',
+          book: '书籍',
         };
 
         // 处理网络搜索和网页获取操作（不显示 toast 通知）
@@ -470,6 +490,11 @@ const sendMessage = async () => {
         }
 
         if (action.type === 'web_fetch') {
+          return;
+        }
+
+        // 处理读取操作（不显示 toast 通知，但会在消息中显示操作标签）
+        if (action.type === 'read') {
           return;
         }
 
@@ -1311,12 +1336,16 @@ const getActionDetails = (action: MessageAction) => {
     delete: '删除',
     web_search: '网络搜索',
     web_fetch: '网页获取',
+    read: '读取',
   };
   const entityLabels: Record<MessageAction['entity'], string> = {
     term: '术语',
     character: '角色',
     web: '网络',
     translation: '翻译',
+    chapter: '章节',
+    paragraph: '段落',
+    book: '书籍',
   };
 
   const details: {
@@ -1450,6 +1479,46 @@ const getActionDetails = (action: MessageAction) => {
       details.push({
         label: '翻译 ID',
         value: action.translation_id,
+      });
+    }
+  }
+
+  // 处理读取操作
+  if (action.type === 'read') {
+    if (action.tool_name) {
+      details.push({
+        label: '工具',
+        value: action.tool_name,
+      });
+    }
+    if (action.chapter_id) {
+      details.push({
+        label: '章节 ID',
+        value: action.chapter_id,
+      });
+    }
+    if (action.chapter_title) {
+      details.push({
+        label: '章节标题',
+        value: action.chapter_title,
+      });
+    }
+    if (action.paragraph_id) {
+      details.push({
+        label: '段落 ID',
+        value: action.paragraph_id,
+      });
+    }
+    if (action.character_name) {
+      details.push({
+        label: '角色名称',
+        value: action.character_name,
+      });
+    }
+    if (action.name) {
+      details.push({
+        label: '名称',
+        value: action.name,
       });
     }
   }
@@ -1676,6 +1745,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         item.action.type === 'web_search',
                       'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/35':
                         item.action.type === 'web_fetch',
+                      'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
+                        item.action.type === 'read',
                     }"
                     @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
                     @mouseleave="() => handleActionMouseLeave(item.action!, message)"
@@ -1688,6 +1759,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         'pi pi-trash': item.action.type === 'delete',
                         'pi pi-search': item.action.type === 'web_search',
                         'pi pi-link': item.action.type === 'web_fetch',
+                        'pi pi-eye': item.action.type === 'read',
                       }"
                     />
                     <span>
@@ -1702,7 +1774,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                 ? '网络搜索'
                                 : item.action.type === 'web_fetch'
                                   ? '网页获取'
-                                  : ''
+                                  : item.action.type === 'read'
+                                    ? '读取'
+                                    : ''
                       }}
                       {{
                         item.action.entity === 'term'
@@ -1713,7 +1787,13 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                               ? '网络'
                               : item.action.entity === 'translation'
                                 ? '翻译'
-                                : ''
+                                : item.action.entity === 'chapter'
+                                  ? '章节'
+                                  : item.action.entity === 'paragraph'
+                                    ? '段落'
+                                    : item.action.entity === 'book'
+                                      ? '书籍'
+                                      : ''
                       }}
                       <span v-if="item.action.name" class="font-semibold"
                         >"{{ item.action.name }}"</span
@@ -1729,6 +1809,24 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         class="font-semibold text-xs"
                       >
                         段落翻译
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.chapter_title"
+                        class="font-semibold text-xs"
+                      >
+                        "{{ item.action.chapter_title }}"
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.character_name"
+                        class="font-semibold text-xs"
+                      >
+                        "{{ item.action.character_name }}"
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.tool_name"
+                        class="font-semibold text-xs"
+                      >
+                        {{ item.action.tool_name }}
                       </span>
                     </span>
                   </div>
@@ -1773,7 +1871,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                     ? '网络搜索'
                                     : item.action.type === 'web_fetch'
                                       ? '网页获取'
-                                      : ''
+                                      : item.action.type === 'read'
+                                        ? '读取'
+                                        : ''
                           }}
                           {{
                             item.action.entity === 'term'
@@ -1784,7 +1884,13 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                   ? '网络'
                                   : item.action.entity === 'translation'
                                     ? '翻译'
-                                    : ''
+                                    : item.action.entity === 'chapter'
+                                      ? '章节'
+                                      : item.action.entity === 'paragraph'
+                                        ? '段落'
+                                        : item.action.entity === 'book'
+                                          ? '书籍'
+                                          : ''
                           }}
                         </span>
                       </div>
