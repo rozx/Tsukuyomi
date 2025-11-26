@@ -10,6 +10,7 @@ import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryD
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useContextStore } from 'src/stores/context';
 import { useBooksStore } from 'src/stores/books';
+import { useUiStore } from 'src/stores/ui';
 import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
 
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 const aiModelsStore = useAIModelsStore();
 const contextStore = useContextStore();
 const booksStore = useBooksStore();
+const uiStore = useUiStore();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
@@ -184,11 +186,14 @@ const handleCharacterPopoverHide = () => {
 const handleParagraphMouseEnter = () => {
   // 如果提供了 bookId 和 chapterId，同时更新书籍、章节和段落
   if (props.bookId && props.chapterId) {
-    contextStore.setContext({
-      currentBookId: props.bookId,
-      currentChapterId: props.chapterId,
-      hoveredParagraphId: props.paragraph.id,
-    });
+    contextStore.setContext(
+      {
+        currentBookId: props.bookId,
+        currentChapterId: props.chapterId,
+        hoveredParagraphId: props.paragraph.id,
+      },
+      props.paragraph.text,
+    );
   } else {
     // 如果没有提供 bookId 和 chapterId，尝试通过段落 ID 查找
     const currentBookId = contextStore.getContext.currentBookId;
@@ -197,17 +202,20 @@ const handleParagraphMouseEnter = () => {
       if (book) {
         const location = ChapterService.findParagraphLocation(book, props.paragraph.id);
         if (location) {
-          contextStore.setContext({
-            currentBookId: currentBookId,
-            currentChapterId: location.chapter.id,
-            hoveredParagraphId: props.paragraph.id,
-          });
+          contextStore.setContext(
+            {
+              currentBookId: currentBookId,
+              currentChapterId: location.chapter.id,
+              hoveredParagraphId: props.paragraph.id,
+            },
+            props.paragraph.text,
+          );
           return;
         }
       }
     }
     // 如果找不到位置信息，只设置段落
-    contextStore.setHoveredParagraph(props.paragraph.id);
+    contextStore.setHoveredParagraph(props.paragraph.id, props.paragraph.text);
   }
 };
 
@@ -320,6 +328,18 @@ const handlePolish = () => {
 
 const handleRetranslate = () => {
   emit('retranslate', props.paragraph.id);
+};
+
+// 复制段落原文到 AI 助手输入框
+const handleCopyToAssistant = () => {
+  // 关闭上下文菜单
+  if (contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.hide();
+  }
+  // 将段落原文复制到助手输入框
+  if (props.paragraph.text) {
+    uiStore.setAssistantInputMessage(props.paragraph.text);
+  }
 };
 
 // 翻译历史对话框
@@ -581,6 +601,14 @@ onUnmounted(() => {
           text
           severity="secondary"
           @click="handleRetranslate"
+        />
+        <Button
+          label="复制原文到助手"
+          icon="pi pi-copy"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handleCopyToAssistant"
         />
         
         <!-- 翻译历史分隔线 -->

@@ -3,6 +3,36 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 const STORAGE_KEY = 'luna-ai-context';
 
 /**
+ * 检查段落是否为空或仅包含符号
+ * 空段落：没有文本或只有空白字符
+ * 仅符号段落：只包含标点符号、特殊字符，但没有实际内容（字母、数字、CJK字符等）
+ * @param text 段落文本
+ * @returns 如果段落为空或仅符号，返回 true
+ */
+function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
+  if (!text || typeof text !== 'string') {
+    return true;
+  }
+
+  // 去除首尾空白字符
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+
+  // 检查是否包含实际内容（字母、数字、CJK字符）
+  // \p{L} 匹配任何语言的字母
+  // \p{N} 匹配任何语言的数字
+  // \p{Han} 匹配汉字
+  // \p{Hiragana} 匹配平假名
+  // \p{Katakana} 匹配片假名
+  const hasContent = /[\p{L}\p{N}\p{Han}\p{Hiragana}\p{Katakana}]/u.test(trimmed);
+
+  // 如果没有实际内容，则认为是仅符号段落
+  return !hasContent;
+}
+
+/**
  * 用户上下文状态
  */
 interface ContextState {
@@ -134,16 +164,32 @@ export const useContextStore = defineStore('context', {
 
     /**
      * 设置悬停的段落
+     * @param paragraphId 段落 ID
+     * @param paragraphText 可选的段落文本，如果提供且为空或仅符号，则不设置段落 ID
      */
-    setHoveredParagraph(paragraphId: string | null): void {
+    setHoveredParagraph(paragraphId: string | null, paragraphText?: string | null): void {
+      // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
+      if (paragraphId && paragraphText !== undefined && paragraphText !== null) {
+        if (isEmptyOrSymbolOnly(paragraphText)) {
+          // 如果段落是空的或仅符号，清除悬停状态
+          this.hoveredParagraphId = null;
+          this.saveState();
+          return;
+        }
+      }
       this.hoveredParagraphId = paragraphId;
       this.saveState();
     },
 
     /**
      * 设置完整的上下文
+     * @param context 上下文对象
+     * @param paragraphText 可选的段落文本，如果提供且为空或仅符号，则不设置段落 ID
      */
-    setContext(context: Partial<ContextState>): void {
+    setContext(
+      context: Partial<ContextState>,
+      paragraphText?: string | null,
+    ): void {
       if (context.currentBookId !== undefined) {
         const previousBookId = this.currentBookId;
         this.currentBookId = context.currentBookId;
@@ -162,7 +208,21 @@ export const useContextStore = defineStore('context', {
         }
       }
       if (context.hoveredParagraphId !== undefined) {
-        this.hoveredParagraphId = context.hoveredParagraphId;
+        // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
+        if (
+          context.hoveredParagraphId &&
+          paragraphText !== undefined &&
+          paragraphText !== null
+        ) {
+          if (isEmptyOrSymbolOnly(paragraphText)) {
+            // 如果段落是空的或仅符号，清除悬停状态
+            this.hoveredParagraphId = null;
+          } else {
+            this.hoveredParagraphId = context.hoveredParagraphId;
+          }
+        } else {
+          this.hoveredParagraphId = context.hoveredParagraphId;
+        }
       }
       this.saveState();
     },

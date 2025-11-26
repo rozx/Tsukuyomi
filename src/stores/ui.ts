@@ -52,12 +52,14 @@ export const useUiStore = defineStore('ui', {
     rightPanelWidth: number;
     isLoaded: boolean;
     isInitialDataLoading: boolean;
+    assistantInputMessage: string | null; // 要复制到助手输入框的消息
   } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
     isLoaded: false,
     isInitialDataLoading: false,
+    assistantInputMessage: null,
   }),
 
   actions: {
@@ -114,6 +116,13 @@ export const useUiStore = defineStore('ui', {
     },
     setInitialDataLoading(loading: boolean) {
       this.isInitialDataLoading = loading;
+    },
+    /**
+     * 设置要复制到助手输入框的消息
+     * @param message 要设置的消息，设置为 null 可清除
+     */
+    setAssistantInputMessage(message: string | null) {
+      this.assistantInputMessage = message;
     },
   },
 });

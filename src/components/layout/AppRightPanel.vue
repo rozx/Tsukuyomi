@@ -1166,6 +1166,32 @@ watch(
   },
 );
 
+// 监听助手输入消息状态，自动填充输入框
+watch(
+  () => ui.assistantInputMessage,
+  (message) => {
+    if (message !== null) {
+      // 设置输入框的值
+      inputMessage.value = message;
+      // 打开右侧面板（如果未打开）
+      if (!ui.rightPanelOpen) {
+        ui.openRightPanel();
+      }
+      // 聚焦到输入框
+      nextTick(() => {
+        if (inputRef.value && inputRef.value.$el) {
+          const textarea = inputRef.value.$el.querySelector('textarea');
+          if (textarea) {
+            textarea.focus();
+          }
+        }
+      });
+      // 清除状态
+      ui.setAssistantInputMessage(null);
+    }
+  },
+);
+
 // 获取操作详细信息（用于 popover）
 const getActionDetails = (action: MessageAction) => {
   const actionLabels: Record<MessageAction['type'], string> = {

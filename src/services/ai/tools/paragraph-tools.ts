@@ -4,6 +4,36 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { ToolDefinition } from './types';
 
+/**
+ * 检查段落是否为空或仅包含符号
+ * 空段落：没有文本或只有空白字符
+ * 仅符号段落：只包含标点符号、特殊字符，但没有实际内容（字母、数字、CJK字符等）
+ * @param text 段落文本
+ * @returns 如果段落为空或仅符号，返回 true
+ */
+function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
+  if (!text || typeof text !== 'string') {
+    return true;
+  }
+
+  // 去除首尾空白字符
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+
+  // 检查是否包含实际内容（字母、数字、CJK字符）
+  // \p{L} 匹配任何语言的字母
+  // \p{N} 匹配任何语言的数字
+  // \p{Han} 匹配汉字
+  // \p{Hiragana} 匹配平假名
+  // \p{Katakana} 匹配片假名
+  const hasContent = /[\p{L}\p{N}\p{Han}\p{Hiragana}\p{Katakana}]/u.test(trimmed);
+
+  // 如果没有实际内容，则认为是仅符号段落
+  return !hasContent;
+}
+
 export const paragraphTools: ToolDefinition[] = [
   {
     definition: {
@@ -135,9 +165,12 @@ export const paragraphTools: ToolDefinition[] = [
 
       const results = ChapterService.getPreviousParagraphs(book, paragraph_id, count);
 
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
       return JSON.stringify({
         success: true,
-        paragraphs: results.map((result) => ({
+        paragraphs: validResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
           translation:
@@ -160,7 +193,7 @@ export const paragraphTools: ToolDefinition[] = [
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
-        count: results.length,
+        count: validResults.length,
       });
     },
   },
@@ -204,9 +237,12 @@ export const paragraphTools: ToolDefinition[] = [
 
       const results = ChapterService.getNextParagraphs(book, paragraph_id, count);
 
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
       return JSON.stringify({
         success: true,
-        paragraphs: results.map((result) => ({
+        paragraphs: validResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
           translation:
@@ -229,7 +265,7 @@ export const paragraphTools: ToolDefinition[] = [
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
-        count: results.length,
+        count: validResults.length,
       });
     },
   },
@@ -289,9 +325,12 @@ export const paragraphTools: ToolDefinition[] = [
         only_with_translation,
       );
 
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
       return JSON.stringify({
         success: true,
-        paragraphs: results.map((result) => ({
+        paragraphs: validResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
           translation:
@@ -314,7 +353,7 @@ export const paragraphTools: ToolDefinition[] = [
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
-        count: results.length,
+        count: validResults.length,
       });
     },
   },
