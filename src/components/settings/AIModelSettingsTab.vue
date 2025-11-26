@@ -11,7 +11,7 @@ const settingsStore = useSettingsStore();
 // 任务配置（使用集中化的标签常量）
 const taskLabels: Record<keyof AIModelDefaultTasks, string> = {
   translation: TASK_TYPE_LABELS.translation,
-  proofreading: TASK_TYPE_LABELS.proofreading,
+  proofreading: '校对和润色', // proofreading 任务用于校对和润色
   termsTranslation: TASK_TYPE_LABELS.termsTranslation,
   assistant: TASK_TYPE_LABELS.assistant,
 };
@@ -78,4 +78,3 @@ const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null)
     </div>
   </div>
 </template>
-

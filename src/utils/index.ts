@@ -25,3 +25,5 @@ export {
   calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
+export { detectRepeatingCharacters } from './ai-degradation-detector';
+export type { DegradationDetectionOptions } from './ai-degradation-detector';

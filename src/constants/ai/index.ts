@@ -32,11 +32,12 @@ export * from './prompts';
  * AI 任务类型标签映射
  */
 export const TASK_TYPE_LABELS: Record<
-  'translation' | 'proofreading' | 'termsTranslation' | 'assistant' | 'config' | 'other',
+  'translation' | 'proofreading' | 'polish' | 'termsTranslation' | 'assistant' | 'config' | 'other',
   string
 > = {
   translation: '翻译',
   proofreading: '校对',
+  polish: '润色',
   termsTranslation: '术语翻译',
   assistant: '助手',
   config: '配置获取',

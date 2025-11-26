@@ -664,7 +664,7 @@ watch(
                   @click.stop
                 />
                 <label :for="`${idPrefix}-default-proofreading`" class="ml-2 text-sm cursor-pointer"
-                  >校对</label
+                  >校对/润色</label
                 >
               </div>
               <span

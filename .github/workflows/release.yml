@@ -229,12 +229,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
+      - name: Package Mac App Bundle
+        if: matrix.os == 'macos-latest'
+        run: |
+          # 将 .app bundle 压缩为 .zip 以便分发
+          cd dist/electron/mac
+          APP_NAME=$(ls -d *.app | head -1)
+          ZIP_NAME="${APP_NAME%.app}-mac.zip"
+          zip -r "$ZIP_NAME" "$APP_NAME"
+          cd ../../..
+
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: dist/electron/Packaged/*.zip
+          # Mac 生成 .app bundle（单文件可执行程序），压缩为 .zip 以便分发
+          files: dist/electron/mac/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
@@ -243,7 +254,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: dist/electron/Packaged/*.zip
+          # Windows 生成 portable .exe（单文件可执行程序）
+          files: dist/electron/Packaged/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 

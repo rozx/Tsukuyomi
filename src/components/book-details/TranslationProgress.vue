@@ -8,7 +8,8 @@ import { useToast } from 'primevue/usetoast';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const props = defineProps<{
-  isTranslating: boolean;
+  isTranslating?: boolean;
+  isPolishing?: boolean;
   progress: {
     current: number;
     total: number;
@@ -128,12 +129,19 @@ watch(
 </script>
 
 <template>
-  <div v-if="isTranslating" class="translation-progress-toolbar">
+  <div v-if="isTranslating || isPolishing" class="translation-progress-toolbar">
     <div class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
-          <i class="pi pi-language translation-progress-icon"></i>
-          <span class="translation-progress-title">正在翻译章节</span>
+          <i
+            :class="[
+              'translation-progress-icon',
+              isPolishing ? 'pi pi-sparkles' : 'pi pi-language',
+            ]"
+          ></i>
+          <span class="translation-progress-title">{{
+            isPolishing ? '正在润色章节' : '正在翻译章节'
+          }}</span>
         </div>
         <div class="translation-progress-message">
           {{ progress.message || '正在处理...' }}

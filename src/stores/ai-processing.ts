@@ -7,6 +7,7 @@ export interface AIProcessingTask {
   type:
     | 'translation'
     | 'proofreading'
+    | 'polish'
     | 'termsTranslation'
     | 'assistant'
     | 'config'
