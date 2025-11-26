@@ -323,8 +323,7 @@ jobs:
           fi
           
           echo "Found .AppImage at: $APPIMAGE_PATH"
-          # 确保 dist/electron 目录存在，并将 AppImage 复制到那里
-          mkdir -p dist/electron
+          # 将 AppImage 复制到 dist/electron 目录
           cp "$APPIMAGE_PATH" dist/electron/linux-release.AppImage
           echo "AppImage file prepared at: dist/electron/linux-release.AppImage"
 
