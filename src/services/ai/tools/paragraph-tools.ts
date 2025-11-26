@@ -41,11 +41,8 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
-      // 查找段落
-      const location = ChapterService.findParagraphLocation(book, paragraph_id);
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
       if (!location) {
         return JSON.stringify({
           success: false,
@@ -152,9 +149,6 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
       // 报告读取操作
       if (onAction) {
         onAction({
@@ -167,7 +161,8 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const results = ChapterService.getPreviousParagraphs(book, paragraph_id, count);
+      // 使用优化的异步方法，按需加载章节内容
+      const results = await ChapterService.getPreviousParagraphsAsync(book, paragraph_id, count);
 
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
@@ -239,9 +234,6 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
       // 报告读取操作
       if (onAction) {
         onAction({
@@ -254,7 +246,8 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const results = ChapterService.getNextParagraphs(book, paragraph_id, count);
+      // 使用优化的异步方法，按需加载章节内容
+      const results = await ChapterService.getNextParagraphsAsync(book, paragraph_id, count);
 
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
@@ -336,9 +329,6 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
       // 报告读取操作
       if (onAction) {
         onAction({
@@ -350,7 +340,8 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const results = ChapterService.searchParagraphsByKeyword(
+      // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
+      const results = await ChapterService.searchParagraphsByKeywordAsync(
         book,
         keyword,
         chapter_id,
@@ -425,11 +416,8 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
-      // 查找段落
-      const location = ChapterService.findParagraphLocation(book, paragraph_id);
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
       if (!location) {
         return JSON.stringify({
           success: false,
@@ -515,11 +503,8 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
-      // 查找段落
-      const location = ChapterService.findParagraphLocation(book, paragraph_id);
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
       if (!location) {
         return JSON.stringify({
           success: false,
@@ -624,11 +609,8 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 加载所有章节内容（如果需要）
-      await ChapterContentService.loadAllChapterContents(book);
-
-      // 查找段落
-      const location = ChapterService.findParagraphLocation(book, paragraph_id);
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
       if (!location) {
         return JSON.stringify({
           success: false,

@@ -517,7 +517,7 @@ export class GistSyncService {
               if (!gistId) throw new Error('Gist ID is undefined during batch update');
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const response: any = await this.octokit.rest.gists.update({
-                gist_id: gistId!,
+                gist_id: gistId,
                 description: 'Luna AI Translator - Settings and Novels',
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 files: batchFiles as any,

@@ -160,43 +160,70 @@ export const bookTools: ToolDefinition[] = [
         }> = [];
 
         if (book.volumes) {
-          // 加载所有章节的内容（如果需要）
-          await ChapterContentService.loadAllChapterContents(book);
+          // 如果提供了 limit，只加载前 N 个章节的内容以提升性能
+          // 否则加载所有章节内容（用于统计）
+          const shouldLoadAll = !limit || limit <= 0;
+          let chaptersProcessed = 0;
+          const maxChaptersToLoad = limit && limit > 0 ? limit : undefined;
 
-          book.volumes.forEach((volume, volumeIndex) => {
-            if (volume.chapters) {
-              volume.chapters.forEach((chapter, chapterIndex) => {
-                const chapterTitle = getChapterDisplayTitle(chapter);
-                const titleOriginal =
-                  typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-                const titleTranslation =
-                  typeof chapter.title === 'string'
-                    ? ''
-                    : chapter.title.translation?.translation || '';
-                const paragraphCount = chapter.content?.length || 0;
-                const translatedCount =
-                  chapter.content?.filter(
-                    (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-                  ).length || 0;
-                const translationProgress =
-                  paragraphCount > 0 ? (translatedCount / paragraphCount) * 100 : 0;
+          for (const volume of book.volumes) {
+            if (!volume.chapters) continue;
 
-                allChapters.push({
-                  id: chapter.id,
-                  title: chapterTitle,
-                  title_original: titleOriginal,
-                  title_translation: titleTranslation,
-                  volumeIndex,
-                  chapterIndex,
-                  volumeId: volume.id,
-                  volumeTitle: getVolumeDisplayTitle(volume),
-                  paragraphCount,
-                  translatedCount,
-                  translationProgress: Math.round(translationProgress * 100) / 100,
-                });
+            for (const chapter of volume.chapters) {
+              // 如果已达到限制，停止处理
+              if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
+                break;
+              }
+
+              // 按需加载章节内容（用于统计）
+              if (chapter.content === undefined) {
+                const content = await ChapterContentService.loadChapterContent(chapter.id);
+                chapter.content = content || [];
+                chapter.contentLoaded = true;
+              }
+
+              const volumeIndex = book.volumes.indexOf(volume);
+              const chapterIndex = volume.chapters.indexOf(chapter);
+              const chapterTitle = getChapterDisplayTitle(chapter);
+              const titleOriginal =
+                typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+              const titleTranslation =
+                typeof chapter.title === 'string'
+                  ? ''
+                  : chapter.title.translation?.translation || '';
+              const paragraphCount = chapter.content?.length || 0;
+              const translatedCount =
+                chapter.content?.filter(
+                  (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
+                ).length || 0;
+              const translationProgress =
+                paragraphCount > 0 ? (translatedCount / paragraphCount) * 100 : 0;
+
+              allChapters.push({
+                id: chapter.id,
+                title: chapterTitle,
+                title_original: titleOriginal,
+                title_translation: titleTranslation,
+                volumeIndex,
+                chapterIndex,
+                volumeId: volume.id,
+                volumeTitle: getVolumeDisplayTitle(volume),
+                paragraphCount,
+                translatedCount,
+                translationProgress: Math.round(translationProgress * 100) / 100,
               });
+
+              chaptersProcessed++;
             }
-          });
+
+            // 如果已达到限制，停止处理卷
+            if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
+              break;
+            }
+          }
+
+          // 如果没有限制，需要获取总章节数（可能未全部加载）
+          // 这里我们只统计已处理的章节，因为未加载的章节无法统计
         }
 
         // 应用限制

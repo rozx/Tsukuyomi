@@ -3,7 +3,7 @@ import { NcodeSyosetuScraper } from '../services/scraper/scrapers/ncode-syosetu-
 
 class TestScraper extends NcodeSyosetuScraper {
   public exposeNext(html: string, url: string) {
-    return this.getNextPageUrl(html, url) as string | null;
+    return this.getNextPageUrl(html, url);
   }
 }
 

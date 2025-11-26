@@ -117,7 +117,7 @@ export class BookService {
       const book = await db.get('books', id);
       if (!book) return undefined;
 
-      const deserializedBook = BookService.deserializeDatesFromDB(book) as Novel;
+      const deserializedBook = BookService.deserializeDatesFromDB(book);
 
       // 如果需要加载内容，遍历所有章节并加载
       if (loadContent && deserializedBook.volumes) {
