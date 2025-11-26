@@ -293,8 +293,7 @@ jobs:
           }
           
           Write-Host "Found .exe at: $($exePath.FullName)"
-          # 确保 dist/electron 目录存在，并将 exe 复制到那里
-          New-Item -ItemType Directory -Force -Path dist/electron | Out-Null
+          # 将 exe 复制到 dist/electron 目录
           Copy-Item -Path $exePath.FullName -Destination dist/electron/windows-release.exe -Force
           Write-Host "Exe file prepared at: dist/electron/windows-release.exe"
 
