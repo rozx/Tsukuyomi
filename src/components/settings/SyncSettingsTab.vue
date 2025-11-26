@@ -437,8 +437,19 @@ watch(
 );
 
 // 恢复到指定修订版本
-const revertToRevision = (version: string) => {
+const revertToRevision = (version: string, event?: Event) => {
+  // 阻止事件冒泡，防止触发父元素的点击事件
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
   if (!gistId.value || !gistEnabled.value) {
+    return;
+  }
+
+  // 如果正在恢复该版本，直接返回
+  if (revertingVersion.value === version) {
     return;
   }
 
@@ -447,6 +458,11 @@ const revertToRevision = (version: string) => {
     header: '确认恢复',
     icon: 'pi pi-exclamation-triangle',
     accept: () => {
+      // 防止重复调用：如果已经在恢复该版本，直接返回
+      if (revertingVersion.value === version) {
+        return;
+      }
+
       void (async () => {
         revertingVersion.value = version;
         try {
@@ -1059,7 +1075,7 @@ const deleteGist = () => {
                 class="p-button-text p-button-sm"
                 :disabled="revertingVersion === revision.version"
                 :loading="revertingVersion === revision.version"
-                @click.stop="revertToRevision(revision.version)"
+                @click.stop="(event) => revertToRevision(revision.version, event)"
               />
             </div>
           </div>

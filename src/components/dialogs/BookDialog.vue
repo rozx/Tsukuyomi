@@ -5,6 +5,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputChips from 'primevue/inputchips';
+import Skeleton from 'primevue/skeleton';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
@@ -14,12 +15,8 @@ import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import {
-  formatCharCount,
-  getChapterCharCount,
-  getVolumeDisplayTitle,
-  getChapterDisplayTitle,
-} from 'src/utils';
+import { useChapterCharCount } from 'src/composables/useChapterCharCount';
+import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -104,7 +101,11 @@ const toggleVolume = (volumeId: string) => {
 };
 
 // 使用工具函数计算和格式化
-// getChapterCharCount 和 formatCharCount 已从 utils 导入
+// formatCharCount 已从 utils 导入
+
+// 使用章节字符数加载 composable（自动处理展开卷和章节列表变化）
+const { getChapterCharCountDisplay, isLoadingChapterCharCount, loadAllVisibleChapterCharCounts } =
+  useChapterCharCount(availableVolumes, expandedVolumes);
 
 // 重置表单
 const resetForm = () => {
@@ -153,7 +154,9 @@ const handleExportJson = async () => {
       exportData = {
         id: '',
         title: formData.value.title || '',
-        ...(formData.value.alternateTitles ? { alternateTitles: formData.value.alternateTitles } : {}),
+        ...(formData.value.alternateTitles
+          ? { alternateTitles: formData.value.alternateTitles }
+          : {}),
         ...(formData.value.author ? { author: formData.value.author } : {}),
         ...(formData.value.description ? { description: formData.value.description } : {}),
         ...(formData.value.tags ? { tags: formData.value.tags } : {}),
@@ -388,7 +391,7 @@ const handleCopyTags = async () => {
 // 监听 visible 变化，初始化表单
 watch(
   () => props.visible,
-  (newVisible) => {
+  async (newVisible) => {
     if (newVisible) {
       if (props.mode === 'edit' && props.book) {
         // 编辑模式：填充现有数据
@@ -413,6 +416,9 @@ watch(
         resetForm();
       }
       formErrors.value = {};
+      // 等待 DOM 更新后加载字符数
+      await nextTick();
+      await loadAllVisibleChapterCharCounts();
     } else {
       // 关闭时重置
       resetForm();
@@ -649,7 +655,14 @@ watch(
                         {{ getChapterDisplayTitle(chapter) || '未命名章节' }}
                       </div>
                       <span class="text-xs text-moon/60 flex-shrink-0">
-                        {{ formatCharCount(getChapterCharCount(chapter)) }} 字
+                        <Skeleton
+                          v-if="isLoadingChapterCharCount(chapter)"
+                          width="40px"
+                          height="12px"
+                        />
+                        <span v-else>
+                          {{ formatCharCount(getChapterCharCountDisplay(chapter)) }} 字
+                        </span>
                       </span>
                     </div>
                     <div class="flex items-center gap-3 mt-1 text-xs text-moon/50">

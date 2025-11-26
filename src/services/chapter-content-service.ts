@@ -175,4 +175,31 @@ export class ChapterContentService {
       novels.map((novel) => ChapterContentService.loadAllChapterContentsForNovel(novel)),
     );
   }
+
+  /**
+   * 加载书籍的所有章节内容（如果需要）
+   * 直接修改传入的 novel 对象，将未加载的章节内容从 IndexedDB 加载到内存中
+   * @param novel 小说对象（会被直接修改）
+   */
+  static async loadAllChapterContents(novel: Novel): Promise<void> {
+    if (!novel.volumes) {
+      return;
+    }
+
+    for (const volume of novel.volumes) {
+      if (volume.chapters) {
+        for (let i = 0; i < volume.chapters.length; i++) {
+          const chapter = volume.chapters[i];
+          if (chapter && chapter.content === undefined) {
+            const content = await ChapterContentService.loadChapterContent(chapter.id);
+            volume.chapters[i] = {
+              ...chapter,
+              content: content || [],
+              contentLoaded: true,
+            };
+          }
+        }
+      }
+    }
+  }
 }

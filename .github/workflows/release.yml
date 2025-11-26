@@ -73,7 +73,57 @@ jobs:
           echo "Current version in package.json: $CURRENT_VERSION"
           echo "Expected version from branch: $EXPECTED_VERSION"
           
-          if [ "$CURRENT_VERSION" != "$EXPECTED_VERSION" ]; then
+          # Function to compare semantic versions
+          # Returns: 0 if v1 == v2, 1 if v1 > v2, 2 if v1 < v2
+          compare_versions() {
+            local v1=$1
+            local v2=$2
+            
+            # Split versions into major.minor.patch
+            IFS='.' read -r -a v1_parts <<< "$v1"
+            IFS='.' read -r -a v2_parts <<< "$v2"
+            
+            # Compare major version
+            if [ "${v1_parts[0]}" -gt "${v2_parts[0]}" ]; then
+              return 1
+            elif [ "${v1_parts[0]}" -lt "${v2_parts[0]}" ]; then
+              return 2
+            fi
+            
+            # Compare minor version
+            if [ "${v1_parts[1]}" -gt "${v2_parts[1]}" ]; then
+              return 1
+            elif [ "${v1_parts[1]}" -lt "${v2_parts[1]}" ]; then
+              return 2
+            fi
+            
+            # Compare patch version
+            if [ "${v1_parts[2]}" -gt "${v2_parts[2]}" ]; then
+              return 1
+            elif [ "${v1_parts[2]}" -lt "${v2_parts[2]}" ]; then
+              return 2
+            fi
+            
+            return 0
+          }
+          
+          # Compare versions
+          compare_versions "$CURRENT_VERSION" "$EXPECTED_VERSION"
+          COMPARE_RESULT=$?
+          
+          if [ $COMPARE_RESULT -eq 0 ]; then
+            # Versions are equal
+            echo "✅ Version matches: $CURRENT_VERSION"
+            echo "version_updated=false" >> $GITHUB_OUTPUT
+            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          elif [ $COMPARE_RESULT -eq 1 ]; then
+            # Current version is greater than expected version
+            echo "ℹ️ Local version ($CURRENT_VERSION) is greater than branch version ($EXPECTED_VERSION)"
+            echo "Keeping local version: $CURRENT_VERSION"
+            echo "version_updated=false" >> $GITHUB_OUTPUT
+            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            # Expected version is greater than current version
             echo "⚠️ Version mismatch detected!"
             echo "Updating version from $CURRENT_VERSION to $EXPECTED_VERSION"
             
@@ -90,10 +140,6 @@ jobs:
               echo "❌ Failed to update version. New version is: $NEW_VERSION"
               exit 1
             fi
-          else
-            echo "✅ Version matches: $CURRENT_VERSION"
-            echo "version_updated=false" >> $GITHUB_OUTPUT
-            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit version update
@@ -232,16 +278,40 @@ jobs:
       - name: Package Mac App Bundle
         if: matrix.os == 'macos-latest'
         run: |
-          # 将 .app bundle 压缩为 .zip 以便分发
-          cd dist/electron/mac
-          APP_NAME=$(ls -d *.app | head -1)
-          if [ -z "$APP_NAME" ]; then
-            echo "Error: No .app bundle found in dist/electron/mac"
+          # 查找 .app bundle（可能在 mac-arm64、mac-x64 或 Packaged/mac-* 目录中）
+          echo "Searching for .app bundle in dist/electron..."
+          APP_PATH=$(find dist/electron -name "*.app" -type d | head -1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app bundle found in dist/electron"
+            echo "Listing dist/electron structure for debugging:"
+            find dist/electron -type d -maxdepth 3 | head -20
             exit 1
           fi
+          
+          echo "Found .app bundle at: $APP_PATH"
+          APP_DIR=$(dirname "$APP_PATH")
+          APP_NAME=$(basename "$APP_PATH")
+          cd "$APP_DIR"
           ZIP_NAME="${APP_NAME%.app}-mac.zip"
+          echo "Creating zip: $ZIP_NAME"
           zip -r "$ZIP_NAME" "$APP_NAME"
-          cd ../../..
+          echo "Zip file created at: $(pwd)/$ZIP_NAME"
+
+      - name: Find and prepare Mac zip for upload
+        if: matrix.os == 'macos-latest'
+        run: |
+          # 查找创建的 zip 文件并移动到固定位置
+          ZIP_PATH=$(find dist/electron -name "*-mac.zip" -type f | head -1)
+          if [ -z "$ZIP_PATH" ]; then
+            echo "Error: No zip file found"
+            exit 1
+          fi
+          echo "Found zip at: $ZIP_PATH"
+          # 确保 dist/electron 目录存在，并将 zip 复制到那里
+          mkdir -p dist/electron
+          cp "$ZIP_PATH" dist/electron/mac-release.zip
+          echo "Zip file prepared at: dist/electron/mac-release.zip"
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
@@ -249,9 +319,29 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           # Mac 生成 .app bundle（单文件可执行程序），压缩为 .zip 以便分发
-          files: dist/electron/mac/*.zip
+          files: dist/electron/mac-release.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Find and prepare Windows exe for upload
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # 查找 .exe 文件（可能在 Packaged 或其他目录中）
+          Write-Host "Searching for .exe file in dist/electron..."
+          $exePath = Get-ChildItem -Path dist/electron -Filter "*.exe" -Recurse -File | Select-Object -First 1
+          
+          if (-not $exePath) {
+            Write-Host "Error: No .exe file found in dist/electron"
+            Write-Host "Listing dist/electron structure for debugging:"
+            Get-ChildItem -Path dist/electron -Recurse -Directory | Select-Object -First 20 | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          
+          Write-Host "Found .exe at: $($exePath.FullName)"
+          # 将 exe 复制到 dist/electron 目录
+          Copy-Item -Path $exePath.FullName -Destination dist/electron/windows-release.exe -Force
+          Write-Host "Exe file prepared at: dist/electron/windows-release.exe"
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
@@ -259,15 +349,34 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           # Windows 生成 portable .exe（单文件可执行程序）
-          files: dist/electron/Packaged/*.exe
+          files: dist/electron/windows-release.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Find and prepare Linux AppImage for upload
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # 查找 .AppImage 文件（可能在 Packaged 或其他目录中）
+          echo "Searching for .AppImage file in dist/electron..."
+          APPIMAGE_PATH=$(find dist/electron -name "*.AppImage" -type f | head -1)
+          
+          if [ -z "$APPIMAGE_PATH" ]; then
+            echo "Error: No .AppImage file found in dist/electron"
+            echo "Listing dist/electron structure for debugging:"
+            find dist/electron -type d -maxdepth 3 | head -20
+            exit 1
+          fi
+          
+          echo "Found .AppImage at: $APPIMAGE_PATH"
+          # 将 AppImage 复制到 dist/electron 目录
+          cp "$APPIMAGE_PATH" dist/electron/linux-release.AppImage
+          echo "AppImage file prepared at: dist/electron/linux-release.AppImage"
 
       - name: Upload Release Assets (Linux)
         if: matrix.os == 'ubuntu-latest'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          files: dist/electron/Packaged/*.AppImage
+          files: dist/electron/linux-release.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}

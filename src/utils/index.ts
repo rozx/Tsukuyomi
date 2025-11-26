@@ -3,8 +3,11 @@ export { runWithConcurrencyLimit } from './concurrency';
 export { formatNumber, formatCharCount, formatWordCount } from './format';
 export {
   getChapterCharCount,
+  getChapterCharCountAsync,
   getVolumeCharCount,
+  getVolumeCharCountAsync,
   getNovelCharCount,
+  getNovelCharCountAsync,
   getTotalChapters,
   getChapterContentText,
   getVolumeDisplayTitle,
@@ -27,3 +30,4 @@ export {
 export { getAssetUrl } from './assets';
 export { detectRepeatingCharacters } from './ai-degradation-detector';
 export type { DegradationDetectionOptions } from './ai-degradation-detector';
+export { isEmptyOrSymbolOnly } from './text-utils';

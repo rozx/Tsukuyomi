@@ -1,4 +1,5 @@
 import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 
 /**
  * 获取卷的显示标题（优先使用翻译，否则使用原文）
@@ -51,15 +52,47 @@ export function getChapterDisplayTitle(chapter: Chapter): string {
 }
 
 /**
- * 计算章节的总字符数
+ * 计算章节的总字符数（同步版本，仅用于已加载的内容）
  * @param chapter 章节对象
  * @returns 总字符数
  */
 export function getChapterCharCount(chapter: Chapter): number {
-  if (!chapter.content || chapter.content.length === 0) {
-    return 0;
+  // 优先使用已加载的 content（段落数组）
+  if (chapter.content && chapter.content.length > 0) {
+    return chapter.content.reduce((total, para) => total + para.text.length, 0);
   }
-  return chapter.content.reduce((total, para) => total + para.text.length, 0);
+  
+  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
+  if (chapter.originalContent) {
+    return chapter.originalContent.length;
+  }
+  
+  return 0;
+}
+
+/**
+ * 计算章节的总字符数（异步版本，会从 IndexedDB 加载内容）
+ * @param chapter 章节对象
+ * @returns Promise<number> 总字符数
+ */
+export async function getChapterCharCountAsync(chapter: Chapter): Promise<number> {
+  // 优先使用已加载的 content（段落数组）
+  if (chapter.content && chapter.content.length > 0) {
+    return chapter.content.reduce((total, para) => total + para.text.length, 0);
+  }
+  
+  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
+  if (chapter.originalContent) {
+    return chapter.originalContent.length;
+  }
+  
+  // 如果都没有，尝试从 IndexedDB 加载内容
+  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  if (content && content.length > 0) {
+    return content.reduce((total, para) => total + para.text.length, 0);
+  }
+  
+  return 0;
 }
 
 /**
@@ -75,6 +108,21 @@ export function getVolumeCharCount(volume: Volume): number {
 }
 
 /**
+ * 计算卷的总字符数（异步版本）
+ * @param volume 卷对象
+ * @returns Promise<number> 总字符数
+ */
+export async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
+  if (!volume.chapters || volume.chapters.length === 0) {
+    return 0;
+  }
+  const counts = await Promise.all(
+    volume.chapters.map((chapter) => getChapterCharCountAsync(chapter))
+  );
+  return counts.reduce((total, count) => total + count, 0);
+}
+
+/**
  * 计算小说的总字符数
  * @param novel 小说对象
  * @returns 总字符数
@@ -84,6 +132,21 @@ export function getNovelCharCount(novel: Novel): number {
     return 0;
   }
   return novel.volumes.reduce((total, volume) => total + getVolumeCharCount(volume), 0);
+}
+
+/**
+ * 计算小说的总字符数（异步版本，会从 IndexedDB 加载内容）
+ * @param novel 小说对象
+ * @returns Promise<number> 总字符数
+ */
+export async function getNovelCharCountAsync(novel: Novel): Promise<number> {
+  if (!novel.volumes || novel.volumes.length === 0) {
+    return 0;
+  }
+  const counts = await Promise.all(
+    novel.volumes.map((volume) => getVolumeCharCountAsync(volume))
+  );
+  return counts.reduce((total, count) => total + count, 0);
 }
 
 /**

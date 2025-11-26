@@ -159,12 +159,22 @@ export class ChapterService {
               mergedChapters[existingChapterIndex] = updatedChapter;
             } else {
               // 合并章节属性
+              // 重要：保留现有章节的 content，如果新章节没有 content 或 content 为空
+              const preserveContent =
+                existingChapter.content !== undefined &&
+                existingChapter.content !== null &&
+                (newChapter.content === undefined ||
+                  newChapter.content === null ||
+                  (Array.isArray(newChapter.content) && newChapter.content.length === 0));
+
               const updatedChapter: Chapter = {
                 ...existingChapter,
                 ...newChapter,
                 id: existingChapter.id, // 保留原有 ID
                 createdAt: existingChapter.createdAt, // 保留原有的创建时间
                 lastEdited: new Date(), // 内容更新，更新时间
+                // 如果新章节没有内容，保留原有内容
+                ...(preserveContent ? { content: existingChapter.content } : {}),
               };
               if (lastUpdated !== undefined) {
                 updatedChapter.lastUpdated = lastUpdated;

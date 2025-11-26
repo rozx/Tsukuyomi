@@ -10,6 +10,7 @@ import { TokenizerBuilder, type LoaderConfig } from '@patdx/kuromoji';
 import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import { UniqueIdGenerator, extractIds, generateShortId, normalizeTranslationQuotes } from 'src/utils';
+import { ChapterContentService } from './chapter-content-service';
 
 // 使用 any 类型来避免 Tokenizer 类型的导入问题
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -218,9 +219,22 @@ export class TerminologyService {
   static async extractWordsFromChapter(chapter: Chapter): Promise<Map<string, ExtractedTermInfo>> {
     const terms = new Map<string, ExtractedTermInfo>();
 
+    // 如果章节内容未加载，尝试从 IndexedDB 加载
+    let chapterWithContent = chapter;
+    if (chapter.content === undefined) {
+      const content = await ChapterContentService.loadChapterContent(chapter.id);
+      if (content) {
+        chapterWithContent = {
+          ...chapter,
+          content,
+          contentLoaded: true,
+        };
+      }
+    }
+
     // 从段落中提取
-    if (chapter.content && Array.isArray(chapter.content)) {
-      for (const paragraph of chapter.content) {
+    if (chapterWithContent.content && Array.isArray(chapterWithContent.content)) {
+      for (const paragraph of chapterWithContent.content) {
         const paragraphTerms = await this.extractWordsFromParagraph(paragraph, chapter.id);
         // 合并术语，累加出现次数
         for (const [key, value] of paragraphTerms.entries()) {
@@ -491,7 +505,7 @@ export class TerminologyService {
    * @param termName 术语名称
    * @returns 出现记录数组
    */
-  private static countTermOccurrences(book: Novel, termName: string): Occurrence[] {
+  private static async countTermOccurrences(book: Novel, termName: string): Promise<Occurrence[]> {
     const occurrencesMap = new Map<string, number>();
     const escapedTermName = termName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escapedTermName, 'g');
@@ -503,9 +517,22 @@ export class TerminologyService {
     for (const chapter of allChapters) {
       let chapterCount = 0;
 
+      // 如果章节内容未加载，尝试从 IndexedDB 加载
+      let chapterWithContent = chapter;
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        if (content) {
+          chapterWithContent = {
+            ...chapter,
+            content,
+            contentLoaded: true,
+          };
+        }
+      }
+
       // 从段落中统计
-      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
-        for (const paragraph of chapter.content) {
+      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+        for (const paragraph of chapterWithContent.content) {
           const matches = paragraph.text.match(regex);
           if (matches) {
             chapterCount += matches.length;
@@ -585,7 +612,7 @@ export class TerminologyService {
     // 统计术语出现次数（如果未提供 occurrences）
     let occurrences = termData.occurrences;
     if (!occurrences || occurrences.length === 0) {
-      occurrences = this.countTermOccurrences(book, termData.name);
+      occurrences = await this.countTermOccurrences(book, termData.name);
     }
 
     // 创建新术语
@@ -655,7 +682,7 @@ export class TerminologyService {
     // 如果名称改变，重新统计出现次数
     let occurrences = existingTerm.occurrences;
     if (nameChanged && updates.name) {
-      occurrences = this.countTermOccurrences(book, updates.name);
+      occurrences = await this.countTermOccurrences(book, updates.name);
     }
 
     // 更新术语
@@ -742,17 +769,19 @@ export class TerminologyService {
       return;
     }
 
-    const updatedTerminologies = terminologies.map((term) => {
-      const occurrences = this.countTermOccurrences(book, term.name);
-      const occurrencesChanged = !isEqual(term.occurrences, occurrences);
-      if (occurrencesChanged) {
-        return {
-          ...term,
-          occurrences,
-        };
-      }
-      return term;
-    });
+    const updatedTerminologies = await Promise.all(
+      terminologies.map(async (term) => {
+        const occurrences = await this.countTermOccurrences(book, term.name);
+        const occurrencesChanged = !isEqual(term.occurrences, occurrences);
+        if (occurrencesChanged) {
+          return {
+            ...term,
+            occurrences,
+          };
+        }
+        return term;
+      })
+    );
 
     // 检查是否有任何术语被更新
     const hasChanges = updatedTerminologies.some((term, index) =>
@@ -774,7 +803,7 @@ export class TerminologyService {
    * @returns 关键词出现次数 Map，key 为关键词，value 为出现记录数组
    * @throws 如果书籍不存在，抛出错误
    */
-  static getOccurrencesByKeywords(bookId: string, keywords: string[]): Map<string, Occurrence[]> {
+  static async getOccurrencesByKeywords(bookId: string, keywords: string[]): Promise<Map<string, Occurrence[]>> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
 
@@ -796,7 +825,7 @@ export class TerminologyService {
         continue;
       }
 
-      const occurrences = this.countTermOccurrences(book, keyword);
+      const occurrences = await this.countTermOccurrences(book, keyword);
       resultMap.set(keyword, occurrences);
     }
 

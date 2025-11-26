@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { v4 as uuidv4 } from 'uuid';
 import Button from 'primevue/button';
@@ -11,9 +11,12 @@ import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import TieredMenu from 'primevue/tieredmenu';
 import ConfirmDialog from 'primevue/confirmdialog';
+import ProgressSpinner from 'primevue/progressspinner';
+import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
@@ -21,7 +24,6 @@ import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import {
   formatWordCount,
-  getNovelCharCount,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
 
@@ -66,7 +68,14 @@ const searchQuery = ref('');
 
 // 使用工具函数计算（需要在排序选项之前定义）
 const getTotalChapters = utilGetTotalChapters;
-const getTotalWords = getNovelCharCount;
+
+// 使用字符数加载 composable
+const {
+  loadBookCharCount,
+  getTotalWords,
+  isLoadingCharCount,
+  clearCache: clearCharCountCache,
+} = useNovelCharCount();
 
 // 排序选项
 type SortOption = {
@@ -196,6 +205,36 @@ const filteredBooks = computed(() => {
   }
 
   return sortedBooks;
+});
+
+// 加载所有书籍的字符数
+const loadAllBookCharCounts = async () => {
+  const books = filteredBooks.value;
+  const loadPromises = books.map((book) => loadBookCharCount(book));
+  await Promise.all(loadPromises);
+};
+
+// 当书籍列表变化时，异步加载字符数
+watch(
+  () => filteredBooks.value,
+  async (books) => {
+    await loadAllBookCharCounts();
+  },
+  { immediate: true },
+);
+
+// 当书籍存储变化时，清除缓存并重新加载
+watch(
+  () => booksStore.books,
+  async () => {
+    clearCharCountCache();
+    await loadAllBookCharCounts();
+  },
+);
+
+// 组件挂载时也加载一次
+onMounted(async () => {
+  await loadAllBookCharCounts();
 });
 
 // 获取封面图片 URL，如果没有则返回默认占位图
@@ -611,7 +650,7 @@ const handleSave = async (formData: Partial<Novel>) => {
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
     }
-    
+
     // 深拷贝保存原始数据用于撤销
     const oldBook = JSON.parse(JSON.stringify(selectedBook.value));
     await booksStore.updateBook(selectedBook.value.id, updates);
@@ -682,7 +721,21 @@ const handleSave = async (formData: Partial<Novel>) => {
 
     <!-- DataView 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0">
+      <!-- 加载指示器 -->
+      <div v-if="booksStore.isLoading" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+          <ProgressSpinner
+            style="width: 50px; height: 50px"
+            strokeWidth="4"
+            animationDuration=".8s"
+            aria-label="加载中"
+          />
+          <p class="text-moon/70 mt-4">正在加载书籍列表...</p>
+        </div>
+      </div>
+      <!-- 书籍列表 -->
       <DataView
+        v-else
         :value="filteredBooks"
         data-key="id"
         :rows="20"
@@ -757,7 +810,12 @@ const handleSave = async (formData: Partial<Novel>) => {
                   </div>
                   <div class="flex items-center justify-between">
                     <span>字数:</span>
-                    <span class="font-medium">{{ formatWordCount(getTotalWords(book)) }}</span>
+                    <span v-if="isLoadingCharCount(book)" class="font-medium">
+                      <Skeleton width="40px" height="12px" />
+                    </span>
+                    <span v-else class="font-medium">{{
+                      formatWordCount(getTotalWords(book))
+                    }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>创建:</span>
@@ -842,9 +900,7 @@ const handleSave = async (formData: Partial<Novel>) => {
             <p class="text-moon/90 mb-2">
               确定要删除书籍 <strong class="text-moon/95">"{{ bookToDelete?.title }}"</strong> 吗？
             </p>
-            <p class="text-sm text-moon/70 mb-4">
-              请在下方的输入框中输入书籍标题以确认删除。
-            </p>
+            <p class="text-sm text-moon/70 mb-4">请在下方的输入框中输入书籍标题以确认删除。</p>
             <div class="space-y-2">
               <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
               <InputGroup class="w-full">

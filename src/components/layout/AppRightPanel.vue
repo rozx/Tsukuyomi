@@ -23,7 +23,8 @@ import type { ActionInfo } from 'src/services/ai/tools';
 import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
-import type { CharacterSetting, Alias, Terminology } from 'src/models/novel';
+import { ChapterService } from 'src/services/chapter-service';
+import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 
 const ui = useUiStore();
 const contextStore = useContextStore();
@@ -164,7 +165,7 @@ const contextInfo = computed(() => {
 
 // 滚动到底部
 const scrollToBottom = () => {
-  nextTick(() => {
+  void nextTick(() => {
     if (messagesContainerRef.value) {
       messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight;
     }
@@ -174,12 +175,13 @@ const scrollToBottom = () => {
 // 聚焦输入框
 const focusInput = () => {
   // 使用 nextTick 确保 DOM 已更新，然后添加小延迟确保组件状态已更新
-  nextTick(() => {
+  void nextTick(() => {
     // 添加小延迟确保 PrimeVue 组件状态已更新（特别是 disabled 状态）
     setTimeout(() => {
       if (inputRef.value) {
         // PrimeVue Textarea 组件的聚焦方法
         // 尝试多种方式访问 textarea 元素
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const component = inputRef.value as any;
 
         // 方法1: 直接调用 focus 方法（如果组件暴露了）
@@ -216,10 +218,8 @@ const focusInput = () => {
         }
 
         // 方法4: 直接通过 DOM 查询（最后手段）
-        const textareaElement = document.querySelector(
-          'textarea[placeholder*="输入消息"]',
-        ) as HTMLTextAreaElement | null;
-        if (textareaElement && !textareaElement.disabled) {
+        const textareaElement = document.querySelector('textarea[placeholder*="输入消息"]');
+        if (textareaElement instanceof HTMLTextAreaElement && !textareaElement.disabled) {
           textareaElement.focus();
         }
       }
@@ -338,7 +338,7 @@ const sendMessage = async () => {
   scrollToBottom();
 
   // 添加占位符助手消息
-  const assistantMessageId = (Date.now() + 1).toString();
+  let assistantMessageId = (Date.now() + 1).toString();
   const assistantMessage: ChatMessage = {
     id: assistantMessageId,
     role: 'assistant',
@@ -363,7 +363,7 @@ const sendMessage = async () => {
       ? currentSession.messages
           .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
           .map((msg) => ({
-            role: msg.role as 'user' | 'assistant',
+            role: msg.role,
             content: msg.content,
           }))
       : undefined;
@@ -399,6 +399,31 @@ const sendMessage = async () => {
             ? { query: action.data.query }
             : {}),
           ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
+          // 翻译操作相关信息
+          ...(action.entity === 'translation' &&
+          'paragraph_id' in action.data &&
+          'translation_id' in action.data
+            ? {
+                paragraph_id: action.data.paragraph_id,
+                translation_id: action.data.translation_id,
+              }
+            : {}),
+          // 读取操作相关信息
+          ...(action.type === 'read' && 'chapter_id' in action.data
+            ? { chapter_id: action.data.chapter_id }
+            : {}),
+          ...(action.type === 'read' && 'chapter_title' in action.data
+            ? { chapter_title: action.data.chapter_title }
+            : {}),
+          ...(action.type === 'read' && 'paragraph_id' in action.data
+            ? { paragraph_id: action.data.paragraph_id }
+            : {}),
+          ...(action.type === 'read' && 'character_name' in action.data
+            ? { character_name: action.data.character_name }
+            : {}),
+          ...(action.type === 'read' && 'tool_name' in action.data
+            ? { tool_name: action.data.tool_name }
+            : {}),
         };
 
         // 立即将操作添加到临时数组（用于后续保存）
@@ -417,11 +442,28 @@ const sendMessage = async () => {
           if (!existingAction) {
             assistantMsg.actions.push(messageAction);
             // 触发响应式更新并滚动到底部
-            nextTick(() => {
+            void nextTick(() => {
               scrollToBottom();
             });
           }
         }
+
+        // 在调用工具后，创建新的助手消息用于后续回复
+        // 这样后续的 AI 回复会显示在新的消息气泡中
+        // 创建新的助手消息
+        const newAssistantMessageId = (Date.now() + 1).toString();
+        const newAssistantMessage: ChatMessage = {
+          id: newAssistantMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        };
+        messages.value.push(newAssistantMessage);
+        // 更新 assistantMessageId，使后续的 onChunk 更新新消息
+        assistantMessageId = newAssistantMessageId;
+        // 重置当前消息操作列表，因为新消息还没有操作
+        currentMessageActions.value = [];
+        scrollToBottom();
 
         // 显示操作通知
         const actionLabels: Record<ActionInfo['type'], string> = {
@@ -430,21 +472,29 @@ const sendMessage = async () => {
           delete: '删除',
           web_search: '网络搜索',
           web_fetch: '网页获取',
+          read: '读取',
         };
         const entityLabels: Record<ActionInfo['entity'], string> = {
           term: '术语',
           character: '角色',
           web: '网络',
+          translation: '翻译',
+          chapter: '章节',
+          paragraph: '段落',
+          book: '书籍',
         };
 
-        // 处理网络搜索和网页获取操作
+        // 处理网络搜索和网页获取操作（不显示 toast 通知）
         if (action.type === 'web_search') {
-          // 不显示 toast，也不继续处理其他逻辑
           return;
         }
 
         if (action.type === 'web_fetch') {
-          // 不显示 toast，也不继续处理其他逻辑
+          return;
+        }
+
+        // 处理读取操作（不显示 toast 通知，但会在消息中显示操作标签）
+        if (action.type === 'read') {
           return;
         }
 
@@ -758,6 +808,88 @@ const sendMessage = async () => {
                 }
               },
             });
+          }
+        } else if (action.type === 'update' && action.entity === 'translation') {
+          // 翻译更新操作：显示详细信息
+          if (
+            'paragraph_id' in action.data &&
+            'translation_id' in action.data &&
+            'old_translation' in action.data &&
+            'new_translation' in action.data
+          ) {
+            const translationData = action.data as {
+              paragraph_id: string;
+              translation_id: string;
+              old_translation: string;
+              new_translation: string;
+            };
+            const previousTranslation = action.previousData as Translation | undefined;
+
+            // 构建详细信息
+            const oldText = translationData.old_translation;
+            const newText = translationData.new_translation;
+            const previewLength = 50;
+            const oldPreview =
+              oldText.length > previewLength
+                ? oldText.substring(0, previewLength) + '...'
+                : oldText;
+            const newPreview =
+              newText.length > previewLength
+                ? newText.substring(0, previewLength) + '...'
+                : newText;
+
+            detail = `段落翻译已更新 | 旧: "${oldPreview}" → 新: "${newPreview}"`;
+
+            // 添加 revert 功能
+            if (previousTranslation && contextStore.getContext.currentBookId) {
+              shouldShowRevertToast = true;
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type as ActionInfo['type']]}${entityLabels[action.entity as ActionInfo['entity']]}`,
+                detail,
+                life: 3000,
+                onRevert: async () => {
+                  if (previousTranslation && contextStore.getContext.currentBookId) {
+                    const bookId = contextStore.getContext.currentBookId;
+                    const booksStore = useBooksStore();
+                    const book = booksStore.getBookById(bookId);
+                    if (!book) return;
+
+                    // 查找段落
+                    const location = ChapterService.findParagraphLocation(
+                      book,
+                      translationData.paragraph_id,
+                    );
+                    if (!location) return;
+
+                    const { paragraph } = location;
+
+                    // 查找要恢复的翻译
+                    const translationIndex = paragraph.translations.findIndex(
+                      (t) => t.id === translationData.translation_id,
+                    );
+                    if (translationIndex === -1) return;
+
+                    // 恢复原始翻译
+                    const translationToRestore = paragraph.translations[translationIndex];
+                    if (translationToRestore) {
+                      translationToRestore.translation = previousTranslation.translation;
+                    }
+
+                    // 更新书籍
+                    await booksStore.updateBook(bookId, { volumes: book.volumes });
+                  }
+                },
+              });
+            } else {
+              // 如果没有 previousData，仍然显示 toast（但不提供撤销）
+              toast.add({
+                severity: 'success',
+                summary: `${actionLabels[action.type as ActionInfo['type']]}${entityLabels[action.entity as ActionInfo['entity']]}`,
+                detail,
+                life: 3000,
+              });
+            }
           }
         } else if (action.type === 'delete' && 'name' in action.data) {
           // 删除操作：显示详细信息（从 previousData 获取）
@@ -1118,7 +1250,7 @@ onMounted(() => {
     createNewSession();
   } else {
     // 加载当前会话的消息
-    loadCurrentSession();
+    void loadCurrentSession();
   }
 });
 
@@ -1126,7 +1258,7 @@ onMounted(() => {
 watch(
   () => chatSessionsStore.currentSessionId,
   () => {
-    loadCurrentSession();
+    void loadCurrentSession();
   },
 );
 
@@ -1166,6 +1298,36 @@ watch(
   },
 );
 
+// 监听助手输入消息状态，自动填充输入框
+watch(
+  () => ui.assistantInputMessage,
+  (message) => {
+    if (message !== null) {
+      // 设置输入框的值
+      inputMessage.value = message;
+      // 打开右侧面板（如果未打开）
+      if (!ui.rightPanelOpen) {
+        ui.openRightPanel();
+      }
+      // 聚焦到输入框
+      void nextTick(() => {
+        if (inputRef.value) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const component = inputRef.value as any;
+          if (component.$el) {
+            const textarea = component.$el.querySelector('textarea');
+            if (textarea) {
+              textarea.focus();
+            }
+          }
+        }
+      });
+      // 清除状态
+      ui.setAssistantInputMessage(null);
+    }
+  },
+);
+
 // 获取操作详细信息（用于 popover）
 const getActionDetails = (action: MessageAction) => {
   const actionLabels: Record<MessageAction['type'], string> = {
@@ -1174,11 +1336,16 @@ const getActionDetails = (action: MessageAction) => {
     delete: '删除',
     web_search: '网络搜索',
     web_fetch: '网页获取',
+    read: '读取',
   };
   const entityLabels: Record<MessageAction['entity'], string> = {
     term: '术语',
     character: '角色',
     web: '网络',
+    translation: '翻译',
+    chapter: '章节',
+    paragraph: '段落',
+    book: '书籍',
   };
 
   const details: {
@@ -1300,6 +1467,62 @@ const getActionDetails = (action: MessageAction) => {
     }
   }
 
+  // 处理翻译操作
+  if (action.entity === 'translation') {
+    if (action.paragraph_id) {
+      details.push({
+        label: '段落 ID',
+        value: action.paragraph_id,
+      });
+    }
+    if (action.translation_id) {
+      details.push({
+        label: '翻译 ID',
+        value: action.translation_id,
+      });
+    }
+  }
+
+  // 处理读取操作
+  if (action.type === 'read') {
+    if (action.tool_name) {
+      details.push({
+        label: '工具',
+        value: action.tool_name,
+      });
+    }
+    if (action.chapter_id) {
+      details.push({
+        label: '章节 ID',
+        value: action.chapter_id,
+      });
+    }
+    if (action.chapter_title) {
+      details.push({
+        label: '章节标题',
+        value: action.chapter_title,
+      });
+    }
+    if (action.paragraph_id) {
+      details.push({
+        label: '段落 ID',
+        value: action.paragraph_id,
+      });
+    }
+    if (action.character_name) {
+      details.push({
+        label: '角色名称',
+        value: action.character_name,
+      });
+    }
+    if (action.name) {
+      details.push({
+        label: '名称',
+        value: action.name,
+      });
+    }
+  }
+
   details.push({
     label: '操作时间',
     value: new Date(action.timestamp).toLocaleString('zh-CN', {
@@ -1339,6 +1562,109 @@ const handleActionMouseLeave = (action: MessageAction, message: ChatMessage) => 
 // 处理 Popover 关闭
 const handleActionPopoverHide = () => {
   hoveredAction.value = null;
+};
+
+// 消息显示项类型
+interface MessageDisplayItem {
+  type: 'content' | 'action';
+  content?: string;
+  action?: MessageAction;
+  messageId: string;
+  messageRole: 'user' | 'assistant';
+  timestamp: number;
+}
+
+// 将消息内容和操作按时间顺序混合
+const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
+  const items: MessageDisplayItem[] = [];
+
+  // 如果没有操作，直接返回内容
+  if (!message.actions || message.actions.length === 0) {
+    if (message.content) {
+      items.push({
+        type: 'content',
+        content: message.content,
+        messageId: message.id,
+        messageRole: message.role,
+        timestamp: message.timestamp,
+      });
+    }
+    return items;
+  }
+
+  // 按时间戳排序操作，同时保留原始索引用于相同时间戳时的排序
+  const actionsWithIndex = message.actions.map((action, index) => ({ action, index }));
+  const sortedActions = actionsWithIndex.sort((a, b) => {
+    // 首先按时间戳排序
+    if (a.action.timestamp !== b.action.timestamp) {
+      return a.action.timestamp - b.action.timestamp;
+    }
+    // 如果时间戳相同，按原始索引排序（保持操作添加的顺序）
+    return a.index - b.index;
+  });
+
+  // 将消息内容按操作时间戳分段
+  // 第一个内容段：从消息开始到第一个操作之前
+  // 每个操作之后：如果有新内容，显示新内容段
+  // 由于我们不知道内容更新的精确时间戳，我们采用简化策略：
+  // 1. 先显示初始内容（如果有）
+  // 2. 然后按时间顺序显示操作
+  // 3. 操作之后的内容会在流式更新时自动追加到消息内容中
+
+  // 添加初始内容（如果有）
+  if (message.content) {
+    items.push({
+      type: 'content',
+      content: message.content,
+      messageId: message.id,
+      messageRole: message.role,
+      timestamp: message.timestamp,
+    });
+  }
+
+  // 添加所有操作（按时间戳排序，相同时间戳时按添加顺序）
+  for (const { action } of sortedActions) {
+    items.push({
+      type: 'action',
+      action,
+      messageId: message.id,
+      messageRole: message.role,
+      timestamp: action.timestamp,
+    });
+  }
+
+  // 按时间戳排序，相同时间戳时使用更精确的排序策略
+  // 为了更准确地反映实际执行顺序，我们需要考虑操作的执行时间
+  // 操作是在流式输出过程中添加的，所以操作的 timestamp 应该反映其实际执行时间
+  return items.sort((a, b) => {
+    if (a.timestamp !== b.timestamp) {
+      return a.timestamp - b.timestamp;
+    }
+    // 如果时间戳相同，需要更精确的排序：
+    // 1. 如果都是操作，保持它们在数组中的顺序（已通过 sortedActions 保证）
+    // 2. 如果一个是内容一个是操作，根据操作的实际执行时间来判断
+    //    由于操作是在流式输出过程中添加的，如果时间戳相同（可能是精度问题），
+    //    我们应该将操作放在内容之后，因为操作发生在消息开始输出之后
+    if (a.type === 'action' && b.type === 'action') {
+      // 都是操作，保持它们在 sortedActions 中的顺序
+      // 由于我们已经按索引排序，这里不需要额外处理
+      return 0;
+    }
+    // 处理内容和操作混合的情况
+    // 由于操作是在流式输出过程中添加的，如果时间戳相同（可能是时间戳精度问题），
+    // 操作应该被视为发生在消息开始输出之后，因此操作应该在内容之后
+    if (a.type === 'content' && b.type === 'action') {
+      // a 是内容，b 是操作
+      // 如果时间戳相同，内容应该在操作之前（因为操作发生在流式输出过程中）
+      return -1;
+    }
+    if (a.type === 'action' && b.type === 'content') {
+      // a 是操作，b 是内容
+      // 如果时间戳相同，操作应该在内容之后（因为操作发生在流式输出过程中）
+      return 1;
+    }
+    return 0;
+  });
 };
 </script>
 
@@ -1406,166 +1732,222 @@ const handleActionPopoverHide = () => {
         <p class="text-xs text-moon-40">助手可以帮你管理术语、角色设定，并提供翻译建议</p>
       </div>
       <div v-else class="flex flex-col gap-4 w-full">
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          class="flex flex-col gap-2 w-full"
-          :class="message.role === 'user' ? 'items-end' : 'items-start'"
-        >
+        <template v-for="message in messages" :key="message.id">
           <div
-            class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
-            :class="
-              message.role === 'user'
-                ? 'bg-primary-500/20 text-primary-100'
-                : 'bg-white/5 text-moon-90'
-            "
+            class="flex flex-col gap-2 w-full"
+            :class="message.role === 'user' ? 'items-end' : 'items-start'"
           >
-            <!-- 操作结果高亮显示 -->
-            <div
-              v-if="message.actions && message.actions.length > 0"
-              class="mb-2 space-y-1 flex flex-wrap gap-1"
+            <template
+              v-for="(item, itemIdx) in getMessageDisplayItems(message)"
+              :key="`${message.id}-${itemIdx}-${item.timestamp}`"
             >
-              <template v-for="(action, idx) in message.actions" :key="idx">
+              <div
+                v-if="item.type === 'content'"
+                class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
+                :class="
+                  item.messageRole === 'user'
+                    ? 'bg-primary-500/20 text-primary-100'
+                    : 'bg-white/5 text-moon-90'
+                "
+              >
                 <div
-                  :id="`action-${message.id}-${action.timestamp}`"
-                  class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
-                  :class="{
-                    'bg-green-500/25 text-green-200 border border-green-500/40 shadow-lg shadow-green-500/20 hover:bg-green-500/35':
-                      action.type === 'create',
-                    'bg-blue-500/25 text-blue-200 border border-blue-500/40 shadow-lg shadow-blue-500/20 hover:bg-blue-500/35':
-                      action.type === 'update',
-                    'bg-red-500/25 text-red-200 border border-red-500/40 shadow-lg shadow-red-500/20 hover:bg-red-500/35':
-                      action.type === 'delete',
-                    'bg-purple-500/25 text-purple-200 border border-purple-500/40 shadow-lg shadow-purple-500/20 hover:bg-purple-500/35':
-                      action.type === 'web_search',
-                    'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/35':
-                      action.type === 'web_fetch',
-                  }"
-                  @mouseenter="(e) => toggleActionPopover(e, action, message)"
-                  @mouseleave="() => handleActionMouseLeave(action, message)"
-                >
-                  <i
-                    class="text-sm"
-                    :class="{
-                      'pi pi-plus-circle': action.type === 'create',
-                      'pi pi-pencil': action.type === 'update',
-                      'pi pi-trash': action.type === 'delete',
-                      'pi pi-search': action.type === 'web_search',
-                      'pi pi-link': action.type === 'web_fetch',
-                    }"
-                  />
-                  <span>
-                    {{
-                      action.type === 'create'
-                        ? '创建'
-                        : action.type === 'update'
-                          ? '更新'
-                          : action.type === 'delete'
-                            ? '删除'
-                            : action.type === 'web_search'
-                              ? '网络搜索'
-                              : action.type === 'web_fetch'
-                                ? '网页获取'
-                                : ''
-                    }}
-                    {{
-                      action.entity === 'term'
-                        ? '术语'
-                        : action.entity === 'character'
-                          ? '角色'
-                          : action.entity === 'web'
-                            ? '网络'
-                            : ''
-                    }}
-                    <span v-if="action.name" class="font-semibold">"{{ action.name }}"</span>
-                    <span v-else-if="action.query" class="font-semibold">"{{ action.query }}"</span>
-                    <span v-else-if="action.url" class="font-semibold text-xs">{{
-                      action.url
-                    }}</span>
-                  </span>
-                </div>
-                <!-- Action Details Popover -->
-                <Popover
-                  :ref="
-                    (el) => {
-                      const actionKey = `${message.id}-${action.timestamp}`;
-                      if (el) {
-                        actionPopoverRefs.set(
-                          actionKey,
-                          el as unknown as InstanceType<typeof Popover>,
-                        );
-                      }
-                    }
-                  "
-                  :target="`action-${message.id}-${action.timestamp}`"
-                  :dismissable="true"
-                  :show-close-icon="false"
-                  style="width: 18rem; max-width: 90vw"
-                  class="action-popover"
-                  @hide="handleActionPopoverHide"
-                >
+                  class="text-sm break-words overflow-wrap-anywhere markdown-content"
+                  v-html="renderMarkdown(item.content || '思考中...')"
+                ></div>
+              </div>
+              <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
+                <div class="space-y-1 flex flex-wrap gap-1">
                   <div
-                    v-if="
-                      hoveredAction &&
-                      hoveredAction.action.timestamp === action.timestamp &&
-                      hoveredAction.message.id === message.id
-                    "
-                    class="action-popover-content"
+                    :id="`action-${item.messageId}-${item.action.timestamp}`"
+                    class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
+                    :class="{
+                      'bg-green-500/25 text-green-200 border border-green-500/40 hover:bg-green-500/35':
+                        item.action.type === 'create',
+                      'bg-blue-500/25 text-blue-200 border border-blue-500/40 hover:bg-blue-500/35':
+                        item.action.type === 'update',
+                      'bg-red-500/25 text-red-200 border border-red-500/40 hover:bg-red-500/35':
+                        item.action.type === 'delete',
+                      'bg-purple-500/25 text-purple-200 border border-purple-500/40 hover:bg-purple-500/35':
+                        item.action.type === 'web_search',
+                      'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/35':
+                        item.action.type === 'web_fetch',
+                      'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
+                        item.action.type === 'read',
+                    }"
+                    @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
+                    @mouseleave="() => handleActionMouseLeave(item.action!, message)"
                   >
-                    <div class="popover-header">
-                      <span class="popover-title">
-                        {{
-                          action.type === 'create'
-                            ? '创建'
-                            : action.type === 'update'
-                              ? '更新'
-                              : action.type === 'delete'
-                                ? '删除'
-                                : action.type === 'web_search'
-                                  ? '网络搜索'
-                                  : action.type === 'web_fetch'
-                                    ? '网页获取'
+                    <i
+                      class="text-sm"
+                      :class="{
+                        'pi pi-plus-circle': item.action.type === 'create',
+                        'pi pi-pencil': item.action.type === 'update',
+                        'pi pi-trash': item.action.type === 'delete',
+                        'pi pi-search': item.action.type === 'web_search',
+                        'pi pi-link': item.action.type === 'web_fetch',
+                        'pi pi-eye': item.action.type === 'read',
+                      }"
+                    />
+                    <span>
+                      {{
+                        item.action.type === 'create'
+                          ? '创建'
+                          : item.action.type === 'update'
+                            ? '更新'
+                            : item.action.type === 'delete'
+                              ? '删除'
+                              : item.action.type === 'web_search'
+                                ? '网络搜索'
+                                : item.action.type === 'web_fetch'
+                                  ? '网页获取'
+                                  : item.action.type === 'read'
+                                    ? '读取'
                                     : ''
-                        }}
-                        {{
-                          action.entity === 'term'
-                            ? '术语'
-                            : action.entity === 'character'
-                              ? '角色'
-                              : action.entity === 'web'
-                                ? '网络'
-                                : ''
-                        }}
-                      </span>
-                    </div>
-                    <div class="popover-details">
-                      <div
-                        v-for="(detail, detailIdx) in getActionDetails(action)"
-                        :key="detailIdx"
-                        class="popover-detail-item"
+                      }}
+                      {{
+                        item.action.entity === 'term'
+                          ? '术语'
+                          : item.action.entity === 'character'
+                            ? '角色'
+                            : item.action.entity === 'web'
+                              ? '网络'
+                              : item.action.entity === 'translation'
+                                ? '翻译'
+                                : item.action.entity === 'chapter'
+                                  ? '章节'
+                                  : item.action.entity === 'paragraph'
+                                    ? '段落'
+                                    : item.action.entity === 'book'
+                                      ? '书籍'
+                                      : ''
+                      }}
+                      <span v-if="item.action.name" class="font-semibold"
+                        >"{{ item.action.name }}"</span
                       >
-                        <span class="popover-detail-label">{{ detail.label }}：</span>
-                        <span class="popover-detail-value">{{ detail.value }}</span>
+                      <span v-else-if="item.action.query" class="font-semibold"
+                        >"{{ item.action.query }}"</span
+                      >
+                      <span v-else-if="item.action.url" class="font-semibold text-xs">{{
+                        item.action.url
+                      }}</span>
+                      <span
+                        v-else-if="item.action.entity === 'translation' && item.action.paragraph_id"
+                        class="font-semibold text-xs"
+                      >
+                        段落翻译
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.chapter_title"
+                        class="font-semibold text-xs"
+                      >
+                        "{{ item.action.chapter_title }}"
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.character_name"
+                        class="font-semibold text-xs"
+                      >
+                        "{{ item.action.character_name }}"
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'read' && item.action.tool_name"
+                        class="font-semibold text-xs"
+                      >
+                        {{ item.action.tool_name }}
+                      </span>
+                    </span>
+                  </div>
+                  <!-- Action Details Popover -->
+                  <Popover
+                    :ref="
+                      (el) => {
+                        const actionKey = `${item.messageId}-${item.action!.timestamp}`;
+                        if (el) {
+                          actionPopoverRefs.set(
+                            actionKey,
+                            el as unknown as InstanceType<typeof Popover>,
+                          );
+                        }
+                      }
+                    "
+                    :target="`action-${item.messageId}-${item.action!.timestamp}`"
+                    :dismissable="true"
+                    :show-close-icon="false"
+                    style="width: 18rem; max-width: 90vw"
+                    class="action-popover"
+                    @hide="handleActionPopoverHide"
+                  >
+                    <div
+                      v-if="
+                        hoveredAction &&
+                        hoveredAction.action.timestamp === item.action!.timestamp &&
+                        hoveredAction.message.id === item.messageId
+                      "
+                      class="action-popover-content"
+                    >
+                      <div class="popover-header">
+                        <span class="popover-title">
+                          {{
+                            item.action.type === 'create'
+                              ? '创建'
+                              : item.action.type === 'update'
+                                ? '更新'
+                                : item.action.type === 'delete'
+                                  ? '删除'
+                                  : item.action.type === 'web_search'
+                                    ? '网络搜索'
+                                    : item.action.type === 'web_fetch'
+                                      ? '网页获取'
+                                      : item.action.type === 'read'
+                                        ? '读取'
+                                        : ''
+                          }}
+                          {{
+                            item.action.entity === 'term'
+                              ? '术语'
+                              : item.action.entity === 'character'
+                                ? '角色'
+                                : item.action.entity === 'web'
+                                  ? '网络'
+                                  : item.action.entity === 'translation'
+                                    ? '翻译'
+                                    : item.action.entity === 'chapter'
+                                      ? '章节'
+                                      : item.action.entity === 'paragraph'
+                                        ? '段落'
+                                        : item.action.entity === 'book'
+                                          ? '书籍'
+                                          : ''
+                          }}
+                        </span>
+                      </div>
+                      <div class="popover-details">
+                        <div
+                          v-for="(detail, detailIdx) in getActionDetails(item.action)"
+                          :key="detailIdx"
+                          class="popover-detail-item"
+                        >
+                          <span class="popover-detail-label">{{ detail.label }}：</span>
+                          <span class="popover-detail-value">{{ detail.value }}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Popover>
-              </template>
-            </div>
-            <div
-              class="text-sm break-words overflow-wrap-anywhere markdown-content"
-              v-html="renderMarkdown(message.content || '思考中...')"
-            ></div>
+                  </Popover>
+                </div>
+              </div>
+              <span
+                v-if="itemIdx === getMessageDisplayItems(message).length - 1"
+                class="text-xs text-moon-40"
+              >
+                {{
+                  new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                }}
+              </span>
+            </template>
           </div>
-          <span class="text-xs text-moon-40">
-            {{
-              new Date(message.timestamp).toLocaleTimeString('zh-CN', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            }}
-          </span>
-        </div>
+        </template>
       </div>
     </div>
 

@@ -142,7 +142,7 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -163,6 +163,18 @@ export const characterTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           message: `角色 "${name}" 不存在`,
+        });
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'character',
+          data: {
+            character_name: name,
+            tool_name: 'get_character',
+          },
         });
       }
 
@@ -402,7 +414,7 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -415,6 +427,17 @@ export const characterTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       if (!book) {
         throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'character',
+          data: {
+            tool_name: 'search_characters_by_keyword',
+          },
+        });
       }
 
       const allCharacters = book.characterSettings || [];
@@ -481,7 +504,7 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId }) => {
+    handler: (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -490,6 +513,17 @@ export const characterTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       if (!book) {
         throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'character',
+          data: {
+            tool_name: 'list_characters',
+          },
+        });
       }
 
       let characters: CharacterSetting[] = book.characterSettings || [];

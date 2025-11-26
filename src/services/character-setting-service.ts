@@ -15,6 +15,7 @@ import {
   getCharacterNameVariants,
 } from 'src/utils';
 import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
+import { ChapterContentService } from './chapter-content-service';
 
 /**
  * 角色设定服务
@@ -28,10 +29,10 @@ export class CharacterSettingService {
    * @param character 角色对象
    * @returns 出现记录数组
    */
-  private static countCharacterOccurrences(
+  private static async countCharacterOccurrences(
     book: Novel,
     character: CharacterSetting,
-  ): Occurrence[] {
+  ): Promise<Occurrence[]> {
     const occurrencesMap = new Map<string, number>();
 
     // 扁平化所有章节
@@ -41,15 +42,28 @@ export class CharacterSettingService {
     // 收集所有章节的文本内容
     let fullText = '';
     for (const chapter of allChapters) {
+      // 如果章节内容未加载，尝试从 IndexedDB 加载
+      let chapterWithContent = chapter;
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        if (content) {
+          chapterWithContent = {
+            ...chapter,
+            content,
+            contentLoaded: true,
+          };
+        }
+      }
+
       // 处理段落内容
-      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
-        for (const paragraph of chapter.content) {
+      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+        for (const paragraph of chapterWithContent.content) {
           fullText += paragraph.text + '\n';
         }
       }
       // 处理原始内容
-      if (chapter.originalContent) {
-        fullText += chapter.originalContent + '\n';
+      if (chapterWithContent.originalContent) {
+        fullText += chapterWithContent.originalContent + '\n';
       }
     }
 
@@ -63,18 +77,31 @@ export class CharacterSettingService {
 
     // 遍历所有章节，统计当前角色的出现次数
     for (const chapter of allChapters) {
+      // 如果章节内容未加载，尝试从 IndexedDB 加载
+      let chapterWithContent = chapter;
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        if (content) {
+          chapterWithContent = {
+            ...chapter,
+            content,
+            contentLoaded: true,
+          };
+        }
+      }
+
       let chapterText = '';
 
       // 处理段落内容
-      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
-        for (const paragraph of chapter.content) {
+      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+        for (const paragraph of chapterWithContent.content) {
           chapterText += paragraph.text + '\n';
         }
       }
 
       // 处理原始内容
-      if (chapter.originalContent) {
-        chapterText += chapter.originalContent + '\n';
+      if (chapterWithContent.originalContent) {
+        chapterText += chapterWithContent.originalContent + '\n';
       }
 
       if (!chapterText.trim()) {
@@ -109,7 +136,7 @@ export class CharacterSettingService {
    * @param name 角色名称
    * @returns 出现记录数组
    */
-  private static countNameOccurrences(book: Novel, name: string): Occurrence[] {
+  private static async countNameOccurrences(book: Novel, name: string): Promise<Occurrence[]> {
     const occurrencesMap = new Map<string, number>();
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escapedName, 'g');
@@ -119,11 +146,24 @@ export class CharacterSettingService {
 
     // 遍历所有章节
     for (const chapter of allChapters) {
+      // 如果章节内容未加载，尝试从 IndexedDB 加载
+      let chapterWithContent = chapter;
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        if (content) {
+          chapterWithContent = {
+            ...chapter,
+            content,
+            contentLoaded: true,
+          };
+        }
+      }
+
       let chapterCount = 0;
 
       // 从段落中统计
-      if (isArray(chapter.content) && !isEmpty(chapter.content)) {
-        for (const paragraph of chapter.content) {
+      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+        for (const paragraph of chapterWithContent.content) {
           const matches = paragraph.text.match(regex);
           if (matches) {
             chapterCount += matches.length;
@@ -132,8 +172,8 @@ export class CharacterSettingService {
       }
 
       // 从原始内容中统计
-      if (chapter.originalContent) {
-        const matches = chapter.originalContent.match(regex);
+      if (chapterWithContent.originalContent) {
+        const matches = chapterWithContent.originalContent.match(regex);
         if (matches) {
           chapterCount += matches.length;
         }
@@ -230,7 +270,7 @@ export class CharacterSettingService {
       occurrences: [],
     };
     // 统计角色出现次数（包括主名称和所有别名）
-    const occurrences = this.countCharacterOccurrences(book, tempCharacter);
+    const occurrences = await this.countCharacterOccurrences(book, tempCharacter);
 
     // 创建新角色设定
     const newCharacter: CharacterSetting = {
@@ -350,7 +390,7 @@ export class CharacterSettingService {
       };
       
       // 使用 countCharacterOccurrences 统计（包括主名称和所有别名）
-      occurrences = this.countCharacterOccurrences(book, tempCharacter);
+      occurrences = await this.countCharacterOccurrences(book, tempCharacter);
     }
 
     // 处理翻译更新
@@ -502,18 +542,20 @@ export class CharacterSettingService {
       return;
     }
 
-    const updatedCharacterSettings = characterSettings.map((char) => {
-      // 使用 countCharacterOccurrences 统计（包括主名称和所有别名）
-      const occurrences = this.countCharacterOccurrences(book, char);
-      const occurrencesChanged = !isEqual(char.occurrences, occurrences);
-      if (occurrencesChanged) {
-        return {
-          ...char,
-          occurrences,
-        };
-      }
-      return char;
-    });
+    const updatedCharacterSettings = await Promise.all(
+      characterSettings.map(async (char) => {
+        // 使用 countCharacterOccurrences 统计（包括主名称和所有别名）
+        const occurrences = await this.countCharacterOccurrences(book, char);
+        const occurrencesChanged = !isEqual(char.occurrences, occurrences);
+        if (occurrencesChanged) {
+          return {
+            ...char,
+            occurrences,
+          };
+        }
+        return char;
+      })
+    );
 
     // 检查是否有任何角色被更新
     const hasChanges = updatedCharacterSettings.some((char, index) =>

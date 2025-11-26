@@ -57,94 +57,159 @@ async function searchWeb(query: string): Promise<{
 
       const results: Array<{ title: string; snippet: string; url: string }> = [];
 
-      // 提取搜索结果（尝试多种可能的 CSS 选择器，因为 DuckDuckGo 可能改变结构）
-      // 方法 1: 尝试新的选择器
-      $('[data-testid="result"]').each((_index, element) => {
-        const $el = $(element);
-        const title =
-          $el.find('a[data-testid="result-title-a"]').text().trim() ||
-          $el.find('h2 a').text().trim();
-        const snippet =
-          $el.find('[data-testid="result-snippet"]').text().trim() ||
-          $el.find('.result__snippet').text().trim();
-        let url =
-          $el.find('a[data-testid="result-title-a"]').attr('href') ||
-          $el.find('h2 a').attr('href') ||
-          '';
-
-        // 解析 DuckDuckGo 重定向 URL，提取真实 URL
-        if (url && url.startsWith('//duckduckgo.com/l/')) {
+      // 辅助函数：解析 DuckDuckGo 重定向 URL
+      const parseDuckDuckGoUrl = (url: string): string => {
+        if (url && (url.startsWith('//duckduckgo.com/l/') || url.startsWith('/l/'))) {
           try {
             const urlParams = new URLSearchParams(url.split('?')[1] || '');
             const uddgParam = urlParams.get('uddg');
             if (uddgParam) {
-              url = decodeURIComponent(uddgParam);
+              return decodeURIComponent(uddgParam);
             }
           } catch (e) {
-            // 如果解析失败，保持原 URL
             console.warn('[WebSearch] 无法解析重定向 URL', { url, error: e });
           }
         }
+        return url;
+      };
 
-        if (title && snippet) {
-          results.push({ title, snippet, url });
+      // 辅助函数：提取结果
+      const extractResult = (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        $el: cheerio.Cheerio<any>,
+        titleSelectors: string[],
+        snippetSelectors: string[],
+        urlSelectors: string[],
+      ): { title: string; snippet: string; url: string } | null => {
+        let title = '';
+        let snippet = '';
+        let url = '';
+
+        // 尝试多个选择器提取标题
+        for (const selector of titleSelectors) {
+          const text = $el.find(selector).first().text().trim();
+          if (text) {
+            title = text;
+            break;
+          }
+        }
+
+        // 尝试多个选择器提取摘要
+        for (const selector of snippetSelectors) {
+          const text = $el.find(selector).first().text().trim();
+          if (text) {
+            snippet = text;
+            break;
+          }
+        }
+
+        // 尝试多个选择器提取 URL
+        for (const selector of urlSelectors) {
+          const href = $el.find(selector).first().attr('href');
+          if (href) {
+            url = href;
+            break;
+          }
+        }
+
+        // 解析 URL
+        url = parseDuckDuckGoUrl(url);
+
+        // 如果至少有一个标题或摘要，就认为是一个有效结果
+        if (title || snippet) {
+          return {
+            title: title || snippet.substring(0, 50) + '...',
+            snippet: snippet || title,
+            url,
+          };
+        }
+
+        return null;
+      };
+
+      // 提取搜索结果（尝试多种可能的 CSS 选择器，因为 DuckDuckGo 可能改变结构）
+      // 方法 1: 尝试新的选择器（data-testid）
+      $('[data-testid="result"]').each((_index, element) => {
+        const result = extractResult(
+          $(element),
+          ['a[data-testid="result-title-a"]', 'h2 a', 'a.result__a', '.result__title a'],
+          ['[data-testid="result-snippet"]', '.result__snippet', '.result__body'],
+          ['a[data-testid="result-title-a"]', 'h2 a', 'a.result__a', '.result__title a'],
+        );
+        if (result) {
+          results.push(result);
         }
       });
 
-      // 方法 2: 如果方法 1 没有结果，尝试旧的选择器
+      // 方法 2: 尝试旧的选择器（class-based）
       if (results.length === 0) {
-        $('.result').each((_index, element) => {
-          const $el = $(element);
-          const title =
-            $el.find('.result__title a').text().trim() || $el.find('h2 a').text().trim();
-          const snippet = $el.find('.result__snippet').text().trim();
-          let url =
-            $el.find('.result__title a').attr('href') || $el.find('h2 a').attr('href') || '';
-
-          // 解析 DuckDuckGo 重定向 URL，提取真实 URL
-          if (url && url.startsWith('//duckduckgo.com/l/')) {
-            try {
-              const urlParams = new URLSearchParams(url.split('?')[1] || '');
-              const uddgParam = urlParams.get('uddg');
-              if (uddgParam) {
-                url = decodeURIComponent(uddgParam);
-              }
-            } catch (e) {
-              // 如果解析失败，保持原 URL
-              console.warn('[WebSearch] 无法解析重定向 URL', { url, error: e });
-            }
-          }
-
-          if (title && snippet) {
-            results.push({ title, snippet, url });
+        $('.result, .web-result, .result__body').each((_index, element) => {
+          const result = extractResult(
+            $(element),
+            ['.result__title a', 'h2 a', 'a.result__a', '.result__title'],
+            ['.result__snippet', '.result__body', 'p'],
+            ['.result__title a', 'h2 a', 'a.result__a'],
+          );
+          if (result) {
+            results.push(result);
           }
         });
       }
 
-      // 方法 3: 尝试更通用的选择器
+      // 方法 3: 尝试更通用的选择器（基于链接和文本）
       if (results.length === 0) {
-        $('article, .web-result, [class*="result"]').each((_index, element) => {
-          const $el = $(element);
-          const title = $el.find('h2 a, a[href^="http"]').first().text().trim();
-          const snippet = $el.find('p, .snippet, [class*="snippet"]').first().text().trim();
-          let url = $el.find('h2 a, a[href^="http"]').first().attr('href') || '';
+        // 查找所有包含 DuckDuckGo 重定向链接的元素，这些通常是搜索结果
+        $('a[href*="duckduckgo.com/l/"]').each((_index, element) => {
+          const $link = $(element);
+          const $parent = $link.closest('.result, .web-result, article, [class*="result"]').length
+            ? $link.closest('.result, .web-result, article, [class*="result"]')
+            : $link.parent().parent();
+          const href = $link.attr('href') || '';
 
-          // 解析 DuckDuckGo 重定向 URL，提取真实 URL
-          if (url && url.startsWith('//duckduckgo.com/l/')) {
-            try {
-              const urlParams = new URLSearchParams(url.split('?')[1] || '');
-              const uddgParam = urlParams.get('uddg');
-              if (uddgParam) {
-                url = decodeURIComponent(uddgParam);
-              }
-            } catch (e) {
-              // 如果解析失败，保持原 URL
-              console.warn('[WebSearch] 无法解析重定向 URL', { url, error: e });
+          const title = $link.text().trim();
+          if (!title || title.length < 5) {
+            return;
+          }
+
+          // 尝试找到摘要（在链接附近的文本）
+          let snippet = '';
+          const $snippet = $parent.find('.result__snippet, .result__body, p').first();
+          if ($snippet.length > 0) {
+            snippet = $snippet.text().trim();
+          } else {
+            // 如果没有找到专门的摘要元素，尝试从父元素中提取文本
+            const parentText = $parent.text().trim();
+            const titleIndex = parentText.indexOf(title);
+            if (titleIndex >= 0) {
+              snippet = parentText
+                .substring(titleIndex + title.length)
+                .trim()
+                .substring(0, 200);
             }
           }
 
-          if (title && snippet && url) {
-            results.push({ title, snippet, url });
+          const url = parseDuckDuckGoUrl(href);
+          if (title && url) {
+            results.push({
+              title,
+              snippet: snippet || title,
+              url,
+            });
+          }
+        });
+      }
+
+      // 方法 4: 尝试基于表格行的结果（DuckDuckGo HTML 版本可能使用表格）
+      if (results.length === 0) {
+        $('table.result, tr.result').each((_index, element) => {
+          const result = extractResult(
+            $(element),
+            ['a', 'h2 a', '.result__title a'],
+            ['td', '.result__snippet', 'p'],
+            ['a[href*="duckduckgo.com/l/"]', 'a[href^="http"]'],
+          );
+          if (result) {
+            results.push(result);
           }
         });
       }
@@ -214,11 +279,42 @@ async function searchWeb(query: string): Promise<{
         };
       }
 
-      // 如果没有找到结果，返回提示（但搜索请求本身是成功的）
-      console.warn('[WebSearch] ⚠️ 未找到搜索结果', {
-        query,
-        htmlLength: html.length,
-      });
+      // 如果没有找到结果，添加调试信息并返回提示（但搜索请求本身是成功的）
+      // 在开发模式下输出 HTML 片段以便调试
+      const isDev = import.meta.env.DEV;
+      if (isDev) {
+        // 尝试查找一些常见的元素来了解 HTML 结构
+        const bodyText = $('body').text().substring(0, 500);
+        const hasResultElements = {
+          'data-testid="result"': $('[data-testid="result"]').length,
+          '.result': $('.result').length,
+          '.web-result': $('.web-result').length,
+          'a[href*="duckduckgo.com/l/"]': $('a[href*="duckduckgo.com/l/"]').length,
+          article: $('article').length,
+          'table.result': $('table.result').length,
+        };
+
+        console.warn('[WebSearch] ⚠️ 未找到搜索结果 - 调试信息', {
+          query,
+          htmlLength: html.length,
+          foundElements: hasResultElements,
+          bodyTextPreview: bodyText,
+          // 输出一些可能的链接
+          links: $('a[href]')
+            .slice(0, 5)
+            .map((_i, el) => ({
+              text: $(el).text().trim().substring(0, 50),
+              href: $(el).attr('href')?.substring(0, 100),
+            }))
+            .get(),
+        });
+      } else {
+        console.warn('[WebSearch] ⚠️ 未找到搜索结果', {
+          query,
+          htmlLength: html.length,
+        });
+      }
+
       return {
         success: true,
         message: `未找到关于"${query}"的搜索结果。建议使用 AI 模型的内置知识库来回答问题。`,

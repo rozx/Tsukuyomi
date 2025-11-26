@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 
 const STORAGE_KEY = 'luna-ai-context';
 
@@ -134,16 +135,29 @@ export const useContextStore = defineStore('context', {
 
     /**
      * 设置悬停的段落
+     * @param paragraphId 段落 ID
+     * @param paragraphText 可选的段落文本，如果提供且为空或仅符号，则不设置段落 ID
      */
-    setHoveredParagraph(paragraphId: string | null): void {
+    setHoveredParagraph(paragraphId: string | null, paragraphText?: string | null): void {
+      // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
+      if (paragraphId && paragraphText !== undefined) {
+        if (isEmptyOrSymbolOnly(paragraphText)) {
+          // 如果段落是空的或仅符号，清除悬停状态
+          this.hoveredParagraphId = null;
+          this.saveState();
+          return;
+        }
+      }
       this.hoveredParagraphId = paragraphId;
       this.saveState();
     },
 
     /**
      * 设置完整的上下文
+     * @param context 上下文对象
+     * @param paragraphText 可选的段落文本，如果提供且为空或仅符号，则不设置段落 ID
      */
-    setContext(context: Partial<ContextState>): void {
+    setContext(context: Partial<ContextState>, paragraphText?: string | null): void {
       if (context.currentBookId !== undefined) {
         const previousBookId = this.currentBookId;
         this.currentBookId = context.currentBookId;
@@ -162,7 +176,17 @@ export const useContextStore = defineStore('context', {
         }
       }
       if (context.hoveredParagraphId !== undefined) {
-        this.hoveredParagraphId = context.hoveredParagraphId;
+        // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
+        if (context.hoveredParagraphId && paragraphText !== undefined) {
+          if (isEmptyOrSymbolOnly(paragraphText)) {
+            // 如果段落是空的或仅符号，清除悬停状态
+            this.hoveredParagraphId = null;
+          } else {
+            this.hoveredParagraphId = context.hoveredParagraphId;
+          }
+        } else {
+          this.hoveredParagraphId = context.hoveredParagraphId;
+        }
       }
       this.saveState();
     },
@@ -201,4 +225,3 @@ export const useContextStore = defineStore('context', {
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useContextStore, import.meta.hot));
 }
-
