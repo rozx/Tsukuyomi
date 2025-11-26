@@ -73,7 +73,57 @@ jobs:
           echo "Current version in package.json: $CURRENT_VERSION"
           echo "Expected version from branch: $EXPECTED_VERSION"
           
-          if [ "$CURRENT_VERSION" != "$EXPECTED_VERSION" ]; then
+          # Function to compare semantic versions
+          # Returns: 0 if v1 == v2, 1 if v1 > v2, 2 if v1 < v2
+          compare_versions() {
+            local v1=$1
+            local v2=$2
+            
+            # Split versions into major.minor.patch
+            IFS='.' read -r -a v1_parts <<< "$v1"
+            IFS='.' read -r -a v2_parts <<< "$v2"
+            
+            # Compare major version
+            if [ "${v1_parts[0]}" -gt "${v2_parts[0]}" ]; then
+              return 1
+            elif [ "${v1_parts[0]}" -lt "${v2_parts[0]}" ]; then
+              return 2
+            fi
+            
+            # Compare minor version
+            if [ "${v1_parts[1]}" -gt "${v2_parts[1]}" ]; then
+              return 1
+            elif [ "${v1_parts[1]}" -lt "${v2_parts[1]}" ]; then
+              return 2
+            fi
+            
+            # Compare patch version
+            if [ "${v1_parts[2]}" -gt "${v2_parts[2]}" ]; then
+              return 1
+            elif [ "${v1_parts[2]}" -lt "${v2_parts[2]}" ]; then
+              return 2
+            fi
+            
+            return 0
+          }
+          
+          # Compare versions
+          compare_versions "$CURRENT_VERSION" "$EXPECTED_VERSION"
+          COMPARE_RESULT=$?
+          
+          if [ $COMPARE_RESULT -eq 0 ]; then
+            # Versions are equal
+            echo "✅ Version matches: $CURRENT_VERSION"
+            echo "version_updated=false" >> $GITHUB_OUTPUT
+            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          elif [ $COMPARE_RESULT -eq 1 ]; then
+            # Current version is greater than expected version
+            echo "ℹ️ Local version ($CURRENT_VERSION) is greater than branch version ($EXPECTED_VERSION)"
+            echo "Keeping local version: $CURRENT_VERSION"
+            echo "version_updated=false" >> $GITHUB_OUTPUT
+            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            # Expected version is greater than current version
             echo "⚠️ Version mismatch detected!"
             echo "Updating version from $CURRENT_VERSION to $EXPECTED_VERSION"
             
@@ -90,10 +140,6 @@ jobs:
               echo "❌ Failed to update version. New version is: $NEW_VERSION"
               exit 1
             fi
-          else
-            echo "✅ Version matches: $CURRENT_VERSION"
-            echo "version_updated=false" >> $GITHUB_OUTPUT
-            echo "final_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit version update
