@@ -78,14 +78,14 @@ export const useBooksStore = defineStore('books', {
 
         // 重要：如果更新了 volumes，需要保留现有章节的 content
         // 因为 content 存储在独立的 IndexedDB 表中，不应该在更新时丢失
-        if (updates.volumes && existingBook.volumes) {
+        if (updates.volumes && existingBook && existingBook.volumes) {
           // 遍历更新的 volumes，为每个章节保留现有的 content
           updatedBook.volumes = await Promise.all(
             updates.volumes.map(async (updatedVolume) => {
               // 查找对应的现有卷
               const existingVolume = existingBook.volumes?.find((v) => v.id === updatedVolume.id);
 
-              if (existingVolume && existingVolume.chapters) {
+              if (existingVolume && existingVolume.chapters && updatedVolume.chapters) {
                 // 为每个更新的章节保留现有的 content
                 updatedVolume.chapters = await Promise.all(
                   updatedVolume.chapters.map(async (updatedChapter) => {
