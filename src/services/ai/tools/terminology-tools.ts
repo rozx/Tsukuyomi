@@ -445,7 +445,6 @@ export const terminologyTools: ToolDefinition[] = [
         });
       }
 
-      // eslint-disable-next-line @typescript-eslint/await-thenable
       const occurrencesMap = await TerminologyService.getOccurrencesByKeywords(bookId, keywords);
 
       // 将 Map 转换为对象数组
