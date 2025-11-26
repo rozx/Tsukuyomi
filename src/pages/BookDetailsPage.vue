@@ -25,6 +25,7 @@ import { TranslationService, PolishService } from 'src/services/ai';
 import {
   formatWordCount,
   getNovelCharCount,
+  getNovelCharCountAsync,
   getTotalChapters,
   getChapterCharCount,
   getChapterContentText,
@@ -843,8 +844,11 @@ const calculateStats = async () => {
   // 使用 setTimeout 将计算推迟到下一个事件循环，避免阻塞渲染
   await new Promise((resolve) => setTimeout(resolve, 0));
 
+  // 使用异步版本加载字符数（从 IndexedDB 加载内容）
+  const wordCount = await getNovelCharCountAsync(book.value);
+
   stats.value = {
-    wordCount: getNovelCharCount(book.value),
+    wordCount,
     chapterCount: getTotalChapters(book.value),
     volumeCount: book.value.volumes?.length || 0,
   };

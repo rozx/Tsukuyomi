@@ -138,7 +138,8 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'update_term',
-        description: '更新现有术语的翻译或描述。⚠️ **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
+        description:
+          '更新现有术语的翻译或描述。⚠️ **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
         parameters: {
           type: 'object',
           properties: {
@@ -444,6 +445,7 @@ export const terminologyTools: ToolDefinition[] = [
         });
       }
 
+      // eslint-disable-next-line @typescript-eslint/await-thenable
       const occurrencesMap = await TerminologyService.getOccurrencesByKeywords(bookId, keywords);
 
       // 将 Map 转换为对象数组
