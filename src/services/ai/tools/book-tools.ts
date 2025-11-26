@@ -165,10 +165,12 @@ export const bookTools: ToolDefinition[] = [
           let chaptersProcessed = 0;
           const maxChaptersToLoad = limit && limit > 0 ? limit : undefined;
 
-          for (const volume of book.volumes) {
+          for (let volumeIndex = 0; volumeIndex < book.volumes.length; volumeIndex++) {
+            const volume = book.volumes[volumeIndex];
             if (!volume.chapters) continue;
 
-            for (const chapter of volume.chapters) {
+            for (let chapterIndex = 0; chapterIndex < volume.chapters.length; chapterIndex++) {
+              const chapter = volume.chapters[chapterIndex];
               // 如果已达到限制，停止处理
               if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
                 break;
@@ -180,9 +182,6 @@ export const bookTools: ToolDefinition[] = [
                 chapter.content = content || [];
                 chapter.contentLoaded = true;
               }
-
-              const volumeIndex = book.volumes.indexOf(volume);
-              const chapterIndex = volume.chapters.indexOf(chapter);
               const chapterTitle = getChapterDisplayTitle(chapter);
               const titleOriginal =
                 typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
