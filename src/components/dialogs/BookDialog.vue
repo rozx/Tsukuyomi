@@ -161,7 +161,7 @@ const loadAllVisibleChapterCharCounts = async () => {
   for (const volume of volumes) {
     if (expandedVolumes.value.has(volume.id) && volume.chapters) {
       for (const chapter of volume.chapters) {
-        loadPromises.push(loadChapterCharCount(chapter).then(() => {}));
+        loadPromises.push(loadChapterCharCount(chapter));
       }
     }
   }
