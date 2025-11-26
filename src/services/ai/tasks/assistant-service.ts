@@ -108,14 +108,17 @@ export class AssistantService {
 - **search_characters_by_keyword**: 关键词搜索（支持 translationOnly 参数）
 - **list_characters**: 列出所有角色
 
-### 内容管理（7个工具）
+### 内容管理（10个工具）
 - **get_book_info**: 获取书籍信息
 - **list_chapters**: 列出章节（查看所有章节时先调用此工具）
 - **get_chapter_info**: 获取章节详情
-- **get_paragraph_info**: 获取段落信息
+- **get_paragraph_info**: 获取段落信息（包括所有翻译版本）
 - **get_previous_paragraphs**: 获取前文段落
 - **get_next_paragraphs**: 获取后文段落
 - **find_paragraph_by_keyword**: 关键词查找段落（支持 only_with_translation 参数）
+- **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
+- **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
+- **select_translation**: 选择段落中的某个翻译版本作为当前选中的翻译（用于在翻译历史中切换不同的翻译版本）
 
 ### 网络搜索（2个工具）
 - **search_web**: 搜索最新信息
@@ -132,8 +135,14 @@ export class AssistantService {
 2. **修复工作流程**：
    - 角色问题：get_character/search_characters_by_keyword → update_character（不要用 search_web）
    - 术语问题：get_term/search_terms_by_keyword → update_term（不要用 search_web）
+   - 翻译问题：get_paragraph_info/get_translation_history → update_translation（用于编辑翻译历史中的翻译版本）
 3. **搜索优先**：部分名称/翻译时优先用 search_*_by_keyword，完整名称时用 get_*
 4. **创建前检查**：创建术语/角色前必须检查是否已存在
+5. **翻译历史管理**：
+   - 使用 get_translation_history 查看段落的完整翻译历史
+   - 使用 update_translation 编辑和修正翻译历史中的某个翻译版本
+   - 使用 select_translation 选择段落中的某个翻译版本作为当前选中的翻译
+   - 翻译历史最多保留5个版本，最新的在最后
 
 `;
 

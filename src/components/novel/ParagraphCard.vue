@@ -77,12 +77,10 @@ const mostRecentTranslation = computed(() => {
 
 // 是否有其他翻译可以显示
 const hasOtherTranslations = computed(() => {
-  // 只要有翻译历史（至少1个翻译）就显示按钮
-  // 即使只有一个翻译，用户也可以点击查看翻译历史
-  // 但悬停时只显示最近的翻译（如果有其他翻译的话）
+  // 只有当翻译数量大于1时才显示按钮
   return (
     props.paragraph.translations &&
-    props.paragraph.translations.length > 0
+    props.paragraph.translations.length > 1
   );
 });
 
@@ -651,7 +649,7 @@ onUnmounted(() => {
   border-radius: 4px;
   color: var(--moon-opacity-40);
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 0;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 2;
 }
@@ -663,8 +661,8 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-.paragraph-card:hover .recent-translation-icon-button {
-  opacity: 0.7;
+.paragraph-card.has-content:hover .recent-translation-icon-button {
+  opacity: 1;
 }
 
 .context-menu-icon-button {
