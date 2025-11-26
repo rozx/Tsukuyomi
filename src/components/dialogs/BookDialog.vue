@@ -16,11 +16,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
-import {
-  formatCharCount,
-  getVolumeDisplayTitle,
-  getChapterDisplayTitle,
-} from 'src/utils';
+import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -108,11 +104,8 @@ const toggleVolume = (volumeId: string) => {
 // formatCharCount 已从 utils 导入
 
 // 使用章节字符数加载 composable（自动处理展开卷和章节列表变化）
-const {
-  getChapterCharCountDisplay,
-  isLoadingChapterCharCount,
-  loadAllVisibleChapterCharCounts,
-} = useChapterCharCount(availableVolumes, expandedVolumes);
+const { getChapterCharCountDisplay, isLoadingChapterCharCount, loadAllVisibleChapterCharCounts } =
+  useChapterCharCount(availableVolumes, expandedVolumes);
 
 // 重置表单
 const resetForm = () => {
@@ -161,7 +154,9 @@ const handleExportJson = async () => {
       exportData = {
         id: '',
         title: formData.value.title || '',
-        ...(formData.value.alternateTitles ? { alternateTitles: formData.value.alternateTitles } : {}),
+        ...(formData.value.alternateTitles
+          ? { alternateTitles: formData.value.alternateTitles }
+          : {}),
         ...(formData.value.author ? { author: formData.value.author } : {}),
         ...(formData.value.description ? { description: formData.value.description } : {}),
         ...(formData.value.tags ? { tags: formData.value.tags } : {}),
