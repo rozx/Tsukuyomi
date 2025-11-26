@@ -464,38 +464,12 @@ const sendMessage = async () => {
           translation: '翻译',
         };
 
-        // 处理网络搜索和网页获取操作
+        // 处理网络搜索和网页获取操作（不显示 toast 通知）
         if (action.type === 'web_search') {
-          const query = 'query' in action.data ? action.data.query : undefined;
-          const results =
-            'results' in action.data && Array.isArray(action.data.results)
-              ? action.data.results
-              : [];
-          const detail = query
-            ? `搜索查询: "${query}"${results.length > 0 ? ` | 找到 ${results.length} 个结果` : ' | 未找到结果'}`
-            : '执行网络搜索';
-          toast.add({
-            severity: 'info',
-            summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
-            detail,
-            life: 3000,
-          });
           return;
         }
 
         if (action.type === 'web_fetch') {
-          const url = 'url' in action.data ? action.data.url : undefined;
-          const title = 'title' in action.data ? action.data.title : undefined;
-          const success = 'success' in action.data ? action.data.success : true;
-          const detail = url
-            ? `${title ? `标题: "${title}" | ` : ''}URL: ${url}${success ? '' : ' | 获取失败'}`
-            : '获取网页内容';
-          toast.add({
-            severity: success ? 'info' : 'warn',
-            summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
-            detail,
-            life: 3000,
-          });
           return;
         }
 
