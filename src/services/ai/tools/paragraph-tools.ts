@@ -5,32 +5,6 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 import type { ToolDefinition } from './types';
-import type { Novel } from 'src/models/novel';
-
-/**
- * 加载书籍的所有章节内容（如果需要）
- */
-async function loadAllChapterContents(book: Novel): Promise<void> {
-  if (!book.volumes) {
-    return;
-  }
-
-  for (const volume of book.volumes) {
-    if (volume.chapters) {
-      for (let i = 0; i < volume.chapters.length; i++) {
-        const chapter = volume.chapters[i];
-        if (chapter && chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          volume.chapters[i] = {
-            ...chapter,
-            content: content || [],
-            contentLoaded: true,
-          };
-        }
-      }
-    }
-  }
-}
 
 export const paragraphTools: ToolDefinition[] = [
   {
@@ -68,7 +42,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 查找段落
       const location = ChapterService.findParagraphLocation(book, paragraph_id);
@@ -179,7 +153,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 报告读取操作
       if (onAction) {
@@ -266,7 +240,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 报告读取操作
       if (onAction) {
@@ -363,7 +337,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 报告读取操作
       if (onAction) {
@@ -452,7 +426,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 查找段落
       const location = ChapterService.findParagraphLocation(book, paragraph_id);
@@ -542,7 +516,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 查找段落
       const location = ChapterService.findParagraphLocation(book, paragraph_id);
@@ -651,7 +625,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 加载所有章节内容（如果需要）
-      await loadAllChapterContents(book);
+      await ChapterContentService.loadAllChapterContents(book);
 
       // 查找段落
       const location = ChapterService.findParagraphLocation(book, paragraph_id);

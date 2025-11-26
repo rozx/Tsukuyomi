@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { Novel } from 'src/models/novel';
+import type { Novel, Paragraph } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 
@@ -57,7 +57,7 @@ export const useBooksStore = defineStore('books', {
         uniqueBooksMap.set(book.id, book);
       }
       const uniqueBooks = Array.from(uniqueBooksMap.values());
-      
+
       this.books = uniqueBooks;
       await BookService.bulkSaveBooks(uniqueBooks);
     },
@@ -70,12 +70,12 @@ export const useBooksStore = defineStore('books', {
       if (index > -1) {
         const existingBook = this.books[index];
         const updatedBook = { ...existingBook, ...updates } as Novel;
-        
+
         // 如果 cover 是 null，删除该属性
         if ('cover' in updates && updates.cover === null) {
           delete updatedBook.cover;
         }
-        
+
         // 重要：如果更新了 volumes，需要保留现有章节的 content
         // 因为 content 存储在独立的 IndexedDB 表中，不应该在更新时丢失
         if (updates.volumes && existingBook.volumes) {
@@ -83,18 +83,16 @@ export const useBooksStore = defineStore('books', {
           updatedBook.volumes = await Promise.all(
             updates.volumes.map(async (updatedVolume) => {
               // 查找对应的现有卷
-              const existingVolume = existingBook.volumes?.find(
-                (v) => v.id === updatedVolume.id
-              );
-              
+              const existingVolume = existingBook.volumes?.find((v) => v.id === updatedVolume.id);
+
               if (existingVolume && existingVolume.chapters) {
                 // 为每个更新的章节保留现有的 content
                 updatedVolume.chapters = await Promise.all(
                   updatedVolume.chapters.map(async (updatedChapter) => {
                     const existingChapter = existingVolume.chapters?.find(
-                      (ch) => ch.id === updatedChapter.id
+                      (ch) => ch.id === updatedChapter.id,
                     );
-                    
+
                     // 如果更新的章节没有 content，尝试从多个来源获取：
                     // 1. 现有章节的 content（如果已加载）
                     // 2. 从 IndexedDB 加载
@@ -104,15 +102,17 @@ export const useBooksStore = defineStore('books', {
                       (Array.isArray(updatedChapter.content) && updatedChapter.content.length === 0)
                     ) {
                       let contentToPreserve: Paragraph[] | undefined = undefined;
-                      
+
                       // 首先尝试从现有章节获取（如果已加载）
                       if (existingChapter && existingChapter.content !== undefined) {
                         contentToPreserve = existingChapter.content;
                       } else {
                         // 如果现有章节没有 content，从 IndexedDB 加载
-                        contentToPreserve = await ChapterContentService.loadChapterContent(updatedChapter.id);
+                        contentToPreserve = await ChapterContentService.loadChapterContent(
+                          updatedChapter.id,
+                        );
                       }
-                      
+
                       // 如果找到了内容，保留它
                       if (contentToPreserve !== undefined) {
                         return {
@@ -121,17 +121,17 @@ export const useBooksStore = defineStore('books', {
                         };
                       }
                     }
-                    
+
                     return updatedChapter;
-                  })
+                  }),
                 );
               }
-              
+
               return updatedVolume;
-            })
+            }),
           );
         }
-        
+
         this.books[index] = updatedBook;
         await BookService.saveBook(updatedBook);
       }

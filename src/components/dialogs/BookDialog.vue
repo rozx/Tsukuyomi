@@ -15,10 +15,9 @@ import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import {
   formatCharCount,
-  getChapterCharCount,
-  getChapterCharCountAsync,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from 'src/utils';
@@ -106,87 +105,14 @@ const toggleVolume = (volumeId: string) => {
 };
 
 // 使用工具函数计算和格式化
-// getChapterCharCount 和 formatCharCount 已从 utils 导入
+// formatCharCount 已从 utils 导入
 
-// 章节字符数缓存和加载状态
-const chapterCharCounts = ref<Record<string, number>>({});
-const loadingChapterCharCounts = ref<Set<string>>(new Set());
-
-// 异步加载章节字符数
-const loadChapterCharCount = async (chapter: Chapter) => {
-  // 如果已缓存，直接返回
-  if (chapterCharCounts.value[chapter.id] !== undefined) {
-    return chapterCharCounts.value[chapter.id] || 0;
-  }
-
-  // 先尝试同步计算（如果内容已加载）
-  const syncCount = getChapterCharCount(chapter);
-  // 如果章节内容已加载，使用同步结果
-  if (chapter.content !== undefined) {
-    chapterCharCounts.value[chapter.id] = syncCount;
-    return syncCount;
-  }
-
-  // 异步加载（从 IndexedDB）
-  loadingChapterCharCounts.value.add(chapter.id);
-  try {
-    const count = await getChapterCharCountAsync(chapter);
-    chapterCharCounts.value[chapter.id] = count;
-    return count;
-  } catch (error) {
-    console.error(`Failed to load char count for chapter ${chapter.id}:`, error);
-    // 如果异步加载失败，使用同步结果作为后备
-    chapterCharCounts.value[chapter.id] = syncCount;
-    return syncCount;
-  } finally {
-    loadingChapterCharCounts.value.delete(chapter.id);
-  }
-};
-
-// 获取章节字符数（带缓存）
-const getChapterCharCountDisplay = (chapter: Chapter): number => {
-  return chapterCharCounts.value[chapter.id] ?? getChapterCharCount(chapter);
-};
-
-// 检查章节是否正在加载字符数
-const isLoadingChapterCharCount = (chapter: Chapter): boolean => {
-  return loadingChapterCharCounts.value.has(chapter.id);
-};
-
-// 加载所有可见章节的字符数
-const loadAllVisibleChapterCharCounts = async () => {
-  const volumes = availableVolumes.value;
-  const loadPromises: Promise<void>[] = [];
-  
-  for (const volume of volumes) {
-    if (expandedVolumes.value.has(volume.id) && volume.chapters) {
-      for (const chapter of volume.chapters) {
-        loadPromises.push(loadChapterCharCount(chapter).then(() => {}));
-      }
-    }
-  }
-  
-  await Promise.all(loadPromises);
-};
-
-// 当展开的卷变化时，加载字符数
-watch(
-  () => expandedVolumes.value,
-  async () => {
-    await loadAllVisibleChapterCharCounts();
-  },
-  { deep: true },
-);
-
-// 当章节列表变化时，清除缓存并重新加载
-watch(
-  () => availableVolumes.value,
-  async () => {
-    chapterCharCounts.value = {};
-    await loadAllVisibleChapterCharCounts();
-  },
-  { deep: true },
-);
+// 使用章节字符数加载 composable（自动处理展开卷和章节列表变化）
+const {
+  getChapterCharCountDisplay,
+  isLoadingChapterCharCount,
+  loadAllVisibleChapterCharCounts,
+} = useChapterCharCount(availableVolumes, expandedVolumes);
 
 // 重置表单
 const resetForm = () => {

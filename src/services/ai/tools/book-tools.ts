@@ -161,21 +161,7 @@ export const bookTools: ToolDefinition[] = [
 
         if (book.volumes) {
           // 加载所有章节的内容（如果需要）
-          for (const volume of book.volumes) {
-            if (volume.chapters) {
-              for (let i = 0; i < volume.chapters.length; i++) {
-                const chapter = volume.chapters[i];
-                if (chapter && chapter.content === undefined) {
-                  const content = await ChapterContentService.loadChapterContent(chapter.id);
-                  volume.chapters[i] = {
-                    ...chapter,
-                    content: content || [],
-                    contentLoaded: true,
-                  };
-                }
-              }
-            }
-          }
+          await ChapterContentService.loadAllChapterContents(book);
 
           book.volumes.forEach((volume, volumeIndex) => {
             if (volume.chapters) {

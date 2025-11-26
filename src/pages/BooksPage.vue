@@ -16,6 +16,7 @@ import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
@@ -23,8 +24,6 @@ import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import {
   formatWordCount,
-  getNovelCharCount,
-  getNovelCharCountAsync,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
 
@@ -70,62 +69,13 @@ const searchQuery = ref('');
 // 使用工具函数计算（需要在排序选项之前定义）
 const getTotalChapters = utilGetTotalChapters;
 
-// 字符数缓存（使用对象而不是 Map，确保 Vue 响应式）
-const bookCharCounts = ref<Record<string, number>>({});
-// 正在加载字符数的书籍 ID 集合
-const loadingCharCounts = ref<Set<string>>(new Set());
-
-// 异步加载书籍字符数
-const loadBookCharCount = async (book: Novel) => {
-  // 如果已缓存，直接返回
-  if (bookCharCounts.value[book.id] !== undefined) {
-    return bookCharCounts.value[book.id] || 0;
-  }
-
-  // 检查是否有章节需要加载内容
-  const hasChapters = book.volumes?.some((v) => v.chapters && v.chapters.length > 0) || false;
-  if (!hasChapters) {
-    // 没有章节，字符数为 0
-    bookCharCounts.value[book.id] = 0;
-    return 0;
-  }
-
-  // 先尝试同步计算（如果内容已加载）
-  const syncCount = getNovelCharCount(book);
-  // 如果同步计算有结果且大于0，或者所有章节的内容都已加载，使用同步结果
-  const allContentLoaded = book.volumes?.every((v) =>
-    v.chapters?.every((c) => c.content !== undefined),
-  );
-  if (allContentLoaded && syncCount >= 0) {
-    bookCharCounts.value[book.id] = syncCount;
-    return syncCount;
-  }
-
-  // 异步加载（从 IndexedDB）
-  loadingCharCounts.value.add(book.id);
-  try {
-    const count = await getNovelCharCountAsync(book);
-    bookCharCounts.value[book.id] = count;
-    return count;
-  } catch (error) {
-    console.error(`Failed to load char count for book ${book.id}:`, error);
-    // 如果异步加载失败，使用同步结果作为后备
-    bookCharCounts.value[book.id] = syncCount;
-    return syncCount;
-  } finally {
-    loadingCharCounts.value.delete(book.id);
-  }
-};
-
-// 获取书籍字符数（带缓存）
-const getTotalWords = (book: Novel): number => {
-  return bookCharCounts.value[book.id] ?? 0;
-};
-
-// 检查书籍是否正在加载字符数
-const isLoadingCharCount = (book: Novel): boolean => {
-  return loadingCharCounts.value.has(book.id);
-};
+// 使用字符数加载 composable
+const {
+  loadBookCharCount,
+  getTotalWords,
+  isLoadingCharCount,
+  clearCache: clearCharCountCache,
+} = useNovelCharCount();
 
 // 排序选项
 type SortOption = {
@@ -277,7 +227,7 @@ watch(
 watch(
   () => booksStore.books,
   async () => {
-    bookCharCounts.value = {};
+    clearCharCountCache();
     await loadAllBookCharCounts();
   },
 );
