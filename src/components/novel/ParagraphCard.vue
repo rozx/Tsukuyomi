@@ -234,13 +234,14 @@ const onTranslationOpen = () => {
       let textareaElement: HTMLTextAreaElement | null = null;
       
       // 方式1: 通过 $el 访问
-      if (translationTextareaRef.value.$el) {
-        textareaElement = translationTextareaRef.value.$el.querySelector('textarea');
+      const componentInstance = translationTextareaRef.value as any;
+      if (componentInstance.$el) {
+        textareaElement = componentInstance.$el.querySelector('textarea');
       }
       
       // 方式2: 如果 $el 是 textarea 本身
-      if (!textareaElement && translationTextareaRef.value.$el instanceof HTMLTextAreaElement) {
-        textareaElement = translationTextareaRef.value.$el;
+      if (!textareaElement && componentInstance.$el instanceof HTMLTextAreaElement) {
+        textareaElement = componentInstance.$el;
       }
       
       // 方式3: 通过组件实例的 input 属性（某些 PrimeVue 版本）
