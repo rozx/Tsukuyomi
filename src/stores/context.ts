@@ -23,10 +23,10 @@ function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
   // 检查是否包含实际内容（字母、数字、CJK字符）
   // \p{L} 匹配任何语言的字母
   // \p{N} 匹配任何语言的数字
-  // \p{Han} 匹配汉字
-  // \p{Hiragana} 匹配平假名
-  // \p{Katakana} 匹配片假名
-  const hasContent = /[\p{L}\p{N}\p{Han}\p{Hiragana}\p{Katakana}]/u.test(trimmed);
+  // \u4e00-\u9fff 匹配汉字 (CJK Unified Ideographs)
+  // \u3040-\u309f 匹配平假名 (Hiragana)
+  // \u30a0-\u30ff 匹配片假名 (Katakana)
+  const hasContent = /[\p{L}\p{N}\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/u.test(trimmed);
 
   // 如果没有实际内容，则认为是仅符号段落
   return !hasContent;
@@ -186,10 +186,7 @@ export const useContextStore = defineStore('context', {
      * @param context 上下文对象
      * @param paragraphText 可选的段落文本，如果提供且为空或仅符号，则不设置段落 ID
      */
-    setContext(
-      context: Partial<ContextState>,
-      paragraphText?: string | null,
-    ): void {
+    setContext(context: Partial<ContextState>, paragraphText?: string | null): void {
       if (context.currentBookId !== undefined) {
         const previousBookId = this.currentBookId;
         this.currentBookId = context.currentBookId;
@@ -209,11 +206,7 @@ export const useContextStore = defineStore('context', {
       }
       if (context.hoveredParagraphId !== undefined) {
         // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
-        if (
-          context.hoveredParagraphId &&
-          paragraphText !== undefined &&
-          paragraphText !== null
-        ) {
+        if (context.hoveredParagraphId && paragraphText !== undefined && paragraphText !== null) {
           if (isEmptyOrSymbolOnly(paragraphText)) {
             // 如果段落是空的或仅符号，清除悬停状态
             this.hoveredParagraphId = null;
@@ -261,4 +254,3 @@ export const useContextStore = defineStore('context', {
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useContextStore, import.meta.hot));
 }
-

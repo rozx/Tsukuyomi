@@ -9,7 +9,15 @@ import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToast
 
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
-const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, markAsRead, revert, canRevert } = useToastHistory();
+const {
+  historyItems,
+  clearHistory,
+  removeHistoryItem,
+  formatTimestamp,
+  markAsRead,
+  revert,
+  canRevert,
+} = useToastHistory();
 
 const selectedSeverity = ref<'all' | ToastHistoryItem['severity']>('all');
 
@@ -147,7 +155,15 @@ defineExpose({
                       <div class="flex items-center gap-2">
                         <h4 class="font-medium text-moon/90">{{ item.summary }}</h4>
                         <Tag
-                          :value="item.severity === 'success' ? '成功' : item.severity === 'error' ? '错误' : item.severity === 'info' ? '信息' : '警告'"
+                          :value="
+                            item.severity === 'success'
+                              ? '成功'
+                              : item.severity === 'error'
+                                ? '错误'
+                                : item.severity === 'info'
+                                  ? '信息'
+                                  : '警告'
+                          "
                           :severity="severityTags[item.severity as ToastHistoryItem['severity']]"
                           class="text-xs"
                         />

@@ -1179,10 +1179,13 @@ watch(
       }
       // 聚焦到输入框
       nextTick(() => {
-        if (inputRef.value && inputRef.value.$el) {
-          const textarea = inputRef.value.$el.querySelector('textarea');
-          if (textarea) {
-            textarea.focus();
+        if (inputRef.value) {
+          const component = inputRef.value as any;
+          if (component.$el) {
+            const textarea = component.$el.querySelector('textarea');
+            if (textarea) {
+              textarea.focus();
+            }
           }
         }
       });
