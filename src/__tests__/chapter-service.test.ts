@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ChapterService } from '../services/chapter-service';
-import type { Novel, Volume, Chapter } from '../models/novel';
+import type { Novel, Volume, Chapter, Paragraph } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
 // 辅助函数：创建测试用小说
@@ -14,7 +14,41 @@ function createTestNovel(volumes: Volume[] = []): Novel {
   };
 }
 
+// 辅助函数：创建测试用段落
+function createTestParagraph(id?: string): Paragraph {
+  return {
+    id: id || generateShortId(),
+    text: '测试段落文本',
+    selectedTranslationId: generateShortId(),
+    translations: [
+      {
+        id: generateShortId(),
+        translation: '测试翻译',
+        aiModelId: 'model-1',
+      },
+    ],
+  };
+}
+
+// Mock ChapterContentService
+const mockLoadChapterContent = mock((_chapterId: string) => Promise.resolve(undefined as Paragraph[] | undefined));
+const mockSaveChapterContent = mock((_chapterId: string, _content: Paragraph[]) => Promise.resolve());
+const mockDeleteChapterContent = mock((_chapterId: string) => Promise.resolve());
+
+await mock.module('src/services/chapter-content-service', () => ({
+  ChapterContentService: {
+    loadChapterContent: mockLoadChapterContent,
+    saveChapterContent: mockSaveChapterContent,
+    deleteChapterContent: mockDeleteChapterContent,
+  },
+}));
+
 describe('ChapterService', () => {
+  beforeEach(() => {
+    mockLoadChapterContent.mockClear();
+    mockSaveChapterContent.mockClear();
+    mockDeleteChapterContent.mockClear();
+  });
   describe('addVolume', () => {
     it('应该添加新卷', () => {
       const novel = createTestNovel();
@@ -321,6 +355,132 @@ describe('ChapterService', () => {
       expect(updatedVolumes[0]?.chapters?.length).toBe(0);
       expect(updatedVolumes[1]?.chapters?.length).toBe(1);
       expect(updatedVolumes[1]?.chapters?.[0]?.id).toBe('c1');
+    });
+  });
+
+  // --- 懒加载相关方法测试 ---
+
+  describe('loadChapterContent', () => {
+    it('应该从独立存储加载章节内容', async () => {
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      const content = [createTestParagraph()];
+      mockLoadChapterContent.mockResolvedValueOnce(content);
+
+      const result = await ChapterService.loadChapterContent(chapter);
+
+      expect(result.content).toEqual(content);
+      expect(result.contentLoaded).toBe(true);
+      expect(mockLoadChapterContent).toHaveBeenCalledWith('chapter-1');
+    });
+
+    it('应该跳过已加载内容的章节', async () => {
+      const content = [createTestParagraph()];
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        content,
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      const result = await ChapterService.loadChapterContent(chapter);
+
+      expect(result).toBe(chapter); // 应该返回同一个对象
+      expect(mockLoadChapterContent).not.toHaveBeenCalled();
+    });
+
+    it('应该处理内容不存在的情况', async () => {
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      mockLoadChapterContent.mockResolvedValueOnce(undefined);
+
+      const result = await ChapterService.loadChapterContent(chapter);
+
+      expect(result.content).toEqual([]);
+      expect(result.contentLoaded).toBe(true);
+    });
+  });
+
+  describe('saveChapterContent', () => {
+    it('应该保存章节内容到独立存储', async () => {
+      const content = [createTestParagraph()];
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        content,
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      await ChapterService.saveChapterContent(chapter);
+
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', content);
+    });
+
+    it('应该跳过没有内容的章节', async () => {
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      await ChapterService.saveChapterContent(chapter);
+
+      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+    });
+
+    it('应该跳过空内容数组的章节', async () => {
+      const chapter: Chapter = {
+        id: 'chapter-1',
+        title: {
+          original: 'Chapter 1',
+          translation: { id: generateShortId(), translation: '', aiModelId: '' },
+        },
+        content: [],
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      await ChapterService.saveChapterContent(chapter);
+
+      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteChapterContent', () => {
+    it('应该删除章节内容', async () => {
+      const chapterId = 'chapter-1';
+
+      await ChapterService.deleteChapterContent(chapterId);
+
+      expect(mockDeleteChapterContent).toHaveBeenCalledWith(chapterId);
     });
   });
 });

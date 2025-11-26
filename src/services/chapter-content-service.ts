@@ -40,12 +40,14 @@ export class ChapterContentService {
     }
   }
 
-  // 简单的内存缓存，避免重复加载
+  // LRU 内存缓存，避免重复加载
+  // 使用 Map 的插入顺序实现 LRU：最近访问的条目会被移动到末尾
   private static contentCache = new Map<string, Paragraph[] | null>();
   private static readonly CACHE_MAX_SIZE = 100; // 最多缓存 100 个章节
 
   /**
    * 清理缓存（当缓存过大时）
+   * 使用 LRU 策略：删除最久未使用的 20% 的缓存项（Map 开头的条目）
    */
   private static evictCacheIfNeeded(): void {
     if (this.contentCache.size > this.CACHE_MAX_SIZE) {
@@ -59,6 +61,20 @@ export class ChapterContentService {
   }
 
   /**
+   * 更新缓存条目的访问顺序（LRU 行为）
+   * 将指定的缓存条目移动到 Map 末尾，表示最近使用
+   * @param chapterId 章节 ID
+   */
+  private static touchCacheEntry(chapterId: string): void {
+    if (this.contentCache.has(chapterId)) {
+      const cached = this.contentCache.get(chapterId)!;
+      // 删除并重新添加，移动到末尾（最近使用）
+      this.contentCache.delete(chapterId);
+      this.contentCache.set(chapterId, cached);
+    }
+  }
+
+  /**
    * 加载章节内容（带缓存）
    * @param chapterId 章节 ID
    * @returns 章节内容，如果不存在则返回 undefined
@@ -67,6 +83,8 @@ export class ChapterContentService {
     // 检查缓存
     if (this.contentCache.has(chapterId)) {
       const cached = this.contentCache.get(chapterId);
+      // 更新访问顺序（LRU 行为）
+      this.touchCacheEntry(chapterId);
       return cached === null ? undefined : cached;
     }
 
@@ -109,6 +127,8 @@ export class ChapterContentService {
     for (const chapterId of chapterIds) {
       if (this.contentCache.has(chapterId)) {
         const cached = this.contentCache.get(chapterId);
+        // 更新访问顺序（LRU 行为）
+        this.touchCacheEntry(chapterId);
         result.set(chapterId, cached === null ? undefined : cached);
       } else {
         uncachedIds.push(chapterId);
