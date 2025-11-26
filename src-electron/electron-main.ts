@@ -352,63 +352,14 @@ function createMenu() {
         isMac ? { role: 'close' as const } : { role: 'quit' as const },
       ],
     },
-    // 编辑菜单
-    {
-      label: '编辑',
-      submenu: [
-        { role: 'undo' as const },
-        { role: 'redo' as const },
-        { type: 'separator' as const },
-        { role: 'cut' as const },
-        { role: 'copy' as const },
-        { role: 'paste' as const },
-        ...(isMac
-          ? [
-              { role: 'pasteAndMatchStyle' as const },
-              { role: 'delete' as const },
-              { role: 'selectAll' as const },
-              { type: 'separator' as const },
-              {
-                label: '语音',
-                submenu: [{ role: 'startSpeaking' as const }, { role: 'stopSpeaking' as const }],
-              },
-            ]
-          : [
-              { role: 'delete' as const },
-              { type: 'separator' as const },
-              { role: 'selectAll' as const },
-            ]),
-      ],
-    },
     // 视图菜单
     {
       label: '视图',
       submenu: [
-        { role: 'reload' as const },
-        { role: 'forceReload' as const },
-        { role: 'toggleDevTools' as const },
-        { type: 'separator' as const },
-        { role: 'resetZoom' as const },
-        { role: 'zoomIn' as const },
-        { role: 'zoomOut' as const },
-        { type: 'separator' as const },
-        { role: 'togglefullscreen' as const },
-      ],
-    },
-    // 窗口菜单
-    {
-      label: '窗口',
-      submenu: [
-        { role: 'minimize' as const },
-        { role: 'zoom' as const },
-        ...(isMac
-          ? [
-              { type: 'separator' as const },
-              { role: 'front' as const },
-              { type: 'separator' as const },
-              { role: 'window' as const },
-            ]
-          : [{ role: 'close' as const }]),
+        { role: 'reload' as const, label: '重新加载' },
+        { role: 'forceReload' as const, label: '强制重新加载' },
+        { role: 'toggleDevTools' as const, label: '切换开发者工具' },
+        { role: 'togglefullscreen' as const, label: '切换全屏' },
       ],
     },
     // 帮助菜单

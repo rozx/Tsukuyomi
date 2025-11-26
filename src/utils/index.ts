@@ -10,6 +10,8 @@ export {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
   getCharacterNameVariants,
+  isEmptyParagraph,
+  hasParagraphTranslation,
 } from './novel-utils';
 export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
 export {
@@ -23,3 +25,5 @@ export {
   calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
+export { detectRepeatingCharacters } from './ai-degradation-detector';
+export type { DegradationDetectionOptions } from './ai-degradation-detector';

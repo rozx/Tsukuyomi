@@ -30,7 +30,7 @@ const getProviderLabel = (provider: string) => {
 const getDefaultTasks = (model: AIModel) => {
   const tasks: string[] = [];
   if (model.isDefault.translation?.enabled) tasks.push(TASK_TYPE_LABELS.translation);
-  if (model.isDefault.proofreading?.enabled) tasks.push(TASK_TYPE_LABELS.proofreading);
+  if (model.isDefault.proofreading?.enabled) tasks.push('校对和润色'); // proofreading 任务用于校对和润色
   if (model.isDefault.termsTranslation?.enabled) tasks.push(TASK_TYPE_LABELS.termsTranslation);
   if (model.isDefault.assistant?.enabled) tasks.push(TASK_TYPE_LABELS.assistant);
   return tasks.join('、') || '无';

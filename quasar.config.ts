@@ -477,13 +477,15 @@ export default defineConfig((ctx) => {
         // Icons should be placed in src-electron/icons/
         mac: {
           icon: 'src-electron/icons/icon.icns',
-          // 只生成 zip 便携版，不生成 dmg 安装程序
-          target: ['zip'],
+          // 生成单文件可执行程序（.app bundle），在 Finder 中显示为单个文件
+          target: ['dir'],
         },
         win: {
           icon: 'src-electron/icons/icon.ico',
-          // 只生成 zip 便携版，不生成 exe 安装程序
-          target: ['zip'],
+          // 生成单文件便携版（portable），创建一个独立的 .exe 文件
+          target: ['portable'],
+          // 禁用代码签名以避免 Windows 符号链接权限问题
+          forceCodeSigning: false, // This disables the automatic signing attempt
         },
         linux: {
           icon: 'src-electron/icons/icon.png',

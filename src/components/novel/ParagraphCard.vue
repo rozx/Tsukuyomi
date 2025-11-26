@@ -18,6 +18,7 @@ const props = defineProps<{
   terminologies?: Terminology[];
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
+  isPolishing?: boolean;
   searchQuery?: string;
   characterScores?: Map<string, number>;
   bookId?: string;
@@ -27,6 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update-translation': [paragraphId: string, newTranslation: string];
   'retranslate': [paragraphId: string];
+  'polish': [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
 }>();
 
@@ -53,6 +55,35 @@ const hasTranslation = computed(() => {
   return translationText.value.trim().length > 0;
 });
 
+// 获取最近的翻译（除了当前应用的）
+const mostRecentTranslation = computed(() => {
+  if (!props.paragraph.translations || props.paragraph.translations.length === 0) {
+    return null;
+  }
+  
+  // 过滤掉当前选中的翻译
+  const otherTranslations = props.paragraph.translations.filter(
+    (t) => t.id !== props.paragraph.selectedTranslationId
+  );
+  
+  if (otherTranslations.length === 0) {
+    return null;
+  }
+  
+  // 返回第一个（假设 translations 数组是按时间顺序的，最新的在最后）
+  // 或者返回最后一个（如果最新的在最后）
+  return otherTranslations[otherTranslations.length - 1];
+});
+
+// 是否有其他翻译可以显示
+const hasOtherTranslations = computed(() => {
+  // 只有当翻译数量大于1时才显示按钮
+  return (
+    props.paragraph.translations &&
+    props.paragraph.translations.length > 1
+  );
+});
+
 // 处理翻译文本的高亮
 const translationNodes = computed(() => {
   const text = translationText.value;
@@ -74,11 +105,13 @@ const translationNodes = computed(() => {
 const termPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const paragraphCardRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
 const termRefsMap = new Map<string, HTMLElement>();
 const characterRefsMap = new Map<string, HTMLElement>();
+const recentTranslationButtonRef = ref<HTMLElement | null>(null);
 
 /**
  * 将文本转换为包含高亮术语和角色的节点数组
@@ -252,13 +285,37 @@ const handleContextMenuPopoverHide = () => {
   // 保留目标元素以便下次使用，只在组件卸载时清理
 };
 
+// 处理最近翻译按钮悬停
+const handleRecentTranslationMouseEnter = (event: Event) => {
+  if (recentTranslationPopoverRef.value && recentTranslationButtonRef.value && mostRecentTranslation.value) {
+    recentTranslationPopoverRef.value.toggle(event);
+  }
+};
+
+// 处理最近翻译按钮鼠标离开
+const handleRecentTranslationMouseLeave = () => {
+  if (recentTranslationPopoverRef.value) {
+    recentTranslationPopoverRef.value.hide();
+  }
+};
+
+// 当最近翻译 Popover 关闭时清理状态
+const handleRecentTranslationPopoverHide = () => {
+  // 不需要特殊处理
+};
+
 // 处理按钮点击（占位函数，暂不实现逻辑）
 const handleProofread = () => {
   // TODO: 实现校对段落逻辑
 };
 
 const handlePolish = () => {
-  // TODO: 实现润色段落逻辑
+  // 关闭上下文菜单
+  if (contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.hide();
+  }
+  // 触发润色事件
+  emit('polish', props.paragraph.id);
 };
 
 const handleRetranslate = () => {
@@ -281,6 +338,9 @@ const openTranslationHistory = () => {
   showTranslationHistoryDialog.value = true;
   if (contextMenuPopoverRef.value) {
     contextMenuPopoverRef.value.hide();
+  }
+  if (recentTranslationPopoverRef.value) {
+    recentTranslationPopoverRef.value.hide();
   }
 };
 
@@ -311,6 +371,17 @@ onUnmounted(() => {
     @mouseenter="handleParagraphMouseEnter"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
+    <!-- 最近翻译按钮 -->
+    <button
+      v-if="hasOtherTranslations"
+      ref="recentTranslationButtonRef"
+      class="recent-translation-icon-button"
+      @click="openTranslationHistory"
+      @mouseenter="handleRecentTranslationMouseEnter"
+      @mouseleave="handleRecentTranslationMouseLeave"
+    >
+      <i class="pi pi-history" />
+    </button>
     <button
       v-if="hasContent"
       ref="contextMenuButtonRef"
@@ -355,9 +426,9 @@ onUnmounted(() => {
           </span>
         </template>
       </p>
-      <div v-if="hasTranslation || props.isTranslating" class="paragraph-translation-wrapper">
-        <!-- 正在翻译时显示 skeleton（覆盖现有翻译） -->
-        <div v-if="props.isTranslating" class="paragraph-translation-skeleton">
+      <div v-if="hasTranslation || props.isTranslating || props.isPolishing" class="paragraph-translation-wrapper">
+        <!-- 正在翻译或润色时显示 skeleton（覆盖现有翻译） -->
+        <div v-if="props.isTranslating || props.isPolishing" class="paragraph-translation-skeleton">
           <Skeleton width="100%" height="1.5rem" />
           <Skeleton width="85%" height="1.5rem" />
           <Skeleton width="70%" height="1.5rem" />
@@ -455,6 +526,28 @@ onUnmounted(() => {
       </div>
     </Popover>
 
+    <!-- 最近翻译提示框 - 使用 PrimeVue Popover -->
+    <Popover
+      ref="recentTranslationPopoverRef"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 24rem; max-width: 90vw"
+      class="recent-translation-popover"
+      @hide="handleRecentTranslationPopoverHide"
+    >
+      <div v-if="mostRecentTranslation" class="recent-translation-popover-content">
+        <div class="popover-header">
+          <span class="popover-label">最近的翻译</span>
+        </div>
+        <div class="recent-translation-text">
+          {{ mostRecentTranslation.translation }}
+        </div>
+        <div class="recent-translation-hint">
+          点击按钮查看完整翻译历史
+        </div>
+      </div>
+    </Popover>
+
     <!-- 上下文菜单 - 使用 PrimeVue Popover -->
     <Popover
       ref="contextMenuPopoverRef"
@@ -475,7 +568,7 @@ onUnmounted(() => {
         />
         <Button
           label="润色段落"
-          icon="pi pi-pencil"
+          icon="pi pi-sparkles"
           class="context-menu-button"
           text
           severity="secondary"
@@ -542,10 +635,40 @@ onUnmounted(() => {
   transform: translateY(-2px);
 }
 
+.recent-translation-icon-button {
+  position: absolute;
+  top: 0.75rem;
+  right: 4rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--white-opacity-20);
+  border-radius: 4px;
+  color: var(--moon-opacity-40);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+}
+
+.recent-translation-icon-button:hover {
+  background-color: var(--white-opacity-10);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-opacity-100);
+  opacity: 1;
+}
+
+.paragraph-card.has-content:hover .recent-translation-icon-button {
+  opacity: 1;
+}
+
 .context-menu-icon-button {
   position: absolute;
   top: 0.75rem;
-  right: 0.75rem;
+  right: 1.25rem;
   width: 1.75rem;
   height: 1.75rem;
   display: flex;
@@ -574,6 +697,7 @@ onUnmounted(() => {
 
 .paragraph-content {
   width: 100%;
+  padding-right: 6rem; /* 为按钮留出空间：历史按钮右边距4rem + 宽度1.75rem ≈ 6rem */
 }
 
 .paragraph-text {
@@ -784,6 +908,46 @@ onUnmounted(() => {
   color: theme('colors.warning.DEFAULT');
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* 最近翻译 Popover 样式 */
+:deep(.recent-translation-popover .p-popover-content) {
+  padding: 0.75rem 1rem;
+}
+
+.recent-translation-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recent-translation-text {
+  font-size: 0.875rem;
+  color: var(--moon-opacity-90);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background: var(--white-opacity-5);
+  border-radius: 4px;
+  border: 1px solid var(--white-opacity-10);
+}
+
+.recent-translation-hint {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-60);
+  font-style: italic;
+  text-align: center;
+  padding-top: 0.25rem;
+}
+
+.popover-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+  margin-bottom: 0.25rem;
 }
 
 /* 上下文菜单 Popover 样式 */

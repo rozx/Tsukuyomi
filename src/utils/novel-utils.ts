@@ -1,4 +1,4 @@
-import type { Novel, Chapter, Volume } from 'src/models/novel';
+import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
 
 /**
  * 获取卷的显示标题（优先使用翻译，否则使用原文）
@@ -151,4 +151,29 @@ export function getCharacterNameVariants(name: string): string[] {
   }
 
   return Array.from(variants);
+}
+
+/**
+ * 检查段落是否为空（无内容或只有空白字符）
+ * @param paragraph 段落对象
+ * @returns 如果段落为空返回 true，否则返回 false
+ */
+export function isEmptyParagraph(paragraph: Paragraph): boolean {
+  if (!paragraph.text) {
+    return true;
+  }
+  return paragraph.text.trim().length === 0;
+}
+
+/**
+ * 检查段落是否有翻译
+ * @param paragraph 段落对象
+ * @returns 如果段落有翻译返回 true，否则返回 false
+ */
+export function hasParagraphTranslation(paragraph: Paragraph): boolean {
+  return !!(
+    paragraph.selectedTranslationId &&
+    paragraph.translations &&
+    paragraph.translations.some((t) => t.id === paragraph.selectedTranslationId)
+  );
 }

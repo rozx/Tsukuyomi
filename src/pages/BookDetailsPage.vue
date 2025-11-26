@@ -9,6 +9,7 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
+import SplitButton from 'primevue/splitbutton';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
@@ -20,7 +21,7 @@ import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
-import { TranslationService } from 'src/services/ai';
+import { TranslationService, PolishService } from 'src/services/ai';
 import {
   formatWordCount,
   getNovelCharCount,
@@ -34,6 +35,8 @@ import {
   findUniqueTermsInText,
   findUniqueCharactersInText,
   calculateCharacterScores,
+  isEmptyParagraph,
+  hasParagraphTranslation,
 } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -176,6 +179,214 @@ const selectParagraphTranslation = async (paragraphId: string, translationId: st
     detail: '已切换到选中的翻译版本',
     life: 2000,
   });
+};
+
+// 润色单个段落
+const polishParagraph = async (paragraphId: string) => {
+  if (
+    !book.value ||
+    !selectedChapterWithContent.value ||
+    !selectedChapterWithContent.value.content
+  ) {
+    return;
+  }
+
+  // 查找段落
+  const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
+  if (!paragraph) {
+    toast.add({
+      severity: 'error',
+      summary: '润色失败',
+      detail: '未找到要润色的段落',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 检查段落是否有翻译
+  if (!hasParagraphTranslation(paragraph)) {
+    toast.add({
+      severity: 'error',
+      summary: '润色失败',
+      detail: '该段落还没有翻译，请先翻译段落',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 检查是否有可用的润色模型（使用校对模型配置）
+  const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+  if (!selectedModel) {
+    toast.add({
+      severity: 'error',
+      summary: '润色失败',
+      detail: '未找到可用的润色模型，请在设置中配置',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 添加段落 ID 到正在润色的集合中
+  polishingParagraphIds.value.add(paragraphId);
+
+  // 创建 AbortController 用于取消润色
+  const abortController = new AbortController();
+
+  try {
+    // 调用润色服务
+    await PolishService.polish([paragraph], selectedModel, {
+      bookId: book.value.id,
+      signal: abortController.signal,
+      aiProcessingStore: {
+        addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+        updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+        appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+        activeTasks: aiProcessingStore.activeTasks,
+      },
+      onParagraphPolish: (paragraphPolishes) => {
+        if (!book.value || !selectedChapterWithContent.value) return;
+
+        // 更新段落润色
+        const updatedVolumes = book.value.volumes?.map((volume) => {
+          if (!volume.chapters) return volume;
+
+          const updatedChapters = volume.chapters.map((chapter) => {
+            if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+            // 使用已加载的章节内容
+            const content =
+              chapter.id === selectedChapterWithContent.value!.id
+                ? selectedChapterWithContent.value!.content
+                : chapter.content;
+
+            if (!content) return chapter;
+
+            const updatedContent = content.map((para) => {
+              const polish = paragraphPolishes.find((pt) => pt.id === para.id);
+              if (!polish) return para;
+
+              // 创建新的翻译对象（润色结果）
+              const newTranslation = {
+                id: generateShortId(),
+                translation: normalizeTranslationQuotes(polish.translation),
+                aiModelId: selectedModel.id,
+              };
+
+              // 添加到翻译列表（限制最多5个）
+              const updatedTranslations = ChapterService.addParagraphTranslation(
+                para.translations || [],
+                newTranslation,
+              );
+
+              return {
+                id: para.id,
+                text: para.text,
+                translations: updatedTranslations,
+                selectedTranslationId: newTranslation.id,
+              };
+            });
+
+            return {
+              ...chapter,
+              content: updatedContent,
+              lastEdited: new Date(),
+            };
+          });
+
+          return {
+            ...volume,
+            chapters: updatedChapters,
+          };
+        });
+
+        // 更新书籍（使用 void 忽略 Promise）
+        void booksStore
+          .updateBook(book.value.id, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          })
+          .then(() => {
+            // 更新 selectedChapterWithContent 以反映保存的更改
+            const updatedChapter = (updatedVolumes || [])
+              .flatMap((v) => v.chapters || [])
+              .find((c) => c.id === selectedChapterWithContent.value?.id);
+            if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+              selectedChapterWithContent.value = {
+                ...selectedChapterWithContent.value,
+                content: updatedChapter.content,
+              };
+            }
+          });
+      },
+      onAction: (action) => {
+        // 显示 CRUD 操作的 toast 通知
+        const entityLabel = action.entity === 'term' ? '术语' : '角色';
+        const typeLabel =
+          action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
+
+        let summary = '';
+        let detail = '';
+
+        if (action.type === 'delete') {
+          const deleteData = action.data as { id: string; name?: string };
+          const name = deleteData.name || '未知';
+          summary = `已删除${entityLabel}`;
+          detail = `${entityLabel} "${name}" 已被删除`;
+        } else {
+          const data = action.data as Terminology | CharacterSetting;
+          const name = data.name || '未知';
+
+          if (action.entity === 'term') {
+            const term = data as Terminology;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (term.translation?.translation) {
+              parts.push(`翻译: "${term.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          } else {
+            const character = data as CharacterSetting;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (character.translation?.translation) {
+              parts.push(`翻译: "${character.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          }
+        }
+
+        toast.add({
+          severity: 'info',
+          summary,
+          detail,
+          life: 3000,
+        });
+      },
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '润色完成',
+      detail: '段落已润色',
+      life: 3000,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      // Cancelled - no need to show toast
+    } else {
+      console.error('润色段落时出错:', error);
+      toast.add({
+        severity: 'error',
+        summary: '润色失败',
+        detail: error instanceof Error ? error.message : '润色段落时发生未知错误',
+        life: 5000,
+      });
+    }
+  } finally {
+    // 从正在润色的集合中移除段落 ID
+    polishingParagraphIds.value.delete(paragraphId);
+  }
 };
 
 // 重新翻译单个段落
@@ -860,6 +1071,33 @@ const selectedChapterParagraphs = computed(() => {
   return selectedChapterWithContent.value.content;
 });
 
+// 翻译状态计算属性
+const translationStatus = computed(() => {
+  const paragraphs = selectedChapterParagraphs.value;
+  if (paragraphs.length === 0) {
+    return { hasNone: true, hasPartial: false, hasAll: false };
+  }
+
+  // 过滤掉空段落，只统计有内容的段落
+  const nonEmptyParagraphs = paragraphs.filter((p) => !isEmptyParagraph(p));
+
+  if (nonEmptyParagraphs.length === 0) {
+    // 如果所有段落都是空的，视为无翻译状态
+    return { hasNone: true, hasPartial: false, hasAll: false };
+  }
+
+  const translatedCount = nonEmptyParagraphs.filter(hasParagraphTranslation).length;
+  const totalCount = nonEmptyParagraphs.length;
+
+  if (translatedCount === 0) {
+    return { hasNone: true, hasPartial: false, hasAll: false };
+  } else if (translatedCount === totalCount) {
+    return { hasNone: false, hasPartial: false, hasAll: true };
+  } else {
+    return { hasNone: false, hasPartial: true, hasAll: false };
+  }
+});
+
 // 实时更新 context store - 监听书籍变化
 watch(
   bookId,
@@ -1188,6 +1426,16 @@ const translationProgress = ref({
 });
 const translationAbortController = ref<AbortController | null>(null);
 const translatingParagraphIds = ref<Set<string>>(new Set());
+
+// 润色章节所有段落
+const isPolishingChapter = ref(false);
+const polishProgress = ref({
+  current: 0,
+  total: 0,
+  message: '',
+});
+const polishAbortController = ref<AbortController | null>(null);
+const polishingParagraphIds = ref<Set<string>>(new Set());
 
 // 规范化章节符号
 const normalizeChapterSymbols = async () => {
@@ -1843,6 +2091,749 @@ const translateAllParagraphs = async () => {
   }
 };
 
+// 继续翻译（只翻译未翻译的段落）
+const continueTranslation = async () => {
+  if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+    return;
+  }
+
+  // 过滤出未翻译的段落（排除空段落）
+  const untranslatedParagraphs = selectedChapterParagraphs.value.filter(
+    (para) => !isEmptyParagraph(para) && !hasParagraphTranslation(para),
+  );
+
+  if (untranslatedParagraphs.length === 0) {
+    toast.add({
+      severity: 'info',
+      summary: '无需翻译',
+      detail: '所有段落都已翻译',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 使用 translateAllParagraphs 的逻辑，但只翻译未翻译的段落
+  // 检查是否有可用的翻译模型
+  const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
+  if (!selectedModel) {
+    toast.add({
+      severity: 'error',
+      summary: '翻译失败',
+      detail: '未找到可用的翻译模型，请在设置中配置',
+      life: 3000,
+    });
+    return;
+  }
+
+  isTranslatingChapter.value = true;
+  translatingParagraphIds.value.clear();
+
+  // 初始化进度
+  translationProgress.value = {
+    current: 0,
+    total: 0,
+    message: '正在初始化翻译...',
+  };
+
+  // 创建 AbortController 用于取消翻译
+  const abortController = new AbortController();
+  translationAbortController.value = abortController;
+
+  // 用于跟踪已更新的段落，避免重复更新
+  const updatedParagraphIds = new Set<string>();
+
+  // 更新段落的辅助函数
+  const updateParagraphsIncrementally = async (
+    paragraphTranslations: { id: string; translation: string }[],
+  ) => {
+    if (!book.value || !selectedChapterWithContent.value) return;
+
+    // 过滤出尚未更新的段落
+    const newTranslations = paragraphTranslations.filter(
+      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
+    );
+
+    if (newTranslations.length === 0) return;
+
+    // 标记这些段落为已更新
+    newTranslations.forEach((pt) => updatedParagraphIds.add(pt.id));
+
+    // 更新每个段落的翻译
+    const updatedVolumes = book.value.volumes?.map((volume) => {
+      if (!volume.chapters) return volume;
+
+      const updatedChapters = volume.chapters.map((chapter) => {
+        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+        // 使用已加载的章节内容
+        const content =
+          chapter.id === selectedChapterWithContent.value!.id
+            ? selectedChapterWithContent.value!.content
+            : chapter.content;
+
+        if (!content) return chapter;
+
+        const updatedContent = content.map((para) => {
+          const translation = newTranslations.find((pt) => pt.id === para.id);
+          if (!translation) return para;
+
+          // 创建新的翻译对象
+          const newTranslation = {
+            id: generateShortId(),
+            translation: normalizeTranslationQuotes(translation.translation),
+            aiModelId: selectedModel.id,
+          };
+
+          // 添加到翻译列表（限制最多5个）
+          const updatedTranslations = ChapterService.addParagraphTranslation(
+            para.translations || [],
+            newTranslation,
+          );
+
+          // 只更新翻译相关字段，确保不修改原文（text 字段）
+          return {
+            id: para.id,
+            text: para.text, // 明确保留原文，不修改
+            translations: updatedTranslations,
+            selectedTranslationId: newTranslation.id,
+          };
+        });
+
+        return {
+          ...chapter,
+          content: updatedContent,
+          lastEdited: new Date(),
+        };
+      });
+
+      return {
+        ...volume,
+        chapters: updatedChapters,
+      };
+    });
+
+    // 更新书籍
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+
+    // 更新 selectedChapterWithContent 以反映保存的更改
+    const updatedChapter = (updatedVolumes || [])
+      .flatMap((v) => v.chapters || [])
+      .find((c) => c.id === selectedChapterWithContent.value!.id);
+    if (updatedChapter && updatedChapter.content) {
+      selectedChapterWithContent.value = {
+        ...selectedChapterWithContent.value,
+        content: updatedChapter.content,
+      };
+    }
+  };
+
+  try {
+    // 获取章节标题
+    const chapterTitle = selectedChapter.value?.title?.original;
+
+    // 调用翻译服务，只翻译未翻译的段落
+    const result = await TranslationService.translate(untranslatedParagraphs, selectedModel, {
+      bookId: book.value.id,
+      ...(chapterTitle ? { chapterTitle } : {}),
+      signal: abortController.signal,
+      aiProcessingStore: {
+        addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+        updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+        appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+        activeTasks: aiProcessingStore.activeTasks,
+      },
+      onProgress: (progress) => {
+        translationProgress.value = {
+          current: progress.current,
+          total: progress.total,
+          message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
+        };
+        // 更新正在翻译的段落 ID
+        if (progress.currentParagraphs) {
+          translatingParagraphIds.value = new Set(progress.currentParagraphs);
+        }
+        console.debug('翻译进度:', progress);
+      },
+      onParagraphTranslation: (translations) => {
+        void updateParagraphsIncrementally(translations);
+      },
+      onAction: (action) => {
+        // 显示 CRUD 操作的 toast 通知（与 translateAllParagraphs 相同）
+        const entityLabel = action.entity === 'term' ? '术语' : '角色';
+        const typeLabel =
+          action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
+
+        let summary = '';
+        let detail = '';
+
+        if (action.type === 'delete') {
+          const deleteData = action.data as { id: string; name?: string };
+          const name = deleteData.name || '未知';
+          summary = `已删除${entityLabel}`;
+          detail = `${entityLabel} "${name}" 已被删除`;
+        } else {
+          const data = action.data as Terminology | CharacterSetting;
+          const name = data.name || '未知';
+
+          if (action.entity === 'term') {
+            const term = data as Terminology;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (term.translation?.translation) {
+              parts.push(`翻译: "${term.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          } else {
+            const character = data as CharacterSetting;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (character.translation?.translation) {
+              parts.push(`翻译: "${character.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          }
+        }
+
+        toast.add({
+          severity: 'info',
+          summary,
+          detail,
+          life: 3000,
+        });
+      },
+    });
+
+    // 处理翻译结果（与 translateAllParagraphs 相同）
+    const translationMap = new Map<string, string>();
+
+    // 优先使用结构化的段落翻译结果
+    if (result.paragraphTranslations && result.paragraphTranslations.length > 0) {
+      result.paragraphTranslations.forEach((pt) => {
+        if (pt.id && pt.translation && !updatedParagraphIds.has(pt.id)) {
+          translationMap.set(pt.id, pt.translation);
+        }
+      });
+    }
+
+    // 更新剩余的段落翻译
+    if (translationMap.size > 0) {
+      const updatedVolumes = book.value.volumes?.map((volume) => {
+        if (!volume.chapters) return volume;
+
+        const updatedChapters = volume.chapters.map((chapter) => {
+          if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+          const content =
+            chapter.id === selectedChapterWithContent.value!.id
+              ? selectedChapterWithContent.value!.content
+              : chapter.content;
+
+          if (!content) return chapter;
+
+          const updatedContent = content.map((para) => {
+            const translation = translationMap.get(para.id);
+            if (!translation) return para;
+
+            const newTranslation = {
+              id: generateShortId(),
+              translation: normalizeTranslationQuotes(translation),
+              aiModelId: selectedModel.id,
+            };
+
+            const updatedTranslations = ChapterService.addParagraphTranslation(
+              para.translations || [],
+              newTranslation,
+            );
+
+            return {
+              id: para.id,
+              text: para.text,
+              translations: updatedTranslations,
+              selectedTranslationId: newTranslation.id,
+            };
+          });
+
+          return {
+            ...chapter,
+            content: updatedContent,
+            lastEdited: new Date(),
+          };
+        });
+
+        return {
+          ...volume,
+          chapters: updatedChapters,
+        };
+      });
+
+      await booksStore.updateBook(book.value.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
+
+      const updatedChapter = (updatedVolumes || [])
+        .flatMap((v) => v.chapters || [])
+        .find((c) => c.id === selectedChapterWithContent.value?.id);
+      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+        selectedChapterWithContent.value = {
+          ...selectedChapterWithContent.value,
+          content: updatedChapter.content,
+        };
+      }
+    }
+
+    const totalTranslatedCount = updatedParagraphIds.size + translationMap.size;
+    toast.add({
+      severity: 'success',
+      summary: '翻译完成',
+      detail: `已成功翻译 ${totalTranslatedCount} 个段落`,
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('翻译失败:', error);
+    const isCancelled =
+      error instanceof Error &&
+      (error.message === '请求已取消' ||
+        error.message === '翻译已取消' ||
+        error.message.includes('取消') ||
+        error.message.includes('cancel') ||
+        error.message.includes('aborted'));
+
+    if (!isCancelled) {
+      toast.add({
+        severity: 'error',
+        summary: '翻译失败',
+        detail: error instanceof Error ? error.message : '翻译时发生未知错误',
+        life: 3000,
+      });
+    }
+  } finally {
+    isTranslatingChapter.value = false;
+    translationAbortController.value = null;
+    setTimeout(() => {
+      translationProgress.value = {
+        current: 0,
+        total: 0,
+        message: '',
+      };
+      translatingParagraphIds.value.clear();
+    }, 1000);
+  }
+};
+
+// 重新翻译所有段落
+const retranslateAllParagraphs = async () => {
+  // 重新翻译就是调用 translateAllParagraphs，它会重新翻译所有段落
+  await translateAllParagraphs();
+};
+
+// 润色章节所有段落
+const polishAllParagraphs = async () => {
+  if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+    return;
+  }
+
+  // 检查是否有可用的润色模型（使用校对模型配置）
+  const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+  if (!selectedModel) {
+    toast.add({
+      severity: 'error',
+      summary: '润色失败',
+      detail: '未找到可用的润色模型，请在设置中配置',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 检查段落是否有翻译
+  const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
+    (para) => !isEmptyParagraph(para) && hasParagraphTranslation(para),
+  );
+
+  if (paragraphsWithTranslation.length === 0) {
+    toast.add({
+      severity: 'error',
+      summary: '润色失败',
+      detail: '没有可润色的段落，请先翻译章节',
+      life: 3000,
+    });
+    return;
+  }
+
+  isPolishingChapter.value = true;
+  polishingParagraphIds.value.clear();
+
+  // 初始化进度
+  polishProgress.value = {
+    current: 0,
+    total: 0,
+    message: '正在初始化润色...',
+  };
+
+  // 创建 AbortController 用于取消润色
+  const abortController = new AbortController();
+  polishAbortController.value = abortController;
+
+  // 用于跟踪已更新的段落，避免重复更新
+  const updatedParagraphIds = new Set<string>();
+
+  // 更新段落的辅助函数
+  const updateParagraphsIncrementally = async (
+    paragraphPolishes: { id: string; translation: string }[],
+  ) => {
+    if (!book.value || !selectedChapterWithContent.value) return;
+
+    // 过滤出尚未更新的段落
+    const newPolishes = paragraphPolishes.filter(
+      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
+    );
+
+    if (newPolishes.length === 0) return;
+
+    // 标记这些段落为已更新
+    newPolishes.forEach((pt) => updatedParagraphIds.add(pt.id));
+
+    // 更新每个段落的翻译
+    const updatedVolumes = book.value.volumes?.map((volume) => {
+      if (!volume.chapters) return volume;
+
+      const updatedChapters = volume.chapters.map((chapter) => {
+        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+        // 使用已加载的章节内容
+        const content =
+          chapter.id === selectedChapterWithContent.value!.id
+            ? selectedChapterWithContent.value!.content
+            : chapter.content;
+
+        if (!content) return chapter;
+
+        const updatedContent = content.map((para) => {
+          const polish = newPolishes.find((pt) => pt.id === para.id);
+          if (!polish) return para;
+
+          // 创建新的翻译对象（润色结果）
+          const newTranslation = {
+            id: generateShortId(),
+            translation: normalizeTranslationQuotes(polish.translation),
+            aiModelId: selectedModel.id,
+          };
+
+          // 添加到翻译列表（限制最多5个）
+          const updatedTranslations = ChapterService.addParagraphTranslation(
+            para.translations || [],
+            newTranslation,
+          );
+
+          // 只更新翻译相关字段，确保不修改原文（text 字段）
+          return {
+            id: para.id,
+            text: para.text, // 明确保留原文，不修改
+            translations: updatedTranslations,
+            selectedTranslationId: newTranslation.id,
+          };
+        });
+
+        return {
+          ...chapter,
+          content: updatedContent,
+          lastEdited: new Date(),
+        };
+      });
+
+      return {
+        ...volume,
+        chapters: updatedChapters,
+      };
+    });
+
+    // 更新书籍
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+
+    // 更新 selectedChapterWithContent 以反映保存的更改
+    const updatedChapter = (updatedVolumes || [])
+      .flatMap((v) => v.chapters || [])
+      .find((c) => c.id === selectedChapterWithContent.value!.id);
+    if (updatedChapter && updatedChapter.content) {
+      selectedChapterWithContent.value = {
+        ...selectedChapterWithContent.value,
+        content: updatedChapter.content,
+      };
+    }
+  };
+
+  try {
+    // 调用润色服务
+    const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
+      bookId: book.value.id,
+      signal: abortController.signal,
+      aiProcessingStore: {
+        addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+        updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+        appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+        activeTasks: aiProcessingStore.activeTasks,
+      },
+      onProgress: (progress) => {
+        polishProgress.value = {
+          current: progress.current,
+          total: progress.total,
+          message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
+        };
+        // 更新正在润色的段落 ID
+        if (progress.currentParagraphs) {
+          polishingParagraphIds.value = new Set(progress.currentParagraphs);
+        }
+        console.debug('润色进度:', progress);
+      },
+      onAction: (action) => {
+        // 显示 CRUD 操作的 toast 通知（与翻译相同）
+        const entityLabel = action.entity === 'term' ? '术语' : '角色';
+        const typeLabel =
+          action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
+
+        let summary = '';
+        let detail = '';
+
+        if (action.type === 'delete') {
+          const deleteData = action.data as { id: string; name?: string };
+          const name = deleteData.name || '未知';
+          summary = `已删除${entityLabel}`;
+          detail = `${entityLabel} "${name}" 已被删除`;
+        } else {
+          const data = action.data as Terminology | CharacterSetting;
+          const name = data.name || '未知';
+
+          if (action.entity === 'term') {
+            const term = data as Terminology;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (term.translation?.translation) {
+              parts.push(`翻译: "${term.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          } else {
+            const character = data as CharacterSetting;
+            summary = `已${typeLabel}${entityLabel}`;
+            const parts: string[] = [`${entityLabel} "${name}"`];
+            if (character.translation?.translation) {
+              parts.push(`翻译: "${character.translation.translation}"`);
+            }
+            detail = parts.join('，');
+          }
+        }
+
+        toast.add({
+          severity: 'info',
+          summary,
+          detail,
+          life: 3000,
+        });
+      },
+      onParagraphPolish: (translations) => {
+        // 立即更新段落润色（异步执行，不阻塞）
+        void updateParagraphsIncrementally(translations);
+      },
+    });
+
+    // 解析润色结果并更新段落（只处理尚未更新的段落）
+    const polishMap = new Map<string, string>();
+
+    // 优先使用结构化的段落润色结果
+    if (result.paragraphTranslations && result.paragraphTranslations.length > 0) {
+      result.paragraphTranslations.forEach((pt) => {
+        if (pt.id && pt.translation && !updatedParagraphIds.has(pt.id)) {
+          polishMap.set(pt.id, pt.translation);
+        }
+      });
+    }
+
+    // 更新剩余的段落润色（如果有）
+    if (polishMap.size > 0) {
+      const updatedVolumes = book.value.volumes?.map((volume) => {
+        if (!volume.chapters) return volume;
+
+        const updatedChapters = volume.chapters.map((chapter) => {
+          if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+          const content =
+            chapter.id === selectedChapterWithContent.value!.id
+              ? selectedChapterWithContent.value!.content
+              : chapter.content;
+
+          if (!content) return chapter;
+
+          const updatedContent = content.map((para) => {
+            const polish = polishMap.get(para.id);
+            if (!polish) return para;
+
+            const newTranslation = {
+              id: generateShortId(),
+              translation: normalizeTranslationQuotes(polish),
+              aiModelId: selectedModel.id,
+            };
+
+            const updatedTranslations = ChapterService.addParagraphTranslation(
+              para.translations || [],
+              newTranslation,
+            );
+
+            return {
+              id: para.id,
+              text: para.text,
+              translations: updatedTranslations,
+              selectedTranslationId: newTranslation.id,
+            };
+          });
+
+          return {
+            ...chapter,
+            content: updatedContent,
+            lastEdited: new Date(),
+          };
+        });
+
+        return {
+          ...volume,
+          chapters: updatedChapters,
+        };
+      });
+
+      await booksStore.updateBook(book.value.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
+
+      const updatedChapter = (updatedVolumes || [])
+        .flatMap((v) => v.chapters || [])
+        .find((c) => c.id === selectedChapterWithContent.value?.id);
+      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
+        selectedChapterWithContent.value = {
+          ...selectedChapterWithContent.value,
+          content: updatedChapter.content,
+        };
+      }
+    }
+
+    // 构建成功消息
+    const actions = result.actions || [];
+    const totalPolishedCount = updatedParagraphIds.size + polishMap.size;
+    let messageDetail = `已成功润色 ${totalPolishedCount} 个段落`;
+    if (actions.length > 0) {
+      const termActions = actions.filter((a) => a.entity === 'term').length;
+      const characterActions = actions.filter((a) => a.entity === 'character').length;
+      const actionDetails: string[] = [];
+      if (termActions > 0) {
+        actionDetails.push(`${termActions} 个术语操作`);
+      }
+      if (characterActions > 0) {
+        actionDetails.push(`${characterActions} 个角色操作`);
+      }
+      if (actionDetails.length > 0) {
+        messageDetail += `，并执行了 ${actionDetails.join('、')}`;
+      }
+    }
+
+    toast.add({
+      severity: 'success',
+      summary: '润色完成',
+      detail: messageDetail,
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('润色失败:', error);
+    // 检查是否为取消错误
+    const isCancelled =
+      error instanceof Error &&
+      (error.message === '请求已取消' ||
+        error.message === '润色已取消' ||
+        error.message.includes('取消') ||
+        error.message.includes('cancel') ||
+        error.message.includes('aborted'));
+
+    if (!isCancelled) {
+      toast.add({
+        severity: 'error',
+        summary: '润色失败',
+        detail: error instanceof Error ? error.message : '润色时发生未知错误',
+        life: 3000,
+      });
+    }
+  } finally {
+    isPolishingChapter.value = false;
+    polishAbortController.value = null;
+    // 延迟清除进度信息和正在润色的段落 ID，让用户看到完成状态
+    setTimeout(() => {
+      polishProgress.value = {
+        current: 0,
+        total: 0,
+        message: '',
+      };
+      polishingParagraphIds.value.clear();
+    }, 1000);
+  }
+};
+
+// SplitButton 的标签和菜单项
+const translationButtonLabel = computed(() => {
+  if (translationStatus.value.hasNone) {
+    return '翻译本章';
+  } else if (translationStatus.value.hasPartial) {
+    return '继续翻译';
+  } else {
+    return '润色本章';
+  }
+});
+
+const translationButtonMenuItems = computed<MenuItem[]>(() => {
+  const items: MenuItem[] = [];
+
+  // 总是显示"重新翻译"
+  items.push({
+    label: '重新翻译',
+    icon: 'pi pi-refresh',
+    command: () => {
+      void retranslateAllParagraphs();
+    },
+  });
+
+  // 如果所有段落都已翻译，显示"校对本章"
+  if (translationStatus.value.hasAll) {
+    items.push({
+      label: '校对本章',
+      icon: 'pi pi-check-circle',
+      command: () => {
+        // TODO: 实现校对功能
+        toast.add({
+          severity: 'info',
+          summary: '功能开发中',
+          detail: '校对功能正在开发中',
+          life: 3000,
+        });
+      },
+    });
+  }
+
+  return items;
+});
+
+const translationButtonClick = () => {
+  if (translationStatus.value.hasNone) {
+    void translateAllParagraphs();
+  } else if (translationStatus.value.hasPartial) {
+    void continueTranslation();
+  } else {
+    void polishAllParagraphs();
+  }
+};
+
 // 取消翻译
 const cancelTranslation = () => {
   // 首先取消本地的 abortController（这是最重要的，因为它会真正停止翻译请求）
@@ -1873,6 +2864,35 @@ const cancelTranslation = () => {
     message: '',
   };
   translatingParagraphIds.value.clear();
+};
+
+// 取消润色
+const cancelPolish = () => {
+  // 首先取消本地的 abortController
+  if (polishAbortController.value) {
+    polishAbortController.value.abort();
+    polishAbortController.value = null;
+  }
+
+  // 然后取消所有相关的 AI 任务
+  const allTasks = aiProcessingStore.activeTasks;
+  const polishTasks = allTasks.filter((task) => task.type === 'polish');
+
+  // 取消所有润色任务
+  for (const task of polishTasks) {
+    if (task.status !== 'completed') {
+      void aiProcessingStore.stopTask(task.id);
+    }
+  }
+
+  // 更新 UI 状态
+  isPolishingChapter.value = false;
+  polishProgress.value = {
+    current: 0,
+    total: 0,
+    message: '',
+  };
+  polishingParagraphIds.value.clear();
 };
 
 // 打开编辑角色对话框
@@ -3038,13 +4058,29 @@ const handleDragLeave = () => {
 
             <!-- 翻译按钮 -->
             <Button
-              label="翻译本章"
+              v-if="translationStatus.hasNone"
+              :label="translationButtonLabel"
               icon="pi pi-language"
               size="small"
               class="!px-3"
-              :loading="isTranslatingChapter"
-              :disabled="isTranslatingChapter || !selectedChapterParagraphs.length"
-              @click="translateAllParagraphs"
+              :loading="isTranslatingChapter || isPolishingChapter"
+              :disabled="
+                isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
+              "
+              @click="translationButtonClick"
+            />
+            <SplitButton
+              v-else
+              :label="translationButtonLabel"
+              :icon="translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-language'"
+              size="small"
+              class="!px-3"
+              :loading="isTranslatingChapter || isPolishingChapter"
+              :disabled="
+                isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
+              "
+              :model="translationButtonMenuItems"
+              @click="translationButtonClick"
             />
 
             <div class="w-px h-4 bg-white/20 mx-2"></div>
@@ -3257,11 +4293,13 @@ const handleDragLeave = () => {
                       ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
                     }"
                     :is-translating="translatingParagraphIds.has(paragraph.id)"
+                    :is-polishing="polishingParagraphIds.has(paragraph.id)"
                     :search-query="searchQuery"
                     :book-id="bookId"
                     :id="`paragraph-${paragraph.id}`"
                     @update-translation="updateParagraphTranslation"
                     @retranslate="retranslateParagraph"
+                    @polish="polishParagraph"
                     @select-translation="selectParagraphTranslation"
                   />
                 </div>
@@ -3285,11 +4323,12 @@ const handleDragLeave = () => {
         </div>
       </div>
 
-      <!-- 翻译进度工具栏 -->
+      <!-- 翻译/润色进度工具栏 -->
       <TranslationProgress
         :is-translating="isTranslatingChapter"
-        :progress="translationProgress"
-        @cancel="cancelTranslation"
+        :is-polishing="isPolishingChapter"
+        :progress="isPolishingChapter ? polishProgress : translationProgress"
+        @cancel="isPolishingChapter ? cancelPolish() : cancelTranslation()"
       />
     </div>
   </div>
