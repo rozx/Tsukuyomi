@@ -78,7 +78,8 @@ const mostRecentTranslation = computed(() => {
 // 是否有其他翻译可以显示
 const hasOtherTranslations = computed(() => {
   // 只要有翻译历史（至少1个翻译）就显示按钮
-  // 即使只有一个翻译，用户也可以查看翻译历史
+  // 即使只有一个翻译，用户也可以点击查看翻译历史
+  // 但悬停时只显示最近的翻译（如果有其他翻译的话）
   return (
     props.paragraph.translations &&
     props.paragraph.translations.length > 0
