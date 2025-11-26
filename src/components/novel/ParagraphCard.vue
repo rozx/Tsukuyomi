@@ -697,7 +697,7 @@ onUnmounted(() => {
 
 .paragraph-content {
   width: 100%;
-  padding-right: 6rem; /* 为按钮留出空间：历史按钮(4rem + 1.75rem) + 间距 + 上下文菜单按钮(1.25rem + 1.75rem) */
+  padding-right: 6rem; /* 为按钮留出空间：历史按钮右边距4rem + 宽度1.75rem ≈ 6rem */
 }
 
 .paragraph-text {
