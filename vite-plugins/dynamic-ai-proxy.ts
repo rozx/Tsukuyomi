@@ -1,6 +1,13 @@
 import type { Plugin } from 'vite';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import type { ServerResponse } from 'http';
+import type { IncomingMessage } from 'http';
+
+/**
+ * 扩展的请求类型，包含动态代理目标
+ */
+interface ExtendedIncomingMessage extends IncomingMessage {
+  _dynamicProxyTarget?: string;
+}
 
 /**
  * 动态 AI API 代理插件
@@ -16,7 +23,7 @@ export function dynamicAIProxy(): Plugin {
         changeOrigin: true,
         secure: true,
         router: (req) => {
-          return (req as any)._dynamicProxyTarget;
+          return (req as ExtendedIncomingMessage)._dynamicProxyTarget;
         },
         on: {
           proxyReq: (proxyReq, _req, _res) => {
@@ -28,8 +35,8 @@ export function dynamicAIProxy(): Plugin {
           },
           error: (err, _req, res) => {
             if (res && 'headersSent' in res && !res.headersSent) {
-              (res).statusCode = 500;
-              (res).end(`Proxy error: ${err.message}`);
+              res.statusCode = 500;
+              res.end(`Proxy error: ${err.message}`);
             }
           },
         },
@@ -65,27 +72,29 @@ export function dynamicAIProxy(): Plugin {
 
               // 修改请求路径，移除 /api/ai/{hostname} 或 /{hostname} 前缀
               let finalPath = restPath || '/';
-              
+
               // 如果路径不包含 /v1，自动添加（OpenAI 兼容 API 通常需要 /v1 前缀）
               // 但只有在路径不是以 /v1 开头时才添加
               if (!finalPath.startsWith('/v1') && !finalPath.startsWith('/v1/')) {
                 // 检查是否是 OpenAI SDK 的标准端点（如 /models, /chat/completions 等）
                 // 这些端点通常需要 /v1 前缀
-                if (finalPath.startsWith('/models') || 
-                    finalPath.startsWith('/chat/completions') || 
-                    finalPath.startsWith('/completions') ||
-                    finalPath.startsWith('/embeddings') ||
-                    finalPath.startsWith('/audio') ||
-                    finalPath.startsWith('/files') ||
-                    finalPath.startsWith('/fine-tunes') ||
-                    finalPath.startsWith('/moderations')) {
+                if (
+                  finalPath.startsWith('/models') ||
+                  finalPath.startsWith('/chat/completions') ||
+                  finalPath.startsWith('/completions') ||
+                  finalPath.startsWith('/embeddings') ||
+                  finalPath.startsWith('/audio') ||
+                  finalPath.startsWith('/files') ||
+                  finalPath.startsWith('/fine-tunes') ||
+                  finalPath.startsWith('/moderations')
+                ) {
                   finalPath = `/v1${finalPath}`;
                 }
               }
-              
+
               req.url = finalPath;
               // 设置动态代理目标供 router 使用
-              (req as any)._dynamicProxyTarget = targetUrl;
+              (req as ExtendedIncomingMessage)._dynamicProxyTarget = targetUrl;
 
               // 使用共享的代理中间件
               try {
@@ -93,8 +102,10 @@ export function dynamicAIProxy(): Plugin {
                 return;
               } catch (error) {
                 if (res && 'headersSent' in res && !res.headersSent) {
-                  (res).statusCode = 500;
-                  (res).end(`Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`);
+                  res.statusCode = 500;
+                  res.end(
+                    `Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`,
+                  );
                 }
                 return;
               }
@@ -103,14 +114,14 @@ export function dynamicAIProxy(): Plugin {
 
           // 如果没有匹配，返回 404
           if (res && 'statusCode' in res) {
-            (res).statusCode = 404;
-            (res).end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
+            res.statusCode = 404;
+            res.end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
           }
         })().catch((err) => {
           console.error('Proxy middleware error:', err);
           if (res && 'headersSent' in res && !res.headersSent) {
-            (res).statusCode = 500;
-            (res).end('Internal Server Error');
+            res.statusCode = 500;
+            res.end('Internal Server Error');
           }
         });
       });
