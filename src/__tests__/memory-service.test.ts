@@ -10,7 +10,9 @@ const mockStoreClear = mock(() => Promise.resolve(undefined));
 const mockStoreGetAll = mock(() => Promise.resolve([]));
 const mockStoreCount = mock(() => Promise.resolve(0));
 
-const mockIndexGetAll = mock((_key: string) => Promise.resolve([]));
+const mockIndexGetAll = mock<(_key: string) => Promise<Memory[]>>((_key: string) =>
+  Promise.resolve([]),
+);
 const mockIndexCount = mock((_key: string) => Promise.resolve(0));
 
 const mockTransactionStorePut = mock(() => Promise.resolve(undefined));
@@ -118,21 +120,21 @@ describe('MemoryService', () => {
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
-      await expect(MemoryService.createMemory('', 'content', 'summary')).rejects.toThrow(
+      await (expect(MemoryService.createMemory('', 'content', 'summary')).rejects.toThrow(
         '书籍 ID 不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 content 为空时抛出错误', async () => {
-      await expect(MemoryService.createMemory('book-1', '', 'summary')).rejects.toThrow(
+      await (expect(MemoryService.createMemory('book-1', '', 'summary')).rejects.toThrow(
         '内容不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 summary 为空时抛出错误', async () => {
-      await expect(MemoryService.createMemory('book-1', 'content', '')).rejects.toThrow(
+      await (expect(MemoryService.createMemory('book-1', 'content', '')).rejects.toThrow(
         '摘要不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在达到 500 条记录限制时自动删除最旧的记录', async () => {
@@ -205,11 +207,15 @@ describe('MemoryService', () => {
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
-      await expect(MemoryService.getMemory('', 'memory-1')).rejects.toThrow('书籍 ID 不能为空');
+      await (expect(MemoryService.getMemory('', 'memory-1')).rejects.toThrow(
+        '书籍 ID 不能为空',
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 memoryId 为空时抛出错误', async () => {
-      await expect(MemoryService.getMemory('book-1', '')).rejects.toThrow('Memory ID 不能为空');
+      await (expect(MemoryService.getMemory('book-1', '')).rejects.toThrow(
+        'Memory ID 不能为空',
+      ) as unknown as Promise<void>);
     });
 
     it('应该更新 lastAccessedAt（LRU 机制）', async () => {
@@ -290,15 +296,15 @@ describe('MemoryService', () => {
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
-      await expect(MemoryService.searchMemoriesByKeyword('', 'keyword')).rejects.toThrow(
+      await (expect(MemoryService.searchMemoriesByKeyword('', 'keyword')).rejects.toThrow(
         '书籍 ID 不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 keyword 为空时抛出错误', async () => {
-      await expect(MemoryService.searchMemoriesByKeyword('book-1', '')).rejects.toThrow(
+      await (expect(MemoryService.searchMemoriesByKeyword('book-1', '')).rejects.toThrow(
         '关键词不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该更新匹配 Memory 的 lastAccessedAt', async () => {
@@ -346,9 +352,9 @@ describe('MemoryService', () => {
       // Mock: 返回 undefined
       mockGet.mockResolvedValue(undefined);
 
-      await expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
+      await (expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
         `Memory 不存在: ${memoryId}`,
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 Memory 不属于指定书籍时抛出错误', async () => {
@@ -359,21 +365,21 @@ describe('MemoryService', () => {
       // Mock: 返回 Memory
       mockGet.mockResolvedValue(memory);
 
-      await expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
+      await (expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
         `Memory 不属于指定的书籍: ${bookId}`,
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
-      await expect(MemoryService.deleteMemory('', 'memory-1')).rejects.toThrow(
+      await (expect(MemoryService.deleteMemory('', 'memory-1')).rejects.toThrow(
         '书籍 ID 不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 memoryId 为空时抛出错误', async () => {
-      await expect(MemoryService.deleteMemory('book-1', '')).rejects.toThrow(
+      await (expect(MemoryService.deleteMemory('book-1', '')).rejects.toThrow(
         'Memory ID 不能为空',
-      );
+      ) as unknown as Promise<void>);
     });
   });
 
@@ -429,7 +435,9 @@ describe('MemoryService', () => {
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
-      await expect(MemoryService.getAllMemories('')).rejects.toThrow('书籍 ID 不能为空');
+      await (expect(MemoryService.getAllMemories('')).rejects.toThrow(
+        '书籍 ID 不能为空',
+      ) as unknown as Promise<void>);
     });
   });
 
