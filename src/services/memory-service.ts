@@ -52,35 +52,10 @@ export class MemoryService {
   }
 
   /**
-   * 删除最旧的 Memory（LRU 策略）
-   */
-  private static async evictOldestMemory(bookId: string): Promise<void> {
-    try {
-      const db = await getDB();
-      const index = db.transaction('memories', 'readwrite').store.index('by-bookId');
-      const allMemories = await index.getAll(bookId);
-
-      if (allMemories.length === 0) return;
-
-      // 按 lastAccessedAt 排序，删除最旧的
-      allMemories.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-      const oldest = allMemories[0];
-      if (oldest) {
-        await db.delete('memories', oldest.id);
-      }
-    } catch (error) {
-      console.error('Failed to evict oldest memory:', error);
-    }
-  }
-
-  /**
    * 创建新的 Memory
+   * 优化版本：只在必要时获取完整数据，减少数据传输
    */
-  static async createMemory(
-    bookId: string,
-    content: string,
-    summary: string,
-  ): Promise<Memory> {
+  static async createMemory(bookId: string, content: string, summary: string): Promise<Memory> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
@@ -91,31 +66,53 @@ export class MemoryService {
       throw new Error('摘要不能为空');
     }
 
-    // 检查是否达到最大数量限制
-    const count = await this.getMemoryCountForBook(bookId);
-    if (count >= MAX_MEMORIES_PER_BOOK) {
-      // 删除最旧的 Memory
-      await this.evictOldestMemory(bookId);
-    }
-
-    // 生成唯一 ID
-    const existingIds = await this.getMemoryIdsForBook(bookId);
-    const idGenerator = new UniqueIdGenerator(existingIds);
-    const id = idGenerator.generate();
-
-    const now = Date.now();
-    const memory: MemoryStorage = {
-      id,
-      bookId,
-      content,
-      summary,
-      createdAt: now,
-      lastAccessedAt: now,
-    };
-
     try {
       const db = await getDB();
-      await db.put('memories', memory);
+      const tx = db.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      const bookIdIndex = store.index('by-bookId');
+
+      // 1. 先快速检查数量（使用 count，比 getAll 快得多）
+      const count = await bookIdIndex.count(bookId);
+
+      let existingIds: string[] = [];
+
+      // 2. 如果达到限制，需要删除最旧的并获取所有 ID
+      if (count >= MAX_MEMORIES_PER_BOOK) {
+        // 获取所有记录以找到最旧的
+        const allMemories = await bookIdIndex.getAll(bookId);
+        // 按 lastAccessedAt 排序，删除最旧的
+        allMemories.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+        const oldest = allMemories[0];
+        if (oldest) {
+          await store.delete(oldest.id);
+        }
+        // 获取剩余记录的 ID（用于 ID 生成）
+        existingIds = allMemories.slice(1).map((m) => m.id);
+      } else {
+        // 3. 如果未达到限制，只需要获取 ID 列表（不获取完整记录）
+        // 使用 getAllKeys 只获取键，比 getAll 快得多
+        const allKeys = await bookIdIndex.getAllKeys(bookId);
+        existingIds = allKeys.map((key) => String(key));
+      }
+
+      // 4. 生成唯一 ID
+      const idGenerator = new UniqueIdGenerator(existingIds);
+      const id = idGenerator.generate();
+
+      // 5. 创建新 Memory
+      const now = Date.now();
+      const memory: MemoryStorage = {
+        id,
+        bookId,
+        content,
+        summary,
+        createdAt: now,
+        lastAccessedAt: now,
+      };
+
+      await store.put(memory);
+      await tx.done;
 
       return {
         id: memory.id,
@@ -179,10 +176,7 @@ export class MemoryService {
   /**
    * 根据关键词搜索 Memory 的摘要
    */
-  static async searchMemoriesByKeyword(
-    bookId: string,
-    keyword: string,
-  ): Promise<Memory[]> {
+  static async searchMemoriesByKeyword(bookId: string, keyword: string): Promise<Memory[]> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
@@ -293,4 +287,3 @@ export class MemoryService {
     }
   }
 }
-
