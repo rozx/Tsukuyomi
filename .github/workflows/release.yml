@@ -235,6 +235,10 @@ jobs:
           # 将 .app bundle 压缩为 .zip 以便分发
           cd dist/electron/mac
           APP_NAME=$(ls -d *.app | head -1)
+          if [ -z "$APP_NAME" ]; then
+            echo "Error: No .app bundle found in dist/electron/mac"
+            exit 1
+          fi
           ZIP_NAME="${APP_NAME%.app}-mac.zip"
           zip -r "$ZIP_NAME" "$APP_NAME"
           cd ../../..
