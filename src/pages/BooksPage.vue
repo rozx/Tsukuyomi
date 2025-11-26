@@ -11,6 +11,8 @@ import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import TieredMenu from 'primevue/tieredmenu';
 import ConfirmDialog from 'primevue/confirmdialog';
+import ProgressSpinner from 'primevue/progressspinner';
+import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -70,6 +72,8 @@ const getTotalChapters = utilGetTotalChapters;
 
 // 字符数缓存（使用对象而不是 Map，确保 Vue 响应式）
 const bookCharCounts = ref<Record<string, number>>({});
+// 正在加载字符数的书籍 ID 集合
+const loadingCharCounts = ref<Set<string>>(new Set());
 
 // 异步加载书籍字符数
 const loadBookCharCount = async (book: Novel) => {
@@ -77,7 +81,7 @@ const loadBookCharCount = async (book: Novel) => {
   if (bookCharCounts.value[book.id] !== undefined) {
     return bookCharCounts.value[book.id] || 0;
   }
-  
+
   // 检查是否有章节需要加载内容
   const hasChapters = book.volumes?.some((v) => v.chapters && v.chapters.length > 0) || false;
   if (!hasChapters) {
@@ -85,19 +89,20 @@ const loadBookCharCount = async (book: Novel) => {
     bookCharCounts.value[book.id] = 0;
     return 0;
   }
-  
+
   // 先尝试同步计算（如果内容已加载）
   const syncCount = getNovelCharCount(book);
   // 如果同步计算有结果且大于0，或者所有章节的内容都已加载，使用同步结果
   const allContentLoaded = book.volumes?.every((v) =>
-    v.chapters?.every((c) => c.content !== undefined)
+    v.chapters?.every((c) => c.content !== undefined),
   );
   if (allContentLoaded && syncCount >= 0) {
     bookCharCounts.value[book.id] = syncCount;
     return syncCount;
   }
-  
+
   // 异步加载（从 IndexedDB）
+  loadingCharCounts.value.add(book.id);
   try {
     const count = await getNovelCharCountAsync(book);
     bookCharCounts.value[book.id] = count;
@@ -107,12 +112,19 @@ const loadBookCharCount = async (book: Novel) => {
     // 如果异步加载失败，使用同步结果作为后备
     bookCharCounts.value[book.id] = syncCount;
     return syncCount;
+  } finally {
+    loadingCharCounts.value.delete(book.id);
   }
 };
 
 // 获取书籍字符数（带缓存）
 const getTotalWords = (book: Novel): number => {
   return bookCharCounts.value[book.id] ?? 0;
+};
+
+// 检查书籍是否正在加载字符数
+const isLoadingCharCount = (book: Novel): boolean => {
+  return loadingCharCounts.value.has(book.id);
 };
 
 // 排序选项
@@ -258,7 +270,7 @@ watch(
   async (books) => {
     await loadAllBookCharCounts();
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // 当书籍存储变化时，清除缓存并重新加载
@@ -267,7 +279,7 @@ watch(
   async () => {
     bookCharCounts.value = {};
     await loadAllBookCharCounts();
-  }
+  },
 );
 
 // 组件挂载时也加载一次
@@ -688,7 +700,7 @@ const handleSave = async (formData: Partial<Novel>) => {
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
     }
-    
+
     // 深拷贝保存原始数据用于撤销
     const oldBook = JSON.parse(JSON.stringify(selectedBook.value));
     await booksStore.updateBook(selectedBook.value.id, updates);
@@ -759,7 +771,21 @@ const handleSave = async (formData: Partial<Novel>) => {
 
     <!-- DataView 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0">
+      <!-- 加载指示器 -->
+      <div v-if="booksStore.isLoading" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+          <ProgressSpinner
+            style="width: 50px; height: 50px"
+            strokeWidth="4"
+            animationDuration=".8s"
+            aria-label="加载中"
+          />
+          <p class="text-moon/70 mt-4">正在加载书籍列表...</p>
+        </div>
+      </div>
+      <!-- 书籍列表 -->
       <DataView
+        v-else
         :value="filteredBooks"
         data-key="id"
         :rows="20"
@@ -834,7 +860,12 @@ const handleSave = async (formData: Partial<Novel>) => {
                   </div>
                   <div class="flex items-center justify-between">
                     <span>字数:</span>
-                    <span class="font-medium">{{ formatWordCount(getTotalWords(book)) }}</span>
+                    <span v-if="isLoadingCharCount(book)" class="font-medium">
+                      <Skeleton width="40px" height="12px" />
+                    </span>
+                    <span v-else class="font-medium">{{
+                      formatWordCount(getTotalWords(book))
+                    }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>创建:</span>
@@ -919,9 +950,7 @@ const handleSave = async (formData: Partial<Novel>) => {
             <p class="text-moon/90 mb-2">
               确定要删除书籍 <strong class="text-moon/95">"{{ bookToDelete?.title }}"</strong> 吗？
             </p>
-            <p class="text-sm text-moon/70 mb-4">
-              请在下方的输入框中输入书籍标题以确认删除。
-            </p>
+            <p class="text-sm text-moon/70 mb-4">请在下方的输入框中输入书籍标题以确认删除。</p>
             <div class="space-y-2">
               <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
               <InputGroup class="w-full">

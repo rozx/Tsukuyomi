@@ -6,6 +6,7 @@ export const useBooksStore = defineStore('books', {
   state: () => ({
     books: [] as Novel[],
     isLoaded: false,
+    isLoading: false,
   }),
 
   getters: {
@@ -28,8 +29,13 @@ export const useBooksStore = defineStore('books', {
         return; // 已加载，跳过
       }
 
-      this.books = await BookService.getAllBooks();
-      this.isLoaded = true;
+      this.isLoading = true;
+      try {
+        this.books = await BookService.getAllBooks();
+        this.isLoaded = true;
+      } finally {
+        this.isLoading = false;
+      }
     },
 
     /**
