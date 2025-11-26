@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Popover from 'primevue/popover';
@@ -9,6 +10,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useContextStore } from 'src/stores/context';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
+import { useBookDetailsStore } from 'src/stores/book-details';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import {
   useChatSessionsStore,
@@ -27,9 +29,11 @@ import { ChapterService } from 'src/services/chapter-service';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 
 const ui = useUiStore();
+const router = useRouter();
 const contextStore = useContextStore();
 const aiModelsStore = useAIModelsStore();
 const booksStore = useBooksStore();
+const bookDetailsStore = useBookDetailsStore();
 const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
@@ -434,7 +438,51 @@ const sendMessage = async () => {
           ...(action.entity === 'memory' && 'summary' in action.data
             ? { name: action.data.summary }
             : {}),
+          // 导航操作相关信息
+          ...(action.type === 'navigate' && 'book_id' in action.data
+            ? { book_id: action.data.book_id }
+            : {}),
+          ...(action.type === 'navigate' && 'chapter_id' in action.data
+            ? { chapter_id: action.data.chapter_id }
+            : {}),
+          ...(action.type === 'navigate' && 'chapter_title' in action.data
+            ? { chapter_title: action.data.chapter_title }
+            : {}),
+          ...(action.type === 'navigate' && 'paragraph_id' in action.data
+            ? { paragraph_id: action.data.paragraph_id }
+            : {}),
         };
+
+        // 处理导航操作
+        if (action.type === 'navigate' && 'book_id' in action.data) {
+          const bookId = action.data.book_id as string;
+          const chapterId = 'chapter_id' in action.data ? (action.data.chapter_id as string) : null;
+          const paragraphId =
+            'paragraph_id' in action.data ? (action.data.paragraph_id as string) : null;
+
+          // 导航到书籍详情页面
+          void router.push(`/books/${bookId}`).then(() => {
+            // 等待路由完成后再设置选中的章节
+            void nextTick(() => {
+              if (chapterId) {
+                bookDetailsStore.setSelectedChapter(bookId, chapterId);
+              }
+
+              // 如果有段落 ID，滚动到该段落
+              if (paragraphId) {
+                void nextTick(() => {
+                  // 等待章节加载完成后再滚动
+                  setTimeout(() => {
+                    const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+                    if (paragraphElement) {
+                      paragraphElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 500); // 给章节内容加载一些时间
+                });
+              }
+            });
+          });
+        }
 
         // 立即将操作添加到临时数组（用于后续保存）
         currentMessageActions.value.push(messageAction);
@@ -483,6 +531,7 @@ const sendMessage = async () => {
           web_search: '网络搜索',
           web_fetch: '网页获取',
           read: '读取',
+          navigate: '导航',
         };
         const entityLabels: Record<ActionInfo['entity'], string> = {
           term: '术语',
@@ -506,6 +555,11 @@ const sendMessage = async () => {
 
         // 处理读取操作（不显示 toast 通知，但会在消息中显示操作标签）
         if (action.type === 'read') {
+          return;
+        }
+
+        // 处理导航操作（不显示 toast 通知，导航已在上面处理）
+        if (action.type === 'navigate') {
           return;
         }
 
@@ -1420,6 +1474,7 @@ const getActionDetails = (action: MessageAction) => {
     web_search: '网络搜索',
     web_fetch: '网页获取',
     read: '读取',
+    navigate: '导航',
   };
   const entityLabels: Record<MessageAction['entity'], string> = {
     term: '术语',
@@ -1625,6 +1680,42 @@ const getActionDetails = (action: MessageAction) => {
       details.push({
         label: '名称',
         value: action.name,
+      });
+    }
+  }
+
+  // 处理导航操作
+  if (action.type === 'navigate') {
+    if (action.book_id) {
+      const book = booksStore.getBookById(action.book_id);
+      if (book) {
+        details.push({
+          label: '书籍',
+          value: book.title,
+        });
+      } else {
+        details.push({
+          label: '书籍 ID',
+          value: action.book_id,
+        });
+      }
+    }
+    if (action.chapter_id) {
+      details.push({
+        label: '章节 ID',
+        value: action.chapter_id,
+      });
+    }
+    if (action.chapter_title) {
+      details.push({
+        label: '章节标题',
+        value: action.chapter_title,
+      });
+    }
+    if (action.paragraph_id) {
+      details.push({
+        label: '段落 ID',
+        value: action.paragraph_id,
       });
     }
   }
@@ -1879,6 +1970,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         item.action.type === 'web_fetch',
                       'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
                         item.action.type === 'read',
+                      'bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/35':
+                        item.action.type === 'navigate',
                     }"
                     @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
                     @mouseleave="() => handleActionMouseLeave(item.action!, message)"
@@ -1892,6 +1985,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         'pi pi-search': item.action.type === 'web_search',
                         'pi pi-link': item.action.type === 'web_fetch',
                         'pi pi-eye': item.action.type === 'read',
+                        'pi pi-arrow-right': item.action.type === 'navigate',
                       }"
                     />
                     <span>
@@ -1908,7 +2002,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                   ? '网页获取'
                                   : item.action.type === 'read'
                                     ? '读取'
-                                    : ''
+                                    : item.action.type === 'navigate'
+                                      ? '导航'
+                                      : ''
                       }}
                       {{
                         item.action.entity === 'term'
@@ -1974,6 +2070,18 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                       >
                         搜索: "{{ item.action.keyword }}"
                       </span>
+                      <span
+                        v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
+                        class="font-semibold text-xs"
+                      >
+                        "{{ item.action.chapter_title }}"
+                      </span>
+                      <span
+                        v-else-if="item.action.type === 'navigate' && item.action.paragraph_id"
+                        class="font-semibold text-xs"
+                      >
+                        段落
+                      </span>
                     </span>
                   </div>
                   <!-- Action Details Popover -->
@@ -2019,7 +2127,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                       ? '网页获取'
                                       : item.action.type === 'read'
                                         ? '读取'
-                                        : ''
+                                        : item.action.type === 'navigate'
+                                          ? '导航'
+                                          : ''
                           }}
                           {{
                             item.action.entity === 'term'

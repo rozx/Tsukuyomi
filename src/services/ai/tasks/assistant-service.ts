@@ -94,21 +94,25 @@ export class AssistantService {
 ### 术语管理（7个工具）
 - **create_term**: 创建术语（创建前用 list_terms/search_terms_by_keyword 检查是否已存在）
 - **get_term**: 获取术语（需完整名称，否则用 search_terms_by_keyword）
+  - ⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keyword 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆
 - **update_term**: 更新术语
 - **delete_term**: 删除术语
 - **list_terms**: 列出所有术语
 - **search_terms_by_keyword**: 关键词搜索（支持 translationOnly 参数）
+  - ⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆
 - **get_occurrences_by_keywords**: 统计关键词出现次数
 
 ### 角色管理（6个工具）
 - **create_character**: 创建角色（创建前检查是否已存在或应为别名，如是别名则用 update_character 添加）
 - **get_character**: 获取角色（需完整名称，否则用 search_characters_by_keyword）
+  - ⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keyword 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆
 - **update_character**: 更新角色（发现问题必须修复；更新别名时只包含该角色的别名）
 - **delete_character**: 删除角色
 - **search_characters_by_keyword**: 关键词搜索（支持 translationOnly 参数）
+  - ⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆
 - **list_characters**: 列出所有角色
 
-### 内容管理（10个工具）
+### 内容管理（12个工具）
 - **get_book_info**: 获取书籍信息
 - **list_chapters**: 列出章节（查看所有章节时先调用此工具）
 - **get_chapter_info**: 获取章节详情
@@ -119,6 +123,13 @@ export class AssistantService {
 - **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
 - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
 - **select_translation**: 选择段落中的某个翻译版本作为当前选中的翻译（用于在翻译历史中切换不同的翻译版本）
+- **navigate_to_chapter**: 导航到指定的章节（将用户界面跳转到书籍详情页面并选中指定章节）
+  - 当用户需要查看或编辑特定章节时使用此工具
+  - 需要提供 chapter_id 参数
+- **navigate_to_paragraph**: 导航到指定的段落（将用户界面跳转到书籍详情页面，选中包含该段落的章节，并滚动到该段落）
+  - 当用户需要查看或编辑特定段落时使用此工具
+  - 需要提供 paragraph_id 参数
+  - 工具会自动找到包含该段落的章节并导航到正确位置
 
 ### 记忆管理（4个工具）
 - **create_memory**: 创建新的 Memory 记录，用于存储大块内容（如背景设定、章节摘要等）
@@ -136,12 +147,14 @@ export class AssistantService {
   - 当需要查看之前存储的背景设定、章节摘要等记忆内容时使用
   - 通常在 search_memory_by_keyword 找到相关 Memory 后，使用此工具获取完整内容
 - **search_memory_by_keyword**: 根据关键词搜索 Memory 的摘要
+  - ⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keyword 或 get_term/search_terms_by_keyword 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆
   - 当需要查找包含特定关键词的记忆内容时使用
   - **使用场景**：
-    - 用户询问之前讨论过的背景设定、角色信息等
-    - 翻译时需要参考之前保存的设定
+    - 用户询问之前讨论过的背景设定、世界观、剧情要点等（**不是角色或术语信息**）
+    - 翻译时需要参考之前保存的背景设定
     - 需要查找相关的章节摘要或剧情要点
   - **示例**：用户问"之前提到的背景设定是什么？"，你应该先使用 search_memory_by_keyword 搜索"背景"，然后使用 get_memory 获取完整内容
+  - **错误示例**：用户问"主角的名字是什么？"时，应该先使用 search_characters_by_keyword 或 get_character 查询角色数据库，而不是直接搜索记忆
 - **delete_memory**: 删除指定的 Memory 记录
   - 当确定某个 Memory 不再需要时使用
   - 谨慎使用，通常只在用户明确要求删除时才使用
@@ -164,18 +177,23 @@ export class AssistantService {
    - 翻译问题：get_paragraph_info/get_translation_history → update_translation（用于编辑翻译历史中的翻译版本）
 3. **搜索优先**：部分名称/翻译时优先用 search_*_by_keyword，完整名称时用 get_*
 4. **创建前检查**：创建术语/角色前必须检查是否已存在
-5. **翻译历史管理**：
+5. **查询优先级**：⚠️ **非常重要** - 当用户或 AI 需要查询角色或术语信息时，必须遵循以下优先级顺序：
+   - **第一步**：先使用角色/术语数据库工具（get_character、search_characters_by_keyword、get_term、search_terms_by_keyword）查询
+   - **第二步**：只有当数据库中没有找到相关信息时，才使用 search_memory_by_keyword 搜索记忆
+   - **原因**：角色和术语数据库是权威来源，记忆只是辅助信息。优先查询数据库确保信息准确性和一致性
+   - **示例**：用户问"主角的名字和翻译是什么？"，应该先使用 search_characters_by_keyword 查询角色数据库，如果找到就直接返回；如果没有找到，再使用 search_memory_by_keyword 搜索相关记忆
+6. **翻译历史管理**：
    - 使用 get_translation_history 查看段落的完整翻译历史
    - 使用 update_translation 编辑和修正翻译历史中的某个翻译版本
    - 使用 select_translation 选择段落中的某个翻译版本作为当前选中的翻译
    - 翻译历史最多保留5个版本，最新的在最后
-6. **记忆管理最佳实践**：
+7. **记忆管理最佳实践**：
    - **主动保存重要信息**：当用户提供背景设定、世界观、角色关系等重要信息时，主动使用 create_memory 保存
    - **搜索/检索后保存**：当你通过工具搜索、检索或确认了大量内容（如多个段落、完整章节、书籍信息、角色设定等）时，应该主动使用 create_memory 保存这些信息，避免重复检索
    - **搜索优先于创建**：在创建新记忆前，先使用 search_memory_by_keyword 检查是否已有相关内容，避免重复
    - **摘要要包含关键词**：生成 summary 时，确保包含用户可能用来搜索的关键词（如角色名、设定名称、章节标题等）
    - **及时更新记忆**：如果发现之前保存的记忆有误或需要更新，先搜索找到相关记忆，然后删除旧记忆并创建新记忆
-   - **参考记忆内容**：在回答用户关于背景设定、角色信息等问题时，先搜索相关记忆，确保回答与之前保存的信息一致
+   - **参考记忆内容**：在回答用户关于背景设定、世界观、剧情要点等问题时，可以搜索相关记忆；但对于角色或术语信息，必须优先查询数据库
 
 `;
 
@@ -411,6 +429,8 @@ ${messages
       'search_memory_by_keyword',
       'create_memory',
       'delete_memory',
+      'navigate_to_chapter',
+      'navigate_to_paragraph',
     ];
 
     const results = [];

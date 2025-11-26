@@ -2,7 +2,7 @@ import type { Terminology, CharacterSetting, Translation } from 'src/models/nove
 import type { AITool } from 'src/services/ai/types/ai-service';
 
 export interface ActionInfo {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
   entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book' | 'memory';
   data:
     | Terminology

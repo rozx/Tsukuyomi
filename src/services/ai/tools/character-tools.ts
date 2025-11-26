@@ -129,7 +129,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'get_character',
         description:
-          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。',
+          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keyword 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -397,7 +397,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'search_characters_by_keyword',
         description:
-          '根据关键词搜索角色。可以搜索角色主名称、别名或翻译。支持可选参数 translationOnly 只返回有翻译的角色。',
+          '根据关键词搜索角色。可以搜索角色主名称、别名或翻译。支持可选参数 translationOnly 只返回有翻译的角色。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {

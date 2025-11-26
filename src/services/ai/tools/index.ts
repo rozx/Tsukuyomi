@@ -6,6 +6,7 @@ import { paragraphTools } from './paragraph-tools';
 import { webSearchTools } from './web-search-tools';
 import { bookTools } from './book-tools';
 import { memoryTools } from './memory-tools';
+import { navigationTools } from './navigation-tools';
 
 export type { ActionInfo };
 
@@ -35,6 +36,11 @@ export class ToolRegistry {
     return memoryTools.map((t) => t.definition);
   }
 
+  static getNavigationTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+    return navigationTools.map((t) => t.definition);
+  }
+
   static getWebSearchTools(): AITool[] {
     return webSearchTools.map((t) => t.definition);
   }
@@ -53,6 +59,7 @@ export class ToolRegistry {
         ...this.getParagraphTools(bookId),
         ...this.getBookTools(bookId),
         ...this.getMemoryTools(bookId),
+        ...this.getNavigationTools(bookId),
       );
     }
 
@@ -72,6 +79,7 @@ export class ToolRegistry {
       ...webSearchTools,
       ...bookTools,
       ...memoryTools,
+      ...navigationTools,
     ];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 

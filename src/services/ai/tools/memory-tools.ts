@@ -82,7 +82,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'search_memory_by_keyword',
         description:
-          '根据关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。',
+          '根据关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keyword 或 get_term/search_terms_by_keyword 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。',
         parameters: {
           type: 'object',
           properties: {

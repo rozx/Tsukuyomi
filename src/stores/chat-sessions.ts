@@ -10,7 +10,7 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  * 操作信息（用于在消息中标记 CRUD 操作）
  */
 export interface MessageAction {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
   entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book' | 'memory';
   name?: string;
   timestamp: number;
@@ -28,6 +28,10 @@ export interface MessageAction {
   // Memory 相关信息
   memory_id?: string; // Memory ID（用于 memory 操作）
   keyword?: string; // 搜索关键词（用于 search_memory_by_keyword）
+  // 导航相关信息
+  book_id?: string; // 书籍 ID（用于 navigate 操作）
+  // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用
+  // paragraph_id 在 translation、read 和 navigate 操作中都会使用
 }
 
 /**
