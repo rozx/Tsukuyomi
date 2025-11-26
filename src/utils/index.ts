@@ -27,3 +27,4 @@ export {
 export { getAssetUrl } from './assets';
 export { detectRepeatingCharacters } from './ai-degradation-detector';
 export type { DegradationDetectionOptions } from './ai-degradation-detector';
+export { isEmptyOrSymbolOnly } from './text-utils';
