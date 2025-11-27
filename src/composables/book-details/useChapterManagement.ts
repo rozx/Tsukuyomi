@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
-import { useToast } from 'primevue/usetoast';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
@@ -8,10 +8,11 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { generateShortId } from 'src/utils/id-generator';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import { cloneDeep } from 'lodash';
 
 export function useChapterManagement(book: Ref<Novel | undefined>) {
   const booksStore = useBooksStore();
-  const toast = useToast();
+  const toast = useToastWithHistory();
 
   // Add Volume/Chapter Dialog State
   const showAddVolumeDialog = ref(false);
@@ -167,6 +168,9 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       translationId = generateShortId();
     }
 
+    // 保存原始数据用于撤销
+    const oldVolumes = book.value.volumes ? cloneDeep(book.value.volumes) : null;
+
     const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
       title: {
         original: editingVolumeTitle.value.trim(),
@@ -188,6 +192,14 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       summary: '更新成功',
       detail: `已更新卷标题`,
       life: 3000,
+      onRevert: async () => {
+        if (book.value && oldVolumes) {
+          await booksStore.updateBook(book.value.id, {
+            volumes: oldVolumes,
+            lastEdited: new Date(),
+          });
+        }
+      },
     });
 
     showEditVolumeDialog.value = false;
@@ -229,6 +241,9 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       translationId = generateShortId();
     }
 
+    // 保存原始数据用于撤销
+    const oldVolumes = book.value.volumes ? cloneDeep(book.value.volumes) : null;
+
     const updatedVolumes = ChapterService.updateChapter(
       book.value,
       editingChapterId.value,
@@ -260,6 +275,15 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       summary: '更新成功',
       detail: `已更新章节标题${moveMessage}`,
       life: 3000,
+      onRevert: async () => {
+        if (book.value && oldVolumes) {
+          // 恢复原始 volumes（包括章节位置和标题）
+          await booksStore.updateBook(book.value.id, {
+            volumes: oldVolumes,
+            lastEdited: new Date(),
+          });
+        }
+      },
     });
 
     showEditChapterDialog.value = false;

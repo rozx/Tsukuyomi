@@ -70,6 +70,7 @@ export class ToolRegistry {
     toolCall: AIToolCall,
     bookId: string,
     onAction?: (action: ActionInfo) => void,
+    onToast?: (message: Parameters<NonNullable<import('./toast-helper').ToastCallback>>[0]) => void,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = [
@@ -119,6 +120,7 @@ export class ToolRegistry {
       const result = await tool.handler(args, {
         ...(bookId ? { bookId } : {}),
         ...(onAction ? { onAction } : {}),
+        ...(onToast ? { onToast } : {}),
       });
 
       // 记录工具调用成功

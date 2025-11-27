@@ -390,6 +390,10 @@ const sendMessage = async () => {
           }
         }
       },
+      onToast: (message) => {
+        // 工具可以直接显示 toast
+        toast.add(message);
+      },
       onAction: (action: ActionInfo) => {
         // 记录操作到当前消息
         const actionName = 'name' in action.data ? action.data.name : undefined;

@@ -13,6 +13,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
+import { cloneDeep } from 'lodash';
 
 const props = defineProps<{
   book: Novel | null;
@@ -113,9 +114,7 @@ const handleSave = async (data: {
       const charId = selectedCharacter.value.id;
       const originalChar = props.book.characterSettings?.find((c) => c.id === charId);
       // 深拷贝保留原始数据用于撤销
-      const previousCharData = originalChar
-        ? JSON.parse(JSON.stringify(originalChar))
-        : null;
+      const previousCharData = originalChar ? cloneDeep(originalChar) : null;
 
       await CharacterSettingService.updateCharacterSetting(
         props.book.id,
@@ -193,7 +192,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
       void (async () => {
         try {
           // 保存要删除的角色数据用于撤销
-          const charToRestore = JSON.parse(JSON.stringify(character._original));
+          const charToRestore = cloneDeep(character._original);
           
           await CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
 

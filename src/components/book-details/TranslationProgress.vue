@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { useToast } from 'primevue/usetoast';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const props = defineProps<{
@@ -22,7 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const aiProcessingStore = useAIProcessingStore();
-const toast = useToast();
+const toast = useToastWithHistory();
 
 const showAITaskHistory = ref(false);
 

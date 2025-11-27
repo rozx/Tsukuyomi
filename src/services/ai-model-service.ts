@@ -1,5 +1,6 @@
 import { getDB } from 'src/utils/indexed-db';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import { cloneDeep } from 'lodash';
 
 export class AIModelService {
   /**
@@ -35,7 +36,7 @@ export class AIModelService {
     try {
       const db = await getDB();
       // 将响应式对象序列化为纯对象，避免 DataCloneError
-      const serializedModel = JSON.parse(JSON.stringify(model)) as AIModel;
+      const serializedModel = cloneDeep(model) as AIModel;
       await db.put('ai-models', serializedModel);
     } catch (error) {
       console.error('Failed to save AI model to DB:', error);
@@ -67,7 +68,7 @@ export class AIModelService {
 
       for (const model of models) {
         // 将响应式对象序列化为纯对象，避免 DataCloneError
-        const serializedModel = JSON.parse(JSON.stringify(model)) as AIModel;
+        const serializedModel = cloneDeep(model) as AIModel;
         await store.put(serializedModel);
       }
 

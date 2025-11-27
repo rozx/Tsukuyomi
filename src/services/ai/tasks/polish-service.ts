@@ -42,6 +42,10 @@ export interface PolishServiceOptions {
    */
   onAction?: (action: ActionInfo) => void;
   /**
+   * Toast 回调函数，用于在工具中直接显示 toast 通知
+   */
+  onToast?: (message: Parameters<NonNullable<import('../tools/toast-helper').ToastCallback>>[0]) => void;
+  /**
    * 段落润色回调函数，用于接收每个块完成后的段落润色结果
    * @param translations 段落润色数组，包含段落ID和润色文本
    */
@@ -100,7 +104,7 @@ export class PolishService {
       书籍ID: options?.bookId || '无',
     });
 
-    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish } =
+    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast } =
       options || {};
     const actions: ActionInfo[] = [];
 
@@ -530,6 +534,10 @@ export class PolishService {
               // 执行工具
               const toolResult = await TranslationService.handleToolCall(
                 toolCall,
+                bookId || '',
+                handleAction,
+                onToast,
+              );
                 bookId || '',
                 handleAction,
               );

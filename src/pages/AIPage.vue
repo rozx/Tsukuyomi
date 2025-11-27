@@ -14,6 +14,7 @@ import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import AIModelDialog from 'src/components/dialogs/AIModelDialog.vue';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { cloneDeep } from 'lodash';
 
 const aiModelsStore = useAIModelsStore();
 const confirm = useConfirm();
@@ -168,7 +169,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
     }
 
     // 深拷贝保存原始数据用于撤销
-    const oldModel = JSON.parse(JSON.stringify(selectedModel.value));
+    const oldModel = cloneDeep(selectedModel.value);
     void aiModelsStore.updateModel(selectedModel.value.id, updates);
     showEditDialog.value = false;
     const modelName = updates.name || selectedModel.value.name;
@@ -201,7 +202,7 @@ const deleteModel = (model: AIModel) => {
     accept: () => {
       const modelName = model.name;
       // 深拷贝保存原始数据用于撤销
-      const modelToRestore = JSON.parse(JSON.stringify(model));
+      const modelToRestore = cloneDeep(model);
       void aiModelsStore.deleteModel(model.id);
       toast.add({
         severity: 'success',

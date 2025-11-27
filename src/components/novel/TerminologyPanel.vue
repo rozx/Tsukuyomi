@@ -16,6 +16,7 @@ import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
+import { cloneDeep } from 'lodash';
 
 const props = defineProps<{
   book: Novel | null;
@@ -140,7 +141,7 @@ const handleSave = async (data: { name: string; translation: string; description
       showAddDialog.value = false;
     } else if (showEditDialog.value && selectedTerminology.value) {
       // 编辑现有术语
-      const oldTermSnapshot = JSON.parse(JSON.stringify(selectedTerminology.value));
+      const oldTermSnapshot = cloneDeep(selectedTerminology.value);
       
       const updates: {
         name?: string;
@@ -228,7 +229,7 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
         try {
           // 保存要删除的术语数据用于撤销
           const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
-          const termSnapshot = termToRestore ? JSON.parse(JSON.stringify(termToRestore)) : null;
+          const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
 
           await TerminologyService.deleteTerminology(props.book!.id, terminology.id);
           toast.add({
@@ -344,7 +345,7 @@ const handleBulkDelete = () => {
         const idsToDelete = Array.from(selectedTermIds.value);
         // 保存要删除的术语数据用于撤销
         const termsToRestore = props.book?.terminologies?.filter((t) => selectedTermIds.value.has(t.id)) || [];
-        const termsSnapshot = JSON.parse(JSON.stringify(termsToRestore));
+        const termsSnapshot = cloneDeep(termsToRestore);
 
         let successCount = 0;
         let failCount = 0;

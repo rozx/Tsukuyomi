@@ -26,6 +26,7 @@ import {
   formatWordCount,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
+import { cloneDeep } from 'lodash';
 
 const router = useRouter();
 const booksStore = useBooksStore();
@@ -506,7 +507,7 @@ const confirmDeleteBook = async () => {
 
   // 执行删除
   // 深拷贝保存原始数据用于撤销
-  const bookToRestore = JSON.parse(JSON.stringify(bookToDelete.value));
+  const bookToRestore = cloneDeep(bookToDelete.value);
   await booksStore.deleteBook(bookToDelete.value.id);
 
   // 关闭对话框
@@ -652,7 +653,7 @@ const handleSave = async (formData: Partial<Novel>) => {
     }
 
     // 深拷贝保存原始数据用于撤销
-    const oldBook = JSON.parse(JSON.stringify(selectedBook.value));
+    const oldBook = cloneDeep(selectedBook.value);
     await booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;
     const bookTitle = updates.title || selectedBook.value.title;
