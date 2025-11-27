@@ -85,15 +85,17 @@ const siteMappingEntries = computed(() => {
 
 // 添加新网站映射
 const newSiteInput = ref('');
-const newProxyInput = ref('');
+const newProxyInput = ref<string | null>(null);
 
 const addSiteMapping = async () => {
   const site = newSiteInput.value.trim();
-  const proxy = newProxyInput.value.trim();
-  if (site && proxy) {
-    await settingsStore.addProxyForSite(site, proxy);
-    newSiteInput.value = '';
-    newProxyInput.value = '';
+  if (site && newProxyInput.value) {
+    const selectedProxy = proxyList.value.find((p) => p.id === newProxyInput.value);
+    if (selectedProxy) {
+      await settingsStore.addProxyForSite(site, selectedProxy.url);
+      newSiteInput.value = '';
+      newProxyInput.value = null;
+    }
   }
 };
 
@@ -427,11 +429,27 @@ onMounted(async () => {
             placeholder="网站域名（如：kakuyomu.jp）"
             class="flex-1"
           />
-          <InputText v-model="newProxyInput" placeholder="代理 URL" class="flex-1" />
+          <Select
+            v-model="newProxyInput"
+            :options="proxyList"
+            option-label="name"
+            option-value="id"
+            placeholder="选择代理服务"
+            class="flex-1"
+          >
+            <template #option="slotProps">
+              <div class="flex flex-col">
+                <span class="text-sm">{{ slotProps.option.name }}</span>
+                <span v-if="slotProps.option.description" class="text-xs text-moon/60">
+                  {{ slotProps.option.description }}
+                </span>
+              </div>
+            </template>
+          </Select>
           <Button
             label="添加"
             size="small"
-            :disabled="!newSiteInput.trim() || !newProxyInput.trim()"
+            :disabled="!newSiteInput.trim() || !newProxyInput"
             @click="addSiteMapping"
           />
         </div>
