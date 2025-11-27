@@ -174,7 +174,6 @@ watch(
   async () => {
     await loadAllBookCharCounts();
   },
-  { immediate: true },
 );
 
 // 组件挂载时加载书籍
