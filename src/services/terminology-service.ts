@@ -9,7 +9,14 @@ import type {
 import { TokenizerBuilder, type LoaderConfig } from '@patdx/kuromoji';
 import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
-import { UniqueIdGenerator, extractIds, generateShortId, normalizeTranslationQuotes } from 'src/utils';
+import {
+  UniqueIdGenerator,
+  extractIds,
+  generateShortId,
+  normalizeTranslationQuotes,
+  processItemsInBatches,
+  ensureChapterContentLoaded,
+} from 'src/utils';
 import { ChapterContentService } from './chapter-content-service';
 
 // 使用 any 类型来避免 Tokenizer 类型的导入问题
@@ -219,18 +226,8 @@ export class TerminologyService {
   static async extractWordsFromChapter(chapter: Chapter): Promise<Map<string, ExtractedTermInfo>> {
     const terms = new Map<string, ExtractedTermInfo>();
 
-    // 如果章节内容未加载，尝试从 IndexedDB 加载
-    let chapterWithContent = chapter;
-    if (chapter.content === undefined) {
-      const content = await ChapterContentService.loadChapterContent(chapter.id);
-      if (content) {
-        chapterWithContent = {
-          ...chapter,
-          content,
-          contentLoaded: true,
-        };
-      }
-    }
+    // 确保章节内容已加载
+    const chapterWithContent = await ensureChapterContentLoaded(chapter);
 
     // 从段落中提取
     if (chapterWithContent.content && Array.isArray(chapterWithContent.content)) {
@@ -501,6 +498,7 @@ export class TerminologyService {
 
   /**
    * 统计术语在书籍所有章节中的出现次数
+   * 使用分批处理避免阻塞 UI
    * @param book 书籍对象
    * @param termName 术语名称
    * @returns 出现记录数组
@@ -513,47 +511,41 @@ export class TerminologyService {
     // 扁平化所有章节
     const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
 
-    // 遍历所有章节
-    for (const chapter of allChapters) {
-      let chapterCount = 0;
+    // 分批处理章节，每批之间让出主线程
+    await processItemsInBatches(
+      allChapters,
+      async (chapter) => {
+        const chapterWithContent = await ensureChapterContentLoaded(chapter);
 
-      // 如果章节内容未加载，尝试从 IndexedDB 加载
-      let chapterWithContent = chapter;
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        if (content) {
-          chapterWithContent = {
-            ...chapter,
-            content,
-            contentLoaded: true,
-          };
+        let chapterCount = 0;
+
+        // 从段落中统计
+        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+          for (const paragraph of chapterWithContent.content) {
+            const matches = paragraph.text.match(regex);
+            if (matches) {
+              chapterCount += matches.length;
+            }
+          }
         }
-      }
 
-      // 从段落中统计
-      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-        for (const paragraph of chapterWithContent.content) {
-          const matches = paragraph.text.match(regex);
+        // 从原始内容中统计
+        if (chapterWithContent.originalContent) {
+          const matches = chapterWithContent.originalContent.match(regex);
           if (matches) {
             chapterCount += matches.length;
           }
         }
-      }
 
-      // 从原始内容中统计
-      if (chapter.originalContent) {
-        const matches = chapter.originalContent.match(regex);
-        if (matches) {
-          chapterCount += matches.length;
+        // 如果该章节有出现，记录到 Map 中
+        if (chapterCount > 0) {
+          const existingCount = occurrencesMap.get(chapter.id) || 0;
+          occurrencesMap.set(chapter.id, existingCount + chapterCount);
         }
-      }
-
-      // 如果该章节有出现，记录到 Map 中
-      if (chapterCount > 0) {
-        const existingCount = occurrencesMap.get(chapter.id) || 0;
-        occurrencesMap.set(chapter.id, existingCount + chapterCount);
-      }
-    }
+      },
+      10, // 每批处理 10 个章节
+      0, // 让出主线程的延迟时间
+    );
 
     // 转换为 Occurrence 数组
     return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
@@ -754,6 +746,7 @@ export class TerminologyService {
   /**
    * 刷新所有术语的出现次数
    * 当章节内容更新后调用此方法来重新统计所有术语的出现次数
+   * 使用分批处理避免阻塞 UI
    * @param bookId 书籍 ID
    */
   static async refreshAllTermOccurrences(bookId: string): Promise<void> {
@@ -769,8 +762,10 @@ export class TerminologyService {
       return;
     }
 
-    const updatedTerminologies = await Promise.all(
-      terminologies.map(async (term) => {
+    // 分批处理术语，每批之间让出主线程
+    const updatedTerminologies = await processItemsInBatches(
+      terminologies,
+      async (term) => {
         const occurrences = await this.countTermOccurrences(book, term.name);
         const occurrencesChanged = !isEqual(term.occurrences, occurrences);
         if (occurrencesChanged) {
@@ -780,7 +775,9 @@ export class TerminologyService {
           };
         }
         return term;
-      })
+      },
+      5, // 每批处理 5 个术语
+      0, // 让出主线程的延迟时间
     );
 
     // 检查是否有任何术语被更新

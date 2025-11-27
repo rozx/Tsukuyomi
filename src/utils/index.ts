@@ -15,6 +15,7 @@ export {
   getCharacterNameVariants,
   isEmptyParagraph,
   hasParagraphTranslation,
+  ensureChapterContentLoaded,
 } from './novel-utils';
 export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
 export {
@@ -32,3 +33,4 @@ export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export { isEmptyOrSymbolOnly } from './text-utils';
 export { isTimeDifferent, isNewlyAdded } from './time-utils';
+export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
