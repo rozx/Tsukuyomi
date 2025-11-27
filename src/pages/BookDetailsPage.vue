@@ -42,7 +42,14 @@ import {
 import { generateShortId } from 'src/utils/id-generator';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { cloneDeep } from 'lodash';
-import type { Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/models/novel';
+import type {
+  Chapter,
+  Novel,
+  Terminology,
+  CharacterSetting,
+  Paragraph,
+  Volume,
+} from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
@@ -468,16 +475,7 @@ const polishParagraph = async (paragraphId: string) => {
             lastEdited: new Date(),
           })
           .then(() => {
-            // 更新 selectedChapterWithContent 以反映保存的更改
-            const updatedChapter = (updatedVolumes || [])
-              .flatMap((v) => v.chapters || [])
-              .find((c) => c.id === selectedChapterWithContent.value?.id);
-            if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-              selectedChapterWithContent.value = {
-                ...selectedChapterWithContent.value,
-                content: updatedChapter.content,
-              };
-            }
+            updateSelectedChapterWithContent(updatedVolumes);
           });
       },
       onAction: (action) => {
@@ -630,16 +628,7 @@ const retranslateParagraph = async (paragraphId: string) => {
             lastEdited: new Date(),
           })
           .then(() => {
-            // 更新 selectedChapterWithContent 以反映保存的更改
-            const updatedChapter = (updatedVolumes || [])
-              .flatMap((v) => v.chapters || [])
-              .find((c) => c.id === selectedChapterWithContent.value?.id);
-            if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-              selectedChapterWithContent.value = {
-                ...selectedChapterWithContent.value,
-                content: updatedChapter.content,
-              };
-            }
+            updateSelectedChapterWithContent(updatedVolumes);
           });
       },
       onAction: (action) => {
@@ -1095,6 +1084,26 @@ const selectedChapterParagraphs = computed(() => {
   }
   return selectedChapterWithContent.value.content;
 });
+
+/**
+ * 更新 selectedChapterWithContent 以反映保存的更改
+ * @param updatedVolumes 更新后的卷数组
+ */
+const updateSelectedChapterWithContent = (updatedVolumes: Volume[] | undefined) => {
+  if (!updatedVolumes || !selectedChapterWithContent.value) return;
+
+  const updatedChapter = updatedVolumes
+    .flatMap((v) => v.chapters || [])
+    .find((c) => c.id === selectedChapterWithContent.value?.id);
+
+  if (updatedChapter && updatedChapter.content) {
+    selectedChapterWithContent.value = {
+      ...selectedChapterWithContent.value,
+      ...updatedChapter,
+      content: updatedChapter.content,
+    };
+  }
+};
 
 // 翻译状态计算属性
 const translationStatus = computed(() => {
@@ -1705,15 +1714,7 @@ const translateAllParagraphs = async () => {
     });
 
     // 更新 selectedChapterWithContent 以反映保存的更改
-    const updatedChapter = (updatedVolumes || [])
-      .flatMap((v) => v.chapters || [])
-      .find((c) => c.id === selectedChapterWithContent.value!.id);
-    if (updatedChapter && updatedChapter.content) {
-      selectedChapterWithContent.value = {
-        ...selectedChapterWithContent.value,
-        content: updatedChapter.content,
-      };
-    }
+    updateSelectedChapterWithContent(updatedVolumes);
   };
 
   try {
@@ -1916,16 +1917,7 @@ const translateAllParagraphs = async () => {
         lastEdited: new Date(),
       });
 
-      // 更新 selectedChapterWithContent 以反映保存的更改
-      const updatedChapter = (updatedVolumes || [])
-        .flatMap((v) => v.chapters || [])
-        .find((c) => c.id === selectedChapterWithContent.value?.id);
-      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-        selectedChapterWithContent.value = {
-          ...selectedChapterWithContent.value,
-          content: updatedChapter.content,
-        };
-      }
+      updateSelectedChapterWithContent(updatedVolumes);
     }
 
     // 构建成功消息
@@ -2114,16 +2106,7 @@ const continueTranslation = async () => {
       lastEdited: new Date(),
     });
 
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    const updatedChapter = (updatedVolumes || [])
-      .flatMap((v) => v.chapters || [])
-      .find((c) => c.id === selectedChapterWithContent.value!.id);
-    if (updatedChapter && updatedChapter.content) {
-      selectedChapterWithContent.value = {
-        ...selectedChapterWithContent.value,
-        content: updatedChapter.content,
-      };
-    }
+    updateSelectedChapterWithContent(updatedVolumes);
   };
 
   try {
@@ -2234,14 +2217,7 @@ const continueTranslation = async () => {
       });
 
       const updatedChapter = (updatedVolumes || [])
-        .flatMap((v) => v.chapters || [])
-        .find((c) => c.id === selectedChapterWithContent.value?.id);
-      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-        selectedChapterWithContent.value = {
-          ...selectedChapterWithContent.value,
-          content: updatedChapter.content,
-        };
-      }
+      updateSelectedChapterWithContent(updatedVolumes);
     }
 
     const totalTranslatedCount = updatedParagraphIds.size + translationMap.size;
@@ -2417,14 +2393,7 @@ const polishAllParagraphs = async () => {
 
     // 更新 selectedChapterWithContent 以反映保存的更改
     const updatedChapter = (updatedVolumes || [])
-      .flatMap((v) => v.chapters || [])
-      .find((c) => c.id === selectedChapterWithContent.value!.id);
-    if (updatedChapter && updatedChapter.content) {
-      selectedChapterWithContent.value = {
-        ...selectedChapterWithContent.value,
-        content: updatedChapter.content,
-      };
-    }
+    updateSelectedChapterWithContent(updatedVolumes);
   };
 
   try {
@@ -2532,14 +2501,7 @@ const polishAllParagraphs = async () => {
       });
 
       const updatedChapter = (updatedVolumes || [])
-        .flatMap((v) => v.chapters || [])
-        .find((c) => c.id === selectedChapterWithContent.value?.id);
-      if (updatedChapter && updatedChapter.content && selectedChapterWithContent.value) {
-        selectedChapterWithContent.value = {
-          ...selectedChapterWithContent.value,
-          content: updatedChapter.content,
-        };
-      }
+      updateSelectedChapterWithContent(updatedVolumes);
     }
 
     // 构建成功消息

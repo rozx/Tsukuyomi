@@ -1788,7 +1788,27 @@ export class ChapterService {
       throw new Error('章节内容为空，无法导出');
     }
 
-    const chapterTitle = getChapterDisplayTitle(chapter);
+    // 根据导出类型选择标题
+    let chapterTitle = '';
+    if (!chapter.title) {
+      chapterTitle = '';
+    } else if (typeof chapter.title === 'string') {
+      // 兼容旧数据
+      chapterTitle = chapter.title;
+    } else {
+      // 根据导出类型选择标题
+      if (type === 'original') {
+        // 导出原文时使用原文标题
+        chapterTitle = chapter.title.original || '';
+      } else {
+        // 导出译文或双语时，优先使用翻译标题，如果没有则使用原文
+        chapterTitle =
+          chapter.title.translation?.translation?.trim() ||
+          chapter.title.original ||
+          '';
+      }
+    }
+
     let content = '';
 
     // 构建导出内容
