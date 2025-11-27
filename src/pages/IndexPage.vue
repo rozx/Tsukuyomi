@@ -33,26 +33,16 @@ const { loadBookCharCount, getTotalWords, isLoadingCharCount } = useNovelCharCou
 
 // 统计数据
 const totalBooks = computed(() => booksStore.books.length);
+const totalChapters = computed(() => {
+  return booksStore.books.reduce((total, book) => total + getTotalChapters(book), 0);
+});
+const starredBooks = computed(() => {
+  return booksStore.books.filter((book) => book.starred).length;
+});
+const totalWords = computed(() => {
+  return booksStore.books.reduce((total, book) => total + getTotalWords(book), 0);
+});
 
-// Memoized metrics
-const totalChaptersRef = ref(0);
-const starredBooksRef = ref(0);
-const totalWordsRef = ref(0);
-
-// Deep watcher to update metrics only when books change
-watch(
-  () => booksStore.books,
-  (books) => {
-    totalChaptersRef.value = books.reduce((total, book) => total + getTotalChapters(book), 0);
-    starredBooksRef.value = books.filter((book) => book.starred).length;
-    totalWordsRef.value = books.reduce((total, book) => total + getTotalWords(book), 0);
-  },
-  { immediate: true, deep: true }
-);
-
-const totalChapters = computed(() => totalChaptersRef.value);
-const starredBooks = computed(() => starredBooksRef.value);
-const totalWords = computed(() => totalWordsRef.value);
 // 最近编辑的书籍（最多6本）
 const recentBooks = computed(() => {
   return [...booksStore.books]
@@ -184,6 +174,7 @@ watch(
   async () => {
     await loadAllBookCharCounts();
   },
+  { immediate: true },
 );
 
 // 组件挂载时加载书籍
