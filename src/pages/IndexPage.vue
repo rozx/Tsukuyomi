@@ -174,7 +174,6 @@ watch(
   async () => {
     await loadAllBookCharCounts();
   },
-  { immediate: true },
 );
 
 // 组件挂载时加载书籍
@@ -226,9 +225,7 @@ onMounted(async () => {
                 <p class="text-sm text-moon/60">总书籍</p>
                 <p class="text-3xl font-bold text-moon-100">{{ totalBooks }}</p>
               </div>
-              <div
-                class="w-14 h-14 rounded-full flex items-center justify-center bg-primary/20"
-              >
+              <div class="w-14 h-14 rounded-full flex items-center justify-center bg-primary/20">
                 <i class="pi pi-book text-2xl text-primary"></i>
               </div>
             </div>
@@ -243,9 +240,7 @@ onMounted(async () => {
                 <p class="text-sm text-moon/60">总章节</p>
                 <p class="text-3xl font-bold text-moon-100">{{ totalChapters }}</p>
               </div>
-              <div
-                class="w-14 h-14 rounded-full flex items-center justify-center bg-accentTeal/20"
-              >
+              <div class="w-14 h-14 rounded-full flex items-center justify-center bg-accentTeal/20">
                 <i class="pi pi-list text-2xl text-accentTeal-200"></i>
               </div>
             </div>
@@ -262,9 +257,7 @@ onMounted(async () => {
                   {{ formatWordCount(totalWords) }}
                 </p>
               </div>
-              <div
-                class="w-14 h-14 rounded-full flex items-center justify-center bg-accent/20"
-              >
+              <div class="w-14 h-14 rounded-full flex items-center justify-center bg-accent/20">
                 <i class="pi pi-file-edit text-2xl text-accent-400"></i>
               </div>
             </div>
@@ -279,9 +272,7 @@ onMounted(async () => {
                 <p class="text-sm text-moon/60">收藏</p>
                 <p class="text-3xl font-bold text-moon-100">{{ starredBooks }}</p>
               </div>
-              <div
-                class="w-14 h-14 rounded-full flex items-center justify-center bg-warning/20"
-              >
+              <div class="w-14 h-14 rounded-full flex items-center justify-center bg-warning/20">
                 <i class="pi pi-star-fill text-2xl text-warning"></i>
               </div>
             </div>
@@ -345,9 +336,7 @@ onMounted(async () => {
           </div>
         </template>
         <template #content>
-          <div
-            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
-          >
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <div
               v-for="book in recentBooks"
               :key="book.id"
@@ -355,9 +344,7 @@ onMounted(async () => {
               @click="navigateToBookDetails(book)"
             >
               <!-- 封面 -->
-              <div
-                class="relative w-full aspect-[2/3] overflow-hidden rounded-lg bg-white/5 mb-2"
-              >
+              <div class="relative w-full aspect-[2/3] overflow-hidden rounded-lg bg-white/5 mb-2">
                 <img
                   :src="getCoverUrl(book)"
                   :alt="book.title"
