@@ -6,7 +6,7 @@ import { ConflictDetectionService } from 'src/services/conflict-detection-servic
 import type { ConflictResolution } from 'src/services/conflict-detection-service';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import type { Novel, Volume, Chapter } from 'src/models/novel';
+import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
 
 /**
  * 同步数据服务
@@ -95,13 +95,17 @@ export class SyncDataService {
           const resolution = resolutionMap.get(remoteNovel.id);
           if (resolution === 'remote') {
             // 使用远程书籍，但需要保留本地章节内容
-            const mergedNovel = await this.mergeNovelWithLocalContent(
+            const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
               remoteNovel as Novel,
               localNovel,
             );
             finalBooks.push(mergedNovel);
           } else {
-            finalBooks.push(localNovel);
+            // 使用本地书籍，但需要确保章节内容已加载
+            const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(
+              localNovel,
+            );
+            finalBooks.push(localNovelWithContent);
           }
         } else {
           // 新书籍，直接添加
@@ -119,8 +123,9 @@ export class SyncDataService {
             // 用户选择删除本地书籍，不添加
             continue;
           }
-          // 用户选择保留本地或没有冲突，添加本地书籍
-          finalBooks.push(localBook);
+          // 用户选择保留本地或没有冲突，添加本地书籍（确保章节内容已加载）
+          const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
+          finalBooks.push(localBookWithContent);
         }
       }
 
@@ -318,7 +323,7 @@ export class SyncDataService {
    * @param localNovel 本地书籍数据
    * @returns 合并后的书籍数据
    */
-  private static async mergeNovelWithLocalContent(
+  static async mergeNovelWithLocalContent(
     remoteNovel: Novel,
     localNovel: Novel,
   ): Promise<Novel> {
@@ -329,8 +334,10 @@ export class SyncDataService {
       createdAt: remoteNovel.createdAt || localNovel.createdAt,
     };
 
-    // 如果远程书籍有 volumes，需要合并章节内容
-    if (remoteNovel.volumes && localNovel.volumes) {
+    // 使用远程的 volumes 结构（如果远程有 volumes，使用远程的；如果远程没有，清空 volumes）
+    // 但保留本地章节内容（如果章节 ID 匹配）
+    if (remoteNovel.volumes && remoteNovel.volumes.length > 0) {
+      // 远程有 volumes，使用远程的 volumes 结构，但保留本地章节内容
       mergedNovel.volumes = await Promise.all(
         remoteNovel.volumes.map(async (remoteVolume) => {
           // 查找对应的本地卷
@@ -401,11 +408,126 @@ export class SyncDataService {
             } as Volume;
           }
 
+          // 远程 volume 在本地不存在，直接使用远程 volume
+          // 但尝试从 IndexedDB 加载章节内容（如果章节 ID 匹配）
+          if (remoteVolume.chapters) {
+            const chaptersWithContent = await Promise.all(
+              remoteVolume.chapters.map(async (remoteChapter) => {
+                // 如果远程章节没有内容，尝试从 IndexedDB 加载
+                if (
+                  !remoteChapter.content ||
+                  (Array.isArray(remoteChapter.content) &&
+                    remoteChapter.content.length === 0)
+                ) {
+                  const contentFromDB = await ChapterContentService.loadChapterContent(
+                    remoteChapter.id,
+                  );
+                  if (contentFromDB && contentFromDB.length > 0) {
+                    return {
+                      ...remoteChapter,
+                      content: contentFromDB,
+                    } as Chapter;
+                  }
+                }
+                return remoteChapter as Chapter;
+              }),
+            );
+            return {
+              ...remoteVolume,
+              chapters: chaptersWithContent,
+            } as Volume;
+          }
+
           return remoteVolume as Volume;
         }),
       );
+    } else {
+      // 远程没有 volumes，清空 volumes（删除本地的 volumes）
+      mergedNovel.volumes = [];
     }
 
     return mergedNovel;
+  }
+
+  /**
+   * 确保书籍的章节内容已加载
+   * 如果章节内容未加载，从 IndexedDB 加载
+   * @param novel 书籍对象
+   * @returns 包含章节内容的书籍对象
+   */
+  static async ensureNovelContentLoaded(novel: Novel): Promise<Novel> {
+    // 如果书籍没有 volumes，直接返回
+    if (!novel.volumes || novel.volumes.length === 0) {
+      return novel;
+    }
+
+    // 检查是否所有章节都已加载内容
+    let needsLoading = false;
+    for (const volume of novel.volumes) {
+      if (volume.chapters) {
+        for (const chapter of volume.chapters) {
+          // 如果章节没有 content 或 content 为空，需要加载
+          if (
+            chapter.content === undefined ||
+            chapter.content === null ||
+            (Array.isArray(chapter.content) && chapter.content.length === 0)
+          ) {
+            needsLoading = true;
+            break;
+          }
+        }
+        if (needsLoading) break;
+      }
+    }
+
+    // 如果不需要加载，直接返回
+    if (!needsLoading) {
+      return novel;
+    }
+
+    // 需要加载章节内容
+    const novelWithContent: Novel = {
+      ...novel,
+      volumes: await Promise.all(
+        novel.volumes.map(async (volume) => {
+          if (!volume.chapters) {
+            return volume;
+          }
+
+          const chaptersWithContent = await Promise.all(
+            volume.chapters.map(async (chapter) => {
+              // 如果章节已有内容，直接返回
+              if (
+                chapter.content !== undefined &&
+                chapter.content !== null &&
+                Array.isArray(chapter.content) &&
+                chapter.content.length > 0
+              ) {
+                return chapter;
+              }
+
+              // 从 IndexedDB 加载内容
+              const content = await ChapterContentService.loadChapterContent(chapter.id);
+              if (content && content.length > 0) {
+                return {
+                  ...chapter,
+                  content,
+                  contentLoaded: true,
+                } as Chapter;
+              }
+
+              return chapter;
+            }),
+          );
+
+          return {
+            ...volume,
+            chapters: chaptersWithContent,
+          };
+        }),
+      ),
+    };
+
+    return novelWithContent;
   }
 }
