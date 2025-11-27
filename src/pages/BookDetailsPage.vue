@@ -2366,7 +2366,6 @@ const polishAllParagraphs = async () => {
     });
 
     // 更新 selectedChapterWithContent 以反映保存的更改
-    const updatedChapter = updatedVolumes || [];
     updateSelectedChapterWithContent(updatedVolumes);
   };
 
