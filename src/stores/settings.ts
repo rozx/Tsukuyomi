@@ -427,6 +427,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 重新排序代理列表
+     */
+    async reorderProxies(newOrder: Array<{ id: string; name: string; url: string; description?: string }>): Promise<void> {
+      await this.updateSettings({ proxyList: newOrder });
+    },
+
+    /**
      * 更新 Gist 同步配置
      */
     async updateGistSync(updates: Partial<SyncConfig>): Promise<void> {

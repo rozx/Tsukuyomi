@@ -167,6 +167,13 @@ const deleteProxy = async (id: string) => {
   await settingsStore.removeProxy(id);
 };
 
+// 处理行重新排序
+const onRowReorder = (event: {
+  value: Array<{ id: string; name: string; url: string; description?: string }>;
+}) => {
+  void settingsStore.reorderProxies(event.value);
+};
+
 // 测试代理
 const testingProxies = ref<Set<string>>(new Set());
 
@@ -316,7 +323,15 @@ onMounted(async () => {
             <Button label="添加代理" size="small" @click="openAddProxyDialog" />
           </div>
 
-          <DataTable :value="proxyList" :paginator="proxyList.length > 5" :rows="5" class="text-xs">
+          <DataTable
+            :value="proxyList"
+            :paginator="proxyList.length > 5"
+            :rows="5"
+            class="text-xs"
+            row-reorder
+            @row-reorder="onRowReorder"
+          >
+            <Column row-reorder-header="拖拽排序" :row-reorder="true" style="width: 3rem" />
             <Column field="name" header="名称" class="text-xs">
               <template #body="{ data }">
                 <span class="font-medium">{{ data.name }}</span>
@@ -441,15 +456,6 @@ onMounted(async () => {
                   rounded
                   :title="`删除 ${getProxyDisplayName(proxy)}`"
                   @click="removeSiteMapping(data.site, proxy)"
-                />
-                <Button
-                  icon="pi pi-trash"
-                  size="small"
-                  severity="danger"
-                  text
-                  rounded
-                  title="清除所有"
-                  @click="clearSiteMapping(data.site)"
                 />
               </div>
             </template>
