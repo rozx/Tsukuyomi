@@ -1,5 +1,6 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo } from './types';
+import type { ToastCallback } from './toast-helper';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
@@ -70,7 +71,7 @@ export class ToolRegistry {
     toolCall: AIToolCall,
     bookId: string,
     onAction?: (action: ActionInfo) => void,
-    onToast?: (message: Parameters<NonNullable<import('./toast-helper').ToastCallback>>[0]) => void,
+    onToast?: ToastCallback,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = [

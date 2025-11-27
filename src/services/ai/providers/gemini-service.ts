@@ -9,6 +9,7 @@ import type {
 import type { ParsedResponse } from 'src/services/ai/types/interfaces';
 import { BaseAIService } from '../core';
 import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
+import { ProxyService } from 'src/services/proxy-service';
 
 /**
  * Gemini AI 服务实现
@@ -283,7 +284,10 @@ export class GeminiService extends BaseAIService {
       const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
       const apiUrl = `${baseUrl}/v1beta/models?key=${encodeURIComponent(config.apiKey)}`;
 
-      const response = await fetch(apiUrl, {
+      // 在浏览器模式下，使用 CORS 代理
+      const proxiedUrl = ProxyService.getProxiedUrlForAI(apiUrl);
+
+      const response = await fetch(proxiedUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

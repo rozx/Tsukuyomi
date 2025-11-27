@@ -112,8 +112,7 @@ const handleActionInfoToast = (
 
   // 显示 CRUD 操作的 toast 通知
   const entityLabel = action.entity === 'term' ? '术语' : '角色';
-  const typeLabel =
-    action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
+  const typeLabel = action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
 
   let summary = '';
   let detail = '';
@@ -481,9 +480,6 @@ const polishParagraph = async (paragraphId: string) => {
       onAction: (action) => {
         handleActionInfoToast(action, { severity: 'info' });
       },
-      onToast: (message) => {
-        toast.add(message);
-      },
     });
 
     toast.add({
@@ -633,9 +629,6 @@ const retranslateParagraph = async (paragraphId: string) => {
       },
       onAction: (action) => {
         handleActionInfoToast(action, { severity: 'info', withRevert: true });
-      },
-      onToast: (message) => {
-        toast.add(message);
       },
     });
 
@@ -2216,7 +2209,7 @@ const continueTranslation = async () => {
         lastEdited: new Date(),
       });
 
-      const updatedChapter = (updatedVolumes || [])
+      const updatedChapter = updatedVolumes || [];
       updateSelectedChapterWithContent(updatedVolumes);
     }
 
@@ -2392,7 +2385,7 @@ const polishAllParagraphs = async () => {
     });
 
     // 更新 selectedChapterWithContent 以反映保存的更改
-    const updatedChapter = (updatedVolumes || [])
+    const updatedChapter = updatedVolumes || [];
     updateSelectedChapterWithContent(updatedVolumes);
   };
 
@@ -2500,7 +2493,7 @@ const polishAllParagraphs = async () => {
         lastEdited: new Date(),
       });
 
-      const updatedChapter = (updatedVolumes || [])
+      const updatedChapter = updatedVolumes || [];
       updateSelectedChapterWithContent(updatedVolumes);
     }
 

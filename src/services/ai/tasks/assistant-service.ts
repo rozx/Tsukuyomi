@@ -9,6 +9,7 @@ import type {
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { AIServiceFactory } from '../index';
 import { ToolRegistry, type ActionInfo } from '../tools';
+import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 
 /**
@@ -26,7 +27,7 @@ export interface AssistantServiceOptions {
   /**
    * Toast 回调函数，用于在工具中直接显示 toast 通知
    */
-  onToast?: (message: Parameters<NonNullable<import('../tools/toast-helper').ToastCallback>>[0]) => void;
+  onToast?: ToastCallback;
   /**
    * 取消信号（可选）
    */
@@ -406,7 +407,7 @@ ${messages
     toolCalls: AIToolCall[],
     bookId: string | null,
     onAction?: (action: ActionInfo) => void,
-    onToast?: (message: Parameters<NonNullable<import('../tools/toast-helper').ToastCallback>>[0]) => void,
+    onToast?: ToastCallback,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     // 定义需要 bookId 的工具列表
     const toolsRequiringBookId = [

@@ -18,6 +18,7 @@ import {
 import { detectRepeatingCharacters } from 'src/utils/ai-degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
+import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
 
 /**
@@ -44,7 +45,7 @@ export interface PolishServiceOptions {
   /**
    * Toast 回调函数，用于在工具中直接显示 toast 通知
    */
-  onToast?: (message: Parameters<NonNullable<import('../tools/toast-helper').ToastCallback>>[0]) => void;
+  onToast?: ToastCallback;
   /**
    * 段落润色回调函数，用于接收每个块完成后的段落润色结果
    * @param translations 段落润色数组，包含段落ID和润色文本
@@ -537,9 +538,6 @@ export class PolishService {
                 bookId || '',
                 handleAction,
                 onToast,
-              );
-                bookId || '',
-                handleAction,
               );
 
               // 添加工具结果到历史

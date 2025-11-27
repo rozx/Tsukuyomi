@@ -9,6 +9,7 @@ import type {
 import type { ParsedResponse } from 'src/services/ai/types/interfaces';
 import { BaseAIService } from '../core';
 import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
+import { ProxyService } from 'src/services/proxy-service';
 
 /**
  * OpenAI AI 服务实现
@@ -16,103 +17,60 @@ import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
  */
 export class OpenAIService extends BaseAIService {
   /**
-   * 获取代理后的 baseURL（仅在开发环境且需要时）
-   * 在开发环境中，如果 baseUrl 指向外部 API，使用代理以避免 CORS 问题
+   * 获取代理后的 baseURL
+   * 在浏览器模式下，使用 CORS 代理来绕过 CORS 限制
    */
   private getProxiedBaseUrl(baseUrl?: string): string {
-    // 检查是否为开发环境（通过检查 hostname）
-    // 在开发环境中，通常运行在 localhost
-    const isDev =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
     // 验证 baseUrl 是否有效
     if (!baseUrl || typeof baseUrl !== 'string' || baseUrl.trim() === '') {
       // 默认使用 OpenAI API
-      // 在开发环境中，始终使用代理（无论是否在 Electron 中）
-      // 在生产环境中，直接使用原始 URL
-      if (isDev) {
-        const origin =
-          typeof window !== 'undefined' ? window.location.origin : 'http://localhost:9000';
-        return `${origin}/api/ai/api.openai.com/v1`;
-      }
-      return 'https://api.openai.com/v1';
+      baseUrl = 'https://api.openai.com/v1';
     }
 
     const trimmedBaseUrl = baseUrl.trim();
 
     // 如果 baseUrl 已经是代理路径（相对路径），转换为完整 URL
     if (trimmedBaseUrl.startsWith('/api/ai/')) {
-      if (isDev) {
-        const origin =
-          typeof window !== 'undefined' ? window.location.origin : 'http://localhost:9000';
-        return `${origin}${trimmedBaseUrl}`;
-      }
-      return trimmedBaseUrl;
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : 'http://localhost:9000';
+      return `${origin}${trimmedBaseUrl}`;
     }
 
-    // 如果 baseUrl 是外部 API，在开发环境中使用代理
-    // 在开发环境中，始终使用代理以确保 CORS 问题得到解决
-    if (isDev) {
-      try {
-        // 确保 baseUrl 包含协议
-        let urlToParse = trimmedBaseUrl;
-        if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
-          urlToParse = `https://${urlToParse}`;
-        }
-
-        // 验证 URL 格式（基本检查）
-        if (
-          !urlToParse.includes('.') &&
-          !urlToParse.startsWith('http://localhost') &&
-          !urlToParse.startsWith('http://127.0.0.1')
-        ) {
-          throw new Error('Invalid URL format: missing hostname');
-        }
-
-        // 解析 URL 获取 hostname 和 pathname
-        const url = new URL(urlToParse);
-        const hostname = url.hostname;
-
-        // 验证 hostname 不为空
-        if (!hostname || hostname.trim() === '') {
-          throw new Error('Invalid URL: empty hostname');
-        }
-
-        // 处理 pathname：确保格式正确
-        // 如果 pathname 是 '/' 或空，则不添加到路径中（让 OpenAI SDK 追加路径）
-        // 否则确保 pathname 以 / 开头且不以 / 结尾
-        let pathname = url.pathname || '';
-        if (pathname === '/' || pathname === '') {
-          pathname = ''; // 根路径，不添加到代理路径中
-        } else {
-          // 确保 pathname 以 / 开头
-          if (!pathname.startsWith('/')) {
-            pathname = `/${pathname}`;
-          }
-          // 移除尾部斜杠（除非是根路径）
-          if (pathname !== '/' && pathname.endsWith('/')) {
-            pathname = pathname.slice(0, -1);
-          }
-        }
-
-        // 构建完整的代理 URL（包含协议和主机名）
-        // OpenAI SDK 需要完整的 URL，不能使用相对路径
-        // 注意：OpenAI SDK 会自动在 baseURL 后添加 /v1，所以如果 pathname 为空，
-        // 我们需要确保代理路径不包含 /v1，让 SDK 自动添加
-        const origin =
-          typeof window !== 'undefined' ? window.location.origin : 'http://localhost:9000';
-        // 如果 pathname 为空，只使用 hostname（OpenAI SDK 会追加 /v1/...）
-        // 如果 pathname 不为空，使用 pathname（可能已经包含 /v1）
-        const proxiedPath = pathname ? `/api/ai/${hostname}${pathname}` : `/api/ai/${hostname}`;
-        return `${origin}${proxiedPath}`;
-      } catch {
-        // 如果 URL 解析失败，返回原始 baseUrl（trim 后）
-        return trimmedBaseUrl;
-      }
-    }
-
+    // 在浏览器模式下，直接返回原始 baseUrl
+    // 实际的代理会在自定义 fetch 函数中处理
     return trimmedBaseUrl;
+  }
+
+  /**
+   * 创建自定义 fetch 函数，用于在浏览器模式下代理请求
+   */
+  private createProxiedFetch(): typeof fetch | undefined {
+    // 检测是否为 Electron 环境
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+
+    // 仅在浏览器模式下使用自定义 fetch
+    if (!isElectron && typeof fetch !== 'undefined') {
+      return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        // 将 input 转换为 URL 字符串
+        let url: string;
+        if (typeof input === 'string') {
+          url = input;
+        } else if (input instanceof URL) {
+          url = input.toString();
+        } else {
+          url = input.url;
+        }
+
+        // 使用 CORS 代理包装 URL
+        const proxiedUrl = ProxyService.getProxiedUrlForAI(url);
+
+        // 使用代理后的 URL 进行请求
+        return fetch(proxiedUrl, init);
+      };
+    }
+
+    // Electron 模式下使用默认 fetch
+    return undefined;
   }
 
   /**
@@ -122,11 +80,13 @@ export class OpenAIService extends BaseAIService {
    */
   private createClient(config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>): OpenAI {
     const proxiedBaseUrl = this.getProxiedBaseUrl(config.baseUrl);
+    const customFetch = this.createProxiedFetch();
 
     return new OpenAI({
       apiKey: config.apiKey,
       baseURL: proxiedBaseUrl,
       dangerouslyAllowBrowser: true, // 允许在浏览器环境中使用（用户已了解风险）
+      ...(customFetch && { fetch: customFetch }), // 在浏览器模式下使用自定义 fetch
       defaultHeaders: {
         'Content-Type': 'application/json',
         Accept: 'application/json',

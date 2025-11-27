@@ -1,5 +1,6 @@
 import { useSettingsStore } from 'src/stores/settings';
 import { showToolToast } from 'src/services/ai/tools/toast-helper';
+import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
@@ -178,6 +179,36 @@ export class ProxyService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 获取 AI 调用的 CORS 代理 URL（仅在浏览器模式下）
+   * 在浏览器模式下，使用默认的 CORS 代理来绕过 CORS 限制
+   * @param originalUrl 原始 URL
+   * @returns 代理后的 URL 或原始 URL
+   */
+  static getProxiedUrlForAI(originalUrl: string): string {
+    // 检测是否为 Electron 环境
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+
+    // 仅在浏览器模式下使用 CORS 代理
+    if (!isElectron) {
+      const proxiedUrl = DEFAULT_CORS_PROXY_FOR_AI.replace(
+        '{url}',
+        encodeURIComponent(originalUrl),
+      );
+      console.log('[ProxyService] 使用 AI CORS 代理（浏览器模式）', {
+        originalUrl,
+        proxiedUrl,
+      });
+      return proxiedUrl;
+    }
+
+    // Electron 模式下直接返回原始 URL
+    console.log('[ProxyService] 跳过 AI CORS 代理（Electron 模式）', {
+      originalUrl,
+    });
+    return originalUrl;
   }
 
   /**
