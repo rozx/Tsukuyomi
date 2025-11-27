@@ -6,6 +6,7 @@ import Password from 'primevue/password';
 import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import { useConfirm } from 'primevue/useconfirm';
+import ConfirmDialog from 'primevue/confirmdialog';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
@@ -454,9 +455,18 @@ const revertToRevision = (version: string, event?: Event) => {
   }
 
   confirm.require({
+    group: 'sync',
     message: '确定要恢复到该修订版本吗？这将覆盖当前本地数据。',
     header: '确认恢复',
     icon: 'pi pi-exclamation-triangle',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '恢复',
+      severity: 'danger',
+    },
     accept: () => {
       // 防止重复调用：如果已经在恢复该版本，直接返回
       if (revertingVersion.value === version) {
@@ -814,13 +824,18 @@ const deleteGist = () => {
 
   // 使用 ConfirmDialog 确认删除
   confirm.require({
+    group: 'sync',
     message: `确定要删除 Gist (ID: ${gistId.value}) 吗？此操作不可撤销，将永久删除 Gist 中的所有数据。`,
     header: '确认删除 Gist',
     icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '删除',
+      severity: 'danger',
+    },
     accept: () => {
       void (async () => {
         gistSyncing.value = true;
@@ -1144,6 +1159,9 @@ const deleteGist = () => {
         @click="deleteGist"
       />
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog group="sync" />
   </div>
 </template>
 

@@ -215,10 +215,14 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
     message: `确定要删除术语 "${terminology.name}" 吗？`,
     header: '确认删除',
     icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '删除',
+      severity: 'danger',
+    },
     accept: () => {
       void (async () => {
         try {
@@ -327,10 +331,14 @@ const handleBulkDelete = () => {
     message: `确定要删除选中的 ${selectedCount} 个术语吗？\n${selectedNames}${moreText}`,
     header: '确认批量删除',
     icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '删除',
+      severity: 'danger',
+    },
     accept: () => {
       void (async () => {
         const idsToDelete = Array.from(selectedTermIds.value);

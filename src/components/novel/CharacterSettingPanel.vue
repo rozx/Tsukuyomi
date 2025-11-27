@@ -181,10 +181,14 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
     message: `确定要删除角色 "${character.name}" 吗？`,
     header: '确认删除',
     icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '删除',
+      severity: 'danger',
+    },
     accept: () => {
       void (async () => {
         try {

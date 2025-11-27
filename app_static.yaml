@@ -1,12 +1,25 @@
 alerts:
   - rule: DEPLOYMENT_FAILED
   - rule: DOMAIN_FAILED
+domains:
+  - domain: luna.rozx.moe
+    type: PRIMARY
 features:
   - buildpack-stack=ubuntu-22
 ingress:
   rules:
     - component:
         name: luna-ai-translator
+      cors:
+        allow_methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        allow_origins:
+          - regex: .*
       match:
         authority:
           exact: ''

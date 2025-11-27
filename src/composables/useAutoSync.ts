@@ -7,6 +7,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { ConflictDetectionService } from 'src/services/conflict-detection-service';
 import { SyncDataService } from 'src/services/sync-data-service';
 import type { ConflictResolution, ConflictItem } from 'src/services/conflict-detection-service';
+import type { Novel } from 'src/models/novel';
 
 // 单例状态（在模块级别共享）
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -31,6 +32,7 @@ export function useAutoSync() {
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
+
 
   /**
    * 应用下载的数据（根据冲突解决结果）
@@ -100,7 +102,7 @@ export function useAutoSync() {
     // 处理书籍（确保 novels 存在且为数组）
     // 即使远程书籍列表为空，也需要处理（可能远程删除了所有书籍）
     if (remoteData && remoteData.novels && Array.isArray(remoteData.novels)) {
-      const finalBooksMap = new Map<string, any>();
+      const finalBooksMap = new Map<string, Novel>();
       const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
 
       // 处理远程书籍（根据冲突解决选择）
@@ -110,9 +112,18 @@ export function useAutoSync() {
           // 本地存在，根据冲突解决选择
           const resolution = resolutionMap.get(remoteNovel.id);
           if (resolution === 'remote') {
-            finalBooksMap.set(remoteNovel.id, remoteNovel);
+            // 使用远程书籍，但需要保留本地章节内容
+            const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
+              remoteNovel as Novel,
+              localNovel,
+            );
+            finalBooksMap.set(remoteNovel.id, mergedNovel);
           } else {
-            finalBooksMap.set(localNovel.id, localNovel);
+            // 使用本地书籍，但需要确保章节内容已加载
+            const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(
+              localNovel,
+            );
+            finalBooksMap.set(localNovel.id, localNovelWithContent);
           }
         } else {
           // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
@@ -120,7 +131,7 @@ export function useAutoSync() {
           const remoteLastEdited = new Date(remoteNovel.lastEdited).getTime();
           if (remoteLastEdited > lastSyncTime) {
             // 远程新添加的，应该添加
-            finalBooksMap.set(remoteNovel.id, remoteNovel);
+            finalBooksMap.set(remoteNovel.id, remoteNovel as Novel);
           }
           // 否则，说明是本地已删除的，不添加
         }
@@ -137,8 +148,9 @@ export function useAutoSync() {
             // 用户选择使用远程（删除），不添加本地书籍
             continue;
           }
-          // 用户选择保留本地或没有冲突，添加本地书籍
-          finalBooksMap.set(localBook.id, localBook);
+          // 用户选择保留本地或没有冲突，添加本地书籍（确保章节内容已加载）
+          const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
+          finalBooksMap.set(localBook.id, localBookWithContent);
         }
       }
 
