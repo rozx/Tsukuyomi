@@ -186,13 +186,18 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
 // 删除模型
 const deleteModel = (model: AIModel) => {
   confirm.require({
+    group: 'ai-model',
     message: `确定要删除模型 "${model.name}" 吗？`,
     header: '确认删除',
     icon: 'pi pi-exclamation-triangle',
-    rejectClass: 'p-button-text',
-    acceptClass: 'p-button-danger',
-    rejectLabel: '取消',
-    acceptLabel: '删除',
+    rejectProps: {
+      label: '取消',
+      severity: 'secondary',
+    },
+    acceptProps: {
+      label: '删除',
+      severity: 'danger',
+    },
     accept: () => {
       const modelName = model.name;
       // 深拷贝保存原始数据用于撤销
@@ -383,7 +388,7 @@ const formatApiKey = (apiKey: string): string => {
     />
 
     <!-- 确认对话框 -->
-    <ConfirmDialog />
+    <ConfirmDialog group="ai-model" />
   </div>
 </template>
 

@@ -42,13 +42,13 @@ const stopTask = async (taskId: string) => {
 // 手动清空所有任务
 const clearAllTasks = () => {
   confirm.require({
+    group: 'thinking-process',
     message: '确定要清空所有思考过程记录吗？此操作不可恢复。',
     header: '确认清空',
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
       label: '取消',
       severity: 'secondary',
-      outlined: true,
     },
     acceptProps: {
       label: '清空',
@@ -273,7 +273,7 @@ defineExpose({
       </div>
     </div>
   </Popover>
-  <ConfirmDialog />
+  <ConfirmDialog group="thinking-process" />
 </template>
 
 <style scoped>
