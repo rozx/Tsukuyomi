@@ -99,7 +99,7 @@ const handleReplaceInput = (event: Event) => {
         <InputText
           :value="replaceQuery"
           @input="handleReplaceInput"
-          placeholder="替换为..."
+          placeholder="替换为...（留空可删除）"
           class="!pl-9 !py-1.5 !text-sm w-full"
           @keydown.enter="emit('replace')"
         />
@@ -111,7 +111,7 @@ const handleReplaceInput = (event: Event) => {
           size="small"
           outlined
           class="!text-xs !px-3 !py-1.5"
-          :disabled="matchesCount === 0 || !replaceQuery"
+          :disabled="matchesCount === 0"
           @click="emit('replace')"
         />
         <Button
@@ -119,7 +119,7 @@ const handleReplaceInput = (event: Event) => {
           size="small"
           outlined
           class="!text-xs !px-3 !py-1.5"
-          :disabled="matchesCount === 0 || !replaceQuery"
+          :disabled="matchesCount === 0"
           @click="emit('replaceAll')"
         />
       </div>
