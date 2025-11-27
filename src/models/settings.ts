@@ -30,6 +30,45 @@ export interface AppSettings {
    * 默认值：0（第一个标签页）
    */
   lastOpenedSettingsTab?: number;
+  /**
+   * 是否启用代理
+   * 默认值：true
+   */
+  proxyEnabled?: boolean;
+  /**
+   * 代理 URL 模板
+   * 格式：http://abc.xyz?url={url}
+   * 其中 {url} 会被替换为实际要请求的 URL
+   * 默认值：https://api.allorigins.win/raw?url={url}
+   */
+  proxyUrl?: string;
+  /**
+   * 是否在遇到错误时自动切换代理服务
+   * 默认值：false
+   */
+  proxyAutoSwitch?: boolean;
+  /**
+   * 是否在自动切换代理成功时自动添加到网站-代理映射
+   * 默认值：true
+   */
+  proxyAutoAddMapping?: boolean;
+  /**
+   * 网站-代理映射关系
+   * 键为网站域名（如 "kakuyomu.jp"），值为可用的代理 URL 列表
+   * 当自动切换代理时，会自动记录成功的代理服务
+   */
+  proxySiteMapping?: Record<string, string[]>;
+  /**
+   * 用户自定义的代理列表
+   * 每个代理包含名称和 URL
+   * 默认包含一些预设代理
+   */
+  proxyList?: Array<{
+    id: string;
+    name: string;
+    url: string;
+    description?: string;
+  }>;
 }
 
 export interface Settings {

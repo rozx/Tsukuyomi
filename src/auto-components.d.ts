@@ -31,6 +31,7 @@ declare module 'vue' {
     Menubar: typeof import('primevue/menubar')['default']
     NovelScraperDialog: typeof import('./components/dialogs/NovelScraperDialog.vue')['default']
     ParagraphCard: typeof import('./components/novel/ParagraphCard.vue')['default']
+    ProxySettingsTab: typeof import('./components/settings/ProxySettingsTab.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScraperSettingsTab: typeof import('./components/settings/ScraperSettingsTab.vue')['default']

@@ -1,0 +1,27 @@
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+features:
+  - buildpack-stack=ubuntu-22
+ingress:
+  rules:
+    - component:
+        name: luna-ai-translator
+      match:
+        authority:
+          exact: ''
+        path:
+          prefix: /
+name: luna-ai-translator-static
+region: sgp
+static_sites:
+  - build_command: bun install && bun run build:spa
+    catchall_document: index.html
+    environment_slug: bun
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: rozx/luna-ai-translator
+    name: luna-ai-translator
+    output_dir: dist/spa
+    source_dir: /

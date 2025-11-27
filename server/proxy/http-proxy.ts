@@ -48,6 +48,18 @@ export const handleDirectProxy = async (
       validateStatus: () => true, // Don't throw on any status code
     });
 
+    // 记录响应信息用于调试
+    const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
+    console.log(`[Direct] [${requestId}] Response received`, {
+      status: response.status,
+      contentType: response.headers['content-type'],
+      dataLength: dataStr.length,
+      dataPreview: dataStr.substring(0, 500),
+      isHtml: dataStr.includes('<html') || dataStr.includes('<!DOCTYPE'),
+      isJson: dataStr.trim().startsWith('{') || dataStr.trim().startsWith('['),
+      targetUrl,
+    });
+
     // Set response status
     res.status(response.status);
 

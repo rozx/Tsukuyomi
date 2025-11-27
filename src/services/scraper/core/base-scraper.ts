@@ -7,6 +7,8 @@ import type {
 } from 'src/services/scraper/types';
 import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
+import { ProxyService } from 'src/services/proxy-service';
+import { useElectron } from 'src/composables/useElectron';
 
 /**
  * 爬虫服务基类
@@ -52,9 +54,9 @@ export abstract class BaseScraper implements NovelScraper {
 
   /**
    * 获取页面 HTML（通用方法）
-   * 在浏览器环境中，使用服务器提供的 /api/... 代理路径
-   * 在 Electron 环境中，使用 Electron 的 net 模块直接请求
-   * 在 Node.js/Bun 环境中，直接访问 URL
+   * 在浏览器环境中，使用服务器提供的 /api/... 代理路径或用户配置的代理
+   * 在 Electron 环境中，使用 Electron 的 net 模块直接请求或用户配置的代理
+   * 在 Node.js/Bun 环境中，直接访问 URL 或使用用户配置的代理
    * @param url 页面 URL
    * @param _proxyPath 代理路径（可选，已弃用）
    * @returns Promise<string> HTML 内容
@@ -63,35 +65,14 @@ export abstract class BaseScraper implements NovelScraper {
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
     try {
       // 检测环境
-      const isBrowser = typeof window !== 'undefined';
-      const isElectron = isBrowser && window.electronAPI?.isElectron;
-      let finalUrl = url;
+      const { isElectron, isBrowser } = useElectron();
 
-      // 在 Web 浏览器环境中（非 Electron），使用服务器代理路径
-      if (isBrowser && !isElectron) {
-        // 在浏览器环境中，使用服务器代理路径（不再使用 AllOrigins）
-        const urlObj = new URL(url);
-        if (urlObj.hostname === 'kakuyomu.jp') {
-          finalUrl = `/api/kakuyomu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-        } else if (urlObj.hostname === 'ncode.syosetu.com') {
-          finalUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-        } else if (urlObj.hostname === 'novel18.syosetu.com') {
-          finalUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-        } else if (urlObj.hostname === 'syosetu.org') {
-          finalUrl = `/api/syosetu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-        } else if (urlObj.hostname === 'p.sda1.dev') {
-          finalUrl = `/api/sda1${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-        }
-      }
-
-      // 重试机制：最多重试 3 次
-      let lastError: Error | null = null;
-      const maxRetries = 3;
-
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
+      // 使用代理服务的自动切换功能执行请求
+      return await ProxyService.executeWithAutoSwitch(
+        url,
+        async (proxiedUrl: string) => {
           // 在 Electron 环境中，使用 Electron 的 net 模块
-          if (isElectron) {
+          if (isElectron.value) {
             if (!window.electronAPI?.fetch) {
               throw new Error('Electron API 未正确加载，请检查 preload 脚本');
             }
@@ -108,7 +89,7 @@ export abstract class BaseScraper implements NovelScraper {
             const urlObj = new URL(url);
             headers['Referer'] = urlObj.origin;
 
-            const response = await window.electronAPI.fetch(url, {
+            const response = await window.electronAPI.fetch(proxiedUrl, {
               method: 'GET',
               headers,
               timeout: 60000,
@@ -126,16 +107,13 @@ export abstract class BaseScraper implements NovelScraper {
           }
 
           // 在浏览器环境（非 Electron）或 Node.js/Bun 环境中，使用 axios
-          // 直接请求，在浏览器环境中使用服务器代理路径，在 Node.js/Bun 环境中直接访问
-          // 在浏览器环境中，某些请求头（如 User-Agent、Accept-Encoding、Referer）不能手动设置
-          // 这些请求头会被浏览器自动设置，或者由服务器代理设置
           const headers: Record<string, string> = {
             Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
           };
 
           // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
-          if (!isBrowser) {
+          if (!isBrowser.value) {
             headers['User-Agent'] =
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
             headers['Accept-Encoding'] = 'gzip, deflate, br';
@@ -144,10 +122,23 @@ export abstract class BaseScraper implements NovelScraper {
               : 'https://kakuyomu.jp/';
           }
 
-          const response = await axios.get(finalUrl, {
+          const response = await axios.get(proxiedUrl, {
             timeout: 60000, // 60 秒超时（与代理服务器超时时间一致）
             headers,
             validateStatus: (status) => status >= 200 && status < 400,
+          });
+
+          const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
+          console.log('[BaseScraper] axios 响应', {
+            status: response.status,
+            statusText: response.statusText,
+            contentType: response.headers['content-type'],
+            dataLength: dataStr.length,
+            dataPreview: dataStr.substring(0, 500),
+            proxiedUrl,
+            isHtml: dataStr.includes('<html') || dataStr.includes('<!DOCTYPE'),
+            hasNextData: dataStr.includes('__NEXT_DATA__'),
+            titleMatch: dataStr.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1],
           });
 
           if (response.status >= 400) {
@@ -155,28 +146,62 @@ export abstract class BaseScraper implements NovelScraper {
           }
 
           if (response.data) {
+            // 检查返回的内容类型
+            const contentType = response.headers['content-type'] || '';
+            const dataStr =
+              typeof response.data === 'string' ? response.data : String(response.data);
+
+            // 检查是否是 JSON 响应（可能是代理服务返回的 JSON 格式）
+            if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
+              console.warn('[BaseScraper] 返回的是 JSON 而不是 HTML', {
+                contentType,
+                dataPreview: dataStr.substring(0, 300),
+              });
+
+              // 尝试解析 JSON 以获取实际内容
+              try {
+                const jsonData =
+                  typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+
+                // 某些代理服务（如 AllOrigins）返回 JSON，内容在 contents 字段
+                if (jsonData.contents && typeof jsonData.contents === 'string') {
+                  console.log('[BaseScraper] 从 JSON contents 字段提取 HTML');
+                  return jsonData.contents;
+                }
+
+                // 某些代理服务返回 JSON，内容在 data 字段
+                if (jsonData.data && typeof jsonData.data === 'string') {
+                  console.log('[BaseScraper] 从 JSON data 字段提取 HTML');
+                  return jsonData.data;
+                }
+
+                // cors.lol 可能直接返回 HTML（即使 Content-Type 是 JSON）
+                // 检查是否包含 HTML 标签
+                if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) {
+                  console.log('[BaseScraper] JSON 响应中包含 HTML，直接使用');
+                  return dataStr;
+                }
+
+                console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
+                  keys: Object.keys(jsonData),
+                  jsonPreview: JSON.stringify(jsonData).substring(0, 500),
+                });
+              } catch {
+                // 不是有效的 JSON，可能是 HTML 但被误判为 JSON
+                console.log('[BaseScraper] JSON 解析失败，使用原始数据');
+              }
+            }
+
             return response.data;
           }
 
           throw new Error('返回的内容为空');
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error('Unknown error');
-
-          // 如果是错误且还有重试机会，等待后重试
-          if (attempt < maxRetries - 1) {
-            // 每次重试前等待更长时间（指数退避）
-            const retryDelay = (attempt + 1) * 2000 + Math.floor(Math.random() * 1000);
-            await new Promise((resolve) => setTimeout(resolve, retryDelay));
-            continue;
-          }
-
-          // 如果没有重试机会了，直接抛出错误
-          throw error;
-        }
-      }
-
-      // 如果所有重试都失败了，抛出最后一个错误
-      throw lastError || new Error('Failed to fetch page after retries');
+        },
+        {
+          skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
+          maxRetries: 3,
+        },
+      );
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response) {

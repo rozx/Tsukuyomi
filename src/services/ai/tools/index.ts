@@ -1,10 +1,12 @@
-﻿import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
+import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo } from './types';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
 import { webSearchTools } from './web-search-tools';
 import { bookTools } from './book-tools';
+import { memoryTools } from './memory-tools';
+import { navigationTools } from './navigation-tools';
 
 export type { ActionInfo };
 
@@ -29,6 +31,16 @@ export class ToolRegistry {
     return bookTools.map((t) => t.definition);
   }
 
+  static getMemoryTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+    return memoryTools.map((t) => t.definition);
+  }
+
+  static getNavigationTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+    return navigationTools.map((t) => t.definition);
+  }
+
   static getWebSearchTools(): AITool[] {
     return webSearchTools.map((t) => t.definition);
   }
@@ -46,6 +58,8 @@ export class ToolRegistry {
         ...this.getCharacterSettingTools(bookId),
         ...this.getParagraphTools(bookId),
         ...this.getBookTools(bookId),
+        ...this.getMemoryTools(bookId),
+        ...this.getNavigationTools(bookId),
       );
     }
 
@@ -64,10 +78,13 @@ export class ToolRegistry {
       ...paragraphTools,
       ...webSearchTools,
       ...bookTools,
+      ...memoryTools,
+      ...navigationTools,
     ];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 
     if (!tool) {
+      console.warn(`[ToolRegistry] ⚠️ 未知的工具: ${functionName}`);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -84,14 +101,37 @@ export class ToolRegistry {
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch (e) {
-        throw new Error(`无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`);
+        const errorMsg = `无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`;
+        console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
+        throw new Error(errorMsg);
       }
+
+      // 记录工具调用开始
+      const argsPreview = JSON.stringify(args);
+      const argsDisplay =
+        argsPreview.length > 200 ? argsPreview.substring(0, 200) + '...' : argsPreview;
+      console.log(
+        `[ToolRegistry] 🔧 AI 调用工具: ${functionName}${bookId ? ` (bookId: ${bookId})` : ''}`,
+        argsDisplay,
+      );
 
       // 网络搜索工具不需要 bookId
       const result = await tool.handler(args, {
         ...(bookId ? { bookId } : {}),
         ...(onAction ? { onAction } : {}),
       });
+
+      // 记录工具调用成功
+      const resultPreview =
+        typeof result === 'string'
+          ? result.length > 200
+            ? result.substring(0, 200) + '...'
+            : result
+          : JSON.stringify(result).length > 200
+            ? JSON.stringify(result).substring(0, 200) + '...'
+            : JSON.stringify(result);
+      console.log(`[ToolRegistry] ✅ 工具调用成功 [${functionName}]:`, resultPreview);
+
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -99,13 +139,15 @@ export class ToolRegistry {
         content: result,
       };
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
         name: functionName,
         content: JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : '未知错误',
+          error: errorMsg,
         }),
       };
     }

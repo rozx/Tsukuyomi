@@ -4,7 +4,7 @@ import { cloneDeep } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import InputChips from 'primevue/inputchips';
+import AutoComplete from 'primevue/autocomplete';
 import Skeleton from 'primevue/skeleton';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
@@ -556,7 +556,7 @@ watch(
               @click="openScraper()"
             />
           </div>
-          <InputChips
+          <AutoComplete
             :id="`${idPrefix}-webUrl`"
             :model-value="formData.webUrl || []"
             @update:model-value="
@@ -564,8 +564,11 @@ watch(
                 formData.webUrl = value;
               }
             "
+            :suggestions="[]"
+            multiple
             placeholder="输入网络地址后按回车"
             class="w-full"
+            @complete="() => {}"
           />
           <!-- 显示可点击的 URL 列表 -->
           <div v-if="formData.webUrl && formData.webUrl.length > 0" class="space-y-1 mt-2">

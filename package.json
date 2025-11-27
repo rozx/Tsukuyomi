@@ -1,13 +1,13 @@
 {
   "name": "luna-ai-translator",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Luna AI translator",
   "productName": "Luna AI translator",
   "author": "rozx <rozx@heavyskymobile.com>",
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "bunx eslint",
+    "lint": "bunx eslint --quiet",
     "type-check": "bunx vue-tsc --noEmit",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",

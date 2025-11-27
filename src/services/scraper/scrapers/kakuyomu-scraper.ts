@@ -1,7 +1,11 @@
 import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
-import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
+import type {
+  FetchNovelResult,
+  ParsedChapterInfo,
+  ParsedVolumeInfo,
+} from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
 
 /**
@@ -68,7 +72,6 @@ export class KakuyomuScraper extends BaseScraper {
     return KakuyomuScraper.NOVEL_URL_PATTERN.test(url);
   }
 
-
   /**
    * 从 URL 中提取小说 ID
    */
@@ -99,6 +102,14 @@ export class KakuyomuScraper extends BaseScraper {
 
       const novelIndexUrl = this.getNovelIndexUrl(url);
       const html = await this.fetchPage(novelIndexUrl);
+
+      // 调试：记录返回的 HTML 信息
+      console.log('[KakuyomuScraper] fetchPage 返回', {
+        url: novelIndexUrl,
+        htmlLength: html.length,
+        htmlPreview: html.substring(0, 500),
+        hasNextData: html.includes('__NEXT_DATA__'),
+      });
 
       // 解析页面中的 Next.js 数据
       const novelInfo = this.parseNovelPage(html, novelIndexUrl);
@@ -251,10 +262,65 @@ export class KakuyomuScraper extends BaseScraper {
   private parseNovelPage(html: string, baseUrl: string): ParsedNovelInfo {
     const $ = cheerio.load(html);
 
-    // 提取 Next.js 数据
-    const nextDataScript = $('script#__NEXT_DATA__').html();
+    // 提取 Next.js 数据 - 尝试多种方式查找
+    let nextDataScript = $('script#__NEXT_DATA__').html();
+
+    // 如果找不到，尝试其他可能的选择器
     if (!nextDataScript) {
-      throw new Error('无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）');
+      // 尝试查找所有包含 __NEXT_DATA__ 的 script 标签
+      $('script').each((_, el) => {
+        const scriptContent = $(el).html() || '';
+        if (scriptContent.includes('__NEXT_DATA__') || scriptContent.includes('__APOLLO_STATE__')) {
+          // 尝试提取 JSON 部分
+          const jsonMatch = scriptContent.match(/__NEXT_DATA__\s*=\s*({[\s\S]*?})(?:\s*;|$)/);
+          if (jsonMatch && jsonMatch[1]) {
+            nextDataScript = jsonMatch[1];
+          } else if (scriptContent.trim().startsWith('{')) {
+            // 如果整个脚本就是 JSON
+            nextDataScript = scriptContent;
+          }
+        }
+      });
+    }
+
+    // 如果还是找不到，尝试从页面中提取 JSON
+    if (!nextDataScript) {
+      const bodyText = $('body').html() || '';
+      const jsonMatch = bodyText.match(
+        /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
+      );
+      if (jsonMatch && jsonMatch[1]) {
+        nextDataScript = jsonMatch[1];
+      }
+    }
+
+    if (!nextDataScript) {
+      // 提供更详细的错误信息用于调试
+      const htmlLength = html.length;
+      const hasScriptTags = $('script').length;
+      const title = $('title').text().trim();
+      const bodyText = $('body').text().substring(0, 200);
+
+      console.error('[KakuyomuScraper] 无法找到 __NEXT_DATA__', {
+        baseUrl,
+        htmlLength,
+        hasScriptTags,
+        title,
+        bodyPreview: bodyText,
+        scriptTags: $('script')
+          .map((_, el) => ({
+            id: $(el).attr('id'),
+            src: $(el).attr('src'),
+            type: $(el).attr('type'),
+            contentLength: ($(el).html() || '').length,
+          }))
+          .get()
+          .slice(0, 5),
+      });
+
+      throw new Error(
+        `无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）。页面可能未完全加载或结构已改变。HTML 长度: ${htmlLength}，脚本标签数: ${hasScriptTags}`,
+      );
     }
 
     let pageData;
@@ -265,7 +331,7 @@ export class KakuyomuScraper extends BaseScraper {
     }
 
     // 提取 Apollo State（包含所有数据）
-     
+
     const apolloState: ApolloState = pageData.props?.pageProps?.__APOLLO_STATE__;
     if (!apolloState) {
       throw new Error('无法找到 Apollo State 数据');

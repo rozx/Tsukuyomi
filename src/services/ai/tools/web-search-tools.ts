@@ -1,6 +1,8 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { ToolDefinition, ToolContext } from './types';
+import { ProxyService } from 'src/services/proxy-service';
+import { useElectron } from 'src/composables/useElectron';
 
 /**
  * 使用 DuckDuckGo 搜索（通过 Vite 代理）
@@ -18,43 +20,64 @@ async function searchWeb(query: string): Promise<{
   message?: string;
 }> {
   try {
-    // 使用 Vite 代理路径来避免 CORS 问题
-    const isBrowser = typeof window !== 'undefined';
-    const searchUrl = isBrowser
-      ? `/api/search/?q=${encodeURIComponent(query)}`
-      : `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const { isBrowser } = useElectron();
+    const originalSearchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
-    try {
-      const response = await axios.get(searchUrl, {
-        timeout: 30000, // 30 秒超时
-        headers: isBrowser
-          ? {
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-            }
-          : {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-              'Accept-Encoding': 'gzip, deflate, br',
-              Referer: 'https://duckduckgo.com/',
-            },
+    let response;
+    // 如果代理未启用且是浏览器环境，使用内部搜索路径
+    if (!ProxyService.isProxyEnabled() && isBrowser.value) {
+      response = await axios.get(`/api/search/?q=${encodeURIComponent(query)}`, {
+        timeout: 30000,
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+        },
         validateStatus: (status) => status >= 200 && status < 400,
       });
+    } else {
+      // 使用代理服务的自动切换功能执行请求
+      response = await ProxyService.executeWithAutoSwitch(
+        originalSearchUrl,
+        async (searchUrl: string) => {
+          return await axios.get(searchUrl, {
+            timeout: 30000, // 30 秒超时
+            headers: isBrowser.value
+              ? {
+                  Accept:
+                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+                }
+              : {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  Accept:
+                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+                  'Accept-Encoding': 'gzip, deflate, br',
+                  Referer: 'https://duckduckgo.com/',
+                },
+            validateStatus: (status) => status >= 200 && status < 400,
+          });
+        },
+        {
+          maxRetries: 3,
+        },
+      );
+    }
 
-      if (response.status >= 400) {
-        console.error('[WebSearch] ❌ 搜索请求失败', {
-          status: response.status,
-          statusText: response.statusText,
-        });
-        throw new Error(`搜索请求失败: ${response.status}`);
-      }
+    if (response.status >= 400) {
+      console.error('[WebSearch] ❌ 搜索请求失败', {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      throw new Error(`搜索请求失败: ${response.status}`);
+    }
 
-      // 解析 HTML 响应
-      const html = response.data;
-      const $ = cheerio.load(html);
+    // 解析 HTML 响应
+    const html = response.data;
+    const $ = cheerio.load(html);
 
+    try {
       const results: Array<{ title: string; snippet: string; url: string }> = [];
 
       // 辅助函数：解析 DuckDuckGo 重定向 URL
@@ -372,37 +395,37 @@ async function fetchWebpage(url: string): Promise<{
       };
     }
 
-    const isBrowser = typeof window !== 'undefined';
-    let fetchUrl: string = url;
-    let headers: Record<string, string>;
+    const { isBrowser } = useElectron();
 
-    // 在 Node.js/Bun 环境中直接访问
-    // 在浏览器环境中也可以直接访问，因为现在有服务器代理
-    if (isBrowser) {
-      // 浏览器环境：使用通用代理 endpoint
-      fetchUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-      headers = {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-      };
-    } else {
-      // Electron/Node.js/Bun 环境：直接访问
-      headers = {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-      };
-    }
+    // 使用代理服务的自动切换功能执行请求
+    const response = await ProxyService.executeWithAutoSwitch(
+      url,
+      async (fetchUrl: string) => {
+        // 设置请求头
+        const headers: Record<string, string> = {
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+        };
+
+        // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
+        if (!isBrowser.value) {
+          headers['User-Agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          headers['Accept-Encoding'] = 'gzip, deflate, br';
+        }
+
+        return await axios.get(fetchUrl, {
+          timeout: 30000, // 30 秒超时
+          headers,
+          validateStatus: (status) => status >= 200 && status < 400,
+        });
+      },
+      {
+        maxRetries: 3,
+      },
+    );
 
     try {
-      const response = await axios.get(fetchUrl, {
-        timeout: 30000, // 30 秒超时
-        headers,
-        validateStatus: (status) => status >= 200 && status < 400,
-      });
-
       if (response.status >= 400) {
         console.error('[WebPage] ❌ 网页请求失败', {
           status: response.status,

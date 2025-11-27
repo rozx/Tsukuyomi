@@ -20,6 +20,11 @@ const { markAsReadByMessage } = useToastHistory();
 const toast = useToastWithHistory();
 const aiProcessingStore = useAIProcessingStore();
 
+// 注册全局 toast 函数，供静态方法使用
+if (typeof window !== 'undefined') {
+  (window as unknown as { __lunaToast?: typeof toast.add }).__lunaToast = toast.add.bind(toast);
+}
+
 // 跟踪之前的任务状态，用于检测状态变化
 const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
 
