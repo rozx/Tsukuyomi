@@ -3,6 +3,7 @@ import type { AppSettings } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
+import { DEFAULT_PROXY_LIST } from 'src/constants/proxy';
 
 const SETTINGS_STORAGE_KEY = 'luna-settings';
 const SYNC_STORAGE_KEY = 'luna-sync-configs';
@@ -14,6 +15,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
   lastOpenedSettingsTab: 0,
+  proxyEnabled: true,
+  proxyUrl: 'https://api.allorigins.win/raw?url={url}',
+  proxyAutoSwitch: false,
+  proxyAutoAddMapping: true,
+  proxyList: DEFAULT_PROXY_LIST,
 };
 
 /**
@@ -138,6 +144,48 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 获取代理启用状态
+     */
+    proxyEnabled: (state): boolean => {
+      return state.settings.proxyEnabled ?? false;
+    },
+
+    /**
+     * 获取代理 URL
+     */
+    proxyUrl: (state): string => {
+      return state.settings.proxyUrl ?? '';
+    },
+
+    /**
+     * 获取代理自动切换状态
+     */
+    proxyAutoSwitch: (state): boolean => {
+      return state.settings.proxyAutoSwitch ?? false;
+    },
+
+    /**
+     * 获取自动添加映射状态
+     */
+    proxyAutoAddMapping: (state): boolean => {
+      return state.settings.proxyAutoAddMapping ?? true;
+    },
+
+    /**
+     * 获取网站-代理映射关系
+     */
+    proxySiteMapping: (state): Record<string, string[]> => {
+      return state.settings.proxySiteMapping ?? {};
+    },
+
+    /**
+     * 获取代理列表
+     */
+    proxyList: (state): Array<{ id: string; name: string; url: string; description?: string }> => {
+      return state.settings.proxyList ?? DEFAULT_PROXY_LIST;
+    },
+
+    /**
      * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
      */
     gistSync: (state): SyncConfig => {
@@ -171,14 +219,14 @@ export const useSettingsStore = defineStore('settings', {
         ...this.settings,
         ...updates,
       };
-      
+
       if (updates.taskDefaultModels !== undefined) {
         mergedSettings.taskDefaultModels = {
           ...this.settings.taskDefaultModels,
           ...updates.taskDefaultModels,
         };
       }
-      
+
       this.settings = mergedSettings;
       saveSettingsToLocalStorage(this.settings);
       await Promise.resolve();
@@ -200,7 +248,10 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 设置任务的默认模型 ID
      */
-    async setTaskDefaultModelId(task: keyof AIModelDefaultTasks, modelId: string | null): Promise<void> {
+    async setTaskDefaultModelId(
+      task: keyof AIModelDefaultTasks,
+      modelId: string | null,
+    ): Promise<void> {
       const taskDefaultModels = {
         ...this.settings.taskDefaultModels,
         [task]: modelId,
@@ -233,7 +284,7 @@ export const useSettingsStore = defineStore('settings', {
       const mergedSettings: Partial<AppSettings> = {
         ...settings,
       };
-      
+
       if (settings.taskDefaultModels !== undefined) {
         // 如果远程有 taskDefaultModels，深度合并
         mergedSettings.taskDefaultModels = {
@@ -241,7 +292,7 @@ export const useSettingsStore = defineStore('settings', {
           ...settings.taskDefaultModels,
         };
       }
-      
+
       await this.updateSettings(mergedSettings);
     },
 
@@ -253,6 +304,129 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 设置代理启用状态
+     */
+    async setProxyEnabled(enabled: boolean): Promise<void> {
+      await this.updateSettings({ proxyEnabled: enabled });
+    },
+
+    /**
+     * 设置代理 URL
+     */
+    async setProxyUrl(url: string): Promise<void> {
+      await this.updateSettings({ proxyUrl: url });
+    },
+
+    /**
+     * 设置代理自动切换状态
+     */
+    async setProxyAutoSwitch(enabled: boolean): Promise<void> {
+      await this.updateSettings({ proxyAutoSwitch: enabled });
+    },
+
+    /**
+     * 设置自动添加映射状态
+     */
+    async setProxyAutoAddMapping(enabled: boolean): Promise<void> {
+      await this.updateSettings({ proxyAutoAddMapping: enabled });
+    },
+
+    /**
+     * 为网站添加可用的代理服务
+     */
+    async addProxyForSite(site: string, proxyUrl: string): Promise<void> {
+      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
+      if (!mapping[site]) {
+        mapping[site] = [];
+      }
+      const siteProxies = mapping[site];
+      if (siteProxies && !siteProxies.includes(proxyUrl)) {
+        siteProxies.push(proxyUrl);
+      }
+      await this.updateSettings({ proxySiteMapping: mapping });
+    },
+
+    /**
+     * 为网站移除代理服务
+     */
+    async removeProxyForSite(site: string, proxyUrl: string): Promise<void> {
+      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
+      const siteProxies = mapping[site];
+      if (siteProxies) {
+        const filtered = siteProxies.filter((url) => url !== proxyUrl);
+        if (filtered.length === 0) {
+          delete mapping[site];
+        } else {
+          mapping[site] = filtered;
+        }
+      }
+      await this.updateSettings({ proxySiteMapping: mapping });
+    },
+
+    /**
+     * 清除网站的所有代理映射
+     */
+    async clearProxyForSite(site: string): Promise<void> {
+      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
+      delete mapping[site];
+      await this.updateSettings({ proxySiteMapping: mapping });
+    },
+
+    /**
+     * 获取网站可用的代理服务列表
+     */
+    getProxiesForSite(site: string): string[] {
+      return this.settings.proxySiteMapping?.[site] ?? [];
+    },
+
+    /**
+     * 添加代理到列表
+     */
+    async addProxy(proxy: { name: string; url: string; description?: string }): Promise<void> {
+      const list = [...(this.settings.proxyList ?? DEFAULT_PROXY_LIST)];
+      const id = `custom-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      list.push({ id, ...proxy });
+      await this.updateSettings({ proxyList: list });
+    },
+
+    /**
+     * 更新代理
+     */
+    async updateProxy(
+      id: string,
+      updates: Partial<{ name: string; url: string; description?: string }>,
+    ): Promise<void> {
+      const list = [...(this.settings.proxyList ?? DEFAULT_PROXY_LIST)];
+      const existing = list.find((p) => p.id === id);
+      if (existing) {
+        const updated: { id: string; name: string; url: string; description?: string } = {
+          id: existing.id,
+          name: updates.name ?? existing.name,
+          url: updates.url ?? existing.url,
+        };
+        if (updates.description !== undefined) {
+          updated.description = updates.description;
+        } else if (existing.description !== undefined) {
+          updated.description = existing.description;
+        }
+        const index = list.findIndex((p) => p.id === id);
+        if (index >= 0) {
+          list[index] = updated;
+          await this.updateSettings({ proxyList: list });
+        }
+      }
+    },
+
+    /**
+     * 删除代理
+     */
+    async removeProxy(id: string): Promise<void> {
+      const list = [...(this.settings.proxyList ?? DEFAULT_PROXY_LIST)];
+      const filtered = list.filter((p) => p.id !== id);
+      await this.updateSettings({ proxyList: filtered });
+    },
+
+    /**
      * 更新 Gist 同步配置
      */
     async updateGistSync(updates: Partial<SyncConfig>): Promise<void> {
@@ -260,19 +434,29 @@ export const useSettingsStore = defineStore('settings', {
       const defaultConfig = createDefaultGistSyncConfig();
       const existingConfig = index >= 0 ? this.syncs[index] : undefined;
 
-      const lastSyncedModelIds = updates.lastSyncedModelIds ?? existingConfig?.lastSyncedModelIds ?? defaultConfig.lastSyncedModelIds;
+      const lastSyncedModelIds =
+        updates.lastSyncedModelIds ??
+        existingConfig?.lastSyncedModelIds ??
+        defaultConfig.lastSyncedModelIds;
 
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
-        lastSyncTime: updates.lastSyncTime !== undefined ? updates.lastSyncTime : (existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime),
-        syncInterval: updates.syncInterval !== undefined ? updates.syncInterval : (existingConfig?.syncInterval ?? defaultConfig.syncInterval),
+        lastSyncTime:
+          updates.lastSyncTime !== undefined
+            ? updates.lastSyncTime
+            : (existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime),
+        syncInterval:
+          updates.syncInterval !== undefined
+            ? updates.syncInterval
+            : (existingConfig?.syncInterval ?? defaultConfig.syncInterval),
         syncType: updates.syncType ?? existingConfig?.syncType ?? defaultConfig.syncType,
         syncParams: {
           ...(existingConfig?.syncParams ?? defaultConfig.syncParams),
           ...(updates.syncParams || {}),
         },
         secret: updates.secret ?? existingConfig?.secret ?? defaultConfig.secret,
-        apiEndpoint: updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
+        apiEndpoint:
+          updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
         ...(lastSyncedModelIds !== undefined ? { lastSyncedModelIds } : {}),
       };
 

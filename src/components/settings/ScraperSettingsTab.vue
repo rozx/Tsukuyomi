@@ -1,8 +1,16 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import InputNumber from 'primevue/inputnumber';
 import { useSettingsStore } from 'src/stores/settings';
 
 const settingsStore = useSettingsStore();
+
+// 确保 store 已加载
+onMounted(async () => {
+  if (!settingsStore.isLoaded) {
+    await settingsStore.loadSettings();
+  }
+});
 </script>
 
 <template>
@@ -19,12 +27,9 @@ const settingsStore = useSettingsStore();
         :max="10"
         :show-buttons="true"
         class="w-full"
-        @update:model-value="
-          (value) => settingsStore.setScraperConcurrencyLimit(Number(value))
-        "
+        @update:model-value="(value) => settingsStore.setScraperConcurrencyLimit(Number(value))"
       />
       <p class="text-xs text-moon/60">同时进行的请求数量，建议值：3</p>
     </div>
   </div>
 </template>
-
