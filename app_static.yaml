@@ -1,0 +1,30 @@
+name: luna-ai-translator
+region: sgp
+
+# 静态网站配置
+# 用于部署 Quasar SPA 构建产物
+static_sites:
+  - name: luna-app
+    github:
+      repo: rozx/luna-ai-translator
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: bun install && bun run build:spa
+    output_dir: dist/spa
+    routes:
+      - path: /
+    catchall_document: index.html
+    cors:
+      allow_origins:
+        - "*"
+      allow_methods:
+        - GET
+        - HEAD
+        - OPTIONS
+      allow_headers:
+        - "*"
+      expose_headers:
+        - "*"
+      max_age: 3600
+
