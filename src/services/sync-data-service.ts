@@ -7,12 +7,15 @@ import type { ConflictResolution } from 'src/services/conflict-detection-service
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
+import { isEqual, omit } from 'lodash';
+import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 
 /**
  * 同步数据服务
  * 处理上传/下载配置的通用逻辑
  */
 export class SyncDataService {
+
   /**
    * 应用下载的数据（根据冲突解决结果）
    */
@@ -24,6 +27,7 @@ export class SyncDataService {
       coverHistory?: any[] | null;
     } | null,
     resolutions: ConflictResolution[],
+    lastSyncTime?: number,
   ): Promise<void> {
     // 如果 remoteData 为 null，直接返回
     if (!remoteData) {
@@ -34,6 +38,9 @@ export class SyncDataService {
     const booksStore = useBooksStore();
     const coverHistoryStore = useCoverHistoryStore();
     const settingsStore = useSettingsStore();
+
+    // 如果没有传入 lastSyncTime，从设置中获取
+    const syncTime = lastSyncTime ?? settingsStore.gistSync.lastSyncTime ?? 0;
 
     const resolutionMap = new Map(resolutions.map((r) => [r.conflictId, r.choice]));
 
@@ -63,17 +70,26 @@ export class SyncDataService {
       }
 
       // 添加本地独有的模型
-      // 如果用户选择了 'remote'（删除本地），则不添加本地模型
+      // 只保留在上次同步后新添加的本地模型（lastEdited > lastSyncTime）
+      // 陈旧的本地模型（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localModel of aiModelsStore.models) {
         if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
-          // 检查是否有冲突解决选择
+          // 检查是否有冲突解决选择（用户手动选择删除）
           const resolution = resolutionMap.get(localModel.id);
           if (resolution === 'remote') {
             // 用户选择删除本地模型，不添加
             continue;
           }
-          // 用户选择保留本地或没有冲突，添加本地模型
-          finalModels.push(localModel);
+
+          // 检查是否是本地新增的（在上次同步后添加）
+          if (
+            localModel.lastEdited &&
+            checkIsNewlyAdded(localModel.lastEdited, syncTime)
+          ) {
+            // 本地新增的模型，保留
+            finalModels.push(localModel);
+          }
+          // 如果不在上次同步后添加，说明是陈旧的本地模型，不添加（自动删除）
         }
       }
 
@@ -114,18 +130,24 @@ export class SyncDataService {
       }
 
       // 添加本地独有的书籍
-      // 如果用户选择了 'remote'（删除本地），则不添加本地书籍
+      // 只保留在上次同步后新添加的本地书籍（lastEdited > lastSyncTime）
+      // 陈旧的本地书籍（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localBook of booksStore.books) {
         if (!remoteData.novels.find((n) => n.id === localBook.id)) {
-          // 检查是否有冲突解决选择
+          // 检查是否有冲突解决选择（用户手动选择删除）
           const resolution = resolutionMap.get(localBook.id);
           if (resolution === 'remote') {
             // 用户选择删除本地书籍，不添加
             continue;
           }
-          // 用户选择保留本地或没有冲突，添加本地书籍（确保章节内容已加载）
-          const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
-          finalBooks.push(localBookWithContent);
+
+          // 检查是否是本地新增的（在上次同步后添加）
+          if (checkIsNewlyAdded(localBook.lastEdited, syncTime)) {
+            // 本地新增的书籍，保留（确保章节内容已加载）
+            const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
+            finalBooks.push(localBookWithContent);
+          }
+          // 如果不在上次同步后添加，说明是陈旧的本地书籍，不添加（自动删除）
         }
       }
 
@@ -156,17 +178,23 @@ export class SyncDataService {
       }
 
       // 添加本地独有的封面
-      // 如果用户选择了 'remote'（删除本地），则不添加本地封面
+      // 只保留在上次同步后新添加的本地封面（addedAt > lastSyncTime）
+      // 陈旧的本地封面（addedAt <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localCover of coverHistoryStore.covers) {
         if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
-          // 检查是否有冲突解决选择
+          // 检查是否有冲突解决选择（用户手动选择删除）
           const resolution = resolutionMap.get(localCover.id);
           if (resolution === 'remote') {
             // 用户选择删除本地封面，不添加
             continue;
           }
-          // 用户选择保留本地或没有冲突，添加本地封面
-          finalCovers.push(localCover);
+
+          // 检查是否是本地新增的（在上次同步后添加）
+          if (checkIsNewlyAdded(localCover.addedAt, syncTime)) {
+            // 本地新增的封面，保留
+            finalCovers.push(localCover);
+          }
+          // 如果不在上次同步后添加，说明是陈旧的本地封面，不添加（自动删除）
         }
       }
 
@@ -225,6 +253,9 @@ export class SyncDataService {
 
     const safeRemoteData = this.createSafeRemoteData(remoteData);
 
+    // 获取上次同步时间
+    const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
+
     const conflictResult = ConflictDetectionService.detectConflicts(
       {
         novels: booksStore.books || [],
@@ -238,6 +269,7 @@ export class SyncDataService {
         ...(safeRemoteData.appSettings ? { appSettings: safeRemoteData.appSettings } : {}),
         ...(safeRemoteData.coverHistory ? { coverHistory: safeRemoteData.coverHistory } : {}),
       },
+      lastSyncTime,
     );
 
     return {
@@ -273,11 +305,9 @@ export class SyncDataService {
       if (!remoteNovel) return true; // 本地有新书籍
 
       // 检查更新时间
-      const localTime = new Date(localNovel.lastEdited).getTime();
-      const remoteTime = new Date(remoteNovel.lastEdited).getTime();
-
-      // 如果本地时间比远程时间新（甚至哪怕只差一点），就需要上传
-      if (Math.abs(localTime - remoteTime) > 1000) return true;
+      if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) {
+        return true;
+      }
     }
 
     // 2. 检查 AI 模型
@@ -288,14 +318,18 @@ export class SyncDataService {
       const remoteModel = remoteModelMap.get(localModel.id);
       if (!remoteModel) return true;
 
-      // 比较内容 (简单比较)
-      if (JSON.stringify(localModel) !== JSON.stringify(remoteModel)) {
+      // 比较内容（使用 lodash 深度比较，排除 apiKey 和 lastEdited）
+      const localForCompare = omit(localModel, 'apiKey', 'lastEdited');
+      const remoteForCompare = omit(remoteModel, 'apiKey', 'lastEdited');
+      if (!isEqual(localForCompare, remoteForCompare)) {
         return true;
       }
     }
 
-    // 3. 检查设置
-    if (JSON.stringify(local.appSettings) !== JSON.stringify(remote.appSettings || {})) {
+    // 3. 检查设置（使用 lodash 深度比较，排除 lastEdited）
+    const localSettingsForCompare = omit(local.appSettings, 'lastEdited');
+    const remoteSettingsForCompare = omit(remote.appSettings || {}, 'lastEdited');
+    if (!isEqual(localSettingsForCompare, remoteSettingsForCompare)) {
       if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
       if (remote.appSettings) return true;
     }
@@ -308,9 +342,9 @@ export class SyncDataService {
       const remoteCover = remoteCoverMap.get(localCover.id);
       if (!remoteCover) return true;
 
-      const localTime = new Date(localCover.addedAt).getTime();
-      const remoteTime = new Date(remoteCover.addedAt).getTime();
-      if (Math.abs(localTime - remoteTime) > 1000) return true;
+      if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) {
+        return true;
+      }
     }
 
     return false;

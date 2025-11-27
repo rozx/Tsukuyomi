@@ -56,7 +56,12 @@ export const useAIModelsStore = defineStore('aiModels', {
         return;
       }
 
-      this.models = await aiModelService.getAllModels();
+      const models = await aiModelService.getAllModels();
+      // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
+      this.models = models.map((model) => ({
+        ...model,
+        lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+      }));
       this.isLoaded = true;
     },
 
@@ -64,8 +69,13 @@ export const useAIModelsStore = defineStore('aiModels', {
      * 添加新的 AI 模型
      */
     async addModel(model: AIModel): Promise<void> {
-      this.models.push(model);
-      await aiModelService.saveModel(model);
+      // 确保 lastEdited 已设置，如果没有则使用当前时间
+      const modelWithLastEdited: AIModel = {
+        ...model,
+        lastEdited: model.lastEdited || new Date(),
+      };
+      this.models.push(modelWithLastEdited);
+      await aiModelService.saveModel(modelWithLastEdited);
     },
 
     /**
@@ -74,7 +84,12 @@ export const useAIModelsStore = defineStore('aiModels', {
     async updateModel(id: string, updates: Partial<AIModel>): Promise<void> {
       const index = this.models.findIndex((model) => model.id === id);
       if (index > -1) {
-        const updatedModel = { ...this.models[index], ...updates } as AIModel;
+        // 更新时自动设置 lastEdited 为当前时间
+        const updatedModel = {
+          ...this.models[index],
+          ...updates,
+          lastEdited: new Date(),
+        } as AIModel;
         this.models[index] = updatedModel;
         await aiModelService.saveModel(updatedModel);
       }

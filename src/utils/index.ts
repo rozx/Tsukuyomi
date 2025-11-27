@@ -28,6 +28,7 @@ export {
   calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
-export { detectRepeatingCharacters } from './ai-degradation-detector';
-export type { DegradationDetectionOptions } from './ai-degradation-detector';
+export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
+export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export { isEmptyOrSymbolOnly } from './text-utils';
+export { isTimeDifferent, isNewlyAdded } from './time-utils';

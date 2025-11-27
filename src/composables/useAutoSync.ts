@@ -239,6 +239,9 @@ export function useAutoSync() {
         // 检测冲突（确保数据不为 null/undefined）
         const remoteData = result.data;
 
+        // 获取上次同步时间
+        const lastSyncTime = config.lastSyncTime || 0;
+
         const conflictResult = ConflictDetectionService.detectConflicts(
           {
             novels: booksStore.books || [],
@@ -252,6 +255,7 @@ export function useAutoSync() {
             ...(remoteData?.appSettings ? { appSettings: remoteData.appSettings } : {}),
             ...(remoteData?.coverHistory ? { coverHistory: remoteData.coverHistory } : {}),
           },
+          lastSyncTime,
         );
 
         if (conflictResult && conflictResult.hasConflicts) {

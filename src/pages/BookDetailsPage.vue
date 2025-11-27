@@ -263,20 +263,31 @@ const updateParagraphTranslation = async (paragraphId: string, newTranslation: s
 
   // 查找段落
   const paragraph = chapter.content.find((p) => p.id === paragraphId);
-  if (!paragraph) return;
+  if (!paragraph || !paragraph.selectedTranslationId || !paragraph.translations) return;
 
-  // 更新翻译
-  if (paragraph.selectedTranslationId && paragraph.translations) {
-    const translation = paragraph.translations.find(
-      (t) => t.id === paragraph.selectedTranslationId,
-    );
-    if (translation) {
-      translation.translation = newTranslation;
+  // 更新章节内容中的翻译
+  const updatedContent = chapter.content.map((para) => {
+    if (para.id === paragraphId) {
+      return {
+        ...para,
+        translations: para.translations?.map((t) =>
+          t.id === paragraph.selectedTranslationId ? { ...t, translation: newTranslation } : t,
+        ),
+      };
     }
-  }
+    return para;
+  });
+
+  // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
+  const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
+    content: updatedContent,
+  });
 
   // 保存书籍
-  await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
 };
 
 // 选择段落翻译
@@ -300,35 +311,20 @@ const selectParagraphTranslation = async (paragraphId: string, translationId: st
     return;
   }
 
-  // 更新选中的翻译ID
-  const updatedVolumes = book.value.volumes?.map((volume) => {
-    if (!volume.chapters) return volume;
+  // 更新章节内容中的选中翻译ID
+  if (!chapter.content) return;
 
-    const updatedChapters = volume.chapters.map((ch) => {
-      if (ch.id !== chapter.id) return ch;
-
-      if (!ch.content) return ch;
-
-      const updatedContent = ch.content.map((para) => {
-        if (para.id !== paragraphId) return para;
-
-        return {
-          ...para,
-          selectedTranslationId: translationId,
-        };
-      });
-
-      return {
-        ...ch,
-        content: updatedContent,
-        lastEdited: new Date(),
-      };
-    });
-
+  const updatedContent = chapter.content.map((para) => {
+    if (para.id !== paragraphId) return para;
     return {
-      ...volume,
-      chapters: updatedChapters,
+      ...para,
+      selectedTranslationId: translationId,
     };
+  });
+
+  // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
+  const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
+    content: updatedContent,
   });
 
   // 保存书籍
@@ -422,10 +418,7 @@ const polishParagraph = async (paragraphId: string) => {
             if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
             // 使用已加载的章节内容
-            const content =
-              chapter.id === selectedChapterWithContent.value!.id
-                ? selectedChapterWithContent.value!.content
-                : chapter.content;
+            const content = ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
             if (!content) return chapter;
 
@@ -572,10 +565,7 @@ const retranslateParagraph = async (paragraphId: string) => {
             if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
             // 使用已加载的章节内容
-            const content =
-              chapter.id === selectedChapterWithContent.value!.id
-                ? selectedChapterWithContent.value!.content
-                : chapter.content;
+            const content = ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
             if (!content) return chapter;
 
@@ -1308,13 +1298,12 @@ const saveOriginalTextEdit = async () => {
       }
     });
 
-    // 更新章节内容
+    // 更新章节内容（ChapterService.updateChapter 会自动更新 lastEdited 时间）
     const updatedVolumes = ChapterService.updateChapter(
       book.value,
       selectedChapterWithContent.value.id,
       {
         content: updatedParagraphs,
-        lastEdited: new Date(),
       },
     );
 
@@ -1501,9 +1490,7 @@ const normalizeChapterSymbols = async () => {
 
         // 使用已加载的章节内容
         const content =
-          chapter.id === selectedChapterWithContent.value!.id
-            ? selectedChapterWithContent.value!.content
-            : chapter.content;
+          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
         // 规范化段落翻译
         let updatedContent = content;
@@ -1655,9 +1642,7 @@ const translateAllParagraphs = async () => {
 
         // 使用已加载的章节内容
         const content =
-          chapter.id === selectedChapterWithContent.value!.id
-            ? selectedChapterWithContent.value!.content
-            : chapter.content;
+          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
         if (!content) return chapter;
 
@@ -2048,9 +2033,7 @@ const continueTranslation = async () => {
 
         // 使用已加载的章节内容
         const content =
-          chapter.id === selectedChapterWithContent.value!.id
-            ? selectedChapterWithContent.value!.content
-            : chapter.content;
+          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
         if (!content) return chapter;
 
@@ -2333,9 +2316,7 @@ const polishAllParagraphs = async () => {
 
         // 使用已加载的章节内容
         const content =
-          chapter.id === selectedChapterWithContent.value!.id
-            ? selectedChapterWithContent.value!.content
-            : chapter.content;
+          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
 
         if (!content) return chapter;
 

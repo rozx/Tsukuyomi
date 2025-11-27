@@ -88,6 +88,7 @@ const duplicateModel = (model: AIModel) => {
     id: generateId(),
     name: `${model.name} (副本)`,
     enabled: false, // 复制的模型默认禁用
+    lastEdited: new Date(),
   };
   void aiModelsStore.addModel(duplicatedModel);
   toast.add({
@@ -128,6 +129,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
         },
         assistant: formData.isDefault?.assistant ?? { enabled: false, temperature: 0.7 },
       },
+      lastEdited: new Date(),
     };
     void aiModelsStore.addModel(newModel);
     showAddDialog.value = false;
