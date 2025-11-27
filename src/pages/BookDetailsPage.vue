@@ -554,7 +554,7 @@ const retranslateParagraph = async (paragraphId: string) => {
       onToast: (message) => {
         toast.add(message);
       },
-      onParagraphTranslation: (paragraphTranslations) => {
+      onParagraphTranslation: async (paragraphTranslations) => {
         if (!book.value || !selectedChapterWithContent.value) return;
 
         // 更新段落翻译
@@ -607,15 +607,12 @@ const retranslateParagraph = async (paragraphId: string) => {
           };
         });
 
-        // 更新书籍（使用 void 忽略 Promise）
-        void booksStore
-          .updateBook(book.value.id, {
-            volumes: updatedVolumes,
-            lastEdited: new Date(),
-          })
-          .then(() => {
-            updateSelectedChapterWithContent(updatedVolumes);
-          });
+        // 更新书籍（等待完成以确保保存）
+        await booksStore.updateBook(book.value.id, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+        updateSelectedChapterWithContent(updatedVolumes);
       },
       onAction: (action) => {
         handleActionInfoToast(action, { severity: 'info', withRevert: true });
@@ -1732,9 +1729,9 @@ const translateAllParagraphs = async () => {
         // 工具可以直接显示 toast
         toast.add(message);
       },
-      onParagraphTranslation: (translations) => {
-        // 立即更新段落翻译（异步执行，不阻塞）
-        void updateParagraphsIncrementally(translations);
+      onParagraphTranslation: async (translations) => {
+        // 立即更新段落翻译（等待完成以确保保存）
+        await updateParagraphsIncrementally(translations);
       },
     });
 
@@ -2113,8 +2110,8 @@ const continueTranslation = async () => {
         }
         console.debug('翻译进度:', progress);
       },
-      onParagraphTranslation: (translations) => {
-        void updateParagraphsIncrementally(translations);
+      onParagraphTranslation: async (translations) => {
+        await updateParagraphsIncrementally(translations);
       },
       onAction: (action) => {
         handleActionInfoToast(action, { severity: 'info' });
