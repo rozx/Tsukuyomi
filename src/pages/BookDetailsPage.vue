@@ -2192,7 +2192,6 @@ const continueTranslation = async () => {
         lastEdited: new Date(),
       });
 
-      const updatedChapter = updatedVolumes || [];
       updateSelectedChapterWithContent(updatedVolumes);
     }
 
