@@ -2472,7 +2472,6 @@ const polishAllParagraphs = async () => {
         lastEdited: new Date(),
       });
 
-      const updatedChapter = updatedVolumes || [];
       updateSelectedChapterWithContent(updatedVolumes);
     }
 
