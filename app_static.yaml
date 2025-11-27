@@ -19,7 +19,7 @@ ingress:
           - DELETE
           - OPTIONS
         allow_origins:
-          - regex: /.*/g
+          - regex: .*
       match:
         authority:
           exact: ''
