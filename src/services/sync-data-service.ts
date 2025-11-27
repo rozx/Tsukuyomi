@@ -353,7 +353,7 @@ export class SyncDataService {
 
                 // 如果本地章节存在，尝试保留其内容
                 if (localChapter) {
-                  let contentToPreserve: Paragraph[] | undefined = undefined;
+                  let contentToPreserve: Paragraph[] | undefined;
 
                   // 首先尝试从本地章节获取（如果已加载）
                   if (
