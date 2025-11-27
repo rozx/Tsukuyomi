@@ -16,9 +16,10 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
-import { detectRepeatingCharacters } from 'src/utils/ai-degradation-detector';
+import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
+import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 
 /**
  * 翻译服务选项
@@ -41,6 +42,10 @@ export interface TranslationServiceOptions {
    * AI 执行操作时的回调（如 CRUD 术语/角色）
    */
   onAction?: (action: ActionInfo) => void;
+  /**
+   * Toast 回调函数，用于在工具中直接显示 toast 通知
+   */
+  onToast?: ToastCallback;
   /**
    * 段落翻译回调函数，用于接收每个块完成后的段落翻译结果
    * @param translations 段落翻译数组，包含段落ID和翻译文本
@@ -117,8 +122,9 @@ export class TranslationService {
     toolCall: AIToolCall,
     bookId: string,
     onAction?: (action: ActionInfo) => void,
+    onToast?: ToastCallback,
   ): Promise<AIToolCallResult> {
-    return ToolRegistry.handleToolCall(toolCall, bookId, onAction);
+    return ToolRegistry.handleToolCall(toolCall, bookId, onAction, onToast);
   }
 
   /**
@@ -151,6 +157,7 @@ export class TranslationService {
       chapterTitle,
       aiProcessingStore,
       onParagraphTranslation,
+      onToast,
     } = options || {};
     const actions: ActionInfo[] = [];
     let titleTranslation: string | undefined;
@@ -560,6 +567,7 @@ export class TranslationService {
                     toolCall,
                     bookId || '',
                     handleAction,
+                    onToast,
                   );
 
                   // 添加工具结果到历史
@@ -949,6 +957,7 @@ export class TranslationService {
                   toolCall,
                   bookId || '',
                   handleAction,
+                  onToast,
                 );
 
                 history.push({

@@ -1,7 +1,10 @@
 import type { Novel } from 'src/models/novel';
-import type { AIModel, AIProvider, AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AppSettings } from 'src/models/settings';
 import type { CoverHistoryItem } from 'src/models/novel';
+import { isEqual, omit } from 'lodash';
+import { isTimeDifferent } from 'src/utils/time-utils';
+import type { Chapter } from 'src/models/novel';
 
 /**
  * 冲突类型
@@ -49,7 +52,32 @@ export interface ConflictResolution {
  */
 export class ConflictDetectionService {
   /**
+   * 创建冲突项
+   */
+  private static createConflictItem(
+    type: ConflictType,
+    id: string,
+    localName: string,
+    remoteName: string,
+    localLastEdited: Date,
+    remoteLastEdited: Date,
+    localData: unknown,
+    remoteData: unknown,
+  ): ConflictItem {
+    return {
+      type,
+      id,
+      localName,
+      remoteName,
+      localLastEdited,
+      remoteLastEdited,
+      localData,
+      remoteData,
+    };
+  }
+  /**
    * 检测本地和远程数据之间的冲突
+   * @param lastSyncTime 上次同步时间（毫秒时间戳），用于判断本地新增的内容
    */
   static detectConflicts(
     local: {
@@ -64,6 +92,7 @@ export class ConflictDetectionService {
       appSettings?: AppSettings;
       coverHistory?: CoverHistoryItem[];
     },
+    lastSyncTime?: number,
   ): ConflictDetectionResult {
     // 确保 remote 不为 null/undefined
     if (!remote) {
@@ -72,25 +101,26 @@ export class ConflictDetectionService {
         conflicts: [],
       };
     }
-    
+
     const conflicts: ConflictItem[] = [];
 
     // 检测书籍冲突（确保 novels 不为 null/undefined）
     const remoteNovels = remote?.novels || [];
-    const novelConflicts = this.detectNovelConflicts(local.novels, remoteNovels);
+    const novelConflicts = this.detectNovelConflicts(local.novels, remoteNovels, lastSyncTime);
     conflicts.push(...novelConflicts);
 
     // 检测 AI 模型冲突（确保 aiModels 不为 null/undefined）
     const remoteAiModels = remote.aiModels || [];
-    const modelConflicts = this.detectAIModelConflicts(local.aiModels, remoteAiModels);
+    const modelConflicts = this.detectAIModelConflicts(
+      local.aiModels,
+      remoteAiModels,
+      lastSyncTime,
+    );
     conflicts.push(...modelConflicts);
 
     // 检测设置冲突
     if (remote.appSettings) {
-      const settingsConflicts = this.detectSettingsConflicts(
-        local.appSettings,
-        remote.appSettings,
-      );
+      const settingsConflicts = this.detectSettingsConflicts(local.appSettings, remote.appSettings);
       conflicts.push(...settingsConflicts);
     }
 
@@ -99,6 +129,7 @@ export class ConflictDetectionService {
       const coverConflicts = this.detectCoverHistoryConflicts(
         local.coverHistory,
         remote.coverHistory,
+        lastSyncTime,
       );
       conflicts.push(...coverConflicts);
     }
@@ -111,91 +142,123 @@ export class ConflictDetectionService {
 
   /**
    * 检测书籍冲突
+   * 只检测两端都存在且内容被修改的情况，或本地存在但可能是远程删除的情况
    */
   private static detectNovelConflicts(
     localNovels: Novel[],
     remoteNovels: Novel[],
+    lastSyncTime?: number,
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localNovels.map((n) => [n.id, n]));
-    const remoteMap = new Map(remoteNovels.map((n) => [n.id, n]));
 
-    // 检测远程书籍的冲突（两端都存在且时间不同）
+    // 只检测两端都存在且内容不同的情况
     for (const remoteNovel of remoteNovels) {
       const localNovel = localMap.get(remoteNovel.id);
       if (localNovel) {
-        // 书籍存在于两端，检查是否有冲突
-        const localTime = localNovel.lastEdited.getTime();
-        const remoteTime = new Date(remoteNovel.lastEdited).getTime();
+        // 书籍存在于两端，先比较内容，再检查时间
+        // 注意：排除章节内容（content），因为章节内容是懒加载的，不应该参与冲突检测
+        const localNovelWithoutContent =
+          ConflictDetectionService.createNovelWithoutContent(localNovel);
+        const remoteNovelWithoutContent = ConflictDetectionService.createNovelWithoutContent({
+          ...remoteNovel,
+          lastEdited: new Date(remoteNovel.lastEdited),
+        });
 
-        // 如果时间差异超过 1 秒，认为有冲突
-        if (Math.abs(localTime - remoteTime) > 1000) {
-          conflicts.push({
-            type: ConflictType.Novel,
-            id: remoteNovel.id,
-            localName: localNovel.title,
-            remoteName: remoteNovel.title,
-            localLastEdited: localNovel.lastEdited,
-            remoteLastEdited: new Date(remoteNovel.lastEdited),
-            localData: localNovel,
-            remoteData: remoteNovel,
-          });
+        const localDataWithoutTime = omit(localNovelWithoutContent, 'lastEdited', 'createdAt');
+        const remoteDataWithoutTime = omit(remoteNovelWithoutContent, 'lastEdited', 'createdAt');
+
+        // 如果内容不同或时间差异超过 1 秒，认为有冲突
+        const contentDifferent = !isEqual(localDataWithoutTime, remoteDataWithoutTime);
+        const remoteLastEditedDate = new Date(remoteNovel.lastEdited);
+        const timeDifferent = isTimeDifferent(localNovel.lastEdited, remoteLastEditedDate);
+
+        if (contentDifferent || timeDifferent) {
+          conflicts.push(
+            this.createConflictItem(
+              ConflictType.Novel,
+              remoteNovel.id,
+              localNovel.title,
+              remoteNovel.title,
+              localNovel.lastEdited,
+              remoteLastEditedDate,
+              localNovel,
+              remoteNovel,
+            ),
+          );
         }
       }
+      // 如果本地没有此书籍，这是远程新增的内容，不算冲突
     }
 
-    // 检测本地存在但远程不存在的书籍（本地新添加或远程已删除）
-    for (const localNovel of localNovels) {
-      if (!remoteMap.has(localNovel.id)) {
-        // 本地存在但远程不存在，需要用户选择是否删除本地书籍
-        conflicts.push({
-          type: ConflictType.Novel,
-          id: localNovel.id,
-          localName: localNovel.title,
-          remoteName: '[已删除]', // 远程不存在，标记为已删除
-          localLastEdited: localNovel.lastEdited,
-          remoteLastEdited: new Date(0), // 使用纪元时间表示不存在
-          localData: localNovel,
-          remoteData: null, // 远程不存在，设置为 null
-        });
-      }
-    }
+    // 检测本地存在但远程不存在的情况
+    // 如果 lastEdited 在上次同步之后，说明是本地新添加的，不算冲突，会保留
+    // 如果 lastEdited 在上次同步之前或等于，说明是陈旧的本地文件，远程已删除，会自动删除，不算冲突
+    // 不需要在这里检测，同步服务会自动处理
 
     return conflicts;
   }
 
   /**
    * 检测 AI 模型冲突
+   * 只检测两端都存在且内容被修改的情况，或本地存在但可能是远程删除的情况
    */
   private static detectAIModelConflicts(
     localModels: AIModel[],
     remoteModels: AIModel[],
+    lastSyncTime?: number,
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localModels.map((m) => [m.id, m]));
 
+    // 只检测两端都存在的情况
     for (const remoteModel of remoteModels) {
       const localModel = localMap.get(remoteModel.id);
       if (localModel) {
-        // 模型存在于两端，检查是否有冲突
-        // AI 模型没有 lastEdited，使用 JSON 比较
-        const localJson = JSON.stringify(this.serializeModel(localModel));
-        const remoteJson = JSON.stringify(this.serializeModel(remoteModel));
+        // 模型存在于两端，先比较内容，再检查时间
+        const localDataWithoutTime = omit(localModel, 'lastEdited');
+        const remoteDataWithoutTime = omit(
+          {
+            ...remoteModel,
+            lastEdited: remoteModel.lastEdited ? new Date(remoteModel.lastEdited) : new Date(0),
+          },
+          'lastEdited',
+        );
 
-        if (localJson !== remoteJson) {
-          conflicts.push({
-            type: ConflictType.AIModel,
-            id: remoteModel.id,
-            localName: localModel.name,
-            remoteName: remoteModel.name,
-            localLastEdited: new Date(), // AI 模型没有时间戳，使用当前时间
-            remoteLastEdited: new Date(),
-            localData: localModel,
-            remoteData: remoteModel,
-          });
+        // 使用 lodash isEqual 进行深度比较，排除 apiKey（敏感信息）
+        const localForCompare = omit(localDataWithoutTime, 'apiKey');
+        const remoteForCompare = omit(remoteDataWithoutTime, 'apiKey');
+        const contentDifferent = !isEqual(localForCompare, remoteForCompare);
+
+        // 检查时间差异
+        const localLastEdited = localModel.lastEdited || new Date(0);
+        const remoteLastEdited = remoteModel.lastEdited
+          ? new Date(remoteModel.lastEdited)
+          : new Date(0);
+        const timeDifferent = isTimeDifferent(localLastEdited, remoteLastEdited);
+
+        if (contentDifferent || timeDifferent) {
+          conflicts.push(
+            this.createConflictItem(
+              ConflictType.AIModel,
+              remoteModel.id,
+              localModel.name,
+              remoteModel.name,
+              localLastEdited,
+              remoteLastEdited,
+              localModel,
+              remoteModel,
+            ),
+          );
         }
       }
+      // 如果本地没有此模型，这是远程新增的内容，不算冲突
     }
+
+    // 检测本地存在但远程不存在的情况
+    // 如果 lastEdited 在上次同步之后，说明是本地新添加的，不算冲突，会保留
+    // 如果 lastEdited 在上次同步之前或等于，说明是陈旧的本地文件，远程已删除，会自动删除，不算冲突
+    // 不需要在这里检测，同步服务会自动处理
 
     return conflicts;
   }
@@ -208,20 +271,40 @@ export class ConflictDetectionService {
     remoteSettings: AppSettings,
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
-    const localJson = JSON.stringify(localSettings);
-    const remoteJson = JSON.stringify(remoteSettings);
 
-    if (localJson !== remoteJson) {
-      conflicts.push({
-        type: ConflictType.Settings,
-        id: 'app-settings',
-        localName: '本地设置',
-        remoteName: '远程设置',
-        localLastEdited: new Date(),
-        remoteLastEdited: new Date(),
-        localData: localSettings,
-        remoteData: remoteSettings,
-      });
+    // 先比较内容，再检查时间
+    const localDataWithoutTime = omit(localSettings, 'lastEdited');
+    const remoteDataWithoutTime = omit(
+      {
+        ...remoteSettings,
+        lastEdited: remoteSettings.lastEdited ? new Date(remoteSettings.lastEdited) : new Date(0),
+      },
+      'lastEdited',
+    );
+
+    // 使用 lodash isEqual 进行深度比较
+    const contentDifferent = !isEqual(localDataWithoutTime, remoteDataWithoutTime);
+
+    // 检查时间差异
+    const localLastEdited = localSettings.lastEdited || new Date(0);
+    const remoteLastEdited = remoteSettings.lastEdited
+      ? new Date(remoteSettings.lastEdited)
+      : new Date(0);
+    const timeDifferent = isTimeDifferent(localLastEdited, remoteLastEdited);
+
+    if (contentDifferent || timeDifferent) {
+      conflicts.push(
+        this.createConflictItem(
+          ConflictType.Settings,
+          'app-settings',
+          '本地设置',
+          '远程设置',
+          localLastEdited,
+          remoteLastEdited,
+          localSettings,
+          remoteSettings,
+        ),
+      );
     }
 
     return conflicts;
@@ -229,68 +312,74 @@ export class ConflictDetectionService {
 
   /**
    * 检测封面历史冲突
+   * 只检测两端都存在且内容被修改的情况，或本地存在但可能是远程删除的情况
    */
   private static detectCoverHistoryConflicts(
     localCovers: CoverHistoryItem[],
     remoteCovers: CoverHistoryItem[],
+    lastSyncTime?: number,
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localCovers.map((c) => [c.id, c]));
 
+    // 只检测两端都存在的情况
     for (const remoteCover of remoteCovers) {
       const localCover = localMap.get(remoteCover.id);
       if (localCover) {
-        const localTime = new Date(localCover.addedAt).getTime();
-        const remoteTime = new Date(remoteCover.addedAt).getTime();
+        // 封面历史使用 addedAt 作为 lastEdited
+        const localAddedAt = new Date(localCover.addedAt);
+        const remoteAddedAt = new Date(remoteCover.addedAt);
 
-        if (Math.abs(localTime - remoteTime) > 1000) {
-          conflicts.push({
-            type: ConflictType.CoverHistory,
-            id: remoteCover.id,
-            localName: `封面 ${localCover.url.substring(0, 30)}...`,
-            remoteName: `封面 ${remoteCover.url.substring(0, 30)}...`,
-            localLastEdited: new Date(localCover.addedAt),
-            remoteLastEdited: new Date(remoteCover.addedAt),
-            localData: localCover,
-            remoteData: remoteCover,
-          });
+        // 先比较内容，再检查时间
+        const localDataWithoutTime = omit(localCover, 'addedAt');
+        const remoteDataWithoutTime = omit(remoteCover, 'addedAt');
+        const contentDifferent = !isEqual(localDataWithoutTime, remoteDataWithoutTime);
+
+        // 检查时间差异
+        const timeDifferent = isTimeDifferent(localAddedAt, remoteAddedAt);
+
+        if (contentDifferent || timeDifferent) {
+          conflicts.push(
+            this.createConflictItem(
+              ConflictType.CoverHistory,
+              remoteCover.id,
+              `封面 ${localCover.url.substring(0, 30)}...`,
+              `封面 ${remoteCover.url.substring(0, 30)}...`,
+              localAddedAt,
+              remoteAddedAt,
+              localCover,
+              remoteCover,
+            ),
+          );
         }
       }
+      // 如果本地没有此封面，这是远程新增的内容，不算冲突
     }
+
+    // 检测本地存在但远程不存在的情况
+    // 如果 addedAt 在上次同步之后，说明是本地新添加的，不算冲突，会保留
+    // 如果 addedAt 在上次同步之前或等于，说明是陈旧的本地文件，远程已删除，会自动删除，不算冲突
+    // 不需要在这里检测，同步服务会自动处理
 
     return conflicts;
   }
 
   /**
-   * 序列化 AI 模型用于比较（排除不重要的字段）
+   * 创建一个不包含章节内容的书籍副本，用于比较
+   * 章节内容是懒加载的，不应该参与冲突检测的比较
    */
-  private static serializeModel(model: AIModel): {
-    id: string;
-    name: string;
-    provider: AIProvider;
-    model: string;
-    temperature: number;
-    maxTokens: number;
-    contextWindow?: number;
-    rateLimit?: number;
-    baseUrl: string;
-    isDefault: AIModelDefaultTasks;
-    enabled: boolean;
-  } {
+  private static createNovelWithoutContent(novel: Novel): Novel {
     return {
-      id: model.id,
-      name: model.name,
-      provider: model.provider,
-      model: model.model,
-      temperature: model.temperature,
-      maxTokens: model.maxTokens,
-      ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
-      ...(model.rateLimit !== undefined ? { rateLimit: model.rateLimit } : {}),
-      baseUrl: model.baseUrl,
-      isDefault: model.isDefault,
-      enabled: model.enabled,
-      // 排除 apiKey，因为它是敏感信息且不应该用于冲突检测
+      ...novel,
+      volumes: novel.volumes?.map((volume) => ({
+        ...volume,
+        chapters: volume.chapters?.map((chapter) => {
+          // 移除 content、contentLoaded 和 originalContent 字段
+          // 这些都是懒加载的，不应该参与冲突检测的比较
+          const { content, contentLoaded, originalContent, ...chapterWithoutContent } = chapter;
+          return chapterWithoutContent as Chapter;
+        }),
+      })),
     };
   }
 }
-

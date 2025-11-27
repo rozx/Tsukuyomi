@@ -3,6 +3,8 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
+import { showToolToast } from './toast-helper';
+import { cloneDeep } from 'lodash';
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -31,7 +33,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, onToast }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -45,6 +47,17 @@ export const terminologyTools: ToolDefinition[] = [
         translation: normalizeTranslationQuotes(translation),
         description,
       });
+
+      // 显示 toast 通知（如果可用）
+      showToolToast(
+        {
+          severity: 'success',
+          summary: '已创建术语',
+          detail: `术语 "${name}" 已创建，翻译: "${term.translation.translation}"`,
+          life: 3000,
+        },
+        onToast,
+      );
 
       if (onAction) {
         onAction({
@@ -174,7 +187,7 @@ export const terminologyTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
       const previousData = previousTerm
-        ? (JSON.parse(JSON.stringify(previousTerm)) as Terminology)
+        ? (cloneDeep(previousTerm) as Terminology)
         : undefined;
 
       const updates: {
@@ -243,7 +256,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const term = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = term ? (JSON.parse(JSON.stringify(term)) as Terminology) : undefined;
+      const previousData = term ? (cloneDeep(term) as Terminology) : undefined;
 
       await TerminologyService.deleteTerminology(bookId, term_id);
 

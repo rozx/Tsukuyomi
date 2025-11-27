@@ -13,9 +13,10 @@ import {
   generateShortId,
   normalizeTranslationQuotes,
   getCharacterNameVariants,
+  processItemsInBatches,
+  ensureChapterContentLoaded,
 } from 'src/utils';
 import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
-import { ChapterContentService } from './chapter-content-service';
 
 /**
  * 角色设定服务
@@ -25,6 +26,7 @@ export class CharacterSettingService {
   /**
    * 统计角色（包括主名称和所有别名）在书籍所有章节中的出现次数
    * 使用 text-matcher.ts 中的 matchCharactersInText 进行匹配，支持名称消歧义
+   * 使用分批处理避免阻塞 UI
    * @param book 书籍对象
    * @param character 角色对象
    * @returns 出现记录数组
@@ -39,33 +41,27 @@ export class CharacterSettingService {
     const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
 
     // 为了更好的消歧义，先计算所有章节的上下文得分
-    // 收集所有章节的文本内容
+    // 收集所有章节的文本内容（分批处理以避免阻塞）
     let fullText = '';
-    for (const chapter of allChapters) {
-      // 如果章节内容未加载，尝试从 IndexedDB 加载
-      let chapterWithContent = chapter;
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        if (content) {
-          chapterWithContent = {
-            ...chapter,
-            content,
-            contentLoaded: true,
-          };
-        }
-      }
+    await processItemsInBatches(
+      allChapters,
+      async (chapter) => {
+        const chapterWithContent = await ensureChapterContentLoaded(chapter);
 
-      // 处理段落内容
-      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-        for (const paragraph of chapterWithContent.content) {
-          fullText += paragraph.text + '\n';
+        // 处理段落内容
+        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+          for (const paragraph of chapterWithContent.content) {
+            fullText += paragraph.text + '\n';
+          }
         }
-      }
-      // 处理原始内容
-      if (chapterWithContent.originalContent) {
-        fullText += chapterWithContent.originalContent + '\n';
-      }
-    }
+        // 处理原始内容
+        if (chapterWithContent.originalContent) {
+          fullText += chapterWithContent.originalContent + '\n';
+        }
+      },
+      10, // 每批处理 10 个章节
+      0, // 让出主线程的延迟时间
+    );
 
     // 计算上下文得分（使用所有角色，以便更好地消歧义）
     const allCharacters = book.characterSettings || [];
@@ -75,53 +71,47 @@ export class CharacterSettingService {
       : [...allCharacters, character];
     const contextScores = calculateCharacterScores(fullText, charactersToMatch);
 
-    // 遍历所有章节，统计当前角色的出现次数
-    for (const chapter of allChapters) {
-      // 如果章节内容未加载，尝试从 IndexedDB 加载
-      let chapterWithContent = chapter;
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        if (content) {
-          chapterWithContent = {
-            ...chapter,
-            content,
-            contentLoaded: true,
-          };
+    // 遍历所有章节，统计当前角色的出现次数（分批处理）
+    await processItemsInBatches(
+      allChapters,
+      async (chapter) => {
+        const chapterWithContent = await ensureChapterContentLoaded(chapter);
+
+        let chapterText = '';
+
+        // 处理段落内容
+        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+          for (const paragraph of chapterWithContent.content) {
+            chapterText += paragraph.text + '\n';
+          }
         }
-      }
 
-      let chapterText = '';
-
-      // 处理段落内容
-      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-        for (const paragraph of chapterWithContent.content) {
-          chapterText += paragraph.text + '\n';
+        // 处理原始内容
+        if (chapterWithContent.originalContent) {
+          chapterText += chapterWithContent.originalContent + '\n';
         }
-      }
 
-      // 处理原始内容
-      if (chapterWithContent.originalContent) {
-        chapterText += chapterWithContent.originalContent + '\n';
-      }
+        if (!chapterText.trim()) {
+          return;
+        }
 
-      if (!chapterText.trim()) {
-        continue;
-      }
+        // 使用 matchCharactersInText 匹配所有角色（包括主名称和所有别名）
+        // 传入所有角色和上下文得分以支持名称消歧义
+        // 然后过滤出当前角色的匹配
+        const allMatches = matchCharactersInText(chapterText, charactersToMatch, contextScores);
 
-      // 使用 matchCharactersInText 匹配所有角色（包括主名称和所有别名）
-      // 传入所有角色和上下文得分以支持名称消歧义
-      // 然后过滤出当前角色的匹配
-      const allMatches = matchCharactersInText(chapterText, charactersToMatch, contextScores);
+        // 只统计当前角色的匹配次数
+        const characterMatches = allMatches.filter((m) => m.item.id === character.id);
+        const chapterCount = characterMatches.length;
 
-      // 只统计当前角色的匹配次数
-      const characterMatches = allMatches.filter((m) => m.item.id === character.id);
-      const chapterCount = characterMatches.length;
-
-      // 如果该章节有出现，记录到 Map 中
-      if (chapterCount > 0) {
-        occurrencesMap.set(chapter.id, chapterCount);
-      }
-    }
+        // 如果该章节有出现，记录到 Map 中
+        if (chapterCount > 0) {
+          occurrencesMap.set(chapter.id, chapterCount);
+        }
+      },
+      10, // 每批处理 10 个章节
+      0, // 让出主线程的延迟时间
+    );
 
     // 转换为 Occurrence 数组
     return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
@@ -132,6 +122,7 @@ export class CharacterSettingService {
 
   /**
    * 统计名称在书籍所有章节中的出现次数
+   * 使用分批处理避免阻塞 UI
    * @param book 书籍对象
    * @param name 角色名称
    * @returns 出现记录数组
@@ -144,47 +135,41 @@ export class CharacterSettingService {
     // 扁平化所有章节
     const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
 
-    // 遍历所有章节
-    for (const chapter of allChapters) {
-      // 如果章节内容未加载，尝试从 IndexedDB 加载
-      let chapterWithContent = chapter;
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        if (content) {
-          chapterWithContent = {
-            ...chapter,
-            content,
-            contentLoaded: true,
-          };
+    // 分批处理章节，每批之间让出主线程
+    await processItemsInBatches(
+      allChapters,
+      async (chapter) => {
+        const chapterWithContent = await ensureChapterContentLoaded(chapter);
+
+        let chapterCount = 0;
+
+        // 从段落中统计
+        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
+          for (const paragraph of chapterWithContent.content) {
+            const matches = paragraph.text.match(regex);
+            if (matches) {
+              chapterCount += matches.length;
+            }
+          }
         }
-      }
 
-      let chapterCount = 0;
-
-      // 从段落中统计
-      if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-        for (const paragraph of chapterWithContent.content) {
-          const matches = paragraph.text.match(regex);
+        // 从原始内容中统计
+        if (chapterWithContent.originalContent) {
+          const matches = chapterWithContent.originalContent.match(regex);
           if (matches) {
             chapterCount += matches.length;
           }
         }
-      }
 
-      // 从原始内容中统计
-      if (chapterWithContent.originalContent) {
-        const matches = chapterWithContent.originalContent.match(regex);
-        if (matches) {
-          chapterCount += matches.length;
+        // 如果该章节有出现，记录到 Map 中
+        if (chapterCount > 0) {
+          const existingCount = occurrencesMap.get(chapter.id) || 0;
+          occurrencesMap.set(chapter.id, existingCount + chapterCount);
         }
-      }
-
-      // 如果该章节有出现，记录到 Map 中
-      if (chapterCount > 0) {
-        const existingCount = occurrencesMap.get(chapter.id) || 0;
-        occurrencesMap.set(chapter.id, existingCount + chapterCount);
-      }
-    }
+      },
+      10, // 每批处理 10 个章节
+      0, // 让出主线程的延迟时间
+    );
 
     // 转换为 Occurrence 数组
     return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
@@ -527,6 +512,7 @@ export class CharacterSettingService {
   /**
    * 刷新所有角色的出现次数
    * 当章节内容更新后调用此方法来重新统计所有角色（包括别名）的出现次数
+   * 使用分批处理避免阻塞 UI
    * @param bookId 书籍 ID
    */
   static async refreshAllCharacterOccurrences(bookId: string): Promise<void> {
@@ -542,8 +528,10 @@ export class CharacterSettingService {
       return;
     }
 
-    const updatedCharacterSettings = await Promise.all(
-      characterSettings.map(async (char) => {
+    // 分批处理角色，每批之间让出主线程
+    const updatedCharacterSettings = await processItemsInBatches(
+      characterSettings,
+      async (char) => {
         // 使用 countCharacterOccurrences 统计（包括主名称和所有别名）
         const occurrences = await this.countCharacterOccurrences(book, char);
         const occurrencesChanged = !isEqual(char.occurrences, occurrences);
@@ -554,7 +542,9 @@ export class CharacterSettingService {
           };
         }
         return char;
-      })
+      },
+      3, // 每批处理 3 个角色
+      0, // 让出主线程的延迟时间
     );
 
     // 检查是否有任何角色被更新

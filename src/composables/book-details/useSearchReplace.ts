@@ -1,6 +1,6 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
-import { useToast } from 'primevue/usetoast';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Chapter, Paragraph, Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 
@@ -11,7 +11,7 @@ export function useSearchReplace(
   updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>
 ) {
   const booksStore = useBooksStore();
-  const toast = useToast();
+  const toast = useToastWithHistory();
 
   // Search State
   const isSearchVisible = ref(false);

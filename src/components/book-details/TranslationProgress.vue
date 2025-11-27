@@ -4,7 +4,7 @@ import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { useToast } from 'primevue/usetoast';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 const props = defineProps<{
@@ -22,7 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const aiProcessingStore = useAIProcessingStore();
-const toast = useToast();
+const toast = useToastWithHistory();
 
 const showAITaskHistory = ref(false);
 
@@ -34,10 +34,14 @@ const taskStatusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-// Recent AI Tasks
+// Recent AI Tasks - only show translation-related tasks
 const recentAITasks = computed(() => {
   const allTasks = aiProcessingStore.activeTasks;
-  return [...allTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
+  // Filter to only show translation and polish tasks
+  const translationTasks = allTasks.filter(
+    (task) => task.type === 'translation' || task.type === 'polish',
+  );
+  return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
 
 // Auto Scroll State
@@ -74,11 +78,24 @@ const toggleAutoScroll = (taskId: string) => {
 
 const clearCompletedTasks = async () => {
   try {
-    await aiProcessingStore.clearCompletedTasks();
+    // Only clear translation-related completed tasks
+    const translationTasks = aiProcessingStore.activeTasks.filter(
+      (task) =>
+        (task.type === 'translation' || task.type === 'polish') &&
+        (task.status === 'completed' ||
+          task.status === 'error' ||
+          task.status === 'cancelled'),
+    );
+
+    // Remove each translation-related completed task
+    for (const task of translationTasks) {
+      await aiProcessingStore.removeTask(task.id);
+    }
+
     toast.add({
       severity: 'success',
       summary: '清除成功',
-      detail: '已清除所有已完成和已取消的任务',
+      detail: `已清除 ${translationTasks.length} 个翻译相关的已完成任务`,
       life: 3000,
     });
   } catch (error) {

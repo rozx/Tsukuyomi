@@ -38,3 +38,5 @@ export const DEFAULT_PROXY_LIST: Array<{
     description: '免费 CORS 代理服务，用于绕过同源策略，支持标准 AJAX 请求到第三方服务',
   },
 ];
+
+export const DEFAULT_CORS_PROXY_FOR_AI = 'https://cors.rozx.moe/?{url}';

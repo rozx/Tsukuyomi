@@ -1,4 +1,6 @@
 import { useSettingsStore } from 'src/stores/settings';
+import { showToolToast } from 'src/services/ai/tools/toast-helper';
+import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
@@ -10,30 +12,6 @@ function getProxyDisplayName(proxyUrl: string): string {
   const proxyList = settingsStore.proxyList;
   const proxy = proxyList.find((p) => p.url === proxyUrl);
   return proxy ? proxy.name : proxyUrl;
-}
-
-/**
- * 显示 toast 通知（在静态方法中使用）
- * 注意：这需要在 Vue 应用上下文中才能工作
- */
-function showToast(message: {
-  severity: 'success' | 'error' | 'info' | 'warn';
-  summary: string;
-  detail?: string;
-  life?: number;
-}): void {
-  // 尝试在浏览器环境中获取 toast 实例
-  if (typeof window !== 'undefined') {
-    // 通过 window 对象获取全局 toast 函数（在 MainLayout 中注册）
-    const toastFn = (window as unknown as { __lunaToast?: (msg: typeof message) => void })
-      .__lunaToast;
-    if (toastFn) {
-      toastFn(message);
-      return;
-    }
-  }
-  // 如果无法显示 toast，至少记录到控制台
-  console.log('[ProxyService] Toast:', message);
 }
 
 /**
@@ -201,6 +179,36 @@ export class ProxyService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 获取 AI 调用的 CORS 代理 URL（仅在浏览器模式下）
+   * 在浏览器模式下，使用默认的 CORS 代理来绕过 CORS 限制
+   * @param originalUrl 原始 URL
+   * @returns 代理后的 URL 或原始 URL
+   */
+  static getProxiedUrlForAI(originalUrl: string): string {
+    // 检测是否为 Electron 环境
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+
+    // 仅在浏览器模式下使用 CORS 代理
+    if (!isElectron) {
+      const proxiedUrl = DEFAULT_CORS_PROXY_FOR_AI.replace(
+        '{url}',
+        encodeURIComponent(originalUrl),
+      );
+      console.log('[ProxyService] 使用 AI CORS 代理（浏览器模式）', {
+        originalUrl,
+        proxiedUrl,
+      });
+      return proxiedUrl;
+    }
+
+    // Electron 模式下直接返回原始 URL
+    console.log('[ProxyService] 跳过 AI CORS 代理（Electron 模式）', {
+      originalUrl,
+    });
+    return originalUrl;
   }
 
   /**
@@ -528,7 +536,7 @@ export class ProxyService {
             console.log(`[ProxyService] 📝 已记录网站-代理映射: ${domain} -> ${currentProxyUrl}`);
             // 显示 toast 通知
             const proxyName = getProxyDisplayName(currentProxyUrl);
-            showToast({
+            showToolToast({
               severity: 'success',
               summary: '代理映射已添加',
               detail: `${domain} 已映射到 ${proxyName}`,

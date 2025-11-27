@@ -9,6 +9,7 @@ import type {
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { AIServiceFactory } from '../index';
 import { ToolRegistry, type ActionInfo } from '../tools';
+import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 
 /**
@@ -23,6 +24,10 @@ export interface AssistantServiceOptions {
    * AI 执行操作时的回调（如 CRUD 术语/角色）
    */
   onAction?: (action: ActionInfo) => void;
+  /**
+   * Toast 回调函数，用于在工具中直接显示 toast 通知
+   */
+  onToast?: ToastCallback;
   /**
    * 取消信号（可选）
    */
@@ -402,6 +407,7 @@ ${messages
     toolCalls: AIToolCall[],
     bookId: string | null,
     onAction?: (action: ActionInfo) => void,
+    onToast?: ToastCallback,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     // 定义需要 bookId 的工具列表
     const toolsRequiringBookId = [
@@ -450,7 +456,7 @@ ${messages
       }
 
       // 调用工具处理函数（对于不需要 bookId 的工具，可以传递空字符串）
-      const result = await ToolRegistry.handleToolCall(toolCall, bookId || '', onAction);
+      const result = await ToolRegistry.handleToolCall(toolCall, bookId || '', onAction, onToast);
       results.push(result);
     }
     return results;
@@ -467,7 +473,7 @@ ${messages
     userMessage: string,
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
-    const { onChunk, onAction, signal, aiProcessingStore } = options;
+    const { onChunk, onAction, onToast, signal, aiProcessingStore } = options;
 
     // 获取 stores
     const contextStore = useContextStore();
@@ -724,6 +730,7 @@ ${messages
               onAction(action);
             }
           },
+          onToast,
         );
 
         // 将工具结果添加到历史

@@ -1788,7 +1788,27 @@ export class ChapterService {
       throw new Error('章节内容为空，无法导出');
     }
 
-    const chapterTitle = getChapterDisplayTitle(chapter);
+    // 根据导出类型选择标题
+    let chapterTitle = '';
+    if (!chapter.title) {
+      chapterTitle = '';
+    } else if (typeof chapter.title === 'string') {
+      // 兼容旧数据
+      chapterTitle = chapter.title;
+    } else {
+      // 根据导出类型选择标题
+      if (type === 'original') {
+        // 导出原文时使用原文标题
+        chapterTitle = chapter.title.original || '';
+      } else {
+        // 导出译文或双语时，优先使用翻译标题，如果没有则使用原文
+        chapterTitle =
+          chapter.title.translation?.translation?.trim() ||
+          chapter.title.original ||
+          '';
+      }
+    }
+
     let content = '';
 
     // 构建导出内容
@@ -1902,5 +1922,68 @@ export class ChapterService {
    */
   static async deleteChapterContent(chapterId: string): Promise<void> {
     await ChapterContentService.deleteChapterContent(chapterId);
+  }
+
+  /**
+   * 获取章节内容（优先使用已加载的内容）
+   * @param chapter 章节对象
+   * @param loadedChapter 已加载内容的章节对象（如果存在）
+   * @returns 章节内容数组
+   */
+  static getChapterContentForUpdate(
+    chapter: Chapter,
+    loadedChapter: Chapter | null | undefined,
+  ): Paragraph[] | undefined {
+    // 优先使用已加载的章节内容
+    if (loadedChapter && chapter.id === loadedChapter.id && loadedChapter.content) {
+      return loadedChapter.content;
+    }
+    // 否则使用章节对象中的内容
+    return chapter.content;
+  }
+
+  /**
+   * 更新章节内容并确保 lastEdited 被更新
+   * 这是批量更新章节内容时的辅助函数
+   * @param volumes 卷列表
+   * @param targetChapterId 目标章节 ID
+   * @param loadedChapter 已加载内容的章节对象（如果存在）
+   * @param contentUpdater 内容更新函数，接收段落数组，返回更新后的段落数组
+   * @returns 更新后的卷列表
+   */
+  static updateChapterContentInVolumes(
+    volumes: Volume[],
+    targetChapterId: string,
+    loadedChapter: Chapter | null | undefined,
+    contentUpdater: (content: Paragraph[]) => Paragraph[],
+  ): Volume[] {
+    return volumes.map((volume) => {
+      if (!volume.chapters) return volume;
+
+      const updatedChapters = volume.chapters.map((chapter) => {
+        if (chapter.id !== targetChapterId) return chapter;
+
+        // 获取章节内容
+        const content = ChapterService.getChapterContentForUpdate(chapter, loadedChapter);
+        if (!content) return chapter;
+
+        // 更新内容
+        const updatedContent = contentUpdater(content);
+
+        // 使用 ChapterService.updateChapter 确保更新 lastEdited 时间
+        // 但由于这是在批量操作中，我们直接返回更新后的章节
+        // 批量操作会在最后统一通过 ChapterService 处理
+        return {
+          ...chapter,
+          content: updatedContent,
+          lastEdited: new Date(), // 确保更新 lastEdited
+        };
+      });
+
+      return {
+        ...volume,
+        chapters: updatedChapters,
+      };
+    });
   }
 }

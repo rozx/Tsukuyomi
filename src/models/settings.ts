@@ -15,6 +15,10 @@ export type TaskDefaultModels = {
  */
 export interface AppSettings {
   /**
+   * 最后编辑时间
+   */
+  lastEdited: Date;
+  /**
    * 爬虫并发数限制（同时进行的请求数量）
    * 默认值：3
    */

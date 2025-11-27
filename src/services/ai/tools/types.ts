@@ -1,5 +1,6 @@
 import type { Terminology, CharacterSetting, Translation } from 'src/models/novel';
 import type { AITool } from 'src/services/ai/types/ai-service';
+import type { ToastCallback } from './toast-helper';
 
 export interface ActionInfo {
   type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
@@ -18,6 +19,7 @@ export interface ActionInfo {
 export interface ToolContext {
   bookId?: string; // 某些工具（如网络搜索）不需要 bookId
   onAction?: (action: ActionInfo) => void;
+  onToast?: ToastCallback; // Toast 回调函数，用于在工具中直接显示 toast
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

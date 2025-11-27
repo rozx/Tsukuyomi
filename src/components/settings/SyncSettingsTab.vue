@@ -14,7 +14,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService } from 'src/services/sync-data-service';
-import { groupChunkFiles } from 'src/utils/gist-file-utils';
+import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';

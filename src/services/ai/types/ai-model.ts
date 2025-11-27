@@ -37,4 +37,8 @@ export interface AIModel {
   baseUrl: string;
   isDefault: AIModelDefaultTasks;
   enabled: boolean;
+  /**
+   * 最后编辑时间
+   */
+  lastEdited: Date;
 }

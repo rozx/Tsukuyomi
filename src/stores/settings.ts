@@ -12,6 +12,7 @@ const SYNC_STORAGE_KEY = 'luna-sync-configs';
  * 默认设置
  */
 const DEFAULT_SETTINGS: AppSettings = {
+  lastEdited: new Date(),
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
   lastOpenedSettingsTab: 0,
@@ -47,14 +48,17 @@ function loadSettingsFromLocalStorage(): AppSettings {
     if (stored) {
       const settings = JSON.parse(stored);
       // 合并默认设置，确保所有字段都存在
-      return {
+      const loadedSettings: AppSettings = {
         ...DEFAULT_SETTINGS,
         ...settings,
         taskDefaultModels: {
           ...DEFAULT_SETTINGS.taskDefaultModels,
           ...(settings.taskDefaultModels || {}),
         },
+        // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
+        lastEdited: settings.lastEdited ? new Date(settings.lastEdited) : new Date(),
       };
+      return loadedSettings;
     }
   } catch (error) {
     console.error('Failed to load settings from LocalStorage:', error);
@@ -218,6 +222,8 @@ export const useSettingsStore = defineStore('settings', {
       const mergedSettings: AppSettings = {
         ...this.settings,
         ...updates,
+        // 更新时自动设置 lastEdited 为当前时间
+        lastEdited: new Date(),
       };
 
       if (updates.taskDefaultModels !== undefined) {
@@ -263,7 +269,7 @@ export const useSettingsStore = defineStore('settings', {
      * 重置为默认设置
      */
     async resetToDefaults(): Promise<void> {
-      this.settings = { ...DEFAULT_SETTINGS };
+      this.settings = { ...DEFAULT_SETTINGS, lastEdited: new Date() };
       saveSettingsToLocalStorage(this.settings);
       await Promise.resolve();
     },
@@ -278,11 +284,23 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 导入设置（用于导入）
      * 需要深度合并 taskDefaultModels，避免覆盖现有配置
+     * 保留导入的 lastEdited 时间戳（如果存在）
      */
     async importSettings(settings: Partial<AppSettings>): Promise<void> {
+      // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
+      let preservedLastEdited: Date | undefined;
+      if (settings.lastEdited) {
+        preservedLastEdited =
+          typeof settings.lastEdited === 'string'
+            ? new Date(settings.lastEdited)
+            : settings.lastEdited;
+      }
+
       // 深度合并 taskDefaultModels，确保不会丢失本地配置
+      // 先移除 lastEdited，稍后单独处理
+      const { lastEdited: _removed, ...settingsWithoutLastEdited } = settings;
       const mergedSettings: Partial<AppSettings> = {
-        ...settings,
+        ...settingsWithoutLastEdited,
       };
 
       if (settings.taskDefaultModels !== undefined) {
@@ -293,7 +311,17 @@ export const useSettingsStore = defineStore('settings', {
         };
       }
 
-      await this.updateSettings(mergedSettings);
+      // 深度合并 taskDefaultModels
+      const finalSettings: AppSettings = {
+        ...this.settings,
+        ...mergedSettings,
+        // 如果有保留的 lastEdited，使用它；否则使用当前时间
+        lastEdited: preservedLastEdited || new Date(),
+      };
+
+      this.settings = finalSettings;
+      saveSettingsToLocalStorage(this.settings);
+      await Promise.resolve();
     },
 
     /**

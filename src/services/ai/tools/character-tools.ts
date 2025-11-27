@@ -3,6 +3,7 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
 import type { ToolDefinition } from './types';
+import { cloneDeep } from 'lodash';
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -269,7 +270,7 @@ export const characterTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       const previousCharacter = book?.characterSettings?.find((c) => c.id === character_id);
       const previousData = previousCharacter
-        ? (JSON.parse(JSON.stringify(previousCharacter)) as CharacterSetting)
+        ? (cloneDeep(previousCharacter) as CharacterSetting)
         : undefined;
 
       const updates: {
@@ -371,7 +372,7 @@ export const characterTools: ToolDefinition[] = [
       const book = booksStore.getBookById(bookId);
       const character = book?.characterSettings?.find((c) => c.id === character_id);
       const previousData = character
-        ? (JSON.parse(JSON.stringify(character)) as CharacterSetting)
+        ? (cloneDeep(character) as CharacterSetting)
         : undefined;
 
       await CharacterSettingService.deleteCharacterSetting(bookId, character_id);

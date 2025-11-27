@@ -174,7 +174,12 @@ export class SettingsService {
         model.model &&
         model.apiKey
       ) {
-        validModels.push(model);
+        // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
+        const validModel: AIModel = {
+          ...model,
+          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+        };
+        validModels.push(validModel);
       }
     }
 
@@ -258,6 +263,11 @@ export class SettingsService {
       const appSettings = settings.appSettings;
       validAppSettings = {} as AppSettings;
       
+      // 验证并处理 lastEdited
+      validAppSettings.lastEdited = appSettings.lastEdited
+        ? new Date(appSettings.lastEdited)
+        : new Date();
+      
       // 验证并发数限制
       if (
         typeof appSettings.scraperConcurrencyLimit === 'number' &&
@@ -286,6 +296,29 @@ export class SettingsService {
         if (Object.keys(validAppSettings.taskDefaultModels).length === 0) {
           delete validAppSettings.taskDefaultModels;
         }
+      }
+
+      // 复制其他可选字段
+      if (appSettings.lastOpenedSettingsTab !== undefined) {
+        validAppSettings.lastOpenedSettingsTab = appSettings.lastOpenedSettingsTab;
+      }
+      if (appSettings.proxyEnabled !== undefined) {
+        validAppSettings.proxyEnabled = appSettings.proxyEnabled;
+      }
+      if (appSettings.proxyUrl !== undefined) {
+        validAppSettings.proxyUrl = appSettings.proxyUrl;
+      }
+      if (appSettings.proxyAutoSwitch !== undefined) {
+        validAppSettings.proxyAutoSwitch = appSettings.proxyAutoSwitch;
+      }
+      if (appSettings.proxyAutoAddMapping !== undefined) {
+        validAppSettings.proxyAutoAddMapping = appSettings.proxyAutoAddMapping;
+      }
+      if (appSettings.proxySiteMapping !== undefined) {
+        validAppSettings.proxySiteMapping = appSettings.proxySiteMapping;
+      }
+      if (appSettings.proxyList !== undefined) {
+        validAppSettings.proxyList = appSettings.proxyList;
       }
     }
 

@@ -240,3 +240,25 @@ export function hasParagraphTranslation(paragraph: Paragraph): boolean {
     paragraph.translations.some((t) => t.id === paragraph.selectedTranslationId)
   );
 }
+
+/**
+ * 确保章节内容已加载（如果未加载则从 IndexedDB 加载）
+ * @param chapter 章节对象
+ * @returns 带有已加载内容的章节对象
+ */
+export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chapter> {
+  if (chapter.content !== undefined) {
+    return chapter;
+  }
+  
+  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  if (content) {
+    return {
+      ...chapter,
+      content,
+      contentLoaded: true,
+    };
+  }
+  
+  return chapter;
+}
