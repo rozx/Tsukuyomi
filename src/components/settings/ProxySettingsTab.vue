@@ -102,11 +102,6 @@ const removeSiteMapping = async (site: string, proxyUrl: string) => {
   await settingsStore.removeProxyForSite(site, proxyUrl);
 };
 
-// 清除网站的所有映射
-const clearSiteMapping = async (site: string) => {
-  await settingsStore.clearProxyForSite(site);
-};
-
 // 获取代理服务的显示名称
 const getProxyDisplayName = (proxyUrl: string): string => {
   const proxy = proxyList.value.find((p) => p.url === proxyUrl);
@@ -164,14 +159,39 @@ const saveProxy = async () => {
 };
 
 const deleteProxy = async (id: string) => {
+  // 如果删除的是当前选中的代理，需要更新选中状态
+  if (selectedProxyId.value === id) {
+    const remainingProxies = proxyList.value.filter((p) => p.id !== id);
+    if (remainingProxies.length > 0) {
+      // 选择第一个剩余的代理
+      const firstProxy = remainingProxies[0];
+      if (firstProxy) {
+        selectedProxyId.value = firstProxy.id;
+        await settingsStore.setProxyUrl(firstProxy.url);
+      }
+    } else {
+      // 如果没有剩余代理，清空选中状态和代理 URL
+      selectedProxyId.value = null;
+      await settingsStore.setProxyUrl('');
+    }
+  }
   await settingsStore.removeProxy(id);
 };
 
 // 处理行重新排序
-const onRowReorder = (event: {
+const onRowReorder = async (event: {
   value: Array<{ id: string; name: string; url: string; description?: string }>;
+  originalEvent?: Event;
+  dragIndex?: number;
+  dropIndex?: number;
 }) => {
-  void settingsStore.reorderProxies(event.value);
+  await settingsStore.reorderProxies(event.value);
+  toast.add({
+    severity: 'success',
+    summary: '代理列表已排序',
+    detail: '代理列表的顺序已更新',
+    life: 2000,
+  });
 };
 
 // 测试代理

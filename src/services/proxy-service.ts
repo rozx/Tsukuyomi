@@ -419,6 +419,9 @@ export class ProxyService {
 
     // 如果没有网站特定代理，使用代理列表
     const proxyList = settingsStore.proxyList;
+    if (proxyList.length === 0) {
+      return null;
+    }
     const defaultProxyIndex = defaultProxyUrl
       ? proxyList.findIndex((proxy) => proxy.url === defaultProxyUrl)
       : -1;
