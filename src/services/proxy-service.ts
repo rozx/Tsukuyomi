@@ -1,4 +1,5 @@
 import { useSettingsStore } from 'src/stores/settings';
+import { showToolToast } from 'src/services/ai/tools/toast-helper';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
@@ -10,30 +11,6 @@ function getProxyDisplayName(proxyUrl: string): string {
   const proxyList = settingsStore.proxyList;
   const proxy = proxyList.find((p) => p.url === proxyUrl);
   return proxy ? proxy.name : proxyUrl;
-}
-
-/**
- * 显示 toast 通知（在静态方法中使用）
- * 注意：这需要在 Vue 应用上下文中才能工作
- */
-function showToast(message: {
-  severity: 'success' | 'error' | 'info' | 'warn';
-  summary: string;
-  detail?: string;
-  life?: number;
-}): void {
-  // 尝试在浏览器环境中获取 toast 实例
-  if (typeof window !== 'undefined') {
-    // 通过 window 对象获取全局 toast 函数（在 MainLayout 中注册）
-    const toastFn = (window as unknown as { __lunaToast?: (msg: typeof message) => void })
-      .__lunaToast;
-    if (toastFn) {
-      toastFn(message);
-      return;
-    }
-  }
-  // 如果无法显示 toast，至少记录到控制台
-  console.log('[ProxyService] Toast:', message);
 }
 
 /**
@@ -528,7 +505,7 @@ export class ProxyService {
             console.log(`[ProxyService] 📝 已记录网站-代理映射: ${domain} -> ${currentProxyUrl}`);
             // 显示 toast 通知
             const proxyName = getProxyDisplayName(currentProxyUrl);
-            showToast({
+            showToolToast({
               severity: 'success',
               summary: '代理映射已添加',
               detail: `${domain} 已映射到 ${proxyName}`,
