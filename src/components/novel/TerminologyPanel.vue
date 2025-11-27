@@ -142,7 +142,7 @@ const handleSave = async (data: { name: string; translation: string; description
     } else if (showEditDialog.value && selectedTerminology.value) {
       // 编辑现有术语
       const oldTermSnapshot = cloneDeep(selectedTerminology.value);
-      
+
       const updates: {
         name?: string;
         translation?: string;
@@ -170,15 +170,13 @@ const handleSave = async (data: { name: string; translation: string; description
         life: 3000,
         onRevert: async () => {
           if (oldTermSnapshot && props.book) {
-            await TerminologyService.updateTerminology(
-              props.book.id,
-              oldTermSnapshot.id,
-              {
-                name: oldTermSnapshot.name,
-                translation: oldTermSnapshot.translation.translation,
+            await TerminologyService.updateTerminology(props.book.id, oldTermSnapshot.id, {
+              name: oldTermSnapshot.name,
+              translation: oldTermSnapshot.translation.translation,
+              ...(oldTermSnapshot.description !== undefined && {
                 description: oldTermSnapshot.description,
-              }
-            );
+              }),
+            });
           }
         },
       });
@@ -344,7 +342,8 @@ const handleBulkDelete = () => {
       void (async () => {
         const idsToDelete = Array.from(selectedTermIds.value);
         // 保存要删除的术语数据用于撤销
-        const termsToRestore = props.book?.terminologies?.filter((t) => selectedTermIds.value.has(t.id)) || [];
+        const termsToRestore =
+          props.book?.terminologies?.filter((t) => selectedTermIds.value.has(t.id)) || [];
         const termsSnapshot = cloneDeep(termsToRestore);
 
         let successCount = 0;
@@ -372,7 +371,9 @@ const handleBulkDelete = () => {
                 const book = booksStore.getBookById(props.book.id);
                 if (book) {
                   const current = book.terminologies || [];
-                  const toAdd = termsSnapshot.filter((t: Terminology) => !current.some((c) => c.id === t.id));
+                  const toAdd = termsSnapshot.filter(
+                    (t: Terminology) => !current.some((c) => c.id === t.id),
+                  );
                   if (toAdd.length > 0) {
                     await booksStore.updateBook(book.id, {
                       terminologies: [...current, ...toAdd],
@@ -474,7 +475,12 @@ const handleFileSelect = async (event: Event) => {
     let addedCount = 0;
     let updatedCount = 0;
     const addedTermIds: string[] = [];
-    const updatedTermsSnapshot: Array<{ id: string; name: string; translation: string; description?: string }> = [];
+    const updatedTermsSnapshot: Array<{
+      id: string;
+      name: string;
+      translation: string;
+      description?: string;
+    }> = [];
 
     for (const importedTerm of importedTerminologies) {
       const existingTerm = props.book.terminologies?.find((t) => t.name === importedTerm.name);
@@ -485,7 +491,9 @@ const handleFileSelect = async (event: Event) => {
           id: existingTerm.id,
           name: existingTerm.name,
           translation: existingTerm.translation.translation,
-          ...(existingTerm.description !== undefined ? { description: existingTerm.description } : {}),
+          ...(existingTerm.description !== undefined
+            ? { description: existingTerm.description }
+            : {}),
         });
         // 更新现有术语
         await TerminologyService.updateTerminology(props.book.id, existingTerm.id, {

@@ -44,7 +44,9 @@ export class OpenAIService extends BaseAIService {
   /**
    * 创建自定义 fetch 函数，用于在浏览器模式下代理请求
    */
-  private createProxiedFetch(): typeof fetch | undefined {
+  private createProxiedFetch():
+    | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>)
+    | undefined {
     // 检测是否为 Electron 环境
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
 
@@ -209,7 +211,7 @@ export class OpenAIService extends BaseAIService {
       const stream = await client.chat.completions.create(requestParams);
       let fullText = '';
       let modelId = config.model;
-      
+
       // 用于收集工具调用的片段
       const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
 
@@ -227,7 +229,7 @@ export class OpenAIService extends BaseAIService {
           if (!delta) {
             continue;
           }
-          
+
           // 处理工具调用
           if (delta.tool_calls) {
             for (const toolCall of delta.tool_calls) {
@@ -236,7 +238,7 @@ export class OpenAIService extends BaseAIService {
                 toolCallsMap.set(index, { id: '', name: '', arguments: '' });
               }
               const current = toolCallsMap.get(index)!;
-              
+
               if (toolCall.id) current.id = toolCall.id;
               if (toolCall.function?.name) current.name = toolCall.function.name;
               if (toolCall.function?.arguments) current.arguments += toolCall.function.arguments;
@@ -245,13 +247,13 @@ export class OpenAIService extends BaseAIService {
 
           // 获取思考内容（reasoning_content）- 用于显示思考过程
           const reasoningContent = (delta as any).reasoning_content || '';
-          
+
           // 获取实际内容（content）- 用于最终输出
           const content = delta.content || '';
-          
+
           // 优先使用 reasoning_content 作为思考消息，如果没有则使用 content
           const textToSend = reasoningContent || content;
-          
+
           // 如果有内容（思考内容或实际内容），累积到 fullText 并调用回调
           if (textToSend) {
             // 只有实际内容（非思考内容）才累积到 fullText
@@ -267,10 +269,10 @@ export class OpenAIService extends BaseAIService {
                 done: false,
                 model: chunk.model || modelId,
               };
-              
+
               // 如果正在收集工具调用，也可以通知回调（虽然通常工具调用只在最后处理）
               // 这里暂不传递部分工具调用，以免复杂化
-              
+
               await onChunk(chunkData);
             }
           }
@@ -287,13 +289,13 @@ export class OpenAIService extends BaseAIService {
       }
 
       // 构建工具调用结果
-      const finalToolCalls = Array.from(toolCallsMap.values()).map(tc => ({
+      const finalToolCalls = Array.from(toolCallsMap.values()).map((tc) => ({
         id: tc.id,
         type: 'function' as const,
         function: {
           name: tc.name,
-          arguments: tc.arguments
-        }
+          arguments: tc.arguments,
+        },
       }));
 
       const text = fullText.trim();
@@ -308,14 +310,14 @@ export class OpenAIService extends BaseAIService {
           text: '',
           done: true,
           model: modelId,
-          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {})
+          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
         });
       }
 
       return {
         text,
         model: modelId,
-        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {})
+        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
       };
     } catch (error) {
       if (error instanceof Error) {

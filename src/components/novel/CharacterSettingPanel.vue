@@ -133,15 +133,19 @@ const handleSave = async (data: {
               previousCharData.id,
               {
                 name: previousCharData.name,
-                sex: previousCharData.sex,
+                ...(previousCharData.sex !== undefined && { sex: previousCharData.sex }),
                 translation: previousCharData.translation.translation,
-                description: previousCharData.description,
-                speakingStyle: previousCharData.speakingStyle,
+                ...(previousCharData.description !== undefined && {
+                  description: previousCharData.description,
+                }),
+                ...(previousCharData.speakingStyle !== undefined && {
+                  speakingStyle: previousCharData.speakingStyle,
+                }),
                 aliases: previousCharData.aliases.map((a: Alias) => ({
                   name: a.name,
                   translation: a.translation.translation,
                 })),
-              }
+              },
             );
           }
         },
@@ -154,8 +158,7 @@ const handleSave = async (data: {
         summary: '添加成功',
         detail: `已添加角色 "${data.name}"`,
         life: 3000,
-        onRevert: () =>
-          CharacterSettingService.deleteCharacterSetting(props.book!.id, newChar.id),
+        onRevert: () => CharacterSettingService.deleteCharacterSetting(props.book!.id, newChar.id),
       });
     }
     showDialog.value = false;
@@ -193,7 +196,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
         try {
           // 保存要删除的角色数据用于撤销
           const charToRestore = cloneDeep(character._original);
-          
+
           await CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
 
           toast.add({
@@ -313,9 +316,7 @@ const handleFileSelect = async (event: Event) => {
     }> = [];
 
     for (const importedChar of importedCharacters) {
-      const existingChar = props.book.characterSettings?.find(
-        (c) => c.name === importedChar.name,
-      );
+      const existingChar = props.book.characterSettings?.find((c) => c.name === importedChar.name);
 
       if (existingChar) {
         // 保存更新前的状态用于撤销
@@ -324,32 +325,32 @@ const handleFileSelect = async (event: Event) => {
           name: existingChar.name,
           ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
           translation: existingChar.translation.translation,
-          ...(existingChar.description !== undefined ? { description: existingChar.description } : {}),
-          ...(existingChar.speakingStyle !== undefined ? { speakingStyle: existingChar.speakingStyle } : {}),
+          ...(existingChar.description !== undefined
+            ? { description: existingChar.description }
+            : {}),
+          ...(existingChar.speakingStyle !== undefined
+            ? { speakingStyle: existingChar.speakingStyle }
+            : {}),
           aliases: existingChar.aliases.map((a: Alias) => ({
             name: a.name,
             translation: a.translation.translation,
           })),
         });
         // 更新现有角色
-        await CharacterSettingService.updateCharacterSetting(
-          props.book.id,
-          existingChar.id,
-          {
-            ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-            translation: importedChar.translation.translation,
-            ...(importedChar.description !== undefined
-              ? { description: importedChar.description }
-              : {}),
-            ...(importedChar.speakingStyle !== undefined
-              ? { speakingStyle: importedChar.speakingStyle }
-              : {}),
-            aliases: importedChar.aliases.map((a) => ({
-              name: a.name,
-              translation: a.translation.translation,
-            })),
-          },
-        );
+        await CharacterSettingService.updateCharacterSetting(props.book.id, existingChar.id, {
+          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
+          translation: importedChar.translation.translation,
+          ...(importedChar.description !== undefined
+            ? { description: importedChar.description }
+            : {}),
+          ...(importedChar.speakingStyle !== undefined
+            ? { speakingStyle: importedChar.speakingStyle }
+            : {}),
+          aliases: importedChar.aliases.map((a) => ({
+            name: a.name,
+            translation: a.translation.translation,
+          })),
+        });
         updatedCount++;
       } else {
         // 添加新角色
@@ -438,8 +439,10 @@ const handleFileSelect = async (event: Event) => {
       />
     </div>
 
-      <!-- 操作栏 -->
-    <div class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10">
+    <!-- 操作栏 -->
+    <div
+      class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+    >
       <div class="flex items-center justify-between gap-3 flex-nowrap">
         <!-- 左侧：搜索栏 -->
         <div class="flex-1 flex items-center gap-3">
@@ -485,15 +488,15 @@ const handleFileSelect = async (event: Event) => {
             @click="openAddDialog"
           />
         </div>
-        </div>
       </div>
+    </div>
 
     <!-- 内容区域 -->
     <div class="flex-1 p-6 overflow-y-auto">
       <!-- 角色列表 (卡片视图) -->
       <div
         class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
-        style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)));"
+        style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)))"
       >
         <SettingCard
           v-for="char in characterSettings"
