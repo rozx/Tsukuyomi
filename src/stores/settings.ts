@@ -319,13 +319,6 @@ export const useSettingsStore = defineStore('settings', {
         lastEdited: preservedLastEdited || new Date(),
       };
 
-      if (mergedSettings.taskDefaultModels !== undefined) {
-        finalSettings.taskDefaultModels = {
-          ...this.settings.taskDefaultModels,
-          ...mergedSettings.taskDefaultModels,
-        };
-      }
-
       this.settings = finalSettings;
       saveSettingsToLocalStorage(this.settings);
       await Promise.resolve();

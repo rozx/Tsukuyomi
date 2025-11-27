@@ -1,10 +1,10 @@
 import type { Novel } from 'src/models/novel';
-import type { AIModel, AIProvider, AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AppSettings } from 'src/models/settings';
 import type { CoverHistoryItem } from 'src/models/novel';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent } from 'src/utils/time-utils';
-import type { Volume, Chapter } from 'src/models/novel';
+import type { Chapter } from 'src/models/novel';
 
 /**
  * 冲突类型
@@ -101,16 +101,12 @@ export class ConflictDetectionService {
         conflicts: [],
       };
     }
-    
+
     const conflicts: ConflictItem[] = [];
 
     // 检测书籍冲突（确保 novels 不为 null/undefined）
     const remoteNovels = remote?.novels || [];
-    const novelConflicts = this.detectNovelConflicts(
-      local.novels,
-      remoteNovels,
-      lastSyncTime,
-    );
+    const novelConflicts = this.detectNovelConflicts(local.novels, remoteNovels, lastSyncTime);
     conflicts.push(...novelConflicts);
 
     // 检测 AI 模型冲突（确保 aiModels 不为 null/undefined）
@@ -124,10 +120,7 @@ export class ConflictDetectionService {
 
     // 检测设置冲突
     if (remote.appSettings) {
-      const settingsConflicts = this.detectSettingsConflicts(
-        local.appSettings,
-        remote.appSettings,
-      );
+      const settingsConflicts = this.detectSettingsConflicts(local.appSettings, remote.appSettings);
       conflicts.push(...settingsConflicts);
     }
 
@@ -158,7 +151,6 @@ export class ConflictDetectionService {
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localNovels.map((n) => [n.id, n]));
-    const remoteMap = new Map(remoteNovels.map((n) => [n.id, n]));
 
     // 只检测两端都存在且内容不同的情况
     for (const remoteNovel of remoteNovels) {
@@ -166,7 +158,8 @@ export class ConflictDetectionService {
       if (localNovel) {
         // 书籍存在于两端，先比较内容，再检查时间
         // 注意：排除章节内容（content），因为章节内容是懒加载的，不应该参与冲突检测
-        const localNovelWithoutContent = ConflictDetectionService.createNovelWithoutContent(localNovel);
+        const localNovelWithoutContent =
+          ConflictDetectionService.createNovelWithoutContent(localNovel);
         const remoteNovelWithoutContent = ConflictDetectionService.createNovelWithoutContent({
           ...remoteNovel,
           lastEdited: new Date(remoteNovel.lastEdited),
@@ -178,10 +171,7 @@ export class ConflictDetectionService {
         // 如果内容不同或时间差异超过 1 秒，认为有冲突
         const contentDifferent = !isEqual(localDataWithoutTime, remoteDataWithoutTime);
         const remoteLastEditedDate = new Date(remoteNovel.lastEdited);
-        const timeDifferent = isTimeDifferent(
-          localNovel.lastEdited,
-          remoteLastEditedDate,
-        );
+        const timeDifferent = isTimeDifferent(localNovel.lastEdited, remoteLastEditedDate);
 
         if (contentDifferent || timeDifferent) {
           conflicts.push(
@@ -220,7 +210,6 @@ export class ConflictDetectionService {
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localModels.map((m) => [m.id, m]));
-    const remoteMap = new Map(remoteModels.map((m) => [m.id, m]));
 
     // 只检测两端都存在的情况
     for (const remoteModel of remoteModels) {
@@ -288,9 +277,7 @@ export class ConflictDetectionService {
     const remoteDataWithoutTime = omit(
       {
         ...remoteSettings,
-        lastEdited: remoteSettings.lastEdited
-          ? new Date(remoteSettings.lastEdited)
-          : new Date(0),
+        lastEdited: remoteSettings.lastEdited ? new Date(remoteSettings.lastEdited) : new Date(0),
       },
       'lastEdited',
     );
@@ -334,7 +321,6 @@ export class ConflictDetectionService {
   ): ConflictItem[] {
     const conflicts: ConflictItem[] = [];
     const localMap = new Map(localCovers.map((c) => [c.id, c]));
-    const remoteMap = new Map(remoteCovers.map((c) => [c.id, c]));
 
     // 只检测两端都存在的情况
     for (const remoteCover of remoteCovers) {
@@ -397,4 +383,3 @@ export class ConflictDetectionService {
     };
   }
 }
-
