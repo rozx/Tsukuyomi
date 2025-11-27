@@ -17,6 +17,32 @@ import { ProxyService } from 'src/services/proxy-service';
  */
 export class OpenAIService extends BaseAIService {
   /**
+   * 规范化 baseURL，确保 OpenAI 兼容 API 包含 /v1 路径
+   * 对于像 Moonshot AI 这样的 API，需要在 baseURL 末尾添加 /v1
+   */
+  private normalizeBaseUrl(baseUrl: string): string {
+    try {
+      const url = new URL(baseUrl);
+      // 规范化路径：移除尾随斜杠
+      const normalizedPath = url.pathname.replace(/\/+$/, '') || '/';
+      
+      // 如果 URL 没有路径或路径仅为根路径，添加 /v1
+      if (normalizedPath === '/') {
+        url.pathname = '/v1';
+        return url.toString();
+      }
+      
+      // 如果已有路径，保持原样（允许用户自定义路径）
+      // 但确保路径没有尾随斜杠（除非是根路径）
+      url.pathname = normalizedPath;
+      return url.toString();
+    } catch {
+      // 如果不是有效的 URL，返回原值（可能是相对路径或其他格式）
+      return baseUrl;
+    }
+  }
+
+  /**
    * 获取代理后的 baseURL
    * 在浏览器模式下，使用 CORS 代理来绕过 CORS 限制
    */
@@ -36,9 +62,12 @@ export class OpenAIService extends BaseAIService {
       return `${origin}${trimmedBaseUrl}`;
     }
 
-    // 在浏览器模式下，直接返回原始 baseUrl
+    // 规范化 baseURL，确保包含 /v1（对于 OpenAI 兼容 API）
+    const normalizedUrl = this.normalizeBaseUrl(trimmedBaseUrl);
+
+    // 在浏览器模式下，直接返回规范化后的 baseUrl
     // 实际的代理会在自定义 fetch 函数中处理
-    return trimmedBaseUrl;
+    return normalizedUrl;
   }
 
   /**
