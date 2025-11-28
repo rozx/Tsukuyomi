@@ -10,7 +10,6 @@ import type {
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, Novel } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
-import { ChapterContentService } from 'src/services/chapter-content-service';
 
 import {
   findUniqueTermsInText,
@@ -51,9 +50,7 @@ export interface TranslationServiceOptions {
    * 段落翻译回调函数，用于接收每个块完成后的段落翻译结果
    * @param translations 段落翻译数组，包含段落ID和翻译文本
    */
-  onParagraphTranslation?: (
-    translations: { id: string; translation: string }[],
-  ) => void | Promise<void>;
+  onParagraphTranslation?: (translations: { id: string; translation: string }[]) => void | Promise<void>;
   /**
    * 取消信号（可选）
    */
@@ -262,70 +259,27 @@ export class TranslationService {
    - **参考记忆**: 翻译前可使用 search_memory_by_keyword 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保翻译风格和术语使用的一致性。
    - **保存记忆**: 完成章节翻译后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
    - **搜索后保存**: 当你通过工具（如 search_paragraph_by_keyword、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
-5. **输出翻译**:
-   - **标题优先**: 如果提供了章节标题，**必须**在翻译段落之前先使用 \`update_chapter_title\` 工具翻译章节标题。
-   - **段落翻译**: 完成每个段落的翻译后，必须使用 \`add_paragraph_translation\` 工具为每个段落添加翻译。
-   - **调用工具**: 直接调用工具返回翻译结果。
-   - **工具参数**:
-     - \`update_chapter_title\`: chapter_id（章节ID，从上下文获取）、translation（标题翻译）、ai_model_id（当前AI模型ID）
-     - \`add_paragraph_translation\`: paragraph_id（段落的ID，从输入中的 [ID: xxx] 格式获取）、translation（翻译内容）、ai_model_id（当前使用的AI模型ID）`;
+5. **输出**: 必须返回有效 JSON 格式:
+   {
+     "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
+     "translation": "完整翻译文本",
+     "titleTranslation": "章节标题翻译(仅当提供标题时)"
+   }
+   确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译。`;
 
       history.push({ role: 'system', content: systemPrompt });
 
-      // 获取章节ID（如果提供了章节标题和段落）
-      let chapterIdForTitle: string | undefined;
-      if (chapterTitle && bookId && content.length > 0 && content[0]?.id) {
-        try {
-          const booksStore = (await import('src/stores/books')).useBooksStore();
-          const book = booksStore.getBookById(bookId);
-          if (book && book.volumes) {
-            for (const volume of book.volumes) {
-              if (volume.chapters) {
-                for (const chapter of volume.chapters) {
-                  // 检查章节内容是否包含第一个段落
-                  if (chapter.content) {
-                    const hasFirstParagraph = chapter.content.some((p) => p.id === content[0]?.id);
-                    if (hasFirstParagraph) {
-                      chapterIdForTitle = chapter.id;
-                      break;
-                    }
-                  } else {
-                    // 如果内容未加载，尝试加载
-                    const chapterContent = await ChapterContentService.loadChapterContent(
-                      chapter.id,
-                    );
-                    if (chapterContent?.some((p: Paragraph) => p.id === content[0]?.id)) {
-                      chapterIdForTitle = chapter.id;
-                      break;
-                    }
-                  }
-                }
-                if (chapterIdForTitle) break;
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[TranslationService] 获取章节ID失败', e);
-        }
-      }
-
       // 2. 初始用户提示
-      const titleInstruction = chapterTitle
-        ? chapterIdForTitle
-          ? `- **标题优先**: 章节标题为 "${chapterTitle}"，章节ID为 "${chapterIdForTitle}"。请先使用 \`update_chapter_title\` 工具翻译标题（chapter_id: "${chapterIdForTitle}", translation: 标题翻译, ai_model_id: "${model.id}"），然后再翻译段落。`
-          : `- **标题优先**: 章节标题为 "${chapterTitle}"。请先使用 \`get_chapter_info\` 工具获取章节信息（可以通过段落ID查找），然后使用 \`update_chapter_title\` 工具翻译标题，最后再翻译段落。`
-        : '- **无章节标题**: 直接翻译段落。';
-
       const initialUserPrompt = `开始翻译。
 
 【执行要点】
-${titleInstruction}
 - **敬语**: 别名匹配优先。
-- **角色和术语**: 相关术语和角色已包含在输入中，请先使用上下文中的术语/角色，如果上下文中没有，再调用工具。创建前必查重。全名=角色，部分名=别名，术语表和角色表分开维护。
+- **角色**: 创建前必查重。全名=角色，部分名=别名。
 - **维护**: 自动修复空数据，清理无用数据。
 - **一致性**: 善用搜索工具。
 - **记忆**: 翻译前搜索相关记忆，完成后可保存章节摘要。
-- **输出方式**: 完成每个段落的翻译后，使用 \`add_paragraph_translation\` 工具添加翻译。当前AI模型ID: ${model.id}`;
+
+请按 JSON 格式返回。`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -505,10 +459,8 @@ ${titleInstruction}
 - **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
 - **一致性**: 搜历史。`;
         if (i === 0) {
-          // 第一个块：如果有标题，在提示中包含标题信息（但不要求返回JSON）
-          const titleSection = chapterTitle
-            ? `\n【章节标题】\n${chapterTitle}\n\n注意：请先使用 \`update_chapter_title\` 工具翻译此标题，然后再翻译下面的段落。\n\n`
-            : '';
+          // 如果有标题，在第一个块中包含标题翻译
+          const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkContext}${chunkText}${maintenanceReminder}`;
         } else {
           content = `接下来的内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
@@ -546,8 +498,7 @@ ${titleInstruction}
             history.push({ role: 'user', content });
 
             let currentTurnCount = 0;
-            const MAX_TURNS = 10; // 增加最大回合数，因为需要为每个段落调用工具
-            const chunkTranslations = new Map<string, string>(); // 收集当前块的翻译
+            const MAX_TURNS = 5; // 防止工具调用死循环
 
             // 工具调用循环
             while (currentTurnCount < MAX_TURNS) {
@@ -619,48 +570,6 @@ ${titleInstruction}
                     onToast,
                   );
 
-                  // 如果是添加翻译的工具，收集翻译结果
-                  if (toolCall.function.name === 'add_paragraph_translation') {
-                    try {
-                      const toolResultData = JSON.parse(toolResult.content);
-                      if (
-                        toolResultData.success &&
-                        toolResultData.paragraph_id &&
-                        toolResultData.translation
-                      ) {
-                        chunkTranslations.set(
-                          toolResultData.paragraph_id,
-                          toolResultData.translation,
-                        );
-                        // 同时添加到全局翻译列表
-                        paragraphTranslations.push({
-                          id: toolResultData.paragraph_id,
-                          translation: toolResultData.translation,
-                        });
-                      }
-                    } catch (e) {
-                      console.warn(
-                        `[TranslationService] ⚠️ 解析工具结果失败: ${toolCall.function.name}`,
-                        e instanceof Error ? e.message : String(e),
-                      );
-                    }
-                  }
-
-                  // 如果是更新标题的工具，记录标题翻译（用于返回结果）
-                  if (toolCall.function.name === 'update_chapter_title' && i === 0) {
-                    try {
-                      const toolResultData = JSON.parse(toolResult.content);
-                      if (toolResultData.success && toolResultData.title_translation) {
-                        titleTranslation = toolResultData.title_translation;
-                      }
-                    } catch (e) {
-                      console.warn(
-                        `[TranslationService] ⚠️ 解析标题翻译结果失败: ${toolCall.function.name}`,
-                        e instanceof Error ? e.message : String(e),
-                      );
-                    }
-                  }
-
                   // 添加工具结果到历史
                   history.push({
                     role: 'tool',
@@ -676,110 +585,251 @@ ${titleInstruction}
                     );
                   }
                 }
-
-                // 检查是否所有段落都已翻译
-                const allParagraphsTranslated =
-                  chunk.paragraphIds?.every((id) => chunkTranslations.has(id)) ?? false;
-
-                if (allParagraphsTranslated) {
-                  // 所有段落都已翻译，可以结束
-                  break;
-                } else {
-                  // 还有段落未翻译，继续
-                  const missingCount = (chunk.paragraphIds?.length || 0) - chunkTranslations.size;
-                  history.push({
-                    role: 'user',
-                    content: `工具调用已完成。还有 ${missingCount} 个段落需要翻译，请继续使用 add_paragraph_translation 工具为剩余的段落添加翻译。`,
-                  });
-                  // 继续循环
-                }
+                // 工具调用完成后，添加提示要求AI继续完成翻译
+                history.push({
+                  role: 'user',
+                  content:
+                    '工具调用已完成。请继续完成当前文本块的翻译任务，返回包含翻译结果的JSON格式响应。不要跳过翻译，必须提供完整的翻译结果。',
+                });
+                // 继续循环，将工具结果和提示发送给 AI
               } else {
-                // 没有工具调用，检查是否有文本回复（可能包含标题翻译或其他信息）
-                finalResponseText = result.text || '';
+                // 没有工具调用，这是最终回复
+                finalResponseText = result.text;
 
-                // 如果是第一个块且有标题，尝试从文本中提取标题翻译
-                if (i === 0 && chapterTitle && finalResponseText) {
-                  // 尝试匹配 "titleTranslation": "..." 或 "标题翻译": "..." 模式
-                  const titleMatch =
-                    finalResponseText.match(/"titleTranslation"\s*:\s*"([^"]+)"/) ||
-                    finalResponseText.match(/"标题翻译"\s*:\s*"([^"]+)"/) ||
-                    finalResponseText.match(/标题翻译[：:]\s*([^\n]+)/);
-                  if (titleMatch && titleMatch[1]) {
-                    titleTranslation = titleMatch[1].trim();
-                  }
+                // 再次检测最终响应中的重复字符，传入原文进行比较
+                if (
+                  detectRepeatingCharacters(finalResponseText, chunkText, {
+                    logLabel: 'TranslationService',
+                  })
+                ) {
+                  throw new Error('AI降级检测：最终响应中检测到重复字符');
                 }
 
-                // 检查是否所有段落都已翻译
-                const allParagraphsTranslated =
-                  chunk.paragraphIds?.every((id) => chunkTranslations.has(id)) ?? false;
-
-                if (allParagraphsTranslated) {
-                  // 所有段落都已翻译，可以结束
-                  break;
-                } else {
-                  // 还有段落未翻译，提醒AI使用工具
-                  const missingCount = (chunk.paragraphIds?.length || 0) - chunkTranslations.size;
-                  history.push({
-                    role: 'user',
-                    content: `还有 ${missingCount} 个段落需要翻译。请使用 add_paragraph_translation 工具为每个段落添加翻译，不要返回JSON格式。`,
-                  });
-                  // 继续循环
-                }
+                history.push({ role: 'assistant', content: finalResponseText });
+                break;
               }
             }
 
-            // 检查是否所有段落都已翻译
-            const allParagraphsTranslated =
-              chunk.paragraphIds?.every((id) => chunkTranslations.has(id)) ?? false;
-
-            if (!allParagraphsTranslated) {
-              const missingIds =
-                chunk.paragraphIds?.filter((id) => !chunkTranslations.has(id)) || [];
-              console.warn(
-                `[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的翻译`,
-                {
-                  缺失段落ID:
-                    missingIds.slice(0, 5).join(', ') +
-                    (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
-                  已翻译段落数: chunkTranslations.size,
-                  预期段落数: chunk.paragraphIds?.length || 0,
-                },
+            // 检查是否在达到最大回合数后仍未获得翻译结果
+            if (!finalResponseText || finalResponseText.trim().length === 0) {
+              throw new Error(
+                `AI在工具调用后未返回翻译结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
               );
             }
 
-            // 使用从工具调用收集的翻译
-            if (chunkTranslations.size > 0 && chunk.paragraphIds) {
-              // 按顺序组织翻译文本
-              const orderedTranslations: string[] = [];
-              const chunkParagraphTranslations: { id: string; translation: string }[] = [];
-              for (const paraId of chunk.paragraphIds) {
-                const translation = chunkTranslations.get(paraId);
-                if (translation) {
-                  orderedTranslations.push(translation);
-                  // paragraphTranslations 已经在工具调用时添加了，这里只需要收集当前块的
-                  chunkParagraphTranslations.push({ id: paraId, translation });
+            // 解析 JSON 响应
+            try {
+              // 尝试提取 JSON
+              const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
+              let chunkTranslation = '';
+              const extractedTranslations: Map<string, string> = new Map();
+
+              // 如果是第一个块且有标题，尝试提取标题翻译（在 JSON 解析之前和之后都尝试）
+              if (i === 0 && chapterTitle) {
+                // 首先尝试从 JSON 中提取
+                if (jsonMatch) {
+                  try {
+                    const jsonStr = jsonMatch[0];
+                    const data = JSON.parse(jsonStr);
+                    if (data.titleTranslation) {
+                      titleTranslation = data.titleTranslation;
+                    }
+                  } catch {
+                    // JSON 解析失败，稍后在外部 try-catch 中处理
+                  }
+                }
+
+                // 如果 JSON 提取失败，尝试从文本中直接提取标题翻译
+                if (!titleTranslation) {
+                  // 尝试匹配 "titleTranslation": "..." 模式
+                  const titleMatch = finalResponseText.match(/"titleTranslation"\s*:\s*"([^"]+)"/);
+                  if (titleMatch && titleMatch[1]) {
+                    titleTranslation = titleMatch[1];
+                  }
                 }
               }
-              const orderedText = orderedTranslations.join('\n\n');
-              translatedText += orderedText;
-              if (onChunk) {
-                await onChunk({ text: orderedText, done: false });
-              }
-              // 通知段落翻译完成
-              if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
+
+              if (jsonMatch) {
+                const jsonStr = jsonMatch[0];
                 try {
-                  await onParagraphTranslation(chunkParagraphTranslations);
-                } catch (error) {
-                  console.error(
-                    `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
-                    error instanceof Error ? error.message : String(error),
+                  const data = JSON.parse(jsonStr);
+
+                  // 如果是第一个块且有标题，再次尝试提取标题翻译（确保提取到最新值）
+                  if (i === 0 && chapterTitle && data.titleTranslation) {
+                    titleTranslation = data.titleTranslation;
+                  }
+
+                  // 优先使用 paragraphs 数组（结构化数据）
+                  if (data.paragraphs && Array.isArray(data.paragraphs)) {
+                    for (const para of data.paragraphs) {
+                      if (para.id && para.translation) {
+                        extractedTranslations.set(para.id, para.translation);
+                      }
+                    }
+
+                    // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
+                    if (data.translation) {
+                      chunkTranslation = data.translation;
+                    } else if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+                      // 从 paragraphs 数组构建完整文本
+                      const orderedTexts: string[] = [];
+                      for (const paraId of chunk.paragraphIds) {
+                        const translation = extractedTranslations.get(paraId);
+                        if (translation) {
+                          orderedTexts.push(translation);
+                        }
+                      }
+                      chunkTranslation = orderedTexts.join('\n\n');
+                    }
+                  } else if (data.translation) {
+                    // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
+                    console.warn(
+                      `[TranslationService] ⚠️ JSON中未找到paragraphs数组（块 ${i + 1}/${chunks.length}），将尝试从translation字符串中提取段落ID`,
+                    );
+                    chunkTranslation = data.translation;
+
+                    // 尝试从字符串中提取段落ID（兼容旧格式）
+                    const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
+                    idPattern.lastIndex = 0;
+                    let match;
+                    while ((match = idPattern.exec(chunkTranslation)) !== null) {
+                      const paragraphId = match[1]?.trim();
+                      const translation = match[2]?.trim();
+                      if (paragraphId && translation) {
+                        extractedTranslations.set(paragraphId, translation);
+                      }
+                    }
+                  } else {
+                    console.warn(
+                      `[TranslationService] ⚠️ AI响应JSON中未找到translation或paragraphs字段（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为翻译`,
+                    );
+                    chunkTranslation = finalResponseText;
+                  }
+                } catch (e) {
+                  console.warn(
+                    `[TranslationService] ⚠️ 解析AI响应JSON失败（块 ${i + 1}/${chunks.length}）`,
+                    e instanceof Error ? e.message : String(e),
                   );
-                  // 继续处理，不中断翻译流程
+                  // JSON 解析失败，回退到原始文本处理
+                  chunkTranslation = finalResponseText;
+                }
+              } else {
+                // 不是 JSON，直接使用原始文本
+                console.warn(
+                  `[TranslationService] ⚠️ AI响应不是JSON格式（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为翻译`,
+                );
+                chunkTranslation = finalResponseText;
+              }
+
+              // 验证：检查当前块中的所有段落是否都有翻译
+              const missingIds: string[] = [];
+              if (chunk.paragraphIds && chunk.paragraphIds.length > 0) {
+                for (const paraId of chunk.paragraphIds) {
+                  if (!extractedTranslations.has(paraId)) {
+                    missingIds.push(paraId);
+                  }
                 }
               }
-            } else {
-              // 没有收集到翻译，记录警告
-              console.warn(`[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 未收集到任何翻译`);
+
+              if (missingIds.length > 0) {
+                console.warn(
+                  `[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的翻译`,
+                  {
+                    缺失段落ID:
+                      missingIds.slice(0, 5).join(', ') +
+                      (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
+                    已提取翻译数: extractedTranslations.size,
+                    预期段落数: chunk.paragraphIds?.length || 0,
+                  },
+                );
+                // 如果缺少段落ID，使用完整翻译文本作为后备方案
+                if (extractedTranslations.size === 0) {
+                  console.warn(
+                    `[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 未找到任何段落ID，将整个翻译文本作为后备方案`,
+                  );
+                  translatedText += chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: chunkTranslation, done: false });
+                  }
+                } else {
+                  // 部分段落有ID，按顺序处理
+                  const orderedTranslations: string[] = [];
+                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
+                  if (chunk.paragraphIds) {
+                    for (const paraId of chunk.paragraphIds) {
+                      const translation = extractedTranslations.get(paraId);
+                      if (translation) {
+                        orderedTranslations.push(translation);
+                        const paraTranslation = { id: paraId, translation };
+                        paragraphTranslations.push(paraTranslation);
+                        chunkParagraphTranslations.push(paraTranslation);
+                      }
+                    }
+                  }
+                  const orderedText = orderedTranslations.join('\n\n');
+                  translatedText += orderedText || chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: orderedText || chunkTranslation, done: false });
+                  }
+                  // 通知段落翻译完成（即使只有部分段落）
+                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
+                    try {
+                      await onParagraphTranslation(chunkParagraphTranslations);
+                    } catch (error) {
+                      console.error(
+                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
+                        error instanceof Error ? error.message : String(error),
+                      );
+                      // 继续处理，不中断翻译流程
+                    }
+                  }
+                }
+              } else {
+                // 所有段落都有翻译，按顺序组织
+                if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+                  const orderedTranslations: string[] = [];
+                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
+                  for (const paraId of chunk.paragraphIds) {
+                    const translation = extractedTranslations.get(paraId);
+                    if (translation) {
+                      orderedTranslations.push(translation);
+                      const paraTranslation = { id: paraId, translation };
+                      paragraphTranslations.push(paraTranslation);
+                      chunkParagraphTranslations.push(paraTranslation);
+                    }
+                  }
+                  const orderedText = orderedTranslations.join('\n\n');
+                  translatedText += orderedText;
+                  if (onChunk) {
+                    await onChunk({ text: orderedText, done: false });
+                  }
+                  // 通知段落翻译完成
+                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
+                    try {
+                      await onParagraphTranslation(chunkParagraphTranslations);
+                    } catch (error) {
+                      console.error(
+                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
+                        error instanceof Error ? error.message : String(error),
+                      );
+                      // 继续处理，不中断翻译流程
+                    }
+                  }
+                } else {
+                  // 没有提取到段落翻译，使用完整文本
+                  translatedText += chunkTranslation;
+                  if (onChunk) {
+                    await onChunk({ text: chunkTranslation, done: false });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(
+                `[TranslationService] ⚠️ 解析AI响应失败（块 ${i + 1}/${chunks.length}）`,
+                e instanceof Error ? e.message : String(e),
+              );
+              translatedText += finalResponseText;
+              if (onChunk) await onChunk({ text: finalResponseText, done: false });
             }
 
             // 标记块已成功处理（在所有处理完成后）
@@ -868,12 +918,12 @@ ${titleInstruction}
           const missingChunkContext = getContext(missingParagraphs, book);
 
           // 构建翻译请求
-          const retryContent = `以下段落缺少翻译，请使用 add_paragraph_translation 工具为每个段落添加翻译。当前AI模型ID: ${model.id}\n\n${missingChunkContext}${missingChunkText}`;
+          const retryContent = `以下段落缺少翻译，请为每个段落提供翻译：\n\n${missingChunkContext}${missingChunkText}`;
           history.push({ role: 'user', content: retryContent });
 
           let currentTurnCount = 0;
-          const MAX_TURNS = 10;
-          const retranslatedTranslations = new Map<string, string>();
+          const MAX_TURNS = 5;
+          let finalResponseText = '';
 
           while (currentTurnCount < MAX_TURNS) {
             currentTurnCount++;
@@ -926,42 +976,6 @@ ${titleInstruction}
                   onToast,
                 );
 
-                // 如果是添加翻译的工具，收集翻译结果
-                if (toolCall.function.name === 'add_paragraph_translation') {
-                  try {
-                    const toolResultData = JSON.parse(toolResult.content);
-                    if (
-                      toolResultData.success &&
-                      toolResultData.paragraph_id &&
-                      toolResultData.translation &&
-                      missingParagraphIds.includes(toolResultData.paragraph_id)
-                    ) {
-                      retranslatedTranslations.set(
-                        toolResultData.paragraph_id,
-                        toolResultData.translation,
-                      );
-                      // 更新或添加到全局翻译列表
-                      const existingIndex = paragraphTranslations.findIndex(
-                        (pt) => pt.id === toolResultData.paragraph_id,
-                      );
-                      const paraTranslation = {
-                        id: toolResultData.paragraph_id,
-                        translation: toolResultData.translation,
-                      };
-                      if (existingIndex >= 0) {
-                        paragraphTranslations[existingIndex] = paraTranslation;
-                      } else {
-                        paragraphTranslations.push(paraTranslation);
-                      }
-                    }
-                  } catch (e) {
-                    console.warn(
-                      `[TranslationService] ⚠️ 解析工具结果失败: ${toolCall.function.name}`,
-                      e instanceof Error ? e.message : String(e),
-                    );
-                  }
-                }
-
                 history.push({
                   role: 'tool',
                   content: toolResult.content,
@@ -976,44 +990,66 @@ ${titleInstruction}
                   );
                 }
               }
-
-              // 检查是否所有缺失段落都已翻译
-              const allTranslated = missingParagraphIds.every((id) =>
-                retranslatedTranslations.has(id),
-              );
-
-              if (allTranslated) {
-                break;
-              } else {
-                const missingCount = missingParagraphIds.length - retranslatedTranslations.size;
-                history.push({
-                  role: 'user',
-                  content: `工具调用已完成。还有 ${missingCount} 个段落需要翻译，请继续使用 add_paragraph_translation 工具为剩余的段落添加翻译。`,
-                });
-              }
+              // 工具调用完成后，添加提示要求AI继续完成翻译
+              history.push({
+                role: 'user',
+                content:
+                  '工具调用已完成。请继续完成当前文本块的翻译任务，返回包含翻译结果的JSON格式响应。不要跳过翻译，必须提供完整的翻译结果。',
+              });
             } else {
-              // 没有工具调用，提醒AI使用工具
-              const missingCount = missingParagraphIds.length - retranslatedTranslations.size;
-              if (missingCount > 0) {
-                history.push({
-                  role: 'user',
-                  content: `还有 ${missingCount} 个段落需要翻译。请使用 add_paragraph_translation 工具为每个段落添加翻译，不要返回JSON格式。`,
-                });
-              } else {
-                break;
+              finalResponseText = result.text;
+              if (
+                detectRepeatingCharacters(finalResponseText, missingChunkText, {
+                  logLabel: 'TranslationService',
+                })
+              ) {
+                throw new Error('AI降级检测：最终响应中检测到重复字符');
               }
+              history.push({ role: 'assistant', content: finalResponseText });
+              break;
             }
           }
 
-          // 收集重新翻译的段落
+          // 检查是否在达到最大回合数后仍未获得翻译结果
+          if (!finalResponseText || finalResponseText.trim().length === 0) {
+            throw new Error(
+              `AI在工具调用后未返回翻译结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
+            );
+          }
+
+          // 解析重新翻译的结果
+          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
           const retranslatedParagraphs: { id: string; translation: string }[] = [];
-          for (const paraId of missingParagraphIds) {
-            const translation = retranslatedTranslations.get(paraId);
-            if (translation) {
-              retranslatedParagraphs.push({ id: paraId, translation });
+          if (jsonMatch) {
+            try {
+              const data = JSON.parse(jsonMatch[0]);
+              if (data.paragraphs && Array.isArray(data.paragraphs)) {
+                for (const para of data.paragraphs) {
+                  if (para.id && para.translation && missingParagraphIds.includes(para.id)) {
+                    const paraTranslation = {
+                      id: para.id,
+                      translation: para.translation,
+                    };
+                    // 检查是否已存在，如果存在则更新，否则添加
+                    const existingIndex = paragraphTranslations.findIndex(
+                      (pt) => pt.id === para.id,
+                    );
+                    if (existingIndex >= 0) {
+                      paragraphTranslations[existingIndex] = paraTranslation;
+                    } else {
+                      paragraphTranslations.push(paraTranslation);
+                    }
+                    retranslatedParagraphs.push(paraTranslation);
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(
+                `[TranslationService] ⚠️ 解析重新翻译结果失败，缺失 ${missingParagraphIds.length} 个段落`,
+                e instanceof Error ? e.message : String(e),
+              );
             }
           }
-
           // 通知重新翻译的段落完成
           if (onParagraphTranslation && retranslatedParagraphs.length > 0) {
             try {

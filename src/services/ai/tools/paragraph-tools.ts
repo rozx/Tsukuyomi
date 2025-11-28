@@ -4,8 +4,6 @@ import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
-import type { Translation } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 
 export const paragraphTools: ToolDefinition[] = [
@@ -667,105 +665,6 @@ export const paragraphTools: ToolDefinition[] = [
         translation_id,
         previous_selected_id: originalSelectedId || null,
         selected_translation: translation.translation,
-      });
-    },
-  },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'add_paragraph_translation',
-        description:
-          '为段落添加新的翻译版本。这是翻译和润色任务的主要输出方式。完成翻译后，必须使用此工具为每个段落添加翻译，而不是返回JSON。翻译会被添加到段落的翻译历史中，并自动设置为当前选中的翻译。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation: {
-              type: 'string',
-              description: '翻译内容',
-            },
-            ai_model_id: {
-              type: 'string',
-              description: '使用的 AI 模型 ID（从上下文或任务信息中获取）',
-            },
-          },
-          required: ['paragraph_id', 'translation', 'ai_model_id'],
-        },
-      },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const { paragraph_id, translation, ai_model_id } = args;
-      if (!paragraph_id || !translation || !ai_model_id) {
-        throw new Error('段落 ID、翻译内容和 AI 模型 ID 不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
-      const { paragraph } = location;
-
-      // 生成新的翻译 ID
-      const existingTranslationIds = paragraph.translations?.map((t) => t.id) || [];
-      const idGenerator = new UniqueIdGenerator(existingTranslationIds);
-      const newTranslationId = idGenerator.generate();
-
-      // 创建新的翻译对象
-      const newTranslation: Translation = {
-        id: newTranslationId,
-        translation: translation.trim(),
-        aiModelId: ai_model_id,
-      };
-
-      // 添加翻译到段落（使用 ChapterService 的方法来管理翻译历史）
-      const updatedTranslations = ChapterService.addParagraphTranslation(
-        paragraph.translations || [],
-        newTranslation,
-      );
-      paragraph.translations = updatedTranslations;
-      paragraph.selectedTranslationId = newTranslationId;
-
-      // 更新书籍（保存更改）
-      await booksStore.updateBook(bookId, { volumes: book.volumes });
-
-      // 报告操作
-      if (onAction) {
-        onAction({
-          type: 'create',
-          entity: 'translation',
-          data: {
-            paragraph_id,
-            translation_id: newTranslationId,
-            translation: translation.trim(),
-            ai_model_id,
-          },
-        });
-      }
-
-      return JSON.stringify({
-        success: true,
-        message: '翻译已添加',
-        paragraph_id,
-        translation_id: newTranslationId,
-        translation: translation.trim(),
       });
     },
   },
