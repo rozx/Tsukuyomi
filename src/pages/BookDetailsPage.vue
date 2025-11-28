@@ -2,9 +2,7 @@
 import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
-import Badge from 'primevue/badge';
 import Button from 'primevue/button';
-import SplitButton from 'primevue/splitbutton';
 import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
@@ -44,6 +42,7 @@ import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vu
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
+import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
 import TermPopover from 'src/components/novel/TermPopover.vue';
 import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
@@ -56,7 +55,7 @@ import {
 import { useChapterExport } from 'src/composables/book-details/useChapterExport';
 import { useChapterDragDrop } from 'src/composables/book-details/useChapterDragDrop';
 import { useParagraphTranslation } from 'src/composables/book-details/useParagraphTranslation';
-import { useEditMode } from 'src/composables/book-details/useEditMode';
+import { useEditMode, type EditMode } from 'src/composables/book-details/useEditMode';
 import { useParagraphNavigation } from 'src/composables/book-details/useParagraphNavigation';
 import { useKeyboardShortcuts } from 'src/composables/book-details/useKeyboardShortcuts';
 import { useChapterTranslation } from 'src/composables/book-details/useChapterTranslation';
@@ -1641,193 +1640,39 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     <!-- 主内容区域 -->
     <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
       <!-- 章节阅读工具栏 -->
-      <Menubar
+      <ChapterToolbar
         v-if="selectedChapter && !selectedSettingMenu"
-        :model="[]"
-        class="chapter-toolbar !border-none !rounded-none !bg-white/5 !backdrop-blur-md !border-b !border-white/10 !p-2 !px-6"
-      >
-        <template #start>
-          <div class="flex items-center gap-3 overflow-hidden max-w-[15rem]">
-            <span
-              class="text-sm font-bold truncate opacity-90"
-              :title="getChapterDisplayTitle(selectedChapter)"
-            >
-              {{ getChapterDisplayTitle(selectedChapter) }}
-            </span>
-          </div>
-        </template>
-
-        <template #end>
-          <div class="flex items-center gap-2">
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 撤销/重做按钮 -->
-            <div class="flex items-center gap-1 mr-2">
-              <Button
-                icon="pi pi-undo"
-                rounded
-                text
-                size="small"
-                class="!w-8 !h-8 text-moon/70 hover:text-moon"
-                :disabled="!canUndo"
-                :title="undoDescription ? `撤销: ${undoDescription}` : '撤销 (Ctrl+Z)'"
-                @click="undo"
-              />
-              <Button
-                icon="pi pi-redo"
-                rounded
-                text
-                size="small"
-                class="!w-8 !h-8 text-moon/70 hover:text-moon"
-                :disabled="!canRedo"
-                :title="redoDescription ? `重做: ${redoDescription}` : '重做 (Ctrl+Y)'"
-                @click="redo"
-              />
-            </div>
-
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 编辑模式切换 -->
-            <div class="flex items-center bg-white/5 rounded-lg p-1 gap-1 mr-2">
-              <Button
-                v-for="option in editModeOptions"
-                :key="option.value"
-                :icon="option.icon"
-                :title="option.title"
-                rounded
-                text
-                size="small"
-                :class="[
-                  '!w-8 !h-8',
-                  editMode === option.value
-                    ? '!bg-primary/20 !text-primary'
-                    : 'text-moon/70 hover:text-moon',
-                ]"
-                @click="editMode = option.value"
-              />
-            </div>
-
-            <!-- 规范化按钮 -->
-            <Button
-              icon="pi pi-code"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              title="规范化符号：格式化本章所有翻译中的符号（引号、标点、空格等）"
-              :disabled="!selectedChapter || !selectedChapterParagraphs.length"
-              @click="normalizeChapterSymbols"
-            />
-
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 导出按钮 -->
-            <Button
-              icon="pi pi-file-export"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              title="导出章节内容"
-              @click="toggleExportMenu"
-            />
-
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 术语统计 -->
-            <div class="relative inline-flex">
-              <Button
-                icon="pi pi-bookmark"
-                rounded
-                text
-                size="small"
-                class="!w-8 !h-8 text-moon/70 hover:text-moon"
-                :title="`本章共使用了 ${usedTermCount} 个术语`"
-                @click="toggleTermPopover"
-              />
-              <Badge
-                v-if="usedTermCount > 0"
-                :value="usedTermCount > 99 ? '99+' : usedTermCount"
-                severity="info"
-                class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
-              />
-            </div>
-
-            <!-- 角色统计 -->
-            <div class="relative inline-flex">
-              <Button
-                icon="pi pi-user"
-                rounded
-                text
-                size="small"
-                class="!w-8 !h-8 text-moon/70 hover:text-moon"
-                :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
-                @click="toggleCharacterPopover"
-              />
-              <Badge
-                v-if="usedCharacterCount > 0"
-                :value="usedCharacterCount > 99 ? '99+' : usedCharacterCount"
-                severity="info"
-                class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
-              />
-            </div>
-
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 翻译按钮 -->
-            <Button
-              v-if="translationStatus.hasNone"
-              :label="translationButtonLabel"
-              icon="pi pi-language"
-              size="small"
-              class="!px-3"
-              :loading="isTranslatingChapter || isPolishingChapter"
-              :disabled="
-                isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
-              "
-              @click="translationButtonClick"
-            />
-            <SplitButton
-              v-else
-              :label="translationButtonLabel"
-              :icon="translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-language'"
-              size="small"
-              class="!px-3"
-              :loading="isTranslatingChapter || isPolishingChapter"
-              :disabled="
-                isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
-              "
-              :model="translationButtonMenuItems"
-              @click="translationButtonClick"
-            />
-
-            <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-            <!-- 搜索按钮 -->
-            <Button
-              :icon="isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search'"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
-              :title="isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)'"
-              @click="toggleSearch"
-            />
-
-            <!-- 键盘快捷键按钮 -->
-            <Button
-              icon="pi pi-info-circle"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              title="键盘快捷键"
-              @click="toggleKeyboardShortcutsPopover"
-            />
-          </div>
-        </template>
-      </Menubar>
+        :selected-chapter="selectedChapter"
+        :can-undo="canUndo"
+        :can-redo="canRedo"
+        :undo-description="undoDescription"
+        :redo-description="redoDescription"
+        :edit-mode="editMode"
+        :edit-mode-options="editModeOptions"
+        :selected-chapter-paragraphs="selectedChapterParagraphs"
+        :used-term-count="usedTermCount"
+        :used-character-count="usedCharacterCount"
+        :translation-status="translationStatus"
+        :translation-button-label="translationButtonLabel"
+        :translation-button-menu-items="translationButtonMenuItems"
+        :is-translating-chapter="isTranslatingChapter"
+        :is-polishing-chapter="isPolishingChapter"
+        :is-search-visible="isSearchVisible"
+        @undo="undo"
+        @redo="redo"
+        @update:edit-mode="
+          (value: EditMode) => {
+            editMode = value;
+          }
+        "
+        @normalize="normalizeChapterSymbols"
+        @toggle-export="toggleExportMenu"
+        @toggle-term-popover="toggleTermPopover"
+        @toggle-character-popover="toggleCharacterPopover"
+        @translation-button-click="translationButtonClick"
+        @toggle-search="toggleSearch"
+        @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
+      />
 
       <!-- 搜索工具栏 -->
       <SearchToolbar
