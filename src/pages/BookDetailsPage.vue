@@ -2,8 +2,6 @@
 import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
-import Select from 'primevue/select';
-import InputText from 'primevue/inputtext';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
@@ -33,9 +31,16 @@ import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue';
+import AddVolumeDialog from 'src/components/dialogs/AddVolumeDialog.vue';
+import AddChapterDialog from 'src/components/dialogs/AddChapterDialog.vue';
+import EditVolumeDialog from 'src/components/dialogs/EditVolumeDialog.vue';
+import EditChapterDialog from 'src/components/dialogs/EditChapterDialog.vue';
+import DeleteVolumeConfirmDialog from 'src/components/dialogs/DeleteVolumeConfirmDialog.vue';
+import DeleteChapterConfirmDialog from 'src/components/dialogs/DeleteChapterConfirmDialog.vue';
+import DeleteTermConfirmDialog from 'src/components/dialogs/DeleteTermConfirmDialog.vue';
+import DeleteCharacterConfirmDialog from 'src/components/dialogs/DeleteCharacterConfirmDialog.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
-import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
@@ -160,8 +165,8 @@ const {
   newVolumeTitle,
   newChapterTitle,
   selectedVolumeId,
-  handleAddVolume,
-  handleAddChapter,
+  handleAddVolume: originalHandleAddVolume,
+  handleAddChapter: originalHandleAddChapter,
   openAddChapterDialog,
   showEditVolumeDialog,
   showEditChapterDialog,
@@ -172,8 +177,8 @@ const {
   editingChapterTargetVolumeId,
   openEditVolumeDialog,
   openEditChapterDialog,
-  handleEditVolume,
-  handleEditChapter,
+  handleEditVolume: originalHandleEditVolume,
+  handleEditChapter: originalHandleEditChapter,
   showDeleteVolumeConfirm,
   showDeleteChapterConfirm,
   deletingVolumeTitle,
@@ -189,6 +194,35 @@ const {
   isDeletingVolume,
   isDeletingChapter,
 } = useChapterManagement(book, saveState);
+
+// Wrapper functions for dialog components
+const handleAddVolume = (title: string) => {
+  newVolumeTitle.value = title;
+  void originalHandleAddVolume();
+};
+
+const handleAddChapter = (data: { title: string; volumeId: string }) => {
+  newChapterTitle.value = data.title;
+  selectedVolumeId.value = data.volumeId;
+  void originalHandleAddChapter();
+};
+
+const handleEditVolume = (data: { title: string; translation: string }) => {
+  editingVolumeTitle.value = data.title;
+  editingVolumeTranslation.value = data.translation;
+  void originalHandleEditVolume();
+};
+
+const handleEditChapter = (data: {
+  title: string;
+  translation: string;
+  targetVolumeId: string;
+}) => {
+  editingChapterTitle.value = data.title;
+  editingChapterTranslation.value = data.translation;
+  editingChapterTargetVolumeId.value = data.targetVolumeId;
+  void originalHandleEditChapter();
+};
 
 // 获取封面图片 URL
 const getCoverUrl = (book: Novel): string => {
@@ -1479,280 +1513,55 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     </aside>
 
     <!-- 添加卷对话框 -->
-    <Dialog
+    <AddVolumeDialog
       v-model:visible="showAddVolumeDialog"
-      modal
-      header="添加新卷"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label for="volume-title" class="block text-sm font-medium text-moon/90">卷标题</label>
-          <InputText
-            id="volume-title"
-            v-model="newVolumeTitle"
-            placeholder="输入卷标题..."
-            class="w-full"
-            autofocus
-            @keyup.enter="handleAddVolume"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isAddingVolume"
-          @click="showAddVolumeDialog = false"
-        />
-        <Button
-          label="添加"
-          :loading="isAddingVolume"
-          :disabled="!newVolumeTitle.trim() || isAddingVolume"
-          @click="handleAddVolume"
-        />
-      </template>
-    </Dialog>
+      :loading="isAddingVolume"
+      @save="handleAddVolume"
+    />
 
     <!-- 添加章节对话框 -->
-    <Dialog
+    <AddChapterDialog
       v-model:visible="showAddChapterDialog"
-      modal
-      header="添加新章节"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label for="volume-select" class="block text-sm font-medium text-moon/90">选择卷</label>
-          <Select
-            id="volume-select"
-            v-model="selectedVolumeId"
-            :options="volumeOptions"
-            optionLabel="label"
-            optionValue="value"
-            placeholder="请选择卷"
-            class="w-full"
-          />
-        </div>
-        <div class="space-y-2">
-          <label for="chapter-title" class="block text-sm font-medium text-moon/90">章节标题</label>
-          <InputText
-            id="chapter-title"
-            v-model="newChapterTitle"
-            placeholder="输入章节标题..."
-            class="w-full"
-            autofocus
-            @keyup.enter="handleAddChapter"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isAddingChapter"
-          @click="showAddChapterDialog = false"
-        />
-        <Button
-          label="添加"
-          :loading="isAddingChapter"
-          :disabled="!newChapterTitle.trim() || !selectedVolumeId || isAddingChapter"
-          @click="handleAddChapter"
-        />
-      </template>
-    </Dialog>
+      :volume-options="volumeOptions"
+      :loading="isAddingChapter"
+      @save="handleAddChapter"
+    />
 
     <!-- 编辑卷对话框 -->
-    <Dialog
+    <EditVolumeDialog
       v-model:visible="showEditVolumeDialog"
-      modal
-      header="编辑卷标题"
-      :style="{ width: '30rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label for="edit-volume-title" class="block text-sm font-medium text-moon/90"
-            >卷标题（原文）*</label
-          >
-          <TranslatableInput
-            id="edit-volume-title"
-            v-model="editingVolumeTitle"
-            placeholder="输入卷标题..."
-            type="input"
-            :apply-translation-to-input="false"
-            @translation-applied="
-              (value: string) => {
-                editingVolumeTranslation = value;
-              }
-            "
-            @keyup.enter="handleEditVolume"
-          />
-        </div>
-        <div class="space-y-2">
-          <label for="edit-volume-translation" class="block text-sm font-medium text-moon/90"
-            >翻译</label
-          >
-          <InputText
-            id="edit-volume-translation"
-            v-model="editingVolumeTranslation"
-            placeholder="输入翻译（可选）"
-            class="w-full"
-            @keyup.enter="handleEditVolume"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isEditingVolume"
-          @click="showEditVolumeDialog = false"
-        />
-        <Button
-          label="保存"
-          :loading="isEditingVolume"
-          :disabled="!editingVolumeTitle.trim() || isEditingVolume"
-          @click="handleEditVolume"
-        />
-      </template>
-    </Dialog>
+      :title="editingVolumeTitle"
+      :translation="editingVolumeTranslation"
+      :loading="isEditingVolume"
+      @save="handleEditVolume"
+    />
 
     <!-- 编辑章节对话框 -->
-    <Dialog
+    <EditChapterDialog
       v-model:visible="showEditChapterDialog"
-      modal
-      header="编辑章节"
-      :style="{ width: '30rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label for="edit-chapter-title" class="block text-sm font-medium text-moon/90"
-            >章节标题（原文）*</label
-          >
-          <TranslatableInput
-            id="edit-chapter-title"
-            v-model="editingChapterTitle"
-            placeholder="输入章节标题..."
-            type="input"
-            :apply-translation-to-input="false"
-            @translation-applied="
-              (value: string) => {
-                editingChapterTranslation = value;
-              }
-            "
-            @keyup.enter="handleEditChapter"
-          />
-        </div>
-        <div class="space-y-2">
-          <label for="edit-chapter-translation" class="block text-sm font-medium text-moon/90"
-            >翻译</label
-          >
-          <InputText
-            id="edit-chapter-translation"
-            v-model="editingChapterTranslation"
-            placeholder="输入翻译（可选）"
-            class="w-full"
-            @keyup.enter="handleEditChapter"
-          />
-        </div>
-        <div class="space-y-2" v-if="volumes.length > 0">
-          <label for="edit-chapter-volume" class="block text-sm font-medium text-moon/90"
-            >所属卷</label
-          >
-          <Select
-            id="edit-chapter-volume"
-            v-model="editingChapterTargetVolumeId"
-            :options="volumeOptions"
-            optionLabel="label"
-            optionValue="value"
-            placeholder="选择卷"
-            class="w-full"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isEditingChapter"
-          @click="showEditChapterDialog = false"
-        />
-        <Button
-          label="保存"
-          :loading="isEditingChapter"
-          :disabled="
-            !editingChapterTitle.trim() || !editingChapterTargetVolumeId || isEditingChapter
-          "
-          @click="handleEditChapter"
-        />
-      </template>
-    </Dialog>
+      :title="editingChapterTitle"
+      :translation="editingChapterTranslation"
+      :target-volume-id="editingChapterTargetVolumeId"
+      :volume-options="volumeOptions"
+      :loading="isEditingChapter"
+      @save="handleEditChapter"
+    />
 
     <!-- 删除卷确认对话框 -->
-    <Dialog
+    <DeleteVolumeConfirmDialog
       v-model:visible="showDeleteVolumeConfirm"
-      modal
-      header="确认删除"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除卷 <strong>"{{ deletingVolumeTitle }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作将同时删除该卷下的所有章节，且无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeletingVolume"
-          @click="showDeleteVolumeConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeletingVolume"
-          :disabled="isDeletingVolume"
-          @click="handleDeleteVolume"
-        />
-      </template>
-    </Dialog>
+      :volume-title="deletingVolumeTitle"
+      :loading="isDeletingVolume"
+      @confirm="handleDeleteVolume"
+    />
 
     <!-- 删除章节确认对话框 -->
-    <Dialog
+    <DeleteChapterConfirmDialog
       v-model:visible="showDeleteChapterConfirm"
-      modal
-      header="确认删除"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除章节 <strong>"{{ deletingChapterTitle }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeletingChapter"
-          @click="showDeleteChapterConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeletingChapter"
-          :disabled="isDeletingChapter"
-          @click="handleDeleteChapter"
-        />
-      </template>
-    </Dialog>
+      :chapter-title="deletingChapterTitle"
+      :loading="isDeletingChapter"
+      @confirm="handleDeleteChapter"
+    />
 
     <!-- 书籍编辑对话框 -->
     <BookDialog
@@ -1806,35 +1615,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     />
 
     <!-- 删除术语确认对话框 -->
-    <Dialog
+    <DeleteTermConfirmDialog
       v-model:visible="showDeleteTermConfirm"
-      modal
-      header="确认删除术语"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除术语 <strong>"{{ deletingTerm?.name }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeletingTerm"
-          @click="showDeleteTermConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeletingTerm"
-          :disabled="isDeletingTerm"
-          @click="confirmDeleteTerm"
-        />
-      </template>
-    </Dialog>
+      :term-name="deletingTerm?.name || null"
+      :loading="isDeletingTerm"
+      @confirm="confirmDeleteTerm"
+    />
 
     <!-- 编辑角色对话框 -->
     <CharacterEditDialog
@@ -1845,35 +1631,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     />
 
     <!-- 删除角色确认对话框 -->
-    <Dialog
+    <DeleteCharacterConfirmDialog
       v-model:visible="showDeleteCharacterConfirm"
-      modal
-      header="确认删除角色"
-      :style="{ width: '25rem' }"
-      :draggable="false"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除角色 <strong>"{{ deletingCharacter?.name }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeletingCharacter"
-          @click="showDeleteCharacterConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeletingCharacter"
-          :disabled="isDeletingCharacter"
-          @click="confirmDeleteCharacter"
-        />
-      </template>
-    </Dialog>
+      :character-name="deletingCharacter?.name || null"
+      :loading="isDeletingCharacter"
+      @confirm="confirmDeleteCharacter"
+    />
 
     <!-- 主内容区域 -->
     <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
