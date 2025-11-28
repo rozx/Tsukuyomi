@@ -92,9 +92,18 @@ const addSiteMapping = async () => {
   if (site && newProxyInput.value) {
     const selectedProxy = proxyList.value.find((p) => p.id === newProxyInput.value);
     if (selectedProxy) {
-      await settingsStore.addProxyForSite(site, selectedProxy.url);
-      newSiteInput.value = '';
-      newProxyInput.value = null;
+      const wasAdded = await settingsStore.addProxyForSite(site, selectedProxy.url);
+      if (wasAdded) {
+        toast.add({
+          severity: 'success',
+          summary: '映射已添加',
+          detail: `${site} -> ${selectedProxy.name}`,
+          life: 2000,
+        });
+        newSiteInput.value = '';
+        newProxyInput.value = null;
+      }
+      // 如果映射已存在，静默处理，不显示 toast
     }
   }
 };

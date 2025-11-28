@@ -50,7 +50,7 @@ export interface TranslationServiceOptions {
    * 段落翻译回调函数，用于接收每个块完成后的段落翻译结果
    * @param translations 段落翻译数组，包含段落ID和翻译文本
    */
-  onParagraphTranslation?: (translations: { id: string; translation: string }[]) => void;
+  onParagraphTranslation?: (translations: { id: string; translation: string }[]) => void | Promise<void>;
   /**
    * 取消信号（可选）
    */
@@ -773,7 +773,15 @@ export class TranslationService {
                   }
                   // 通知段落翻译完成（即使只有部分段落）
                   if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
-                    onParagraphTranslation(chunkParagraphTranslations);
+                    try {
+                      await onParagraphTranslation(chunkParagraphTranslations);
+                    } catch (error) {
+                      console.error(
+                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
+                        error instanceof Error ? error.message : String(error),
+                      );
+                      // 继续处理，不中断翻译流程
+                    }
                   }
                 }
               } else {
@@ -797,7 +805,15 @@ export class TranslationService {
                   }
                   // 通知段落翻译完成
                   if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
-                    onParagraphTranslation(chunkParagraphTranslations);
+                    try {
+                      await onParagraphTranslation(chunkParagraphTranslations);
+                    } catch (error) {
+                      console.error(
+                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
+                        error instanceof Error ? error.message : String(error),
+                      );
+                      // 继续处理，不中断翻译流程
+                    }
                   }
                 } else {
                   // 没有提取到段落翻译，使用完整文本
@@ -1036,7 +1052,15 @@ export class TranslationService {
           }
           // 通知重新翻译的段落完成
           if (onParagraphTranslation && retranslatedParagraphs.length > 0) {
-            onParagraphTranslation(retranslatedParagraphs);
+            try {
+              await onParagraphTranslation(retranslatedParagraphs);
+            } catch (error) {
+              console.error(
+                `[TranslationService] ⚠️ 保存重新翻译的段落失败`,
+                error instanceof Error ? error.message : String(error),
+              );
+              // 继续处理，不中断翻译流程
+            }
           }
         } catch (error) {
           console.error(

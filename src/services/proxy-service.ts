@@ -43,21 +43,13 @@ export class ProxyService {
   ): string {
     const { skipProxy = false, skipInternalProxy = false } = options;
 
-    console.log('[ProxyService] getProxiedUrl', {
-      originalUrl,
-      skipProxy,
-      skipInternalProxy,
-    });
-
     // 如果跳过代理，直接返回原始 URL
     if (skipProxy) {
-      console.log('[ProxyService] 跳过代理，返回原始 URL');
       return originalUrl;
     }
 
     // 内部 API 请求（以 /api/ 开头）应该跳过代理
     if (originalUrl.startsWith('/api/')) {
-      console.log('[ProxyService] 内部 API 请求，跳过代理');
       return originalUrl;
     }
 
@@ -83,22 +75,11 @@ export class ProxyService {
             const siteProxy = siteProxies[0];
             if (siteProxy) {
               proxyUrl = siteProxy;
-              console.log('[ProxyService] 使用网站特定的代理', {
-                domain,
-                proxyUrl,
-              });
             }
           }
         }
       }
     }
-
-    console.log('[ProxyService] 代理状态', {
-      proxyEnabled,
-      proxyUrl,
-      isElectron,
-      skipInternalProxy,
-    });
 
     // 如果启用了代理且代理 URL 不为空，使用代理
     if (proxyEnabled && proxyUrl && proxyUrl.trim()) {
@@ -109,10 +90,6 @@ export class ProxyService {
       // 在 Electron/Node.js 环境中，也可以直接使用代理 URL
       // 只有在开发环境且有后端服务器支持时，才使用 /api/proxy（但这不是必需的）
       // 为了简化逻辑，我们统一直接使用代理 URL，让代理服务处理 CORS
-      console.log('[ProxyService] 使用代理 URL', {
-        proxiedUrl,
-        isElectron,
-      });
       return proxiedUrl;
     }
     if (!skipInternalProxy && !isElectron) {
@@ -133,16 +110,11 @@ export class ProxyService {
       }
 
       if (internalProxyUrl) {
-        console.log('[ProxyService] 使用内部代理路径', {
-          hostname: urlObj.hostname,
-          internalProxyUrl,
-        });
         return internalProxyUrl;
       }
     }
 
     // 默认返回原始 URL
-    console.log('[ProxyService] 返回原始 URL（未使用代理）');
     return originalUrl;
   }
 
@@ -152,12 +124,7 @@ export class ProxyService {
    */
   static isProxyEnabled(): boolean {
     const settingsStore = useSettingsStore();
-    const enabled = settingsStore.proxyEnabled ?? false;
-    console.log('[ProxyService] isProxyEnabled', {
-      enabled,
-      proxyUrl: settingsStore.proxyUrl ?? '',
-    });
-    return enabled;
+    return settingsStore.proxyEnabled ?? false;
   }
 
   /**
@@ -197,17 +164,10 @@ export class ProxyService {
         '{url}',
         encodeURIComponent(originalUrl),
       );
-      console.log('[ProxyService] 使用 AI CORS 代理（浏览器模式）', {
-        originalUrl,
-        proxiedUrl,
-      });
       return proxiedUrl;
     }
 
     // Electron 模式下直接返回原始 URL
-    console.log('[ProxyService] 跳过 AI CORS 代理（Electron 模式）', {
-      originalUrl,
-    });
     return originalUrl;
   }
 
@@ -321,22 +281,13 @@ export class ProxyService {
    */
   private static switchToNextProxy(originalUrl?: string): boolean {
     const settingsStore = useSettingsStore();
-    const currentUrl = settingsStore.proxyUrl ?? '';
     const nextProxyUrl = this.getNextProxyUrl(originalUrl);
-
-    console.log('[ProxyService] switchToNextProxy', {
-      currentUrl,
-      nextProxyUrl,
-      originalUrl,
-    });
 
     if (nextProxyUrl) {
       void settingsStore.setProxyUrl(nextProxyUrl);
-      console.log(`[ProxyService] ✅ 代理服务已自动切换: ${currentUrl} -> ${nextProxyUrl}`);
       return true;
     }
 
-    console.log('[ProxyService] ❌ 无法切换到下一个代理服务（没有更多代理可用）');
     return false;
   }
 
@@ -349,26 +300,18 @@ export class ProxyService {
     const settingsStore = useSettingsStore();
     const autoSwitch = settingsStore.proxyAutoSwitch ?? false;
 
-    console.log('[ProxyService] handleProxyError', {
-      autoSwitch,
-      error: error instanceof Error ? error.message : String(error),
-    });
-
     // 如果未启用自动切换，不处理
     if (!autoSwitch) {
-      console.log('[ProxyService] 自动切换未启用，跳过处理');
       return false;
     }
 
     // 检查错误是否是网络错误
     const isNetworkErr = this.isNetworkError(error);
     if (!isNetworkErr) {
-      console.log('[ProxyService] 不是网络错误，跳过处理');
       return false;
     }
 
     // 切换到下一个代理服务
-    console.log('[ProxyService] 检测到网络错误，尝试切换代理');
     // 注意：handleProxyError 没有 originalUrl 参数，所以无法使用网站特定代理
     // 这个函数主要用于向后兼容，实际应该使用 executeWithAutoSwitch
     return this.switchToNextProxy();
@@ -478,16 +421,6 @@ export class ProxyService {
     const autoSwitch = settingsStore.proxyAutoSwitch ?? false;
     const defaultProxyUrl = settingsStore.proxyUrl ?? '';
 
-    console.log('[ProxyService] executeWithAutoSwitch 开始', {
-      originalUrl,
-      skipProxy,
-      skipInternalProxy,
-      maxRetries,
-      autoSwitch,
-      proxyEnabled: settingsStore.proxyEnabled ?? false,
-      defaultProxyUrl,
-    });
-
     // 如果跳过代理或未启用代理，直接执行请求
     if (skipProxy || !settingsStore.proxyEnabled) {
       const proxiedUrl = this.getProxiedUrl(originalUrl, { skipProxy, skipInternalProxy });
@@ -511,16 +444,8 @@ export class ProxyService {
           proxiedUrl = originalUrl;
         }
 
-        console.log(`[ProxyService] 尝试请求 (${attempt + 1}/${maxRetries})`, {
-          originalUrl,
-          proxiedUrl,
-          currentProxyUrl,
-          isDefaultProxy: currentProxyUrl === defaultProxyUrl,
-        });
-
         // 执行请求
         const result = await requestFn(proxiedUrl);
-        console.log(`[ProxyService] ✅ 请求成功 (尝试 ${attempt + 1})`);
 
         // 如果请求成功，且使用的不是默认代理，且启用了自动添加映射，记录到网站-代理映射中
         const autoAddMapping = settingsStore.proxyAutoAddMapping ?? true;
@@ -532,16 +457,18 @@ export class ProxyService {
         ) {
           const domain = this.extractDomain(originalUrl);
           if (domain) {
-            void settingsStore.addProxyForSite(domain, currentProxyUrl);
-            console.log(`[ProxyService] 📝 已记录网站-代理映射: ${domain} -> ${currentProxyUrl}`);
-            // 显示 toast 通知
-            const proxyName = getProxyDisplayName(currentProxyUrl);
-            showToolToast({
-              severity: 'success',
-              summary: '代理映射已添加',
-              detail: `${domain} 已映射到 ${proxyName}`,
-              life: 3000,
-            });
+            const wasAdded = await settingsStore.addProxyForSite(domain, currentProxyUrl);
+            if (wasAdded) {
+              // 显示 toast 通知
+              const proxyName = getProxyDisplayName(currentProxyUrl);
+              showToolToast({
+                severity: 'success',
+                summary: '代理映射已添加',
+                detail: `${domain} 已映射到 ${proxyName}`,
+                life: 3000,
+              });
+            }
+            // 如果映射已存在，静默处理
           }
         }
 
@@ -562,20 +489,17 @@ export class ProxyService {
         // 如果启用了自动切换且是网络错误，继续尝试下一个代理（在下次循环中）
         if (autoSwitch && isNetworkErr && attempt < maxRetries - 1) {
           // 等待一小段时间后继续重试
-          console.log('[ProxyService] 等待 500ms 后尝试下一个代理...');
           await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
 
         // 如果没有启用自动切换或已达到最大重试次数
         if (attempt === maxRetries - 1) {
-          console.error('[ProxyService] ❌ 所有重试都失败，抛出错误');
           throw lastError;
         }
 
         // 等待后重试（指数退避）
         const retryDelay = (attempt + 1) * 1000;
-        console.log(`[ProxyService] 等待 ${retryDelay}ms 后重试...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
       }
     }

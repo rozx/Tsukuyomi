@@ -24,6 +24,7 @@ const props = defineProps<{
   characterScores?: Map<string, number>;
   bookId?: string;
   chapterId?: string;
+  selected?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,6 +32,7 @@ const emit = defineEmits<{
   'retranslate': [paragraphId: string];
   'polish': [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
+  'paragraph-hover': [paragraphId: string];
 }>();
 
 const aiModelsStore = useAIModelsStore();
@@ -184,6 +186,9 @@ const handleCharacterPopoverHide = () => {
 
 // 处理段落悬停
 const handleParagraphMouseEnter = () => {
+  // 触发段落悬停事件，用于更新导航索引
+  emit('paragraph-hover', props.paragraph.id);
+
   // 如果提供了 bookId 和 chapterId，同时更新书籍、章节和段落
   if (props.bookId && props.chapterId) {
     contextStore.setContext(
@@ -222,6 +227,15 @@ const handleParagraphMouseEnter = () => {
 // 翻译编辑状态
 const editingTranslationValue = ref('');
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
+const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
+
+/**
+ * 安全地从 Vue 组件实例中提取 $el 属性
+ */
+const getComponentElement = (componentInstance: unknown): HTMLElement | undefined => {
+  const instance = componentInstance as { $el?: HTMLElement };
+  return instance.$el;
+};
 
 // 开始编辑翻译
 const onTranslationOpen = () => {
@@ -234,19 +248,22 @@ const onTranslationOpen = () => {
       let textareaElement: HTMLTextAreaElement | null = null;
       
       // 方式1: 通过 $el 访问
-      const componentInstance = translationTextareaRef.value as any;
-      if (componentInstance.$el) {
-        textareaElement = componentInstance.$el.querySelector('textarea');
+      const componentElement = getComponentElement(translationTextareaRef.value);
+      if (componentElement) {
+        textareaElement = componentElement.querySelector('textarea');
       }
       
       // 方式2: 如果 $el 是 textarea 本身
-      if (!textareaElement && componentInstance.$el instanceof HTMLTextAreaElement) {
-        textareaElement = componentInstance.$el;
+      if (!textareaElement && componentElement instanceof HTMLTextAreaElement) {
+        textareaElement = componentElement;
       }
       
       // 方式3: 通过组件实例的 input 属性（某些 PrimeVue 版本）
-      if (!textareaElement && (translationTextareaRef.value as any).input) {
-        textareaElement = (translationTextareaRef.value as any).input;
+      if (!textareaElement) {
+        const instance = translationTextareaRef.value as { input?: HTMLTextAreaElement };
+        if (instance.input) {
+          textareaElement = instance.input;
+        }
       }
       
       if (textareaElement) {
@@ -266,13 +283,30 @@ const onTranslationClose = () => {
   }
 };
 
+// 应用更改
+const applyTranslation = (closeCallback: () => void) => {
+  onTranslationClose();
+  closeCallback();
+};
+
+// 取消编辑
+const cancelTranslation = (closeCallback: () => void) => {
+  editingTranslationValue.value = translationText.value;
+  closeCallback();
+};
+
 // 处理键盘事件
 const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => void) => {
-  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+  // Enter 键：应用更改（保存并关闭）
+  if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
     event.preventDefault();
     closeCallback();
     onTranslationClose();
-  } else if (event.key === 'Escape') {
+  }
+  // Shift+Enter：允许换行（不阻止默认行为，让浏览器处理换行）
+  // 这里不需要处理，让默认行为发生即可
+  // Escape 键：取消编辑
+  else if (event.key === 'Escape') {
     event.preventDefault();
     editingTranslationValue.value = translationText.value;
     closeCallback();
@@ -412,13 +446,38 @@ onUnmounted(() => {
     contextMenuTargetRef.value = null;
   }
 });
+
+// 暴露方法供父组件调用
+defineExpose({
+  startEditing: () => {
+    if (translationInplaceRef.value && hasTranslation.value) {
+      // 通过点击 display 区域来触发编辑
+      const inplaceElement = getComponentElement(translationInplaceRef.value);
+      if (inplaceElement) {
+        const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
+        if (displayElement) {
+          displayElement.click();
+        }
+      }
+    }
+  },
+  scrollIntoView: (options?: ScrollIntoViewOptions) => {
+    if (paragraphCardRef.value) {
+      paragraphCardRef.value.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        ...options,
+      });
+    }
+  },
+});
 </script>
 
 <template>
   <div
     ref="paragraphCardRef"
     class="paragraph-card"
-    :class="{ 'has-content': hasContent }"
+    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected }"
     @contextmenu="handleParagraphContextMenu"
     @mouseenter="handleParagraphMouseEnter"
   >
@@ -487,6 +546,7 @@ onUnmounted(() => {
         </div>
         <!-- 有翻译文本且不在翻译时显示可编辑的翻译 -->
         <Inplace
+          ref="translationInplaceRef"
           v-else-if="hasTranslation"
           class="translation-inplace"
           @open="onTranslationOpen"
@@ -508,10 +568,27 @@ onUnmounted(() => {
                 class="translation-textarea"
                 :auto-resize="true"
                 @keydown="(e) => handleTranslationKeydown(e, closeCallback)"
-                @blur="() => { closeCallback(); onTranslationClose(); }"
               />
-              <div class="translation-edit-hints">
-                <span class="hint-text">Ctrl+Enter 保存，Esc 取消</span>
+              <div class="translation-edit-actions">
+                <div class="translation-edit-hints">
+                  <span class="hint-text">Enter 保存，Shift+Enter 换行，Esc 取消</span>
+                </div>
+                <div class="translation-edit-buttons">
+                  <Button
+                    label="取消"
+                    icon="pi pi-times"
+                    class="p-button-text p-button-sm"
+                    size="small"
+                    @click="cancelTranslation(closeCallback)"
+                  />
+                  <Button
+                    label="应用"
+                    icon="pi pi-check"
+                    class="p-button-sm"
+                    size="small"
+                    @click="applyTranslation(closeCallback)"
+                  />
+                </div>
               </div>
             </div>
           </template>
@@ -676,6 +753,11 @@ onUnmounted(() => {
   padding: 1rem 1.25rem;
   width: 100%;
   position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.paragraph-card.paragraph-selected {
+  /* 选中效果由外层容器处理，这里不添加样式 */
 }
 
 .paragraph-icon {
@@ -845,15 +927,28 @@ onUnmounted(() => {
   background: var(--white-opacity-8);
 }
 
+.translation-edit-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .translation-edit-hints {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
 }
 
 .hint-text {
   font-size: 0.75rem;
   color: var(--moon-opacity-60);
   font-style: italic;
+}
+
+.translation-edit-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 /* 术语高亮 */

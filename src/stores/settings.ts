@@ -361,17 +361,25 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 为网站添加可用的代理服务
+     * @returns 如果代理已成功添加返回 true，如果已存在返回 false
      */
-    async addProxyForSite(site: string, proxyUrl: string): Promise<void> {
+    async addProxyForSite(site: string, proxyUrl: string): Promise<boolean> {
       const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
       if (!mapping[site]) {
         mapping[site] = [];
       }
       const siteProxies = mapping[site];
-      if (siteProxies && !siteProxies.includes(proxyUrl)) {
+      // 检查是否已存在相同的代理 URL
+      if (siteProxies && siteProxies.includes(proxyUrl)) {
+        // 已存在，不添加
+        return false;
+      }
+      // 添加新的代理 URL
+      if (siteProxies) {
         siteProxies.push(proxyUrl);
       }
       await this.updateSettings({ proxySiteMapping: mapping });
+      return true;
     },
 
     /**
