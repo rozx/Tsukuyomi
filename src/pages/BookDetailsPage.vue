@@ -152,6 +152,48 @@ const updateParagraphsAndSave = async (
 };
 
 /**
+ * 统计唯一的操作数量（按实体类型分组）
+ * @param actions 操作数组
+ * @returns 包含术语和角色操作数量的对象
+ */
+const countUniqueActions = (actions: ActionInfo[]): { terms: number; characters: number } => {
+  const termKeys = new Set<string>();
+  const characterKeys = new Set<string>();
+
+  for (const action of actions) {
+    if (action.entity !== 'term' && action.entity !== 'character') continue;
+    if (action.type !== 'create' && action.type !== 'update' && action.type !== 'delete') continue;
+
+    // 创建唯一键：entity + type + id
+    // 对于 delete 操作，data 是 { id: string; name?: string }
+    // 对于 create/update 操作，data 是 Terminology 或 CharacterSetting
+    let id: string | undefined;
+    if (action.type === 'delete') {
+      const deleteData = action.data as { id?: string; name?: string };
+      id = deleteData.id;
+    } else {
+      const entityData = action.data as Terminology | CharacterSetting;
+      id = entityData.id;
+    }
+
+    if (!id) continue;
+
+    const key = `${action.entity}:${action.type}:${id}`;
+
+    if (action.entity === 'term') {
+      termKeys.add(key);
+    } else if (action.entity === 'character') {
+      characterKeys.add(key);
+    }
+  }
+
+  return {
+    terms: termKeys.size,
+    characters: characterKeys.size,
+  };
+};
+
+/**
  * 批量更新段落翻译并保存（用于增量更新）
  * @param paragraphTranslations 段落翻译数组
  * @param aiModelId AI 模型 ID
@@ -2637,6 +2679,7 @@ const translateAllParagraphs = async () => {
     // 更新剩余的段落翻译（如果有）和标题翻译
     const hasRemainingParagraphs = translationMap.size > 0;
     const hasTitleTranslation = result.titleTranslation && result.titleTranslation.trim();
+    let actuallyUpdatedFromMap = 0;
 
     if (hasRemainingParagraphs || hasTitleTranslation) {
       const updatedVolumes = book.value.volumes?.map((volume) => {
@@ -2665,6 +2708,9 @@ const translateAllParagraphs = async () => {
                 para.translations || [],
                 newTranslation,
               );
+
+              // 计数实际更新的段落
+              actuallyUpdatedFromMap++;
 
               // 只更新翻译相关字段，确保不修改原文（text 字段）
               return {
@@ -2715,11 +2761,11 @@ const translateAllParagraphs = async () => {
 
     // 构建成功消息
     const actions = result.actions || [];
-    const totalTranslatedCount = updatedParagraphIds.size + translationMap.size;
+    // 计算实际更新的段落数：增量更新的段落 + 从 translationMap 实际更新的段落
+    const totalTranslatedCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
     let messageDetail = `已成功翻译 ${totalTranslatedCount} 个段落`;
     if (actions.length > 0) {
-      const termActions = actions.filter((a) => a.entity === 'term').length;
-      const characterActions = actions.filter((a) => a.entity === 'character').length;
+      const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
       const actionDetails: string[] = [];
       if (termActions > 0) {
         actionDetails.push(`${termActions} 个术语操作`);
@@ -2877,6 +2923,7 @@ const continueTranslation = async () => {
     }
 
     // 更新剩余的段落翻译
+    let actuallyUpdatedFromMap = 0;
     if (translationMap.size > 0) {
       const updatedVolumes = book.value.volumes?.map((volume) => {
         if (!volume.chapters) return volume;
@@ -2905,6 +2952,9 @@ const continueTranslation = async () => {
               para.translations || [],
               newTranslation,
             );
+
+            // 计数实际更新的段落
+            actuallyUpdatedFromMap++;
 
             return {
               id: para.id,
@@ -2935,7 +2985,8 @@ const continueTranslation = async () => {
       updateSelectedChapterWithContent(updatedVolumes);
     }
 
-    const totalTranslatedCount = updatedParagraphIds.size + translationMap.size;
+    // 计算实际更新的段落数：增量更新的段落 + 从 translationMap 实际更新的段落
+    const totalTranslatedCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
     toast.add({
       severity: 'success',
       summary: '翻译完成',
@@ -3081,6 +3132,7 @@ const polishAllParagraphs = async () => {
     }
 
     // 更新剩余的段落润色（如果有）
+    let actuallyUpdatedFromMap = 0;
     if (polishMap.size > 0) {
       const updatedVolumes = book.value.volumes?.map((volume) => {
         if (!volume.chapters) return volume;
@@ -3105,6 +3157,9 @@ const polishAllParagraphs = async () => {
               para.translations || [],
               newTranslation,
             );
+
+            // 计数实际更新的段落
+            actuallyUpdatedFromMap++;
 
             return {
               id: para.id,
@@ -3137,11 +3192,11 @@ const polishAllParagraphs = async () => {
 
     // 构建成功消息
     const actions = result.actions || [];
-    const totalPolishedCount = updatedParagraphIds.size + polishMap.size;
+    // 计算实际更新的段落数：增量更新的段落 + 从 polishMap 实际更新的段落
+    const totalPolishedCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
     let messageDetail = `已成功润色 ${totalPolishedCount} 个段落`;
     if (actions.length > 0) {
-      const termActions = actions.filter((a) => a.entity === 'term').length;
-      const characterActions = actions.filter((a) => a.entity === 'character').length;
+      const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
       const actionDetails: string[] = [];
       if (termActions > 0) {
         actionDetails.push(`${termActions} 个术语操作`);
