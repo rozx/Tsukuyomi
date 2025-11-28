@@ -72,6 +72,9 @@ export function useParagraphTranslation(
     };
     await ChapterService.saveChapterContent(updatedChapter);
 
+    // 立即更新 UI，避免等待 updateBook 完成
+    selectedChapterWithContent.value = updatedChapter;
+
     // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
     // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
@@ -84,9 +87,6 @@ export function useParagraphTranslation(
       volumes: updatedVolumes,
       lastEdited: new Date(),
     });
-
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    updateSelectedChapterWithContent(updatedVolumes);
   };
 
   // 选择段落翻译
@@ -129,6 +129,9 @@ export function useParagraphTranslation(
     };
     await ChapterService.saveChapterContent(updatedChapter);
 
+    // 立即更新 UI，避免等待 updateBook 完成
+    selectedChapterWithContent.value = updatedChapter;
+
     // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
     // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
@@ -141,9 +144,6 @@ export function useParagraphTranslation(
       volumes: updatedVolumes,
       lastEdited: new Date(),
     });
-
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    updateSelectedChapterWithContent(updatedVolumes);
 
     toast.add({
       severity: 'success',

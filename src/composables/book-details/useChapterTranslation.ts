@@ -102,6 +102,15 @@ export function useChapterTranslation(
         .find((c) => c.id === selectedChapterWithContent.value!.id);
       if (updatedChapter && updatedChapter.content) {
         await ChapterService.saveChapterContent(updatedChapter);
+        
+        // 立即更新 UI，避免等待 updateBook 完成
+        if (updateSelected && selectedChapterWithContent.value) {
+          selectedChapterWithContent.value = {
+            ...selectedChapterWithContent.value,
+            ...updatedChapter,
+            content: updatedChapter.content,
+          };
+        }
       }
     }
 
@@ -110,10 +119,6 @@ export function useChapterTranslation(
       volumes: updatedVolumes,
       lastEdited: new Date(),
     });
-
-    if (updateSelected) {
-      updateSelectedChapterWithContent(updatedVolumes);
-    }
   };
 
   /**
