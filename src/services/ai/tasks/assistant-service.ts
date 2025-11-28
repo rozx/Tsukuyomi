@@ -87,18 +87,6 @@ export class AssistantService {
     currentChapterId: string | null;
     hoveredParagraphId: string | null;
   }): string {
-    // 获取当前时间
-    const now = new Date();
-    const currentTime = now.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
 
 ## 能力范围
@@ -231,6 +219,18 @@ export class AssistantService {
       }
       prompt += `\n询问上下文相关问题时，先使用工具获取信息再回答。\n\n`;
     }
+
+    // 获取当前时间
+    const now = new Date();
+    const currentTime = now.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
 
     prompt += `## 使用指南
 - 回答用户关于书籍、章节、段落、术语、角色的任何问题
