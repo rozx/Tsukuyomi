@@ -10,7 +10,10 @@ import { generateShortId } from 'src/utils/id-generator';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 import { cloneDeep } from 'lodash';
 
-export function useChapterManagement(book: Ref<Novel | undefined>) {
+export function useChapterManagement(
+  book: Ref<Novel | undefined>,
+  saveState?: (description?: string) => void,
+) {
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
 
@@ -48,6 +51,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       return;
     }
 
+    saveState?.('添加卷');
+
     const updatedVolumes = ChapterService.addVolume(book.value, newVolumeTitle.value);
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
@@ -69,6 +74,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
     if (!book.value || !newChapterTitle.value.trim() || !selectedVolumeId.value) {
       return;
     }
+
+    saveState?.('添加章节');
 
     const updatedVolumes = ChapterService.addChapter(
       book.value,
@@ -152,6 +159,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       return;
     }
 
+    saveState?.('编辑卷');
+
     const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
 
     let translationId = '';
@@ -217,6 +226,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
     ) {
       return;
     }
+
+    saveState?.('编辑章节');
 
     let currentChapter: Chapter | null = null;
     for (const volume of book.value.volumes || []) {
@@ -313,6 +324,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
       return;
     }
 
+    saveState?.('删除卷');
+
     const updatedVolumes = ChapterService.deleteVolume(book.value, deletingVolumeId.value);
 
     await booksStore.updateBook(book.value.id, {
@@ -336,6 +349,8 @@ export function useChapterManagement(book: Ref<Novel | undefined>) {
     if (!book.value || !deletingChapterId.value) {
       return;
     }
+
+    saveState?.('删除章节');
 
     const updatedVolumes = ChapterService.deleteChapter(book.value, deletingChapterId.value);
 
