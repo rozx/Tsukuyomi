@@ -95,66 +95,115 @@ export const useBooksStore = defineStore('books', {
             }
           }
 
-          // 遍历更新的 volumes，为每个章节保留现有的 content
-          updatedBook.volumes = await Promise.all(
-            updates.volumes.map(async (updatedVolume) => {
-              const existingVolume = existingVolumesMap.get(updatedVolume.id);
-              const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
+          // 优化：先收集需要加载内容的章节，批量处理
+          const chaptersNeedingContent: Array<{
+            volumeIndex: number;
+            chapterIndex: number;
+            chapterId: string;
+            existingChapter: Chapter;
+          }> = [];
 
-              if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
-                // 为每个更新的章节保留现有的 content
-                updatedVolume.chapters = await Promise.all(
-                  updatedVolume.chapters.map(async (updatedChapter) => {
-                    // 使用 Map 快速查找现有章节（O(1) 而不是 O(n)）
-                    const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+          // 第一遍：识别需要保留内容的章节
+          for (let vIndex = 0; vIndex < updates.volumes.length; vIndex++) {
+            const updatedVolume = updates.volumes[vIndex];
+            const existingVolume = existingVolumesMap.get(updatedVolume.id);
+            const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
 
-                    // 优化：如果章节不存在于现有数据中，说明是新章节，直接返回
-                    // 新章节要么已经有内容，要么应该保持 undefined
-                    if (!existingChapter) {
-                      return updatedChapter;
-                    }
+            if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
+              for (let cIndex = 0; cIndex < updatedVolume.chapters.length; cIndex++) {
+                const updatedChapter = updatedVolume.chapters[cIndex];
+                const existingChapter = volumeChaptersMap.get(updatedChapter.id);
 
-                    // 优化：如果更新的章节已经有内容，直接返回，不需要保留操作
-                    if (
-                      updatedChapter.content !== undefined &&
-                      updatedChapter.content !== null &&
-                      Array.isArray(updatedChapter.content) &&
-                      updatedChapter.content.length > 0
-                    ) {
-                      return updatedChapter;
-                    }
+                // 如果是新章节，跳过（新章节不需要保留内容）
+                if (!existingChapter) {
+                  continue;
+                }
 
-                    // 如果更新的章节没有 content，尝试从多个来源获取：
-                    // 1. 现有章节的 content（如果已加载）
-                    // 2. 从 IndexedDB 加载
-                    let contentToPreserve: Paragraph[] | undefined = undefined;
+                // 如果更新的章节已经有内容，跳过
+                if (
+                  updatedChapter.content !== undefined &&
+                  updatedChapter.content !== null &&
+                  Array.isArray(updatedChapter.content) &&
+                  updatedChapter.content.length > 0
+                ) {
+                  continue;
+                }
 
-                    // 首先尝试从现有章节获取（如果已加载）
-                    if (existingChapter.content !== undefined) {
-                      contentToPreserve = existingChapter.content;
-                    } else {
-                      // 如果现有章节没有 content，从 IndexedDB 加载
-                      contentToPreserve = await ChapterContentService.loadChapterContent(
-                        updatedChapter.id,
-                      );
-                    }
-
-                    // 如果找到了内容，保留它
-                    if (contentToPreserve !== undefined) {
-                      return {
-                        ...updatedChapter,
-                        content: contentToPreserve,
-                      };
-                    }
-
-                    return updatedChapter;
-                  }),
-                );
+                // 如果现有章节也没有内容（未加载），需要从 IndexedDB 加载
+                if (existingChapter.content === undefined) {
+                  chaptersNeedingContent.push({
+                    volumeIndex: vIndex,
+                    chapterIndex: cIndex,
+                    chapterId: updatedChapter.id,
+                    existingChapter,
+                  });
+                }
               }
+            }
+          }
 
-              return updatedVolume;
-            }),
-          );
+          // 批量加载需要的内容（如果有）
+          const contentMap = new Map<string, Paragraph[] | undefined>();
+          if (chaptersNeedingContent.length > 0) {
+            const chapterIds = chaptersNeedingContent.map((c) => c.chapterId);
+            const loadedContents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+            for (const [chapterId, content] of loadedContents) {
+              contentMap.set(chapterId, content);
+            }
+          }
+
+          // 第二遍：应用保留的内容
+          updatedBook.volumes = updates.volumes.map((updatedVolume, vIndex) => {
+            const existingVolume = existingVolumesMap.get(updatedVolume.id);
+            const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
+
+            if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
+              return {
+                ...updatedVolume,
+                chapters: updatedVolume.chapters.map((updatedChapter, cIndex) => {
+                  const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+
+                  // 如果是新章节，直接返回
+                  if (!existingChapter) {
+                    return updatedChapter;
+                  }
+
+                  // 如果更新的章节已经有内容，直接返回
+                  if (
+                    updatedChapter.content !== undefined &&
+                    updatedChapter.content !== null &&
+                    Array.isArray(updatedChapter.content) &&
+                    updatedChapter.content.length > 0
+                  ) {
+                    return updatedChapter;
+                  }
+
+                  // 尝试获取要保留的内容
+                  let contentToPreserve: Paragraph[] | undefined = undefined;
+
+                  // 首先尝试从现有章节获取（如果已加载）
+                  if (existingChapter.content !== undefined) {
+                    contentToPreserve = existingChapter.content;
+                  } else {
+                    // 从批量加载的结果中获取
+                    contentToPreserve = contentMap.get(updatedChapter.id);
+                  }
+
+                  // 如果找到了内容，保留它
+                  if (contentToPreserve !== undefined) {
+                    return {
+                      ...updatedChapter,
+                      content: contentToPreserve,
+                    };
+                  }
+
+                  return updatedChapter;
+                }),
+              };
+            }
+
+            return updatedVolume;
+          });
         }
 
         this.books[index] = updatedBook;
