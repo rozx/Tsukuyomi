@@ -485,9 +485,12 @@ const deleteBook = (book: Novel) => {
   showDeleteConfirm.value = true;
 };
 
+// 删除加载状态
+const isDeletingBook = ref(false);
+
 // 确认删除书籍
 const confirmDeleteBook = async () => {
-  if (!bookToDelete.value) {
+  if (!bookToDelete.value || isDeletingBook.value) {
     return;
   }
 
@@ -505,23 +508,28 @@ const confirmDeleteBook = async () => {
     return;
   }
 
-  // 执行删除
-  // 深拷贝保存原始数据用于撤销
-  const bookToRestore = cloneDeep(bookToDelete.value);
-  await booksStore.deleteBook(bookToDelete.value.id);
+  isDeletingBook.value = true;
+  try {
+    // 执行删除
+    // 深拷贝保存原始数据用于撤销
+    const bookToRestore = cloneDeep(bookToDelete.value);
+    await booksStore.deleteBook(bookToDelete.value.id);
 
-  // 关闭对话框
-  showDeleteConfirm.value = false;
-  deleteConfirmInput.value = '';
-  bookToDelete.value = null;
+    // 关闭对话框
+    showDeleteConfirm.value = false;
+    deleteConfirmInput.value = '';
+    bookToDelete.value = null;
 
-  toast.add({
-    severity: 'success',
-    summary: '删除成功',
-    detail: `已成功删除书籍 "${bookTitle}"`,
-    life: 3000,
-    onRevert: () => booksStore.addBook(bookToRestore),
-  });
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已成功删除书籍 "${bookTitle}"`,
+      life: 3000,
+      onRevert: () => booksStore.addBook(bookToRestore),
+    });
+  } finally {
+    isDeletingBook.value = false;
+  }
 };
 
 // 取消删除
@@ -930,12 +938,13 @@ const handleSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" icon="pi pi-times" class="p-button-text" @click="cancelDeleteBook" />
+        <Button label="取消" icon="pi pi-times" class="p-button-text" :disabled="isDeletingBook" @click="cancelDeleteBook" />
         <Button
           label="删除"
           icon="pi pi-trash"
           class="p-button-danger"
-          :disabled="isDeleteDisabled"
+          :loading="isDeletingBook"
+          :disabled="isDeleteDisabled || isDeletingBook"
           @click="confirmDeleteBook"
         />
       </template>

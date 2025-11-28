@@ -18,6 +18,7 @@ import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
+import co from 'co';
 
 // 格式化文件大小
 const formatFileSize = (bytes: number): string => {
@@ -473,7 +474,7 @@ const revertToRevision = (version: string, event?: Event) => {
         return;
       }
 
-      void (async () => {
+      void co(function* () {
         revertingVersion.value = version;
         try {
           const baseConfig = settingsStore.gistSync;
@@ -488,20 +489,20 @@ const revertToRevision = (version: string, event?: Event) => {
             secret: gistToken.value,
           };
 
-          const result = await gistSyncService.downloadFromGistRevision(config, version);
+          const result = yield gistSyncService.downloadFromGistRevision(config, version);
 
           if (result.success && result.data) {
             // 恢复模式：先清空本地数据，确保完全覆盖（Restore behavior）
             // 这样 SyncDataService.applyDownloadedData 就会将远程数据视为"新数据"直接添加
             // 从而实现"完全覆盖本地数据"的效果
-            await booksStore.clearBooks();
+            yield booksStore.clearBooks();
             void aiModelsStore.clearModels();
             void coverHistoryStore.clearHistory();
 
             // 应用下载的数据
-            await SyncDataService.applyDownloadedData(result.data, []);
+            yield SyncDataService.applyDownloadedData(result.data, []);
 
-            void settingsStore.updateLastSyncTime();
+            yield settingsStore.updateLastSyncTime();
             gistLastSyncTime.value = Date.now();
             // 重置自动同步定时器
             setupAutoSync();
@@ -529,20 +530,26 @@ const revertToRevision = (version: string, event?: Event) => {
         } finally {
           revertingVersion.value = null;
         }
-      })();
+      });
     },
   });
 };
 
 // 保存 Gist 配置
 const saveGistConfig = (shouldRestartAutoSync = false) => {
-  void settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
-  if (gistId.value) {
-    void settingsStore.setGistId(gistId.value);
-  }
-  void settingsStore.setGistSyncEnabled(gistEnabled.value);
-  // 保存自动同步设置（注意：这不会覆盖已设置的 lastSyncTime）
-  void settingsStore.setSyncInterval(autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0);
+  void co(function* () {
+    try {
+      yield settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
+      if (gistId.value) {
+        yield settingsStore.setGistId(gistId.value);
+      }
+      yield settingsStore.setGistSyncEnabled(gistEnabled.value);
+      // 保存自动同步设置（注意：这不会覆盖已设置的 lastSyncTime）
+      yield settingsStore.setSyncInterval(autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0);
+    } catch (error) {
+      console.error('[SyncSettingsTab] 保存 Gist 配置失败:', error);
+    }
+  });
 
   // 如果需要重新启动自动同步，延迟执行以确保配置已保存
   if (shouldRestartAutoSync) {
@@ -559,9 +566,15 @@ const handleAutoSyncEnabledChange = (value: boolean) => {
   stopAutoSync(); // 立即停止自动同步
   if (value) {
     // 如果启用自动同步，先保存同步间隔
-    void settingsStore.setSyncInterval(syncIntervalMinutes.value * 60000);
-    // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
-    void settingsStore.updateLastSyncTime();
+    void co(function* () {
+      try {
+        yield settingsStore.setSyncInterval(syncIntervalMinutes.value * 60000);
+        // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
+        yield settingsStore.updateLastSyncTime();
+      } catch (error) {
+        console.error('[SyncSettingsTab] 更新自动同步设置失败:', error);
+      }
+    });
     // 重新启动自动同步
     window.setTimeout(() => {
       setupAutoSync();
@@ -580,9 +593,15 @@ const handleSyncIntervalChange = (value: number | null) => {
 
     if (autoSyncEnabled.value) {
       // 先保存同步间隔
-      void settingsStore.setSyncInterval(newValue * 60000);
-      // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
-      void settingsStore.updateLastSyncTime();
+      void co(function* () {
+        try {
+          yield settingsStore.setSyncInterval(newValue * 60000);
+          // 然后重置最后同步时间为当前时间，使计时器从当前时间重新开始
+          yield settingsStore.updateLastSyncTime();
+        } catch (error) {
+          console.error('[SyncSettingsTab] 更新同步间隔失败:', error);
+        }
+      });
       // 重新启动自动同步（使用新的间隔和新的开始时间）
       window.setTimeout(() => {
         setupAutoSync();
@@ -685,7 +704,14 @@ const uploadToGist = async () => {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
         gistId.value = result.gistId;
-        void settingsStore.setGistId(result.gistId);
+        const gistIdValue = result.gistId;
+        void co(function* () {
+          try {
+            yield settingsStore.setGistId(gistIdValue);
+          } catch (error) {
+            console.error('[SyncSettingsTab] 设置 Gist ID 失败:', error);
+          }
+        });
         // 如果重新创建了 Gist，显示提示信息
         if (result.isRecreated) {
           toast.add({
@@ -696,7 +722,13 @@ const uploadToGist = async () => {
           });
         }
       }
-      void settingsStore.updateLastSyncTime();
+      void co(function* () {
+        try {
+          yield settingsStore.updateLastSyncTime();
+        } catch (error) {
+          console.error('[SyncSettingsTab] 更新最后同步时间失败:', error);
+        }
+      });
       gistLastSyncTime.value = Date.now();
       saveGistConfig();
       // 重置自动同步定时器
@@ -769,7 +801,13 @@ const downloadFromGist = async () => {
       // 直接应用下载的数据（无冲突解决，因为这是手动下载，直接覆盖）
       await SyncDataService.applyDownloadedData(result.data, []);
 
-      void settingsStore.updateLastSyncTime();
+      void co(function* () {
+        try {
+          yield settingsStore.updateLastSyncTime();
+        } catch (error) {
+          console.error('[SyncSettingsTab] 更新最后同步时间失败:', error);
+        }
+      });
       gistLastSyncTime.value = Date.now();
       // 重置自动同步定时器
       setupAutoSync();
@@ -837,7 +875,7 @@ const deleteGist = () => {
       severity: 'danger',
     },
     accept: () => {
-      void (async () => {
+      void co(function* () {
         gistSyncing.value = true;
         try {
           const baseConfig = settingsStore.gistSync;
@@ -852,12 +890,18 @@ const deleteGist = () => {
             secret: gistToken.value,
           };
 
-          const result = await gistSyncService.deleteGist(config);
+          const result = yield gistSyncService.deleteGist(config);
 
           if (result.success) {
             // 清除本地 Gist ID
             gistId.value = '';
-            void settingsStore.setGistId('');
+            void co(function* () {
+              try {
+                yield settingsStore.setGistId('');
+              } catch (error) {
+                console.error('[SyncSettingsTab] 清除 Gist ID 失败:', error);
+              }
+            });
             saveGistConfig();
             toast.add({
               severity: 'success',
@@ -883,7 +927,7 @@ const deleteGist = () => {
         } finally {
           gistSyncing.value = false;
         }
-      })();
+      });
     },
   });
 };

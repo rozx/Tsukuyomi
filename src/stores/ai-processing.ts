@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { getDB } from 'src/utils/indexed-db';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import co from 'co';
 
 export interface AIProcessingTask {
   id: string;
@@ -111,24 +112,26 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
-     * 正在进行的任务列表
+     * 正在进行的任务列表（按开始时间倒序，最新的在最前面）
      */
     activeTasksList(state): AIProcessingTask[] {
-      return state.activeTasks.filter(
-        (task) => task.status === 'thinking' || task.status === 'processing',
-      );
+      return state.activeTasks
+        .filter((task) => task.status === 'thinking' || task.status === 'processing')
+        .sort((a, b) => b.startTime - a.startTime);
     },
 
     /**
-     * 已完成的任务列表（包括已完成、错误、已取消）
+     * 已完成的任务列表（包括已完成、错误、已取消，按开始时间倒序，最新的在最前面）
      */
     completedTasksList(state): AIProcessingTask[] {
-      return state.activeTasks.filter(
-        (task) =>
-          task.status === 'completed' ||
-          task.status === 'error' ||
-          task.status === 'cancelled',
-      );
+      return state.activeTasks
+        .filter(
+          (task) =>
+            task.status === 'completed' ||
+            task.status === 'error' ||
+            task.status === 'cancelled',
+        )
+        .sort((a, b) => b.startTime - a.startTime);
     },
 
     /**
@@ -191,8 +194,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
                 endTime: Date.now(),
               };
               // 异步更新 DB 中的状态，确保持久化
-              void saveThinkingProcessToDB(interruptedTask).catch((error) => {
-                console.error('Failed to update interrupted task in IndexedDB:', error);
+              void co(function* () {
+                try {
+                  yield saveThinkingProcessToDB(interruptedTask);
+                } catch (error) {
+                  console.error('Failed to update interrupted task in IndexedDB:', error);
+                }
               });
               return interruptedTask;
             }
@@ -236,8 +243,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       this.activeTasks.push(newTask);
       // 保存到 IndexedDB（异步，不阻塞任务创建）
       // 如果保存失败，任务仍然可以继续执行
-      void saveThinkingProcessToDB(newTask).catch((error) => {
-        console.error('Failed to save task to IndexedDB:', error);
+      void co(function* () {
+        try {
+          yield saveThinkingProcessToDB(newTask);
+        } catch (error) {
+          console.error('Failed to save task to IndexedDB:', error);
+        }
       });
       return id;
     },
@@ -261,8 +272,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         this.activeTasks = [...this.activeTasks];
         // 保存到 IndexedDB（异步，不阻塞任务更新）
         // 如果保存失败，任务仍然可以继续执行
-        void saveThinkingProcessToDB(task).catch((error) => {
-          console.error('Failed to update task in IndexedDB:', error);
+        void co(function* () {
+          try {
+            yield saveThinkingProcessToDB(task);
+          } catch (error) {
+            console.error('Failed to update task in IndexedDB:', error);
+          }
         });
       }
     },
@@ -289,8 +304,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         // 确保响应式更新
         this.activeTasks = [...this.activeTasks];
         // 保存到 IndexedDB（异步，不阻塞）
-        void saveThinkingProcessToDB(task).catch((error) => {
-          console.error('Failed to save cancelled task to IndexedDB:', error);
+        void co(function* () {
+          try {
+            yield saveThinkingProcessToDB(task);
+          } catch (error) {
+            console.error('Failed to save cancelled task to IndexedDB:', error);
+          }
         });
       }
     },
@@ -309,7 +328,13 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         // 确保响应式更新
         this.activeTasks = [...this.activeTasks];
         // 保存到 IndexedDB（异步，不阻塞 UI）
-        void saveThinkingProcessToDB(task);
+        void co(function* () {
+          try {
+            yield saveThinkingProcessToDB(task);
+          } catch (error) {
+            console.error('Failed to save thinking message to IndexedDB:', error);
+          }
+        });
       }
     },
 

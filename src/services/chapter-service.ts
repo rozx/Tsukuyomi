@@ -489,8 +489,16 @@ export class ChapterService {
     if (!volume) return existingVolumes;
 
     const existingChapters = volume.chapters || [];
-    const chapterIds = extractIds(existingChapters);
-    const idGenerator = new UniqueIdGenerator(chapterIds);
+    // 优化：直接使用 Set 来检查唯一性，避免创建完整的ID数组
+    // 只在必要时生成新ID（如果发生冲突，概率极低）
+    const existingIdsSet = new Set(existingChapters.map((ch) => ch.id));
+    let newChapterId = generateShortId();
+    // 如果发生冲突（概率极低），生成新ID
+    let attempts = 0;
+    while (existingIdsSet.has(newChapterId) && attempts < 10) {
+      newChapterId = generateShortId();
+      attempts++;
+    }
     const now = new Date();
 
     const trimmedTitle = title.trim();
@@ -501,7 +509,7 @@ export class ChapterService {
     };
 
     const newChapter: Chapter = {
-      id: idGenerator.generate(),
+      id: newChapterId,
       title: {
         original: trimmedTitle,
         translation,
@@ -626,15 +634,26 @@ export class ChapterService {
    */
   static deleteChapter(novel: Novel, chapterId: string): Volume[] {
     const existingVolumes = novel.volumes || [];
-    return existingVolumes.map((volume) => {
-      if (volume.chapters && volume.chapters.some((c) => c.id === chapterId)) {
-        return {
-          ...volume,
-          chapters: volume.chapters.filter((c) => c.id !== chapterId),
-        };
+    
+    // 优化：直接找到包含该章节的卷，避免遍历所有卷
+    for (let i = 0; i < existingVolumes.length; i++) {
+      const volume = existingVolumes[i];
+      if (volume?.chapters) {
+        const chapterIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (chapterIndex !== -1) {
+          // 找到包含该章节的卷，只修改这个卷
+          const updatedVolumes = [...existingVolumes];
+          updatedVolumes[i] = {
+            ...volume,
+            chapters: volume.chapters.filter((c) => c.id !== chapterId),
+          };
+          return updatedVolumes;
+        }
       }
-      return volume;
-    });
+    }
+    
+    // 如果没有找到章节，返回原始卷列表
+    return existingVolumes;
   }
 
   /**

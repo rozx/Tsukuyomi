@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useConfirm } from 'primevue/useconfirm';
 import InputGroup from 'primevue/inputgroup';
@@ -14,6 +15,7 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
+import co from 'co';
 
 const props = defineProps<{
   book: Novel | null;
@@ -21,6 +23,21 @@ const props = defineProps<{
 
 const toast = useToastWithHistory();
 const confirm = useConfirm();
+
+// 删除相关状态
+const isDeleting = ref(false);
+const showDeleteConfirm = ref(false);
+const deletingCharacter = ref<{
+  id: string;
+  name: string;
+  sex?: 'male' | 'female' | 'other' | undefined;
+  description?: string | undefined;
+  speakingStyle?: string | undefined;
+  translations: string;
+  aliases: string[];
+  occurrences: number;
+  _original: any;
+} | null>(null);
 
 // 搜索关键词
 const searchQuery = ref('');
@@ -174,62 +191,65 @@ const handleSave = async (data: {
   }
 };
 
-// 处理删除
+// 打开删除确认对话框
+const openDeleteConfirm = (character: (typeof characterSettings.value)[0]) => {
+  if (!props.book) return;
+  deletingCharacter.value = character;
+  showDeleteConfirm.value = true;
+};
+
+// 确认删除角色
+const confirmDeleteCharacter = async () => {
+  if (!props.book || !deletingCharacter.value || isDeleting.value) return;
+
+  const character = deletingCharacter.value;
+  isDeleting.value = true;
+
+  try {
+    // 保存要删除的角色数据用于撤销
+    const charToRestore = cloneDeep(character._original);
+
+    await CharacterSettingService.deleteCharacterSetting(props.book.id, character.id);
+
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已删除角色 "${character.name}"`,
+      life: 3000,
+      onRevert: async () => {
+        const booksStore = useBooksStore();
+        const book = booksStore.getBookById(props.book!.id);
+        if (book) {
+          const current = book.characterSettings || [];
+          // 检查是否存在（避免重复）
+          if (!current.some((c) => c.id === charToRestore.id)) {
+            await booksStore.updateBook(book.id, {
+              characterSettings: [...current, charToRestore],
+              lastEdited: new Date(),
+            });
+          }
+        }
+      },
+    });
+
+    showDeleteConfirm.value = false;
+    deletingCharacter.value = null;
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 5000,
+    });
+  } finally {
+    isDeleting.value = false;
+  }
+};
+
+// 处理删除（保留兼容性，调用新的删除确认函数）
 const handleDelete = (character: (typeof characterSettings.value)[0]) => {
   if (!props.book) return;
-
-  confirm.require({
-    group: 'character',
-    message: `确定要删除角色 "${character.name}" 吗？`,
-    header: '确认删除',
-    icon: 'pi pi-exclamation-triangle',
-    rejectProps: {
-      label: '取消',
-      severity: 'secondary',
-    },
-    acceptProps: {
-      label: '删除',
-      severity: 'danger',
-    },
-    accept: () => {
-      void (async () => {
-        try {
-          // 保存要删除的角色数据用于撤销
-          const charToRestore = cloneDeep(character._original);
-
-          await CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
-
-          toast.add({
-            severity: 'success',
-            summary: '删除成功',
-            detail: `已删除角色 "${character.name}"`,
-            life: 3000,
-            onRevert: async () => {
-              const booksStore = useBooksStore();
-              const book = booksStore.getBookById(props.book!.id);
-              if (book) {
-                const current = book.characterSettings || [];
-                // 检查是否存在（避免重复）
-                if (!current.some((c) => c.id === charToRestore.id)) {
-                  await booksStore.updateBook(book.id, {
-                    characterSettings: [...current, charToRestore],
-                    lastEdited: new Date(),
-                  });
-                }
-              }
-            },
-          });
-        } catch (error) {
-          toast.add({
-            severity: 'error',
-            summary: '删除失败',
-            detail: error instanceof Error ? error.message : '未知错误',
-            life: 5000,
-          });
-        }
-      })();
-    },
-  });
+  openDeleteConfirm(character);
 };
 
 // 导出角色设定为 JSON
@@ -531,6 +551,26 @@ const handleFileSelect = async (event: Event) => {
     />
 
     <!-- 确认删除对话框 -->
+    <Dialog
+      v-model:visible="showDeleteConfirm"
+      modal
+      header="确认删除角色"
+      :style="{ width: '25rem' }"
+      :draggable="false"
+    >
+      <div class="space-y-4">
+        <p class="text-moon/90">
+          确定要删除角色 <strong>"{{ deletingCharacter?.name }}"</strong> 吗？
+        </p>
+        <p class="text-sm text-moon/70">此操作无法撤销。</p>
+      </div>
+      <template #footer>
+        <Button label="取消" class="p-button-text" :disabled="isDeleting" @click="showDeleteConfirm = false" />
+        <Button label="删除" class="p-button-danger" :loading="isDeleting" :disabled="isDeleting" @click="confirmDeleteCharacter" />
+      </template>
+    </Dialog>
+
+    <!-- 保留 ConfirmDialog 用于其他可能的确认操作 -->
     <ConfirmDialog group="character" />
 
     <!-- 隐藏的文件输入 -->

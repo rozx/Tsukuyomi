@@ -34,9 +34,11 @@ const props = withDefaults(
     visible: boolean;
     mode: 'add' | 'edit';
     book?: Novel | null;
+    loading?: boolean;
   }>(),
   {
     book: null,
+    loading: false,
   },
 );
 
@@ -770,12 +772,15 @@ watch(
             label="取消"
             icon="pi pi-times"
             class="p-button-text icon-button-hover"
+            :disabled="loading"
             @click="handleCancel"
           />
           <Button
             label="保存"
             icon="pi pi-check"
             class="p-button-primary icon-button-hover"
+            :loading="loading"
+            :disabled="loading"
             @click="handleSave"
           />
         </div>

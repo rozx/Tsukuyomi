@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { AppSettings } from 'src/models/settings';
+import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
@@ -40,6 +40,35 @@ function createDefaultGistSyncConfig(): SyncConfig {
 }
 
 /**
+ * 迁移旧的 proxySiteMapping 格式（string[]）到新格式（ProxySiteMappingEntry）
+ */
+function migrateProxySiteMapping(
+  mapping: Record<string, string[] | ProxySiteMappingEntry> | undefined,
+): Record<string, ProxySiteMappingEntry> | undefined {
+  if (!mapping) {
+    return undefined;
+  }
+
+  const migrated: Record<string, ProxySiteMappingEntry> = {};
+  for (const [site, value] of Object.entries(mapping)) {
+    // 检查是否是旧格式（string[]）
+    if (Array.isArray(value)) {
+      migrated[site] = {
+        enabled: true,
+        proxies: value,
+      };
+    } else {
+      // 已经是新格式
+      migrated[site] = {
+        enabled: value.enabled ?? true,
+        proxies: value.proxies ?? [],
+      };
+    }
+  }
+  return migrated;
+}
+
+/**
  * 从 LocalStorage 加载设置
  */
 function loadSettingsFromLocalStorage(): AppSettings {
@@ -47,6 +76,9 @@ function loadSettingsFromLocalStorage(): AppSettings {
     const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (stored) {
       const settings = JSON.parse(stored);
+      // 迁移 proxySiteMapping
+      const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping);
+      
       // 合并默认设置，确保所有字段都存在
       const loadedSettings: AppSettings = {
         ...DEFAULT_SETTINGS,
@@ -57,7 +89,15 @@ function loadSettingsFromLocalStorage(): AppSettings {
         },
         // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
         lastEdited: settings.lastEdited ? new Date(settings.lastEdited) : new Date(),
+        // 使用迁移后的映射
+        proxySiteMapping: migratedMapping,
       };
+      
+      // 如果进行了迁移，保存回 LocalStorage
+      if (migratedMapping && migratedMapping !== settings.proxySiteMapping) {
+        saveSettingsToLocalStorage(loadedSettings);
+      }
+      
       return loadedSettings;
     }
   } catch (error) {
@@ -176,9 +216,9 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 获取网站-代理映射关系
+     * 获取网站-代理映射关系（新格式）
      */
-    proxySiteMapping: (state): Record<string, string[]> => {
+    proxySiteMapping: (state): Record<string, ProxySiteMappingEntry> => {
       return state.settings.proxySiteMapping ?? {};
     },
 
@@ -296,11 +336,17 @@ export const useSettingsStore = defineStore('settings', {
             : settings.lastEdited;
       }
 
+      // 迁移 proxySiteMapping（如果存在）
+      let migratedProxySiteMapping: Record<string, ProxySiteMappingEntry> | undefined;
+      if (settings.proxySiteMapping !== undefined) {
+        migratedProxySiteMapping = migrateProxySiteMapping(settings.proxySiteMapping);
+      }
+
       // 深度合并 taskDefaultModels，确保不会丢失本地配置
-      // 先移除 lastEdited，稍后单独处理
-      const { lastEdited: _removed, ...settingsWithoutLastEdited } = settings;
+      // 先移除 lastEdited 和 proxySiteMapping，稍后单独处理
+      const { lastEdited: _removed, proxySiteMapping: _proxyMapping, ...settingsWithoutSpecial } = settings;
       const mergedSettings: Partial<AppSettings> = {
-        ...settingsWithoutLastEdited,
+        ...settingsWithoutSpecial,
       };
 
       if (settings.taskDefaultModels !== undefined) {
@@ -317,6 +363,8 @@ export const useSettingsStore = defineStore('settings', {
         ...mergedSettings,
         // 如果有保留的 lastEdited，使用它；否则使用当前时间
         lastEdited: preservedLastEdited || new Date(),
+        // 使用迁移后的 proxySiteMapping
+        ...(migratedProxySiteMapping !== undefined ? { proxySiteMapping: migratedProxySiteMapping } : {}),
       };
 
       this.settings = finalSettings;
@@ -366,18 +414,16 @@ export const useSettingsStore = defineStore('settings', {
     async addProxyForSite(site: string, proxyUrl: string): Promise<boolean> {
       const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
       if (!mapping[site]) {
-        mapping[site] = [];
+        mapping[site] = { enabled: true, proxies: [] };
       }
-      const siteProxies = mapping[site];
+      const siteEntry = mapping[site];
       // 检查是否已存在相同的代理 URL
-      if (siteProxies && siteProxies.includes(proxyUrl)) {
+      if (siteEntry.proxies.includes(proxyUrl)) {
         // 已存在，不添加
         return false;
       }
       // 添加新的代理 URL
-      if (siteProxies) {
-        siteProxies.push(proxyUrl);
-      }
+      siteEntry.proxies.push(proxyUrl);
       await this.updateSettings({ proxySiteMapping: mapping });
       return true;
     },
@@ -387,13 +433,13 @@ export const useSettingsStore = defineStore('settings', {
      */
     async removeProxyForSite(site: string, proxyUrl: string): Promise<void> {
       const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
-      const siteProxies = mapping[site];
-      if (siteProxies) {
-        const filtered = siteProxies.filter((url) => url !== proxyUrl);
+      const siteEntry = mapping[site];
+      if (siteEntry) {
+        const filtered = siteEntry.proxies.filter((url) => url !== proxyUrl);
         if (filtered.length === 0) {
           delete mapping[site];
         } else {
-          mapping[site] = filtered;
+          siteEntry.proxies = filtered;
         }
       }
       await this.updateSettings({ proxySiteMapping: mapping });
@@ -412,7 +458,43 @@ export const useSettingsStore = defineStore('settings', {
      * 获取网站可用的代理服务列表
      */
     getProxiesForSite(site: string): string[] {
-      return this.settings.proxySiteMapping?.[site] ?? [];
+      const entry = this.settings.proxySiteMapping?.[site];
+      if (!entry || !entry.enabled) {
+        return [];
+      }
+      return entry.proxies ?? [];
+    },
+
+    /**
+     * 设置网站映射规则的启用/禁用状态
+     */
+    async setProxySiteMappingEnabled(site: string, enabled: boolean): Promise<void> {
+      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
+      if (!mapping[site]) {
+        mapping[site] = { enabled, proxies: [] };
+      } else {
+        mapping[site] = { ...mapping[site], enabled };
+      }
+      await this.updateSettings({ proxySiteMapping: mapping });
+    },
+
+    /**
+     * 更换网站映射中的代理 URL
+     * @param site 网站域名
+     * @param oldProxyUrl 旧的代理 URL
+     * @param newProxyUrl 新的代理 URL
+     */
+    async changeProxyForSite(site: string, oldProxyUrl: string, newProxyUrl: string): Promise<void> {
+      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
+      if (!mapping[site]) {
+        mapping[site] = { enabled: true, proxies: [] };
+      }
+      const siteEntry = mapping[site];
+      const index = siteEntry.proxies.indexOf(oldProxyUrl);
+      if (index >= 0) {
+        siteEntry.proxies[index] = newProxyUrl;
+        await this.updateSettings({ proxySiteMapping: mapping });
+      }
     },
 
     /**

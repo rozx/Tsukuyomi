@@ -2,6 +2,7 @@ import { computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import type { ToastMessageOptions } from 'primevue/toast';
 import { useToastHistoryStore } from 'src/stores/toast-history';
+import co from 'co';
 
 // 重新导出类型供外部使用
 export type { ToastHistoryItem } from 'src/stores/toast-history';
@@ -96,16 +97,22 @@ export function useToastWithHistory() {
 
     // 添加到历史记录（store 会自动保存到 IndexedDB）
     // 传递时间戳以确保一致性
-    void store.addToHistory(
-      {
-        severity,
-        summary,
-        detail,
-        ...(message.life !== undefined ? { life: message.life } : {}),
-      },
-      message.onRevert,
-      timestamp,
-    );
+    void co(function* () {
+      try {
+        yield store.addToHistory(
+          {
+            severity,
+            summary,
+            detail,
+            ...(message.life !== undefined ? { life: message.life } : {}),
+          },
+          message.onRevert,
+          timestamp,
+        );
+      } catch (error) {
+        console.error('[useToastHistory] 保存 toast 历史记录失败:', error);
+      }
+    });
 
     // 将消息映射到时间戳（用于关闭时标记为已读）
     store.setMessageTimestamp({ summary, detail }, timestamp);

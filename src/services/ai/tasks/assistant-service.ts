@@ -220,11 +220,25 @@ export class AssistantService {
       prompt += `\n询问上下文相关问题时，先使用工具获取信息再回答。\n\n`;
     }
 
+    // 获取当前时间
+    const now = new Date();
+    const currentTime = now.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
     prompt += `## 使用指南
 - 回答用户关于书籍、章节、段落、术语、角色的任何问题
 - 提供翻译建议、术语建议、角色名称建议
 - 使用简体中文，友好专业地交流
 - 目标是帮助用户更高效、准确地完成翻译工作
+
+**当前时间**：${currentTime}
 
 ## 记忆工具使用示例
 

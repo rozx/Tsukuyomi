@@ -8,6 +8,7 @@ import { ConflictDetectionService } from 'src/services/conflict-detection-servic
 import { SyncDataService } from 'src/services/sync-data-service';
 import type { ConflictResolution, ConflictItem } from 'src/services/conflict-detection-service';
 import type { Novel } from 'src/models/novel';
+import co from 'co';
 
 // 单例状态（在模块级别共享）
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -276,9 +277,15 @@ export function useAutoSync() {
 
         // 无冲突，直接应用
         await applyDownloadedData(result.data, []);
-        void settingsStore.updateLastSyncTime();
-        // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
-        void settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+        void co(function* () {
+          try {
+            yield settingsStore.updateLastSyncTime();
+            // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
+            yield settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+          } catch (error) {
+            console.error('[useAutoSync] 更新同步状态失败:', error);
+          }
+        });
 
         // 检查是否需要上传（如果有本地更改）
         const shouldUpload = SyncDataService.hasChangesToUpload(
@@ -336,9 +343,15 @@ export function useAutoSync() {
     const safeRemoteData = SyncDataService.createSafeRemoteData(remoteData);
 
     await applyDownloadedData(safeRemoteData, resolutions);
-    void settingsStore.updateLastSyncTime();
-    // 更新上次同步时的模型 ID 列表
-    void settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+    void co(function* () {
+      try {
+        yield settingsStore.updateLastSyncTime();
+        // 更新上次同步时的模型 ID 列表
+        yield settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+      } catch (error) {
+        console.error('[useAutoSync] 更新同步状态失败:', error);
+      }
+    });
 
     showConflictDialog.value = false;
     pendingRemoteData.value = null;

@@ -255,9 +255,43 @@ jobs:
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git push origin ${{ steps.get_version.outputs.version }}
 
-      - name: Create Release
-        id: create_release
+      - name: Check and prepare release notes
+        id: prepare_release_notes
         if: steps.check_label.outputs.has_release_label == 'true'
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          RELEASE_NOTES_FILE="docs/ReleaseNotes/RELEASE_NOTES_${VERSION}.md"
+          
+          echo "Checking for release notes file: $RELEASE_NOTES_FILE"
+          
+          if [ -f "$RELEASE_NOTES_FILE" ]; then
+            echo "✅ Release notes file found: $RELEASE_NOTES_FILE"
+            echo "has_release_notes=true" >> $GITHUB_OUTPUT
+            echo "release_notes_path=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT
+          else
+            echo "ℹ️ No release notes file found at $RELEASE_NOTES_FILE, will use auto-generated notes"
+            echo "has_release_notes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release (with release notes file)
+        id: create_release
+        if: steps.check_label.outputs.has_release_label == 'true' && steps.prepare_release_notes.outputs.has_release_notes == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body_path: ${{ steps.prepare_release_notes.outputs.release_notes_path }}
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          # 优先使用 PAT（如果存在），否则使用默认的 GITHUB_TOKEN
+          # 对于私有仓库，PAT 通常更可靠
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Create Release (with auto-generated notes)
+        id: create_release_auto
+        if: steps.check_label.outputs.has_release_label == 'true' && steps.prepare_release_notes.outputs.has_release_notes != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
@@ -275,7 +309,8 @@ jobs:
         id: set_final_outputs
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
-          if [ "${{ steps.create_release.outcome }}" == "success" ]; then
+          # Check if either release creation step succeeded
+          if [ "${{ steps.create_release.outcome }}" == "success" ] || [ "${{ steps.create_release_auto.outcome }}" == "success" ]; then
             echo "release_created=true" >> $GITHUB_OUTPUT
           else
             echo "release_created=false" >> $GITHUB_OUTPUT
