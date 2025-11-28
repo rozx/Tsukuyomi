@@ -18,11 +18,8 @@ interface TranslationStatus {
   hasAll: boolean;
 }
 
-interface MenuItem {
-  label: string;
-  icon?: string;
-  command?: () => void;
-}
+// Use PrimeVue's MenuItem type
+import type { MenuItem } from 'primevue/menuitem';
 
 const props = defineProps<{
   selectedChapter: Chapter | null;
@@ -48,7 +45,7 @@ const emit = defineEmits<{
   (e: 'redo'): void;
   (e: 'update:editMode', value: EditMode): void;
   (e: 'normalize'): void;
-  (e: 'toggleExport'): void;
+  (e: 'toggleExport', event: Event): void;
   (e: 'toggleTermPopover', event: Event): void;
   (e: 'toggleCharacterPopover', event: Event): void;
   (e: 'translationButtonClick'): void;
@@ -162,7 +159,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           size="small"
           class="!w-8 !h-8 text-moon/70 hover:text-moon"
           title="导出章节内容"
-          @click="emit('toggleExport')"
+          @click="(event: Event) => emit('toggleExport', event)"
         />
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
