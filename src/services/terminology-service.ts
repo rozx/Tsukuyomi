@@ -510,11 +510,10 @@ export class TerminologyService {
     termName: string,
     book: Novel,
   ): void {
-    const self = this;
     void co(function* () {
       try {
         // 统计术语出现次数
-        const countedOccurrences: Occurrence[] = yield self.countTermOccurrences(book, termName);
+        const countedOccurrences: Occurrence[] = yield TerminologyService.countTermOccurrences(book, termName);
 
         const booksStore = useBooksStore();
         // 获取最新的书籍状态
