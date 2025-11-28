@@ -441,7 +441,8 @@ defineExpose({
   startEditing: () => {
     if (translationInplaceRef.value && hasTranslation.value) {
       // 通过点击 display 区域来触发编辑
-      const inplaceElement = translationInplaceRef.value.$el as HTMLElement;
+      const componentInstance = translationInplaceRef.value as unknown as { $el?: HTMLElement };
+      const inplaceElement = componentInstance.$el;
       if (inplaceElement) {
         const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
         if (displayElement) {
