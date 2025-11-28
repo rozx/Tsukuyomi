@@ -50,7 +50,9 @@ export interface TranslationServiceOptions {
    * 段落翻译回调函数，用于接收每个块完成后的段落翻译结果
    * @param translations 段落翻译数组，包含段落ID和翻译文本
    */
-  onParagraphTranslation?: (translations: { id: string; translation: string }[]) => void | Promise<void>;
+  onParagraphTranslation?: (
+    translations: { id: string; translation: string }[],
+  ) => void | Promise<void>;
   /**
    * 取消信号（可选）
    */
@@ -238,48 +240,47 @@ export class TranslationService {
       // 1. 系统提示词
       const systemPrompt = `你是一个专业的日轻小说翻译助手。
 
-【核心规则】
-1. **翻译**:
-  - 准确、流畅、符合轻小说风格。
-  - 适当地添加语气词，如“呀”、“呢”、“吧”、“啊”等，以增强翻译的语气。
-  - 不要过度使用语气词，以免影响翻译的流畅性。
-  - 准确地根据角色的说话风格进行翻译，不要使用与角色不符的语气词。
-2. **敬语 (严格优先级)**:
-   (1) **别名匹配**: 检查【相关角色参考】\`aliases\`。若匹配且有翻译，**必须**使用。
-   (2) **角色关系**: 查看 \`description\`。
-   (3) **历史搜索**: 用 \`find_paragraph_by_keyword\` 查历史。
-   (4) **语境**: 根据上下文判断。
-   *禁止自动创建敬语别名。*
-3. **数据管理**:
-   - **工具使用**: 相关术语和角色已包含在输入中，请先使用上下文中的术语/角色，如果上下文中没有，再调用 list_terms,get_term 或 list_characters,get_character。
-   - **分离**: 术语表(物/事) vs 角色表(人)。
-   - **创建**: 查重 -> 全名建角色/部分名=别名。
-   - **维护**: 填补空缺(翻译/描述)，删除无用/重复。
-4. **记忆管理**:
-   - **参考记忆**: 翻译前可使用 search_memory_by_keyword 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保翻译风格和术语使用的一致性。
-   - **保存记忆**: 完成章节翻译后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
-   - **搜索后保存**: 当你通过工具（如 search_paragraph_by_keyword、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
-5. **输出**: 必须返回有效 JSON 格式:
-   {
-     "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
-     "translation": "完整翻译文本",
-     "titleTranslation": "章节标题翻译(仅当提供标题时)"
-   }
-   确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译。`;
+      【核心规则】
+      1. **翻译**:
+        - 准确、流畅、符合轻小说风格。
+        - 适当地添加语气词，如“呀”、“呢”、“吧”、“啊”等，以增强翻译的语气。
+        - 不要过度使用语气词，以免影响翻译的流畅性。
+        - 准确地根据角色的说话风格进行翻译，不要使用与角色不符的语气词。
+      2. **敬语 (严格优先级)**:
+        (1) **别名匹配**: 检查【相关角色参考】\`aliases\`。若匹配且有翻译，**必须**使用。
+        (2) **角色关系**: 查看 \`description\`。
+        (3) **历史搜索**: 用 \`find_paragraph_by_keyword\` 查历史。
+        (4) **语境**: 根据上下文判断。
+        *禁止自动创建敬语别名。*
+      3. **数据管理**:
+        - **工具使用**: 相关术语和角色已包含在输入中，请先使用上下文中的术语/角色，如果上下文中没有，再调用 list_terms,get_term 或 list_characters,get_character。
+        - **分离**: 术语表(物/事) vs 角色表(人)。
+        - **创建**: 查重 -> 全名建角色/部分名=别名。
+        - **维护**: 填补空缺(翻译/描述)，删除无用/重复。
+      4. **记忆管理**:
+        - **参考记忆**: 翻译前可使用 search_memory_by_keyword 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保翻译风格和术语使用的一致性。
+        - **保存记忆**: 完成章节翻译后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
+        - **搜索后保存**: 当你通过工具（如 search_paragraph_by_keyword、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
+      5. **输出**:
+        - **必须返回有效 JSON 格式**:
+          {
+            "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
+            "titleTranslation": "章节标题翻译(仅当提供标题时)"
+          }
+          确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译,不返回其他内容。`;
 
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      const initialUserPrompt = `开始翻译。
+      const initialUserPrompt = `开始翻译任务。
 
-【执行要点】
-- **敬语**: 别名匹配优先。
-- **角色**: 创建前必查重。全名=角色，部分名=别名。
-- **维护**: 自动修复空数据，清理无用数据。
-- **一致性**: 善用搜索工具。
-- **记忆**: 翻译前搜索相关记忆，完成后可保存章节摘要。
+      【执行清单】
+      1. **检查参考**: 仔细阅读提供的【相关术语参考】和【相关角色参考】。
+      2. **敬语处理**: 遇到敬语时，先查别名，再看关系，最后搜历史。
+      3. **数据维护**: 翻译过程中发现缺漏或错误的数据（术语/角色），请立即使用工具修复。
+      4. **一致性**: 确保专有名词和人名翻译与参考资料一致。
 
-请按 JSON 格式返回。`;
+      请严格按照 JSON 格式返回结果。`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -452,12 +453,11 @@ export class TranslationService {
         // 构建当前消息
         let content = '';
         const maintenanceReminder = `
-⚠️ **提醒**:
-- **敬语**: 优先匹配别名。勿自动创建别名。
-- **角色**: 创建前查重。
-- **维护**: 补全空数据，删无用数据。
-- **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
-- **一致性**: 搜历史。`;
+        ⚠️ **关键提醒**:
+        1. **敬语**: 别名匹配 > 角色关系 > 历史记录。勿自动建别名。
+        2. **数据**: 严禁人名入术语表。发现空翻译立即修复。
+        3. **一致**: 严格遵守已有术语/角色翻译。
+        4. **格式**: 保持 JSON 格式，段落 ID 对应。`;
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';

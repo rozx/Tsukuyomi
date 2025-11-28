@@ -143,6 +143,46 @@ watch(
   { deep: true, flush: 'post' },
 );
 
+// Auto-fold inactive tasks when a new task starts
+watch(
+  () =>
+    recentAITasks.value.map((task) => ({
+      id: task.id,
+      status: task.status,
+      startTime: task.startTime,
+    })),
+  (newTasks, oldTasks) => {
+    // Find newly started active tasks (status is 'thinking' or 'processing')
+    const newActiveTasks = newTasks.filter(
+      (task) => task.status === 'thinking' || task.status === 'processing',
+    );
+    const oldActiveTaskIds = new Set(
+      (oldTasks || []).filter(
+        (task) => task.status === 'thinking' || task.status === 'processing',
+      ).map((task) => task.id),
+    );
+
+    // Check if there's a newly started task
+    const hasNewActiveTask = newActiveTasks.some(
+      (task) => !oldActiveTaskIds.has(task.id),
+    );
+
+    if (hasNewActiveTask) {
+      // Fold all inactive tasks (not 'thinking' or 'processing')
+      for (const task of recentAITasks.value) {
+        const isActive = task.status === 'thinking' || task.status === 'processing';
+        if (!isActive) {
+          taskFolded.value[task.id] = true;
+        } else {
+          // Ensure active tasks are unfolded
+          taskFolded.value[task.id] = false;
+        }
+      }
+    }
+  },
+  { deep: true, flush: 'post' },
+);
+
 </script>
 
 <template>
