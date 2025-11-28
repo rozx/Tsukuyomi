@@ -4,7 +4,7 @@ import type { MenuItem } from 'primevue/menuitem';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Chapter } from 'src/models/novel';
 import { ChapterService } from 'src/services/chapter-service';
-import TieredMenu from 'primevue/tieredmenu';
+import type TieredMenu from 'primevue/tieredmenu';
 
 export function useChapterExport(
   selectedChapter: Ref<Chapter | null>,

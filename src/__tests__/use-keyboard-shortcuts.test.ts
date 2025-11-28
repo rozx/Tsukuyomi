@@ -188,7 +188,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('f', { ctrlKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(toggleSearch).toHaveBeenCalledTimes(1);
   });
 
@@ -267,7 +269,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('h', { ctrlKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(showReplace.value).toBe(true);
   });
 
@@ -305,7 +309,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('F3');
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(nextMatch).toHaveBeenCalledTimes(1);
   });
 
@@ -343,7 +349,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('F3', { shiftKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(prevMatch).toHaveBeenCalledTimes(1);
   });
 
@@ -381,7 +389,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('Escape');
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(toggleSearch).toHaveBeenCalledTimes(1);
   });
 
@@ -425,7 +435,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('c', { ctrlKey: true, shiftKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(copyAllTranslatedText).toHaveBeenCalledTimes(1);
   });
 
@@ -464,7 +476,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('z', { ctrlKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(undo).toHaveBeenCalledTimes(1);
   });
 
@@ -503,7 +517,9 @@ describe('useKeyboardShortcuts', () => {
     const event = createMockKeyboardEvent('y', { ctrlKey: true });
     handleKeydown(event);
 
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(redo).toHaveBeenCalledTimes(1);
   });
 

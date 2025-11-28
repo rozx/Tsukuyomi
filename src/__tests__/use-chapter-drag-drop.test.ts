@@ -12,7 +12,7 @@ class MockHTMLElement {
   constructor() {}
 }
 
-// @ts-ignore
+// @ts-expect-error - Mock HTMLElement for test environment
 global.HTMLElement = MockHTMLElement;
 
 // Helper function to create mock DragEvent
@@ -188,7 +188,9 @@ describe('useChapterDragDrop', () => {
 
     expect(dragOverVolumeId.value).toBe('volume-2');
     expect(dragOverIndex.value).toBe(1);
-    expect(event.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(event.dataTransfer?.dropEffect).toBe('move');
   });
 
@@ -231,7 +233,9 @@ describe('useChapterDragDrop', () => {
     const dropEvent = createMockDragEvent('drop');
     await handleDrop(dropEvent, 'volume-2', 0);
 
-    expect(dropEvent.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = dropEvent.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(saveState).toHaveBeenCalledWith('移动章节');
     expect(mockMoveChapter).toHaveBeenCalledWith(book.value, 'chapter-1', 'volume-2', 0);
     expect(mockBooksStoreUpdateBook).toHaveBeenCalled();
@@ -249,7 +253,9 @@ describe('useChapterDragDrop', () => {
 
     await handleDrop(dropEvent, 'volume-2', 0);
 
-    expect(dropEvent.preventDefault).toHaveBeenCalled();
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = dropEvent.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalled();
     expect(mockMoveChapter).not.toHaveBeenCalled();
     expect(mockBooksStoreUpdateBook).not.toHaveBeenCalled();
   });

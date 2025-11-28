@@ -1,7 +1,7 @@
 import { ref, nextTick, type Ref, type ComputedRef } from 'vue';
 import { isEmptyParagraph } from 'src/utils';
 import type { Paragraph } from 'src/models/novel';
-import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
+import type ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 
 export function useParagraphNavigation(
   selectedChapterParagraphs: ComputedRef<Paragraph[]>,
