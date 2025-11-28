@@ -241,12 +241,13 @@ export class PolishService {
    - **保存记忆**: 完成章节润色后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
    - **搜索后保存**: 当你通过工具（如 search_paragraph_by_keyword、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
 
-11. **输出格式**: 必须返回有效 JSON 格式:
-   {
-     "paragraphs": [{ "id": "段落ID", "translation": "润色后的内容" }],
-     "translation": "完整润色文本"
-   }
-   确保 paragraphs 数组包含所有输入段落的 ID 和对应润色结果。`;
+11. **输出润色**:
+   - **必须使用工具**: 完成每个段落的润色后，必须使用 \`add_paragraph_translation\` 工具为每个段落添加润色结果。
+   - **调用工具**: 直接调用工具返回润色结果。
+   - **工具参数**:
+     - \`paragraph_id\`: 段落的ID（从输入中的 [ID: xxx] 格式获取）
+     - \`translation\`: 润色后的内容
+     - \`ai_model_id\`: 当前使用的AI模型ID（已提供在上下文中）`;
 
       history.push({ role: 'system', content: systemPrompt });
 
@@ -265,8 +266,7 @@ export class PolishService {
 - **工具使用**: 优先使用上下文，必要时调用工具。
 - **记忆**: 润色前搜索相关记忆，完成后可保存章节摘要。
 - **保留原文格式**: 保留原文的格式，如标点符号、换行符等。
-
-请按 JSON 格式返回。`;
+- **输出方式**: 完成每个段落的润色后，使用 \`add_paragraph_translation\` 工具添加润色结果。当前AI模型ID: ${model.id}`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -469,8 +469,8 @@ export class PolishService {
         history.push({ role: 'user', content });
 
         let currentTurnCount = 0;
-        const MAX_TURNS = 5; // 防止工具调用死循环
-        let finalResponseText = '';
+        const MAX_TURNS = 10; // 增加最大回合数，因为需要为每个段落调用工具
+        const chunkPolishes = new Map<string, string>(); // 收集当前块的润色结果
 
         // 工具调用循环
         while (currentTurnCount < MAX_TURNS) {
@@ -540,6 +540,30 @@ export class PolishService {
                 onToast,
               );
 
+              // 如果是添加翻译的工具，收集润色结果
+              if (toolCall.function.name === 'add_paragraph_translation') {
+                try {
+                  const toolResultData = JSON.parse(toolResult.content);
+                  if (
+                    toolResultData.success &&
+                    toolResultData.paragraph_id &&
+                    toolResultData.translation
+                  ) {
+                    chunkPolishes.set(toolResultData.paragraph_id, toolResultData.translation);
+                    // 同时添加到全局润色列表
+                    paragraphPolishes.push({
+                      id: toolResultData.paragraph_id,
+                      translation: toolResultData.translation,
+                    });
+                  }
+                } catch (e) {
+                  console.warn(
+                    `[PolishService] ⚠️ 解析工具结果失败: ${toolCall.function.name}`,
+                    e instanceof Error ? e.message : String(e),
+                  );
+                }
+              }
+
               // 添加工具结果到历史
               history.push({
                 role: 'tool',
@@ -555,200 +579,86 @@ export class PolishService {
                 );
               }
             }
-            // 工具调用完成后，添加提示要求AI继续完成润色
-            history.push({
-              role: 'user',
-              content:
-                '工具调用已完成。请继续完成当前文本块的润色任务，返回包含润色结果的JSON格式响应。不要跳过润色，必须提供完整的润色结果。',
-            });
-            // 继续循环，将工具结果和提示发送给 AI
-          } else {
-            // 没有工具调用，这是最终回复
-            finalResponseText = result.text;
 
-            // 再次检测最终响应中的重复字符，传入原文进行比较
-            if (
-              detectRepeatingCharacters(finalResponseText, chunkText, { logLabel: 'PolishService' })
-            ) {
-              throw new Error('AI降级检测：最终响应中检测到重复字符');
+            // 检查是否所有段落都已润色
+            const allParagraphsPolished =
+              chunk.paragraphIds?.every((id) => chunkPolishes.has(id)) ?? false;
+
+            if (allParagraphsPolished) {
+              // 所有段落都已润色，可以结束
+              break;
+            } else {
+              // 还有段落未润色，继续
+              const missingCount = (chunk.paragraphIds?.length || 0) - chunkPolishes.size;
+              history.push({
+                role: 'user',
+                content: `工具调用已完成。还有 ${missingCount} 个段落需要润色，请继续使用 add_paragraph_translation 工具为剩余的段落添加润色结果。`,
+              });
+              // 继续循环
             }
+          } else {
+            // 没有工具调用，检查是否所有段落都已润色
+            const allParagraphsPolished =
+              chunk.paragraphIds?.every((id) => chunkPolishes.has(id)) ?? false;
 
-            history.push({ role: 'assistant', content: finalResponseText });
-            break;
+            if (allParagraphsPolished) {
+              // 所有段落都已润色，可以结束
+              break;
+            } else {
+              // 还有段落未润色，提醒AI使用工具
+              const missingCount = (chunk.paragraphIds?.length || 0) - chunkPolishes.size;
+              history.push({
+                role: 'user',
+                content: `还有 ${missingCount} 个段落需要润色。请使用 add_paragraph_translation 工具为每个段落添加润色结果，不要返回JSON格式。`,
+              });
+              // 继续循环
+            }
           }
         }
 
-        // 检查是否在达到最大回合数后仍未获得润色结果
-        if (!finalResponseText || finalResponseText.trim().length === 0) {
-          throw new Error(
-            `AI在工具调用后未返回润色结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
-          );
-        }
+        // 检查是否所有段落都已润色
+        const allParagraphsPolished =
+          chunk.paragraphIds?.every((id) => chunkPolishes.has(id)) ?? false;
 
-        // 解析 JSON 响应
-        try {
-          // 尝试提取 JSON
-          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-          let chunkPolish = '';
-          const extractedPolishes: Map<string, string> = new Map();
-
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            try {
-              const data = JSON.parse(jsonStr);
-
-              // 优先使用 paragraphs 数组（结构化数据）
-              if (data.paragraphs && Array.isArray(data.paragraphs)) {
-                for (const para of data.paragraphs) {
-                  if (para.id && para.translation) {
-                    extractedPolishes.set(para.id, para.translation);
-                  }
-                }
-
-                // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
-                if (data.translation) {
-                  chunkPolish = data.translation;
-                } else if (extractedPolishes.size > 0 && chunk.paragraphIds) {
-                  // 从 paragraphs 数组构建完整文本
-                  const orderedTexts: string[] = [];
-                  for (const paraId of chunk.paragraphIds) {
-                    const polish = extractedPolishes.get(paraId);
-                    if (polish) {
-                      orderedTexts.push(polish);
-                    }
-                  }
-                  chunkPolish = orderedTexts.join('\n\n');
-                }
-              } else if (data.translation) {
-                // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
-                console.warn(
-                  `[PolishService] ⚠️ JSON中未找到paragraphs数组（块 ${i + 1}/${chunks.length}），将尝试从translation字符串中提取段落ID`,
-                );
-                chunkPolish = data.translation;
-
-                // 尝试从字符串中提取段落ID（兼容旧格式）
-                const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
-                idPattern.lastIndex = 0;
-                let match;
-                while ((match = idPattern.exec(chunkPolish)) !== null) {
-                  const paragraphId = match[1]?.trim();
-                  const polish = match[2]?.trim();
-                  if (paragraphId && polish) {
-                    extractedPolishes.set(paragraphId, polish);
-                  }
-                }
-              } else {
-                console.warn(
-                  `[PolishService] ⚠️ AI响应JSON中未找到translation或paragraphs字段（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为润色结果`,
-                );
-                chunkPolish = finalResponseText;
-              }
-            } catch (e) {
-              console.warn(
-                `[PolishService] ⚠️ 解析AI响应JSON失败（块 ${i + 1}/${chunks.length}）`,
-                e instanceof Error ? e.message : String(e),
-              );
-              // JSON 解析失败，回退到原始文本处理
-              chunkPolish = finalResponseText;
-            }
-          } else {
-            // 不是 JSON，直接使用原始文本
-            console.warn(
-              `[PolishService] ⚠️ AI响应不是JSON格式（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为润色结果`,
-            );
-            chunkPolish = finalResponseText;
-          }
-
-          // 验证：检查当前块中的所有段落是否都有润色结果
-          const missingIds: string[] = [];
-          if (chunk.paragraphIds && chunk.paragraphIds.length > 0) {
-            for (const paraId of chunk.paragraphIds) {
-              if (!extractedPolishes.has(paraId)) {
-                missingIds.push(paraId);
-              }
-            }
-          }
-
-          if (missingIds.length > 0) {
-            console.warn(
-              `[PolishService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的润色结果`,
-              {
-                缺失段落ID:
-                  missingIds.slice(0, 5).join(', ') +
-                  (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
-                已提取润色数: extractedPolishes.size,
-                预期段落数: chunk.paragraphIds?.length || 0,
-              },
-            );
-            // 如果缺少段落ID，使用完整润色文本作为后备方案
-            if (extractedPolishes.size === 0) {
-              polishedText += chunkPolish;
-              if (onChunk) {
-                await onChunk({ text: chunkPolish, done: false });
-              }
-            } else {
-              // 部分段落有ID，按顺序处理
-              const orderedPolishes: string[] = [];
-              const chunkParagraphPolishes: { id: string; translation: string }[] = [];
-              if (chunk.paragraphIds) {
-                for (const paraId of chunk.paragraphIds) {
-                  const polish = extractedPolishes.get(paraId);
-                  if (polish) {
-                    orderedPolishes.push(polish);
-                    const paraPolish = { id: paraId, translation: polish };
-                    paragraphPolishes.push(paraPolish);
-                    chunkParagraphPolishes.push(paraPolish);
-                  }
-                }
-              }
-              const orderedText = orderedPolishes.join('\n\n');
-              polishedText += orderedText || chunkPolish;
-              if (onChunk) {
-                await onChunk({ text: orderedText || chunkPolish, done: false });
-              }
-              // 通知段落润色完成（即使只有部分段落）
-              if (onParagraphPolish && chunkParagraphPolishes.length > 0) {
-                onParagraphPolish(chunkParagraphPolishes);
-              }
-            }
-          } else {
-            // 所有段落都有润色结果，按顺序组织
-            if (extractedPolishes.size > 0 && chunk.paragraphIds) {
-              const orderedPolishes: string[] = [];
-              const chunkParagraphPolishes: { id: string; translation: string }[] = [];
-              for (const paraId of chunk.paragraphIds) {
-                const polish = extractedPolishes.get(paraId);
-                if (polish) {
-                  orderedPolishes.push(polish);
-                  const paraPolish = { id: paraId, translation: polish };
-                  paragraphPolishes.push(paraPolish);
-                  chunkParagraphPolishes.push(paraPolish);
-                }
-              }
-              const orderedText = orderedPolishes.join('\n\n');
-              polishedText += orderedText;
-              if (onChunk) {
-                await onChunk({ text: orderedText, done: false });
-              }
-              // 通知段落润色完成
-              if (onParagraphPolish && chunkParagraphPolishes.length > 0) {
-                onParagraphPolish(chunkParagraphPolishes);
-              }
-            } else {
-              // 没有提取到段落润色，使用完整文本
-              polishedText += chunkPolish;
-              if (onChunk) {
-                await onChunk({ text: chunkPolish, done: false });
-              }
-            }
-          }
-        } catch (e) {
+        if (!allParagraphsPolished) {
+          const missingIds = chunk.paragraphIds?.filter((id) => !chunkPolishes.has(id)) || [];
           console.warn(
-            `[PolishService] ⚠️ 解析AI响应失败（块 ${i + 1}/${chunks.length}）`,
-            e instanceof Error ? e.message : String(e),
+            `[PolishService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的润色结果`,
+            {
+              缺失段落ID:
+                missingIds.slice(0, 5).join(', ') +
+                (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
+              已润色段落数: chunkPolishes.size,
+              预期段落数: chunk.paragraphIds?.length || 0,
+            },
           );
-          polishedText += finalResponseText;
-          if (onChunk) await onChunk({ text: finalResponseText, done: false });
+        }
+
+        // 使用从工具调用收集的润色结果
+        if (chunkPolishes.size > 0 && chunk.paragraphIds) {
+          // 按顺序组织润色文本
+          const orderedPolishes: string[] = [];
+          const chunkParagraphPolishes: { id: string; translation: string }[] = [];
+          for (const paraId of chunk.paragraphIds) {
+            const polish = chunkPolishes.get(paraId);
+            if (polish) {
+              orderedPolishes.push(polish);
+              // paragraphPolishes 已经在工具调用时添加了，这里只需要收集当前块的
+              chunkParagraphPolishes.push({ id: paraId, translation: polish });
+            }
+          }
+          const orderedText = orderedPolishes.join('\n\n');
+          polishedText += orderedText;
+          if (onChunk) {
+            await onChunk({ text: orderedText, done: false });
+          }
+          // 通知段落润色完成
+          if (onParagraphPolish && chunkParagraphPolishes.length > 0) {
+            onParagraphPolish(chunkParagraphPolishes);
+          }
+        } else {
+          // 没有收集到润色结果，记录警告
+          console.warn(`[PolishService] ⚠️ 块 ${i + 1}/${chunks.length} 未收集到任何润色结果`);
         }
       }
 

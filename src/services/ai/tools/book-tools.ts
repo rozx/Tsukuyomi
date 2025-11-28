@@ -1,12 +1,15 @@
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { ChapterService } from 'src/services/chapter-service';
 import {
   getChapterDisplayTitle,
   getChapterContentText,
   getVolumeDisplayTitle,
 } from 'src/utils/novel-utils';
+import { generateShortId } from 'src/utils/id-generator';
+import { useBooksStore } from 'src/stores/books';
 import type { ToolDefinition, ToolContext } from './types';
-import type { Chapter } from 'src/models/novel';
+import type { Chapter, Translation } from 'src/models/novel';
 
 export const bookTools: ToolDefinition[] = [
   {
@@ -386,6 +389,136 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取章节信息失败',
         });
       }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'update_chapter_title',
+        description:
+          '更新章节标题的翻译。在翻译章节内容之前，应该先使用此工具翻译章节标题。如果章节标题已有翻译，此工具会更新现有翻译；如果没有翻译，会创建新的翻译。',
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '章节 ID',
+            },
+            translation: {
+              type: 'string',
+              description: '标题的翻译内容',
+            },
+            ai_model_id: {
+              type: 'string',
+              description: '使用的 AI 模型 ID（从上下文或任务信息中获取）',
+            },
+          },
+          required: ['chapter_id', 'translation', 'ai_model_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { chapter_id, translation, ai_model_id } = args;
+      if (!chapter_id || !translation || !ai_model_id) {
+        throw new Error('章节 ID、翻译内容和 AI 模型 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 查找章节
+      let chapter: Chapter | null = null;
+      if (book.volumes) {
+        for (const volume of book.volumes) {
+          if (volume.chapters) {
+            const found = volume.chapters.find((ch) => ch.id === chapter_id);
+            if (found) {
+              chapter = found;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!chapter) {
+        return JSON.stringify({
+          success: false,
+          error: `章节不存在: ${chapter_id}`,
+        });
+      }
+
+      // 获取原始标题
+      const originalTitle =
+        typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+
+      // 创建或更新翻译
+      let titleTranslation: Translation;
+      if (typeof chapter.title === 'string') {
+        // 旧数据格式，创建新的翻译对象
+        titleTranslation = {
+          id: generateShortId(),
+          translation: translation.trim(),
+          aiModelId: ai_model_id,
+        };
+      } else {
+        // 新数据格式，更新现有翻译或创建新翻译
+        const existingTranslation = chapter.title.translation;
+        if (existingTranslation) {
+          // 更新现有翻译
+          titleTranslation = {
+            ...existingTranslation,
+            translation: translation.trim(),
+            aiModelId: ai_model_id,
+          };
+        } else {
+          // 创建新翻译
+          titleTranslation = {
+            id: generateShortId(),
+            translation: translation.trim(),
+            aiModelId: ai_model_id,
+          };
+        }
+      }
+
+      // 更新章节标题
+      const updatedVolumes = ChapterService.updateChapter(book, chapter_id, {
+        title: {
+          original: originalTitle,
+          translation: titleTranslation,
+        },
+      });
+
+      // 更新书籍
+      await booksStore.updateBook(bookId, { volumes: updatedVolumes });
+
+      // 报告操作
+      if (onAction) {
+        onAction({
+          type: 'update',
+          entity: 'chapter',
+          data: {
+            chapter_id,
+            title_original: originalTitle,
+            title_translation: translation.trim(),
+            ai_model_id,
+          },
+        });
+      }
+
+      return JSON.stringify({
+        success: true,
+        message: '章节标题翻译已更新',
+        chapter_id,
+        title_original: originalTitle,
+        title_translation: translation.trim(),
+      });
     },
   },
 ];

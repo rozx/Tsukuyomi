@@ -311,7 +311,8 @@ export function useChapterTranslation(
           }
         },
         onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info' });
+          // 单个段落润色时，不显示每个操作的 toast，只在最后显示总结
+          // 这里不收集 actions，因为单个段落操作通常很简单
         },
       });
 
@@ -457,7 +458,8 @@ export function useChapterTranslation(
           updateSelectedChapterWithContent(updatedVolumes);
         },
         onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info', withRevert: true });
+          // 单个段落翻译时，不显示每个操作的 toast，只在最后显示总结
+          // 这里不收集 actions，因为单个段落操作通常很简单
         },
       });
 
@@ -526,6 +528,9 @@ export function useChapterTranslation(
       // 获取章节标题
       const chapterTitle = selectedChapter.value?.title?.original;
 
+      // 收集所有 actions，用于最后显示总结性 toast
+      const collectedActions: ActionInfo[] = [];
+
       // 调用翻译服务
       const result = await TranslationService.translate(paragraphs, selectedModel, {
         bookId: book.value.id,
@@ -551,10 +556,11 @@ export function useChapterTranslation(
           console.debug('翻译进度:', progress);
         },
         onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'success', life: 4000, withRevert: true });
+          // 收集 actions，不立即显示 toast
+          collectedActions.push(action);
         },
         onToast: (message) => {
-          // 工具可以直接显示 toast
+          // 工具可以直接显示 toast（但通常不会在翻译过程中调用）
           toast.add(message);
         },
         onParagraphTranslation: async (translations) => {
@@ -726,12 +732,38 @@ export function useChapterTranslation(
       }
 
       // 构建成功消息
-      const actions = result.actions || [];
+      // 使用收集的 actions 和 result.actions 合并（result.actions 可能包含其他操作）
+      const allActions = [...collectedActions, ...(result.actions || [])];
       // 计算实际更新的段落数：增量更新的段落 + 从 translationMap 实际更新的段落
       const totalTranslatedCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
-      let messageDetail = `已成功翻译 ${totalTranslatedCount} 个段落`;
-      if (actions.length > 0) {
-        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
+      
+      // 检查是否有章节标题更新
+      const chapterTitleAction = allActions.find(
+        (action) => action.entity === 'chapter' && action.type === 'update',
+      );
+      const chapterTitleUpdated = !!chapterTitleAction;
+      
+      // 构建消息详情
+      const messageParts: string[] = [];
+      if (totalTranslatedCount > 0) {
+        messageParts.push(`已成功翻译 ${totalTranslatedCount} 个段落`);
+      }
+      if (chapterTitleUpdated) {
+        const titleData = chapterTitleAction.data as {
+          title_original?: string;
+          title_translation?: string;
+        };
+        if (titleData.title_translation) {
+          messageParts.push(`章节标题已翻译为"${titleData.title_translation}"`);
+        } else {
+          messageParts.push('章节标题已翻译');
+        }
+      }
+      
+      let messageDetail = messageParts.join('，');
+      
+      if (allActions.length > 0) {
+        const { terms: termActions, characters: characterActions } = countUniqueActions(allActions);
         const actionDetails: string[] = [];
         if (termActions > 0) {
           actionDetails.push(`${termActions} 个术语操作`);
@@ -744,12 +776,15 @@ export function useChapterTranslation(
         }
       }
 
-      toast.add({
-        severity: 'success',
-        summary: '翻译完成',
-        detail: messageDetail,
-        life: 3000,
-      });
+      // 确保有内容才显示 toast（即使只有标题更新也要显示）
+      if (messageDetail || chapterTitleUpdated || totalTranslatedCount > 0) {
+        toast.add({
+          severity: 'success',
+          summary: '翻译完成',
+          detail: messageDetail || '翻译任务已完成',
+          life: 3000,
+        });
+      }
     } catch (error) {
       console.error('翻译失败:', error);
       // 检查是否为取消错误（可能是 "请求已取消" 或 "翻译已取消"）
@@ -1040,6 +1075,9 @@ export function useChapterTranslation(
     // 用于跟踪已更新的段落，避免重复更新
     const updatedParagraphIds = new Set<string>();
 
+    // 收集所有 actions，用于最后显示总结性 toast
+    const collectedActions: ActionInfo[] = [];
+
     try {
       // 调用润色服务
       const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
@@ -1065,9 +1103,11 @@ export function useChapterTranslation(
           console.debug('润色进度:', progress);
         },
         onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info' });
+          // 收集 actions，不立即显示 toast
+          collectedActions.push(action);
         },
         onToast: (message) => {
+          // 工具可以直接显示 toast（但通常不会在润色过程中调用）
           toast.add(message);
         },
         onParagraphPolish: (translations) => {
@@ -1154,12 +1194,38 @@ export function useChapterTranslation(
       }
 
       // 构建成功消息
-      const actions = result.actions || [];
+      // 使用收集的 actions 和 result.actions 合并（result.actions 可能包含其他操作）
+      const allActions = [...collectedActions, ...(result.actions || [])];
       // 计算实际更新的段落数：增量更新的段落 + 从 polishMap 实际更新的段落
       const totalPolishedCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
-      let messageDetail = `已成功润色 ${totalPolishedCount} 个段落`;
-      if (actions.length > 0) {
-        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
+      
+      // 检查是否有章节标题更新
+      const chapterTitleAction = allActions.find(
+        (action) => action.entity === 'chapter' && action.type === 'update',
+      );
+      const chapterTitleUpdated = !!chapterTitleAction;
+      
+      // 构建消息详情
+      const messageParts: string[] = [];
+      if (totalPolishedCount > 0) {
+        messageParts.push(`已成功润色 ${totalPolishedCount} 个段落`);
+      }
+      if (chapterTitleUpdated) {
+        const titleData = chapterTitleAction.data as {
+          title_original?: string;
+          title_translation?: string;
+        };
+        if (titleData.title_translation) {
+          messageParts.push(`章节标题已更新为"${titleData.title_translation}"`);
+        } else {
+          messageParts.push('章节标题已更新');
+        }
+      }
+      
+      let messageDetail = messageParts.join('，');
+      
+      if (allActions.length > 0) {
+        const { terms: termActions, characters: characterActions } = countUniqueActions(allActions);
         const actionDetails: string[] = [];
         if (termActions > 0) {
           actionDetails.push(`${termActions} 个术语操作`);
@@ -1172,12 +1238,15 @@ export function useChapterTranslation(
         }
       }
 
-      toast.add({
-        severity: 'success',
-        summary: '润色完成',
-        detail: messageDetail,
-        life: 3000,
-      });
+      // 确保有内容才显示 toast（即使只有标题更新也要显示）
+      if (messageDetail || chapterTitleUpdated || totalPolishedCount > 0) {
+        toast.add({
+          severity: 'success',
+          summary: '润色完成',
+          detail: messageDetail || '润色任务已完成',
+          life: 3000,
+        });
+      }
     } catch (error) {
       console.error('润色失败:', error);
       // 检查是否为取消错误
