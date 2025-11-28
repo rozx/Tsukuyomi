@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { ref, computed } from 'vue';
+import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
-import type { Novel, Chapter, Paragraph } from '../models/novel';
+import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
 // Mock dependencies
@@ -58,7 +58,7 @@ await mock.module('src/services/ai', () => ({
   },
 }));
 
-const mockUpdateChapter = mock(() => []);
+const mockUpdateChapter = mock((): Volume[] => []);
 const mockGetChapterContentForUpdate = mock(() => []);
 const mockAddParagraphTranslation = mock(() => []);
 
@@ -67,7 +67,7 @@ await mock.module('src/services/chapter-service', () => ({
     updateChapter: mockUpdateChapter,
     getChapterContentForUpdate: mockGetChapterContentForUpdate,
     addParagraphTranslation: mockAddParagraphTranslation,
-    loadChapterContent: mock(() => Promise.resolve({ content: [] } as Chapter)),
+    loadChapterContent: mock(() => Promise.resolve({ id: 'test', title: { original: '', translation: { id: '', translation: '', aiModelId: '' } }, content: [], lastEdited: new Date(), createdAt: new Date() } as Chapter)),
   },
 }));
 
@@ -99,6 +99,7 @@ function createTestChapter(id: string, paragraphs: Paragraph[]): Chapter {
     },
     content: paragraphs,
     lastEdited: new Date(),
+    createdAt: new Date(),
   };
 }
 
@@ -122,10 +123,10 @@ function createTestNovel(chapters: Chapter[]): Novel {
 }
 
 describe('useChapterTranslation', () => {
-  let book: ReturnType<typeof ref<Novel | undefined>>;
-  let selectedChapter: ReturnType<typeof ref<Chapter | null>>;
-  let selectedChapterWithContent: ReturnType<typeof ref<Chapter | null>>;
-  let selectedChapterParagraphs: ReturnType<typeof computed<Paragraph[]>>;
+  let book: Ref<Novel | undefined>;
+  let selectedChapter: Ref<Chapter | null>;
+  let selectedChapterWithContent: Ref<Chapter | null>;
+  let selectedChapterParagraphs: ComputedRef<Paragraph[]>;
   let updateSelectedChapterWithContent: ReturnType<typeof mock>;
   let handleActionInfoToast: ReturnType<typeof mock>;
   let countUniqueActions: ReturnType<typeof mock>;

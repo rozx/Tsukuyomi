@@ -510,10 +510,11 @@ export class TerminologyService {
     termName: string,
     book: Novel,
   ): void {
+    const self = this;
     void co(function* () {
       try {
         // 统计术语出现次数
-        const countedOccurrences: Occurrence[] = yield this.countTermOccurrences(book, termName);
+        const countedOccurrences: Occurrence[] = yield self.countTermOccurrences(book, termName);
 
         const booksStore = useBooksStore();
         // 获取最新的书籍状态
@@ -536,7 +537,7 @@ export class TerminologyService {
       } catch (error) {
         console.error(`[TerminologyService] 更新术语 "${termName}" 的出现次数失败:`, error);
       }
-    }.bind(this));
+    });
   }
 
   /**

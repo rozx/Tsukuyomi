@@ -1,7 +1,7 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
-import type { Novel, Chapter, Paragraph } from '../models/novel';
+import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
 // Mock dependencies
@@ -10,7 +10,7 @@ const mockUseToastWithHistory = mock(() => ({
   add: mockToastAdd,
 }));
 
-const mockUpdateChapter = mock(() => []);
+const mockUpdateChapter = mock((): Volume[] => []);
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
@@ -64,6 +64,7 @@ function createTestChapter(id: string, paragraphs: Paragraph[]): Chapter {
     },
     content: paragraphs,
     lastEdited: new Date(),
+    createdAt: new Date(),
   };
 }
 

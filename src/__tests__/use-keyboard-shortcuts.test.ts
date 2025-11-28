@@ -228,7 +228,7 @@ describe('useKeyboardShortcuts', () => {
     );
 
     isSearchVisible.value = true;
-    const event = createMockKeyboardEvent('f', { ctrlKey: true, target: inputElement });
+    const event = createMockKeyboardEvent('f', { ctrlKey: true, target: inputElement as any });
     handleKeydown(event);
 
     // 如果在搜索输入框中，不应该调用 toggleSearch
@@ -401,6 +401,7 @@ describe('useKeyboardShortcuts', () => {
       title: { original: 'Chapter 1', translation: { id: 'trans-1', translation: '', aiModelId: '' } },
       content: [paragraph1, paragraph2],
       lastEdited: new Date(),
+      createdAt: new Date(),
     };
 
     const { handleKeydown } = useKeyboardShortcuts(
@@ -555,7 +556,7 @@ describe('useKeyboardShortcuts', () => {
 
     isKeyboardNavigating.value = true;
     const target = new MockHTMLElement();
-    const event = createMockMouseEvent(target);
+    const event = createMockMouseEvent(target as any);
     handleClick(event);
 
     // 如果点击的不是段落卡片，应该重置键盘导航状态

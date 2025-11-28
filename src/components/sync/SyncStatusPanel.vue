@@ -113,9 +113,10 @@ const uploadConfig = async () => {
     if (result.success) {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
+        const gistIdValue = result.gistId;
         void co(function* () {
           try {
-            yield settingsStore.setGistId(result.gistId);
+            yield settingsStore.setGistId(gistIdValue);
           } catch (error) {
             console.error('[SyncStatusPanel] 设置 Gist ID 失败:', error);
           }

@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { ref, computed } from 'vue';
+import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useParagraphNavigation } from '../composables/book-details/useParagraphNavigation';
 import type { Paragraph } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
@@ -63,9 +63,9 @@ function createTestParagraph(id: string, text: string): Paragraph {
 }
 
 describe('useParagraphNavigation', () => {
-  let selectedChapterParagraphs: ReturnType<typeof computed<Paragraph[]>>;
-  let scrollableContentRef: ReturnType<typeof ref<HTMLElement | null>>;
-  let currentlyEditingParagraphId: ReturnType<typeof ref<string | null>>;
+  let selectedChapterParagraphs: ComputedRef<Paragraph[]>;
+  let scrollableContentRef: Ref<HTMLElement | null>;
+  let currentlyEditingParagraphId: Ref<string | null>;
 
   beforeEach(() => {
     selectedChapterParagraphs = computed(() => []);

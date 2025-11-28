@@ -279,17 +279,20 @@ export function useChapterTranslation(
           });
 
           // 更新书籍（后台执行）
-          void co(function* () {
-            try {
-              yield booksStore.updateBook(book.value.id, {
-                volumes: updatedVolumes,
-                lastEdited: new Date(),
-              });
-              updateSelectedChapterWithContent(updatedVolumes);
-            } catch (error) {
-              console.error('[useChapterTranslation] 更新书籍失败:', error);
-            }
-          });
+          const bookId = book.value?.id;
+          if (bookId) {
+            void co(function* () {
+              try {
+                yield booksStore.updateBook(bookId, {
+                  volumes: updatedVolumes,
+                  lastEdited: new Date(),
+                });
+                updateSelectedChapterWithContent(updatedVolumes);
+              } catch (error) {
+                console.error('[useChapterTranslation] 更新书籍失败:', error);
+              }
+            });
+          }
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });

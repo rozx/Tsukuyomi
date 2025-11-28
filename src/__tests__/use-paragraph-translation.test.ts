@@ -10,7 +10,7 @@ const mockUseToastWithHistory = mock(() => ({
   add: mockToastAdd,
 }));
 
-const mockUpdateChapter = mock(() => []);
+const mockUpdateChapter = mock((): Volume[] => []);
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
@@ -58,6 +58,7 @@ function createTestChapter(id: string, paragraphs: Paragraph[]): Chapter {
     },
     content: paragraphs,
     lastEdited: new Date(),
+    createdAt: new Date(),
   };
 }
 
@@ -185,7 +186,10 @@ describe('useParagraphTranslation', () => {
     expect(mockUpdateChapter).toHaveBeenCalled();
     expect(mockBooksStoreUpdateBook).toHaveBeenCalled();
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
-    const toastCall = mockToastAdd.mock.calls[0]![0];
+    const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
+    expect(calls.length).toBeGreaterThan(0);
+    const toastCall = calls[0]?.[0] as any;
+    expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('success');
     expect(toastCall.summary).toBe('已切换翻译');
   });
@@ -203,7 +207,10 @@ describe('useParagraphTranslation', () => {
     await selectParagraphTranslation('para-1', 'non-existent-id');
 
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
-    const toastCall = mockToastAdd.mock.calls[0]![0];
+    const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
+    expect(calls.length).toBeGreaterThan(0);
+    const toastCall = calls[0]?.[0] as any;
+    expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('error');
     expect(toastCall.summary).toBe('选择失败');
     expect(mockBooksStoreUpdateBook).not.toHaveBeenCalled();

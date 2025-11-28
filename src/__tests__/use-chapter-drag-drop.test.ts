@@ -20,8 +20,8 @@ function createMockDragEvent(type: string, options?: { dataTransfer?: Partial<Da
   const dataTransfer = {
     effectAllowed: 'all' as DataTransfer['effectAllowed'],
     dropEffect: 'none' as DataTransfer['dropEffect'],
-    items: [] as DataTransferItemList,
-    files: [] as FileList,
+    items: [] as unknown as DataTransferItemList,
+    files: [] as unknown as FileList,
     types: [] as readonly string[],
     clearData: mock(() => {}),
     getData: mock(() => ''),
@@ -61,7 +61,7 @@ const mockUseToastWithHistory = mock(() => ({
   add: mockToastAdd,
 }));
 
-const mockMoveChapter = mock(() => []);
+const mockMoveChapter = mock((): Volume[] => []);
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
@@ -91,6 +91,7 @@ function createTestChapter(id: string, title: string): Chapter {
     },
     content: [],
     lastEdited: new Date(),
+    createdAt: new Date(),
   };
 }
 

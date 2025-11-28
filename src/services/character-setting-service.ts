@@ -37,10 +37,11 @@ export class CharacterSettingService {
     character: CharacterSetting,
     book: Novel,
   ): void {
+    const self = this;
     void co(function* () {
       try {
         // 统计角色出现次数
-        const countedOccurrences: Occurrence[] = yield this.countCharacterOccurrences(
+        const countedOccurrences: Occurrence[] = yield self.countCharacterOccurrences(
           book,
           character,
         );
@@ -69,7 +70,7 @@ export class CharacterSettingService {
           error,
         );
       }
-    }.bind(this));
+    });
   }
 
   /**
