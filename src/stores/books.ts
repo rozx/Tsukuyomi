@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { Novel, Paragraph } from 'src/models/novel';
+import type { Novel, Paragraph, Volume, Chapter } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 
@@ -79,47 +79,72 @@ export const useBooksStore = defineStore('books', {
         // 重要：如果更新了 volumes，需要保留现有章节的 content
         // 因为 content 存储在独立的 IndexedDB 表中，不应该在更新时丢失
         if (updates.volumes && existingBook && existingBook.volumes) {
+          // 优化：为现有卷和章节创建 Map 以快速查找，避免 O(n) 查找
+          const existingVolumesMap = new Map<string, Volume>(
+            existingBook.volumes.map((v) => [v.id, v]),
+          );
+          const existingChaptersMap = new Map<string, Map<string, Chapter>>();
+          
+          // 为每个卷创建章节 Map
+          for (const volume of existingBook.volumes) {
+            if (volume.chapters) {
+              existingChaptersMap.set(
+                volume.id,
+                new Map(volume.chapters.map((ch) => [ch.id, ch])),
+              );
+            }
+          }
+
           // 遍历更新的 volumes，为每个章节保留现有的 content
           updatedBook.volumes = await Promise.all(
             updates.volumes.map(async (updatedVolume) => {
-              // 查找对应的现有卷
-              const existingVolume = existingBook.volumes?.find((v) => v.id === updatedVolume.id);
+              const existingVolume = existingVolumesMap.get(updatedVolume.id);
+              const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
 
-              if (existingVolume && existingVolume.chapters && updatedVolume.chapters) {
+              if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
                 // 为每个更新的章节保留现有的 content
                 updatedVolume.chapters = await Promise.all(
                   updatedVolume.chapters.map(async (updatedChapter) => {
-                    const existingChapter = existingVolume.chapters?.find(
-                      (ch) => ch.id === updatedChapter.id,
-                    );
+                    // 使用 Map 快速查找现有章节（O(1) 而不是 O(n)）
+                    const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+
+                    // 优化：如果章节不存在于现有数据中，说明是新章节，直接返回
+                    // 新章节要么已经有内容，要么应该保持 undefined
+                    if (!existingChapter) {
+                      return updatedChapter;
+                    }
+
+                    // 优化：如果更新的章节已经有内容，直接返回，不需要保留操作
+                    if (
+                      updatedChapter.content !== undefined &&
+                      updatedChapter.content !== null &&
+                      Array.isArray(updatedChapter.content) &&
+                      updatedChapter.content.length > 0
+                    ) {
+                      return updatedChapter;
+                    }
 
                     // 如果更新的章节没有 content，尝试从多个来源获取：
                     // 1. 现有章节的 content（如果已加载）
                     // 2. 从 IndexedDB 加载
-                    if (
-                      updatedChapter.content === undefined ||
-                      updatedChapter.content === null ||
-                      (Array.isArray(updatedChapter.content) && updatedChapter.content.length === 0)
-                    ) {
-                      let contentToPreserve: Paragraph[] | undefined = undefined;
+                    let contentToPreserve: Paragraph[] | undefined = undefined;
 
-                      // 首先尝试从现有章节获取（如果已加载）
-                      if (existingChapter && existingChapter.content !== undefined) {
-                        contentToPreserve = existingChapter.content;
-                      } else {
-                        // 如果现有章节没有 content，从 IndexedDB 加载
-                        contentToPreserve = await ChapterContentService.loadChapterContent(
-                          updatedChapter.id,
-                        );
-                      }
+                    // 首先尝试从现有章节获取（如果已加载）
+                    if (existingChapter.content !== undefined) {
+                      contentToPreserve = existingChapter.content;
+                    } else {
+                      // 如果现有章节没有 content，从 IndexedDB 加载
+                      contentToPreserve = await ChapterContentService.loadChapterContent(
+                        updatedChapter.id,
+                      );
+                    }
 
-                      // 如果找到了内容，保留它
-                      if (contentToPreserve !== undefined) {
-                        return {
-                          ...updatedChapter,
-                          content: contentToPreserve,
-                        };
-                      }
+                    // 如果找到了内容，保留它
+                    if (contentToPreserve !== undefined) {
+                      return {
+                        ...updatedChapter,
+                        content: contentToPreserve,
+                      };
                     }
 
                     return updatedChapter;

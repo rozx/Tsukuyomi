@@ -192,6 +192,12 @@ const {
   openDeleteChapterConfirm,
   handleDeleteVolume,
   handleDeleteChapter,
+  isAddingVolume,
+  isAddingChapter,
+  isEditingVolume,
+  isEditingChapter,
+  isDeletingVolume,
+  isDeletingChapter,
 } = useChapterManagement(book, saveState);
 
 // 获取封面图片 URL
@@ -404,51 +410,6 @@ const selectedChapter = computed(() => {
   return null;
 });
 
-// 监听选中章节变化，懒加载内容
-watch(
-  selectedChapterId,
-  async (newChapterId, oldChapterId) => {
-    // 如果章节切换了（不是初始化），清空撤销/重做历史记录
-    if (oldChapterId !== null && newChapterId !== oldChapterId) {
-      clearHistory();
-    }
-
-    if (!newChapterId || !selectedChapter.value) {
-      selectedChapterWithContent.value = null;
-      resetParagraphNavigation();
-      return;
-    }
-
-    // 如果内容已加载，直接使用
-    if (selectedChapter.value.content !== undefined) {
-      selectedChapterWithContent.value = selectedChapter.value;
-      resetParagraphNavigation();
-      return;
-    }
-
-    // 加载章节内容
-    isLoadingChapterContent.value = true;
-    try {
-      const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
-      selectedChapterWithContent.value = chapterWithContent;
-      resetParagraphNavigation();
-    } catch (error) {
-      console.error('Failed to load chapter content:', error);
-      toast.add({
-        severity: 'error',
-        summary: '加载失败',
-        detail: '无法加载章节内容',
-        life: 3000,
-      });
-      selectedChapterWithContent.value = null;
-      resetParagraphNavigation();
-    } finally {
-      isLoadingChapterContent.value = false;
-    }
-  },
-  { immediate: true },
-);
-
 // 计算章节范围内的角色出现频率，用于消歧义
 const chapterCharacterScores = computed(() => {
   if (!selectedChapterWithContent.value || !book.value?.characterSettings) {
@@ -536,6 +497,52 @@ const {
   selectedChapterParagraphs,
   scrollableContentRef,
   currentlyEditingParagraphId,
+);
+
+// 监听选中章节变化，懒加载内容
+// 注意：这个 watch 必须在 resetParagraphNavigation 定义之后
+watch(
+  selectedChapterId,
+  async (newChapterId, oldChapterId) => {
+    // 如果章节切换了（不是初始化），清空撤销/重做历史记录
+    if (oldChapterId !== null && newChapterId !== oldChapterId) {
+      clearHistory();
+    }
+
+    if (!newChapterId || !selectedChapter.value) {
+      selectedChapterWithContent.value = null;
+      resetParagraphNavigation();
+      return;
+    }
+
+    // 如果内容已加载，直接使用
+    if (selectedChapter.value.content !== undefined) {
+      selectedChapterWithContent.value = selectedChapter.value;
+      resetParagraphNavigation();
+      return;
+    }
+
+    // 加载章节内容
+    isLoadingChapterContent.value = true;
+    try {
+      const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
+      selectedChapterWithContent.value = chapterWithContent;
+      resetParagraphNavigation();
+    } catch (error) {
+      console.error('Failed to load chapter content:', error);
+      toast.add({
+        severity: 'error',
+        summary: '加载失败',
+        detail: '无法加载章节内容',
+        life: 3000,
+      });
+      selectedChapterWithContent.value = null;
+      resetParagraphNavigation();
+    } finally {
+      isLoadingChapterContent.value = false;
+    }
+  },
+  { immediate: true },
 );
 
 // 实时更新 context store - 监听书籍变化
@@ -1016,6 +1023,7 @@ const handleSaveCharacter = async (data: {
 // Add Delete Character Dialog State
 const showDeleteCharacterConfirm = ref(false);
 const deletingCharacter = ref<CharacterSetting | null>(null);
+const isDeletingCharacter = ref(false);
 
 const openDeleteCharacterConfirm = (character: CharacterSetting) => {
   deletingCharacter.value = character;
@@ -1026,12 +1034,13 @@ const openDeleteCharacterConfirm = (character: CharacterSetting) => {
 };
 
 const confirmDeleteCharacter = async () => {
-  if (!book.value || !deletingCharacter.value) return;
+  if (!book.value || !deletingCharacter.value || isDeletingCharacter.value) return;
 
-  // 保存状态用于撤销
-  saveState('删除角色设定');
-
+  isDeletingCharacter.value = true;
   try {
+    // 保存状态用于撤销
+    saveState('删除角色设定');
+
     await CharacterSettingService.deleteCharacterSetting(book.value.id, deletingCharacter.value.id);
 
     toast.add({
@@ -1051,6 +1060,8 @@ const confirmDeleteCharacter = async () => {
       detail: '删除角色时发生错误',
       life: 3000,
     });
+  } finally {
+    isDeletingCharacter.value = false;
   }
 };
 
@@ -1160,6 +1171,7 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
 // Add Delete Term Dialog State
 const showDeleteTermConfirm = ref(false);
 const deletingTerm = ref<Terminology | null>(null);
+const isDeletingTerm = ref(false);
 
 const openDeleteTermConfirm = (term: Terminology) => {
   deletingTerm.value = term;
@@ -1170,12 +1182,13 @@ const openDeleteTermConfirm = (term: Terminology) => {
 };
 
 const confirmDeleteTerm = async () => {
-  if (!book.value || !deletingTerm.value) return;
+  if (!book.value || !deletingTerm.value || isDeletingTerm.value) return;
 
-  // 保存状态用于撤销
-  saveState('删除术语');
-
+  isDeletingTerm.value = true;
   try {
+    // 保存状态用于撤销
+    saveState('删除术语');
+
     const updatedTerminologies = (book.value.terminologies || []).filter(
       (t) => t.id !== deletingTerm.value!.id,
     );
@@ -1202,59 +1215,68 @@ const confirmDeleteTerm = async () => {
       detail: '删除术语时发生错误',
       life: 3000,
     });
+  } finally {
+    isDeletingTerm.value = false;
   }
 };
 
 // 保存书籍（编辑）
+const isSavingBook = ref(false);
+
 const handleBookSave = async (formData: Partial<Novel>) => {
-  if (!book.value) return;
+  if (!book.value || isSavingBook.value) return;
 
-  // 保存状态用于撤销
-  saveState('编辑书籍信息');
+  isSavingBook.value = true;
+  try {
+    // 保存状态用于撤销
+    saveState('编辑书籍信息');
 
-  const updates: Partial<Novel> = {
-    title: formData.title!,
-    lastEdited: new Date(),
-  };
-  if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-    updates.alternateTitles = formData.alternateTitles;
+    const updates: Partial<Novel> = {
+      title: formData.title!,
+      lastEdited: new Date(),
+    };
+    if (formData.alternateTitles && formData.alternateTitles.length > 0) {
+      updates.alternateTitles = formData.alternateTitles;
+    }
+    if (formData.author?.trim()) {
+      updates.author = formData.author.trim();
+    }
+    if (formData.description?.trim()) {
+      updates.description = formData.description.trim();
+    }
+    if (formData.tags && formData.tags.length > 0) {
+      updates.tags = formData.tags;
+    }
+    if (formData.webUrl && formData.webUrl.length > 0) {
+      updates.webUrl = formData.webUrl;
+    }
+    // 处理封面：如果提供了封面就更新，如果为 null 就删除封面
+    if (formData.cover !== undefined) {
+      updates.cover = formData.cover;
+    }
+    // 处理 volumes：如果提供了 volumes 就更新
+    if (formData.volumes !== undefined) {
+      updates.volumes = formData.volumes;
+    }
+    // 保存原始数据用于撤销
+    const oldBook = cloneDeep(book.value);
+    await booksStore.updateBook(book.value.id, updates);
+    showBookDialog.value = false;
+    const bookTitle = updates.title || book.value.title;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已成功更新书籍 "${bookTitle}"`,
+      life: 3000,
+      onRevert: async () => {
+        if (book.value) {
+          await booksStore.updateBook(book.value.id, oldBook);
+        }
+      },
+    });
+  } finally {
+    isSavingBook.value = false;
   }
-  if (formData.author?.trim()) {
-    updates.author = formData.author.trim();
-  }
-  if (formData.description?.trim()) {
-    updates.description = formData.description.trim();
-  }
-  if (formData.tags && formData.tags.length > 0) {
-    updates.tags = formData.tags;
-  }
-  if (formData.webUrl && formData.webUrl.length > 0) {
-    updates.webUrl = formData.webUrl;
-  }
-  // 处理封面：如果提供了封面就更新，如果为 null 就删除封面
-  if (formData.cover !== undefined) {
-    updates.cover = formData.cover;
-  }
-  // 处理 volumes：如果提供了 volumes 就更新
-  if (formData.volumes !== undefined) {
-    updates.volumes = formData.volumes;
-  }
-  // 保存原始数据用于撤销
-  const oldBook = cloneDeep(book.value);
-  await booksStore.updateBook(book.value.id, updates);
-  showBookDialog.value = false;
-  const bookTitle = updates.title || book.value.title;
-  toast.add({
-    severity: 'success',
-    summary: '更新成功',
-    detail: `已成功更新书籍 "${bookTitle}"`,
-    life: 3000,
-    onRevert: async () => {
-      if (book.value) {
-        await booksStore.updateBook(book.value.id, oldBook);
-      }
-    },
-  });
 };
 </script>
 
@@ -1501,8 +1523,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showAddVolumeDialog = false" />
-        <Button label="添加" :disabled="!newVolumeTitle.trim()" @click="handleAddVolume" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isAddingVolume"
+          @click="showAddVolumeDialog = false"
+        />
+        <Button
+          label="添加"
+          :loading="isAddingVolume"
+          :disabled="!newVolumeTitle.trim() || isAddingVolume"
+          @click="handleAddVolume"
+        />
       </template>
     </Dialog>
 
@@ -1540,10 +1572,16 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showAddChapterDialog = false" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isAddingChapter"
+          @click="showAddChapterDialog = false"
+        />
         <Button
           label="添加"
-          :disabled="!newChapterTitle.trim() || !selectedVolumeId"
+          :loading="isAddingChapter"
+          :disabled="!newChapterTitle.trim() || !selectedVolumeId || isAddingChapter"
           @click="handleAddChapter"
         />
       </template>
@@ -1590,8 +1628,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showEditVolumeDialog = false" />
-        <Button label="保存" :disabled="!editingVolumeTitle.trim()" @click="handleEditVolume" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isEditingVolume"
+          @click="showEditVolumeDialog = false"
+        />
+        <Button
+          label="保存"
+          :loading="isEditingVolume"
+          :disabled="!editingVolumeTitle.trim() || isEditingVolume"
+          @click="handleEditVolume"
+        />
       </template>
     </Dialog>
 
@@ -1650,10 +1698,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showEditChapterDialog = false" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isEditingChapter"
+          @click="showEditChapterDialog = false"
+        />
         <Button
           label="保存"
-          :disabled="!editingChapterTitle.trim() || !editingChapterTargetVolumeId"
+          :loading="isEditingChapter"
+          :disabled="
+            !editingChapterTitle.trim() || !editingChapterTargetVolumeId || isEditingChapter
+          "
           @click="handleEditChapter"
         />
       </template>
@@ -1674,8 +1730,19 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <p class="text-sm text-moon/70">此操作将同时删除该卷下的所有章节，且无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showDeleteVolumeConfirm = false" />
-        <Button label="删除" class="p-button-danger" @click="handleDeleteVolume" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeletingVolume"
+          @click="showDeleteVolumeConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeletingVolume"
+          :disabled="isDeletingVolume"
+          @click="handleDeleteVolume"
+        />
       </template>
     </Dialog>
 
@@ -1694,8 +1761,19 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showDeleteChapterConfirm = false" />
-        <Button label="删除" class="p-button-danger" @click="handleDeleteChapter" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeletingChapter"
+          @click="showDeleteChapterConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeletingChapter"
+          :disabled="isDeletingChapter"
+          @click="handleDeleteChapter"
+        />
       </template>
     </Dialog>
 
@@ -1704,6 +1782,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       v-model:visible="showBookDialog"
       mode="edit"
       :book="book || null"
+      :loading="isSavingBook"
       @save="handleBookSave"
       @cancel="showBookDialog = false"
     />
@@ -2009,8 +2088,19 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showDeleteTermConfirm = false" />
-        <Button label="删除" class="p-button-danger" @click="confirmDeleteTerm" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeletingTerm"
+          @click="showDeleteTermConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeletingTerm"
+          :disabled="isDeletingTerm"
+          @click="confirmDeleteTerm"
+        />
       </template>
     </Dialog>
 
@@ -2037,8 +2127,19 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" @click="showDeleteCharacterConfirm = false" />
-        <Button label="删除" class="p-button-danger" @click="confirmDeleteCharacter" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeletingCharacter"
+          @click="showDeleteCharacterConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeletingCharacter"
+          :disabled="isDeletingCharacter"
+          @click="confirmDeleteCharacter"
+        />
       </template>
     </Dialog>
 

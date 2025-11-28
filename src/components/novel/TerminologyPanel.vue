@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
+import Dialog from 'primevue/dialog';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
@@ -63,6 +64,15 @@ const selectedTerminology = ref<Terminology | null>(null);
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 const isSaving = ref(false);
+const isDeleting = ref(false);
+const showDeleteConfirm = ref(false);
+const deletingTerminology = ref<{
+  id: string;
+  name: string;
+  description?: string | undefined;
+  translation: string;
+  occurrences: number;
+} | null>(null);
 
 // 批量操作相关状态
 const bulkActionMode = ref(false);
@@ -198,7 +208,66 @@ const handleSave = async (data: { name: string; translation: string; description
   }
 };
 
-// 删除术语
+// 打开删除确认对话框
+const openDeleteConfirm = (terminology: (typeof terminologies.value)[number]) => {
+  deletingTerminology.value = terminology;
+  showDeleteConfirm.value = true;
+};
+
+// 确认删除术语
+const confirmDeleteTerm = async () => {
+  if (!props.book || !deletingTerminology.value || isDeleting.value) {
+    return;
+  }
+
+  const terminology = deletingTerminology.value;
+  isDeleting.value = true;
+
+  try {
+    // 保存要删除的术语数据用于撤销
+    const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
+    const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
+
+    await TerminologyService.deleteTerminology(props.book.id, terminology.id);
+    
+    toast.add({
+      severity: 'success',
+      summary: '删除成功',
+      detail: `已成功删除术语 "${terminology.name}"`,
+      life: 3000,
+      onRevert: async () => {
+        if (termSnapshot && props.book) {
+          const booksStore = useBooksStore();
+          const book = booksStore.getBookById(props.book.id);
+          if (book) {
+            const current = book.terminologies || [];
+            if (!current.some((t) => t.id === termSnapshot.id)) {
+              await booksStore.updateBook(book.id, {
+                terminologies: [...current, termSnapshot],
+                lastEdited: new Date(),
+              });
+            }
+          }
+        }
+      },
+    });
+
+    showDeleteConfirm.value = false;
+    deletingTerminology.value = null;
+  } catch (error) {
+    console.error('删除术语失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '删除失败',
+      detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
+      life: 3000,
+    });
+  } finally {
+    isDeleting.value = false;
+  }
+};
+
+// 删除术语（保留兼容性，调用新的删除确认函数）
 const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
   if (!props.book) {
     toast.add({
@@ -209,61 +278,7 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
     });
     return;
   }
-
-  confirm.require({
-    group: 'terminology',
-    message: `确定要删除术语 "${terminology.name}" 吗？`,
-    header: '确认删除',
-    icon: 'pi pi-exclamation-triangle',
-    rejectProps: {
-      label: '取消',
-      severity: 'secondary',
-    },
-    acceptProps: {
-      label: '删除',
-      severity: 'danger',
-    },
-    accept: () => {
-      void co(function* () {
-        try {
-          // 保存要删除的术语数据用于撤销
-          const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
-          const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
-
-          yield TerminologyService.deleteTerminology(props.book!.id, terminology.id);
-          toast.add({
-            severity: 'success',
-            summary: '删除成功',
-            detail: `已成功删除术语 "${terminology.name}"`,
-            life: 3000,
-            onRevert: async () => {
-              if (termSnapshot && props.book) {
-                const booksStore = useBooksStore();
-                const book = booksStore.getBookById(props.book.id);
-                if (book) {
-                  const current = book.terminologies || [];
-                  if (!current.some((t) => t.id === termSnapshot.id)) {
-                    await booksStore.updateBook(book.id, {
-                      terminologies: [...current, termSnapshot],
-                      lastEdited: new Date(),
-                    });
-                  }
-                }
-              }
-            },
-          });
-        } catch (error) {
-          console.error('删除术语失败:', error);
-          toast.add({
-            severity: 'error',
-            summary: '删除失败',
-            detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
-            life: 3000,
-          });
-        }
-      });
-    },
-  });
+  openDeleteConfirm(terminology);
 };
 
 // 打开提取术语对话框
@@ -754,6 +769,26 @@ const handleFileSelect = async (event: Event) => {
     />
 
     <!-- 确认删除对话框 -->
+    <Dialog
+      v-model:visible="showDeleteConfirm"
+      modal
+      header="确认删除术语"
+      :style="{ width: '25rem' }"
+      :draggable="false"
+    >
+      <div class="space-y-4">
+        <p class="text-moon/90">
+          确定要删除术语 <strong>"{{ deletingTerminology?.name }}"</strong> 吗？
+        </p>
+        <p class="text-sm text-moon/70">此操作无法撤销。</p>
+      </div>
+      <template #footer>
+        <Button label="取消" class="p-button-text" :disabled="isDeleting" @click="showDeleteConfirm = false" />
+        <Button label="删除" class="p-button-danger" :loading="isDeleting" :disabled="isDeleting" @click="confirmDeleteTerm" />
+      </template>
+    </Dialog>
+
+    <!-- 保留 ConfirmDialog 用于其他可能的确认操作 -->
     <ConfirmDialog group="terminology" />
 
     <!-- 隐藏的文件输入 -->
