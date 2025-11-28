@@ -222,7 +222,6 @@ describe('useEditMode', () => {
     const saveState = mock(() => {});
 
     const {
-      isEditingOriginalText,
       originalTextEditValue,
       saveOriginalTextEdit,
       startEditingOriginalText,
