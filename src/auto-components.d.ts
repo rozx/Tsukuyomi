@@ -19,7 +19,7 @@ declare module 'vue' {
     AppRightPanel: typeof import('./components/layout/AppRightPanel.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
-    ChapterContentPanel: typeof import('./components/book-details/ChapterContentPanel.vue')['default']
+    ChapterContentPanel: typeof import('./components/novel/ChapterContentPanel.vue')['default']
     CharacterEditDialog: typeof import('./components/dialogs/CharacterEditDialog.vue')['default']
     CharacterSettingPanel: typeof import('./components/novel/CharacterSettingPanel.vue')['default']
     ConflictResolutionDialog: typeof import('./components/dialogs/ConflictResolutionDialog.vue')['default']
@@ -36,7 +36,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScraperSettingsTab: typeof import('./components/settings/ScraperSettingsTab.vue')['default']
-    SearchToolbar: typeof import('./components/book-details/SearchToolbar.vue')['default']
+    SearchToolbar: typeof import('./components/novel/SearchToolbar.vue')['default']
     SettingCard: typeof import('./components/novel/SettingCard.vue')['default']
     SettingsDialog: typeof import('./components/dialogs/SettingsDialog.vue')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
@@ -49,6 +49,6 @@ declare module 'vue' {
     TranslatableChips: typeof import('./components/translation/TranslatableChips.vue')['default']
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
     TranslationHistoryDialog: typeof import('./components/dialogs/TranslationHistoryDialog.vue')['default']
-    TranslationProgress: typeof import('./components/book-details/TranslationProgress.vue')['default']
+    TranslationProgress: typeof import('./components/novel/TranslationProgress.vue')['default']
   }
 }

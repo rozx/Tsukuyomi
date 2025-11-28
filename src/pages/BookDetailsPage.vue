@@ -37,9 +37,9 @@ import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue'
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
-import SearchToolbar from 'src/components/book-details/SearchToolbar.vue';
-import TranslationProgress from 'src/components/book-details/TranslationProgress.vue';
-import ChapterContentPanel from 'src/components/book-details/ChapterContentPanel.vue';
+import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
+import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
+import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -2353,7 +2353,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :edit-mode="editMode"
             :original-text-edit-value="originalTextEditValue"
             :translated-char-count="translatedCharCount"
-            :book="book"
+            :book="book || null"
             :book-id="bookId"
             :chapter-character-scores="chapterCharacterScores"
             :selected-chapter-id="selectedChapterId"
@@ -2372,10 +2372,16 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             @open-edit-chapter-dialog="openEditChapterDialog"
             @cancel-original-text-edit="cancelOriginalTextEdit"
             @save-original-text-edit="saveOriginalTextEdit"
-            @update-translation="updateParagraphTranslation"
+            @update-translation="
+              (paragraphId: string, newTranslation: string) =>
+                updateParagraphTranslation(paragraphId, newTranslation)
+            "
             @retranslate-paragraph="retranslateParagraph"
             @polish-paragraph="polishParagraph"
-            @select-translation="selectParagraphTranslation"
+            @select-translation="
+              (paragraphId: string, translationId: string) =>
+                selectParagraphTranslation(paragraphId, translationId)
+            "
             @paragraph-click="handleParagraphClick"
             @paragraph-edit-start="handleParagraphEditStart"
             @paragraph-edit-stop="handleParagraphEditStop"

@@ -18,8 +18,8 @@ const props = defineProps<{
   originalTextEditValue: string;
   translatedCharCount: number;
   book: Novel | null;
-  bookId: string | null;
-  chapterCharacterScores?: Record<string, number>;
+  bookId?: string;
+  chapterCharacterScores?: Map<string, number> | undefined;
   selectedChapterId: string | null;
   translatingParagraphIds: Set<string>;
   polishingParagraphIds: Set<string>;
@@ -35,10 +35,10 @@ const emit = defineEmits<{
   (e: 'open-edit-chapter-dialog', chapter: Chapter): void;
   (e: 'cancel-original-text-edit'): void;
   (e: 'save-original-text-edit'): void;
-  (e: 'update-translation', data: { paragraphId: string; translationId: string; translation: string }): void;
+  (e: 'update-translation', paragraphId: string, newTranslation: string): void;
   (e: 'retranslate-paragraph', paragraphId: string): void;
   (e: 'polish-paragraph', paragraphId: string): void;
-  (e: 'select-translation', data: { paragraphId: string; translationId: string }): void;
+  (e: 'select-translation', paragraphId: string, translationId: string): void;
   (e: 'paragraph-click', paragraphId: string): void;
   (e: 'paragraph-edit-start', paragraphId: string): void;
   (e: 'paragraph-edit-stop', paragraphId: string): void;
@@ -231,20 +231,20 @@ const handleOriginalTextInput = (event: Event) => {
             v-bind="{
               ...(chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}),
               ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
+              ...(bookId ? { bookId: bookId } : {}),
             }"
             :is-translating="translatingParagraphIds.has(paragraph.id)"
             :is-polishing="polishingParagraphIds.has(paragraph.id)"
             :search-query="searchQuery"
-            :book-id="bookId"
             :id="`paragraph-${paragraph.id}`"
             :selected="selectedParagraphIndex === index && (isKeyboardSelected || isClickSelected)"
             @update-translation="
-              (data) => emit('update-translation', data)
+              (paragraphId: string, newTranslation: string) => emit('update-translation', paragraphId, newTranslation)
             "
             @retranslate="(paragraphId: string) => emit('retranslate-paragraph', paragraphId)"
             @polish="(paragraphId: string) => emit('polish-paragraph', paragraphId)"
             @select-translation="
-              (data) => emit('select-translation', data)
+              (paragraphId: string, translationId: string) => emit('select-translation', paragraphId, translationId)
             "
             @paragraph-click="(paragraphId: string) => emit('paragraph-click', paragraphId)"
             @paragraph-edit-start="(paragraphId: string) => emit('paragraph-edit-start', paragraphId)"
