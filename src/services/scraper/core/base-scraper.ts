@@ -128,19 +128,6 @@ export abstract class BaseScraper implements NovelScraper {
             validateStatus: (status) => status >= 200 && status < 400,
           });
 
-          const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
-          console.log('[BaseScraper] axios 响应', {
-            status: response.status,
-            statusText: response.statusText,
-            contentType: response.headers['content-type'],
-            dataLength: dataStr.length,
-            dataPreview: dataStr.substring(0, 500),
-            proxiedUrl,
-            isHtml: dataStr.includes('<html') || dataStr.includes('<!DOCTYPE'),
-            hasNextData: dataStr.includes('__NEXT_DATA__'),
-            titleMatch: dataStr.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1],
-          });
-
           if (response.status >= 400) {
             throw new Error(`目标网站返回错误: ${response.status}`);
           }
@@ -153,11 +140,6 @@ export abstract class BaseScraper implements NovelScraper {
 
             // 检查是否是 JSON 响应（可能是代理服务返回的 JSON 格式）
             if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
-              console.warn('[BaseScraper] 返回的是 JSON 而不是 HTML', {
-                contentType,
-                dataPreview: dataStr.substring(0, 300),
-              });
-
               // 尝试解析 JSON 以获取实际内容
               try {
                 const jsonData =
@@ -165,20 +147,17 @@ export abstract class BaseScraper implements NovelScraper {
 
                 // 某些代理服务（如 AllOrigins）返回 JSON，内容在 contents 字段
                 if (jsonData.contents && typeof jsonData.contents === 'string') {
-                  console.log('[BaseScraper] 从 JSON contents 字段提取 HTML');
                   return jsonData.contents;
                 }
 
                 // 某些代理服务返回 JSON，内容在 data 字段
                 if (jsonData.data && typeof jsonData.data === 'string') {
-                  console.log('[BaseScraper] 从 JSON data 字段提取 HTML');
                   return jsonData.data;
                 }
 
                 // cors.lol 可能直接返回 HTML（即使 Content-Type 是 JSON）
                 // 检查是否包含 HTML 标签
                 if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) {
-                  console.log('[BaseScraper] JSON 响应中包含 HTML，直接使用');
                   return dataStr;
                 }
 
@@ -188,7 +167,6 @@ export abstract class BaseScraper implements NovelScraper {
                 });
               } catch {
                 // 不是有效的 JSON，可能是 HTML 但被误判为 JSON
-                console.log('[BaseScraper] JSON 解析失败，使用原始数据');
               }
             }
 
