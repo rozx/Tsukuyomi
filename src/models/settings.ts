@@ -11,6 +11,21 @@ export type TaskDefaultModels = {
 };
 
 /**
+ * 网站-代理映射条目
+ */
+export interface ProxySiteMappingEntry {
+  /**
+   * 是否启用此映射规则
+   * 默认值：true
+   */
+  enabled?: boolean;
+  /**
+   * 可用的代理 URL 列表
+   */
+  proxies: string[];
+}
+
+/**
  * 应用设置接口
  */
 export interface AppSettings {
@@ -58,10 +73,10 @@ export interface AppSettings {
   proxyAutoAddMapping?: boolean;
   /**
    * 网站-代理映射关系
-   * 键为网站域名（如 "kakuyomu.jp"），值为可用的代理 URL 列表
+   * 键为网站域名（如 "kakuyomu.jp"），值为映射配置（包含启用状态和代理 URL 列表）
    * 当自动切换代理时，会自动记录成功的代理服务
    */
-  proxySiteMapping?: Record<string, string[]>;
+  proxySiteMapping?: Record<string, ProxySiteMappingEntry>;
   /**
    * 用户自定义的代理列表
    * 每个代理包含名称和 URL

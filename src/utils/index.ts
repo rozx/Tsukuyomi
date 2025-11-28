@@ -38,3 +38,4 @@ export {
   refreshAllOccurrencesInBackground,
   removeChapterOccurrencesInBackground,
 } from './occurrence-utils';
+export { extractRootDomain } from './domain-utils';

@@ -10,6 +10,7 @@ import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { extractRootDomain } from 'src/utils/domain-utils';
 import axios from 'axios';
 
 const settingsStore = useSettingsStore();
@@ -77,9 +78,10 @@ watch(
 // 网站-代理映射管理
 const siteMapping = computed(() => settingsStore.proxySiteMapping);
 const siteMappingEntries = computed(() => {
-  return Object.entries(siteMapping.value).map(([site, proxies]) => ({
+  return Object.entries(siteMapping.value).map(([site, entry]) => ({
     site,
-    proxies: [...proxies],
+    enabled: entry.enabled ?? true,
+    proxies: [...(entry.proxies ?? [])],
   }));
 });
 
@@ -88,30 +90,192 @@ const newSiteInput = ref('');
 const newProxyInput = ref<string | null>(null);
 
 const addSiteMapping = async () => {
-  const site = newSiteInput.value.trim();
-  if (site && newProxyInput.value) {
+  const inputSite = newSiteInput.value.trim();
+  if (inputSite && newProxyInput.value) {
     const selectedProxy = proxyList.value.find((p) => p.id === newProxyInput.value);
     if (selectedProxy) {
-      const wasAdded = await settingsStore.addProxyForSite(site, selectedProxy.url);
+      // 提取根域名
+      const rootDomain = extractRootDomain(inputSite);
+      if (!rootDomain) {
+        toast.add({
+          severity: 'error',
+          summary: '无效的域名',
+          detail: '无法从输入中提取有效的域名',
+          life: 3000,
+        });
+        return;
+      }
+
+      // 检查是否已达到最大数量
+      const currentProxies = settingsStore.getProxiesForSite(rootDomain);
+      if (currentProxies.length >= 3) {
+        toast.add({
+          severity: 'warn',
+          summary: '已达到最大数量',
+          detail: '每个网站最多只能配置 3 个代理',
+          life: 3000,
+        });
+        return;
+      }
+
+      // 检查代理是否已存在
+      const proxyExists = currentProxies.includes(selectedProxy.url);
+
+      const wasAdded = await settingsStore.addProxyForSite(rootDomain, selectedProxy.url);
       if (wasAdded) {
         toast.add({
           severity: 'success',
-          summary: '映射已添加',
-          detail: `${site} -> ${selectedProxy.name}`,
+          summary: proxyExists ? '映射已更新' : '映射已添加',
+          detail: `${rootDomain} -> ${selectedProxy.name}`,
           life: 2000,
         });
         newSiteInput.value = '';
         newProxyInput.value = null;
+      } else if (proxyExists) {
+        // 代理已存在，静默处理
+        toast.add({
+          severity: 'info',
+          summary: '代理已存在',
+          detail: `${rootDomain} 已包含代理 ${selectedProxy.name}`,
+          life: 2000,
+        });
       }
-      // 如果映射已存在，静默处理，不显示 toast
     }
   }
 };
 
-// 删除网站映射
-const removeSiteMapping = async (site: string, proxyUrl: string) => {
-  await settingsStore.removeProxyForSite(site, proxyUrl);
+// 切换网站映射规则的启用/禁用状态
+const toggleSiteMappingEnabled = async (site: string, enabled: boolean) => {
+  await settingsStore.setProxySiteMappingEnabled(site, enabled);
+  toast.add({
+    severity: 'success',
+    summary: enabled ? '规则已启用' : '规则已禁用',
+    detail: `${site} 的映射规则已${enabled ? '启用' : '禁用'}`,
+    life: 2000,
+  });
 };
+
+// 编辑网站映射
+const editingSiteMapping = ref<{ site: string; enabled: boolean; proxies: string[] } | null>(null);
+const showEditSiteMappingDialog = ref(false);
+const selectedProxiesForEdit = ref<string[]>([]);
+const enabledForEdit = ref(false);
+
+const openEditSiteMappingDialog = (site: string) => {
+  const entry = siteMapping.value[site];
+  if (entry) {
+    editingSiteMapping.value = {
+      site,
+      enabled: entry.enabled ?? true,
+      proxies: [...(entry.proxies ?? [])],
+    };
+    selectedProxiesForEdit.value = [...(entry.proxies ?? [])];
+    enabledForEdit.value = entry.enabled ?? true;
+    showEditSiteMappingDialog.value = true;
+  }
+};
+
+const cancelEditSiteMapping = () => {
+  editingSiteMapping.value = null;
+  selectedProxiesForEdit.value = [];
+  enabledForEdit.value = false;
+  showEditSiteMappingDialog.value = false;
+};
+
+const addProxyToMapping = (proxyUrl: string | undefined) => {
+  if (proxyUrl && !selectedProxiesForEdit.value.includes(proxyUrl)) {
+    if (selectedProxiesForEdit.value.length < 3) {
+      selectedProxiesForEdit.value.push(proxyUrl);
+    } else {
+      toast.add({
+        severity: 'warn',
+        summary: '已达到最大数量',
+        detail: '每个网站最多只能配置 3 个代理',
+        life: 3000,
+      });
+    }
+  }
+};
+
+const removeProxyFromMapping = (proxyUrl: string) => {
+  const index = selectedProxiesForEdit.value.indexOf(proxyUrl);
+  if (index >= 0) {
+    selectedProxiesForEdit.value.splice(index, 1);
+  }
+};
+
+const moveProxyUp = (index: number) => {
+  if (index > 0 && index < selectedProxiesForEdit.value.length) {
+    const temp = selectedProxiesForEdit.value[index];
+    if (temp) {
+      selectedProxiesForEdit.value[index] = selectedProxiesForEdit.value[index - 1] ?? temp;
+      selectedProxiesForEdit.value[index - 1] = temp;
+    }
+  }
+};
+
+const moveProxyDown = (index: number) => {
+  if (index >= 0 && index < selectedProxiesForEdit.value.length - 1) {
+    const temp = selectedProxiesForEdit.value[index];
+    if (temp) {
+      selectedProxiesForEdit.value[index] = selectedProxiesForEdit.value[index + 1] ?? temp;
+      selectedProxiesForEdit.value[index + 1] = temp;
+    }
+  }
+};
+
+const confirmEditSiteMapping = async () => {
+  if (!editingSiteMapping.value) {
+    return;
+  }
+
+  // 验证最大数量
+  if (selectedProxiesForEdit.value.length > 3) {
+    toast.add({
+      severity: 'error',
+      summary: '代理数量超限',
+      detail: '每个网站最多只能配置 3 个代理',
+      life: 3000,
+    });
+    return;
+  }
+
+  const site = editingSiteMapping.value.site;
+  const currentEntry = siteMapping.value[site];
+  const currentProxies = currentEntry?.proxies ?? [];
+
+  // 更新启用状态
+  if (enabledForEdit.value !== (currentEntry?.enabled ?? true)) {
+    await settingsStore.setProxySiteMappingEnabled(site, enabledForEdit.value);
+  }
+
+  // 更新代理列表：先清除所有，然后按新顺序添加
+  // 先移除所有现有代理
+  for (const proxyUrl of currentProxies) {
+    await settingsStore.removeProxyForSite(site, proxyUrl);
+  }
+
+  // 按新顺序添加所有代理（最多3个）
+  const proxiesToAdd = selectedProxiesForEdit.value.slice(0, 3);
+  for (const proxyUrl of proxiesToAdd) {
+    await settingsStore.addProxyForSite(site, proxyUrl);
+  }
+
+  toast.add({
+    severity: 'success',
+    summary: '映射已更新',
+    detail: `${site} 的代理映射已更新`,
+    life: 2000,
+  });
+
+  cancelEditSiteMapping();
+};
+
+// 获取未选择的代理列表
+const availableProxiesForEdit = computed(() => {
+  const selectedUrls = new Set(selectedProxiesForEdit.value);
+  return proxyList.value.filter((proxy) => proxy.url && !selectedUrls.has(proxy.url));
+});
 
 // 获取代理服务的显示名称
 const getProxyDisplayName = (proxyUrl: string): string => {
@@ -435,7 +599,7 @@ onMounted(async () => {
         <div class="flex gap-2">
           <InputText
             v-model="newSiteInput"
-            placeholder="网站域名（如：kakuyomu.jp）"
+            placeholder="网站域名或URL（如：kakuyomu.jp 或 https://www.kakuyomu.jp）"
             class="flex-1"
           />
           <Select
@@ -472,37 +636,43 @@ onMounted(async () => {
           :rows="5"
           class="text-xs"
         >
-          <Column field="site" header="网站" class="text-xs">
+          <Column field="site" header="网站" class="text-xs" style="width: 150px">
             <template #body="{ data }">
               <span class="font-medium">{{ data.site }}</span>
             </template>
           </Column>
-          <Column field="proxies" header="可用代理" class="text-xs">
+          <Column header="启用" class="text-xs" style="width: 80px">
+            <template #body="{ data }">
+              <ToggleSwitch
+                :model-value="data.enabled"
+                @update:model-value="(value: boolean) => toggleSiteMappingEnabled(data.site, value)"
+              />
+            </template>
+          </Column>
+          <Column field="proxies" header="代理列表" class="text-xs">
             <template #body="{ data }">
               <div class="flex flex-wrap gap-1">
                 <Tag
                   v-for="(proxy, index) in data.proxies"
                   :key="index"
                   :value="getProxyDisplayName(proxy)"
-                  severity="info"
+                  :severity="data.enabled ? 'info' : 'secondary'"
                   class="text-xs"
                 />
               </div>
             </template>
           </Column>
-          <Column header="操作" class="text-xs" style="width: 150px">
+          <Column header="操作" class="text-xs" style="width: 120px">
             <template #body="{ data }">
-              <div class="flex gap-1 flex-nowrap">
+              <div class="flex gap-1 flex-nowrap justify-end">
                 <Button
-                  v-for="(proxy, index) in data.proxies"
-                  :key="index"
-                  icon="pi pi-times"
+                  icon="pi pi-pencil"
                   size="small"
-                  severity="danger"
+                  severity="secondary"
                   text
                   rounded
-                  :title="`删除 ${getProxyDisplayName(proxy)}`"
-                  @click="removeSiteMapping(data.site, proxy)"
+                  title="编辑映射"
+                  @click="openEditSiteMappingDialog(data.site)"
                 />
               </div>
             </template>
@@ -544,6 +714,122 @@ onMounted(async () => {
             :disabled="!newProxyName.trim() || !newProxyUrl.trim()"
             @click="saveProxy"
           />
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- 编辑网站映射对话框 -->
+    <Dialog
+      v-model:visible="showEditSiteMappingDialog"
+      modal
+      header="编辑网站-代理映射"
+      :style="{ width: '700px' }"
+      @hide="cancelEditSiteMapping"
+    >
+      <div class="space-y-4" v-if="editingSiteMapping">
+        <div>
+          <p class="text-sm text-moon/80 mb-2">
+            网站：<span class="font-medium">{{ editingSiteMapping.site }}</span>
+          </p>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <label class="text-xs text-moon/80">启用此映射规则</label>
+          <ToggleSwitch v-model="enabledForEdit" />
+        </div>
+
+        <div class="border-t border-moon/20 pt-3">
+          <div class="flex items-center justify-between mb-3">
+            <h4 class="text-sm font-medium text-moon/90">已选择的代理</h4>
+            <span class="text-xs text-moon/60">{{ selectedProxiesForEdit.length }}/3</span>
+          </div>
+          <div v-if="selectedProxiesForEdit.length === 0" class="text-xs text-moon/60 italic mb-3">
+            暂无代理，请从下方添加（最多 3 个）
+          </div>
+          <div v-else class="space-y-2 mb-3">
+            <div
+              v-for="(proxyUrl, index) in selectedProxiesForEdit"
+              :key="index"
+              class="flex items-center gap-2 p-2 bg-white/5 rounded border border-white/10"
+            >
+              <div class="flex-1 flex items-center gap-2">
+                <span class="text-xs text-moon/60 w-6">{{ index + 1 }}</span>
+                <Tag
+                  :value="getProxyDisplayName(proxyUrl)"
+                  severity="info"
+                  class="text-xs flex-1"
+                />
+              </div>
+              <div class="flex gap-1">
+                <Button
+                  icon="pi pi-arrow-up"
+                  size="small"
+                  severity="secondary"
+                  text
+                  rounded
+                  :disabled="index === 0"
+                  :title="`上移`"
+                  @click="moveProxyUp(index)"
+                />
+                <Button
+                  icon="pi pi-arrow-down"
+                  size="small"
+                  severity="secondary"
+                  text
+                  rounded
+                  :disabled="index === selectedProxiesForEdit.length - 1"
+                  :title="`下移`"
+                  @click="moveProxyDown(index)"
+                />
+                <Button
+                  icon="pi pi-times"
+                  size="small"
+                  severity="danger"
+                  text
+                  rounded
+                  :title="`移除`"
+                  @click="removeProxyFromMapping(proxyUrl)"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-moon/20 pt-3">
+          <h4 class="text-sm font-medium text-moon/90 mb-3">可用代理</h4>
+          <div v-if="availableProxiesForEdit.length === 0" class="text-xs text-moon/60 italic">
+            所有代理已添加
+          </div>
+          <div v-else class="space-y-2">
+            <div
+              v-for="proxy in availableProxiesForEdit"
+              :key="proxy.id"
+              class="flex items-center justify-between p-2 bg-white/5 rounded border border-white/10"
+            >
+              <div class="flex-1">
+                <div class="text-sm font-medium">{{ proxy.name }}</div>
+                <div v-if="proxy.description" class="text-xs text-moon/60">
+                  {{ proxy.description }}
+                </div>
+                <div class="text-xs text-moon/50 mt-1 break-all">{{ proxy.url }}</div>
+              </div>
+              <Button
+                icon="pi pi-plus"
+                size="small"
+                severity="success"
+                text
+                rounded
+                :title="`添加 ${proxy.name}`"
+                :disabled="selectedProxiesForEdit.length >= 3"
+                @click="addProxyToMapping(proxy.url)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3 border-t border-moon/20">
+          <Button label="取消" size="small" text @click="cancelEditSiteMapping" />
+          <Button label="保存" size="small" @click="confirmEditSiteMapping" />
         </div>
       </div>
     </Dialog>

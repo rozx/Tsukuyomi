@@ -1,6 +1,6 @@
 import { useSettingsStore } from 'src/stores/settings';
-import { showToolToast } from 'src/services/ai/tools/toast-helper';
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
+import { extractRootDomain } from 'src/utils/domain-utils';
 import co from 'co';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
@@ -66,16 +66,19 @@ export class ProxyService {
     if (proxyEnabled) {
       const domain = this.extractDomain(originalUrl);
       if (domain) {
-        const siteProxies = settingsStore.getProxiesForSite(domain);
-        if (siteProxies.length > 0) {
-          // 如果当前代理在网站特定列表中，使用当前代理
-          // 否则使用网站特定列表中的第一个
-          if (proxyUrl && siteProxies.includes(proxyUrl)) {
-            // 使用当前代理
-          } else {
-            const siteProxy = siteProxies[0];
-            if (siteProxy) {
-              proxyUrl = siteProxy;
+        const rootDomain = extractRootDomain(domain);
+        if (rootDomain) {
+          const siteProxies = settingsStore.getProxiesForSite(rootDomain);
+          if (siteProxies.length > 0) {
+            // 如果当前代理在网站特定列表中，使用当前代理
+            // 否则使用网站特定列表中的第一个
+            if (proxyUrl && siteProxies.includes(proxyUrl)) {
+              // 使用当前代理
+            } else {
+              const siteProxy = siteProxies[0];
+              if (siteProxy) {
+                proxyUrl = siteProxy;
+              }
             }
           }
         }
@@ -149,6 +152,7 @@ export class ProxyService {
     }
   }
 
+
   /**
    * 获取 AI 调用的 CORS 代理 URL（仅在浏览器模式下）
    * 在浏览器模式下，使用默认的 CORS 代理来绕过 CORS 限制
@@ -185,19 +189,22 @@ export class ProxyService {
     if (originalUrl) {
       const domain = this.extractDomain(originalUrl);
       if (domain) {
-        const siteProxies = settingsStore.getProxiesForSite(domain);
-        if (siteProxies.length > 0) {
-          // 查找当前代理在网站特定列表中的索引
-          const currentIndex = siteProxies.findIndex((url) => url === currentUrl);
-          if (currentIndex >= 0) {
-            // 切换到下一个网站特定的代理
-            const nextIndex = (currentIndex + 1) % siteProxies.length;
-            const nextProxy = siteProxies[nextIndex];
-            return nextProxy ?? null;
-          } else if (siteProxies.length > 0) {
-            // 如果当前代理不在列表中，使用第一个
-            const firstProxy = siteProxies[0];
-            return firstProxy ?? null;
+        const rootDomain = extractRootDomain(domain);
+        if (rootDomain) {
+          const siteProxies = settingsStore.getProxiesForSite(rootDomain);
+          if (siteProxies.length > 0) {
+            // 查找当前代理在网站特定列表中的索引
+            const currentIndex = siteProxies.findIndex((url) => url === currentUrl);
+            if (currentIndex >= 0) {
+              // 切换到下一个网站特定的代理
+              const nextIndex = (currentIndex + 1) % siteProxies.length;
+              const nextProxy = siteProxies[nextIndex];
+              return nextProxy ?? null;
+            } else if (siteProxies.length > 0) {
+              // 如果当前代理不在列表中，使用第一个
+              const firstProxy = siteProxies[0];
+              return firstProxy ?? null;
+            }
           }
         }
       }
@@ -326,6 +333,10 @@ export class ProxyService {
 
   /**
    * 获取当前尝试应该使用的代理 URL（不改变全局设置）
+   * 策略：
+   * 1. 第一次尝试（attemptIndex = 0）：优先使用默认代理，如果默认代理在网站特定列表中则使用它
+   * 2. 后续尝试：先尝试网站特定代理列表中的所有代理（排除已尝试的）
+   * 3. 如果网站特定代理都用完了，继续尝试全局代理列表中不在网站特定代理列表中的代理
    * @param originalUrl 原始 URL
    * @param attemptIndex 当前尝试索引（0 表示使用默认代理）
    * @returns 代理 URL 或 null
@@ -333,64 +344,63 @@ export class ProxyService {
   private static getProxyUrlForAttempt(originalUrl: string, attemptIndex: number): string | null {
     const settingsStore = useSettingsStore();
     const defaultProxyUrl = settingsStore.proxyUrl ?? '';
+    const domain = this.extractDomain(originalUrl);
+    const rootDomain = domain ? extractRootDomain(domain) : null;
+    const siteProxies = rootDomain ? settingsStore.getProxiesForSite(rootDomain) : [];
+    const proxyList = settingsStore.proxyList;
 
-    // 第一次尝试（attemptIndex === 0）使用默认代理或网站特定代理
+    // 第一次尝试：优先使用默认代理
     if (attemptIndex === 0) {
-      // 检查是否有网站特定的代理
-      const domain = this.extractDomain(originalUrl);
-      if (domain) {
-        const siteProxies = settingsStore.getProxiesForSite(domain);
-        if (siteProxies.length > 0) {
-          // 如果默认代理在网站特定列表中，使用默认代理
-          if (defaultProxyUrl && siteProxies.includes(defaultProxyUrl)) {
-            return defaultProxyUrl;
-          }
-          // 否则使用网站特定列表中的第一个
-          const siteProxy = siteProxies[0];
-          if (siteProxy) {
-            return siteProxy;
-          }
-        }
+      // 如果有网站特定代理且默认代理在其中，使用默认代理
+      if (defaultProxyUrl && siteProxies.length > 0 && siteProxies.includes(defaultProxyUrl)) {
+        return defaultProxyUrl;
       }
+      // 如果有网站特定代理但默认代理不在其中，使用网站特定代理的第一个
+      if (siteProxies.length > 0) {
+        return siteProxies[0] ?? null;
+      }
+      // 否则使用默认代理
       return defaultProxyUrl || null;
     }
 
-    // 后续尝试：切换到下一个代理
-    // 首先尝试网站特定的代理列表
-    const domain = this.extractDomain(originalUrl);
-    if (domain) {
-      const siteProxies = settingsStore.getProxiesForSite(domain);
-      if (siteProxies.length > 0) {
-        // 找到默认代理在列表中的位置
-        const defaultIndex = defaultProxyUrl
-          ? siteProxies.findIndex((url) => url === defaultProxyUrl)
-          : -1;
-        const startIndex = defaultIndex >= 0 ? defaultIndex : 0;
-        // 计算当前尝试应该使用的索引（循环使用）
-        const targetIndex = (startIndex + attemptIndex) % siteProxies.length;
-        const targetProxy = siteProxies[targetIndex];
-        if (targetProxy) {
-          return targetProxy;
-        }
+    // 后续尝试（attemptIndex > 0）
+    // 构建所有可用的代理列表，按优先级排序：
+    // 1. 网站特定代理（排除默认代理，如果默认代理已经在第一次尝试中使用）
+    // 2. 全局代理列表中不在网站特定代理列表中的代理
+
+    const siteProxyUrls = new Set(siteProxies);
+    const allAvailableProxies: string[] = [];
+
+    // 添加网站特定代理（排除默认代理，因为已经在第一次尝试中使用）
+    if (siteProxies.length > 0) {
+      const defaultIndex = defaultProxyUrl
+        ? siteProxies.findIndex((url) => url === defaultProxyUrl)
+        : -1;
+      if (defaultIndex >= 0) {
+        // 如果默认代理在网站特定列表中，从它之后开始
+        allAvailableProxies.push(...siteProxies.slice(defaultIndex + 1));
+        allAvailableProxies.push(...siteProxies.slice(0, defaultIndex));
+      } else {
+        // 如果默认代理不在网站特定列表中，从第一个开始
+        allAvailableProxies.push(...siteProxies);
       }
     }
 
-    // 如果没有网站特定代理，使用代理列表
-    const proxyList = settingsStore.proxyList;
-    if (proxyList.length === 0) {
-      return null;
-    }
-    const defaultProxyIndex = defaultProxyUrl
-      ? proxyList.findIndex((proxy) => proxy.url === defaultProxyUrl)
-      : -1;
-    const startProxyIndex = defaultProxyIndex >= 0 ? defaultProxyIndex : 0;
-    const targetProxyIndex = (startProxyIndex + attemptIndex) % proxyList.length;
-    const targetProxy = proxyList[targetProxyIndex];
-    if (targetProxy) {
-      return targetProxy.url;
+    // 添加全局代理列表中不在网站特定代理列表中的代理
+    const globalProxies = proxyList
+      .map((p) => p.url)
+      .filter((url) => !siteProxyUrls.has(url) && url !== defaultProxyUrl);
+    allAvailableProxies.push(...globalProxies);
+
+    // 根据尝试索引选择代理
+    if (allAvailableProxies.length > 0) {
+      // attemptIndex = 1 表示第一次重试，应该使用 allAvailableProxies[0]
+      const targetIndex = (attemptIndex - 1) % allAvailableProxies.length;
+      return allAvailableProxies[targetIndex] ?? null;
     }
 
-    return null;
+    // 如果没有可用代理，回退到默认代理
+    return defaultProxyUrl || null;
   }
 
   /**
@@ -464,18 +474,12 @@ export class ProxyService {
         ) {
           const domain = this.extractDomain(originalUrl);
           if (domain) {
-            const wasAdded = await settingsStore.addProxyForSite(domain, currentProxyUrl);
-            if (wasAdded) {
-              // 显示 toast 通知
-              const proxyName = getProxyDisplayName(currentProxyUrl);
-              showToolToast({
-                severity: 'success',
-                summary: '代理映射已添加',
-                detail: `${domain} 已映射到 ${proxyName}`,
-                life: 3000,
-              });
+            // 提取根域名
+            const rootDomain = extractRootDomain(domain);
+            if (rootDomain) {
+              // 静默添加映射，不显示 toast 通知
+              await settingsStore.addProxyForSite(rootDomain, currentProxyUrl);
             }
-            // 如果映射已存在，静默处理
           }
         }
 
