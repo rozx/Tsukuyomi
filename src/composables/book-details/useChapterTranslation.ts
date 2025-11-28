@@ -95,6 +95,17 @@ export function useChapterTranslation(
       };
     });
 
+    // 优化：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
+    if (updatedVolumes) {
+      const updatedChapter = updatedVolumes
+        .flatMap((v) => v.chapters || [])
+        .find((c) => c.id === selectedChapterWithContent.value!.id);
+      if (updatedChapter && updatedChapter.content) {
+        await ChapterService.saveChapterContent(updatedChapter);
+      }
+    }
+
+    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
       lastEdited: new Date(),

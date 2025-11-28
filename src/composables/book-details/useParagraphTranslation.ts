@@ -63,12 +63,23 @@ export function useParagraphTranslation(
       return para;
     });
 
-    // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
+    // 优化：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
+    // 这样可以避免遍历所有章节来保留内容
+    const updatedChapter = {
+      ...chapter,
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+    await ChapterService.saveChapterContent(updatedChapter);
+
+    // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
+    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
       content: updatedContent,
+      lastEdited: new Date(),
     });
 
-    // 保存书籍
+    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
       lastEdited: new Date(),
@@ -110,12 +121,22 @@ export function useParagraphTranslation(
       };
     });
 
+    // 优化：直接保存章节内容到 IndexedDB
+    const updatedChapter = {
+      ...chapter,
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+    await ChapterService.saveChapterContent(updatedChapter);
+
     // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
+    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
       content: updatedContent,
+      lastEdited: new Date(),
     });
 
-    // 保存书籍
+    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
       lastEdited: new Date(),

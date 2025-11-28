@@ -106,12 +106,16 @@ export const useBooksStore = defineStore('books', {
           // 第一遍：识别需要保留内容的章节
           for (let vIndex = 0; vIndex < updates.volumes.length; vIndex++) {
             const updatedVolume = updates.volumes[vIndex];
+            if (!updatedVolume) continue;
+
             const existingVolume = existingVolumesMap.get(updatedVolume.id);
             const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
 
             if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
               for (let cIndex = 0; cIndex < updatedVolume.chapters.length; cIndex++) {
                 const updatedChapter = updatedVolume.chapters[cIndex];
+                if (!updatedChapter) continue;
+
                 const existingChapter = volumeChaptersMap.get(updatedChapter.id);
 
                 // 如果是新章节，跳过（新章节不需要保留内容）
@@ -119,13 +123,14 @@ export const useBooksStore = defineStore('books', {
                   continue;
                 }
 
-                // 如果更新的章节已经有内容，跳过
+                // 优化：如果更新的章节已经有完整的内容（是数组），跳过
+                // 这意味着内容已经被更新，不需要从 IndexedDB 加载
                 if (
                   updatedChapter.content !== undefined &&
                   updatedChapter.content !== null &&
-                  Array.isArray(updatedChapter.content) &&
-                  updatedChapter.content.length > 0
+                  Array.isArray(updatedChapter.content)
                 ) {
+                  // 即使数组为空，也认为内容已更新，不需要保留
                   continue;
                 }
 
@@ -168,13 +173,14 @@ export const useBooksStore = defineStore('books', {
                     return updatedChapter;
                   }
 
-                  // 如果更新的章节已经有内容，直接返回
+                  // 优化：如果更新的章节已经有完整的内容（是数组），直接返回
+                  // 这意味着内容已经被更新，不需要保留
                   if (
                     updatedChapter.content !== undefined &&
                     updatedChapter.content !== null &&
-                    Array.isArray(updatedChapter.content) &&
-                    updatedChapter.content.length > 0
+                    Array.isArray(updatedChapter.content)
                   ) {
+                    // 即使数组为空，也认为内容已更新，不需要保留
                     return updatedChapter;
                   }
 
