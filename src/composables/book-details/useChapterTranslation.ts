@@ -11,6 +11,7 @@ import { normalizeTranslationQuotes } from 'src/utils';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
+import co from 'co';
 
 export function useChapterTranslation(
   book: Ref<Novel | undefined>,
@@ -277,15 +278,18 @@ export function useChapterTranslation(
             };
           });
 
-          // 更新书籍（使用 void 忽略 Promise）
-          void booksStore
-            .updateBook(book.value.id, {
-              volumes: updatedVolumes,
-              lastEdited: new Date(),
-            })
-            .then(() => {
+          // 更新书籍（后台执行）
+          void co(function* () {
+            try {
+              yield booksStore.updateBook(book.value.id, {
+                volumes: updatedVolumes,
+                lastEdited: new Date(),
+              });
               updateSelectedChapterWithContent(updatedVolumes);
-            });
+            } catch (error) {
+              console.error('[useChapterTranslation] 更新书籍失败:', error);
+            }
+          });
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -1048,8 +1052,14 @@ export function useChapterTranslation(
           toast.add(message);
         },
         onParagraphPolish: (translations) => {
-          // 立即更新段落润色（异步执行，不阻塞）
-          void updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
+          // 立即更新段落润色（后台执行，不阻塞）
+          void co(function* () {
+            try {
+              yield updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
+            } catch (error) {
+              console.error('[useChapterTranslation] 更新段落润色失败:', error);
+            }
+          });
         },
       });
 

@@ -7,7 +7,11 @@ import { ChapterService } from 'src/services/chapter-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { generateShortId } from 'src/utils/id-generator';
-import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import {
+  getVolumeDisplayTitle,
+  getChapterDisplayTitle,
+  removeChapterOccurrencesInBackground,
+} from 'src/utils';
 import { cloneDeep } from 'lodash';
 
 export function useChapterManagement(
@@ -51,8 +55,6 @@ export function useChapterManagement(
       return;
     }
 
-    saveState?.('添加卷');
-
     const updatedVolumes = ChapterService.addVolume(book.value, newVolumeTitle.value);
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
@@ -75,8 +77,6 @@ export function useChapterManagement(
       return;
     }
 
-    saveState?.('添加章节');
-
     const updatedVolumes = ChapterService.addChapter(
       book.value,
       selectedVolumeId.value,
@@ -88,9 +88,8 @@ export function useChapterManagement(
       lastEdited: new Date(),
     });
 
-    // Refresh occurrences
-    await TerminologyService.refreshAllTermOccurrences(book.value.id);
-    await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
+    // 新添加的章节没有内容，无需刷新出现次数
+    // 当章节内容被编辑时，会自动更新出现次数
 
     toast.add({
       severity: 'success',
@@ -159,8 +158,6 @@ export function useChapterManagement(
       return;
     }
 
-    saveState?.('编辑卷');
-
     const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
 
     let translationId = '';
@@ -226,8 +223,6 @@ export function useChapterManagement(
     ) {
       return;
     }
-
-    saveState?.('编辑章节');
 
     let currentChapter: Chapter | null = null;
     for (const volume of book.value.volumes || []) {
@@ -324,8 +319,6 @@ export function useChapterManagement(
       return;
     }
 
-    saveState?.('删除卷');
-
     const updatedVolumes = ChapterService.deleteVolume(book.value, deletingVolumeId.value);
 
     await booksStore.updateBook(book.value.id, {
@@ -350,18 +343,20 @@ export function useChapterManagement(
       return;
     }
 
-    saveState?.('删除章节');
-
-    const updatedVolumes = ChapterService.deleteChapter(book.value, deletingChapterId.value);
+    const chapterIdToDelete = deletingChapterId.value;
+    const updatedVolumes = ChapterService.deleteChapter(book.value, chapterIdToDelete);
 
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
       lastEdited: new Date(),
     });
 
-    // Refresh occurrences
-    await TerminologyService.refreshAllTermOccurrences(book.value.id);
-    await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
+    // 高效移除该章节的出现记录，无需重新扫描所有章节
+    removeChapterOccurrencesInBackground(
+      book.value.id,
+      chapterIdToDelete,
+      'useChapterManagement',
+    );
 
     toast.add({
       severity: 'success',

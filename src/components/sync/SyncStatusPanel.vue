@@ -12,6 +12,7 @@ import { formatRelativeTime } from 'src/utils/format';
 import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
 import type { ConflictResolution, ConflictItem } from 'src/services/conflict-detection-service';
 import { SyncDataService } from 'src/services/sync-data-service';
+import co from 'co';
 
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();
@@ -112,9 +113,21 @@ const uploadConfig = async () => {
     if (result.success) {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
-        void settingsStore.setGistId(result.gistId);
+        void co(function* () {
+          try {
+            yield settingsStore.setGistId(result.gistId);
+          } catch (error) {
+            console.error('[SyncStatusPanel] 设置 Gist ID 失败:', error);
+          }
+        });
       }
-      void settingsStore.updateLastSyncTime();
+      void co(function* () {
+        try {
+          yield settingsStore.updateLastSyncTime();
+        } catch (error) {
+          console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
+        }
+      });
       // 更新远程统计数据（上传的数据）
       remoteStats.value = {
         booksCount: booksStore.books.length,
@@ -198,7 +211,13 @@ const downloadConfig = async () => {
       // 无冲突，直接应用
       await applyDownloadedData(safeRemoteData, []);
 
-      void settingsStore.updateLastSyncTime();
+      void co(function* () {
+        try {
+          yield settingsStore.updateLastSyncTime();
+        } catch (error) {
+          console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
+        }
+      });
       remoteStats.value = {
         booksCount: result.data.novels?.length || 0,
         aiModelsCount: result.data.aiModels?.length || 0,
@@ -248,7 +267,13 @@ const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
   try {
     await applyDownloadedData(safeRemoteData, resolutions);
 
-    void settingsStore.updateLastSyncTime();
+    void co(function* () {
+      try {
+        yield settingsStore.updateLastSyncTime();
+      } catch (error) {
+        console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
+      }
+    });
     remoteStats.value = {
       booksCount: safeRemoteData.novels?.length || 0,
       aiModelsCount: safeRemoteData.aiModels?.length || 0,

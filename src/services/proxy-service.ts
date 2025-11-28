@@ -1,6 +1,7 @@
 import { useSettingsStore } from 'src/stores/settings';
 import { showToolToast } from 'src/services/ai/tools/toast-helper';
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
+import co from 'co';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
@@ -284,7 +285,13 @@ export class ProxyService {
     const nextProxyUrl = this.getNextProxyUrl(originalUrl);
 
     if (nextProxyUrl) {
-      void settingsStore.setProxyUrl(nextProxyUrl);
+      void co(function* () {
+        try {
+          yield settingsStore.setProxyUrl(nextProxyUrl);
+        } catch (error) {
+          console.error('[ProxyService] 切换代理 URL 失败:', error);
+        }
+      });
       return true;
     }
 

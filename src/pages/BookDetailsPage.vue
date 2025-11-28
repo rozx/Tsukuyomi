@@ -113,6 +113,45 @@ const { canUndo, canRedo, undoDescription, redoDescription, saveState, undo, red
   useUndoRedo(book, async (updatedBook) => {
     if (updatedBook) {
       await booksStore.updateBook(updatedBook.id, updatedBook);
+
+      // 同步更新 selectedChapterWithContent，确保撤销/重做后 UI 正确显示
+      if (selectedChapterId.value && updatedBook.volumes) {
+        // 查找更新后的章节
+        let foundChapter = false;
+        for (const volume of updatedBook.volumes) {
+          if (volume.chapters) {
+            const updatedChapter = volume.chapters.find((ch) => ch.id === selectedChapterId.value);
+            if (updatedChapter) {
+              foundChapter = true;
+              // 如果章节内容已加载，更新 selectedChapterWithContent
+              if (updatedChapter.content !== undefined) {
+                selectedChapterWithContent.value = updatedChapter;
+              } else if (selectedChapterWithContent.value) {
+                // 如果章节内容未加载，但之前已加载，需要重新加载
+                // 或者保持当前内容（因为内容存储在独立存储中）
+                // 这里我们选择重新加载以确保一致性
+                try {
+                  const chapterWithContent =
+                    await ChapterService.loadChapterContent(updatedChapter);
+                  selectedChapterWithContent.value = chapterWithContent;
+                } catch (error) {
+                  console.error('Failed to reload chapter content after undo/redo:', error);
+                  // 如果加载失败，至少更新章节的基本信息
+                  selectedChapterWithContent.value = {
+                    ...selectedChapterWithContent.value,
+                    ...updatedChapter,
+                  };
+                }
+              }
+              break;
+            }
+          }
+        }
+        // 如果章节不存在（可能被删除），清空 selectedChapterWithContent
+        if (!foundChapter && selectedChapterWithContent.value) {
+          selectedChapterWithContent.value = null;
+        }
+      }
     }
   });
 
@@ -302,9 +341,6 @@ const handleScraperUpdate = async (novel: Novel) => {
     return;
   }
 
-  // 保存状态用于撤销
-  saveState('从在线获取更新');
-
   try {
     // 保存原始数据用于撤销
     const oldBook = cloneDeep(book.value);
@@ -371,7 +407,12 @@ const selectedChapter = computed(() => {
 // 监听选中章节变化，懒加载内容
 watch(
   selectedChapterId,
-  async (newChapterId) => {
+  async (newChapterId, oldChapterId) => {
+    // 如果章节切换了（不是初始化），清空撤销/重做历史记录
+    if (oldChapterId !== null && newChapterId !== oldChapterId) {
+      clearHistory();
+    }
+
     if (!newChapterId || !selectedChapter.value) {
       selectedChapterWithContent.value = null;
       resetParagraphNavigation();

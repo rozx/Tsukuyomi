@@ -27,6 +27,7 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
+import co from 'co';
 
 const ui = useUiStore();
 const router = useRouter();
@@ -465,26 +466,29 @@ const sendMessage = async () => {
             'paragraph_id' in action.data ? (action.data.paragraph_id as string) : null;
 
           // 导航到书籍详情页面
-          void router.push(`/books/${bookId}`).then(() => {
-            // 等待路由完成后再设置选中的章节
-            void nextTick(() => {
+          void co(function* () {
+            try {
+              yield router.push(`/books/${bookId}`);
+              // 等待路由完成后再设置选中的章节
+              yield nextTick();
               if (chapterId) {
                 bookDetailsStore.setSelectedChapter(bookId, chapterId);
               }
 
               // 如果有段落 ID，滚动到该段落
               if (paragraphId) {
-                void nextTick(() => {
-                  // 等待章节加载完成后再滚动
-                  setTimeout(() => {
-                    const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
-                    if (paragraphElement) {
-                      paragraphElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                  }, 500); // 给章节内容加载一些时间
-                });
+                yield nextTick();
+                // 等待章节加载完成后再滚动
+                setTimeout(() => {
+                  const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+                  if (paragraphElement) {
+                    paragraphElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, 500); // 给章节内容加载一些时间
               }
-            });
+            } catch (error) {
+              console.error('[AppRightPanel] 导航失败:', error);
+            }
           });
         }
 

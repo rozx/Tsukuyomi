@@ -6,6 +6,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
+import { refreshAllOccurrencesInBackground } from 'src/utils';
 
 export type EditMode = 'original' | 'translation' | 'preview';
 
@@ -128,9 +129,8 @@ export function useEditMode(
       // 更新 selectedChapterWithContent 以反映保存的更改
       updateSelectedChapterWithContent(updatedVolumes);
 
-      // 重新计算该章节中出现的术语和角色的出现次数
-      await TerminologyService.refreshAllTermOccurrences(book.value.id);
-      await CharacterSettingService.refreshAllCharacterOccurrences(book.value.id);
+      // 重新计算该章节中出现的术语和角色的出现次数（后台运行）
+      refreshAllOccurrencesInBackground(book.value.id, 'useEditMode');
 
       toast.add({
         severity: 'success',

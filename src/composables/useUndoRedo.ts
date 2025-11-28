@@ -109,9 +109,9 @@ export function useUndoRedo(
         return;
       }
 
-      // 恢复上一个状态
-      bookRef.value = cloneDeep(previousState.book);
-      await onStateChange(bookRef.value);
+      // 恢复上一个状态（通过 onStateChange 回调更新，而不是直接修改 ref）
+      // 注意：如果 bookRef 是 computed，不能直接赋值，需要通过 onStateChange 更新 store
+      await onStateChange(cloneDeep(previousState.book));
     } finally {
       isUndoing.value = false;
     }
@@ -140,9 +140,9 @@ export function useUndoRedo(
         return;
       }
 
-      // 恢复下一个状态
-      bookRef.value = cloneDeep(nextState.book);
-      await onStateChange(bookRef.value);
+      // 恢复下一个状态（通过 onStateChange 回调更新，而不是直接修改 ref）
+      // 注意：如果 bookRef 是 computed，不能直接赋值，需要通过 onStateChange 更新 store
+      await onStateChange(cloneDeep(nextState.book));
     } finally {
       isUndoing.value = false;
     }

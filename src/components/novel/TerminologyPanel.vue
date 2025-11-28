@@ -17,6 +17,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
+import co from 'co';
 
 const props = defineProps<{
   book: Novel | null;
@@ -223,13 +224,13 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
       severity: 'danger',
     },
     accept: () => {
-      void (async () => {
+      void co(function* () {
         try {
           // 保存要删除的术语数据用于撤销
           const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
           const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
 
-          await TerminologyService.deleteTerminology(props.book!.id, terminology.id);
+          yield TerminologyService.deleteTerminology(props.book!.id, terminology.id);
           toast.add({
             severity: 'success',
             summary: '删除成功',
@@ -260,7 +261,7 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
             life: 3000,
           });
         }
-      })();
+      });
     },
   });
 };
@@ -339,7 +340,7 @@ const handleBulkDelete = () => {
       severity: 'danger',
     },
     accept: () => {
-      void (async () => {
+      void co(function* () {
         const idsToDelete = Array.from(selectedTermIds.value);
         // 保存要删除的术语数据用于撤销
         const termsToRestore =
@@ -351,7 +352,7 @@ const handleBulkDelete = () => {
 
         for (const id of idsToDelete) {
           try {
-            await TerminologyService.deleteTerminology(props.book!.id, id);
+            yield TerminologyService.deleteTerminology(props.book!.id, id);
             successCount++;
           } catch (error) {
             console.error('删除术语失败:', error);
@@ -397,7 +398,7 @@ const handleBulkDelete = () => {
 
         selectedTermIds.value.clear();
         bulkActionMode.value = false;
-      })();
+      });
     },
   });
 };

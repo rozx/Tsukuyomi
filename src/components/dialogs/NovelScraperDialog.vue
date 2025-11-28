@@ -21,6 +21,7 @@ import {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from 'src/utils';
+import co from 'co';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -330,11 +331,23 @@ const selectChapter = (chapter: Chapter) => {
   selectedChapterId.value = chapter.id;
   // 如果是已导入的章节，也需要加载新内容以进行对比
   if (!chapterContents.value.has(chapter.id) && chapter.webUrl) {
-    void loadChapterContent(chapter);
+    void co(function* () {
+      try {
+        yield loadChapterContent(chapter);
+      } catch (error) {
+        console.error('[NovelScraperDialog] 加载章节内容失败:', error);
+      }
+    });
   }
   // 异步加载本地（已导入）章节内容用于比对
   if (isChapterImported(chapter)) {
-    void loadImportedChapterContent(chapter);
+    void co(function* () {
+      try {
+        yield loadImportedChapterContent(chapter);
+      } catch (error) {
+        console.error('[NovelScraperDialog] 加载已导入章节内容失败:', error);
+      }
+    });
   }
 };
 

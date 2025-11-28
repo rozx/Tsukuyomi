@@ -34,3 +34,7 @@ export type { DegradationDetectionOptions } from 'src/services/ai/degradation-de
 export { isEmptyOrSymbolOnly } from './text-utils';
 export { isTimeDifferent, isNewlyAdded } from './time-utils';
 export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
+export {
+  refreshAllOccurrencesInBackground,
+  removeChapterOccurrencesInBackground,
+} from './occurrence-utils';

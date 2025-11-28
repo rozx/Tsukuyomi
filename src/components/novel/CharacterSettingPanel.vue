@@ -14,6 +14,7 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
+import co from 'co';
 
 const props = defineProps<{
   book: Novel | null;
@@ -192,12 +193,12 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
       severity: 'danger',
     },
     accept: () => {
-      void (async () => {
+      void co(function* () {
         try {
           // 保存要删除的角色数据用于撤销
           const charToRestore = cloneDeep(character._original);
 
-          await CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
+          yield CharacterSettingService.deleteCharacterSetting(props.book!.id, character.id);
 
           toast.add({
             severity: 'success',
@@ -227,7 +228,7 @@ const handleDelete = (character: (typeof characterSettings.value)[0]) => {
             life: 5000,
           });
         }
-      })();
+      });
     },
   });
 };
