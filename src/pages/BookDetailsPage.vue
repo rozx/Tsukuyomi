@@ -371,6 +371,11 @@ const updateParagraphTranslation = async (paragraphId: string, newTranslation: s
   const chapter = selectedChapterWithContent.value;
   if (!book.value || !chapter || !chapter.content) return;
 
+  // 清除编辑状态
+  if (currentlyEditingParagraphId.value === paragraphId) {
+    currentlyEditingParagraphId.value = null;
+  }
+
   // 保存状态用于撤销
   saveState('更新段落翻译');
 
@@ -1252,14 +1257,46 @@ const selectedParagraphIndex = ref<number | null>(null);
 const paragraphCardRefs = ref<Map<string, InstanceType<typeof ParagraphCard>>>(new Map());
 // 是否通过键盘导航选中（用于控制是否显示选中效果）
 const isKeyboardSelected = ref(false);
+// 是否通过点击选中（用于控制是否显示选中效果）
+const isClickSelected = ref(false);
+// 当前正在编辑的段落 ID（确保同时只有一个段落处于编辑模式）
+const currentlyEditingParagraphId = ref<string | null>(null);
 // 是否正在使用键盘导航（用于忽略鼠标悬停）
 const isKeyboardNavigating = ref(false);
+// 是否正在进行程序化滚动（用于区分用户滚动和程序化滚动）
+const isProgrammaticScrolling = ref(false);
+// 最后一次键盘导航的时间戳（用于判断是否应该允许滚动事件重置状态）
+const lastKeyboardNavigationTime = ref<number | null>(null);
+// 程序化滚动的 timeout ID（用于清除之前的 timeout）
+let programmaticScrollTimeoutId: ReturnType<typeof setTimeout> | null = null;
+// 重置键盘导航状态的防抖 timeout ID
+let resetNavigationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+// 清除选中效果的 timeout ID
+let clearSelectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 // 重置段落导航
 const resetParagraphNavigation = () => {
   selectedParagraphIndex.value = null;
   isKeyboardSelected.value = false;
+  isClickSelected.value = false;
   isKeyboardNavigating.value = false;
+  lastKeyboardNavigationTime.value = null;
+  // 清除程序化滚动的 timeout
+  if (programmaticScrollTimeoutId !== null) {
+    clearTimeout(programmaticScrollTimeoutId);
+    programmaticScrollTimeoutId = null;
+  }
+  // 清除重置导航的防抖 timeout
+  if (resetNavigationTimeoutId !== null) {
+    clearTimeout(resetNavigationTimeoutId);
+    resetNavigationTimeoutId = null;
+  }
+  // 清除选中效果的 timeout
+  if (clearSelectionTimeoutId !== null) {
+    clearTimeout(clearSelectionTimeoutId);
+    clearSelectionTimeoutId = null;
+  }
+  isProgrammaticScrolling.value = false;
 };
 
 // 获取非空段落的索引列表
@@ -1290,6 +1327,52 @@ const findNextNonEmptyParagraph = (
       ? prevIndex
       : (nonEmptyIndices[nonEmptyIndices.length - 1] ?? null); // 循环到最后一个
   }
+};
+
+// 快速滚动到元素（使用自定义动画，比浏览器默认的 smooth 更快）
+const scrollToElementFast = (element: HTMLElement) => {
+  // 找到可滚动的容器
+  const scrollContainer = scrollableContentRef.value;
+  if (!scrollContainer) {
+    // 如果没有找到容器，回退到 window 滚动
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const elementRect = element.getBoundingClientRect();
+  const containerRect = scrollContainer.getBoundingClientRect();
+  
+  // 计算元素相对于容器的位置
+  const elementTopRelativeToContainer = elementRect.top - containerRect.top + scrollContainer.scrollTop;
+  const elementHeight = elementRect.height;
+  const containerHeight = containerRect.height;
+  
+  // 计算目标滚动位置（将元素居中）
+  const targetScrollY = elementTopRelativeToContainer - containerHeight / 2 + elementHeight / 2;
+
+  const startScrollY = scrollContainer.scrollTop;
+  const distance = targetScrollY - startScrollY;
+  const duration = 300; // 300ms 的快速动画
+  let startTime: number | null = null;
+
+  const easeInOutCubic = (t: number): number => {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  };
+
+  const animateScroll = (currentTime: number) => {
+    if (startTime === null) startTime = currentTime;
+    const timeElapsed = currentTime - startTime;
+    const progress = Math.min(timeElapsed / duration, 1);
+    const easedProgress = easeInOutCubic(progress);
+
+    scrollContainer.scrollTop = startScrollY + distance * easedProgress;
+
+    if (progress < 1) {
+      requestAnimationFrame(animateScroll);
+    }
+  };
+
+  requestAnimationFrame(animateScroll);
 };
 
 // 导航到指定段落（跳过空段落）
@@ -1323,23 +1406,72 @@ const navigateToParagraph = (
     }
   }
 
+  // 如果切换到不同的段落，取消当前正在编辑的段落
+  const previousIndex = selectedParagraphIndex.value;
+  if (previousIndex !== null && previousIndex !== targetIndex) {
+    cancelCurrentEditing();
+  }
+
   selectedParagraphIndex.value = targetIndex;
   // 只有键盘导航时才显示选中效果
   isKeyboardSelected.value = isKeyboard;
+  // 如果是键盘导航，清除点击选中状态
+  if (isKeyboard) {
+    isClickSelected.value = false;
+    // 清除之前的定时器
+    if (clearSelectionTimeoutId !== null) {
+      clearTimeout(clearSelectionTimeoutId);
+    }
+    // 2 秒后清除键盘选中效果
+    clearSelectionTimeoutId = setTimeout(() => {
+      isKeyboardSelected.value = false;
+      clearSelectionTimeoutId = null;
+    }, 2000);
+  }
 
   // 自动滚动到选中的段落（如果启用）
   if (scroll) {
+    // 如果是键盘导航触发的滚动，标记为程序化滚动
+    if (isKeyboard) {
+      // 更新最后一次键盘导航的时间
+      lastKeyboardNavigationTime.value = Date.now();
+      // 清除之前的 timeout（如果存在）
+      if (programmaticScrollTimeoutId !== null) {
+        clearTimeout(programmaticScrollTimeoutId);
+      }
+      isProgrammaticScrolling.value = true;
+      // 在滚动动画完成后清除标志（使用更快的动画，缩短到 600ms）
+      // 这样可以避免平滑滚动的余波被误判为用户滚动
+      programmaticScrollTimeoutId = setTimeout(() => {
+        isProgrammaticScrolling.value = false;
+        programmaticScrollTimeoutId = null;
+      }, 600);
+    }
     const targetParagraph = selectedChapterParagraphs.value[targetIndex];
     if (targetParagraph) {
       const cardRef = paragraphCardRefs.value.get(targetParagraph.id);
       if (cardRef) {
-        cardRef.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 获取组件的 DOM 元素
+        const element = (cardRef as { $el?: HTMLElement }).$el || (cardRef as unknown as HTMLElement);
+        if (element instanceof HTMLElement) {
+          if (scroll) {
+            scrollToElementFast(element);
+          }
+          // 将焦点转移到选中的段落
+          nextTick(() => {
+            element.focus();
+          });
+        }
       } else {
         // 如果 ref 还没有设置，使用 DOM 查询
         nextTick(() => {
           const element = document.getElementById(`paragraph-${targetParagraph.id}`);
           if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (scroll) {
+              scrollToElementFast(element);
+            }
+            // 将焦点转移到选中的段落
+            element.focus();
           }
         });
       }
@@ -1347,28 +1479,101 @@ const navigateToParagraph = (
   }
 };
 
-// 处理段落悬停，更新导航索引但不显示选中效果
-const handleParagraphHover = (paragraphId: string) => {
-  // 如果正在使用键盘导航，忽略鼠标悬停
-  if (isKeyboardNavigating.value) return;
 
+// 处理段落点击，设置选中段落
+const handleParagraphClick = (paragraphId: string) => {
   if (!selectedChapterParagraphs.value.length) return;
 
   const index = selectedChapterParagraphs.value.findIndex((p) => p.id === paragraphId);
   if (index !== -1) {
     const paragraph = selectedChapterParagraphs.value[index];
     if (!paragraph) return;
-    // 如果悬停的是空段落，导航到最近的非空段落
+    
+    // 如果点击的是空段落，找到最近的非空段落
+    let targetIndex = index;
     if (isEmptyParagraph(paragraph)) {
       const nextNonEmpty = findNextNonEmptyParagraph(index, 'down');
       if (nextNonEmpty !== null) {
-        navigateToParagraph(nextNonEmpty, false, false); // 不滚动，不显示效果
+        targetIndex = nextNonEmpty;
+      } else {
+        const prevNonEmpty = findNextNonEmptyParagraph(index, 'up');
+        if (prevNonEmpty !== null) {
+          targetIndex = prevNonEmpty;
+        } else {
+          return; // 没有非空段落
+        }
       }
-    } else {
-      // 更新索引但不滚动，不显示选中效果（isKeyboard = false）
-      selectedParagraphIndex.value = index;
-      isKeyboardSelected.value = false;
     }
+    
+    // 如果点击的段落已经被选中，不需要重新显示选中效果
+    if (selectedParagraphIndex.value === targetIndex && (isKeyboardSelected.value || isClickSelected.value)) {
+      return;
+    }
+    
+    // 如果切换到不同的段落，取消当前正在编辑的段落
+    if (selectedParagraphIndex.value !== null && selectedParagraphIndex.value !== targetIndex) {
+      cancelCurrentEditing();
+    }
+    
+    // 设置选中段落（不滚动，显示选中效果）
+    selectedParagraphIndex.value = targetIndex;
+    isKeyboardSelected.value = false;
+    isClickSelected.value = true; // 点击选中时显示选中效果
+    // 清除键盘导航状态
+    isKeyboardNavigating.value = false;
+    lastKeyboardNavigationTime.value = null;
+    // 清除之前的定时器
+    if (clearSelectionTimeoutId !== null) {
+      clearTimeout(clearSelectionTimeoutId);
+    }
+    // 2 秒后清除选中效果
+    clearSelectionTimeoutId = setTimeout(() => {
+      isClickSelected.value = false;
+      clearSelectionTimeoutId = null;
+    }, 2000);
+    
+    // 将焦点转移到选中的段落
+    nextTick(() => {
+      const targetParagraph = selectedChapterParagraphs.value[targetIndex];
+      if (targetParagraph) {
+        const element = document.getElementById(`paragraph-${targetParagraph.id}`);
+        if (element) {
+          element.focus();
+        }
+      }
+    });
+  }
+};
+
+// 取消当前正在编辑的段落
+const cancelCurrentEditing = () => {
+  if (currentlyEditingParagraphId.value === null) return;
+
+  const editingParagraphId = currentlyEditingParagraphId.value;
+  const paragraph = selectedChapterParagraphs.value.find((p) => p.id === editingParagraphId);
+  if (paragraph) {
+    const cardRef = paragraphCardRefs.value.get(paragraph.id);
+    if (cardRef && typeof (cardRef as { stopEditing?: () => void }).stopEditing === 'function') {
+      (cardRef as { stopEditing: () => void }).stopEditing();
+    }
+  }
+  currentlyEditingParagraphId.value = null;
+};
+
+// 处理段落开始编辑事件
+const handleParagraphEditStart = (paragraphId: string) => {
+  // 如果已经有其他段落在编辑，先取消它
+  if (currentlyEditingParagraphId.value !== null && currentlyEditingParagraphId.value !== paragraphId) {
+    cancelCurrentEditing();
+  }
+  currentlyEditingParagraphId.value = paragraphId;
+};
+
+// 处理段落停止编辑事件
+const handleParagraphEditStop = (paragraphId: string) => {
+  // 如果停止编辑的段落是当前正在编辑的段落，清除编辑状态
+  if (currentlyEditingParagraphId.value === paragraphId) {
+    currentlyEditingParagraphId.value = null;
   }
 };
 
@@ -1378,8 +1583,14 @@ const startEditingSelectedParagraph = () => {
 
   const paragraph = selectedChapterParagraphs.value[selectedParagraphIndex.value];
   if (paragraph) {
+    // 如果已经有其他段落在编辑，先取消它
+    if (currentlyEditingParagraphId.value !== null && currentlyEditingParagraphId.value !== paragraph.id) {
+      cancelCurrentEditing();
+    }
+    
     const cardRef = paragraphCardRefs.value.get(paragraph.id);
     if (cardRef) {
+      currentlyEditingParagraphId.value = paragraph.id;
       cardRef.startEditing();
     }
   }
@@ -1571,8 +1782,15 @@ const handleKeydown = (event: KeyboardEvent) => {
 
     // 标记正在使用键盘导航
     isKeyboardNavigating.value = true;
+    // 更新最后一次键盘导航的时间
+    lastKeyboardNavigationTime.value = Date.now();
+    // 清除重置导航的防抖 timeout（避免在键盘导航期间触发重置）
+    if (resetNavigationTimeoutId !== null) {
+      clearTimeout(resetNavigationTimeoutId);
+      resetNavigationTimeoutId = null;
+    }
 
-    // 获取当前索引：优先使用 selectedParagraphIndex（可能是鼠标悬停设置的）
+    // 获取当前索引：使用 selectedParagraphIndex（如果已通过点击设置）
     // 如果 selectedParagraphIndex 是 null，说明还没有选中任何段落，需要找到第一个非空段落
     let currentIndex: number;
     if (selectedParagraphIndex.value !== null) {
@@ -1584,29 +1802,44 @@ const handleKeydown = (event: KeyboardEvent) => {
       const firstIndex = nonEmptyIndices[0];
       if (firstIndex === undefined) return;
       currentIndex = firstIndex;
+      // 设置选中段落
+      selectedParagraphIndex.value = currentIndex;
     }
 
-    // 如果当前段落还没有显示选中效果（isKeyboardSelected = false），先显示当前段落的选中效果
-    if (!isKeyboardSelected.value) {
-      // 确保当前索引对应的段落是非空的
-      const paragraph = selectedChapterParagraphs.value[currentIndex];
-      if (paragraph && isEmptyParagraph(paragraph)) {
-        // 如果是空段落，找到最近的非空段落
-        const nextNonEmpty = findNextNonEmptyParagraph(currentIndex, 'down');
-        if (nextNonEmpty !== null) {
-          currentIndex = nextNonEmpty;
+    // 确保当前索引对应的段落是非空的
+    const paragraph = selectedChapterParagraphs.value[currentIndex];
+    if (paragraph && isEmptyParagraph(paragraph)) {
+      // 如果是空段落，找到最近的非空段落
+      const nextNonEmpty = findNextNonEmptyParagraph(currentIndex, 'down');
+      if (nextNonEmpty !== null) {
+        currentIndex = nextNonEmpty;
+      } else {
+        const prevNonEmpty = findNextNonEmptyParagraph(currentIndex, 'up');
+        if (prevNonEmpty !== null) {
+          currentIndex = prevNonEmpty;
         } else {
-          const prevNonEmpty = findNextNonEmptyParagraph(currentIndex, 'up');
-          if (prevNonEmpty !== null) {
-            currentIndex = prevNonEmpty;
-          } else {
-            return; // 没有非空段落
-          }
+          return; // 没有非空段落
         }
       }
-      // 显示当前段落的选中效果，但不移动
-      navigateToParagraph(currentIndex, true, true);
-      return;
+      // 更新选中段落
+      selectedParagraphIndex.value = currentIndex;
+    }
+    
+    // 如果还没有显示键盘选中效果，需要先切换到键盘选中模式
+    // 如果段落是通过点击选中的，第一次按箭头键应该直接开始导航
+    // 如果段落还没有被选中，第一次按箭头键先显示选中效果
+    if (!isKeyboardSelected.value) {
+      // 清除点击选中状态，切换到键盘选中模式
+      isClickSelected.value = false;
+      // 如果段落已经被选中（通过点击），直接开始导航，不需要先显示选中效果
+      if (selectedParagraphIndex.value === currentIndex) {
+        isKeyboardSelected.value = true;
+        // 继续执行下面的导航逻辑
+      } else {
+        // 如果段落还没有被选中，先显示选中效果
+        navigateToParagraph(currentIndex, false, true); // 不滚动，只显示选中效果
+        return;
+      }
     }
 
     // 如果已经显示了选中效果，则移动到下一个/上一个段落
@@ -1711,17 +1944,60 @@ const handleClick = (event: MouseEvent) => {
     target.closest('.paragraph-card') || target.closest('.paragraph-with-line-number');
   if (!isParagraphCard) {
     isKeyboardNavigating.value = false;
+    lastKeyboardNavigationTime.value = null;
   }
 };
 
 // 处理鼠标移动事件，重新启用鼠标悬停逻辑
+// 但忽略程序化滚动期间的鼠标移动（滚动时鼠标相对位置会变化，触发 mousemove）
 const handleMouseMove = () => {
-  isKeyboardNavigating.value = false;
+  const now = Date.now();
+  const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
+    ? now - lastKeyboardNavigationTime.value
+    : Infinity;
+
+  // 只有在非程序化滚动，且距离最后一次键盘导航超过 2 秒时才重置键盘导航状态
+  // 这样可以避免滚动时鼠标相对位置变化触发的 mousemove 重置状态
+  if (!isProgrammaticScrolling.value && timeSinceLastKeyboardNav > 2000) {
+    // 使用防抖，避免频繁重置（只有在停止鼠标移动 300ms 后才真正重置）
+    if (resetNavigationTimeoutId !== null) {
+      clearTimeout(resetNavigationTimeoutId);
+    }
+    resetNavigationTimeoutId = setTimeout(() => {
+      if (isKeyboardNavigating.value) {
+        isKeyboardNavigating.value = false;
+        lastKeyboardNavigationTime.value = null;
+      }
+      resetNavigationTimeoutId = null;
+    }, 300);
+  }
 };
 
 // 处理滚动事件，重新启用鼠标悬停逻辑
+// 但忽略程序化滚动（由键盘导航触发的滚动）
 const handleScroll = () => {
-  isKeyboardNavigating.value = false;
+  const now = Date.now();
+  const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
+    ? now - lastKeyboardNavigationTime.value
+    : Infinity;
+
+  // 只有在非程序化滚动，且距离最后一次键盘导航超过 2 秒时才重置键盘导航状态
+  // 这样可以避免：
+  // 1. 键盘导航触发的 scrollIntoView 重置鼠标悬停状态
+  // 2. 平滑滚动的余波在 timeout 之后被误判为用户滚动
+  if (!isProgrammaticScrolling.value && timeSinceLastKeyboardNav > 2000) {
+    // 使用防抖，避免频繁重置（只有在停止滚动 300ms 后才真正重置）
+    if (resetNavigationTimeoutId !== null) {
+      clearTimeout(resetNavigationTimeoutId);
+    }
+    resetNavigationTimeoutId = setTimeout(() => {
+      if (isKeyboardNavigating.value) {
+        isKeyboardNavigating.value = false;
+        lastKeyboardNavigationTime.value = null;
+      }
+      resetNavigationTimeoutId = null;
+    }, 300);
+  }
 };
 
 onMounted(() => {
@@ -1744,6 +2020,21 @@ onMounted(() => {
 // 组件卸载时清除上下文
 onUnmounted(() => {
   contextStore.clearContext();
+  // 清除程序化滚动的 timeout
+  if (programmaticScrollTimeoutId !== null) {
+    clearTimeout(programmaticScrollTimeoutId);
+    programmaticScrollTimeoutId = null;
+  }
+  // 清除重置导航的防抖 timeout
+  if (resetNavigationTimeoutId !== null) {
+    clearTimeout(resetNavigationTimeoutId);
+    resetNavigationTimeoutId = null;
+  }
+  // 清除选中效果的 timeout
+  if (clearSelectionTimeoutId !== null) {
+    clearTimeout(clearSelectionTimeoutId);
+    clearSelectionTimeoutId = null;
+  }
   // 移除键盘快捷键监听
   window.removeEventListener('keydown', handleKeydown);
   // 移除点击事件监听器
@@ -4617,12 +4908,14 @@ const handleDragLeave = () => {
                     :search-query="searchQuery"
                     :book-id="bookId"
                     :id="`paragraph-${paragraph.id}`"
-                    :selected="selectedParagraphIndex === index && isKeyboardSelected"
+                    :selected="selectedParagraphIndex === index && (isKeyboardSelected || isClickSelected)"
                     @update-translation="updateParagraphTranslation"
                     @retranslate="retranslateParagraph"
                     @polish="polishParagraph"
                     @select-translation="selectParagraphTranslation"
-                    @paragraph-hover="handleParagraphHover"
+                    @paragraph-click="handleParagraphClick"
+                    @paragraph-edit-start="handleParagraphEditStart"
+                    @paragraph-edit-stop="handleParagraphEditStop"
                   />
                 </div>
               </div>

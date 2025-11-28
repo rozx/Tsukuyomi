@@ -24,6 +24,7 @@ const props = defineProps<{
   characterScores?: Map<string, number>;
   bookId?: string;
   chapterId?: string;
+  id?: string;
   selected?: boolean;
 }>();
 
@@ -32,7 +33,9 @@ const emit = defineEmits<{
   'retranslate': [paragraphId: string];
   'polish': [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
-  'paragraph-hover': [paragraphId: string];
+  'paragraph-click': [paragraphId: string];
+  'paragraph-edit-start': [paragraphId: string];
+  'paragraph-edit-stop': [paragraphId: string];
 }>();
 
 const aiModelsStore = useAIModelsStore();
@@ -184,11 +187,8 @@ const handleCharacterPopoverHide = () => {
   hoveredCharacter.value = null;
 };
 
-// 处理段落悬停
+// 处理段落悬停（仅用于上下文设置）
 const handleParagraphMouseEnter = () => {
-  // 触发段落悬停事件，用于更新导航索引
-  emit('paragraph-hover', props.paragraph.id);
-
   // 如果提供了 bookId 和 chapterId，同时更新书籍、章节和段落
   if (props.bookId && props.chapterId) {
     contextStore.setContext(
@@ -240,6 +240,8 @@ const getComponentElement = (componentInstance: unknown): HTMLElement | undefine
 // 开始编辑翻译
 const onTranslationOpen = () => {
   editingTranslationValue.value = translationText.value;
+  // 通知父组件开始编辑
+  emit('paragraph-edit-start', props.paragraph.id);
   // 使用 nextTick 确保 DOM 更新后再聚焦
   nextTick(() => {
     if (translationTextareaRef.value) {
@@ -281,6 +283,8 @@ const onTranslationClose = () => {
   if (editingTranslationValue.value !== translationText.value) {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
+  // 通知父组件停止编辑
+  emit('paragraph-edit-stop', props.paragraph.id);
 };
 
 // 应用更改
@@ -461,6 +465,30 @@ defineExpose({
       }
     }
   },
+  stopEditing: () => {
+    if (translationInplaceRef.value) {
+      // 查找取消按钮并点击它来关闭编辑
+      // 点击取消按钮会触发 @close 事件，从而调用 onTranslationClose 并发出 paragraph-edit-stop 事件
+      const inplaceElement = getComponentElement(translationInplaceRef.value);
+      if (inplaceElement) {
+        // 查找取消按钮（通过图标类名）
+        const cancelButton = inplaceElement.querySelector(
+          '.translation-edit-buttons button .pi-times',
+        )?.closest('button') as HTMLElement;
+        if (cancelButton) {
+          cancelButton.click();
+        } else {
+          // 如果没有找到取消按钮，尝试查找并点击应用按钮（保存并关闭）
+          const applyButton = inplaceElement.querySelector(
+            '.translation-edit-buttons button .pi-check',
+          )?.closest('button') as HTMLElement;
+          if (applyButton) {
+            applyButton.click();
+          }
+        }
+      }
+    }
+  },
   scrollIntoView: (options?: ScrollIntoViewOptions) => {
     if (paragraphCardRef.value) {
       paragraphCardRef.value.scrollIntoView({
@@ -475,11 +503,14 @@ defineExpose({
 
 <template>
   <div
+    :id="props.id"
     ref="paragraphCardRef"
     class="paragraph-card"
     :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected }"
+    tabindex="-1"
     @contextmenu="handleParagraphContextMenu"
     @mouseenter="handleParagraphMouseEnter"
+    @click="emit('paragraph-click', props.paragraph.id)"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
     <!-- 最近翻译按钮 -->
@@ -487,7 +518,7 @@ defineExpose({
       v-if="hasOtherTranslations"
       ref="recentTranslationButtonRef"
       class="recent-translation-icon-button"
-      @click="openTranslationHistory"
+      @click.stop="openTranslationHistory"
       @mouseenter="handleRecentTranslationMouseEnter"
       @mouseleave="handleRecentTranslationMouseLeave"
     >
@@ -497,7 +528,7 @@ defineExpose({
       v-if="hasContent"
       ref="contextMenuButtonRef"
       class="context-menu-icon-button"
-      @click="handleContextMenuClick"
+      @click.stop="handleContextMenuClick"
     >
       <i class="pi pi-ellipsis-v" />
     </button>
@@ -756,6 +787,10 @@ defineExpose({
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.paragraph-card:focus {
+  outline: none;
+}
+
 .paragraph-card.paragraph-selected {
   /* 选中效果由外层容器处理，这里不添加样式 */
 }
@@ -870,6 +905,10 @@ defineExpose({
   transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.translation-inplace :deep(.p-inplace-display:focus) {
+  outline: none;
+}
+
 .translation-inplace :deep(.p-inplace-display:hover) {
   background-color: var(--white-opacity-5);
   border-radius: 4px;
@@ -884,6 +923,10 @@ defineExpose({
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.paragraph-translation:focus {
+  outline: none;
 }
 
 .paragraph-translation-skeleton {
