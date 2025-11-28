@@ -2,8 +2,6 @@ import { ref, computed, watch, type Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
-import { TerminologyService } from 'src/services/terminology-service';
-import { CharacterSettingService } from 'src/services/character-setting-service';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { refreshAllOccurrencesInBackground } from 'src/utils';
