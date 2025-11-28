@@ -1,7 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import Popover from 'primevue/popover';
 import TieredMenu from 'primevue/tieredmenu';
 import Select from 'primevue/select';
 import InputText from 'primevue/inputtext';
@@ -40,6 +39,9 @@ import TranslatableInput from 'src/components/translation/TranslatableInput.vue'
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
+import TermPopover from 'src/components/novel/TermPopover.vue';
+import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
+import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -709,7 +711,7 @@ const translatedCharCount = computed(() => {
 });
 
 // 术语弹出框状态
-const termPopover = ref();
+const termPopover = ref<{ toggle: (event: Event) => void; hide: () => void } | null>(null);
 const showEditTermDialog = ref(false);
 const editingTerm = ref<Terminology | null>(null);
 const isSavingTerm = ref(false);
@@ -729,11 +731,11 @@ const usedTerms = computed(() => {
 const usedTermCount = computed(() => usedTerms.value.length);
 
 const toggleTermPopover = (event: Event) => {
-  termPopover.value.toggle(event);
+  termPopover.value?.toggle(event);
 };
 
 // 角色设定弹出框状态
-const characterPopover = ref();
+const characterPopover = ref<{ toggle: (event: Event) => void; hide: () => void } | null>(null);
 const showEditCharacterDialog = ref(false);
 const editingCharacter = ref<CharacterSetting | null>(null);
 const isSavingCharacter = ref(false);
@@ -757,14 +759,14 @@ const usedCharacters = computed(() => {
 const usedCharacterCount = computed(() => usedCharacters.value.length);
 
 const toggleCharacterPopover = (event: Event) => {
-  characterPopover.value.toggle(event);
+  characterPopover.value?.toggle(event);
 };
 
 // 键盘快捷键弹出框状态
-const keyboardShortcutsPopover = ref();
+const keyboardShortcutsPopover = ref<{ toggle: (event: Event) => void } | null>(null);
 
 const toggleKeyboardShortcutsPopover = (event: Event) => {
-  keyboardShortcutsPopover.value.toggle(event);
+  keyboardShortcutsPopover.value?.toggle(event);
 };
 
 // 规范化章节符号
@@ -1776,268 +1778,23 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     <TieredMenu ref="exportMenuRef" :model="exportMenuItems" popup />
 
     <!-- 术语列表 Popover -->
-    <Popover ref="termPopover" style="width: 24rem; max-width: 90vw">
-      <div class="flex flex-col max-h-[60vh] overflow-hidden">
-        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <DataView :value="usedTerms" data-key="id" layout="list" class="term-popover-dataview">
-            <template #header>
-              <div class="p-3">
-                <h4 class="font-medium text-moon-100">本章使用的术语</h4>
-                <p class="text-xs text-moon/60 mt-1">共 {{ usedTermCount }} 个</p>
-              </div>
-            </template>
-            <template #list="slotProps">
-              <div class="flex flex-col gap-2 p-2">
-                <div
-                  v-for="term in slotProps.items"
-                  :key="term.id"
-                  class="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
-                >
-                  <div class="flex justify-between items-start gap-2 min-w-0">
-                    <div class="min-w-0 flex-1 overflow-hidden">
-                      <div class="font-medium text-sm text-moon-90 break-words">
-                        {{ term.name }}
-                      </div>
-                      <div class="text-xs text-primary-400 mt-0.5 break-words">
-                        {{ term.translation.translation }}
-                      </div>
-                      <div
-                        v-if="term.description"
-                        class="text-xs text-moon/50 mt-1 line-clamp-2 break-words"
-                      >
-                        {{ term.description }}
-                      </div>
-                    </div>
-                    <div class="flex gap-1 flex-shrink-0">
-                      <Button
-                        icon="pi pi-pencil"
-                        class="p-button-text p-button-sm !p-1 !w-7 !h-7"
-                        @click="openEditTermDialog(term)"
-                      />
-                      <Button
-                        icon="pi pi-trash"
-                        class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
-                        @click="openDeleteTermConfirm(term)"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-            <template #empty>
-              <div class="text-center py-8 text-moon/50 text-sm">本章暂无术语</div>
-            </template>
-          </DataView>
-        </div>
-      </div>
-    </Popover>
+    <TermPopover
+      ref="termPopover"
+      :used-terms="usedTerms"
+      @edit="openEditTermDialog"
+      @delete="openDeleteTermConfirm"
+    />
 
     <!-- 角色设定列表 Popover -->
-    <Popover ref="characterPopover" style="width: 24rem; max-width: 90vw">
-      <div class="flex flex-col max-h-[60vh] overflow-hidden">
-        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <DataView
-            :value="usedCharacters"
-            data-key="id"
-            layout="list"
-            class="character-popover-dataview"
-          >
-            <template #header>
-              <div class="p-3">
-                <h4 class="font-medium text-moon-100">本章使用的角色设定</h4>
-                <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
-              </div>
-            </template>
-            <template #list="slotProps">
-              <div class="flex flex-col gap-2 p-2">
-                <div
-                  v-for="character in slotProps.items"
-                  :key="character.id"
-                  class="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
-                >
-                  <div class="flex justify-between items-start gap-2 min-w-0">
-                    <div class="min-w-0 flex-1 overflow-hidden">
-                      <div class="flex items-center gap-2">
-                        <div class="font-medium text-sm text-moon-90 break-words">
-                          {{ character.name }}
-                        </div>
-                        <span
-                          v-if="character.sex"
-                          class="text-xs px-1.5 py-0.5 rounded bg-primary/20 text-primary-400"
-                        >
-                          {{
-                            character.sex === 'male'
-                              ? '男'
-                              : character.sex === 'female'
-                                ? '女'
-                                : '其他'
-                          }}
-                        </span>
-                      </div>
-                      <div class="text-xs text-primary-400 mt-0.5 break-words">
-                        {{ character.translation.translation }}
-                      </div>
-                      <div
-                        v-if="character.description"
-                        class="text-xs text-moon/50 mt-1 line-clamp-2 break-words"
-                      >
-                        {{ character.description }}
-                      </div>
-                      <div
-                        v-if="character.aliases && character.aliases.length > 0"
-                        class="text-xs text-moon/60 mt-1"
-                      >
-                        <span class="text-moon/50">别名：</span>
-                        <span class="break-words">
-                          {{ character.aliases.map((a: { name: string }) => a.name).join('、') }}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="flex gap-1 flex-shrink-0">
-                      <Button
-                        icon="pi pi-pencil"
-                        class="p-button-text p-button-sm !p-1 !w-7 !h-7"
-                        @click="openEditCharacterDialog(character)"
-                      />
-                      <Button
-                        icon="pi pi-trash"
-                        class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
-                        @click="openDeleteCharacterConfirm(character)"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-            <template #empty>
-              <div class="text-center py-8 text-moon/50 text-sm">本章暂无角色设定</div>
-            </template>
-          </DataView>
-        </div>
-      </div>
-    </Popover>
+    <CharacterPopover
+      ref="characterPopover"
+      :used-characters="usedCharacters"
+      @edit="openEditCharacterDialog"
+      @delete="openDeleteCharacterConfirm"
+    />
 
     <!-- 键盘快捷键 Popover -->
-    <Popover ref="keyboardShortcutsPopover" style="width: 28rem; max-width: 90vw">
-      <div class="flex flex-col max-h-[70vh] overflow-hidden">
-        <div class="p-3 border-b border-white/10">
-          <h4 class="font-medium text-moon-100">键盘快捷键</h4>
-          <p class="text-xs text-moon/60 mt-1">本页面可用的所有快捷键</p>
-        </div>
-        <div class="flex-1 min-h-0 overflow-y-auto">
-          <div class="p-3 flex flex-col gap-4">
-            <!-- 搜索相关 -->
-            <div class="flex flex-col gap-2">
-              <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">搜索与替换</div>
-              <div class="flex flex-col gap-1.5">
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">打开/关闭查找</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Ctrl+F
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">打开/关闭替换</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Ctrl+H
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">下一个匹配</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    F3
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">上一个匹配</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Shift+F3
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">关闭搜索工具栏</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Esc
-                  </kbd>
-                </div>
-              </div>
-            </div>
-
-            <!-- 编辑相关 -->
-            <div class="flex flex-col gap-2">
-              <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">编辑操作</div>
-              <div class="flex flex-col gap-1.5">
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">撤销</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Ctrl+Z
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">重做</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Ctrl+Y
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">复制所有已翻译文本</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Ctrl+Shift+C
-                  </kbd>
-                </div>
-              </div>
-            </div>
-
-            <!-- 导航相关 -->
-            <div class="flex flex-col gap-2">
-              <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">段落导航</div>
-              <div class="flex flex-col gap-1.5">
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">上一个段落</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    ↑
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">下一个段落</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    ↓
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-1">
-                  <span class="text-sm text-moon-90">开始编辑当前段落</span>
-                  <kbd
-                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
-                  >
-                    Enter
-                  </kbd>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Popover>
+    <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
 
     <!-- 编辑术语对话框 -->
     <TermEditDialog
@@ -3014,25 +2771,5 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .no-selection-hint {
   margin: 0;
-}
-
-/* Term Popover DataView - ensure header stays fixed and content scrolls */
-:deep(.term-popover-dataview),
-:deep(.character-popover-dataview) {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  background: transparent !important;
-}
-
-:deep(.term-popover-dataview .p-dataview-content),
-:deep(.character-popover-dataview .p-dataview-content) {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
-  background: transparent !important;
 }
 </style>
