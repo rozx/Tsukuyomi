@@ -87,7 +87,21 @@ export class AssistantService {
     currentChapterId: string | null;
     hoveredParagraphId: string | null;
   }): string {
+    // 获取当前时间
+    const now = new Date();
+    const currentTime = now.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
+
+**当前时间**：${currentTime}
 
 ## 能力范围
 - 翻译相关：术语管理、角色设定、翻译建议
