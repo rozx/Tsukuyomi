@@ -111,24 +111,26 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
-     * 正在进行的任务列表
+     * 正在进行的任务列表（按开始时间倒序，最新的在最前面）
      */
     activeTasksList(state): AIProcessingTask[] {
-      return state.activeTasks.filter(
-        (task) => task.status === 'thinking' || task.status === 'processing',
-      );
+      return state.activeTasks
+        .filter((task) => task.status === 'thinking' || task.status === 'processing')
+        .sort((a, b) => b.startTime - a.startTime);
     },
 
     /**
-     * 已完成的任务列表（包括已完成、错误、已取消）
+     * 已完成的任务列表（包括已完成、错误、已取消，按开始时间倒序，最新的在最前面）
      */
     completedTasksList(state): AIProcessingTask[] {
-      return state.activeTasks.filter(
-        (task) =>
-          task.status === 'completed' ||
-          task.status === 'error' ||
-          task.status === 'cancelled',
-      );
+      return state.activeTasks
+        .filter(
+          (task) =>
+            task.status === 'completed' ||
+            task.status === 'error' ||
+            task.status === 'cancelled',
+        )
+        .sort((a, b) => b.startTime - a.startTime);
     },
 
     /**
