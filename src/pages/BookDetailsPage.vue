@@ -102,52 +102,90 @@ const book = computed(() => {
 // ActionInfo Toast 处理
 const { handleActionInfoToast } = useActionInfoToast(book);
 
-// 撤销/重做功能
-const { canUndo, canRedo, undoDescription, redoDescription, saveState, undo, redo, clearHistory } =
-  useUndoRedo(book, async (updatedBook) => {
-    if (updatedBook) {
-      await booksStore.updateBook(updatedBook.id, updatedBook);
+// 撤销/重做功能 - 创建一个增强函数来获取包含当前已加载章节内容的书籍对象
+const getEnhancedBook = (): Novel | undefined => {
+  if (!book.value) return undefined;
 
-      // 同步更新 selectedChapterWithContent，确保撤销/重做后 UI 正确显示
-      if (selectedChapterId.value && updatedBook.volumes) {
-        // 查找更新后的章节
-        let foundChapter = false;
-        for (const volume of updatedBook.volumes) {
-          if (volume.chapters) {
-            const updatedChapter = volume.chapters.find((ch) => ch.id === selectedChapterId.value);
-            if (updatedChapter) {
-              foundChapter = true;
-              // 如果章节内容已加载，更新 selectedChapterWithContent
-              if (updatedChapter.content !== undefined) {
-                selectedChapterWithContent.value = updatedChapter;
-              } else if (selectedChapterWithContent.value) {
-                // 如果章节内容未加载，但之前已加载，需要重新加载
-                // 或者保持当前内容（因为内容存储在独立存储中）
-                // 这里我们选择重新加载以确保一致性
-                try {
-                  const chapterWithContent =
-                    await ChapterService.loadChapterContent(updatedChapter);
-                  selectedChapterWithContent.value = chapterWithContent;
-                } catch (error) {
-                  console.error('Failed to reload chapter content after undo/redo:', error);
-                  // 如果加载失败，至少更新章节的基本信息
-                  selectedChapterWithContent.value = {
-                    ...selectedChapterWithContent.value,
-                    ...updatedChapter,
-                  };
+  // 如果当前有已加载的章节内容，将其合并到书籍对象中
+  if (
+    selectedChapterWithContent.value?.content &&
+    selectedChapterWithContent.value?.id &&
+    book.value.volumes
+  ) {
+    return {
+      ...book.value,
+      volumes: book.value.volumes.map((volume) => {
+        if (!volume.chapters) return volume;
+        return {
+          ...volume,
+          chapters: volume.chapters.map((chapter) => {
+            if (chapter.id === selectedChapterWithContent.value?.id) {
+              return {
+                ...chapter,
+                content: selectedChapterWithContent.value.content,
+              };
+            }
+            return chapter;
+          }),
+        };
+      }),
+    };
+  }
+
+  return book.value;
+};
+
+const { canUndo, canRedo, undoDescription, redoDescription, saveState, undo, redo, clearHistory } =
+  useUndoRedo(
+    book,
+    async (updatedBook) => {
+      if (updatedBook) {
+        await booksStore.updateBook(updatedBook.id, updatedBook);
+
+        // 同步更新 selectedChapterWithContent，确保撤销/重做后 UI 正确显示
+        if (selectedChapterId.value && updatedBook.volumes) {
+          // 查找更新后的章节
+          let foundChapter = false;
+          for (const volume of updatedBook.volumes) {
+            if (volume.chapters) {
+              const updatedChapter = volume.chapters.find(
+                (ch) => ch.id === selectedChapterId.value,
+              );
+              if (updatedChapter) {
+                foundChapter = true;
+                // 如果章节内容已加载，更新 selectedChapterWithContent
+                if (updatedChapter.content !== undefined && Array.isArray(updatedChapter.content)) {
+                  selectedChapterWithContent.value = updatedChapter;
+                } else if (selectedChapterWithContent.value) {
+                  // 如果章节内容未加载，但之前已加载，需要重新加载
+                  // 或者保持当前内容（因为内容存储在独立存储中）
+                  // 这里我们选择重新加载以确保一致性
+                  try {
+                    const chapterWithContent =
+                      await ChapterService.loadChapterContent(updatedChapter);
+                    selectedChapterWithContent.value = chapterWithContent;
+                  } catch (error) {
+                    console.error('Failed to reload chapter content after undo/redo:', error);
+                    // 如果加载失败，至少更新章节的基本信息
+                    selectedChapterWithContent.value = {
+                      ...selectedChapterWithContent.value,
+                      ...updatedChapter,
+                    };
+                  }
                 }
+                break;
               }
-              break;
             }
           }
-        }
-        // 如果章节不存在（可能被删除），清空 selectedChapterWithContent
-        if (!foundChapter && selectedChapterWithContent.value) {
-          selectedChapterWithContent.value = null;
+          // 如果章节不存在（可能被删除），清空 selectedChapterWithContent
+          if (!foundChapter && selectedChapterWithContent.value) {
+            selectedChapterWithContent.value = null;
+          }
         }
       }
-    }
-  });
+    },
+    getEnhancedBook,
+  );
 
 // 监听书籍ID变化，切换书籍时清空历史记录
 watch(

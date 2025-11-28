@@ -15,10 +15,12 @@ interface HistoryItem {
  * 撤销/重做功能 Composable
  * @param bookRef 书籍的响应式引用
  * @param onStateChange 状态变化回调函数，用于保存书籍
+ * @param getEnhancedBook 可选的函数，用于获取增强的书籍对象（例如包含当前已加载的章节内容）
  */
 export function useUndoRedo(
   bookRef: Ref<Novel | undefined>,
   onStateChange: (book: Novel) => Promise<void> | void,
+  getEnhancedBook?: () => Novel | undefined,
 ) {
   // 历史记录栈（撤销栈）
   const undoStack = ref<HistoryItem[]>([]);
@@ -62,10 +64,12 @@ export function useUndoRedo(
    * @param description 操作描述（可选）
    */
   const saveState = (description?: string) => {
-    if (!bookRef.value || isUndoing.value) return;
+    // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
+    const bookToSave = getEnhancedBook ? getEnhancedBook() : bookRef.value;
+    if (!bookToSave || isUndoing.value) return;
 
     // 深拷贝当前书籍状态
-    const currentState = cloneDeep(bookRef.value);
+    const currentState = cloneDeep(bookToSave);
 
     // 检查是否与最后一个保存的状态相同（避免重复保存相同状态）
     if (undoStack.value.length > 0) {
@@ -104,13 +108,17 @@ export function useUndoRedo(
    * 撤销操作
    */
   const undo = async () => {
-    if (!canUndo.value || !bookRef.value || isUndoing.value) return;
+    if (!canUndo.value || isUndoing.value) return;
+    
+    // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
+    const currentBook = getEnhancedBook ? getEnhancedBook() : bookRef.value;
+    if (!currentBook) return;
 
     isUndoing.value = true;
 
     try {
       // 将当前状态保存到重做栈
-      const currentState = cloneDeep(bookRef.value);
+      const currentState = cloneDeep(currentBook);
       
       // 从撤销栈获取上一个状态
       const previousState = undoStack.value.pop();
@@ -141,13 +149,17 @@ export function useUndoRedo(
    * 重做操作
    */
   const redo = async () => {
-    if (!canRedo.value || !bookRef.value || isUndoing.value) return;
+    if (!canRedo.value || isUndoing.value) return;
+    
+    // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
+    const currentBook = getEnhancedBook ? getEnhancedBook() : bookRef.value;
+    if (!currentBook) return;
 
     isUndoing.value = true;
 
     try {
       // 将当前状态保存到撤销栈
-      const currentState = cloneDeep(bookRef.value);
+      const currentState = cloneDeep(currentBook);
       
       // 从重做栈获取下一个状态
       const nextState = redoStack.value.pop();

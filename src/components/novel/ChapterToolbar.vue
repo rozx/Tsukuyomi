@@ -104,7 +104,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             @click="emit('undo')"
           />
           <Button
-            icon="pi pi-redo"
+            icon="pi pi-refresh"
             rounded
             text
             size="small"
@@ -212,7 +212,9 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           size="small"
           class="!px-3"
           :loading="isTranslatingChapter || isPolishingChapter"
-          :disabled="isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length"
+          :disabled="
+            isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
+          "
           @click="emit('translationButtonClick')"
         />
         <SplitButton
@@ -222,7 +224,9 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           size="small"
           class="!px-3"
           :loading="isTranslatingChapter || isPolishingChapter"
-          :disabled="isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length"
+          :disabled="
+            isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
+          "
           :model="translationButtonMenuItems"
           @click="emit('translationButtonClick')"
         />
@@ -255,4 +259,3 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
     </template>
   </Menubar>
 </template>
-
