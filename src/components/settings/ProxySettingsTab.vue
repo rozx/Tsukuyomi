@@ -11,6 +11,7 @@ import Dialog from 'primevue/dialog';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { extractRootDomain } from 'src/utils/domain-utils';
+import { DEFAULT_CORS_PROXY_FOR_AI, DEFAULT_PROXY_LIST } from 'src/constants/proxy';
 import axios from 'axios';
 
 const settingsStore = useSettingsStore();
@@ -33,11 +34,17 @@ const findProxyIdByUrl = (url: string): string | null => {
 const initializeProxy = () => {
   const currentUrl = settingsStore.proxyUrl ?? '';
   if (!currentUrl) {
-    // 如果代理 URL 为空，默认选择第一个代理
-    const firstProxy = proxyList.value[0];
-    if (firstProxy) {
-      selectedProxyId.value = firstProxy.id;
-      settingsStore.setProxyUrl(firstProxy.url);
+    // 如果代理 URL 为空，使用 DEFAULT_PROXY_LIST 的第一项作为默认代理
+    const defaultProxyUrl = DEFAULT_CORS_PROXY_FOR_AI;
+    // 先在当前代理列表中查找
+    let defaultProxy = proxyList.value.find((p) => p.url === defaultProxyUrl);
+    // 如果找不到，使用 DEFAULT_PROXY_LIST 的第一项
+    if (!defaultProxy && DEFAULT_PROXY_LIST[0]) {
+      defaultProxy = DEFAULT_PROXY_LIST[0];
+    }
+    if (defaultProxy) {
+      selectedProxyId.value = defaultProxy.id;
+      settingsStore.setProxyUrl(defaultProxy.url);
     }
   } else {
     const proxyId = findProxyIdByUrl(currentUrl);
@@ -338,11 +345,16 @@ const deleteProxy = async (id: string) => {
   if (selectedProxyId.value === id) {
     const remainingProxies = proxyList.value.filter((p) => p.id !== id);
     if (remainingProxies.length > 0) {
-      // 选择第一个剩余的代理
-      const firstProxy = remainingProxies[0];
-      if (firstProxy) {
-        selectedProxyId.value = firstProxy.id;
-        await settingsStore.setProxyUrl(firstProxy.url);
+      // 优先选择默认代理（DEFAULT_PROXY_LIST 的第一项），如果它在剩余列表中
+      const defaultProxyUrl = DEFAULT_CORS_PROXY_FOR_AI;
+      let selectedProxy = remainingProxies.find((p) => p.url === defaultProxyUrl);
+      // 如果默认代理不在剩余列表中，选择第一个剩余的代理
+      if (!selectedProxy) {
+        selectedProxy = remainingProxies[0];
+      }
+      if (selectedProxy) {
+        selectedProxyId.value = selectedProxy.id;
+        await settingsStore.setProxyUrl(selectedProxy.url);
       }
     } else {
       // 如果没有剩余代理，清空选中状态和代理 URL

@@ -8,6 +8,12 @@ export const DEFAULT_PROXY_LIST: Array<{
   description?: string;
 }> = [
   {
+    id: 'rozx.moe',
+    name: 'CORS Luna',
+    url: 'https://cors.rozx.moe/?{url}',
+    description: 'Luna AI translator 默认代理, 自己架设的 CORS 代理服务。',
+  },
+  {
     id: 'corslol',
     name: 'CORS.lol (推荐)',
     url: 'https://api.cors.lol/?url={url}',
@@ -39,4 +45,5 @@ export const DEFAULT_PROXY_LIST: Array<{
   },
 ];
 
-export const DEFAULT_CORS_PROXY_FOR_AI = 'https://cors.rozx.moe/?{url}';
+// 默认代理服务使用 DEFAULT_PROXY_LIST 的第一项
+export const DEFAULT_CORS_PROXY_FOR_AI = DEFAULT_PROXY_LIST[0]!.url;
