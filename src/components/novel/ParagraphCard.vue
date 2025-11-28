@@ -229,6 +229,14 @@ const editingTranslationValue = ref('');
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
 
+/**
+ * 安全地从 Vue 组件实例中提取 $el 属性
+ */
+const getComponentElement = (componentInstance: unknown): HTMLElement | undefined => {
+  const instance = componentInstance as { $el?: HTMLElement };
+  return instance.$el;
+};
+
 // 开始编辑翻译
 const onTranslationOpen = () => {
   editingTranslationValue.value = translationText.value;
@@ -240,19 +248,22 @@ const onTranslationOpen = () => {
       let textareaElement: HTMLTextAreaElement | null = null;
       
       // 方式1: 通过 $el 访问
-      const componentInstance = translationTextareaRef.value as any;
-      if (componentInstance.$el) {
-        textareaElement = componentInstance.$el.querySelector('textarea');
+      const componentElement = getComponentElement(translationTextareaRef.value);
+      if (componentElement) {
+        textareaElement = componentElement.querySelector('textarea');
       }
       
       // 方式2: 如果 $el 是 textarea 本身
-      if (!textareaElement && componentInstance.$el instanceof HTMLTextAreaElement) {
-        textareaElement = componentInstance.$el;
+      if (!textareaElement && componentElement instanceof HTMLTextAreaElement) {
+        textareaElement = componentElement;
       }
       
       // 方式3: 通过组件实例的 input 属性（某些 PrimeVue 版本）
-      if (!textareaElement && (translationTextareaRef.value as any).input) {
-        textareaElement = (translationTextareaRef.value as any).input;
+      if (!textareaElement) {
+        const instance = translationTextareaRef.value as { input?: HTMLTextAreaElement };
+        if (instance.input) {
+          textareaElement = instance.input;
+        }
       }
       
       if (textareaElement) {
@@ -441,8 +452,7 @@ defineExpose({
   startEditing: () => {
     if (translationInplaceRef.value && hasTranslation.value) {
       // 通过点击 display 区域来触发编辑
-      const componentInstance = translationInplaceRef.value as unknown as { $el?: HTMLElement };
-      const inplaceElement = componentInstance.$el;
+      const inplaceElement = getComponentElement(translationInplaceRef.value);
       if (inplaceElement) {
         const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
         if (displayElement) {

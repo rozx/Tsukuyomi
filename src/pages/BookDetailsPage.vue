@@ -75,6 +75,115 @@ const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
 /**
+ * 创建新的段落翻译对象
+ */
+const createParagraphTranslation = (translation: string, aiModelId: string) => {
+  return {
+    id: generateShortId(),
+    translation: normalizeTranslationQuotes(translation),
+    aiModelId,
+  };
+};
+
+/**
+ * 更新章节中的段落翻译并保存
+ * @param paragraphUpdates 段落更新映射，key 为段落 ID，value 为翻译文本
+ * @param aiModelId AI 模型 ID
+ * @param updateSelected 是否更新 selectedChapterWithContent
+ */
+const updateParagraphsAndSave = async (
+  paragraphUpdates: Map<string, string>,
+  aiModelId: string,
+  updateSelected: boolean = true,
+): Promise<void> => {
+  if (!book.value || !selectedChapterWithContent.value || paragraphUpdates.size === 0) return;
+
+  const updatedVolumes = book.value.volumes?.map((volume) => {
+    if (!volume.chapters) return volume;
+
+    const updatedChapters = volume.chapters.map((chapter) => {
+      if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+      const content = ChapterService.getChapterContentForUpdate(
+        chapter,
+        selectedChapterWithContent.value,
+      );
+      if (!content) return chapter;
+
+      const updatedContent = content.map((para) => {
+        const translation = paragraphUpdates.get(para.id);
+        if (!translation) return para;
+
+        const newTranslation = createParagraphTranslation(translation, aiModelId);
+        const updatedTranslations = ChapterService.addParagraphTranslation(
+          para.translations || [],
+          newTranslation,
+        );
+
+        return {
+          id: para.id,
+          text: para.text,
+          translations: updatedTranslations,
+          selectedTranslationId: newTranslation.id,
+        };
+      });
+
+      return {
+        ...chapter,
+        content: updatedContent,
+        lastEdited: new Date(),
+      };
+    });
+
+    return {
+      ...volume,
+      chapters: updatedChapters,
+    };
+  });
+
+  await booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
+
+  if (updateSelected) {
+    updateSelectedChapterWithContent(updatedVolumes);
+  }
+};
+
+/**
+ * 批量更新段落翻译并保存（用于增量更新）
+ * @param paragraphTranslations 段落翻译数组
+ * @param aiModelId AI 模型 ID
+ * @param updatedParagraphIds 已更新段落 ID 集合（用于去重）
+ * @returns 更新后的段落数量
+ */
+const updateParagraphsIncrementally = async (
+  paragraphTranslations: { id: string; translation: string }[],
+  aiModelId: string,
+  updatedParagraphIds: Set<string>,
+): Promise<number> => {
+  if (!book.value || !selectedChapterWithContent.value) return 0;
+
+  const newTranslations = paragraphTranslations.filter(
+    (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
+  );
+
+  if (newTranslations.length === 0) return 0;
+
+  newTranslations.forEach((pt) => updatedParagraphIds.add(pt.id));
+
+  const translationMap = new Map<string, string>();
+  newTranslations.forEach((pt) => {
+    translationMap.set(pt.id, pt.translation);
+  });
+
+  await updateParagraphsAndSave(translationMap, aiModelId, true);
+
+  return newTranslations.length;
+};
+
+/**
  * 处理 AI 工具调用产生的 ActionInfo，并显示相应的 toast 通知
  * @param action ActionInfo 对象
  * @param options 可选配置
@@ -428,7 +537,10 @@ const polishParagraph = async (paragraphId: string) => {
             if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
             // 使用已加载的章节内容
-            const content = ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
+            const content = ChapterService.getChapterContentForUpdate(
+              chapter,
+              selectedChapterWithContent.value,
+            );
 
             if (!content) return chapter;
 
@@ -437,11 +549,10 @@ const polishParagraph = async (paragraphId: string) => {
               if (!polish) return para;
 
               // 创建新的翻译对象（润色结果）
-              const newTranslation = {
-                id: generateShortId(),
-                translation: normalizeTranslationQuotes(polish.translation),
-                aiModelId: selectedModel.id,
-              };
+              const newTranslation = createParagraphTranslation(
+                polish.translation,
+                selectedModel.id,
+              );
 
               // 添加到翻译列表（限制最多5个）
               const updatedTranslations = ChapterService.addParagraphTranslation(
@@ -575,7 +686,10 @@ const retranslateParagraph = async (paragraphId: string) => {
             if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
 
             // 使用已加载的章节内容
-            const content = ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
+            const content = ChapterService.getChapterContentForUpdate(
+              chapter,
+              selectedChapterWithContent.value,
+            );
 
             if (!content) return chapter;
 
@@ -584,11 +698,10 @@ const retranslateParagraph = async (paragraphId: string) => {
               if (!translation) return para;
 
               // 创建新的翻译对象
-              const newTranslation = {
-                id: generateShortId(),
-                translation: normalizeTranslationQuotes(translation.translation),
-                aiModelId: selectedModel.id,
-              };
+              const newTranslation = createParagraphTranslation(
+                translation.translation,
+                selectedModel.id,
+              );
 
               // 添加到翻译列表（限制最多5个）
               const updatedTranslations = ChapterService.addParagraphTranslation(
@@ -818,14 +931,11 @@ const book = computed(() => {
 
 // 撤销/重做功能
 const { canUndo, canRedo, undoDescription, redoDescription, saveState, undo, redo, clearHistory } =
-  useUndoRedo(
-    book,
-    async (updatedBook) => {
-      if (updatedBook) {
-        await booksStore.updateBook(updatedBook.id, updatedBook);
-      }
-    },
-  );
+  useUndoRedo(book, async (updatedBook) => {
+    if (updatedBook) {
+      await booksStore.updateBook(updatedBook.id, updatedBook);
+    }
+  });
 
 // 监听书籍ID变化，切换书籍时清空历史记录
 watch(
@@ -1160,7 +1270,10 @@ const getNonEmptyParagraphIndices = (): number[] => {
 };
 
 // 查找下一个非空段落的索引
-const findNextNonEmptyParagraph = (currentIndex: number, direction: 'up' | 'down'): number | null => {
+const findNextNonEmptyParagraph = (
+  currentIndex: number,
+  direction: 'up' | 'down',
+): number | null => {
   const nonEmptyIndices = getNonEmptyParagraphIndices();
   if (nonEmptyIndices.length === 0) return null;
 
@@ -1173,12 +1286,18 @@ const findNextNonEmptyParagraph = (currentIndex: number, direction: 'up' | 'down
     // 创建反向副本以避免修改原数组
     const reversedIndices = [...nonEmptyIndices].reverse();
     const prevIndex = reversedIndices.find((idx) => idx < currentIndex);
-    return prevIndex !== undefined ? prevIndex : (nonEmptyIndices[nonEmptyIndices.length - 1] ?? null); // 循环到最后一个
+    return prevIndex !== undefined
+      ? prevIndex
+      : (nonEmptyIndices[nonEmptyIndices.length - 1] ?? null); // 循环到最后一个
   }
 };
 
 // 导航到指定段落（跳过空段落）
-const navigateToParagraph = (index: number, scroll: boolean = true, isKeyboard: boolean = false) => {
+const navigateToParagraph = (
+  index: number,
+  scroll: boolean = true,
+  isKeyboard: boolean = false,
+) => {
   if (!selectedChapterParagraphs.value.length) return;
 
   // 限制索引范围
@@ -1232,7 +1351,7 @@ const navigateToParagraph = (index: number, scroll: boolean = true, isKeyboard: 
 const handleParagraphHover = (paragraphId: string) => {
   // 如果正在使用键盘导航，忽略鼠标悬停
   if (isKeyboardNavigating.value) return;
-  
+
   if (!selectedChapterParagraphs.value.length) return;
 
   const index = selectedChapterParagraphs.value.findIndex((p) => p.id === paragraphId);
@@ -1359,9 +1478,7 @@ watch(
 const handleKeydown = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement;
   const isInputElement =
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.isContentEditable;
+    target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
   // Ctrl+F 或 Cmd+F: 打开/关闭查找（如果不在搜索输入框中）
   if ((event.ctrlKey || event.metaKey) && event.key === 'f' && !event.shiftKey) {
@@ -1514,9 +1631,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
       // 获取上一个非空段落的索引（循环）
       const prevNonEmptyIndex =
-        currentNonEmptyIndex > 0
-          ? currentNonEmptyIndex - 1
-          : nonEmptyIndices.length - 1;
+        currentNonEmptyIndex > 0 ? currentNonEmptyIndex - 1 : nonEmptyIndices.length - 1;
       const targetIndex = nonEmptyIndices[prevNonEmptyIndex];
       if (targetIndex !== undefined) {
         navigateToParagraph(targetIndex, true, true); // 键盘导航，显示效果
@@ -1539,9 +1654,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
       // 获取下一个非空段落的索引（循环）
       const nextNonEmptyIndex =
-        currentNonEmptyIndex < nonEmptyIndices.length - 1
-          ? currentNonEmptyIndex + 1
-          : 0;
+        currentNonEmptyIndex < nonEmptyIndices.length - 1 ? currentNonEmptyIndex + 1 : 0;
       const targetIndex = nonEmptyIndices[nextNonEmptyIndex];
       if (targetIndex !== undefined) {
         navigateToParagraph(targetIndex, true, true); // 键盘导航，显示效果
@@ -1594,7 +1707,8 @@ const handleKeydown = (event: KeyboardEvent) => {
 const handleClick = (event: MouseEvent) => {
   // 如果点击的不是段落卡片，重置键盘导航状态
   const target = event.target as HTMLElement;
-  const isParagraphCard = target.closest('.paragraph-card') || target.closest('.paragraph-with-line-number');
+  const isParagraphCard =
+    target.closest('.paragraph-card') || target.closest('.paragraph-with-line-number');
   if (!isParagraphCard) {
     isKeyboardNavigating.value = false;
   }
@@ -1974,8 +2088,10 @@ const normalizeChapterSymbols = async () => {
         }
 
         // 使用已加载的章节内容
-        const content =
-          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
+        const content = ChapterService.getChapterContentForUpdate(
+          chapter,
+          selectedChapterWithContent.value,
+        );
 
         // 规范化段落翻译
         let updatedContent = content;
@@ -2105,83 +2221,7 @@ const translateAllParagraphs = async () => {
   // 用于跟踪已更新的段落，避免重复更新
   const updatedParagraphIds = new Set<string>();
 
-  // 更新段落的辅助函数
-  const updateParagraphsIncrementally = async (
-    paragraphTranslations: { id: string; translation: string }[],
-  ) => {
-    if (!book.value || !selectedChapterWithContent.value) return;
-
-    // 过滤出尚未更新的段落
-    const newTranslations = paragraphTranslations.filter(
-      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
-    );
-
-    if (newTranslations.length === 0) return;
-
-    // 标记这些段落为已更新
-    newTranslations.forEach((pt) => updatedParagraphIds.add(pt.id));
-
-    // 更新每个段落的翻译
-    const updatedVolumes = book.value.volumes?.map((volume) => {
-      if (!volume.chapters) return volume;
-
-      const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
-
-        // 使用已加载的章节内容
-        const content =
-          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
-
-        if (!content) return chapter;
-
-        const updatedContent = content.map((para) => {
-          const translation = newTranslations.find((pt) => pt.id === para.id);
-          if (!translation) return para;
-
-          // 创建新的翻译对象
-          const newTranslation = {
-            id: generateShortId(),
-            translation: normalizeTranslationQuotes(translation.translation),
-            aiModelId: selectedModel.id,
-          };
-
-          // 添加到翻译列表（限制最多5个）
-          const updatedTranslations = ChapterService.addParagraphTranslation(
-            para.translations || [],
-            newTranslation,
-          );
-
-          // 只更新翻译相关字段，确保不修改原文（text 字段）
-          return {
-            id: para.id,
-            text: para.text, // 明确保留原文，不修改
-            translations: updatedTranslations,
-            selectedTranslationId: newTranslation.id,
-          };
-        });
-
-        return {
-          ...chapter,
-          content: updatedContent,
-          lastEdited: new Date(),
-        };
-      });
-
-      return {
-        ...volume,
-        chapters: updatedChapters,
-      };
-    });
-
-    // 更新书籍
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
-
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    updateSelectedChapterWithContent(updatedVolumes);
-  };
+  // 使用全局的更新段落辅助函数
 
   try {
     const paragraphs = selectedChapterParagraphs.value;
@@ -2222,7 +2262,7 @@ const translateAllParagraphs = async () => {
       },
       onParagraphTranslation: async (translations) => {
         // 立即更新段落翻译（等待完成以确保保存）
-        await updateParagraphsIncrementally(translations);
+        await updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
       },
     });
 
@@ -2327,11 +2367,7 @@ const translateAllParagraphs = async () => {
               if (!translation) return para;
 
               // 创建新的翻译对象
-              const newTranslation = {
-                id: generateShortId(),
-                translation: normalizeTranslationQuotes(translation),
-                aiModelId: selectedModel.id,
-              };
+              const newTranslation = createParagraphTranslation(translation, selectedModel.id);
 
               // 添加到翻译列表（限制最多5个）
               const updatedTranslations = ChapterService.addParagraphTranslation(
@@ -2496,82 +2532,7 @@ const continueTranslation = async () => {
   // 用于跟踪已更新的段落，避免重复更新
   const updatedParagraphIds = new Set<string>();
 
-  // 更新段落的辅助函数
-  const updateParagraphsIncrementally = async (
-    paragraphTranslations: { id: string; translation: string }[],
-  ) => {
-    if (!book.value || !selectedChapterWithContent.value) return;
-
-    // 过滤出尚未更新的段落
-    const newTranslations = paragraphTranslations.filter(
-      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
-    );
-
-    if (newTranslations.length === 0) return;
-
-    // 标记这些段落为已更新
-    newTranslations.forEach((pt) => updatedParagraphIds.add(pt.id));
-
-    // 更新每个段落的翻译
-    const updatedVolumes = book.value.volumes?.map((volume) => {
-      if (!volume.chapters) return volume;
-
-      const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
-
-        // 使用已加载的章节内容
-        const content =
-          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
-
-        if (!content) return chapter;
-
-        const updatedContent = content.map((para) => {
-          const translation = newTranslations.find((pt) => pt.id === para.id);
-          if (!translation) return para;
-
-          // 创建新的翻译对象
-          const newTranslation = {
-            id: generateShortId(),
-            translation: normalizeTranslationQuotes(translation.translation),
-            aiModelId: selectedModel.id,
-          };
-
-          // 添加到翻译列表（限制最多5个）
-          const updatedTranslations = ChapterService.addParagraphTranslation(
-            para.translations || [],
-            newTranslation,
-          );
-
-          // 只更新翻译相关字段，确保不修改原文（text 字段）
-          return {
-            id: para.id,
-            text: para.text, // 明确保留原文，不修改
-            translations: updatedTranslations,
-            selectedTranslationId: newTranslation.id,
-          };
-        });
-
-        return {
-          ...chapter,
-          content: updatedContent,
-          lastEdited: new Date(),
-        };
-      });
-
-      return {
-        ...volume,
-        chapters: updatedChapters,
-      };
-    });
-
-    // 更新书籍
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
-
-    updateSelectedChapterWithContent(updatedVolumes);
-  };
+  // 使用全局的更新段落辅助函数
 
   try {
     // 获取章节标题
@@ -2602,7 +2563,7 @@ const continueTranslation = async () => {
         console.debug('翻译进度:', progress);
       },
       onParagraphTranslation: async (translations) => {
-        await updateParagraphsIncrementally(translations);
+        await updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
       },
       onAction: (action) => {
         handleActionInfoToast(action, { severity: 'info' });
@@ -2778,83 +2739,7 @@ const polishAllParagraphs = async () => {
   // 用于跟踪已更新的段落，避免重复更新
   const updatedParagraphIds = new Set<string>();
 
-  // 更新段落的辅助函数
-  const updateParagraphsIncrementally = async (
-    paragraphPolishes: { id: string; translation: string }[],
-  ) => {
-    if (!book.value || !selectedChapterWithContent.value) return;
-
-    // 过滤出尚未更新的段落
-    const newPolishes = paragraphPolishes.filter(
-      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
-    );
-
-    if (newPolishes.length === 0) return;
-
-    // 标记这些段落为已更新
-    newPolishes.forEach((pt) => updatedParagraphIds.add(pt.id));
-
-    // 更新每个段落的翻译
-    const updatedVolumes = book.value.volumes?.map((volume) => {
-      if (!volume.chapters) return volume;
-
-      const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
-
-        // 使用已加载的章节内容
-        const content =
-          ChapterService.getChapterContentForUpdate(chapter, selectedChapterWithContent.value);
-
-        if (!content) return chapter;
-
-        const updatedContent = content.map((para) => {
-          const polish = newPolishes.find((pt) => pt.id === para.id);
-          if (!polish) return para;
-
-          // 创建新的翻译对象（润色结果）
-          const newTranslation = {
-            id: generateShortId(),
-            translation: normalizeTranslationQuotes(polish.translation),
-            aiModelId: selectedModel.id,
-          };
-
-          // 添加到翻译列表（限制最多5个）
-          const updatedTranslations = ChapterService.addParagraphTranslation(
-            para.translations || [],
-            newTranslation,
-          );
-
-          // 只更新翻译相关字段，确保不修改原文（text 字段）
-          return {
-            id: para.id,
-            text: para.text, // 明确保留原文，不修改
-            translations: updatedTranslations,
-            selectedTranslationId: newTranslation.id,
-          };
-        });
-
-        return {
-          ...chapter,
-          content: updatedContent,
-          lastEdited: new Date(),
-        };
-      });
-
-      return {
-        ...volume,
-        chapters: updatedChapters,
-      };
-    });
-
-    // 更新书籍
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
-
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    updateSelectedChapterWithContent(updatedVolumes);
-  };
+  // 使用全局的更新段落辅助函数
 
   try {
     // 调用润色服务
@@ -2888,7 +2773,7 @@ const polishAllParagraphs = async () => {
       },
       onParagraphPolish: (translations) => {
         // 立即更新段落润色（异步执行，不阻塞）
-        void updateParagraphsIncrementally(translations);
+        void updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
       },
     });
 
@@ -2923,11 +2808,7 @@ const polishAllParagraphs = async () => {
             const polish = polishMap.get(para.id);
             if (!polish) return para;
 
-            const newTranslation = {
-              id: generateShortId(),
-              translation: normalizeTranslationQuotes(polish),
-              aiModelId: selectedModel.id,
-            };
+            const newTranslation = createParagraphTranslation(polish, selectedModel.id);
 
             const updatedTranslations = ChapterService.addParagraphTranslation(
               para.translations || [],
@@ -4172,31 +4053,41 @@ const handleDragLeave = () => {
               <div class="flex flex-col gap-1.5">
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">打开/关闭查找</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Ctrl+F
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">打开/关闭替换</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Ctrl+H
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">下一个匹配</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     F3
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">上一个匹配</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Shift+F3
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">关闭搜索工具栏</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Esc
                   </kbd>
                 </div>
@@ -4209,19 +4100,25 @@ const handleDragLeave = () => {
               <div class="flex flex-col gap-1.5">
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">撤销</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Ctrl+Z
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">重做</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Ctrl+Y
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">复制所有已翻译文本</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Ctrl+Shift+C
                   </kbd>
                 </div>
@@ -4234,19 +4131,25 @@ const handleDragLeave = () => {
               <div class="flex flex-col gap-1.5">
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">上一个段落</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     ↑
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">下一个段落</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     ↓
                   </kbd>
                 </div>
                 <div class="flex items-center justify-between py-1">
                   <span class="text-sm text-moon-90">开始编辑当前段落</span>
-                  <kbd class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded">
+                  <kbd
+                    class="px-2 py-1 text-xs font-mono bg-white/10 border border-white/20 rounded"
+                  >
                     Enter
                   </kbd>
                 </div>
@@ -4336,7 +4239,7 @@ const handleDragLeave = () => {
         <template #end>
           <div class="flex items-center gap-2">
             <div class="w-px h-4 bg-white/20 mx-2"></div>
-            
+
             <!-- 撤销/重做按钮 -->
             <div class="flex items-center gap-1 mr-2">
               <Button
@@ -4688,13 +4591,18 @@ const handleDragLeave = () => {
                 >
                   <span class="line-number">{{ index + 1 }}</span>
                   <ParagraphCard
-                    :ref="(el) => {
-                      if (el) {
-                        paragraphCardRefs.set(paragraph.id, el as InstanceType<typeof ParagraphCard>);
-                      } else {
-                        paragraphCardRefs.delete(paragraph.id);
+                    :ref="
+                      (el) => {
+                        if (el) {
+                          paragraphCardRefs.set(
+                            paragraph.id,
+                            el as InstanceType<typeof ParagraphCard>,
+                          );
+                        } else {
+                          paragraphCardRefs.delete(paragraph.id);
+                        }
                       }
-                    }"
+                    "
                     :paragraph="paragraph"
                     :terminologies="book?.terminologies || []"
                     :character-settings="book?.characterSettings || []"
