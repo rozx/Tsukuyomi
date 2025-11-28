@@ -245,7 +245,7 @@ export class PolishService {
         {
           "paragraphs": [{ "id": "段落ID", "translation": "润色后的内容" }],
         }
-        确保 paragraphs 数组包含所有输入段落的 ID 和对应润色结果，不返回其他内容 。`;
+        确保 paragraphs 数组包含所有输入段落的 ID 和对应润色结果。`;
 
       history.push({ role: 'system', content: systemPrompt });
 

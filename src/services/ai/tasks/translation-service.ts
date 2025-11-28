@@ -267,7 +267,7 @@ export class TranslationService {
             "paragraphs": [{ "id": "段落ID", "translation": "翻译内容" }],
             "titleTranslation": "章节标题翻译(仅当提供标题时)"
           }
-          确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译,不返回其他内容。`;
+          确保 paragraphs 数组包含所有输入段落的 ID 和对应翻译。`;
 
       history.push({ role: 'system', content: systemPrompt });
 
