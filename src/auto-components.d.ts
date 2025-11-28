@@ -11,6 +11,8 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AddChapterDialog: typeof import('./components/dialogs/AddChapterDialog.vue')['default']
+    AddVolumeDialog: typeof import('./components/dialogs/AddVolumeDialog.vue')['default']
     AIModelDialog: typeof import('./components/dialogs/AIModelDialog.vue')['default']
     AIModelSettingsTab: typeof import('./components/settings/AIModelSettingsTab.vue')['default']
     AppFooter: typeof import('./components/layout/AppFooter.vue')['default']
@@ -20,14 +22,23 @@ declare module 'vue' {
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
     ChapterContentPanel: typeof import('./components/novel/ChapterContentPanel.vue')['default']
+    ChapterToolbar: typeof import('./components/novel/ChapterToolbar.vue')['default']
     CharacterEditDialog: typeof import('./components/dialogs/CharacterEditDialog.vue')['default']
+    CharacterPopover: typeof import('./components/novel/CharacterPopover.vue')['default']
     CharacterSettingPanel: typeof import('./components/novel/CharacterSettingPanel.vue')['default']
     ConflictResolutionDialog: typeof import('./components/dialogs/ConflictResolutionDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/dialogs/CoverManagerDialog.vue')['default']
     DataView: typeof import('primevue/dataview')['default']
+    DeleteChapterConfirmDialog: typeof import('./components/dialogs/DeleteChapterConfirmDialog.vue')['default']
+    DeleteCharacterConfirmDialog: typeof import('./components/dialogs/DeleteCharacterConfirmDialog.vue')['default']
+    DeleteTermConfirmDialog: typeof import('./components/dialogs/DeleteTermConfirmDialog.vue')['default']
+    DeleteVolumeConfirmDialog: typeof import('./components/dialogs/DeleteVolumeConfirmDialog.vue')['default']
     Dialog: typeof import('primevue/dialog')['default']
+    EditChapterDialog: typeof import('./components/dialogs/EditChapterDialog.vue')['default']
+    EditVolumeDialog: typeof import('./components/dialogs/EditVolumeDialog.vue')['default']
     ExtractedTermsDialog: typeof import('./components/novel/ExtractedTermsDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
+    KeyboardShortcutsPopover: typeof import('./components/novel/KeyboardShortcutsPopover.vue')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']
     NovelScraperDialog: typeof import('./components/dialogs/NovelScraperDialog.vue')['default']
@@ -43,6 +54,7 @@ declare module 'vue' {
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
     TermEditDialog: typeof import('./components/dialogs/TermEditDialog.vue')['default']
     TerminologyPanel: typeof import('./components/novel/TerminologyPanel.vue')['default']
+    TermPopover: typeof import('./components/novel/TermPopover.vue')['default']
     TestResult: typeof import('./components/ai/TestResult.vue')['default']
     ThinkingProcessPanel: typeof import('./components/ai/ThinkingProcessPanel.vue')['default']
     ToastHistoryDialog: typeof import('./components/dialogs/ToastHistoryDialog.vue')['default']
@@ -50,5 +62,6 @@ declare module 'vue' {
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
     TranslationHistoryDialog: typeof import('./components/dialogs/TranslationHistoryDialog.vue')['default']
     TranslationProgress: typeof import('./components/novel/TranslationProgress.vue')['default']
+    VolumesList: typeof import('./components/novel/VolumesList.vue')['default']
   }
 }

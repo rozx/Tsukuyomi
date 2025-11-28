@@ -115,6 +115,27 @@ export function useKeyboardShortcuts(
       return;
     }
 
+    // Ctrl+Z 或 Cmd+Z: 撤销（需要在输入框检查之前处理，但只在非输入框时生效）
+    if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+      if (!isInputElement && canUndo.value) {
+        event.preventDefault();
+        void undo();
+      }
+      return;
+    }
+
+    // Ctrl+Y 或 Ctrl+Shift+Z 或 Cmd+Shift+Z: 重做（需要在输入框检查之前处理，但只在非输入框时生效）
+    if (
+      ((event.ctrlKey || event.metaKey) && event.key === 'y') ||
+      ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z')
+    ) {
+      if (!isInputElement && canRedo.value) {
+        event.preventDefault();
+        void redo();
+      }
+      return;
+    }
+
     // 如果用户在输入框中输入，不处理其他快捷键
     if (isInputElement) {
       return;
@@ -263,26 +284,6 @@ export function useKeyboardShortcuts(
       return;
     }
 
-    // Ctrl+Z 或 Cmd+Z: 撤销
-    if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
-      event.preventDefault();
-      if (canUndo.value) {
-        void undo();
-      }
-      return;
-    }
-
-    // Ctrl+Y 或 Ctrl+Shift+Z 或 Cmd+Shift+Z: 重做
-    if (
-      ((event.ctrlKey || event.metaKey) && event.key === 'y') ||
-      ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z')
-    ) {
-      event.preventDefault();
-      if (canRedo.value) {
-        void redo();
-      }
-      return;
-    }
   };
 
   // 处理点击事件，重置键盘导航状态（允许鼠标悬停再次生效）
