@@ -246,7 +246,6 @@ describe('useChapterDragDrop', () => {
 
   it('应该在书籍为空时不执行移动', async () => {
     const book = ref<Novel | undefined>(undefined);
-    const chapter = createTestChapter('chapter-1', 'Chapter 1');
 
     const { handleDrop } = useChapterDragDrop(book);
 
