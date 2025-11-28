@@ -2,7 +2,6 @@ import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ref, computed } from 'vue';
 import { useKeyboardShortcuts } from '../composables/book-details/useKeyboardShortcuts';
 import type { Chapter, Paragraph } from '../models/novel';
-import { generateShortId } from '../utils/id-generator';
 
 // Mock HTMLElement
 class MockHTMLElement {

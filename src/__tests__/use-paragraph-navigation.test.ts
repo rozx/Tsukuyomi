@@ -2,7 +2,6 @@ import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useParagraphNavigation } from '../composables/book-details/useParagraphNavigation';
 import type { Paragraph } from '../models/novel';
-import { generateShortId } from '../utils/id-generator';
 
 // Mock HTMLElement and DOM APIs
 class MockHTMLElement {
