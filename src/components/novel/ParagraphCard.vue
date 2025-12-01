@@ -270,7 +270,7 @@ const getComponentElement = (componentInstance: unknown): HTMLElement | undefine
  */
 const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): number => {
   const text = translationText.value;
-  if (!text || !textElement) return text.length;
+  if (!text || !textElement) return 0;
 
   // 尝试使用 Range API 获取点击位置
   let range: Range | null = null;
