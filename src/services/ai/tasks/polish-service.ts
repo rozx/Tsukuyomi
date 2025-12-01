@@ -243,7 +243,6 @@ export class PolishService {
         - 如遇到错误分类，必须使用 delete_term 或 delete_character 删除错误项，添加到正确表。
         - 如遇到空翻译，必须使用 update_term 或 update_character 修复。
         - 如遇到描述不匹配，必须使用 update_term 或 update_character 修复。
-        - 如遇到重复角色，必须使用 delete_character 删除重复，添加为别名。
 
       10. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keyword 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
