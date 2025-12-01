@@ -3,7 +3,6 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
-  AIToolCall,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';

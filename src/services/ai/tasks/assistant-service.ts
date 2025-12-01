@@ -85,7 +85,7 @@ export class AssistantService {
   private static buildSystemPrompt(context: {
     currentBookId: string | null;
     currentChapterId: string | null;
-    hoveredParagraphId: string | null;
+    selectedParagraphId: string | null;
   }): string {
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
 
@@ -203,7 +203,7 @@ export class AssistantService {
 `;
 
     // 添加上下文信息
-    if (context.currentBookId || context.currentChapterId || context.hoveredParagraphId) {
+    if (context.currentBookId || context.currentChapterId || context.selectedParagraphId) {
       prompt += `## 当前工作上下文\n\n`;
       if (context.currentBookId) {
         prompt += `- 书籍 ID: \`${context.currentBookId}\` → 使用 get_book_info 获取详情\n`;
@@ -214,8 +214,8 @@ export class AssistantService {
       } else if (context.currentBookId) {
         prompt += `- 使用 list_chapters 查看所有章节\n`;
       }
-      if (context.hoveredParagraphId) {
-        prompt += `- 段落 ID: \`${context.hoveredParagraphId}\` → 使用 get_paragraph_info 获取详情\n`;
+      if (context.selectedParagraphId) {
+        prompt += `- 段落 ID: \`${context.selectedParagraphId}\` → 使用 get_paragraph_info 获取详情\n`;
       }
       prompt += `\n询问上下文相关问题时，先使用工具获取信息再回答。\n\n`;
     }

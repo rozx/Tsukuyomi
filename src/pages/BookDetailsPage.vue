@@ -351,6 +351,7 @@ const openBookDialog = () => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
@@ -368,6 +369,7 @@ const navigateToTermsSetting = () => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
@@ -385,6 +387,7 @@ const navigateToCharactersSetting = () => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
@@ -398,6 +401,7 @@ const openScraperDialog = () => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
@@ -627,6 +631,24 @@ watch(
       contextStore.setCurrentChapter(newChapterId);
     } else {
       contextStore.setCurrentChapter(null);
+    }
+  },
+  { immediate: true },
+);
+
+// 实时更新 context store - 监听选中段落变化
+watch(
+  () => [selectedParagraphIndex.value, selectedChapterParagraphs.value] as const,
+  ([index, paragraphs]) => {
+    if (index !== null && paragraphs.length > 0 && index >= 0 && index < paragraphs.length) {
+      const paragraph = paragraphs[index];
+      if (paragraph) {
+        contextStore.setSelectedParagraph(paragraph.id);
+      } else {
+        contextStore.setSelectedParagraph(null);
+      }
+    } else {
+      contextStore.setSelectedParagraph(null);
     }
   },
   { immediate: true },
@@ -992,6 +1014,7 @@ const openEditCharacterDialog = (character: CharacterSetting) => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
@@ -1127,6 +1150,7 @@ const openEditTermDialog = (term: Terminology) => {
       currentBookId: bookId.value,
       currentChapterId: null,
       hoveredParagraphId: null,
+      selectedParagraphId: null,
     });
   }
 };
