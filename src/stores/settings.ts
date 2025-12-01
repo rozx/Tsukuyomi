@@ -80,6 +80,12 @@ function loadSettingsFromLocalStorage(): AppSettings {
       const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping);
       
       // 合并默认设置，确保所有字段都存在
+      // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
+      // 如果不存在，使用当前时间作为初始值（这是初始化，不是编辑）
+      const existingLastEdited = settings.lastEdited
+        ? new Date(settings.lastEdited)
+        : new Date();
+      
       const loadedSettings: AppSettings = {
         ...DEFAULT_SETTINGS,
         ...settings,
@@ -87,13 +93,13 @@ function loadSettingsFromLocalStorage(): AppSettings {
           ...DEFAULT_SETTINGS.taskDefaultModels,
           ...(settings.taskDefaultModels || {}),
         },
-        // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
-        lastEdited: settings.lastEdited ? new Date(settings.lastEdited) : new Date(),
+        // 保留原有的 lastEdited，如果不存在则使用当前时间（这是初始化，不是编辑）
+        lastEdited: existingLastEdited,
         // 使用迁移后的映射
         proxySiteMapping: migratedMapping,
       };
       
-      // 如果进行了迁移，保存回 LocalStorage
+      // 如果进行了迁移，保存回 LocalStorage（但不更新 lastEdited，因为这是自动迁移，不是用户编辑）
       if (migratedMapping && migratedMapping !== settings.proxySiteMapping) {
         saveSettingsToLocalStorage(loadedSettings);
       }
@@ -259,11 +265,11 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateSettings(updates: Partial<AppSettings>): Promise<void> {
       // 深度合并 taskDefaultModels
+      // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
       const mergedSettings: AppSettings = {
         ...this.settings,
         ...updates,
-        // 更新时自动设置 lastEdited 为当前时间
-        lastEdited: new Date(),
+        lastEdited: updates.lastEdited ?? new Date(),
       };
 
       if (updates.taskDefaultModels !== undefined) {
@@ -361,8 +367,8 @@ export const useSettingsStore = defineStore('settings', {
       const finalSettings: AppSettings = {
         ...this.settings,
         ...mergedSettings,
-        // 如果有保留的 lastEdited，使用它；否则使用当前时间
-        lastEdited: preservedLastEdited || new Date(),
+        // 如果有保留的 lastEdited，使用它；否则保留本地的 lastEdited（同步操作不应该更新 lastEdited）
+        lastEdited: preservedLastEdited || this.settings.lastEdited,
         // 使用迁移后的 proxySiteMapping
         ...(migratedProxySiteMapping !== undefined ? { proxySiteMapping: migratedProxySiteMapping } : {}),
       };
