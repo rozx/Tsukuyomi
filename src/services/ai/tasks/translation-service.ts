@@ -251,6 +251,7 @@ export class TranslationService {
          - 适当地添加语气词（"呀"、"呢"、"吧"、"啊"等）以增强语气
          - 不要过度使用，以免影响流畅性
          - 根据角色的说话风格（speaking_style）准确翻译，不使用与角色不符的语气词
+      6. **原文参考**: 参考前面段落或者章节的原文和翻译，确保翻译的一致性，不要出现前后矛盾的情况。
 
       ========================================
       【敬语翻译工作流（必须严格执行）】
@@ -436,7 +437,9 @@ export class TranslationService {
 
       4. **输出阶段**:
          - 返回符合格式要求的 JSON
-         - 确保所有输入段落都在 \`paragraphs\` 数组中`;
+         - 确保所有输入段落都在 \`paragraphs\` 数组中
+         - 如有章节标题，必须包含 \`titleTranslation\` 字段
+         - 确保 JSON 格式有效`;
 
       history.push({ role: 'system', content: systemPrompt });
 

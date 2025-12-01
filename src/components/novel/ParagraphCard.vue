@@ -137,6 +137,7 @@ const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const paragraphCardRef = ref<HTMLElement | null>(null);
+const paragraphTextRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
 const termRefsMap = new Map<string, HTMLElement>();
@@ -462,6 +463,9 @@ const contextMenuButtonRef = ref<HTMLElement | null>(null);
 const contextMenuTargetRef = ref<HTMLElement | null>(null);
 
 const handleContextMenuClick = (event: Event) => {
+  // 检查是否有文本选择
+  checkTextSelection();
+  
   if (contextMenuButtonRef.value && contextMenuPopoverRef.value) {
     contextMenuPopoverRef.value.toggle(event);
   }
@@ -470,6 +474,9 @@ const handleContextMenuClick = (event: Event) => {
 // 处理右键点击段落卡片
 const handleParagraphContextMenu = (event: MouseEvent) => {
   event.preventDefault();
+  
+  // 检查是否有文本选择
+  checkTextSelection();
   
   // 创建或获取临时目标元素在鼠标位置
   let target = contextMenuTargetRef.value;
@@ -563,6 +570,62 @@ const handleCopyToAssistant = () => {
   // 将段落原文复制到助手输入框
   if (props.paragraph.text) {
     uiStore.setAssistantInputMessage(props.paragraph.text);
+  }
+};
+
+// 存储当前是否有文本选择（在原始文本中）
+const hasTextSelection = ref(false);
+
+// 检查是否有文本选择（在原始文本中）
+const checkTextSelection = (): boolean => {
+  if (!paragraphTextRef.value) {
+    hasTextSelection.value = false;
+    return false;
+  }
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    hasTextSelection.value = false;
+    return false;
+  }
+  const range = selection.getRangeAt(0);
+  // 检查选择是否在段落文本元素内
+  const hasSelection =
+    range.toString().trim().length > 0 &&
+    paragraphTextRef.value.contains(range.commonAncestorContainer);
+  hasTextSelection.value = hasSelection;
+  return hasSelection;
+};
+
+// 获取选中的文本
+const getSelectedText = (): string | null => {
+  if (!paragraphTextRef.value) {
+    return null;
+  }
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  // 检查选择是否在段落文本元素内
+  if (!paragraphTextRef.value.contains(range.commonAncestorContainer)) {
+    return null;
+  }
+  const selectedText = range.toString().trim();
+  return selectedText.length > 0 ? selectedText : null;
+};
+
+// 解释选中的文本
+const handleExplainSelection = () => {
+  // 关闭上下文菜单
+  if (contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.hide();
+  }
+  // 获取选中的文本
+  const selectedText = getSelectedText();
+  if (selectedText) {
+    // 将选中的文本和解释请求发送到助手输入框
+    const explainPrompt = `请解释以下日文文本的含义、语法和文化背景：\n\n${selectedText}`;
+    uiStore.setAssistantInputMessage(explainPrompt);
   }
 };
 
@@ -697,7 +760,7 @@ defineExpose({
       <i class="pi pi-ellipsis-v" />
     </button>
     <div class="paragraph-content">
-      <p class="paragraph-text">
+      <p ref="paragraphTextRef" class="paragraph-text">
         <template v-for="(node, nodeIndex) in highlightedText" :key="nodeIndex">
           <span v-if="node.type === 'text'">{{ node.content }}</span>
           <span
@@ -887,6 +950,16 @@ defineExpose({
       @hide="handleContextMenuPopoverHide"
     >
       <div class="context-menu-content">
+        <Button
+          v-if="hasTextSelection"
+          label="解释选中文本"
+          icon="pi pi-question-circle"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handleExplainSelection"
+        />
+        <div v-if="hasTextSelection" class="context-menu-divider" />
         <Button
           label="校对段落"
           icon="pi pi-check-circle"

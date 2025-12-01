@@ -87,6 +87,10 @@ export interface ChatMessage {
   name?: string;
   tool_call_id?: string;
   tool_calls?: AIToolCall[];
+  /**
+   * 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时需要此字段
+   */
+  reasoning_content?: string | null;
 }
 
 /**
@@ -108,6 +112,7 @@ export interface TextGenerationResult {
   model?: string;
   toolCalls?: AIToolCall[]; // 如果有工具调用
   finishReason?: string; // stop, length, tool_calls, content_filter, etc.
+  reasoningContent?: string; // 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时返回
 }
 
 /**
