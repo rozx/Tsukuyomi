@@ -91,6 +91,29 @@ const hasOtherTranslations = computed(() => {
   );
 });
 
+// 计算按钮位置，确保按钮对齐
+const buttonSpacing = 2.25; // 按钮宽度(1.75rem) + 间距(0.5rem)
+const contextMenuButtonRight = 1.25; // 上下文菜单按钮固定位置
+
+// 编辑按钮是否可见（始终在 DOM 中，通过 CSS 控制可见性）
+const isEditButtonVisible = computed(() => hasTranslation.value);
+
+// 编辑按钮位置：如果翻译历史按钮可见，在最左边；否则在上下文菜单按钮左边
+const editButtonRight = computed(() => {
+  if (hasOtherTranslations.value) {
+    return contextMenuButtonRight + buttonSpacing * 2; // 5.75rem
+  }
+  return contextMenuButtonRight + buttonSpacing; // 3.5rem
+});
+
+// 翻译历史按钮位置：如果编辑按钮可见，在编辑按钮和上下文菜单按钮之间；否则在上下文菜单按钮左边
+const recentTranslationButtonRight = computed(() => {
+  if (isEditButtonVisible.value) {
+    return contextMenuButtonRight + buttonSpacing; // 3.5rem
+  }
+  return contextMenuButtonRight + buttonSpacing; // 3.5rem
+});
+
 // 处理翻译文本的高亮
 const translationNodes = computed(() => {
   const text = translationText.value;
@@ -228,6 +251,9 @@ const handleParagraphMouseEnter = () => {
 const editingTranslationValue = ref('');
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
+const translationDisplayRef = ref<HTMLElement | null>(null);
+// 存储点击位置对应的字符索引
+const clickedCharIndex = ref<number | null>(null);
 
 /**
  * 安全地从 Vue 组件实例中提取 $el 属性
@@ -235,6 +261,116 @@ const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
 const getComponentElement = (componentInstance: unknown): HTMLElement | undefined => {
   const instance = componentInstance as { $el?: HTMLElement };
   return instance.$el;
+};
+
+/**
+ * 计算点击位置对应的字符索引
+ * 使用 Range API 来精确定位光标位置
+ */
+const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): number => {
+  const text = translationText.value;
+  if (!text || !textElement) return text.length;
+
+  // 尝试使用 Range API 获取点击位置
+  let range: Range | null = null;
+  
+  if (document.caretRangeFromPoint) {
+    // Chrome, Safari, Edge
+    range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  } else if ((document as { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null }).caretPositionFromPoint) {
+    // Firefox
+    const caretPos = (document as { caretPositionFromPoint: (x: number, y: number) => { offsetNode: Node; offset: number } | null }).caretPositionFromPoint(event.clientX, event.clientY);
+    if (caretPos) {
+      range = document.createRange();
+      if (caretPos.offsetNode.nodeType === Node.TEXT_NODE) {
+        const offset = Math.min(caretPos.offset, caretPos.offsetNode.textContent?.length || 0);
+        range.setStart(caretPos.offsetNode, offset);
+        range.setEnd(caretPos.offsetNode, offset);
+      }
+    }
+  }
+
+  // 如果成功获取到 Range，计算字符位置
+  if (range && textElement.contains(range.commonAncestorContainer)) {
+    // 创建一个从元素开始到点击位置的 Range
+    const textRange = document.createRange();
+    textRange.selectNodeContents(textElement);
+    textRange.setEnd(range.startContainer, range.startOffset);
+    
+    // 获取范围内的文本内容（这会自动处理 HTML 标签）
+    const textBefore = textRange.toString();
+    return textBefore.length;
+  }
+
+  // 如果 Range API 不可用，使用备用方法：基于坐标计算
+  const style = window.getComputedStyle(textElement);
+  const rect = textElement.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  
+  // 计算行号
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.8;
+  const paddingTop = parseFloat(style.paddingTop) || 0;
+  const lineIndex = Math.max(0, Math.floor((y - paddingTop) / lineHeight));
+  
+  // 将文本按行分割
+  const lines = text.split('\n');
+  let charIndex = 0;
+  
+  // 累加前面所有行的字符数（包括换行符）
+  for (let i = 0; i < lineIndex && i < lines.length; i++) {
+    charIndex += lines[i].length + 1; // +1 为换行符
+  }
+  
+  // 在当前行中查找字符位置
+  if (lineIndex < lines.length) {
+    const currentLine = lines[lineIndex];
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const relativeX = x - paddingLeft;
+    
+    // 使用 canvas 测量字符宽度
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.font = `${style.fontSize} ${style.fontFamily}`;
+      
+      let currentX = 0;
+      for (let i = 0; i <= currentLine.length; i++) {
+        if (i < currentLine.length) {
+          const charWidth = context.measureText(currentLine[i]).width;
+          const nextX = currentX + charWidth;
+          
+          // 判断点击位置更接近哪个字符
+          if (relativeX >= currentX && relativeX < nextX) {
+            const midPoint = currentX + charWidth / 2;
+            return charIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
+          }
+          
+          currentX = nextX;
+        } else {
+          // 行尾
+          if (relativeX >= currentX) {
+            return charIndex + currentLine.length;
+          }
+        }
+      }
+    }
+    
+    // 如果测量失败，返回行尾
+    return charIndex + currentLine.length;
+  }
+  
+  // 如果点击在所有行之后，返回文本末尾
+  return text.length;
+};
+
+/**
+ * 处理翻译文本显示区域的点击事件
+ */
+const handleTranslationDisplayClick = (event: MouseEvent) => {
+  if (translationDisplayRef.value) {
+    clickedCharIndex.value = getCharIndexFromClick(event, translationDisplayRef.value);
+  }
 };
 
 // 开始编辑翻译
@@ -270,9 +406,13 @@ const onTranslationOpen = () => {
       
       if (textareaElement) {
         textareaElement.focus();
-        // 将光标移到文本末尾
-        const textLength = textareaElement.value.length;
-        textareaElement.setSelectionRange(textLength, textLength);
+        // 如果有保存的点击位置，使用它；否则移到文本末尾
+        const targetPosition = clickedCharIndex.value !== null 
+          ? Math.max(0, Math.min(clickedCharIndex.value, textareaElement.value.length))
+          : textareaElement.value.length;
+        textareaElement.setSelectionRange(targetPosition, targetPosition);
+        // 清除保存的点击位置
+        clickedCharIndex.value = null;
       }
     }
   });
@@ -361,6 +501,20 @@ const handleParagraphContextMenu = (event: MouseEvent) => {
 // 当上下文菜单 Popover 关闭时清理状态
 const handleContextMenuPopoverHide = () => {
   // 保留目标元素以便下次使用，只在组件卸载时清理
+};
+
+// 处理编辑翻译按钮点击
+const handleEditTranslationClick = () => {
+  if (translationInplaceRef.value && hasTranslation.value) {
+    // 通过点击 display 区域来触发编辑
+    const inplaceElement = getComponentElement(translationInplaceRef.value);
+    if (inplaceElement) {
+      const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
+      if (displayElement) {
+        displayElement.click();
+      }
+    }
+  }
 };
 
 // 处理最近翻译按钮悬停
@@ -518,11 +672,21 @@ defineExpose({
       v-if="hasOtherTranslations"
       ref="recentTranslationButtonRef"
       class="recent-translation-icon-button"
+      :style="{ right: `${recentTranslationButtonRight}rem` }"
       @click.stop="openTranslationHistory"
       @mouseenter="handleRecentTranslationMouseEnter"
       @mouseleave="handleRecentTranslationMouseLeave"
     >
       <i class="pi pi-history" />
+    </button>
+    <!-- 编辑翻译按钮 -->
+    <button
+      v-if="isEditButtonVisible"
+      class="edit-translation-icon-button"
+      :style="{ right: `${editButtonRight}rem` }"
+      @click.stop="handleEditTranslationClick"
+    >
+      <i class="pi pi-pencil" />
     </button>
     <button
       v-if="hasContent"
@@ -584,7 +748,11 @@ defineExpose({
           @close="onTranslationClose"
         >
           <template #display>
-            <p class="paragraph-translation">
+            <p 
+              ref="translationDisplayRef"
+              class="paragraph-translation"
+              @click="handleTranslationDisplayClick"
+            >
               <template v-for="(node, index) in translationNodes" :key="index">
                 <span v-if="node.type === 'text'">{{ node.content }}</span>
                 <mark v-else class="search-highlight">{{ node.content }}</mark>
@@ -816,7 +984,6 @@ defineExpose({
 .recent-translation-icon-button {
   position: absolute;
   top: 0.75rem;
-  right: 4rem;
   width: 1.75rem;
   height: 1.75rem;
   display: flex;
@@ -840,6 +1007,36 @@ defineExpose({
 }
 
 .paragraph-card.has-content:hover .recent-translation-icon-button {
+  opacity: 1;
+}
+
+.edit-translation-icon-button {
+  position: absolute;
+  top: 0.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--white-opacity-20);
+  border-radius: 4px;
+  color: var(--moon-opacity-40);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+}
+
+.edit-translation-icon-button:hover {
+  background-color: var(--white-opacity-10);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-opacity-100);
+  opacity: 1;
+}
+
+.paragraph-card.paragraph-selected .edit-translation-icon-button,
+.paragraph-card.has-content:hover .edit-translation-icon-button {
   opacity: 1;
 }
 
