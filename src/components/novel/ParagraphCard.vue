@@ -320,12 +320,19 @@ const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): num
   
   // 累加前面所有行的字符数（包括换行符）
   for (let i = 0; i < lineIndex && i < lines.length; i++) {
-    charIndex += lines[i].length + 1; // +1 为换行符
+    const line = lines[i];
+    if (line !== undefined) {
+      charIndex += line.length + 1; // +1 为换行符
+    }
   }
   
   // 在当前行中查找字符位置
   if (lineIndex < lines.length) {
     const currentLine = lines[lineIndex];
+    if (currentLine === undefined) {
+      return text.length;
+    }
+    
     const paddingLeft = parseFloat(style.paddingLeft) || 0;
     const relativeX = x - paddingLeft;
     
@@ -338,16 +345,19 @@ const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): num
       let currentX = 0;
       for (let i = 0; i <= currentLine.length; i++) {
         if (i < currentLine.length) {
-          const charWidth = context.measureText(currentLine[i]).width;
-          const nextX = currentX + charWidth;
-          
-          // 判断点击位置更接近哪个字符
-          if (relativeX >= currentX && relativeX < nextX) {
-            const midPoint = currentX + charWidth / 2;
-            return charIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
+          const char = currentLine[i];
+          if (char !== undefined) {
+            const charWidth = context.measureText(char).width;
+            const nextX = currentX + charWidth;
+            
+            // 判断点击位置更接近哪个字符
+            if (relativeX >= currentX && relativeX < nextX) {
+              const midPoint = currentX + charWidth / 2;
+              return charIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
+            }
+            
+            currentX = nextX;
           }
-          
-          currentX = nextX;
         } else {
           // 行尾
           if (relativeX >= currentX) {
