@@ -475,6 +475,7 @@ const editBook = (book: Novel) => {
     currentBookId: book.id,
     currentChapterId: null,
     hoveredParagraphId: null,
+    selectedParagraphId: null,
   });
 };
 

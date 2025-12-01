@@ -69,7 +69,12 @@ export const useBooksStore = defineStore('books', {
       const index = this.books.findIndex((book) => book.id === id);
       if (index > -1) {
         const existingBook = this.books[index];
-        const updatedBook = { ...existingBook, ...updates } as Novel;
+        // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
+        const updatesWithLastEdited: Partial<Novel> = {
+          ...updates,
+          lastEdited: updates.lastEdited ?? new Date(),
+        };
+        const updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
 
         // 如果 cover 是 null，删除该属性
         if ('cover' in updates && updates.cover === null) {

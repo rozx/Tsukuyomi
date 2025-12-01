@@ -3,7 +3,6 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
-  AIToolCall,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
@@ -226,6 +225,7 @@ export class PolishService {
       7. **意境和情感的传达**:
         - 确保译文能准确传达原作所营造的意境和其中蕴含的情感。
         - 保持原文的情感色彩和氛围。
+        - **参考前面段落的原文和翻译，确保翻译的一致性。**
 
       8. **翻译历史参考**:
         - 每个段落都提供了多个翻译历史版本。
@@ -235,6 +235,14 @@ export class PolishService {
       9. **工具使用**:
         - 使用工具获取术语、角色和段落上下文。
         - 优先使用上下文中的术语/角色，如果上下文中没有，再调用工具查询。
+        - 如遇到敬语翻译，必须使用 find_paragraph_by_keyword 检查历史翻译一致性。
+        - 如遇到新术语和角色，必须使用 get_occurrences_by_keywords 检查词频，确认需要后创建。
+        - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
+        - 如遇到数据问题，必须使用 update_term 或 update_character 修复。
+        - 如遇到重复角色，必须使用 delete_character 删除重复，添加为别名。
+        - 如遇到错误分类，必须使用 delete_term 或 delete_character 删除错误项，添加到正确表。
+        - 如遇到空翻译，必须使用 update_term 或 update_character 修复。
+        - 如遇到描述不匹配，必须使用 update_term 或 update_character 修复。
 
       10. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keyword 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
@@ -260,7 +268,7 @@ export class PolishService {
         - **角色区分**: 根据角色身份、性格、时代背景调整语言。
         - **专有名词**: 保持术语和角色名称统一。
         - **情感传达**: 准确传达意境和情感。
-        - **历史参考**: 参考翻译历史，混合匹配最佳表达。
+        - **历史参考**: 参考翻译历史和之前段落的原文和翻译，混合匹配最佳表达。
         - **工具使用**: 优先使用上下文，必要时调用工具。
         - **记忆**: 润色前搜索相关记忆，完成后可保存章节摘要。
         - **保留原文格式**: 保留原文的格式，如标点符号、换行符等。

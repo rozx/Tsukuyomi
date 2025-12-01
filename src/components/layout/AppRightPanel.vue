@@ -161,7 +161,7 @@ const contextInfo = computed(() => {
   if (context.currentChapterId) {
     info.push('当前章节');
   }
-  if (context.hoveredParagraphId) {
+  if (context.selectedParagraphId) {
     info.push('当前段落');
   }
 
@@ -1368,7 +1368,7 @@ const createNewSession = () => {
   chatSessionsStore.createSession({
     bookId: context.currentBookId,
     chapterId: context.currentChapterId,
-    paragraphId: context.hoveredParagraphId,
+    paragraphId: context.selectedParagraphId,
   });
   messages.value = [];
 };
@@ -1429,7 +1429,7 @@ watch(
     chatSessionsStore.updateCurrentSessionContext({
       bookId: context.currentBookId,
       chapterId: context.currentChapterId,
-      paragraphId: context.hoveredParagraphId,
+      paragraphId: context.selectedParagraphId,
     });
   },
   { deep: true },

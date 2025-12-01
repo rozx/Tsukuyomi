@@ -178,7 +178,7 @@ export class OpenAIService extends BaseAIService {
             } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
           }
           if (msg.role === 'assistant' && msg.tool_calls) {
-            return {
+            const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
               role: 'assistant',
               content: msg.content,
               tool_calls: msg.tool_calls.map((tc) => ({
@@ -186,7 +186,12 @@ export class OpenAIService extends BaseAIService {
                 type: 'function',
                 function: tc.function,
               })),
-            } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam;
+            };
+            // 如果消息包含 reasoning_content，添加到请求中（DeepSeek 等模型需要）
+            if (msg.reasoning_content !== undefined && msg.reasoning_content !== null) {
+              (assistantMsg as any).reasoning_content = msg.reasoning_content;
+            }
+            return assistantMsg;
           }
           return {
             role: msg.role,
@@ -239,6 +244,7 @@ export class OpenAIService extends BaseAIService {
       // 使用流式 API
       const stream = await client.chat.completions.create(requestParams);
       let fullText = '';
+      let reasoningContent = ''; // 累积思考内容
       let modelId = config.model;
 
       // 用于收集工具调用的片段
@@ -275,13 +281,16 @@ export class OpenAIService extends BaseAIService {
           }
 
           // 获取思考内容（reasoning_content）- 用于显示思考过程
-          const reasoningContent = (delta as any).reasoning_content || '';
+          const deltaReasoningContent = (delta as any).reasoning_content || '';
+          if (deltaReasoningContent) {
+            reasoningContent += deltaReasoningContent;
+          }
 
           // 获取实际内容（content）- 用于最终输出
           const content = delta.content || '';
 
           // 优先使用 reasoning_content 作为思考消息，如果没有则使用 content
-          const textToSend = reasoningContent || content;
+          const textToSend = deltaReasoningContent || content;
 
           // 如果有内容（思考内容或实际内容），累积到 fullText 并调用回调
           if (textToSend) {
@@ -347,6 +356,7 @@ export class OpenAIService extends BaseAIService {
         text,
         model: modelId,
         ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+        ...(reasoningContent ? { reasoningContent: reasoningContent.trim() } : {}),
       };
     } catch (error) {
       if (error instanceof Error) {

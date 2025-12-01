@@ -275,11 +275,8 @@ export function useParagraphNavigation(
         }
       }
 
-      // 如果点击的段落已经被选中，不需要重新显示选中效果
-      if (
-        selectedParagraphIndex.value === targetIndex &&
-        (isKeyboardSelected.value || isClickSelected.value)
-      ) {
+      // 如果点击的段落已经被选中，不需要重新触发选择
+      if (selectedParagraphIndex.value === targetIndex) {
         return;
       }
 

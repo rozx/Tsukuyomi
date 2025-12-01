@@ -30,8 +30,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update-translation': [paragraphId: string, newTranslation: string];
-  'retranslate': [paragraphId: string];
-  'polish': [paragraphId: string];
+  retranslate: [paragraphId: string];
+  polish: [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
   'paragraph-click': [paragraphId: string];
   'paragraph-edit-start': [paragraphId: string];
@@ -67,16 +67,16 @@ const mostRecentTranslation = computed(() => {
   if (!props.paragraph.translations || props.paragraph.translations.length === 0) {
     return null;
   }
-  
+
   // 过滤掉当前选中的翻译
   const otherTranslations = props.paragraph.translations.filter(
-    (t) => t.id !== props.paragraph.selectedTranslationId
+    (t) => t.id !== props.paragraph.selectedTranslationId,
   );
-  
+
   if (otherTranslations.length === 0) {
     return null;
   }
-  
+
   // 返回第一个（假设 translations 数组是按时间顺序的，最新的在最后）
   // 或者返回最后一个（如果最新的在最后）
   return otherTranslations[otherTranslations.length - 1];
@@ -85,10 +85,29 @@ const mostRecentTranslation = computed(() => {
 // 是否有其他翻译可以显示
 const hasOtherTranslations = computed(() => {
   // 只有当翻译数量大于1时才显示按钮
-  return (
-    props.paragraph.translations &&
-    props.paragraph.translations.length > 1
-  );
+  return props.paragraph.translations && props.paragraph.translations.length > 1;
+});
+
+// 计算按钮位置，确保按钮对齐
+const buttonSpacing = 2.25; // 按钮宽度(1.75rem) + 间距(0.5rem)
+const contextMenuButtonRight = 1.25; // 上下文菜单按钮固定位置
+
+// 编辑按钮是否可见（始终在 DOM 中，通过 CSS 控制可见性）
+const isEditButtonVisible = computed(() => hasTranslation.value);
+
+// 编辑按钮位置：如果翻译历史按钮可见，在最左边；否则在上下文菜单按钮左边
+const editButtonRight = computed(() => {
+  if (hasOtherTranslations.value) {
+    return contextMenuButtonRight + buttonSpacing * 2; // 5.75rem
+  }
+  return contextMenuButtonRight + buttonSpacing; // 3.5rem
+});
+
+// 翻译历史按钮位置：始终在上下文菜单按钮左边一个按钮间距处
+// 当编辑按钮可见时，它在编辑按钮和上下文菜单按钮之间；当编辑按钮不可见时，它直接在上下文菜单按钮左边
+// 两种情况下的位置都是相同的（3.5rem）
+const recentTranslationButtonRight = computed(() => {
+  return contextMenuButtonRight + buttonSpacing; // 3.5rem
 });
 
 // 处理翻译文本的高亮
@@ -101,11 +120,13 @@ const translationNodes = computed(() => {
   const query = props.searchQuery;
   const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
   const parts = text.split(regex);
-  
-  return parts.map((part) => ({
-    type: part.toLowerCase() === query.toLowerCase() ? 'highlight' : 'text',
-    content: part
-  })).filter(node => node.content);
+
+  return parts
+    .map((part) => ({
+      type: part.toLowerCase() === query.toLowerCase() ? 'highlight' : 'text',
+      content: part,
+    }))
+    .filter((node) => node.content);
 });
 
 // Popover refs
@@ -114,6 +135,7 @@ const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const paragraphCardRef = ref<HTMLElement | null>(null);
+const paragraphTextRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
 const termRefsMap = new Map<string, HTMLElement>();
@@ -228,6 +250,9 @@ const handleParagraphMouseEnter = () => {
 const editingTranslationValue = ref('');
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
+const translationDisplayRef = ref<HTMLElement | null>(null);
+// 存储点击位置对应的字符索引
+const clickedCharIndex = ref<number | null>(null);
 
 /**
  * 安全地从 Vue 组件实例中提取 $el 属性
@@ -235,6 +260,142 @@ const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
 const getComponentElement = (componentInstance: unknown): HTMLElement | undefined => {
   const instance = componentInstance as { $el?: HTMLElement };
   return instance.$el;
+};
+
+/**
+ * 计算点击位置对应的字符索引
+ * 使用 Range API 来精确定位光标位置
+ */
+const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): number => {
+  const text = translationText.value;
+  if (!text || !textElement) return 0;
+
+  // 尝试使用 Range API 获取点击位置
+  let range: Range | null = null;
+
+  if (document.caretRangeFromPoint) {
+    // Chrome, Safari, Edge
+    range = document.caretRangeFromPoint(event.clientX, event.clientY);
+  } else if (
+    (
+      document as {
+        caretPositionFromPoint?: (
+          x: number,
+          y: number,
+        ) => { offsetNode: Node; offset: number } | null;
+      }
+    ).caretPositionFromPoint
+  ) {
+    // Firefox
+    const caretPos = (
+      document as {
+        caretPositionFromPoint: (
+          x: number,
+          y: number,
+        ) => { offsetNode: Node; offset: number } | null;
+      }
+    ).caretPositionFromPoint(event.clientX, event.clientY);
+    if (caretPos) {
+      range = document.createRange();
+      if (caretPos.offsetNode.nodeType === Node.TEXT_NODE) {
+        const offset = Math.min(caretPos.offset, caretPos.offsetNode.textContent?.length || 0);
+        range.setStart(caretPos.offsetNode, offset);
+        range.setEnd(caretPos.offsetNode, offset);
+      }
+    }
+  }
+
+  // 如果成功获取到 Range，计算字符位置
+  if (range && textElement.contains(range.commonAncestorContainer)) {
+    // 创建一个从元素开始到点击位置的 Range
+    const textRange = document.createRange();
+    textRange.selectNodeContents(textElement);
+    textRange.setEnd(range.startContainer, range.startOffset);
+
+    // 获取范围内的文本内容（这会自动处理 HTML 标签）
+    const textBefore = textRange.toString();
+    return textBefore.length;
+  }
+
+  // 如果 Range API 不可用，使用备用方法：基于坐标计算
+  const style = window.getComputedStyle(textElement);
+  const rect = textElement.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  // 计算行号
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.8;
+  const paddingTop = parseFloat(style.paddingTop) || 0;
+  const lineIndex = Math.max(0, Math.floor((y - paddingTop) / lineHeight));
+
+  // 将文本按行分割
+  const lines = text.split('\n');
+  let charIndex = 0;
+
+  // 累加前面所有行的字符数（包括换行符）
+  for (let i = 0; i < lineIndex && i < lines.length; i++) {
+    const line = lines[i];
+    if (line !== undefined) {
+      charIndex += line.length + 1; // +1 为换行符
+    }
+  }
+
+  // 在当前行中查找字符位置
+  if (lineIndex < lines.length) {
+    const currentLine = lines[lineIndex];
+    if (currentLine === undefined) {
+      return text.length;
+    }
+
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const relativeX = x - paddingLeft;
+
+    // 使用 canvas 测量字符宽度
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.font = `${style.fontSize} ${style.fontFamily}`;
+
+      let currentX = 0;
+      for (let i = 0; i <= currentLine.length; i++) {
+        if (i < currentLine.length) {
+          const char = currentLine[i];
+          if (char !== undefined) {
+            const charWidth = context.measureText(char).width;
+            const nextX = currentX + charWidth;
+
+            // 判断点击位置更接近哪个字符
+            if (relativeX >= currentX && relativeX < nextX) {
+              const midPoint = currentX + charWidth / 2;
+              return charIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
+            }
+
+            currentX = nextX;
+          }
+        } else {
+          // 行尾
+          if (relativeX >= currentX) {
+            return charIndex + currentLine.length;
+          }
+        }
+      }
+    }
+
+    // 如果测量失败，返回行尾
+    return charIndex + currentLine.length;
+  }
+
+  // 如果点击在所有行之后，返回文本末尾
+  return text.length;
+};
+
+/**
+ * 处理翻译文本显示区域的点击事件
+ */
+const handleTranslationDisplayClick = (event: MouseEvent) => {
+  if (translationDisplayRef.value) {
+    clickedCharIndex.value = getCharIndexFromClick(event, translationDisplayRef.value);
+  }
 };
 
 // 开始编辑翻译
@@ -248,18 +409,18 @@ const onTranslationOpen = () => {
       // PrimeVue Textarea 组件内部使用 textarea 元素
       // 尝试多种方式访问 textarea 元素
       let textareaElement: HTMLTextAreaElement | null = null;
-      
+
       // 方式1: 通过 $el 访问
       const componentElement = getComponentElement(translationTextareaRef.value);
       if (componentElement) {
         textareaElement = componentElement.querySelector('textarea');
       }
-      
+
       // 方式2: 如果 $el 是 textarea 本身
       if (!textareaElement && componentElement instanceof HTMLTextAreaElement) {
         textareaElement = componentElement;
       }
-      
+
       // 方式3: 通过组件实例的 input 属性（某些 PrimeVue 版本）
       if (!textareaElement) {
         const instance = translationTextareaRef.value as { input?: HTMLTextAreaElement };
@@ -267,12 +428,17 @@ const onTranslationOpen = () => {
           textareaElement = instance.input;
         }
       }
-      
+
       if (textareaElement) {
         textareaElement.focus();
-        // 将光标移到文本末尾
-        const textLength = textareaElement.value.length;
-        textareaElement.setSelectionRange(textLength, textLength);
+        // 如果有保存的点击位置，使用它；否则移到文本末尾
+        const targetPosition =
+          clickedCharIndex.value !== null
+            ? Math.max(0, Math.min(clickedCharIndex.value, textareaElement.value.length))
+            : textareaElement.value.length;
+        textareaElement.setSelectionRange(targetPosition, targetPosition);
+        // 清除保存的点击位置
+        clickedCharIndex.value = null;
       }
     }
   });
@@ -322,6 +488,9 @@ const contextMenuButtonRef = ref<HTMLElement | null>(null);
 const contextMenuTargetRef = ref<HTMLElement | null>(null);
 
 const handleContextMenuClick = (event: Event) => {
+  // 检查是否有文本选择
+  checkTextSelection();
+
   if (contextMenuButtonRef.value && contextMenuPopoverRef.value) {
     contextMenuPopoverRef.value.toggle(event);
   }
@@ -330,10 +499,13 @@ const handleContextMenuClick = (event: Event) => {
 // 处理右键点击段落卡片
 const handleParagraphContextMenu = (event: MouseEvent) => {
   event.preventDefault();
-  
+
+  // 检查是否有文本选择
+  checkTextSelection();
+
   // 创建或获取临时目标元素在鼠标位置
   let target = contextMenuTargetRef.value;
-  
+
   if (!target || !document.body.contains(target)) {
     target = document.createElement('div');
     target.style.position = 'fixed';
@@ -345,11 +517,11 @@ const handleParagraphContextMenu = (event: MouseEvent) => {
     document.body.appendChild(target);
     contextMenuTargetRef.value = target;
   }
-  
+
   // 设置临时元素位置为鼠标光标位置
   target.style.left = `${event.clientX}px`;
   target.style.top = `${event.clientY}px`;
-  
+
   // 使用 nextTick 确保 DOM 更新后再显示菜单
   setTimeout(() => {
     if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
@@ -363,9 +535,27 @@ const handleContextMenuPopoverHide = () => {
   // 保留目标元素以便下次使用，只在组件卸载时清理
 };
 
+// 处理编辑翻译按钮点击
+const handleEditTranslationClick = () => {
+  if (translationInplaceRef.value && hasTranslation.value) {
+    // 通过点击 display 区域来触发编辑
+    const inplaceElement = getComponentElement(translationInplaceRef.value);
+    if (inplaceElement) {
+      const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
+      if (displayElement) {
+        displayElement.click();
+      }
+    }
+  }
+};
+
 // 处理最近翻译按钮悬停
 const handleRecentTranslationMouseEnter = (event: Event) => {
-  if (recentTranslationPopoverRef.value && recentTranslationButtonRef.value && mostRecentTranslation.value) {
+  if (
+    recentTranslationPopoverRef.value &&
+    recentTranslationButtonRef.value &&
+    mostRecentTranslation.value
+  ) {
     recentTranslationPopoverRef.value.toggle(event);
   }
 };
@@ -409,6 +599,62 @@ const handleCopyToAssistant = () => {
   // 将段落原文复制到助手输入框
   if (props.paragraph.text) {
     uiStore.setAssistantInputMessage(props.paragraph.text);
+  }
+};
+
+// 存储当前是否有文本选择（在原始文本中）
+const hasTextSelection = ref(false);
+
+// 检查是否有文本选择（在原始文本中）
+const checkTextSelection = (): boolean => {
+  if (!paragraphTextRef.value) {
+    hasTextSelection.value = false;
+    return false;
+  }
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    hasTextSelection.value = false;
+    return false;
+  }
+  const range = selection.getRangeAt(0);
+  // 检查选择是否在段落文本元素内
+  const hasSelection =
+    range.toString().trim().length > 0 &&
+    paragraphTextRef.value.contains(range.commonAncestorContainer);
+  hasTextSelection.value = hasSelection;
+  return hasSelection;
+};
+
+// 获取选中的文本
+const getSelectedText = (): string | null => {
+  if (!paragraphTextRef.value) {
+    return null;
+  }
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  // 检查选择是否在段落文本元素内
+  if (!paragraphTextRef.value.contains(range.commonAncestorContainer)) {
+    return null;
+  }
+  const selectedText = range.toString().trim();
+  return selectedText.length > 0 ? selectedText : null;
+};
+
+// 解释选中的文本
+const handleExplainSelection = () => {
+  // 关闭上下文菜单
+  if (contextMenuPopoverRef.value) {
+    contextMenuPopoverRef.value.hide();
+  }
+  // 获取选中的文本
+  const selectedText = getSelectedText();
+  if (selectedText) {
+    // 将选中的文本和解释请求发送到助手输入框
+    const explainPrompt = `请解释以下日文文本的含义、语法和文化背景：\n\n${selectedText}`;
+    uiStore.setAssistantInputMessage(explainPrompt);
   }
 };
 
@@ -472,16 +718,16 @@ defineExpose({
       const inplaceElement = getComponentElement(translationInplaceRef.value);
       if (inplaceElement) {
         // 查找取消按钮（通过图标类名）
-        const cancelButton = inplaceElement.querySelector(
-          '.translation-edit-buttons button .pi-times',
-        )?.closest('button') as HTMLElement;
+        const cancelButton = inplaceElement
+          .querySelector('.translation-edit-buttons button .pi-times')
+          ?.closest('button') as HTMLElement;
         if (cancelButton) {
           cancelButton.click();
         } else {
           // 如果没有找到取消按钮，尝试查找并点击应用按钮（保存并关闭）
-          const applyButton = inplaceElement.querySelector(
-            '.translation-edit-buttons button .pi-check',
-          )?.closest('button') as HTMLElement;
+          const applyButton = inplaceElement
+            .querySelector('.translation-edit-buttons button .pi-check')
+            ?.closest('button') as HTMLElement;
           if (applyButton) {
             applyButton.click();
           }
@@ -518,11 +764,21 @@ defineExpose({
       v-if="hasOtherTranslations"
       ref="recentTranslationButtonRef"
       class="recent-translation-icon-button"
+      :style="{ right: `${recentTranslationButtonRight}rem` }"
       @click.stop="openTranslationHistory"
       @mouseenter="handleRecentTranslationMouseEnter"
       @mouseleave="handleRecentTranslationMouseLeave"
     >
       <i class="pi pi-history" />
+    </button>
+    <!-- 编辑翻译按钮 -->
+    <button
+      v-if="isEditButtonVisible"
+      class="edit-translation-icon-button"
+      :style="{ right: `${editButtonRight}rem` }"
+      @click.stop="handleEditTranslationClick"
+    >
+      <i class="pi pi-pencil" />
     </button>
     <button
       v-if="hasContent"
@@ -533,7 +789,7 @@ defineExpose({
       <i class="pi pi-ellipsis-v" />
     </button>
     <div class="paragraph-content">
-      <p class="paragraph-text">
+      <p ref="paragraphTextRef" class="paragraph-text">
         <template v-for="(node, nodeIndex) in highlightedText" :key="nodeIndex">
           <span v-if="node.type === 'text'">{{ node.content }}</span>
           <span
@@ -568,7 +824,10 @@ defineExpose({
           </span>
         </template>
       </p>
-      <div v-if="hasTranslation || props.isTranslating || props.isPolishing" class="paragraph-translation-wrapper">
+      <div
+        v-if="hasTranslation || props.isTranslating || props.isPolishing"
+        class="paragraph-translation-wrapper"
+      >
         <!-- 正在翻译或润色时显示 skeleton（覆盖现有翻译） -->
         <div v-if="props.isTranslating || props.isPolishing" class="paragraph-translation-skeleton">
           <Skeleton width="100%" height="1.5rem" />
@@ -584,7 +843,11 @@ defineExpose({
           @close="onTranslationClose"
         >
           <template #display>
-            <p class="paragraph-translation">
+            <p
+              ref="translationDisplayRef"
+              class="paragraph-translation"
+              @click="handleTranslationDisplayClick"
+            >
               <template v-for="(node, index) in translationNodes" :key="index">
                 <span v-if="node.type === 'text'">{{ node.content }}</span>
                 <mark v-else class="search-highlight">{{ node.content }}</mark>
@@ -703,9 +966,7 @@ defineExpose({
         <div class="recent-translation-text">
           {{ mostRecentTranslation.translation }}
         </div>
-        <div class="recent-translation-hint">
-          点击按钮查看完整翻译历史
-        </div>
+        <div class="recent-translation-hint">点击按钮查看完整翻译历史</div>
       </div>
     </Popover>
 
@@ -719,6 +980,16 @@ defineExpose({
       @hide="handleContextMenuPopoverHide"
     >
       <div class="context-menu-content">
+        <Button
+          v-if="hasTextSelection"
+          label="解释选中文本"
+          icon="pi pi-question-circle"
+          class="context-menu-button"
+          text
+          severity="secondary"
+          @click="handleExplainSelection"
+        />
+        <div v-if="hasTextSelection" class="context-menu-divider" />
         <Button
           label="校对段落"
           icon="pi pi-check-circle"
@@ -751,10 +1022,10 @@ defineExpose({
           severity="secondary"
           @click="handleCopyToAssistant"
         />
-        
+
         <!-- 翻译历史分隔线 -->
         <div v-if="translationHistoryCount > 0" class="context-menu-divider" />
-        
+
         <!-- 翻译历史按钮 -->
         <Button
           v-if="translationHistoryCount > 0"
@@ -816,7 +1087,6 @@ defineExpose({
 .recent-translation-icon-button {
   position: absolute;
   top: 0.75rem;
-  right: 4rem;
   width: 1.75rem;
   height: 1.75rem;
   display: flex;
@@ -840,6 +1110,36 @@ defineExpose({
 }
 
 .paragraph-card.has-content:hover .recent-translation-icon-button {
+  opacity: 1;
+}
+
+.edit-translation-icon-button {
+  position: absolute;
+  top: 0.75rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--white-opacity-20);
+  border-radius: 4px;
+  color: var(--moon-opacity-40);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+}
+
+.edit-translation-icon-button:hover {
+  background-color: var(--white-opacity-10);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-opacity-100);
+  opacity: 1;
+}
+
+.paragraph-card.paragraph-selected .edit-translation-icon-button,
+.paragraph-card.has-content:hover .edit-translation-icon-button {
   opacity: 1;
 }
 
@@ -871,7 +1171,6 @@ defineExpose({
 .paragraph-card.has-content:hover .context-menu-icon-button {
   opacity: 1;
 }
-
 
 .paragraph-content {
   width: 100%;

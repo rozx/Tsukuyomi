@@ -13,6 +13,8 @@ interface ContextState {
   currentChapterId: string | null;
   // 当前悬停的段落 ID
   hoveredParagraphId: string | null;
+  // 当前选中的段落 ID
+  selectedParagraphId: string | null;
 }
 
 /**
@@ -27,6 +29,7 @@ function loadContextFromStorage(): ContextState {
         currentBookId: state.currentBookId ?? null,
         currentChapterId: state.currentChapterId ?? null,
         hoveredParagraphId: state.hoveredParagraphId ?? null,
+        selectedParagraphId: state.selectedParagraphId ?? null,
       };
     }
   } catch (error) {
@@ -36,6 +39,7 @@ function loadContextFromStorage(): ContextState {
     currentBookId: null,
     currentChapterId: null,
     hoveredParagraphId: null,
+    selectedParagraphId: null,
   };
 }
 
@@ -55,6 +59,7 @@ export const useContextStore = defineStore('context', {
     currentBookId: null,
     currentChapterId: null,
     hoveredParagraphId: null,
+    selectedParagraphId: null,
     isLoaded: false,
   }),
 
@@ -66,6 +71,7 @@ export const useContextStore = defineStore('context', {
       currentBookId: state.currentBookId,
       currentChapterId: state.currentChapterId,
       hoveredParagraphId: state.hoveredParagraphId,
+      selectedParagraphId: state.selectedParagraphId,
     }),
 
     /**
@@ -103,6 +109,7 @@ export const useContextStore = defineStore('context', {
       this.currentBookId = state.currentBookId;
       this.currentChapterId = state.currentChapterId;
       this.hoveredParagraphId = state.hoveredParagraphId;
+      this.selectedParagraphId = state.selectedParagraphId;
       this.isLoaded = true;
     },
 
@@ -116,6 +123,7 @@ export const useContextStore = defineStore('context', {
       if (bookId === null || previousBookId !== bookId) {
         this.currentChapterId = null;
         this.hoveredParagraphId = null;
+        this.selectedParagraphId = null;
       }
       this.saveState();
     },
@@ -129,6 +137,7 @@ export const useContextStore = defineStore('context', {
       // 如果切换章节，清除段落上下文
       if (chapterId === null || previousChapterId !== chapterId) {
         this.hoveredParagraphId = null;
+        this.selectedParagraphId = null;
       }
       this.saveState();
     },
@@ -165,6 +174,7 @@ export const useContextStore = defineStore('context', {
         if (context.currentBookId === null || previousBookId !== context.currentBookId) {
           this.currentChapterId = null;
           this.hoveredParagraphId = null;
+          this.selectedParagraphId = null;
         }
       }
       if (context.currentChapterId !== undefined) {
@@ -173,6 +183,7 @@ export const useContextStore = defineStore('context', {
         // 如果切换章节，清除段落上下文
         if (context.currentChapterId === null || previousChapterId !== context.currentChapterId) {
           this.hoveredParagraphId = null;
+          this.selectedParagraphId = null;
         }
       }
       if (context.hoveredParagraphId !== undefined) {
@@ -188,6 +199,9 @@ export const useContextStore = defineStore('context', {
           this.hoveredParagraphId = context.hoveredParagraphId;
         }
       }
+      if (context.selectedParagraphId !== undefined) {
+        this.selectedParagraphId = context.selectedParagraphId;
+      }
       this.saveState();
     },
 
@@ -198,6 +212,7 @@ export const useContextStore = defineStore('context', {
       this.currentBookId = null;
       this.currentChapterId = null;
       this.hoveredParagraphId = null;
+      this.selectedParagraphId = null;
       this.saveState();
     },
 
@@ -210,6 +225,15 @@ export const useContextStore = defineStore('context', {
     },
 
     /**
+     * 设置选中的段落
+     * @param paragraphId 段落 ID
+     */
+    setSelectedParagraph(paragraphId: string | null): void {
+      this.selectedParagraphId = paragraphId;
+      this.saveState();
+    },
+
+    /**
      * 保存状态到 localStorage
      */
     saveState(): void {
@@ -217,6 +241,7 @@ export const useContextStore = defineStore('context', {
         currentBookId: this.currentBookId,
         currentChapterId: this.currentChapterId,
         hoveredParagraphId: this.hoveredParagraphId,
+        selectedParagraphId: this.selectedParagraphId,
       });
     },
   },

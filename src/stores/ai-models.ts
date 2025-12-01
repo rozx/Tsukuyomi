@@ -113,6 +113,8 @@ export const useAIModelsStore = defineStore('aiModels', {
       const model = this.models.find((m) => m.id === id);
       if (model) {
         model.enabled = !model.enabled;
+        // 更新时自动设置 lastEdited 为当前时间
+        model.lastEdited = new Date();
         await aiModelService.saveModel(model);
       }
     },
@@ -133,11 +135,15 @@ export const useAIModelsStore = defineStore('aiModels', {
           this.models.forEach((m) => {
             if (m.id !== id && m.isDefault[task]) {
               m.isDefault[task] = { ...m.isDefault[task], enabled: false };
+              // 更新时自动设置 lastEdited 为当前时间
+              m.lastEdited = new Date();
               modelsToUpdate.push(m);
             }
           });
           // 批量更新其他模型
-          await aiModelService.bulkSaveModels(modelsToUpdate);
+          if (modelsToUpdate.length > 0) {
+            await aiModelService.bulkSaveModels(modelsToUpdate);
+          }
         }
         // 保持现有的 temperature，只更新 enabled
         const currentConfig = model.isDefault[task];
@@ -145,6 +151,8 @@ export const useAIModelsStore = defineStore('aiModels', {
           enabled: isDefault,
           temperature: currentConfig?.temperature ?? 0.7,
         };
+        // 更新时自动设置 lastEdited 为当前时间
+        model.lastEdited = new Date();
         await aiModelService.saveModel(model);
       }
     },
@@ -168,9 +176,19 @@ export const useAIModelsStore = defineStore('aiModels', {
 
       // 批量保存到 IndexedDB
       if (models.length > 0) {
-        await aiModelService.bulkSaveModels(models);
+        // 确保导入的模型都有 lastEdited，如果没有则使用当前时间（这是 CREATE 操作）
+        const modelsWithLastEdited = models.map((model) => ({
+          ...model,
+          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+        }));
+        await aiModelService.bulkSaveModels(modelsWithLastEdited);
         // 重新从 DB 加载，确保状态一致
-        this.models = await aiModelService.getAllModels();
+        const loadedModels = await aiModelService.getAllModels();
+        // 确保 lastEdited 是 Date 对象
+        this.models = loadedModels.map((model) => ({
+          ...model,
+          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+        }));
       }
       this.isLoaded = true;
     },

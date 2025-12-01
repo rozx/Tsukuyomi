@@ -366,6 +366,8 @@ export class SyncDataService {
       ...remoteNovel,
       // 保留本地书籍的创建时间（如果远程没有）
       createdAt: remoteNovel.createdAt || localNovel.createdAt,
+      // 保留远程书籍的 lastEdited（这是合并操作，使用远程的 lastEdited）
+      lastEdited: remoteNovel.lastEdited || localNovel.lastEdited,
     };
 
     // 使用远程的 volumes 结构（如果远程有 volumes，使用远程的；如果远程没有，清空 volumes）

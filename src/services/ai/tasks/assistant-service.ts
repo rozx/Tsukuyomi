@@ -85,7 +85,7 @@ export class AssistantService {
   private static buildSystemPrompt(context: {
     currentBookId: string | null;
     currentChapterId: string | null;
-    hoveredParagraphId: string | null;
+    selectedParagraphId: string | null;
   }): string {
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
 
@@ -203,7 +203,7 @@ export class AssistantService {
 `;
 
     // 添加上下文信息
-    if (context.currentBookId || context.currentChapterId || context.hoveredParagraphId) {
+    if (context.currentBookId || context.currentChapterId || context.selectedParagraphId) {
       prompt += `## 当前工作上下文\n\n`;
       if (context.currentBookId) {
         prompt += `- 书籍 ID: \`${context.currentBookId}\` → 使用 get_book_info 获取详情\n`;
@@ -214,8 +214,8 @@ export class AssistantService {
       } else if (context.currentBookId) {
         prompt += `- 使用 list_chapters 查看所有章节\n`;
       }
-      if (context.hoveredParagraphId) {
-        prompt += `- 段落 ID: \`${context.hoveredParagraphId}\` → 使用 get_paragraph_info 获取详情\n`;
+      if (context.selectedParagraphId) {
+        prompt += `- 段落 ID: \`${context.selectedParagraphId}\` → 使用 get_paragraph_info 获取详情\n`;
       }
       prompt += `\n询问上下文相关问题时，先使用工具获取信息再回答。\n\n`;
     }
@@ -700,6 +700,9 @@ ${messages
         toolCalls = result.toolCalls;
       }
 
+      // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
+      const reasoningContent = result.reasoningContent;
+
       // 只有在没有工具调用且没有文本时才警告
       if (!fullText.trim() && toolCalls.length === 0) {
         console.warn('[AssistantService] 警告：响应文本和工具调用都为空', {
@@ -715,12 +718,14 @@ ${messages
 
       // 将第一次响应添加到历史
       // OpenAI API 要求：如果有 tool_calls，content 可以是 null；如果没有 tool_calls，content 必须有内容
+      // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
       if (toolCalls.length > 0) {
         // 有工具调用，content 可以是 null
         messages.push({
           role: 'assistant',
           content: fullText || null,
           tool_calls: toolCalls,
+          reasoning_content: reasoningContent || null, // DeepSeek 要求此字段必须存在
         });
       } else if (fullText && fullText.trim()) {
         // 没有工具调用，但 content 有内容
@@ -868,6 +873,9 @@ ${messages
           toolCalls = followUpResult.toolCalls;
         }
 
+        // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
+        const followUpReasoningContent = followUpResult.reasoningContent;
+
         // 更新最终响应文本（只有在有内容时才更新）
         if (followUpText && followUpText.trim()) {
           finalResponseText = followUpText;
@@ -875,12 +883,14 @@ ${messages
 
         // 将助手回复添加到历史
         // OpenAI API 要求：如果有 tool_calls，content 可以是 null；如果没有 tool_calls，content 必须有内容
+        // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
         if (toolCalls.length > 0) {
           // 有工具调用，content 可以是 null
           messages.push({
             role: 'assistant',
             content: followUpText || null,
             tool_calls: toolCalls,
+            reasoning_content: followUpReasoningContent || null, // DeepSeek 要求此字段必须存在
           });
         } else if (followUpText && followUpText.trim()) {
           // 没有工具调用，但 content 有内容
