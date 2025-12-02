@@ -371,6 +371,7 @@ export class TranslationService {
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
          - \`list_characters\`: 检查别名冲突、查找重复角色
+         - \`create_memory\`: 保存记忆，用于保存背景设定、角色信息等记忆内容，每当翻译完成后，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
       2. **按需使用**:
          - \`create_character\` / \`create_term\`: 确认需要时创建
          - \`delete_character\` / \`delete_term\`: 清理无用或重复项
@@ -381,10 +382,10 @@ export class TranslationService {
       【记忆管理工作流】
       ========================================
       1. **参考记忆**:
-         - 翻译前可使用 \`search_memory_by_keyword\` 搜索相关的背景设定、角色信息等记忆内容
+         - 翻译前可使用 \`search_memory_by_keywords\` 搜索相关的背景设定、角色信息等记忆内容
          - 使用 \`get_memory\` 获取完整内容，确保翻译风格和术语使用的一致性
       2. **保存记忆**:
-         - 完成章节翻译后，可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
+         - 完成章节或者某个情节翻译后，推荐可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
          - 重要背景设定也可保存供后续参考
       3. **搜索后保存**:
          - 当你通过工具（如 \`search_paragraph_by_keyword\`、\`get_chapter_info\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考

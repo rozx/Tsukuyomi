@@ -130,7 +130,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'get_character',
         description:
-          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keyword 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
+          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -396,22 +396,25 @@ export const characterTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_characters_by_keyword',
+        name: 'search_characters_by_keywords',
         description:
-          '根据关键词搜索角色。可以搜索角色主名称、别名或翻译。支持可选参数 translationOnly 只返回有翻译的角色。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
+          '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的角色。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
-            keyword: {
-              type: 'string',
-              description: '搜索关键词',
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '搜索关键词数组（返回包含任一关键词的角色）',
             },
             translation_only: {
               type: 'boolean',
               description: '是否只返回有翻译的角色（默认 false）',
             },
           },
-          required: ['keyword'],
+          required: ['keywords'],
         },
       },
     },
@@ -419,9 +422,15 @@ export const characterTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keyword, translation_only = false } = args;
-      if (keyword === undefined || keyword === null) {
-        throw new Error('关键词不能为空');
+      const { keywords, translation_only = false } = args;
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        throw new Error('关键词数组不能为空');
+      }
+
+      // 过滤掉空字符串
+      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      if (validKeywords.length === 0) {
+        throw new Error('关键词数组不能为空');
       }
 
       const booksStore = useBooksStore();
@@ -436,26 +445,31 @@ export const characterTools: ToolDefinition[] = [
           type: 'read',
           entity: 'character',
           data: {
-            tool_name: 'search_characters_by_keyword',
+            tool_name: 'search_characters_by_keywords',
           },
         });
       }
 
       const allCharacters = book.characterSettings || [];
-      const keywordLower = keyword.toLowerCase();
+      const keywordsLower = validKeywords.map((k) => k.toLowerCase());
 
       const filteredCharacters = allCharacters.filter((char) => {
         // 搜索角色名称
-        const nameMatch = char.name.toLowerCase().includes(keywordLower);
+        const nameMatch = keywordsLower.some((keyword) =>
+          char.name.toLowerCase().includes(keyword),
+        );
         // 搜索翻译
-        const translationMatch = char.translation?.translation
-          ?.toLowerCase()
-          .includes(keywordLower);
+        const translationMatch = keywordsLower.some(
+          (keyword) =>
+            char.translation?.translation?.toLowerCase().includes(keyword),
+        );
         // 搜索别名
-        const aliasMatch = char.aliases?.some(
-          (alias) =>
-            alias.name.toLowerCase().includes(keywordLower) ||
-            alias.translation?.translation?.toLowerCase().includes(keywordLower),
+        const aliasMatch = char.aliases?.some((alias) =>
+          keywordsLower.some(
+            (keyword) =>
+              alias.name.toLowerCase().includes(keyword) ||
+              alias.translation?.translation?.toLowerCase().includes(keyword),
+          ),
         );
 
         if (translation_only) {
@@ -463,7 +477,7 @@ export const characterTools: ToolDefinition[] = [
           return (translationMatch || aliasMatch) && char.translation?.translation;
         }
 
-        // 否则只要名称、翻译或别名匹配即可
+        // 否则只要名称、翻译或别名匹配任一关键词即可（OR 逻辑）
         return nameMatch || translationMatch || aliasMatch;
       });
 

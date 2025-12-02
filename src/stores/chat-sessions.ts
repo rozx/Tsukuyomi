@@ -27,7 +27,8 @@ export interface MessageAction {
   tool_name?: string; // 工具名称（用于 read 操作）
   // Memory 相关信息
   memory_id?: string; // Memory ID（用于 memory 操作）
-  keyword?: string; // 搜索关键词（用于 search_memory_by_keyword）
+  keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
+  keywords?: string[]; // 搜索关键词数组（用于 search_memory_by_keywords）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用

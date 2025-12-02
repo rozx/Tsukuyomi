@@ -1,5 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
-import { UniqueIdGenerator } from 'src/utils/id-generator';
+import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
 
 const MAX_MEMORIES_PER_BOOK = 500;
@@ -53,7 +53,10 @@ export class MemoryService {
 
   /**
    * 创建新的 Memory
-   * 优化版本：只在必要时获取完整数据，减少数据传输
+   * 高性能优化版本：
+   * 1. 使用延迟 ID 生成策略（只在碰撞时检查，避免获取所有 ID）
+   * 2. 使用游标查找最旧的记录，避免加载所有数据到内存
+   * 3. 最小化数据库查询次数
    */
   static async createMemory(bookId: string, content: string, summary: string): Promise<Memory> {
     if (!bookId) {
@@ -72,35 +75,55 @@ export class MemoryService {
       const store = tx.objectStore('memories');
       const bookIdIndex = store.index('by-bookId');
 
-      // 1. 先快速检查数量（使用 count，比 getAll 快得多）
+      // 1. 快速检查数量（使用 count，非常快）
       const count = await bookIdIndex.count(bookId);
 
-      let existingIds: string[] = [];
-
-      // 2. 如果达到限制，需要删除最旧的并获取所有 ID
+      // 2. 如果达到限制，找到并删除最旧的记录（使用游标，只读取必要的数据）
       if (count >= MAX_MEMORIES_PER_BOOK) {
-        // 获取所有记录以找到最旧的
-        const allMemories = await bookIdIndex.getAll(bookId);
-        // 按 lastAccessedAt 排序，删除最旧的
-        allMemories.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-        const oldest = allMemories[0];
-        if (oldest) {
-          await store.delete(oldest.id);
+        // 使用游标遍历所有 bookId 匹配的记录，找到 lastAccessedAt 最小的
+        let oldestId: string | null = null;
+        let oldestTime = Number.MAX_SAFE_INTEGER;
+
+        let cursor = await bookIdIndex.openCursor(bookId);
+        while (cursor) {
+          const memory = cursor.value;
+          if (memory.lastAccessedAt < oldestTime) {
+            oldestTime = memory.lastAccessedAt;
+            oldestId = memory.id;
+          }
+          cursor = await cursor.continue();
         }
-        // 获取剩余记录的 ID（用于 ID 生成）
-        existingIds = allMemories.slice(1).map((m) => m.id);
-      } else {
-        // 3. 如果未达到限制，只需要获取 ID 列表（不获取完整记录）
-        // 使用 getAllKeys 只获取键，比 getAll 快得多
-        const allKeys = await bookIdIndex.getAllKeys(bookId);
-        existingIds = allKeys.map((key) => String(key));
+
+        // 删除最旧的记录
+        if (oldestId) {
+          await store.delete(oldestId);
+        }
       }
 
-      // 4. 生成唯一 ID
-      const idGenerator = new UniqueIdGenerator(existingIds);
-      const id = idGenerator.generate();
+      // 3. 生成唯一 ID（使用延迟检查策略，避免获取所有 ID）
+      // 由于 8 位十六进制字符串的碰撞概率极低（16^8 = 4.3 亿），
+      // 我们可以先生成 ID，然后检查是否存在，只在碰撞时重试
+      let id: string | null = null;
+      let attempts = 0;
+      const maxAttempts = 10; // 理论上几乎不会超过 1 次
 
-      // 5. 创建新 Memory
+      while (attempts < maxAttempts) {
+        const candidateId = generateShortId();
+        // 快速检查 ID 是否已存在（只查询单个键，非常快）
+        const existing = await store.get(candidateId);
+        if (!existing) {
+          // ID 不存在，可以使用
+          id = candidateId;
+          break;
+        }
+        attempts++;
+      }
+
+      if (!id) {
+        throw new Error('无法生成唯一 ID，请重试');
+      }
+
+      // 4. 创建新 Memory
       const now = Date.now();
       const memory: MemoryStorage = {
         id,
@@ -174,14 +197,28 @@ export class MemoryService {
   }
 
   /**
-   * 根据关键词搜索 Memory 的摘要
+   * 根据关键词搜索 Memory 的摘要（支持单个关键词，向后兼容）
    */
   static async searchMemoriesByKeyword(bookId: string, keyword: string): Promise<Memory[]> {
+    return this.searchMemoriesByKeywords(bookId, [keyword]);
+  }
+
+  /**
+   * 根据多个关键词搜索 Memory 的摘要
+   * 返回包含所有关键词的 Memory（AND 逻辑）
+   */
+  static async searchMemoriesByKeywords(bookId: string, keywords: string[]): Promise<Memory[]> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
-    if (!keyword) {
-      throw new Error('关键词不能为空');
+    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      throw new Error('关键词数组不能为空');
+    }
+
+    // 过滤掉空字符串
+    const validKeywords = keywords.filter((k) => k && k.trim().length > 0);
+    if (validKeywords.length === 0) {
+      throw new Error('关键词数组不能为空');
     }
 
     try {
@@ -189,10 +226,12 @@ export class MemoryService {
       const index = db.transaction('memories', 'readonly').store.index('by-bookId');
       const allMemories = await index.getAll(bookId);
 
-      const keywordLower = keyword.toLowerCase();
-      const matchingMemories = allMemories.filter((memory) =>
-        memory.summary.toLowerCase().includes(keywordLower),
-      );
+      const keywordsLower = validKeywords.map((k) => k.toLowerCase());
+      const matchingMemories = allMemories.filter((memory) => {
+        const summaryLower = memory.summary.toLowerCase();
+        // 所有关键词都必须出现在摘要中（AND 逻辑）
+        return keywordsLower.every((keyword) => summaryLower.includes(keyword));
+      });
 
       // 按最后访问时间倒序排序（最近访问的在前）
       matchingMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
@@ -218,7 +257,7 @@ export class MemoryService {
         lastAccessedAt: now, // 使用更新后的时间
       }));
     } catch (error) {
-      console.error('Failed to search memories by keyword:', error);
+      console.error('Failed to search memories by keywords:', error);
       throw new Error('搜索 Memory 失败');
     }
   }
