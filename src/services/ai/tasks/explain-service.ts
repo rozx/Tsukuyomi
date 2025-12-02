@@ -90,7 +90,7 @@ export class ExplainService {
    * @returns 解释提示词
    */
   static generatePrompt(selectedText: string): string {
-    return `请简短精要地解释以下日文文本的含义、语法和文化背景，和在这章中的关联或者意义：\n\n${selectedText}`;
+    return `请简短精要地解释以下日文文本的含义、语法和文化背景，和这本书的关联或者意义：\n\n${selectedText}`;
   }
 
   /**
