@@ -13,6 +13,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useUiStore } from 'src/stores/ui';
 import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
+import { ExplainService } from 'src/services/ai/tasks/explain-service';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -577,11 +578,15 @@ const handleProofread = () => {
   // TODO: 实现校对段落逻辑
 };
 
-const handlePolish = () => {
-  // 关闭上下文菜单
+// 关闭上下文菜单的辅助函数
+const closeContextMenu = () => {
   if (contextMenuPopoverRef.value) {
     contextMenuPopoverRef.value.hide();
   }
+};
+
+const handlePolish = () => {
+  closeContextMenu();
   // 触发润色事件
   emit('polish', props.paragraph.id);
 };
@@ -592,13 +597,11 @@ const handleRetranslate = () => {
 
 // 复制段落原文到 AI 助手输入框
 const handleCopyToAssistant = () => {
-  // 关闭上下文菜单
-  if (contextMenuPopoverRef.value) {
-    contextMenuPopoverRef.value.hide();
-  }
-  // 将段落原文复制到助手输入框
+  closeContextMenu();
+  // 使用 ExplainService 准备文本并发送到助手输入框
   if (props.paragraph.text) {
-    uiStore.setAssistantInputMessage(props.paragraph.text);
+    const preparedText = ExplainService.prepareTextForAssistant(props.paragraph.text);
+    uiStore.setAssistantInputMessage(preparedText);
   }
 };
 
@@ -645,15 +648,12 @@ const getSelectedText = (): string | null => {
 
 // 解释选中的文本
 const handleExplainSelection = () => {
-  // 关闭上下文菜单
-  if (contextMenuPopoverRef.value) {
-    contextMenuPopoverRef.value.hide();
-  }
+  closeContextMenu();
   // 获取选中的文本
   const selectedText = getSelectedText();
   if (selectedText) {
-    // 将选中的文本和解释请求发送到助手输入框
-    const explainPrompt = `请解释以下日文文本的含义、语法和文化背景：\n\n${selectedText}`;
+    // 使用 ExplainService 生成解释提示词并发送到助手输入框
+    const explainPrompt = ExplainService.generatePrompt(selectedText);
     uiStore.setAssistantInputMessage(explainPrompt);
   }
 };
@@ -672,9 +672,7 @@ const translationHistoryCount = computed(() => {
 // 打开翻译历史对话框
 const openTranslationHistory = () => {
   showTranslationHistoryDialog.value = true;
-  if (contextMenuPopoverRef.value) {
-    contextMenuPopoverRef.value.hide();
-  }
+  closeContextMenu();
   if (recentTranslationPopoverRef.value) {
     recentTranslationPopoverRef.value.hide();
   }
