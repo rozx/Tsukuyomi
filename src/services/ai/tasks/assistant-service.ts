@@ -11,6 +11,7 @@ import { AIServiceFactory } from '../index';
 import { ToolRegistry, type ActionInfo } from '../tools';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
+import { MemoryService } from 'src/services/memory-service';
 
 /**
  * Assistant 服务选项
@@ -136,7 +137,7 @@ export class AssistantService {
         - 需要提供 paragraph_id 参数
         - 工具会自动找到包含该段落的章节并导航到正确位置
 
-      ### 记忆管理（4个工具）
+      ### 记忆管理（5个工具）
       - **create_memory**: 创建新的 Memory 记录，用于存储大块内容（如背景设定、章节摘要等）
         - ⚠️ **重要**：调用此工具时，你必须自己生成内容的摘要（summary）并作为参数提供
         - 需要提供 content（实际内容）和 summary（摘要，**必须由 AI 生成**）
@@ -153,13 +154,26 @@ export class AssistantService {
         - 通常在 search_memory_by_keywords 找到相关 Memory 后，使用此工具获取完整内容
       - **search_memory_by_keywords**: 根据多个关键词搜索 Memory 的摘要（支持多个关键词，返回包含所有关键词的 Memory）
         - ⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆
-        - 当需要查找包含特定关键词的记忆内容时使用
+        - 任何时候，当你需要查找之前保存的内容的时候都应该先查询一下记忆
         - **使用场景**：
           - 用户询问之前讨论过的背景设定、世界观、剧情要点等（**不是角色或术语信息**）
           - 翻译时需要参考之前保存的背景设定
           - 需要查找相关的章节摘要或剧情要点
         - **示例**：用户问"之前提到的背景设定是什么？"，你应该先使用 search_memory_by_keywords 搜索["背景"]，然后使用 get_memory 获取完整内容
         - **错误示例**：用户问"主角的名字是什么？"时，应该先使用 search_characters_by_keywords 或 get_character 查询角色数据库，而不是直接搜索记忆
+      - **get_recent_memories**: 获取最近的 Memory 记录列表，按最后访问时间或创建时间排序
+        - 当需要快速浏览最近的记忆内容、了解最近的背景设定或章节摘要时使用
+        - 适合在对话开始时获取上下文，了解用户最近在讨论什么
+        - 可以按创建时间（createdAt）或最后访问时间（lastAccessedAt）排序
+        - **使用场景**：
+          - 对话开始时需要了解上下文，快速浏览最近的记忆
+          - 需要查看最近保存的背景设定或章节摘要
+          - 想了解用户最近在讨论哪些话题
+          - 当不确定使用哪些关键词搜索时，可以先获取最近的记忆作为参考
+        - **参数**：
+          - limit: 返回的记忆数量（默认 10，建议 5-20）
+          - sort_by: 排序方式，'createdAt' 或 'lastAccessedAt'（默认）
+        - **示例**：对话开始时，使用 get_recent_memories 获取最近 10 条记忆，了解用户最近的讨论内容
       - **delete_memory**: 删除指定的 Memory 记录
         - 当确定某个 Memory 不再需要时使用
         - 谨慎使用，通常是当记忆需要更新时使用
@@ -197,6 +211,7 @@ export class AssistantService {
         - **主动保存重要信息**：当用户提供背景设定、世界观、角色关系等重要信息时，主动使用 create_memory 保存
         - **搜索/检索后保存**：当你通过工具搜索、检索或确认了大量内容（如多个段落、完整章节、书籍信息、角色设定等）时，应该主动使用 create_memory 保存这些信息，避免重复检索
         - **搜索优先于创建**：在创建新记忆前，先使用 search_memory_by_keywords 检查是否已有相关内容，避免重复
+        - **获取上下文**：对话开始时或需要了解用户最近的讨论内容时，可以使用 get_recent_memories 快速获取最近的记忆作为上下文
         - **摘要要包含关键词**：生成 summary 时，确保包含用户可能用来搜索的关键词（如角色名、设定名称、章节标题等）
         - **及时更新记忆**：如果发现之前保存的记忆有误或需要更新，先搜索找到相关记忆，然后删除旧记忆并创建新记忆
         - **参考记忆内容**：在回答用户关于背景设定、世界观、剧情要点等问题时，可以搜索相关记忆；但对于角色或术语信息，必须优先查询数据库
@@ -285,7 +300,22 @@ export class AssistantService {
 2. 获取到章节内容后，使用 create_memory 保存章节摘要：
    - content: "第3章的完整内容和关键信息..."
    - summary: "第3章摘要：章节标题和主要内容"
-3. 这样后续可以快速参考，无需重复获取章节信息`;
+3. 这样后续可以快速参考，无需重复获取章节信息
+
+### 场景 6：对话开始时获取上下文
+**场景**：用户开始新的对话或一段时间后重新对话
+**AI 操作**：
+1. 使用 get_recent_memories 获取最近 10 条记忆（按最后访问时间排序）
+2. 浏览这些记忆，了解用户最近的讨论内容和背景设定
+3. 基于这些上下文信息，更好地理解用户的当前问题
+4. 如果发现相关的记忆，可以在回答中参考这些信息
+
+### 场景 7：快速浏览最近的记忆
+**用户**："我最近都讨论了什么？"
+**AI 操作**：
+1. 使用 get_recent_memories 获取最近的记忆（例如 limit=15）
+2. 可以按创建时间（sort_by='createdAt'）查看最新创建的，或按访问时间查看最近使用的
+3. 向用户展示这些记忆的摘要，帮助回顾之前的讨论内容`;
 
     return prompt;
   }
@@ -605,17 +635,27 @@ ${messages
             summaryOptions.signal = finalSignal;
           }
           summaryOptions.onChunk = (chunk) => {
-            // 更新任务状态显示总结进度
-            if (aiProcessingStore && taskId && chunk.text) {
-              void aiProcessingStore.updateTask(taskId, {
-                message: `正在总结会话历史... ${chunk.text.slice(0, 50)}`,
-              });
-            }
+            // 不更新任务状态，静默总结（不显示思考过程）
             if (onChunk) {
               void onChunk(chunk);
             }
           };
           const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+
+          // 创建记忆（如果有 bookId）
+          if (context.currentBookId && summary) {
+            try {
+              const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+              await MemoryService.createMemory(
+                context.currentBookId,
+                summary,
+                `会话摘要：${memorySummary}`,
+              );
+            } catch (error) {
+              console.error('Failed to create memory for session summary:', error);
+              // 不抛出错误，记忆创建失败不应该影响摘要流程
+            }
+          }
 
           // 返回特殊结果，指示需要重置
           return {
@@ -989,17 +1029,28 @@ ${messages
               summaryOptions.signal = finalSignal;
             }
             summaryOptions.onChunk = (chunk) => {
-              // 更新任务状态显示总结进度
-              if (aiProcessingStore && taskId && chunk.text) {
-                void aiProcessingStore.updateTask(taskId, {
-                  message: `正在总结会话历史... ${chunk.text.slice(0, 50)}`,
-                });
-              }
+              // 不更新任务状态，静默总结（不显示思考过程）
               if (onChunk) {
                 void onChunk(chunk);
               }
             };
             const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+
+            // 创建记忆（如果有 bookId）
+            if (context.currentBookId && summary) {
+              try {
+                const memorySummary =
+                  summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+                await MemoryService.createMemory(
+                  context.currentBookId,
+                  summary,
+                  `会话摘要：${memorySummary}`,
+                );
+              } catch (error) {
+                console.error('Failed to create memory for session summary:', error);
+                // 不抛出错误，记忆创建失败不应该影响摘要流程
+              }
+            }
 
             // 更新任务状态
             if (aiProcessingStore && taskId) {

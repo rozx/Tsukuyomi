@@ -8,6 +8,8 @@ import {
 } from './assistant-service';
 import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
+import { MemoryService } from 'src/services/memory-service';
+import { useContextStore } from 'src/stores/context';
 
 /**
  * 解释服务选项
@@ -171,6 +173,26 @@ export class ExplainService {
 
     // 使用 AssistantService 处理解释请求
     const result = await AssistantService.chat(model, explainPrompt, assistantOptions);
+
+    // 创建记忆（如果有 bookId 且解释成功）
+    if (result.text && selectedText) {
+      const contextStore = useContextStore();
+      const context = contextStore.getContext;
+      if (context.currentBookId) {
+        try {
+          // 构建记忆内容：包含原始文本和解释
+          const memoryContent = `原文：\n${selectedText}\n\n解释：\n${result.text}`;
+          const memorySummary =
+            selectedText.length > 50
+              ? `文本解释：${selectedText.slice(0, 50)}...`
+              : `文本解释：${selectedText}`;
+          await MemoryService.createMemory(context.currentBookId, memoryContent, memorySummary);
+        } catch (error) {
+          console.error('Failed to create memory for explanation:', error);
+          // 不抛出错误，记忆创建失败不应该影响解释流程
+        }
+      }
+    }
 
     // 构建并返回解释结果
     return this.buildExplainResult(result);

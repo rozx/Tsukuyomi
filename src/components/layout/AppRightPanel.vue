@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Popover from 'primevue/popover';
+import ProgressSpinner from 'primevue/progressspinner';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useUiStore } from 'src/stores/ui';
@@ -26,6 +27,7 @@ import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-serv
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { MemoryService } from 'src/services/memory-service';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import co from 'co';
 
@@ -133,6 +135,7 @@ onUnmounted(() => {
 const messages = ref<ChatMessage[]>([]);
 const inputMessage = ref('');
 const isSending = ref(false);
+const isSummarizing = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
 
@@ -267,6 +270,7 @@ const sendMessage = async () => {
   if (willExceedLimit && messages.value.length > 0) {
     try {
       isSending.value = true;
+      isSummarizing.value = true;
       // 不显示总结开始的 toast，静默进行
 
       // 构建要总结的消息（排除系统消息）
@@ -286,8 +290,24 @@ const sendMessage = async () => {
         },
       );
 
-      // 保存总结并重置消息
+      // 保存总结（不清除聊天历史）
       chatSessionsStore.summarizeAndReset(summary);
+
+      // 创建记忆（如果有 bookId）
+      const context = contextStore.getContext;
+      if (context.currentBookId && summary) {
+        try {
+          const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+          await MemoryService.createMemory(
+            context.currentBookId,
+            summary,
+            `会话摘要：${memorySummary}`,
+          );
+        } catch (error) {
+          console.error('Failed to create memory for session summary:', error);
+          // 不抛出错误，记忆创建失败不应该影响摘要流程
+        }
+      }
 
       // 更新本地消息列表（使用标记避免触发 watch）
       isUpdatingFromStore = true;
@@ -300,9 +320,11 @@ const sendMessage = async () => {
       isUpdatingFromStore = false;
 
       // 不显示总结成功的 toast，静默完成
+      isSummarizing.value = false;
     } catch (error) {
       console.error('Failed to summarize session:', error);
       summarySucceeded = false;
+      isSummarizing.value = false;
       toast.add({
         severity: 'error',
         summary: '总结失败',
@@ -326,6 +348,8 @@ const sendMessage = async () => {
       if (summarySucceeded) {
         isSending.value = false;
       }
+      // 确保摘要状态被重置
+      isSummarizing.value = false;
       // 如果总结失败且未达到上限，继续发送消息
     }
   }
@@ -1167,19 +1191,12 @@ const sendMessage = async () => {
 
     // 检查是否需要重置（token 限制或错误导致）
     if (result.needsReset && result.summary) {
-      // 保存总结并重置消息（使用保存的会话 ID，确保即使会话切换，总结也会保存到原始会话）
+      // 保存总结（不清除聊天历史，使用保存的会话 ID，确保即使会话切换，总结也会保存到原始会话）
       if (sessionId) {
         chatSessionsStore.summarizeAndReset(result.summary, sessionId);
       }
 
-      // 显示总结信息
-      toast.add({
-        severity: 'info',
-        summary: '会话已总结',
-        detail:
-          '由于达到 token 限制或发生错误，会话历史已自动总结并重置。之前的对话内容已保存为总结。',
-        life: 5000,
-      });
+      // 不显示总结成功的 toast，静默完成
 
       // 更新本地消息列表（使用标记避免触发 watch）
       isUpdatingFromStore = true;
@@ -1937,6 +1954,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
         <p class="text-xs text-moon-40">助手可以帮你管理术语、角色设定，并提供翻译建议</p>
       </div>
       <div v-else class="flex flex-col gap-4 w-full">
+        <!-- 摘要加载指示器 -->
+        <div v-if="isSummarizing" class="flex items-center gap-2 justify-center w-full py-4">
+          <ProgressSpinner style="width: 20px; height: 20px" strokeWidth="4" />
+          <span class="text-sm text-moon-60">正在摘要聊天会话...</span>
+        </div>
         <template v-for="message in messages" :key="message.id">
           <div
             class="flex flex-col gap-2 w-full"

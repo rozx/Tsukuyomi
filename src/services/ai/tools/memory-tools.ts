@@ -302,5 +302,84 @@ export const memoryTools: ToolDefinition[] = [
       }
     },
   },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_recent_memories',
+        description:
+          '获取最近的 Memory 记录列表，按最后访问时间或创建时间排序。当需要快速浏览最近的记忆内容、了解最近的背景设定或章节摘要时使用此工具。适合在对话开始时获取上下文，或在需要查看最近保存的重要信息时使用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: '返回的记忆数量限制（默认 10，最大建议 20）',
+              minimum: 1,
+              maximum: 50,
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['createdAt', 'lastAccessedAt'],
+              description: '排序方式：createdAt 按创建时间（最新创建的在前），lastAccessedAt 按最后访问时间（默认）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        return JSON.stringify({
+          success: false,
+          error: '书籍 ID 不能为空',
+        });
+      }
+
+      const { limit = 10, sort_by = 'lastAccessedAt' } = args;
+      const validLimit = Math.min(Math.max(1, Math.floor(limit || 10)), 50); // 限制在 1-50 之间
+      const validSortBy = sort_by === 'createdAt' ? 'createdAt' : 'lastAccessedAt';
+
+      try {
+        const memories = await MemoryService.getRecentMemories(
+          bookId,
+          validLimit,
+          validSortBy,
+          true, // 更新访问时间
+        );
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'memory',
+            data: {
+              limit: validLimit,
+              sort_by: validSortBy,
+              tool_name: 'get_recent_memories',
+            },
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          memories: memories.map((memory) => ({
+            id: memory.id,
+            summary: memory.summary,
+            content: memory.content,
+            createdAt: memory.createdAt,
+            lastAccessedAt: memory.lastAccessedAt,
+          })),
+          count: memories.length,
+          sort_by: validSortBy,
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '获取最近 Memory 失败',
+        });
+      }
+    },
+  },
 ];
 

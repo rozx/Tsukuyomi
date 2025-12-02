@@ -325,4 +325,79 @@ export class MemoryService {
       throw new Error('获取所有 Memory 失败');
     }
   }
+
+  /**
+   * 获取最近的 Memory（用于 AI 上下文）
+   * @param bookId 书籍 ID
+   * @param limit 返回的记忆数量限制（默认 10）
+   * @param sortBy 排序方式：'createdAt' 按创建时间，'lastAccessedAt' 按最后访问时间（默认）
+   * @param updateAccessTime 是否更新最后访问时间（默认 true）
+   * @returns 最近的 Memory 列表
+   */
+  static async getRecentMemories(
+    bookId: string,
+    limit: number = 10,
+    sortBy: 'createdAt' | 'lastAccessedAt' = 'lastAccessedAt',
+    updateAccessTime: boolean = true,
+  ): Promise<Memory[]> {
+    if (!bookId) {
+      throw new Error('书籍 ID 不能为空');
+    }
+    if (limit <= 0) {
+      throw new Error('限制数量必须大于 0');
+    }
+
+    try {
+      const db = await getDB();
+      const index = db.transaction('memories', 'readonly').store.index('by-bookId');
+      const allMemories = await index.getAll(bookId);
+
+      // 按指定字段排序
+      if (sortBy === 'createdAt') {
+        allMemories.sort((a, b) => b.createdAt - a.createdAt);
+      } else {
+        allMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
+      }
+
+      // 取前 limit 条
+      const recentMemories = allMemories.slice(0, limit);
+
+      // 如果需要更新访问时间
+      if (updateAccessTime && recentMemories.length > 0) {
+        const now = Date.now();
+        const tx = db.transaction('memories', 'readwrite');
+        for (const memory of recentMemories) {
+          const updatedMemory: MemoryStorage = {
+            ...memory,
+            lastAccessedAt: now,
+          };
+          await tx.store.put(updatedMemory);
+        }
+        await tx.done;
+
+        // 返回更新后的记忆
+        return recentMemories.map((memory) => ({
+          id: memory.id,
+          bookId: memory.bookId,
+          content: memory.content,
+          summary: memory.summary,
+          createdAt: memory.createdAt,
+          lastAccessedAt: now,
+        }));
+      }
+
+      // 返回未更新的记忆
+      return recentMemories.map((memory) => ({
+        id: memory.id,
+        bookId: memory.bookId,
+        content: memory.content,
+        summary: memory.summary,
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.lastAccessedAt,
+      }));
+    } catch (error) {
+      console.error('Failed to get recent memories:', error);
+      throw new Error('获取最近 Memory 失败');
+    }
+  }
 }
