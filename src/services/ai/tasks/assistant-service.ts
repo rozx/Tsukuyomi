@@ -668,6 +668,14 @@ ${messages
             }
           }
 
+          // 更新任务状态为已完成
+          if (aiProcessingStore && taskId) {
+            await aiProcessingStore.updateTask(taskId, {
+              status: 'completed',
+              message: '会话已总结并重置',
+            });
+          }
+
           // 返回特殊结果，指示需要重置
           return {
             text: '',

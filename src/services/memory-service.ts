@@ -78,20 +78,21 @@ export class MemoryService {
       // 1. 快速检查数量（使用 count，非常快）
       const count = await bookIdIndex.count(bookId);
 
-      // 2. 如果达到限制，找到并删除最旧的记录（使用游标，只读取必要的数据）
+      // 2. 如果达到限制，找到并删除最旧的记录
       if (count >= MAX_MEMORIES_PER_BOOK) {
-        // 使用游标遍历所有 bookId 匹配的记录，找到 lastAccessedAt 最小的
+        // 使用 getAll() 获取所有该书籍的记忆（利用索引，非常快）
+        // 然后在内存中查找最旧的记录（内存操作比游标迭代快得多）
+        const allMemories = await bookIdIndex.getAll(bookId);
+        
+        // 在内存中查找 lastAccessedAt 最小的记录（O(n) 但非常快）
         let oldestId: string | null = null;
         let oldestTime = Number.MAX_SAFE_INTEGER;
-
-        let cursor = await bookIdIndex.openCursor(bookId);
-        while (cursor) {
-          const memory = cursor.value;
+        
+        for (const memory of allMemories) {
           if (memory.lastAccessedAt < oldestTime) {
             oldestTime = memory.lastAccessedAt;
             oldestId = memory.id;
           }
-          cursor = await cursor.continue();
         }
 
         // 删除最旧的记录
