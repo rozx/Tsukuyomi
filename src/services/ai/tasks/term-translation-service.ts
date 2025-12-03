@@ -167,9 +167,9 @@ export class TermTranslationService {
             firstChunkReceived = true;
           }
 
-          // 累积思考消息
-          if (chunk.text) {
-            void aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
+          // 保存思考内容到思考过程（不保存实际内容）
+          if (chunk.reasoningContent) {
+            void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
           }
 
           if (chunk.done) {
@@ -196,6 +196,11 @@ export class TermTranslationService {
       }
 
       const result = await service.generateText(config, request, wrappedOnChunk);
+
+      // 保存思考内容到思考过程（从最终结果）
+      if (aiProcessingStore && taskId && result.reasoningContent) {
+        void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
+      }
 
       // 不再自动删除任务，保留思考过程供用户查看
 

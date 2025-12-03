@@ -3,6 +3,7 @@ import type {
   AIServiceConfig,
   TextGenerationRequest,
   TextGenerationStreamCallback,
+  TextGenerationChunk,
   ChatMessage,
   AIToolCall,
 } from 'src/services/ai/types/ai-service';
@@ -711,7 +712,7 @@ ${messages
       const allActions: ActionInfo[] = [];
 
       const result = await aiService.generateText(config, request, async (chunk) => {
-        // 累积流式文本
+        // 累积流式文本（只累积实际内容，不包括思考内容）
         if (chunk.text) {
           fullText += chunk.text;
         }
@@ -719,27 +720,27 @@ ${messages
           toolCalls.push(...chunk.toolCalls);
         }
 
-        // 更新任务状态（保存思考过程）
-        if (aiProcessingStore && taskId && chunk.text) {
-          await aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
+        // 保存思考内容到思考过程（不显示在聊天中）
+        if (aiProcessingStore && taskId && chunk.reasoningContent) {
+          await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
         }
 
-        // 调用用户回调
+        // 调用用户回调（只传递实际内容，不传递思考内容）
         if (onChunk) {
-          await onChunk(chunk);
+          // 创建一个只包含实际内容的 chunk，不包含思考内容
+          const filteredChunk: TextGenerationChunk = {
+            text: chunk.text || '',
+            done: chunk.done,
+            ...(chunk.model ? { model: chunk.model } : {}),
+            ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+            // 不传递 reasoningContent，这样思考内容就不会显示在聊天中
+          };
+          await onChunk(filteredChunk);
         }
       });
 
       // 使用 result.text 如果存在且不为空，否则使用累积的 fullText
-      // 注意：如果 result.text 和累积的 fullText 不一致，需要补充保存缺失的部分
       if (result.text && result.text.trim()) {
-        // 如果 result.text 比累积的 fullText 更长，说明有缺失的部分，需要补充保存
-        if (result.text.length > fullText.length) {
-          const missingText = result.text.slice(fullText.length);
-          if (aiProcessingStore && taskId && missingText) {
-            await aiProcessingStore.appendThinkingMessage(taskId, missingText);
-          }
-        }
         fullText = result.text;
       }
 
@@ -748,7 +749,11 @@ ${messages
       }
 
       // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
+      // 保存思考内容到思考过程（不显示在聊天中）
       const reasoningContent = result.reasoningContent;
+      if (aiProcessingStore && taskId && reasoningContent) {
+        await aiProcessingStore.appendThinkingMessage(taskId, reasoningContent);
+      }
 
       // 只有在没有工具调用且没有文本时才警告
       if (!fullText.trim() && toolCalls.length === 0) {
@@ -891,28 +896,28 @@ ${messages
               toolCalls.push(...chunk.toolCalls);
             }
 
-            // 更新任务状态（保存思考过程）
-            if (aiProcessingStore && taskId && chunk.text) {
-              await aiProcessingStore.appendThinkingMessage(taskId, chunk.text);
+            // 保存思考内容到思考过程（不显示在聊天中）
+            if (aiProcessingStore && taskId && chunk.reasoningContent) {
+              await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
             }
 
-            // 调用用户回调
+            // 调用用户回调（只传递实际内容，不传递思考内容）
             if (onChunk) {
-              await onChunk(chunk);
+              // 创建一个只包含实际内容的 chunk，不包含思考内容
+              const filteredChunk: TextGenerationChunk = {
+                text: chunk.text || '',
+                done: chunk.done,
+                ...(chunk.model ? { model: chunk.model } : {}),
+                ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+                // 不传递 reasoningContent，这样思考内容就不会显示在聊天中
+              };
+              await onChunk(filteredChunk);
             }
           },
         );
 
         // 使用 result.text 如果存在，否则使用累积的文本
-        // 注意：如果 followUpResult.text 和累积的 followUpText 不一致，需要补充保存缺失的部分
         if (followUpResult.text && followUpResult.text.trim()) {
-          // 如果 followUpResult.text 比累积的 followUpText 更长，说明有缺失的部分，需要补充保存
-          if (followUpResult.text.length > followUpText.length) {
-            const missingText = followUpResult.text.slice(followUpText.length);
-            if (aiProcessingStore && taskId && missingText) {
-              await aiProcessingStore.appendThinkingMessage(taskId, missingText);
-            }
-          }
           followUpText = followUpResult.text;
         }
 
@@ -921,7 +926,11 @@ ${messages
         }
 
         // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
+        // 保存思考内容到思考过程（不显示在聊天中）
         const followUpReasoningContent = followUpResult.reasoningContent;
+        if (aiProcessingStore && taskId && followUpReasoningContent) {
+          await aiProcessingStore.appendThinkingMessage(taskId, followUpReasoningContent);
+        }
 
         // 更新最终响应文本（只有在有内容时才更新）
         if (followUpText && followUpText.trim()) {

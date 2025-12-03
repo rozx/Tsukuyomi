@@ -4,6 +4,7 @@ import type {
   TextGenerationRequest,
   TextGenerationResult,
   TextGenerationStreamCallback,
+  TextGenerationChunk,
   ModelInfo,
 } from 'src/services/ai/types/ai-service';
 import type { ParsedResponse } from 'src/services/ai/types/interfaces';
@@ -280,39 +281,31 @@ export class OpenAIService extends BaseAIService {
             }
           }
 
-          // 获取思考内容（reasoning_content）- 用于显示思考过程
+          // 获取思考内容（reasoning_content）- 用于保存到思考过程
           const deltaReasoningContent = (delta as any).reasoning_content || '';
           if (deltaReasoningContent) {
             reasoningContent += deltaReasoningContent;
           }
 
-          // 获取实际内容（content）- 用于最终输出
+          // 获取实际内容（content）- 用于最终输出和聊天显示
           const content = delta.content || '';
 
-          // 优先使用 reasoning_content 作为思考消息，如果没有则使用 content
-          const textToSend = deltaReasoningContent || content;
+          // 只有实际内容（非思考内容）才累积到 fullText
+          if (content) {
+            fullText += content;
+          }
 
-          // 如果有内容（思考内容或实际内容），累积到 fullText 并调用回调
-          if (textToSend) {
-            // 只有实际内容（非思考内容）才累积到 fullText
-            if (content) {
-              fullText += content;
-            }
+          // 如果提供了回调函数，传递实际内容和思考内容（但思考内容应被过滤，不显示在聊天中）
+          // 思考内容通过 reasoningContent 字段传递，供上层保存到思考过程
+          if (onChunk && (content || deltaReasoningContent)) {
+            const chunkData: TextGenerationChunk = {
+              text: content, // 只传递实际内容用于聊天显示
+              done: false,
+              model: chunk.model || modelId,
+              ...(deltaReasoningContent ? { reasoningContent: deltaReasoningContent } : {}), // 传递思考内容供保存
+            };
 
-            // 如果提供了回调函数，调用它
-            // 传递思考内容或实际内容，让上层决定如何处理
-            if (onChunk) {
-              const chunkData: any = {
-                text: textToSend, // 传递思考内容或实际内容
-                done: false,
-                model: chunk.model || modelId,
-              };
-
-              // 如果正在收集工具调用，也可以通知回调（虽然通常工具调用只在最后处理）
-              // 这里暂不传递部分工具调用，以免复杂化
-
-              await onChunk(chunkData);
-            }
+            await onChunk(chunkData);
           }
 
           // 更新模型 ID（可能在第一个块中）

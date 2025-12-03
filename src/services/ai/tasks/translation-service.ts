@@ -755,9 +755,9 @@ export class TranslationService {
                     throw new Error('AI降级检测：检测到重复字符，停止翻译');
                   }
 
-                  // 累积思考消息（异步操作，但不阻塞）
-                  if (aiProcessingStore && taskId) {
-                    void aiProcessingStore.appendThinkingMessage(taskId, c.text);
+                  // 保存思考内容到思考过程（不保存实际内容）
+                  if (aiProcessingStore && taskId && c.reasoningContent) {
+                    void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
                   }
                 }
                 return Promise.resolve();
@@ -814,6 +814,11 @@ export class TranslationService {
               } else {
                 // 没有工具调用，这是最终回复
                 finalResponseText = result.text;
+
+                // 保存思考内容到思考过程（从最终结果）
+                if (aiProcessingStore && taskId && result.reasoningContent) {
+                  void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
+                }
 
                 // 再次检测最终响应中的重复字符，传入原文进行比较
                 if (
@@ -1166,8 +1171,9 @@ export class TranslationService {
                 ) {
                   throw new Error('AI降级检测：检测到重复字符，停止翻译');
                 }
-                if (aiProcessingStore && taskId) {
-                  void aiProcessingStore.appendThinkingMessage(taskId, c.text);
+                // 保存思考内容到思考过程（不保存实际内容）
+                if (aiProcessingStore && taskId && c.reasoningContent) {
+                  void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
                 }
               }
               return Promise.resolve();
