@@ -497,6 +497,11 @@ export class PolishService {
 
           // 确保 AI 请求完全完成后再继续
           const result = await service.generateText(config, request, (c) => {
+            // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
+            if (aiProcessingStore && taskId && c.reasoningContent) {
+              void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
+            }
+
             // 处理流式输出
             if (c.text) {
               if (!chunkReceived && aiProcessingStore && taskId) {
@@ -511,11 +516,6 @@ export class PolishService {
                 detectRepeatingCharacters(accumulatedText, chunkText, { logLabel: 'PolishService' })
               ) {
                 throw new Error('AI降级检测：检测到重复字符，停止润色');
-              }
-
-              // 保存思考内容到思考过程（不保存实际内容）
-              if (aiProcessingStore && taskId && c.reasoningContent) {
-                void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
               }
             }
             return Promise.resolve();
