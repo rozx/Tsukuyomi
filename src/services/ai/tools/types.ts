@@ -12,7 +12,7 @@ export interface ActionInfo {
     | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean }
     | { paragraph_id: string; translation_id: string; old_translation: string; new_translation: string }
     | { chapter_id?: string; chapter_title?: string; paragraph_id?: string; character_name?: string; book_id?: string; tool_name?: string }
-    | { memory_id?: string; keyword?: string; keywords?: string[]; summary?: string; id?: string; tool_name?: string };
+    | { memory_id?: string; keyword?: string; keywords?: string[]; summary?: string; id?: string; tool_name?: string; limit?: number; sort_by?: string };
   previousData?: Terminology | CharacterSetting | Translation; // 用于 revert 的原始数据（仅用于 update 操作）
 }
 
