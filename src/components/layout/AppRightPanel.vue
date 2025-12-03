@@ -146,10 +146,42 @@ const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null
 // 思考过程折叠状态（messageId -> isExpanded）
 const thinkingExpanded = ref<Map<string, boolean>>(new Map());
 
+// 思考过程内容容器 refs（用于滚动）
+const thinkingContentRefs = ref<Map<string, HTMLElement | null>>(new Map());
+
+// 设置思考过程内容容器 ref
+const setThinkingContentRef = (messageId: string, el: HTMLElement | null) => {
+  if (el) {
+    thinkingContentRefs.value.set(messageId, el);
+  } else {
+    thinkingContentRefs.value.delete(messageId);
+  }
+};
+
+// 滚动思考过程内容到底部
+const scrollThinkingToBottom = (messageId: string) => {
+  void nextTick(() => {
+    const container = thinkingContentRefs.value.get(messageId);
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  });
+};
+
 // 切换思考过程折叠状态
 const toggleThinking = (messageId: string) => {
   const current = thinkingExpanded.value.get(messageId) || false;
-  thinkingExpanded.value.set(messageId, !current);
+  const willExpand = !current;
+  thinkingExpanded.value.set(messageId, willExpand);
+
+  // 如果展开，等待 DOM 更新后滚动到底部
+  if (willExpand) {
+    void nextTick(() => {
+      scrollThinkingToBottom(messageId);
+      // 同时滚动消息容器到底部，确保思考过程气泡可见
+      scrollToBottom();
+    });
+  }
 };
 
 // 获取思考过程预览（前2行）
@@ -436,6 +468,10 @@ const sendMessage = async () => {
             msg.thinkingProcess = '';
           }
           msg.thinkingProcess += text;
+          // 如果思考过程已展开，滚动到思考过程内容底部
+          if (thinkingExpanded.value.get(assistantMessageId)) {
+            scrollThinkingToBottom(assistantMessageId);
+          }
           scrollToBottom();
         }
       },
@@ -1484,6 +1520,29 @@ watch(
   },
 );
 
+// 监听思考过程更新，如果已展开则滚动到底部
+watch(
+  () => messages.value.map((m) => ({ id: m.id, thinkingProcess: m.thinkingProcess })),
+  (newValues, oldValues) => {
+    if (!oldValues) return;
+
+    // 检查每个消息的思考过程是否更新
+    for (const newVal of newValues) {
+      const oldVal = oldValues.find((v) => v.id === newVal.id);
+      if (
+        oldVal &&
+        oldVal.thinkingProcess !== newVal.thinkingProcess &&
+        newVal.thinkingProcess &&
+        thinkingExpanded.value.get(newVal.id)
+      ) {
+        // 思考过程已更新且已展开，滚动到底部
+        scrollThinkingToBottom(newVal.id);
+      }
+    }
+  },
+  { deep: true },
+);
+
 // 监听助手输入消息状态，自动填充输入框
 watch(
   () => ui.assistantInputMessage,
@@ -1990,7 +2049,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           >
             <!-- 思考过程显示（仅在助手消息且有思考内容时显示） -->
             <div
-              v-if="message.role === 'assistant' && message.thinkingProcess && message.thinkingProcess.trim()"
+              v-if="
+                message.role === 'assistant' &&
+                message.thinkingProcess &&
+                message.thinkingProcess.trim()
+              "
               class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 bg-white/3 border border-white/10"
             >
               <button
@@ -1999,20 +2062,29 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
               >
                 <i
                   class="text-xs transition-transform"
-                  :class="thinkingExpanded.get(message.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+                  :class="
+                    thinkingExpanded.get(message.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'
+                  "
                 />
                 <span class="font-medium">思考过程</span>
               </button>
               <div
                 v-if="thinkingExpanded.get(message.id)"
-                class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto"
+                :ref="(el) => setThinkingContentRef(message.id, el as HTMLElement)"
+                class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto thinking-content"
+                :data-message-id="message.id"
               >
                 {{ message.thinkingProcess }}
               </div>
               <div
                 v-else
                 class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere opacity-70"
-                style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;"
+                style="
+                  display: -webkit-box;
+                  -webkit-line-clamp: 2;
+                  -webkit-box-orient: vertical;
+                  overflow: hidden;
+                "
               >
                 {{ getThinkingPreview(message.thinkingProcess) }}
               </div>
