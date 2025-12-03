@@ -36,7 +36,7 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
         return {
           getAll: mockIndexGetAll,
           count: mockIndexCount,
-          openCursor: async (bookId: string) => {
+          openCursor: (bookId: string) => {
             // 重置游标状态
             currentCursorBookId = bookId;
             currentCursorIndex = 0;
@@ -62,13 +62,13 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
               
               return {
                 value: current,
-                continue: async () => {
-                  return createNextCursor();
+                continue: () => {
+                  return Promise.resolve(createNextCursor());
                 },
               };
             };
             
-            return createNextCursor();
+            return Promise.resolve(createNextCursor());
           },
         };
       },
