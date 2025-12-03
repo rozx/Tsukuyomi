@@ -270,8 +270,8 @@ export class TranslationService {
       - 如果描述中缺少关系信息，应使用 \`update_character\` 工具补充
 
       **步骤 3: 检查历史翻译一致性（必须执行）**
-      - 使用 \`find_paragraph_by_keyword\` 工具搜索该角色在之前段落中的翻译
-      - 参数: \`keyword\`（角色名或带敬语的名称）、\`only_with_translation: true\`、\`max_paragraphs: 3\`
+      - 使用 \`find_paragraph_by_keywords\` 工具搜索该角色在之前段落中的翻译
+      - 参数: \`keywords\`（角色名或带敬语的名称数组）、\`only_with_translation: true\`、\`max_paragraphs: 3\`
       - 如果找到之前的翻译，**必须保持一致**
 
       **步骤 4: 应用角色关系**
@@ -367,7 +367,7 @@ export class TranslationService {
 
       **工具使用优先级**:
       1. **高频必用**:
-         - \`find_paragraph_by_keyword\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用）
+         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词）
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
          - \`list_characters\`: 检查别名冲突、查找重复角色
@@ -388,7 +388,7 @@ export class TranslationService {
          - 完成章节或者某个情节翻译后，推荐可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
          - 重要背景设定也可保存供后续参考
       3. **搜索后保存**:
-         - 当你通过工具（如 \`search_paragraph_by_keyword\`、\`get_chapter_info\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
+         - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
 
       ========================================
       【输出格式要求（必须严格遵守）】
@@ -460,7 +460,7 @@ export class TranslationService {
          - 遇到敬语时，严格按照工作流执行：
            (1) 检查角色别名翻译（最高优先级）
            (2) 查看角色设定（description 中的关系信息）
-           (3) 使用 find_paragraph_by_keyword 检查历史翻译一致性（必须执行）
+           (3) 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
            (4) 应用角色关系判断
            (5) 翻译并保持一致性
          - 遇到新术语时：先使用 get_occurrences_by_keywords 检查词频（≥3次才添加），确认需要后创建
@@ -658,7 +658,7 @@ export class TranslationService {
         1. **敬语翻译工作流（必须严格执行）**:
            - 步骤1: 检查角色别名翻译（最高优先级，必须首先执行）
            - 步骤2: 查看角色设定（description 中的关系信息）
-           - 步骤3: 使用 find_paragraph_by_keyword 检查历史翻译一致性（必须执行）
+           - 步骤3: 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
            - 步骤4: 应用角色关系判断
            - 步骤5: 翻译并保持一致性
            - ⚠️ 禁止自动创建敬语别名
@@ -670,7 +670,7 @@ export class TranslationService {
            - 发现错误分类 → 删除错误项，添加到正确表
         3. **一致性要求**:
            - 严格遵守已有术语/角色翻译
-           - 使用 find_paragraph_by_keyword 确保敬语翻译一致性
+           - 使用 find_paragraph_by_keywords 确保敬语翻译一致性
            - 新术语创建前必须检查词频（≥3次才添加）
            - 新角色创建前必须检查是否为别名
         4. **输出格式（必须严格遵守）**:

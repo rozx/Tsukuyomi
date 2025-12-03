@@ -131,7 +131,7 @@ export class AssistantService {
         - 用于查看当前段落之后的上下文，帮助理解文本的连贯性
         - 支持通过 count 参数指定要获取的段落数量（默认 3，建议范围 1-10）
         - 返回多个段落，按从近到远的顺序排列
-      - **find_paragraph_by_keyword**: 关键词查找段落（支持 only_with_translation 参数）
+      - **find_paragraph_by_keywords**: 关键词查找段落（支持多个关键词，返回包含任一关键词的段落，支持 only_with_translation 参数）
       - **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
       - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
       - **select_translation**: 选择段落中的某个翻译版本作为当前选中的翻译（用于在翻译历史中切换不同的翻译版本）
@@ -153,7 +153,7 @@ export class AssistantService {
           - 完成章节翻译后，需要保存章节摘要时
           - 用户询问并讨论了一些重要信息，需要保存供后续参考时
           - 总结书籍的关键设定、剧情要点等
-          - ⚠️ **重要**：当你通过工具（如 search_paragraph_by_keyword、get_chapter_info、get_book_info 等）搜索、检索或确认了大量内容（如多个段落、完整章节、书籍信息等）时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考
+          - ⚠️ **重要**：当你通过工具（如 find_paragraph_by_keywords、get_chapter_info、get_book_info 等）搜索、检索或确认了大量内容（如多个段落、完整章节、书籍信息等）时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考
         - **示例**：用户说"这本书的背景是魔法世界，主角是魔法师"，你应该使用 create_memory 保存这个信息
       - **get_memory**: 根据 Memory ID 获取指定的 Memory 内容
         - 当需要查看之前存储的背景设定、章节摘要等记忆内容时使用
@@ -294,7 +294,7 @@ export class AssistantService {
 ### 场景 5：搜索/检索大量内容后保存记忆
 **用户**："帮我查找所有关于主角的段落"
 **AI 操作**：
-1. 使用 search_paragraph_by_keyword 搜索"主角"相关的段落
+1. 使用 find_paragraph_by_keywords 搜索"主角"相关的段落
 2. 获取到多个段落的内容后，使用 create_memory 保存这些重要信息：
    - content: "关于主角的所有段落内容摘要..."
    - summary: "主角相关段落摘要"
@@ -481,7 +481,7 @@ ${messages
       'get_paragraph_info',
       'get_previous_paragraphs',
       'get_next_paragraphs',
-      'find_paragraph_by_keyword',
+      'find_paragraph_by_keywords',
       'get_memory',
       'search_memory_by_keywords',
       'create_memory',
@@ -833,7 +833,7 @@ ${messages
           'get_paragraph_info',
           'get_previous_paragraphs',
           'get_next_paragraphs',
-          'find_paragraph_by_keyword',
+          'find_paragraph_by_keywords',
           'get_occurrences_by_keywords',
         ];
         const hasUpdateTool = toolCalls.some((tc) => !queryOnlyTools.includes(tc.function.name));

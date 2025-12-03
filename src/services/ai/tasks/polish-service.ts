@@ -235,7 +235,7 @@ export class PolishService {
       9. **工具使用**:
         - 使用工具获取术语、角色和段落上下文。
         - 优先使用上下文中的术语/角色，如果上下文中没有，再调用工具查询。
-        - 如遇到敬语翻译，必须使用 find_paragraph_by_keyword 检查历史翻译一致性。
+        - 如遇到敬语翻译，必须使用 find_paragraph_by_keywords 检查历史翻译一致性。
         - 如遇到新术语和角色，必须使用 get_occurrences_by_keywords 检查词频，确认需要后创建。
         - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
         - 如遇到数据问题，必须使用 update_term 或 update_character 修复。
@@ -247,7 +247,7 @@ export class PolishService {
       10. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keywords 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
         - **保存记忆**: 完成章节润色后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
-        - **搜索后保存**: 当你通过工具（如 search_paragraph_by_keyword、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
+        - **搜索后保存**: 当你通过工具（如 find_paragraph_by_keywords、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
 
       11. **输出格式**: 必须返回有效 JSON 格式:
         {

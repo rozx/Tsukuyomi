@@ -1,4 +1,4 @@
-import { ChapterService } from 'src/services/chapter-service';
+import { ChapterService, type ParagraphSearchResult } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -285,15 +285,18 @@ export const paragraphTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'find_paragraph_by_keyword',
+        name: 'find_paragraph_by_keywords',
         description:
-          '根据关键词查找包含该关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。',
+          '根据多个关键词查找包含任一关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。支持多个关键词，返回包含任一关键词的段落（OR 逻辑）。',
         parameters: {
           type: 'object',
           properties: {
-            keyword: {
-              type: 'string',
-              description: '搜索关键词',
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '搜索关键词数组（返回包含任一关键词的段落）',
             },
             chapter_id: {
               type: 'string',
@@ -310,7 +313,7 @@ export const paragraphTools: ToolDefinition[] = [
                 '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落，用于查看之前如何翻译某个关键词，确保翻译一致性。',
             },
           },
-          required: ['keyword'],
+          required: ['keywords'],
         },
       },
     },
@@ -318,9 +321,15 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keyword, chapter_id, max_paragraphs = 1, only_with_translation = false } = args;
-      if (!keyword) {
-        throw new Error('关键词不能为空');
+      const { keywords, chapter_id, max_paragraphs = 1, only_with_translation = false } = args;
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        throw new Error('关键词数组不能为空');
+      }
+
+      // 过滤掉空字符串
+      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      if (validKeywords.length === 0) {
+        throw new Error('关键词数组不能为空');
       }
 
       const booksStore = useBooksStore();
@@ -335,19 +344,39 @@ export const paragraphTools: ToolDefinition[] = [
           type: 'read',
           entity: 'paragraph',
           data: {
-            tool_name: 'find_paragraph_by_keyword',
+            tool_name: 'find_paragraph_by_keywords',
           },
         });
       }
 
-      // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
-      const results = await ChapterService.searchParagraphsByKeywordAsync(
-        book,
-        keyword,
-        chapter_id,
-        max_paragraphs,
-        only_with_translation,
-      );
+      // 对每个关键词进行搜索，然后合并结果并去重
+      const allResults: Map<string, ParagraphSearchResult> = new Map();
+      
+      for (const keyword of validKeywords) {
+        // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
+        const results = await ChapterService.searchParagraphsByKeywordAsync(
+          book,
+          keyword,
+          chapter_id,
+          max_paragraphs * validKeywords.length, // 增加搜索数量以应对去重
+          only_with_translation,
+        );
+
+        // 将结果添加到 Map 中，使用段落 ID 作为 key 去重
+        for (const result of results) {
+          if (!allResults.has(result.paragraph.id)) {
+            allResults.set(result.paragraph.id, result);
+          }
+        }
+
+        // 如果已经收集到足够的段落，提前停止
+        if (allResults.size >= max_paragraphs) {
+          break;
+        }
+      }
+
+      // 转换为数组并限制数量
+      const results = Array.from(allResults.values()).slice(0, max_paragraphs);
 
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
