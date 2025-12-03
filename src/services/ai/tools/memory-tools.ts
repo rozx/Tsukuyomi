@@ -14,7 +14,7 @@ export const memoryTools: ToolDefinition[] = [
           properties: {
             memory_id: {
               type: 'string',
-              description: 'Memory ID（从 create_memory 或 search_memory_by_keyword 获取）',
+              description: 'Memory ID（从 create_memory 或 search_memory_by_keywords 获取）',
             },
           },
           required: ['memory_id'],
@@ -80,18 +80,21 @@ export const memoryTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_memory_by_keyword',
+        name: 'search_memory_by_keywords',
         description:
-          '根据关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keyword 或 get_term/search_terms_by_keyword 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。',
+          '根据多个关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。支持多个关键词，返回包含所有关键词的 Memory（AND 逻辑）。⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。',
         parameters: {
           type: 'object',
           properties: {
-            keyword: {
-              type: 'string',
-              description: '搜索关键词（将在 Memory 的摘要中搜索）',
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '搜索关键词数组（将在 Memory 的摘要中搜索，返回包含所有关键词的 Memory）',
             },
           },
-          required: ['keyword'],
+          required: ['keywords'],
         },
       },
     },
@@ -102,16 +105,25 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { keyword } = args;
-      if (!keyword) {
+      const { keywords } = args;
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         return JSON.stringify({
           success: false,
-          error: '关键词不能为空',
+          error: '关键词数组不能为空',
+        });
+      }
+
+      // 过滤掉空字符串
+      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      if (validKeywords.length === 0) {
+        return JSON.stringify({
+          success: false,
+          error: '关键词数组不能为空',
         });
       }
 
       try {
-        const memories = await MemoryService.searchMemoriesByKeyword(bookId, keyword);
+        const memories = await MemoryService.searchMemoriesByKeywords(bookId, validKeywords);
 
         // 报告读取操作
         if (onAction) {
@@ -119,8 +131,8 @@ export const memoryTools: ToolDefinition[] = [
             type: 'read',
             entity: 'memory',
             data: {
-              keyword,
-              tool_name: 'search_memory_by_keyword',
+              keywords: validKeywords,
+              tool_name: 'search_memory_by_keywords',
             },
           });
         }
@@ -232,7 +244,7 @@ export const memoryTools: ToolDefinition[] = [
           properties: {
             memory_id: {
               type: 'string',
-              description: 'Memory ID（从 get_memory 或 search_memory_by_keyword 获取）',
+              description: 'Memory ID（从 get_memory 或 search_memory_by_keywords 获取）',
             },
           },
           required: ['memory_id'],
@@ -286,6 +298,85 @@ export const memoryTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: error instanceof Error ? error.message : '删除 Memory 失败',
+        });
+      }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_recent_memories',
+        description:
+          '获取最近的 Memory 记录列表，按最后访问时间或创建时间排序。当需要快速浏览最近的记忆内容、了解最近的背景设定或章节摘要时使用此工具。适合在对话开始时获取上下文，或在需要查看最近保存的重要信息时使用。',
+        parameters: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: '返回的记忆数量限制（默认 10，最大建议 20）',
+              minimum: 1,
+              maximum: 50,
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['createdAt', 'lastAccessedAt'],
+              description: '排序方式：createdAt 按创建时间（最新创建的在前），lastAccessedAt 按最后访问时间（默认）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        return JSON.stringify({
+          success: false,
+          error: '书籍 ID 不能为空',
+        });
+      }
+
+      const { limit = 10, sort_by = 'lastAccessedAt' } = args;
+      const validLimit = Math.min(Math.max(1, Math.floor(limit || 10)), 50); // 限制在 1-50 之间
+      const validSortBy = sort_by === 'createdAt' ? 'createdAt' : 'lastAccessedAt';
+
+      try {
+        const memories = await MemoryService.getRecentMemories(
+          bookId,
+          validLimit,
+          validSortBy,
+          true, // 更新访问时间
+        );
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'memory',
+            data: {
+              limit: validLimit,
+              sort_by: validSortBy,
+              tool_name: 'get_recent_memories',
+            },
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          memories: memories.map((memory) => ({
+            id: memory.id,
+            summary: memory.summary,
+            content: memory.content,
+            createdAt: memory.createdAt,
+            lastAccessedAt: memory.lastAccessedAt,
+          })),
+          count: memories.length,
+          sort_by: validSortBy,
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '获取最近 Memory 失败',
         });
       }
     },

@@ -17,30 +17,73 @@ const mockIndexCount = mock((_key: string) => Promise.resolve(0));
 
 const mockTransactionStorePut = mock(() => Promise.resolve(undefined));
 
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
-  objectStore: () => ({
-    get: mockStoreGet,
-    put: mockStorePut,
-    delete: mockStoreDelete,
-    clear: mockStoreClear,
-    getAll: mockStoreGetAll,
-    count: mockStoreCount,
-    index: () => ({
-      getAll: mockIndexGetAll,
-      count: mockIndexCount,
+// 用于存储测试数据的内存存储，供游标使用
+let testMemoryData: Memory[] = [];
+// 存储当前游标的状态
+let currentCursorBookId: string | null = null;
+let currentCursorIndex = 0;
+
+const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
+  return {
+    objectStore: () => ({
+      get: mockStoreGet,
+      put: mockStorePut,
+      delete: mockStoreDelete,
+      clear: mockStoreClear,
+      getAll: mockStoreGetAll,
+      count: mockStoreCount,
+      index: (name: string) => {
+        return {
+          getAll: mockIndexGetAll,
+          count: mockIndexCount,
+          openCursor: (bookId: string) => {
+            // 重置游标状态
+            currentCursorBookId = bookId;
+            currentCursorIndex = 0;
+            const filtered = testMemoryData.filter((m) => m.bookId === bookId);
+            
+            // 创建游标类型
+            type CursorType = {
+              value: Memory;
+              continue: () => Promise<CursorType | null>;
+            } | null;
+            
+            // 创建游标函数
+            const createNextCursor = (): CursorType => {
+              if (currentCursorIndex >= filtered.length) {
+                return null;
+              }
+              const current = filtered[currentCursorIndex];
+              if (!current) {
+                return null;
+              }
+              currentCursorIndex++;
+              
+              return {
+                value: current,
+                continue: () => {
+                  return Promise.resolve(createNextCursor());
+                },
+              };
+            };
+            
+            return Promise.resolve(createNextCursor());
+          },
+        };
+      },
     }),
-  }),
-  store: {
-    get: mockStoreGet,
-    put: mockTransactionStorePut, // 用于 searchMemoriesByKeyword 中的更新
-    delete: mockStoreDelete,
-    index: () => ({
-      getAll: mockIndexGetAll,
-      count: mockIndexCount,
-    }),
-  },
-  done: Promise.resolve(),
-}));
+    store: {
+      get: mockStoreGet,
+      put: mockTransactionStorePut, // 用于 searchMemoriesByKeyword 中的更新
+      delete: mockStoreDelete,
+      index: () => ({
+        getAll: mockIndexGetAll,
+        count: mockIndexCount,
+      }),
+    },
+    done: Promise.resolve(),
+  };
+});
 
 const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
 const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
@@ -94,6 +137,10 @@ describe('MemoryService', () => {
     mockIndexCount.mockClear();
     mockTransaction.mockClear();
     mockTransactionStorePut.mockClear();
+    // 重置测试数据
+    testMemoryData = [];
+    currentCursorBookId = null;
+    currentCursorIndex = 0;
   });
 
   describe('createMemory', () => {
@@ -104,7 +151,8 @@ describe('MemoryService', () => {
 
       // Mock: 没有现有记录
       mockIndexCount.mockResolvedValue(0);
-      mockIndexGetAll.mockResolvedValue([]);
+      // Mock: ID 检查返回 undefined（ID 不存在，可以使用）
+      mockStoreGet.mockResolvedValue(undefined);
 
       const memory = await MemoryService.createMemory(bookId, content, summary);
 
@@ -116,7 +164,8 @@ describe('MemoryService', () => {
       expect(memory.id.length).toBe(8); // 短 ID 应该是 8 位
       expect(memory.createdAt).toBeGreaterThan(0);
       expect(memory.lastAccessedAt).toBeGreaterThan(0);
-      expect(mockPut).toHaveBeenCalled();
+      // 应该调用了 store.put 来保存新的 Memory
+      expect(mockStorePut).toHaveBeenCalled();
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
@@ -142,21 +191,22 @@ describe('MemoryService', () => {
       const content = '新内容';
       const summary = '新摘要';
 
-      // Mock: 已有 500 条记录
+      // Mock: 已有 500 条记录，设置测试数据供游标使用
       mockIndexCount.mockResolvedValue(500);
       const oldMemories = Array.from({ length: 500 }, (_, i) =>
         createTestMemory(`id-${i}`, bookId, `content-${i}`, `summary-${i}`, 1000 + i, 1000 + i),
       );
-      mockIndexGetAll.mockResolvedValue(oldMemories);
-
-      // Mock: 删除最旧的记录
-      mockDelete.mockResolvedValue(undefined);
+      // 设置测试数据，供游标使用
+      testMemoryData = oldMemories;
+      
+      // Mock: ID 检查返回 undefined（ID 不存在，可以使用）
+      mockStoreGet.mockResolvedValue(undefined);
 
       const memory = await MemoryService.createMemory(bookId, content, summary);
 
       expect(memory).toBeTruthy();
-      // 应该调用了 delete 来删除最旧的记录
-      expect(mockDelete).toHaveBeenCalled();
+      // 应该调用了 store.delete 来删除最旧的记录（通过事务内的 store）
+      expect(mockStoreDelete).toHaveBeenCalled();
     });
   });
 

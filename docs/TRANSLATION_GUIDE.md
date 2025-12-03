@@ -82,12 +82,12 @@
 
 #### 3. 检查历史翻译一致性
 
-在翻译敬语前，**必须**使用 `find_paragraph_by_keyword` 工具：
+在翻译敬语前，**必须**使用 `find_paragraph_by_keywords` 工具：
 
 ```javascript
 // 搜索该角色在之前段落中的翻译
-find_paragraph_by_keyword({
-  keyword: "田中さん",  // 或 "田中"
+find_paragraph_by_keywords({
+  keywords: ["田中さん", "田中"],  // 关键词数组（返回包含任一关键词的段落）
   only_with_translation: true,  // 只返回已翻译的段落
   max_paragraphs: 3
 })
@@ -156,15 +156,15 @@ find_paragraph_by_keyword({
 | --------------------------- | ------------ | -------------------------------- |
 | `get_previous_paragraphs`   | 获取前文段落 | 需要查看上文语境                 |
 | `get_next_paragraphs`       | 获取后文段落 | 需要查看下文语境                 |
-| `find_paragraph_by_keyword` | 关键词搜索   | ⚠️ 翻译敬语前必须使用，确保一致性 |
+| `find_paragraph_by_keywords` | 关键词搜索   | ⚠️ 翻译敬语前必须使用，确保一致性（支持多个关键词） |
 
 ### 关键工具使用示例
 
 #### 搜索历史翻译（敬语翻译必用）
 
 ```javascript
-find_paragraph_by_keyword({
-  keyword: "田中さん",
+find_paragraph_by_keywords({
+  keywords: ["田中さん", "田中"],  // 关键词数组（返回包含任一关键词的段落）
   only_with_translation: true,  // 只返回已翻译的段落
   max_paragraphs: 3
 })
@@ -217,7 +217,7 @@ get_occurrences_by_keywords({
 get_occurrences_by_keywords({ keywords: ["新术语"] })
 
 // 2. 检查上下文
-find_paragraph_by_keyword({ keyword: "新术语" })
+find_paragraph_by_keywords({ keywords: ["新术语"] })
 ```
 
 ### 术语更新原则（必须执行）
@@ -508,7 +508,7 @@ update_character({
 
 **添加前必须**：
 1. 使用 `get_occurrences_by_keywords` 检查词频
-2. 使用 `find_paragraph_by_keyword` 查看上下文
+2. 使用 `find_paragraph_by_keywords` 查看上下文
 
 ### Q2: 如何判断是创建新角色还是添加别名？
 
@@ -545,7 +545,7 @@ update_character({
   ↓ 如果没有
 查看角色描述中的关系信息 → 判断敬语处理方式
   ↓ 同时
-使用 find_paragraph_by_keyword 搜索历史翻译 → 保持一致
+使用 find_paragraph_by_keywords 搜索历史翻译 → 保持一致
 ```
 
 ### Q4: 如何处理重复角色？
@@ -602,7 +602,7 @@ create_term({ name: "火球術", translation: "火球术", ... })
 
 **正确做法**：
 - ✅ 使用已存在的别名翻译
-- ✅ 使用 `find_paragraph_by_keyword` 查找历史翻译
+- ✅ 使用 `find_paragraph_by_keywords` 查找历史翻译
 - ✅ 根据角色关系和上下文翻译
 - ❌ 不自动添加新的敬语别名
 
@@ -613,7 +613,7 @@ create_term({ name: "火球術", translation: "火球术", ... })
 1. **术语表**: 专有名词、特殊概念翻译固定
 2. **角色表**: 角色名称翻译固定
 3. **别名系统**: 角色不同称呼（包括敬语）翻译固定
-4. **历史搜索**: 使用 `find_paragraph_by_keyword` 查找之前的翻译
+4. **历史搜索**: 使用 `find_paragraph_by_keywords` 查找之前的翻译
 5. **上下文**: 根据角色关系和场景确保敬语翻译合理
 
 ---
@@ -641,7 +641,7 @@ create_term({ name: "火球術", translation: "火球术", ... })
 ### 工具使用优先级
 
 **高频必用**：
-1. `find_paragraph_by_keyword` - 敬语翻译、术语一致性
+1. `find_paragraph_by_keywords` - 敬语翻译、术语一致性（支持多个关键词）
 2. `update_character` - 补充翻译、添加别名、更新描述
 3. `update_term` - 补充术语翻译
 4. `list_characters` - 检查别名冲突、查找重复角色

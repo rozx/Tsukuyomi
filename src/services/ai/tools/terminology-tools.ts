@@ -85,7 +85,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_term',
         description:
-          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keyword 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
+          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -338,22 +338,25 @@ export const terminologyTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_terms_by_keyword',
+        name: 'search_terms_by_keywords',
         description:
-          '根据关键词搜索术语。可以搜索术语名称或翻译。支持可选参数 translationOnly 只返回有翻译的术语。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keyword 搜索记忆。',
+          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
-            keyword: {
-              type: 'string',
-              description: '搜索关键词',
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '搜索关键词数组（返回包含任一关键词的术语）',
             },
             translation_only: {
               type: 'boolean',
               description: '是否只返回有翻译的术语（默认 false）',
             },
           },
-          required: ['keyword'],
+          required: ['keywords'],
         },
       },
     },
@@ -361,9 +364,15 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keyword, translation_only = false } = args;
-      if (keyword === undefined || keyword === null) {
-        throw new Error('关键词不能为空');
+      const { keywords, translation_only = false } = args;
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        throw new Error('关键词数组不能为空');
+      }
+
+      // 过滤掉空字符串
+      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      if (validKeywords.length === 0) {
+        throw new Error('关键词数组不能为空');
       }
 
       const booksStore = useBooksStore();
@@ -378,28 +387,31 @@ export const terminologyTools: ToolDefinition[] = [
           type: 'read',
           entity: 'term',
           data: {
-            tool_name: 'search_terms_by_keyword',
+            tool_name: 'search_terms_by_keywords',
           },
         });
       }
 
       const allTerms = book.terminologies || [];
-      const keywordLower = keyword.toLowerCase();
+      const keywordsLower = validKeywords.map((k) => k.toLowerCase());
 
       const filteredTerms = allTerms.filter((term) => {
         // 搜索术语名称
-        const nameMatch = term.name.toLowerCase().includes(keywordLower);
+        const nameMatch = keywordsLower.some((keyword) =>
+          term.name.toLowerCase().includes(keyword),
+        );
         // 搜索翻译
-        const translationMatch = term.translation?.translation
-          ?.toLowerCase()
-          .includes(keywordLower);
+        const translationMatch = keywordsLower.some(
+          (keyword) =>
+            term.translation?.translation?.toLowerCase().includes(keyword),
+        );
 
         if (translation_only) {
           // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
           return translationMatch && term.translation?.translation;
         }
 
-        // 否则只要名称或翻译匹配即可
+        // 否则只要名称或翻译匹配任一关键词即可（OR 逻辑）
         return nameMatch || translationMatch;
       });
 

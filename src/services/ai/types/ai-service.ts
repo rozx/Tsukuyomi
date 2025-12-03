@@ -123,6 +123,7 @@ export interface TextGenerationChunk {
   done: boolean;
   model?: string;
   toolCalls?: AIToolCall[]; // 流式响应中可能包含工具调用片段（通常需要客户端拼接）
+  reasoningContent?: string; // 思考内容（reasoning_content）- 仅用于保存到思考过程，不应显示在聊天中
 }
 
 /**

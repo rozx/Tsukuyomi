@@ -27,7 +27,8 @@ export interface MessageAction {
   tool_name?: string; // 工具名称（用于 read 操作）
   // Memory 相关信息
   memory_id?: string; // Memory ID（用于 memory 操作）
-  keyword?: string; // 搜索关键词（用于 search_memory_by_keyword）
+  keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
+  keywords?: string[]; // 搜索关键词数组（用于 search_memory_by_keywords）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用
@@ -43,6 +44,9 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   actions?: MessageAction[]; // 消息中包含的操作
+  thinkingProcess?: string; // AI 思考过程（仅在 assistant 角色时使用）
+  isSummarization?: boolean; // 是否为总结消息（用于标记总结过程的消息气泡）
+  isSummaryResponse?: boolean; // 是否为总结响应消息（用于标记包含完整总结内容的消息，应隐藏）
 }
 
 /**
@@ -306,7 +310,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     },
 
     /**
-     * 设置会话总结并重置消息
+     * 设置会话总结（保留所有消息，不清除聊天历史）
      * @param summary 会话总结
      * @param sessionId 可选的会话 ID，如果不提供则使用当前会话
      */
@@ -316,14 +320,10 @@ export const useChatSessionsStore = defineStore('chatSessions', {
 
       const session = this.sessions.find((s) => s.id === targetSessionId);
       if (session) {
-        // 保存总结
+        // 保存总结，但不清除聊天历史
         session.summary = summary;
-        // 只保留最后几条消息（保留上下文）
-        const keepMessages = 2; // 保留最后 2 条消息
-        const recentMessages = session.messages.slice(-keepMessages);
-        // 在消息列表开头添加总结消息（作为系统消息的替代）
-        // 注意：这里不添加实际的消息，而是在 AssistantService 中使用总结
-        session.messages = recentMessages;
+        // 不修改消息列表，保留所有消息
+        // 摘要将在 AssistantService 中用于后续对话的上下文
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
       }

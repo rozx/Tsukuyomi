@@ -26,6 +26,7 @@ import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-serv
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { MemoryService } from 'src/services/memory-service';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import co from 'co';
 
@@ -133,12 +134,62 @@ onUnmounted(() => {
 const messages = ref<ChatMessage[]>([]);
 const inputMessage = ref('');
 const isSending = ref(false);
+const isSummarizing = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
 
 // Popover refs for action details
 const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
 const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
+
+// 思考过程折叠状态（messageId -> isExpanded）
+const thinkingExpanded = ref<Map<string, boolean>>(new Map());
+
+// 思考过程内容容器 refs（用于滚动）
+const thinkingContentRefs = ref<Map<string, HTMLElement | null>>(new Map());
+
+// 设置思考过程内容容器 ref
+const setThinkingContentRef = (messageId: string, el: HTMLElement | null) => {
+  if (el) {
+    thinkingContentRefs.value.set(messageId, el);
+  } else {
+    thinkingContentRefs.value.delete(messageId);
+  }
+};
+
+// 滚动思考过程内容到底部
+const scrollThinkingToBottom = (messageId: string) => {
+  void nextTick(() => {
+    const container = thinkingContentRefs.value.get(messageId);
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  });
+};
+
+// 切换思考过程折叠状态
+const toggleThinking = (messageId: string) => {
+  const current = thinkingExpanded.value.get(messageId) || false;
+  const willExpand = !current;
+  thinkingExpanded.value.set(messageId, willExpand);
+
+  // 如果展开，等待 DOM 更新后滚动到底部
+  if (willExpand) {
+    void nextTick(() => {
+      scrollThinkingToBottom(messageId);
+      // 同时滚动消息容器到底部，确保思考过程气泡可见
+      scrollToBottom();
+    });
+  }
+};
+
+// 获取思考过程预览（前2行）
+const getThinkingPreview = (thinkingProcess: string): string => {
+  if (!thinkingProcess) return '';
+  const lines = thinkingProcess.split('\n');
+  if (lines.length <= 2) return thinkingProcess;
+  return lines.slice(0, 2).join('\n');
+};
 
 // 获取默认助手模型
 const assistantModel = computed(() => {
@@ -267,13 +318,33 @@ const sendMessage = async () => {
   if (willExceedLimit && messages.value.length > 0) {
     try {
       isSending.value = true;
+      isSummarizing.value = true;
       // 不显示总结开始的 toast，静默进行
 
-      // 构建要总结的消息（排除系统消息）
-      const messagesToSummarize = messages.value.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
+      // 创建总结消息气泡
+      const summarizationMessageId = (Date.now() - 1).toString();
+      const summarizationMessage: ChatMessage = {
+        id: summarizationMessageId,
+        role: 'assistant',
+        content: '正在总结聊天会话...',
+        timestamp: Date.now(),
+        isSummarization: true,
+      };
+      messages.value.push(summarizationMessage);
+      // 更新 store 中的消息历史
+      const currentSession = chatSessionsStore.currentSession;
+      if (currentSession) {
+        chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+      }
+      scrollToBottom();
+
+      // 构建要总结的消息（排除系统消息和总结消息）
+      const messagesToSummarize = messages.value
+        .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse)
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
 
       // 调用总结功能
       const summary = await AssistantService.summarizeSession(
@@ -286,8 +357,49 @@ const sendMessage = async () => {
         },
       );
 
-      // 保存总结并重置消息
+      // 更新总结消息状态为完成
+      const summarizationMsgIndex = messages.value.findIndex(
+        (m) => m.id === summarizationMessageId,
+      );
+      if (summarizationMsgIndex >= 0) {
+        const existingMsg = messages.value[summarizationMsgIndex];
+        if (existingMsg) {
+          messages.value[summarizationMsgIndex] = {
+            id: existingMsg.id,
+            role: existingMsg.role,
+            content: '✓ 聊天会话总结完成',
+            timestamp: existingMsg.timestamp,
+            ...(existingMsg.isSummarization !== undefined && {
+              isSummarization: existingMsg.isSummarization,
+            }),
+            ...(existingMsg.actions && { actions: existingMsg.actions }),
+            ...(existingMsg.thinkingProcess && { thinkingProcess: existingMsg.thinkingProcess }),
+          };
+          // 更新 store 中的消息历史
+          if (currentSession) {
+            chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+          }
+        }
+      }
+
+      // 保存总结（不清除聊天历史）
       chatSessionsStore.summarizeAndReset(summary);
+
+      // 创建记忆（如果有 bookId）
+      const context = contextStore.getContext;
+      if (context.currentBookId && summary) {
+        try {
+          const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+          await MemoryService.createMemory(
+            context.currentBookId,
+            summary,
+            `会话摘要：${memorySummary}`,
+          );
+        } catch (error) {
+          console.error('Failed to create memory for session summary:', error);
+          // 不抛出错误，记忆创建失败不应该影响摘要流程
+        }
+      }
 
       // 更新本地消息列表（使用标记避免触发 watch）
       isUpdatingFromStore = true;
@@ -300,9 +412,11 @@ const sendMessage = async () => {
       isUpdatingFromStore = false;
 
       // 不显示总结成功的 toast，静默完成
+      isSummarizing.value = false;
     } catch (error) {
       console.error('Failed to summarize session:', error);
       summarySucceeded = false;
+      isSummarizing.value = false;
       toast.add({
         severity: 'error',
         summary: '总结失败',
@@ -326,6 +440,8 @@ const sendMessage = async () => {
       if (summarySucceeded) {
         isSending.value = false;
       }
+      // 确保摘要状态被重置
+      isSummarizing.value = false;
       // 如果总结失败且未达到上限，继续发送消息
     }
   }
@@ -373,11 +489,45 @@ const sendMessage = async () => {
           }))
       : undefined;
 
+    // 用于跟踪摘要消息 ID（如果摘要在服务内部触发）
+    let internalSummarizationMessageId: string | null = null;
+    // 标记是否正在摘要（用于阻止 onChunk 更新助手消息）
+    let isSummarizingInternally = false;
+
     // 调用 AssistantService（内部会创建任务并获取 abortController signal）
     const result = await AssistantService.chat(assistantModel.value, message, {
       ...(sessionSummary ? { sessionSummary } : {}),
       ...(messageHistory ? { messageHistory } : {}),
+      onSummarizingStart: () => {
+        // 当服务内部开始摘要时，创建摘要气泡
+        isSummarizingInternally = true;
+
+        // 立即移除占位符助手消息，防止显示 AI 响应内容
+        const assistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
+        if (assistantMsgIndex >= 0) {
+          messages.value.splice(assistantMsgIndex, 1);
+        }
+
+        internalSummarizationMessageId = (Date.now() - 1).toString();
+        const summarizationMessage: ChatMessage = {
+          id: internalSummarizationMessageId,
+          role: 'assistant',
+          content: '正在总结聊天会话...',
+          timestamp: Date.now(),
+          isSummarization: true,
+        };
+        messages.value.push(summarizationMessage);
+        // 更新 store 中的消息历史
+        if (currentSession) {
+          chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+        }
+        scrollToBottom();
+      },
       onChunk: (chunk) => {
+        // 如果正在摘要，不更新助手消息内容
+        if (isSummarizingInternally) {
+          return;
+        }
         // 更新助手消息内容
         const msg = messages.value.find((m) => m.id === assistantMessageId);
         if (msg) {
@@ -385,10 +535,25 @@ const sendMessage = async () => {
             msg.content += chunk.text;
             scrollToBottom();
           }
-          // 如果消息内容仍然为空，至少显示一个提示
-          if (!msg.content && !chunk.text) {
-            msg.content = '正在思考...';
+        }
+      },
+      onThinkingChunk: (text) => {
+        // 如果正在摘要，不更新助手消息的思考过程
+        if (isSummarizingInternally) {
+          return;
+        }
+        // 更新助手消息的思考过程
+        const msg = messages.value.find((m) => m.id === assistantMessageId);
+        if (msg) {
+          if (!msg.thinkingProcess) {
+            msg.thinkingProcess = '';
           }
+          msg.thinkingProcess += text;
+          // 如果思考过程已展开，滚动到思考过程内容底部
+          if (thinkingExpanded.value.get(assistantMessageId)) {
+            scrollThinkingToBottom(assistantMessageId);
+          }
+          scrollToBottom();
         }
       },
       onToast: (message) => {
@@ -1167,21 +1332,67 @@ const sendMessage = async () => {
 
     // 检查是否需要重置（token 限制或错误导致）
     if (result.needsReset && result.summary) {
-      // 保存总结并重置消息（使用保存的会话 ID，确保即使会话切换，总结也会保存到原始会话）
+      // 保存总结（不清除聊天历史，使用保存的会话 ID，确保即使会话切换，总结也会保存到原始会话）
       if (sessionId) {
         chatSessionsStore.summarizeAndReset(result.summary, sessionId);
       }
 
-      // 显示总结信息
-      toast.add({
-        severity: 'info',
-        summary: '会话已总结',
-        detail:
-          '由于达到 token 限制或发生错误，会话历史已自动总结并重置。之前的对话内容已保存为总结。',
-        life: 5000,
-      });
+      // 不显示总结成功的 toast，静默完成
+
+      // 移除占位符助手消息（因为需要重置）
+      // 注意：如果已经在 onSummarizingStart 中移除了，这里不会找到消息，但不会报错
+      const assistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
+      if (assistantMsgIndex >= 0) {
+        messages.value.splice(assistantMsgIndex, 1);
+      }
+
+      // 重置摘要标志
+      isSummarizingInternally = false;
+
+      // 更新摘要消息状态为完成（如果摘要气泡已通过回调创建）
+      if (internalSummarizationMessageId) {
+        const summarizationMsgIndex = messages.value.findIndex(
+          (m) => m.id === internalSummarizationMessageId,
+        );
+        if (summarizationMsgIndex >= 0) {
+          const existingMsg = messages.value[summarizationMsgIndex];
+          if (existingMsg) {
+            messages.value[summarizationMsgIndex] = {
+              id: existingMsg.id,
+              role: existingMsg.role,
+              content: '✓ 聊天会话总结完成（由于达到 token 限制，之前的对话历史已自动总结）',
+              timestamp: existingMsg.timestamp,
+              ...(existingMsg.isSummarization !== undefined && {
+                isSummarization: existingMsg.isSummarization,
+              }),
+              ...(existingMsg.actions && { actions: existingMsg.actions }),
+              ...(existingMsg.thinkingProcess && { thinkingProcess: existingMsg.thinkingProcess }),
+            };
+            // 更新 store 中的消息历史
+            if (sessionId) {
+              chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+            }
+          }
+        }
+      } else {
+        // 如果回调没有触发（理论上不应该发生），创建摘要气泡
+        const summarizationMessageId = (Date.now() - 1).toString();
+        const summarizationMessage: ChatMessage = {
+          id: summarizationMessageId,
+          role: 'assistant',
+          content: '✓ 聊天会话总结完成（由于达到 token 限制，之前的对话历史已自动总结）',
+          timestamp: Date.now(),
+          isSummarization: true,
+        };
+        messages.value.push(summarizationMessage);
+        // 更新 store 中的消息历史
+        if (sessionId) {
+          chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+        }
+      }
 
       // 更新本地消息列表（使用标记避免触发 watch）
+      // 注意：这应该在更新摘要消息之后进行，以确保摘要消息被正确保存
       isUpdatingFromStore = true;
       const session = chatSessionsStore.currentSession;
       if (session) {
@@ -1191,22 +1402,7 @@ const sendMessage = async () => {
       await nextTick();
       isUpdatingFromStore = false;
 
-      // 移除占位符助手消息（因为需要重置）
-      const assistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
-      if (assistantMsgIndex >= 0) {
-        messages.value.splice(assistantMsgIndex, 1);
-      }
-
-      // 重新发送用户消息（使用总结后的上下文）
-      // 注意：这里不自动重新发送，让用户决定是否继续
-      // 但我们可以显示一个提示消息
-      const summaryMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `**会话已总结**\n\n由于达到 token 限制，之前的对话历史已自动总结。总结内容：\n\n${result.summary}\n\n您可以继续提问，我会基于总结内容继续对话。`,
-        timestamp: Date.now(),
-      };
-      messages.value.push(summaryMessage);
+      // 不创建显示完整总结内容的消息，因为用户要求不显示 AI 总结响应
 
       // 更新 store 中的消息历史
       // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
@@ -1216,7 +1412,296 @@ const sendMessage = async () => {
 
       // 清空操作列表
       currentMessageActions.value = [];
-      return; // 提前返回，不继续处理
+
+      // 摘要完成后，继续发送用户消息（基于摘要后的上下文）
+      // 用户消息已经在前面添加了，现在需要重新调用 AssistantService.chat
+      // 但这次会使用摘要后的上下文，所以不会再次触发摘要
+
+      // 确保用户消息已保存到 store
+      if (sessionId) {
+        chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+      }
+
+      // 重新获取更新后的会话摘要和消息历史
+      const updatedSession = chatSessionsStore.currentSession;
+      const updatedSessionSummary = updatedSession?.summary;
+      const updatedMessageHistory: AIChatMessage[] | undefined = updatedSession?.messages
+        ? updatedSession.messages
+            .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+            .map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            }))
+        : undefined;
+
+      // 创建新的助手消息用于继续对话
+      assistantMessageId = (Date.now() + 1).toString();
+      const newAssistantMessage: ChatMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+      };
+      messages.value.push(newAssistantMessage);
+      scrollToBottom();
+
+      // 重置摘要标志
+      isSummarizingInternally = false;
+
+      try {
+        // 重新调用 AssistantService.chat，这次会使用摘要后的上下文
+        const continueResult = await AssistantService.chat(assistantModel.value, message, {
+          ...(updatedSessionSummary ? { sessionSummary: updatedSessionSummary } : {}),
+          ...(updatedMessageHistory ? { messageHistory: updatedMessageHistory } : {}),
+          onChunk: (chunk) => {
+            // 更新助手消息内容
+            const msg = messages.value.find((m) => m.id === assistantMessageId);
+            if (msg) {
+              if (chunk.text) {
+                msg.content += chunk.text;
+                scrollToBottom();
+              }
+            }
+          },
+          onThinkingChunk: (text) => {
+            // 更新助手消息的思考过程
+            const msg = messages.value.find((m) => m.id === assistantMessageId);
+            if (msg) {
+              if (!msg.thinkingProcess) {
+                msg.thinkingProcess = '';
+              }
+              msg.thinkingProcess += text;
+              // 如果思考过程已展开，滚动到思考过程内容底部
+              if (thinkingExpanded.value.get(assistantMessageId)) {
+                scrollThinkingToBottom(assistantMessageId);
+              }
+              scrollToBottom();
+            }
+          },
+          onToast: (message) => {
+            // 工具可以直接显示 toast
+            toast.add(message);
+          },
+          onAction: (action: ActionInfo) => {
+            // 记录操作到当前消息（复用之前的 onAction 逻辑）
+            const actionName = 'name' in action.data ? action.data.name : undefined;
+            const messageAction: MessageAction = {
+              type: action.type,
+              entity: action.entity,
+              ...(actionName ? { name: actionName } : {}),
+              timestamp: Date.now(),
+              // 网络操作相关信息
+              ...(action.type === 'web_search' && 'query' in action.data
+                ? { query: action.data.query }
+                : {}),
+              ...(action.type === 'web_fetch' && 'url' in action.data
+                ? { url: action.data.url }
+                : {}),
+              // 翻译操作相关信息
+              ...(action.entity === 'translation' &&
+              'paragraph_id' in action.data &&
+              'translation_id' in action.data
+                ? {
+                    paragraph_id: action.data.paragraph_id,
+                    translation_id: action.data.translation_id,
+                  }
+                : {}),
+              // 读取操作相关信息
+              ...(action.type === 'read' && 'chapter_id' in action.data
+                ? { chapter_id: action.data.chapter_id }
+                : {}),
+              ...(action.type === 'read' && 'chapter_title' in action.data
+                ? { chapter_title: action.data.chapter_title }
+                : {}),
+              ...(action.type === 'read' && 'paragraph_id' in action.data
+                ? { paragraph_id: action.data.paragraph_id }
+                : {}),
+              ...(action.type === 'read' && 'character_name' in action.data
+                ? { character_name: action.data.character_name }
+                : {}),
+              ...(action.type === 'read' && 'tool_name' in action.data
+                ? { tool_name: action.data.tool_name }
+                : {}),
+              // Memory 相关信息
+              ...(action.entity === 'memory' && 'memory_id' in action.data
+                ? { memory_id: action.data.memory_id }
+                : {}),
+              ...(action.entity === 'memory' && 'keyword' in action.data
+                ? { keyword: action.data.keyword }
+                : {}),
+              ...(action.entity === 'memory' && 'summary' in action.data
+                ? { name: action.data.summary }
+                : {}),
+              // 导航操作相关信息
+              ...(action.type === 'navigate' && 'book_id' in action.data
+                ? { book_id: action.data.book_id }
+                : {}),
+              ...(action.type === 'navigate' && 'chapter_id' in action.data
+                ? { chapter_id: action.data.chapter_id }
+                : {}),
+              ...(action.type === 'navigate' && 'chapter_title' in action.data
+                ? { chapter_title: action.data.chapter_title }
+                : {}),
+              ...(action.type === 'navigate' && 'paragraph_id' in action.data
+                ? { paragraph_id: action.data.paragraph_id }
+                : {}),
+            };
+
+            // 处理导航操作
+            if (action.type === 'navigate' && 'book_id' in action.data) {
+              const bookId = action.data.book_id as string;
+              const chapterId =
+                'chapter_id' in action.data ? (action.data.chapter_id as string) : null;
+              const paragraphId =
+                'paragraph_id' in action.data ? (action.data.paragraph_id as string) : null;
+
+              // 导航到书籍详情页面
+              void co(function* () {
+                try {
+                  yield router.push(`/books/${bookId}`);
+                  // 等待路由完成后再设置选中的章节
+                  yield nextTick();
+                  if (chapterId) {
+                    bookDetailsStore.setSelectedChapter(bookId, chapterId);
+                  }
+
+                  // 如果有段落 ID，滚动到该段落
+                  if (paragraphId) {
+                    yield nextTick();
+                    // 等待章节加载完成后再滚动
+                    setTimeout(() => {
+                      const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+                      if (paragraphElement) {
+                        paragraphElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }, 500); // 给章节内容加载一些时间
+                  }
+                } catch (error) {
+                  console.error('[AppRightPanel] 导航失败:', error);
+                }
+              });
+            }
+
+            // 立即将操作添加到临时数组（用于后续保存）
+            currentMessageActions.value.push(messageAction);
+
+            // 立即将操作添加到当前助手消息，使其立即显示在 UI 中
+            const assistantMsg = messages.value.find((m) => m.id === assistantMessageId);
+            if (assistantMsg) {
+              if (!assistantMsg.actions) {
+                assistantMsg.actions = [];
+              }
+              assistantMsg.actions.push(messageAction);
+            }
+          },
+          // 不传递 signal，让服务内部管理
+          aiProcessingStore: {
+            addTask: async (task) => {
+              const id = await aiProcessingStore.addTask(task);
+              return id;
+            },
+            updateTask: async (id, updates) => {
+              await aiProcessingStore.updateTask(id, updates);
+            },
+            appendThinkingMessage: async (id, text) => {
+              await aiProcessingStore.appendThinkingMessage(id, text);
+            },
+            removeTask: async (id) => {
+              await aiProcessingStore.removeTask(id);
+            },
+            activeTasks: aiProcessingStore.activeTasks,
+          },
+        });
+
+        // 处理继续对话的结果
+        if (continueResult.taskId) {
+          currentTaskId.value = continueResult.taskId;
+        }
+
+        // 如果继续对话时又需要重置（理论上不应该发生，但为了安全起见）
+        if (continueResult.needsReset && continueResult.summary) {
+          // 这种情况不应该发生，但如果发生了，我们只保存摘要，不继续对话
+          if (sessionId) {
+            chatSessionsStore.summarizeAndReset(continueResult.summary, sessionId);
+          }
+          // 移除助手消息
+          const continueAssistantMsgIndex = messages.value.findIndex(
+            (m) => m.id === assistantMessageId,
+          );
+          if (continueAssistantMsgIndex >= 0) {
+            messages.value.splice(continueAssistantMsgIndex, 1);
+          }
+          toast.add({
+            severity: 'warn',
+            summary: '对话无法继续',
+            detail: '摘要后再次达到限制，请创建新会话',
+            life: 5000,
+          });
+          return;
+        }
+
+        // 更新最终消息内容和操作
+        const finalMsg = messages.value.find((m) => m.id === assistantMessageId);
+        if (finalMsg) {
+          finalMsg.content = continueResult.text || '';
+          if (continueResult.actions && continueResult.actions.length > 0) {
+            if (!finalMsg.actions) {
+              finalMsg.actions = [];
+            }
+            // 将服务返回的操作添加到消息中
+            for (const action of continueResult.actions) {
+              const actionName = 'name' in action.data ? action.data.name : undefined;
+              const messageAction: MessageAction = {
+                type: action.type,
+                entity: action.entity,
+                ...(actionName ? { name: actionName } : {}),
+                timestamp: Date.now(),
+                // 添加其他操作相关信息（简化处理）
+              };
+              finalMsg.actions.push(messageAction);
+            }
+          }
+        }
+
+        // 更新 store 中的消息历史
+        if (continueResult.messageHistory && sessionId) {
+          // 将 AI 返回的消息历史转换为 ChatMessage 格式并更新
+          const updatedMessages: ChatMessage[] = messages.value.map((msg) => {
+            // 保留现有的消息，只更新助手消息的内容
+            if (msg.id === assistantMessageId) {
+              return {
+                ...msg,
+                content: continueResult.text || msg.content,
+              };
+            }
+            return msg;
+          });
+          chatSessionsStore.updateSessionMessages(sessionId, updatedMessages);
+        } else if (sessionId) {
+          chatSessionsStore.updateSessionMessages(sessionId, messages.value);
+        }
+
+        // 清空操作列表
+        currentMessageActions.value = [];
+
+        isSending.value = false;
+        return; // 继续对话完成，提前返回
+      } catch (continueError) {
+        console.error('继续对话失败:', continueError);
+        // 移除助手消息
+        const errorAssistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
+        if (errorAssistantMsgIndex >= 0) {
+          messages.value.splice(errorAssistantMsgIndex, 1);
+        }
+        toast.add({
+          severity: 'error',
+          summary: '继续对话失败',
+          detail: continueError instanceof Error ? continueError.message : '未知错误',
+          life: 5000,
+        });
+        isSending.value = false;
+        return;
+      }
     }
 
     // 更新最终消息内容
@@ -1441,6 +1926,29 @@ watch(
   () => {
     scrollToBottom();
   },
+);
+
+// 监听思考过程更新，如果已展开则滚动到底部
+watch(
+  () => messages.value.map((m) => ({ id: m.id, thinkingProcess: m.thinkingProcess })),
+  (newValues, oldValues) => {
+    if (!oldValues) return;
+
+    // 检查每个消息的思考过程是否更新
+    for (const newVal of newValues) {
+      const oldVal = oldValues.find((v) => v.id === newVal.id);
+      if (
+        oldVal &&
+        oldVal.thinkingProcess !== newVal.thinkingProcess &&
+        newVal.thinkingProcess &&
+        thinkingExpanded.value.get(newVal.id)
+      ) {
+        // 思考过程已更新且已展开，滚动到底部
+        scrollThinkingToBottom(newVal.id);
+      }
+    }
+  },
+  { deep: true },
 );
 
 // 监听助手输入消息状态，自动填充输入框
@@ -1938,255 +2446,304 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       </div>
       <div v-else class="flex flex-col gap-4 w-full">
         <template v-for="message in messages" :key="message.id">
-          <div
-            class="flex flex-col gap-2 w-full"
-            :class="message.role === 'user' ? 'items-end' : 'items-start'"
-          >
-            <template
-              v-for="(item, itemIdx) in getMessageDisplayItems(message)"
-              :key="`${message.id}-${itemIdx}-${item.timestamp}`"
+          <!-- 过滤掉总结响应消息（包含完整总结内容的消息） -->
+          <template v-if="!message.isSummaryResponse">
+            <div
+              class="flex flex-col gap-2 w-full"
+              :class="message.role === 'user' ? 'items-end' : 'items-start'"
             >
+              <!-- 思考过程显示（仅在助手消息且有思考内容时显示） -->
               <div
-                v-if="item.type === 'content'"
-                class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
-                :class="
-                  item.messageRole === 'user'
-                    ? 'bg-primary-500/20 text-primary-100'
-                    : 'bg-white/5 text-moon-90'
+                v-if="
+                  message.role === 'assistant' &&
+                  message.thinkingProcess &&
+                  message.thinkingProcess.trim()
                 "
+                class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 bg-white/3 border border-white/10"
               >
-                <div
-                  class="text-sm break-words overflow-wrap-anywhere markdown-content"
-                  v-html="renderMarkdown(item.content || '思考中...')"
-                ></div>
-              </div>
-              <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
-                <div class="space-y-1 flex flex-wrap gap-1">
-                  <div
-                    :id="`action-${item.messageId}-${item.action.timestamp}`"
-                    class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
-                    :class="{
-                      'bg-green-500/25 text-green-200 border border-green-500/40 hover:bg-green-500/35':
-                        item.action.type === 'create',
-                      'bg-blue-500/25 text-blue-200 border border-blue-500/40 hover:bg-blue-500/35':
-                        item.action.type === 'update',
-                      'bg-red-500/25 text-red-200 border border-red-500/40 hover:bg-red-500/35':
-                        item.action.type === 'delete',
-                      'bg-purple-500/25 text-purple-200 border border-purple-500/40 hover:bg-purple-500/35':
-                        item.action.type === 'web_search',
-                      'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/35':
-                        item.action.type === 'web_fetch',
-                      'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
-                        item.action.type === 'read',
-                      'bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/35':
-                        item.action.type === 'navigate',
-                    }"
-                    @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
-                    @mouseleave="() => handleActionMouseLeave(item.action!, message)"
-                  >
-                    <i
-                      class="text-sm"
-                      :class="{
-                        'pi pi-plus-circle': item.action.type === 'create',
-                        'pi pi-pencil': item.action.type === 'update',
-                        'pi pi-trash': item.action.type === 'delete',
-                        'pi pi-search': item.action.type === 'web_search',
-                        'pi pi-link': item.action.type === 'web_fetch',
-                        'pi pi-eye': item.action.type === 'read',
-                        'pi pi-arrow-right': item.action.type === 'navigate',
-                      }"
-                    />
-                    <span>
-                      {{
-                        item.action.type === 'create'
-                          ? '创建'
-                          : item.action.type === 'update'
-                            ? '更新'
-                            : item.action.type === 'delete'
-                              ? '删除'
-                              : item.action.type === 'web_search'
-                                ? '网络搜索'
-                                : item.action.type === 'web_fetch'
-                                  ? '网页获取'
-                                  : item.action.type === 'read'
-                                    ? '读取'
-                                    : item.action.type === 'navigate'
-                                      ? '导航'
-                                      : ''
-                      }}
-                      {{
-                        item.action.entity === 'term'
-                          ? '术语'
-                          : item.action.entity === 'character'
-                            ? '角色'
-                            : item.action.entity === 'web'
-                              ? '网络'
-                              : item.action.entity === 'translation'
-                                ? '翻译'
-                                : item.action.entity === 'chapter'
-                                  ? '章节'
-                                  : item.action.entity === 'paragraph'
-                                    ? '段落'
-                                    : item.action.entity === 'book'
-                                      ? '书籍'
-                                      : item.action.entity === 'memory'
-                                        ? '记忆'
-                                        : ''
-                      }}
-                      <span v-if="item.action.name" class="font-semibold"
-                        >"{{ item.action.name }}"</span
-                      >
-                      <span v-else-if="item.action.query" class="font-semibold"
-                        >"{{ item.action.query }}"</span
-                      >
-                      <span v-else-if="item.action.url" class="font-semibold text-xs">{{
-                        item.action.url
-                      }}</span>
-                      <span
-                        v-else-if="item.action.entity === 'translation' && item.action.paragraph_id"
-                        class="font-semibold text-xs"
-                      >
-                        段落翻译
-                      </span>
-                      <span
-                        v-else-if="item.action.type === 'read' && item.action.chapter_title"
-                        class="font-semibold text-xs"
-                      >
-                        "{{ item.action.chapter_title }}"
-                      </span>
-                      <span
-                        v-else-if="item.action.type === 'read' && item.action.character_name"
-                        class="font-semibold text-xs"
-                      >
-                        "{{ item.action.character_name }}"
-                      </span>
-                      <span
-                        v-else-if="item.action.type === 'read' && item.action.tool_name"
-                        class="font-semibold text-xs"
-                      >
-                        {{ item.action.tool_name }}
-                      </span>
-                      <span
-                        v-else-if="item.action.entity === 'memory' && item.action.memory_id"
-                        class="font-semibold text-xs"
-                      >
-                        Memory ID: {{ item.action.memory_id }}
-                      </span>
-                      <span
-                        v-else-if="item.action.entity === 'memory' && item.action.keyword"
-                        class="font-semibold text-xs"
-                      >
-                        搜索: "{{ item.action.keyword }}"
-                      </span>
-                      <span
-                        v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
-                        class="font-semibold text-xs"
-                      >
-                        "{{ item.action.chapter_title }}"
-                      </span>
-                      <span
-                        v-else-if="item.action.type === 'navigate' && item.action.paragraph_id"
-                        class="font-semibold text-xs"
-                      >
-                        段落
-                      </span>
-                    </span>
-                  </div>
-                  <!-- Action Details Popover -->
-                  <Popover
-                    :ref="
-                      (el) => {
-                        const actionKey = `${item.messageId}-${item.action!.timestamp}`;
-                        if (el) {
-                          actionPopoverRefs.set(
-                            actionKey,
-                            el as unknown as InstanceType<typeof Popover>,
-                          );
-                        }
-                      }
+                <button
+                  class="w-full text-left flex items-center gap-2 text-xs text-moon-70 hover:text-moon-90 transition-colors"
+                  @click="toggleThinking(message.id)"
+                >
+                  <i
+                    class="text-xs transition-transform"
+                    :class="
+                      thinkingExpanded.get(message.id)
+                        ? 'pi pi-chevron-down'
+                        : 'pi pi-chevron-right'
                     "
-                    :target="`action-${item.messageId}-${item.action!.timestamp}`"
-                    :dismissable="true"
-                    :show-close-icon="false"
-                    style="width: 18rem; max-width: 90vw"
-                    class="action-popover"
-                    @hide="handleActionPopoverHide"
-                  >
-                    <div
-                      v-if="
-                        hoveredAction &&
-                        hoveredAction.action.timestamp === item.action!.timestamp &&
-                        hoveredAction.message.id === item.messageId
-                      "
-                      class="action-popover-content"
-                    >
-                      <div class="popover-header">
-                        <span class="popover-title">
-                          {{
-                            item.action.type === 'create'
-                              ? '创建'
-                              : item.action.type === 'update'
-                                ? '更新'
-                                : item.action.type === 'delete'
-                                  ? '删除'
-                                  : item.action.type === 'web_search'
-                                    ? '网络搜索'
-                                    : item.action.type === 'web_fetch'
-                                      ? '网页获取'
-                                      : item.action.type === 'read'
-                                        ? '读取'
-                                        : item.action.type === 'navigate'
-                                          ? '导航'
-                                          : ''
-                          }}
-                          {{
-                            item.action.entity === 'term'
-                              ? '术语'
-                              : item.action.entity === 'character'
-                                ? '角色'
-                                : item.action.entity === 'web'
-                                  ? '网络'
-                                  : item.action.entity === 'translation'
-                                    ? '翻译'
-                                    : item.action.entity === 'chapter'
-                                      ? '章节'
-                                      : item.action.entity === 'paragraph'
-                                        ? '段落'
-                                        : item.action.entity === 'book'
-                                          ? '书籍'
-                                          : item.action.entity === 'memory'
-                                            ? '记忆'
-                                            : ''
-                          }}
-                        </span>
-                      </div>
-                      <div class="popover-details">
-                        <div
-                          v-for="(detail, detailIdx) in getActionDetails(item.action)"
-                          :key="detailIdx"
-                          class="popover-detail-item"
-                        >
-                          <span class="popover-detail-label">{{ detail.label }}：</span>
-                          <span class="popover-detail-value">{{ detail.value }}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Popover>
+                  />
+                  <span class="font-medium">思考过程</span>
+                </button>
+                <div
+                  v-if="thinkingExpanded.get(message.id)"
+                  :ref="(el) => setThinkingContentRef(message.id, el as HTMLElement)"
+                  class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto thinking-content"
+                  :data-message-id="message.id"
+                >
+                  {{ message.thinkingProcess }}
+                </div>
+                <div
+                  v-else
+                  class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere opacity-70"
+                  style="
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                  "
+                >
+                  {{ getThinkingPreview(message.thinkingProcess) }}
                 </div>
               </div>
-              <span
-                v-if="itemIdx === getMessageDisplayItems(message).length - 1"
-                class="text-xs text-moon-40"
+              <template
+                v-for="(item, itemIdx) in getMessageDisplayItems(message)"
+                :key="`${message.id}-${itemIdx}-${item.timestamp}`"
               >
-                {{
-                  new Date(message.timestamp).toLocaleTimeString('zh-CN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                }}
-              </span>
-            </template>
-          </div>
+                <div
+                  v-if="item.type === 'content' && item.content"
+                  class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
+                  :class="
+                    item.messageRole === 'user'
+                      ? 'bg-primary-500/20 text-primary-100'
+                      : 'bg-white/5 text-moon-90'
+                  "
+                >
+                  <div
+                    class="text-sm break-words overflow-wrap-anywhere markdown-content"
+                    v-html="renderMarkdown(item.content)"
+                  ></div>
+                </div>
+                <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
+                  <div class="space-y-1 flex flex-wrap gap-1">
+                    <div
+                      :id="`action-${item.messageId}-${item.action.timestamp}`"
+                      class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
+                      :class="{
+                        'bg-green-500/25 text-green-200 border border-green-500/40 hover:bg-green-500/35':
+                          item.action.type === 'create',
+                        'bg-blue-500/25 text-blue-200 border border-blue-500/40 hover:bg-blue-500/35':
+                          item.action.type === 'update',
+                        'bg-red-500/25 text-red-200 border border-red-500/40 hover:bg-red-500/35':
+                          item.action.type === 'delete',
+                        'bg-purple-500/25 text-purple-200 border border-purple-500/40 hover:bg-purple-500/35':
+                          item.action.type === 'web_search',
+                        'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/35':
+                          item.action.type === 'web_fetch',
+                        'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
+                          item.action.type === 'read',
+                        'bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/35':
+                          item.action.type === 'navigate',
+                      }"
+                      @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
+                      @mouseleave="() => handleActionMouseLeave(item.action!, message)"
+                    >
+                      <i
+                        class="text-sm"
+                        :class="{
+                          'pi pi-plus-circle': item.action.type === 'create',
+                          'pi pi-pencil': item.action.type === 'update',
+                          'pi pi-trash': item.action.type === 'delete',
+                          'pi pi-search': item.action.type === 'web_search',
+                          'pi pi-link': item.action.type === 'web_fetch',
+                          'pi pi-eye': item.action.type === 'read',
+                          'pi pi-arrow-right': item.action.type === 'navigate',
+                        }"
+                      />
+                      <span>
+                        {{
+                          item.action.type === 'create'
+                            ? '创建'
+                            : item.action.type === 'update'
+                              ? '更新'
+                              : item.action.type === 'delete'
+                                ? '删除'
+                                : item.action.type === 'web_search'
+                                  ? '网络搜索'
+                                  : item.action.type === 'web_fetch'
+                                    ? '网页获取'
+                                    : item.action.type === 'read'
+                                      ? '读取'
+                                      : item.action.type === 'navigate'
+                                        ? '导航'
+                                        : ''
+                        }}
+                        {{
+                          item.action.entity === 'term'
+                            ? '术语'
+                            : item.action.entity === 'character'
+                              ? '角色'
+                              : item.action.entity === 'web'
+                                ? '网络'
+                                : item.action.entity === 'translation'
+                                  ? '翻译'
+                                  : item.action.entity === 'chapter'
+                                    ? '章节'
+                                    : item.action.entity === 'paragraph'
+                                      ? '段落'
+                                      : item.action.entity === 'book'
+                                        ? '书籍'
+                                        : item.action.entity === 'memory'
+                                          ? '记忆'
+                                          : ''
+                        }}
+                        <span v-if="item.action.name" class="font-semibold"
+                          >"{{ item.action.name }}"</span
+                        >
+                        <span v-else-if="item.action.query" class="font-semibold"
+                          >"{{ item.action.query }}"</span
+                        >
+                        <span v-else-if="item.action.url" class="font-semibold text-xs">{{
+                          item.action.url
+                        }}</span>
+                        <span
+                          v-else-if="
+                            item.action.entity === 'translation' && item.action.paragraph_id
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          段落翻译
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'read' && item.action.chapter_title"
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.chapter_title }}"
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'read' && item.action.character_name"
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.character_name }}"
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'read' && item.action.tool_name"
+                          class="font-semibold text-xs"
+                        >
+                          {{ item.action.tool_name }}
+                        </span>
+                        <span
+                          v-else-if="item.action.entity === 'memory' && item.action.memory_id"
+                          class="font-semibold text-xs"
+                        >
+                          Memory ID: {{ item.action.memory_id }}
+                        </span>
+                        <span
+                          v-else-if="item.action.entity === 'memory' && item.action.keyword"
+                          class="font-semibold text-xs"
+                        >
+                          搜索: "{{ item.action.keyword }}"
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.chapter_title }}"
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'navigate' && item.action.paragraph_id"
+                          class="font-semibold text-xs"
+                        >
+                          段落
+                        </span>
+                      </span>
+                    </div>
+                    <!-- Action Details Popover -->
+                    <Popover
+                      :ref="
+                        (el) => {
+                          const actionKey = `${item.messageId}-${item.action!.timestamp}`;
+                          if (el) {
+                            actionPopoverRefs.set(
+                              actionKey,
+                              el as unknown as InstanceType<typeof Popover>,
+                            );
+                          }
+                        }
+                      "
+                      :target="`action-${item.messageId}-${item.action!.timestamp}`"
+                      :dismissable="true"
+                      :show-close-icon="false"
+                      style="width: 18rem; max-width: 90vw"
+                      class="action-popover"
+                      @hide="handleActionPopoverHide"
+                    >
+                      <div
+                        v-if="
+                          hoveredAction &&
+                          hoveredAction.action.timestamp === item.action!.timestamp &&
+                          hoveredAction.message.id === item.messageId
+                        "
+                        class="action-popover-content"
+                      >
+                        <div class="popover-header">
+                          <span class="popover-title">
+                            {{
+                              item.action.type === 'create'
+                                ? '创建'
+                                : item.action.type === 'update'
+                                  ? '更新'
+                                  : item.action.type === 'delete'
+                                    ? '删除'
+                                    : item.action.type === 'web_search'
+                                      ? '网络搜索'
+                                      : item.action.type === 'web_fetch'
+                                        ? '网页获取'
+                                        : item.action.type === 'read'
+                                          ? '读取'
+                                          : item.action.type === 'navigate'
+                                            ? '导航'
+                                            : ''
+                            }}
+                            {{
+                              item.action.entity === 'term'
+                                ? '术语'
+                                : item.action.entity === 'character'
+                                  ? '角色'
+                                  : item.action.entity === 'web'
+                                    ? '网络'
+                                    : item.action.entity === 'translation'
+                                      ? '翻译'
+                                      : item.action.entity === 'chapter'
+                                        ? '章节'
+                                        : item.action.entity === 'paragraph'
+                                          ? '段落'
+                                          : item.action.entity === 'book'
+                                            ? '书籍'
+                                            : item.action.entity === 'memory'
+                                              ? '记忆'
+                                              : ''
+                            }}
+                          </span>
+                        </div>
+                        <div class="popover-details">
+                          <div
+                            v-for="(detail, detailIdx) in getActionDetails(item.action)"
+                            :key="detailIdx"
+                            class="popover-detail-item"
+                          >
+                            <span class="popover-detail-label">{{ detail.label }}：</span>
+                            <span class="popover-detail-value">{{ detail.value }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Popover>
+                  </div>
+                </div>
+                <span
+                  v-if="itemIdx === getMessageDisplayItems(message).length - 1"
+                  class="text-xs text-moon-40"
+                >
+                  {{
+                    new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  }}
+                </span>
+              </template>
+            </div>
+          </template>
         </template>
       </div>
     </div>
