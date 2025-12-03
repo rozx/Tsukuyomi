@@ -4,7 +4,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
-import { generateShortId, UniqueIdGenerator } from 'src/utils/id-generator';
+import { UniqueIdGenerator } from 'src/utils/id-generator';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import type { Translation } from 'src/models/novel';
 import type { ToolDefinition } from './types';
