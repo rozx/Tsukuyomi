@@ -143,6 +143,23 @@ const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作
 const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
 const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
 
+// 思考过程折叠状态（messageId -> isExpanded）
+const thinkingExpanded = ref<Map<string, boolean>>(new Map());
+
+// 切换思考过程折叠状态
+const toggleThinking = (messageId: string) => {
+  const current = thinkingExpanded.value.get(messageId) || false;
+  thinkingExpanded.value.set(messageId, !current);
+};
+
+// 获取思考过程预览（前2行）
+const getThinkingPreview = (thinkingProcess: string): string => {
+  if (!thinkingProcess) return '';
+  const lines = thinkingProcess.split('\n');
+  if (lines.length <= 2) return thinkingProcess;
+  return lines.slice(0, 2).join('\n');
+};
+
 // 获取默认助手模型
 const assistantModel = computed(() => {
   return aiModelsStore.getDefaultModelForTask('assistant');
@@ -409,10 +426,17 @@ const sendMessage = async () => {
             msg.content += chunk.text;
             scrollToBottom();
           }
-          // 如果消息内容仍然为空，至少显示一个提示
-          if (!msg.content && !chunk.text) {
-            msg.content = '正在思考...';
+        }
+      },
+      onThinkingChunk: (text) => {
+        // 更新助手消息的思考过程
+        const msg = messages.value.find((m) => m.id === assistantMessageId);
+        if (msg) {
+          if (!msg.thinkingProcess) {
+            msg.thinkingProcess = '';
           }
+          msg.thinkingProcess += text;
+          scrollToBottom();
         }
       },
       onToast: (message) => {
@@ -1964,12 +1988,41 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
             class="flex flex-col gap-2 w-full"
             :class="message.role === 'user' ? 'items-end' : 'items-start'"
           >
+            <!-- 思考过程显示（仅在助手消息且有思考内容时显示） -->
+            <div
+              v-if="message.role === 'assistant' && message.thinkingProcess && message.thinkingProcess.trim()"
+              class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 bg-white/3 border border-white/10"
+            >
+              <button
+                class="w-full text-left flex items-center gap-2 text-xs text-moon-70 hover:text-moon-90 transition-colors"
+                @click="toggleThinking(message.id)"
+              >
+                <i
+                  class="text-xs transition-transform"
+                  :class="thinkingExpanded.get(message.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+                />
+                <span class="font-medium">思考过程</span>
+              </button>
+              <div
+                v-if="thinkingExpanded.get(message.id)"
+                class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto"
+              >
+                {{ message.thinkingProcess }}
+              </div>
+              <div
+                v-else
+                class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere opacity-70"
+                style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;"
+              >
+                {{ getThinkingPreview(message.thinkingProcess) }}
+              </div>
+            </div>
             <template
               v-for="(item, itemIdx) in getMessageDisplayItems(message)"
               :key="`${message.id}-${itemIdx}-${item.timestamp}`"
             >
               <div
-                v-if="item.type === 'content'"
+                v-if="item.type === 'content' && item.content"
                 class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
                 :class="
                   item.messageRole === 'user'
@@ -1979,7 +2032,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
               >
                 <div
                   class="text-sm break-words overflow-wrap-anywhere markdown-content"
-                  v-html="renderMarkdown(item.content || '思考中...')"
+                  v-html="renderMarkdown(item.content)"
                 ></div>
               </div>
               <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">

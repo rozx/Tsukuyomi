@@ -44,6 +44,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   actions?: MessageAction[]; // 消息中包含的操作
+  thinkingProcess?: string; // AI 思考过程（仅在 assistant 角色时使用）
 }
 
 /**

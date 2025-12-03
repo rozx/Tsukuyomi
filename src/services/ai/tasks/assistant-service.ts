@@ -23,6 +23,10 @@ export interface AssistantServiceOptions {
    */
   onChunk?: TextGenerationStreamCallback;
   /**
+   * 思考内容流式回调函数，用于接收思考过程中的数据块（用于在聊天中显示）
+   */
+  onThinkingChunk?: (text: string) => void | Promise<void>;
+  /**
    * AI 执行操作时的回调（如 CRUD 术语/角色）
    */
   onAction?: (action: ActionInfo) => void;
@@ -720,9 +724,14 @@ ${messages
           toolCalls.push(...chunk.toolCalls);
         }
 
-        // 保存思考内容到思考过程（不显示在聊天中）
+        // 保存思考内容到思考过程面板
         if (aiProcessingStore && taskId && chunk.reasoningContent) {
           await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+        }
+
+        // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）
+        if (options.onThinkingChunk && chunk.reasoningContent) {
+          await options.onThinkingChunk(chunk.reasoningContent);
         }
 
         // 调用用户回调（只传递实际内容，不传递思考内容）
@@ -749,10 +758,14 @@ ${messages
       }
 
       // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
-      // 保存思考内容到思考过程（不显示在聊天中）
+      // 保存思考内容到思考过程面板
       const reasoningContent = result.reasoningContent;
       if (aiProcessingStore && taskId && reasoningContent) {
         await aiProcessingStore.appendThinkingMessage(taskId, reasoningContent);
+      }
+      // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）
+      if (options.onThinkingChunk && reasoningContent) {
+        await options.onThinkingChunk(reasoningContent);
       }
 
       // 只有在没有工具调用且没有文本时才警告
@@ -896,9 +909,14 @@ ${messages
               toolCalls.push(...chunk.toolCalls);
             }
 
-            // 保存思考内容到思考过程（不显示在聊天中）
+            // 保存思考内容到思考过程面板
             if (aiProcessingStore && taskId && chunk.reasoningContent) {
               await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+            }
+
+            // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）
+            if (options.onThinkingChunk && chunk.reasoningContent) {
+              await options.onThinkingChunk(chunk.reasoningContent);
             }
 
             // 调用用户回调（只传递实际内容，不传递思考内容）
@@ -926,10 +944,14 @@ ${messages
         }
 
         // 捕获 reasoning_content（DeepSeek 等模型在使用工具时返回）
-        // 保存思考内容到思考过程（不显示在聊天中）
+        // 保存思考内容到思考过程面板
         const followUpReasoningContent = followUpResult.reasoningContent;
         if (aiProcessingStore && taskId && followUpReasoningContent) {
           await aiProcessingStore.appendThinkingMessage(taskId, followUpReasoningContent);
+        }
+        // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）
+        if (options.onThinkingChunk && followUpReasoningContent) {
+          await options.onThinkingChunk(followUpReasoningContent);
         }
 
         // 更新最终响应文本（只有在有内容时才更新）
