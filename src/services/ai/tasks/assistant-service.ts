@@ -56,6 +56,10 @@ export interface AssistantServiceOptions {
    * 对话历史（可选），如果提供，将作为初始对话历史，实现连续对话
    */
   messageHistory?: ChatMessage[];
+  /**
+   * 摘要开始时的回调（用于在 UI 中显示摘要气泡）
+   */
+  onSummarizingStart?: () => void;
 }
 
 /**
@@ -637,6 +641,11 @@ ${messages
           }));
 
         if (messagesToSummarize.length > 0) {
+          // 通知组件摘要开始
+          if (options.onSummarizingStart) {
+            options.onSummarizingStart();
+          }
+
           // 调用总结功能
           const summaryOptions: {
             signal?: AbortSignal;
@@ -1065,6 +1074,11 @@ ${messages
             }));
 
           if (messagesToSummarize.length > 0) {
+            // 通知组件摘要开始
+            if (options.onSummarizingStart) {
+              options.onSummarizingStart();
+            }
+
             // 调用总结功能
             const summaryOptions: {
               signal?: AbortSignal;
