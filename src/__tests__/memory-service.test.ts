@@ -57,7 +57,6 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
               if (!current) {
                 return null;
               }
-              const index = currentCursorIndex;
               currentCursorIndex++;
               
               return {
