@@ -142,7 +142,9 @@ export class AssistantService {
         - 返回多个段落，按从近到远的顺序排列
       - **find_paragraph_by_keywords**: 关键词查找段落（支持多个关键词，返回包含任一关键词的段落，支持 only_with_translation 参数）
       - **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
+      - **add_translation**: 为段落添加新的翻译版本（如果已有5个版本，最旧的会被自动删除）
       - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
+      - **remove_translation**: 删除段落中指定的翻译版本
       - **select_translation**: 选择段落中的某个翻译版本作为当前选中的翻译（用于在翻译历史中切换不同的翻译版本）
       - **navigate_to_chapter**: 导航到指定的章节（将用户界面跳转到书籍详情页面并选中指定章节）
         - 当用户需要查看或编辑特定章节时使用此工具
@@ -209,7 +211,7 @@ export class AssistantService {
       2. **修复工作流程**：
         - 角色问题：get_character/search_characters_by_keywords → update_character（不要用 search_web）
         - 术语问题：get_term/search_terms_by_keywords → update_term（不要用 search_web）
-        - 翻译问题：get_paragraph_info/get_translation_history → update_translation（用于编辑翻译历史中的翻译版本）
+        - 翻译问题：get_paragraph_info/get_translation_history → add_translation/update_translation/remove_translation（用于管理翻译历史）
       3. **搜索优先**：部分名称/翻译时优先用 search_*_by_keywords，完整名称时用 get_*
       4. **创建前检查**：创建术语/角色前必须检查是否已存在
       5. **查询优先级**：⚠️ **非常重要** - 当用户或 AI 需要查询角色或术语信息时，必须遵循以下优先级顺序：
@@ -219,7 +221,9 @@ export class AssistantService {
         - **示例**：用户问"主角的名字和翻译是什么？"，应该先使用 search_characters_by_keywords 查询角色数据库，如果找到就直接返回；如果没有找到，再使用 search_memory_by_keywords 搜索相关记忆
       6. **翻译历史管理**：
         - 使用 get_translation_history 查看段落的完整翻译历史
+        - 使用 add_translation 为段落添加新的翻译版本（如果已有5个版本，最旧的会被自动删除）
         - 使用 update_translation 编辑和修正翻译历史中的某个翻译版本
+        - 使用 remove_translation 删除不需要的翻译版本
         - 使用 select_translation 选择段落中的某个翻译版本作为当前选中的翻译
         - 翻译历史最多保留5个版本，最新的在最后
       7. **记忆管理最佳实践**：
@@ -491,6 +495,11 @@ ${messages
       'get_previous_paragraphs',
       'get_next_paragraphs',
       'find_paragraph_by_keywords',
+      'get_translation_history',
+      'add_translation',
+      'update_translation',
+      'remove_translation',
+      'select_translation',
       'get_memory',
       'search_memory_by_keywords',
       'create_memory',

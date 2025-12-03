@@ -4,6 +4,9 @@ import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
+import { generateShortId, UniqueIdGenerator } from 'src/utils/id-generator';
+import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
+import type { Translation } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 
 export const paragraphTools: ToolDefinition[] = [
@@ -694,6 +697,268 @@ export const paragraphTools: ToolDefinition[] = [
         translation_id,
         previous_selected_id: originalSelectedId || null,
         selected_translation: translation.translation,
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'add_translation',
+        description:
+          '为段落添加新的翻译版本。用于在段落中添加新的翻译内容，新翻译会被添加到翻译历史中。如果段落已有5个翻译版本，最旧的翻译会被自动删除。',
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+            translation: {
+              type: 'string',
+              description: '新的翻译内容',
+            },
+            ai_model_id: {
+              type: 'string',
+              description: 'AI 模型 ID（可选，如果不提供则使用当前默认模型）',
+            },
+            set_as_selected: {
+              type: 'boolean',
+              description: '是否将新翻译设置为当前选中的翻译（默认 true）',
+            },
+          },
+          required: ['paragraph_id', 'translation'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { paragraph_id, translation, ai_model_id, set_as_selected = true } = args;
+      if (!paragraph_id || !translation) {
+        throw new Error('段落 ID 和翻译内容不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const aiModelsStore = useAIModelsStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
+
+      // 确定使用的 AI 模型 ID
+      let modelId = ai_model_id;
+      if (!modelId) {
+        // 如果没有提供，尝试使用段落中已有的翻译的模型 ID，或使用默认模型
+        const existingModelId = paragraph.translations?.[0]?.aiModelId;
+        if (existingModelId) {
+          modelId = existingModelId;
+        } else {
+          const defaultModel = aiModelsStore.getDefaultModelForTask('translation');
+          if (!defaultModel) {
+            return JSON.stringify({
+              success: false,
+              error: '未找到可用的 AI 模型，请提供 ai_model_id 参数',
+            });
+          }
+          modelId = defaultModel.id;
+        }
+      }
+
+      // 验证模型是否存在
+      const model = aiModelsStore.getModelById(modelId);
+      if (!model) {
+        return JSON.stringify({
+          success: false,
+          error: `AI 模型不存在: ${modelId}`,
+        });
+      }
+
+      // 创建新的翻译对象
+      const existingTranslationIds = paragraph.translations?.map((t) => t.id) || [];
+      const idGenerator = new UniqueIdGenerator(existingTranslationIds);
+      const newTranslation: Translation = {
+        id: idGenerator.generate(),
+        translation: normalizeTranslationQuotes(translation.trim()),
+        aiModelId: modelId,
+      };
+
+      // 添加翻译（使用 ChapterService 的辅助方法，自动限制最多5个）
+      const existingTranslations = paragraph.translations || [];
+      const updatedTranslations = ChapterService.addParagraphTranslation(
+        existingTranslations,
+        newTranslation,
+      );
+
+      // 更新段落的翻译数组
+      paragraph.translations = updatedTranslations;
+
+      // 如果设置为选中，更新选中的翻译 ID
+      if (set_as_selected) {
+        paragraph.selectedTranslationId = newTranslation.id;
+      } else if (!paragraph.selectedTranslationId && updatedTranslations.length > 0) {
+        // 如果没有选中的翻译，且新添加的翻译是第一个，则自动选中
+        paragraph.selectedTranslationId = updatedTranslations[0]?.id || '';
+      }
+
+      // 更新书籍（保存更改）
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
+
+      // 报告操作
+      if (onAction) {
+        onAction({
+          type: 'create',
+          entity: 'translation',
+          data: {
+            paragraph_id,
+            translation_id: newTranslation.id,
+            old_translation: '',
+            new_translation: newTranslation.translation,
+          },
+        });
+      }
+
+      return JSON.stringify({
+        success: true,
+        message: '翻译已添加',
+        paragraph_id,
+        translation_id: newTranslation.id,
+        translation: newTranslation.translation,
+        ai_model_id: modelId,
+        ai_model_name: model.name,
+        is_selected: set_as_selected,
+        total_translations: updatedTranslations.length,
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'remove_translation',
+        description:
+          '从段落中删除指定的翻译版本。用于清理不需要的翻译历史记录。如果删除的是当前选中的翻译，会自动选择其他翻译（优先选择最新的翻译）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+            translation_id: {
+              type: 'string',
+              description: '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
+            },
+          },
+          required: ['paragraph_id', 'translation_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { paragraph_id, translation_id } = args;
+      if (!paragraph_id || !translation_id) {
+        throw new Error('段落 ID 和翻译 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
+
+      // 验证翻译是否存在
+      if (!paragraph.translations || paragraph.translations.length === 0) {
+        return JSON.stringify({
+          success: false,
+          error: `段落没有翻译历史`,
+        });
+      }
+
+      const translationIndex = paragraph.translations.findIndex((t) => t.id === translation_id);
+      if (translationIndex === -1) {
+        return JSON.stringify({
+          success: false,
+          error: `翻译 ID 不存在: ${translation_id}`,
+        });
+      }
+
+      // 保存要删除的翻译信息用于报告
+      const translationToDelete = paragraph.translations[translationIndex];
+      if (!translationToDelete) {
+        return JSON.stringify({
+          success: false,
+          error: `无法找到要删除的翻译`,
+        });
+      }
+
+      const wasSelected = paragraph.selectedTranslationId === translation_id;
+
+      // 删除翻译
+      paragraph.translations.splice(translationIndex, 1);
+
+      // 如果删除的是选中的翻译，需要重新选择
+      if (wasSelected) {
+        if (paragraph.translations.length > 0) {
+          // 优先选择最新的翻译（数组最后一个）
+          paragraph.selectedTranslationId = paragraph.translations[paragraph.translations.length - 1]?.id || '';
+        } else {
+          // 如果没有翻译了，清空选中的翻译 ID
+          paragraph.selectedTranslationId = '';
+        }
+      }
+
+      // 更新书籍（保存更改）
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
+
+      // 报告操作
+      if (onAction) {
+        onAction({
+          type: 'delete',
+          entity: 'translation',
+          data: {
+            paragraph_id,
+            translation_id,
+            old_translation: translationToDelete.translation,
+            new_translation: '',
+          },
+        });
+      }
+
+      return JSON.stringify({
+        success: true,
+        message: '翻译已删除',
+        paragraph_id,
+        translation_id,
+        deleted_translation: translationToDelete.translation,
+        was_selected: wasSelected,
+        new_selected_id: paragraph.selectedTranslationId || null,
+        remaining_translations: paragraph.translations.length,
       });
     },
   },
