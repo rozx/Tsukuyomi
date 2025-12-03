@@ -93,6 +93,9 @@ export class GeminiService extends BaseAIService {
       const generationConfig: {
         temperature?: number;
         maxOutputTokens?: number;
+        thinkingConfig?: {
+          includeThoughts?: boolean;
+        };
       } = {};
 
       const temperature = request.temperature ?? config.temperature;
@@ -105,6 +108,15 @@ export class GeminiService extends BaseAIService {
       // 如果 maxTokens 是 0 或未定义，不设置 maxOutputTokens，让 API 使用默认值（无限制）
       if (maxTokens !== undefined && maxTokens > 0) {
         generationConfig.maxOutputTokens = maxTokens;
+      }
+
+      // 为 Gemini 3 Pro 等支持思考的模型启用思考内容
+      // 检查模型名称是否包含 "gemini-3" 或 "gemini-2"
+      const modelNameLower = modelName.toLowerCase();
+      if (modelNameLower.includes('gemini-3') || modelNameLower.includes('gemini-2')) {
+        generationConfig.thinkingConfig = {
+          includeThoughts: true,
+        };
       }
 
       // 准备系统指令和消息内容
@@ -131,13 +143,28 @@ export class GeminiService extends BaseAIService {
               const parts: any[] = [];
               if (msg.content) parts.push({ text: msg.content });
               if (msg.tool_calls) {
-                msg.tool_calls.forEach((tc) => {
-                  parts.push({
+                msg.tool_calls.forEach((tc, idx) => {
+                  // 传递 Gemini 返回的签名；若缺失，在当前回合需要首个函数调用提供占位签名
+                  // OpenAI 兼容格式中，签名位于 tc.extra_content.google.thought_signature
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const sigFromModel = (tc as any)?.extra_content?.google?.thought_signature as
+                    | string
+                    | undefined;
+                  const basePart = {
                     functionCall: {
                       name: tc.function.name,
                       args: JSON.parse(tc.function.arguments),
                     },
-                  });
+                  } as Record<string, unknown>;
+                  // 将签名置于 part 层级（与 functionCall 同级），符合文档示例
+                  if (sigFromModel) {
+                    (basePart as { [key: string]: unknown }).thought_signature = sigFromModel;
+                  } else if (idx === 0) {
+                    // 首个并行/顺序函数调用缺签名时，使用 FAQ 的占位值
+                    (basePart as { [key: string]: unknown }).thought_signature =
+                      'skip_thought_signature_validator';
+                  }
+                  parts.push(basePart);
                 });
               }
               return { role: 'model', parts };
@@ -196,6 +223,7 @@ export class GeminiService extends BaseAIService {
       );
 
       let fullText = '';
+      let fullReasoningContent = '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toolCalls: any[] = [];
 
@@ -206,13 +234,58 @@ export class GeminiService extends BaseAIService {
           throw new Error('请求已取消');
         }
 
-        const chunkText = chunk.text();
         const chunkFunctionCalls = chunk.functionCalls();
+
+        // 从 parts 中分别提取思考内容和实际响应文本
+        // chunk.text() 可能会包含所有内容（包括思考内容），所以我们需要直接从 parts 中提取
+        let chunkText = '';
+        let chunkReasoningContent = '';
+        try {
+          // 尝试从 chunk 的 parts 中提取内容
+          // Gemini SDK 的 chunk 对象可能包含 parts 属性，但类型定义可能不完整
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const chunkAny = chunk as any;
+          // 尝试从 candidates 中获取 parts，或者直接从 chunk 获取（如果 SDK 结构不同）
+          const parts = chunkAny.candidates?.[0]?.content?.parts || chunkAny.parts || [];
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const part of parts as any[]) {
+            if (part.text) {
+              // 检查是否有 thought 属性（Gemini 3 Pro 的思考内容）
+              // 注意：API 可能返回 thought: true，或者不返回 thought 属性
+              if (part.thought === true) {
+                // 如果 part 有 thought: true，则这是思考内容
+                chunkReasoningContent += part.text;
+              } else {
+                // 否则是实际响应文本
+                chunkText += part.text;
+              }
+            }
+          }
+        } catch (error) {
+          // 如果无法访问 parts，回退到使用 chunk.text()
+          // 这种情况下可能无法区分思考内容和实际响应
+          console.debug('无法访问 chunk parts，回退到 chunk.text():', error);
+          const fallbackText = chunk.text();
+          if (fallbackText) {
+            chunkText = fallbackText;
+          }
+        }
+
+        // 如果没有从 parts 中提取到文本，回退到使用 chunk.text()
+        // 这确保在 SDK 版本不支持 parts 时仍能正常工作
+        if (!chunkText && !chunkReasoningContent) {
+          const fallbackText = chunk.text();
+          if (fallbackText) {
+            chunkText = fallbackText;
+          }
+        }
 
         if (chunkFunctionCalls) {
           toolCalls.push(...chunkFunctionCalls);
         }
 
+        // 处理实际响应文本（非思考内容）
         if (chunkText) {
           fullText += chunkText;
 
@@ -222,6 +295,22 @@ export class GeminiService extends BaseAIService {
               text: chunkText,
               done: false,
               model: config.model,
+            });
+          }
+        }
+
+        // 处理思考内容
+        // 思考内容应该单独传递，不包含在实际响应中
+        if (chunkReasoningContent) {
+          fullReasoningContent += chunkReasoningContent;
+
+          // 如果提供了回调函数，通过 reasoningContent 传递思考内容
+          if (onChunk) {
+            await onChunk({
+              text: '', // 思考内容不显示在聊天中
+              done: false,
+              model: config.model,
+              reasoningContent: chunkReasoningContent,
             });
           }
         }
@@ -251,6 +340,7 @@ export class GeminiService extends BaseAIService {
           done: true,
           model: config.model,
           ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+          ...(fullReasoningContent ? { reasoningContent: fullReasoningContent } : {}),
         });
       }
 
@@ -258,6 +348,7 @@ export class GeminiService extends BaseAIService {
         text,
         model: config.model,
         ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+        ...(fullReasoningContent ? { reasoningContent: fullReasoningContent } : {}),
       };
     } catch (error) {
       if (error instanceof Error) {
