@@ -31,6 +31,15 @@ function getParagraphTranslationText(paragraph: Paragraph): string {
 }
 
 /**
+ * 检查段落是否有内容（文本不为空）
+ * @param paragraph 段落对象
+ * @returns 如果段落有内容（text 存在且去除空白后不为空）则返回 true
+ */
+function hasParagraphContent(paragraph: Paragraph | null | undefined): boolean {
+  return !!paragraph?.text && paragraph.text.trim().length > 0;
+}
+
+/**
  * 章节服务
  * 提供章节获取、更新、合并等通用功能
  */
@@ -1385,7 +1394,8 @@ export class ChapterService {
       }
 
       const paragraph = chapter.content[pIdx];
-      if (paragraph) {
+      // 只添加有内容的段落
+      if (paragraph && hasParagraphContent(paragraph)) {
         results.push({
           paragraph,
           paragraphIndex: pIdx,
@@ -1489,7 +1499,8 @@ export class ChapterService {
 
       // 获取当前段落
       const paragraph = chapter.content[paragraphIndex];
-      if (paragraph) {
+      // 只添加有内容的段落
+      if (paragraph && hasParagraphContent(paragraph)) {
         results.unshift({
           paragraph,
           paragraphIndex,
@@ -1673,7 +1684,8 @@ export class ChapterService {
       }
 
       const paragraph = chapter.content[pIdx];
-      if (paragraph) {
+      // 只添加有内容的段落
+      if (paragraph && hasParagraphContent(paragraph)) {
         results.push({
           paragraph,
           paragraphIndex: pIdx,
@@ -1757,7 +1769,8 @@ export class ChapterService {
 
       // 获取当前段落
       const paragraph = chapter.content[paragraphIndex];
-      if (paragraph) {
+      // 只添加有内容的段落
+      if (paragraph && hasParagraphContent(paragraph)) {
         results.push({
           paragraph,
           paragraphIndex,

@@ -123,8 +123,14 @@ export class AssistantService {
       - **list_chapters**: 列出章节（查看所有章节时先调用此工具）
       - **get_chapter_info**: 获取章节详情
       - **get_paragraph_info**: 获取段落信息（包括所有翻译版本）
-      - **get_previous_paragraphs**: 获取前文段落
-      - **get_next_paragraphs**: 获取后文段落
+      - **get_previous_paragraphs**: 获取指定段落之前的若干个段落（默认 3 个，可通过 count 参数调整）
+        - 用于查看当前段落之前的上下文，帮助理解文本的连贯性
+        - 支持通过 count 参数指定要获取的段落数量（默认 3，建议范围 1-10）
+        - 返回多个段落，按从远到近的顺序排列
+      - **get_next_paragraphs**: 获取指定段落之后的若干个段落（默认 3 个，可通过 count 参数调整）
+        - 用于查看当前段落之后的上下文，帮助理解文本的连贯性
+        - 支持通过 count 参数指定要获取的段落数量（默认 3，建议范围 1-10）
+        - 返回多个段落，按从近到远的顺序排列
       - **find_paragraph_by_keyword**: 关键词查找段落（支持 only_with_translation 参数）
       - **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
       - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
