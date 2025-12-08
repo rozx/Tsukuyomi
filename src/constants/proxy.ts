@@ -9,13 +9,13 @@ export const DEFAULT_PROXY_LIST: Array<{
 }> = [
   {
     id: 'rozx.moe',
-    name: 'CORS Luna',
+    name: 'CORS Luna (推荐使用)',
     url: 'https://cors.rozx.moe/?{url}',
     description: 'Luna AI translator 默认代理 (#^.^#)。',
   },
   {
     id: 'corslol',
-    name: 'CORS.lol (推荐)',
+    name: 'CORS.lol ',
     url: 'https://api.cors.lol/?url={url}',
     description: '开源 CORS 代理，免费计划支持无限请求',
   },
