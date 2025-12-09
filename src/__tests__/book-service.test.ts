@@ -32,8 +32,10 @@ await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
 
-// Import BookService AFTER mocking
+// Import services AFTER mocking
+// BookService depends on ChapterContentService, so we need to import both
 import { BookService } from '../services/book-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 
 describe('BookService', () => {
   beforeEach(() => {
@@ -90,8 +92,14 @@ describe('BookService', () => {
   });
 
   it('should clear all books', async () => {
+    // Verify ChapterContentService is available (it's imported by BookService)
+    expect(ChapterContentService).toBeDefined();
+    expect(typeof ChapterContentService.clearAllChapterContent).toBe('function');
+    
     await BookService.clearBooks();
     expect(mockClear).toHaveBeenCalledWith('books');
+    // clearAllChapterContent also calls db.clear('chapter-contents')
+    expect(mockClear).toHaveBeenCalledWith('chapter-contents');
   });
 });
 

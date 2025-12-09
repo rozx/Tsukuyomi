@@ -90,6 +90,9 @@ function createTestNovel(volumes: Volume[] = []): Novel {
 
 describe('ChapterContentService', () => {
   beforeEach(() => {
+    // 验证 ChapterContentService 和其方法存在
+    expect(ChapterContentService).toBeDefined();
+    expect(typeof ChapterContentService.clearAllCache).toBe('function');
     // 清除所有缓存
     ChapterContentService.clearAllCache();
     // 重置所有 mock
