@@ -438,6 +438,7 @@ export class TranslationService {
          - 确保段落 ID 完全对应
          - 确保 JSON 格式有效
          - 确保术语和角色翻译与参考资料一致
+         - 确保翻译与原文格式一致，如换行符、标点符号等
 
       4. **输出阶段**:
          - 返回符合格式要求的 JSON
@@ -465,7 +466,7 @@ export class TranslationService {
            (2) 查看角色设定（description 中的关系信息）
            (3) 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
            (4) 应用角色关系判断
-           (5) 翻译并保持一致性
+           (5) 翻译并保持一致性，特别是换行符、标点符号等。
          - 遇到新术语时：先使用 get_occurrences_by_keywords 检查词频（≥3次才添加），确认需要后创建
          - 遇到新角色时：先使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）
          - 发现数据问题（空翻译、描述不匹配、重复项、错误分类）时立即使用工具修复
