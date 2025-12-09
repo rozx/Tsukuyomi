@@ -228,6 +228,7 @@ export function useChapterTranslation(
       // 调用润色服务
       await PolishService.polish([paragraph], selectedModel, {
         bookId: book.value.id,
+        currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),

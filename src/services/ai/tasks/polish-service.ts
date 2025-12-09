@@ -68,6 +68,10 @@ export interface PolishServiceOptions {
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
+  /**
+   * 当前段落 ID（可选），用于单段落润色时提供上下文
+   */
+  currentParagraphId?: string;
 }
 
 export interface PolishResult {
@@ -104,7 +108,7 @@ export class PolishService {
       书籍ID: options?.bookId || '无',
     });
 
-    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast } =
+    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast, currentParagraphId } =
       options || {};
     const actions: ActionInfo[] = [];
 
@@ -260,7 +264,14 @@ export class PolishService {
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      const initialUserPrompt = `开始润色。
+      let initialUserPrompt = `开始润色。`;
+
+      // 如果是单段落润色，添加段落 ID 信息以便 AI 获取上下文
+      if (currentParagraphId && content.length === 1) {
+        initialUserPrompt += `\n\n**当前段落 ID**: ${currentParagraphId}\n你可以使用工具（如 find_paragraph_by_keywords、get_chapter_info 等）获取该段落的前后上下文，以确保润色的一致性和连贯性。`;
+      }
+
+      initialUserPrompt += `
 
         【执行要点】
         - **语气词**: 适当添加，符合角色风格。
