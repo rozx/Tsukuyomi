@@ -36,6 +36,7 @@ const mockDb = {
 };
 
 // Mock the module BEFORE importing ChapterContentService
+// 使用绝对路径（从 src 开始）以确保在 GitHub Actions 中也能正确解析
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
