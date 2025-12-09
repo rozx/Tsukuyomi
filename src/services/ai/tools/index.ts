@@ -67,6 +67,16 @@ export class ToolRegistry {
     return tools;
   }
 
+  /**
+   * 获取工具列表，排除翻译管理工具（add_translation, update_translation, remove_translation, select_translation）
+   * 用于翻译、润色、校对服务，这些服务应该只返回JSON而不是使用工具来管理翻译
+   */
+  static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
+    const allTools = this.getAllTools(bookId);
+    const excludedToolNames = ['add_translation', 'update_translation', 'remove_translation', 'select_translation'];
+    return allTools.filter((tool) => !excludedToolNames.includes(tool.function.name));
+  }
+
   static async handleToolCall(
     toolCall: AIToolCall,
     bookId: string,

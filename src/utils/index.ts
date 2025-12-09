@@ -31,7 +31,12 @@ export {
 export { getAssetUrl } from './assets';
 export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
-export { isEmptyOrSymbolOnly } from './text-utils';
+export {
+  isEmptyOrSymbolOnly,
+  buildOriginalTranslationsMap,
+  hasTranslationChanged,
+  filterChangedParagraphs,
+} from './text-utils';
 export { isTimeDifferent, isNewlyAdded } from './time-utils';
 export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
 export {

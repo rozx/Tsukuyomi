@@ -15,7 +15,6 @@ import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/ti
  * 处理上传/下载配置的通用逻辑
  */
 export class SyncDataService {
-
   /**
    * 应用下载的数据（根据冲突解决结果）
    */
@@ -82,10 +81,7 @@ export class SyncDataService {
           }
 
           // 检查是否是本地新增的（在上次同步后添加）
-          if (
-            localModel.lastEdited &&
-            checkIsNewlyAdded(localModel.lastEdited, syncTime)
-          ) {
+          if (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime)) {
             // 本地新增的模型，保留
             finalModels.push(localModel);
           }
@@ -118,9 +114,8 @@ export class SyncDataService {
             finalBooks.push(mergedNovel);
           } else {
             // 使用本地书籍，但需要确保章节内容已加载
-            const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(
-              localNovel,
-            );
+            const localNovelWithContent =
+              await SyncDataService.ensureNovelContentLoaded(localNovel);
             finalBooks.push(localNovelWithContent);
           }
         } else {
@@ -269,7 +264,6 @@ export class SyncDataService {
         ...(safeRemoteData.appSettings ? { appSettings: safeRemoteData.appSettings } : {}),
         ...(safeRemoteData.coverHistory ? { coverHistory: safeRemoteData.coverHistory } : {}),
       },
-      lastSyncTime,
     );
 
     return {
@@ -357,10 +351,7 @@ export class SyncDataService {
    * @param localNovel 本地书籍数据
    * @returns 合并后的书籍数据
    */
-  static async mergeNovelWithLocalContent(
-    remoteNovel: Novel,
-    localNovel: Novel,
-  ): Promise<Novel> {
+  static async mergeNovelWithLocalContent(remoteNovel: Novel, localNovel: Novel): Promise<Novel> {
     // 使用远程书籍的元数据，但保留本地书籍的章节内容
     const mergedNovel: Novel = {
       ...remoteNovel,
@@ -383,9 +374,7 @@ export class SyncDataService {
             // 合并章节，保留本地章节内容
             const mergedChapters = await Promise.all(
               remoteVolume.chapters.map(async (remoteChapter) => {
-                const localChapter = localVolume.chapters?.find(
-                  (ch) => ch.id === remoteChapter.id,
-                );
+                const localChapter = localVolume.chapters?.find((ch) => ch.id === remoteChapter.id);
 
                 // 如果本地章节存在，尝试保留其内容
                 if (localChapter) {
@@ -419,8 +408,7 @@ export class SyncDataService {
                 // 否则尝试从 IndexedDB 加载（如果章节 ID 相同）
                 if (
                   (!remoteChapter.content ||
-                    (Array.isArray(remoteChapter.content) &&
-                      remoteChapter.content.length === 0)) &&
+                    (Array.isArray(remoteChapter.content) && remoteChapter.content.length === 0)) &&
                   localChapter
                 ) {
                   const contentFromDB = await ChapterContentService.loadChapterContent(
@@ -452,8 +440,7 @@ export class SyncDataService {
                 // 如果远程章节没有内容，尝试从 IndexedDB 加载
                 if (
                   !remoteChapter.content ||
-                  (Array.isArray(remoteChapter.content) &&
-                    remoteChapter.content.length === 0)
+                  (Array.isArray(remoteChapter.content) && remoteChapter.content.length === 0)
                 ) {
                   const contentFromDB = await ChapterContentService.loadChapterContent(
                     remoteChapter.id,

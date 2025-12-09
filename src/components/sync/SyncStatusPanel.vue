@@ -4,14 +4,15 @@ import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
+import { SyncDataService } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
 import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
-import type { ConflictResolution, ConflictItem } from 'src/services/conflict-detection-service';
-import { SyncDataService } from 'src/services/sync-data-service';
+import type { ConflictResolution } from 'src/services/conflict-detection-service';
+import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
 const settingsStore = useSettingsStore();
@@ -78,15 +79,15 @@ const remoteStats = ref<{
   aiModelsCount: number;
 } | null>(null);
 
-// 冲突相关
-const showConflictDialog = ref(false);
-const detectedConflicts = ref<ConflictItem[]>([]);
-const pendingRemoteData = ref<{
-  novels: any[];
-  aiModels: any[];
-  appSettings?: any;
-  coverHistory?: any[];
-} | null>(null);
+// 冲突相关 - 使用 composable
+const {
+  showConflictDialog,
+  detectedConflicts,
+  pendingRemoteData,
+  uploadWithConflictCheck,
+  handleConflictResolveAndUpload,
+  handleConflictCancel,
+} = useGistUploadWithConflictCheck();
 
 // 上传配置
 const uploadConfig = async () => {
@@ -101,34 +102,13 @@ const uploadConfig = async () => {
     return;
   }
 
-  isSyncing.value = true;
-  try {
-    const result = await gistSyncService.uploadToGist(config, {
-      aiModels: aiModelsStore.models,
-      appSettings: settingsStore.getAllSettings(),
-      novels: booksStore.books,
-      coverHistory: coverHistoryStore.covers,
-    });
-
-    if (result.success) {
-      // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
-      if (result.gistId) {
-        const gistIdValue = result.gistId;
-        void co(function* () {
-          try {
-            yield settingsStore.setGistId(gistIdValue);
-          } catch (error) {
-            console.error('[SyncStatusPanel] 设置 Gist ID 失败:', error);
-          }
-        });
-      }
-      void co(function* () {
-        try {
-          yield settingsStore.updateLastSyncTime();
-        } catch (error) {
-          console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
-        }
-      });
+  // 使用 composable 处理冲突检查和上传
+  const hasConflicts = await uploadWithConflictCheck(
+    config,
+    (value) => {
+      isSyncing.value = value;
+    },
+    (result) => {
       // 更新远程统计数据（上传的数据）
       remoteStats.value = {
         booksCount: booksStore.books.length,
@@ -140,38 +120,15 @@ const uploadConfig = async () => {
         detail: result.message || '数据已成功同步到 Gist',
         life: 3000,
       });
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: '同步失败',
-        detail: result.error || '同步到 Gist 时发生未知错误',
-        life: 5000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '同步失败',
-      detail: error instanceof Error ? error.message : '同步时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    isSyncing.value = false;
+    },
+  );
+
+  // 如果有冲突，composable 已经显示了对话框，这里不需要做任何事
+  if (hasConflicts) {
+    return;
   }
 };
 
-// 应用下载的数据（根据冲突解决结果）
-const applyDownloadedData = async (
-  remoteData: {
-    novels?: any[] | null;
-    aiModels?: any[] | null;
-    appSettings?: any;
-    coverHistory?: any[] | null;
-  } | null,
-  resolutions: ConflictResolution[],
-) => {
-  await SyncDataService.applyDownloadedData(remoteData, resolutions);
-};
 
 // 下载配置
 const downloadConfig = async () => {
@@ -210,7 +167,7 @@ const downloadConfig = async () => {
       }
 
       // 无冲突，直接应用
-      await applyDownloadedData(safeRemoteData, []);
+      await SyncDataService.applyDownloadedData(safeRemoteData, []);
 
       void co(function* () {
         try {
@@ -251,60 +208,21 @@ const downloadConfig = async () => {
 
 // 处理冲突解决
 const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
-  if (!pendingRemoteData.value) {
-    showConflictDialog.value = false;
-    return;
-  }
-
-  // 确保 remoteData 不为 null 且包含必要的字段
-  const remoteData = pendingRemoteData.value;
-
-  // 确保 novels 和 aiModels 是数组（即使为空）
-  const safeRemoteData = SyncDataService.createSafeRemoteData(remoteData);
-
-  isSyncing.value = true;
-  showConflictDialog.value = false;
-
-  try {
-    await applyDownloadedData(safeRemoteData, resolutions);
-
-    void co(function* () {
-      try {
-        yield settingsStore.updateLastSyncTime();
-      } catch (error) {
-        console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
-      }
-    });
-    remoteStats.value = {
-      booksCount: safeRemoteData.novels?.length || 0,
-      aiModelsCount: safeRemoteData.aiModels?.length || 0,
-    };
-
-    toast.add({
-      severity: 'success',
-      summary: '同步完成',
-      detail: '冲突已解决，数据已同步',
-      life: 3000,
-    });
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '同步失败',
-      detail: error instanceof Error ? error.message : '应用冲突解决时发生错误',
-      life: 5000,
-    });
-  } finally {
-    isSyncing.value = false;
-    pendingRemoteData.value = null;
-    detectedConflicts.value = [];
-  }
-};
-
-// 取消冲突解决
-const handleConflictCancel = () => {
-  showConflictDialog.value = false;
-  pendingRemoteData.value = null;
-  detectedConflicts.value = [];
+  const config = gistSync.value;
+  await handleConflictResolveAndUpload(
+    config,
+    resolutions,
+    (value) => {
+      isSyncing.value = value;
+    },
+    () => {
+      // 更新远程统计数据
+      remoteStats.value = {
+        booksCount: booksStore.books.length,
+        aiModelsCount: aiModelsStore.models.length,
+      };
+    },
+  );
 };
 
 // Popover ref

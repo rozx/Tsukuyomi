@@ -17,6 +17,7 @@ export interface AIProcessingTask {
   status: 'thinking' | 'processing' | 'completed' | 'error' | 'cancelled';
   message?: string;
   thinkingMessage?: string; // 实际的 AI 思考消息（从流式响应中累积）
+  outputContent?: string; // AI 的实际输出内容（翻译/润色/校对结果）
   startTime: number;
   endTime?: number;
   abortController?: AbortController; // 用于取消请求（不持久化）
@@ -56,6 +57,7 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       status: task.status,
       ...(task.message !== undefined && { message: task.message }),
       ...(task.thinkingMessage !== undefined && { thinkingMessage: task.thinkingMessage }),
+      ...(task.outputContent !== undefined && { outputContent: task.outputContent }),
       startTime: task.startTime,
       ...(task.endTime !== undefined && { endTime: task.endTime }),
     };
@@ -333,6 +335,30 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
             yield saveThinkingProcessToDB(task);
           } catch (error) {
             console.error('Failed to save thinking message to IndexedDB:', error);
+          }
+        });
+      }
+    },
+
+    /**
+     * 追加输出内容（用于流式输出）
+     */
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async appendOutputContent(id: string, text: string): Promise<void> {
+      const task = this.activeTasks.find((t) => t.id === id);
+      if (task) {
+        if (!task.outputContent) {
+          task.outputContent = '';
+        }
+        task.outputContent += text;
+        // 确保响应式更新
+        this.activeTasks = [...this.activeTasks];
+        // 保存到 IndexedDB（异步，不阻塞 UI）
+        void co(function* () {
+          try {
+            yield saveThinkingProcessToDB(task);
+          } catch (error) {
+            console.error('Failed to save output content to IndexedDB:', error);
           }
         });
       }

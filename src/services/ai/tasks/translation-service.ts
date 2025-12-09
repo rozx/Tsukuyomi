@@ -72,6 +72,7 @@ export interface TranslationServiceOptions {
     addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
     updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
     appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    appendOutputContent: (id: string, text: string) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
@@ -90,7 +91,7 @@ export interface TranslationResult {
  * 使用 AI 服务进行文本翻译，支持术语 CRUD 工具
  */
 export class TranslationService {
-  static readonly CHUNK_SIZE = 1500;
+  static readonly CHUNK_SIZE = 2500;
 
   /**
    * 检查文本是否只包含符号（不是真正的文本内容）
@@ -225,7 +226,8 @@ export class TranslationService {
 
     try {
       const service = AIServiceFactory.getService(model.provider);
-      const tools = ToolRegistry.getAllTools(bookId);
+      // 排除翻译管理工具，只返回JSON
+      const tools = ToolRegistry.getToolsExcludingTranslationManagement(bookId);
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -252,6 +254,7 @@ export class TranslationService {
          - 不要过度使用，以免影响流畅性
          - 根据角色的说话风格（speaking_style）准确翻译，不使用与角色不符的语气词
       6. **原文参考**: 参考前面段落或者章节的原文和翻译，确保翻译的一致性，不要出现前后矛盾的情况。
+      7. **标题翻译**: 翻译标题时请参考以前章节的标题翻译，确保翻译格式的一致性。可以使用 \`get_previous_chapter\` 工具查看前一个章节的标题翻译作为参考。
 
       ========================================
       【敬语翻译工作流（必须严格执行）】
@@ -271,7 +274,7 @@ export class TranslationService {
 
       **步骤 3: 检查历史翻译一致性（必须执行）**
       - 使用 \`find_paragraph_by_keywords\` 工具搜索该角色在之前段落中的翻译
-      - 参数: \`keywords\`（角色名或带敬语的名称数组）、\`only_with_translation: true\`、\`max_paragraphs: 3\`
+      - 如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节（从开头到当前）
       - 如果找到之前的翻译，**必须保持一致**
 
       **步骤 4: 应用角色关系**
@@ -306,7 +309,7 @@ export class TranslationService {
       3. 确认需要后使用 \`create_term\` 创建
 
       **术语创建原则**:
-      - ✅ 应该添加：专有名词、特殊概念、反复出现（≥3次）且翻译固定的词汇
+      - ✅ 应该添加：特殊用法（如网络用语、网络梗、流行语等）、专有名词、特殊概念、反复出现（≥3次）且翻译固定的词汇
       - ❌ 不应该添加：仅由汉字组成且无特殊含义的普通词汇、常见助词、通用词汇、出现次数<3次的词汇
 
       **术语维护**:
@@ -336,6 +339,7 @@ export class TranslationService {
       2. 发现别名 → 使用 \`update_character\` 添加（⚠️ 先使用 \`list_characters\` 检查冲突）
       3. 发现重复角色 → \`delete_character\` 删除重复，然后 \`update_character\` 添加为别名
       4. 描述需补充 → 使用 \`update_character\` 更新
+      5. 发现特殊称呼 → 使用 \`update_character\` 更新
 
       **角色创建原则**:
       - 创建前必须检查：使用 \`list_characters\` 或 \`get_character\` 确认是否已存在
@@ -367,7 +371,7 @@ export class TranslationService {
 
       **工具使用优先级**:
       1. **高频必用**:
-         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词）
+         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
          - \`list_characters\`: 检查别名冲突、查找重复角色
@@ -377,6 +381,8 @@ export class TranslationService {
          - \`delete_character\` / \`delete_term\`: 清理无用或重复项
          - \`get_occurrences_by_keywords\`: 决定术语添加/删除前确认词频
          - \`get_previous_paragraphs\` / \`get_next_paragraphs\`: 需要更多上下文时
+         - \`get_previous_chapter\` / \`get_next_chapter\`: 需要查看前一个或下一个章节的上下文时（用于理解章节间的连贯性和保持翻译一致性）
+         - \`update_chapter_title\`: 更新章节标题（用于修正章节标题翻译，确保翻译格式的一致性）
 
       ========================================
       【记忆管理工作流】
@@ -388,11 +394,16 @@ export class TranslationService {
          - 完成章节或者某个情节翻译后，推荐可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
          - 重要背景设定也可保存供后续参考
       3. **搜索后保存**:
-         - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
+         - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\`、\`get_previous_chapter\`、\`get_next_chapter\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
 
       ========================================
       【输出格式要求（必须严格遵守）】
       ========================================
+      **⚠️ 重要：只能返回JSON，禁止使用翻译管理工具**
+      - ❌ **禁止使用** \`add_translation\`、\`update_translation\`、\`remove_translation\`、\`select_translation\` 等翻译管理工具
+      - ✅ **必须直接返回** JSON 格式的翻译结果
+      - 系统会自动处理翻译的保存和管理，你只需要返回翻译内容
+
       **必须返回有效的 JSON 格式**:
       \`\`\`json
       {
@@ -405,12 +416,13 @@ export class TranslationService {
       \`\`\`
 
       **格式要求清单**:
-      - [ ] 如果有章节标题，必须包含 \`titleTranslation\` 字段
-      - [ ] \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
-      - [ ] 段落 ID 必须与原文**完全一致**
-      - [ ] 段落数量必须**1:1 对应**（不能合并或拆分段落）
-      - [ ] 必须是有效的 JSON（注意转义特殊字符）
-      - [ ] 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
+      - 如果有章节标题，必须包含 \`titleTranslation\` 字段
+      - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+      - 段落 ID 必须与原文**完全一致**
+      - 段落数量必须**1:1 对应**（不能合并或拆分段落）
+      - 必须是有效的 JSON（注意转义特殊字符）
+      - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
+      - **不要使用任何翻译管理工具，只返回JSON**
 
       ========================================
       【执行工作流】
@@ -435,6 +447,7 @@ export class TranslationService {
          - 确保段落 ID 完全对应
          - 确保 JSON 格式有效
          - 确保术语和角色翻译与参考资料一致
+         - 确保翻译与原文格式一致，如换行符、标点符号等
 
       4. **输出阶段**:
          - 返回符合格式要求的 JSON
@@ -462,7 +475,7 @@ export class TranslationService {
            (2) 查看角色设定（description 中的关系信息）
            (3) 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
            (4) 应用角色关系判断
-           (5) 翻译并保持一致性
+           (5) 翻译并保持一致性，特别是换行符、标点符号等。
          - 遇到新术语时：先使用 get_occurrences_by_keywords 检查词频（≥3次才添加），确认需要后创建
          - 遇到新角色时：先使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）
          - 发现数据问题（空翻译、描述不匹配、重复项、错误分类）时立即使用工具修复
@@ -634,6 +647,11 @@ export class TranslationService {
             message: `正在翻译第 ${i + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
+          // 添加块分隔符
+          void aiProcessingStore.appendThinkingMessage(
+            taskId,
+            `\n\n[=== 翻译块 ${i + 1}/${chunks.length} ===]\n\n`,
+          );
         }
 
         if (onProgress) {
@@ -717,7 +735,7 @@ export class TranslationService {
             history.push({ role: 'user', content });
 
             let currentTurnCount = 0;
-            const MAX_TURNS = 5; // 防止工具调用死循环
+            const MAX_TURNS = 10; // 防止工具调用死循环
 
             // 工具调用循环
             while (currentTurnCount < MAX_TURNS) {
@@ -750,6 +768,11 @@ export class TranslationService {
 
                   // 累积文本用于检测重复字符
                   accumulatedText += c.text;
+
+                  // 追加输出内容到任务
+                  if (aiProcessingStore && taskId) {
+                    void aiProcessingStore.appendOutputContent(taskId, c.text);
+                  }
 
                   // 检测重复字符（AI降级检测），传入原文进行比较
                   if (

@@ -1,6 +1,6 @@
 {
   "name": "luna-ai-translator",
-  "version": "0.6.11",
+  "version": "0.7.0",
   "description": "Luna AI translator",
   "productName": "Luna AI translator",
   "author": "rozx <rozx@heavyskymobile.com>",
@@ -30,7 +30,6 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@octokit/rest": "^22.0.1",
-    "@patdx/kuromoji": "^1.0.4",
     "@primevue/themes": "^4.5.0",
     "@quasar/extras": "^1.17.0",
     "axios": "^1.13.2",
@@ -38,7 +37,6 @@
     "co": "^4.6.0",
     "dompurify": "^3.3.0",
     "express": "^4.22.1",
-    "got-scraping": "^4.1.2",
     "http-proxy-middleware": "^3.0.5",
     "idb": "^8.0.3",
     "lodash": "^4.17.21",

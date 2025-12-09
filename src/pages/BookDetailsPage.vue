@@ -10,6 +10,7 @@ import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
+import { TerminologyService } from 'src/services/terminology-service';
 import {
   formatWordCount,
   getNovelCharCountAsync,
@@ -760,11 +761,16 @@ const {
   isPolishingChapter,
   polishProgress,
   polishingParagraphIds,
+  isProofreadingChapter,
+  proofreadingProgress,
+  proofreadingParagraphIds,
   // 函数
   polishParagraph,
+  proofreadParagraph,
   retranslateParagraph,
   cancelTranslation,
   cancelPolish,
+  cancelProofreading,
   // 计算属性
   translationStatus,
   translationButtonLabel,
@@ -808,6 +814,7 @@ const termPopover = ref<{ toggle: (event: Event) => void; hide: () => void } | n
 const showEditTermDialog = ref(false);
 const editingTerm = ref<Terminology | null>(null);
 const isSavingTerm = ref(false);
+const termDialogMode = ref<'add' | 'edit'>('edit');
 
 // 计算当前章节使用的术语列表
 const usedTerms = computed(() => {
@@ -825,6 +832,35 @@ const usedTermCount = computed(() => usedTerms.value.length);
 
 const toggleTermPopover = (event: Event) => {
   termPopover.value?.toggle(event);
+};
+
+// 辅助函数：关闭popover
+const closePopover = (popoverRef: { hide: () => void } | null) => {
+  if (popoverRef) {
+    popoverRef.hide();
+  }
+};
+
+// 辅助函数：关闭popover并更新上下文
+const closePopoverAndUpdateContext = (popoverRef: { hide: () => void } | null) => {
+  closePopover(popoverRef);
+  // 更新上下文：保留书籍，清除章节和段落
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+      selectedParagraphId: null,
+    });
+  }
+};
+
+// 打开创建术语对话框
+const openCreateTermDialog = () => {
+  editingTerm.value = null;
+  termDialogMode.value = 'add';
+  showEditTermDialog.value = true;
+  closePopoverAndUpdateContext(termPopover.value);
 };
 
 // 角色设定弹出框状态
@@ -1000,23 +1036,18 @@ const normalizeChapterSymbols = async () => {
   }
 };
 
+// 打开创建角色对话框
+const openCreateCharacterDialog = () => {
+  editingCharacter.value = null;
+  showEditCharacterDialog.value = true;
+  closePopoverAndUpdateContext(characterPopover.value);
+};
+
 // 打开编辑角色对话框
 const openEditCharacterDialog = (character: CharacterSetting) => {
   editingCharacter.value = character;
   showEditCharacterDialog.value = true;
-  // Close popover
-  if (characterPopover.value) {
-    characterPopover.value.hide();
-  }
-  // 更新上下文：保留书籍，清除章节和段落
-  if (bookId.value) {
-    contextStore.setContext({
-      currentBookId: bookId.value,
-      currentChapterId: null,
-      hoveredParagraphId: null,
-      selectedParagraphId: null,
-    });
-  }
+  closePopoverAndUpdateContext(characterPopover.value);
 };
 
 // 保存角色设定
@@ -1025,12 +1056,10 @@ const handleSaveCharacter = async (data: {
   sex?: 'male' | 'female' | 'other' | undefined;
   translation: string;
   description: string;
+  speakingStyle: string;
   aliases: Array<{ name: string; translation: string }>;
 }) => {
-  if (!book.value || !editingCharacter.value) return;
-
-  // 保存状态用于撤销
-  saveState('保存角色设定');
+  if (!book.value) return;
 
   if (!data.name) {
     toast.add({
@@ -1045,45 +1074,76 @@ const handleSaveCharacter = async (data: {
   isSavingCharacter.value = true;
 
   try {
-    const currentCharacterSettings = book.value.characterSettings || [];
+    if (!editingCharacter.value) {
+      // 创建新角色
+      // 保存状态用于撤销
+      saveState('添加角色设定');
 
-    // 检查名称冲突 (排除自己)
-    const nameConflict = currentCharacterSettings.find(
-      (c) => c.id !== editingCharacter.value!.id && c.name === data.name,
-    );
+      await CharacterSettingService.addCharacterSetting(book.value.id, {
+        name: data.name,
+        sex: data.sex,
+        ...(data.translation ? { translation: data.translation } : {}),
+        ...(data.description ? { description: data.description } : {}),
+        ...(data.speakingStyle ? { speakingStyle: data.speakingStyle } : {}),
+        ...(data.aliases ? { aliases: data.aliases } : {}),
+      });
 
-    if (nameConflict) {
       toast.add({
-        severity: 'warn',
-        summary: '保存失败',
-        detail: `角色 "${data.name}" 已存在`,
+        severity: 'success',
+        summary: '保存成功',
+        detail: `已添加角色 "${data.name}"`,
         life: 3000,
       });
-      isSavingCharacter.value = false;
-      return;
+
+      showEditCharacterDialog.value = false;
+      editingCharacter.value = null;
+    } else {
+      // 编辑现有角色
+      // 保存状态用于撤销
+      saveState('保存角色设定');
+
+      const currentCharacterSettings = book.value.characterSettings || [];
+
+      // 检查名称冲突 (排除自己)
+      const nameConflict = currentCharacterSettings.find(
+        (c) => c.id !== editingCharacter.value!.id && c.name === data.name,
+      );
+
+      if (nameConflict) {
+        toast.add({
+          severity: 'warn',
+          summary: '保存失败',
+          detail: `角色 "${data.name}" 已存在`,
+          life: 3000,
+        });
+        isSavingCharacter.value = false;
+        return;
+      }
+
+      await CharacterSettingService.updateCharacterSetting(
+        book.value.id,
+        editingCharacter.value.id,
+        data,
+      );
+
+      toast.add({
+        severity: 'success',
+        summary: '保存成功',
+        detail: `已更新角色 "${data.name}"`,
+        life: 3000,
+      });
+
+      showEditCharacterDialog.value = false;
+      editingCharacter.value = null;
     }
-
-    await CharacterSettingService.updateCharacterSetting(
-      book.value.id,
-      editingCharacter.value.id,
-      data,
-    );
-
-    toast.add({
-      severity: 'success',
-      summary: '保存成功',
-      detail: `已更新角色 "${data.name}"`,
-      life: 3000,
-    });
-
-    showEditCharacterDialog.value = false;
-    editingCharacter.value = null;
   } catch (error) {
     console.error('保存角色失败:', error);
+    const errorMessage =
+      error instanceof Error ? error.message : '保存角色时发生错误';
     toast.add({
       severity: 'error',
       summary: '保存失败',
-      detail: '保存角色时发生错误',
+      detail: errorMessage,
       life: 3000,
     });
   } finally {
@@ -1099,9 +1159,7 @@ const isDeletingCharacter = ref(false);
 const openDeleteCharacterConfirm = (character: CharacterSetting) => {
   deletingCharacter.value = character;
   showDeleteCharacterConfirm.value = true;
-  if (characterPopover.value) {
-    characterPopover.value.hide();
-  }
+  closePopover(characterPopover.value);
 };
 
 const confirmDeleteCharacter = async () => {
@@ -1139,28 +1197,14 @@ const confirmDeleteCharacter = async () => {
 // 打开编辑术语对话框
 const openEditTermDialog = (term: Terminology) => {
   editingTerm.value = term;
+  termDialogMode.value = 'edit';
   showEditTermDialog.value = true;
-  // Close popover
-  if (termPopover.value) {
-    termPopover.value.hide();
-  }
-  // 更新上下文：保留书籍，清除章节和段落
-  if (bookId.value) {
-    contextStore.setContext({
-      currentBookId: bookId.value,
-      currentChapterId: null,
-      hoveredParagraphId: null,
-      selectedParagraphId: null,
-    });
-  }
+  closePopoverAndUpdateContext(termPopover.value);
 };
 
 // 保存术语
 const handleSaveTerm = async (data: { name: string; translation: string; description: string }) => {
-  if (!book.value || !editingTerm.value) return;
-
-  // 保存状态用于撤销
-  saveState('保存术语');
+  if (!book.value) return;
 
   if (!data.name) {
     toast.add({
@@ -1175,64 +1219,95 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
   isSavingTerm.value = true;
 
   try {
-    const currentTerminologies = book.value.terminologies || [];
+    if (termDialogMode.value === 'add') {
+      // 创建新术语
+      // 保存状态用于撤销
+      saveState('添加术语');
 
-    // 检查名称冲突 (排除自己)
-    const nameConflict = currentTerminologies.find(
-      (t) => t.id !== editingTerm.value!.id && t.name === data.name,
-    );
+      await TerminologyService.addTerminology(book.value.id, {
+        name: data.name,
+        ...(data.translation ? { translation: data.translation } : {}),
+        ...(data.description ? { description: data.description } : {}),
+      });
 
-    if (nameConflict) {
       toast.add({
-        severity: 'warn',
-        summary: '保存失败',
-        detail: `术语 "${data.name}" 已存在`,
+        severity: 'success',
+        summary: '保存成功',
+        detail: `已添加术语 "${data.name}"`,
         life: 3000,
       });
-      isSavingTerm.value = false;
-      return;
-    }
 
-    const updatedTerminologies = currentTerminologies.map((term) => {
-      if (term.id === editingTerm.value!.id) {
-        const updated: Terminology = {
-          ...term,
-          name: data.name,
-          translation: {
-            ...term.translation,
-            translation: data.translation,
-          },
-        };
-        if (data.description) {
-          updated.description = data.description;
-        } else {
-          delete updated.description;
-        }
-        return updated;
+      showEditTermDialog.value = false;
+      editingTerm.value = null;
+      termDialogMode.value = 'edit';
+    } else {
+      // 编辑现有术语
+      if (!editingTerm.value) return;
+
+      // 保存状态用于撤销
+      saveState('保存术语');
+
+      const currentTerminologies = book.value.terminologies || [];
+
+      // 检查名称冲突 (排除自己)
+      const nameConflict = currentTerminologies.find(
+        (t) => t.id !== editingTerm.value!.id && t.name === data.name,
+      );
+
+      if (nameConflict) {
+        toast.add({
+          severity: 'warn',
+          summary: '保存失败',
+          detail: `术语 "${data.name}" 已存在`,
+          life: 3000,
+        });
+        isSavingTerm.value = false;
+        return;
       }
-      return term;
-    });
 
-    await booksStore.updateBook(book.value.id, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
-    });
+      const updatedTerminologies = currentTerminologies.map((term) => {
+        if (term.id === editingTerm.value!.id) {
+          const updated: Terminology = {
+            ...term,
+            name: data.name,
+            translation: {
+              ...term.translation,
+              translation: data.translation,
+            },
+          };
+          if (data.description) {
+            updated.description = data.description;
+          } else {
+            delete updated.description;
+          }
+          return updated;
+        }
+        return term;
+      });
 
-    toast.add({
-      severity: 'success',
-      summary: '保存成功',
-      detail: `已更新术语 "${data.name}"`,
-      life: 3000,
-    });
+      await booksStore.updateBook(book.value.id, {
+        terminologies: updatedTerminologies,
+        lastEdited: new Date(),
+      });
 
-    showEditTermDialog.value = false;
-    editingTerm.value = null;
+      toast.add({
+        severity: 'success',
+        summary: '保存成功',
+        detail: `已更新术语 "${data.name}"`,
+        life: 3000,
+      });
+
+      showEditTermDialog.value = false;
+      editingTerm.value = null;
+    }
   } catch (error) {
     console.error('保存术语失败:', error);
+    const errorMessage =
+      error instanceof Error ? error.message : '保存术语时发生错误';
     toast.add({
       severity: 'error',
       summary: '保存失败',
-      detail: '保存术语时发生错误',
+      detail: errorMessage,
       life: 3000,
     });
   } finally {
@@ -1248,9 +1323,7 @@ const isDeletingTerm = ref(false);
 const openDeleteTermConfirm = (term: Terminology) => {
   deletingTerm.value = term;
   showDeleteTermConfirm.value = true;
-  if (termPopover.value) {
-    termPopover.value.hide();
-  }
+  closePopover(termPopover.value);
 };
 
 const confirmDeleteTerm = async () => {
@@ -1566,6 +1639,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       :used-terms="usedTerms"
       @edit="openEditTermDialog"
       @delete="openDeleteTermConfirm"
+      @create="openCreateTermDialog"
     />
 
     <!-- 角色设定列表 Popover -->
@@ -1574,6 +1648,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       :used-characters="usedCharacters"
       @edit="openEditCharacterDialog"
       @delete="openDeleteCharacterConfirm"
+      @create="openCreateCharacterDialog"
     />
 
     <!-- 键盘快捷键 Popover -->
@@ -1582,7 +1657,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     <!-- 编辑术语对话框 -->
     <TermEditDialog
       v-model:visible="showEditTermDialog"
-      mode="edit"
+      :mode="termDialogMode"
       :term="editingTerm"
       :loading="isSavingTerm"
       @save="handleSaveTerm"
@@ -1699,6 +1774,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :selected-chapter-id="selectedChapterId"
             :translating-paragraph-ids="translatingParagraphIds"
             :polishing-paragraph-ids="polishingParagraphIds"
+            :proofreading-paragraph-ids="proofreadingParagraphIds"
             :search-query="searchQuery"
             :selected-paragraph-index="selectedParagraphIndex"
             :is-keyboard-selected="isKeyboardSelected"
@@ -1718,6 +1794,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             "
             @retranslate-paragraph="retranslateParagraph"
             @polish-paragraph="polishParagraph"
+            @proofread-paragraph="proofreadParagraph"
             @select-translation="
               (paragraphId: string, translationId: string) =>
                 selectParagraphTranslation(paragraphId, translationId)
@@ -1740,8 +1817,21 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       <TranslationProgress
         :is-translating="isTranslatingChapter"
         :is-polishing="isPolishingChapter"
-        :progress="isPolishingChapter ? polishProgress : translationProgress"
-        @cancel="isPolishingChapter ? cancelPolish() : cancelTranslation()"
+        :is-proofreading="isProofreadingChapter"
+        :progress="
+          isProofreadingChapter
+            ? proofreadingProgress
+            : isPolishingChapter
+              ? polishProgress
+              : translationProgress
+        "
+        @cancel="
+          isProofreadingChapter
+            ? cancelProofreading()
+            : isPolishingChapter
+              ? cancelPolish()
+              : cancelTranslation()
+        "
       />
     </div>
   </div>

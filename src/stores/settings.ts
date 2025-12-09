@@ -17,8 +17,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   taskDefaultModels: {},
   lastOpenedSettingsTab: 0,
   proxyEnabled: true,
-  proxyUrl: 'https://api.allorigins.win/raw?url={url}',
-  proxyAutoSwitch: false,
+  proxyUrl: DEFAULT_PROXY_LIST[0]!.url,
+  proxyAutoSwitch: true,
   proxyAutoAddMapping: true,
   proxyList: DEFAULT_PROXY_LIST,
 };
@@ -78,14 +78,14 @@ function loadSettingsFromLocalStorage(): AppSettings {
       const settings = JSON.parse(stored);
       // 迁移 proxySiteMapping
       const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping);
-      
+
       // 合并默认设置，确保所有字段都存在
       // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
       // 如果不存在，使用当前时间作为初始值（这是初始化，不是编辑）
       const existingLastEdited = settings.lastEdited
         ? new Date(settings.lastEdited)
         : new Date();
-      
+
       const loadedSettings: AppSettings = {
         ...DEFAULT_SETTINGS,
         ...settings,
@@ -98,12 +98,12 @@ function loadSettingsFromLocalStorage(): AppSettings {
         // 使用迁移后的映射
         proxySiteMapping: migratedMapping,
       };
-      
+
       // 如果进行了迁移，保存回 LocalStorage（但不更新 lastEdited，因为这是自动迁移，不是用户编辑）
       if (migratedMapping && migratedMapping !== settings.proxySiteMapping) {
         saveSettingsToLocalStorage(loadedSettings);
       }
-      
+
       return loadedSettings;
     }
   } catch (error) {

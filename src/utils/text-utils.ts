@@ -1,3 +1,5 @@
+import type { Paragraph } from 'src/models/novel';
+
 /**
  * 检查段落是否为空或仅包含符号
  * 空段落：没有文本或只有空白字符
@@ -26,5 +28,63 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
 
   // 如果没有实际内容，则认为是仅符号段落
   return !hasContent;
+}
+
+/**
+ * 构建段落的原始翻译映射
+ * @param paragraphs 段落数组
+ * @returns 段落ID到原始翻译文本的映射
+ */
+export function buildOriginalTranslationsMap(
+  paragraphs: Paragraph[],
+): Map<string, string> {
+  const originalTranslations = new Map<string, string>();
+  for (const paragraph of paragraphs) {
+    const currentTranslation =
+      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+      paragraph.translations?.[0]?.translation ||
+      '';
+    if (currentTranslation) {
+      originalTranslations.set(paragraph.id, currentTranslation.trim());
+    }
+  }
+  return originalTranslations;
+}
+
+/**
+ * 比较两个翻译文本是否相同（忽略空白字符差异）
+ * @param original 原始翻译文本
+ * @param modified 修改后的翻译文本
+ * @returns 如果翻译有变化，返回 true
+ */
+export function hasTranslationChanged(original: string, modified: string): boolean {
+  const normalizedOriginal = original.trim();
+  const normalizedModified = modified.trim();
+  return normalizedOriginal !== normalizedModified;
+}
+
+/**
+ * 过滤出有变化的段落翻译
+ * @param paragraphIds 段落ID数组
+ * @param extractedTranslations 提取的翻译映射（段落ID -> 翻译文本）
+ * @param originalTranslations 原始翻译映射（段落ID -> 原始翻译文本）
+ * @returns 有变化的段落翻译数组
+ */
+export function filterChangedParagraphs(
+  paragraphIds: string[],
+  extractedTranslations: Map<string, string>,
+  originalTranslations: Map<string, string>,
+): { id: string; translation: string }[] {
+  const changedParagraphs: { id: string; translation: string }[] = [];
+  for (const paraId of paragraphIds) {
+    const translation = extractedTranslations.get(paraId);
+    if (translation) {
+      const originalTranslation = originalTranslations.get(paraId) || '';
+      if (hasTranslationChanged(originalTranslation, translation)) {
+        changedParagraphs.push({ id: paraId, translation });
+      }
+    }
+  }
+  return changedParagraphs;
 }
 

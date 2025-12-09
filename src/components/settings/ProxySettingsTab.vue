@@ -393,7 +393,7 @@ const testProxy = async (proxy: { id: string; name: string; url: string }) => {
 
   try {
     // 使用一个简单的测试 URL
-    const testUrl = 'https://www.google.com';
+    const testUrl = 'https://www.duckduckgo.com';
     const proxiedUrl = proxy.url.replace('{url}', encodeURIComponent(testUrl));
 
     // 设置超时时间为 10 秒

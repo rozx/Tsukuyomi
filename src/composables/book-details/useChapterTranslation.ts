@@ -3,7 +3,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { TranslationService, PolishService } from 'src/services/ai';
+import { TranslationService, PolishService, ProofreadingService } from 'src/services/ai';
 import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
@@ -37,6 +37,76 @@ export function useChapterTranslation(
       translation: normalizeTranslationQuotes(translation),
       aiModelId,
     };
+  };
+
+  /**
+   * 更新段落翻译的通用辅助函数
+   */
+  const updateParagraphsFromResults = (
+    paragraphResults: { id: string; translation: string }[],
+    aiModelId: string,
+  ) => {
+    if (!book.value || !selectedChapterWithContent.value) return;
+
+    const updatedVolumes = book.value.volumes?.map((volume) => {
+      if (!volume.chapters) return volume;
+
+      const updatedChapters = volume.chapters.map((chapter) => {
+        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+        const content = ChapterService.getChapterContentForUpdate(
+          chapter,
+          selectedChapterWithContent.value,
+        );
+
+        if (!content) return chapter;
+
+        const updatedContent = content.map((para) => {
+          const result = paragraphResults.find((pt) => pt.id === para.id);
+          if (!result) return para;
+
+          const newTranslation = createParagraphTranslation(result.translation, aiModelId);
+          const updatedTranslations = ChapterService.addParagraphTranslation(
+            para.translations || [],
+            newTranslation,
+          );
+
+          return {
+            id: para.id,
+            text: para.text,
+            translations: updatedTranslations,
+            selectedTranslationId: newTranslation.id,
+          };
+        });
+
+        return {
+          ...chapter,
+          content: updatedContent,
+          lastEdited: new Date(),
+        };
+      });
+
+      return {
+        ...volume,
+        chapters: updatedChapters,
+      };
+    });
+
+    // 更新书籍（后台执行）
+    const bookId = book.value?.id;
+    if (bookId) {
+      void co(function* () {
+        try {
+          yield booksStore.updateBook(bookId, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          });
+          updateSelectedChapterWithContent(updatedVolumes);
+        } catch (error) {
+          console.error('[useChapterTranslation] 更新书籍失败:', error);
+        }
+      });
+    }
   };
 
   /**
@@ -173,6 +243,16 @@ export function useChapterTranslation(
   const polishAbortController = ref<AbortController | null>(null);
   const polishingParagraphIds = ref<Set<string>>(new Set());
 
+  // 校对章节所有段落的状态
+  const isProofreadingChapter = ref(false);
+  const proofreadingProgress = ref({
+    current: 0,
+    total: 0,
+    message: '',
+  });
+  const proofreadingAbortController = ref<AbortController | null>(null);
+  const proofreadingParagraphIds = ref<Set<string>>(new Set());
+
   // 润色单个段落
   const polishParagraph = async (paragraphId: string) => {
     if (
@@ -228,11 +308,13 @@ export function useChapterTranslation(
       // 调用润色服务
       await PolishService.polish([paragraph], selectedModel, {
         bookId: book.value.id,
+        currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
           updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
           appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
           removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
           activeTasks: aiProcessingStore.activeTasks,
         },
@@ -240,75 +322,7 @@ export function useChapterTranslation(
           toast.add(message);
         },
         onParagraphPolish: (paragraphPolishes) => {
-          if (!book.value || !selectedChapterWithContent.value) return;
-
-          // 更新段落润色
-          const updatedVolumes = book.value.volumes?.map((volume) => {
-            if (!volume.chapters) return volume;
-
-            const updatedChapters = volume.chapters.map((chapter) => {
-              if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
-
-              // 使用已加载的章节内容
-              const content = ChapterService.getChapterContentForUpdate(
-                chapter,
-                selectedChapterWithContent.value,
-              );
-
-              if (!content) return chapter;
-
-              const updatedContent = content.map((para) => {
-                const polish = paragraphPolishes.find((pt) => pt.id === para.id);
-                if (!polish) return para;
-
-                // 创建新的翻译对象（润色结果）
-                const newTranslation = createParagraphTranslation(
-                  polish.translation,
-                  selectedModel.id,
-                );
-
-                // 添加到翻译列表（限制最多5个）
-                const updatedTranslations = ChapterService.addParagraphTranslation(
-                  para.translations || [],
-                  newTranslation,
-                );
-
-                return {
-                  id: para.id,
-                  text: para.text,
-                  translations: updatedTranslations,
-                  selectedTranslationId: newTranslation.id,
-                };
-              });
-
-              return {
-                ...chapter,
-                content: updatedContent,
-                lastEdited: new Date(),
-              };
-            });
-
-            return {
-              ...volume,
-              chapters: updatedChapters,
-            };
-          });
-
-          // 更新书籍（后台执行）
-          const bookId = book.value?.id;
-          if (bookId) {
-            void co(function* () {
-              try {
-                yield booksStore.updateBook(bookId, {
-                  volumes: updatedVolumes,
-                  lastEdited: new Date(),
-                });
-                updateSelectedChapterWithContent(updatedVolumes);
-              } catch (error) {
-                console.error('[useChapterTranslation] 更新书籍失败:', error);
-              }
-            });
-          }
+          updateParagraphsFromResults(paragraphPolishes, selectedModel.id);
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -322,20 +336,102 @@ export function useChapterTranslation(
         life: 3000,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Cancelled - no need to show toast
-      } else {
-        console.error('润色段落时出错:', error);
-        toast.add({
-          severity: 'error',
-          summary: '润色失败',
-          detail: error instanceof Error ? error.message : '润色段落时发生未知错误',
-          life: 5000,
-        });
-      }
+      console.error('润色段落时出错:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在润色的集合中移除段落 ID
       polishingParagraphIds.value.delete(paragraphId);
+    }
+  };
+
+  // 校对单个段落
+  const proofreadParagraph = async (paragraphId: string) => {
+    if (
+      !book.value ||
+      !selectedChapterWithContent.value ||
+      !selectedChapterWithContent.value.content
+    ) {
+      return;
+    }
+
+    // 查找段落
+    const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
+    if (!paragraph) {
+      toast.add({
+        severity: 'error',
+        summary: '校对失败',
+        detail: '未找到要校对的段落',
+        life: 3000,
+      });
+      return;
+    }
+
+    // 检查段落是否有翻译
+    if (!hasParagraphTranslation(paragraph)) {
+      toast.add({
+        severity: 'error',
+        summary: '校对失败',
+        detail: '该段落还没有翻译，请先翻译段落',
+        life: 3000,
+      });
+      return;
+    }
+
+    // 检查是否有可用的校对模型
+    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+    if (!selectedModel) {
+      toast.add({
+        severity: 'error',
+        summary: '校对失败',
+        detail: '未找到可用的校对模型，请在设置中配置',
+        life: 3000,
+      });
+      return;
+    }
+
+    // 添加段落 ID 到正在校对的集合中
+    proofreadingParagraphIds.value.add(paragraphId);
+
+    // 创建 AbortController 用于取消校对
+    const abortController = new AbortController();
+
+    try {
+      // 调用校对服务
+      await ProofreadingService.proofread([paragraph], selectedModel, {
+        bookId: book.value.id,
+        currentParagraphId: paragraphId,
+        signal: abortController.signal,
+        aiProcessingStore: {
+          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
+          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+          activeTasks: aiProcessingStore.activeTasks,
+        },
+        onToast: (message) => {
+          toast.add(message);
+        },
+        onParagraphProofreading: (paragraphProofreadings) => {
+          updateParagraphsFromResults(paragraphProofreadings, selectedModel.id);
+        },
+        onAction: (action) => {
+          handleActionInfoToast(action, { severity: 'info' });
+        },
+      });
+
+      toast.add({
+        severity: 'success',
+        summary: '校对完成',
+        detail: '段落已校对',
+        life: 3000,
+      });
+    } catch (error) {
+      console.error('校对段落时出错:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
+    } finally {
+      // 从正在校对的集合中移除段落 ID
+      proofreadingParagraphIds.value.delete(paragraphId);
     }
   };
 
@@ -388,6 +484,7 @@ export function useChapterTranslation(
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
           updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
           appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
           removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
           activeTasks: aiProcessingStore.activeTasks,
         },
@@ -468,17 +565,8 @@ export function useChapterTranslation(
         life: 3000,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Cancelled - no need to show toast
-      } else {
-        console.error('重新翻译段落时出错:', error);
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '重新翻译段落时发生未知错误',
-          life: 5000,
-        });
-      }
+      console.error('重新翻译段落时出错:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在翻译的集合中移除段落 ID
       translatingParagraphIds.value.delete(paragraphId);
@@ -535,6 +623,7 @@ export function useChapterTranslation(
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
           updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
           appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
           removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
           activeTasks: aiProcessingStore.activeTasks,
         },
@@ -752,23 +841,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('翻译失败:', error);
-      // 检查是否为取消错误（可能是 "请求已取消" 或 "翻译已取消"）
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '翻译已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isTranslatingChapter.value = false;
       translationAbortController.value = null;
@@ -847,6 +920,7 @@ export function useChapterTranslation(
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
           updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
           appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
           removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
           activeTasks: aiProcessingStore.activeTasks,
         },
@@ -954,22 +1028,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('翻译失败:', error);
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '翻译已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isTranslatingChapter.value = false;
       translationAbortController.value = null;
@@ -1049,6 +1108,7 @@ export function useChapterTranslation(
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
           updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
           appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
           removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
           activeTasks: aiProcessingStore.activeTasks,
         },
@@ -1180,23 +1240,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('润色失败:', error);
-      // 检查是否为取消错误
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '润色已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '润色失败',
-          detail: error instanceof Error ? error.message : '润色时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isPolishingChapter.value = false;
       polishAbortController.value = null;
@@ -1273,10 +1317,247 @@ export function useChapterTranslation(
     polishingParagraphIds.value.clear();
   };
 
+  // 校对章节所有段落
+  const proofreadAllParagraphs = async () => {
+    if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+      return;
+    }
+
+    // 检查是否有可用的校对模型
+    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+    if (!selectedModel) {
+      toast.add({
+        severity: 'error',
+        summary: '校对失败',
+        detail: '未找到可用的校对模型，请在设置中配置',
+        life: 3000,
+      });
+      return;
+    }
+
+    // 检查段落是否有翻译
+    const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
+      (para) => !isEmptyParagraph(para) && hasParagraphTranslation(para),
+    );
+
+    if (paragraphsWithTranslation.length === 0) {
+      toast.add({
+        severity: 'error',
+        summary: '校对失败',
+        detail: '没有可校对的段落，请先翻译章节',
+        life: 3000,
+      });
+      return;
+    }
+
+    isProofreadingChapter.value = true;
+    proofreadingParagraphIds.value.clear();
+
+    // 初始化进度
+    proofreadingProgress.value = {
+      current: 0,
+      total: 0,
+      message: '正在初始化校对...',
+    };
+
+    // 创建 AbortController 用于取消校对
+    const abortController = new AbortController();
+    proofreadingAbortController.value = abortController;
+
+    // 用于跟踪已更新的段落，避免重复更新
+    const updatedParagraphIds = new Set<string>();
+
+    try {
+      // 调用校对服务
+      const result = await ProofreadingService.proofread(paragraphsWithTranslation, selectedModel, {
+        bookId: book.value.id,
+        signal: abortController.signal,
+        aiProcessingStore: {
+          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
+          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
+          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
+          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
+          activeTasks: aiProcessingStore.activeTasks,
+        },
+        onProgress: (progress) => {
+          proofreadingProgress.value = {
+            current: progress.current,
+            total: progress.total,
+            message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
+          };
+          // 更新正在校对的段落 ID
+          if (progress.currentParagraphs) {
+            proofreadingParagraphIds.value = new Set(progress.currentParagraphs);
+          }
+          console.debug('校对进度:', progress);
+        },
+        onAction: (action) => {
+          handleActionInfoToast(action, { severity: 'info' });
+        },
+        onToast: (message) => {
+          toast.add(message);
+        },
+        onParagraphProofreading: (translations) => {
+          // 立即更新段落校对（后台执行，不阻塞）
+          void co(function* () {
+            try {
+              yield updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
+            } catch (error) {
+              console.error('[useChapterTranslation] 更新段落校对失败:', error);
+            }
+          });
+        },
+      });
+
+      // 解析校对结果并更新段落（只处理尚未更新的段落）
+      const proofreadingMap = new Map<string, string>();
+
+      // 优先使用结构化的段落校对结果
+      if (result.paragraphTranslations && result.paragraphTranslations.length > 0) {
+        result.paragraphTranslations.forEach((pt) => {
+          if (pt.id && pt.translation && !updatedParagraphIds.has(pt.id)) {
+            proofreadingMap.set(pt.id, pt.translation);
+          }
+        });
+      }
+
+      // 更新剩余的段落校对（如果有）
+      let actuallyUpdatedFromMap = 0;
+      if (proofreadingMap.size > 0) {
+        const updatedVolumes = book.value.volumes?.map((volume) => {
+          if (!volume.chapters) return volume;
+
+          const updatedChapters = volume.chapters.map((chapter) => {
+            if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
+
+            const content =
+              chapter.id === selectedChapterWithContent.value!.id
+                ? selectedChapterWithContent.value!.content
+                : chapter.content;
+
+            if (!content) return chapter;
+
+            const updatedContent = content.map((para) => {
+              const proofreading = proofreadingMap.get(para.id);
+              if (!proofreading) return para;
+
+              const newTranslation = createParagraphTranslation(proofreading, selectedModel.id);
+
+              const updatedTranslations = ChapterService.addParagraphTranslation(
+                para.translations || [],
+                newTranslation,
+              );
+
+              // 计数实际更新的段落
+              actuallyUpdatedFromMap++;
+
+              return {
+                id: para.id,
+                text: para.text,
+                translations: updatedTranslations,
+                selectedTranslationId: newTranslation.id,
+              };
+            });
+
+            return {
+              ...chapter,
+              content: updatedContent,
+              lastEdited: new Date(),
+            };
+          });
+
+          return {
+            ...volume,
+            chapters: updatedChapters,
+          };
+        });
+
+        await booksStore.updateBook(book.value.id, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+
+        updateSelectedChapterWithContent(updatedVolumes);
+      }
+
+      // 构建成功消息
+      const actions = result.actions || [];
+      // 计算实际更新的段落数：增量更新的段落 + 从 proofreadingMap 实际更新的段落
+      const totalProofreadCount = updatedParagraphIds.size + actuallyUpdatedFromMap;
+      let messageDetail = `已成功校对 ${totalProofreadCount} 个段落`;
+      if (actions.length > 0) {
+        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
+        const actionDetails: string[] = [];
+        if (termActions > 0) {
+          actionDetails.push(`${termActions} 个术语操作`);
+        }
+        if (characterActions > 0) {
+          actionDetails.push(`${characterActions} 个角色操作`);
+        }
+        if (actionDetails.length > 0) {
+          messageDetail += `，并执行了 ${actionDetails.join('、')}`;
+        }
+      }
+
+      toast.add({
+        severity: 'success',
+        summary: '校对完成',
+        detail: messageDetail,
+        life: 3000,
+      });
+    } catch (error) {
+      console.error('校对失败:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
+    } finally {
+      isProofreadingChapter.value = false;
+      proofreadingAbortController.value = null;
+      // 延迟清除进度信息和正在校对的段落 ID，让用户看到完成状态
+      setTimeout(() => {
+        proofreadingProgress.value = {
+          current: 0,
+          total: 0,
+          message: '',
+        };
+        proofreadingParagraphIds.value.clear();
+      }, 1000);
+    }
+  };
+
+  // 取消校对
+  const cancelProofreading = () => {
+    // 首先取消本地的 abortController
+    if (proofreadingAbortController.value) {
+      proofreadingAbortController.value.abort();
+      proofreadingAbortController.value = null;
+    }
+
+    // 然后取消所有相关的 AI 任务
+    const allTasks = aiProcessingStore.activeTasks;
+    const proofreadingTasks = allTasks.filter((task) => task.type === 'proofreading');
+
+    // 取消所有校对任务
+    for (const task of proofreadingTasks) {
+      if (task.status !== 'completed') {
+        void aiProcessingStore.stopTask(task.id);
+      }
+    }
+
+    // 更新 UI 状态
+    isProofreadingChapter.value = false;
+    proofreadingProgress.value = {
+      current: 0,
+      total: 0,
+      message: '',
+    };
+    proofreadingParagraphIds.value.clear();
+  };
+
   // 组件卸载时取消所有任务
   onUnmounted(() => {
     cancelTranslation();
     cancelPolish();
+    cancelProofreading();
   });
 
   // 翻译状态计算属性
@@ -1335,13 +1616,7 @@ export function useChapterTranslation(
         label: '校对本章',
         icon: 'pi pi-check-circle',
         command: () => {
-          // TODO: 实现校对功能
-          toast.add({
-            severity: 'info',
-            summary: '功能开发中',
-            detail: '校对功能正在开发中',
-            life: 3000,
-          });
+          void proofreadAllParagraphs();
         },
       });
     }
@@ -1367,15 +1642,21 @@ export function useChapterTranslation(
     isPolishingChapter,
     polishProgress,
     polishingParagraphIds,
+    isProofreadingChapter,
+    proofreadingProgress,
+    proofreadingParagraphIds,
     // 函数
     polishParagraph,
+    proofreadParagraph,
     retranslateParagraph,
     translateAllParagraphs,
     continueTranslation,
     retranslateAllParagraphs,
     polishAllParagraphs,
+    proofreadAllParagraphs,
     cancelTranslation,
     cancelPolish,
+    cancelProofreading,
     // 计算属性
     translationStatus,
     translationButtonLabel,

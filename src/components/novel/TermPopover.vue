@@ -12,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [term: Terminology];
   delete: [term: Terminology];
+  create: [];
 }>();
 
 const popover = ref<InstanceType<typeof Popover> | null>(null);
@@ -24,6 +25,10 @@ const handleEdit = (term: Terminology) => {
 
 const handleDelete = (term: Terminology) => {
   emit('delete', term);
+};
+
+const handleCreate = () => {
+  emit('create');
 };
 
 // Expose popover ref for parent component to toggle
@@ -45,8 +50,19 @@ defineExpose({
         <DataView :value="usedTerms" data-key="id" layout="list" class="term-popover-dataview">
           <template #header>
             <div class="p-3">
-              <h4 class="font-medium text-moon-100">本章使用的术语</h4>
-              <p class="text-xs text-moon/60 mt-1">共 {{ usedTermCount }} 个</p>
+              <div class="flex justify-between items-start gap-2">
+                <div>
+                  <h4 class="font-medium text-moon-100">本章使用的术语</h4>
+                  <p class="text-xs text-moon/60 mt-1">共 {{ usedTermCount }} 个</p>
+                </div>
+                <Button
+                  icon="pi pi-plus"
+                  label="新建"
+                  size="small"
+                  class="!text-xs !px-2 !py-1 !h-auto"
+                  @click="handleCreate"
+                />
+              </div>
             </div>
           </template>
           <template #list="slotProps">

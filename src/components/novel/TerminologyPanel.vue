@@ -11,7 +11,6 @@ import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
 import SettingCard from './SettingCard.vue';
 import type { Novel, Terminology } from 'src/models/novel';
-import ExtractedTermsDialog from './ExtractedTermsDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -58,7 +57,6 @@ const terminologies = computed(() => {
 
 const showAddDialog = ref(false);
 const showEditDialog = ref(false);
-const showExtractedTermsDialog = ref(false);
 const selectedTerminology = ref<Terminology | null>(null);
 
 const toast = useToastWithHistory();
@@ -279,15 +277,6 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
     return;
   }
   openDeleteConfirm(terminology);
-};
-
-// 打开提取术语对话框
-const handleExtractTerms = () => {
-  if (!props.book) {
-    console.warn('没有选择书籍');
-    return;
-  }
-  showExtractedTermsDialog.value = true;
 };
 
 // 切换批量操作模式
@@ -671,13 +660,6 @@ const handleFileSelect = async (event: Event) => {
             @click="handleImport"
           />
           <Button
-            label="提取术语"
-            icon="pi pi-search"
-            class="p-button-outlined flex-shrink-0"
-            :disabled="bulkActionMode"
-            @click="handleExtractTerms"
-          />
-          <Button
             label="添加术语"
             icon="pi pi-plus"
             class="p-button-primary flex-shrink-0"
@@ -759,13 +741,6 @@ const handleFileSelect = async (event: Event) => {
       :term="selectedTerminology"
       :loading="isSaving"
       @save="handleSave"
-    />
-
-    <!-- 提取的术语对话框 -->
-    <ExtractedTermsDialog
-      v-model:visible="showExtractedTermsDialog"
-      :book="props.book"
-      @saved="() => {}"
     />
 
     <!-- 确认删除对话框 -->

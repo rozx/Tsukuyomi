@@ -21,6 +21,7 @@ const props = defineProps<{
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
   isPolishing?: boolean;
+  isProofreading?: boolean;
   searchQuery?: string;
   characterScores?: Map<string, number>;
   bookId?: string;
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   'update-translation': [paragraphId: string, newTranslation: string];
   retranslate: [paragraphId: string];
   polish: [paragraphId: string];
+  proofread: [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
   'paragraph-click': [paragraphId: string];
   'paragraph-edit-start': [paragraphId: string];
@@ -139,8 +141,12 @@ const paragraphCardRef = ref<HTMLElement | null>(null);
 const paragraphTextRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
+const hoveredCharacters = ref<CharacterSetting[]>([]); // 多个匹配的角色
 const termRefsMap = new Map<string, HTMLElement>();
 const characterRefsMap = new Map<string, HTMLElement>();
+// 用于延迟关闭 Popover 的定时器
+let termPopoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let characterPopoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const recentTranslationButtonRef = ref<HTMLElement | null>(null);
 
 /**
@@ -152,6 +158,7 @@ const highlightedText = computed(
     content: string;
     term?: Terminology;
     character?: CharacterSetting;
+    characters?: CharacterSetting[];
   }> => {
     if (!hasContent.value) {
       return [{ type: 'text', content: props.paragraph.text }];
@@ -168,6 +175,11 @@ const highlightedText = computed(
 
 // 处理术语悬停
 const handleTermMouseEnter = (event: Event, term: Terminology) => {
+  // 清除关闭定时器
+  if (termPopoverCloseTimer) {
+    clearTimeout(termPopoverCloseTimer);
+    termPopoverCloseTimer = null;
+  }
   hoveredTerm.value = term;
   const target = event.currentTarget as HTMLElement;
   if (target && termPopoverRef.value) {
@@ -176,38 +188,82 @@ const handleTermMouseEnter = (event: Event, term: Terminology) => {
   }
 };
 
-// 处理术语鼠标离开
+// 处理术语鼠标离开（添加延迟，允许移动到 Popover）
 const handleTermMouseLeave = () => {
-  if (termPopoverRef.value) {
-    termPopoverRef.value.hide();
+  // 设置延迟关闭，给用户时间移动到 Popover
+  termPopoverCloseTimer = setTimeout(() => {
+    if (termPopoverRef.value) {
+      termPopoverRef.value.hide();
+    }
+    termPopoverCloseTimer = null;
+  }, 100); // 100ms 延迟
+};
+
+// Popover 鼠标进入时取消关闭
+const handleTermPopoverMouseEnter = () => {
+  if (termPopoverCloseTimer) {
+    clearTimeout(termPopoverCloseTimer);
+    termPopoverCloseTimer = null;
   }
 };
 
+
 // 当术语 Popover 关闭时清理状态
 const handleTermPopoverHide = () => {
+  if (termPopoverCloseTimer) {
+    clearTimeout(termPopoverCloseTimer);
+    termPopoverCloseTimer = null;
+  }
   hoveredTerm.value = null;
 };
 
-// 处理角色悬停
-const handleCharacterMouseEnter = (event: Event, character: CharacterSetting) => {
-  hoveredCharacter.value = character;
+// 处理角色悬停（支持多个匹配的角色）
+// allCharacters 数组已经按出现次数排序（出现次数多的在前）
+const handleCharacterMouseEnter = (event: Event, character: CharacterSetting, allCharacters?: CharacterSetting[]) => {
+  // 清除关闭定时器
+  if (characterPopoverCloseTimer) {
+    clearTimeout(characterPopoverCloseTimer);
+    characterPopoverCloseTimer = null;
+  }
+  hoveredCharacter.value = character; // 用于向后兼容，显示第一个角色（出现次数最多的）
+  // 保持排序后的顺序，确保在 Popover 中显示时也按出现次数排序
+  hoveredCharacters.value = allCharacters && allCharacters.length > 0 ? allCharacters : [character];
   const target = event.currentTarget as HTMLElement;
   if (target && characterPopoverRef.value) {
+    // 为所有角色设置 ref（使用第一个角色的 ID 作为 key）
     characterRefsMap.set(character.id, target);
     characterPopoverRef.value.toggle(event);
   }
 };
 
-// 处理角色鼠标离开
+// 处理角色鼠标离开（添加延迟，允许移动到 Popover）
 const handleCharacterMouseLeave = () => {
-  if (characterPopoverRef.value) {
-    characterPopoverRef.value.hide();
+  // 设置延迟关闭，给用户时间移动到 Popover
+  characterPopoverCloseTimer = setTimeout(() => {
+    if (characterPopoverRef.value) {
+      characterPopoverRef.value.hide();
+    }
+    characterPopoverCloseTimer = null;
+  }, 100); // 100ms 延迟
+};
+
+// Popover 鼠标进入时取消关闭
+const handleCharacterPopoverMouseEnter = () => {
+  if (characterPopoverCloseTimer) {
+    clearTimeout(characterPopoverCloseTimer);
+    characterPopoverCloseTimer = null;
   }
 };
 
+
 // 当角色 Popover 关闭时清理状态
 const handleCharacterPopoverHide = () => {
+  if (characterPopoverCloseTimer) {
+    clearTimeout(characterPopoverCloseTimer);
+    characterPopoverCloseTimer = null;
+  }
   hoveredCharacter.value = null;
+  hoveredCharacters.value = [];
 };
 
 // 处理段落悬停（仅用于上下文设置）
@@ -573,9 +629,11 @@ const handleRecentTranslationPopoverHide = () => {
   // 不需要特殊处理
 };
 
-// 处理按钮点击（占位函数，暂不实现逻辑）
+// 处理校对段落
 const handleProofread = () => {
-  // TODO: 实现校对段落逻辑
+  closeContextMenu();
+  // 触发校对事件
+  emit('proofread', props.paragraph.id);
 };
 
 // 关闭上下文菜单的辅助函数
@@ -815,7 +873,7 @@ defineExpose({
               }
             "
             class="character-highlight"
-            @mouseenter="handleCharacterMouseEnter($event, node.character!)"
+            @mouseenter="handleCharacterMouseEnter($event, node.character!, node.characters)"
             @mouseleave="handleCharacterMouseLeave"
           >
             {{ node.content }}
@@ -823,11 +881,11 @@ defineExpose({
         </template>
       </p>
       <div
-        v-if="hasTranslation || props.isTranslating || props.isPolishing"
+        v-if="hasTranslation || props.isTranslating || props.isPolishing || props.isProofreading"
         class="paragraph-translation-wrapper"
       >
         <!-- 正在翻译或润色时显示 skeleton（覆盖现有翻译） -->
-        <div v-if="props.isTranslating || props.isPolishing" class="paragraph-translation-skeleton">
+        <div v-if="props.isTranslating || props.isPolishing || props.isProofreading" class="paragraph-translation-skeleton">
           <Skeleton width="100%" height="1.5rem" />
           <Skeleton width="85%" height="1.5rem" />
           <Skeleton width="70%" height="1.5rem" />
@@ -897,7 +955,12 @@ defineExpose({
       class="term-popover"
       @hide="handleTermPopoverHide"
     >
-      <div v-if="hoveredTerm" class="term-popover-content">
+      <div
+        v-if="hoveredTerm"
+        class="term-popover-content"
+        @mouseenter="handleTermPopoverMouseEnter"
+        @mouseleave="() => termPopoverRef?.hide()"
+      >
         <div class="popover-header">
           <span class="popover-term-name">{{ hoveredTerm.name }}</span>
           <span class="popover-translation">{{ hoveredTerm.translation.translation }}</span>
@@ -913,38 +976,48 @@ defineExpose({
       ref="characterPopoverRef"
       :dismissable="true"
       :show-close-icon="false"
-      style="width: 20rem; max-width: 90vw"
+      :style="{ width: hoveredCharacters.length > 1 ? '24rem' : '20rem', maxWidth: '90vw' }"
       class="character-popover"
       @hide="handleCharacterPopoverHide"
     >
-      <div v-if="hoveredCharacter" class="character-popover-content">
-        <div class="popover-header">
-          <div class="popover-character-name-row">
-            <span class="popover-character-name">{{ hoveredCharacter.name }}</span>
-            <span v-if="hoveredCharacter.sex" class="popover-character-sex">
-              {{
-                hoveredCharacter.sex === 'male'
-                  ? '男'
-                  : hoveredCharacter.sex === 'female'
-                    ? '女'
-                    : '其他'
-              }}
-            </span>
+      <div
+        v-if="hoveredCharacter && hoveredCharacters.length > 0"
+        class="character-popover-content"
+        @mouseenter="handleCharacterPopoverMouseEnter"
+        @mouseleave="() => characterPopoverRef?.hide()"
+      >
+        <!-- 如果有多个匹配的角色，显示提示 -->
+        <!-- 角色列表已按出现次数排序（出现次数多的在前） -->
+        <div v-if="hoveredCharacters.length > 1" class="popover-multiple-characters-hint">
+          <span class="hint-text"
+            >该文本可能匹配 {{ hoveredCharacters.length }} 个角色（按出现次数排序）：</span
+          >
+        </div>
+
+        <!-- 显示所有匹配的角色（已按出现次数排序） -->
+        <template v-for="(char, index) in hoveredCharacters" :key="char.id">
+          <div v-if="index > 0" class="popover-character-divider" />
+          <div class="popover-character-item">
+            <div class="popover-header">
+              <div class="popover-character-name-row">
+                <span class="popover-character-name">{{ char.name }}</span>
+                <span v-if="char.sex" class="popover-character-sex">
+                  {{ char.sex === 'male' ? '男' : char.sex === 'female' ? '女' : '其他' }}
+                </span>
+              </div>
+              <span class="popover-translation">{{ char.translation.translation }}</span>
+            </div>
+            <div v-if="char.description" class="popover-description">
+              {{ char.description }}
+            </div>
+            <div v-if="char.aliases && char.aliases.length > 0" class="popover-aliases">
+              <span class="popover-aliases-label">别名：</span>
+              <span class="popover-aliases-list">
+                {{ char.aliases.map((a) => a.name).join('、') }}
+              </span>
+            </div>
           </div>
-          <span class="popover-translation">{{ hoveredCharacter.translation.translation }}</span>
-        </div>
-        <div v-if="hoveredCharacter.description" class="popover-description">
-          {{ hoveredCharacter.description }}
-        </div>
-        <div
-          v-if="hoveredCharacter.aliases && hoveredCharacter.aliases.length > 0"
-          class="popover-aliases"
-        >
-          <span class="popover-aliases-label">别名：</span>
-          <span class="popover-aliases-list">
-            {{ hoveredCharacter.aliases.map((a) => a.name).join('、') }}
-          </span>
-        </div>
+        </template>
       </div>
     </Popover>
 
@@ -1334,6 +1407,37 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  max-height: 23rem; /* 固定最大高度 */
+  overflow-y: auto; /* 启用垂直滚动 */
+  overflow-x: hidden; /* 隐藏水平滚动 */
+  min-height: 0; /* 允许内容收缩 */
+  /* Firefox 滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.05);
+}
+
+/* WebKit 浏览器滚动条样式 */
+.term-popover-content::-webkit-scrollbar,
+.character-popover-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.term-popover-content::-webkit-scrollbar-track,
+.character-popover-content::-webkit-scrollbar-track {
+  background: var(--white-opacity-5);
+  border-radius: 4px;
+}
+
+.term-popover-content::-webkit-scrollbar-thumb,
+.character-popover-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  border: 1px solid var(--white-opacity-10);
+}
+
+.term-popover-content::-webkit-scrollbar-thumb:hover,
+.character-popover-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .popover-header {
@@ -1396,6 +1500,34 @@ defineExpose({
 
 .popover-aliases-list {
   color: var(--moon-opacity-90);
+}
+
+/* 多角色匹配提示 */
+.popover-multiple-characters-hint {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--white-opacity-20);
+}
+
+.popover-multiple-characters-hint .hint-text {
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-80);
+  font-style: italic;
+  font-weight: 500;
+}
+
+/* 角色分隔线 */
+.popover-character-divider {
+  height: 1px;
+  background: var(--white-opacity-20);
+  margin: 0.75rem 0;
+}
+
+/* 角色项容器 */
+.popover-character-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 /* 搜索高亮 */
