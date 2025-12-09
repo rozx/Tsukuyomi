@@ -18,6 +18,9 @@ import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
+import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
+import type { ConflictResolution } from 'src/services/conflict-detection-service';
+import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
 // 格式化文件大小
@@ -191,6 +194,15 @@ const loadingRevisions = ref(false);
 const revertingVersion = ref<string | null>(null);
 const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
+
+// 冲突相关 - 使用 composable
+const {
+  showConflictDialog,
+  detectedConflicts,
+  uploadWithConflictCheck,
+  handleConflictResolveAndUpload,
+  handleConflictCancel,
+} = useGistUploadWithConflictCheck();
 
 // 加载修订历史
 const loadRevisions = async () => {
@@ -679,39 +691,28 @@ const uploadToGist = async () => {
     return;
   }
 
-  gistSyncing.value = true;
-  try {
-    const baseConfig = settingsStore.gistSync;
-    const config: SyncConfig = {
-      ...baseConfig,
-      enabled: true,
-      syncParams: {
-        ...baseConfig.syncParams,
-        username: gistUsername.value,
-        ...(gistId.value ? { gistId: gistId.value } : {}),
-      },
-      secret: gistToken.value,
-    };
+  const baseConfig = settingsStore.gistSync;
+  const config: SyncConfig = {
+    ...baseConfig,
+    enabled: true,
+    syncParams: {
+      ...baseConfig.syncParams,
+      username: gistUsername.value,
+      ...(gistId.value ? { gistId: gistId.value } : {}),
+    },
+    secret: gistToken.value,
+  };
 
-    const result = await gistSyncService.uploadToGist(config, {
-      aiModels: aiModelsStore.models,
-      appSettings: settingsStore.getAllSettings(),
-      novels: booksStore.books,
-      coverHistory: coverHistoryStore.covers,
-    });
-
-    if (result.success) {
+  // 使用 composable 处理冲突检查和上传
+  const hasConflicts = await uploadWithConflictCheck(
+    config,
+    (value) => {
+      gistSyncing.value = value;
+    },
+    (result) => {
       // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
       if (result.gistId) {
         gistId.value = result.gistId;
-        const gistIdValue = result.gistId;
-        void co(function* () {
-          try {
-            yield settingsStore.setGistId(gistIdValue);
-          } catch (error) {
-            console.error('[SyncSettingsTab] 设置 Gist ID 失败:', error);
-          }
-        });
         // 如果重新创建了 Gist，显示提示信息
         if (result.isRecreated) {
           toast.add({
@@ -722,13 +723,6 @@ const uploadToGist = async () => {
           });
         }
       }
-      void co(function* () {
-        try {
-          yield settingsStore.updateLastSyncTime();
-        } catch (error) {
-          console.error('[SyncSettingsTab] 更新最后同步时间失败:', error);
-        }
-      });
       gistLastSyncTime.value = Date.now();
       saveGistConfig();
       // 重置自动同步定时器
@@ -739,23 +733,12 @@ const uploadToGist = async () => {
         detail: result.message || '数据已成功同步到 Gist',
         life: 3000,
       });
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: '同步失败',
-        detail: result.error || '同步到 Gist 时发生未知错误',
-        life: 5000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '同步失败',
-      detail: error instanceof Error ? error.message : '同步时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    gistSyncing.value = false;
+    },
+  );
+
+  // 如果有冲突，composable 已经显示了对话框，这里不需要做任何事
+  if (hasConflicts) {
+    return;
   }
 };
 
@@ -930,6 +913,39 @@ const deleteGist = () => {
       });
     },
   });
+};
+
+// 处理冲突解决
+const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
+  const baseConfig = settingsStore.gistSync;
+  const config: SyncConfig = {
+    ...baseConfig,
+    enabled: true,
+    syncParams: {
+      ...baseConfig.syncParams,
+      username: gistUsername.value,
+      ...(gistId.value ? { gistId: gistId.value } : {}),
+    },
+    secret: gistToken.value,
+  };
+
+  await handleConflictResolveAndUpload(
+    config,
+    resolutions,
+    (value) => {
+      gistSyncing.value = value;
+    },
+    (result) => {
+      // 更新 Gist ID
+      if (result.gistId) {
+        gistId.value = result.gistId;
+      }
+      gistLastSyncTime.value = Date.now();
+      saveGistConfig();
+      // 重置自动同步定时器
+      setupAutoSync();
+    },
+  );
 };
 </script>
 
@@ -1206,6 +1222,14 @@ const deleteGist = () => {
 
     <!-- 确认对话框 -->
     <ConfirmDialog group="sync" />
+
+    <!-- 冲突解决对话框 -->
+    <ConflictResolutionDialog
+      :visible="showConflictDialog"
+      :conflicts="detectedConflicts"
+      @resolve="handleConflictResolve"
+      @cancel="handleConflictCancel"
+    />
   </div>
 </template>
 
