@@ -1369,6 +1369,9 @@ const sendMessage = async () => {
         appendThinkingMessage: async (id, text) => {
           await aiProcessingStore.appendThinkingMessage(id, text);
         },
+        appendOutputContent: async (id, text) => {
+          await aiProcessingStore.appendOutputContent(id, text);
+        },
         removeTask: async (id) => {
           await aiProcessingStore.removeTask(id);
         },
@@ -1658,6 +1661,9 @@ const sendMessage = async () => {
             },
             appendThinkingMessage: async (id, text) => {
               await aiProcessingStore.appendThinkingMessage(id, text);
+            },
+            appendOutputContent: async (id, text) => {
+              await aiProcessingStore.appendOutputContent(id, text);
             },
             removeTask: async (id) => {
               await aiProcessingStore.removeTask(id);

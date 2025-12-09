@@ -38,6 +38,7 @@ export interface ExplainServiceOptions {
     addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
     updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
     appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    appendOutputContent: (id: string, text: string) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };

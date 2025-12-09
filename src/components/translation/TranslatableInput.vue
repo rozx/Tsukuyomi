@@ -117,6 +117,7 @@ const handleTranslate = async () => {
         addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
         updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
         appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
+        appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
         removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
         activeTasks: aiProcessingStore.activeTasks,
       },

@@ -45,6 +45,7 @@ export interface AssistantServiceOptions {
     addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
     updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
     appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    appendOutputContent: (id: string, text: string) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[]; // 用于获取任务的 abortController
   };
@@ -759,6 +760,11 @@ ${messages
         // 保存思考内容到思考过程面板
         if (aiProcessingStore && taskId && chunk.reasoningContent) {
           await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+        }
+
+        // 追加输出内容到任务
+        if (aiProcessingStore && taskId && chunk.text) {
+          await aiProcessingStore.appendOutputContent(taskId, chunk.text);
         }
 
         // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）

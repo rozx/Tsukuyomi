@@ -34,6 +34,7 @@ export interface TermTranslationServiceOptions {
     addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
     updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
     appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    appendOutputContent: (id: string, text: string) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
@@ -167,9 +168,14 @@ export class TermTranslationService {
             firstChunkReceived = true;
           }
 
-          // 保存思考内容到思考过程（不保存实际内容）
+          // 保存思考内容到思考过程
           if (chunk.reasoningContent) {
             void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+          }
+
+          // 追加输出内容到任务
+          if (chunk.text) {
+            void aiProcessingStore.appendOutputContent(taskId, chunk.text);
           }
 
           if (chunk.done) {
