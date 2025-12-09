@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
@@ -10,6 +10,7 @@ import { TASK_TYPE_LABELS } from 'src/constants/ai';
 const props = defineProps<{
   isTranslating?: boolean;
   isPolishing?: boolean;
+  isProofreading?: boolean;
   progress: {
     current: number;
     total: number;
@@ -37,15 +38,17 @@ const taskStatusLabels: Record<string, string> = {
 // Recent AI Tasks - only show translation-related tasks
 const recentAITasks = computed(() => {
   const allTasks = aiProcessingStore.activeTasks;
-  // Filter to only show translation and polish tasks
+  // Filter to only show translation, polish, and proofreading tasks
   const translationTasks = allTasks.filter(
-    (task) => task.type === 'translation' || task.type === 'polish',
+    (task) =>
+      task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
   );
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
 
 // Auto Scroll State
 const autoScrollEnabled = ref<Record<string, boolean>>({});
+const autoScrollOutputEnabled = ref<Record<string, boolean>>({});
 
 // Task Fold State
 const taskFolded = ref<Record<string, boolean>>({});
@@ -55,6 +58,7 @@ const toggleTaskFold = (taskId: string) => {
 };
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
+const outputContainers = ref<Record<string, HTMLElement | null>>({});
 
 const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
   if (el) {
@@ -64,15 +68,42 @@ const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
   }
 };
 
+const setOutputContainer = (taskId: string, el: HTMLElement | null) => {
+  if (el) {
+    outputContainers.value[taskId] = el;
+  } else {
+    delete outputContainers.value[taskId];
+  }
+};
+
+const scrollToBottom = (container: HTMLElement) => {
+  // 使用 requestAnimationFrame 确保在浏览器绘制后滚动
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
+};
+
 const toggleAutoScroll = (taskId: string) => {
   autoScrollEnabled.value[taskId] = !autoScrollEnabled.value[taskId];
   if (autoScrollEnabled.value[taskId]) {
-    setTimeout(() => {
+    nextTick(() => {
       const container = thinkingContainers.value[taskId];
       if (container) {
-        container.scrollTop = container.scrollHeight;
+        scrollToBottom(container);
       }
-    }, 0);
+    });
+  }
+};
+
+const toggleAutoScrollOutput = (taskId: string) => {
+  autoScrollOutputEnabled.value[taskId] = !autoScrollOutputEnabled.value[taskId];
+  if (autoScrollOutputEnabled.value[taskId]) {
+    nextTick(() => {
+      const container = outputContainers.value[taskId];
+      if (container) {
+        scrollToBottom(container);
+      }
+    });
   }
 };
 
@@ -81,7 +112,9 @@ const clearCompletedTasks = async () => {
     // Only clear translation-related completed tasks
     const translationTasks = aiProcessingStore.activeTasks.filter(
       (task) =>
-        (task.type === 'translation' || task.type === 'polish') &&
+        (task.type === 'translation' ||
+          task.type === 'polish' ||
+          task.type === 'proofreading') &&
         (task.status === 'completed' ||
           task.status === 'error' ||
           task.status === 'cancelled'),
@@ -120,7 +153,104 @@ const formatTaskDuration = (startTime: number, endTime?: number): string => {
   return `${minutes}分${seconds}秒`;
 };
 
-// Auto scroll watcher
+// 格式化思考消息，识别特殊标记
+interface FormattedMessagePart {
+  type: 'chunk-separator' | 'tool-call' | 'tool-result' | 'content';
+  text: string;
+  toolName?: string;
+  chunkInfo?: string;
+}
+
+const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
+  if (!message) return [];
+  
+  const parts: FormattedMessagePart[] = [];
+  let currentIndex = 0;
+  
+  // 匹配块分隔符：[=== 翻译块 X/Y ===] 或 [=== 润色块 X/Y ===] 或 [=== 校对块 X/Y ===]
+  const chunkSeparatorPattern = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
+  // 匹配工具调用：[调用工具: 工具名]
+  const toolCallPattern = /\[调用工具: ([^\]]+)\]/g;
+  // 匹配工具结果：[工具结果: ...]
+  const toolResultPattern = /\[工具结果: ([^\]]+)\]/g;
+  
+  // 收集所有匹配项及其位置
+  const matches: Array<{
+    index: number;
+    type: 'chunk-separator' | 'tool-call' | 'tool-result';
+    match: RegExpMatchArray;
+  }> = [];
+  
+  let match;
+  while ((match = chunkSeparatorPattern.exec(message)) !== null) {
+    matches.push({ index: match.index, type: 'chunk-separator', match });
+  }
+  chunkSeparatorPattern.lastIndex = 0;
+  
+  while ((match = toolCallPattern.exec(message)) !== null) {
+    matches.push({ index: match.index, type: 'tool-call', match });
+  }
+  toolCallPattern.lastIndex = 0;
+  
+  while ((match = toolResultPattern.exec(message)) !== null) {
+    matches.push({ index: match.index, type: 'tool-result', match });
+  }
+  toolResultPattern.lastIndex = 0;
+  
+  // 按位置排序
+  matches.sort((a, b) => a.index - b.index);
+  
+  // 处理每个匹配项
+  for (const { index, type, match } of matches) {
+    // 添加匹配前的普通内容
+    if (index > currentIndex) {
+      const text = message.slice(currentIndex, index).trim();
+      if (text) {
+        parts.push({ type: 'content', text });
+      }
+    }
+    
+    // 添加特殊标记
+    if (type === 'chunk-separator') {
+      parts.push({
+        type: 'chunk-separator',
+        text: match[0],
+        chunkInfo: `${match[1]}块 ${match[2]}`,
+      });
+    } else if (type === 'tool-call') {
+      parts.push({
+        type: 'tool-call',
+        text: match[0],
+        toolName: match[1],
+      });
+    } else if (type === 'tool-result') {
+      parts.push({
+        type: 'tool-result',
+        text: match[0],
+        toolName: match[1],
+      });
+    }
+    
+    currentIndex = index + match[0].length;
+  }
+  
+  // 添加剩余内容
+  if (currentIndex < message.length) {
+    const text = message.slice(currentIndex).trim();
+    if (text) {
+      parts.push({ type: 'content', text });
+    }
+  }
+  
+  // 如果没有匹配项，返回整个消息作为普通内容
+  if (parts.length === 0 && message.trim()) {
+    parts.push({ type: 'content', text: message });
+  }
+  
+  return parts;
+};
+
+// Auto scroll watcher for thinking message
 watch(
   () =>
     recentAITasks.value.map((task) => ({
@@ -129,16 +259,45 @@ watch(
       length: task.thinkingMessage?.length || 0,
     })),
   () => {
-    setTimeout(() => {
-      for (const task of recentAITasks.value) {
-        if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
-          const container = thinkingContainers.value[task.id];
-          if (container) {
-            container.scrollTop = container.scrollHeight;
+    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        for (const task of recentAITasks.value) {
+          if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
+            const container = thinkingContainers.value[task.id];
+            if (container) {
+              container.scrollTop = container.scrollHeight;
+            }
           }
         }
-      }
-    }, 0);
+      });
+    });
+  },
+  { deep: true, flush: 'post' },
+);
+
+// Auto scroll watcher for output content
+watch(
+  () =>
+    recentAITasks.value.map((task) => ({
+      id: task.id,
+      message: task.outputContent,
+      length: task.outputContent?.length || 0,
+    })),
+  () => {
+    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        for (const task of recentAITasks.value) {
+          if (autoScrollOutputEnabled.value[task.id] && task.outputContent) {
+            const container = outputContainers.value[task.id];
+            if (container) {
+              container.scrollTop = container.scrollHeight;
+            }
+          }
+        }
+      });
+    });
   },
   { deep: true, flush: 'post' },
 );
@@ -186,18 +345,26 @@ watch(
 </script>
 
 <template>
-  <div v-if="isTranslating || isPolishing" class="translation-progress-toolbar">
+  <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-toolbar">
     <div class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
           <i
             :class="[
               'translation-progress-icon',
-              isPolishing ? 'pi pi-sparkles' : 'pi pi-language',
+              isProofreading
+                ? 'pi pi-check-circle'
+                : isPolishing
+                  ? 'pi pi-sparkles'
+                  : 'pi pi-language',
             ]"
           ></i>
           <span class="translation-progress-title">{{
-            isPolishing ? '正在润色章节' : '正在翻译章节'
+            isProofreading
+              ? '正在校对章节'
+              : isPolishing
+                ? '正在润色章节'
+                : '正在翻译章节'
           }}</span>
         </div>
         <div class="translation-progress-message">
@@ -339,7 +506,57 @@ watch(
                     :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
                     class="ai-task-thinking-text"
                   >
-                    {{ task.thinkingMessage }}
+                    <template
+                      v-for="(part, index) in formatThinkingMessage(task.thinkingMessage || '')"
+                      :key="index"
+                    >
+                      <div
+                        v-if="part.type === 'chunk-separator'"
+                        class="thinking-chunk-separator"
+                      >
+                        <i class="pi pi-minus"></i>
+                        <span>{{ part.chunkInfo }}</span>
+                        <i class="pi pi-minus"></i>
+                      </div>
+                      <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
+                        <i class="pi pi-cog"></i>
+                        <span class="thinking-tool-label">调用工具：</span>
+                        <span class="thinking-tool-name">{{ part.toolName }}</span>
+                      </div>
+                      <div v-else-if="part.type === 'tool-result'" class="thinking-tool-result">
+                        <i class="pi pi-check-circle"></i>
+                        <span class="thinking-tool-label">工具结果：</span>
+                        <span class="thinking-tool-content">{{ part.toolName }}</span>
+                      </div>
+                      <div v-else class="thinking-content">{{ part.text }}</div>
+                    </template>
+                  </div>
+                </div>
+                <div
+                  v-if="task.outputContent && task.outputContent.trim()"
+                  class="ai-task-output"
+                >
+                  <div class="ai-task-output-header">
+                    <span class="ai-task-output-label">输出内容：</span>
+                    <Button
+                      :icon="autoScrollOutputEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
+                      :class="[
+                        'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                        { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
+                      ]"
+                      :title="
+                        autoScrollOutputEnabled[task.id]
+                          ? '禁用自动滚动'
+                          : '启用自动滚动（新内容出现时自动滚动到底部）'
+                      "
+                      @click="toggleAutoScrollOutput(task.id)"
+                    />
+                  </div>
+                  <div
+                    :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
+                    class="ai-task-output-text"
+                  >
+                    {{ task.outputContent }}
                   </div>
                 </div>
               </div>
@@ -670,6 +887,126 @@ watch(
   overflow-y: auto;
   display: block;
   scroll-behavior: smooth;
+}
+
+.thinking-chunk-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0.5rem;
+  background: var(--primary-opacity-10);
+  border: 1px solid var(--primary-opacity-30);
+  border-radius: 4px;
+  color: var(--primary-opacity-90);
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+.thinking-chunk-separator i {
+  color: var(--primary-opacity-60);
+  font-size: 0.75rem;
+}
+
+.thinking-tool-call {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: var(--blue-500-opacity-10);
+  border-left: 3px solid var(--blue-500);
+  border-radius: 2px;
+  color: var(--blue-500);
+  font-size: 0.8125rem;
+}
+
+.thinking-tool-call i {
+  color: var(--blue-500);
+  font-size: 0.875rem;
+}
+
+.thinking-tool-label {
+  font-weight: 500;
+  color: var(--blue-500-opacity-80);
+}
+
+.thinking-tool-name {
+  color: var(--blue-500);
+  font-weight: 600;
+}
+
+.thinking-tool-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: var(--green-500-opacity-10);
+  border-left: 3px solid var(--green-500);
+  border-radius: 2px;
+  color: var(--green-500);
+  font-size: 0.8125rem;
+}
+
+.thinking-tool-result i {
+  color: var(--green-500);
+  font-size: 0.875rem;
+}
+
+.thinking-tool-result .thinking-tool-label {
+  font-weight: 500;
+  color: var(--green-500-opacity-80);
+}
+
+.thinking-tool-content {
+  color: var(--green-500);
+  word-break: break-word;
+}
+
+.thinking-content {
+  color: var(--moon-opacity-70);
+  line-height: 1.6;
+  margin: 0.25rem 0;
+}
+
+.ai-task-output {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background: var(--green-500-opacity-5);
+  border: 1px solid var(--green-500-opacity-20);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.ai-task-output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.ai-task-output-label {
+  color: var(--green-500-opacity-80);
+  font-weight: 500;
+  margin-right: 0.5rem;
+}
+
+.ai-task-output-text {
+  color: var(--moon-opacity-80);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  display: block;
+  scroll-behavior: smooth;
+  background: var(--white-opacity-3);
+  padding: 0.5rem;
+  border-radius: 2px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
 }
 </style>
 

@@ -1774,6 +1774,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :selected-chapter-id="selectedChapterId"
             :translating-paragraph-ids="translatingParagraphIds"
             :polishing-paragraph-ids="polishingParagraphIds"
+            :proofreading-paragraph-ids="proofreadingParagraphIds"
             :search-query="searchQuery"
             :selected-paragraph-index="selectedParagraphIndex"
             :is-keyboard-selected="isKeyboardSelected"
@@ -1817,8 +1818,20 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :is-translating="isTranslatingChapter"
         :is-polishing="isPolishingChapter"
         :is-proofreading="isProofreadingChapter"
-        :progress="isPolishingChapter ? polishProgress : translationProgress"
-        @cancel="isPolishingChapter ? cancelPolish() : cancelTranslation()"
+        :progress="
+          isProofreadingChapter
+            ? proofreadingProgress
+            : isPolishingChapter
+              ? polishProgress
+              : translationProgress
+        "
+        @cancel="
+          isProofreadingChapter
+            ? cancelProofreading()
+            : isPolishingChapter
+              ? cancelPolish()
+              : cancelTranslation()
+        "
       />
     </div>
   </div>

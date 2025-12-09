@@ -23,6 +23,7 @@ const props = defineProps<{
   selectedChapterId: string | null;
   translatingParagraphIds: Set<string>;
   polishingParagraphIds: Set<string>;
+  proofreadingParagraphIds: Set<string>;
   searchQuery: string;
   selectedParagraphIndex: number | null;
   isKeyboardSelected: boolean;
@@ -38,6 +39,7 @@ const emit = defineEmits<{
   (e: 'update-translation', paragraphId: string, newTranslation: string): void;
   (e: 'retranslate-paragraph', paragraphId: string): void;
   (e: 'polish-paragraph', paragraphId: string): void;
+  (e: 'proofread-paragraph', paragraphId: string): void;
   (e: 'select-translation', paragraphId: string, translationId: string): void;
   (e: 'paragraph-click', paragraphId: string): void;
   (e: 'paragraph-edit-start', paragraphId: string): void;
@@ -235,6 +237,7 @@ const handleOriginalTextInput = (event: Event) => {
             }"
             :is-translating="translatingParagraphIds.has(paragraph.id)"
             :is-polishing="polishingParagraphIds.has(paragraph.id)"
+            :is-proofreading="proofreadingParagraphIds.has(paragraph.id)"
             :search-query="searchQuery"
             :id="`paragraph-${paragraph.id}`"
             :selected="selectedParagraphIndex === index && (isKeyboardSelected || isClickSelected)"
@@ -243,6 +246,7 @@ const handleOriginalTextInput = (event: Event) => {
             "
             @retranslate="(paragraphId: string) => emit('retranslate-paragraph', paragraphId)"
             @polish="(paragraphId: string) => emit('polish-paragraph', paragraphId)"
+            @proofread="(paragraphId: string) => emit('proofread-paragraph', paragraphId)"
             @select-translation="
               (paragraphId: string, translationId: string) => emit('select-translation', paragraphId, translationId)
             "

@@ -72,6 +72,7 @@ export interface TranslationServiceOptions {
     addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
     updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
     appendThinkingMessage: (id: string, text: string) => Promise<void>;
+    appendOutputContent: (id: string, text: string) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
@@ -90,7 +91,7 @@ export interface TranslationResult {
  * 使用 AI 服务进行文本翻译，支持术语 CRUD 工具
  */
 export class TranslationService {
-  static readonly CHUNK_SIZE = 1500;
+  static readonly CHUNK_SIZE = 2500;
 
   /**
    * 检查文本是否只包含符号（不是真正的文本内容）
@@ -225,7 +226,8 @@ export class TranslationService {
 
     try {
       const service = AIServiceFactory.getService(model.provider);
-      const tools = ToolRegistry.getAllTools(bookId);
+      // 排除翻译管理工具，只返回JSON
+      const tools = ToolRegistry.getToolsExcludingTranslationManagement(bookId);
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -397,6 +399,11 @@ export class TranslationService {
       ========================================
       【输出格式要求（必须严格遵守）】
       ========================================
+      **⚠️ 重要：只能返回JSON，禁止使用翻译管理工具**
+      - ❌ **禁止使用** \`add_translation\`、\`update_translation\`、\`remove_translation\`、\`select_translation\` 等翻译管理工具
+      - ✅ **必须直接返回** JSON 格式的翻译结果
+      - 系统会自动处理翻译的保存和管理，你只需要返回翻译内容
+
       **必须返回有效的 JSON 格式**:
       \`\`\`json
       {
@@ -415,6 +422,7 @@ export class TranslationService {
       - 段落数量必须**1:1 对应**（不能合并或拆分段落）
       - 必须是有效的 JSON（注意转义特殊字符）
       - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
+      - **不要使用任何翻译管理工具，只返回JSON**
 
       ========================================
       【执行工作流】
@@ -639,6 +647,11 @@ export class TranslationService {
             message: `正在翻译第 ${i + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
+          // 添加块分隔符
+          void aiProcessingStore.appendThinkingMessage(
+            taskId,
+            `\n\n[=== 翻译块 ${i + 1}/${chunks.length} ===]\n\n`,
+          );
         }
 
         if (onProgress) {
@@ -722,7 +735,7 @@ export class TranslationService {
             history.push({ role: 'user', content });
 
             let currentTurnCount = 0;
-            const MAX_TURNS = 5; // 防止工具调用死循环
+            const MAX_TURNS = 10; // 防止工具调用死循环
 
             // 工具调用循环
             while (currentTurnCount < MAX_TURNS) {
@@ -755,6 +768,11 @@ export class TranslationService {
 
                   // 累积文本用于检测重复字符
                   accumulatedText += c.text;
+
+                  // 追加输出内容到任务
+                  if (aiProcessingStore && taskId) {
+                    void aiProcessingStore.appendOutputContent(taskId, c.text);
+                  }
 
                   // 检测重复字符（AI降级检测），传入原文进行比较
                   if (
