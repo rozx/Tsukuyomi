@@ -2,7 +2,6 @@
 import './setup';
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { ChapterService } from '../services/chapter-service';
 import type { Novel, Volume, Chapter, Paragraph } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
@@ -33,7 +32,7 @@ function createTestParagraph(id?: string): Paragraph {
   };
 }
 
-// Mock ChapterContentService
+// Mock ChapterContentService BEFORE importing ChapterService
 const mockLoadChapterContent = mock((_chapterId: string) => Promise.resolve(undefined as Paragraph[] | undefined));
 const mockSaveChapterContent = mock((_chapterId: string, _content: Paragraph[]) => Promise.resolve());
 const mockDeleteChapterContent = mock((_chapterId: string) => Promise.resolve());
@@ -45,6 +44,9 @@ await mock.module('src/services/chapter-content-service', () => ({
     deleteChapterContent: mockDeleteChapterContent,
   },
 }));
+
+// Import ChapterService AFTER mocking
+import { ChapterService } from '../services/chapter-service';
 
 describe('ChapterService', () => {
   beforeEach(() => {

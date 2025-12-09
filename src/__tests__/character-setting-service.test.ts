@@ -2,13 +2,12 @@
 import './setup';
 
 import { describe, test, expect, mock, beforeEach } from 'bun:test';
-import { CharacterSettingService } from 'src/services/character-setting-service';
 import type { Novel } from 'src/models/novel';
 
 const mockUpdateBook = mock(() => Promise.resolve());
 const mockGetBookById = mock((_id: string) => null as Novel | null);
 
-// Mock useBooksStore
+// Mock useBooksStore BEFORE importing CharacterSettingService
 await mock.module('src/stores/books', () => {
   return {
     useBooksStore: () => ({
@@ -17,6 +16,9 @@ await mock.module('src/stores/books', () => {
     }),
   };
 });
+
+// Import CharacterSettingService AFTER mocking
+import { CharacterSettingService } from 'src/services/character-setting-service';
 
 // Mock FileReader for import tests
 class MockFileReader {

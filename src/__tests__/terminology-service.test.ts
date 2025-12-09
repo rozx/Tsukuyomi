@@ -23,6 +23,7 @@ declare const expect: (actual: unknown) => {
   };
 };
 
+// Import TerminologyService (no mocking needed for this service)
 import { TerminologyService } from 'src/services/terminology-service';
 
 // Mock FileReader for import tests

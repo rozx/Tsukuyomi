@@ -2,7 +2,6 @@
 import './setup';
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { aiModelService } from '../services/ai-model-service';
 import type { AIModel } from '../services/ai/types/ai-model';
 
 // Mock objects
@@ -28,10 +27,13 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module
+// Mock the module BEFORE importing aiModelService
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
+
+// Import aiModelService AFTER mocking
+import { aiModelService } from '../services/ai-model-service';
 
 describe('AIModelService', () => {
   beforeEach(() => {

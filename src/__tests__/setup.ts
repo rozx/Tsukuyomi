@@ -1,7 +1,7 @@
 /**
  * 测试环境设置
  * 为测试环境提供 IndexedDB 和 localStorage 的 polyfill
- * 
+ *
  * 注意：此文件必须在任何使用 IndexedDB 的模块导入之前被导入
  */
 
@@ -25,14 +25,14 @@ if (typeof globalThis.indexedDB === 'undefined') {
         removeEventListener: () => {},
         dispatchEvent: () => true,
       } as unknown as IDBOpenDBRequest;
-      
+
       // 立即失败，因为实际使用应该通过 mock.module 来模拟
       setTimeout(() => {
         if (request.onerror) {
           request.onerror(new Event('error') as any);
         }
       }, 0);
-      
+
       return request;
     },
     deleteDatabase: (_name: string) => {
@@ -49,13 +49,13 @@ if (typeof globalThis.indexedDB === 'undefined') {
         removeEventListener: () => {},
         dispatchEvent: () => true,
       } as unknown as IDBRequest;
-      
+
       setTimeout(() => {
         if (request.onsuccess) {
           request.onsuccess(new Event('success') as any);
         }
       }, 0);
-      
+
       return request;
     },
     cmp: () => 0,
@@ -85,4 +85,3 @@ if (typeof globalThis.localStorage === 'undefined') {
     },
   };
 }
-

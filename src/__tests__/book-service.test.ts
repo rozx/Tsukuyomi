@@ -2,7 +2,6 @@
 import './setup';
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { BookService } from '../services/book-service';
 import type { Novel } from '../models/novel';
 
 // Mock objects
@@ -28,10 +27,13 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module
+// Mock the module BEFORE importing BookService
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
+
+// Import BookService AFTER mocking
+import { BookService } from '../services/book-service';
 
 describe('BookService', () => {
   beforeEach(() => {

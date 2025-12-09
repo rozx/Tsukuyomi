@@ -2,7 +2,6 @@
 import './setup';
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { ChapterContentService } from '../services/chapter-content-service';
 import type { Paragraph, Novel, Volume, Chapter } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
@@ -36,10 +35,13 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module
+// Mock the module BEFORE importing ChapterContentService
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
+
+// Import ChapterContentService AFTER mocking
+import { ChapterContentService } from '../services/chapter-content-service';
 
 // 辅助函数：创建测试用段落
 function createTestParagraph(id?: string): Paragraph {
