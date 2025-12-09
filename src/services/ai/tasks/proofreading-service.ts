@@ -14,6 +14,10 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
+import {
+  buildOriginalTranslationsMap,
+  filterChangedParagraphs,
+} from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -277,10 +281,11 @@ export class ProofreadingService {
       **格式要求清单**:
       - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
       - 段落 ID 必须与原文**完全一致**
-      - 段落数量必须**1:1 对应**（不能合并或拆分段落）
+      - **⚠️ 重要：只返回有变化的段落**
+        - 如果段落没有错误或变化，**不要**将其包含在 \`paragraphs\` 数组中
+        - 只返回经过修正或改进的段落
+        - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
       - 必须是有效的 JSON（注意转义特殊字符）
-      - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应校对结果
-      - 如果段落没有错误，保持原样返回；如果有错误，返回修正后的版本
       - **不要使用任何翻译管理工具，只返回JSON**
 
       ========================================
@@ -304,13 +309,15 @@ export class ProofreadingService {
          - 确保与全文保持一致
 
       4. **验证阶段**:
-         - 确保所有段落都有校对结果
-         - 确保段落 ID 完全对应
+         - 检查每个段落是否有需要修正的错误
+         - 确保段落 ID 完全对应（仅针对有变化的段落）
          - 确保 JSON 格式有效
+         - **只将有变化的段落包含在输出中**
 
       5. **输出阶段**:
          - 返回符合格式要求的 JSON
-         - 确保所有输入段落都在 \`paragraphs\` 数组中`;
+         - **只包含有变化的段落**在 \`paragraphs\` 数组中
+         - 如果所有段落都没有变化，返回空的 \`paragraphs\` 数组：\`{"paragraphs": []}\``;
 
       history.push({ role: 'system', content: systemPrompt });
 
@@ -331,8 +338,9 @@ export class ProofreadingService {
         - **一致性**：使用工具查找其他段落中的用法，确保全文一致
         - **最小改动**：只修正确实存在的错误，保持原意和风格
         - **参考原文**：校对时参考原文段落，确保翻译准确无误
+        - **⚠️ 重要**：只返回有变化的段落。如果段落没有错误或变化，不要包含在返回结果中
 
-        请按 JSON 格式返回。`;
+        请按 JSON 格式返回，只包含有变化的段落。`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -466,6 +474,9 @@ export class ProofreadingService {
 
       let proofreadText = '';
       const paragraphProofreadings: { id: string; translation: string }[] = [];
+
+      // 存储每个段落的原始翻译，用于比较是否有变化
+      const originalTranslations = buildOriginalTranslationsMap(paragraphsWithTranslation);
 
       // 3. 循环处理每个块
       for (let i = 0; i < chunks.length; i++) {
@@ -755,16 +766,18 @@ export class ProofreadingService {
             } else {
               // 部分段落有ID，按顺序处理
               const orderedProofreadings: string[] = [];
-              const chunkParagraphProofreadings: { id: string; translation: string }[] = [];
+              let chunkParagraphProofreadings: { id: string; translation: string }[] = [];
               if (chunk.paragraphIds) {
-                for (const paraId of chunk.paragraphIds) {
-                  const proofreading = extractedProofreadings.get(paraId);
-                  if (proofreading) {
-                    orderedProofreadings.push(proofreading);
-                    const paraProofreading = { id: paraId, translation: proofreading };
-                    paragraphProofreadings.push(paraProofreading);
-                    chunkParagraphProofreadings.push(paraProofreading);
-                  }
+                // 过滤出有变化的段落
+                chunkParagraphProofreadings = filterChangedParagraphs(
+                  chunk.paragraphIds,
+                  extractedProofreadings,
+                  originalTranslations,
+                );
+                // 按顺序构建文本
+                for (const paraProofreading of chunkParagraphProofreadings) {
+                  orderedProofreadings.push(paraProofreading.translation);
+                  paragraphProofreadings.push(paraProofreading);
                 }
               }
               const orderedText = orderedProofreadings.join('\n\n');
@@ -781,15 +794,16 @@ export class ProofreadingService {
             // 所有段落都有校对结果，按顺序组织
             if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
               const orderedProofreadings: string[] = [];
-              const chunkParagraphProofreadings: { id: string; translation: string }[] = [];
-              for (const paraId of chunk.paragraphIds) {
-                const proofreading = extractedProofreadings.get(paraId);
-                if (proofreading) {
-                  orderedProofreadings.push(proofreading);
-                  const paraProofreading = { id: paraId, translation: proofreading };
-                  paragraphProofreadings.push(paraProofreading);
-                  chunkParagraphProofreadings.push(paraProofreading);
-                }
+              // 过滤出有变化的段落
+              const chunkParagraphProofreadings = filterChangedParagraphs(
+                chunk.paragraphIds,
+                extractedProofreadings,
+                originalTranslations,
+              );
+              // 按顺序构建文本
+              for (const paraProofreading of chunkParagraphProofreadings) {
+                orderedProofreadings.push(paraProofreading.translation);
+                paragraphProofreadings.push(paraProofreading);
               }
               const orderedText = orderedProofreadings.join('\n\n');
               proofreadText += orderedText;

@@ -14,6 +14,10 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
+import {
+  buildOriginalTranslationsMap,
+  filterChangedParagraphs,
+} from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -267,7 +271,13 @@ export class PolishService {
         {
           "paragraphs": [{ "id": "段落ID", "translation": "润色后的内容" }],
         }
-        确保 paragraphs 数组包含所有输入段落的 ID 和对应润色结果。
+
+        **⚠️ 重要：只返回有变化的段落**
+        - 如果段落经过润色后有改进或变化，将其包含在 \`paragraphs\` 数组中
+        - 如果段落没有改进或变化，**不要**将其包含在 \`paragraphs\` 数组中
+        - 系统会自动比较润色结果与原文，只有真正有变化的段落才会被保存为新翻译
+        - 如果所有段落都没有变化，返回空的 \`paragraphs\` 数组：\`{"paragraphs": []}\`
+
         **不要使用任何翻译管理工具，只返回JSON**`;
 
       history.push({ role: 'system', content: systemPrompt });
@@ -294,8 +304,9 @@ export class PolishService {
         - **工具使用**: 优先使用上下文，必要时调用工具。
         - **记忆**: 润色前搜索相关记忆，完成后可保存章节摘要。
         - **保留原文格式**: 保留原文的格式，如标点符号、换行符等。
+        - **⚠️ 重要**: 只返回有变化的段落。如果段落没有改进或变化，不要包含在返回结果中。
 
-        请按 JSON 格式返回。`;
+        请按 JSON 格式返回，只包含有变化的段落。`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -446,6 +457,9 @@ export class PolishService {
       let polishedText = '';
       const paragraphPolishes: { id: string; translation: string }[] = [];
 
+      // 存储每个段落的原始翻译，用于比较是否有变化
+      const originalTranslations = buildOriginalTranslationsMap(paragraphsWithTranslation);
+
       // 3. 循环处理每个块
       for (let i = 0; i < chunks.length; i++) {
         // 检查是否已取消
@@ -492,7 +506,8 @@ export class PolishService {
 - **语气词**: 适当添加，符合角色风格。
 - **自然流畅**: 摆脱翻译腔，使用地道中文。
 - **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
-- **历史参考**: 参考翻译历史，混合匹配最佳表达。`;
+- **历史参考**: 参考翻译历史，混合匹配最佳表达。
+- **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。`;
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
@@ -733,16 +748,18 @@ export class PolishService {
             } else {
               // 部分段落有ID，按顺序处理
               const orderedPolishes: string[] = [];
-              const chunkParagraphPolishes: { id: string; translation: string }[] = [];
+              let chunkParagraphPolishes: { id: string; translation: string }[] = [];
               if (chunk.paragraphIds) {
-                for (const paraId of chunk.paragraphIds) {
-                  const polish = extractedPolishes.get(paraId);
-                  if (polish) {
-                    orderedPolishes.push(polish);
-                    const paraPolish = { id: paraId, translation: polish };
-                    paragraphPolishes.push(paraPolish);
-                    chunkParagraphPolishes.push(paraPolish);
-                  }
+                // 过滤出有变化的段落
+                chunkParagraphPolishes = filterChangedParagraphs(
+                  chunk.paragraphIds,
+                  extractedPolishes,
+                  originalTranslations,
+                );
+                // 按顺序构建文本
+                for (const paraPolish of chunkParagraphPolishes) {
+                  orderedPolishes.push(paraPolish.translation);
+                  paragraphPolishes.push(paraPolish);
                 }
               }
               const orderedText = orderedPolishes.join('\n\n');
@@ -759,15 +776,16 @@ export class PolishService {
             // 所有段落都有润色结果，按顺序组织
             if (extractedPolishes.size > 0 && chunk.paragraphIds) {
               const orderedPolishes: string[] = [];
-              const chunkParagraphPolishes: { id: string; translation: string }[] = [];
-              for (const paraId of chunk.paragraphIds) {
-                const polish = extractedPolishes.get(paraId);
-                if (polish) {
-                  orderedPolishes.push(polish);
-                  const paraPolish = { id: paraId, translation: polish };
-                  paragraphPolishes.push(paraPolish);
-                  chunkParagraphPolishes.push(paraPolish);
-                }
+              // 过滤出有变化的段落
+              const chunkParagraphPolishes = filterChangedParagraphs(
+                chunk.paragraphIds,
+                extractedPolishes,
+                originalTranslations,
+              );
+              // 按顺序构建文本
+              for (const paraPolish of chunkParagraphPolishes) {
+                orderedPolishes.push(paraPolish.translation);
+                paragraphPolishes.push(paraPolish);
               }
               const orderedText = orderedPolishes.join('\n\n');
               polishedText += orderedText;
