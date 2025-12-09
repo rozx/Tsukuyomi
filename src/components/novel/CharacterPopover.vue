@@ -12,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [character: CharacterSetting];
   delete: [character: CharacterSetting];
+  create: [];
 }>();
 
 const popover = ref<InstanceType<typeof Popover> | null>(null);
@@ -24,6 +25,10 @@ const handleEdit = (character: CharacterSetting) => {
 
 const handleDelete = (character: CharacterSetting) => {
   emit('delete', character);
+};
+
+const handleCreate = () => {
+  emit('create');
 };
 
 // Expose popover ref for parent component to toggle
@@ -50,8 +55,19 @@ defineExpose({
         >
           <template #header>
             <div class="p-3">
-              <h4 class="font-medium text-moon-100">本章使用的角色设定</h4>
-              <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
+              <div class="flex justify-between items-start gap-2">
+                <div>
+                  <h4 class="font-medium text-moon-100">本章使用的角色设定</h4>
+                  <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
+                </div>
+                <Button
+                  icon="pi pi-plus"
+                  label="新建"
+                  size="small"
+                  class="!text-xs !px-2 !py-1 !h-auto"
+                  @click="handleCreate"
+                />
+              </div>
             </div>
           </template>
           <template #list="slotProps">
