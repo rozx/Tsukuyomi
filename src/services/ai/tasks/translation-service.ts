@@ -307,7 +307,7 @@ export class TranslationService {
       3. 确认需要后使用 \`create_term\` 创建
 
       **术语创建原则**:
-      - ✅ 应该添加：专有名词、特殊概念、反复出现（≥3次）且翻译固定的词汇
+      - ✅ 应该添加：特殊用法（如网络用语、网络梗、流行语等）、专有名词、特殊概念、反复出现（≥3次）且翻译固定的词汇
       - ❌ 不应该添加：仅由汉字组成且无特殊含义的普通词汇、常见助词、通用词汇、出现次数<3次的词汇
 
       **术语维护**:
@@ -337,6 +337,7 @@ export class TranslationService {
       2. 发现别名 → 使用 \`update_character\` 添加（⚠️ 先使用 \`list_characters\` 检查冲突）
       3. 发现重复角色 → \`delete_character\` 删除重复，然后 \`update_character\` 添加为别名
       4. 描述需补充 → 使用 \`update_character\` 更新
+      5. 发现特殊称呼 → 使用 \`update_character\` 更新
 
       **角色创建原则**:
       - 创建前必须检查：使用 \`list_characters\` 或 \`get_character\` 确认是否已存在
