@@ -1,3 +1,6 @@
+// 必须在所有其他导入之前导入 setup，以确保 polyfill 在 idb 库导入之前设置
+import './setup';
+
 // Bun 测试框架提供全局函数，直接使用即可
 // 这些函数在运行时由 Bun 提供，无需导入
 // 使用函数签名类型避免 import() 类型注解（符合 ESLint 规范）
@@ -20,6 +23,7 @@ declare const expect: (actual: unknown) => {
   };
 };
 
+// Import TerminologyService (no mocking needed for this service)
 import { TerminologyService } from 'src/services/terminology-service';
 
 // Mock FileReader for import tests

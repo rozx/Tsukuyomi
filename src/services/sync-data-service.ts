@@ -26,6 +26,7 @@ export class SyncDataService {
       coverHistory?: any[] | null;
     } | null,
     resolutions: ConflictResolution[],
+    syncIntent: 'upload' | 'download' | 'auto' = 'download',
     lastSyncTime?: number,
   ): Promise<void> {
     // 如果 remoteData 为 null，直接返回
@@ -43,6 +44,32 @@ export class SyncDataService {
 
     const resolutionMap = new Map(resolutions.map((r) => [r.conflictId, r.choice]));
 
+    // 辅助函数：决定是否使用远程数据
+    const shouldUseRemote = (
+      id: string,
+      localLastEdited?: Date | number | string,
+      remoteLastEdited?: Date | number | string,
+    ): boolean => {
+      const resolution = resolutionMap.get(id);
+      if (resolution) {
+        return resolution === 'remote';
+      }
+      // 无冲突（或未解决）时，根据同步意图决定
+      if (syncIntent === 'auto') {
+        // 自动同步：谁新用谁
+        if (localLastEdited && remoteLastEdited) {
+          const localTime = new Date(localLastEdited).getTime();
+          const remoteTime = new Date(remoteLastEdited).getTime();
+          return remoteTime > localTime;
+        }
+        // 如果缺少时间戳，默认使用远程（假设远程是新的）
+        return true;
+      }
+      // 下载：偏好远程
+      // 上传：偏好本地
+      return syncIntent === 'download';
+    };
+
     // 处理 AI 模型（确保 aiModels 是数组）
     if (
       remoteData.aiModels &&
@@ -56,8 +83,7 @@ export class SyncDataService {
         const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
         if (localModel) {
           // 有冲突，根据用户选择
-          const resolution = resolutionMap.get(remoteModel.id);
-          if (resolution === 'remote') {
+          if (shouldUseRemote(remoteModel.id, localModel.lastEdited, remoteModel.lastEdited)) {
             finalModels.push(remoteModel);
           } else {
             finalModels.push(localModel);
@@ -104,8 +130,7 @@ export class SyncDataService {
         const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
         if (localNovel) {
           // 有冲突，根据用户选择
-          const resolution = resolutionMap.get(remoteNovel.id);
-          if (resolution === 'remote') {
+          if (shouldUseRemote(remoteNovel.id, localNovel.lastEdited, remoteNovel.lastEdited)) {
             // 使用远程书籍，但需要保留本地章节内容
             const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
               remoteNovel as Novel,
@@ -161,8 +186,7 @@ export class SyncDataService {
       for (const remoteCover of remoteData.coverHistory) {
         const localCover = coverHistoryStore.covers.find((c) => c.id === remoteCover.id);
         if (localCover) {
-          const resolution = resolutionMap.get(remoteCover.id);
-          if (resolution === 'remote') {
+          if (shouldUseRemote(remoteCover.id, localCover.addedAt, remoteCover.addedAt)) {
             finalCovers.push(remoteCover);
           } else {
             finalCovers.push(localCover);
@@ -201,8 +225,10 @@ export class SyncDataService {
 
     // 处理设置
     if (remoteData.appSettings) {
-      const resolution = resolutionMap.get('app-settings');
-      if (resolution === 'remote' || resolutions.length === 0) {
+      const localSettings = settingsStore.getAllSettings();
+      if (
+        shouldUseRemote('app-settings', localSettings.lastEdited, remoteData.appSettings.lastEdited)
+      ) {
         // 无冲突时也应用远程设置
         const currentGistSync = settingsStore.gistSync;
         await settingsStore.importSettings(remoteData.appSettings);
@@ -321,11 +347,29 @@ export class SyncDataService {
     }
 
     // 3. 检查设置（使用 lodash 深度比较，排除 lastEdited）
-    const localSettingsForCompare = omit(local.appSettings, 'lastEdited');
-    const remoteSettingsForCompare = omit(remote.appSettings || {}, 'lastEdited');
-    if (!isEqual(localSettingsForCompare, remoteSettingsForCompare)) {
-      if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
-      if (remote.appSettings) return true;
+    // 还需要排除 syncs 中的 lastSyncTime 和 lastSyncedModelIds，因为每次同步都会更新
+    // 如果远程有设置且时间戳相同，则认为没有变更（避免因 merge 导致的差异触发上传）
+    if (
+      !remote.appSettings ||
+      isTimeDifferent(local.appSettings.lastEdited, remote.appSettings.lastEdited)
+    ) {
+      const prepareSettingsForCompare = (settings: any) => {
+        const omitted = omit(settings, 'lastEdited');
+        if (omitted.syncs && Array.isArray(omitted.syncs)) {
+          omitted.syncs = omitted.syncs.map((sync: any) =>
+            omit(sync, 'lastSyncTime', 'lastSyncedModelIds'),
+          );
+        }
+        return omitted;
+      };
+
+      const localSettingsForCompare = prepareSettingsForCompare(local.appSettings);
+      const remoteSettingsForCompare = prepareSettingsForCompare(remote.appSettings || {});
+
+      if (!isEqual(localSettingsForCompare, remoteSettingsForCompare)) {
+        if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
+        if (remote.appSettings) return true;
+      }
     }
 
     // 4. 检查封面历史
