@@ -19,6 +19,7 @@ export interface HighlightNode {
   content: string;
   term?: Terminology;
   character?: CharacterSetting;
+  characters?: CharacterSetting[]; // 当文本匹配多个角色时，包含所有匹配的角色
 }
 
 /**
@@ -143,50 +144,37 @@ export function matchCharactersInText(
     }
   }
 
-  // 4. 解决名称歧义
-  // 对于每个名字，选择得分最高的角色。如果得分相同，保留原始顺序（定义的优先顺序）
-  const resolvedNameMap = new Map<string, CharacterSetting>();
-
-  for (const [name, possibleChars] of nameToCharsMap.entries()) {
-    if (!possibleChars || possibleChars.length === 0) continue;
-
-    if (possibleChars.length === 1) {
-      const char = possibleChars[0];
-      if (char) resolvedNameMap.set(name, char);
-    } else {
-      // 复制数组以进行排序，避免修改原始 Map 中的数组
+  // 4. 构建最终结果 - 包含所有匹配的角色，而不只是得分最高的
+  // 对于每个匹配位置，返回所有可能的角色
+  const matches: MatchResult<CharacterSetting>[] = [];
+  
+  for (const raw of rawMatches) {
+    const possibleChars = nameToCharsMap.get(raw.name);
+    if (possibleChars && possibleChars.length > 0) {
+      // 如果有多个可能的角色，按得分排序（用于后续显示顺序）
+      // 但返回所有匹配的角色，而不仅仅是得分最高的
       const sortedChars = [...possibleChars].sort((a, b) => {
-        // 综合得分 = 上下文得分（如果存在） + 本地得分
-        // 如果提供了上下文得分，通常上下文得分权重更高或更准确反映全局情况
         const contextScoreA = contextScores?.get(a.id) || 0;
         const contextScoreB = contextScores?.get(b.id) || 0;
         const localScoreA = localScores.get(a.id) || 0;
         const localScoreB = localScores.get(b.id) || 0;
 
-        // 简单相加
         const scoreA = contextScoreA + localScoreA;
         const scoreB = contextScoreB + localScoreB;
 
         return scoreB - scoreA;
       });
-      // 取最高分者
-      const winner = sortedChars[0];
-      if (winner) resolvedNameMap.set(name, winner);
-    }
-  }
 
-  // 5. 构建最终结果
-  const matches: MatchResult<CharacterSetting>[] = [];
-  for (const raw of rawMatches) {
-    const char = resolvedNameMap.get(raw.name);
-    if (char) {
-      matches.push({
-        item: char,
-        matchedName: raw.name,
-        index: raw.index,
-        length: raw.length,
-        type: 'character',
-      });
+      // 为每个匹配的角色创建一个 MatchResult
+      for (const char of sortedChars) {
+        matches.push({
+          item: char,
+          matchedName: raw.name,
+          index: raw.index,
+          length: raw.length,
+          type: 'character',
+        });
+      }
     }
   }
 
@@ -277,7 +265,17 @@ export function parseTextForHighlighting(
     return [{ type: 'text', content: text }];
   }
 
-  // 解决重叠问题
+  // 计算角色在文本中的本地出现次数（用于排序）
+  const localScores = new Map<string, number>();
+  for (const match of allMatches) {
+    if (match.type === 'character') {
+      const char = match.item as CharacterSetting;
+      const currentScore = localScores.get(char.id) || 0;
+      localScores.set(char.id, currentScore + 1);
+    }
+  }
+
+  // 解决重叠问题并合并相同位置的多角色匹配
   // 1. 按索引排序
   // 2. 索引相同时按长度降序排序（优先保留较长的匹配）
   allMatches.sort((a, b) => {
@@ -287,42 +285,101 @@ export function parseTextForHighlighting(
     return b.length - a.length;
   });
 
-  // 过滤重叠匹配
-  const filteredMatches: MatchResult<Terminology | CharacterSetting>[] = [];
-  for (let i = 0; i < allMatches.length; i++) {
-    const current = allMatches[i];
-    if (!current) continue;
+  // 合并相同位置的多个角色匹配
+  // Map<positionKey, { match: MatchResult, characters: CharacterSetting[] }>
+  const positionMap = new Map<string, {
+    match: MatchResult<Terminology | CharacterSetting>;
+    characters: CharacterSetting[];
+  }>();
 
+  for (const match of allMatches) {
+    const positionKey = `${match.index}-${match.length}`;
+    
+    if (match.type === 'character') {
+      const char = match.item as CharacterSetting;
+      const existing = positionMap.get(positionKey);
+      
+      if (existing) {
+        // 如果已存在，添加角色到列表（避免重复）
+        const charIdSet = new Set(existing.characters.map(c => c.id));
+        if (!charIdSet.has(char.id)) {
+          existing.characters.push(char);
+        }
+      } else {
+        // 创建新条目
+        positionMap.set(positionKey, {
+          match,
+          characters: [char],
+        });
+      }
+    } else {
+      // 术语：直接添加，不合并
+      positionMap.set(positionKey, {
+        match,
+        characters: [],
+      });
+    }
+  }
+
+  // 对每个位置的角色列表按出现次数排序（上下文得分 + 本地得分）
+  for (const entry of positionMap.values()) {
+    if (entry.characters.length > 1) {
+      entry.characters.sort((a, b) => {
+        const contextScoreA = contextScores?.get(a.id) || 0;
+        const contextScoreB = contextScores?.get(b.id) || 0;
+        const localScoreA = localScores.get(a.id) || 0;
+        const localScoreB = localScores.get(b.id) || 0;
+
+        const scoreA = contextScoreA + localScoreA;
+        const scoreB = contextScoreB + localScoreB;
+
+        // 按得分降序排序（出现次数多的在前）
+        return scoreB - scoreA;
+      });
+    }
+  }
+
+  // 过滤重叠匹配（不同位置之间的重叠）
+  const filteredMatches: Array<{
+    match: MatchResult<Terminology | CharacterSetting>;
+    characters: CharacterSetting[];
+  }> = [];
+  
+  for (const entry of positionMap.values()) {
     let hasOverlap = false;
 
     for (const existing of filteredMatches) {
-      const currentEnd = current.index + current.length;
-      const existingEnd = existing.index + existing.length;
+      const currentEnd = entry.match.index + entry.match.length;
+      const existingEnd = existing.match.index + existing.match.length;
 
-      // 检查是否有重叠
-      if (
-        (current.index >= existing.index && current.index < existingEnd) ||
-        (currentEnd > existing.index && currentEnd <= existingEnd) ||
-        (current.index <= existing.index && currentEnd >= existingEnd)
-      ) {
-        hasOverlap = true;
-        break;
+      // 检查是否有重叠（但允许相同位置的多个角色）
+      if (entry.match.index !== existing.match.index || entry.match.length !== existing.match.length) {
+        if (
+          (entry.match.index >= existing.match.index && entry.match.index < existingEnd) ||
+          (currentEnd > existing.match.index && currentEnd <= existingEnd) ||
+          (entry.match.index <= existing.match.index && currentEnd >= existingEnd)
+        ) {
+          hasOverlap = true;
+          break;
+        }
       }
     }
 
     if (!hasOverlap) {
-      filteredMatches.push(current);
+      filteredMatches.push(entry);
     }
   }
 
   // 再次按索引排序（确保顺序正确）
-  filteredMatches.sort((a, b) => a.index - b.index);
+  filteredMatches.sort((a, b) => a.match.index - b.match.index);
 
   // 构建节点数组
   const nodes: HighlightNode[] = [];
   let lastIndex = 0;
 
-  for (const match of filteredMatches) {
+  for (const entry of filteredMatches) {
+    const match = entry.match;
+    
     // 添加匹配项前面的普通文本
     if (match.index > lastIndex) {
       nodes.push({
@@ -339,11 +396,16 @@ export function parseTextForHighlighting(
         term: match.item as Terminology,
       });
     } else {
-      nodes.push({
-        type: 'character',
-        content: match.matchedName,
-        character: match.item as CharacterSetting,
-      });
+      // 角色匹配：包含所有匹配的角色
+      const characters = entry.characters;
+      if (characters.length > 0) {
+        nodes.push({
+          type: 'character',
+          content: match.matchedName,
+          character: characters[0], // 第一个角色用于向后兼容
+          characters: characters, // 所有匹配的角色
+        });
+      }
     }
 
     lastIndex = match.index + match.length;
@@ -375,20 +437,48 @@ export function findUniqueTermsInText(text: string, terms: Terminology[]): Termi
 
 /**
  * 获取文本中包含的所有唯一角色
+ * 当同一文本可以匹配多个角色时，会返回所有匹配的角色（而不仅仅是得分最高的）
  * @param text 文本
  * @param characters 角色列表
  * @param contextScores 可选的上下文得分
- * @returns 唯一的角色列表
+ * @returns 唯一的角色列表（按出现次数排序，出现次数多的在前）
  */
 export function findUniqueCharactersInText(
   text: string,
   characters: CharacterSetting[],
   contextScores?: Map<string, number>,
 ): CharacterSetting[] {
+  // matchCharactersInText 现在会返回所有匹配的角色，包括同一文本匹配多个角色的情况
   const matches = matchCharactersInText(text, characters, contextScores);
-  const uniqueMap = new Map<string, CharacterSetting>();
-  matches.forEach((m) => uniqueMap.set(m.item.id, m.item));
-  return Array.from(uniqueMap.values());
+  
+  // 计算每个角色的出现次数（用于排序）
+  const characterCounts = new Map<string, number>();
+  const characterMap = new Map<string, CharacterSetting>();
+  
+  // 遍历所有匹配，提取唯一角色并统计出现次数
+  // 如果同一文本匹配多个角色，所有匹配的角色都会被包含
+  matches.forEach((m) => {
+    const charId = m.item.id;
+    characterMap.set(charId, m.item);
+    characterCounts.set(charId, (characterCounts.get(charId) || 0) + 1);
+  });
+  
+  // 按出现次数排序（出现次数多的在前）
+  const uniqueCharacters = Array.from(characterMap.values()).sort((a, b) => {
+    const countA = characterCounts.get(a.id) || 0;
+    const countB = characterCounts.get(b.id) || 0;
+    
+    // 如果出现次数相同，使用上下文得分作为次要排序依据
+    if (countA === countB) {
+      const contextScoreA = contextScores?.get(a.id) || 0;
+      const contextScoreB = contextScores?.get(b.id) || 0;
+      return contextScoreB - contextScoreA;
+    }
+    
+    return countB - countA;
+  });
+  
+  return uniqueCharacters;
 }
 
 /**
