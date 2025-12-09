@@ -1,20 +1,26 @@
 import { describe, expect, it } from 'bun:test';
 import { ConflictDetectionService, ConflictType } from '../services/conflict-detection-service';
-import type { Novel } from '../models/novel';
+import type { Novel, Volume, Chapter, Translation } from '../models/novel';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AppSettings } from '../models/settings';
 import type { CoverHistoryItem } from '../models/novel';
+import { generateShortId } from '../utils/id-generator';
 
 describe('冲突检测服务 (ConflictDetectionService)', () => {
   const baseDate = new Date('2024-01-01T00:00:00.000Z');
   const laterDate = new Date('2024-01-02T00:00:00.000Z');
+
+  const createMockTranslation = (): Translation => ({
+    id: generateShortId(),
+    translation: '',
+    aiModelId: '',
+  });
 
   const createMockNovel = (id: string, lastEdited: Date, title: string = 'Test Novel'): Novel => ({
     id,
     title,
     author: 'Author',
     description: 'Desc',
-    coverUrl: '',
     tags: [],
     volumes: [],
     createdAt: baseDate,
@@ -30,8 +36,17 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
     name,
     provider: 'openai',
     model: 'gpt-4',
+    temperature: 0.7,
+    maxTokens: 2000,
     apiKey: 'key',
-    isCustom: true,
+    baseUrl: 'https://api.openai.com/v1',
+    isDefault: {
+      translation: { enabled: false, temperature: 0.7 },
+      proofreading: { enabled: false, temperature: 0.7 },
+      termsTranslation: { enabled: false, temperature: 0.7 },
+      assistant: { enabled: false, temperature: 0.7 },
+    },
+    enabled: true,
     lastEdited,
   });
 
@@ -43,11 +58,9 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
     proxyList: [],
   });
 
-  const createMockCover = (id: string, addedAt: number): CoverHistoryItem => ({
+  const createMockCover = (id: string, addedAt: Date): CoverHistoryItem => ({
     id,
-    novelId: 'novel-1',
     url: 'http://example.com/cover.jpg',
-    prompt: 'test prompt',
     addedAt,
   });
 
@@ -56,7 +69,7 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       const novel = createMockNovel('1', baseDate);
       const model = createMockAIModel('1', baseDate);
       const settings = createMockSettings(baseDate);
-      const cover = createMockCover('1', baseDate.getTime());
+      const cover = createMockCover('1', baseDate);
 
       const local = {
         novels: [novel],
@@ -98,8 +111,8 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       const result = ConflictDetectionService.detectConflicts(local, remote);
       expect(result.hasConflicts).toBe(true);
       expect(result.conflicts).toHaveLength(1);
-      expect(result.conflicts[0].type).toBe(ConflictType.Novel);
-      expect(result.conflicts[0].id).toBe('1');
+      expect(result.conflicts[0]?.type).toBe(ConflictType.Novel);
+      expect(result.conflicts[0]?.id).toBe('1');
     });
 
     it('当 AI 模型内容不同时，应检测到冲突', () => {
@@ -123,7 +136,7 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       const result = ConflictDetectionService.detectConflicts(local, remote);
       expect(result.hasConflicts).toBe(true);
       expect(result.conflicts).toHaveLength(1);
-      expect(result.conflicts[0].type).toBe(ConflictType.AIModel);
+      expect(result.conflicts[0]?.type).toBe(ConflictType.AIModel);
     });
 
     it('当设置内容不同时，应检测到冲突', () => {
@@ -147,7 +160,7 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       const result = ConflictDetectionService.detectConflicts(local, remote);
       expect(result.hasConflicts).toBe(true);
       expect(result.conflicts).toHaveLength(1);
-      expect(result.conflicts[0].type).toBe(ConflictType.Settings);
+      expect(result.conflicts[0]?.type).toBe(ConflictType.Settings);
     });
 
     it('当仅 lastEdited 时间不同时，不应检测到设置冲突', () => {
@@ -173,10 +186,10 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
     });
 
     it('应检测到封面历史冲突', () => {
-      const localCover = createMockCover('1', baseDate.getTime());
+      const localCover = createMockCover('1', baseDate);
       const remoteCover = {
-        ...createMockCover('1', laterDate.getTime()),
-        prompt: 'Changed Prompt',
+        ...createMockCover('1', laterDate),
+        url: 'http://example.com/cover-changed.jpg',
       };
 
       const local = {
@@ -196,20 +209,23 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       const result = ConflictDetectionService.detectConflicts(local, remote);
       expect(result.hasConflicts).toBe(true);
       expect(result.conflicts).toHaveLength(1);
-      expect(result.conflicts[0].type).toBe(ConflictType.CoverHistory);
+      expect(result.conflicts[0]?.type).toBe(ConflictType.CoverHistory);
     });
   });
 
   describe('detectNovelConflicts 详情 (书籍冲突检测细节)', () => {
     it('应忽略本地新增的章节（不算冲突）', () => {
-      const localNovel = createMockNovel('1', laterDate);
+      const v1Translation = createMockTranslation();
+      const c1Translation = createMockTranslation();
+      
+      const localNovel = createMockNovel('1', baseDate); // Use same date to avoid metadata conflict
       localNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
+          title: { original: 'V1', translation: v1Translation },
           chapters: [
-            { id: 'c1', title: 'C1', paragraphs: [] },
-            { id: 'c2', title: 'C2', paragraphs: [] }, // New chapter
+            { id: 'c1', title: { original: 'C1', translation: c1Translation }, createdAt: baseDate, lastEdited: baseDate },
+            { id: 'c2', title: { original: 'C2', translation: createMockTranslation() }, createdAt: baseDate, lastEdited: baseDate }, // New chapter
           ],
         },
       ];
@@ -218,8 +234,8 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       remoteNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
-          chapters: [{ id: 'c1', title: 'C1', paragraphs: [] }],
+          title: { original: 'V1', translation: v1Translation },
+          chapters: [{ id: 'c1', title: { original: 'C1', translation: c1Translation }, createdAt: baseDate, lastEdited: baseDate }],
         },
       ];
 
@@ -241,23 +257,26 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
     });
 
     it('应忽略远程新增的章节（不算冲突）', () => {
+      const v1Translation = createMockTranslation();
+      const c1Translation = createMockTranslation();
+      
       const localNovel = createMockNovel('1', baseDate);
       localNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
-          chapters: [{ id: 'c1', title: 'C1', paragraphs: [] }],
+          title: { original: 'V1', translation: v1Translation },
+          chapters: [{ id: 'c1', title: { original: 'C1', translation: c1Translation }, createdAt: baseDate, lastEdited: baseDate }],
         },
       ];
 
-      const remoteNovel = createMockNovel('1', laterDate);
+      const remoteNovel = createMockNovel('1', baseDate); // Use same date to avoid metadata conflict
       remoteNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
+          title: { original: 'V1', translation: v1Translation },
           chapters: [
-            { id: 'c1', title: 'C1', paragraphs: [] },
-            { id: 'c2', title: 'C2', paragraphs: [] }, // New chapter
+            { id: 'c1', title: { original: 'C1', translation: c1Translation }, createdAt: baseDate, lastEdited: baseDate },
+            { id: 'c2', title: { original: 'C2', translation: createMockTranslation() }, createdAt: baseDate, lastEdited: baseDate }, // New chapter
           ],
         },
       ];
@@ -284,8 +303,8 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       localNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
-          chapters: [{ id: 'c1', title: 'C1 Local', paragraphs: [] }],
+          title: { original: 'V1', translation: createMockTranslation() },
+          chapters: [{ id: 'c1', title: { original: 'C1 Local', translation: createMockTranslation() }, createdAt: baseDate, lastEdited: baseDate }],
         },
       ];
 
@@ -293,8 +312,8 @@ describe('冲突检测服务 (ConflictDetectionService)', () => {
       remoteNovel.volumes = [
         {
           id: 'v1',
-          title: 'V1',
-          chapters: [{ id: 'c1', title: 'C1 Remote', paragraphs: [] }],
+          title: { original: 'V1', translation: createMockTranslation() },
+          chapters: [{ id: 'c1', title: { original: 'C1 Remote', translation: createMockTranslation() }, createdAt: baseDate, lastEdited: baseDate }],
         },
       ];
 
