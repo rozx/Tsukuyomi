@@ -761,11 +761,16 @@ const {
   isPolishingChapter,
   polishProgress,
   polishingParagraphIds,
+  isProofreadingChapter,
+  proofreadingProgress,
+  proofreadingParagraphIds,
   // 函数
   polishParagraph,
+  proofreadParagraph,
   retranslateParagraph,
   cancelTranslation,
   cancelPolish,
+  cancelProofreading,
   // 计算属性
   translationStatus,
   translationButtonLabel,
@@ -1788,6 +1793,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             "
             @retranslate-paragraph="retranslateParagraph"
             @polish-paragraph="polishParagraph"
+            @proofread-paragraph="proofreadParagraph"
             @select-translation="
               (paragraphId: string, translationId: string) =>
                 selectParagraphTranslation(paragraphId, translationId)
@@ -1810,6 +1816,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       <TranslationProgress
         :is-translating="isTranslatingChapter"
         :is-polishing="isPolishingChapter"
+        :is-proofreading="isProofreadingChapter"
         :progress="isPolishingChapter ? polishProgress : translationProgress"
         @cancel="isPolishingChapter ? cancelPolish() : cancelTranslation()"
       />

@@ -21,6 +21,7 @@ const props = defineProps<{
   characterSettings?: CharacterSetting[];
   isTranslating?: boolean;
   isPolishing?: boolean;
+  isProofreading?: boolean;
   searchQuery?: string;
   characterScores?: Map<string, number>;
   bookId?: string;
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   'update-translation': [paragraphId: string, newTranslation: string];
   retranslate: [paragraphId: string];
   polish: [paragraphId: string];
+  proofread: [paragraphId: string];
   'select-translation': [paragraphId: string, translationId: string];
   'paragraph-click': [paragraphId: string];
   'paragraph-edit-start': [paragraphId: string];
@@ -627,9 +629,11 @@ const handleRecentTranslationPopoverHide = () => {
   // 不需要特殊处理
 };
 
-// 处理按钮点击（占位函数，暂不实现逻辑）
+// 处理校对段落
 const handleProofread = () => {
-  // TODO: 实现校对段落逻辑
+  closeContextMenu();
+  // 触发校对事件
+  emit('proofread', props.paragraph.id);
 };
 
 // 关闭上下文菜单的辅助函数
@@ -877,11 +881,11 @@ defineExpose({
         </template>
       </p>
       <div
-        v-if="hasTranslation || props.isTranslating || props.isPolishing"
+        v-if="hasTranslation || props.isTranslating || props.isPolishing || props.isProofreading"
         class="paragraph-translation-wrapper"
       >
         <!-- 正在翻译或润色时显示 skeleton（覆盖现有翻译） -->
-        <div v-if="props.isTranslating || props.isPolishing" class="paragraph-translation-skeleton">
+        <div v-if="props.isTranslating || props.isPolishing || props.isProofreading" class="paragraph-translation-skeleton">
           <Skeleton width="100%" height="1.5rem" />
           <Skeleton width="85%" height="1.5rem" />
           <Skeleton width="70%" height="1.5rem" />
