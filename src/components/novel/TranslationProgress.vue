@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
@@ -26,6 +26,69 @@ const aiProcessingStore = useAIProcessingStore();
 const toast = useToastWithHistory();
 
 const showAITaskHistory = ref(false);
+
+// Height adjustment state
+const aiHistoryHeight = ref(400); // Default height in pixels
+const isResizing = ref(false);
+const resizeStartY = ref(0);
+const resizeStartHeight = ref(400);
+
+// Load saved height from localStorage
+onMounted(() => {
+  const savedHeight = localStorage.getItem('translation-progress-ai-history-height');
+  if (savedHeight) {
+    const height = parseInt(savedHeight, 10);
+    if (height >= 200 && height <= 800) {
+      aiHistoryHeight.value = height;
+      resizeStartHeight.value = height;
+    }
+  }
+});
+
+// Save height to localStorage
+const saveHeight = (height: number) => {
+  localStorage.setItem('translation-progress-ai-history-height', height.toString());
+};
+
+// Resize handlers
+const handleResizeStart = (e: MouseEvent | TouchEvent) => {
+  e.preventDefault();
+  isResizing.value = true;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  resizeStartY.value = clientY;
+  resizeStartHeight.value = aiHistoryHeight.value;
+  document.addEventListener('mousemove', handleResizeMove);
+  document.addEventListener('mouseup', handleResizeEnd);
+  document.addEventListener('touchmove', handleResizeMove);
+  document.addEventListener('touchend', handleResizeEnd);
+};
+
+const handleResizeMove = (e: MouseEvent | TouchEvent) => {
+  if (!isResizing.value) return;
+  e.preventDefault();
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  const deltaY = resizeStartY.value - clientY; // Inverted: dragging up increases height
+  const newHeight = Math.max(200, Math.min(800, resizeStartHeight.value + deltaY));
+  aiHistoryHeight.value = newHeight;
+};
+
+const handleResizeEnd = () => {
+  if (isResizing.value) {
+    isResizing.value = false;
+    saveHeight(aiHistoryHeight.value);
+  }
+  document.removeEventListener('mousemove', handleResizeMove);
+  document.removeEventListener('mouseup', handleResizeEnd);
+  document.removeEventListener('touchmove', handleResizeMove);
+  document.removeEventListener('touchend', handleResizeEnd);
+};
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleResizeMove);
+  document.removeEventListener('mouseup', handleResizeEnd);
+  document.removeEventListener('touchmove', handleResizeMove);
+  document.removeEventListener('touchend', handleResizeEnd);
+});
 
 const taskStatusLabels: Record<string, string> = {
   thinking: '思考中',
@@ -402,8 +465,21 @@ watch(
       />
     </div>
     <!-- AI 任务历史 -->
-    <div v-if="showAITaskHistory" class="translation-progress-ai-history">
-      <div class="ai-history-content">
+    <div v-if="showAITaskHistory" class="translation-progress-ai-history-wrapper">
+      <div
+        class="translation-progress-ai-history-resize-handle"
+        @mousedown="handleResizeStart"
+        @touchstart="handleResizeStart"
+        :class="{ 'resizing': isResizing }"
+        title="拖拽调整高度"
+      >
+        <i class="pi pi-grip-lines-vertical"></i>
+      </div>
+      <div
+        class="translation-progress-ai-history"
+        :style="{ height: `${aiHistoryHeight}px` }"
+      >
+        <div class="ai-history-content">
         <div v-if="recentAITasks.length === 0" class="ai-history-empty">
           <i class="pi pi-info-circle"></i>
           <span>暂无 AI 任务记录</span>
@@ -564,6 +640,7 @@ watch(
           </div>
         </div>
       </div>
+      </div>
     </div>
   </div>
 </template>
@@ -650,12 +727,54 @@ watch(
 }
 
 /* AI 任务历史 */
+.translation-progress-ai-history-wrapper {
+  position: relative;
+  border-top: 1px solid var(--white-opacity-20);
+}
+
+.translation-progress-ai-history-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--white-opacity-10);
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  transition: background 0.2s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.translation-progress-ai-history-resize-handle:hover {
+  background: var(--primary-opacity-30);
+}
+
+.translation-progress-ai-history-resize-handle.resizing {
+  background: var(--primary-opacity-50);
+}
+
+.translation-progress-ai-history-resize-handle i {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-40);
+  pointer-events: none;
+}
+
+.translation-progress-ai-history-resize-handle:hover i,
+.translation-progress-ai-history-resize-handle.resizing i {
+  color: var(--primary-opacity-80);
+}
+
 .translation-progress-ai-history {
   border-top: 1px solid var(--white-opacity-20);
   background: var(--white-opacity-3);
-  max-height: 400px;
+  height: 400px;
   overflow-y: auto;
   overflow-x: hidden;
+  resize: none;
 }
 
 .ai-history-content {
