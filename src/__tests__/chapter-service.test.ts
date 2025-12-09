@@ -32,27 +32,58 @@ function createTestParagraph(id?: string): Paragraph {
   };
 }
 
-// Mock ChapterContentService BEFORE importing ChapterService
-const mockLoadChapterContent = mock((_chapterId: string) => Promise.resolve(undefined as Paragraph[] | undefined));
-const mockSaveChapterContent = mock((_chapterId: string, _content: Paragraph[]) => Promise.resolve());
-const mockDeleteChapterContent = mock((_chapterId: string) => Promise.resolve());
+// Mock IndexedDB instead of ChapterContentService
+// This way all ChapterContentService methods are available
+const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
+const mockStorePut = mock(() => Promise.resolve(undefined));
+const mockStoreDelete = mock(() => Promise.resolve(undefined));
+const mockStoreClear = mock(() => Promise.resolve(undefined));
 
-await mock.module('src/services/chapter-content-service', () => ({
-  ChapterContentService: {
-    loadChapterContent: mockLoadChapterContent,
-    saveChapterContent: mockSaveChapterContent,
-    deleteChapterContent: mockDeleteChapterContent,
-  },
+const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
+  objectStore: () => ({
+    get: mockStoreGet,
+    put: mockStorePut,
+    delete: mockStoreDelete,
+    clear: mockStoreClear,
+  }),
+  done: Promise.resolve(),
 }));
 
-// Import ChapterService AFTER mocking
+const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
+const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
+const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
+const mockClear = mock((_storeName: string) => Promise.resolve(undefined));
+
+const mockDb = {
+  getAll: mock(() => Promise.resolve([])),
+  get: mockGet,
+  put: mockPut,
+  delete: mockDelete,
+  clear: mockClear,
+  transaction: mockTransaction,
+};
+
+// Mock IndexedDB BEFORE importing services
+await mock.module('src/utils/indexed-db', () => ({
+  getDB: () => Promise.resolve(mockDb),
+}));
+
+// Import services AFTER mocking IndexedDB
+// This way all methods are available, but IndexedDB calls are mocked
 import { ChapterService } from '../services/chapter-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 
 describe('ChapterService', () => {
   beforeEach(() => {
-    mockLoadChapterContent.mockClear();
-    mockSaveChapterContent.mockClear();
-    mockDeleteChapterContent.mockClear();
+    // Clear ChapterContentService cache
+    ChapterContentService.clearAllCache();
+    // Clear mocks
+    mockGet.mockClear();
+    mockPut.mockClear();
+    mockDelete.mockClear();
+    mockStoreGet.mockClear();
+    mockStorePut.mockClear();
+    mockStoreDelete.mockClear();
   });
   describe('addVolume', () => {
     it('应该添加新卷', () => {
@@ -378,13 +409,18 @@ describe('ChapterService', () => {
       };
 
       const content = [createTestParagraph()];
-      mockLoadChapterContent.mockResolvedValueOnce(content);
+      const chapterContent = {
+        chapterId: 'chapter-1',
+        content: JSON.stringify(content),
+        lastModified: new Date().toISOString(),
+      };
+      mockGet.mockResolvedValueOnce(chapterContent);
 
       const result = await ChapterService.loadChapterContent(chapter);
 
       expect(result.content).toEqual(content);
       expect(result.contentLoaded).toBe(true);
-      expect(mockLoadChapterContent).toHaveBeenCalledWith('chapter-1');
+      expect(mockGet).toHaveBeenCalledWith('chapter-contents', 'chapter-1');
     });
 
     it('应该跳过已加载内容的章节', async () => {
@@ -403,7 +439,7 @@ describe('ChapterService', () => {
       const result = await ChapterService.loadChapterContent(chapter);
 
       expect(result).toBe(chapter); // 应该返回同一个对象
-      expect(mockLoadChapterContent).not.toHaveBeenCalled();
+      expect(mockGet).not.toHaveBeenCalled();
     });
 
     it('应该处理内容不存在的情况', async () => {
@@ -417,7 +453,7 @@ describe('ChapterService', () => {
         createdAt: new Date(),
       };
 
-      mockLoadChapterContent.mockResolvedValueOnce(undefined);
+      mockGet.mockResolvedValueOnce(undefined);
 
       const result = await ChapterService.loadChapterContent(chapter);
 
@@ -442,7 +478,13 @@ describe('ChapterService', () => {
 
       await ChapterService.saveChapterContent(chapter);
 
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', content);
+      expect(mockPut).toHaveBeenCalledWith(
+        'chapter-contents',
+        expect.objectContaining({
+          chapterId: 'chapter-1',
+          content: JSON.stringify(content),
+        }),
+      );
     });
 
     it('应该跳过没有内容的章节', async () => {
@@ -458,7 +500,7 @@ describe('ChapterService', () => {
 
       await ChapterService.saveChapterContent(chapter);
 
-      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+      expect(mockPut).not.toHaveBeenCalled();
     });
 
     it('应该跳过空内容数组的章节', async () => {
@@ -475,7 +517,7 @@ describe('ChapterService', () => {
 
       await ChapterService.saveChapterContent(chapter);
 
-      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+      expect(mockPut).not.toHaveBeenCalled();
     });
   });
 
@@ -485,7 +527,7 @@ describe('ChapterService', () => {
 
       await ChapterService.deleteChapterContent(chapterId);
 
-      expect(mockDeleteChapterContent).toHaveBeenCalledWith(chapterId);
+      expect(mockDelete).toHaveBeenCalledWith('chapter-contents', chapterId);
     });
   });
 });
