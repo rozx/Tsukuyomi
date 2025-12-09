@@ -736,71 +736,18 @@ export class ProofreadingService {
             chunkProofreading = finalResponseText;
           }
 
-          // 验证：检查当前块中的所有段落是否都有校对结果
-          const missingIds: string[] = [];
-          if (chunk.paragraphIds && chunk.paragraphIds.length > 0) {
-            for (const paraId of chunk.paragraphIds) {
-              if (!extractedProofreadings.has(paraId)) {
-                missingIds.push(paraId);
-              }
-            }
-          }
-
-          if (missingIds.length > 0) {
-            console.warn(
-              `[ProofreadingService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的校对结果`,
-              {
-                缺失段落ID:
-                  missingIds.slice(0, 5).join(', ') +
-                  (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
-                已提取校对数: extractedProofreadings.size,
-                预期段落数: chunk.paragraphIds?.length || 0,
-              },
+          // 处理校对结果：AI 现在只返回有变化的段落，这是预期行为
+          if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
+            // 过滤出有变化的段落（AI 应该已经只返回了有变化的段落，但这里再次验证以确保一致性）
+            const chunkParagraphProofreadings = filterChangedParagraphs(
+              chunk.paragraphIds,
+              extractedProofreadings,
+              originalTranslations,
             );
-            // 如果缺少段落ID，使用完整校对文本作为后备方案
-            if (extractedProofreadings.size === 0) {
-              proofreadText += chunkProofreading;
-              if (onChunk) {
-                await onChunk({ text: chunkProofreading, done: false });
-              }
-            } else {
-              // 部分段落有ID，按顺序处理
-              const orderedProofreadings: string[] = [];
-              let chunkParagraphProofreadings: { id: string; translation: string }[] = [];
-              if (chunk.paragraphIds) {
-                // 过滤出有变化的段落
-                chunkParagraphProofreadings = filterChangedParagraphs(
-                  chunk.paragraphIds,
-                  extractedProofreadings,
-                  originalTranslations,
-                );
-                // 按顺序构建文本
-                for (const paraProofreading of chunkParagraphProofreadings) {
-                  orderedProofreadings.push(paraProofreading.translation);
-                  paragraphProofreadings.push(paraProofreading);
-                }
-              }
-              const orderedText = orderedProofreadings.join('\n\n');
-              proofreadText += orderedText || chunkProofreading;
-              if (onChunk) {
-                await onChunk({ text: orderedText || chunkProofreading, done: false });
-              }
-              // 通知段落校对完成（即使只有部分段落）
-              if (onParagraphProofreading && chunkParagraphProofreadings.length > 0) {
-                onParagraphProofreading(chunkParagraphProofreadings);
-              }
-            }
-          } else {
-            // 所有段落都有校对结果，按顺序组织
-            if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
-              const orderedProofreadings: string[] = [];
-              // 过滤出有变化的段落
-              const chunkParagraphProofreadings = filterChangedParagraphs(
-                chunk.paragraphIds,
-                extractedProofreadings,
-                originalTranslations,
-              );
+
+            if (chunkParagraphProofreadings.length > 0) {
               // 按顺序构建文本
+              const orderedProofreadings: string[] = [];
               for (const paraProofreading of chunkParagraphProofreadings) {
                 orderedProofreadings.push(paraProofreading.translation);
                 paragraphProofreadings.push(paraProofreading);
@@ -811,15 +758,16 @@ export class ProofreadingService {
                 await onChunk({ text: orderedText, done: false });
               }
               // 通知段落校对完成
-              if (onParagraphProofreading && chunkParagraphProofreadings.length > 0) {
+              if (onParagraphProofreading) {
                 onParagraphProofreading(chunkParagraphProofreadings);
               }
-            } else {
-              // 没有提取到段落校对，使用完整文本
-              proofreadText += chunkProofreading;
-              if (onChunk) {
-                await onChunk({ text: chunkProofreading, done: false });
-              }
+            }
+            // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
+          } else {
+            // 没有提取到段落校对（可能是 JSON 解析失败或格式不正确），使用完整文本作为后备
+            proofreadText += chunkProofreading;
+            if (onChunk) {
+              await onChunk({ text: chunkProofreading, done: false });
             }
           }
         } catch (e) {
