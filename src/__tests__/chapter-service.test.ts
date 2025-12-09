@@ -1,3 +1,6 @@
+// 必须在所有其他导入之前导入 setup，以确保 polyfill 在 idb 库导入之前设置
+import './setup';
+
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ChapterService } from '../services/chapter-service';
 import type { Novel, Volume, Chapter, Paragraph } from '../models/novel';
