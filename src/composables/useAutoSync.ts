@@ -34,7 +34,6 @@ export function useAutoSync() {
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
 
-
   /**
    * 应用下载的数据（根据冲突解决结果）
    * 注意：自动同步需要特殊处理（检测本地删除），所以使用自定义逻辑
@@ -121,9 +120,8 @@ export function useAutoSync() {
             finalBooksMap.set(remoteNovel.id, mergedNovel);
           } else {
             // 使用本地书籍，但需要确保章节内容已加载
-            const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(
-              localNovel,
-            );
+            const localNovelWithContent =
+              await SyncDataService.ensureNovelContentLoaded(localNovel);
             finalBooksMap.set(localNovel.id, localNovelWithContent);
           }
         } else {
@@ -256,7 +254,6 @@ export function useAutoSync() {
             ...(remoteData?.appSettings ? { appSettings: remoteData.appSettings } : {}),
             ...(remoteData?.coverHistory ? { coverHistory: remoteData.coverHistory } : {}),
           },
-          lastSyncTime,
         );
 
         if (conflictResult && conflictResult.hasConflicts) {
