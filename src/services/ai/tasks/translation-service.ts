@@ -252,6 +252,7 @@ export class TranslationService {
          - 不要过度使用，以免影响流畅性
          - 根据角色的说话风格（speaking_style）准确翻译，不使用与角色不符的语气词
       6. **原文参考**: 参考前面段落或者章节的原文和翻译，确保翻译的一致性，不要出现前后矛盾的情况。
+      7. **标题翻译**: 翻译标题时请参考以前章节的标题翻译，确保翻译格式的一致性。可以使用 \`get_previous_chapter\` 工具查看前一个章节的标题翻译作为参考。
 
       ========================================
       【敬语翻译工作流（必须严格执行）】
@@ -271,7 +272,7 @@ export class TranslationService {
 
       **步骤 3: 检查历史翻译一致性（必须执行）**
       - 使用 \`find_paragraph_by_keywords\` 工具搜索该角色在之前段落中的翻译
-      - 参数: \`keywords\`（角色名或带敬语的名称数组）、\`only_with_translation: true\`、\`max_paragraphs: 3\`
+      - 如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节（从开头到当前）
       - 如果找到之前的翻译，**必须保持一致**
 
       **步骤 4: 应用角色关系**
@@ -367,7 +368,7 @@ export class TranslationService {
 
       **工具使用优先级**:
       1. **高频必用**:
-         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词）
+         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
          - \`list_characters\`: 检查别名冲突、查找重复角色
@@ -377,6 +378,8 @@ export class TranslationService {
          - \`delete_character\` / \`delete_term\`: 清理无用或重复项
          - \`get_occurrences_by_keywords\`: 决定术语添加/删除前确认词频
          - \`get_previous_paragraphs\` / \`get_next_paragraphs\`: 需要更多上下文时
+         - \`get_previous_chapter\` / \`get_next_chapter\`: 需要查看前一个或下一个章节的上下文时（用于理解章节间的连贯性和保持翻译一致性）
+         - \`update_chapter_title\`: 更新章节标题（用于修正章节标题翻译，确保翻译格式的一致性）
 
       ========================================
       【记忆管理工作流】
@@ -388,7 +391,7 @@ export class TranslationService {
          - 完成章节或者某个情节翻译后，推荐可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
          - 重要背景设定也可保存供后续参考
       3. **搜索后保存**:
-         - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
+         - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\`、\`get_previous_chapter\`、\`get_next_chapter\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
 
       ========================================
       【输出格式要求（必须严格遵守）】

@@ -127,10 +127,13 @@ export class AssistantService {
         - ⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆
       - **list_characters**: 列出所有角色
 
-      ### 内容管理（12个工具）
+      ### 内容管理（15个工具）
       - **get_book_info**: 获取书籍信息
       - **list_chapters**: 列出章节（查看所有章节时先调用此工具）
       - **get_chapter_info**: 获取章节详情
+      - **get_previous_chapter**: 获取指定章节的前一个章节信息（用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性）
+      - **get_next_chapter**: 获取指定章节的下一个章节信息（用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性）
+      - **update_chapter_title**: 更新章节标题（可以更新原文标题或翻译标题，用于修正章节标题翻译）
       - **get_paragraph_info**: 获取段落信息（包括所有翻译版本）
       - **get_previous_paragraphs**: 获取指定段落之前的若干个段落（默认 3 个，可通过 count 参数调整）
         - 用于查看当前段落之前的上下文，帮助理解文本的连贯性
@@ -140,7 +143,7 @@ export class AssistantService {
         - 用于查看当前段落之后的上下文，帮助理解文本的连贯性
         - 支持通过 count 参数指定要获取的段落数量（默认 3，建议范围 1-10）
         - 返回多个段落，按从近到远的顺序排列
-      - **find_paragraph_by_keywords**: 关键词查找段落（支持多个关键词，返回包含任一关键词的段落，支持 only_with_translation 参数）
+      - **find_paragraph_by_keywords**: 关键词查找段落（支持多个关键词，返回包含任一关键词的段落，支持 only_with_translation 参数。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
       - **get_translation_history**: 获取段落的完整翻译历史（包括所有翻译版本及其AI模型信息）
       - **add_translation**: 为段落添加新的翻译版本（如果已有5个版本，最旧的会被自动删除）
       - **update_translation**: 更新段落中指定翻译版本的内容（用于编辑和修正翻译历史）
@@ -491,6 +494,9 @@ ${messages
       'get_book_info',
       'list_chapters',
       'get_chapter_info',
+      'get_previous_chapter',
+      'get_next_chapter',
+      'update_chapter_title',
       'get_paragraph_info',
       'get_previous_paragraphs',
       'get_next_paragraphs',
@@ -874,6 +880,9 @@ ${messages
           'search_terms_by_keywords',
           'get_book_info',
           'get_chapter_info',
+          'get_previous_chapter',
+          'get_next_chapter',
+          'update_chapter_title',
           'get_paragraph_info',
           'get_previous_paragraphs',
           'get_next_paragraphs',

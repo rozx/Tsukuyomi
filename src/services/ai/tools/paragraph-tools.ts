@@ -304,7 +304,7 @@ export const paragraphTools: ToolDefinition[] = [
             chapter_id: {
               type: 'string',
               description:
-                '可选的章节 ID，如果提供则从该章节向前搜索（包括该章节及之前的所有章节）',
+                '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
             },
             max_paragraphs: {
               type: 'number',

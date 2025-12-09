@@ -90,6 +90,7 @@ find_paragraph_by_keywords({
   keywords: ["田中さん", "田中"],  // 关键词数组（返回包含任一关键词的段落）
   only_with_translation: true,  // 只返回已翻译的段落
   max_paragraphs: 3
+  // chapter_id: "章节ID"  // 可选：如果提供，则仅在指定章节内搜索；否则搜索所有章节
 })
 ```
 
@@ -156,7 +157,7 @@ find_paragraph_by_keywords({
 | --------------------------- | ------------ | -------------------------------- |
 | `get_previous_paragraphs`   | 获取前文段落 | 需要查看上文语境                 |
 | `get_next_paragraphs`       | 获取后文段落 | 需要查看下文语境                 |
-| `find_paragraph_by_keywords` | 关键词搜索   | ⚠️ 翻译敬语前必须使用，确保一致性（支持多个关键词） |
+| `find_paragraph_by_keywords` | 关键词搜索   | ⚠️ 翻译敬语前必须使用，确保一致性（支持多个关键词）。如果提供 `chapter_id` 参数，则仅在指定章节内搜索；否则搜索所有章节 |
 
 ### 关键工具使用示例
 
@@ -167,6 +168,7 @@ find_paragraph_by_keywords({
   keywords: ["田中さん", "田中"],  // 关键词数组（返回包含任一关键词的段落）
   only_with_translation: true,  // 只返回已翻译的段落
   max_paragraphs: 3
+  // chapter_id: "章节ID"  // 可选：如果提供，则仅在指定章节内搜索；否则搜索所有章节
 })
 ```
 
@@ -641,7 +643,7 @@ create_term({ name: "火球術", translation: "火球术", ... })
 ### 工具使用优先级
 
 **高频必用**：
-1. `find_paragraph_by_keywords` - 敬语翻译、术语一致性（支持多个关键词）
+1. `find_paragraph_by_keywords` - 敬语翻译、术语一致性（支持多个关键词。如果提供 `chapter_id` 参数，则仅在指定章节内搜索；否则搜索所有章节）
 2. `update_character` - 补充翻译、添加别名、更新描述
 3. `update_term` - 补充术语翻译
 4. `list_characters` - 检查别名冲突、查找重复角色

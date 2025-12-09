@@ -243,11 +243,13 @@ export class PolishService {
         - 如遇到错误分类，必须使用 delete_term 或 delete_character 删除错误项，添加到正确表。
         - 如遇到空翻译，必须使用 update_term 或 update_character 修复。
         - 如遇到描述不匹配，必须使用 update_term 或 update_character 修复。
+        - 需要查看前一个或下一个章节的上下文时，可使用 get_previous_chapter 或 get_next_chapter 工具（用于理解章节间的连贯性和保持润色一致性）。
+        - 需要修正章节标题翻译时，可使用 update_chapter_title 工具更新章节标题。
 
       10. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keywords 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
         - **保存记忆**: 完成章节润色后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
-        - **搜索后保存**: 当你通过工具（如 find_paragraph_by_keywords、get_chapter_info 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
+        - **搜索后保存**: 当你通过工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_chapter、get_next_chapter 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
 
       11. **输出格式**: 必须返回有效 JSON 格式:
         {
