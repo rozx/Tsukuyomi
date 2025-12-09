@@ -191,11 +191,13 @@ describe('MemoryService', () => {
       const content = '新内容';
       const summary = '新摘要';
 
-      // Mock: 已有 500 条记录，设置测试数据供游标使用
+      // Mock: 已有 500 条记录
       mockIndexCount.mockResolvedValue(500);
       const oldMemories = Array.from({ length: 500 }, (_, i) =>
         createTestMemory(`id-${i}`, bookId, `content-${i}`, `summary-${i}`, 1000 + i, 1000 + i),
       );
+      // Mock: index.getAll() 返回所有记录
+      mockIndexGetAll.mockResolvedValue(oldMemories);
       // 设置测试数据，供游标使用
       testMemoryData = oldMemories;
       

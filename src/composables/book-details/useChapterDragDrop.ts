@@ -58,6 +58,9 @@ export function useChapterDragDrop(
 
     const { chapter, sourceVolumeId } = draggedChapter.value;
 
+    // 保存状态用于撤销
+    saveState?.('移动章节');
+
     const updatedVolumes = ChapterService.moveChapter(
       book.value,
       chapter.id,

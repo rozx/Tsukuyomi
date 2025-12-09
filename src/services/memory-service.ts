@@ -201,6 +201,9 @@ export class MemoryService {
    * 根据关键词搜索 Memory 的摘要（支持单个关键词，向后兼容）
    */
   static async searchMemoriesByKeyword(bookId: string, keyword: string): Promise<Memory[]> {
+    if (!keyword || !keyword.trim()) {
+      throw new Error('关键词不能为空');
+    }
     return this.searchMemoriesByKeywords(bookId, [keyword]);
   }
 

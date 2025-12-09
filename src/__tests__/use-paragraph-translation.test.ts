@@ -11,6 +11,7 @@ const mockUseToastWithHistory = mock(() => ({
 }));
 
 const mockUpdateChapter = mock((): Volume[] => []);
+const mockSaveChapterContent = mock(() => Promise.resolve());
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
@@ -27,6 +28,7 @@ await mock.module('src/stores/books', () => ({
 await mock.module('src/services/chapter-service', () => ({
   ChapterService: {
     updateChapter: mockUpdateChapter,
+    saveChapterContent: mockSaveChapterContent,
   },
 }));
 
@@ -85,6 +87,7 @@ describe('useParagraphTranslation', () => {
   beforeEach(() => {
     mockToastAdd.mockClear();
     mockUpdateChapter.mockClear();
+    mockSaveChapterContent.mockClear();
     mockBooksStoreUpdateBook.mockClear();
   });
 

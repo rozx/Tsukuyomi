@@ -5,8 +5,8 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  lint-and-type-check:
-    name: Lint and Type Check
+  lint-type-check-and-test:
+    name: Lint, Type Check, and Test
     runs-on: ubuntu-latest
 
     steps:
@@ -34,3 +34,6 @@ jobs:
 
       - name: Run Type Check
         run: bun run type-check
+
+      - name: Run Unit Tests
+        run: bun test
