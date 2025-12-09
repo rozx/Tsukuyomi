@@ -323,17 +323,8 @@ export function useChapterTranslation(
         life: 3000,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Cancelled - no need to show toast
-      } else {
-        console.error('润色段落时出错:', error);
-        toast.add({
-          severity: 'error',
-          summary: '润色失败',
-          detail: error instanceof Error ? error.message : '润色段落时发生未知错误',
-          life: 5000,
-        });
-      }
+      console.error('润色段落时出错:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在润色的集合中移除段落 ID
       polishingParagraphIds.value.delete(paragraphId);
@@ -469,17 +460,8 @@ export function useChapterTranslation(
         life: 3000,
       });
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Cancelled - no need to show toast
-      } else {
-        console.error('重新翻译段落时出错:', error);
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '重新翻译段落时发生未知错误',
-          life: 5000,
-        });
-      }
+      console.error('重新翻译段落时出错:', error);
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在翻译的集合中移除段落 ID
       translatingParagraphIds.value.delete(paragraphId);
@@ -753,23 +735,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('翻译失败:', error);
-      // 检查是否为取消错误（可能是 "请求已取消" 或 "翻译已取消"）
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '翻译已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isTranslatingChapter.value = false;
       translationAbortController.value = null;
@@ -955,22 +921,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('翻译失败:', error);
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '翻译已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '翻译失败',
-          detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isTranslatingChapter.value = false;
       translationAbortController.value = null;
@@ -1181,23 +1132,7 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('润色失败:', error);
-      // 检查是否为取消错误
-      const isCancelled =
-        error instanceof Error &&
-        (error.message === '请求已取消' ||
-          error.message === '润色已取消' ||
-          error.message.includes('取消') ||
-          error.message.includes('cancel') ||
-          error.message.includes('aborted'));
-
-      if (!isCancelled) {
-        toast.add({
-          severity: 'error',
-          summary: '润色失败',
-          detail: error instanceof Error ? error.message : '润色时发生未知错误',
-          life: 3000,
-        });
-      }
+      // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       isPolishingChapter.value = false;
       polishAbortController.value = null;

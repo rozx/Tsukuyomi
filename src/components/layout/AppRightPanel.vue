@@ -1764,15 +1764,7 @@ const sendMessage = async () => {
       chatSessionsStore.updateSessionMessages(sessionId, messages.value);
     }
 
-    // 如果不是用户主动取消，显示错误提示
-    if (!isAborted) {
-      toast.add({
-        severity: 'error',
-        summary: '助手回复失败',
-        detail: error instanceof Error ? error.message : '未知错误',
-        life: 5000,
-      });
-    }
+    // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
   } finally {
     isSending.value = false;
     currentTaskId.value = null;

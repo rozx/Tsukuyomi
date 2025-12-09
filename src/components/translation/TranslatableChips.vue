@@ -295,18 +295,7 @@ const handleTranslate = async () => {
     showTranslationDialog.value = true;
   } catch (error) {
     console.error('翻译失败:', error);
-    // 检查是否是被取消的
-    const isCancelled = error instanceof Error && error.message === '翻译已取消';
-
-    // 只有非取消的错误才显示 toast（任务状态已由服务管理）
-    if (!isCancelled) {
-      toast.add({
-        severity: 'error',
-        summary: '翻译失败',
-        detail: error instanceof Error ? error.message : '翻译时发生未知错误',
-        life: 3000,
-      });
-    }
+    // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
   } finally {
     translating.value = false;
     // 任务移除已由服务管理，这里只需要清理本地引用
