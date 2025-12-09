@@ -16,15 +16,15 @@ if (typeof globalThis.indexedDB === 'undefined') {
         onsuccess: null,
         onblocked: null,
         onupgradeneeded: null,
-        result: null,
+        result: null as IDBDatabase | null,
         error: null,
         readyState: 'done' as IDBRequestReadyState,
-        source: null,
+        source: null as IDBObjectStore | IDBIndex | IDBCursor | null,
         transaction: null,
         addEventListener: () => {},
         removeEventListener: () => {},
         dispatchEvent: () => true,
-      } as IDBOpenDBRequest;
+      } as unknown as IDBOpenDBRequest;
       
       // 立即失败，因为实际使用应该通过 mock.module 来模拟
       setTimeout(() => {
@@ -43,12 +43,12 @@ if (typeof globalThis.indexedDB === 'undefined') {
         result: null,
         error: null,
         readyState: 'done' as IDBRequestReadyState,
-        source: null,
+        source: null as IDBObjectStore | IDBIndex | IDBCursor | null,
         transaction: null,
         addEventListener: () => {},
         removeEventListener: () => {},
         dispatchEvent: () => true,
-      } as IDBRequest;
+      } as unknown as IDBRequest;
       
       setTimeout(() => {
         if (request.onsuccess) {
