@@ -129,6 +129,12 @@ const handleResizeEnd = () => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleResizeMove);
   document.removeEventListener('mouseup', handleResizeEnd);
+  // 清理所有思考过程活动状态超时器
+  for (const timeoutId of thinkingActiveTimeouts.value.values()) {
+    clearTimeout(timeoutId);
+  }
+  thinkingActiveTimeouts.value.clear();
+  thinkingActive.value.clear();
 });
 
 const messages = ref<ChatMessage[]>([]);
@@ -147,6 +153,49 @@ const thinkingExpanded = ref<Map<string, boolean>>(new Map());
 
 // 思考过程内容容器 refs（用于滚动）
 const thinkingContentRefs = ref<Map<string, HTMLElement | null>>(new Map());
+
+// 思考过程活动状态（messageId -> isActive），用于显示加载指示器
+const thinkingActive = ref<Map<string, boolean>>(new Map());
+
+// 思考过程活动状态超时器（messageId -> timeoutId），用于清除活动状态
+const thinkingActiveTimeouts = ref<Map<string, number>>(new Map());
+
+// 设置思考过程为活动状态
+const setThinkingActive = (messageId: string, isActive: boolean) => {
+  if (isActive) {
+    thinkingActive.value.set(messageId, true);
+    // 清除之前的超时器（如果有）
+    const existingTimeout = thinkingActiveTimeouts.value.get(messageId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      thinkingActiveTimeouts.value.delete(messageId);
+    }
+  } else {
+    thinkingActive.value.delete(messageId);
+    // 清除超时器
+    const existingTimeout = thinkingActiveTimeouts.value.get(messageId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      thinkingActiveTimeouts.value.delete(messageId);
+    }
+  }
+};
+
+// 标记思考过程为活动状态，并在2秒后自动清除（如果没有新的思考块）
+const markThinkingActive = (messageId: string) => {
+  thinkingActive.value.set(messageId, true);
+  // 清除之前的超时器（如果有）
+  const existingTimeout = thinkingActiveTimeouts.value.get(messageId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+  }
+  // 设置新的超时器，2秒后清除活动状态
+  const timeoutId = window.setTimeout(() => {
+    thinkingActive.value.delete(messageId);
+    thinkingActiveTimeouts.value.delete(messageId);
+  }, 2000);
+  thinkingActiveTimeouts.value.set(messageId, timeoutId);
+};
 
 // 设置思考过程内容容器 ref
 const setThinkingContentRef = (messageId: string, el: HTMLElement | null) => {
@@ -549,6 +598,8 @@ const sendMessage = async () => {
             msg.thinkingProcess = '';
           }
           msg.thinkingProcess += text;
+          // 标记思考过程为活动状态（显示加载指示器）
+          markThinkingActive(assistantMessageId);
           // 如果思考过程已展开，滚动到思考过程内容底部
           if (thinkingExpanded.value.get(assistantMessageId)) {
             scrollThinkingToBottom(assistantMessageId);
@@ -1471,6 +1522,8 @@ const sendMessage = async () => {
                 msg.thinkingProcess = '';
               }
               msg.thinkingProcess += text;
+              // 标记思考过程为活动状态（显示加载指示器）
+              markThinkingActive(assistantMessageId);
               // 如果思考过程已展开，滚动到思考过程内容底部
               if (thinkingExpanded.value.get(assistantMessageId)) {
                 scrollThinkingToBottom(assistantMessageId);
@@ -1661,6 +1714,8 @@ const sendMessage = async () => {
               finalMsg.actions.push(messageAction);
             }
           }
+          // 清除思考过程活动状态（消息已完成）
+          setThinkingActive(assistantMessageId, false);
         }
 
         // 更新 store 中的消息历史
@@ -1721,6 +1776,8 @@ const sendMessage = async () => {
       if (!msg.actions) {
         msg.actions = [];
       }
+      // 清除思考过程活动状态（消息已完成）
+      setThinkingActive(assistantMessageId, false);
     }
 
     // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
@@ -1757,6 +1814,8 @@ const sendMessage = async () => {
       if (currentMessageActions.value.length > 0) {
         msg.actions = [...currentMessageActions.value];
       }
+      // 清除思考过程活动状态（消息已失败）
+      setThinkingActive(assistantMessageId, false);
     }
 
     // 保存消息到正确的会话（使用保存的会话 ID）
@@ -1770,6 +1829,10 @@ const sendMessage = async () => {
     currentTaskId.value = null;
     // 清空操作列表（无论成功还是失败）
     currentMessageActions.value = [];
+    // 清除所有思考过程活动状态（消息已完成或失败）
+    if (assistantMessageId) {
+      setThinkingActive(assistantMessageId, false);
+    }
     scrollToBottom();
     // 聚焦输入框
     focusInput();
@@ -1797,10 +1860,14 @@ const stopCurrentTask = async () => {
       .slice()
       .reverse()
       .find((msg) => msg.role === 'assistant');
-    if (lastAssistantMsg && !lastAssistantMsg.content.trim()) {
-      lastAssistantMsg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
-    } else if (lastAssistantMsg && !lastAssistantMsg.content.includes('**已取消**')) {
-      lastAssistantMsg.content += '\n\n**已取消**';
+    if (lastAssistantMsg) {
+      if (!lastAssistantMsg.content.trim()) {
+        lastAssistantMsg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
+      } else if (!lastAssistantMsg.content.includes('**已取消**')) {
+        lastAssistantMsg.content += '\n\n**已取消**';
+      }
+      // 清除思考过程活动状态（任务已停止）
+      setThinkingActive(lastAssistantMsg.id, false);
     }
 
     // 保存消息到会话
@@ -2466,6 +2533,10 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                     "
                   />
                   <span class="font-medium">思考过程</span>
+                  <i
+                    v-if="thinkingActive.get(message.id)"
+                    class="pi pi-spin pi-spinner text-xs ml-auto"
+                  />
                 </button>
                 <div
                   v-if="thinkingExpanded.get(message.id)"
