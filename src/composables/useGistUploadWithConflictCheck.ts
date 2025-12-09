@@ -31,15 +31,18 @@ export function useGistUploadWithConflictCheck() {
     appSettings?: any;
     coverHistory?: any[];
   } | null>(null);
+  const syncIntent = ref<'upload' | 'download'>('upload');
 
   /**
    * 检查冲突（如果存在 Gist ID）
    * @param config 同步配置
    * @returns 如果有冲突返回 true，否则返回 false
    */
-  const checkConflicts = async (config: SyncConfig): Promise<boolean> => {
+  const checkConflicts = async (
+    config: SyncConfig,
+  ): Promise<{ hasConflicts: boolean; data?: any }> => {
     if (!config.syncParams.gistId) {
-      return false; // 没有 Gist ID，无需检查冲突
+      return { hasConflicts: false }; // 没有 Gist ID，无需检查冲突
     }
 
     try {
@@ -55,8 +58,9 @@ export function useGistUploadWithConflictCheck() {
           // 有冲突，保存状态供后续处理
           detectedConflicts.value = conflicts;
           pendingRemoteData.value = safeRemoteData;
-          return true;
+          return { hasConflicts: true, data: safeRemoteData };
         }
+        return { hasConflicts: false, data: downloadResult.data };
       } else if (!downloadResult.success) {
         // 下载失败
         toast.add({
@@ -77,7 +81,7 @@ export function useGistUploadWithConflictCheck() {
       throw error;
     }
 
-    return false; // 无冲突
+    return { hasConflicts: false }; // 无冲突
   };
 
   /**
@@ -91,7 +95,13 @@ export function useGistUploadWithConflictCheck() {
     config: SyncConfig,
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
     onError?: (error: string) => void,
-  ): Promise<{ success: boolean; gistId?: string; isRecreated?: boolean; message?: string; error?: string }> => {
+  ): Promise<{
+    success: boolean;
+    gistId?: string;
+    isRecreated?: boolean;
+    message?: string;
+    error?: string;
+  }> => {
     try {
       const result = await gistSyncService.uploadToGist(config, {
         aiModels: aiModelsStore.models,
@@ -168,8 +178,9 @@ export function useGistUploadWithConflictCheck() {
   ): Promise<boolean> => {
     // 检查冲突
     setSyncing(true);
+    syncIntent.value = 'upload';
     try {
-      const hasConflicts = await checkConflicts(config);
+      const { hasConflicts } = await checkConflicts(config);
 
       if (hasConflicts) {
         // 有冲突，显示对话框
@@ -190,13 +201,60 @@ export function useGistUploadWithConflictCheck() {
   };
 
   /**
-   * 处理冲突解决后的上传
+   * 下载前检查冲突并下载（如果无冲突）
+   * @param config 同步配置
+   * @param setSyncing 设置同步状态的函数
+   * @returns 如果有冲突返回 true，否则返回 false
+   */
+  const downloadWithConflictCheck = async (
+    config: SyncConfig,
+    setSyncing: (value: boolean) => void,
+  ): Promise<boolean> => {
+    setSyncing(true);
+    syncIntent.value = 'download';
+    try {
+      const { hasConflicts, data } = await checkConflicts(config);
+
+      if (hasConflicts) {
+        showConflictDialog.value = true;
+        setSyncing(false);
+        return true;
+      }
+
+      // 无冲突，直接应用下载的数据
+      if (data) {
+        await SyncDataService.applyDownloadedData(data, [], 'download');
+        void co(function* () {
+          try {
+            yield settingsStore.updateLastSyncTime();
+          } catch (error) {
+            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
+          }
+        });
+        toast.add({
+          severity: 'success',
+          summary: '下载成功',
+          detail: '从 Gist 下载数据成功',
+          life: 3000,
+        });
+      }
+      return false;
+    } catch (error) {
+      setSyncing(false);
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  /**
+   * 处理冲突解决
    * @param config 同步配置
    * @param resolutions 冲突解决结果
    * @param setSyncing 设置同步状态的函数
    * @param onSuccess 成功回调（可选），接收上传结果
    */
-  const handleConflictResolveAndUpload = async (
+  const handleConflictResolve = async (
     config: SyncConfig,
     resolutions: ConflictResolution[],
     setSyncing: (value: boolean) => void,
@@ -215,7 +273,7 @@ export function useGistUploadWithConflictCheck() {
 
     try {
       // 应用冲突解决后的数据
-      await SyncDataService.applyDownloadedData(safeRemoteData, resolutions);
+      await SyncDataService.applyDownloadedData(safeRemoteData, resolutions, syncIntent.value);
 
       // 更新同步时间
       void co(function* () {
@@ -226,8 +284,8 @@ export function useGistUploadWithConflictCheck() {
         }
       });
 
-      // 上传最终状态
-      if (config.enabled) {
+      // 如果是上传意图，则上传最终状态
+      if (syncIntent.value === 'upload' && config.enabled) {
         await performUpload(config, onSuccess);
       } else {
         toast.add({
@@ -265,8 +323,8 @@ export function useGistUploadWithConflictCheck() {
     detectedConflicts,
     pendingRemoteData,
     uploadWithConflictCheck,
-    handleConflictResolveAndUpload,
+    downloadWithConflictCheck,
+    handleConflictResolve,
     handleConflictCancel,
   };
 }
-

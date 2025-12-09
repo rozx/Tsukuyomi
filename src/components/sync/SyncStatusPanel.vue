@@ -85,7 +85,8 @@ const {
   detectedConflicts,
   pendingRemoteData,
   uploadWithConflictCheck,
-  handleConflictResolveAndUpload,
+  downloadWithConflictCheck,
+  handleConflictResolve,
   handleConflictCancel,
 } = useGistUploadWithConflictCheck();
 
@@ -129,7 +130,6 @@ const uploadConfig = async () => {
   }
 };
 
-
 // 下载配置
 const downloadConfig = async () => {
   const config = gistSync.value;
@@ -148,68 +148,27 @@ const downloadConfig = async () => {
     return;
   }
 
-  isSyncing.value = true;
-  try {
-    const result = await gistSyncService.downloadFromGist(config);
+  // 使用 composable 处理冲突检查和下载
+  const hasConflicts = await downloadWithConflictCheck(config, (value) => {
+    isSyncing.value = value;
+  });
 
-    if (result.success && result.data) {
-      // 检测冲突并创建安全的数据对象
-      const { hasConflicts, conflicts, safeRemoteData } =
-        SyncDataService.detectConflictsAndCreateSafeData(result.data);
-
-      if (hasConflicts) {
-        // 有冲突，显示冲突解决对话框
-        detectedConflicts.value = conflicts;
-        pendingRemoteData.value = safeRemoteData;
-        showConflictDialog.value = true;
-        isSyncing.value = false;
-        return;
-      }
-
-      // 无冲突，直接应用
-      await SyncDataService.applyDownloadedData(safeRemoteData, []);
-
-      void co(function* () {
-        try {
-          yield settingsStore.updateLastSyncTime();
-        } catch (error) {
-          console.error('[SyncStatusPanel] 更新最后同步时间失败:', error);
-        }
-      });
-      remoteStats.value = {
-        booksCount: result.data.novels?.length || 0,
-        aiModelsCount: result.data.aiModels?.length || 0,
-      };
-      toast.add({
-        severity: 'success',
-        summary: '下载成功',
-        detail: result.message || '从 Gist 下载数据成功',
-        life: 3000,
-      });
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: '下载失败',
-        detail: result.error || '从 Gist 下载数据时发生未知错误',
-        life: 5000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '下载失败',
-      detail: error instanceof Error ? error.message : '下载时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    isSyncing.value = false;
+  if (!hasConflicts) {
+    // 如果没有冲突，downloadWithConflictCheck 已经应用了数据
+    // 我们只需要更新统计信息
+    // 注意：这里我们无法直接获取下载的数据来更新统计，
+    // 但我们可以更新为本地当前状态（因为已经同步了）
+    remoteStats.value = {
+      booksCount: booksStore.books.length,
+      aiModelsCount: aiModelsStore.models.length,
+    };
   }
 };
 
 // 处理冲突解决
-const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
+const onConflictResolve = async (resolutions: ConflictResolution[]) => {
   const config = gistSync.value;
-  await handleConflictResolveAndUpload(
+  await handleConflictResolve(
     config,
     resolutions,
     (value) => {
@@ -316,7 +275,7 @@ defineExpose({
   <ConflictResolutionDialog
     :visible="showConflictDialog"
     :conflicts="detectedConflicts"
-    @resolve="handleConflictResolve"
+    @resolve="onConflictResolve"
     @cancel="handleConflictCancel"
   />
 </template>

@@ -273,7 +273,8 @@ export function useAutoSync() {
         }
 
         // 无冲突，直接应用
-        await applyDownloadedData(result.data, []);
+        // 自动同步时，使用 'auto' 意图，以便根据时间戳自动合并
+        await SyncDataService.applyDownloadedData(result.data, [], 'auto');
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
@@ -357,18 +358,31 @@ export function useAutoSync() {
     // 冲突解决后，上传最终状态到 Gist
     const config = settingsStore.gistSync;
     if (config.enabled) {
-      try {
-        settingsStore.setSyncing(true);
-        await gistSyncService.uploadToGist(config, {
+      // 检查是否需要上传（如果有本地更改）
+      const shouldUpload = SyncDataService.hasChangesToUpload(
+        {
+          novels: booksStore.books,
           aiModels: aiModelsStore.models,
           appSettings: settingsStore.getAllSettings(),
-          novels: booksStore.books,
           coverHistory: coverHistoryStore.covers,
-        });
-      } catch {
-        // 静默失败
-      } finally {
-        settingsStore.setSyncing(false);
+        },
+        safeRemoteData,
+      );
+
+      if (shouldUpload) {
+        try {
+          settingsStore.setSyncing(true);
+          await gistSyncService.uploadToGist(config, {
+            aiModels: aiModelsStore.models,
+            appSettings: settingsStore.getAllSettings(),
+            novels: booksStore.books,
+            coverHistory: coverHistoryStore.covers,
+          });
+        } catch {
+          // 静默失败
+        } finally {
+          settingsStore.setSyncing(false);
+        }
       }
     }
   };

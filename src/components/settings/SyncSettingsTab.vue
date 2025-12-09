@@ -200,7 +200,8 @@ const {
   showConflictDialog,
   detectedConflicts,
   uploadWithConflictCheck,
-  handleConflictResolveAndUpload,
+  downloadWithConflictCheck,
+  handleConflictResolve,
   handleConflictCancel,
 } = useGistUploadWithConflictCheck();
 
@@ -557,7 +558,9 @@ const saveGistConfig = (shouldRestartAutoSync = false) => {
       }
       yield settingsStore.setGistSyncEnabled(gistEnabled.value);
       // 保存自动同步设置（注意：这不会覆盖已设置的 lastSyncTime）
-      yield settingsStore.setSyncInterval(autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0);
+      yield settingsStore.setSyncInterval(
+        autoSyncEnabled.value ? syncIntervalMinutes.value * 60000 : 0,
+      );
     } catch (error) {
       console.error('[SyncSettingsTab] 保存 Gist 配置失败:', error);
     }
@@ -764,60 +767,27 @@ const downloadFromGist = async () => {
     return;
   }
 
-  gistSyncing.value = true;
-  try {
-    const baseConfig = settingsStore.gistSync;
-    const config: SyncConfig = {
-      ...baseConfig,
-      enabled: true,
-      syncParams: {
-        ...baseConfig.syncParams,
-        username: gistUsername.value,
-        gistId: gistId.value,
-      },
-      secret: gistToken.value,
-    };
+  const baseConfig = settingsStore.gistSync;
+  const config: SyncConfig = {
+    ...baseConfig,
+    enabled: true,
+    syncParams: {
+      ...baseConfig.syncParams,
+      username: gistUsername.value,
+      gistId: gistId.value,
+    },
+    secret: gistToken.value,
+  };
 
-    const result = await gistSyncService.downloadFromGist(config);
+  // 使用 composable 处理冲突检查和下载
+  const hasConflicts = await downloadWithConflictCheck(config, (value) => {
+    gistSyncing.value = value;
+  });
 
-    if (result.success && result.data) {
-      // 直接应用下载的数据（无冲突解决，因为这是手动下载，直接覆盖）
-      await SyncDataService.applyDownloadedData(result.data, []);
-
-      void co(function* () {
-        try {
-          yield settingsStore.updateLastSyncTime();
-        } catch (error) {
-          console.error('[SyncSettingsTab] 更新最后同步时间失败:', error);
-        }
-      });
-      gistLastSyncTime.value = Date.now();
-      // 重置自动同步定时器
-      setupAutoSync();
-
-      toast.add({
-        severity: 'success',
-        summary: '下载成功',
-        detail: result.message || '从 Gist 下载数据成功',
-        life: 3000,
-      });
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: '下载失败',
-        detail: result.error || '从 Gist 下载数据时发生未知错误',
-        life: 5000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '下载失败',
-      detail: error instanceof Error ? error.message : '下载时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    gistSyncing.value = false;
+  if (!hasConflicts) {
+    gistLastSyncTime.value = Date.now();
+    // 重置自动同步定时器
+    setupAutoSync();
   }
 };
 
@@ -916,7 +886,7 @@ const deleteGist = () => {
 };
 
 // 处理冲突解决
-const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
+const onConflictResolve = async (resolutions: ConflictResolution[]) => {
   const baseConfig = settingsStore.gistSync;
   const config: SyncConfig = {
     ...baseConfig,
@@ -929,7 +899,7 @@ const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
     secret: gistToken.value,
   };
 
-  await handleConflictResolveAndUpload(
+  await handleConflictResolve(
     config,
     resolutions,
     (value) => {
@@ -939,7 +909,21 @@ const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
       // 更新 Gist ID
       if (result.gistId) {
         gistId.value = result.gistId;
+        if (result.isRecreated) {
+          toast.add({
+            severity: 'warn',
+            summary: 'Gist 已重新创建',
+            detail: result.message,
+            life: 5000,
+          });
+        }
       }
+      toast.add({
+        severity: 'success',
+        summary: '同步成功',
+        detail: result.message || '同步到 Gist 成功',
+        life: 3000,
+      });
       gistLastSyncTime.value = Date.now();
       saveGistConfig();
       // 重置自动同步定时器
@@ -1227,7 +1211,7 @@ const handleConflictResolve = async (resolutions: ConflictResolution[]) => {
     <ConflictResolutionDialog
       :visible="showConflictDialog"
       :conflicts="detectedConflicts"
-      @resolve="handleConflictResolve"
+      @resolve="onConflictResolve"
       @cancel="handleConflictCancel"
     />
   </div>
