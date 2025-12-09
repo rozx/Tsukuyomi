@@ -1082,10 +1082,10 @@ const handleSaveCharacter = async (data: {
       await CharacterSettingService.addCharacterSetting(book.value.id, {
         name: data.name,
         sex: data.sex,
-        translation: data.translation || undefined,
-        description: data.description || undefined,
-        speakingStyle: data.speakingStyle || undefined,
-        aliases: data.aliases || undefined,
+        ...(data.translation ? { translation: data.translation } : {}),
+        ...(data.description ? { description: data.description } : {}),
+        ...(data.speakingStyle ? { speakingStyle: data.speakingStyle } : {}),
+        ...(data.aliases ? { aliases: data.aliases } : {}),
       });
 
       toast.add({
@@ -1226,8 +1226,8 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
 
       await TerminologyService.addTerminology(book.value.id, {
         name: data.name,
-        translation: data.translation || undefined,
-        description: data.description || undefined,
+        ...(data.translation ? { translation: data.translation } : {}),
+        ...(data.description ? { description: data.description } : {}),
       });
 
       toast.add({

@@ -125,7 +125,7 @@ export function useGistUploadWithConflictCheck() {
         if (onSuccess) {
           onSuccess(result);
         }
-        return { success: true, ...result };
+        return { ...result, success: true };
       } else {
         const errorMsg = result.error || '同步到 Gist 时发生未知错误';
         toast.add({

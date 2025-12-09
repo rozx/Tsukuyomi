@@ -4,6 +4,7 @@ import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
+import { SyncDataService } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -82,6 +83,7 @@ const remoteStats = ref<{
 const {
   showConflictDialog,
   detectedConflicts,
+  pendingRemoteData,
   uploadWithConflictCheck,
   handleConflictResolveAndUpload,
   handleConflictCancel,
@@ -165,7 +167,7 @@ const downloadConfig = async () => {
       }
 
       // 无冲突，直接应用
-      await applyDownloadedData(safeRemoteData, []);
+      await SyncDataService.applyDownloadedData(safeRemoteData, []);
 
       void co(function* () {
         try {

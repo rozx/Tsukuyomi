@@ -11,9 +11,9 @@ export interface ActionInfo {
     | { id: string; name?: string }
     | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean }
     | { paragraph_id: string; translation_id: string; old_translation: string; new_translation: string }
-    | { chapter_id?: string; chapter_title?: string; paragraph_id?: string; character_name?: string; book_id?: string; tool_name?: string }
+    | { chapter_id?: string; chapter_title?: string; paragraph_id?: string; character_name?: string; book_id?: string; tool_name?: string; old_title?: string; new_title?: string }
     | { memory_id?: string; keyword?: string; keywords?: string[]; summary?: string; id?: string; tool_name?: string; limit?: number; sort_by?: string };
-  previousData?: Terminology | CharacterSetting | Translation; // 用于 revert 的原始数据（仅用于 update 操作）
+  previousData?: Terminology | CharacterSetting | Translation | { title_original?: string; title_translation?: string }; // 用于 revert 的原始数据（仅用于 update 操作）
 }
 
 export interface ToolContext {

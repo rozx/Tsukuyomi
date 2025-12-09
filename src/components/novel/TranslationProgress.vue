@@ -54,7 +54,7 @@ const saveHeight = (height: number) => {
 const handleResizeStart = (e: MouseEvent | TouchEvent) => {
   e.preventDefault();
   isResizing.value = true;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  const clientY = 'touches' in e && e.touches[0] ? e.touches[0].clientY : (e as MouseEvent).clientY;
   resizeStartY.value = clientY;
   resizeStartHeight.value = aiHistoryHeight.value;
   document.addEventListener('mousemove', handleResizeMove);
@@ -66,7 +66,7 @@ const handleResizeStart = (e: MouseEvent | TouchEvent) => {
 const handleResizeMove = (e: MouseEvent | TouchEvent) => {
   if (!isResizing.value) return;
   e.preventDefault();
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  const clientY = 'touches' in e && e.touches[0] ? e.touches[0].clientY : (e as MouseEvent).clientY;
   const deltaY = resizeStartY.value - clientY; // Inverted: dragging up increases height
   const newHeight = Math.max(200, Math.min(800, resizeStartHeight.value + deltaY));
   aiHistoryHeight.value = newHeight;
@@ -281,17 +281,21 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
         chunkInfo: `${match[1]}块 ${match[2]}`,
       });
     } else if (type === 'tool-call') {
-      parts.push({
-        type: 'tool-call',
-        text: match[0],
-        toolName: match[1],
-      });
+      if (match[1]) {
+        parts.push({
+          type: 'tool-call',
+          text: match[0],
+          toolName: match[1],
+        });
+      }
     } else if (type === 'tool-result') {
-      parts.push({
-        type: 'tool-result',
-        text: match[0],
-        toolName: match[1],
-      });
+      if (match[1]) {
+        parts.push({
+          type: 'tool-result',
+          text: match[0],
+          toolName: match[1],
+        });
+      }
     }
     
     currentIndex = index + match[0].length;

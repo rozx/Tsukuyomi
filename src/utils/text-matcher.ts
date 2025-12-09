@@ -399,10 +399,11 @@ export function parseTextForHighlighting(
       // 角色匹配：包含所有匹配的角色
       const characters = entry.characters;
       if (characters.length > 0) {
+        const firstCharacter = characters[0];
         nodes.push({
           type: 'character',
           content: match.matchedName,
-          character: characters[0], // 第一个角色用于向后兼容
+          ...(firstCharacter ? { character: firstCharacter } : {}), // 第一个角色用于向后兼容
           characters: characters, // 所有匹配的角色
         });
       }
