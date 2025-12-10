@@ -725,7 +725,13 @@ const {
   prevMatch,
   replaceCurrent,
   replaceAll,
-} = useSearchReplace(book, selectedChapter, selectedChapterParagraphs, updateParagraphTranslation);
+} = useSearchReplace(
+  book,
+  selectedChapter,
+  selectedChapterParagraphs,
+  updateParagraphTranslation,
+  currentlyEditingParagraphId,
+);
 
 // 初始化键盘快捷键 composable
 const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts(

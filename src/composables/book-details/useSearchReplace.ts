@@ -8,7 +8,8 @@ export function useSearchReplace(
   book: Ref<Novel | undefined>,
   selectedChapter: Ref<Chapter | null>,
   selectedChapterParagraphs: Ref<Paragraph[]>,
-  updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>
+  updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>,
+  currentlyEditingParagraphId?: Ref<string | null>,
 ) {
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
@@ -20,8 +21,27 @@ export function useSearchReplace(
   const replaceQuery = ref('');
   const currentSearchMatchIndex = ref(-1);
 
-  // Helper to get paragraph translation text
+  /**
+   * 获取段落翻译文本
+   * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容
+   */
   const getParagraphTranslationText = (paragraph: Paragraph): string => {
+    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容
+    if (currentlyEditingParagraphId?.value === paragraph.id) {
+      const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
+      if (paragraphElement) {
+        // 查找段落内的 textarea 元素（用于编辑翻译）
+        // PrimeVue Textarea 组件会将 textarea 包装在内部
+        const textarea = paragraphElement.querySelector(
+          '.paragraph-translation-edit textarea',
+        ) as HTMLTextAreaElement | null;
+        if (textarea && textarea.value !== undefined) {
+          return textarea.value;
+        }
+      }
+    }
+
+    // 否则返回保存的翻译内容
     if (!paragraph.selectedTranslationId || !paragraph.translations) {
       return '';
     }
@@ -69,7 +89,8 @@ export function useSearchReplace(
 
   const nextMatch = () => {
     if (!searchMatches.value.length) return;
-    currentSearchMatchIndex.value = (currentSearchMatchIndex.value + 1) % searchMatches.value.length;
+    currentSearchMatchIndex.value =
+      (currentSearchMatchIndex.value + 1) % searchMatches.value.length;
     const match = searchMatches.value[currentSearchMatchIndex.value];
     if (match) scrollToMatch(match.id);
   };
@@ -91,17 +112,31 @@ export function useSearchReplace(
     const match = searchMatches.value[currentSearchMatchIndex.value];
     if (!match) return;
 
-    const chapter = selectedChapter.value;
-    if (!chapter?.content) return;
-
-    const paragraph = chapter.content.find((p) => p.id === match.id);
+    // 从 selectedChapterParagraphs 中查找段落，确保使用正确的数据源（包含当前编辑内容）
+    const paragraph = selectedChapterParagraphs.value.find((p) => p.id === match.id);
     if (!paragraph) return;
 
+    // 获取当前文本（如果正在编辑，会从 DOM 获取）
     const text = getParagraphTranslationText(paragraph);
     const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
     const newText = text.replace(regex, replaceQuery.value);
 
     if (newText !== text) {
+      // 如果段落正在编辑，需要先更新 DOM 中的 textarea，然后再保存
+      if (currentlyEditingParagraphId?.value === paragraph.id) {
+        const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
+        if (paragraphElement) {
+          const textarea = paragraphElement.querySelector(
+            '.paragraph-translation-edit textarea',
+          ) as HTMLTextAreaElement | null;
+          if (textarea) {
+            textarea.value = newText;
+            // 触发 input 事件以确保 Vue 的 v-model 更新
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      }
+
       await updateParagraphTranslation(match.id, newText);
       toast.add({ severity: 'success', summary: '已替换', life: 3000 });
     }
@@ -109,8 +144,12 @@ export function useSearchReplace(
 
   const replaceAll = async () => {
     if (!searchMatches.value.length) return;
+    // 使用 selectedChapterParagraphs 来获取段落，因为它来自 selectedChapterWithContent，确保有内容
+    const paragraphs = selectedChapterParagraphs.value;
+    if (!paragraphs || paragraphs.length === 0) return;
+
     const chapter = selectedChapter.value;
-    if (!chapter?.content) return;
+    if (!chapter) return;
 
     let count = 0;
     const matches = [...searchMatches.value];
@@ -125,28 +164,28 @@ export function useSearchReplace(
 
     // Create a deep copy or modify directly? Original code modified directly then saved.
     // We need to iterate over paragraphs and update translations.
-    
+
     // Since we are in a composable, let's use the store to update.
     // But we need to construct the updated volumes.
-    
+
     // Reuse logic from original file:
-    
+
     // We will update the book object's structure.
     // NOTE: This assumes `book.value` is reactive and connected to the store or we update the store.
     // The original code updated `book.value.volumes` then called `booksStore.updateBook`.
     // `book` prop here is a Ref to the book from the store.
-    
+
     // Wait, `book` in `BookDetailsPage` comes from `booksStore.getBookById`.
     // Modifying it directly might not be best practice if it's a store object, but let's follow the original pattern for now
     // which seemed to modify local state (if it was a copy) or store state.
     // Actually `booksStore.getBookById` returns the reactive object from the store state in Pinia usually.
-    
+
     // Let's be safe and clone the volumes to update.
-    
+
     // However, since we need to update `translation` inside `paragraph.translations`, we need to find them.
-    
+
     // Let's just implement the loop logic here.
-    
+
     // We can't easily "update" the local `book.value` if it's read-only from store getters (if it is).
     // But in the original code: `book` was a computed: `return booksStore.getBookById(bookId.value);`.
     // And they did `const updatedVolumes = ...` then `booksStore.updateBook`.
@@ -160,16 +199,34 @@ export function useSearchReplace(
     */
     // It seems it was modifying the `paragraph` object in place (which is part of `selectedChapter` which is part of `book`).
     // This implies `book` is reactive and mutable.
-    
+
     for (const match of matches) {
-      const paragraph = chapter.content.find((p) => p.id === match.id);
+      // 从 selectedChapterParagraphs 中查找段落，确保使用正确的数据源
+      const paragraph = paragraphs.find((p) => p.id === match.id);
       if (!paragraph) continue;
 
+      // 获取当前文本（如果正在编辑，会从 DOM 获取）
       const text = getParagraphTranslationText(paragraph);
       const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
       const newText = text.replace(regex, replaceQuery.value);
 
       if (newText !== text) {
+        // 如果段落正在编辑，需要先更新 DOM 中的 textarea
+        if (currentlyEditingParagraphId?.value === paragraph.id) {
+          const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
+          if (paragraphElement) {
+            const textarea = paragraphElement.querySelector(
+              '.paragraph-translation-edit textarea',
+            ) as HTMLTextAreaElement | null;
+            if (textarea) {
+              textarea.value = newText;
+              // 触发 input 事件以确保 Vue 的 v-model 更新
+              textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+        }
+
+        // 更新保存的翻译内容
         if (paragraph.selectedTranslationId && paragraph.translations) {
           const translation = paragraph.translations.find(
             (t) => t.id === paragraph.selectedTranslationId,
@@ -212,4 +269,3 @@ export function useSearchReplace(
     replaceAll,
   };
 }
-
