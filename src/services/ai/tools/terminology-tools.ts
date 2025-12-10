@@ -3,7 +3,6 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
-import { showToolToast } from './toast-helper';
 import { cloneDeep } from 'lodash';
 
 export const terminologyTools: ToolDefinition[] = [
@@ -48,17 +47,8 @@ export const terminologyTools: ToolDefinition[] = [
         description,
       });
 
-      // 显示 toast 通知（如果可用）
-      showToolToast(
-        {
-          severity: 'success',
-          summary: '已创建术语',
-          detail: `术语 "${name}" 已创建，翻译: "${term.translation.translation}"`,
-          life: 3000,
-        },
-        onToast,
-      );
-
+      // 通过 onAction 回调传递操作信息，统一由 handleActionInfoToast 处理 toast
+      // 不再直接调用 showToolToast，避免重复显示 toast
       if (onAction) {
         onAction({
           type: 'create',
