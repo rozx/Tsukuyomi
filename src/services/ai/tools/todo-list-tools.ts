@@ -211,14 +211,16 @@ export const todoListTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'list_todos',
-        description: '列出所有待办事项。可以获取所有、仅未完成或仅已完成的待办事项。',
+        description:
+          '列出待办事项列表。返回一个包含所有待办事项的列表，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。',
         parameters: {
           type: 'object',
           properties: {
             filter: {
               type: 'string',
               enum: ['all', 'active', 'completed'],
-              description: '过滤类型：all-所有，active-仅未完成，completed-仅已完成',
+              description:
+                '过滤类型：all-返回所有待办事项列表，active-仅返回未完成的待办事项列表，completed-仅返回已完成的待办事项列表',
             },
           },
         },
@@ -239,6 +241,7 @@ export const todoListTools: ToolDefinition[] = [
           todos = TodoListService.getAllTodos();
       }
 
+      // 返回待办事项列表
       return JSON.stringify({
         success: true,
         todos: todos.map((todo) => ({
