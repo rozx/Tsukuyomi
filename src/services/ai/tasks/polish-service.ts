@@ -20,6 +20,7 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
+import { getTodosSystemPrompt, createTaskTodo, getPostToolCallReminder } from './todo-helper';
 
 /**
  * 润色服务选项
@@ -209,8 +210,13 @@ export class PolishService {
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
+      // 创建任务相关的待办事项
+      const taskDescription = `润色 ${paragraphsWithTranslation.length} 个段落`;
+      const taskTodo = createTaskTodo('polish', taskDescription);
+
       // 1. 系统提示词
-      const systemPrompt = `你是一个专业的日轻小说润色助手。
+      const todosPrompt = getTodosSystemPrompt();
+      const systemPrompt = `你是一个专业的日轻小说润色助手。${todosPrompt}
 
       【核心规则】
       1. **语气词优化**:
@@ -632,6 +638,9 @@ export class PolishService {
                 (chunk.paragraphIds.length > 10 ? '...' : '')
               : '';
 
+            // 获取待办事项提醒
+            const todosReminder = getPostToolCallReminder();
+
             const continuePrompt = `工具调用已完成。请继续完成当前文本块的润色任务。
 
 **⚠️ 重要提醒**：
@@ -642,7 +651,8 @@ export class PolishService {
 - 必须返回包含润色结果的JSON格式响应
 - 不要跳过润色，必须提供完整的润色结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中
-- 工具调用只是为了获取参考信息，现在请直接返回润色结果`;
+- 工具调用只是为了获取参考信息，现在请直接返回润色结果
+- **待办事项管理**：如果你已经完成了某个待办事项的任务，可以在返回润色结果之前或之后使用 mark_todo_done 工具将其标记为完成${todosReminder}`;
 
             history.push({
               role: 'user',
@@ -805,6 +815,7 @@ export class PolishService {
           message: '润色完成',
         });
         // 不再自动删除任务，保留思考过程供用户查看
+        // 注意：待办事项由 AI 自己决定是否标记为完成，不自动标记
       }
 
       return {

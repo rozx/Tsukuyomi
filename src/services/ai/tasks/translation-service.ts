@@ -20,6 +20,7 @@ import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import { getTodosSystemPrompt, createTaskTodo, getPostToolCallReminder } from './todo-helper';
 
 /**
  * 翻译服务选项
@@ -244,8 +245,15 @@ export class TranslationService {
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
+      // 创建任务相关的待办事项
+      const taskDescription = chapterTitle
+        ? `翻译章节：${chapterTitle}（${content.length} 个段落）`
+        : `翻译 ${content.length} 个段落`;
+      const taskTodo = createTaskTodo('translation', taskDescription);
+
       // 1. 系统提示词
-      const systemPrompt = `你是一个专业的日轻小说翻译助手，负责将日语轻小说翻译为自然流畅的简体中文。
+      const todosPrompt = getTodosSystemPrompt();
+      const systemPrompt = `你是一个专业的日轻小说翻译助手，负责将日语轻小说翻译为自然流畅的简体中文。${todosPrompt}
 
       ========================================
       【翻译基本原则】
@@ -847,17 +855,20 @@ export class TranslationService {
                     (chunk.paragraphIds.length > 10 ? '...' : '')
                   : '';
 
+                // 获取待办事项提醒
+                const todosReminder = getPostToolCallReminder();
+
                 const continuePrompt = `工具调用已完成。请继续完成当前文本块的翻译任务。
 
 **⚠️ 重要提醒**：
 - 你正在翻译以下段落（不要重新开始，继续之前的翻译任务）：
   段落ID: ${paragraphIdList || '见下方内容'}
-  内容预览: ${chunkText.split('\n').slice(0, 3).join('\n')}${chunkText.split('\n').length > 3 ? '\n...' : ''}
 
 - 必须返回包含翻译结果的JSON格式响应
 - 不要跳过翻译，必须提供完整的翻译结果
 - 确保 paragraphs 数组中包含所有输入段落的 ID 和对应翻译
-- 工具调用只是为了获取参考信息，现在请直接返回翻译结果`;
+- 工具调用只是为了获取参考信息，现在请直接返回翻译结果
+- **待办事项管理**：如果你已经完成了某个待办事项的任务，可以在返回翻译结果之前或之后使用 mark_todo_done 工具将其标记为完成${todosReminder}`;
 
                 history.push({
                   role: 'user',
@@ -1364,6 +1375,7 @@ export class TranslationService {
           message: '翻译完成',
         });
         // 不再自动删除任务，保留思考过程供用户查看
+        // 注意：待办事项由 AI 自己决定是否标记为完成，不自动标记
       }
 
       return {

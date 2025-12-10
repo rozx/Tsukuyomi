@@ -13,6 +13,7 @@ import { ToolRegistry, type ActionInfo } from '../tools';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
+import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
 
 /**
  * Assistant 服务选项
@@ -98,7 +99,8 @@ export class AssistantService {
     currentChapterId: string | null;
     selectedParagraphId: string | null;
   }): string {
-    let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
+    const todosPrompt = getTodosSystemPrompt();
+    let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。${todosPrompt}
 
       ## 能力范围
       - 翻译相关：术语管理、角色设定、翻译建议
@@ -924,6 +926,15 @@ ${messages
             messages.push({
               role: 'user',
               content: reminderContent,
+            });
+          }
+        } else {
+          // 工具调用完成后，添加待办事项提醒
+          const todosReminder = getPostToolCallReminder();
+          if (todosReminder) {
+            messages.push({
+              role: 'user',
+              content: todosReminder,
             });
           }
         }
