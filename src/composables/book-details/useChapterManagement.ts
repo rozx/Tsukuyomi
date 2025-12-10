@@ -39,6 +39,9 @@ export function useChapterManagement(
   const editingChapterTranslation = ref('');
   const editingChapterSourceVolumeId = ref<string | null>(null);
   const editingChapterTargetVolumeId = ref<string | null>(null);
+  const editingChapterTranslationInstructions = ref('');
+  const editingChapterPolishInstructions = ref('');
+  const editingChapterProofreadingInstructions = ref('');
 
   // Delete Confirm Dialog State
   const showDeleteVolumeConfirm = ref(false);
@@ -86,7 +89,12 @@ export function useChapterManagement(
   };
 
   const handleAddChapter = async () => {
-    if (!book.value || !newChapterTitle.value.trim() || !selectedVolumeId.value || isAddingChapter.value) {
+    if (
+      !book.value ||
+      !newChapterTitle.value.trim() ||
+      !selectedVolumeId.value ||
+      isAddingChapter.value
+    ) {
       return;
     }
 
@@ -168,11 +176,19 @@ export function useChapterManagement(
     }
     editingChapterSourceVolumeId.value = sourceVolume?.id || null;
     editingChapterTargetVolumeId.value = sourceVolume?.id || null;
+    editingChapterTranslationInstructions.value = chapter.translationInstructions || '';
+    editingChapterPolishInstructions.value = chapter.polishInstructions || '';
+    editingChapterProofreadingInstructions.value = chapter.proofreadingInstructions || '';
     showEditChapterDialog.value = true;
   };
 
   const handleEditVolume = async () => {
-    if (!book.value || !editingVolumeId.value || !editingVolumeTitle.value.trim() || isEditingVolume.value) {
+    if (
+      !book.value ||
+      !editingVolumeId.value ||
+      !editingVolumeTitle.value.trim() ||
+      isEditingVolume.value
+    ) {
       return;
     }
 
@@ -288,6 +304,10 @@ export function useChapterManagement(
               aiModelId: aiModelId,
             },
           },
+          translationInstructions: editingChapterTranslationInstructions.value.trim() || undefined,
+          polishInstructions: editingChapterPolishInstructions.value.trim() || undefined,
+          proofreadingInstructions:
+            editingChapterProofreadingInstructions.value.trim() || undefined,
         },
         editingChapterTargetVolumeId.value,
       );
@@ -324,6 +344,9 @@ export function useChapterManagement(
       editingChapterTranslation.value = '';
       editingChapterSourceVolumeId.value = null;
       editingChapterTargetVolumeId.value = null;
+      editingChapterTranslationInstructions.value = '';
+      editingChapterPolishInstructions.value = '';
+      editingChapterProofreadingInstructions.value = '';
     } finally {
       isEditingChapter.value = false;
     }
@@ -431,6 +454,9 @@ export function useChapterManagement(
     editingChapterTranslation,
     editingChapterSourceVolumeId,
     editingChapterTargetVolumeId,
+    editingChapterTranslationInstructions,
+    editingChapterPolishInstructions,
+    editingChapterProofreadingInstructions,
     openEditVolumeDialog,
     openEditChapterDialog,
     handleEditVolume,

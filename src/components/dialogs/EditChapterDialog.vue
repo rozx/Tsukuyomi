@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
+import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 
@@ -18,16 +19,32 @@ const props = defineProps<{
   targetVolumeId: string | null;
   volumeOptions: VolumeOption[];
   loading?: boolean;
+  translationInstructions?: string;
+  polishInstructions?: string;
+  proofreadingInstructions?: string;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
-  (e: 'save', data: { title: string; translation: string; targetVolumeId: string }): void;
+  (
+    e: 'save',
+    data: {
+      title: string;
+      translation: string;
+      targetVolumeId: string;
+      translationInstructions?: string;
+      polishInstructions?: string;
+      proofreadingInstructions?: string;
+    },
+  ): void;
 }>();
 
 const chapterTitle = ref('');
 const chapterTranslation = ref('');
 const selectedVolumeId = ref<string | null>(null);
+const chapterTranslationInstructions = ref('');
+const chapterPolishInstructions = ref('');
+const chapterProofreadingInstructions = ref('');
 
 watch(
   () => props.visible,
@@ -36,6 +53,9 @@ watch(
       chapterTitle.value = props.title;
       chapterTranslation.value = props.translation;
       selectedVolumeId.value = props.targetVolumeId;
+      chapterTranslationInstructions.value = props.translationInstructions || '';
+      chapterPolishInstructions.value = props.polishInstructions || '';
+      chapterProofreadingInstructions.value = props.proofreadingInstructions || '';
     }
   },
 );
@@ -69,11 +89,35 @@ watch(
 
 const handleSave = () => {
   if (chapterTitle.value.trim() && selectedVolumeId.value) {
-    emit('save', {
+    const data: {
+      title: string;
+      translation: string;
+      targetVolumeId: string;
+      translationInstructions?: string;
+      polishInstructions?: string;
+      proofreadingInstructions?: string;
+    } = {
       title: chapterTitle.value.trim(),
       translation: chapterTranslation.value.trim(),
       targetVolumeId: selectedVolumeId.value,
-    });
+    };
+
+    const trimmedTranslation = chapterTranslationInstructions.value.trim();
+    if (trimmedTranslation) {
+      data.translationInstructions = trimmedTranslation;
+    }
+
+    const trimmedPolish = chapterPolishInstructions.value.trim();
+    if (trimmedPolish) {
+      data.polishInstructions = trimmedPolish;
+    }
+
+    const trimmedProofreading = chapterProofreadingInstructions.value.trim();
+    if (trimmedProofreading) {
+      data.proofreadingInstructions = trimmedProofreading;
+    }
+
+    emit('save', data);
   }
 };
 
@@ -136,6 +180,74 @@ const handleTranslationApplied = (value: string) => {
           class="w-full"
         />
       </div>
+
+      <!-- 特殊指令 -->
+      <div class="space-y-4 pt-2 border-t border-white/10">
+        <label class="block text-sm font-medium text-moon/90">特殊指令（章节级别）</label>
+        <small class="text-moon/60 text-xs block mb-2"
+          >这些指令将覆盖书籍级别的指令，仅应用于当前章节。</small
+        >
+
+        <!-- 翻译指令 -->
+        <div class="space-y-2">
+          <label
+            for="edit-chapter-translation-instructions"
+            class="block text-sm font-medium text-moon/80"
+            >翻译指令</label
+          >
+          <Textarea
+            id="edit-chapter-translation-instructions"
+            v-model="chapterTranslationInstructions"
+            placeholder="输入翻译任务的特殊指令（可选）"
+            :rows="3"
+            :auto-resize="true"
+            class="w-full"
+          />
+          <small class="text-moon/60 text-xs block"
+            >这些指令将在执行翻译任务时添加到系统提示词中</small
+          >
+        </div>
+
+        <!-- 润色指令 -->
+        <div class="space-y-2">
+          <label
+            for="edit-chapter-polish-instructions"
+            class="block text-sm font-medium text-moon/80"
+            >润色指令</label
+          >
+          <Textarea
+            id="edit-chapter-polish-instructions"
+            v-model="chapterPolishInstructions"
+            placeholder="输入润色任务的特殊指令（可选）"
+            :rows="3"
+            :auto-resize="true"
+            class="w-full"
+          />
+          <small class="text-moon/60 text-xs block"
+            >这些指令将在执行润色任务时添加到系统提示词中</small
+          >
+        </div>
+
+        <!-- 校对指令 -->
+        <div class="space-y-2">
+          <label
+            for="edit-chapter-proofreading-instructions"
+            class="block text-sm font-medium text-moon/80"
+            >校对指令</label
+          >
+          <Textarea
+            id="edit-chapter-proofreading-instructions"
+            v-model="chapterProofreadingInstructions"
+            placeholder="输入校对任务的特殊指令（可选）"
+            :rows="3"
+            :auto-resize="true"
+            class="w-full"
+          />
+          <small class="text-moon/60 text-xs block"
+            >这些指令将在执行校对任务时添加到系统提示词中</small
+          >
+        </div>
+      </div>
     </div>
     <template #footer>
       <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
@@ -148,4 +260,3 @@ const handleTranslationApplied = (value: string) => {
     </template>
   </Dialog>
 </template>
-

@@ -6,7 +6,7 @@ import type {
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type { Paragraph, Novel } from 'src/models/novel';
+import type { Paragraph, Novel, Chapter } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
 import {
@@ -212,12 +212,46 @@ export class ProofreadingService {
         signal: finalSignal,
       };
 
+      // 获取书籍和章节数据以获取特殊指令（仅当提供了 bookId 时）
+      let book: Novel | undefined;
+      let chapter: Chapter | undefined;
+      let specialInstructions: string | undefined;
+      if (bookId) {
+        try {
+          // 动态导入 store 以避免循环依赖
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          book = booksStore.getBookById(bookId);
+
+          // 如果提供了章节ID，获取章节数据以获取章节级别的特殊指令
+          if (chapterId && book) {
+            for (const volume of book.volumes || []) {
+              const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
+              if (foundChapter) {
+                chapter = foundChapter;
+                break;
+              }
+            }
+          }
+
+          // 获取合并后的特殊指令（章节级别覆盖书籍级别）
+          specialInstructions = chapter?.proofreadingInstructions || book?.proofreadingInstructions;
+        } catch (e) {
+          console.warn(
+            `[ProofreadingService] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}），将跳过上下文提取（术语、角色参考）`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
       // 1. 系统提示词
       const todosPrompt = getTodosSystemPrompt();
-      const systemPrompt = `你是一个专业的小说校对助手，负责检查并修正翻译文本中的各种错误。${todosPrompt}
+      const specialInstructionsSection = specialInstructions
+        ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
+        : '';
+      const systemPrompt = `你是一个专业的小说校对助手，负责检查并修正翻译文本中的各种错误。${todosPrompt}${specialInstructionsSection}
 
       ========================================
       【校对工作范围】
@@ -377,21 +411,6 @@ export class ProofreadingService {
         context?: string;
         paragraphIds?: string[];
       }> = [];
-
-      // 获取书籍数据以提取上下文（仅当提供了 bookId 时）
-      let book: Novel | undefined;
-      if (bookId) {
-        try {
-          // 动态导入 store 以避免循环依赖
-          const booksStore = (await import('src/stores/books')).useBooksStore();
-          book = booksStore.getBookById(bookId);
-        } catch (e) {
-          console.warn(
-            `[ProofreadingService] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}），将跳过上下文提取（术语、角色参考）`,
-            e instanceof Error ? e.message : e,
-          );
-        }
-      }
 
       // 计算全文的角色出现得分，用于消歧义
       let characterScores: Map<string, number> | undefined;

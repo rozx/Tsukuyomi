@@ -25,6 +25,16 @@ export interface Novel {
   characterSettings?: CharacterSetting[] | undefined;
   terminologies?: Terminology[] | undefined;
   notes?: Note[] | undefined;
+  /**
+   * 特殊指令（书籍级别）
+   * - translationInstructions: 翻译任务的特殊指令
+   * - polishInstructions: 润色任务的特殊指令
+   * - proofreadingInstructions: 校对任务的特殊指令
+   * 章节级别的指令会覆盖书籍级别的指令
+   */
+  translationInstructions?: string | undefined;
+  polishInstructions?: string | undefined;
+  proofreadingInstructions?: string | undefined;
 }
 
 export interface CoverImage {
@@ -105,7 +115,15 @@ export interface Chapter {
    */
   lastUpdated?: Date | undefined;
 
-  specialInstructions?: string | undefined; // 特殊指令，如：翻译时需要保留原文的格式
+  /**
+   * 特殊指令（章节级别，会覆盖书籍级别的指令）
+   * - translationInstructions: 翻译任务的特殊指令
+   * - polishInstructions: 润色任务的特殊指令
+   * - proofreadingInstructions: 校对任务的特殊指令
+   */
+  translationInstructions?: string | undefined;
+  polishInstructions?: string | undefined;
+  proofreadingInstructions?: string | undefined;
 }
 
 export interface Paragraph {

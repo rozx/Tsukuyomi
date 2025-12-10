@@ -51,6 +51,7 @@ const emit = defineEmits<{
   (e: 'translationButtonClick'): void;
   (e: 'toggleSearch'): void;
   (e: 'toggleKeyboardShortcuts', event: Event): void;
+  (e: 'toggleSpecialInstructions', event: Event): void;
 }>();
 
 const handleEditModeChange = (value: EditMode) => {
@@ -229,6 +230,19 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           "
           :model="translationButtonMenuItems"
           @click="emit('translationButtonClick')"
+        />
+
+        <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+        <!-- 特殊指令按钮 -->
+        <Button
+          icon="pi pi-cog"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          title="特殊指令（编辑翻译/润色/校对的特殊指令）"
+          @click="(event: Event) => emit('toggleSpecialInstructions', event)"
         />
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
