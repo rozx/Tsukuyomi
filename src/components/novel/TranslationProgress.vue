@@ -6,6 +6,7 @@ import ProgressBar from 'primevue/progressbar';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
 const props = defineProps<{
   isTranslating?: boolean;
@@ -27,6 +28,22 @@ const toast = useToastWithHistory();
 
 const showAITaskHistory = ref(false);
 
+// 待办事项列表
+const todos = ref<TodoItem[]>([]);
+const showTodoList = ref(false);
+
+// 加载待办事项列表
+const loadTodos = () => {
+  todos.value = TodoListService.getAllTodos();
+};
+
+// 监听待办事项变化（通过 localStorage 事件）
+const handleStorageChange = (e: StorageEvent) => {
+  if (e.key === 'luna-ai-todo-list') {
+    loadTodos();
+  }
+};
+
 // Height adjustment state
 const aiHistoryHeight = ref(400); // Default height in pixels
 const isResizing = ref(false);
@@ -43,6 +60,10 @@ onMounted(() => {
       resizeStartHeight.value = height;
     }
   }
+  // 初始化时加载待办事项
+  loadTodos();
+  // 监听 localStorage 变化（跨标签页同步）
+  window.addEventListener('storage', handleStorageChange);
 });
 
 // Save height to localStorage
@@ -88,6 +109,8 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', handleResizeEnd);
   document.removeEventListener('touchmove', handleResizeMove);
   document.removeEventListener('touchend', handleResizeEnd);
+  // 清理 storage 事件监听
+  window.removeEventListener('storage', handleStorageChange);
 });
 
 const taskStatusLabels: Record<string, string> = {
@@ -103,8 +126,7 @@ const recentAITasks = computed(() => {
   const allTasks = aiProcessingStore.activeTasks;
   // Filter to only show translation, polish, and proofreading tasks
   const translationTasks = allTasks.filter(
-    (task) =>
-      task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
+    (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
   );
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
@@ -175,12 +197,8 @@ const clearCompletedTasks = async () => {
     // Only clear translation-related completed tasks
     const translationTasks = aiProcessingStore.activeTasks.filter(
       (task) =>
-        (task.type === 'translation' ||
-          task.type === 'polish' ||
-          task.type === 'proofreading') &&
-        (task.status === 'completed' ||
-          task.status === 'error' ||
-          task.status === 'cancelled'),
+        (task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading') &&
+        (task.status === 'completed' || task.status === 'error' || task.status === 'cancelled'),
     );
 
     // Remove each translation-related completed task
@@ -226,43 +244,43 @@ interface FormattedMessagePart {
 
 const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
   if (!message) return [];
-  
+
   const parts: FormattedMessagePart[] = [];
   let currentIndex = 0;
-  
+
   // 匹配块分隔符：[=== 翻译块 X/Y ===] 或 [=== 润色块 X/Y ===] 或 [=== 校对块 X/Y ===]
   const chunkSeparatorPattern = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
   // 匹配工具调用：[调用工具: 工具名]
   const toolCallPattern = /\[调用工具: ([^\]]+)\]/g;
   // 匹配工具结果：[工具结果: ...]
   const toolResultPattern = /\[工具结果: ([^\]]+)\]/g;
-  
+
   // 收集所有匹配项及其位置
   const matches: Array<{
     index: number;
     type: 'chunk-separator' | 'tool-call' | 'tool-result';
     match: RegExpMatchArray;
   }> = [];
-  
+
   let match;
   while ((match = chunkSeparatorPattern.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'chunk-separator', match });
   }
   chunkSeparatorPattern.lastIndex = 0;
-  
+
   while ((match = toolCallPattern.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'tool-call', match });
   }
   toolCallPattern.lastIndex = 0;
-  
+
   while ((match = toolResultPattern.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'tool-result', match });
   }
   toolResultPattern.lastIndex = 0;
-  
+
   // 按位置排序
   matches.sort((a, b) => a.index - b.index);
-  
+
   // 处理每个匹配项
   for (const { index, type, match } of matches) {
     // 添加匹配前的普通内容
@@ -272,7 +290,7 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
         parts.push({ type: 'content', text });
       }
     }
-    
+
     // 添加特殊标记
     if (type === 'chunk-separator') {
       parts.push({
@@ -297,10 +315,10 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
         });
       }
     }
-    
+
     currentIndex = index + match[0].length;
   }
-  
+
   // 添加剩余内容
   if (currentIndex < message.length) {
     const text = message.slice(currentIndex).trim();
@@ -308,12 +326,12 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
       parts.push({ type: 'content', text });
     }
   }
-  
+
   // 如果没有匹配项，返回整个消息作为普通内容
   if (parts.length === 0 && message.trim()) {
     parts.push({ type: 'content', text: message });
   }
-  
+
   return parts;
 };
 
@@ -383,15 +401,13 @@ watch(
       (task) => task.status === 'thinking' || task.status === 'processing',
     );
     const oldActiveTaskIds = new Set(
-      (oldTasks || []).filter(
-        (task) => task.status === 'thinking' || task.status === 'processing',
-      ).map((task) => task.id),
+      (oldTasks || [])
+        .filter((task) => task.status === 'thinking' || task.status === 'processing')
+        .map((task) => task.id),
     );
 
     // Check if there's a newly started task
-    const hasNewActiveTask = newActiveTasks.some(
-      (task) => !oldActiveTaskIds.has(task.id),
-    );
+    const hasNewActiveTask = newActiveTasks.some((task) => !oldActiveTaskIds.has(task.id));
 
     if (hasNewActiveTask) {
       // Fold all inactive tasks (not 'thinking' or 'processing')
@@ -408,7 +424,6 @@ watch(
   },
   { deep: true, flush: 'post' },
 );
-
 </script>
 
 <template>
@@ -427,11 +442,7 @@ watch(
             ]"
           ></i>
           <span class="translation-progress-title">{{
-            isProofreading
-              ? '正在校对章节'
-              : isPolishing
-                ? '正在润色章节'
-                : '正在翻译章节'
+            isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
           }}</span>
         </div>
         <div class="translation-progress-message">
@@ -440,17 +451,11 @@ watch(
       </div>
       <div class="translation-progress-bar-wrapper">
         <ProgressBar
-          :value="
-            progress.total > 0
-              ? (progress.current / progress.total) * 100
-              : 0
-          "
+          :value="progress.total > 0 ? (progress.current / progress.total) * 100 : 0"
           :show-value="false"
           class="translation-progress-bar"
         />
-        <div class="translation-progress-text">
-          {{ progress.current }} / {{ progress.total }}
-        </div>
+        <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
       </div>
       <Button
         icon="pi pi-list"
@@ -461,6 +466,22 @@ watch(
         :title="showAITaskHistory ? '隐藏 AI 任务历史' : '显示 AI 任务历史'"
         @click="showAITaskHistory = !showAITaskHistory"
       />
+      <Button
+        icon="pi pi-check-square"
+        :class="[
+          'p-button-text p-button-sm translation-progress-todo-toggle',
+          { 'p-highlight': showTodoList },
+        ]"
+        :title="showTodoList ? '隐藏待办事项' : '显示待办事项'"
+        @click="showTodoList = !showTodoList"
+      >
+        <span
+          v-if="todos.filter((t) => !t.completed).length > 0"
+          class="ml-1 px-1 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
+        >
+          {{ todos.filter((t) => !t.completed).length }}
+        </span>
+      </Button>
       <Button
         icon="pi pi-times"
         label="取消"
@@ -474,176 +495,206 @@ watch(
         class="translation-progress-ai-history-resize-handle"
         @mousedown="handleResizeStart"
         @touchstart="handleResizeStart"
-        :class="{ 'resizing': isResizing }"
+        :class="{ resizing: isResizing }"
         title="拖拽调整高度"
       >
         <i class="pi pi-grip-lines-vertical"></i>
       </div>
-      <div
-        class="translation-progress-ai-history"
-        :style="{ height: `${aiHistoryHeight}px` }"
-      >
+      <div class="translation-progress-ai-history" :style="{ height: `${aiHistoryHeight}px` }">
         <div class="ai-history-content">
-        <div v-if="recentAITasks.length === 0" class="ai-history-empty">
-          <i class="pi pi-info-circle"></i>
-          <span>暂无 AI 任务记录</span>
-        </div>
-        <div v-else class="ai-history-tasks">
-          <!-- 清除已完成/已取消任务按钮 -->
-          <div
-            v-if="
-              recentAITasks.some(
-                (t) =>
-                  t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
-              )
-            "
-            class="ai-history-clear-actions"
-          >
-            <Button
-              icon="pi pi-trash"
-              label="清除已完成/已取消的任务"
-              class="p-button-text p-button-sm ai-history-clear-button"
-              @click="clearCompletedTasks"
-            />
+          <div v-if="recentAITasks.length === 0" class="ai-history-empty">
+            <i class="pi pi-info-circle"></i>
+            <span>暂无 AI 任务记录</span>
           </div>
-          <div
-            v-for="task in recentAITasks"
-            :key="task.id"
-            class="ai-history-task-item"
-            :class="{
-              'task-active': task.status === 'thinking' || task.status === 'processing',
-              'task-completed': task.status === 'completed',
-              'task-error': task.status === 'error',
-              'task-cancelled': task.status === 'cancelled',
-              'task-folded': taskFolded[task.id],
-            }"
-          >
-            <div class="ai-task-header">
-              <div class="ai-task-info">
-                <Button
-                  :icon="taskFolded[task.id] ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
-                  class="p-button-text p-button-sm ai-task-fold-toggle"
-                  @click="toggleTaskFold(task.id)"
-                  title="折叠/展开"
-                />
-                <i
-                  class="pi ai-task-status-icon"
-                  :class="{
-                    'pi-spin pi-spinner':
-                      task.status === 'thinking' || task.status === 'processing',
-                    'pi-check-circle': task.status === 'completed',
-                    'pi-times-circle': task.status === 'error',
-                    'pi-ban': task.status === 'cancelled',
-                  }"
-                ></i>
-                <span class="ai-task-model">{{ task.modelName }}</span>
-                <Badge
-                  :value="TASK_TYPE_LABELS[task.type] || task.type"
-                  severity="info"
-                  class="ai-task-type-badge"
-                />
-                <span class="ai-task-status">{{
-                  taskStatusLabels[task.status] || task.status
-                }}</span>
-              </div>
-              <div class="ai-task-meta">
-                <span class="ai-task-duration">{{
-                  formatTaskDuration(task.startTime, task.endTime)
-                }}</span>
-                <Button
-                  v-if="task.status === 'thinking' || task.status === 'processing'"
-                  icon="pi pi-stop"
-                  class="p-button-text p-button-sm p-button-danger ai-task-stop"
-                  @click="void aiProcessingStore.stopTask(task.id)"
-                  title="停止任务"
-                />
-              </div>
+          <div v-else class="ai-history-tasks">
+            <!-- 清除已完成/已取消任务按钮 -->
+            <div
+              v-if="
+                recentAITasks.some(
+                  (t) =>
+                    t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
+                )
+              "
+              class="ai-history-clear-actions"
+            >
+              <Button
+                icon="pi pi-trash"
+                label="清除已完成/已取消的任务"
+                class="p-button-text p-button-sm ai-history-clear-button"
+                @click="clearCompletedTasks"
+              />
             </div>
-            <Transition name="task-content">
-              <div v-if="!taskFolded[task.id]" class="ai-task-content">
-                <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
-                <div
-                  v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                  class="ai-task-thinking"
-                >
-                  <div class="ai-task-thinking-header">
-                    <span class="ai-task-thinking-label">思考过程：</span>
-                    <Button
-                      :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
-                      :class="[
-                        'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                        { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
-                      ]"
-                      :title="
-                        autoScrollEnabled[task.id]
-                          ? '禁用自动滚动'
-                          : '启用自动滚动（新内容出现时自动滚动到底部）'
-                      "
-                      @click="toggleAutoScroll(task.id)"
-                    />
-                  </div>
-                  <div
-                    :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
-                    class="ai-task-thinking-text"
-                  >
-                    <template
-                      v-for="(part, index) in formatThinkingMessage(task.thinkingMessage || '')"
-                      :key="index"
-                    >
-                      <div
-                        v-if="part.type === 'chunk-separator'"
-                        class="thinking-chunk-separator"
-                      >
-                        <i class="pi pi-minus"></i>
-                        <span>{{ part.chunkInfo }}</span>
-                        <i class="pi pi-minus"></i>
-                      </div>
-                      <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
-                        <i class="pi pi-cog"></i>
-                        <span class="thinking-tool-label">调用工具：</span>
-                        <span class="thinking-tool-name">{{ part.toolName }}</span>
-                      </div>
-                      <div v-else-if="part.type === 'tool-result'" class="thinking-tool-result">
-                        <i class="pi pi-check-circle"></i>
-                        <span class="thinking-tool-label">工具结果：</span>
-                        <span class="thinking-tool-content">{{ part.toolName }}</span>
-                      </div>
-                      <div v-else class="thinking-content">{{ part.text }}</div>
-                    </template>
-                  </div>
+            <div
+              v-for="task in recentAITasks"
+              :key="task.id"
+              class="ai-history-task-item"
+              :class="{
+                'task-active': task.status === 'thinking' || task.status === 'processing',
+                'task-completed': task.status === 'completed',
+                'task-error': task.status === 'error',
+                'task-cancelled': task.status === 'cancelled',
+                'task-folded': taskFolded[task.id],
+              }"
+            >
+              <div class="ai-task-header">
+                <div class="ai-task-info">
+                  <Button
+                    :icon="taskFolded[task.id] ? 'pi pi-chevron-right' : 'pi pi-chevron-down'"
+                    class="p-button-text p-button-sm ai-task-fold-toggle"
+                    @click="toggleTaskFold(task.id)"
+                    title="折叠/展开"
+                  />
+                  <i
+                    class="pi ai-task-status-icon"
+                    :class="{
+                      'pi-spin pi-spinner':
+                        task.status === 'thinking' || task.status === 'processing',
+                      'pi-check-circle': task.status === 'completed',
+                      'pi-times-circle': task.status === 'error',
+                      'pi-ban': task.status === 'cancelled',
+                    }"
+                  ></i>
+                  <span class="ai-task-model">{{ task.modelName }}</span>
+                  <Badge
+                    :value="TASK_TYPE_LABELS[task.type] || task.type"
+                    severity="info"
+                    class="ai-task-type-badge"
+                  />
+                  <span class="ai-task-status">{{
+                    taskStatusLabels[task.status] || task.status
+                  }}</span>
                 </div>
-                <div
-                  v-if="task.outputContent && task.outputContent.trim()"
-                  class="ai-task-output"
-                >
-                  <div class="ai-task-output-header">
-                    <span class="ai-task-output-label">输出内容：</span>
-                    <Button
-                      :icon="autoScrollOutputEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
-                      :class="[
-                        'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                        { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
-                      ]"
-                      :title="
-                        autoScrollOutputEnabled[task.id]
-                          ? '禁用自动滚动'
-                          : '启用自动滚动（新内容出现时自动滚动到底部）'
-                      "
-                      @click="toggleAutoScrollOutput(task.id)"
-                    />
-                  </div>
-                  <div
-                    :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
-                    class="ai-task-output-text"
-                  >
-                    {{ task.outputContent }}
-                  </div>
+                <div class="ai-task-meta">
+                  <span class="ai-task-duration">{{
+                    formatTaskDuration(task.startTime, task.endTime)
+                  }}</span>
+                  <Button
+                    v-if="task.status === 'thinking' || task.status === 'processing'"
+                    icon="pi pi-stop"
+                    class="p-button-text p-button-sm p-button-danger ai-task-stop"
+                    @click="void aiProcessingStore.stopTask(task.id)"
+                    title="停止任务"
+                  />
                 </div>
               </div>
-            </Transition>
+              <Transition name="task-content">
+                <div v-if="!taskFolded[task.id]" class="ai-task-content">
+                  <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
+                  <div
+                    v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                    class="ai-task-thinking"
+                  >
+                    <div class="ai-task-thinking-header">
+                      <span class="ai-task-thinking-label">思考过程：</span>
+                      <Button
+                        :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
+                        :class="[
+                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                          { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                        ]"
+                        :title="
+                          autoScrollEnabled[task.id]
+                            ? '禁用自动滚动'
+                            : '启用自动滚动（新内容出现时自动滚动到底部）'
+                        "
+                        @click="toggleAutoScroll(task.id)"
+                      />
+                    </div>
+                    <div
+                      :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
+                      class="ai-task-thinking-text"
+                    >
+                      <template
+                        v-for="(part, index) in formatThinkingMessage(task.thinkingMessage || '')"
+                        :key="index"
+                      >
+                        <div
+                          v-if="part.type === 'chunk-separator'"
+                          class="thinking-chunk-separator"
+                        >
+                          <i class="pi pi-minus"></i>
+                          <span>{{ part.chunkInfo }}</span>
+                          <i class="pi pi-minus"></i>
+                        </div>
+                        <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
+                          <i class="pi pi-cog"></i>
+                          <span class="thinking-tool-label">调用工具：</span>
+                          <span class="thinking-tool-name">{{ part.toolName }}</span>
+                        </div>
+                        <div v-else-if="part.type === 'tool-result'" class="thinking-tool-result">
+                          <i class="pi pi-check-circle"></i>
+                          <span class="thinking-tool-label">工具结果：</span>
+                          <span class="thinking-tool-content">{{ part.toolName }}</span>
+                        </div>
+                        <div v-else class="thinking-content">{{ part.text }}</div>
+                      </template>
+                    </div>
+                  </div>
+                  <div
+                    v-if="task.outputContent && task.outputContent.trim()"
+                    class="ai-task-output"
+                  >
+                    <div class="ai-task-output-header">
+                      <span class="ai-task-output-label">输出内容：</span>
+                      <Button
+                        :icon="
+                          autoScrollOutputEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
+                        "
+                        :class="[
+                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                          { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
+                        ]"
+                        :title="
+                          autoScrollOutputEnabled[task.id]
+                            ? '禁用自动滚动'
+                            : '启用自动滚动（新内容出现时自动滚动到底部）'
+                        "
+                        @click="toggleAutoScrollOutput(task.id)"
+                      />
+                    </div>
+                    <div
+                      :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
+                      class="ai-task-output-text"
+                    >
+                      {{ task.outputContent }}
+                    </div>
+                  </div>
+                </div>
+              </Transition>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+    <!-- 待办事项列表 -->
+    <div v-if="showTodoList" class="translation-progress-todo-wrapper">
+      <div class="translation-progress-todo">
+        <div class="todo-header">
+          <span class="todo-title">待办事项</span>
+          <span v-if="todos.filter((t) => !t.completed).length > 0" class="todo-count">
+            {{ todos.filter((t) => !t.completed).length }} 个未完成
+          </span>
+        </div>
+        <div v-if="todos.length === 0" class="todo-empty">
+          <i class="pi pi-info-circle"></i>
+          <span>暂无待办事项</span>
+        </div>
+        <div v-else class="todo-list">
+          <div
+            v-for="todo in todos"
+            :key="todo.id"
+            class="todo-item"
+            :class="{ 'todo-completed': todo.completed }"
+          >
+            <i
+              class="pi todo-check-icon"
+              :class="todo.completed ? 'pi-check-circle text-green-400' : 'pi-circle text-moon-50'"
+            ></i>
+            <span class="todo-text" :class="{ 'line-through': todo.completed }">
+              {{ todo.text }}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1131,5 +1182,88 @@ watch(
   font-family: 'Courier New', monospace;
   font-size: 0.8125rem;
 }
-</style>
 
+/* 待办事项列表 */
+.translation-progress-todo-wrapper {
+  border-top: 1px solid var(--white-opacity-20);
+}
+
+.translation-progress-todo {
+  background: var(--white-opacity-3);
+  padding: 1rem 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.todo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--white-opacity-10);
+}
+
+.todo-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+}
+
+.todo-count {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-80);
+  font-weight: 500;
+}
+
+.todo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  color: var(--moon-opacity-60);
+  font-size: 0.875rem;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.todo-item:hover {
+  background: var(--white-opacity-5);
+}
+
+.todo-item.todo-completed {
+  opacity: 0.6;
+}
+
+.todo-check-icon {
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.todo-text {
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-80);
+  line-height: 1.4;
+  flex: 1;
+  word-break: break-word;
+}
+
+.translation-progress-todo-toggle {
+  flex-shrink: 0;
+}
+</style>

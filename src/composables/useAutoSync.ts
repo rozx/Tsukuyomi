@@ -226,8 +226,7 @@ export function useAutoSync() {
 
       if (result.success && result.data) {
         // 直接应用数据（总是使用最新的 lastEdited 时间）
-        // 自动同步时，使用 'auto' 意图，以便根据时间戳自动合并
-        await SyncDataService.applyDownloadedData(result.data, 'auto');
+        await SyncDataService.applyDownloadedData(result.data);
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();

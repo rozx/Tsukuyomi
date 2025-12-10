@@ -1,4 +1,3 @@
-import { ref } from 'vue';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -20,8 +19,6 @@ export function useGistUploadWithConflictCheck() {
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
   const gistSyncService = new GistSyncService();
-
-  const syncIntent = ref<'upload' | 'download'>('upload');
 
   /**
    * 下载远程数据（不再检查冲突）
@@ -158,7 +155,6 @@ export function useGistUploadWithConflictCheck() {
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
   ): Promise<void> => {
     setSyncing(true);
-    syncIntent.value = 'upload';
     try {
       // 先下载远程数据并应用（使用最新的 lastEdited 时间）
       const { data, error } = await downloadRemoteData(config);
@@ -170,7 +166,7 @@ export function useGistUploadWithConflictCheck() {
 
       if (data) {
         // 应用远程数据（总是使用最新的 lastEdited 时间）
-        await SyncDataService.applyDownloadedData(data, 'upload');
+        await SyncDataService.applyDownloadedData(data);
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
@@ -199,7 +195,6 @@ export function useGistUploadWithConflictCheck() {
     setSyncing: (value: boolean) => void,
   ): Promise<void> => {
     setSyncing(true);
-    syncIntent.value = 'download';
     try {
       const { data, error } = await downloadRemoteData(config);
 
@@ -209,7 +204,7 @@ export function useGistUploadWithConflictCheck() {
 
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
       if (data) {
-        await SyncDataService.applyDownloadedData(data, 'download');
+        await SyncDataService.applyDownloadedData(data);
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();

@@ -91,7 +91,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       mockCoverHistoryStore.covers = [{ id: 'c1', url: 'local.jpg', addedAt: baseDate }];
       mockSettingsStore.getAllSettings = mock(() => ({ lastEdited: baseDate }));
 
-      await SyncDataService.applyDownloadedData(remoteData, 'auto');
+      await SyncDataService.applyDownloadedData(remoteData);
 
       // Should use Remote Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
@@ -125,7 +125,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: laterDate }];
       mockSettingsStore.getAllSettings = mock(() => ({ lastEdited: laterDate }));
 
-      await SyncDataService.applyDownloadedData(remoteData, 'auto');
+      await SyncDataService.applyDownloadedData(remoteData);
 
       // Should use Local Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
@@ -136,7 +136,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockSettingsStore.importSettings).not.toHaveBeenCalled();
     });
 
-    it('当远程数据较新时，应应用远程数据（下载意图）', async () => {
+    it('当远程数据较新时，应应用远程数据', async () => {
       const baseDate = new Date('2024-01-01T00:00:00.000Z');
       const laterDate = new Date('2024-01-02T00:00:00.000Z');
 
@@ -145,7 +145,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       };
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: baseDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, 'download');
+      await SyncDataService.applyDownloadedData(remoteData);
 
       // Should use Remote Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
@@ -153,7 +153,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       );
     });
 
-    it('当本地数据较新时，应保留本地数据（上传意图）', async () => {
+    it('当本地数据较新时，应保留本地数据', async () => {
       const baseDate = new Date('2024-01-01T00:00:00.000Z');
       const laterDate = new Date('2024-01-02T00:00:00.000Z');
 
@@ -162,7 +162,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       };
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: laterDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, 'upload');
+      await SyncDataService.applyDownloadedData(remoteData);
 
       // Should use Local Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(

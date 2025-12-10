@@ -8,6 +8,7 @@ import { webSearchTools } from './web-search-tools';
 import { bookTools } from './book-tools';
 import { memoryTools } from './memory-tools';
 import { navigationTools } from './navigation-tools';
+import { todoListTools } from './todo-list-tools';
 
 export type { ActionInfo };
 
@@ -46,10 +47,16 @@ export class ToolRegistry {
     return webSearchTools.map((t) => t.definition);
   }
 
+  static getTodoListTools(): AITool[] {
+    return todoListTools.map((t) => t.definition);
+  }
+
   static getAllTools(bookId?: string): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具始终可用（不需要 bookId）
       ...this.getWebSearchTools(),
+      // 待办事项工具始终可用（不需要 bookId）
+      ...this.getTodoListTools(),
     ];
 
     // 其他工具需要 bookId
@@ -73,7 +80,12 @@ export class ToolRegistry {
    */
   static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAllTools(bookId);
-    const excludedToolNames = ['add_translation', 'update_translation', 'remove_translation', 'select_translation'];
+    const excludedToolNames = [
+      'add_translation',
+      'update_translation',
+      'remove_translation',
+      'select_translation',
+    ];
     return allTools.filter((tool) => !excludedToolNames.includes(tool.function.name));
   }
 
@@ -92,6 +104,7 @@ export class ToolRegistry {
       ...bookTools,
       ...memoryTools,
       ...navigationTools,
+      ...todoListTools,
     ];
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 

@@ -11,7 +11,16 @@ export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总
  */
 export interface MessageAction {
   type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
-  entity: 'term' | 'character' | 'web' | 'translation' | 'chapter' | 'paragraph' | 'book' | 'memory';
+  entity:
+    | 'term'
+    | 'character'
+    | 'web'
+    | 'translation'
+    | 'chapter'
+    | 'paragraph'
+    | 'book'
+    | 'memory'
+    | 'todo';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
@@ -82,11 +91,18 @@ function loadSessionsFromStorage(): ChatSession[] {
       // 确保时间戳是数字类型
       return sessions.map((session) => ({
         ...session,
-        createdAt: typeof session.createdAt === 'string' ? new Date(session.createdAt).getTime() : session.createdAt,
-        updatedAt: typeof session.updatedAt === 'string' ? new Date(session.updatedAt).getTime() : session.updatedAt,
+        createdAt:
+          typeof session.createdAt === 'string'
+            ? new Date(session.createdAt).getTime()
+            : session.createdAt,
+        updatedAt:
+          typeof session.updatedAt === 'string'
+            ? new Date(session.updatedAt).getTime()
+            : session.updatedAt,
         messages: session.messages.map((msg) => ({
           ...msg,
-          timestamp: typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp,
+          timestamp:
+            typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp,
         })),
       }));
     }
@@ -334,4 +350,3 @@ export const useChatSessionsStore = defineStore('chatSessions', {
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useChatSessionsStore, import.meta.hot));
 }
-

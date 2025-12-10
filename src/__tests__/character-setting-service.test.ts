@@ -8,7 +8,7 @@ const mockUpdateBook = mock(() => Promise.resolve());
 const mockGetBookById = mock((_id: string) => null as Novel | null);
 
 // Mock useBooksStore BEFORE importing CharacterSettingService
-mock.module('src/stores/books', () => {
+await mock.module('src/stores/books', () => {
   return {
     useBooksStore: () => ({
       getBookById: mockGetBookById,

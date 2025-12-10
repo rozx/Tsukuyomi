@@ -23,7 +23,6 @@ export class SyncDataService {
       appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
-    _syncIntent: 'upload' | 'download' | 'auto' = 'download',
     lastSyncTime?: number,
   ): Promise<void> {
     // 如果 remoteData 为 null，直接返回
