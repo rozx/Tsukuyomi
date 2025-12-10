@@ -20,7 +20,12 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
-import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
+import { getTodosSystemPrompt } from './todo-helper';
+import {
+  executeToolCallLoop,
+  checkMaxTurnsReached,
+  type AIProcessingStore,
+} from './ai-task-helper';
 
 /**
  * 润色服务选项
@@ -547,157 +552,27 @@ export class PolishService {
 
         history.push({ role: 'user', content });
 
-        let currentTurnCount = 0;
-        const MAX_TURNS = 10; // 防止工具调用死循环
-        let finalResponseText = '';
-
-        // 工具调用循环
-        while (currentTurnCount < MAX_TURNS) {
-          currentTurnCount++;
-
-          const request: TextGenerationRequest = {
-            messages: history,
-          };
-
-          if (tools.length > 0) {
-            request.tools = tools;
-          }
-
-          // 调用 AI
-          let chunkReceived = false;
-          let accumulatedText = '';
-
-          // 确保 AI 请求完全完成后再继续
-          const result = await service.generateText(config, request, (c) => {
-            // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
-            if (aiProcessingStore && taskId && c.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
-            }
-
-            // 处理流式输出
-            if (c.text) {
-              if (!chunkReceived && aiProcessingStore && taskId) {
-                chunkReceived = true;
-              }
-
-              // 累积文本用于检测重复字符
-              accumulatedText += c.text;
-
-              // 追加输出内容到任务
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendOutputContent(taskId, c.text);
-              }
-
-              // 检测重复字符（AI降级检测），传入原文进行比较
-              if (
-                detectRepeatingCharacters(accumulatedText, chunkText, { logLabel: 'PolishService' })
-              ) {
-                throw new Error('AI降级检测：检测到重复字符，停止润色');
-              }
-            }
-            return Promise.resolve();
-          });
-
-          // 检查是否有工具调用
-          if (result.toolCalls && result.toolCalls.length > 0) {
-            // 将助手的回复（包含工具调用）添加到历史
-            history.push({
-              role: 'assistant',
-              content: result.text || null,
-              tool_calls: result.toolCalls,
-            });
-
-            // 执行工具
-            for (const toolCall of result.toolCalls) {
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `\n[调用工具: ${toolCall.function.name}]\n`,
-                );
-              }
-
-              // 执行工具
-              const toolResult = await TranslationService.handleToolCall(
-                toolCall,
-                bookId || '',
-                handleAction,
-                onToast,
-              );
-
-              // 添加工具结果到历史
-              history.push({
-                role: 'tool',
-                content: toolResult.content,
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name,
-              });
-
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-                );
-              }
-            }
-            // 工具调用完成后，添加提示要求AI继续完成润色
-            // 重要：在提示中包含原始任务内容，防止AI重新开始
-            // 提取段落ID列表，帮助AI记住正在处理哪些段落
-            const paragraphIdList = chunk.paragraphIds
-              ? chunk.paragraphIds.slice(0, 10).join(', ') +
-                (chunk.paragraphIds.length > 10 ? '...' : '')
-              : '';
-
-            // 获取待办事项提醒
-            const todosReminder = getPostToolCallReminder();
-
-            const continuePrompt = `工具调用已完成。请继续完成当前文本块的润色任务。
-
-**⚠️ 重要提醒**：
-- 你正在润色以下段落（不要重新开始，继续之前的润色任务）：
-  段落ID: ${paragraphIdList || '见下方内容'}
-  内容预览: ${chunkText.split('\n').slice(0, 3).join('\n')}${chunkText.split('\n').length > 3 ? '\n...' : ''}
-
-- 必须返回包含润色结果的JSON格式响应
-- 不要跳过润色，必须提供完整的润色结果
-- 只返回有变化的段落，没有变化的段落不要包含在结果中
-- 工具调用只是为了获取参考信息，现在请直接返回润色结果
-- **待办事项管理**：
-  - 如果需要规划润色步骤，可以使用 create_todo 创建待办事项
-  - 如果已经完成了某个待办事项的任务，使用 mark_todo_done 工具将其标记为完成
-  - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
-
-            history.push({
-              role: 'user',
-              content: continuePrompt,
-            });
-            // 继续循环，将工具结果和提示发送给 AI
-          } else {
-            // 没有工具调用，这是最终回复
-            finalResponseText = result.text;
-
-            // 保存思考内容到思考过程（从最终结果）
-            if (aiProcessingStore && taskId && result.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-            }
-
-            // 再次检测最终响应中的重复字符，传入原文进行比较
-            if (
-              detectRepeatingCharacters(finalResponseText, chunkText, { logLabel: 'PolishService' })
-            ) {
-              throw new Error('AI降级检测：最终响应中检测到重复字符');
-            }
-
-            history.push({ role: 'assistant', content: finalResponseText });
-            break;
-          }
-        }
+        // 使用共享的工具调用循环
+        const finalResponseText = await executeToolCallLoop({
+          history,
+          tools,
+          generateText: service.generateText.bind(service),
+          aiServiceConfig: config,
+          taskType: 'polish',
+          chunkText,
+          paragraphIds: chunk.paragraphIds,
+          bookId: bookId || '',
+          handleAction,
+          onToast,
+          taskId,
+          aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+          logLabel: 'PolishService',
+          maxTurns: 10,
+          includePreview: true,
+        });
 
         // 检查是否在达到最大回合数后仍未获得润色结果
-        if (!finalResponseText || finalResponseText.trim().length === 0) {
-          throw new Error(
-            `AI在工具调用后未返回润色结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
-          );
-        }
+        checkMaxTurnsReached(finalResponseText, 10, 'polish');
 
         // 解析 JSON 响应
         try {
