@@ -20,7 +20,7 @@ import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { getTodosSystemPrompt, createTaskTodo, getPostToolCallReminder } from './todo-helper';
+import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
 
 /**
  * 翻译服务选项
@@ -245,12 +245,6 @@ export class TranslationService {
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
-      // 创建任务相关的待办事项
-      const taskDescription = chapterTitle
-        ? `翻译章节：${chapterTitle}（${content.length} 个段落）`
-        : `翻译 ${content.length} 个段落`;
-      const taskTodo = createTaskTodo('translation', taskDescription);
-
       // 1. 系统提示词
       const todosPrompt = getTodosSystemPrompt();
       const systemPrompt = `你是一个专业的日轻小说翻译助手，负责将日语轻小说翻译为自然流畅的简体中文。${todosPrompt}
@@ -396,6 +390,12 @@ export class TranslationService {
          - \`get_previous_paragraphs\` / \`get_next_paragraphs\`: 需要更多上下文时
          - \`get_previous_chapter\` / \`get_next_chapter\`: 需要查看前一个或下一个章节的上下文时（用于理解章节间的连贯性和保持翻译一致性）
          - \`update_chapter_title\`: 更新章节标题（用于修正章节标题翻译，确保翻译格式的一致性）
+      3. **待办事项管理**（用于任务规划）:
+         - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）
+         - \`list_todos\`: 查看所有待办事项
+         - \`update_todo\`: 更新待办事项的内容或状态
+         - \`mark_todo_done\`: 标记待办事项为完成（当你完成了该待办的任务时）
+         - \`delete_todo\`: 删除待办事项
 
       ========================================
       【记忆管理工作流】
@@ -479,6 +479,10 @@ export class TranslationService {
       }
 
       initialUserPrompt += `
+
+      【任务规划建议】
+      - 如果需要规划复杂的翻译任务，你可以使用 \`create_todo\` 工具创建待办事项来规划步骤
+      - 例如：为大型章节创建待办事项来跟踪翻译进度、术语检查、角色一致性检查等子任务
 
       【执行清单（按顺序执行）】
       1. **准备阶段**:
@@ -714,7 +718,10 @@ export class TranslationService {
         4. **输出格式（必须严格遵守）**:
            - 保持 JSON 格式，段落 ID 完全对应
            - 确保 1:1 段落对应（不能合并或拆分段落）
-           - paragraphs 数组必须包含所有输入段落的 ID 和对应翻译`;
+           - paragraphs 数组必须包含所有输入段落的 ID 和对应翻译
+        5. **待办事项管理**（可选，用于任务规划）:
+           - 如果需要规划复杂的翻译任务，可以使用 create_todo 创建待办事项来规划步骤
+           - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
@@ -868,7 +875,10 @@ export class TranslationService {
 - 不要跳过翻译，必须提供完整的翻译结果
 - 确保 paragraphs 数组中包含所有输入段落的 ID 和对应翻译
 - 工具调用只是为了获取参考信息，现在请直接返回翻译结果
-- **待办事项管理**：如果你已经完成了某个待办事项的任务，可以在返回翻译结果之前或之后使用 mark_todo_done 工具将其标记为完成${todosReminder}`;
+- **待办事项管理**：
+  - 如果需要规划翻译步骤，可以使用 create_todo 创建待办事项
+  - 如果已经完成了某个待办事项的任务，使用 mark_todo_done 工具将其标记为完成
+  - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
 
                 history.push({
                   role: 'user',

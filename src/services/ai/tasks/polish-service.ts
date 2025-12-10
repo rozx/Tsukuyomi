@@ -20,7 +20,7 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
-import { getTodosSystemPrompt, createTaskTodo, getPostToolCallReminder } from './todo-helper';
+import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
 
 /**
  * 润色服务选项
@@ -210,10 +210,6 @@ export class PolishService {
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
-      // 创建任务相关的待办事项
-      const taskDescription = `润色 ${paragraphsWithTranslation.length} 个段落`;
-      const taskTodo = createTaskTodo('polish', taskDescription);
-
       // 1. 系统提示词
       const todosPrompt = getTodosSystemPrompt();
       const systemPrompt = `你是一个专业的日轻小说润色助手。${todosPrompt}
@@ -271,6 +267,12 @@ export class PolishService {
         - 如遇到描述不匹配，必须使用 update_term 或 update_character 修复。
         - 需要查看前一个或下一个章节的上下文时，可使用 get_previous_chapter 或 get_next_chapter 工具（用于理解章节间的连贯性和保持润色一致性）。
         - 需要修正章节标题翻译时，可使用 update_chapter_title 工具更新章节标题。
+        - **待办事项管理**（用于任务规划）:
+          - create_todo: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）
+          - list_todos: 查看所有待办事项
+          - update_todo: 更新待办事项的内容或状态
+          - mark_todo_done: 标记待办事项为完成（当你完成了该待办的任务时）
+          - delete_todo: 删除待办事项
 
       10. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keywords 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
@@ -312,6 +314,10 @@ export class PolishService {
       }
 
       initialUserPrompt += `
+
+        【任务规划建议】
+        - 如果需要规划复杂的润色任务，你可以使用 create_todo 工具创建待办事项来规划步骤
+        - 例如：为大型章节创建待办事项来跟踪润色进度、术语一致性检查等子任务
 
         【执行要点】
         - **语气词**: 适当添加，符合角色风格。
@@ -528,7 +534,10 @@ export class PolishService {
 - **自然流畅**: 摆脱翻译腔，使用地道中文。
 - **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
 - **历史参考**: 参考翻译历史，混合匹配最佳表达。
-- **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。`;
+- **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。
+- **待办事项管理**（可选，用于任务规划）:
+  - 如果需要规划复杂的润色任务，可以使用 create_todo 创建待办事项来规划步骤
+  - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
@@ -652,7 +661,10 @@ export class PolishService {
 - 不要跳过润色，必须提供完整的润色结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中
 - 工具调用只是为了获取参考信息，现在请直接返回润色结果
-- **待办事项管理**：如果你已经完成了某个待办事项的任务，可以在返回润色结果之前或之后使用 mark_todo_done 工具将其标记为完成${todosReminder}`;
+- **待办事项管理**：
+  - 如果需要规划润色步骤，可以使用 create_todo 创建待办事项
+  - 如果已经完成了某个待办事项的任务，使用 mark_todo_done 工具将其标记为完成
+  - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
 
             history.push({
               role: 'user',

@@ -20,7 +20,7 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
-import { getTodosSystemPrompt, createTaskTodo, getPostToolCallReminder } from './todo-helper';
+import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
 
 /**
  * 校对服务选项
@@ -210,10 +210,6 @@ export class ProofreadingService {
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
-      // 创建任务相关的待办事项
-      const taskDescription = `校对 ${paragraphsWithTranslation.length} 个段落`;
-      const taskTodo = createTaskTodo('proofreading', taskDescription);
-
       // 1. 系统提示词
       const todosPrompt = getTodosSystemPrompt();
       const systemPrompt = `你是一个专业的小说校对助手，负责检查并修正翻译文本中的各种错误。${todosPrompt}
@@ -267,6 +263,12 @@ export class ProofreadingService {
          - \`update_character\`: 发现角色名称不一致时更新
          - \`update_term\`: 发现术语翻译不一致时更新
          - \`create_memory\`: 保存重要的背景设定、角色信息等记忆内容，以便后续快速参考
+      3. **待办事项管理**（用于任务规划）:
+         - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）
+         - \`list_todos\`: 查看所有待办事项
+         - \`update_todo\`: 更新待办事项的内容或状态
+         - \`mark_todo_done\`: 标记待办事项为完成（当你完成了该待办的任务时）
+         - \`delete_todo\`: 删除待办事项
 
       ========================================
       【输出格式要求（必须严格遵守）】
@@ -343,6 +345,10 @@ export class ProofreadingService {
       }
 
       initialUserPrompt += `
+
+        【任务规划建议】
+        - 如果需要规划复杂的校对任务，你可以使用 create_todo 工具创建待办事项来规划步骤
+        - 例如：为大型章节创建待办事项来跟踪校对进度、一致性检查、格式检查等子任务
 
         【执行要点】
         - **文字层面**：检查错别字、标点、语法、词语用法
@@ -539,7 +545,10 @@ export class ProofreadingService {
 - **内容层面**：检查人名、地名、称谓一致性；检查时间线和逻辑；检查专业知识/设定
 - **格式层面**：检查格式、数字用法、引文注释
 - **一致性**：使用工具查找其他段落中的用法，确保全文一致
-- **最小改动**：只修正确实存在的错误，保持原意和风格`;
+- **最小改动**：只修正确实存在的错误，保持原意和风格
+- **待办事项管理**（可选，用于任务规划）:
+  - 如果需要规划复杂的校对任务，可以使用 create_todo 创建待办事项来规划步骤
+  - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
@@ -665,7 +674,10 @@ export class ProofreadingService {
 - 不要跳过校对，必须提供完整的校对结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中
 - 工具调用只是为了获取参考信息，现在请直接返回校对结果
-- **待办事项管理**：如果你已经完成了某个待办事项的任务，可以在返回校对结果之前或之后使用 mark_todo_done 工具将其标记为完成${todosReminder}`;
+- **待办事项管理**：
+  - 如果需要规划校对步骤，可以使用 create_todo 创建待办事项
+  - 如果已经完成了某个待办事项的任务，使用 mark_todo_done 工具将其标记为完成
+  - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
 
             history.push({
               role: 'user',
