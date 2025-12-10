@@ -77,6 +77,10 @@ export interface PolishServiceOptions {
    * 当前段落 ID（可选），用于单段落润色时提供上下文
    */
   currentParagraphId?: string;
+  /**
+   * 章节 ID（可选），如果提供，将在上下文中提供给 AI
+   */
+  chapterId?: string;
 }
 
 export interface PolishResult {
@@ -113,7 +117,7 @@ export class PolishService {
       书籍ID: options?.bookId || '无',
     });
 
-    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast, currentParagraphId } =
+    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast, currentParagraphId, chapterId } =
       options || {};
     const actions: ActionInfo[] = [];
 
@@ -284,6 +288,11 @@ export class PolishService {
 
       // 2. 初始用户提示
       let initialUserPrompt = `开始润色。`;
+
+      // 如果提供了章节ID，添加到上下文中
+      if (chapterId) {
+        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保润色的一致性和连贯性。`;
+      }
 
       // 如果是单段落润色，添加段落 ID 信息以便 AI 获取上下文
       if (currentParagraphId && content.length === 1) {

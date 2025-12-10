@@ -14,10 +14,7 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
-import {
-  buildOriginalTranslationsMap,
-  filterChangedParagraphs,
-} from 'src/utils';
+import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -77,6 +74,10 @@ export interface ProofreadingServiceOptions {
    * 当前段落 ID（可选），用于单段落校对时提供上下文
    */
   currentParagraphId?: string;
+  /**
+   * 章节 ID（可选），如果提供，将在上下文中提供给 AI
+   */
+  chapterId?: string;
 }
 
 export interface ProofreadingResult {
@@ -122,6 +123,7 @@ export class ProofreadingService {
       onParagraphProofreading,
       onToast,
       currentParagraphId,
+      chapterId,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -324,6 +326,11 @@ export class ProofreadingService {
       // 2. 初始用户提示
       let initialUserPrompt = `开始校对。`;
 
+      // 如果提供了章节ID，添加到上下文中
+      if (chapterId) {
+        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保校对的一致性和连贯性。`;
+      }
+
       // 如果是单段落校对，添加段落 ID 信息以便 AI 获取上下文
       if (currentParagraphId && content.length === 1) {
         initialUserPrompt += `\n\n**当前段落 ID**: ${currentParagraphId}\n你可以使用工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs 等）获取该段落的前后上下文，以确保校对的一致性和连贯性。`;
@@ -436,7 +443,8 @@ export class ProofreadingService {
       for (const paragraph of paragraphsWithTranslation) {
         // 获取段落的当前翻译
         const currentTranslation =
-          paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+          paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)
+            ?.translation ||
           paragraph.translations?.[0]?.translation ||
           '';
 
@@ -578,7 +586,9 @@ export class ProofreadingService {
 
               // 检测重复字符（AI降级检测），传入原文进行比较
               if (
-                detectRepeatingCharacters(accumulatedText, chunkText, { logLabel: 'ProofreadingService' })
+                detectRepeatingCharacters(accumulatedText, chunkText, {
+                  logLabel: 'ProofreadingService',
+                })
               ) {
                 throw new Error('AI降级检测：检测到重复字符，停止校对');
               }
@@ -645,7 +655,9 @@ export class ProofreadingService {
 
             // 再次检测最终响应中的重复字符，传入原文进行比较
             if (
-              detectRepeatingCharacters(finalResponseText, chunkText, { logLabel: 'ProofreadingService' })
+              detectRepeatingCharacters(finalResponseText, chunkText, {
+                logLabel: 'ProofreadingService',
+              })
             ) {
               throw new Error('AI降级检测：最终响应中检测到重复字符');
             }
@@ -829,4 +841,3 @@ export class ProofreadingService {
     }
   }
 }
-

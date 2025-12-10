@@ -66,6 +66,10 @@ export interface TranslationServiceOptions {
    */
   chapterTitle?: string;
   /**
+   * 章节 ID（可选），如果提供，将在上下文中提供给 AI
+   */
+  chapterId?: string;
+  /**
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
   aiProcessingStore?: {
@@ -158,6 +162,7 @@ export class TranslationService {
       signal,
       bookId,
       chapterTitle,
+      chapterId,
       aiProcessingStore,
       onParagraphTranslation,
       onToast,
@@ -458,7 +463,14 @@ export class TranslationService {
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      const initialUserPrompt = `开始翻译任务。
+      let initialUserPrompt = `开始翻译任务。`;
+
+      // 如果提供了章节ID，添加到上下文中
+      if (chapterId) {
+        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保翻译的一致性和连贯性。`;
+      }
+
+      initialUserPrompt += `
 
       【执行清单（按顺序执行）】
       1. **准备阶段**:

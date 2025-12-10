@@ -308,6 +308,7 @@ export function useChapterTranslation(
       // 调用润色服务
       await PolishService.polish([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -399,6 +400,7 @@ export function useChapterTranslation(
       // 调用校对服务
       await ProofreadingService.proofread([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -479,6 +481,7 @@ export function useChapterTranslation(
       // 调用翻译服务
       await TranslationService.translate([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -617,6 +620,7 @@ export function useChapterTranslation(
       // 调用翻译服务
       const result = await TranslationService.translate(paragraphs, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         ...(chapterTitle ? { chapterTitle } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
@@ -914,6 +918,7 @@ export function useChapterTranslation(
       // 调用翻译服务，只翻译未翻译的段落
       const result = await TranslationService.translate(untranslatedParagraphs, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         ...(chapterTitle ? { chapterTitle } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
@@ -1103,6 +1108,7 @@ export function useChapterTranslation(
       // 调用润色服务
       const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1371,6 +1377,7 @@ export function useChapterTranslation(
       // 调用校对服务
       const result = await ProofreadingService.proofread(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
