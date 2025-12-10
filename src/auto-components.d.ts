@@ -26,7 +26,6 @@ declare module 'vue' {
     CharacterEditDialog: typeof import('./components/dialogs/CharacterEditDialog.vue')['default']
     CharacterPopover: typeof import('./components/novel/CharacterPopover.vue')['default']
     CharacterSettingPanel: typeof import('./components/novel/CharacterSettingPanel.vue')['default']
-    ConflictResolutionDialog: typeof import('./components/dialogs/ConflictResolutionDialog.vue')['default']
     CoverManagerDialog: typeof import('./components/dialogs/CoverManagerDialog.vue')['default']
     DeleteChapterConfirmDialog: typeof import('./components/dialogs/DeleteChapterConfirmDialog.vue')['default']
     DeleteCharacterConfirmDialog: typeof import('./components/dialogs/DeleteCharacterConfirmDialog.vue')['default']

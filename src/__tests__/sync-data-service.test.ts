@@ -1,7 +1,5 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { SyncDataService } from '../services/sync-data-service';
-import type { ConflictResolution } from '../services/conflict-detection-service';
-import { ConflictType } from '../services/conflict-detection-service';
 
 // Mock Stores
 const mockAIModelsStore = {
@@ -77,148 +75,68 @@ describe('数据同步服务 (SyncDataService)', () => {
   });
 
   describe('applyDownloadedData (应用下载数据)', () => {
-    it('当没有冲突（resolutions 为空）且意图为下载时，应应用远程数据', async () => {
+    it('应总是使用最新的 lastEdited 时间（远程较新）', async () => {
+      const baseDate = new Date('2024-01-01T00:00:00.000Z');
+      const laterDate = new Date('2024-01-02T00:00:00.000Z');
+
       const remoteData = {
-        novels: [{ id: 'n1', title: 'Remote Novel' }],
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
-        appSettings: { theme: 'dark' },
-        coverHistory: [{ id: 'c1', url: 'remote.jpg' }],
+        novels: [{ id: 'n1', title: 'Remote Novel', lastEdited: laterDate }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: laterDate }],
+        appSettings: { theme: 'dark', lastEdited: laterDate },
+        coverHistory: [{ id: 'c1', url: 'remote.jpg', addedAt: laterDate }],
       };
 
-      // Local state is empty or different but no conflict detected (simulated by empty resolutions)
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
+      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: baseDate }];
+      mockBooksStore.books = [{ id: 'n1', title: 'Local Novel', lastEdited: baseDate }];
+      mockCoverHistoryStore.covers = [{ id: 'c1', url: 'local.jpg', addedAt: baseDate }];
+      mockSettingsStore.getAllSettings = mock(() => ({ lastEdited: baseDate }));
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'download');
+      await SyncDataService.applyDownloadedData(remoteData, 'auto');
 
-      // Verify AI Models
-      expect(mockAIModelsStore.clearModels).toHaveBeenCalled();
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'm1', name: 'Remote Model' }),
-      );
-
-      // Verify Novels
-      expect(mockBooksStore.clearBooks).toHaveBeenCalled();
-      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalled();
-      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
-      expect(addedBooks[0]).toMatchObject({ id: 'n1', title: 'Remote Novel' });
-
-      // Verify Settings
-      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(remoteData.appSettings);
-
-      // Verify Cover History
-      expect(mockCoverHistoryStore.clearHistory).toHaveBeenCalled();
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'c1', url: 'remote.jpg' }),
-      );
-    });
-
-    it('当没有冲突（resolutions 为空）且意图为上传时，应保留本地数据', async () => {
-      const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
-      };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
-
-      await SyncDataService.applyDownloadedData(remoteData, [], 'upload');
-
-      // Should use Local Model
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'm1', name: 'Local Model' }),
-      );
-    });
-
-    it('当冲突解决策略明确为 "remote" 时，应应用远程数据', async () => {
-      const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
-      };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'remote' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
+      // Should use Remote Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Remote Model' }),
       );
+
+      // Verify Novels
+      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalled();
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+      expect(addedBooks[0]).toMatchObject({ title: 'Remote Novel' });
+
+      // Verify Settings
+      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ theme: 'dark' }),
+      );
+
+      // Verify Cover History
+      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'remote.jpg' }),
+      );
     });
 
-    it('当冲突解决策略明确为 "local" 时，应应用本地数据', async () => {
+    it('应总是使用最新的 lastEdited 时间（本地较新）', async () => {
+      const baseDate = new Date('2024-01-01T00:00:00.000Z');
+      const laterDate = new Date('2024-01-02T00:00:00.000Z');
+
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: baseDate }],
+        appSettings: { theme: 'remote', lastEdited: baseDate },
       };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
+      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: laterDate }];
+      mockSettingsStore.getAllSettings = mock(() => ({ lastEdited: laterDate }));
 
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
+      await SyncDataService.applyDownloadedData(remoteData, 'auto');
 
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
+      // Should use Local Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Local Model' }),
       );
+
+      // Settings should not be updated (local is newer)
+      expect(mockSettingsStore.importSettings).not.toHaveBeenCalled();
     });
 
-    it('即使其他项有冲突，非冲突项也应根据意图应用数据（下载：远程）', async () => {
-      // m1 has conflict (resolved to local), m2 has no conflict (should update to remote)
-      const remoteData = {
-        aiModels: [
-          { id: 'm1', name: 'Remote Model 1' },
-          { id: 'm2', name: 'Remote Model 2' },
-        ],
-      };
-      mockAIModelsStore.models = [
-        { id: 'm1', name: 'Local Model 1' },
-        { id: 'm2', name: 'Local Model 2' },
-      ];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions, 'download');
-
-      // m1 should be local
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 1' }),
-      );
-      // m2 should be remote (because resolution is undefined, and intent is download)
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote Model 2' }),
-      );
-    });
-
-    it('即使其他项有冲突，非冲突项也应根据意图应用数据（上传：本地）', async () => {
-      // m1 has conflict (resolved to local), m2 has no conflict (should keep local)
-      const remoteData = {
-        aiModels: [
-          { id: 'm1', name: 'Remote Model 1' },
-          { id: 'm2', name: 'Remote Model 2' },
-        ],
-      };
-      mockAIModelsStore.models = [
-        { id: 'm1', name: 'Local Model 1' },
-        { id: 'm2', name: 'Local Model 2' },
-      ];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions, 'upload');
-
-      // m1 should be local
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 1' }),
-      );
-      // m2 should be local (because resolution is undefined, and intent is upload)
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 2' }),
-      );
-    });
-
-    it('当意图为自动同步时，应选择较新的数据（远程较新）', async () => {
+    it('当远程数据较新时，应应用远程数据（下载意图）', async () => {
       const baseDate = new Date('2024-01-01T00:00:00.000Z');
       const laterDate = new Date('2024-01-02T00:00:00.000Z');
 
@@ -227,7 +145,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       };
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: baseDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'auto');
+      await SyncDataService.applyDownloadedData(remoteData, 'download');
 
       // Should use Remote Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
@@ -235,7 +153,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       );
     });
 
-    it('当意图为自动同步时，应选择较新的数据（本地较新）', async () => {
+    it('当本地数据较新时，应保留本地数据（上传意图）', async () => {
       const baseDate = new Date('2024-01-01T00:00:00.000Z');
       const laterDate = new Date('2024-01-02T00:00:00.000Z');
 
@@ -244,41 +162,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       };
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: laterDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'auto');
+      await SyncDataService.applyDownloadedData(remoteData, 'upload');
 
       // Should use Local Model (newer)
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Local Model' }),
       );
-    });
-
-    it('当设置没有冲突解决记录时，应应用远程设置', async () => {
-      const remoteData = {
-        appSettings: { theme: 'remote' },
-      };
-
-      // Resolutions might contain other items, but not settings
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'some-novel', type: ConflictType.Novel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
-      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith({ theme: 'remote' });
-    });
-
-    it('当设置的冲突解决策略为 "local" 时，不应应用远程设置', async () => {
-      const remoteData = {
-        appSettings: { theme: 'remote' },
-      };
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'app-settings', type: ConflictType.Settings, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
-      expect(mockSettingsStore.importSettings).not.toHaveBeenCalled();
     });
   });
 });

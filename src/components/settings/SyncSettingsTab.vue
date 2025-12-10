@@ -18,8 +18,6 @@ import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
-import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
-import type { ConflictResolution } from 'src/services/conflict-detection-service';
 import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
@@ -195,15 +193,8 @@ const revertingVersion = ref<string | null>(null);
 const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
 
-// 冲突相关 - 使用 composable
-const {
-  showConflictDialog,
-  detectedConflicts,
-  uploadWithConflictCheck,
-  downloadWithConflictCheck,
-  handleConflictResolve,
-  handleConflictCancel,
-} = useGistUploadWithConflictCheck();
+// 同步相关 - 使用 composable
+const { uploadWithConflictCheck, downloadWithConflictCheck } = useGistUploadWithConflictCheck();
 
 // 加载修订历史
 const loadRevisions = async () => {
@@ -512,8 +503,8 @@ const revertToRevision = (version: string, event?: Event) => {
             void aiModelsStore.clearModels();
             void coverHistoryStore.clearHistory();
 
-            // 应用下载的数据
-            yield SyncDataService.applyDownloadedData(result.data, []);
+            // 应用下载的数据（总是使用最新的 lastEdited 时间）
+            yield SyncDataService.applyDownloadedData(result.data);
 
             yield settingsStore.updateLastSyncTime();
             gistLastSyncTime.value = Date.now();
@@ -706,8 +697,8 @@ const uploadToGist = async () => {
     secret: gistToken.value,
   };
 
-  // 使用 composable 处理冲突检查和上传
-  const hasConflicts = await uploadWithConflictCheck(
+  // 使用 composable 处理上传
+  await uploadWithConflictCheck(
     config,
     (value) => {
       gistSyncing.value = value;
@@ -738,11 +729,6 @@ const uploadToGist = async () => {
       });
     },
   );
-
-  // 如果有冲突，composable 已经显示了对话框，这里不需要做任何事
-  if (hasConflicts) {
-    return;
-  }
 };
 
 // 从 Gist 下载
@@ -779,16 +765,14 @@ const downloadFromGist = async () => {
     secret: gistToken.value,
   };
 
-  // 使用 composable 处理冲突检查和下载
-  const hasConflicts = await downloadWithConflictCheck(config, (value) => {
+  // 使用 composable 处理下载
+  await downloadWithConflictCheck(config, (value) => {
     gistSyncing.value = value;
   });
 
-  if (!hasConflicts) {
-    gistLastSyncTime.value = Date.now();
-    // 重置自动同步定时器
-    setupAutoSync();
-  }
+  gistLastSyncTime.value = Date.now();
+  // 重置自动同步定时器
+  setupAutoSync();
 };
 
 // 删除 Gist
@@ -883,53 +867,6 @@ const deleteGist = () => {
       });
     },
   });
-};
-
-// 处理冲突解决
-const onConflictResolve = async (resolutions: ConflictResolution[]) => {
-  const baseConfig = settingsStore.gistSync;
-  const config: SyncConfig = {
-    ...baseConfig,
-    enabled: true,
-    syncParams: {
-      ...baseConfig.syncParams,
-      username: gistUsername.value,
-      ...(gistId.value ? { gistId: gistId.value } : {}),
-    },
-    secret: gistToken.value,
-  };
-
-  await handleConflictResolve(
-    config,
-    resolutions,
-    (value) => {
-      gistSyncing.value = value;
-    },
-    (result) => {
-      // 更新 Gist ID
-      if (result.gistId) {
-        gistId.value = result.gistId;
-        if (result.isRecreated) {
-          toast.add({
-            severity: 'warn',
-            summary: 'Gist 已重新创建',
-            detail: result.message,
-            life: 5000,
-          });
-        }
-      }
-      toast.add({
-        severity: 'success',
-        summary: '同步成功',
-        detail: result.message || '同步到 Gist 成功',
-        life: 3000,
-      });
-      gistLastSyncTime.value = Date.now();
-      saveGistConfig();
-      // 重置自动同步定时器
-      setupAutoSync();
-    },
-  );
 };
 </script>
 
@@ -1206,14 +1143,6 @@ const onConflictResolve = async (resolutions: ConflictResolution[]) => {
 
     <!-- 确认对话框 -->
     <ConfirmDialog group="sync" />
-
-    <!-- 冲突解决对话框 -->
-    <ConflictResolutionDialog
-      :visible="showConflictDialog"
-      :conflicts="detectedConflicts"
-      @resolve="onConflictResolve"
-      @cancel="handleConflictCancel"
-    />
   </div>
 </template>
 

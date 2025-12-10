@@ -2,8 +2,6 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
-import { ConflictDetectionService } from 'src/services/conflict-detection-service';
-import type { ConflictResolution } from 'src/services/conflict-detection-service';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
@@ -16,17 +14,16 @@ import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/ti
  */
 export class SyncDataService {
   /**
-   * 应用下载的数据（根据冲突解决结果）
+   * 应用下载的数据（总是使用最新的 lastEdited 时间）
    */
   static async applyDownloadedData(
     remoteData: {
-      novels?: any[] | null;
-      aiModels?: any[] | null;
-      appSettings?: any;
-      coverHistory?: any[] | null;
+      novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
-    resolutions: ConflictResolution[],
-    syncIntent: 'upload' | 'download' | 'auto' = 'download',
+    _syncIntent: 'upload' | 'download' | 'auto' = 'download',
     lastSyncTime?: number,
   ): Promise<void> {
     // 如果 remoteData 为 null，直接返回
@@ -42,32 +39,18 @@ export class SyncDataService {
     // 如果没有传入 lastSyncTime，从设置中获取
     const syncTime = lastSyncTime ?? settingsStore.gistSync.lastSyncTime ?? 0;
 
-    const resolutionMap = new Map(resolutions.map((r) => [r.conflictId, r.choice]));
-
-    // 辅助函数：决定是否使用远程数据
+    // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
     const shouldUseRemote = (
-      id: string,
       localLastEdited?: Date | number | string,
       remoteLastEdited?: Date | number | string,
     ): boolean => {
-      const resolution = resolutionMap.get(id);
-      if (resolution) {
-        return resolution === 'remote';
+      if (localLastEdited && remoteLastEdited) {
+        const localTime = new Date(localLastEdited).getTime();
+        const remoteTime = new Date(remoteLastEdited).getTime();
+        return remoteTime > localTime;
       }
-      // 无冲突（或未解决）时，根据同步意图决定
-      if (syncIntent === 'auto') {
-        // 自动同步：谁新用谁
-        if (localLastEdited && remoteLastEdited) {
-          const localTime = new Date(localLastEdited).getTime();
-          const remoteTime = new Date(remoteLastEdited).getTime();
-          return remoteTime > localTime;
-        }
-        // 如果缺少时间戳，默认使用远程（假设远程是新的）
-        return true;
-      }
-      // 下载：偏好远程
-      // 上传：偏好本地
-      return syncIntent === 'download';
+      // 如果缺少时间戳，默认使用远程（假设远程是新的）
+      return true;
     };
 
     // 处理 AI 模型（确保 aiModels 是数组）
@@ -76,14 +59,14 @@ export class SyncDataService {
       Array.isArray(remoteData.aiModels) &&
       remoteData.aiModels.length > 0
     ) {
-      const finalModels: any[] = [];
+      const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-      // 收集所有远程模型（根据冲突解决选择）
+      // 收集所有远程模型（使用最新的 lastEdited 时间）
       for (const remoteModel of remoteData.aiModels) {
         const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
         if (localModel) {
-          // 有冲突，根据用户选择
-          if (shouldUseRemote(remoteModel.id, localModel.lastEdited, remoteModel.lastEdited)) {
+          // 比较 lastEdited 时间，使用最新的
+          if (shouldUseRemote(localModel.lastEdited, remoteModel.lastEdited)) {
             finalModels.push(remoteModel);
           } else {
             finalModels.push(localModel);
@@ -99,13 +82,6 @@ export class SyncDataService {
       // 陈旧的本地模型（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localModel of aiModelsStore.models) {
         if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
-          // 检查是否有冲突解决选择（用户手动选择删除）
-          const resolution = resolutionMap.get(localModel.id);
-          if (resolution === 'remote') {
-            // 用户选择删除本地模型，不添加
-            continue;
-          }
-
           // 检查是否是本地新增的（在上次同步后添加）
           if (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime)) {
             // 本地新增的模型，保留
@@ -125,12 +101,12 @@ export class SyncDataService {
     if (remoteData.novels && Array.isArray(remoteData.novels) && remoteData.novels.length > 0) {
       const finalBooks: Novel[] = [];
 
-      // 收集所有远程书籍（根据冲突解决选择）
+      // 收集所有远程书籍（使用最新的 lastEdited 时间）
       for (const remoteNovel of remoteData.novels) {
         const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
         if (localNovel) {
-          // 有冲突，根据用户选择
-          if (shouldUseRemote(remoteNovel.id, localNovel.lastEdited, remoteNovel.lastEdited)) {
+          // 比较 lastEdited 时间，使用最新的
+          if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
             // 使用远程书籍，但需要保留本地章节内容
             const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
               remoteNovel as Novel,
@@ -154,13 +130,6 @@ export class SyncDataService {
       // 陈旧的本地书籍（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localBook of booksStore.books) {
         if (!remoteData.novels.find((n) => n.id === localBook.id)) {
-          // 检查是否有冲突解决选择（用户手动选择删除）
-          const resolution = resolutionMap.get(localBook.id);
-          if (resolution === 'remote') {
-            // 用户选择删除本地书籍，不添加
-            continue;
-          }
-
           // 检查是否是本地新增的（在上次同步后添加）
           if (checkIsNewlyAdded(localBook.lastEdited, syncTime)) {
             // 本地新增的书籍，保留（确保章节内容已加载）
@@ -181,12 +150,13 @@ export class SyncDataService {
       Array.isArray(remoteData.coverHistory) &&
       remoteData.coverHistory.length > 0
     ) {
-      const finalCovers: any[] = [];
+      const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
       for (const remoteCover of remoteData.coverHistory) {
         const localCover = coverHistoryStore.covers.find((c) => c.id === remoteCover.id);
         if (localCover) {
-          if (shouldUseRemote(remoteCover.id, localCover.addedAt, remoteCover.addedAt)) {
+          // 比较 addedAt 时间，使用最新的
+          if (shouldUseRemote(localCover.addedAt, remoteCover.addedAt)) {
             finalCovers.push(remoteCover);
           } else {
             finalCovers.push(localCover);
@@ -201,13 +171,6 @@ export class SyncDataService {
       // 陈旧的本地封面（addedAt <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localCover of coverHistoryStore.covers) {
         if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
-          // 检查是否有冲突解决选择（用户手动选择删除）
-          const resolution = resolutionMap.get(localCover.id);
-          if (resolution === 'remote') {
-            // 用户选择删除本地封面，不添加
-            continue;
-          }
-
           // 检查是否是本地新增的（在上次同步后添加）
           if (checkIsNewlyAdded(localCover.addedAt, syncTime)) {
             // 本地新增的封面，保留
@@ -226,10 +189,8 @@ export class SyncDataService {
     // 处理设置
     if (remoteData.appSettings) {
       const localSettings = settingsStore.getAllSettings();
-      if (
-        shouldUseRemote('app-settings', localSettings.lastEdited, remoteData.appSettings.lastEdited)
-      ) {
-        // 无冲突时也应用远程设置
+      // 比较 lastEdited 时间，使用最新的
+      if (shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited)) {
         const currentGistSync = settingsStore.gistSync;
         await settingsStore.importSettings(remoteData.appSettings);
         await settingsStore.updateGistSync(currentGistSync);
@@ -241,61 +202,23 @@ export class SyncDataService {
    * 创建安全的远程数据对象（确保 novels 和 aiModels 是数组）
    */
   static createSafeRemoteData(data: GistSyncData | null | undefined): {
-    novels: any[];
-    aiModels: any[];
-    appSettings?: any;
-    coverHistory: any[];
+    novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
   } {
+    if (!data) {
+      return {
+        novels: [],
+        aiModels: [],
+        coverHistory: [],
+      };
+    }
     return {
-      novels: Array.isArray(data?.novels) ? data.novels : [],
-      aiModels: Array.isArray(data?.aiModels) ? data.aiModels : [],
-      appSettings: data?.appSettings,
-      coverHistory: Array.isArray(data?.coverHistory) ? data.coverHistory : [],
-    };
-  }
-
-  /**
-   * 检测冲突并返回安全的数据对象
-   */
-  static detectConflictsAndCreateSafeData(remoteData: GistSyncData | null | undefined): {
-    hasConflicts: boolean;
-    conflicts: any[];
-    safeRemoteData: {
-      novels: any[];
-      aiModels: any[];
-      appSettings?: any;
-      coverHistory: any[];
-    };
-  } {
-    const aiModelsStore = useAIModelsStore();
-    const booksStore = useBooksStore();
-    const coverHistoryStore = useCoverHistoryStore();
-    const settingsStore = useSettingsStore();
-
-    const safeRemoteData = this.createSafeRemoteData(remoteData);
-
-    // 获取上次同步时间
-    const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
-
-    const conflictResult = ConflictDetectionService.detectConflicts(
-      {
-        novels: booksStore.books || [],
-        aiModels: aiModelsStore.models || [],
-        appSettings: settingsStore.getAllSettings(),
-        coverHistory: coverHistoryStore.covers || [],
-      },
-      {
-        novels: safeRemoteData.novels,
-        aiModels: safeRemoteData.aiModels,
-        ...(safeRemoteData.appSettings ? { appSettings: safeRemoteData.appSettings } : {}),
-        ...(safeRemoteData.coverHistory ? { coverHistory: safeRemoteData.coverHistory } : {}),
-      },
-    );
-
-    return {
-      hasConflicts: conflictResult.hasConflicts,
-      conflicts: conflictResult.conflicts,
-      safeRemoteData,
+      novels: Array.isArray(data.novels) ? data.novels : [],
+      aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
+      appSettings: data.appSettings,
+      coverHistory: Array.isArray(data.coverHistory) ? data.coverHistory : [],
     };
   }
 
@@ -304,16 +227,16 @@ export class SyncDataService {
    */
   static hasChangesToUpload(
     local: {
-      novels: any[];
-      aiModels: any[];
-      appSettings: any;
-      coverHistory: any[];
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
     remote: {
-      novels: any[];
-      aiModels: any[];
-      appSettings?: any;
-      coverHistory?: any[];
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   ): boolean {
     // 1. 检查书籍
