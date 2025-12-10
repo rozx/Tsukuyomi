@@ -8,7 +8,7 @@ const mockUpdateBook = mock(() => Promise.resolve());
 const mockGetBookById = mock((_id: string) => null as Novel | null);
 
 // Mock useBooksStore BEFORE importing CharacterSettingService
-await mock.module('src/stores/books', () => {
+mock.module('src/stores/books', () => {
   return {
     useBooksStore: () => ({
       getBookById: mockGetBookById,
@@ -17,8 +17,8 @@ await mock.module('src/stores/books', () => {
   };
 });
 
-// Import CharacterSettingService AFTER mocking
-import { CharacterSettingService } from 'src/services/character-setting-service';
+// Import CharacterSettingService AFTER mocking using dynamic import to avoid hoisting
+const { CharacterSettingService } = await import('src/services/character-setting-service');
 
 // Mock FileReader for import tests
 class MockFileReader {
@@ -26,15 +26,18 @@ class MockFileReader {
   onerror: ((e: any) => void) | null = null;
 
   readAsText(file: File) {
-    file.text().then((text) => {
-      if (this.onload) {
-        this.onload({ target: { result: text } });
-      }
-    }).catch((e) => {
-        if (this.onerror) {
-            this.onerror(e);
+    file
+      .text()
+      .then((text) => {
+        if (this.onload) {
+          this.onload({ target: { result: text } });
         }
-    });
+      })
+      .catch((e) => {
+        if (this.onerror) {
+          this.onerror(e);
+        }
+      });
   }
 }
 
@@ -113,7 +116,7 @@ describe('CharacterSettingService', () => {
       expect(result.aliases).toHaveLength(1);
       expect(result.aliases[0]?.name).toBe('Ally');
       expect(result.aliases[0]?.translation?.translation).toBe('艾莉');
-      
+
       // 验证出现次数数组存在（但内容为空，因为是在后台异步更新的）
       expect(result.occurrences).toBeDefined();
       expect(Array.isArray(result.occurrences)).toBe(true);
@@ -230,7 +233,7 @@ describe('CharacterSettingService', () => {
 
     test('如果角色不存在应该抛出错误', async () => {
       mockBook.characterSettings = [];
-      
+
       try {
         await CharacterSettingService.deleteCharacterSetting(bookId, 'non-existent');
       } catch (error: any) {

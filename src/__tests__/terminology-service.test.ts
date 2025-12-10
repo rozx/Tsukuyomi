@@ -32,15 +32,18 @@ class MockFileReader {
   onerror: ((e: any) => void) | null = null;
 
   readAsText(file: File) {
-    file.text().then((text) => {
-      if (this.onload) {
-        this.onload({ target: { result: text } });
-      }
-    }).catch((e) => {
-        if (this.onerror) {
-            this.onerror(e);
+    file
+      .text()
+      .then((text) => {
+        if (this.onload) {
+          this.onload({ target: { result: text } });
         }
-    });
+      })
+      .catch((e) => {
+        if (this.onerror) {
+          this.onerror(e);
+        }
+      });
   }
 }
 
@@ -61,7 +64,9 @@ describe('TerminologyService', () => {
         type: 'application/json',
       });
 
-      await expect(TerminologyService.importTerminologiesFromFile(file)).rejects.toThrow('文件格式错误：术语数据不完整');
+      await expect(TerminologyService.importTerminologiesFromFile(file)).rejects.toThrow(
+        '文件格式错误：术语数据不完整',
+      );
     });
 
     test('should accept valid translation object', async () => {
@@ -86,25 +91,25 @@ describe('TerminologyService', () => {
 
     test('should accept key-value pair object', async () => {
       const kvData = {
-        "Excalibur": "誓约胜利之剑",
-        "Avalon": "远离尘世的理想乡"
+        Excalibur: '誓约胜利之剑',
+        Avalon: '远离尘世的理想乡',
       };
       const file = new File([JSON.stringify(kvData)], 'test.json', {
         type: 'application/json',
       });
 
       const imported = await TerminologyService.importTerminologiesFromFile(file);
-      
+
       expect(imported).toHaveLength(2);
-      
-      const excalibur = imported.find(t => t.name === 'Excalibur');
+
+      const excalibur = imported.find((t) => t.name === 'Excalibur');
       expect(excalibur?.translation.translation).toBe('誓约胜利之剑');
       // Using regex match on ID since it's generated
-      // expect(excalibur?.id).toMatch(/^import-/); 
+      // expect(excalibur?.id).toMatch(/^import-/);
       expect(excalibur?.id.startsWith('import-')).toBe(true);
       expect(excalibur?.description).toBe(undefined);
 
-      const avalon = imported.find(t => t.name === 'Avalon');
+      const avalon = imported.find((t) => t.name === 'Avalon');
       expect(avalon?.translation.translation).toBe('远离尘世的理想乡');
     });
   });

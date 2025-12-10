@@ -1,8 +1,13 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { ref } from 'vue';
-import { countUniqueActions, useActionInfoToast } from '../composables/book-details/useActionInfoToast';
+import {
+  countUniqueActions,
+  useActionInfoToast,
+} from '../composables/book-details/useActionInfoToast';
 import type { ActionInfo } from '../services/ai/tools/types';
 import type { Novel, Terminology, CharacterSetting } from '../models/novel';
+import { TerminologyService } from '../services/terminology-service';
+import { CharacterSettingService } from '../services/character-setting-service';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -30,19 +35,43 @@ await mock.module('src/stores/books', () => ({
   useBooksStore: mockUseBooksStore,
 }));
 
-await mock.module('src/services/terminology-service', () => ({
-  TerminologyService: {
-    deleteTerminology: mockDeleteTerminology,
-    updateTerminology: mockUpdateTerminology,
-  },
-}));
+// Mock static methods directly
+const originalDeleteTerminology = TerminologyService.deleteTerminology;
+const originalUpdateTerminology = TerminologyService.updateTerminology;
+const originalDeleteCharacterSetting = CharacterSettingService.deleteCharacterSetting;
+const originalUpdateCharacterSetting = CharacterSettingService.updateCharacterSetting;
 
-await mock.module('src/services/character-setting-service', () => ({
-  CharacterSettingService: {
-    deleteCharacterSetting: mockDeleteCharacterSetting,
-    updateCharacterSetting: mockUpdateCharacterSetting,
-  },
-}));
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+TerminologyService.deleteTerminology = mockDeleteTerminology;
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+TerminologyService.updateTerminology = mockUpdateTerminology;
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+CharacterSettingService.deleteCharacterSetting = mockDeleteCharacterSetting;
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+CharacterSettingService.updateCharacterSetting = mockUpdateCharacterSetting;
+
+import { afterAll } from 'bun:test';
+
+afterAll(() => {
+  // Restore original methods
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  TerminologyService.deleteTerminology = originalDeleteTerminology;
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  TerminologyService.updateTerminology = originalUpdateTerminology;
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  CharacterSettingService.deleteCharacterSetting = originalDeleteCharacterSetting;
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  CharacterSettingService.updateCharacterSetting = originalUpdateCharacterSetting;
+});
 
 describe('countUniqueActions', () => {
   it('应该正确统计唯一的术语操作', () => {
@@ -303,4 +332,3 @@ describe('useActionInfoToast', () => {
     expect(typeof callArgs.onRevert).toBe('function');
   });
 });
-

@@ -11,12 +11,18 @@
 // 这必须在 idb 库导入之前执行
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - fake-indexeddb/auto 的类型定义可能不完整，但运行时可用
-import 'fake-indexeddb/auto';
+// import 'fake-indexeddb/auto';
+import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 
 // 确保 indexedDB 在全局范围内可用（针对某些环境）
-if (typeof globalThis.indexedDB === 'undefined' && typeof indexedDB !== 'undefined') {
+if (typeof globalThis.indexedDB === 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).indexedDB = indexedDB;
+}
+
+if (typeof globalThis.IDBKeyRange === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).IDBKeyRange = IDBKeyRange;
 }
 
 // Polyfill for localStorage
