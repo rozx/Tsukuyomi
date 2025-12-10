@@ -2805,12 +2805,6 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           搜索: "{{ item.action.keyword }}"
                         </span>
                         <span
-                          v-else-if="item.action.entity === 'todo' && item.action.name"
-                          class="font-semibold text-xs"
-                        >
-                          "{{ item.action.name }}"
-                        </span>
-                        <span
                           v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
                           class="font-semibold text-xs"
                         >

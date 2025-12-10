@@ -20,7 +20,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { onAction }) => {
+    handler: (args, { onAction }) => {
       const { text } = args;
       if (!text || !text.trim()) {
         throw new Error('待办事项内容不能为空');
@@ -74,7 +74,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { onAction }) => {
+    handler: (args, { onAction }) => {
       const { id, text, completed } = args;
       if (!id) {
         throw new Error('待办事项 ID 不能为空');
@@ -126,7 +126,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { onAction }) => {
+    handler: (args, { onAction }) => {
       const { id } = args;
       if (!id) {
         throw new Error('待办事项 ID 不能为空');
@@ -174,7 +174,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { onAction }) => {
+    handler: (args, { onAction }) => {
       const { id } = args;
       if (!id) {
         throw new Error('待办事项 ID 不能为空');
