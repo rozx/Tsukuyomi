@@ -36,10 +36,18 @@ await mock.module('src/stores/books', () => ({
 }));
 
 // Mock static methods directly
-const originalDeleteTerminology = TerminologyService.deleteTerminology;
-const originalUpdateTerminology = TerminologyService.updateTerminology;
-const originalDeleteCharacterSetting = CharacterSettingService.deleteCharacterSetting;
-const originalUpdateCharacterSetting = CharacterSettingService.updateCharacterSetting;
+const originalDeleteTerminology = (
+  ...args: Parameters<typeof TerminologyService.deleteTerminology>
+) => TerminologyService.deleteTerminology(...args);
+const originalUpdateTerminology = (
+  ...args: Parameters<typeof TerminologyService.updateTerminology>
+) => TerminologyService.updateTerminology(...args);
+const originalDeleteCharacterSetting = (
+  ...args: Parameters<typeof CharacterSettingService.deleteCharacterSetting>
+) => CharacterSettingService.deleteCharacterSetting(...args);
+const originalUpdateCharacterSetting = (
+  ...args: Parameters<typeof CharacterSettingService.updateCharacterSetting>
+) => CharacterSettingService.updateCharacterSetting(...args);
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore

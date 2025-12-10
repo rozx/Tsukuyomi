@@ -36,9 +36,12 @@ const mockRefreshAllTermOccurrences = mock(() => Promise.resolve());
 const mockRefreshAllCharacterOccurrences = mock(() => Promise.resolve());
 
 // Mock static methods directly to preserve other methods
-const originalRefreshAllTermOccurrences = TerminologyService.refreshAllTermOccurrences;
-const originalRefreshAllCharacterOccurrences =
-  CharacterSettingService.refreshAllCharacterOccurrences;
+const originalRefreshAllTermOccurrences = (
+  ...args: Parameters<typeof TerminologyService.refreshAllTermOccurrences>
+) => TerminologyService.refreshAllTermOccurrences(...args);
+const originalRefreshAllCharacterOccurrences = (
+  ...args: Parameters<typeof CharacterSettingService.refreshAllCharacterOccurrences>
+) => CharacterSettingService.refreshAllCharacterOccurrences(...args);
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
