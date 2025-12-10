@@ -14,10 +14,7 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
-import {
-  buildOriginalTranslationsMap,
-  filterChangedParagraphs,
-} from 'src/utils';
+import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -117,8 +114,17 @@ export class PolishService {
       书籍ID: options?.bookId || '无',
     });
 
-    const { onChunk, onProgress, signal, bookId, aiProcessingStore, onParagraphPolish, onToast, currentParagraphId, chapterId } =
-      options || {};
+    const {
+      onChunk,
+      onProgress,
+      signal,
+      bookId,
+      aiProcessingStore,
+      onParagraphPolish,
+      onToast,
+      currentParagraphId,
+      chapterId,
+    } = options || {};
     const actions: ActionInfo[] = [];
 
     // 内部 action 处理函数，收集 actions 并调用外部 callback
@@ -619,10 +625,28 @@ export class PolishService {
               }
             }
             // 工具调用完成后，添加提示要求AI继续完成润色
+            // 重要：在提示中包含原始任务内容，防止AI重新开始
+            // 提取段落ID列表，帮助AI记住正在处理哪些段落
+            const paragraphIdList = chunk.paragraphIds
+              ? chunk.paragraphIds.slice(0, 10).join(', ') +
+                (chunk.paragraphIds.length > 10 ? '...' : '')
+              : '';
+
+            const continuePrompt = `工具调用已完成。请继续完成当前文本块的润色任务。
+
+**⚠️ 重要提醒**：
+- 你正在润色以下段落（不要重新开始，继续之前的润色任务）：
+  段落ID: ${paragraphIdList || '见下方内容'}
+  内容预览: ${chunkText.split('\n').slice(0, 3).join('\n')}${chunkText.split('\n').length > 3 ? '\n...' : ''}
+
+- 必须返回包含润色结果的JSON格式响应
+- 不要跳过润色，必须提供完整的润色结果
+- 只返回有变化的段落，没有变化的段落不要包含在结果中
+- 工具调用只是为了获取参考信息，现在请直接返回润色结果`;
+
             history.push({
               role: 'user',
-              content:
-                '工具调用已完成。请继续完成当前文本块的润色任务，返回包含润色结果的JSON格式响应。不要跳过润色，必须提供完整的润色结果。',
+              content: continuePrompt,
             });
             // 继续循环，将工具结果和提示发送给 AI
           } else {

@@ -638,10 +638,28 @@ export class ProofreadingService {
               }
             }
             // 工具调用完成后，添加提示要求AI继续完成校对
+            // 重要：在提示中包含原始任务内容，防止AI重新开始
+            // 提取段落ID列表，帮助AI记住正在处理哪些段落
+            const paragraphIdList = chunk.paragraphIds
+              ? chunk.paragraphIds.slice(0, 10).join(', ') +
+                (chunk.paragraphIds.length > 10 ? '...' : '')
+              : '';
+
+            const continuePrompt = `工具调用已完成。请继续完成当前文本块的校对任务。
+
+**⚠️ 重要提醒**：
+- 你正在校对以下段落（不要重新开始，继续之前的校对任务）：
+  段落ID: ${paragraphIdList || '见下方内容'}
+  内容预览: ${chunkText.split('\n').slice(0, 3).join('\n')}${chunkText.split('\n').length > 3 ? '\n...' : ''}
+
+- 必须返回包含校对结果的JSON格式响应
+- 不要跳过校对，必须提供完整的校对结果
+- 只返回有变化的段落，没有变化的段落不要包含在结果中
+- 工具调用只是为了获取参考信息，现在请直接返回校对结果`;
+
             history.push({
               role: 'user',
-              content:
-                '工具调用已完成。请继续完成当前文本块的校对任务，返回包含校对结果的JSON格式响应。不要跳过校对，必须提供完整的校对结果。',
+              content: continuePrompt,
             });
             // 继续循环，将工具结果和提示发送给 AI
           } else {
