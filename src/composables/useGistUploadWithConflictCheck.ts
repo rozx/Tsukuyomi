@@ -144,7 +144,7 @@ export function useGistUploadWithConflictCheck() {
   };
 
   /**
-   * 上传前下载远程数据并上传（不再检查冲突）
+   * 上传数据到 Gist（不再下载和检查冲突）
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
    * @param onSuccess 成功回调（可选）
@@ -156,27 +156,7 @@ export function useGistUploadWithConflictCheck() {
   ): Promise<void> => {
     setSyncing(true);
     try {
-      // 先下载远程数据并应用（使用最新的 lastEdited 时间）
-      const { data, error } = await downloadRemoteData(config);
-      if (error) {
-        // 下载失败，仍然尝试上传
-        await performUpload(config, onSuccess);
-        return;
-      }
-
-      if (data) {
-        // 应用远程数据（总是使用最新的 lastEdited 时间）
-        await SyncDataService.applyDownloadedData(data);
-        void co(function* () {
-          try {
-            yield settingsStore.updateLastSyncTime();
-          } catch (error) {
-            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
-          }
-        });
-      }
-
-      // 然后上传本地数据（包含刚刚合并的远程数据）
+      // 直接上传本地数据，不再下载和检查冲突
       await performUpload(config, onSuccess);
     } catch (error) {
       console.error('[useGistUploadWithConflictCheck] 上传失败:', error);
