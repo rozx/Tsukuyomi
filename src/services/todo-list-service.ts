@@ -126,6 +126,7 @@ export class TodoListService {
       completed: updates.completed !== undefined ? updates.completed : todo.completed,
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
+      taskId: todo.taskId, // 保持 taskId 不变
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
