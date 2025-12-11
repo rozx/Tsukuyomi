@@ -96,7 +96,13 @@ export async function executeToolCall(
   }
 
   // 执行工具
-  const toolResult = await ToolRegistry.handleToolCall(toolCall, bookId, handleAction, onToast);
+  const toolResult = await ToolRegistry.handleToolCall(
+    toolCall,
+    bookId,
+    handleAction,
+    onToast,
+    taskId,
+  );
 
   if (aiProcessingStore && taskId) {
     void aiProcessingStore.appendThinkingMessage(
@@ -114,6 +120,7 @@ export function buildContinuePrompt(
   paragraphIds: string[] | undefined,
   chunkText: string,
   includePreview?: boolean,
+  taskId?: string,
 ): string {
   const taskTypeLabels = {
     translation: '翻译',
@@ -126,7 +133,7 @@ export function buildContinuePrompt(
     ? paragraphIds.slice(0, 10).join(', ') + (paragraphIds.length > 10 ? '...' : '')
     : '';
 
-  const todosReminder = getPostToolCallReminder();
+  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
 
   let prompt = `工具调用已完成。请继续完成当前文本块的${taskLabel}任务。
 
@@ -253,6 +260,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
           bookId,
           handleAction,
           onToast,
+          taskId,
         );
 
         if (aiProcessingStore && taskId) {
@@ -276,7 +284,13 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
       }
 
       // 构建并添加继续提示
-      const continuePrompt = buildContinuePrompt(taskType, paragraphIds, chunkText, includePreview);
+      const continuePrompt = buildContinuePrompt(
+        taskType,
+        paragraphIds,
+        chunkText,
+        includePreview,
+        taskId,
+      );
       history.push({
         role: 'user',
         content: continuePrompt,

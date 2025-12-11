@@ -57,6 +57,7 @@ export interface ActionInfo {
 
 export interface ToolContext {
   bookId?: string; // 某些工具（如网络搜索）不需要 bookId
+  taskId?: string; // AI 任务 ID，由服务层自动提供，用于关联待办事项等
   onAction?: (action: ActionInfo) => void;
   onToast?: ToastCallback; // Toast 回调函数，用于在工具中直接显示 toast
 }

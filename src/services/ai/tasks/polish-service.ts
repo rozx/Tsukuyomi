@@ -247,7 +247,7 @@ export class PolishService {
       const history: ChatMessage[] = [];
 
       // 1. 系统提示词
-      const todosPrompt = getTodosSystemPrompt();
+      const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = specialInstructions
         ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
         : '';

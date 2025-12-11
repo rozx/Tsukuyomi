@@ -7,9 +7,13 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
 /**
  * 获取待办事项的系统提示词片段
+ * @param taskId 任务 ID（必需）
  */
-export function getTodosSystemPrompt(): string {
-  const activeTodos = TodoListService.getActiveTodos();
+export function getTodosSystemPrompt(taskId: string): string {
+  if (!taskId) {
+    return '';
+  }
+  const activeTodos = TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed);
 
   if (activeTodos.length === 0) {
     return '';
@@ -43,12 +47,19 @@ export function getTodosSystemPrompt(): string {
 
 /**
  * 创建任务相关的待办事项
+ * @param taskType 任务类型
+ * @param taskDescription 任务描述
+ * @param taskId 任务 ID（必需）
  */
 export function createTaskTodo(
   taskType: 'translation' | 'polish' | 'proofreading' | 'assistant',
   taskDescription: string,
+  taskId: string,
 ): TodoItem | null {
   try {
+    if (!taskId) {
+      throw new Error('任务 ID 不能为空');
+    }
     const taskTypeLabels = {
       translation: '翻译',
       polish: '润色',
@@ -57,7 +68,7 @@ export function createTaskTodo(
     };
 
     const todoText = `[${taskTypeLabels[taskType]}] ${taskDescription}`;
-    return TodoListService.createTodo(todoText);
+    return TodoListService.createTodo(todoText, taskId);
   } catch (error) {
     console.error('[TodoHelper] 创建待办事项失败:', error);
     return null;
@@ -106,9 +117,18 @@ export function markRelatedTodosDone(
 
 /**
  * 在工具调用后，生成提醒 AI 下一步的提示
+ * @param currentTodos 当前的待办事项列表（可选）
+ * @param taskId 任务 ID（必需）
  */
-export function getPostToolCallReminder(currentTodos?: TodoItem[]): string {
-  const todos = currentTodos || TodoListService.getActiveTodos();
+export function getPostToolCallReminder(
+  currentTodos: TodoItem[] | undefined,
+  taskId: string,
+): string {
+  if (!taskId) {
+    return '';
+  }
+  const todos =
+    currentTodos || TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed);
 
   if (todos.length === 0) {
     return '';
@@ -137,9 +157,13 @@ export function getPostToolCallReminder(currentTodos?: TodoItem[]): string {
 
 /**
  * 获取待办事项的简要列表（用于添加到提示词）
+ * @param taskId 任务 ID（必需）
  */
-export function getTodosSummary(): string {
-  const activeTodos = TodoListService.getActiveTodos();
+export function getTodosSummary(taskId: string): string {
+  if (!taskId) {
+    return '当前无待办事项。';
+  }
+  const activeTodos = TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed);
 
   if (activeTodos.length === 0) {
     return '当前无待办事项。';

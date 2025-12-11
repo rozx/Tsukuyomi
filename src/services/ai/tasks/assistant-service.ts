@@ -94,12 +94,15 @@ export class AssistantService {
    * 构建系统提示词
    * 包含用户当前上下文信息
    */
-  private static buildSystemPrompt(context: {
-    currentBookId: string | null;
-    currentChapterId: string | null;
-    selectedParagraphId: string | null;
-  }): string {
-    const todosPrompt = getTodosSystemPrompt();
+  private static buildSystemPrompt(
+    context: {
+      currentBookId: string | null;
+      currentChapterId: string | null;
+      selectedParagraphId: string | null;
+    },
+    taskId?: string,
+  ): string {
+    const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。${todosPrompt}
 
       ## 能力范围
@@ -488,6 +491,7 @@ ${messages
     bookId: string | null,
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
+    taskId?: string,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     // 定义需要 bookId 的工具列表
     const toolsRequiringBookId = [
@@ -544,7 +548,13 @@ ${messages
       }
 
       // 调用工具处理函数（对于不需要 bookId 的工具，可以传递空字符串）
-      const result = await ToolRegistry.handleToolCall(toolCall, bookId || '', onAction, onToast);
+      const result = await ToolRegistry.handleToolCall(
+        toolCall,
+        bookId || '',
+        onAction,
+        onToast,
+        taskId,
+      );
       results.push(result);
     }
     return results;
@@ -569,20 +579,7 @@ ${messages
     // 获取上下文（只使用 ID）
     const context = contextStore.getContext;
 
-    // 构建系统提示词（只传递 ID）
-    let systemPrompt = this.buildSystemPrompt(context);
-
-    // 如果当前会话有总结，添加到系统提示词中
-    // 注意：这里需要在调用时传入会话信息，因为 store 不能在静态方法中直接使用
-    // 我们通过 options 传递总结信息
-    if (options.sessionSummary) {
-      systemPrompt += `\n\n## 之前的对话总结\n\n${options.sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
-    }
-
-    // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
-    const tools = ToolRegistry.getAllTools(context.currentBookId || undefined);
-
-    // 创建任务（如果提供了 store）
+    // 创建任务（如果提供了 store）- 必须在构建系统提示词之前创建，以便传递 taskId
     let taskId: string | undefined;
     let taskAbortSignal: AbortSignal | undefined;
     if (aiProcessingStore) {
@@ -596,6 +593,22 @@ ${messages
       // 获取任务的 abortController signal（用于停止按钮）
       // 注意：这里需要从 store 中获取任务，因为 addTask 返回的是 id
       // 但任务对象（包含 abortController）在 store 的 activeTasks 中
+    }
+
+    // 构建系统提示词（只传递 ID）- 必须在创建任务之后
+    let systemPrompt = this.buildSystemPrompt(context, taskId);
+
+    // 如果当前会话有总结，添加到系统提示词中
+    // 注意：这里需要在调用时传入会话信息，因为 store 不能在静态方法中直接使用
+    // 我们通过 options 传递总结信息
+    if (options.sessionSummary) {
+      systemPrompt += `\n\n## 之前的对话总结\n\n${options.sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+    }
+
+    // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
+    const tools = ToolRegistry.getAllTools(context.currentBookId || undefined);
+
+    if (aiProcessingStore && taskId) {
       // 由于 addTask 是异步的，我们需要等待一下或者直接从 store 中查找
       // 实际上，addTask 会立即将任务添加到 activeTasks，所以我们可以直接查找
       const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
@@ -865,6 +878,7 @@ ${messages
             }
           },
           onToast,
+          taskId,
         );
 
         // 将工具结果添加到历史
@@ -940,12 +954,14 @@ ${messages
           }
         } else {
           // 工具调用完成后，添加待办事项提醒
-          const todosReminder = getPostToolCallReminder();
-          if (todosReminder) {
-            messages.push({
-              role: 'user',
-              content: todosReminder,
-            });
+          if (taskId) {
+            const todosReminder = getPostToolCallReminder(undefined, taskId);
+            if (todosReminder) {
+              messages.push({
+                role: 'user',
+                content: todosReminder,
+              });
+            }
           }
         }
 
