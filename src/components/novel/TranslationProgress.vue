@@ -33,7 +33,7 @@ const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
 // Recent AI Tasks - only show translation-related tasks
-// 必须在 loadTodos 之前定义，因为 loadTodos 会使用它
+// 为了代码逻辑清晰，将 recentAITasks 放在 loadTodos 之前，因为 loadTodos 会使用它（但这不是技术上的要求）
 const recentAITasks = computed(() => {
   const allTasks = aiProcessingStore.activeTasks;
   // Filter to only show translation, polish, and proofreading tasks
