@@ -218,7 +218,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'list_todos',
         description:
-          '列出待办事项列表。返回一个包含所有待办事项的列表，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。',
+          '列出当前任务的待办事项列表。返回当前任务关联的所有待办事项，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。注意：此工具仅返回当前任务（taskId）的待办事项，不会返回其他任务的待办事项。',
         parameters: {
           type: 'object',
           properties: {

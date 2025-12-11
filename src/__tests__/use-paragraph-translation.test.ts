@@ -5,6 +5,7 @@ import type { Novel, Chapter, Volume, Paragraph } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 import { ChapterService } from '../services/chapter-service';
 import * as BooksStore from '../stores/books';
+import * as useToastHistory from '../composables/useToastHistory';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -15,13 +16,6 @@ const mockUseToastWithHistory = mock(() => ({
 const mockUpdateChapter = mock((): Volume[] => []);
 const mockSaveChapterContent = mock(() => Promise.resolve());
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
-const mockUseBooksStore = mock(() => ({
-  updateBook: mockBooksStoreUpdateBook,
-}));
-
-await mock.module('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
-}));
 
 // Helper functions
 function createTestParagraph(id: string, text: string, translation?: string): Paragraph {
@@ -85,6 +79,7 @@ describe('useParagraphTranslation', () => {
     } as any);
     spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
     spyOn(ChapterService, 'saveChapterContent').mockImplementation(mockSaveChapterContent);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
   });
 
   afterEach(() => {
