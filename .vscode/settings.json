@@ -1,10 +1,11 @@
 {
   "i18n-ally.localesPaths": ["src/i18n"],
   "i18n-ally.pathMatcher": "{locale}/index.ts",
+  "i18n-ally.enabledParsers": ["ts"],
   "i18n-ally.keystyle": "nested",
   "i18n-ally.sourceLanguage": "zh-CN",
   "i18n-ally.displayLanguage": "zh-CN",
-  "i18n-ally.enabledFrameworks": ["vue", "i18next"],
+  "i18n-ally.enabledFrameworks": ["vue"],
   "i18n-ally.ignoredLocales": [],
   "i18n-ally.ignoredKeys": [],
   "files.exclude": {

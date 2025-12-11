@@ -20,59 +20,54 @@
   <link rel="icon" type="image/ico" href="favicon.ico" />
 </head>
 
-<body>
+<body style="
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
+      overflow: hidden;
+    ">
   <!-- 初始加载屏幕 - 在 Vue 挂载前显示 -->
   <div id="initial-loading-screen" style="
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    transition: opacity 0.3s ease-out;
-  ">
-    <div style="
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1rem;
-    ">
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.3s ease-out;
+      ">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem">
       <!-- 加载动画 -->
       <div style="
-        width: 4rem;
-        height: 4rem;
-        border: 4px solid rgba(253, 253, 255, 0.1);
-        border-top-color: #f0458b;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      "></div>
-      <p style="
-        color: rgba(253, 253, 255, 0.9);
-        font-size: 1.125rem;
-        font-weight: 500;
-        margin: 0;
-      ">正在加载应用...</p>
-      <p style="
-        color: rgba(253, 253, 255, 0.6);
-        font-size: 0.875rem;
-        margin: 0;
-      ">请稍候</p>
+            width: 4rem;
+            height: 4rem;
+            border: 4px solid rgba(253, 253, 255, 0.1);
+            border-top-color: #f0458b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          "></div>
+      <p style="color: rgba(253, 253, 255, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0">
+        正在加载应用...
+      </p>
+      <p style="color: rgba(253, 253, 255, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
     </div>
   </div>
 
   <style>
     @keyframes spin {
-      to { transform: rotate(360deg); }
+      to {
+        transform: rotate(360deg);
+      }
     }
   </style>
 
   <script>
-    (function() {
+    (function () {
       'use strict';
       const loadingScreen = document.getElementById('initial-loading-screen');
       if (!loadingScreen) return;
@@ -101,23 +96,32 @@
 
         // 淡出动画
         loadingScreen.style.opacity = '0';
-        setTimeout(function() {
+        setTimeout(function () {
           if (loadingScreen && loadingScreen.parentNode) {
             loadingScreen.style.display = 'none';
+            // 恢复 body 的 overflow（CSS 会处理背景）
+            document.body.style.overflow = '';
           }
         }, 300);
       }
 
       function checkVueApp() {
         // 检查多种可能的 Vue/Quasar 挂载点
-        // Quasar 通常使用 #q-app 作为根元素，或带有 data-v-app 属性
-        // 也检查常见的 Quasar 类名
-        return document.querySelector('#q-app, [data-v-app], [id^="q-app"], .q-layout, .q-page-container, [class*="q-"]');
+        const app = document.getElementById('q-app');
+        // 必须确保 #q-app 内有内容，说明 Vue 已经渲染
+        if (app && app.childElementCount > 0) {
+          return true;
+        }
+
+        // 检查其他明确的 Vue/Quasar 结构
+        return !!document.querySelector(
+          '[data-v-app], .q-layout, .q-page-container'
+        );
       }
 
       // 方法1: 监听 DOM 变化，检测 Vue 应用挂载
       if (document.body) {
-        observer = new MutationObserver(function() {
+        observer = new MutationObserver(function () {
           if (checkVueApp()) {
             observer.disconnect();
             observer = null;
@@ -128,12 +132,12 @@
 
         observer.observe(document.body, {
           childList: true,
-          subtree: true
+          subtree: true,
         });
       } else {
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
           if (document.body && !observer) {
-            observer = new MutationObserver(function() {
+            observer = new MutationObserver(function () {
               if (checkVueApp()) {
                 observer.disconnect();
                 observer = null;
@@ -143,7 +147,7 @@
 
             observer.observe(document.body, {
               childList: true,
-              subtree: true
+              subtree: true,
             });
           }
         });
@@ -152,7 +156,7 @@
       // 方法2: 轮询检查（作为备用方案）
       let checkCount = 0;
       const maxChecks = 100; // 最多检查 5 秒（50ms * 100）
-      checkInterval = setInterval(function() {
+      checkInterval = setInterval(function () {
         checkCount++;
         if (checkVueApp()) {
           clearInterval(checkInterval);
@@ -175,8 +179,8 @@
       }, 50);
 
       // 方法3: 页面加载完成后也尝试隐藏（作为最后保障）
-      window.addEventListener('load', function() {
-        setTimeout(function() {
+      window.addEventListener('load', function () {
+        setTimeout(function () {
           if (loadingScreen && loadingScreen.style.display !== 'none' && !isHiding) {
             if (observer) {
               observer.disconnect();

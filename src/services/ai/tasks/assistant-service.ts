@@ -13,6 +13,7 @@ import { ToolRegistry, type ActionInfo } from '../tools';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
+import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
 
 /**
  * Assistant 服务选项
@@ -98,7 +99,8 @@ export class AssistantService {
     currentChapterId: string | null;
     selectedParagraphId: string | null;
   }): string {
-    let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。
+    const todosPrompt = getTodosSystemPrompt();
+    let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。${todosPrompt}
 
       ## 能力范围
       - 翻译相关：术语管理、角色设定、翻译建议
@@ -157,6 +159,16 @@ export class AssistantService {
         - 当用户需要查看或编辑特定段落时使用此工具
         - 需要提供 paragraph_id 参数
         - 工具会自动找到包含该段落的章节并导航到正确位置
+
+      ### 待办事项管理（5个工具）
+      - **create_todo**: 创建待办事项来规划任务步骤
+        - 建议在开始复杂任务前使用此工具创建待办事项来规划
+        - 例如：翻译大型章节时，可以创建多个待办事项来跟踪不同阶段的进度
+        - 帮助用户和 AI 跟踪任务进度
+      - **list_todos**: 查看所有待办事项（支持过滤：all/active/completed）
+      - **update_todo**: 更新待办事项的内容或状态
+      - **mark_todo_done**: 标记待办事项为完成（当你完成了该待办的任务时）
+      - **delete_todo**: 删除待办事项
 
       ### 记忆管理（5个工具）
       - **create_memory**: 创建新的 Memory 记录，用于存储大块内容（如背景设定、章节摘要等）
@@ -924,6 +936,15 @@ ${messages
             messages.push({
               role: 'user',
               content: reminderContent,
+            });
+          }
+        } else {
+          // 工具调用完成后，添加待办事项提醒
+          const todosReminder = getPostToolCallReminder();
+          if (todosReminder) {
+            messages.push({
+              role: 'user',
+              content: todosReminder,
             });
           }
         }

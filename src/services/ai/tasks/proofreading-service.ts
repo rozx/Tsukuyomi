@@ -6,7 +6,7 @@ import type {
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type { Paragraph, Novel } from 'src/models/novel';
+import type { Paragraph, Novel, Chapter } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
 import {
@@ -14,15 +14,18 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
-import {
-  buildOriginalTranslationsMap,
-  filterChangedParagraphs,
-} from 'src/utils';
+import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TranslationService } from './translation-service';
+import { getTodosSystemPrompt } from './todo-helper';
+import {
+  executeToolCallLoop,
+  checkMaxTurnsReached,
+  type AIProcessingStore,
+} from './ai-task-helper';
 
 /**
  * 校对服务选项
@@ -77,6 +80,10 @@ export interface ProofreadingServiceOptions {
    * 当前段落 ID（可选），用于单段落校对时提供上下文
    */
   currentParagraphId?: string;
+  /**
+   * 章节 ID（可选），如果提供，将在上下文中提供给 AI
+   */
+  chapterId?: string;
 }
 
 export interface ProofreadingResult {
@@ -122,6 +129,7 @@ export class ProofreadingService {
       onParagraphProofreading,
       onToast,
       currentParagraphId,
+      chapterId,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -204,11 +212,46 @@ export class ProofreadingService {
         signal: finalSignal,
       };
 
+      // 获取书籍和章节数据以获取特殊指令（仅当提供了 bookId 时）
+      let book: Novel | undefined;
+      let chapter: Chapter | undefined;
+      let specialInstructions: string | undefined;
+      if (bookId) {
+        try {
+          // 动态导入 store 以避免循环依赖
+          const booksStore = (await import('src/stores/books')).useBooksStore();
+          book = booksStore.getBookById(bookId);
+
+          // 如果提供了章节ID，获取章节数据以获取章节级别的特殊指令
+          if (chapterId && book) {
+            for (const volume of book.volumes || []) {
+              const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
+              if (foundChapter) {
+                chapter = foundChapter;
+                break;
+              }
+            }
+          }
+
+          // 获取合并后的特殊指令（章节级别覆盖书籍级别）
+          specialInstructions = chapter?.proofreadingInstructions || book?.proofreadingInstructions;
+        } catch (e) {
+          console.warn(
+            `[ProofreadingService] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}），将跳过上下文提取（术语、角色参考）`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+
       // 初始化消息历史
       const history: ChatMessage[] = [];
 
       // 1. 系统提示词
-      const systemPrompt = `你是一个专业的小说校对助手，负责检查并修正翻译文本中的各种错误。
+      const todosPrompt = getTodosSystemPrompt();
+      const specialInstructionsSection = specialInstructions
+        ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
+        : '';
+      const systemPrompt = `你是一个专业的小说校对助手，负责检查并修正翻译文本中的各种错误。${todosPrompt}${specialInstructionsSection}
 
       ========================================
       【校对工作范围】
@@ -259,6 +302,12 @@ export class ProofreadingService {
          - \`update_character\`: 发现角色名称不一致时更新
          - \`update_term\`: 发现术语翻译不一致时更新
          - \`create_memory\`: 保存重要的背景设定、角色信息等记忆内容，以便后续快速参考
+      3. **待办事项管理**（用于任务规划）:
+         - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）
+         - \`list_todos\`: 查看所有待办事项
+         - \`update_todo\`: 更新待办事项的内容或状态
+         - \`mark_todo_done\`: 标记待办事项为完成（当你完成了该待办的任务时）
+         - \`delete_todo\`: 删除待办事项
 
       ========================================
       【输出格式要求（必须严格遵守）】
@@ -324,12 +373,21 @@ export class ProofreadingService {
       // 2. 初始用户提示
       let initialUserPrompt = `开始校对。`;
 
+      // 如果提供了章节ID，添加到上下文中
+      if (chapterId) {
+        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保校对的一致性和连贯性。`;
+      }
+
       // 如果是单段落校对，添加段落 ID 信息以便 AI 获取上下文
       if (currentParagraphId && content.length === 1) {
         initialUserPrompt += `\n\n**当前段落 ID**: ${currentParagraphId}\n你可以使用工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs 等）获取该段落的前后上下文，以确保校对的一致性和连贯性。`;
       }
 
       initialUserPrompt += `
+
+        【任务规划建议】
+        - 如果需要规划复杂的校对任务，你可以使用 create_todo 工具创建待办事项来规划步骤
+        - 例如：为大型章节创建待办事项来跟踪校对进度、一致性检查、格式检查等子任务
 
         【执行要点】
         - **文字层面**：检查错别字、标点、语法、词语用法
@@ -353,21 +411,6 @@ export class ProofreadingService {
         context?: string;
         paragraphIds?: string[];
       }> = [];
-
-      // 获取书籍数据以提取上下文（仅当提供了 bookId 时）
-      let book: Novel | undefined;
-      if (bookId) {
-        try {
-          // 动态导入 store 以避免循环依赖
-          const booksStore = (await import('src/stores/books')).useBooksStore();
-          book = booksStore.getBookById(bookId);
-        } catch (e) {
-          console.warn(
-            `[ProofreadingService] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}），将跳过上下文提取（术语、角色参考）`,
-            e instanceof Error ? e.message : e,
-          );
-        }
-      }
 
       // 计算全文的角色出现得分，用于消歧义
       let characterScores: Map<string, number> | undefined;
@@ -436,7 +479,8 @@ export class ProofreadingService {
       for (const paragraph of paragraphsWithTranslation) {
         // 获取段落的当前翻译
         const currentTranslation =
-          paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+          paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)
+            ?.translation ||
           paragraph.translations?.[0]?.translation ||
           '';
 
@@ -525,7 +569,10 @@ export class ProofreadingService {
 - **内容层面**：检查人名、地名、称谓一致性；检查时间线和逻辑；检查专业知识/设定
 - **格式层面**：检查格式、数字用法、引文注释
 - **一致性**：使用工具查找其他段落中的用法，确保全文一致
-- **最小改动**：只修正确实存在的错误，保持原意和风格`;
+- **最小改动**：只修正确实存在的错误，保持原意和风格
+- **待办事项管理**（可选，用于任务规划）:
+  - 如果需要规划复杂的校对任务，可以使用 create_todo 创建待办事项来规划步骤
+  - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
@@ -535,132 +582,27 @@ export class ProofreadingService {
 
         history.push({ role: 'user', content });
 
-        let currentTurnCount = 0;
-        const MAX_TURNS = 10; // 防止工具调用死循环
-        let finalResponseText = '';
-
-        // 工具调用循环
-        while (currentTurnCount < MAX_TURNS) {
-          currentTurnCount++;
-
-          const request: TextGenerationRequest = {
-            messages: history,
-          };
-
-          if (tools.length > 0) {
-            request.tools = tools;
-          }
-
-          // 调用 AI
-          let chunkReceived = false;
-          let accumulatedText = '';
-
-          // 确保 AI 请求完全完成后再继续
-          const result = await service.generateText(config, request, (c) => {
-            // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
-            if (aiProcessingStore && taskId && c.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
-            }
-
-            // 处理流式输出
-            if (c.text) {
-              if (!chunkReceived && aiProcessingStore && taskId) {
-                chunkReceived = true;
-              }
-
-              // 累积文本用于检测重复字符
-              accumulatedText += c.text;
-
-              // 追加输出内容到任务
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendOutputContent(taskId, c.text);
-              }
-
-              // 检测重复字符（AI降级检测），传入原文进行比较
-              if (
-                detectRepeatingCharacters(accumulatedText, chunkText, { logLabel: 'ProofreadingService' })
-              ) {
-                throw new Error('AI降级检测：检测到重复字符，停止校对');
-              }
-            }
-            return Promise.resolve();
-          });
-
-          // 检查是否有工具调用
-          if (result.toolCalls && result.toolCalls.length > 0) {
-            // 将助手的回复（包含工具调用）添加到历史
-            history.push({
-              role: 'assistant',
-              content: result.text || null,
-              tool_calls: result.toolCalls,
-            });
-
-            // 执行工具
-            for (const toolCall of result.toolCalls) {
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `\n[调用工具: ${toolCall.function.name}]\n`,
-                );
-              }
-
-              // 执行工具
-              const toolResult = await TranslationService.handleToolCall(
-                toolCall,
-                bookId || '',
-                handleAction,
-                onToast,
-              );
-
-              // 添加工具结果到历史
-              history.push({
-                role: 'tool',
-                content: toolResult.content,
-                tool_call_id: toolCall.id,
-                name: toolCall.function.name,
-              });
-
-              if (aiProcessingStore && taskId) {
-                void aiProcessingStore.appendThinkingMessage(
-                  taskId,
-                  `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-                );
-              }
-            }
-            // 工具调用完成后，添加提示要求AI继续完成校对
-            history.push({
-              role: 'user',
-              content:
-                '工具调用已完成。请继续完成当前文本块的校对任务，返回包含校对结果的JSON格式响应。不要跳过校对，必须提供完整的校对结果。',
-            });
-            // 继续循环，将工具结果和提示发送给 AI
-          } else {
-            // 没有工具调用，这是最终回复
-            finalResponseText = result.text;
-
-            // 保存思考内容到思考过程（从最终结果）
-            if (aiProcessingStore && taskId && result.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-            }
-
-            // 再次检测最终响应中的重复字符，传入原文进行比较
-            if (
-              detectRepeatingCharacters(finalResponseText, chunkText, { logLabel: 'ProofreadingService' })
-            ) {
-              throw new Error('AI降级检测：最终响应中检测到重复字符');
-            }
-
-            history.push({ role: 'assistant', content: finalResponseText });
-            break;
-          }
-        }
+        // 使用共享的工具调用循环
+        const finalResponseText = await executeToolCallLoop({
+          history,
+          tools,
+          generateText: service.generateText.bind(service),
+          aiServiceConfig: config,
+          taskType: 'proofreading',
+          chunkText,
+          paragraphIds: chunk.paragraphIds,
+          bookId: bookId || '',
+          handleAction,
+          onToast,
+          taskId,
+          aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+          logLabel: 'ProofreadingService',
+          maxTurns: 10,
+          includePreview: true,
+        });
 
         // 检查是否在达到最大回合数后仍未获得校对结果
-        if (!finalResponseText || finalResponseText.trim().length === 0) {
-          throw new Error(
-            `AI在工具调用后未返回校对结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
-          );
-        }
+        checkMaxTurnsReached(finalResponseText, 10, 'proofreading');
 
         // 解析 JSON 响应
         try {
@@ -790,6 +732,7 @@ export class ProofreadingService {
           message: '校对完成',
         });
         // 不再自动删除任务，保留思考过程供用户查看
+        // 注意：待办事项由 AI 自己决定是否标记为完成，不自动标记
       }
 
       return {
@@ -829,4 +772,3 @@ export class ProofreadingService {
     }
   }
 }
-

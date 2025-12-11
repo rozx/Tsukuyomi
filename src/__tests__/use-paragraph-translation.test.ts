@@ -1,8 +1,9 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
 import { useParagraphTranslation } from '../composables/book-details/useParagraphTranslation';
 import type { Novel, Chapter, Volume, Paragraph } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import * as BooksStore from '../stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -19,10 +20,6 @@ const mockUseBooksStore = mock(() => ({
 
 await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
-}));
-
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
 }));
 
 await mock.module('src/services/chapter-service', () => ({
@@ -89,13 +86,23 @@ describe('useParagraphTranslation', () => {
     mockUpdateChapter.mockClear();
     mockSaveChapterContent.mockClear();
     mockBooksStoreUpdateBook.mockClear();
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
   });
 
-  it('应该初始化编辑状态', () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('应该初始化状态', () => {
     const book = ref<Novel | undefined>(undefined);
     const selectedChapterWithContent = ref<Chapter | null>(null);
 
-    const { currentlyEditingParagraphId } = useParagraphTranslation(book, selectedChapterWithContent);
+    const { currentlyEditingParagraphId } = useParagraphTranslation(
+      book,
+      selectedChapterWithContent,
+    );
 
     expect(currentlyEditingParagraphId.value).toBeNull();
   });
@@ -133,7 +140,11 @@ describe('useParagraphTranslation', () => {
     mockUpdateChapter.mockReturnValueOnce(updatedVolumes);
 
     const saveState = mock(() => {});
-    const { updateParagraphTranslation } = useParagraphTranslation(book, selectedChapterWithContent, saveState);
+    const { updateParagraphTranslation } = useParagraphTranslation(
+      book,
+      selectedChapterWithContent,
+      saveState,
+    );
 
     await updateParagraphTranslation('para-1', '新翻译');
 
@@ -182,7 +193,10 @@ describe('useParagraphTranslation', () => {
     ];
     mockUpdateChapter.mockReturnValueOnce(updatedVolumes);
 
-    const { selectParagraphTranslation } = useParagraphTranslation(book, selectedChapterWithContent);
+    const { selectParagraphTranslation } = useParagraphTranslation(
+      book,
+      selectedChapterWithContent,
+    );
 
     await selectParagraphTranslation('para-1', translation2Id);
 
@@ -205,7 +219,10 @@ describe('useParagraphTranslation', () => {
     const book = ref<Novel | undefined>(novel);
     const selectedChapterWithContent = ref<Chapter | null>(chapter);
 
-    const { selectParagraphTranslation } = useParagraphTranslation(book, selectedChapterWithContent);
+    const { selectParagraphTranslation } = useParagraphTranslation(
+      book,
+      selectedChapterWithContent,
+    );
 
     await selectParagraphTranslation('para-1', 'non-existent-id');
 
@@ -227,7 +244,10 @@ describe('useParagraphTranslation', () => {
     const book = ref<Novel | undefined>(novel);
     const selectedChapterWithContent = ref<Chapter | null>(chapter);
 
-    const { updateSelectedChapterWithContent } = useParagraphTranslation(book, selectedChapterWithContent);
+    const { updateSelectedChapterWithContent } = useParagraphTranslation(
+      book,
+      selectedChapterWithContent,
+    );
 
     const updatedVolumes: Volume[] = [
       {
@@ -250,4 +270,3 @@ describe('useParagraphTranslation', () => {
     expect(selectedChapterWithContent.value?.content?.[0]?.text).toBe('更新后的原文');
   });
 });
-

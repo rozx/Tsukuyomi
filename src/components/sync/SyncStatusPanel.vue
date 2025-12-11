@@ -10,8 +10,6 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
-import ConflictResolutionDialog from 'src/components/dialogs/ConflictResolutionDialog.vue';
-import type { ConflictResolution } from 'src/services/conflict-detection-service';
 import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
@@ -79,16 +77,8 @@ const remoteStats = ref<{
   aiModelsCount: number;
 } | null>(null);
 
-// 冲突相关 - 使用 composable
-const {
-  showConflictDialog,
-  detectedConflicts,
-  pendingRemoteData,
-  uploadWithConflictCheck,
-  downloadWithConflictCheck,
-  handleConflictResolve,
-  handleConflictCancel,
-} = useGistUploadWithConflictCheck();
+// 同步相关 - 使用 composable
+const { uploadWithConflictCheck, downloadWithConflictCheck } = useGistUploadWithConflictCheck();
 
 // 上传配置
 const uploadConfig = async () => {
@@ -103,8 +93,8 @@ const uploadConfig = async () => {
     return;
   }
 
-  // 使用 composable 处理冲突检查和上传
-  const hasConflicts = await uploadWithConflictCheck(
+  // 使用 composable 处理上传
+  await uploadWithConflictCheck(
     config,
     (value) => {
       isSyncing.value = value;
@@ -123,11 +113,6 @@ const uploadConfig = async () => {
       });
     },
   );
-
-  // 如果有冲突，composable 已经显示了对话框，这里不需要做任何事
-  if (hasConflicts) {
-    return;
-  }
 };
 
 // 下载配置
@@ -148,40 +133,19 @@ const downloadConfig = async () => {
     return;
   }
 
-  // 使用 composable 处理冲突检查和下载
-  const hasConflicts = await downloadWithConflictCheck(config, (value) => {
+  // 使用 composable 处理下载
+  await downloadWithConflictCheck(config, (value) => {
     isSyncing.value = value;
   });
 
-  if (!hasConflicts) {
-    // 如果没有冲突，downloadWithConflictCheck 已经应用了数据
-    // 我们只需要更新统计信息
-    // 注意：这里我们无法直接获取下载的数据来更新统计，
-    // 但我们可以更新为本地当前状态（因为已经同步了）
-    remoteStats.value = {
-      booksCount: booksStore.books.length,
-      aiModelsCount: aiModelsStore.models.length,
-    };
-  }
-};
-
-// 处理冲突解决
-const onConflictResolve = async (resolutions: ConflictResolution[]) => {
-  const config = gistSync.value;
-  await handleConflictResolve(
-    config,
-    resolutions,
-    (value) => {
-      isSyncing.value = value;
-    },
-    () => {
-      // 更新远程统计数据
-      remoteStats.value = {
-        booksCount: booksStore.books.length,
-        aiModelsCount: aiModelsStore.models.length,
-      };
-    },
-  );
+  // downloadWithConflictCheck 已经应用了数据
+  // 我们只需要更新统计信息
+  // 注意：这里我们无法直接获取下载的数据来更新统计，
+  // 但我们可以更新为本地当前状态（因为已经同步了）
+  remoteStats.value = {
+    booksCount: booksStore.books.length,
+    aiModelsCount: aiModelsStore.models.length,
+  };
 };
 
 // Popover ref
@@ -272,12 +236,6 @@ defineExpose({
   </Popover>
 
   <!-- 冲突解决对话框 -->
-  <ConflictResolutionDialog
-    :visible="showConflictDialog"
-    :conflicts="detectedConflicts"
-    @resolve="onConflictResolve"
-    @cancel="handleConflictCancel"
-  />
 </template>
 
 <style scoped>

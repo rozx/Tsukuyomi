@@ -1,7 +1,6 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import { SyncDataService } from '../services/sync-data-service';
-import type { ConflictResolution } from '../services/conflict-detection-service';
-import { ConflictType } from '../services/conflict-detection-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 
 // Mock Stores
 const mockAIModelsStore = {
@@ -14,6 +13,8 @@ const mockBooksStore = {
   books: [] as unknown[],
   clearBooks: mock(() => Promise.resolve()),
   bulkAddBooks: mock((_books: unknown[]) => Promise.resolve()),
+  getBookById: mock(() => null),
+  updateBook: mock(() => Promise.resolve()),
 };
 
 const mockCoverHistoryStore = {
@@ -47,19 +48,13 @@ await mock.module('src/stores/settings', () => ({
 }));
 
 // Mock ChapterContentService
-await mock.module('src/services/chapter-content-service', () => ({
-  ChapterContentService: {
-    loadChapterContent: mock(() => Promise.resolve([])),
-  },
-}));
-
-// Mock SyncDataService static methods that involve complex logic we don't want to test here
-// Note: We can't easily mock static methods of the class we are testing if we import the class directly.
-// However, we can mock the dependencies they use.
-// For mergeNovelWithLocalContent and ensureNovelContentLoaded, they use ChapterContentService which we mocked.
 
 describe('数据同步服务 (SyncDataService)', () => {
   beforeEach(() => {
+    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
+    spyOn(ChapterContentService, 'clearAllCache').mockImplementation(() => {});
+    spyOn(ChapterContentService, 'clearCache').mockImplementation(() => {});
+
     mockAIModelsStore.models = [];
     mockAIModelsStore.clearModels.mockClear();
     mockAIModelsStore.addModel.mockClear();
@@ -76,19 +71,20 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockSettingsStore.updateGistSync.mockClear();
   });
 
+  afterEach(() => {
+    mock.restore();
+  });
+
   describe('applyDownloadedData (应用下载数据)', () => {
-    it('当没有冲突（resolutions 为空）且意图为下载时，应应用远程数据', async () => {
+    it('当本地为空时，应应用所有远程数据', async () => {
       const remoteData = {
-        novels: [{ id: 'n1', title: 'Remote Novel' }],
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
+        novels: [{ id: 'n1', title: 'Remote Novel', lastEdited: new Date().toISOString() }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: new Date().toISOString() }],
         appSettings: { theme: 'dark' },
         coverHistory: [{ id: 'c1', url: 'remote.jpg' }],
       };
 
-      // Local state is empty or different but no conflict detected (simulated by empty resolutions)
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
-
-      await SyncDataService.applyDownloadedData(remoteData, [], 'download');
+      await SyncDataService.applyDownloadedData(remoteData);
 
       // Verify AI Models
       expect(mockAIModelsStore.clearModels).toHaveBeenCalled();
@@ -112,173 +108,79 @@ describe('数据同步服务 (SyncDataService)', () => {
       );
     });
 
-    it('当没有冲突（resolutions 为空）且意图为上传时，应保留本地数据', async () => {
+    it('当远程数据较新时，应更新本地数据', async () => {
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-02').toISOString();
+
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: newDate }],
       };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
+      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: oldDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'upload');
-
-      // Should use Local Model
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'm1', name: 'Local Model' }),
-      );
-    });
-
-    it('当冲突解决策略明确为 "remote" 时，应应用远程数据', async () => {
-      const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
-      };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'remote' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
+      await SyncDataService.applyDownloadedData(remoteData);
 
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Remote Model' }),
       );
     });
 
-    it('当冲突解决策略明确为 "local" 时，应应用本地数据', async () => {
+    it('当本地数据较新时，应保留本地数据', async () => {
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-02').toISOString();
+
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model' }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: oldDate }],
       };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model' }];
+      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: newDate }];
 
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
+      await SyncDataService.applyDownloadedData(remoteData);
 
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Local Model' }),
       );
     });
 
-    it('即使其他项有冲突，非冲突项也应根据意图应用数据（下载：远程）', async () => {
-      // m1 has conflict (resolved to local), m2 has no conflict (should update to remote)
-      const remoteData = {
-        aiModels: [
-          { id: 'm1', name: 'Remote Model 1' },
-          { id: 'm2', name: 'Remote Model 2' },
-        ],
-      };
-      mockAIModelsStore.models = [
-        { id: 'm1', name: 'Local Model 1' },
-        { id: 'm2', name: 'Local Model 2' },
-      ];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions, 'download');
-
-      // m1 should be local
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 1' }),
-      );
-      // m2 should be remote (because resolution is undefined, and intent is download)
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote Model 2' }),
-      );
-    });
-
-    it('即使其他项有冲突，非冲突项也应根据意图应用数据（上传：本地）', async () => {
-      // m1 has conflict (resolved to local), m2 has no conflict (should keep local)
-      const remoteData = {
-        aiModels: [
-          { id: 'm1', name: 'Remote Model 1' },
-          { id: 'm2', name: 'Remote Model 2' },
-        ],
-      };
-      mockAIModelsStore.models = [
-        { id: 'm1', name: 'Local Model 1' },
-        { id: 'm2', name: 'Local Model 2' },
-      ];
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'm1', type: ConflictType.AIModel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions, 'upload');
-
-      // m1 should be local
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 1' }),
-      );
-      // m2 should be local (because resolution is undefined, and intent is upload)
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model 2' }),
-      );
-    });
-
-    it('当意图为自动同步时，应选择较新的数据（远程较新）', async () => {
-      const baseDate = new Date('2024-01-01T00:00:00.000Z');
-      const laterDate = new Date('2024-01-02T00:00:00.000Z');
+    it('应保留上次同步后新增的本地数据', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const newDate = new Date('2024-01-02').toISOString();
 
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: laterDate }],
+        aiModels: [{ id: 'm2', name: 'Remote Model', lastEdited: newDate }],
       };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: baseDate }];
+      // Local has a new model added after sync
+      mockAIModelsStore.models = [{ id: 'm1', name: 'New Local Model', lastEdited: newDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'auto');
+      await SyncDataService.applyDownloadedData(remoteData, lastSyncTime);
 
-      // Should use Remote Model (newer)
+      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'New Local Model' }),
+      );
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Remote Model' }),
       );
     });
 
-    it('当意图为自动同步时，应选择较新的数据（本地较新）', async () => {
-      const baseDate = new Date('2024-01-01T00:00:00.000Z');
-      const laterDate = new Date('2024-01-02T00:00:00.000Z');
+    it('应删除上次同步前存在但远程已删除的本地数据', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-03').toISOString();
 
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: baseDate }],
+        aiModels: [{ id: 'm2', name: 'Remote Model', lastEdited: newDate }],
       };
-      mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: laterDate }];
+      // Local has an old model (not modified since sync)
+      mockAIModelsStore.models = [{ id: 'm1', name: 'Old Local Model', lastEdited: oldDate }];
 
-      await SyncDataService.applyDownloadedData(remoteData, [], 'auto');
+      await SyncDataService.applyDownloadedData(remoteData, lastSyncTime);
 
-      // Should use Local Model (newer)
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model' }),
+      // Should NOT add the old model back (effectively deleting it)
+      expect(mockAIModelsStore.addModel).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Old Local Model' }),
       );
-    });
-
-    it('当设置没有冲突解决记录时，应应用远程设置', async () => {
-      const remoteData = {
-        appSettings: { theme: 'remote' },
-      };
-
-      // Resolutions might contain other items, but not settings
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'some-novel', type: ConflictType.Novel, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
-      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith({ theme: 'remote' });
-    });
-
-    it('当设置的冲突解决策略为 "local" 时，不应应用远程设置', async () => {
-      const remoteData = {
-        appSettings: { theme: 'remote' },
-      };
-
-      const resolutions: ConflictResolution[] = [
-        { conflictId: 'app-settings', type: ConflictType.Settings, choice: 'local' },
-      ];
-
-      await SyncDataService.applyDownloadedData(remoteData, resolutions);
-
-      expect(mockSettingsStore.importSettings).not.toHaveBeenCalled();
+      // Should add the remote model
+      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Remote Model' }),
+      );
     });
   });
 });

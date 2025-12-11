@@ -1,4 +1,3 @@
-import { ref } from 'vue';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -6,7 +5,6 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { SyncConfig } from 'src/models/sync';
-import type { ConflictItem, ConflictResolution } from 'src/services/conflict-detection-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import co from 'co';
 
@@ -22,27 +20,16 @@ export function useGistUploadWithConflictCheck() {
   const toast = useToastWithHistory();
   const gistSyncService = new GistSyncService();
 
-  // 冲突相关状态
-  const showConflictDialog = ref(false);
-  const detectedConflicts = ref<ConflictItem[]>([]);
-  const pendingRemoteData = ref<{
-    novels: any[];
-    aiModels: any[];
-    appSettings?: any;
-    coverHistory?: any[];
-  } | null>(null);
-  const syncIntent = ref<'upload' | 'download'>('upload');
-
   /**
-   * 检查冲突（如果存在 Gist ID）
+   * 下载远程数据（不再检查冲突）
    * @param config 同步配置
-   * @returns 如果有冲突返回 true，否则返回 false
+   * @returns 下载的数据
    */
-  const checkConflicts = async (
+  const downloadRemoteData = async (
     config: SyncConfig,
-  ): Promise<{ hasConflicts: boolean; data?: any }> => {
+  ): Promise<{ data?: any; error?: string }> => {
     if (!config.syncParams.gistId) {
-      return { hasConflicts: false }; // 没有 Gist ID，无需检查冲突
+      return {}; // 没有 Gist ID，无需下载
     }
 
     try {
@@ -50,38 +37,30 @@ export function useGistUploadWithConflictCheck() {
       const downloadResult = await gistSyncService.downloadFromGist(config);
 
       if (downloadResult.success && downloadResult.data) {
-        // 检测冲突
-        const { hasConflicts, conflicts, safeRemoteData } =
-          SyncDataService.detectConflictsAndCreateSafeData(downloadResult.data);
-
-        if (hasConflicts) {
-          // 有冲突，保存状态供后续处理
-          detectedConflicts.value = conflicts;
-          pendingRemoteData.value = safeRemoteData;
-          return { hasConflicts: true, data: safeRemoteData };
-        }
-        return { hasConflicts: false, data: downloadResult.data };
+        return { data: downloadResult.data };
       } else if (!downloadResult.success) {
         // 下载失败
+        const errorMsg = downloadResult.error || '从 Gist 下载数据时发生未知错误';
         toast.add({
           severity: 'error',
-          summary: '检查冲突失败',
-          detail: downloadResult.error || '从 Gist 下载数据时发生未知错误',
+          summary: '下载失败',
+          detail: errorMsg,
           life: 5000,
         });
-        throw new Error(downloadResult.error || '从 Gist 下载数据时发生未知错误');
+        return { error: errorMsg };
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '下载时发生未知错误';
       toast.add({
         severity: 'error',
-        summary: '检查冲突失败',
-        detail: error instanceof Error ? error.message : '检查冲突时发生未知错误',
+        summary: '下载失败',
+        detail: errorMsg,
         life: 5000,
       });
-      throw error;
+      return { error: errorMsg };
     }
 
-    return { hasConflicts: false }; // 无冲突
+    return {};
   };
 
   /**
@@ -165,65 +144,67 @@ export function useGistUploadWithConflictCheck() {
   };
 
   /**
-   * 上传前检查冲突并上传（如果无冲突）
+   * 上传前下载远程数据并上传（不再检查冲突）
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
    * @param onSuccess 成功回调（可选）
-   * @returns 如果有冲突返回 true，否则返回 false
    */
   const uploadWithConflictCheck = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
-  ): Promise<boolean> => {
-    // 检查冲突
+  ): Promise<void> => {
     setSyncing(true);
-    syncIntent.value = 'upload';
     try {
-      const { hasConflicts } = await checkConflicts(config);
-
-      if (hasConflicts) {
-        // 有冲突，显示对话框
-        showConflictDialog.value = true;
-        setSyncing(false);
-        return true;
+      // 先下载远程数据并应用（使用最新的 lastEdited 时间）
+      const { data, error } = await downloadRemoteData(config);
+      if (error) {
+        // 下载失败，仍然尝试上传
+        await performUpload(config, onSuccess);
+        return;
       }
 
-      // 无冲突，直接上传
+      if (data) {
+        // 应用远程数据（总是使用最新的 lastEdited 时间）
+        await SyncDataService.applyDownloadedData(data);
+        void co(function* () {
+          try {
+            yield settingsStore.updateLastSyncTime();
+          } catch (error) {
+            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
+          }
+        });
+      }
+
+      // 然后上传本地数据（包含刚刚合并的远程数据）
       await performUpload(config, onSuccess);
-      return false;
     } catch (error) {
-      setSyncing(false);
-      return false; // 发生错误，不继续
+      console.error('[useGistUploadWithConflictCheck] 上传失败:', error);
     } finally {
       setSyncing(false);
     }
   };
 
   /**
-   * 下载前检查冲突并下载（如果无冲突）
+   * 下载并应用远程数据（不再检查冲突）
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
-   * @returns 如果有冲突返回 true，否则返回 false
    */
   const downloadWithConflictCheck = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     setSyncing(true);
-    syncIntent.value = 'download';
     try {
-      const { hasConflicts, data } = await checkConflicts(config);
+      const { data, error } = await downloadRemoteData(config);
 
-      if (hasConflicts) {
-        showConflictDialog.value = true;
-        setSyncing(false);
-        return true;
+      if (error) {
+        return;
       }
 
-      // 无冲突，直接应用下载的数据
+      // 应用下载的数据（总是使用最新的 lastEdited 时间）
       if (data) {
-        await SyncDataService.applyDownloadedData(data, [], 'download');
+        await SyncDataService.applyDownloadedData(data);
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
@@ -238,93 +219,15 @@ export function useGistUploadWithConflictCheck() {
           life: 3000,
         });
       }
-      return false;
     } catch (error) {
-      setSyncing(false);
-      return false;
+      console.error('[useGistUploadWithConflictCheck] 下载失败:', error);
     } finally {
       setSyncing(false);
     }
-  };
-
-  /**
-   * 处理冲突解决
-   * @param config 同步配置
-   * @param resolutions 冲突解决结果
-   * @param setSyncing 设置同步状态的函数
-   * @param onSuccess 成功回调（可选），接收上传结果
-   */
-  const handleConflictResolve = async (
-    config: SyncConfig,
-    resolutions: ConflictResolution[],
-    setSyncing: (value: boolean) => void,
-    onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
-  ): Promise<void> => {
-    if (!pendingRemoteData.value) {
-      showConflictDialog.value = false;
-      pendingRemoteData.value = null;
-      detectedConflicts.value = [];
-      return;
-    }
-
-    const safeRemoteData = SyncDataService.createSafeRemoteData(pendingRemoteData.value);
-    setSyncing(true);
-    showConflictDialog.value = false;
-
-    try {
-      // 应用冲突解决后的数据
-      await SyncDataService.applyDownloadedData(safeRemoteData, resolutions, syncIntent.value);
-
-      // 更新同步时间
-      void co(function* () {
-        try {
-          yield settingsStore.updateLastSyncTime();
-        } catch (error) {
-          console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
-        }
-      });
-
-      // 如果是上传意图，则上传最终状态
-      if (syncIntent.value === 'upload' && config.enabled) {
-        await performUpload(config, onSuccess);
-      } else {
-        toast.add({
-          severity: 'success',
-          summary: '同步完成',
-          detail: '冲突已解决，数据已同步',
-          life: 3000,
-        });
-      }
-    } catch (error) {
-      toast.add({
-        severity: 'error',
-        summary: '同步失败',
-        detail: error instanceof Error ? error.message : '应用冲突解决时发生错误',
-        life: 5000,
-      });
-    } finally {
-      setSyncing(false);
-      pendingRemoteData.value = null;
-      detectedConflicts.value = [];
-    }
-  };
-
-  /**
-   * 取消冲突解决
-   */
-  const handleConflictCancel = (): void => {
-    showConflictDialog.value = false;
-    pendingRemoteData.value = null;
-    detectedConflicts.value = [];
   };
 
   return {
-    showConflictDialog,
-    detectedConflicts,
-    pendingRemoteData,
     uploadWithConflictCheck,
     downloadWithConflictCheck,
-    handleConflictResolve,
-    handleConflictCancel,
   };
 }

@@ -1,8 +1,11 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import { TerminologyService } from 'src/services/terminology-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import * as BooksStore from 'src/stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -20,10 +23,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
 await mock.module('src/services/chapter-service', () => ({
   ChapterService: {
     updateChapter: mockUpdateChapter,
@@ -32,18 +31,6 @@ await mock.module('src/services/chapter-service', () => ({
 
 const mockRefreshAllTermOccurrences = mock(() => Promise.resolve());
 const mockRefreshAllCharacterOccurrences = mock(() => Promise.resolve());
-
-await mock.module('src/services/terminology-service', () => ({
-  TerminologyService: {
-    refreshAllTermOccurrences: mockRefreshAllTermOccurrences,
-  },
-}));
-
-await mock.module('src/services/character-setting-service', () => ({
-  CharacterSettingService: {
-    refreshAllCharacterOccurrences: mockRefreshAllCharacterOccurrences,
-  },
-}));
 
 // Helper functions
 function createTestParagraph(id: string, text: string): Paragraph {
@@ -94,6 +81,20 @@ describe('useEditMode', () => {
     mockBooksStoreUpdateBook.mockClear();
     mockRefreshAllTermOccurrences.mockClear();
     mockRefreshAllCharacterOccurrences.mockClear();
+
+    spyOn(TerminologyService, 'refreshAllTermOccurrences').mockImplementation(
+      mockRefreshAllTermOccurrences,
+    );
+    spyOn(CharacterSettingService, 'refreshAllCharacterOccurrences').mockImplementation(
+      mockRefreshAllCharacterOccurrences,
+    );
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该初始化编辑模式为 translation', () => {
@@ -153,7 +154,13 @@ describe('useEditMode', () => {
       originalTextEditValue,
       originalTextEditChapterId,
       startEditingOriginalText,
-    } = useEditMode(book, selectedChapterWithContent, selectedChapterParagraphs, selectedChapterId, updateSelectedChapterWithContent);
+    } = useEditMode(
+      book,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapterId,
+      updateSelectedChapterWithContent,
+    );
 
     expect(isEditingOriginalText.value).toBe(false);
 
@@ -180,7 +187,13 @@ describe('useEditMode', () => {
       originalTextEditValue,
       cancelOriginalTextEdit,
       startEditingOriginalText,
-    } = useEditMode(book, selectedChapterWithContent, selectedChapterParagraphs, selectedChapterId, updateSelectedChapterWithContent);
+    } = useEditMode(
+      book,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapterId,
+      updateSelectedChapterWithContent,
+    );
 
     startEditingOriginalText();
     originalTextEditValue.value = '修改后的文本';
@@ -221,11 +234,14 @@ describe('useEditMode', () => {
     const updateSelectedChapterWithContent = mock(() => {});
     const saveState = mock(() => {});
 
-    const {
-      originalTextEditValue,
-      saveOriginalTextEdit,
-      startEditingOriginalText,
-    } = useEditMode(book, selectedChapterWithContent, selectedChapterParagraphs, selectedChapterId, updateSelectedChapterWithContent, saveState);
+    const { originalTextEditValue, saveOriginalTextEdit, startEditingOriginalText } = useEditMode(
+      book,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapterId,
+      updateSelectedChapterWithContent,
+      saveState,
+    );
 
     startEditingOriginalText();
     originalTextEditValue.value = '新文本\n新段落';
@@ -240,4 +256,3 @@ describe('useEditMode', () => {
     // 这是预期的测试行为
   });
 });
-

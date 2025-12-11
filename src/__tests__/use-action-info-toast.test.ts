@@ -1,8 +1,14 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
-import { countUniqueActions, useActionInfoToast } from '../composables/book-details/useActionInfoToast';
+import {
+  countUniqueActions,
+  useActionInfoToast,
+} from '../composables/book-details/useActionInfoToast';
 import type { ActionInfo } from '../services/ai/tools/types';
 import type { Novel, Terminology, CharacterSetting } from '../models/novel';
+import { TerminologyService } from 'src/services/terminology-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import * as BooksStore from 'src/stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -18,30 +24,12 @@ const mockUseBooksStore = mock(() => ({
 }));
 
 const mockDeleteTerminology = mock(() => Promise.resolve());
-const mockUpdateTerminology = mock(() => Promise.resolve());
+const mockUpdateTerminology = mock(() => Promise.resolve({} as Terminology));
 const mockDeleteCharacterSetting = mock(() => Promise.resolve());
-const mockUpdateCharacterSetting = mock(() => Promise.resolve());
+const mockUpdateCharacterSetting = mock(() => Promise.resolve({} as CharacterSetting));
 
 await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
-}));
-
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
-await mock.module('src/services/terminology-service', () => ({
-  TerminologyService: {
-    deleteTerminology: mockDeleteTerminology,
-    updateTerminology: mockUpdateTerminology,
-  },
-}));
-
-await mock.module('src/services/character-setting-service', () => ({
-  CharacterSettingService: {
-    deleteCharacterSetting: mockDeleteCharacterSetting,
-    updateCharacterSetting: mockUpdateCharacterSetting,
-  },
 }));
 
 describe('countUniqueActions', () => {
@@ -167,12 +155,29 @@ describe('useActionInfoToast', () => {
     mockDeleteCharacterSetting.mockClear();
     mockUpdateCharacterSetting.mockClear();
 
+    spyOn(TerminologyService, 'deleteTerminology').mockImplementation(mockDeleteTerminology);
+    spyOn(TerminologyService, 'updateTerminology').mockImplementation(mockUpdateTerminology);
+    spyOn(CharacterSettingService, 'deleteCharacterSetting').mockImplementation(
+      mockDeleteCharacterSetting,
+    );
+    spyOn(CharacterSettingService, 'updateCharacterSetting').mockImplementation(
+      mockUpdateCharacterSetting,
+    );
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      getBookById: mockBooksStoreGetBookById,
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
+
     mockBook = {
       id: 'book-1',
       title: 'Test Book',
       lastEdited: new Date(),
       createdAt: new Date(),
     };
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该显示创建术语的 toast', () => {
@@ -303,4 +308,3 @@ describe('useActionInfoToast', () => {
     expect(typeof callArgs.onRevert).toBe('function');
   });
 });
-

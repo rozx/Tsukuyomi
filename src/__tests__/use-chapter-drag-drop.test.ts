@@ -1,8 +1,9 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
 import { useChapterDragDrop } from '../composables/book-details/useChapterDragDrop';
 import type { Novel, Chapter, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import * as BooksStore from '../stores/books';
 
 // Mock HTMLElement for Node.js/Bun environment
 class MockHTMLElement {
@@ -16,7 +17,10 @@ class MockHTMLElement {
 global.HTMLElement = MockHTMLElement;
 
 // Helper function to create mock DragEvent
-function createMockDragEvent(type: string, options?: { dataTransfer?: Partial<DataTransfer>; target?: any }): DragEvent {
+function createMockDragEvent(
+  type: string,
+  options?: { dataTransfer?: Partial<DataTransfer>; target?: any },
+): DragEvent {
   const dataTransfer = {
     effectAllowed: 'all' as DataTransfer['effectAllowed'],
     dropEffect: 'none' as DataTransfer['dropEffect'],
@@ -71,10 +75,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
 await mock.module('src/services/chapter-service', () => ({
   ChapterService: {
     moveChapter: mockMoveChapter,
@@ -111,6 +111,13 @@ describe('useChapterDragDrop', () => {
     mockToastAdd.mockClear();
     mockMoveChapter.mockClear();
     mockBooksStoreUpdateBook.mockClear();
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该初始化拖拽状态', () => {
@@ -127,7 +134,10 @@ describe('useChapterDragDrop', () => {
     const chapter = createTestChapter('chapter-1', 'Chapter 1');
     const volume: Volume = {
       id: 'volume-1',
-      title: { original: 'Volume 1', translation: { id: generateShortId(), translation: '', aiModelId: '' } },
+      title: {
+        original: 'Volume 1',
+        translation: { id: generateShortId(), translation: '', aiModelId: '' },
+      },
       chapters: [chapter],
     };
     const book = ref<Novel | undefined>(createTestNovel([volume]));
@@ -199,12 +209,18 @@ describe('useChapterDragDrop', () => {
     const chapter = createTestChapter('chapter-1', 'Chapter 1');
     const volume1: Volume = {
       id: 'volume-1',
-      title: { original: 'Volume 1', translation: { id: generateShortId(), translation: '', aiModelId: '' } },
+      title: {
+        original: 'Volume 1',
+        translation: { id: generateShortId(), translation: '', aiModelId: '' },
+      },
       chapters: [chapter],
     };
     const volume2: Volume = {
       id: 'volume-2',
-      title: { original: 'Volume 2', translation: { id: generateShortId(), translation: '', aiModelId: '' } },
+      title: {
+        original: 'Volume 2',
+        translation: { id: generateShortId(), translation: '', aiModelId: '' },
+      },
       chapters: [],
     };
     const book = ref<Novel | undefined>(createTestNovel([volume1, volume2]));
@@ -260,4 +276,3 @@ describe('useChapterDragDrop', () => {
     expect(mockBooksStoreUpdateBook).not.toHaveBeenCalled();
   });
 });
-

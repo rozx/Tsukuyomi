@@ -1,0 +1,89 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Service Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		},
+		{
+			"label": "Run Specific Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts src/__tests__/use-paragraph-navigation.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests Final",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		},
+		{
+			"label": "Run Character Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/character-setting-service.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests Final 2",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests Final 3",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		},
+		{
+			"label": "Run Conflict Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/character-setting-service.test.ts src/__tests__/use-edit-mode.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests Final 4",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		},
+		{
+			"label": "Grep Failures",
+			"type": "shell",
+			"command": "bun test 2>&1 | grep \"✗\"",
+			"group": "test"
+		},
+		{
+			"label": "Run Sync Data Service Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/sync-data-service.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run Sync Data Service Tests 2",
+			"type": "shell",
+			"command": "bun test src/__tests__/sync-data-service.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run Character Tests Check",
+			"type": "shell",
+			"command": "bun test src/__tests__/character-setting-service.test.ts",
+			"group": "test"
+		},
+		{
+			"label": "Run All Tests Final Check",
+			"type": "shell",
+			"command": "bun test",
+			"group": "test"
+		}
+	]
+}

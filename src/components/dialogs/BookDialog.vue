@@ -4,6 +4,7 @@ import { cloneDeep } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
+import Textarea from 'primevue/textarea';
 import AutoComplete from 'primevue/autocomplete';
 import Skeleton from 'primevue/skeleton';
 import type { Novel, Chapter } from 'src/models/novel';
@@ -63,6 +64,9 @@ const formData = ref<Partial<Novel>>({
   description: '',
   tags: [],
   webUrl: [],
+  translationInstructions: '',
+  polishInstructions: '',
+  proofreadingInstructions: '',
 });
 
 // 封面管理对话框
@@ -118,6 +122,9 @@ const resetForm = () => {
     description: '',
     tags: [],
     webUrl: [],
+    translationInstructions: '',
+    polishInstructions: '',
+    proofreadingInstructions: '',
   };
   formErrors.value = {};
   expandedVolumes.value.clear();
@@ -404,6 +411,9 @@ watch(
           description: props.book.description || '',
           tags: props.book.tags ? [...props.book.tags] : [],
           webUrl: props.book.webUrl ? [...props.book.webUrl] : [],
+          translationInstructions: props.book.translationInstructions || '',
+          polishInstructions: props.book.polishInstructions || '',
+          proofreadingInstructions: props.book.proofreadingInstructions || '',
         };
         if (props.book.cover) {
           data.cover = { ...props.book.cover };
@@ -600,6 +610,74 @@ watch(
           <small class="text-moon/60 block mt-1"
             >输入网络地址后按回车键添加，或点击按钮从支持的网站获取</small
           >
+        </div>
+
+        <!-- 特殊指令 -->
+        <div class="space-y-4">
+          <label class="block text-sm font-medium text-moon/90">特殊指令（书籍级别）</label>
+          <small class="text-moon/60 text-xs block mb-2"
+            >这些指令将应用于该书籍的所有章节。章节级别的指令会覆盖书籍级别的指令。</small
+          >
+
+          <!-- 翻译指令 -->
+          <div class="space-y-2">
+            <label
+              :for="`${idPrefix}-translationInstructions`"
+              class="block text-sm font-medium text-moon/80"
+              >翻译指令</label
+            >
+            <Textarea
+              :id="`${idPrefix}-translationInstructions`"
+              v-model="formData.translationInstructions"
+              placeholder="输入翻译任务的特殊指令（可选）"
+              :rows="3"
+              :auto-resize="true"
+              class="w-full"
+            />
+            <small class="text-moon/60 text-xs block"
+              >这些指令将在执行翻译任务时添加到系统提示词中</small
+            >
+          </div>
+
+          <!-- 润色指令 -->
+          <div class="space-y-2">
+            <label
+              :for="`${idPrefix}-polishInstructions`"
+              class="block text-sm font-medium text-moon/80"
+              >润色指令</label
+            >
+            <Textarea
+              :id="`${idPrefix}-polishInstructions`"
+              v-model="formData.polishInstructions"
+              placeholder="输入润色任务的特殊指令（可选）"
+              :rows="3"
+              :auto-resize="true"
+              class="w-full"
+            />
+            <small class="text-moon/60 text-xs block"
+              >这些指令将在执行润色任务时添加到系统提示词中</small
+            >
+          </div>
+
+          <!-- 校对指令 -->
+          <div class="space-y-2">
+            <label
+              :for="`${idPrefix}-proofreadingInstructions`"
+              class="block text-sm font-medium text-moon/80"
+              >校对指令</label
+            >
+            <Textarea
+              :id="`${idPrefix}-proofreadingInstructions`"
+              v-model="formData.proofreadingInstructions"
+              placeholder="输入校对任务的特殊指令（可选）"
+              :rows="3"
+              :auto-resize="true"
+              class="w-full"
+            />
+            <small class="text-moon/60 text-xs block"
+              >这些指令将在执行校对任务时添加到系统提示词中</small
+            >
+          </div>
         </div>
 
         <!-- 卷和章节（只读） -->

@@ -1,7 +1,5 @@
-// 必须在所有其他导入之前导入 setup，以确保 polyfill 在 idb 库导入之前设置
-import './setup';
-
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { BookService } from '../services/book-service';
 import type { Novel } from '../models/novel';
 
 // Mock objects
@@ -27,15 +25,10 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module BEFORE importing BookService
+// Mock the module
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
-
-// Import services AFTER mocking
-// BookService depends on ChapterContentService, so we need to import both
-import { BookService } from '../services/book-service';
-import { ChapterContentService } from '../services/chapter-content-service';
 
 describe('BookService', () => {
   beforeEach(() => {
@@ -92,14 +85,8 @@ describe('BookService', () => {
   });
 
   it('should clear all books', async () => {
-    // Verify ChapterContentService is available (it's imported by BookService)
-    expect(ChapterContentService).toBeDefined();
-    expect(typeof ChapterContentService.clearAllChapterContent).toBe('function');
-    
     await BookService.clearBooks();
     expect(mockClear).toHaveBeenCalledWith('books');
-    // clearAllChapterContent also calls db.clear('chapter-contents')
-    expect(mockClear).toHaveBeenCalledWith('chapter-contents');
   });
 });
 

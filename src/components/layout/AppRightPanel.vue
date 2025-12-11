@@ -27,6 +27,7 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { MemoryService } from 'src/services/memory-service';
+import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import co from 'co';
 
@@ -126,6 +127,13 @@ const handleResizeEnd = () => {
   document.removeEventListener('mouseup', handleResizeEnd);
 };
 
+onMounted(() => {
+  // 初始化时加载待办事项
+  loadTodos();
+  // 监听 localStorage 变化（跨标签页同步）
+  window.addEventListener('storage', handleStorageChange);
+});
+
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleResizeMove);
   document.removeEventListener('mouseup', handleResizeEnd);
@@ -135,6 +143,8 @@ onUnmounted(() => {
   }
   thinkingActiveTimeouts.value.clear();
   thinkingActive.value.clear();
+  // 清理 storage 事件监听
+  window.removeEventListener('storage', handleStorageChange);
 });
 
 const messages = ref<ChatMessage[]>([]);
@@ -143,6 +153,22 @@ const isSending = ref(false);
 const isSummarizing = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
+
+// 待办事项列表
+const todos = ref<TodoItem[]>([]);
+const showTodoList = ref(false);
+
+// 加载待办事项列表
+const loadTodos = () => {
+  todos.value = TodoListService.getAllTodos();
+};
+
+// 监听待办事项变化（通过 localStorage 事件）
+const handleStorageChange = (e: StorageEvent) => {
+  if (e.key === 'luna-ai-todo-list') {
+    loadTodos();
+  }
+};
 
 // Popover refs for action details
 const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
@@ -659,6 +685,10 @@ const sendMessage = async () => {
           ...(action.entity === 'memory' && 'summary' in action.data
             ? { name: action.data.summary }
             : {}),
+          // 待办事项操作相关信息
+          ...(action.entity === 'todo' && 'text' in action.data
+            ? { name: (action.data as TodoItem).text }
+            : {}),
           // 导航操作相关信息
           ...(action.type === 'navigate' && 'book_id' in action.data
             ? { book_id: action.data.book_id }
@@ -766,6 +796,7 @@ const sendMessage = async () => {
           paragraph: '段落',
           book: '书籍',
           memory: '记忆',
+          todo: '待办事项',
         };
 
         // 处理网络搜索和网页获取操作（不显示 toast 通知）
@@ -784,6 +815,13 @@ const sendMessage = async () => {
 
         // 处理导航操作（不显示 toast 通知，导航已在上面处理）
         if (action.type === 'navigate') {
+          return;
+        }
+
+        // 处理待办事项操作（不显示 toast 通知，根据需求）
+        if (action.entity === 'todo') {
+          // 刷新待办事项列表
+          loadTodos();
           return;
         }
 
@@ -2066,6 +2104,7 @@ const getActionDetails = (action: MessageAction) => {
     paragraph: '段落',
     book: '书籍',
     memory: '记忆',
+    todo: '待办事项',
   };
 
   const details: {
@@ -2183,6 +2222,16 @@ const getActionDetails = (action: MessageAction) => {
       details.push({
         label: '网页 URL',
         value: action.url,
+      });
+    }
+  }
+
+  // 处理待办事项操作
+  if (action.entity === 'todo') {
+    if (action.name) {
+      details.push({
+        label: '内容',
+        value: action.name,
       });
     }
   }
@@ -2496,6 +2545,53 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       <p class="text-xs text-moon-50">{{ contextInfo }}</p>
     </div>
 
+    <!-- Todo List Section -->
+    <div class="shrink-0 relative z-10 border-b border-white/10">
+      <button
+        class="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
+        @click="showTodoList = !showTodoList"
+      >
+        <div class="flex items-center gap-2">
+          <i class="pi pi-list text-sm text-moon-70"></i>
+          <span class="text-xs font-medium text-moon-100">待办事项</span>
+          <span
+            v-if="todos.filter((t) => !t.completed).length > 0"
+            class="px-1.5 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
+          >
+            {{ todos.filter((t) => !t.completed).length }}
+          </span>
+        </div>
+        <i
+          class="pi text-xs text-moon-70 transition-transform"
+          :class="showTodoList ? 'pi-chevron-down' : 'pi-chevron-right'"
+        ></i>
+      </button>
+      <div v-if="showTodoList" class="max-h-64 overflow-y-auto border-t border-white/10 bg-white/3">
+        <div v-if="todos.length === 0" class="px-4 py-3 text-xs text-moon-60 text-center">
+          暂无待办事项
+        </div>
+        <div v-else class="px-4 py-2 space-y-1">
+          <div
+            v-for="todo in todos"
+            :key="todo.id"
+            class="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-white/5 transition-colors"
+            :class="{ 'opacity-60': todo.completed }"
+          >
+            <i
+              class="pi mt-0.5 text-xs flex-shrink-0"
+              :class="todo.completed ? 'pi-check-circle text-green-400' : 'pi-circle text-moon-50'"
+            ></i>
+            <span
+              class="text-xs text-moon-80 flex-1 break-words"
+              :class="{ 'line-through': todo.completed }"
+            >
+              {{ todo.text }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Messages area -->
     <div
       ref="messagesContainerRef"
@@ -2603,6 +2699,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           item.action.type === 'read',
                         'bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/35':
                           item.action.type === 'navigate',
+                        'bg-orange-500/25 text-orange-200 border border-orange-500/40 hover:bg-orange-500/35':
+                          item.action.entity === 'todo',
                       }"
                       @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
                       @mouseleave="() => handleActionMouseLeave(item.action!, message)"
@@ -2617,6 +2715,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           'pi pi-link': item.action.type === 'web_fetch',
                           'pi pi-eye': item.action.type === 'read',
                           'pi pi-arrow-right': item.action.type === 'navigate',
+                          'pi pi-list': item.action.entity === 'todo',
                         }"
                       />
                       <span>
@@ -2654,7 +2753,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                         ? '书籍'
                                         : item.action.entity === 'memory'
                                           ? '记忆'
-                                          : ''
+                                          : item.action.entity === 'todo'
+                                            ? '待办事项'
+                                            : ''
                         }}
                         <span v-if="item.action.name" class="font-semibold"
                           >"{{ item.action.name }}"</span
@@ -2781,7 +2882,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                             ? '书籍'
                                             : item.action.entity === 'memory'
                                               ? '记忆'
-                                              : ''
+                                              : item.action.entity === 'todo'
+                                                ? '待办事项'
+                                                : ''
                             }}
                           </span>
                         </div>

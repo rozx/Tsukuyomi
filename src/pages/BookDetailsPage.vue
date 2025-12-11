@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
@@ -47,6 +47,7 @@ import VolumesList from 'src/components/novel/VolumesList.vue';
 import TermPopover from 'src/components/novel/TermPopover.vue';
 import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
+import SpecialInstructionsPopover from 'src/components/novel/SpecialInstructionsPopover.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -213,6 +214,9 @@ const {
   editingChapterTitle,
   editingChapterTranslation,
   editingChapterTargetVolumeId,
+  editingChapterTranslationInstructions,
+  editingChapterPolishInstructions,
+  editingChapterProofreadingInstructions,
   openEditVolumeDialog,
   openEditChapterDialog,
   handleEditVolume: originalHandleEditVolume,
@@ -255,10 +259,16 @@ const handleEditChapter = (data: {
   title: string;
   translation: string;
   targetVolumeId: string;
+  translationInstructions?: string;
+  polishInstructions?: string;
+  proofreadingInstructions?: string;
 }) => {
   editingChapterTitle.value = data.title;
   editingChapterTranslation.value = data.translation;
   editingChapterTargetVolumeId.value = data.targetVolumeId;
+  editingChapterTranslationInstructions.value = data.translationInstructions || '';
+  editingChapterPolishInstructions.value = data.polishInstructions || '';
+  editingChapterProofreadingInstructions.value = data.proofreadingInstructions || '';
   void originalHandleEditChapter();
 };
 
@@ -715,7 +725,13 @@ const {
   prevMatch,
   replaceCurrent,
   replaceAll,
-} = useSearchReplace(book, selectedChapter, selectedChapterParagraphs, updateParagraphTranslation);
+} = useSearchReplace(
+  book,
+  selectedChapter,
+  selectedChapterParagraphs,
+  updateParagraphTranslation,
+  currentlyEditingParagraphId,
+);
 
 // 初始化键盘快捷键 composable
 const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts(
@@ -896,6 +912,81 @@ const keyboardShortcutsPopover = ref<{ toggle: (event: Event) => void } | null>(
 
 const toggleKeyboardShortcutsPopover = (event: Event) => {
   keyboardShortcutsPopover.value?.toggle(event);
+};
+
+// 特殊指令弹出框状态
+const specialInstructionsPopover = ref<{ toggle: (event: Event) => void } | null>(null);
+
+const toggleSpecialInstructionsPopover = (event: Event) => {
+  specialInstructionsPopover.value?.toggle(event);
+};
+
+// 保存特殊指令
+const handleSaveSpecialInstructions = async (data: {
+  translationInstructions?: string;
+  polishInstructions?: string;
+  proofreadingInstructions?: string;
+}) => {
+  if (!book.value) return;
+
+  try {
+    if (selectedChapter.value) {
+      // 保存章节级别的指令
+      const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
+        translationInstructions: data.translationInstructions,
+        polishInstructions: data.polishInstructions,
+        proofreadingInstructions: data.proofreadingInstructions,
+      });
+
+      await booksStore.updateBook(book.value.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
+
+      // 更新 selectedChapterWithContent 中的特殊指令字段
+      if (
+        selectedChapterWithContent.value &&
+        selectedChapterWithContent.value.id === selectedChapter.value.id
+      ) {
+        selectedChapterWithContent.value = {
+          ...selectedChapterWithContent.value,
+          translationInstructions: data.translationInstructions,
+          polishInstructions: data.polishInstructions,
+          proofreadingInstructions: data.proofreadingInstructions,
+        };
+      }
+
+      toast.add({
+        severity: 'success',
+        summary: '保存成功',
+        detail: '章节特殊指令已保存',
+        life: 3000,
+      });
+    } else {
+      // 保存书籍级别的指令
+      await booksStore.updateBook(book.value.id, {
+        translationInstructions: data.translationInstructions,
+        polishInstructions: data.polishInstructions,
+        proofreadingInstructions: data.proofreadingInstructions,
+        lastEdited: new Date(),
+      });
+
+      toast.add({
+        severity: 'success',
+        summary: '保存成功',
+        detail: '书籍特殊指令已保存',
+        life: 3000,
+      });
+    }
+  } catch (error) {
+    console.error('保存特殊指令失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: error instanceof Error ? error.message : '保存特殊指令时发生错误',
+      life: 3000,
+    });
+  }
 };
 
 // 规范化章节符号
@@ -1138,8 +1229,7 @@ const handleSaveCharacter = async (data: {
     }
   } catch (error) {
     console.error('保存角色失败:', error);
-    const errorMessage =
-      error instanceof Error ? error.message : '保存角色时发生错误';
+    const errorMessage = error instanceof Error ? error.message : '保存角色时发生错误';
     toast.add({
       severity: 'error',
       summary: '保存失败',
@@ -1302,8 +1392,7 @@ const handleSaveTerm = async (data: { name: string; translation: string; descrip
     }
   } catch (error) {
     console.error('保存术语失败:', error);
-    const errorMessage =
-      error instanceof Error ? error.message : '保存术语时发生错误';
+    const errorMessage = error instanceof Error ? error.message : '保存术语时发生错误';
     toast.add({
       severity: 'error',
       summary: '保存失败',
@@ -1591,6 +1680,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       :target-volume-id="editingChapterTargetVolumeId || null"
       :volume-options="volumeOptions"
       :loading="isEditingChapter"
+      :translation-instructions="editingChapterTranslationInstructions || ''"
+      :polish-instructions="editingChapterPolishInstructions || ''"
+      :proofreading-instructions="editingChapterProofreadingInstructions || ''"
       @save="handleEditChapter"
     />
 
@@ -1653,6 +1745,14 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
     <!-- 键盘快捷键 Popover -->
     <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
+
+    <!-- 特殊指令弹出框 -->
+    <SpecialInstructionsPopover
+      ref="specialInstructionsPopover"
+      :book="book || null"
+      :chapter="selectedChapter || null"
+      @save="handleSaveSpecialInstructions"
+    />
 
     <!-- 编辑术语对话框 -->
     <TermEditDialog
@@ -1722,6 +1822,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @translation-button-click="translationButtonClick"
         @toggle-search="toggleSearch"
         @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
+        @toggle-special-instructions="toggleSpecialInstructionsPopover"
       />
 
       <!-- 搜索工具栏 -->

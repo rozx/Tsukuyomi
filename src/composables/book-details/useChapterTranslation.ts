@@ -19,7 +19,14 @@ export function useChapterTranslation(
   selectedChapterWithContent: Ref<Chapter | null>,
   selectedChapterParagraphs: ComputedRef<Paragraph[]>,
   updateSelectedChapterWithContent: (updatedVolumes: Novel['volumes']) => void,
-  handleActionInfoToast: (action: ActionInfo, options?: { severity?: 'info' | 'success' | 'warn' | 'error'; life?: number; withRevert?: boolean }) => void,
+  handleActionInfoToast: (
+    action: ActionInfo,
+    options?: {
+      severity?: 'info' | 'success' | 'warn' | 'error';
+      life?: number;
+      withRevert?: boolean;
+    },
+  ) => void,
   countUniqueActions: (actions: ActionInfo[]) => { terms: number; characters: number },
   saveState: (description?: string) => void,
 ) {
@@ -172,7 +179,7 @@ export function useChapterTranslation(
         .find((c) => c.id === selectedChapterWithContent.value!.id);
       if (updatedChapter && updatedChapter.content) {
         await ChapterService.saveChapterContent(updatedChapter);
-        
+
         // 立即更新 UI，避免等待 updateBook 完成
         if (updateSelected && selectedChapterWithContent.value) {
           selectedChapterWithContent.value = {
@@ -308,6 +315,7 @@ export function useChapterTranslation(
       // 调用润色服务
       await PolishService.polish([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -399,6 +407,7 @@ export function useChapterTranslation(
       // 调用校对服务
       await ProofreadingService.proofread([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         currentParagraphId: paragraphId,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -479,6 +488,7 @@ export function useChapterTranslation(
       // 调用翻译服务
       await TranslationService.translate([paragraph], selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapterWithContent.value.id,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -574,7 +584,11 @@ export function useChapterTranslation(
   };
 
   // 翻译章节所有段落
-  const translateAllParagraphs = async () => {
+  const translateAllParagraphs = async (customInstructions?: {
+    translationInstructions?: string;
+    polishInstructions?: string;
+    proofreadingInstructions?: string;
+  }) => {
     if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
       return;
     }
@@ -617,7 +631,11 @@ export function useChapterTranslation(
       // 调用翻译服务
       const result = await TranslationService.translate(paragraphs, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         ...(chapterTitle ? { chapterTitle } : {}),
+        ...(customInstructions?.translationInstructions !== undefined
+          ? { customInstructions: customInstructions.translationInstructions }
+          : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -858,7 +876,11 @@ export function useChapterTranslation(
   };
 
   // 继续翻译（只翻译未翻译的段落）
-  const continueTranslation = async () => {
+  const continueTranslation = async (customInstructions?: {
+    translationInstructions?: string;
+    polishInstructions?: string;
+    proofreadingInstructions?: string;
+  }) => {
     if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
       return;
     }
@@ -914,7 +936,11 @@ export function useChapterTranslation(
       // 调用翻译服务，只翻译未翻译的段落
       const result = await TranslationService.translate(untranslatedParagraphs, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
         ...(chapterTitle ? { chapterTitle } : {}),
+        ...(customInstructions?.translationInstructions !== undefined
+          ? { customInstructions: customInstructions.translationInstructions }
+          : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1050,7 +1076,11 @@ export function useChapterTranslation(
   };
 
   // 润色章节所有段落
-  const polishAllParagraphs = async () => {
+  const polishAllParagraphs = async (customInstructions?: {
+    translationInstructions?: string;
+    polishInstructions?: string;
+    proofreadingInstructions?: string;
+  }) => {
     if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
       return;
     }
@@ -1103,6 +1133,10 @@ export function useChapterTranslation(
       // 调用润色服务
       const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
+        ...(customInstructions?.polishInstructions !== undefined
+          ? { customInstructions: customInstructions.polishInstructions }
+          : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1134,7 +1168,11 @@ export function useChapterTranslation(
           // 立即更新段落润色（后台执行，不阻塞）
           void co(function* () {
             try {
-              yield updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
+              yield updateParagraphsIncrementally(
+                translations,
+                selectedModel.id,
+                updatedParagraphIds,
+              );
             } catch (error) {
               console.error('[useChapterTranslation] 更新段落润色失败:', error);
             }
@@ -1318,7 +1356,11 @@ export function useChapterTranslation(
   };
 
   // 校对章节所有段落
-  const proofreadAllParagraphs = async () => {
+  const proofreadAllParagraphs = async (customInstructions?: {
+    translationInstructions?: string;
+    polishInstructions?: string;
+    proofreadingInstructions?: string;
+  }) => {
     if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
       return;
     }
@@ -1371,6 +1413,10 @@ export function useChapterTranslation(
       // 调用校对服务
       const result = await ProofreadingService.proofread(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
+        chapterId: selectedChapter.value.id,
+        ...(customInstructions?.proofreadingInstructions !== undefined
+          ? { customInstructions: customInstructions.proofreadingInstructions }
+          : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1402,7 +1448,11 @@ export function useChapterTranslation(
           // 立即更新段落校对（后台执行，不阻塞）
           void co(function* () {
             try {
-              yield updateParagraphsIncrementally(translations, selectedModel.id, updatedParagraphIds);
+              yield updateParagraphsIncrementally(
+                translations,
+                selectedModel.id,
+                updatedParagraphIds,
+              );
             } catch (error) {
               console.error('[useChapterTranslation] 更新段落校对失败:', error);
             }
@@ -1606,7 +1656,9 @@ export function useChapterTranslation(
       label: '重新翻译',
       icon: 'pi pi-refresh',
       command: () => {
-        void retranslateAllParagraphs();
+        translationTaskDialogType.value = 'translation';
+        pendingTaskCallback.value = translateAllParagraphs;
+        showTranslationTaskDialog.value = true;
       },
     });
 
@@ -1616,7 +1668,9 @@ export function useChapterTranslation(
         label: '校对本章',
         icon: 'pi pi-check-circle',
         command: () => {
-          void proofreadAllParagraphs();
+          translationTaskDialogType.value = 'proofreading';
+          pendingTaskCallback.value = proofreadAllParagraphs;
+          showTranslationTaskDialog.value = true;
         },
       });
     }
@@ -1624,14 +1678,47 @@ export function useChapterTranslation(
     return items;
   });
 
+  // 翻译任务对话框状态
+  const showTranslationTaskDialog = ref(false);
+  const translationTaskDialogType = ref<'translation' | 'polish' | 'proofreading'>('translation');
+  const pendingTaskCallback = ref<
+    | ((instructions?: {
+        translationInstructions?: string;
+        polishInstructions?: string;
+        proofreadingInstructions?: string;
+      }) => Promise<void>)
+    | null
+  >(null);
+
   const translationButtonClick = () => {
     if (translationStatus.value.hasNone) {
-      void translateAllParagraphs();
+      translationTaskDialogType.value = 'translation';
+      pendingTaskCallback.value = translateAllParagraphs;
+      showTranslationTaskDialog.value = true;
     } else if (translationStatus.value.hasPartial) {
-      void continueTranslation();
+      translationTaskDialogType.value = 'translation';
+      pendingTaskCallback.value = continueTranslation;
+      showTranslationTaskDialog.value = true;
     } else {
-      void polishAllParagraphs();
+      translationTaskDialogType.value = 'polish';
+      pendingTaskCallback.value = polishAllParagraphs;
+      showTranslationTaskDialog.value = true;
     }
+  };
+
+  const handleTranslationTaskDialogConfirm = async (instructions: {
+    translationInstructions?: string;
+    polishInstructions?: string;
+    proofreadingInstructions?: string;
+  }) => {
+    if (pendingTaskCallback.value) {
+      await pendingTaskCallback.value(instructions);
+      pendingTaskCallback.value = null;
+    }
+  };
+
+  const handleTranslationTaskDialogCancel = () => {
+    pendingTaskCallback.value = null;
   };
 
   return {
@@ -1662,5 +1749,10 @@ export function useChapterTranslation(
     translationButtonLabel,
     translationButtonMenuItems,
     translationButtonClick,
+    // 对话框状态
+    showTranslationTaskDialog,
+    translationTaskDialogType,
+    handleTranslationTaskDialogConfirm,
+    handleTranslationTaskDialogCancel,
   };
 }

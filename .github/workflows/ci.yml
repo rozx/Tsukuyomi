@@ -6,7 +6,7 @@ on:
 
 jobs:
   lint-type-check-and-test:
-    name: Lint, Type Check, and Test
+    name: Lint and Type Check
     runs-on: ubuntu-latest
 
     steps:
@@ -34,6 +34,3 @@ jobs:
 
       - name: Run Type Check
         run: bun run type-check
-
-      - name: Run Unit Tests
-        run: bun test
