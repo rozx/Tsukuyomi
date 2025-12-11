@@ -31,24 +31,59 @@ const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
 watch(
   () => aiProcessingStore.activeTasks,
   (newTasks, oldTasks) => {
+    // 收集本周期内取消的任务
+    const cancelledTasks: AIProcessingTask[] = [];
+    const errorTasks: AIProcessingTask[] = [];
+
     // 处理新添加的任务
     for (const task of newTasks) {
       const oldTask = previousTasks.value.get(task.id);
 
       // 如果任务状态发生变化
       if (oldTask && oldTask.status !== task.status) {
-        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-
         // 不显示任务开始和完成的 toast，只显示错误和取消
         if (task.status === 'error') {
-          const errorMessage = task.message || '未知错误';
-          toast.add({
-            severity: 'error',
-            summary: 'AI 任务失败',
-            detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${errorMessage}`,
-            life: 5000,
-          });
+          errorTasks.push(task);
         } else if (task.status === 'cancelled') {
+          cancelledTasks.push(task);
+        }
+      }
+
+      // 更新任务记录
+      previousTasks.value.set(task.id, { ...task });
+    }
+
+    // 处理错误任务（每个错误任务单独显示 toast）
+    for (const task of errorTasks) {
+      const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
+      const errorMessage = task.message || '未知错误';
+      toast.add({
+        severity: 'error',
+        summary: 'AI 任务失败',
+        detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${errorMessage}`,
+        life: 5000,
+      });
+    }
+
+    // 处理取消的任务
+    if (cancelledTasks.length > 0) {
+      // 分离助手任务和其他任务
+      const assistantCancelled = cancelledTasks.filter((t) => t.type === 'assistant');
+      const otherCancelled = cancelledTasks.filter((t) => t.type !== 'assistant');
+
+      // 如果多个助手任务被取消，显示一个合并的 toast
+      if (assistantCancelled.length > 1) {
+        toast.add({
+          severity: 'warn',
+          summary: 'AI 任务已取消',
+          detail: `已取消 ${assistantCancelled.length} 个助手任务`,
+          life: 3000,
+        });
+      } else if (assistantCancelled.length === 1) {
+        // 单个助手任务取消，显示单独的 toast
+        const task = assistantCancelled[0];
+        if (task) {
+          const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
           toast.add({
             severity: 'warn',
             summary: 'AI 任务已取消',
@@ -58,8 +93,16 @@ watch(
         }
       }
 
-      // 更新任务记录
-      previousTasks.value.set(task.id, { ...task });
+      // 其他类型的任务取消，每个单独显示 toast
+      for (const task of otherCancelled) {
+        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
+        toast.add({
+          severity: 'warn',
+          summary: 'AI 任务已取消',
+          detail: `${task.modelName} 的${taskTypeLabel}任务已取消`,
+          life: 3000,
+        });
+      }
     }
 
     // 清理已移除的任务记录

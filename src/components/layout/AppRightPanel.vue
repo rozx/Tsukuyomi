@@ -1972,7 +1972,16 @@ const clearChat = () => {
 };
 
 // 创建新会话
-const createNewSession = () => {
+const createNewSession = async () => {
+  // 停止所有正在进行的助手（聊天）相关任务
+  // 仅停止聊天任务，不影响翻译、校对等其他任务
+  try {
+    await aiProcessingStore.stopAllAssistantTasks();
+  } catch (error) {
+    console.error('Failed to stop assistant tasks:', error);
+    // 不阻止创建新会话，即使停止任务失败
+  }
+
   const context = contextStore.getContext;
   chatSessionsStore.createSession({
     bookId: context.currentBookId,
