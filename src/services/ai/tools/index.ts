@@ -95,6 +95,7 @@ export class ToolRegistry {
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
     taskId?: string,
+    sessionId?: string,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = [
@@ -141,10 +142,11 @@ export class ToolRegistry {
         argsDisplay,
       );
 
-      // 将 taskId 传递给工具上下文（由服务层自动提供）
+      // 将 taskId 和 sessionId 传递给工具上下文（由服务层自动提供）
       const result = await tool.handler(args, {
         ...(bookId ? { bookId } : {}),
         ...(taskId ? { taskId } : {}),
+        ...(sessionId ? { sessionId } : {}),
         ...(onAction ? { onAction } : {}),
         ...(onToast ? { onToast } : {}),
       });

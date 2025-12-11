@@ -20,7 +20,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { onAction, taskId }) => {
+    handler: (args, { onAction, taskId, sessionId }) => {
       const { text } = args;
       if (!text || !text.trim()) {
         throw new Error('待办事项内容不能为空');
@@ -31,8 +31,9 @@ export const todoListTools: ToolDefinition[] = [
         );
       }
 
-      // taskId 由服务层自动提供，AI 不需要知道任务 ID
-      const todo = TodoListService.createTodo(text, taskId);
+      // taskId 和 sessionId 由服务层自动提供，AI 不需要知道任务 ID 或会话 ID
+      // 对于助手聊天，sessionId 会被传递并关联到待办事项
+      const todo = TodoListService.createTodo(text, taskId, sessionId);
 
       // 通过 onAction 回调传递操作信息（不需要 toast）
       if (onAction) {
@@ -232,16 +233,19 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { taskId }) => {
+    handler: (args, { taskId, sessionId }) => {
       const { filter = 'all' } = args;
 
       if (!taskId) {
         throw new Error('任务 ID 未提供，无法列出待办事项。这通常表示服务层未正确传递任务上下文。');
       }
 
-      // taskId 由服务层自动提供，自动过滤出当前任务的待办事项
+      // taskId 和 sessionId 由服务层自动提供
+      // 对于助手聊天，优先使用 sessionId 过滤待办事项；否则使用 taskId
       let todos: TodoItem[];
-      const taskTodos = TodoListService.getTodosByTaskId(taskId);
+      const taskTodos = sessionId
+        ? TodoListService.getTodosBySessionId(sessionId)
+        : TodoListService.getTodosByTaskId(taskId);
       switch (filter) {
         case 'active':
           todos = taskTodos.filter((todo) => !todo.completed);

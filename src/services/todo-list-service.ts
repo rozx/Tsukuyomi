@@ -9,7 +9,8 @@ export interface TodoItem {
   completed: boolean;
   createdAt: number;
   updatedAt: number;
-  taskId: string; // 关联的 AI 任务 ID（必需）
+  taskId: string; // 关联的 AI 任务 ID（必需，用于翻译、润色、校对等任务）
+  sessionId?: string; // 关联的聊天会话 ID（可选，用于助手聊天会话）
 }
 
 const STORAGE_KEY = 'luna-ai-todo-list';
@@ -77,8 +78,9 @@ export class TodoListService {
    * 创建待办事项
    * @param text 待办事项内容
    * @param taskId 关联的 AI 任务 ID（必需）
+   * @param sessionId 关联的聊天会话 ID（可选，用于助手聊天会话）
    */
-  static createTodo(text: string, taskId: string): TodoItem {
+  static createTodo(text: string, taskId: string, sessionId?: string): TodoItem {
     if (!text || !text.trim()) {
       throw new Error('待办事项内容不能为空');
     }
@@ -95,12 +97,15 @@ export class TodoListService {
       createdAt: now,
       updatedAt: now,
       taskId: taskId.trim(),
+      ...(sessionId ? { sessionId: sessionId.trim() } : {}),
     };
 
     todos.push(newTodo);
     saveTodosToStorage(todos);
 
-    console.log(`[TodoListService] 创建待办事项: ${newTodo.id} (任务: ${taskId})`);
+    console.log(
+      `[TodoListService] 创建待办事项: ${newTodo.id} (任务: ${taskId}${sessionId ? `, 会话: ${sessionId}` : ''})`,
+    );
     return newTodo;
   }
 
@@ -127,6 +132,7 @@ export class TodoListService {
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
       taskId: todo.taskId, // 保持 taskId 不变
+      ...(todo.sessionId ? { sessionId: todo.sessionId } : {}), // 保持 sessionId 不变（如果存在）
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
@@ -199,6 +205,14 @@ export class TodoListService {
    */
   static getTodosByTaskId(taskId: string): TodoItem[] {
     return this.getAllTodos().filter((todo) => todo.taskId === taskId);
+  }
+
+  /**
+   * 根据会话 ID 获取待办事项
+   * @param sessionId 会话 ID
+   */
+  static getTodosBySessionId(sessionId: string): TodoItem[] {
+    return this.getAllTodos().filter((todo) => todo.sessionId === sessionId);
   }
 
   /**

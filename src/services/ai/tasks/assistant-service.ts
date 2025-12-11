@@ -62,6 +62,10 @@ export interface AssistantServiceOptions {
    * 摘要开始时的回调（用于在 UI 中显示摘要气泡）
    */
   onSummarizingStart?: () => void;
+  /**
+   * 聊天会话 ID（可选），如果提供，待办事项将关联到此会话而不是任务
+   */
+  sessionId?: string;
 }
 
 /**
@@ -101,8 +105,9 @@ export class AssistantService {
       selectedParagraphId: string | null;
     },
     taskId?: string,
+    sessionId?: string,
   ): string {
-    const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
+    const todosPrompt = taskId ? getTodosSystemPrompt(taskId, sessionId) : '';
     let prompt = `你是 Luna AI Assistant，专业的日语小说翻译助手。帮助用户进行翻译工作，管理术语、角色设定，并回答一般性问题。${todosPrompt}
 
       ## 能力范围
@@ -253,6 +258,13 @@ export class AssistantService {
         - **摘要要包含关键词**：生成 summary 时，确保包含用户可能用来搜索的关键词（如角色名、设定名称、章节标题等）
         - **及时更新记忆**：如果发现之前保存的记忆有误或需要更新，先搜索找到相关记忆，然后删除旧记忆并创建新记忆
         - **参考记忆内容**：在回答用户关于背景设定、世界观、剧情要点等问题时，可以搜索相关记忆；但对于角色或术语信息，必须优先查询数据库
+      8. **待办事项管理最佳实践**：
+        - **规划复杂任务**：在开始复杂任务前（如翻译大型章节、批量处理多个段落等），使用 create_todo 创建待办事项来规划任务步骤，帮助跟踪进度
+        - **及时标记完成**：当你真正完成了某个待办事项的任务时，立即使用 mark_todo_done 工具将其标记为完成，不要过早标记，也不要忘记标记
+        - **查看待办列表**：使用 list_todos 工具查看所有待办事项，了解当前任务进度和剩余工作
+        - **更新待办内容**：如果任务需求发生变化，使用 update_todo 工具更新待办事项的内容，保持待办列表的准确性
+        - **优先处理待办**：如果当前任务与某个待办事项相关，请优先处理该待办事项，确保任务按计划完成
+        - **清理已完成待办**：对于不再需要的待办事项，可以使用 delete_todo 工具删除，保持待办列表的整洁
 
 `;
 
@@ -492,6 +504,7 @@ ${messages
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
     taskId?: string,
+    sessionId?: string,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     // 定义需要 bookId 的工具列表
     const toolsRequiringBookId = [
@@ -554,6 +567,7 @@ ${messages
         onAction,
         onToast,
         taskId,
+        sessionId,
       );
       results.push(result);
     }
@@ -571,7 +585,7 @@ ${messages
     userMessage: string,
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
-    const { onChunk, onAction, onToast, signal, aiProcessingStore } = options;
+    const { onChunk, onAction, onToast, signal, aiProcessingStore, sessionId } = options;
 
     // 获取 stores
     const contextStore = useContextStore();
@@ -596,7 +610,7 @@ ${messages
     }
 
     // 构建系统提示词（只传递 ID）- 必须在创建任务之后
-    let systemPrompt = this.buildSystemPrompt(context, taskId);
+    let systemPrompt = this.buildSystemPrompt(context, taskId, sessionId);
 
     // 如果当前会话有总结，添加到系统提示词中
     // 注意：这里需要在调用时传入会话信息，因为 store 不能在静态方法中直接使用
@@ -879,6 +893,7 @@ ${messages
           },
           onToast,
           taskId,
+          sessionId,
         );
 
         // 将工具结果添加到历史
@@ -955,7 +970,7 @@ ${messages
         } else {
           // 工具调用完成后，添加待办事项提醒
           if (taskId) {
-            const todosReminder = getPostToolCallReminder(undefined, taskId);
+            const todosReminder = getPostToolCallReminder(undefined, taskId, sessionId);
             if (todosReminder) {
               messages.push({
                 role: 'user',
