@@ -1,10 +1,11 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
-import { TerminologyService } from '../services/terminology-service';
-import { CharacterSettingService } from '../services/character-setting-service';
+import { TerminologyService } from 'src/services/terminology-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import * as BooksStore from 'src/stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -22,10 +23,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
 await mock.module('src/services/chapter-service', () => ({
   ChapterService: {
     updateChapter: mockUpdateChapter,
@@ -34,33 +31,6 @@ await mock.module('src/services/chapter-service', () => ({
 
 const mockRefreshAllTermOccurrences = mock(() => Promise.resolve());
 const mockRefreshAllCharacterOccurrences = mock(() => Promise.resolve());
-
-// Mock static methods directly to preserve other methods
-const originalRefreshAllTermOccurrences = (
-  ...args: Parameters<typeof TerminologyService.refreshAllTermOccurrences>
-) => TerminologyService.refreshAllTermOccurrences(...args);
-const originalRefreshAllCharacterOccurrences = (
-  ...args: Parameters<typeof CharacterSettingService.refreshAllCharacterOccurrences>
-) => CharacterSettingService.refreshAllCharacterOccurrences(...args);
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-TerminologyService.refreshAllTermOccurrences = mockRefreshAllTermOccurrences;
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-CharacterSettingService.refreshAllCharacterOccurrences = mockRefreshAllCharacterOccurrences;
-
-import { afterAll } from 'bun:test';
-
-afterAll(() => {
-  // Restore original methods
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  TerminologyService.refreshAllTermOccurrences = originalRefreshAllTermOccurrences;
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  CharacterSettingService.refreshAllCharacterOccurrences = originalRefreshAllCharacterOccurrences;
-});
 
 // Helper functions
 function createTestParagraph(id: string, text: string): Paragraph {
@@ -111,6 +81,20 @@ describe('useEditMode', () => {
     mockBooksStoreUpdateBook.mockClear();
     mockRefreshAllTermOccurrences.mockClear();
     mockRefreshAllCharacterOccurrences.mockClear();
+
+    spyOn(TerminologyService, 'refreshAllTermOccurrences').mockImplementation(
+      mockRefreshAllTermOccurrences,
+    );
+    spyOn(CharacterSettingService, 'refreshAllCharacterOccurrences').mockImplementation(
+      mockRefreshAllCharacterOccurrences,
+    );
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该初始化编辑模式为 translation', () => {

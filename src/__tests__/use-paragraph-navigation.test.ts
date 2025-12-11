@@ -1,7 +1,8 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn } from 'bun:test';
 import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useParagraphNavigation } from '../composables/book-details/useParagraphNavigation';
 import type { Paragraph } from '../models/novel';
+import * as Utils from '../utils';
 
 // Mock HTMLElement and DOM APIs
 class MockHTMLElement {
@@ -47,10 +48,6 @@ const mockIsEmptyParagraph = mock((paragraph: Paragraph) => {
   return !paragraph.text || paragraph.text.trim() === '';
 });
 
-await mock.module('src/utils', () => ({
-  isEmptyParagraph: mockIsEmptyParagraph,
-}));
-
 // Helper functions
 function createTestParagraph(id: string, text: string): Paragraph {
   return {
@@ -73,6 +70,7 @@ describe('useParagraphNavigation', () => {
     mockRequestAnimationFrame.mockClear();
     mockGetElementById.mockClear();
     mockIsEmptyParagraph.mockClear();
+    spyOn(Utils, 'isEmptyParagraph').mockImplementation(mockIsEmptyParagraph);
   });
 
   it('应该初始化状态', () => {
@@ -82,7 +80,11 @@ describe('useParagraphNavigation', () => {
       isClickSelected,
       isKeyboardNavigating,
       isProgrammaticScrolling,
-    } = useParagraphNavigation(selectedChapterParagraphs, scrollableContentRef, currentlyEditingParagraphId);
+    } = useParagraphNavigation(
+      selectedChapterParagraphs,
+      scrollableContentRef,
+      currentlyEditingParagraphId,
+    );
 
     expect(selectedParagraphIndex.value).toBeNull();
     expect(isKeyboardSelected.value).toBe(false);
@@ -92,8 +94,16 @@ describe('useParagraphNavigation', () => {
   });
 
   it('应该重置段落导航', () => {
-    const { resetParagraphNavigation, selectedParagraphIndex, isKeyboardSelected, isClickSelected } =
-      useParagraphNavigation(selectedChapterParagraphs, scrollableContentRef, currentlyEditingParagraphId);
+    const {
+      resetParagraphNavigation,
+      selectedParagraphIndex,
+      isKeyboardSelected,
+      isClickSelected,
+    } = useParagraphNavigation(
+      selectedChapterParagraphs,
+      scrollableContentRef,
+      currentlyEditingParagraphId,
+    );
 
     selectedParagraphIndex.value = 0;
     isKeyboardSelected.value = true;
@@ -209,11 +219,12 @@ describe('useParagraphNavigation', () => {
     const scrollContainer = new MockHTMLElement();
     scrollableContentRef.value = scrollContainer as any;
 
-    const { navigateToParagraph, selectedParagraphIndex, isKeyboardSelected } = useParagraphNavigation(
-      selectedChapterParagraphs,
-      scrollableContentRef,
-      currentlyEditingParagraphId,
-    );
+    const { navigateToParagraph, selectedParagraphIndex, isKeyboardSelected } =
+      useParagraphNavigation(
+        selectedChapterParagraphs,
+        scrollableContentRef,
+        currentlyEditingParagraphId,
+      );
 
     navigateToParagraph(0, true, true);
 
@@ -225,11 +236,12 @@ describe('useParagraphNavigation', () => {
     const paragraph1 = createTestParagraph('para-1', '段落1');
     selectedChapterParagraphs = computed(() => [paragraph1]);
 
-    const { navigateToParagraph, selectedParagraphIndex, isKeyboardSelected } = useParagraphNavigation(
-      selectedChapterParagraphs,
-      scrollableContentRef,
-      currentlyEditingParagraphId,
-    );
+    const { navigateToParagraph, selectedParagraphIndex, isKeyboardSelected } =
+      useParagraphNavigation(
+        selectedChapterParagraphs,
+        scrollableContentRef,
+        currentlyEditingParagraphId,
+      );
 
     navigateToParagraph(0, false, false);
 
@@ -262,7 +274,11 @@ describe('useParagraphNavigation', () => {
     selectedChapterParagraphs = computed(() => [paragraph1, paragraph2]);
 
     const { handleParagraphClick, selectedParagraphIndex, isClickSelected, isKeyboardSelected } =
-      useParagraphNavigation(selectedChapterParagraphs, scrollableContentRef, currentlyEditingParagraphId);
+      useParagraphNavigation(
+        selectedChapterParagraphs,
+        scrollableContentRef,
+        currentlyEditingParagraphId,
+      );
 
     handleParagraphClick('para-2');
 
@@ -333,4 +349,3 @@ describe('useParagraphNavigation', () => {
     expect(() => cleanup()).not.toThrow();
   });
 });
-

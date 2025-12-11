@@ -1,4 +1,4 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
 import {
   countUniqueActions,
@@ -6,8 +6,9 @@ import {
 } from '../composables/book-details/useActionInfoToast';
 import type { ActionInfo } from '../services/ai/tools/types';
 import type { Novel, Terminology, CharacterSetting } from '../models/novel';
-import { TerminologyService } from '../services/terminology-service';
-import { CharacterSettingService } from '../services/character-setting-service';
+import { TerminologyService } from 'src/services/terminology-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import * as BooksStore from 'src/stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -30,56 +31,6 @@ const mockUpdateCharacterSetting = mock(() => Promise.resolve());
 await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
-
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
-// Mock static methods directly
-const originalDeleteTerminology = (
-  ...args: Parameters<typeof TerminologyService.deleteTerminology>
-) => TerminologyService.deleteTerminology(...args);
-const originalUpdateTerminology = (
-  ...args: Parameters<typeof TerminologyService.updateTerminology>
-) => TerminologyService.updateTerminology(...args);
-const originalDeleteCharacterSetting = (
-  ...args: Parameters<typeof CharacterSettingService.deleteCharacterSetting>
-) => CharacterSettingService.deleteCharacterSetting(...args);
-const originalUpdateCharacterSetting = (
-  ...args: Parameters<typeof CharacterSettingService.updateCharacterSetting>
-) => CharacterSettingService.updateCharacterSetting(...args);
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-TerminologyService.deleteTerminology = mockDeleteTerminology;
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-TerminologyService.updateTerminology = mockUpdateTerminology;
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-CharacterSettingService.deleteCharacterSetting = mockDeleteCharacterSetting;
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-CharacterSettingService.updateCharacterSetting = mockUpdateCharacterSetting;
-
-import { afterAll } from 'bun:test';
-
-afterAll(() => {
-  // Restore original methods
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  TerminologyService.deleteTerminology = originalDeleteTerminology;
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  TerminologyService.updateTerminology = originalUpdateTerminology;
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  CharacterSettingService.deleteCharacterSetting = originalDeleteCharacterSetting;
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  CharacterSettingService.updateCharacterSetting = originalUpdateCharacterSetting;
-});
 
 describe('countUniqueActions', () => {
   it('应该正确统计唯一的术语操作', () => {
@@ -204,12 +155,29 @@ describe('useActionInfoToast', () => {
     mockDeleteCharacterSetting.mockClear();
     mockUpdateCharacterSetting.mockClear();
 
+    spyOn(TerminologyService, 'deleteTerminology').mockImplementation(mockDeleteTerminology);
+    spyOn(TerminologyService, 'updateTerminology').mockImplementation(mockUpdateTerminology);
+    spyOn(CharacterSettingService, 'deleteCharacterSetting').mockImplementation(
+      mockDeleteCharacterSetting,
+    );
+    spyOn(CharacterSettingService, 'updateCharacterSetting').mockImplementation(
+      mockUpdateCharacterSetting,
+    );
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      getBookById: mockBooksStoreGetBookById,
+      updateBook: mockBooksStoreUpdateBook,
+    } as any);
+
     mockBook = {
       id: 'book-1',
       title: 'Test Book',
       lastEdited: new Date(),
       createdAt: new Date(),
     };
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该显示创建术语的 toast', () => {

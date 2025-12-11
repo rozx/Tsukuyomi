@@ -1,8 +1,9 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import * as BooksStore from '../stores/books';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -37,10 +38,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
 await mock.module('src/stores/ai-models', () => ({
   useAIModelsStore: mockUseAIModelsStore,
 }));
@@ -67,7 +64,15 @@ await mock.module('src/services/chapter-service', () => ({
     updateChapter: mockUpdateChapter,
     getChapterContentForUpdate: mockGetChapterContentForUpdate,
     addParagraphTranslation: mockAddParagraphTranslation,
-    loadChapterContent: mock(() => Promise.resolve({ id: 'test', title: { original: '', translation: { id: '', translation: '', aiModelId: '' } }, content: [], lastEdited: new Date(), createdAt: new Date() } as Chapter)),
+    loadChapterContent: mock(() =>
+      Promise.resolve({
+        id: 'test',
+        title: { original: '', translation: { id: '', translation: '', aiModelId: '' } },
+        content: [],
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      } as Chapter),
+    ),
   },
 }));
 
@@ -153,6 +158,15 @@ describe('useChapterTranslation', () => {
     handleActionInfoToast.mockClear();
     countUniqueActions.mockClear();
     saveState.mockClear();
+
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      updateBook: mockBooksStoreUpdateBook,
+      getBookById: mock(() => null),
+    } as any);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该初始化状态', () => {
@@ -396,4 +410,3 @@ describe('useChapterTranslation', () => {
     expect(translationButtonMenuItems.value[0]?.label).toBe('重新翻译');
   });
 });
-

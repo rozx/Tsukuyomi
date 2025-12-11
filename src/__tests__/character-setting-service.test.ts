@@ -1,50 +1,24 @@
-// 必须在所有其他导入之前导入 setup，以确保 polyfill 在 idb 库导入之前设置
 import './setup';
-
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
+import { describe, test, expect, mock, beforeEach, spyOn, beforeAll, afterAll } from 'bun:test';
+import { CharacterSettingService } from 'src/services/character-setting-service';
 import type { Novel } from 'src/models/novel';
+import * as BooksStoreModule from 'src/stores/books';
 
 const mockUpdateBook = mock(() => Promise.resolve());
 const mockGetBookById = mock((_id: string) => null as Novel | null);
 
-// Mock useBooksStore BEFORE importing CharacterSettingService
-await mock.module('src/stores/books', () => {
-  return {
-    useBooksStore: () => ({
+describe('CharacterSettingService', () => {
+  beforeAll(() => {
+    spyOn(BooksStoreModule, 'useBooksStore').mockReturnValue({
       getBookById: mockGetBookById,
       updateBook: mockUpdateBook,
-    }),
-  };
-});
+    } as any);
+  });
 
-// Import CharacterSettingService AFTER mocking using dynamic import to avoid hoisting
-const { CharacterSettingService } = await import('src/services/character-setting-service');
+  afterAll(() => {
+    mock.restore();
+  });
 
-// Mock FileReader for import tests
-class MockFileReader {
-  onload: ((e: any) => void) | null = null;
-  onerror: ((e: any) => void) | null = null;
-
-  readAsText(file: File) {
-    file
-      .text()
-      .then((text) => {
-        if (this.onload) {
-          this.onload({ target: { result: text } });
-        }
-      })
-      .catch((e) => {
-        if (this.onerror) {
-          this.onerror(e);
-        }
-      });
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(global as any).FileReader = MockFileReader;
-
-describe('CharacterSettingService', () => {
   const bookId = 'book-1';
   let mockBook: Novel;
 

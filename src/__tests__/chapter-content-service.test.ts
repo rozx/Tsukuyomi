@@ -1,7 +1,5 @@
-// 必须在所有其他导入之前导入 setup，以确保 polyfill 在 idb 库导入之前设置
-import './setup';
-
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { ChapterContentService } from '../services/chapter-content-service';
 import type { Paragraph, Novel, Volume, Chapter } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
@@ -35,14 +33,10 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module BEFORE importing ChapterContentService
-// 使用绝对路径（从 src 开始）以确保在 GitHub Actions 中也能正确解析
+// Mock the module
 await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
-
-// Import ChapterContentService AFTER mocking
-import { ChapterContentService } from '../services/chapter-content-service';
 
 // 辅助函数：创建测试用段落
 function createTestParagraph(id?: string): Paragraph {
@@ -91,14 +85,8 @@ function createTestNovel(volumes: Volume[] = []): Novel {
 
 describe('ChapterContentService', () => {
   beforeEach(() => {
-    // 清除所有缓存（如果方法存在，否则跳过）
-    try {
-      if (ChapterContentService?.clearAllCache) {
-        ChapterContentService.clearAllCache();
-      }
-    } catch {
-      // 如果方法不存在，跳过清除缓存
-    }
+    // 清除所有缓存
+    ChapterContentService.clearAllCache();
     // 重置所有 mock
     mockPut.mockClear();
     mockGet.mockClear();

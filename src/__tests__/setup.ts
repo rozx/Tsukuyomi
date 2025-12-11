@@ -49,3 +49,28 @@ if (typeof globalThis.localStorage === 'undefined') {
     },
   };
 }
+
+// Polyfill for FileReader
+class MockFileReader {
+  onload: ((e: any) => void) | null = null;
+  onerror: ((e: any) => void) | null = null;
+
+  readAsText(file: File) {
+    file
+      .text()
+      .then((text) => {
+        if (this.onload) {
+          this.onload({ target: { result: text } });
+        }
+      })
+      .catch((e) => {
+        if (this.onerror) {
+          this.onerror(e);
+        }
+      });
+  }
+}
+
+console.log('Setting up global.FileReader');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).FileReader = MockFileReader;
