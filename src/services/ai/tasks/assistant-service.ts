@@ -1225,7 +1225,11 @@ ${messages
         // 检查是否是取消错误
         const isCancelled =
           error instanceof Error &&
-          (error.message === '请求已取消' || error.message.includes('aborted'));
+          (
+            error.message === '请求已取消' ||
+            error.message.includes('aborted') ||
+            error.name === 'AbortError'
+          );
 
         if (isCancelled) {
           await aiProcessingStore.updateTask(taskId, {
