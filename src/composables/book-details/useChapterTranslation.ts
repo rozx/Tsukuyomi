@@ -1656,9 +1656,7 @@ export function useChapterTranslation(
       label: '重新翻译',
       icon: 'pi pi-refresh',
       command: () => {
-        translationTaskDialogType.value = 'translation';
-        pendingTaskCallback.value = translateAllParagraphs;
-        showTranslationTaskDialog.value = true;
+        void translateAllParagraphs();
       },
     });
 
@@ -1668,9 +1666,7 @@ export function useChapterTranslation(
         label: '校对本章',
         icon: 'pi pi-check-circle',
         command: () => {
-          translationTaskDialogType.value = 'proofreading';
-          pendingTaskCallback.value = proofreadAllParagraphs;
-          showTranslationTaskDialog.value = true;
+          void proofreadAllParagraphs();
         },
       });
     }
@@ -1678,47 +1674,14 @@ export function useChapterTranslation(
     return items;
   });
 
-  // 翻译任务对话框状态
-  const showTranslationTaskDialog = ref(false);
-  const translationTaskDialogType = ref<'translation' | 'polish' | 'proofreading'>('translation');
-  const pendingTaskCallback = ref<
-    | ((instructions?: {
-        translationInstructions?: string;
-        polishInstructions?: string;
-        proofreadingInstructions?: string;
-      }) => Promise<void>)
-    | null
-  >(null);
-
   const translationButtonClick = () => {
     if (translationStatus.value.hasNone) {
-      translationTaskDialogType.value = 'translation';
-      pendingTaskCallback.value = translateAllParagraphs;
-      showTranslationTaskDialog.value = true;
+      void translateAllParagraphs();
     } else if (translationStatus.value.hasPartial) {
-      translationTaskDialogType.value = 'translation';
-      pendingTaskCallback.value = continueTranslation;
-      showTranslationTaskDialog.value = true;
+      void continueTranslation();
     } else {
-      translationTaskDialogType.value = 'polish';
-      pendingTaskCallback.value = polishAllParagraphs;
-      showTranslationTaskDialog.value = true;
+      void polishAllParagraphs();
     }
-  };
-
-  const handleTranslationTaskDialogConfirm = async (instructions: {
-    translationInstructions?: string;
-    polishInstructions?: string;
-    proofreadingInstructions?: string;
-  }) => {
-    if (pendingTaskCallback.value) {
-      await pendingTaskCallback.value(instructions);
-      pendingTaskCallback.value = null;
-    }
-  };
-
-  const handleTranslationTaskDialogCancel = () => {
-    pendingTaskCallback.value = null;
   };
 
   return {
@@ -1749,10 +1712,5 @@ export function useChapterTranslation(
     translationButtonLabel,
     translationButtonMenuItems,
     translationButtonClick,
-    // 对话框状态
-    showTranslationTaskDialog,
-    translationTaskDialogType,
-    handleTranslationTaskDialogConfirm,
-    handleTranslationTaskDialogCancel,
   };
 }
