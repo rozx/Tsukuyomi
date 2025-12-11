@@ -1,36 +1,33 @@
 <!doctype html>
 <html lang="zh-CN" class="dark">
-  <head>
-    <title><%= productName %></title>
 
-    <meta charset="utf-8" />
-    <meta name="description" content="<%= productDescription %>" />
-    <meta name="format-detection" content="telephone=no" />
-    <meta name="msapplication-tap-highlight" content="no" />
-    <meta
-      name="viewport"
-      content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width<% if (ctx.mode.cordova || ctx.mode.capacitor) { %>, viewport-fit=cover<% } %>"
-    />
+<head>
+  <title>
+    <%= productName %>
+  </title>
 
-    <link rel="icon" type="image/png" sizes="128x128" href="icons/favicon-128x128.png" />
-    <link rel="icon" type="image/png" sizes="96x96" href="icons/favicon-96x96.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png" />
-    <link rel="icon" type="image/ico" href="favicon.ico" />
-  </head>
+  <meta charset="utf-8" />
+  <meta name="description" content="<%= productDescription %>" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="msapplication-tap-highlight" content="no" />
+  <meta name="viewport"
+    content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width<% if (ctx.mode.cordova || ctx.mode.capacitor) { %>, viewport-fit=cover<% } %>" />
 
-  <body
-    style="
+  <link rel="icon" type="image/png" sizes="128x128" href="icons/favicon-128x128.png" />
+  <link rel="icon" type="image/png" sizes="96x96" href="icons/favicon-96x96.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png" />
+  <link rel="icon" type="image/ico" href="favicon.ico" />
+</head>
+
+<body style="
       margin: 0;
       padding: 0;
       background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
       overflow: hidden;
-    "
-  >
-    <!-- 初始加载屏幕 - 在 Vue 挂载前显示 -->
-    <div
-      id="initial-loading-screen"
-      style="
+    ">
+  <!-- 初始加载屏幕 - 在 Vue 挂载前显示 -->
+  <div id="initial-loading-screen" style="
         position: fixed;
         top: 0;
         left: 0;
@@ -43,163 +40,164 @@
         justify-content: center;
         z-index: 9999;
         transition: opacity 0.3s ease-out;
-      "
-    >
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem">
-        <!-- 加载动画 -->
-        <div
-          style="
+      ">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem">
+      <!-- 加载动画 -->
+      <div style="
             width: 4rem;
             height: 4rem;
             border: 4px solid rgba(253, 253, 255, 0.1);
             border-top-color: #f0458b;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-          "
-        ></div>
-        <p
-          style="color: rgba(253, 253, 255, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0"
-        >
-          正在加载应用...
-        </p>
-        <p style="color: rgba(253, 253, 255, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
-      </div>
+          "></div>
+      <p style="color: rgba(253, 253, 255, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0">
+        正在加载应用...
+      </p>
+      <p style="color: rgba(253, 253, 255, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
     </div>
+  </div>
 
-    <style>
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
+  <style>
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
       }
-    </style>
+    }
+  </style>
 
-    <script>
-      (function () {
-        'use strict';
-        const loadingScreen = document.getElementById('initial-loading-screen');
-        if (!loadingScreen) return;
+  <script>
+    (function () {
+      'use strict';
+      const loadingScreen = document.getElementById('initial-loading-screen');
+      if (!loadingScreen) return;
 
-        // 防止多次调用
-        let isHiding = false;
-        let observer = null;
-        let checkInterval = null;
+      // 防止多次调用
+      let isHiding = false;
+      let observer = null;
+      let checkInterval = null;
 
-        function hideLoadingScreen() {
-          // 如果已经在隐藏过程中，直接返回
-          if (isHiding || loadingScreen.style.display === 'none') {
-            return;
+      function hideLoadingScreen() {
+        // 如果已经在隐藏过程中，直接返回
+        if (isHiding || loadingScreen.style.display === 'none') {
+          return;
+        }
+        isHiding = true;
+
+        // 清理所有监听器
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+        if (checkInterval) {
+          clearInterval(checkInterval);
+          checkInterval = null;
+        }
+
+        // 淡出动画
+        loadingScreen.style.opacity = '0';
+        setTimeout(function () {
+          if (loadingScreen && loadingScreen.parentNode) {
+            loadingScreen.style.display = 'none';
+            // 恢复 body 的 overflow（CSS 会处理背景）
+            document.body.style.overflow = '';
           }
-          isHiding = true;
+        }, 300);
+      }
 
-          // 清理所有监听器
+      function checkVueApp() {
+        // 检查多种可能的 Vue/Quasar 挂载点
+        const app = document.getElementById('q-app');
+        // 必须确保 #q-app 内有内容，说明 Vue 已经渲染
+        if (app && app.childElementCount > 0) {
+          return true;
+        }
+
+        // 检查其他明确的 Vue/Quasar 结构
+        return !!document.querySelector(
+          '[data-v-app], .q-layout, .q-page-container'
+        );
+      }
+
+      // 方法1: 监听 DOM 变化，检测 Vue 应用挂载
+      if (document.body) {
+        observer = new MutationObserver(function () {
+          if (checkVueApp()) {
+            observer.disconnect();
+            observer = null;
+            // 给 Vue 一点时间完成初始渲染
+            setTimeout(hideLoadingScreen, 150);
+          }
+        });
+
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+        });
+      } else {
+        document.addEventListener('DOMContentLoaded', function () {
+          if (document.body && !observer) {
+            observer = new MutationObserver(function () {
+              if (checkVueApp()) {
+                observer.disconnect();
+                observer = null;
+                setTimeout(hideLoadingScreen, 150);
+              }
+            });
+
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true,
+            });
+          }
+        });
+      }
+
+      // 方法2: 轮询检查（作为备用方案）
+      let checkCount = 0;
+      const maxChecks = 100; // 最多检查 5 秒（50ms * 100）
+      checkInterval = setInterval(function () {
+        checkCount++;
+        if (checkVueApp()) {
+          clearInterval(checkInterval);
+          checkInterval = null;
           if (observer) {
             observer.disconnect();
             observer = null;
           }
-          if (checkInterval) {
-            clearInterval(checkInterval);
-            checkInterval = null;
+          setTimeout(hideLoadingScreen, 150);
+        } else if (checkCount >= maxChecks) {
+          // 超时保护：5秒后强制隐藏
+          clearInterval(checkInterval);
+          checkInterval = null;
+          if (observer) {
+            observer.disconnect();
+            observer = null;
           }
-
-          // 淡出动画
-          loadingScreen.style.opacity = '0';
-          setTimeout(function () {
-            if (loadingScreen && loadingScreen.parentNode) {
-              loadingScreen.style.display = 'none';
-              // 恢复 body 的 overflow（CSS 会处理背景）
-              document.body.style.overflow = '';
-            }
-          }, 300);
+          hideLoadingScreen();
         }
+      }, 50);
 
-        function checkVueApp() {
-          // 检查多种可能的 Vue/Quasar 挂载点
-          // Quasar 通常使用 #q-app 作为根元素，或带有 data-v-app 属性
-          // 也检查常见的 Quasar 类名
-          return document.querySelector(
-            '#q-app, [data-v-app], [id^="q-app"], .q-layout, .q-page-container, [class*="q-"]',
-          );
-        }
-
-        // 方法1: 监听 DOM 变化，检测 Vue 应用挂载
-        if (document.body) {
-          observer = new MutationObserver(function () {
-            if (checkVueApp()) {
-              observer.disconnect();
-              observer = null;
-              // 给 Vue 一点时间完成初始渲染
-              setTimeout(hideLoadingScreen, 150);
-            }
-          });
-
-          observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-          });
-        } else {
-          document.addEventListener('DOMContentLoaded', function () {
-            if (document.body && !observer) {
-              observer = new MutationObserver(function () {
-                if (checkVueApp()) {
-                  observer.disconnect();
-                  observer = null;
-                  setTimeout(hideLoadingScreen, 150);
-                }
-              });
-
-              observer.observe(document.body, {
-                childList: true,
-                subtree: true,
-              });
-            }
-          });
-        }
-
-        // 方法2: 轮询检查（作为备用方案）
-        let checkCount = 0;
-        const maxChecks = 100; // 最多检查 5 秒（50ms * 100）
-        checkInterval = setInterval(function () {
-          checkCount++;
-          if (checkVueApp()) {
-            clearInterval(checkInterval);
-            checkInterval = null;
+      // 方法3: 页面加载完成后也尝试隐藏（作为最后保障）
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (loadingScreen && loadingScreen.style.display !== 'none' && !isHiding) {
             if (observer) {
               observer.disconnect();
               observer = null;
             }
-            setTimeout(hideLoadingScreen, 150);
-          } else if (checkCount >= maxChecks) {
-            // 超时保护：5秒后强制隐藏
-            clearInterval(checkInterval);
-            checkInterval = null;
-            if (observer) {
-              observer.disconnect();
-              observer = null;
+            if (checkInterval) {
+              clearInterval(checkInterval);
+              checkInterval = null;
             }
             hideLoadingScreen();
           }
-        }, 50);
+        }, 500);
+      });
+    })();
+  </script>
 
-        // 方法3: 页面加载完成后也尝试隐藏（作为最后保障）
-        window.addEventListener('load', function () {
-          setTimeout(function () {
-            if (loadingScreen && loadingScreen.style.display !== 'none' && !isHiding) {
-              if (observer) {
-                observer.disconnect();
-                observer = null;
-              }
-              if (checkInterval) {
-                clearInterval(checkInterval);
-                checkInterval = null;
-              }
-              hideLoadingScreen();
-            }
-          }, 500);
-        });
-      })();
-    </script>
+  <!-- quasar:entry-point -->
+</body>
 
-    <!-- quasar:entry-point -->
-  </body>
 </html>
