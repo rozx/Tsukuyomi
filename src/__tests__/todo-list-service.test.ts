@@ -107,7 +107,7 @@ describe('TodoListService', () => {
     test('应该能够删除待办事项，无论其完成状态如何', () => {
       const taskId = 'task-1';
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
-      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.createTodo('Todo 2', taskId);
       TodoListService.markTodoAsDone(todo1.id);
 
       const deletedCount = TodoListService.deleteTodosByTaskId(taskId);
@@ -144,7 +144,7 @@ describe('TodoListService', () => {
     test('应该只返回所有任务中已完成的待办事项', () => {
       const taskId = 'task-1';
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
-      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.createTodo('Todo 2', taskId);
       TodoListService.markTodoAsDone(todo1.id);
 
       const completedTodos = TodoListService.getCompletedTodos();
