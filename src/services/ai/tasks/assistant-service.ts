@@ -1222,10 +1222,22 @@ ${messages
 
       // 更新任务状态
       if (aiProcessingStore && taskId) {
-        await aiProcessingStore.updateTask(taskId, {
-          status: 'error',
-          message: error instanceof Error ? error.message : '未知错误',
-        });
+        // 检查是否是取消错误
+        const isCancelled =
+          error instanceof Error &&
+          (error.message === '请求已取消' || error.message.includes('aborted'));
+
+        if (isCancelled) {
+          await aiProcessingStore.updateTask(taskId, {
+            status: 'cancelled',
+            message: '已取消',
+          });
+        } else {
+          await aiProcessingStore.updateTask(taskId, {
+            status: 'error',
+            message: error instanceof Error ? error.message : '未知错误',
+          });
+        }
       }
 
       throw error;

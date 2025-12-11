@@ -316,8 +316,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         if (task.abortController) {
           task.abortController.abort();
         }
-        // 如果任务已经完成，不需要更新状态
-        if (task.status === 'completed') {
+        // 如果任务已经完成或已取消，不需要更新状态
+        if (task.status === 'completed' || task.status === 'cancelled') {
           return;
         }
         // 更新任务状态（确保响应式更新）
