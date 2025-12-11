@@ -10,7 +10,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
-import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
+import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
 const settingsStore = useSettingsStore();
@@ -78,7 +78,7 @@ const remoteStats = ref<{
 } | null>(null);
 
 // 同步相关 - 使用 composable
-const { uploadWithConflictCheck, downloadWithConflictCheck } = useGistUploadWithConflictCheck();
+const { uploadToGist, downloadFromGist } = useGistSync();
 
 // 上传配置
 const uploadConfig = async () => {
@@ -94,7 +94,7 @@ const uploadConfig = async () => {
   }
 
   // 使用 composable 处理上传
-  await uploadWithConflictCheck(
+  await uploadToGist(
     config,
     (value) => {
       isSyncing.value = value;
@@ -134,11 +134,11 @@ const downloadConfig = async () => {
   }
 
   // 使用 composable 处理下载
-  await downloadWithConflictCheck(config, (value) => {
+  await downloadFromGist(config, (value) => {
     isSyncing.value = value;
   });
 
-  // downloadWithConflictCheck 已经应用了数据
+  // downloadFromGist 已经应用了数据
   // 我们只需要更新统计信息
   // 注意：这里我们无法直接获取下载的数据来更新统计，
   // 但我们可以更新为本地当前状态（因为已经同步了）
