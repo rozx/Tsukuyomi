@@ -32,9 +32,24 @@ const showAITaskHistory = ref(false);
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
-// 加载待办事项列表
+// Recent AI Tasks - only show translation-related tasks
+// 为了代码逻辑清晰，将 recentAITasks 放在 loadTodos 之前，因为 loadTodos 会使用它（但这不是技术上的要求）
+const recentAITasks = computed(() => {
+  const allTasks = aiProcessingStore.activeTasks;
+  // Filter to only show translation, polish, and proofreading tasks
+  const translationTasks = allTasks.filter(
+    (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
+  );
+  return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
+});
+
+// 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
 const loadTodos = () => {
-  todos.value = TodoListService.getAllTodos();
+  const allTodos = TodoListService.getAllTodos();
+  // 获取当前翻译相关任务的 ID 列表
+  const currentTaskIds = new Set(recentAITasks.value.map((task) => task.id));
+  // 只显示属于当前任务的待办事项
+  todos.value = allTodos.filter((todo) => currentTaskIds.has(todo.taskId));
 };
 
 // 监听待办事项变化（通过 localStorage 事件）
@@ -43,6 +58,15 @@ const handleStorageChange = (e: StorageEvent) => {
     loadTodos();
   }
 };
+
+// 监听 recentAITasks 变化，重新加载待办事项
+watch(
+  () => recentAITasks.value,
+  () => {
+    loadTodos();
+  },
+  { deep: true },
+);
 
 // Height adjustment state
 const aiHistoryHeight = ref(400); // Default height in pixels
@@ -120,16 +144,6 @@ const taskStatusLabels: Record<string, string> = {
   error: '错误',
   cancelled: '已取消',
 };
-
-// Recent AI Tasks - only show translation-related tasks
-const recentAITasks = computed(() => {
-  const allTasks = aiProcessingStore.activeTasks;
-  // Filter to only show translation, polish, and proofreading tasks
-  const translationTasks = allTasks.filter(
-    (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
-  );
-  return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
-});
 
 // Auto Scroll State
 const autoScrollEnabled = ref<Record<string, boolean>>({});

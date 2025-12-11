@@ -9,10 +9,11 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import co from 'co';
 
 /**
- * Gist 上传前冲突检查 composable
- * 提供冲突检查和上传的通用逻辑
+ * Gist 同步 composable
+ * 提供上传和下载的通用逻辑
+ * 上传时会先下载远程数据并合并，确保不会丢失远程更改
  */
-export function useGistUploadWithConflictCheck() {
+export function useGistSync() {
   const settingsStore = useSettingsStore();
   const aiModelsStore = useAIModelsStore();
   const booksStore = useBooksStore();
@@ -21,7 +22,7 @@ export function useGistUploadWithConflictCheck() {
   const gistSyncService = new GistSyncService();
 
   /**
-   * 下载远程数据（不再检查冲突）
+   * 下载远程数据
    * @param config 同步配置
    * @returns 下载的数据
    */
@@ -66,12 +67,19 @@ export function useGistUploadWithConflictCheck() {
   /**
    * 执行上传操作
    * @param config 同步配置
+   * @param dataToUpload 要上传的数据
    * @param onSuccess 成功回调（可选），接收上传结果
    * @param onError 错误回调（可选），接收错误消息
    * @returns 上传结果
    */
   const performUpload = async (
     config: SyncConfig,
+    dataToUpload: {
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    },
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
     onError?: (error: string) => void,
   ): Promise<{
@@ -82,12 +90,7 @@ export function useGistUploadWithConflictCheck() {
     error?: string;
   }> => {
     try {
-      const result = await gistSyncService.uploadToGist(config, {
-        aiModels: aiModelsStore.models,
-        appSettings: settingsStore.getAllSettings(),
-        novels: booksStore.books,
-        coverHistory: coverHistoryStore.covers,
-      });
+      const result = await gistSyncService.uploadToGist(config, dataToUpload);
 
       if (result.success) {
         // 更新 Gist ID
@@ -97,7 +100,7 @@ export function useGistUploadWithConflictCheck() {
             try {
               yield settingsStore.setGistId(gistIdValue);
             } catch (error) {
-              console.error('[useGistUploadWithConflictCheck] 设置 Gist ID 失败:', error);
+              console.error('[useGistSync] 设置 Gist ID 失败:', error);
             }
           });
         }
@@ -107,7 +110,7 @@ export function useGistUploadWithConflictCheck() {
           try {
             yield settingsStore.updateLastSyncTime();
           } catch (error) {
-            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
+            console.error('[useGistSync] 更新最后同步时间失败:', error);
           }
         });
 
@@ -144,53 +147,62 @@ export function useGistUploadWithConflictCheck() {
   };
 
   /**
-   * 上传前下载远程数据并上传（不再检查冲突）
+   * 上传数据到 Gist
+   * 上传前会先下载远程数据并合并，确保不会丢失远程更改
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
    * @param onSuccess 成功回调（可选）
    */
-  const uploadWithConflictCheck = async (
+  const uploadToGist = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
   ): Promise<void> => {
     setSyncing(true);
     try {
-      // 先下载远程数据并应用（使用最新的 lastEdited 时间）
-      const { data, error } = await downloadRemoteData(config);
-      if (error) {
-        // 下载失败，仍然尝试上传
-        await performUpload(config, onSuccess);
-        return;
+      // 准备本地数据
+      const localData = {
+        aiModels: aiModelsStore.models,
+        appSettings: settingsStore.getAllSettings(),
+        novels: booksStore.books,
+        coverHistory: coverHistoryStore.covers,
+      };
+
+      // 如果有 Gist ID，先下载远程数据并合并
+      let dataToUpload = localData;
+      if (config.syncParams.gistId) {
+        const { data: remoteData, error } = await downloadRemoteData(config);
+
+        if (error) {
+          // 下载失败，但继续使用本地数据上传（可能是网络问题，不应该阻止上传）
+          console.warn('[useGistSync] 下载远程数据失败，使用本地数据上传:', error);
+        } else if (remoteData) {
+          // 合并本地和远程数据
+          const lastSyncTime = settingsStore.gistSync.lastSyncTime ?? 0;
+          dataToUpload = await SyncDataService.mergeDataForUpload(
+            localData,
+            remoteData,
+            lastSyncTime,
+          );
+        }
       }
 
-      if (data) {
-        // 应用远程数据（总是使用最新的 lastEdited 时间）
-        await SyncDataService.applyDownloadedData(data);
-        void co(function* () {
-          try {
-            yield settingsStore.updateLastSyncTime();
-          } catch (error) {
-            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
-          }
-        });
-      }
-
-      // 然后上传本地数据（包含刚刚合并的远程数据）
-      await performUpload(config, onSuccess);
+      // 上传合并后的数据
+      await performUpload(config, dataToUpload, onSuccess);
     } catch (error) {
-      console.error('[useGistUploadWithConflictCheck] 上传失败:', error);
+      console.error('[useGistSync] 上传失败:', error);
     } finally {
       setSyncing(false);
     }
   };
 
   /**
-   * 下载并应用远程数据（不再检查冲突）
+   * 下载并应用远程数据
+   * 注意：此函数直接下载并应用远程数据，不进行冲突检查
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
    */
-  const downloadWithConflictCheck = async (
+  const downloadFromGist = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
   ): Promise<void> => {
@@ -209,7 +221,7 @@ export function useGistUploadWithConflictCheck() {
           try {
             yield settingsStore.updateLastSyncTime();
           } catch (error) {
-            console.error('[useGistUploadWithConflictCheck] 更新最后同步时间失败:', error);
+            console.error('[useGistSync] 更新最后同步时间失败:', error);
           }
         });
         toast.add({
@@ -220,14 +232,14 @@ export function useGistUploadWithConflictCheck() {
         });
       }
     } catch (error) {
-      console.error('[useGistUploadWithConflictCheck] 下载失败:', error);
+      console.error('[useGistSync] 下载失败:', error);
     } finally {
       setSyncing(false);
     }
   };
 
   return {
-    uploadWithConflictCheck,
-    downloadWithConflictCheck,
+    uploadToGist,
+    downloadFromGist,
   };
 }

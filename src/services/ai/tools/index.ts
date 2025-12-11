@@ -94,6 +94,7 @@ export class ToolRegistry {
     bookId: string,
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
+    taskId?: string,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = [
@@ -140,9 +141,10 @@ export class ToolRegistry {
         argsDisplay,
       );
 
-      // 网络搜索工具不需要 bookId
+      // 将 taskId 传递给工具上下文（由服务层自动提供）
       const result = await tool.handler(args, {
         ...(bookId ? { bookId } : {}),
+        ...(taskId ? { taskId } : {}),
         ...(onAction ? { onAction } : {}),
         ...(onToast ? { onToast } : {}),
       });

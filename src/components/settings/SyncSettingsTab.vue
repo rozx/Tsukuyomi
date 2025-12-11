@@ -18,7 +18,7 @@ import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
-import { useGistUploadWithConflictCheck } from 'src/composables/useGistUploadWithConflictCheck';
+import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import co from 'co';
 
 // 格式化文件大小
@@ -194,7 +194,8 @@ const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
 
 // 同步相关 - 使用 composable
-const { uploadWithConflictCheck, downloadWithConflictCheck } = useGistUploadWithConflictCheck();
+const { uploadToGist: uploadToGistComposable, downloadFromGist: downloadFromGistComposable } =
+  useGistSync();
 
 // 加载修订历史
 const loadRevisions = async () => {
@@ -698,7 +699,7 @@ const uploadToGist = async () => {
   };
 
   // 使用 composable 处理上传
-  await uploadWithConflictCheck(
+  await uploadToGistComposable(
     config,
     (value) => {
       gistSyncing.value = value;
@@ -766,7 +767,7 @@ const downloadFromGist = async () => {
   };
 
   // 使用 composable 处理下载
-  await downloadWithConflictCheck(config, (value) => {
+  await downloadFromGistComposable(config, (value) => {
     gistSyncing.value = value;
   });
 

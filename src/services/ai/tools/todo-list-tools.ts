@@ -20,13 +20,19 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { onAction }) => {
+    handler: (args, { onAction, taskId }) => {
       const { text } = args;
       if (!text || !text.trim()) {
         throw new Error('待办事项内容不能为空');
       }
+      if (!taskId) {
+        throw new Error(
+          '任务 ID 未提供，待办事项必须关联到 AI 任务。这通常表示服务层未正确传递任务上下文。',
+        );
+      }
 
-      const todo = TodoListService.createTodo(text);
+      // taskId 由服务层自动提供，AI 不需要知道任务 ID
+      const todo = TodoListService.createTodo(text, taskId);
 
       // 通过 onAction 回调传递操作信息（不需要 toast）
       if (onAction) {
@@ -212,7 +218,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'list_todos',
         description:
-          '列出待办事项列表。返回一个包含所有待办事项的列表，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。',
+          '列出当前任务的待办事项列表。返回当前任务关联的所有待办事项，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。注意：此工具仅返回当前任务（taskId）的待办事项，不会返回其他任务的待办事项。',
         parameters: {
           type: 'object',
           properties: {
@@ -226,19 +232,25 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args) => {
+    handler: (args, { taskId }) => {
       const { filter = 'all' } = args;
 
+      if (!taskId) {
+        throw new Error('任务 ID 未提供，无法列出待办事项。这通常表示服务层未正确传递任务上下文。');
+      }
+
+      // taskId 由服务层自动提供，自动过滤出当前任务的待办事项
       let todos: TodoItem[];
+      const taskTodos = TodoListService.getTodosByTaskId(taskId);
       switch (filter) {
         case 'active':
-          todos = TodoListService.getActiveTodos();
+          todos = taskTodos.filter((todo) => !todo.completed);
           break;
         case 'completed':
-          todos = TodoListService.getCompletedTodos();
+          todos = taskTodos.filter((todo) => todo.completed);
           break;
         default:
-          todos = TodoListService.getAllTodos();
+          todos = taskTodos;
       }
 
       // 返回待办事项列表

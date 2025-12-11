@@ -4,6 +4,7 @@ import { useChapterDragDrop } from '../composables/book-details/useChapterDragDr
 import type { Novel, Chapter, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 import * as BooksStore from '../stores/books';
+import { ChapterService } from '../services/chapter-service';
 
 // Mock HTMLElement for Node.js/Bun environment
 class MockHTMLElement {
@@ -75,12 +76,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/services/chapter-service', () => ({
-  ChapterService: {
-    moveChapter: mockMoveChapter,
-  },
-}));
-
 // Helper function to create test chapter
 function createTestChapter(id: string, title: string): Chapter {
   return {
@@ -114,6 +109,7 @@ describe('useChapterDragDrop', () => {
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       updateBook: mockBooksStoreUpdateBook,
     } as any);
+    spyOn(ChapterService, 'moveChapter').mockImplementation(mockMoveChapter);
   });
 
   afterEach(() => {

@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { getDB } from 'src/utils/indexed-db';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TodoListService } from 'src/services/todo-list-service';
 import co from 'co';
 
 export interface AIProcessingTask {
@@ -129,9 +130,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       return state.activeTasks
         .filter(
           (task) =>
-            task.status === 'completed' ||
-            task.status === 'error' ||
-            task.status === 'cancelled',
+            task.status === 'completed' || task.status === 'error' || task.status === 'cancelled',
         )
         .sort((a, b) => b.startTime - a.startTime);
     },
@@ -195,6 +194,17 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
                 message: '任务被中断（应用重启或刷新）',
                 endTime: Date.now(),
               };
+              // 删除关联的待办事项（因为任务被中断，视为错误状态）
+              try {
+                const deletedCount = TodoListService.deleteTodosByTaskId(task.id);
+                if (deletedCount > 0) {
+                  console.log(
+                    `[AIProcessingStore] 中断的任务 ${task.id} 已标记为错误，已删除 ${deletedCount} 个关联待办事项`,
+                  );
+                }
+              } catch (error) {
+                console.error('[AIProcessingStore] 删除中断任务关联待办事项失败:', error);
+              }
               // 异步更新 DB 中的状态，确保持久化
               void co(function* () {
                 try {
@@ -269,6 +279,17 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           updates.status === 'cancelled'
         ) {
           task.endTime = Date.now();
+          // 删除关联的待办事项
+          try {
+            const deletedCount = TodoListService.deleteTodosByTaskId(id);
+            if (deletedCount > 0) {
+              console.log(
+                `[AIProcessingStore] 任务 ${id} 完成/取消，已删除 ${deletedCount} 个关联待办事项`,
+              );
+            }
+          } catch (error) {
+            console.error('[AIProcessingStore] 删除任务关联待办事项失败:', error);
+          }
         }
         // 确保响应式更新
         this.activeTasks = [...this.activeTasks];
@@ -303,6 +324,17 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         task.status = 'cancelled';
         task.message = '已取消';
         task.endTime = Date.now();
+        // 删除关联的待办事项
+        try {
+          const deletedCount = TodoListService.deleteTodosByTaskId(id);
+          if (deletedCount > 0) {
+            console.log(
+              `[AIProcessingStore] 任务 ${id} 已取消，已删除 ${deletedCount} 个关联待办事项`,
+            );
+          }
+        } catch (error) {
+          console.error('[AIProcessingStore] 删除任务关联待办事项失败:', error);
+        }
         // 确保响应式更新
         this.activeTasks = [...this.activeTasks];
         // 保存到 IndexedDB（异步，不阻塞）
@@ -382,9 +414,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       const completedTaskIds = this.activeTasks
         .filter(
           (task) =>
-            task.status === 'completed' ||
-            task.status === 'error' ||
-            task.status === 'cancelled',
+            task.status === 'completed' || task.status === 'error' || task.status === 'cancelled',
         )
         .map((task) => task.id);
 

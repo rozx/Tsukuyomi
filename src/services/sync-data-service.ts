@@ -222,6 +222,185 @@ export class SyncDataService {
   }
 
   /**
+   * 合并本地数据和远程数据，用于上传
+   * 返回合并后的数据，不修改 store
+   * @param localData 本地数据
+   * @param remoteData 远程数据
+   * @param lastSyncTime 上次同步时间
+   * @returns 合并后的数据
+   */
+  static async mergeDataForUpload(
+    localData: {
+      novels: Novel[];
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    },
+    remoteData: {
+      novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    } | null,
+    lastSyncTime: number,
+  ): Promise<{
+    novels: Novel[];
+    aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  }> {
+    if (!remoteData) {
+      // 没有远程数据，直接返回本地数据
+      return {
+        novels: localData.novels,
+        aiModels: localData.aiModels,
+        appSettings: localData.appSettings,
+        coverHistory: localData.coverHistory,
+      };
+    }
+
+    // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
+    const shouldUseRemote = (
+      localLastEdited?: Date | number | string,
+      remoteLastEdited?: Date | number | string,
+    ): boolean => {
+      if (localLastEdited && remoteLastEdited) {
+        const localTime = new Date(localLastEdited).getTime();
+        const remoteTime = new Date(remoteLastEdited).getTime();
+        return remoteTime > localTime;
+      }
+      // 如果缺少时间戳，默认使用本地（因为我们要上传）
+      return false;
+    };
+
+    // 合并 AI 模型
+    const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const remoteModels = remoteData.aiModels || [];
+    const remoteModelMap = new Map(remoteModels.map((m: any) => [m.id, m])); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    // 处理远程和本地都有的模型
+    for (const localModel of localData.aiModels) {
+      const remoteModel = remoteModelMap.get(localModel.id);
+      if (remoteModel) {
+        if (shouldUseRemote(localModel.lastEdited, remoteModel.lastEdited)) {
+          finalModels.push(remoteModel);
+        } else {
+          finalModels.push(localModel);
+        }
+      } else {
+        // 本地独有的模型，检查是否是新增的
+        if (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, lastSyncTime)) {
+          finalModels.push(localModel);
+        }
+      }
+    }
+
+    // 添加远程独有的模型（如果在上次同步后没有在本地被删除）
+    for (const remoteModel of remoteModels) {
+      if (!localData.aiModels.find((m) => m.id === remoteModel.id)) {
+        // 远程有但本地没有，检查是否是远程新增的
+        if (remoteModel.lastEdited && checkIsNewlyAdded(remoteModel.lastEdited, lastSyncTime)) {
+          finalModels.push(remoteModel);
+        }
+      }
+    }
+
+    // 合并书籍
+    const finalBooks: Novel[] = [];
+    const remoteNovels = remoteData.novels || [];
+    const remoteNovelMap = new Map(remoteNovels.map((n: any) => [n.id, n])); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    // 处理远程和本地都有的书籍
+    for (const localNovel of localData.novels) {
+      const remoteNovel = remoteNovelMap.get(localNovel.id);
+      if (remoteNovel) {
+        if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
+          // 使用远程书籍，但保留本地章节内容
+          const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
+            remoteNovel as Novel,
+            localNovel,
+          );
+          finalBooks.push(mergedNovel);
+        } else {
+          // 使用本地书籍，确保章节内容已加载
+          const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
+          finalBooks.push(localNovelWithContent);
+        }
+      } else {
+        // 本地独有的书籍，检查是否是新增的
+        if (checkIsNewlyAdded(localNovel.lastEdited, lastSyncTime)) {
+          const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
+          finalBooks.push(localNovelWithContent);
+        }
+      }
+    }
+
+    // 添加远程独有的书籍（如果在上次同步后没有在本地被删除）
+    for (const remoteNovel of remoteNovels) {
+      if (!localData.novels.find((n) => n.id === remoteNovel.id)) {
+        // 远程有但本地没有，检查是否是远程新增的
+        if (checkIsNewlyAdded(remoteNovel.lastEdited, lastSyncTime)) {
+          finalBooks.push(remoteNovel as Novel);
+        }
+      }
+    }
+
+    // 合并封面历史
+    const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const remoteCovers = remoteData.coverHistory || [];
+    const remoteCoverMap = new Map(remoteCovers.map((c: any) => [c.id, c])); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    // 处理远程和本地都有的封面
+    for (const localCover of localData.coverHistory) {
+      const remoteCover = remoteCoverMap.get(localCover.id);
+      if (remoteCover) {
+        if (shouldUseRemote(localCover.addedAt, remoteCover.addedAt)) {
+          finalCovers.push(remoteCover);
+        } else {
+          finalCovers.push(localCover);
+        }
+      } else {
+        // 本地独有的封面，检查是否是新增的
+        if (checkIsNewlyAdded(localCover.addedAt, lastSyncTime)) {
+          finalCovers.push(localCover);
+        }
+      }
+    }
+
+    // 添加远程独有的封面
+    for (const remoteCover of remoteCovers) {
+      if (!localData.coverHistory.find((c) => c.id === remoteCover.id)) {
+        if (checkIsNewlyAdded(remoteCover.addedAt, lastSyncTime)) {
+          finalCovers.push(remoteCover);
+        }
+      }
+    }
+
+    // 合并设置
+    let finalSettings = localData.appSettings;
+    if (remoteData.appSettings) {
+      if (shouldUseRemote(localData.appSettings.lastEdited, remoteData.appSettings.lastEdited)) {
+        // 使用远程设置，但保留本地的 Gist 同步配置
+        const currentGistSync = localData.appSettings.syncs?.gist;
+        finalSettings = {
+          ...remoteData.appSettings,
+          syncs: {
+            ...remoteData.appSettings.syncs,
+            gist: currentGistSync || remoteData.appSettings.syncs?.gist,
+          },
+        };
+      }
+    }
+
+    return {
+      novels: finalBooks,
+      aiModels: finalModels,
+      appSettings: finalSettings,
+      coverHistory: finalCovers,
+    };
+  }
+
+  /**
    * 检查本地数据相对于远程数据是否有变更（需要上传）
    */
   static hasChangesToUpload(

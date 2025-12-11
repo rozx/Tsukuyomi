@@ -9,6 +9,7 @@ export interface TodoItem {
   completed: boolean;
   createdAt: number;
   updatedAt: number;
+  taskId: string; // 关联的 AI 任务 ID（必需）
 }
 
 const STORAGE_KEY = 'luna-ai-todo-list';
@@ -74,10 +75,15 @@ export class TodoListService {
 
   /**
    * 创建待办事项
+   * @param text 待办事项内容
+   * @param taskId 关联的 AI 任务 ID（必需）
    */
-  static createTodo(text: string): TodoItem {
+  static createTodo(text: string, taskId: string): TodoItem {
     if (!text || !text.trim()) {
       throw new Error('待办事项内容不能为空');
+    }
+    if (!taskId || !taskId.trim()) {
+      throw new Error('任务 ID 不能为空');
     }
 
     const todos = this.getAllTodos();
@@ -88,12 +94,13 @@ export class TodoListService {
       completed: false,
       createdAt: now,
       updatedAt: now,
+      taskId: taskId.trim(),
     };
 
     todos.push(newTodo);
     saveTodosToStorage(todos);
 
-    console.log(`[TodoListService] 创建待办事项: ${newTodo.id}`);
+    console.log(`[TodoListService] 创建待办事项: ${newTodo.id} (任务: ${taskId})`);
     return newTodo;
   }
 
@@ -119,6 +126,7 @@ export class TodoListService {
       completed: updates.completed !== undefined ? updates.completed : todo.completed,
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
+      taskId: todo.taskId, // 保持 taskId 不变
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
@@ -183,5 +191,32 @@ export class TodoListService {
   static clearAllTodos(): void {
     saveTodosToStorage([]);
     console.log('[TodoListService] 清空所有待办事项');
+  }
+
+  /**
+   * 根据任务 ID 获取待办事项
+   * @param taskId 任务 ID
+   */
+  static getTodosByTaskId(taskId: string): TodoItem[] {
+    return this.getAllTodos().filter((todo) => todo.taskId === taskId);
+  }
+
+  /**
+   * 根据任务 ID 删除所有关联的待办事项
+   * @param taskId 任务 ID
+   * @returns 删除的待办事项数量
+   */
+  static deleteTodosByTaskId(taskId: string): number {
+    const todos = this.getAllTodos();
+    const initialCount = todos.length;
+    const filteredTodos = todos.filter((todo) => todo.taskId !== taskId);
+    const deletedCount = initialCount - filteredTodos.length;
+
+    if (deletedCount > 0) {
+      saveTodosToStorage(filteredTodos);
+      console.log(`[TodoListService] 删除任务 ${taskId} 的 ${deletedCount} 个待办事项`);
+    }
+
+    return deletedCount;
   }
 }

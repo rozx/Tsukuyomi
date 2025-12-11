@@ -136,8 +136,9 @@ export class TranslationService {
     bookId: string,
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
+    taskId?: string,
   ): Promise<AIToolCallResult> {
-    return ToolRegistry.handleToolCall(toolCall, bookId, onAction, onToast);
+    return ToolRegistry.handleToolCall(toolCall, bookId, onAction, onToast, taskId);
   }
 
   /**
@@ -282,7 +283,7 @@ export class TranslationService {
       const history: ChatMessage[] = [];
 
       // 1. 系统提示词
-      const todosPrompt = getTodosSystemPrompt();
+      const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = specialInstructions
         ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
         : '';
@@ -1166,6 +1167,7 @@ export class TranslationService {
                   bookId || '',
                   handleAction,
                   onToast,
+                  taskId,
                 );
 
                 history.push({

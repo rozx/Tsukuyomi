@@ -6,6 +6,7 @@ import { generateShortId } from '../utils/id-generator';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import * as BooksStore from 'src/stores/books';
+import { ChapterService } from 'src/services/chapter-service';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -21,12 +22,6 @@ const mockUseBooksStore = mock(() => ({
 
 await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
-}));
-
-await mock.module('src/services/chapter-service', () => ({
-  ChapterService: {
-    updateChapter: mockUpdateChapter,
-  },
 }));
 
 const mockRefreshAllTermOccurrences = mock(() => Promise.resolve());
@@ -91,6 +86,7 @@ describe('useEditMode', () => {
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       updateBook: mockBooksStoreUpdateBook,
     } as any);
+    spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
   });
 
   afterEach(() => {

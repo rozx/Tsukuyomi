@@ -96,7 +96,13 @@ export async function executeToolCall(
   }
 
   // 执行工具
-  const toolResult = await ToolRegistry.handleToolCall(toolCall, bookId, handleAction, onToast);
+  const toolResult = await ToolRegistry.handleToolCall(
+    toolCall,
+    bookId,
+    handleAction,
+    onToast,
+    taskId,
+  );
 
   if (aiProcessingStore && taskId) {
     void aiProcessingStore.appendThinkingMessage(
@@ -114,6 +120,7 @@ export function buildContinuePrompt(
   paragraphIds: string[] | undefined,
   chunkText: string,
   includePreview?: boolean,
+  taskId?: string,
 ): string {
   const taskTypeLabels = {
     translation: '翻译',
@@ -126,7 +133,7 @@ export function buildContinuePrompt(
     ? paragraphIds.slice(0, 10).join(', ') + (paragraphIds.length > 10 ? '...' : '')
     : '';
 
-  const todosReminder = getPostToolCallReminder();
+  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
 
   let prompt = `工具调用已完成。请继续完成当前文本块的${taskLabel}任务。
 
@@ -160,6 +167,36 @@ export function buildContinuePrompt(
   - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
 
   return prompt;
+}
+
+/**
+ * 构建输出内容后的后续操作提示
+ * 询问 AI 是否需要进行其他操作（如创建记忆、更新术语等）
+ */
+export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  const taskLabel = taskTypeLabels[taskType];
+  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
+
+  return `${taskLabel}任务的主要输出已完成。现在你可以选择进行以下后续操作（可选）：
+
+**可选的后续操作**：
+1. **创建记忆**：如果翻译过程中发现了重要的背景设定、角色信息、剧情要点等，可以使用 \`create_memory\` 工具保存这些信息，以便后续快速参考
+2. **更新术语/角色**：如果发现术语或角色信息需要更新（如补充翻译、添加别名、更新描述等），可以使用相应的更新工具
+3. **创建待办事项**：如果需要规划后续任务步骤，可以使用 \`create_todo\` 创建待办事项
+4. **标记待办完成**：如果已经完成了某个待办事项的任务，使用 \`mark_todo_done\` 工具将其标记为完成
+
+**重要说明**：
+- 这些操作都是**可选的**，如果你不需要进行任何后续操作，可以直接回复"已完成"或"无需其他操作"
+- 如果你需要进行后续操作，请直接调用相应的工具
+- 如果不需要任何后续操作，请明确表示已完成，这样系统就会结束当前任务${todosReminder}
+
+请告诉我你是否需要进行任何后续操作，或者直接表示已完成。`;
 }
 
 /**
@@ -216,6 +253,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
 
   let currentTurnCount = 0;
   let finalResponseText: string | null = null;
+  let hasReceivedMainOutput = false; // 标记是否已收到主要输出内容
 
   while (currentTurnCount < maxTurns) {
     currentTurnCount++;
@@ -253,6 +291,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
           bookId,
           handleAction,
           onToast,
+          taskId,
         );
 
         if (aiProcessingStore && taskId) {
@@ -275,35 +314,77 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
         });
       }
 
-      // 构建并添加继续提示
-      const continuePrompt = buildContinuePrompt(taskType, paragraphIds, chunkText, includePreview);
-      history.push({
-        role: 'user',
-        content: continuePrompt,
-      });
+      // 如果已经收到主要输出，工具调用后的提示应该询问是否还需要其他操作
+      if (hasReceivedMainOutput) {
+        // 工具调用完成后，继续询问是否还需要其他操作
+        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+        history.push({
+          role: 'user',
+          content: postOutputPrompt,
+        });
+      } else {
+        // 构建并添加继续提示（要求返回主要输出）
+        const continuePrompt = buildContinuePrompt(
+          taskType,
+          paragraphIds,
+          chunkText,
+          includePreview,
+          taskId,
+        );
+        history.push({
+          role: 'user',
+          content: continuePrompt,
+        });
+      }
 
       // 继续循环，将工具结果和提示发送给 AI
     } else {
-      // 没有工具调用，这是最终回复
-      finalResponseText = result.text;
+      // 没有工具调用，这是回复
+      const responseText = result.text;
 
       // 保存思考内容到思考过程（从最终结果）
       if (aiProcessingStore && taskId && result.reasoningContent) {
         void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
       }
 
-      // 再次检测最终响应中的重复字符，传入原文进行比较
-      if (
-        finalResponseText &&
-        detectRepeatingCharacters(finalResponseText, chunkText, { logLabel })
-      ) {
-        throw new Error(`AI降级检测：最终响应中检测到重复字符`);
-      }
+      // 如果还没有收到主要输出，这是主要输出内容
+      if (!hasReceivedMainOutput) {
+        finalResponseText = responseText;
 
-      if (finalResponseText) {
-        history.push({ role: 'assistant', content: finalResponseText });
+        // 再次检测最终响应中的重复字符，传入原文进行比较
+        if (
+          finalResponseText &&
+          detectRepeatingCharacters(finalResponseText, chunkText, { logLabel })
+        ) {
+          throw new Error(`AI降级检测：最终响应中检测到重复字符`);
+        }
+
+        if (finalResponseText) {
+          history.push({ role: 'assistant', content: finalResponseText });
+        }
+
+        // 标记已收到主要输出，并询问是否需要后续操作
+        hasReceivedMainOutput = true;
+
+        // 添加后续操作提示，给 AI 一个机会进行后续操作（如创建记忆、更新术语等）
+        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+        history.push({
+          role: 'user',
+          content: postOutputPrompt,
+        });
+
+        // 继续循环，给 AI 机会进行后续操作
+        continue;
+      } else {
+        // 已经收到主要输出，这是对后续操作提示的回复
+        // 如果 AI 没有进行工具调用，说明它已经完成了所有操作（或者选择不进行后续操作）
+        // 将回复添加到历史，然后结束循环
+        if (responseText) {
+          history.push({ role: 'assistant', content: responseText });
+        }
+        // 结束循环，主要输出已经完成，AI 可以选择不进行后续操作
+        break;
       }
-      break;
     }
   }
 
