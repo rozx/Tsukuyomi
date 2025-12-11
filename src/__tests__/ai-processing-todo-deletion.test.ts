@@ -105,7 +105,7 @@ describe('AIProcessingStore - Todo Deletion', () => {
       });
 
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
-      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.createTodo('Todo 2', taskId);
       TodoListService.markTodoAsDone(todo1.id);
 
       expect(TodoListService.getTodosByTaskId(taskId)).toHaveLength(2);
