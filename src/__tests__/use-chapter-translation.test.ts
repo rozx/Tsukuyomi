@@ -3,6 +3,7 @@ import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import { ChapterService } from '../services/chapter-service';
 import * as BooksStore from '../stores/books';
 
 // Mock dependencies
@@ -58,23 +59,6 @@ await mock.module('src/services/ai', () => ({
 const mockUpdateChapter = mock((): Volume[] => []);
 const mockGetChapterContentForUpdate = mock(() => []);
 const mockAddParagraphTranslation = mock(() => []);
-
-await mock.module('src/services/chapter-service', () => ({
-  ChapterService: {
-    updateChapter: mockUpdateChapter,
-    getChapterContentForUpdate: mockGetChapterContentForUpdate,
-    addParagraphTranslation: mockAddParagraphTranslation,
-    loadChapterContent: mock(() =>
-      Promise.resolve({
-        id: 'test',
-        title: { original: '', translation: { id: '', translation: '', aiModelId: '' } },
-        content: [],
-        lastEdited: new Date(),
-        createdAt: new Date(),
-      } as Chapter),
-    ),
-  },
-}));
 
 // Helper functions
 function createTestParagraph(id: string, text: string, hasTranslation = false): Paragraph {
@@ -163,6 +147,14 @@ describe('useChapterTranslation', () => {
       updateBook: mockBooksStoreUpdateBook,
       getBookById: mock(() => null),
     } as any);
+
+    spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
+    spyOn(ChapterService, 'getChapterContentForUpdate').mockImplementation(
+      mockGetChapterContentForUpdate,
+    );
+    spyOn(ChapterService, 'addParagraphTranslation').mockImplementation(
+      mockAddParagraphTranslation,
+    );
   });
 
   afterEach(() => {

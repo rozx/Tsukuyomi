@@ -1,7 +1,8 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
 import { useChapterExport } from '../composables/book-details/useChapterExport';
 import type { Chapter, Paragraph } from '../models/novel';
+import { ChapterService } from '../services/chapter-service';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
@@ -15,16 +16,15 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-await mock.module('src/services/chapter-service', () => ({
-  ChapterService: {
-    exportChapter: mockExportChapter,
-  },
-}));
-
 describe('useChapterExport', () => {
   beforeEach(() => {
     mockToastAdd.mockClear();
     mockExportChapter.mockClear();
+    spyOn(ChapterService, 'exportChapter').mockImplementation(mockExportChapter);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('应该创建导出菜单引用', () => {
@@ -51,13 +51,18 @@ describe('useChapterExport', () => {
   it('应该在导出成功时显示成功 toast (clipboard)', async () => {
     const chapter: Chapter = {
       id: 'chapter-1',
-      title: { original: 'Chapter 1', translation: { id: 'trans-1', translation: '', aiModelId: '' } },
+      title: {
+        original: 'Chapter 1',
+        translation: { id: 'trans-1', translation: '', aiModelId: '' },
+      },
       content: [{ id: 'para-1', text: 'test', selectedTranslationId: '', translations: [] }],
       lastEdited: new Date(),
       createdAt: new Date(),
     };
     const selectedChapter = ref<Chapter | null>(chapter);
-    const selectedChapterParagraphs = ref<Paragraph[]>([{ id: 'para-1', text: '', selectedTranslationId: '', translations: [] }]);
+    const selectedChapterParagraphs = ref<Paragraph[]>([
+      { id: 'para-1', text: '', selectedTranslationId: '', translations: [] },
+    ]);
 
     const { exportChapter } = useChapterExport(selectedChapter, selectedChapterParagraphs);
 
@@ -76,13 +81,18 @@ describe('useChapterExport', () => {
   it('应该在导出成功时显示成功 toast (file)', async () => {
     const chapter: Chapter = {
       id: 'chapter-1',
-      title: { original: 'Chapter 1', translation: { id: 'trans-1', translation: '', aiModelId: '' } },
+      title: {
+        original: 'Chapter 1',
+        translation: { id: 'trans-1', translation: '', aiModelId: '' },
+      },
       content: [{ id: 'para-1', text: 'test', selectedTranslationId: '', translations: [] }],
       lastEdited: new Date(),
       createdAt: new Date(),
     };
     const selectedChapter = ref<Chapter | null>(chapter);
-    const selectedChapterParagraphs = ref<Paragraph[]>([{ id: 'para-1', text: '', selectedTranslationId: '', translations: [] }]);
+    const selectedChapterParagraphs = ref<Paragraph[]>([
+      { id: 'para-1', text: '', selectedTranslationId: '', translations: [] },
+    ]);
 
     const { exportChapter } = useChapterExport(selectedChapter, selectedChapterParagraphs);
 
@@ -106,13 +116,18 @@ describe('useChapterExport', () => {
 
     const chapter: Chapter = {
       id: 'chapter-1',
-      title: { original: 'Chapter 1', translation: { id: 'trans-1', translation: '', aiModelId: '' } },
+      title: {
+        original: 'Chapter 1',
+        translation: { id: 'trans-1', translation: '', aiModelId: '' },
+      },
       content: [{ id: 'para-1', text: 'test', selectedTranslationId: '', translations: [] }],
       lastEdited: new Date(),
       createdAt: new Date(),
     };
     const selectedChapter = ref<Chapter | null>(chapter);
-    const selectedChapterParagraphs = ref<Paragraph[]>([{ id: 'para-1', text: '', selectedTranslationId: '', translations: [] }]);
+    const selectedChapterParagraphs = ref<Paragraph[]>([
+      { id: 'para-1', text: '', selectedTranslationId: '', translations: [] },
+    ]);
 
     const { exportChapter } = useChapterExport(selectedChapter, selectedChapterParagraphs);
 
@@ -131,13 +146,18 @@ describe('useChapterExport', () => {
   it('应该在复制所有翻译文本成功时显示成功 toast', async () => {
     const chapter: Chapter = {
       id: 'chapter-1',
-      title: { original: 'Chapter 1', translation: { id: 'trans-1', translation: '', aiModelId: '' } },
+      title: {
+        original: 'Chapter 1',
+        translation: { id: 'trans-1', translation: '', aiModelId: '' },
+      },
       content: [{ id: 'para-1', text: 'test', selectedTranslationId: '', translations: [] }],
       lastEdited: new Date(),
       createdAt: new Date(),
     };
     const selectedChapter = ref<Chapter | null>(chapter);
-    const selectedChapterParagraphs = ref<Paragraph[]>([{ id: 'para-1', text: '', selectedTranslationId: '', translations: [] }]);
+    const selectedChapterParagraphs = ref<Paragraph[]>([
+      { id: 'para-1', text: '', selectedTranslationId: '', translations: [] },
+    ]);
 
     const { copyAllTranslatedText } = useChapterExport(selectedChapter, selectedChapterParagraphs);
 
@@ -175,4 +195,3 @@ describe('useChapterExport', () => {
     }
   });
 });
-

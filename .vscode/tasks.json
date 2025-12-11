@@ -84,6 +84,17 @@
 			"type": "shell",
 			"command": "bun test",
 			"group": "test"
+		},
+		{
+			"label": "Run Chapter Service Tests",
+			"type": "shell",
+			"command": "bun",
+			"args": [
+				"test",
+				"src/__tests__/chapter-service.test.ts"
+			],
+			"isBackground": false,
+			"group": "test"
 		}
 	]
 }
