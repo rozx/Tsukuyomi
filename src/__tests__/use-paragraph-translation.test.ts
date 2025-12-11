@@ -9,8 +9,14 @@ import * as useToastHistory from '../composables/useToastHistory';
 
 // Mock dependencies
 const mockToastAdd = mock(() => {});
+const mockToastRemove = mock(() => {});
+const mockToastRemoveGroup = mock(() => {});
+const mockToastRemoveAllGroups = mock(() => {});
 const mockUseToastWithHistory = mock(() => ({
   add: mockToastAdd,
+  remove: mockToastRemove,
+  removeGroup: mockToastRemoveGroup,
+  removeAllGroups: mockToastRemoveAllGroups,
 }));
 
 const mockUpdateChapter = mock((): Volume[] => []);
