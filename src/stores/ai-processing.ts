@@ -316,8 +316,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         if (task.abortController) {
           task.abortController.abort();
         }
-        // 如果任务已经完成，不需要更新状态
-        if (task.status === 'completed') {
+        // 如果任务已经完成或已取消，不需要更新状态
+        if (task.status === 'completed' || task.status === 'cancelled') {
           return;
         }
         // 更新任务状态（确保响应式更新）
@@ -435,6 +435,25 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     async clearAllTasks(): Promise<void> {
       this.activeTasks = [];
       await clearAllThinkingProcessesFromDB();
+    },
+
+    /**
+     * 停止所有正在进行的任务
+     */
+    async stopAllActiveTasks(): Promise<void> {
+      const activeTasks = this.activeTasksList;
+      // 并行停止所有活动任务
+      await Promise.all(activeTasks.map((task) => this.stopTask(task.id)));
+    },
+
+    /**
+     * 停止所有正在进行的助手（聊天）相关任务
+     * 仅停止 type 为 'assistant' 的任务，不影响翻译、校对等其他任务
+     */
+    async stopAllAssistantTasks(): Promise<void> {
+      const activeTasks = this.activeTasksList.filter((task) => task.type === 'assistant');
+      // 并行停止所有助手任务
+      await Promise.all(activeTasks.map((task) => this.stopTask(task.id)));
     },
   },
 });

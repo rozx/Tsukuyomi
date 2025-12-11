@@ -158,11 +158,17 @@ const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
-// 加载待办事项列表（仅显示当前任务的待办事项）
+// 加载待办事项列表（优先显示当前会话的待办事项，否则显示当前任务的待办事项）
 const loadTodos = () => {
   const allTodos = TodoListService.getAllTodos();
-  // 如果有当前任务 ID，只显示该任务的待办事项；否则显示空列表
-  if (currentTaskId.value) {
+  const currentSession = chatSessionsStore.currentSession;
+  const sessionId = currentSession?.id;
+
+  // 对于助手聊天，优先使用 sessionId 过滤待办事项
+  if (sessionId) {
+    todos.value = allTodos.filter((todo) => todo.sessionId === sessionId);
+  } else if (currentTaskId.value) {
+    // 对于其他任务（翻译、润色等），使用 taskId 过滤
     todos.value = allTodos.filter((todo) => todo.taskId === currentTaskId.value);
   } else {
     todos.value = [];
@@ -176,9 +182,9 @@ const handleStorageChange = (e: StorageEvent) => {
   }
 };
 
-// 监听 currentTaskId 变化，重新加载待办事项
+// 监听 currentTaskId 和当前会话变化，重新加载待办事项
 watch(
-  () => currentTaskId.value,
+  () => [currentTaskId.value, chatSessionsStore.currentSessionId],
   () => {
     loadTodos();
   },
@@ -587,6 +593,7 @@ const sendMessage = async () => {
     const result = await AssistantService.chat(assistantModel.value, message, {
       ...(sessionSummary ? { sessionSummary } : {}),
       ...(messageHistory ? { messageHistory } : {}),
+      ...(sessionId ? { sessionId } : {}),
       onSummarizingStart: () => {
         // 当服务内部开始摘要时，创建摘要气泡
         isSummarizingInternally = true;
@@ -1965,7 +1972,16 @@ const clearChat = () => {
 };
 
 // 创建新会话
-const createNewSession = () => {
+const createNewSession = async () => {
+  // 停止所有正在进行的助手（聊天）相关任务
+  // 仅停止聊天任务，不影响翻译、校对等其他任务
+  try {
+    await aiProcessingStore.stopAllAssistantTasks();
+  } catch (error) {
+    console.error('Failed to stop assistant tasks:', error);
+    // 不阻止创建新会话，即使停止任务失败
+  }
+
   const context = contextStore.getContext;
   chatSessionsStore.createSession({
     bookId: context.currentBookId,
