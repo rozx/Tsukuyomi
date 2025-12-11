@@ -16,9 +16,9 @@ describe('TerminologyService', () => {
         type: 'application/json',
       });
 
-      await expect(TerminologyService.importTerminologiesFromFile(file)).rejects.toThrow(
+      await (expect(TerminologyService.importTerminologiesFromFile(file)).rejects.toThrow(
         '文件格式错误：术语数据不完整',
-      );
+      ) as unknown as Promise<void>);
     });
 
     test('should accept valid translation object', async () => {
@@ -31,6 +31,7 @@ describe('TerminologyService', () => {
             translation: '测试',
             aiModelId: 'model1',
           },
+          occurrences: [],
         },
       ];
       const file = new File([JSON.stringify(validData)], 'test.json', {

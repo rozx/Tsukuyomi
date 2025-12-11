@@ -24,9 +24,9 @@ const mockUseBooksStore = mock(() => ({
 }));
 
 const mockDeleteTerminology = mock(() => Promise.resolve());
-const mockUpdateTerminology = mock(() => Promise.resolve());
+const mockUpdateTerminology = mock(() => Promise.resolve({} as Terminology));
 const mockDeleteCharacterSetting = mock(() => Promise.resolve());
-const mockUpdateCharacterSetting = mock(() => Promise.resolve());
+const mockUpdateCharacterSetting = mock(() => Promise.resolve({} as CharacterSetting));
 
 await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
