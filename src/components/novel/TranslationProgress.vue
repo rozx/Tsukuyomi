@@ -32,9 +32,13 @@ const showAITaskHistory = ref(false);
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
-// 加载待办事项列表
+// 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
 const loadTodos = () => {
-  todos.value = TodoListService.getAllTodos();
+  const allTodos = TodoListService.getAllTodos();
+  // 获取当前翻译相关任务的 ID 列表
+  const currentTaskIds = new Set(recentAITasks.value.map((task) => task.id));
+  // 只显示属于当前任务的待办事项
+  todos.value = allTodos.filter((todo) => currentTaskIds.has(todo.taskId));
 };
 
 // 监听待办事项变化（通过 localStorage 事件）
@@ -43,6 +47,15 @@ const handleStorageChange = (e: StorageEvent) => {
     loadTodos();
   }
 };
+
+// 监听 recentAITasks 变化，重新加载待办事项
+watch(
+  () => recentAITasks.value,
+  () => {
+    loadTodos();
+  },
+  { deep: true },
+);
 
 // Height adjustment state
 const aiHistoryHeight = ref(400); // Default height in pixels

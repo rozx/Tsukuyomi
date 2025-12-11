@@ -158,9 +158,15 @@ const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
-// 加载待办事项列表
+// 加载待办事项列表（仅显示当前任务的待办事项）
 const loadTodos = () => {
-  todos.value = TodoListService.getAllTodos();
+  const allTodos = TodoListService.getAllTodos();
+  // 如果有当前任务 ID，只显示该任务的待办事项；否则显示空列表
+  if (currentTaskId.value) {
+    todos.value = allTodos.filter((todo) => todo.taskId === currentTaskId.value);
+  } else {
+    todos.value = [];
+  }
 };
 
 // 监听待办事项变化（通过 localStorage 事件）
@@ -169,6 +175,14 @@ const handleStorageChange = (e: StorageEvent) => {
     loadTodos();
   }
 };
+
+// 监听 currentTaskId 变化，重新加载待办事项
+watch(
+  () => currentTaskId.value,
+  () => {
+    loadTodos();
+  },
+);
 
 // Popover refs for action details
 const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
