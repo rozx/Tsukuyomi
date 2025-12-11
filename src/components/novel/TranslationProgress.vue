@@ -32,6 +32,17 @@ const showAITaskHistory = ref(false);
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
+// Recent AI Tasks - only show translation-related tasks
+// 必须在 loadTodos 之前定义，因为 loadTodos 会使用它
+const recentAITasks = computed(() => {
+  const allTasks = aiProcessingStore.activeTasks;
+  // Filter to only show translation, polish, and proofreading tasks
+  const translationTasks = allTasks.filter(
+    (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
+  );
+  return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
+});
+
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
 const loadTodos = () => {
   const allTodos = TodoListService.getAllTodos();
@@ -133,16 +144,6 @@ const taskStatusLabels: Record<string, string> = {
   error: '错误',
   cancelled: '已取消',
 };
-
-// Recent AI Tasks - only show translation-related tasks
-const recentAITasks = computed(() => {
-  const allTasks = aiProcessingStore.activeTasks;
-  // Filter to only show translation, polish, and proofreading tasks
-  const translationTasks = allTasks.filter(
-    (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
-  );
-  return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
-});
 
 // Auto Scroll State
 const autoScrollEnabled = ref<Record<string, boolean>>({});
