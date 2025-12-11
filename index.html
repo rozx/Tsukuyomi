@@ -173,7 +173,7 @@
             }
             setTimeout(hideLoadingScreen, 150);
           } else if (checkCount >= maxChecks) {
-            // 超时保护：5秒后强制隐藏
+            // 超时保护：50秒后强制隐藏
             clearInterval(checkInterval);
             checkInterval = null;
             if (observer) {
