@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import Popover from 'primevue/popover';
 import Textarea from 'primevue/textarea';
 import Button from 'primevue/button';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import type { Novel, Chapter } from 'src/models/novel';
 
 const props = defineProps<{
@@ -22,6 +27,12 @@ const emit = defineEmits<{
 }>();
 
 const popover = ref<InstanceType<typeof Popover> | null>(null);
+
+// 活动标签页
+const activeTab = ref<string>('translation');
+
+// 确保始终有默认值
+const currentActiveTab = computed(() => activeTab.value || 'translation');
 
 // 表单数据
 const translationInstructions = ref('');
@@ -47,34 +58,30 @@ watch(
       polishInstructions.value = '';
       proofreadingInstructions.value = '';
     }
+    // 重置到默认标签页
+    activeTab.value = 'translation';
   },
   { immediate: true },
 );
 
 const handleSave = () => {
+  // 始终包含所有三个字段，即使为空也要保存（用于清除现有值）
   const data: {
     translationInstructions?: string;
     polishInstructions?: string;
     proofreadingInstructions?: string;
-  } = {};
-
-  const trimmedTranslation = translationInstructions.value.trim();
-  if (trimmedTranslation) {
-    data.translationInstructions = trimmedTranslation;
-  }
-
-  const trimmedPolish = polishInstructions.value.trim();
-  if (trimmedPolish) {
-    data.polishInstructions = trimmedPolish;
-  }
-
-  const trimmedProofreading = proofreadingInstructions.value.trim();
-  if (trimmedProofreading) {
-    data.proofreadingInstructions = trimmedProofreading;
-  }
+  } = {
+    translationInstructions: translationInstructions.value.trim(),
+    polishInstructions: polishInstructions.value.trim(),
+    proofreadingInstructions: proofreadingInstructions.value.trim(),
+  };
 
   emit('save', data);
   popover.value?.hide();
+};
+
+const handleTabChange = (value: string | number) => {
+  activeTab.value = String(value);
 };
 
 // Expose popover ref for parent component to toggle
@@ -105,51 +112,62 @@ defineExpose({
         </p>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto">
-        <div class="p-4 flex flex-col gap-4">
-          <!-- 翻译指令 -->
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-moon/90">翻译指令</label>
-            <Textarea
-              v-model="translationInstructions"
-              placeholder="输入翻译任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行翻译任务时添加到系统提示词中</small
-            >
-          </div>
-
-          <!-- 润色指令 -->
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-moon/90">润色指令</label>
-            <Textarea
-              v-model="polishInstructions"
-              placeholder="输入润色任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行润色任务时添加到系统提示词中</small
-            >
-          </div>
-
-          <!-- 校对指令 -->
-          <div class="space-y-2">
-            <label class="block text-sm font-medium text-moon/90">校对指令</label>
-            <Textarea
-              v-model="proofreadingInstructions"
-              placeholder="输入校对任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行校对任务时添加到系统提示词中</small
-            >
-          </div>
+        <div class="p-4">
+          <Tabs
+            :value="currentActiveTab"
+            @update:value="handleTabChange"
+            class="special-instructions-tabs"
+          >
+            <TabList>
+              <Tab value="translation">翻译指令</Tab>
+              <Tab value="polish">润色指令</Tab>
+              <Tab value="proofreading">校对指令</Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel value="translation">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    v-model="translationInstructions"
+                    placeholder="输入翻译任务的特殊指令（可选）"
+                    :rows="8"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行翻译任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+              <TabPanel value="polish">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    v-model="polishInstructions"
+                    placeholder="输入润色任务的特殊指令（可选）"
+                    :rows="8"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行润色任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+              <TabPanel value="proofreading">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    v-model="proofreadingInstructions"
+                    placeholder="输入校对任务的特殊指令（可选）"
+                    :rows="8"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行校对任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
         </div>
       </div>
       <div class="p-3 border-t border-white/10 flex justify-end gap-2">
@@ -159,3 +177,30 @@ defineExpose({
     </div>
   </Popover>
 </template>
+
+<style scoped>
+.special-instructions-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.special-instructions-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.special-instructions-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tabpanels) {
+  padding: 0;
+}
+</style>

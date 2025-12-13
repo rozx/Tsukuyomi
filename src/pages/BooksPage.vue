@@ -660,6 +660,16 @@ const handleSave = async (formData: Partial<Novel>) => {
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
     }
+    // 处理特殊指令：始终包含这些字段（即使为空字符串，用于清除现有值）
+    if (formData.translationInstructions !== undefined) {
+      updates.translationInstructions = formData.translationInstructions;
+    }
+    if (formData.polishInstructions !== undefined) {
+      updates.polishInstructions = formData.polishInstructions;
+    }
+    if (formData.proofreadingInstructions !== undefined) {
+      updates.proofreadingInstructions = formData.proofreadingInstructions;
+    }
 
     // 深拷贝保存原始数据用于撤销
     const oldBook = cloneDeep(selectedBook.value);

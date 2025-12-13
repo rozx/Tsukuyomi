@@ -930,12 +930,17 @@ const handleSaveSpecialInstructions = async (data: {
   if (!book.value) return;
 
   try {
+    // 确保所有字段都有值（如果未提供则使用空字符串，避免 undefined 覆盖现有值）
+    const translationInstructions = data.translationInstructions ?? '';
+    const polishInstructions = data.polishInstructions ?? '';
+    const proofreadingInstructions = data.proofreadingInstructions ?? '';
+
     if (selectedChapter.value) {
       // 保存章节级别的指令
       const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
-        translationInstructions: data.translationInstructions,
-        polishInstructions: data.polishInstructions,
-        proofreadingInstructions: data.proofreadingInstructions,
+        translationInstructions,
+        polishInstructions,
+        proofreadingInstructions,
       });
 
       await booksStore.updateBook(book.value.id, {
@@ -950,9 +955,9 @@ const handleSaveSpecialInstructions = async (data: {
       ) {
         selectedChapterWithContent.value = {
           ...selectedChapterWithContent.value,
-          translationInstructions: data.translationInstructions,
-          polishInstructions: data.polishInstructions,
-          proofreadingInstructions: data.proofreadingInstructions,
+          translationInstructions,
+          polishInstructions,
+          proofreadingInstructions,
         };
       }
 
@@ -965,9 +970,9 @@ const handleSaveSpecialInstructions = async (data: {
     } else {
       // 保存书籍级别的指令
       await booksStore.updateBook(book.value.id, {
-        translationInstructions: data.translationInstructions,
-        polishInstructions: data.polishInstructions,
-        proofreadingInstructions: data.proofreadingInstructions,
+        translationInstructions,
+        polishInstructions,
+        proofreadingInstructions,
         lastEdited: new Date(),
       });
 
@@ -1491,6 +1496,16 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     // 处理 volumes：如果提供了 volumes 就更新
     if (formData.volumes !== undefined) {
       updates.volumes = formData.volumes;
+    }
+    // 处理特殊指令：始终包含这些字段（即使为空字符串，用于清除现有值）
+    if (formData.translationInstructions !== undefined) {
+      updates.translationInstructions = formData.translationInstructions;
+    }
+    if (formData.polishInstructions !== undefined) {
+      updates.polishInstructions = formData.polishInstructions;
+    }
+    if (formData.proofreadingInstructions !== undefined) {
+      updates.proofreadingInstructions = formData.proofreadingInstructions;
     }
     // 保存原始数据用于撤销
     const oldBook = cloneDeep(book.value);

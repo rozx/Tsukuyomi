@@ -126,6 +126,15 @@ const handleSave = async (formData: Partial<Novel>) => {
     ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
     ...(formData.cover ? { cover: formData.cover } : {}),
     ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
+    ...(formData.translationInstructions !== undefined
+      ? { translationInstructions: formData.translationInstructions }
+      : {}),
+    ...(formData.polishInstructions !== undefined
+      ? { polishInstructions: formData.polishInstructions }
+      : {}),
+    ...(formData.proofreadingInstructions !== undefined
+      ? { proofreadingInstructions: formData.proofreadingInstructions }
+      : {}),
     createdAt: now,
     lastEdited: now,
   };
