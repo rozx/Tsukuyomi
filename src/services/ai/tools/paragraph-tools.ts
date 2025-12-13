@@ -303,8 +303,7 @@ export const paragraphTools: ToolDefinition[] = [
             },
             chapter_id: {
               type: 'string',
-              description:
-                '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
+              description: '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
             },
             max_paragraphs: {
               type: 'number',
@@ -330,7 +329,9 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 过滤掉空字符串
-      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
       if (validKeywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -354,7 +355,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 对每个关键词进行搜索，然后合并结果并去重
       const allResults: Map<string, ParagraphSearchResult> = new Map();
-      
+
       for (const keyword of validKeywords) {
         // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
         const results = await ChapterService.searchParagraphsByKeywordAsync(
@@ -926,7 +927,8 @@ export const paragraphTools: ToolDefinition[] = [
       if (wasSelected) {
         if (paragraph.translations.length > 0) {
           // 优先选择最新的翻译（数组最后一个）
-          paragraph.selectedTranslationId = paragraph.translations[paragraph.translations.length - 1]?.id || '';
+          paragraph.selectedTranslationId =
+            paragraph.translations[paragraph.translations.length - 1]?.id || '';
         } else {
           // 如果没有翻译了，清空选中的翻译 ID
           paragraph.selectedTranslationId = '';
@@ -959,6 +961,247 @@ export const paragraphTools: ToolDefinition[] = [
         was_selected: wasSelected,
         new_selected_id: paragraph.selectedTranslationId || null,
         remaining_translations: paragraph.translations.length,
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'batch_replace_translations',
+        description:
+          '批量替换段落翻译。根据关键词在翻译文本中查找段落，并将匹配段落的翻译替换为新的翻译文本。用于批量修正翻译中的错误或统一翻译风格。',
+        parameters: {
+          type: 'object',
+          properties: {
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '关键词数组，用于在翻译文本中搜索包含任一关键词的段落（OR 逻辑）',
+            },
+            replacement_text: {
+              type: 'string',
+              description: '新的翻译文本，用于替换匹配段落的翻译',
+            },
+            chapter_id: {
+              type: 'string',
+              description: '可选的章节 ID，如果提供则仅在该章节内搜索和替换（不处理其他章节）',
+            },
+            replace_all_translations: {
+              type: 'boolean',
+              description:
+                '是否替换所有翻译版本（默认 false）。如果为 true，则替换段落的所有翻译版本；如果为 false，则只替换当前选中的翻译版本。',
+            },
+            max_replacements: {
+              type: 'number',
+              description:
+                '可选的最大替换数量（默认 100）。用于限制一次操作替换的段落数量，避免意外替换过多内容。',
+            },
+          },
+          required: ['keywords', 'replacement_text'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const {
+        keywords,
+        replacement_text,
+        chapter_id,
+        replace_all_translations = false,
+        max_replacements = 100,
+      } = args;
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        throw new Error('关键词数组不能为空');
+      }
+      if (!replacement_text || typeof replacement_text !== 'string') {
+        throw new Error('替换文本不能为空');
+      }
+
+      // 过滤掉空字符串
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
+      if (validKeywords.length === 0) {
+        throw new Error('关键词数组不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 报告操作开始
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            tool_name: 'batch_replace_translations',
+            keywords: validKeywords,
+          },
+        });
+      }
+
+      // 收集所有匹配的段落
+      const allResults: Map<string, ParagraphSearchResult> = new Map();
+
+      // 对每个关键词进行搜索，在翻译文本中查找
+      for (const keyword of validKeywords) {
+        // 使用优化的异步方法，按需加载章节内容
+        // 注意：这里我们需要搜索翻译文本，而不是原文
+        // 由于 searchParagraphsByKeywordAsync 搜索的是原文，我们需要自己实现搜索翻译的逻辑
+        const results = await ChapterService.searchParagraphsByKeywordAsync(
+          book,
+          keyword,
+          chapter_id,
+          max_replacements * validKeywords.length, // 增加搜索数量以应对去重
+          true, // only_with_translation = true，只搜索有翻译的段落
+        );
+
+        // 进一步过滤：检查翻译文本中是否包含关键词
+        for (const result of results) {
+          const paragraph = result.paragraph;
+          if (!paragraph.translations || paragraph.translations.length === 0) {
+            continue;
+          }
+
+          // 检查翻译文本中是否包含关键词
+          const keywordLower = keyword.toLowerCase();
+          const hasKeywordInTranslation = paragraph.translations.some((t) =>
+            t.translation?.toLowerCase().includes(keywordLower),
+          );
+
+          if (hasKeywordInTranslation && !allResults.has(paragraph.id)) {
+            allResults.set(paragraph.id, result);
+          }
+        }
+
+        // 如果已经收集到足够的段落，提前停止
+        if (allResults.size >= max_replacements) {
+          break;
+        }
+      }
+
+      // 转换为数组并限制数量
+      const results = Array.from(allResults.values()).slice(0, max_replacements);
+
+      if (results.length === 0) {
+        return JSON.stringify({
+          success: true,
+          message: '未找到匹配的段落',
+          replaced_count: 0,
+          keywords: validKeywords,
+        });
+      }
+
+      // 执行替换操作
+      const replacedParagraphs: Array<{
+        paragraph_id: string;
+        chapter_id: string;
+        old_translations: Array<{ translation_id: string; translation: string }>;
+        new_translation: string;
+      }> = [];
+
+      for (const result of results) {
+        const { paragraph } = result;
+
+        if (!paragraph.translations || paragraph.translations.length === 0) {
+          continue;
+        }
+
+        const oldTranslations: Array<{ translation_id: string; translation: string }> = [];
+
+        if (replace_all_translations) {
+          // 替换所有翻译版本
+          for (const translation of paragraph.translations) {
+            oldTranslations.push({
+              translation_id: translation.id,
+              translation: translation.translation,
+            });
+            translation.translation = normalizeTranslationQuotes(replacement_text.trim());
+          }
+        } else {
+          // 只替换选中的翻译版本
+          if (paragraph.selectedTranslationId) {
+            const selectedTranslation = paragraph.translations.find(
+              (t) => t.id === paragraph.selectedTranslationId,
+            );
+            if (selectedTranslation) {
+              oldTranslations.push({
+                translation_id: selectedTranslation.id,
+                translation: selectedTranslation.translation,
+              });
+              selectedTranslation.translation = normalizeTranslationQuotes(replacement_text.trim());
+            }
+          } else {
+            // 如果没有选中的翻译，替换第一个翻译
+            const firstTranslation = paragraph.translations[0];
+            if (firstTranslation) {
+              oldTranslations.push({
+                translation_id: firstTranslation.id,
+                translation: firstTranslation.translation,
+              });
+              firstTranslation.translation = normalizeTranslationQuotes(replacement_text.trim());
+              // 同时设置为选中
+              paragraph.selectedTranslationId = firstTranslation.id;
+            }
+          }
+        }
+
+        if (oldTranslations.length > 0) {
+          replacedParagraphs.push({
+            paragraph_id: paragraph.id,
+            chapter_id: result.chapter.id,
+            old_translations: oldTranslations,
+            new_translation: replacement_text.trim(),
+          });
+
+          // 报告更新操作
+          if (onAction) {
+            for (const oldTrans of oldTranslations) {
+              onAction({
+                type: 'update',
+                entity: 'translation',
+                data: {
+                  paragraph_id: paragraph.id,
+                  translation_id: oldTrans.translation_id,
+                  old_translation: oldTrans.translation,
+                  new_translation: replacement_text.trim(),
+                },
+                previousData: {
+                  id: oldTrans.translation_id,
+                  translation: oldTrans.translation,
+                  aiModelId:
+                    paragraph.translations.find((t) => t.id === oldTrans.translation_id)
+                      ?.aiModelId || '',
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 更新书籍（保存更改）
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
+
+      return JSON.stringify({
+        success: true,
+        message: `成功替换 ${replacedParagraphs.length} 个段落的翻译`,
+        replaced_count: replacedParagraphs.length,
+        keywords: validKeywords,
+        replacement_text: replacement_text.trim(),
+        replace_all_translations,
+        replaced_paragraphs: replacedParagraphs.map((p) => ({
+          paragraph_id: p.paragraph_id,
+          chapter_id: p.chapter_id,
+          translation_count: p.old_translations.length,
+        })),
       });
     },
   },
