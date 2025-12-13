@@ -23,8 +23,8 @@ import { TranslationService } from './translation-service';
 import { getTodosSystemPrompt } from './todo-helper';
 import {
   executeToolCallLoop,
-  checkMaxTurnsReached,
   type AIProcessingStore,
+  verifyParagraphCompleteness,
 } from './ai-task-helper';
 
 /**
@@ -318,29 +318,52 @@ export class PolishService {
         - **保存记忆**: 完成章节润色后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
         - **搜索后保存**: 当你通过工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_chapter、get_next_chapter 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
 
-      11. **输出格式**:
+      11. **输出格式（必须严格遵守）**:
         ⚠️ **重要：只能返回JSON，禁止使用翻译管理工具**
         - ❌ **禁止使用** \`add_translation\`、\`update_translation\`、\`remove_translation\`、\`select_translation\` 等翻译管理工具
-        - ✅ **必须直接返回** JSON 格式的润色结果
+        - ✅ **必须直接返回** JSON 格式的润色结果，包含 status 字段
         - 系统会自动处理翻译的保存和管理，你只需要返回润色内容
 
-        必须返回有效 JSON 格式:
+        必须返回有效 JSON 格式，包含 status 字段:
+        \`\`\`json
         {
-          "paragraphs": [{ "id": "段落ID", "translation": "润色后的内容" }],
+          "status": "working",
+          "paragraphs": [{ "id": "段落ID", "translation": "润色后的内容" }]
         }
+        \`\`\`
+
+        **状态字段说明（status）**:
+        - **"planning"**: 准备阶段，正在规划任务、获取上下文、创建待办事项等。在此阶段可以使用工具获取信息、规划任务。
+        - **"working"**: 工作阶段，正在润色段落。可以输出部分润色结果，状态保持为 "working" 直到完成所有段落。
+        - **"completed"**: 完成阶段，当前块的所有段落润色已完成。系统会验证所有段落都有润色（只验证有变化的段落），如果缺少会要求继续工作。
+        - **"done"**: 完成阶段，所有后续操作（创建记忆、更新术语/角色、待办事项等）都已完成，可以进入下一个块。
 
         **⚠️ 重要：只返回有变化的段落**
         - 如果段落经过润色后有改进或变化，将其包含在 \`paragraphs\` 数组中
         - 如果段落没有改进或变化，**不要**将其包含在 \`paragraphs\` 数组中
         - 系统会自动比较润色结果与原文，只有真正有变化的段落才会被保存为新翻译
-        - 如果所有段落都没有变化，返回空的 \`paragraphs\` 数组：\`{"paragraphs": []}\`
+        - 如果所有段落都没有变化，返回：\`{"status": "completed", "paragraphs": []}\`
 
-        **不要使用任何翻译管理工具，只返回JSON**`;
+        **格式要求清单**:
+        - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
+        - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+        - 段落 ID 必须与原文**完全一致**
+        - 必须是有效的 JSON（注意转义特殊字符）
+        - **不要使用任何翻译管理工具，只返回JSON**
+        - **在所有状态阶段都可以使用工具**（planning、working、completed、done）`;
 
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始润色。`;
+      let initialUserPrompt = `开始润色。
+
+**重要：必须使用状态字段（status）**
+- 所有响应必须是有效的 JSON 格式，包含 status 字段
+- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
+- 可以从 "planning" 状态开始，规划任务、获取上下文
+- 准备好后，将状态设置为 "working" 并开始润色
+- 完成所有段落润色后，将状态设置为 "completed"
+- 完成所有后续操作后，将状态设置为 "done"`;
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
@@ -358,15 +381,32 @@ export class PolishService {
         - 如果需要规划复杂的润色任务，你可以使用 create_todo 工具创建待办事项来规划步骤
         - 例如：为大型章节创建待办事项来跟踪润色进度、术语一致性检查等子任务
         - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："润色第1-5段，优化语气词使用，确保自然流畅" 而不是 "润色文本"
-        - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："润色第1-5段，优化语气词使用，确保自然流畅" 而不是 "润色文本"
 
-        【执行要点】
-        - **语气词**: 适当添加，符合角色风格。
-        - **自然流畅**: 摆脱翻译腔，使用地道中文。
-        - **节奏优化**: 调整句子长度和结构。
-        - **语病修正**: 消除语病和不必要重复。
-        - **角色区分**: 根据角色身份、性格、时代背景调整语言。
-        - **专有名词**: 保持术语和角色名称统一。
+        【执行要点（按状态流程执行）】
+        1. **规划阶段（status: "planning"）**:
+           - 可以使用工具获取上下文、创建待办事项等
+           - 准备好后，将状态设置为 "working"
+
+        2. **工作阶段（status: "working"）**:
+           - **语气词**: 适当添加，符合角色风格。
+           - **自然流畅**: 摆脱翻译腔，使用地道中文。
+           - **节奏优化**: 调整句子长度和结构。
+           - **语病修正**: 消除语病和不必要重复。
+           - **角色区分**: 根据角色身份、性格、时代背景调整语言。
+           - **专有名词**: 保持术语和角色名称统一。
+           - 可以输出部分润色结果，状态保持为 "working"
+           - 完成所有段落润色后，将状态设置为 "completed"
+
+        3. **完成阶段（status: "completed"）**:
+           - 系统会自动验证所有段落都有润色（只验证有变化的段落）
+           - 如果缺少润色，系统会要求继续工作（状态回到 "working"）
+           - 如果所有段落都完整，系统会询问是否需要后续操作
+           - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
+           - 完成所有后续操作后，将状态设置为 "done"
+
+        ⚠️ **重要提醒**:
+        - 只返回有变化的段落，没有变化的段落不要包含在结果中
+        - 工具使用：在所有状态阶段都可以使用工具
         - **情感传达**: 准确传达意境和情感。
         - **历史参考**: 参考翻译历史和之前段落的原文和翻译，混合匹配最佳表达。
         - **工具使用**: 优先使用上下文，必要时调用工具。
@@ -574,8 +614,8 @@ export class PolishService {
 
         history.push({ role: 'user', content });
 
-        // 使用共享的工具调用循环
-        const finalResponseText = await executeToolCallLoop({
+        // 使用共享的工具调用循环（基于状态的流程）
+        const loopResult = await executeToolCallLoop({
           history,
           tools,
           generateText: service.generateText.bind(service),
@@ -591,126 +631,61 @@ export class PolishService {
           logLabel: 'PolishService',
           maxTurns: 10,
           includePreview: true,
+          // 对于 polish，只验证有变化的段落
+          verifyCompleteness: (expectedIds, receivedTranslations) => {
+            // 只检查已收到的翻译（有变化的段落）
+            // 对于 polish，不需要验证所有段落都有翻译，只需要验证返回的段落格式正确
+            return {
+              allComplete: true, // polish 只返回有变化的段落，所以总是完整的
+              missingIds: [],
+            };
+          },
         });
 
-        // 检查是否在达到最大回合数后仍未获得润色结果
-        checkMaxTurnsReached(finalResponseText, 10, 'polish');
-
-        // 解析 JSON 响应
-        try {
-          // 尝试提取 JSON
-          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-          let chunkPolish = '';
-          const extractedPolishes: Map<string, string> = new Map();
-
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            try {
-              const data = JSON.parse(jsonStr);
-
-              // 优先使用 paragraphs 数组（结构化数据）
-              if (data.paragraphs && Array.isArray(data.paragraphs)) {
-                for (const para of data.paragraphs) {
-                  if (para.id && para.translation) {
-                    extractedPolishes.set(para.id, para.translation);
-                  }
-                }
-
-                // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
-                if (data.translation) {
-                  chunkPolish = data.translation;
-                } else if (extractedPolishes.size > 0 && chunk.paragraphIds) {
-                  // 从 paragraphs 数组构建完整文本
-                  const orderedTexts: string[] = [];
-                  for (const paraId of chunk.paragraphIds) {
-                    const polish = extractedPolishes.get(paraId);
-                    if (polish) {
-                      orderedTexts.push(polish);
-                    }
-                  }
-                  chunkPolish = orderedTexts.join('\n\n');
-                }
-              } else if (data.translation) {
-                // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
-                console.warn(
-                  `[PolishService] ⚠️ JSON中未找到paragraphs数组（块 ${i + 1}/${chunks.length}），将尝试从translation字符串中提取段落ID`,
-                );
-                chunkPolish = data.translation;
-
-                // 尝试从字符串中提取段落ID（兼容旧格式）
-                const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
-                idPattern.lastIndex = 0;
-                let match;
-                while ((match = idPattern.exec(chunkPolish)) !== null) {
-                  const paragraphId = match[1]?.trim();
-                  const polish = match[2]?.trim();
-                  if (paragraphId && polish) {
-                    extractedPolishes.set(paragraphId, polish);
-                  }
-                }
-              } else {
-                console.warn(
-                  `[PolishService] ⚠️ AI响应JSON中未找到translation或paragraphs字段（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为润色结果`,
-                );
-                chunkPolish = finalResponseText;
-              }
-            } catch (e) {
-              console.warn(
-                `[PolishService] ⚠️ 解析AI响应JSON失败（块 ${i + 1}/${chunks.length}）`,
-                e instanceof Error ? e.message : String(e),
-              );
-              // JSON 解析失败，回退到原始文本处理
-              chunkPolish = finalResponseText;
-            }
-          } else {
-            // 不是 JSON，直接使用原始文本
-            console.warn(
-              `[PolishService] ⚠️ AI响应不是JSON格式（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为润色结果`,
-            );
-            chunkPolish = finalResponseText;
-          }
-
-          // 处理润色结果：AI 现在只返回有变化的段落，这是预期行为
-          if (extractedPolishes.size > 0 && chunk.paragraphIds) {
-            // 过滤出有变化的段落（AI 应该已经只返回了有变化的段落，但这里再次验证以确保一致性）
-            const chunkParagraphPolishes = filterChangedParagraphs(
-              chunk.paragraphIds,
-              extractedPolishes,
-              originalTranslations,
-            );
-
-            if (chunkParagraphPolishes.length > 0) {
-              // 按顺序构建文本
-              const orderedPolishes: string[] = [];
-              for (const paraPolish of chunkParagraphPolishes) {
-                orderedPolishes.push(paraPolish.translation);
-                paragraphPolishes.push(paraPolish);
-              }
-              const orderedText = orderedPolishes.join('\n\n');
-              polishedText += orderedText;
-              if (onChunk) {
-                await onChunk({ text: orderedText, done: false });
-              }
-              // 通知段落润色完成
-              if (onParagraphPolish) {
-                onParagraphPolish(chunkParagraphPolishes);
-              }
-            }
-            // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
-          } else {
-            // 没有提取到段落润色（可能是 JSON 解析失败或格式不正确），使用完整文本作为后备
-            polishedText += chunkPolish;
-            if (onChunk) {
-              await onChunk({ text: chunkPolish, done: false });
-            }
-          }
-        } catch (e) {
-          console.warn(
-            `[PolishService] ⚠️ 解析AI响应失败（块 ${i + 1}/${chunks.length}）`,
-            e instanceof Error ? e.message : String(e),
+        // 检查状态
+        if (loopResult.status !== 'done') {
+          throw new Error(
+            `润色任务未完成（状态: ${loopResult.status}）。请重试。`,
           );
-          polishedText += finalResponseText;
-          if (onChunk) await onChunk({ text: finalResponseText, done: false });
+        }
+
+        // 使用从状态流程中提取的段落润色
+        const extractedPolishes = loopResult.paragraphs;
+
+        // 处理润色结果：只返回有变化的段落
+        if (extractedPolishes.size > 0 && chunk.paragraphIds) {
+          // 过滤出有变化的段落
+          const chunkParagraphPolishes = filterChangedParagraphs(
+            chunk.paragraphIds,
+            extractedPolishes,
+            originalTranslations,
+          );
+
+          if (chunkParagraphPolishes.length > 0) {
+            // 按顺序构建文本
+            const orderedPolishes: string[] = [];
+            for (const paraPolish of chunkParagraphPolishes) {
+              orderedPolishes.push(paraPolish.translation);
+              paragraphPolishes.push(paraPolish);
+            }
+            const orderedText = orderedPolishes.join('\n\n');
+            polishedText += orderedText;
+            if (onChunk) {
+              await onChunk({ text: orderedText, done: false });
+            }
+            // 通知段落润色完成
+            if (onParagraphPolish) {
+              onParagraphPolish(chunkParagraphPolishes);
+            }
+          }
+          // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
+        } else {
+          // 没有提取到段落润色，使用完整文本作为后备
+          const fallbackText = loopResult.responseText || '';
+          polishedText += fallbackText;
+          if (onChunk) {
+            await onChunk({ text: fallbackText, done: false });
+          }
         }
       }
 

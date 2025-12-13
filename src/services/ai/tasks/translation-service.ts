@@ -1,7 +1,6 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIServiceConfig,
-  TextGenerationRequest,
   TextGenerationStreamCallback,
   AIToolCall,
   AIToolCallResult,
@@ -16,16 +15,11 @@ import {
   findUniqueCharactersInText,
   calculateCharacterScores,
 } from 'src/utils/text-matcher';
-import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { getTodosSystemPrompt } from './todo-helper';
-import {
-  executeToolCallLoop,
-  checkMaxTurnsReached,
-  type AIProcessingStore,
-} from './ai-task-helper';
+import { executeToolCallLoop, type AIProcessingStore } from './ai-task-helper';
 
 /**
  * 翻译服务选项
@@ -457,9 +451,10 @@ export class TranslationService {
       - ✅ **必须直接返回** JSON 格式的翻译结果
       - 系统会自动处理翻译的保存和管理，你只需要返回翻译内容
 
-      **必须返回有效的 JSON 格式**:
+      **必须返回有效的 JSON 格式，包含 status 字段**:
       \`\`\`json
       {
+        "status": "working",
         "paragraphs": [
           { "id": "段落ID1", "translation": "段落1的翻译" },
           { "id": "段落ID2", "translation": "段落2的翻译" }
@@ -468,7 +463,14 @@ export class TranslationService {
       }
       \`\`\`
 
+      **状态字段说明（status）**:
+      - **"planning"**: 准备阶段，正在规划任务、获取上下文、创建待办事项等。在此阶段可以使用工具获取信息、规划任务。
+      - **"working"**: 工作阶段，正在翻译段落。可以输出部分翻译结果，状态保持为 "working" 直到完成所有段落。
+      - **"completed"**: 完成阶段，当前块的所有段落翻译已完成。系统会验证所有段落都有翻译，如果缺少会要求继续工作。
+      - **"done"**: 完成阶段，所有后续操作（创建记忆、更新术语/角色、待办事项等）都已完成，可以进入下一个块。
+
       **格式要求清单**:
+      - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
       - 如果有章节标题，必须包含 \`titleTranslation\` 字段
       - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
       - 段落 ID 必须与原文**完全一致**
@@ -476,42 +478,54 @@ export class TranslationService {
       - 必须是有效的 JSON（注意转义特殊字符）
       - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
       - **不要使用任何翻译管理工具，只返回JSON**
+      - **在所有状态阶段都可以使用工具**（planning、working、completed、done）
 
       ========================================
-      【执行工作流】
+      【执行工作流（基于状态）】
       ========================================
-      翻译每个文本块时，按以下步骤执行：
+      翻译每个文本块时，按以下状态流程执行：
 
-      1. **准备阶段**:
+      1. **规划阶段（status: "planning"）**:
          - 仔细阅读【相关术语参考】和【相关角色参考】
          - 检查术语/角色分离是否正确
          - 检查是否有空翻译需要补充
          - 检查是否有描述不匹配需要更新
+         - 可以使用工具获取上下文、创建待办事项等
+         - 当准备好开始翻译时，将状态设置为 "working"
 
-      2. **翻译阶段**:
+      2. **工作阶段（status: "working"）**:
          - 逐段翻译，确保 1:1 对应
          - 遇到敬语时，严格按照【敬语翻译工作流】执行
          - 遇到新术语时，先检查词频，确认需要后创建
          - 遇到新角色时，先检查是否为别名，确认是新角色后创建
          - 发现数据问题（空翻译、描述不匹配、重复项）时立即修复
+         - 可以输出部分翻译结果，状态保持为 "working"
+         - 可以使用工具进行任何需要的操作
+         - 当完成所有段落翻译时，将状态设置为 "completed"
 
-      3. **验证阶段**:
-         - 确保所有段落都有翻译
-         - 确保段落 ID 完全对应
-         - 确保 JSON 格式有效
-         - 确保术语和角色翻译与参考资料一致
-         - 确保翻译与原文格式一致，如换行符、标点符号等
+      3. **完成阶段（status: "completed"）**:
+         - 系统会自动验证所有段落都有翻译
+         - 如果缺少翻译，系统会要求继续工作（状态回到 "working"）
+         - 如果所有段落都完整，系统会询问是否需要后续操作
+         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
+         - 当所有后续操作完成时，将状态设置为 "done"
 
-      4. **输出阶段**:
-         - 返回符合格式要求的 JSON
-         - 确保所有输入段落都在 \`paragraphs\` 数组中
-         - 如有章节标题，必须包含 \`titleTranslation\` 字段
-         - 确保 JSON 格式有效`;
+      4. **最终完成（status: "done"）**:
+         - 所有操作已完成
+         - 系统会进入下一个文本块或完成整个任务`;
 
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始翻译任务。`;
+      let initialUserPrompt = `开始翻译任务。
+
+**重要：必须使用状态字段（status）**
+- 所有响应必须是有效的 JSON 格式，包含 status 字段
+- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
+- 可以从 "planning" 状态开始，规划任务、获取上下文
+- 准备好后，将状态设置为 "working" 并开始翻译
+- 完成所有段落翻译后，将状态设置为 "completed"
+- 完成所有后续操作后，将状态设置为 "done"`;
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
@@ -525,15 +539,17 @@ export class TranslationService {
       - 例如：为大型章节创建待办事项来跟踪翻译进度、术语检查、角色一致性检查等子任务
       - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："翻译第1-5段，检查术语一致性，确保角色名称翻译一致" 而不是 "翻译文本"
 
-      【执行清单（按顺序执行）】
-      1. **准备阶段**:
+      【执行清单（按状态流程执行）】
+      1. **规划阶段（status: "planning"）**:
          - 仔细阅读【相关术语参考】和【相关角色参考】
          - 检查术语/角色分离是否正确（术语表中不能有人名，角色表中不能有术语）
          - 检查是否有空翻译（translation 为空）→ 立即使用工具更新
          - 检查是否有描述不匹配 → 立即使用工具更新
          - 检查是否有重复角色 → 合并（删除重复，添加为别名）
+         - 可以使用工具获取上下文、创建待办事项等
+         - 准备好后，将状态设置为 "working"
 
-      2. **翻译阶段**:
+      2. **工作阶段（status: "working"）**:
          - 逐段翻译，严格保证 1:1 段落对应
          - 遇到敬语时，严格按照工作流执行：
            (1) 检查角色别名翻译（最高优先级）
@@ -544,22 +560,22 @@ export class TranslationService {
          - 遇到新术语时：先使用 get_occurrences_by_keywords 检查词频（≥3次才添加），确认需要后创建
          - 遇到新角色时：先使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）
          - 发现数据问题（空翻译、描述不匹配、重复项、错误分类）时立即使用工具修复
+         - 可以输出部分翻译结果，状态保持为 "working"
+         - 完成所有段落翻译后，将状态设置为 "completed"
 
-      3. **验证阶段**:
-         - 确保所有段落都有翻译（检查 paragraphs 数组是否包含所有输入段落的 ID）
-         - 确保段落 ID 完全对应
-         - 确保术语和角色翻译与参考资料一致
-
-      4. **输出阶段**:
-         - 返回符合格式要求的 JSON
-         - 确保所有输入段落都在 paragraphs 数组中
-         - 如果有章节标题，必须包含 titleTranslation 字段
+      3. **完成阶段（status: "completed"）**:
+         - 系统会自动验证所有段落都有翻译
+         - 如果缺少翻译，系统会要求继续工作（状态回到 "working"）
+         - 如果所有段落都完整，系统会询问是否需要后续操作
+         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
+         - 完成所有后续操作后，将状态设置为 "done"
 
       ⚠️ **关键提醒**:
       - 敬语翻译：别名匹配 > 角色关系 > 历史记录。禁止自动创建敬语别名。
       - 数据维护：严禁人名入术语表。发现空翻译立即修复。
       - 一致性：严格遵守已有术语/角色翻译。
-      - 格式：保持 JSON 格式，段落 ID 对应，1:1 段落对应。`;
+      - 格式：保持 JSON 格式，包含 status 字段，段落 ID 对应，1:1 段落对应。
+      - 工具使用：在所有状态阶段都可以使用工具。`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -760,7 +776,6 @@ export class TranslationService {
         // 重试循环
         let retryCount = 0;
         let chunkProcessed = false;
-        let finalResponseText: string | null = null;
 
         while (retryCount <= MAX_RETRIES && !chunkProcessed) {
           try {
@@ -788,8 +803,8 @@ export class TranslationService {
 
             history.push({ role: 'user', content });
 
-            // 使用共享的工具调用循环
-            finalResponseText = await executeToolCallLoop({
+            // 使用共享的工具调用循环（基于状态的流程）
+            const loopResult = await executeToolCallLoop({
               history,
               tools,
               generateText: service.generateText.bind(service),
@@ -807,222 +822,56 @@ export class TranslationService {
               includePreview: false,
             });
 
-            // 检查是否在达到最大回合数后仍未获得翻译结果
-            checkMaxTurnsReached(finalResponseText, 10, 'translation');
+            // 检查状态
+            if (loopResult.status !== 'done') {
+              throw new Error(`翻译任务未完成（状态: ${loopResult.status}）。请重试。`);
+            }
 
-            // 解析 JSON 响应
-            try {
-              // 尝试提取 JSON
-              const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-              let chunkTranslation = '';
-              const extractedTranslations: Map<string, string> = new Map();
+            // 提取标题翻译（如果是第一个块）
+            if (i === 0 && chapterTitle && loopResult.titleTranslation) {
+              titleTranslation = loopResult.titleTranslation;
+            }
 
-              // 如果是第一个块且有标题，尝试提取标题翻译（在 JSON 解析之前和之后都尝试）
-              if (i === 0 && chapterTitle) {
-                // 首先尝试从 JSON 中提取
-                if (jsonMatch) {
-                  try {
-                    const jsonStr = jsonMatch[0];
-                    const data = JSON.parse(jsonStr);
-                    if (data.titleTranslation) {
-                      titleTranslation = data.titleTranslation;
-                    }
-                  } catch {
-                    // JSON 解析失败，稍后在外部 try-catch 中处理
-                  }
-                }
+            // 使用从状态流程中提取的段落翻译
+            const extractedTranslations = loopResult.paragraphs;
 
-                // 如果 JSON 提取失败，尝试从文本中直接提取标题翻译
-                if (!titleTranslation) {
-                  // 尝试匹配 "titleTranslation": "..." 模式
-                  const titleMatch = finalResponseText.match(/"titleTranslation"\s*:\s*"([^"]+)"/);
-                  if (titleMatch && titleMatch[1]) {
-                    titleTranslation = titleMatch[1];
-                  }
+            // 按顺序组织翻译文本
+            if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+              const orderedTranslations: string[] = [];
+              const chunkParagraphTranslations: { id: string; translation: string }[] = [];
+              for (const paraId of chunk.paragraphIds) {
+                const translation = extractedTranslations.get(paraId);
+                if (translation) {
+                  orderedTranslations.push(translation);
+                  const paraTranslation = { id: paraId, translation };
+                  paragraphTranslations.push(paraTranslation);
+                  chunkParagraphTranslations.push(paraTranslation);
                 }
               }
-
-              if (jsonMatch) {
-                const jsonStr = jsonMatch[0];
+              const orderedText = orderedTranslations.join('\n\n');
+              translatedText += orderedText;
+              if (onChunk) {
+                await onChunk({ text: orderedText, done: false });
+              }
+              // 通知段落翻译完成
+              if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
                 try {
-                  const data = JSON.parse(jsonStr);
-
-                  // 如果是第一个块且有标题，再次尝试提取标题翻译（确保提取到最新值）
-                  if (i === 0 && chapterTitle && data.titleTranslation) {
-                    titleTranslation = data.titleTranslation;
-                  }
-
-                  // 优先使用 paragraphs 数组（结构化数据）
-                  if (data.paragraphs && Array.isArray(data.paragraphs)) {
-                    for (const para of data.paragraphs) {
-                      if (para.id && para.translation) {
-                        extractedTranslations.set(para.id, para.translation);
-                      }
-                    }
-
-                    // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
-                    if (data.translation) {
-                      chunkTranslation = data.translation;
-                    } else if (extractedTranslations.size > 0 && chunk.paragraphIds) {
-                      // 从 paragraphs 数组构建完整文本
-                      const orderedTexts: string[] = [];
-                      for (const paraId of chunk.paragraphIds) {
-                        const translation = extractedTranslations.get(paraId);
-                        if (translation) {
-                          orderedTexts.push(translation);
-                        }
-                      }
-                      chunkTranslation = orderedTexts.join('\n\n');
-                    }
-                  } else if (data.translation) {
-                    // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
-                    console.warn(
-                      `[TranslationService] ⚠️ JSON中未找到paragraphs数组（块 ${i + 1}/${chunks.length}），将尝试从translation字符串中提取段落ID`,
-                    );
-                    chunkTranslation = data.translation;
-
-                    // 尝试从字符串中提取段落ID（兼容旧格式）
-                    const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
-                    idPattern.lastIndex = 0;
-                    let match;
-                    while ((match = idPattern.exec(chunkTranslation)) !== null) {
-                      const paragraphId = match[1]?.trim();
-                      const translation = match[2]?.trim();
-                      if (paragraphId && translation) {
-                        extractedTranslations.set(paragraphId, translation);
-                      }
-                    }
-                  } else {
-                    console.warn(
-                      `[TranslationService] ⚠️ AI响应JSON中未找到translation或paragraphs字段（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为翻译`,
-                    );
-                    chunkTranslation = finalResponseText;
-                  }
-                } catch (e) {
-                  console.warn(
-                    `[TranslationService] ⚠️ 解析AI响应JSON失败（块 ${i + 1}/${chunks.length}）`,
-                    e instanceof Error ? e.message : String(e),
+                  await onParagraphTranslation(chunkParagraphTranslations);
+                } catch (error) {
+                  console.error(
+                    `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
+                    error instanceof Error ? error.message : String(error),
                   );
-                  // JSON 解析失败，回退到原始文本处理
-                  chunkTranslation = finalResponseText;
-                }
-              } else {
-                // 不是 JSON，直接使用原始文本
-                console.warn(
-                  `[TranslationService] ⚠️ AI响应不是JSON格式（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为翻译`,
-                );
-                chunkTranslation = finalResponseText;
-              }
-
-              // 验证：检查当前块中的所有段落是否都有翻译
-              const missingIds: string[] = [];
-              if (chunk.paragraphIds && chunk.paragraphIds.length > 0) {
-                for (const paraId of chunk.paragraphIds) {
-                  if (!extractedTranslations.has(paraId)) {
-                    missingIds.push(paraId);
-                  }
+                  // 继续处理，不中断翻译流程
                 }
               }
-
-              if (missingIds.length > 0) {
-                console.warn(
-                  `[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 中缺失 ${missingIds.length}/${chunk.paragraphIds?.length || 0} 个段落的翻译`,
-                  {
-                    缺失段落ID:
-                      missingIds.slice(0, 5).join(', ') +
-                      (missingIds.length > 5 ? ` 等 ${missingIds.length} 个` : ''),
-                    已提取翻译数: extractedTranslations.size,
-                    预期段落数: chunk.paragraphIds?.length || 0,
-                  },
-                );
-                // 如果缺少段落ID，使用完整翻译文本作为后备方案
-                if (extractedTranslations.size === 0) {
-                  console.warn(
-                    `[TranslationService] ⚠️ 块 ${i + 1}/${chunks.length} 未找到任何段落ID，将整个翻译文本作为后备方案`,
-                  );
-                  translatedText += chunkTranslation;
-                  if (onChunk) {
-                    await onChunk({ text: chunkTranslation, done: false });
-                  }
-                } else {
-                  // 部分段落有ID，按顺序处理
-                  const orderedTranslations: string[] = [];
-                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
-                  if (chunk.paragraphIds) {
-                    for (const paraId of chunk.paragraphIds) {
-                      const translation = extractedTranslations.get(paraId);
-                      if (translation) {
-                        orderedTranslations.push(translation);
-                        const paraTranslation = { id: paraId, translation };
-                        paragraphTranslations.push(paraTranslation);
-                        chunkParagraphTranslations.push(paraTranslation);
-                      }
-                    }
-                  }
-                  const orderedText = orderedTranslations.join('\n\n');
-                  translatedText += orderedText || chunkTranslation;
-                  if (onChunk) {
-                    await onChunk({ text: orderedText || chunkTranslation, done: false });
-                  }
-                  // 通知段落翻译完成（即使只有部分段落）
-                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
-                    try {
-                      await onParagraphTranslation(chunkParagraphTranslations);
-                    } catch (error) {
-                      console.error(
-                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
-                        error instanceof Error ? error.message : String(error),
-                      );
-                      // 继续处理，不中断翻译流程
-                    }
-                  }
-                }
-              } else {
-                // 所有段落都有翻译，按顺序组织
-                if (extractedTranslations.size > 0 && chunk.paragraphIds) {
-                  const orderedTranslations: string[] = [];
-                  const chunkParagraphTranslations: { id: string; translation: string }[] = [];
-                  for (const paraId of chunk.paragraphIds) {
-                    const translation = extractedTranslations.get(paraId);
-                    if (translation) {
-                      orderedTranslations.push(translation);
-                      const paraTranslation = { id: paraId, translation };
-                      paragraphTranslations.push(paraTranslation);
-                      chunkParagraphTranslations.push(paraTranslation);
-                    }
-                  }
-                  const orderedText = orderedTranslations.join('\n\n');
-                  translatedText += orderedText;
-                  if (onChunk) {
-                    await onChunk({ text: orderedText, done: false });
-                  }
-                  // 通知段落翻译完成
-                  if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
-                    try {
-                      await onParagraphTranslation(chunkParagraphTranslations);
-                    } catch (error) {
-                      console.error(
-                        `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
-                        error instanceof Error ? error.message : String(error),
-                      );
-                      // 继续处理，不中断翻译流程
-                    }
-                  }
-                } else {
-                  // 没有提取到段落翻译，使用完整文本
-                  translatedText += chunkTranslation;
-                  if (onChunk) {
-                    await onChunk({ text: chunkTranslation, done: false });
-                  }
-                }
+            } else {
+              // 没有提取到段落翻译，使用完整文本作为后备
+              const fallbackText = loopResult.responseText || '';
+              translatedText += fallbackText;
+              if (onChunk) {
+                await onChunk({ text: fallbackText, done: false });
               }
-            } catch (e) {
-              console.warn(
-                `[TranslationService] ⚠️ 解析AI响应失败（块 ${i + 1}/${chunks.length}）`,
-                e instanceof Error ? e.message : String(e),
-              );
-              translatedText += finalResponseText;
-              if (onChunk) await onChunk({ text: finalResponseText, done: false });
             }
 
             // 标记块已成功处理（在所有处理完成后）
@@ -1064,7 +913,7 @@ export class TranslationService {
         await onChunk({ text: '', done: true });
       }
 
-      // 最终验证：确保所有段落都有翻译（排除原始文本为空的段落或只包含符号的段落）
+      // 验证：确保所有段落都有翻译（排除原始文本为空的段落或只包含符号的段落）
       const paragraphsWithText = content.filter((p) => {
         if (!p.text || p.text.trim().length === 0) {
           return false;
@@ -1078,10 +927,9 @@ export class TranslationService {
         (id) => !translatedParagraphIds.has(id),
       );
 
-      // 如果有缺失翻译的段落，重新翻译它们
       if (missingParagraphIds.length > 0) {
         console.warn(
-          `[TranslationService] ⚠️ 发现 ${missingParagraphIds.length}/${paragraphsWithText.length} 个段落缺少翻译，将重新翻译`,
+          `[TranslationService] ⚠️ 发现 ${missingParagraphIds.length}/${paragraphsWithText.length} 个段落缺少翻译`,
           {
             缺失段落ID:
               missingParagraphIds.slice(0, 5).join(', ') +
@@ -1090,185 +938,7 @@ export class TranslationService {
             已翻译段落数: paragraphTranslations.length,
           },
         );
-
-        if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            message: `发现 ${missingParagraphIds.length} 个段落缺少翻译，正在重新翻译...`,
-            status: 'processing',
-          });
-        }
-
-        // 获取需要重新翻译的段落
-        const missingParagraphs = paragraphsWithText.filter((p) =>
-          missingParagraphIds.includes(p.id),
-        );
-
-        // 重新翻译缺失的段落
-        try {
-          const missingChunkText = missingParagraphs
-            .map((p) => `[ID: ${p.id}] ${p.text}\n\n`)
-            .join('');
-          const missingChunkContext = getContext(missingParagraphs, book);
-
-          // 构建翻译请求
-          const retryContent = `以下段落缺少翻译，请为每个段落提供翻译：\n\n${missingChunkContext}${missingChunkText}`;
-          history.push({ role: 'user', content: retryContent });
-
-          let currentTurnCount = 0;
-          const MAX_TURNS = 5;
-          let finalResponseText = '';
-
-          while (currentTurnCount < MAX_TURNS) {
-            currentTurnCount++;
-
-            const request: TextGenerationRequest = {
-              messages: history,
-            };
-
-            if (tools.length > 0) {
-              request.tools = tools;
-            }
-
-            let accumulatedText = '';
-            const result = await service.generateText(config, request, (c) => {
-              // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
-              if (aiProcessingStore && taskId && c.reasoningContent) {
-                void aiProcessingStore.appendThinkingMessage(taskId, c.reasoningContent);
-              }
-
-              if (c.text) {
-                accumulatedText += c.text;
-                if (
-                  detectRepeatingCharacters(accumulatedText, missingChunkText, {
-                    logLabel: 'TranslationService',
-                  })
-                ) {
-                  throw new Error('AI降级检测：检测到重复字符，停止翻译');
-                }
-              }
-              return Promise.resolve();
-            });
-
-            if (result.toolCalls && result.toolCalls.length > 0) {
-              history.push({
-                role: 'assistant',
-                content: result.text || null,
-                tool_calls: result.toolCalls,
-              });
-
-              for (const toolCall of result.toolCalls) {
-                if (aiProcessingStore && taskId) {
-                  void aiProcessingStore.appendThinkingMessage(
-                    taskId,
-                    `\n[调用工具: ${toolCall.function.name}]\n`,
-                  );
-                }
-
-                const toolResult = await TranslationService.handleToolCall(
-                  toolCall,
-                  bookId || '',
-                  handleAction,
-                  onToast,
-                  taskId,
-                );
-
-                history.push({
-                  role: 'tool',
-                  content: toolResult.content,
-                  tool_call_id: toolCall.id,
-                  name: toolCall.function.name,
-                });
-
-                if (aiProcessingStore && taskId) {
-                  void aiProcessingStore.appendThinkingMessage(
-                    taskId,
-                    `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-                  );
-                }
-              }
-              // 工具调用完成后，添加提示要求AI继续完成翻译
-              history.push({
-                role: 'user',
-                content:
-                  '工具调用已完成。请继续完成当前文本块的翻译任务，返回包含翻译结果的JSON格式响应。不要跳过翻译，必须提供完整的翻译结果。',
-              });
-            } else {
-              finalResponseText = result.text;
-              if (
-                detectRepeatingCharacters(finalResponseText, missingChunkText, {
-                  logLabel: 'TranslationService',
-                })
-              ) {
-                throw new Error('AI降级检测：最终响应中检测到重复字符');
-              }
-              history.push({ role: 'assistant', content: finalResponseText });
-              break;
-            }
-          }
-
-          // 检查是否在达到最大回合数后仍未获得翻译结果
-          if (!finalResponseText || finalResponseText.trim().length === 0) {
-            throw new Error(
-              `AI在工具调用后未返回翻译结果（已达到最大回合数 ${MAX_TURNS}）。请重试。`,
-            );
-          }
-
-          // 解析重新翻译的结果
-          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-          const retranslatedParagraphs: { id: string; translation: string }[] = [];
-          if (jsonMatch) {
-            try {
-              const data = JSON.parse(jsonMatch[0]);
-              if (data.paragraphs && Array.isArray(data.paragraphs)) {
-                for (const para of data.paragraphs) {
-                  if (para.id && para.translation && missingParagraphIds.includes(para.id)) {
-                    const paraTranslation = {
-                      id: para.id,
-                      translation: para.translation,
-                    };
-                    // 检查是否已存在，如果存在则更新，否则添加
-                    const existingIndex = paragraphTranslations.findIndex(
-                      (pt) => pt.id === para.id,
-                    );
-                    if (existingIndex >= 0) {
-                      paragraphTranslations[existingIndex] = paraTranslation;
-                    } else {
-                      paragraphTranslations.push(paraTranslation);
-                    }
-                    retranslatedParagraphs.push(paraTranslation);
-                  }
-                }
-              }
-            } catch (e) {
-              console.warn(
-                `[TranslationService] ⚠️ 解析重新翻译结果失败，缺失 ${missingParagraphIds.length} 个段落`,
-                e instanceof Error ? e.message : String(e),
-              );
-            }
-          }
-          // 通知重新翻译的段落完成
-          if (onParagraphTranslation && retranslatedParagraphs.length > 0) {
-            try {
-              await onParagraphTranslation(retranslatedParagraphs);
-            } catch (error) {
-              console.error(
-                `[TranslationService] ⚠️ 保存重新翻译的段落失败`,
-                error instanceof Error ? error.message : String(error),
-              );
-              // 继续处理，不中断翻译流程
-            }
-          }
-        } catch (error) {
-          console.error(
-            `[TranslationService] ❌ 重新翻译缺失段落失败，${missingParagraphIds.length} 个段落未翻译`,
-            {
-              错误: error instanceof Error ? error.message : String(error),
-              缺失段落数: missingParagraphIds.length,
-              缺失段落ID: missingParagraphIds.slice(0, 5).join(', ') + '...',
-            },
-          );
-          // 即使重新翻译失败，也继续执行，至少我们已经记录了警告
-        }
+        // 注意：新的状态流程会在 executeToolCallLoop 中自动处理缺失段落
       } else {
         console.log(
           `[TranslationService] ✅ 翻译完成：所有 ${paragraphsWithText.length} 个有效段落都有翻译`,

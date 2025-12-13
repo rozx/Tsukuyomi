@@ -24,6 +24,33 @@ import { getPostToolCallReminder } from './todo-helper';
 export type TaskType = 'translation' | 'polish' | 'proofreading';
 
 /**
+ * 状态类型
+ */
+export type TaskStatus = 'planning' | 'working' | 'completed' | 'done';
+
+/**
+ * 解析后的 JSON 响应结果
+ */
+export interface ParsedResponse {
+  status: TaskStatus;
+  content?:
+    | {
+        paragraphs?: Array<{ id: string; translation: string }>;
+        titleTranslation?: string;
+      }
+    | undefined;
+  error?: string | undefined;
+}
+
+/**
+ * 验证结果
+ */
+export interface VerificationResult {
+  allComplete: boolean;
+  missingIds: string[];
+}
+
+/**
  * AI 处理 Store 接口
  */
 export interface AIProcessingStore {
@@ -43,6 +70,94 @@ export interface StreamCallbackConfig {
   aiProcessingStore: AIProcessingStore | undefined;
   originalText: string;
   logLabel: string;
+}
+
+/**
+ * 解析和验证 JSON 响应（带状态字段）
+ * @param responseText AI 返回的文本
+ * @returns 解析后的结果，包含状态和内容
+ */
+export function parseStatusResponse(responseText: string): ParsedResponse {
+  try {
+    // 尝试提取 JSON
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return {
+        status: 'working',
+        error: '响应中未找到 JSON 格式',
+      };
+    }
+
+    const jsonStr = jsonMatch[0];
+    const data = JSON.parse(jsonStr);
+
+    // 验证状态字段
+    if (!data.status || typeof data.status !== 'string') {
+      return {
+        status: 'working',
+        error: 'JSON 中缺少 status 字段',
+      };
+    }
+
+    const status = data.status as string;
+    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'done'];
+
+    if (!validStatuses.includes(status as TaskStatus)) {
+      return {
+        status: 'working',
+        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 done 之一`,
+      };
+    }
+
+    // 提取内容（如果有）
+    const content: ParsedResponse['content'] = {};
+    if (data.paragraphs && Array.isArray(data.paragraphs)) {
+      content.paragraphs = data.paragraphs;
+    }
+    if (data.titleTranslation && typeof data.titleTranslation === 'string') {
+      content.titleTranslation = data.titleTranslation;
+    }
+
+    return {
+      status: status as TaskStatus,
+      content: Object.keys(content).length > 0 ? content : undefined,
+    };
+  } catch (e) {
+    return {
+      status: 'working',
+      error: `JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+/**
+ * 验证段落翻译完整性
+ * @param expectedParagraphIds 期望的段落 ID 列表
+ * @param receivedTranslations 已收到的翻译（段落 ID 到翻译文本的映射）
+ * @param taskType 任务类型
+ * @param skipEmptyParagraphs 是否跳过空段落（用于 polish 和 proofreading）
+ * @returns 验证结果
+ */
+export function verifyParagraphCompleteness(
+  expectedParagraphIds: string[],
+  receivedTranslations: Map<string, string>,
+  taskType: TaskType,
+  _skipEmptyParagraphs: boolean = false,
+): VerificationResult {
+  const missingIds: string[] = [];
+
+  for (const paraId of expectedParagraphIds) {
+    // 对于 polish 和 proofreading，如果设置了 skipEmptyParagraphs，可以跳过空段落
+    // 但这里我们只检查是否有翻译，不检查段落是否为空
+    if (!receivedTranslations.has(paraId)) {
+      missingIds.push(paraId);
+    }
+  }
+
+  return {
+    allComplete: missingIds.length === 0,
+    missingIds,
+  };
 }
 
 /**
@@ -148,18 +263,19 @@ export function buildContinuePrompt(
   }
 
   const taskSpecificInstructions = {
-    translation: `- 必须返回包含翻译结果的JSON格式响应
+    translation: `- 必须返回包含翻译结果的JSON格式响应，包含 status 字段
 - 不要跳过翻译，必须提供完整的翻译结果
 - 确保 paragraphs 数组中包含所有输入段落的 ID 和对应翻译`,
-    polish: `- 必须返回包含润色结果的JSON格式响应
+    polish: `- 必须返回包含润色结果的JSON格式响应，包含 status 字段
 - 不要跳过润色，必须提供完整的润色结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中`,
-    proofreading: `- 必须返回包含校对结果的JSON格式响应
+    proofreading: `- 必须返回包含校对结果的JSON格式响应，包含 status 字段
 - 不要跳过校对，必须提供完整的校对结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中`,
   };
 
   prompt += `\n${taskSpecificInstructions[taskType]}
+- **必须包含 status 字段**：当前状态必须是 "working"（正在处理）或 "completed"（已完成当前块）
 - 工具调用只是为了获取参考信息，现在请直接返回${taskLabel}结果
 - **待办事项管理**：
   - 如果需要规划${taskLabel}步骤，可以使用 create_todo 创建待办事项
@@ -193,11 +309,15 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
 4. **标记待办完成**：如果已经完成了某个待办事项的任务，使用 \`mark_todo_done\` 工具将其标记为完成
 
 **重要说明**：
-- 这些操作都是**可选的**，如果你不需要进行任何后续操作，可以直接回复"已完成"或"无需其他操作"
+- 这些操作都是**可选的**，如果你不需要进行任何后续操作，请返回 JSON 格式，状态设置为 "done"
 - 如果你需要进行后续操作，请直接调用相应的工具
-- 如果不需要任何后续操作，请明确表示已完成，这样系统就会结束当前任务${todosReminder}
+- 如果不需要任何后续操作，请返回 JSON 格式：\`{"status": "done"}\`，这样系统就会结束当前任务${todosReminder}
 
-请告诉我你是否需要进行任何后续操作，或者直接表示已完成。`;
+**必须返回 JSON 格式**：
+- 如果需要进行后续操作，调用工具后继续返回 JSON，状态保持为 "completed"
+- 如果不需要后续操作，返回：\`{"status": "done"}\`
+
+请告诉我你是否需要进行任何后续操作，或者直接返回状态为 "done" 的 JSON。`;
 }
 
 /**
@@ -227,13 +347,30 @@ export interface ToolCallLoopConfig {
   logLabel: string;
   maxTurns?: number;
   includePreview?: boolean;
+  /**
+   * 验证回调：用于服务特定的验证逻辑
+   * @param expectedIds 期望的段落 ID 列表
+   * @param receivedTranslations 已收到的翻译
+   * @returns 验证结果
+   */
+  verifyCompleteness?: (
+    expectedIds: string[],
+    receivedTranslations: Map<string, string>,
+  ) => VerificationResult;
 }
 
 /**
- * 执行工具调用循环
- * 返回最终响应文本，如果没有工具调用则返回 null
+ * 执行工具调用循环（基于状态的流程）
+ * 返回最终响应文本和状态信息
  */
-export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<string | null> {
+export interface ToolCallLoopResult {
+  responseText: string | null;
+  status: TaskStatus;
+  paragraphs: Map<string, string>;
+  titleTranslation?: string | undefined;
+}
+
+export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<ToolCallLoopResult> {
   const {
     history,
     tools,
@@ -250,11 +387,21 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
     logLabel,
     maxTurns = 10,
     includePreview = false,
+    verifyCompleteness,
   } = config;
 
   let currentTurnCount = 0;
+  let currentStatus: TaskStatus = 'planning';
+  const accumulatedParagraphs = new Map<string, string>();
+  let titleTranslation: string | undefined;
   let finalResponseText: string | null = null;
-  let hasReceivedMainOutput = false; // 标记是否已收到主要输出内容
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+  const taskLabel = taskTypeLabels[taskType];
 
   while (currentTurnCount < maxTurns) {
     currentTurnCount++;
@@ -275,9 +422,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
     // 调用 AI
     const result = await generateText(aiServiceConfig, request, streamCallback);
 
+    // 保存思考内容
+    if (aiProcessingStore && taskId && result.reasoningContent) {
+      void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
+    }
+
     // 检查是否有工具调用
     if (result.toolCalls && result.toolCalls.length > 0) {
-      // 将助手的回复（包含工具调用）添加到历史
+      // 工具调用在所有状态阶段都允许
       history.push({
         role: 'assistant',
         content: result.text || null,
@@ -286,7 +438,13 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
 
       // 执行工具
       for (const toolCall of result.toolCalls) {
-        // 执行工具并记录结果
+        if (aiProcessingStore && taskId) {
+          void aiProcessingStore.appendThinkingMessage(
+            taskId,
+            `\n[调用工具: ${toolCall.function.name}]\n`,
+          );
+        }
+
         const toolResult = await ToolRegistry.handleToolCall(
           toolCall,
           bookId,
@@ -298,15 +456,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `\n[调用工具: ${toolCall.function.name}]\n`,
-          );
-          void aiProcessingStore.appendThinkingMessage(
-            taskId,
             `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
           );
         }
 
-        // 添加工具结果到历史
         history.push({
           role: 'tool',
           content: toolResult.content,
@@ -315,16 +468,15 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
         });
       }
 
-      // 如果已经收到主要输出，工具调用后的提示应该询问是否还需要其他操作
-      if (hasReceivedMainOutput) {
-        // 工具调用完成后，继续询问是否还需要其他操作
-        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+      // 根据当前状态决定下一步提示
+      if (currentStatus === 'planning') {
+        // 规划阶段：继续规划，直到状态变为 working
         history.push({
           role: 'user',
-          content: postOutputPrompt,
+          content: `请继续规划任务。当你准备好开始${taskLabel}时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
         });
-      } else {
-        // 构建并添加继续提示（要求返回主要输出）
+      } else if (currentStatus === 'working') {
+        // 工作阶段：继续工作
         const continuePrompt = buildContinuePrompt(
           taskType,
           paragraphIds,
@@ -336,65 +488,144 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<s
           role: 'user',
           content: continuePrompt,
         });
-      }
-
-      // 继续循环，将工具结果和提示发送给 AI
-    } else {
-      // 没有工具调用，这是回复
-      const responseText = result.text;
-
-      // 保存思考内容到思考过程（从最终结果）
-      if (aiProcessingStore && taskId && result.reasoningContent) {
-        void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-      }
-
-      // 如果还没有收到主要输出，这是主要输出内容
-      if (!hasReceivedMainOutput) {
-        finalResponseText = responseText;
-
-        // 再次检测最终响应中的重复字符，传入原文进行比较
-        if (
-          finalResponseText &&
-          detectRepeatingCharacters(finalResponseText, chunkText, { logLabel })
-        ) {
-          throw new Error(`AI降级检测：最终响应中检测到重复字符`);
-        }
-
-        if (finalResponseText) {
-          history.push({ role: 'assistant', content: finalResponseText });
-        }
-
-        // 标记已收到主要输出，并询问是否需要后续操作
-        hasReceivedMainOutput = true;
-
-        // 添加后续操作提示，给 AI 一个机会进行后续操作（如创建记忆、更新术语等）
+      } else if (currentStatus === 'completed') {
+        // 完成阶段：询问后续操作
         const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
         history.push({
           role: 'user',
           content: postOutputPrompt,
         });
-
-        // 继续循环，给 AI 机会进行后续操作
-        continue;
-      } else {
-        // 已经收到主要输出，这是对后续操作提示的回复
-        // 如果 AI 没有进行工具调用，说明它已经完成了所有操作（或者选择不进行后续操作）
-        // 将回复添加到历史，然后结束循环
-        if (responseText) {
-          history.push({ role: 'assistant', content: responseText });
-        }
-        // 结束循环，主要输出已经完成，AI 可以选择不进行后续操作
-        break;
+      } else if (currentStatus === 'done') {
+        // 完成阶段：应该已经完成，但允许最后的工具调用
+        history.push({
+          role: 'user',
+          content: `所有操作已完成。如果还有需要处理的事项，请继续。否则请保持状态为 "done"。`,
+        });
       }
+
+      continue;
+    }
+
+    // 没有工具调用，解析响应
+    const responseText = result.text || '';
+    finalResponseText = responseText;
+
+    // 检测重复字符
+    if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
+      throw new Error(`AI降级检测：最终响应中检测到重复字符`);
+    }
+
+    // 解析状态响应
+    const parsed = parseStatusResponse(responseText);
+
+    if (parsed.error) {
+      // JSON 解析失败，要求重试
+      console.warn(`[${logLabel}] ⚠️ ${parsed.error}`);
+      history.push({
+        role: 'assistant',
+        content: responseText,
+      });
+      history.push({
+        role: 'user',
+        content: `响应格式错误：${parsed.error}。请确保返回有效的 JSON 格式，包含 status 字段（值必须是 planning、working、completed 或 done 之一）。`,
+      });
+      continue;
+    }
+
+    // 更新状态
+    currentStatus = parsed.status;
+
+    // 提取内容
+    if (parsed.content) {
+      if (parsed.content.paragraphs) {
+        for (const para of parsed.content.paragraphs) {
+          if (para.id && para.translation) {
+            accumulatedParagraphs.set(para.id, para.translation);
+          }
+        }
+      }
+      if (parsed.content.titleTranslation) {
+        titleTranslation = parsed.content.titleTranslation;
+      }
+    }
+
+    // 将响应添加到历史
+    history.push({
+      role: 'assistant',
+      content: responseText,
+    });
+
+    // 根据状态处理
+    if (currentStatus === 'planning') {
+      // 规划阶段：继续规划
+      history.push({
+        role: 'user',
+        content: `请继续规划任务。当你准备好开始${taskLabel}时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
+      });
+      continue;
+    } else if (currentStatus === 'working') {
+      // 工作阶段：继续工作，直到状态变为 completed
+      history.push({
+        role: 'user',
+        content: `请继续${taskLabel}任务。当你完成当前块的所有段落${taskLabel}时，请将状态设置为 "completed"。`,
+      });
+      continue;
+    } else if (currentStatus === 'completed') {
+      // 完成阶段：验证完整性
+      if (paragraphIds && paragraphIds.length > 0) {
+        const verification = verifyCompleteness
+          ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
+          : verifyParagraphCompleteness(
+              paragraphIds,
+              accumulatedParagraphs,
+              taskType,
+              taskType === 'polish' || taskType === 'proofreading',
+            );
+
+        if (!verification.allComplete && verification.missingIds.length > 0) {
+          // 缺少段落，要求继续工作
+          const missingIdsList = verification.missingIds.slice(0, 10).join(', ');
+          const hasMore = verification.missingIds.length > 10;
+          history.push({
+            role: 'user',
+            content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
+          });
+          currentStatus = 'working';
+          continue;
+        }
+      }
+
+      // 所有段落都完整，询问后续操作
+      const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+      history.push({
+        role: 'user',
+        content: postOutputPrompt,
+      });
+      continue;
+    } else if (currentStatus === 'done') {
+      // 完成：退出循环
+      break;
     }
   }
 
-  return finalResponseText;
+  // 检查是否达到最大回合数
+  if (currentStatus !== 'done' && currentTurnCount >= maxTurns) {
+    throw new Error(
+      `AI在${maxTurns}回合内未完成${taskLabel}任务（当前状态: ${currentStatus}）。请重试。`,
+    );
+  }
+
+  return {
+    responseText: finalResponseText,
+    status: currentStatus,
+    paragraphs: accumulatedParagraphs,
+    titleTranslation,
+  };
 }
 
 /**
- * 检查是否达到最大回合数限制
- * 使用类型断言函数，确保 TypeScript 知道如果函数不抛出，则 finalResponseText 不是 null
+ * 检查是否达到最大回合数限制（已废弃，状态检查在 executeToolCallLoop 中处理）
+ * 保留此函数以保持向后兼容性
  */
 export function checkMaxTurnsReached(
   finalResponseText: string | null,

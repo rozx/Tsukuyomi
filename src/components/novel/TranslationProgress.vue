@@ -3,11 +3,17 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   isTranslating?: boolean;
   isPolishing?: boolean;
@@ -154,6 +160,32 @@ const taskFolded = ref<Record<string, boolean>>({});
 
 const toggleTaskFold = (taskId: string) => {
   taskFolded.value[taskId] = !taskFolded.value[taskId];
+};
+
+// Active Tab State for each task
+const activeTab = ref<Record<string, string>>({});
+
+const setActiveTab = (taskId: string, value: string) => {
+  activeTab.value[taskId] = value;
+};
+
+const getActiveTab = (taskId: string): string => {
+  // If user has already selected a tab, use that
+  const savedTab = activeTab.value[taskId];
+  if (savedTab) {
+    return savedTab;
+  }
+  // Otherwise, find the task and default to the tab with content
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (task) {
+    const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
+    const hasOutput = task.outputContent && task.outputContent.trim();
+    // If only output exists, default to output; otherwise default to thinking
+    if (hasOutput && !hasThinking) {
+      return 'output';
+    }
+  }
+  return 'thinking';
 };
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
@@ -594,85 +626,120 @@ watch(
               <Transition name="task-content">
                 <div v-if="!taskFolded[task.id]" class="ai-task-content">
                   <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
-                  <div
-                    v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                    class="ai-task-thinking"
+                  <Tabs
+                    :value="getActiveTab(task.id)"
+                    @update:value="(value) => setActiveTab(task.id, String(value))"
+                    class="ai-task-tabs"
                   >
-                    <div class="ai-task-thinking-header">
-                      <span class="ai-task-thinking-label">思考过程：</span>
-                      <Button
-                        :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
-                        :class="[
-                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                          { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
-                        ]"
-                        :title="
-                          autoScrollEnabled[task.id]
-                            ? '禁用自动滚动'
-                            : '启用自动滚动（新内容出现时自动滚动到底部）'
-                        "
-                        @click="toggleAutoScroll(task.id)"
-                      />
-                    </div>
-                    <div
-                      :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
-                      class="ai-task-thinking-text"
-                    >
-                      <template
-                        v-for="(part, index) in formatThinkingMessage(task.thinkingMessage || '')"
-                        :key="index"
+                    <TabList>
+                      <Tab
+                        value="thinking"
+                        :disabled="!task.thinkingMessage || !task.thinkingMessage.trim()"
                       >
+                        思考过程
+                      </Tab>
+                      <Tab
+                        value="output"
+                        :disabled="!task.outputContent || !task.outputContent.trim()"
+                      >
+                        输出内容
+                      </Tab>
+                    </TabList>
+                    <TabPanels>
+                      <TabPanel value="thinking">
                         <div
-                          v-if="part.type === 'chunk-separator'"
-                          class="thinking-chunk-separator"
+                          v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                          class="ai-task-thinking"
                         >
-                          <i class="pi pi-minus"></i>
-                          <span>{{ part.chunkInfo }}</span>
-                          <i class="pi pi-minus"></i>
+                          <div class="ai-task-thinking-header">
+                            <span class="ai-task-thinking-label">思考过程：</span>
+                            <Button
+                              :icon="
+                                autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
+                              "
+                              :class="[
+                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                                { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                              ]"
+                              :title="
+                                autoScrollEnabled[task.id]
+                                  ? '禁用自动滚动'
+                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
+                              "
+                              @click="toggleAutoScroll(task.id)"
+                            />
+                          </div>
+                          <div
+                            :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
+                            class="ai-task-thinking-text"
+                          >
+                            <template
+                              v-for="(part, index) in formatThinkingMessage(
+                                task.thinkingMessage || '',
+                              )"
+                              :key="index"
+                            >
+                              <div
+                                v-if="part.type === 'chunk-separator'"
+                                class="thinking-chunk-separator"
+                              >
+                                <i class="pi pi-minus"></i>
+                                <span>{{ part.chunkInfo }}</span>
+                                <i class="pi pi-minus"></i>
+                              </div>
+                              <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
+                                <i class="pi pi-cog"></i>
+                                <span class="thinking-tool-label">调用工具：</span>
+                                <span class="thinking-tool-name">{{ part.toolName }}</span>
+                              </div>
+                              <div
+                                v-else-if="part.type === 'tool-result'"
+                                class="thinking-tool-result"
+                              >
+                                <i class="pi pi-check-circle"></i>
+                                <span class="thinking-tool-label">工具结果：</span>
+                                <span class="thinking-tool-content">{{ part.toolName }}</span>
+                              </div>
+                              <div v-else class="thinking-content">{{ part.text }}</div>
+                            </template>
+                          </div>
                         </div>
-                        <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
-                          <i class="pi pi-cog"></i>
-                          <span class="thinking-tool-label">调用工具：</span>
-                          <span class="thinking-tool-name">{{ part.toolName }}</span>
+                      </TabPanel>
+                      <TabPanel value="output">
+                        <div
+                          v-if="task.outputContent && task.outputContent.trim()"
+                          class="ai-task-output"
+                        >
+                          <div class="ai-task-output-header">
+                            <span class="ai-task-output-label">输出内容：</span>
+                            <Button
+                              :icon="
+                                autoScrollOutputEnabled[task.id]
+                                  ? 'pi pi-arrow-down'
+                                  : 'pi pi-arrows-v'
+                              "
+                              :class="[
+                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                                { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
+                              ]"
+                              :title="
+                                autoScrollOutputEnabled[task.id]
+                                  ? '禁用自动滚动'
+                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
+                              "
+                              @click="toggleAutoScrollOutput(task.id)"
+                            />
+                          </div>
+                          <div
+                            :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
+                            class="ai-task-output-text"
+                          >
+                            {{ task.outputContent }}
+                          </div>
                         </div>
-                        <div v-else-if="part.type === 'tool-result'" class="thinking-tool-result">
-                          <i class="pi pi-check-circle"></i>
-                          <span class="thinking-tool-label">工具结果：</span>
-                          <span class="thinking-tool-content">{{ part.toolName }}</span>
-                        </div>
-                        <div v-else class="thinking-content">{{ part.text }}</div>
-                      </template>
-                    </div>
-                  </div>
-                  <div
-                    v-if="task.outputContent && task.outputContent.trim()"
-                    class="ai-task-output"
-                  >
-                    <div class="ai-task-output-header">
-                      <span class="ai-task-output-label">输出内容：</span>
-                      <Button
-                        :icon="
-                          autoScrollOutputEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
-                        "
-                        :class="[
-                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                          { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
-                        ]"
-                        :title="
-                          autoScrollOutputEnabled[task.id]
-                            ? '禁用自动滚动'
-                            : '启用自动滚动（新内容出现时自动滚动到底部）'
-                        "
-                        @click="toggleAutoScrollOutput(task.id)"
-                      />
-                    </div>
-                    <div
-                      :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
-                      class="ai-task-output-text"
-                    >
-                      {{ task.outputContent }}
-                    </div>
-                  </div>
+                      </TabPanel>
+                    </TabPanels>
+                  </Tabs>
                 </div>
               </Transition>
             </div>
@@ -1008,6 +1075,40 @@ watch(
   line-height: 1.4;
 }
 
+.ai-task-tabs {
+  margin-top: 0.5rem;
+}
+
+.ai-task-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.ai-task-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.ai-task-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.ai-task-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.ai-task-tabs :deep(.p-tab[disabled]) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ai-task-tabs :deep(.p-tabpanels) {
+  padding: 0;
+}
+
 /* 折叠/展开过渡动画 */
 .task-content-enter-active,
 .task-content-leave-active {
@@ -1027,7 +1128,6 @@ watch(
 }
 
 .ai-task-thinking {
-  margin-top: 0.5rem;
   padding: 0.5rem;
   border-radius: 4px;
   background: var(--white-opacity-3);
@@ -1160,7 +1260,6 @@ watch(
 }
 
 .ai-task-output {
-  margin-top: 0.5rem;
   padding: 0.5rem;
   border-radius: 4px;
   background: var(--green-500-opacity-5);
