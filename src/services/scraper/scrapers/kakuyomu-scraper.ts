@@ -186,16 +186,14 @@ export class KakuyomuScraper extends BaseScraper {
             // <br> 标签转换为换行
             text += '\n';
           } else if (tagName === 'p') {
-            // 嵌套的 <p> 标签，递归提取并添加换行
+            // 嵌套的 <p> 标签，递归提取但不自动添加换行
+            // 只有 class="blank" 的 <p> 才会被处理为段落分隔
             const innerText = extractParagraphText($node);
             if (innerText.trim()) {
-              text += innerText + '\n';
-            } else {
-              // 嵌套的空 <p> 标签也添加换行
-              text += '\n';
+              text += innerText;
             }
           } else if (tagName === 'div') {
-            // <div> 标签，递归提取内容，可能添加换行
+            // <div> 标签，递归提取内容
             const innerText = extractParagraphText($node);
             if (innerText.trim()) {
               text += innerText;
@@ -214,34 +212,50 @@ export class KakuyomuScraper extends BaseScraper {
     };
 
     // 提取所有段落 <p> 标签
+    // 每个普通 <p> 标签作为新的一行（单换行）
+    // 只有 class="blank" 的 <p> 才作为段落分隔（双换行）
+    let currentParagraph = '';
+    
     contentElement.find('p').each((_, el) => {
       const $p = $(el);
+      const hasBlankClass = $p.hasClass('blank');
       const extractedText = extractParagraphText($p);
-
-      // 保持原始段落格式
       const cleanedText = extractedText.trim();
 
       // 检查是否为导航文本
-      if (!/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
-        // 非导航文本，正常添加（保持原始格式）
+      if (/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
+        return; // 跳过导航文本
+      }
+
+      if (hasBlankClass) {
+        // <p class="blank"> 作为段落分隔，结束当前段落并开始新段落
+        if (currentParagraph.trim()) {
+          paragraphs.push(currentParagraph.trim());
+          currentParagraph = '';
+        }
+      } else {
+        // 普通 <p> 标签，每个都作为新的一行（单换行）
         if (cleanedText) {
-          paragraphs.push(cleanedText);
+          if (currentParagraph) {
+            currentParagraph += '\n' + cleanedText;
+          } else {
+            currentParagraph = cleanedText;
+          }
         }
       }
     });
+
+    // 添加最后一个段落
+    if (currentParagraph.trim()) {
+      paragraphs.push(currentParagraph.trim());
+    }
 
     // 如果没有找到 <p> 标签，尝试直接提取所有文本内容
     if (paragraphs.length === 0) {
       const allText = extractParagraphText(contentElement);
       const cleanedText = allText.trim();
       if (cleanedText && !/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
-        // 按双换行符分割段落
-        const splitParagraphs = cleanedText.split(/\n{2,}/).filter((p) => p.trim());
-        if (splitParagraphs.length > 0) {
-          paragraphs.push(...splitParagraphs);
-        } else if (cleanedText) {
-          paragraphs.push(cleanedText);
-        }
+        paragraphs.push(cleanedText);
       }
     }
 
