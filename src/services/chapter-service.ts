@@ -1920,7 +1920,14 @@ export class ChapterService {
     type: 'original' | 'translation' | 'bilingual',
     format: 'txt' | 'json' | 'clipboard',
   ): Promise<void> {
-    if (!chapter || !chapter.content || chapter.content.length === 0) {
+    if (!chapter) {
+      throw new Error('章节内容为空，无法导出');
+    }
+
+    // 确保章节内容已加载
+    const chapterWithContent = await this.loadChapterContent(chapter);
+    
+    if (!chapterWithContent.content || chapterWithContent.content.length === 0) {
       throw new Error('章节内容为空，无法导出');
     }
 
@@ -1949,7 +1956,7 @@ export class ChapterService {
 
     // 构建导出内容
     if (format === 'json') {
-      const data = chapter.content.map((p) => ({
+      const data = chapterWithContent.content.map((p) => ({
         original: p.text,
         translation: getParagraphTranslationText(p),
       }));
@@ -1962,7 +1969,7 @@ export class ChapterService {
         2,
       );
     } else {
-      const lines = chapter.content.map((p) => {
+      const lines = chapterWithContent.content.map((p) => {
         const original = p.text;
         const translation = getParagraphTranslationText(p);
 
