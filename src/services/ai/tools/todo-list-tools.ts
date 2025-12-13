@@ -7,13 +7,13 @@ export const todoListTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'create_todo',
-        description: '创建新的待办事项。当用户要求添加任务或待办事项时使用此工具。',
+        description: '创建新的待办事项。当用户要求添加任务或待办事项时使用此工具。⚠️ 重要：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，而不是高层次的总结。',
         parameters: {
           type: 'object',
           properties: {
             text: {
               type: 'string',
-              description: '待办事项的内容描述',
+              description: '待办事项的内容描述。⚠️ 重要：必须提供详细、具体、可执行的描述，而不是总结性的描述。例如："翻译第1-5段，检查术语一致性" 而不是 "翻译文本"。',
             },
           },
           required: ['text'],

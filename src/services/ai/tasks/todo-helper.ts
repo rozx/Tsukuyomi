@@ -41,6 +41,8 @@ export function getTodosSystemPrompt(taskId: string, sessionId?: string): string
   prompt += '\n**重要提示**：\n';
   prompt += '- **规划建议**：在开始复杂任务前，你可以使用 `create_todo` 创建待办事项来规划步骤\n';
   prompt +=
+    '- **⚠️ 创建详细待办**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："翻译第1-5段，检查术语一致性，确保角色名称翻译一致" 而不是 "翻译文本"\n';
+  prompt +=
     '- **进度跟踪**：如果你已经完成了某个待办事项，立即使用 `mark_todo_done` 工具将其标记为完成\n';
   prompt += '- **任务关联**：如果当前任务与某个待办事项相关，请优先处理该待办事项\n';
   prompt +=
