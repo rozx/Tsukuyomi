@@ -2217,7 +2217,19 @@ export class ChapterService {
             return '';
         }
       });
-      content = `${chapterTitle}\n\n${lines.join('\n')}`;
+      // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
+      const processedLines = lines.map((line) => {
+        const trimmed = line.trim();
+        if (trimmed === '') {
+          // 空行替换为两个换行符
+          return '\n\n';
+        }
+        // 非空行：确保以至少一个换行符结尾
+        // 如果末尾已有换行符，保持不变；否则添加一个换行符
+        return line.endsWith('\n') ? line : `${line}\n`;
+      });
+      // 使用空字符串连接，因为每行已包含必要的换行符
+      content = `${chapterTitle}\n\n${processedLines.join('')}`;
     }
 
     // 执行导出动作
