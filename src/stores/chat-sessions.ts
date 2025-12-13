@@ -34,10 +34,11 @@ export interface MessageAction {
   chapter_title?: string; // 章节标题（用于 read chapter）
   character_name?: string; // 角色名称（用于 read character）
   tool_name?: string; // 工具名称（用于 read 操作）
+  keywords?: string[]; // 关键词数组（用于 batch_replace_translations 和 search_memory_by_keywords）
+  regex_pattern?: string; // 正则表达式模式（用于 search_paragraphs_by_regex）
   // Memory 相关信息
   memory_id?: string; // Memory ID（用于 memory 操作）
   keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
-  keywords?: string[]; // 搜索关键词数组（用于 search_memory_by_keywords）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用

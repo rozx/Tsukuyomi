@@ -418,6 +418,130 @@ export const paragraphTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
+        name: 'search_paragraphs_by_regex',
+        description:
+          '使用正则表达式搜索段落。支持在原文或翻译文本中搜索，可以匹配复杂的文本模式。用于查找符合特定模式的段落，例如查找包含特定格式的文本、数字模式、特定字符组合等。',
+        parameters: {
+          type: 'object',
+          properties: {
+            regex_pattern: {
+              type: 'string',
+              description: '正则表达式模式（字符串格式）。例如："\\d+年" 匹配包含数字和"年"的文本，"[あ-ん]+" 匹配平假名等。',
+            },
+            chapter_id: {
+              type: 'string',
+              description: '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
+            },
+            max_paragraphs: {
+              type: 'number',
+              description: '可选的最大返回段落数量（默认 1）',
+            },
+            only_with_translation: {
+              type: 'boolean',
+              description:
+                '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落。',
+            },
+            search_in_translation: {
+              type: 'boolean',
+              description:
+                '是否在翻译文本中搜索（默认 false）。当设置为 true 时，在翻译文本中搜索；当设置为 false 时，在原文中搜索。',
+            },
+          },
+          required: ['regex_pattern'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const {
+        regex_pattern,
+        chapter_id,
+        max_paragraphs = 1,
+        only_with_translation = false,
+        search_in_translation = false,
+      } = args;
+      if (!regex_pattern || typeof regex_pattern !== 'string' || regex_pattern.trim().length === 0) {
+        throw new Error('正则表达式模式不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 验证正则表达式是否有效
+      try {
+        new RegExp(regex_pattern.trim());
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: `无效的正则表达式模式: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            tool_name: 'search_paragraphs_by_regex',
+            regex_pattern: regex_pattern.trim(),
+          },
+        });
+      }
+
+      // 使用优化的异步方法，按需加载章节内容
+      const results = await ChapterService.searchParagraphsByRegexAsync(
+        book,
+        regex_pattern.trim(),
+        chapter_id,
+        max_paragraphs,
+        only_with_translation,
+        search_in_translation,
+      );
+
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
+      return JSON.stringify({
+        success: true,
+        paragraphs: validResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          chapter: {
+            id: result.chapter.id,
+            title: result.chapter.title.original,
+            title_translation: result.chapter.title.translation?.translation || '',
+          },
+          volume: {
+            id: result.volume.id,
+            title: result.volume.title.original,
+            title_translation: result.volume.title.translation?.translation || '',
+          },
+          paragraph_index: result.paragraphIndex,
+          chapter_index: result.chapterIndex,
+          volume_index: result.volumeIndex,
+        })),
+        count: validResults.length,
+        regex_pattern: regex_pattern.trim(),
+        search_in_translation,
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
         name: 'get_translation_history',
         description:
           '获取段落的完整翻译历史。返回该段落的所有翻译版本，包括翻译ID、翻译内容、使用的AI模型等信息。用于查看段落的翻译历史记录。',
