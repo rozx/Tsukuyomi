@@ -346,16 +346,15 @@ export class TranslationService {
 
       **翻译中处理**:
       1. 发现空翻译 → 立即使用 \`update_term\` 更新
-      2. 发现需要新术语 → 先使用 \`get_occurrences_by_keywords\` 检查词频（≥3次才添加）
-      3. 确认需要后使用 \`create_term\` 创建
+      2. 发现需要新术语 → 直接使用 \`create_term\` 创建（无需检查词频）
 
       **术语创建原则**:
-      - ✅ 应该添加：特殊用法（如网络用语、网络梗、流行语等）、专有名词、特殊概念、反复出现（≥3次）且翻译固定的词汇
-      - ❌ 不应该添加：仅由汉字组成且无特殊含义的普通词汇、常见助词、通用词汇、出现次数<3次的词汇
+      - ✅ 应该添加：特殊用法（如网络用语、网络梗、流行语等）、专有名词、特殊概念、反复出现且翻译固定的词汇
+      - ❌ 不应该添加：仅由汉字组成且无特殊含义的普通词汇、常见助词、通用词汇
 
       **术语维护**:
       - 发现误分类的角色名称 → \`delete_term\` + \`create_character\`
-      - 发现无用术语 → 使用 \`get_occurrences_by_keywords\` 确认词频后 \`delete_term\`
+      - 发现无用术语 → \`delete_term\` 删除
       - 发现重复术语 → \`delete_term\` 删除重复项
 
       ========================================
@@ -418,9 +417,8 @@ export class TranslationService {
          - \`list_characters\`: 检查别名冲突、查找重复角色
          - \`create_memory\`: 保存记忆，用于保存背景设定、角色信息等记忆内容，每当翻译完成后，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
       2. **按需使用**:
-         - \`create_character\` / \`create_term\`: 确认需要时创建
+         - \`create_character\` / \`create_term\`: 确认需要时直接创建（无需检查词频）
          - \`delete_character\` / \`delete_term\`: 清理无用或重复项
-         - \`get_occurrences_by_keywords\`: 决定术语添加/删除前确认词频
          - \`get_previous_paragraphs\` / \`get_next_paragraphs\`: 需要更多上下文时
          - \`get_previous_chapter\` / \`get_next_chapter\`: 需要查看前一个或下一个章节的上下文时（用于理解章节间的连贯性和保持翻译一致性）
          - \`update_chapter_title\`: 更新章节标题（用于修正章节标题翻译，确保翻译格式的一致性）
@@ -496,7 +494,7 @@ export class TranslationService {
       2. **工作阶段（status: "working"）**:
          - 逐段翻译，确保 1:1 对应
          - 遇到敬语时，严格按照【敬语翻译工作流】执行
-         - 遇到新术语时，先检查词频，确认需要后创建
+         - 遇到新术语时，确认需要后直接创建（无需检查词频）
          - 遇到新角色时，先检查是否为别名，确认是新角色后创建
          - 发现数据问题（空翻译、描述不匹配、重复项）时立即修复
          - 可以输出部分翻译结果，状态保持为 "working"
@@ -557,7 +555,7 @@ export class TranslationService {
            (3) 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
            (4) 应用角色关系判断
            (5) 翻译并保持一致性，特别是换行符、标点符号等。
-         - 遇到新术语时：先使用 get_occurrences_by_keywords 检查词频（≥3次才添加），确认需要后创建
+         - 遇到新术语时：确认需要后直接使用 create_term 创建（无需检查词频）
          - 遇到新角色时：先使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）
          - 发现数据问题（空翻译、描述不匹配、重复项、错误分类）时立即使用工具修复
          - 可以输出部分翻译结果，状态保持为 "working"
@@ -755,7 +753,6 @@ export class TranslationService {
         3. **一致性要求**:
            - 严格遵守已有术语/角色翻译
            - 使用 find_paragraph_by_keywords 确保敬语翻译一致性
-           - 新术语创建前必须检查词频（≥3次才添加）
            - 新角色创建前必须检查是否为别名
         4. **输出格式（必须严格遵守）**:
            - 保持 JSON 格式，段落 ID 完全对应

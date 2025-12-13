@@ -297,7 +297,7 @@ export class PolishService {
         - 使用工具获取术语、角色和段落上下文。
         - 优先使用上下文中的术语/角色，如果上下文中没有，再调用工具查询。
         - 如遇到敬语翻译，必须使用 find_paragraph_by_keywords 检查历史翻译一致性。
-        - 如遇到新术语和角色，必须使用 get_occurrences_by_keywords 检查词频，确认需要后创建。
+        - 如遇到新术语和角色，确认需要后直接创建（无需检查词频）。
         - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
         - 如遇到数据问题，必须使用 update_term 或 update_character 修复。
         - 如遇到重复角色，必须使用 delete_character 删除重复，添加为别名。
