@@ -10,11 +10,6 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, Novel, Chapter } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
-import {
-  findUniqueTermsInText,
-  findUniqueCharactersInText,
-  calculateCharacterScores,
-} from 'src/utils/text-matcher';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -303,13 +298,14 @@ export class TranslationService {
       遇到包含敬语的文本时，必须按以下顺序执行：
 
       **步骤 1: 检查角色别名翻译（最高优先级）**
-      - 在【相关角色参考】中查找该角色的 \`aliases\` 列表
+      - 使用 \`get_character\` 或 \`search_characters_by_keywords\` 工具查找该角色
+      - 在角色的 \`aliases\` 列表中查找匹配的别名
       - 如果文本中的角色名称（带敬语）与某个别名**完全匹配**，且该别名已有翻译（\`translation\` 字段），**必须直接使用该翻译**
       - 如果别名中包含敬语但翻译为空，应使用 \`update_character\` 工具补充该别名的翻译
       - ⚠️ **禁止自动创建新的敬语别名**
 
       **步骤 2: 查看角色设定**
-      - 如果别名中没有找到匹配的翻译，查看【相关角色参考】中角色的 \`description\` 字段
+      - 如果别名中没有找到匹配的翻译，查看角色的 \`description\` 字段
       - 角色描述应包含**角色关系信息**（如"主角的妹妹"、"同班同学"、"上司"等）
       - 如果描述中缺少关系信息，应使用 \`update_character\` 工具补充
 
@@ -339,7 +335,7 @@ export class TranslationService {
       - ❌ 角色表中**绝对不能**包含术语
 
       **翻译前检查**:
-      1. 检查【相关术语参考】中的术语
+      1. 使用 \`list_terms\` 或 \`search_terms_by_keywords\` 工具获取相关术语
       2. 确认术语/角色分离正确
       3. 检查空翻译 → 使用 \`update_term\` 立即更新
       4. 检查描述匹配 → 使用 \`update_term\` 更新
@@ -365,7 +361,7 @@ export class TranslationService {
       - **别名 (\`aliases\`)**: 名字或姓氏的**单独部分**（如 "田中"、"太郎"），或带敬语的称呼（如 "田中さん"）
 
       **翻译前检查**:
-      1. 检查【相关角色参考】中的角色
+      1. 使用 \`list_characters\` 或 \`search_characters_by_keywords\` 工具获取相关角色
       2. 确认术语/角色分离正确
       3. 检查空翻译 → 使用 \`update_character\` 立即更新
       4. 检查描述/口吻 → 使用 \`update_character\` 更新
@@ -405,16 +401,13 @@ export class TranslationService {
       ========================================
       【工具使用说明】
       ========================================
-      **自动提供的参考**:
-      - 【相关术语参考】: 当前段落中出现的术语（可直接使用，无需调用工具）
-      - 【相关角色参考】: 当前段落中出现的角色（可直接使用，无需调用工具）
-
       **工具使用优先级**:
       1. **高频必用**:
          - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
-         - \`list_characters\`: 检查别名冲突、查找重复角色
+         - \`list_characters\`: 检查别名冲突、查找重复角色。⚠️ **重要**：如果提供了章节 ID，应传递 \`chapter_id\` 参数以只获取该章节的角色；如果需要所有章节的角色，设置 \`all_chapters=true\`
+         - \`list_terms\`: 获取术语列表。⚠️ **重要**：如果提供了章节 ID，应传递 \`chapter_id\` 参数以只获取该章节的术语；如果需要所有章节的术语，设置 \`all_chapters=true\`
          - \`create_memory\`: 保存记忆，用于保存背景设定、角色信息等记忆内容，每当翻译完成后，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
       2. **按需使用**:
          - \`create_character\` / \`create_term\`: 确认需要时直接创建（无需检查词频）
@@ -484,7 +477,8 @@ export class TranslationService {
       翻译每个文本块时，按以下状态流程执行：
 
       1. **规划阶段（status: "planning"）**:
-         - 仔细阅读【相关术语参考】和【相关角色参考】
+         - 使用工具获取上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords 等）
+         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色
          - 检查术语/角色分离是否正确
          - 检查是否有空翻译需要补充
          - 检查是否有描述不匹配需要更新
@@ -539,7 +533,8 @@ export class TranslationService {
 
       【执行清单（按状态流程执行）】
       1. **规划阶段（status: "planning"）**:
-         - 仔细阅读【相关术语参考】和【相关角色参考】
+         - 使用工具获取上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords 等）
+         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色
          - 检查术语/角色分离是否正确（术语表中不能有人名，角色表中不能有术语）
          - 检查是否有空翻译（translation 为空）→ 立即使用工具更新
          - 检查是否有描述不匹配 → 立即使用工具更新
@@ -583,73 +578,11 @@ export class TranslationService {
       const CHUNK_SIZE = TranslationService.CHUNK_SIZE;
       const chunks: Array<{
         text: string;
-        context?: string;
         paragraphIds?: string[];
       }> = [];
 
-      // 计算全文的角色出现得分，用于消歧义
-      let characterScores: Map<string, number> | undefined;
-      if (book && book.characterSettings) {
-        const fullText = content.map((p) => p.text).join('\n');
-        characterScores = calculateCharacterScores(fullText, book.characterSettings);
-      }
-
       let currentChunkText = '';
       let currentChunkParagraphs: Paragraph[] = [];
-
-      // 辅助函数：提取上下文
-      const getContext = (paragraphs: Paragraph[], bookData?: Novel): string => {
-        if (!bookData || paragraphs.length === 0) return '';
-
-        const textContent = paragraphs.map((p) => p.text).join('\n');
-        const contextParts: string[] = [];
-
-        // 查找相关术语
-        const relevantTerms = findUniqueTermsInText(textContent, bookData.terminologies || []);
-        if (relevantTerms.length > 0) {
-          contextParts.push('【相关术语参考】');
-          contextParts.push(
-            relevantTerms
-              .map(
-                (t) =>
-                  `- [ID: ${t.id}] ${t.name}: ${t.translation.translation}${t.description ? ` (${t.description})` : ''}`,
-              )
-              .join('\n'),
-          );
-        }
-
-        // 查找相关角色
-        const relevantCharacters = findUniqueCharactersInText(
-          textContent,
-          bookData.characterSettings || [],
-          characterScores,
-        );
-        if (relevantCharacters.length > 0) {
-          contextParts.push('【相关角色参考】');
-          contextParts.push(
-            relevantCharacters
-              .map((c) => {
-                let charInfo = `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}`;
-                if (c.aliases && c.aliases.length > 0) {
-                  const aliasList = c.aliases
-                    .map((a) => `${a.name}(${a.translation.translation})`)
-                    .join(', ');
-                  charInfo += ` [别名: ${aliasList}]`;
-                }
-                if (c.description) {
-                  charInfo += ` (${c.description})`;
-                }
-                if (c.speakingStyle) {
-                  charInfo += ` [口吻: ${c.speakingStyle}]`;
-                }
-                return charInfo;
-              })
-              .join('\n'),
-          );
-        }
-
-        return contextParts.length > 0 ? contextParts.join('\n') + '\n\n' : '';
-      };
 
       for (const paragraph of content) {
         // 跳过空段落（原始文本为空或只有空白字符）
@@ -660,18 +593,13 @@ export class TranslationService {
         // 格式化段落：[ID: {id}] {text}
         const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n\n`;
 
-        // 预测加入新段落后的上下文
-        const nextParagraphs = [...currentChunkParagraphs, paragraph];
-        const nextContext = getContext(nextParagraphs, book);
-
-        // 如果当前块加上新段落和上下文超过限制，且当前块不为空，则先保存当前块
+        // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
         if (
-          currentChunkText.length + paragraphText.length + nextContext.length > CHUNK_SIZE &&
+          currentChunkText.length + paragraphText.length > CHUNK_SIZE &&
           currentChunkText.length > 0
         ) {
           chunks.push({
             text: currentChunkText,
-            context: getContext(currentChunkParagraphs, book),
             paragraphIds: currentChunkParagraphs.map((p) => p.id),
           });
           currentChunkText = '';
@@ -684,7 +612,6 @@ export class TranslationService {
       if (currentChunkText.length > 0) {
         chunks.push({
           text: currentChunkText,
-          context: getContext(currentChunkParagraphs, book),
           paragraphIds: currentChunkParagraphs.map((p) => p.id),
         });
       }
@@ -704,7 +631,6 @@ export class TranslationService {
         if (!chunk) continue;
 
         const chunkText = chunk.text;
-        const chunkContext = chunk.context || '';
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
@@ -765,9 +691,9 @@ export class TranslationService {
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容：\n\n${chunkText}${maintenanceReminder}`;
         }
 
         // 重试循环

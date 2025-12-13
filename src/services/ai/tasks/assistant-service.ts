@@ -123,7 +123,7 @@ export class AssistantService {
         - ⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆
       - **update_term**: 更新术语
       - **delete_term**: 删除术语
-      - **list_terms**: 列出所有术语
+      - **list_terms**: 列出术语。可以通过 \`chapter_id\` 参数指定章节（只返回该章节中出现的术语），或设置 \`all_chapters=true\` 列出所有章节的术语
       - **search_terms_by_keywords**: 多关键词搜索（支持 translationOnly 参数）
         - ⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆
       - **get_occurrences_by_keywords**: 统计关键词出现次数
@@ -136,7 +136,7 @@ export class AssistantService {
       - **delete_character**: 删除角色
       - **search_characters_by_keywords**: 多关键词搜索（支持 translationOnly 参数）
         - ⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆
-      - **list_characters**: 列出所有角色
+      - **list_characters**: 列出角色设定。可以通过 \`chapter_id\` 参数指定章节（只返回该章节中出现的角色），或设置 \`all_chapters=true\` 列出所有章节的角色
 
       ### 内容管理（15个工具）
       - **get_book_info**: 获取书籍信息

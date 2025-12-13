@@ -9,11 +9,6 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, Novel, Chapter } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
-import {
-  findUniqueTermsInText,
-  findUniqueCharactersInText,
-  calculateCharacterScores,
-} from 'src/utils/text-matcher';
 import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
@@ -294,8 +289,8 @@ export class PolishService {
         - 选择最合适的词汇和句式，创造最佳润色结果。
 
       9. **工具使用**:
-        - 使用工具获取术语、角色和段落上下文。
-        - 优先使用上下文中的术语/角色，如果上下文中没有，再调用工具查询。
+        - 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。
+        - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色；如果需要所有章节的，设置 \`all_chapters=true\`
         - 如遇到敬语翻译，必须使用 find_paragraph_by_keywords 检查历史翻译一致性。
         - 如遇到新术语和角色，确认需要后直接创建（无需检查词频）。
         - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
@@ -409,7 +404,7 @@ export class PolishService {
         - 工具使用：在所有状态阶段都可以使用工具
         - **情感传达**: 准确传达意境和情感。
         - **历史参考**: 参考翻译历史和之前段落的原文和翻译，混合匹配最佳表达。
-        - **工具使用**: 优先使用上下文，必要时调用工具。
+        - **工具使用**: 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数。
         - **记忆**: 润色前搜索相关记忆，完成后可保存章节摘要。
         - **保留原文格式**: 保留原文的格式，如标点符号、换行符等。
         - **⚠️ 重要**: 只返回有变化的段落。如果段落没有改进或变化，不要包含在返回结果中。
@@ -424,75 +419,13 @@ export class PolishService {
       const CHUNK_SIZE = PolishService.CHUNK_SIZE;
       const chunks: Array<{
         text: string;
-        context?: string;
         paragraphIds?: string[];
         translationHistories?: Map<string, string[]>; // 段落ID -> 翻译历史数组
       }> = [];
 
-      // 计算全文的角色出现得分，用于消歧义
-      let characterScores: Map<string, number> | undefined;
-      if (book && book.characterSettings) {
-        const fullText = paragraphsWithTranslation.map((p) => p.text).join('\n');
-        characterScores = calculateCharacterScores(fullText, book.characterSettings);
-      }
-
       let currentChunkText = '';
       let currentChunkParagraphs: Paragraph[] = [];
       let currentChunkTranslationHistories = new Map<string, string[]>();
-
-      // 辅助函数：提取上下文
-      const getContext = (paragraphs: Paragraph[], bookData?: Novel): string => {
-        if (!bookData || paragraphs.length === 0) return '';
-
-        const textContent = paragraphs.map((p) => p.text).join('\n');
-        const contextParts: string[] = [];
-
-        // 查找相关术语
-        const relevantTerms = findUniqueTermsInText(textContent, bookData.terminologies || []);
-        if (relevantTerms.length > 0) {
-          contextParts.push('【相关术语参考】');
-          contextParts.push(
-            relevantTerms
-              .map(
-                (t) =>
-                  `- [ID: ${t.id}] ${t.name}: ${t.translation.translation}${t.description ? ` (${t.description})` : ''}`,
-              )
-              .join('\n'),
-          );
-        }
-
-        // 查找相关角色
-        const relevantCharacters = findUniqueCharactersInText(
-          textContent,
-          bookData.characterSettings || [],
-          characterScores,
-        );
-        if (relevantCharacters.length > 0) {
-          contextParts.push('【相关角色参考】');
-          contextParts.push(
-            relevantCharacters
-              .map((c) => {
-                let charInfo = `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}`;
-                if (c.aliases && c.aliases.length > 0) {
-                  const aliasList = c.aliases
-                    .map((a) => `${a.name}(${a.translation.translation})`)
-                    .join(', ');
-                  charInfo += ` [别名: ${aliasList}]`;
-                }
-                if (c.description) {
-                  charInfo += ` (${c.description})`;
-                }
-                if (c.speakingStyle) {
-                  charInfo += ` [口吻: ${c.speakingStyle}]`;
-                }
-                return charInfo;
-              })
-              .join('\n'),
-          );
-        }
-
-        return contextParts.length > 0 ? contextParts.join('\n') + '\n\n' : '';
-      };
 
       for (const paragraph of paragraphsWithTranslation) {
         // 获取段落的翻译历史（最多5个，最新的在前）
@@ -514,18 +447,13 @@ export class PolishService {
             : '';
         const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
 
-        // 预测加入新段落后的上下文
-        const nextParagraphs = [...currentChunkParagraphs, paragraph];
-        const nextContext = getContext(nextParagraphs, book);
-
-        // 如果当前块加上新段落和上下文超过限制，且当前块不为空，则先保存当前块
+        // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
         if (
-          currentChunkText.length + paragraphText.length + nextContext.length > CHUNK_SIZE &&
+          currentChunkText.length + paragraphText.length > CHUNK_SIZE &&
           currentChunkText.length > 0
         ) {
           chunks.push({
             text: currentChunkText,
-            context: getContext(currentChunkParagraphs, book),
             paragraphIds: currentChunkParagraphs.map((p) => p.id),
             translationHistories: new Map(currentChunkTranslationHistories),
           });
@@ -541,7 +469,6 @@ export class PolishService {
       if (currentChunkText.length > 0) {
         chunks.push({
           text: currentChunkText,
-          context: getContext(currentChunkParagraphs, book),
           paragraphIds: currentChunkParagraphs.map((p) => p.id),
           translationHistories: new Map(currentChunkTranslationHistories),
         });
@@ -564,7 +491,6 @@ export class PolishService {
         if (!chunk) continue;
 
         const chunkText = chunk.text;
-        const chunkContext = chunk.context || '';
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
@@ -595,10 +521,10 @@ export class PolishService {
 
         // 构建当前消息
         const maintenanceReminder = `
-⚠️ **提醒**:
+        ⚠️ **提醒**:
 - **语气词**: 适当添加，符合角色风格。
 - **自然流畅**: 摆脱翻译腔，使用地道中文。
-- **工具**: 优先使用上下文中的术语/角色，勿滥用列表工具。
+- **工具**: 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数。
 - **历史参考**: 参考翻译历史，混合匹配最佳表达。
 - **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。
 - **待办事项管理**（可选，用于任务规划）:
@@ -607,9 +533,9 @@ export class PolishService {
   - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容：\n\n${chunkText}${maintenanceReminder}`;
         }
 
         history.push({ role: 'user', content });

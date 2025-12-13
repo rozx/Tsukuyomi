@@ -176,9 +176,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = previousTerm
-        ? (cloneDeep(previousTerm) as Terminology)
-        : undefined;
+      const previousData = previousTerm ? (cloneDeep(previousTerm) as Terminology) : undefined;
 
       const updates: {
         translation?: string;
@@ -271,10 +269,20 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'list_terms',
         description:
-          '列出所有术语。在翻译开始前，可以使用此工具获取所有已存在的术语，以便在翻译时保持一致性。',
+          '列出术语。可以通过 chapter_id 参数指定章节（只返回该章节中出现的术语），或设置 all_chapters=true 列出所有章节的术语。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有术语。在翻译开始前，可以使用此工具获取相关术语，以便在翻译时保持一致性。',
         parameters: {
           type: 'object',
           properties: {
+            chapter_id: {
+              type: 'string',
+              description:
+                '章节 ID（可选）。如果提供，只返回在该章节中出现的术语。如果不提供且 all_chapters 为 false，则返回所有术语。',
+            },
+            all_chapters: {
+              type: 'boolean',
+              description:
+                '是否列出所有章节的术语（默认 false）。如果为 true，忽略 chapter_id 参数，返回所有术语。',
+            },
             limit: {
               type: 'number',
               description: '返回的术语数量限制（可选，默认返回所有）',
@@ -288,7 +296,7 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { limit } = args;
+      const { chapter_id, all_chapters = false, limit } = args;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
@@ -302,11 +310,27 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'list_terms',
+            chapter_id,
           },
         });
       }
 
       let terms: Terminology[] = book.terminologies || [];
+
+      // 如果 all_chapters 为 false，需要按章节过滤
+      if (!all_chapters) {
+        // 如果提供了 chapter_id，使用它；否则尝试从上下文中获取（但上下文没有，所以这里只处理提供了的情况）
+        if (chapter_id) {
+          // 只返回在该章节中出现的术语
+          terms = terms.filter((term) =>
+            term.occurrences.some((occ) => occ.chapterId === chapter_id),
+          );
+        }
+        // 如果没有提供 chapter_id，保持现有行为（返回所有）
+        // 注意：由于工具上下文没有当前章节信息，如果用户想要默认只列出当前章节的，
+        // 需要在调用时显式传递 chapter_id 参数
+      }
+
       if (limit && limit > 0) {
         terms = terms.slice(0, limit);
       }
@@ -319,8 +343,14 @@ export const terminologyTools: ToolDefinition[] = [
           translation: term.translation.translation,
           description: term.description,
           occurrences_count: term.occurrences.length,
+          chapter_occurrences: chapter_id
+            ? term.occurrences.find((occ) => occ.chapterId === chapter_id)?.count || 0
+            : undefined,
         })),
-        total: book.terminologies?.length || 0,
+        total: terms.length,
+        all_terms_count: book.terminologies?.length || 0,
+        ...(chapter_id ? { chapter_id } : {}),
+        ...(all_chapters ? { all_chapters: true } : {}),
       });
     },
   },
@@ -360,7 +390,9 @@ export const terminologyTools: ToolDefinition[] = [
       }
 
       // 过滤掉空字符串
-      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
       if (validKeywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -391,9 +423,8 @@ export const terminologyTools: ToolDefinition[] = [
           term.name.toLowerCase().includes(keyword),
         );
         // 搜索翻译
-        const translationMatch = keywordsLower.some(
-          (keyword) =>
-            term.translation?.translation?.toLowerCase().includes(keyword),
+        const translationMatch = keywordsLower.some((keyword) =>
+          term.translation?.translation?.toLowerCase().includes(keyword),
         );
 
         if (translation_only) {

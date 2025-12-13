@@ -36,7 +36,6 @@ const showAITaskHistory = ref(false);
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
-const showTodoList = ref(false);
 
 // Recent AI Tasks - only show translation-related tasks
 // 为了代码逻辑清晰，将 recentAITasks 放在 loadTodos 之前，因为 loadTodos 会使用它（但这不是技术上的要求）
@@ -56,6 +55,11 @@ const loadTodos = () => {
   const currentTaskIds = new Set(recentAITasks.value.map((task) => task.id));
   // 只显示属于当前任务的待办事项
   todos.value = allTodos.filter((todo) => currentTaskIds.has(todo.taskId));
+};
+
+// 获取特定任务的待办事项
+const getTodosForTask = (taskId: string): TodoItem[] => {
+  return todos.value.filter((todo) => todo.taskId === taskId);
 };
 
 // 监听待办事项变化（通过 localStorage 事件）
@@ -180,7 +184,11 @@ const getActiveTab = (taskId: string): string => {
   if (task) {
     const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
     const hasOutput = task.outputContent && task.outputContent.trim();
-    // If only output exists, default to output; otherwise default to thinking
+    const hasTodos = getTodosForTask(taskId).length > 0;
+    // Priority: todos > output > thinking
+    if (hasTodos) {
+      return 'todos';
+    }
     if (hasOutput && !hasThinking) {
       return 'output';
     }
@@ -513,22 +521,6 @@ watch(
         @click="showAITaskHistory = !showAITaskHistory"
       />
       <Button
-        icon="pi pi-check-square"
-        :class="[
-          'p-button-text p-button-sm translation-progress-todo-toggle',
-          { 'p-highlight': showTodoList },
-        ]"
-        :title="showTodoList ? '隐藏待办事项' : '显示待办事项'"
-        @click="showTodoList = !showTodoList"
-      >
-        <span
-          v-if="todos.filter((t) => !t.completed).length > 0"
-          class="ml-1 px-1 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
-        >
-          {{ todos.filter((t) => !t.completed).length }}
-        </span>
-      </Button>
-      <Button
         icon="pi pi-times"
         label="取消"
         class="p-button-text p-button-sm translation-progress-cancel"
@@ -644,6 +636,15 @@ watch(
                       >
                         输出内容
                       </Tab>
+                      <Tab value="todos" :disabled="getTodosForTask(task.id).length === 0">
+                        待办事项
+                        <Badge
+                          v-if="getTodosForTask(task.id).filter((t) => !t.completed).length > 0"
+                          :value="getTodosForTask(task.id).filter((t) => !t.completed).length"
+                          severity="info"
+                          class="ml-1"
+                        />
+                      </Tab>
                     </TabList>
                     <TabPanels>
                       <TabPanel value="thinking">
@@ -738,42 +739,45 @@ watch(
                           </div>
                         </div>
                       </TabPanel>
+                      <TabPanel value="todos">
+                        <div class="ai-task-todos">
+                          <div
+                            v-if="getTodosForTask(task.id).length === 0"
+                            class="ai-task-todos-empty"
+                          >
+                            <i class="pi pi-info-circle"></i>
+                            <span>该任务暂无待办事项</span>
+                          </div>
+                          <div v-else class="ai-task-todos-list">
+                            <div
+                              v-for="todo in getTodosForTask(task.id)"
+                              :key="todo.id"
+                              class="ai-task-todo-item"
+                              :class="{ 'todo-completed': todo.completed }"
+                            >
+                              <i
+                                class="pi ai-task-todo-check-icon"
+                                :class="
+                                  todo.completed
+                                    ? 'pi-check-circle text-green-400'
+                                    : 'pi-circle text-moon-50'
+                                "
+                              ></i>
+                              <span
+                                class="ai-task-todo-text"
+                                :class="{ 'line-through': todo.completed }"
+                              >
+                                {{ todo.text }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TabPanel>
                     </TabPanels>
                   </Tabs>
                 </div>
               </Transition>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <!-- 待办事项列表 -->
-    <div v-if="showTodoList" class="translation-progress-todo-wrapper">
-      <div class="translation-progress-todo">
-        <div class="todo-header">
-          <span class="todo-title">待办事项</span>
-          <span v-if="todos.filter((t) => !t.completed).length > 0" class="todo-count">
-            {{ todos.filter((t) => !t.completed).length }} 个未完成
-          </span>
-        </div>
-        <div v-if="todos.length === 0" class="todo-empty">
-          <i class="pi pi-info-circle"></i>
-          <span>暂无待办事项</span>
-        </div>
-        <div v-else class="todo-list">
-          <div
-            v-for="todo in todos"
-            :key="todo.id"
-            class="todo-item"
-            :class="{ 'todo-completed': todo.completed }"
-          >
-            <i
-              class="pi todo-check-icon"
-              :class="todo.completed ? 'pi-check-circle text-green-400' : 'pi-circle text-moon-50'"
-            ></i>
-            <span class="todo-text" :class="{ 'line-through': todo.completed }">
-              {{ todo.text }}
-            </span>
           </div>
         </div>
       </div>
@@ -1296,40 +1300,16 @@ watch(
   font-size: 0.8125rem;
 }
 
-/* 待办事项列表 */
-.translation-progress-todo-wrapper {
-  border-top: 1px solid var(--white-opacity-20);
-}
-
-.translation-progress-todo {
+.ai-task-todos {
+  padding: 0.5rem;
+  border-radius: 4px;
   background: var(--white-opacity-3);
-  padding: 1rem 1.5rem;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.todo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--white-opacity-10);
-}
-
-.todo-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-}
-
-.todo-count {
+  border: 1px solid var(--white-opacity-5);
   font-size: 0.75rem;
-  color: var(--primary-opacity-80);
-  font-weight: 500;
+  line-height: 1.5;
 }
 
-.todo-empty {
+.ai-task-todos-empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1339,13 +1319,15 @@ watch(
   font-size: 0.875rem;
 }
 
-.todo-list {
+.ai-task-todos-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
-.todo-item {
+.ai-task-todo-item {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -1354,29 +1336,25 @@ watch(
   transition: background 0.2s;
 }
 
-.todo-item:hover {
+.ai-task-todo-item:hover {
   background: var(--white-opacity-5);
 }
 
-.todo-item.todo-completed {
+.ai-task-todo-item.todo-completed {
   opacity: 0.6;
 }
 
-.todo-check-icon {
+.ai-task-todo-check-icon {
   font-size: 0.875rem;
   flex-shrink: 0;
   margin-top: 0.125rem;
 }
 
-.todo-text {
+.ai-task-todo-text {
   font-size: 0.8125rem;
   color: var(--moon-opacity-80);
   line-height: 1.4;
   flex: 1;
   word-break: break-word;
-}
-
-.translation-progress-todo-toggle {
-  flex-shrink: 0;
 }
 </style>
