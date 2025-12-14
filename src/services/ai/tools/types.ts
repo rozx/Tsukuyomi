@@ -36,6 +36,10 @@ export interface ActionInfo {
         tool_name?: string;
         old_title?: string;
         new_title?: string;
+        regex_pattern?: string;
+        keywords?: string[];
+        translation_keywords?: string[];
+        original_keywords?: string[];
       }
     | {
         memory_id?: string;

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Select from 'primevue/select';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 
 interface VolumeOption {
@@ -46,6 +51,14 @@ const chapterTranslationInstructions = ref('');
 const chapterPolishInstructions = ref('');
 const chapterProofreadingInstructions = ref('');
 
+// 特殊指令活动标签页
+const specialInstructionsActiveTab = ref<string>('translation');
+
+// 确保始终有默认值
+const currentSpecialInstructionsActiveTab = computed(
+  () => specialInstructionsActiveTab.value || 'translation',
+);
+
 watch(
   () => props.visible,
   (newVal) => {
@@ -56,6 +69,8 @@ watch(
       chapterTranslationInstructions.value = props.translationInstructions || '';
       chapterPolishInstructions.value = props.polishInstructions || '';
       chapterProofreadingInstructions.value = props.proofreadingInstructions || '';
+      // 重置到默认标签页
+      specialInstructionsActiveTab.value = 'translation';
     }
   },
 );
@@ -89,6 +104,7 @@ watch(
 
 const handleSave = () => {
   if (chapterTitle.value.trim() && selectedVolumeId.value) {
+    // 始终包含所有三个字段，即使为空也要保存（用于清除现有值）
     const data: {
       title: string;
       translation: string;
@@ -100,22 +116,10 @@ const handleSave = () => {
       title: chapterTitle.value.trim(),
       translation: chapterTranslation.value.trim(),
       targetVolumeId: selectedVolumeId.value,
+      translationInstructions: chapterTranslationInstructions.value.trim(),
+      polishInstructions: chapterPolishInstructions.value.trim(),
+      proofreadingInstructions: chapterProofreadingInstructions.value.trim(),
     };
-
-    const trimmedTranslation = chapterTranslationInstructions.value.trim();
-    if (trimmedTranslation) {
-      data.translationInstructions = trimmedTranslation;
-    }
-
-    const trimmedPolish = chapterPolishInstructions.value.trim();
-    if (trimmedPolish) {
-      data.polishInstructions = trimmedPolish;
-    }
-
-    const trimmedProofreading = chapterProofreadingInstructions.value.trim();
-    if (trimmedProofreading) {
-      data.proofreadingInstructions = trimmedProofreading;
-    }
 
     emit('save', data);
   }
@@ -127,6 +131,11 @@ const handleCancel = () => {
 
 const handleTranslationApplied = (value: string) => {
   chapterTranslation.value = value;
+};
+
+// 处理特殊指令标签页切换
+const handleSpecialInstructionsTabChange = (value: string | number) => {
+  specialInstructionsActiveTab.value = String(value);
 };
 </script>
 
@@ -182,71 +191,71 @@ const handleTranslationApplied = (value: string) => {
       </div>
 
       <!-- 特殊指令 -->
-      <div class="space-y-4 pt-2 border-t border-white/10">
-        <label class="block text-sm font-medium text-moon/90">特殊指令（章节级别）</label>
-        <small class="text-moon/60 text-xs block mb-2"
-          >这些指令将覆盖书籍级别的指令，仅应用于当前章节。</small
+      <div class="space-y-2 pt-2 border-t border-white/10">
+        <div>
+          <label class="block text-sm font-medium text-moon/90">特殊指令（章节级别）</label>
+          <small class="text-moon/60 text-xs block mt-1"
+            >这些指令将覆盖书籍级别的指令，仅应用于当前章节。</small
+          >
+        </div>
+        <Tabs
+          :value="currentSpecialInstructionsActiveTab"
+          @update:value="handleSpecialInstructionsTabChange"
+          class="special-instructions-tabs"
         >
-
-        <!-- 翻译指令 -->
-        <div class="space-y-2">
-          <label
-            for="edit-chapter-translation-instructions"
-            class="block text-sm font-medium text-moon/80"
-            >翻译指令</label
-          >
-          <Textarea
-            id="edit-chapter-translation-instructions"
-            v-model="chapterTranslationInstructions"
-            placeholder="输入翻译任务的特殊指令（可选）"
-            :rows="3"
-            :auto-resize="true"
-            class="w-full"
-          />
-          <small class="text-moon/60 text-xs block"
-            >这些指令将在执行翻译任务时添加到系统提示词中</small
-          >
-        </div>
-
-        <!-- 润色指令 -->
-        <div class="space-y-2">
-          <label
-            for="edit-chapter-polish-instructions"
-            class="block text-sm font-medium text-moon/80"
-            >润色指令</label
-          >
-          <Textarea
-            id="edit-chapter-polish-instructions"
-            v-model="chapterPolishInstructions"
-            placeholder="输入润色任务的特殊指令（可选）"
-            :rows="3"
-            :auto-resize="true"
-            class="w-full"
-          />
-          <small class="text-moon/60 text-xs block"
-            >这些指令将在执行润色任务时添加到系统提示词中</small
-          >
-        </div>
-
-        <!-- 校对指令 -->
-        <div class="space-y-2">
-          <label
-            for="edit-chapter-proofreading-instructions"
-            class="block text-sm font-medium text-moon/80"
-            >校对指令</label
-          >
-          <Textarea
-            id="edit-chapter-proofreading-instructions"
-            v-model="chapterProofreadingInstructions"
-            placeholder="输入校对任务的特殊指令（可选）"
-            :rows="3"
-            :auto-resize="true"
-            class="w-full"
-          />
-          <small class="text-moon/60 text-xs block"
-            >这些指令将在执行校对任务时添加到系统提示词中</small
-          >
-        </div>
+          <TabList>
+            <Tab value="translation">翻译指令</Tab>
+            <Tab value="polish">润色指令</Tab>
+            <Tab value="proofreading">校对指令</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel value="translation">
+              <div class="space-y-2 pt-2">
+                <Textarea
+                  id="edit-chapter-translation-instructions"
+                  v-model="chapterTranslationInstructions"
+                  placeholder="输入翻译任务的特殊指令（可选）"
+                  :rows="6"
+                  :auto-resize="true"
+                  class="w-full"
+                />
+                <small class="text-moon/60 text-xs block"
+                  >这些指令将在执行翻译任务时添加到系统提示词中</small
+                >
+              </div>
+            </TabPanel>
+            <TabPanel value="polish">
+              <div class="space-y-2 pt-2">
+                <Textarea
+                  id="edit-chapter-polish-instructions"
+                  v-model="chapterPolishInstructions"
+                  placeholder="输入润色任务的特殊指令（可选）"
+                  :rows="6"
+                  :auto-resize="true"
+                  class="w-full"
+                />
+                <small class="text-moon/60 text-xs block"
+                  >这些指令将在执行润色任务时添加到系统提示词中</small
+                >
+              </div>
+            </TabPanel>
+            <TabPanel value="proofreading">
+              <div class="space-y-2 pt-2">
+                <Textarea
+                  id="edit-chapter-proofreading-instructions"
+                  v-model="chapterProofreadingInstructions"
+                  placeholder="输入校对任务的特殊指令（可选）"
+                  :rows="6"
+                  :auto-resize="true"
+                  class="w-full"
+                />
+                <small class="text-moon/60 text-xs block"
+                  >这些指令将在执行校对任务时添加到系统提示词中</small
+                >
+              </div>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
       </div>
     </div>
     <template #footer>
@@ -260,3 +269,30 @@ const handleTranslationApplied = (value: string) => {
     </template>
   </Dialog>
 </template>
+
+<style scoped>
+.special-instructions-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.special-instructions-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.special-instructions-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tabpanels) {
+  padding: 0;
+}
+</style>

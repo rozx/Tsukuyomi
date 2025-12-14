@@ -905,7 +905,8 @@ export class ChapterService {
     // 第一遍：收集需要加载的章节
     // 如果指定了章节，只加载该章节；否则加载所有章节
     const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
+    const endVolumeIndex =
+      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
 
     for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
       const volume = novel.volumes[vIndex];
@@ -918,7 +919,8 @@ export class ChapterService {
 
       // 确定章节范围：如果指定了章节，只处理该章节；否则处理所有章节
       const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+      const endChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
 
       // 遍历章节
       for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
@@ -950,7 +952,8 @@ export class ChapterService {
 
     // 如果指定了章节，只搜索该章节；否则搜索所有章节
     const searchStartVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const searchEndVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
+    const searchEndVolumeIndex =
+      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
 
     for (let vIndex = searchStartVolumeIndex; vIndex <= searchEndVolumeIndex; vIndex++) {
       const volume = novel.volumes[vIndex];
@@ -962,8 +965,10 @@ export class ChapterService {
       }
 
       // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
-      const searchStartChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const searchEndChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+      const searchStartChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
+      const searchEndChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
 
       // 遍历章节
       for (let cIndex = searchStartChapterIndex; cIndex <= searchEndChapterIndex; cIndex++) {
@@ -1072,7 +1077,8 @@ export class ChapterService {
 
     // 如果指定了章节，只搜索该章节；否则搜索所有章节
     const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
+    const endVolumeIndex =
+      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
 
     for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
       const volume = novel.volumes[vIndex];
@@ -1085,7 +1091,8 @@ export class ChapterService {
 
       // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
       const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+      const endChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
 
       // 遍历章节
       for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
@@ -1102,6 +1109,221 @@ export class ChapterService {
 
             const paragraph = chapter.content[pIndex];
             if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
+              // 如果要求只返回有翻译的段落，检查段落是否有翻译
+              if (onlyWithTranslation) {
+                const hasTranslation =
+                  paragraph.translations &&
+                  paragraph.translations.length > 0 &&
+                  paragraph.translations.some(
+                    (t) => t.translation && t.translation.trim().length > 0,
+                  );
+                if (!hasTranslation) {
+                  continue; // 跳过没有翻译的段落
+                }
+              }
+
+              results.push({
+                paragraph,
+                paragraphIndex: pIndex,
+                chapter,
+                chapterIndex: cIndex,
+                volume,
+                volumeIndex: vIndex,
+              });
+
+              // 如果已达到最大返回数量，停止搜索
+              if (results.length >= maxParagraphs) {
+                break;
+              }
+            }
+          }
+        }
+
+        // 如果已达到最大返回数量，停止搜索章节
+        if (results.length >= maxParagraphs) {
+          break;
+        }
+      }
+
+      // 如果已达到最大返回数量，停止搜索卷
+      if (results.length >= maxParagraphs) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 使用正则表达式异步搜索段落（按需加载章节内容，优化性能）
+   * @param novel 小说对象
+   * @param regexPattern 正则表达式模式（字符串）
+   * @param chapterId 可选的章节 ID，如果提供则仅在该章节内搜索
+   * @param maxParagraphs 最大返回段落数量（默认 1）
+   * @param onlyWithTranslation 是否只返回有翻译的段落（默认 false）
+   * @param searchInTranslation 是否在翻译文本中搜索（默认 false，在原文中搜索）
+   * @returns 匹配的段落搜索结果数组
+   */
+  static async searchParagraphsByRegexAsync(
+    novel: Novel | null | undefined,
+    regexPattern: string,
+    chapterId?: string,
+    maxParagraphs: number = 1,
+    onlyWithTranslation: boolean = false,
+    searchInTranslation: boolean = false,
+  ): Promise<ParagraphSearchResult[]> {
+    if (!novel || !novel.volumes || !regexPattern.trim()) {
+      return [];
+    }
+
+    // 验证并编译正则表达式（不使用 'g' 标志，因为我们只是测试匹配，不提取）
+    let regex: RegExp;
+    try {
+      regex = new RegExp(regexPattern.trim());
+    } catch (error) {
+      // 如果正则表达式无效，返回空结果
+      console.error('Invalid regex pattern:', regexPattern, error);
+      return [];
+    }
+
+    // 如果提供了 chapterId，需要找到该章节的位置
+    let targetVolumeIndex: number | null = null;
+    let targetChapterIndex: number | null = null;
+
+    if (chapterId) {
+      // 查找目标章节的位置
+      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+        const volume = novel.volumes[vIndex];
+        if (volume && volume.chapters) {
+          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+          if (cIndex !== -1) {
+            targetVolumeIndex = vIndex;
+            targetChapterIndex = cIndex;
+            break;
+          }
+        }
+      }
+
+      // 如果找不到指定的章节，返回空结果
+      if (targetVolumeIndex === null || targetChapterIndex === null) {
+        return [];
+      }
+    }
+
+    // 收集需要加载的章节（批量加载优化）
+    const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+
+    // 第一遍：收集需要加载的章节
+    // 如果指定了章节，只加载该章节；否则加载所有章节
+    const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
+    const endVolumeIndex =
+      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
+
+    for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      // 如果指定了章节，只处理目标卷
+      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
+        continue;
+      }
+
+      // 确定章节范围：如果指定了章节，只处理该章节；否则处理所有章节
+      const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
+      const endChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+
+      // 遍历章节
+      for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果需要加载，添加到列表
+        if (chapter.content === undefined) {
+          chaptersToLoad.push({ chapter, vIndex, cIndex });
+        }
+      }
+    }
+
+    // 批量加载需要的章节
+    if (chaptersToLoad.length > 0) {
+      const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+      // 更新章节内容
+      for (const { chapter } of chaptersToLoad) {
+        const content = contentsMap.get(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+    }
+
+    // 第二遍：在加载的章节中搜索
+    const results: ParagraphSearchResult[] = [];
+
+    // 如果指定了章节，只搜索该章节；否则搜索所有章节
+    const searchStartVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
+    const searchEndVolumeIndex =
+      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
+
+    for (let vIndex = searchStartVolumeIndex; vIndex <= searchEndVolumeIndex; vIndex++) {
+      const volume = novel.volumes[vIndex];
+      if (!volume || !volume.chapters) continue;
+
+      // 如果指定了章节，只处理目标卷
+      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
+        continue;
+      }
+
+      // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
+      const searchStartChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
+      const searchEndChapterIndex =
+        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+
+      // 遍历章节
+      for (let cIndex = searchStartChapterIndex; cIndex <= searchEndChapterIndex; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (!chapter) continue;
+
+        // 如果仍未加载，按需加载（可能是在第一遍之后添加的新章节）
+        if (chapter.content === undefined) {
+          const content = await ChapterContentService.loadChapterContent(chapter.id);
+          chapter.content = content || [];
+          chapter.contentLoaded = true;
+        }
+
+        // 搜索段落
+        if (chapter.content) {
+          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+            // 如果已达到最大返回数量，停止搜索
+            if (results.length >= maxParagraphs) {
+              break;
+            }
+
+            const paragraph = chapter.content[pIndex];
+            if (!paragraph) continue;
+
+            // 确定要搜索的文本
+            let searchText: string;
+            if (searchInTranslation) {
+              // 在翻译文本中搜索
+              if (!paragraph.translations || paragraph.translations.length === 0) {
+                continue; // 如果没有翻译，跳过
+              }
+              // 使用选中的翻译，如果没有则使用第一个翻译
+              const selectedTranslation = paragraph.translations.find(
+                (t) => t.id === paragraph.selectedTranslationId,
+              );
+              searchText =
+                selectedTranslation?.translation || paragraph.translations[0]?.translation || '';
+            } else {
+              // 在原文中搜索
+              searchText = paragraph.text;
+            }
+
+            // 使用正则表达式测试
+            if (regex.test(searchText)) {
               // 如果要求只返回有翻译的段落，检查段落是否有翻译
               if (onlyWithTranslation) {
                 const hasTranslation =
@@ -1920,7 +2142,14 @@ export class ChapterService {
     type: 'original' | 'translation' | 'bilingual',
     format: 'txt' | 'json' | 'clipboard',
   ): Promise<void> {
-    if (!chapter || !chapter.content || chapter.content.length === 0) {
+    if (!chapter) {
+      throw new Error('章节内容为空，无法导出');
+    }
+
+    // 确保章节内容已加载
+    const chapterWithContent = await this.loadChapterContent(chapter);
+
+    if (!chapterWithContent.content || chapterWithContent.content.length === 0) {
       throw new Error('章节内容为空，无法导出');
     }
 
@@ -1939,9 +2168,7 @@ export class ChapterService {
       } else {
         // 导出译文或双语时，优先使用翻译标题，如果没有则使用原文
         chapterTitle =
-          chapter.title.translation?.translation?.trim() ||
-          chapter.title.original ||
-          '';
+          chapter.title.translation?.translation?.trim() || chapter.title.original || '';
       }
     }
 
@@ -1949,7 +2176,7 @@ export class ChapterService {
 
     // 构建导出内容
     if (format === 'json') {
-      const data = chapter.content.map((p) => ({
+      const data = chapterWithContent.content.map((p) => ({
         original: p.text,
         translation: getParagraphTranslationText(p),
       }));
@@ -1962,7 +2189,7 @@ export class ChapterService {
         2,
       );
     } else {
-      const lines = chapter.content.map((p) => {
+      const lines = chapterWithContent.content.map((p) => {
         const original = p.text;
         const translation = getParagraphTranslationText(p);
 
@@ -1990,7 +2217,19 @@ export class ChapterService {
             return '';
         }
       });
-      content = `${chapterTitle}\n\n${lines.join('\n')}`;
+      // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
+      const processedLines = lines.map((line) => {
+        const trimmed = line.trim();
+        if (trimmed === '') {
+          // 空行替换为两个换行符
+          return '\n\n';
+        }
+        // 非空行：确保以至少一个换行符结尾
+        // 如果末尾已有换行符，保持不变；否则添加一个换行符
+        return line.endsWith('\n') ? line : `${line}\n`;
+      });
+      // 使用空字符串连接，因为每行已包含必要的换行符
+      content = `${chapterTitle}\n\n${processedLines.join('')}`;
     }
 
     // 执行导出动作

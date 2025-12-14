@@ -80,6 +80,114 @@ describe('TodoListTools', () => {
       expect((actionData as { type: string; entity: string }).type).toBe('create');
       expect((actionData as { type: string; entity: string }).entity).toBe('todo');
     });
+
+    test('应该能够批量创建多个待办事项（使用 items 参数）', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
+      expect(tool).toBeDefined();
+
+      const items = [
+        '翻译第1-5段，检查术语一致性',
+        '翻译第6-10段，确保角色名称翻译一致',
+        '翻译第11-15段，检查上下文连贯性',
+      ];
+
+      const result = await tool!.handler({ items }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.todos).toBeDefined();
+      expect(parsed.todos).toHaveLength(3);
+      expect(parsed.count).toBe(3);
+      expect(parsed.message).toContain('成功创建 3 个待办事项');
+
+      // 验证所有 todos 都已创建并关联到 taskId
+      const todos = TodoListService.getTodosByTaskId(taskId);
+      expect(todos).toHaveLength(3);
+      expect(todos.map((t) => t.text)).toEqual(expect.arrayContaining(items));
+      todos.forEach((todo) => {
+        expect(todo.taskId).toBe(taskId);
+        expect(todo.completed).toBe(false);
+      });
+    });
+
+    test('批量创建时应该跳过空字符串并继续创建其他项', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
+      expect(tool).toBeDefined();
+
+      const items = [
+        '翻译第1-5段',
+        '', // 空字符串
+        '   ', // 只有空白字符
+        '翻译第6-10段',
+      ];
+
+      const result = await tool!.handler({ items }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.todos).toHaveLength(2); // 只创建了2个有效的待办事项
+      expect(parsed.count).toBe(2);
+      expect(parsed.errors).toBeDefined();
+      expect(parsed.errors.length).toBeGreaterThan(0);
+
+      // 验证只有有效的 todos 被创建
+      const todos = TodoListService.getTodosByTaskId(taskId);
+      expect(todos).toHaveLength(2);
+      expect(todos.map((t) => t.text)).toEqual(
+        expect.arrayContaining(['翻译第1-5段', '翻译第6-10段']),
+      );
+    });
+
+    test('批量创建时如果所有项都无效应该抛出错误', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
+      expect(tool).toBeDefined();
+
+      const items = ['', '   ', ''];
+
+      try {
+        await tool!.handler({ items }, context);
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error instanceof Error && error.message).toContain('批量创建待办事项失败');
+      }
+
+      // 验证没有创建任何待办事项
+      const todos = TodoListService.getTodosByTaskId(taskId);
+      expect(todos).toHaveLength(0);
+    });
+
+    test('当既没有提供 text 也没有提供 items 时应该抛出错误', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
+      expect(tool).toBeDefined();
+
+      try {
+        await tool!.handler({}, context);
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error instanceof Error && error.message).toContain('必须提供 text 或 items 参数之一');
+      }
+    });
+
+    test('批量创建时应该为每个待办事项调用 onAction 回调', async () => {
+      const actions: unknown[] = [];
+
+      const contextWithAction: ToolContext = {
+        ...context,
+        onAction: (action) => {
+          actions.push(action);
+        },
+      };
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
+      const items = ['待办事项1', '待办事项2', '待办事项3'];
+      await tool!.handler({ items }, contextWithAction);
+
+      expect(actions).toHaveLength(3);
+      actions.forEach((action) => {
+        expect((action as { type: string; entity: string }).type).toBe('create');
+        expect((action as { type: string; entity: string }).entity).toBe('todo');
+      });
+    });
   });
 
   describe('list_todos', () => {

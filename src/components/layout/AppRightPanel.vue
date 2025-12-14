@@ -660,70 +660,7 @@ const sendMessage = async () => {
       },
       onAction: (action: ActionInfo) => {
         // 记录操作到当前消息
-        const actionName = 'name' in action.data ? action.data.name : undefined;
-        const messageAction: MessageAction = {
-          type: action.type,
-          entity: action.entity,
-          ...(actionName ? { name: actionName } : {}),
-          timestamp: Date.now(),
-          // 网络操作相关信息
-          ...(action.type === 'web_search' && 'query' in action.data
-            ? { query: action.data.query }
-            : {}),
-          ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
-          // 翻译操作相关信息
-          ...(action.entity === 'translation' &&
-          'paragraph_id' in action.data &&
-          'translation_id' in action.data
-            ? {
-                paragraph_id: action.data.paragraph_id,
-                translation_id: action.data.translation_id,
-              }
-            : {}),
-          // 读取操作相关信息
-          ...(action.type === 'read' && 'chapter_id' in action.data
-            ? { chapter_id: action.data.chapter_id }
-            : {}),
-          ...(action.type === 'read' && 'chapter_title' in action.data
-            ? { chapter_title: action.data.chapter_title }
-            : {}),
-          ...(action.type === 'read' && 'paragraph_id' in action.data
-            ? { paragraph_id: action.data.paragraph_id }
-            : {}),
-          ...(action.type === 'read' && 'character_name' in action.data
-            ? { character_name: action.data.character_name }
-            : {}),
-          ...(action.type === 'read' && 'tool_name' in action.data
-            ? { tool_name: action.data.tool_name }
-            : {}),
-          // Memory 相关信息
-          ...(action.entity === 'memory' && 'memory_id' in action.data
-            ? { memory_id: action.data.memory_id }
-            : {}),
-          ...(action.entity === 'memory' && 'keyword' in action.data
-            ? { keyword: action.data.keyword }
-            : {}),
-          ...(action.entity === 'memory' && 'summary' in action.data
-            ? { name: action.data.summary }
-            : {}),
-          // 待办事项操作相关信息
-          ...(action.entity === 'todo' && 'text' in action.data
-            ? { name: (action.data as TodoItem).text }
-            : {}),
-          // 导航操作相关信息
-          ...(action.type === 'navigate' && 'book_id' in action.data
-            ? { book_id: action.data.book_id }
-            : {}),
-          ...(action.type === 'navigate' && 'chapter_id' in action.data
-            ? { chapter_id: action.data.chapter_id }
-            : {}),
-          ...(action.type === 'navigate' && 'chapter_title' in action.data
-            ? { chapter_title: action.data.chapter_title }
-            : {}),
-          ...(action.type === 'navigate' && 'paragraph_id' in action.data
-            ? { paragraph_id: action.data.paragraph_id }
-            : {}),
-        };
+        const messageAction = createMessageActionFromActionInfo(action);
 
         // 处理导航操作
         if (action.type === 'navigate' && 'book_id' in action.data) {
@@ -1599,68 +1536,7 @@ const sendMessage = async () => {
           },
           onAction: (action: ActionInfo) => {
             // 记录操作到当前消息（复用之前的 onAction 逻辑）
-            const actionName = 'name' in action.data ? action.data.name : undefined;
-            const messageAction: MessageAction = {
-              type: action.type,
-              entity: action.entity,
-              ...(actionName ? { name: actionName } : {}),
-              timestamp: Date.now(),
-              // 网络操作相关信息
-              ...(action.type === 'web_search' && 'query' in action.data
-                ? { query: action.data.query }
-                : {}),
-              ...(action.type === 'web_fetch' && 'url' in action.data
-                ? { url: action.data.url }
-                : {}),
-              // 翻译操作相关信息
-              ...(action.entity === 'translation' &&
-              'paragraph_id' in action.data &&
-              'translation_id' in action.data
-                ? {
-                    paragraph_id: action.data.paragraph_id,
-                    translation_id: action.data.translation_id,
-                  }
-                : {}),
-              // 读取操作相关信息
-              ...(action.type === 'read' && 'chapter_id' in action.data
-                ? { chapter_id: action.data.chapter_id }
-                : {}),
-              ...(action.type === 'read' && 'chapter_title' in action.data
-                ? { chapter_title: action.data.chapter_title }
-                : {}),
-              ...(action.type === 'read' && 'paragraph_id' in action.data
-                ? { paragraph_id: action.data.paragraph_id }
-                : {}),
-              ...(action.type === 'read' && 'character_name' in action.data
-                ? { character_name: action.data.character_name }
-                : {}),
-              ...(action.type === 'read' && 'tool_name' in action.data
-                ? { tool_name: action.data.tool_name }
-                : {}),
-              // Memory 相关信息
-              ...(action.entity === 'memory' && 'memory_id' in action.data
-                ? { memory_id: action.data.memory_id }
-                : {}),
-              ...(action.entity === 'memory' && 'keyword' in action.data
-                ? { keyword: action.data.keyword }
-                : {}),
-              ...(action.entity === 'memory' && 'summary' in action.data
-                ? { name: action.data.summary }
-                : {}),
-              // 导航操作相关信息
-              ...(action.type === 'navigate' && 'book_id' in action.data
-                ? { book_id: action.data.book_id }
-                : {}),
-              ...(action.type === 'navigate' && 'chapter_id' in action.data
-                ? { chapter_id: action.data.chapter_id }
-                : {}),
-              ...(action.type === 'navigate' && 'chapter_title' in action.data
-                ? { chapter_title: action.data.chapter_title }
-                : {}),
-              ...(action.type === 'navigate' && 'paragraph_id' in action.data
-                ? { paragraph_id: action.data.paragraph_id }
-                : {}),
-            };
+            const messageAction = createMessageActionFromActionInfo(action);
 
             // 处理导航操作
             if (action.type === 'navigate' && 'book_id' in action.data) {
@@ -1768,14 +1644,7 @@ const sendMessage = async () => {
             }
             // 将服务返回的操作添加到消息中
             for (const action of continueResult.actions) {
-              const actionName = 'name' in action.data ? action.data.name : undefined;
-              const messageAction: MessageAction = {
-                type: action.type,
-                entity: action.entity,
-                ...(actionName ? { name: actionName } : {}),
-                timestamp: Date.now(),
-                // 添加其他操作相关信息（简化处理）
-              };
+              const messageAction = createMessageActionFromActionInfo(action);
               finalMsg.actions.push(messageAction);
             }
           }
@@ -2115,6 +1984,83 @@ watch(
 );
 
 // 获取操作详细信息（用于 popover）
+/**
+ * 将 ActionInfo 转换为 MessageAction
+ * 统一处理所有操作类型的字段映射
+ */
+const createMessageActionFromActionInfo = (action: ActionInfo): MessageAction => {
+  const actionName = 'name' in action.data ? action.data.name : undefined;
+  return {
+    type: action.type,
+    entity: action.entity,
+    ...(actionName ? { name: actionName } : {}),
+    timestamp: Date.now(),
+    // 网络操作相关信息
+    ...(action.type === 'web_search' && 'query' in action.data
+      ? { query: action.data.query }
+      : {}),
+    ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
+    // 翻译操作相关信息
+    ...(action.entity === 'translation' &&
+    'paragraph_id' in action.data &&
+    'translation_id' in action.data
+      ? {
+          paragraph_id: action.data.paragraph_id,
+          translation_id: action.data.translation_id,
+        }
+      : {}),
+    // 读取操作相关信息
+    ...(action.type === 'read' && 'chapter_id' in action.data
+      ? { chapter_id: action.data.chapter_id }
+      : {}),
+    ...(action.type === 'read' && 'chapter_title' in action.data
+      ? { chapter_title: action.data.chapter_title }
+      : {}),
+    ...(action.type === 'read' && 'paragraph_id' in action.data
+      ? { paragraph_id: action.data.paragraph_id }
+      : {}),
+    ...(action.type === 'read' && 'character_name' in action.data
+      ? { character_name: action.data.character_name }
+      : {}),
+    ...(action.type === 'read' && 'tool_name' in action.data
+      ? { tool_name: action.data.tool_name }
+      : {}),
+    ...(action.type === 'read' && 'keywords' in action.data
+      ? { keywords: action.data.keywords }
+      : {}),
+    ...(action.type === 'read' && 'regex_pattern' in action.data
+      ? { regex_pattern: action.data.regex_pattern }
+      : {}),
+    // Memory 相关信息
+    ...(action.entity === 'memory' && 'memory_id' in action.data
+      ? { memory_id: action.data.memory_id }
+      : {}),
+    ...(action.entity === 'memory' && 'keyword' in action.data
+      ? { keyword: action.data.keyword }
+      : {}),
+    ...(action.entity === 'memory' && 'summary' in action.data
+      ? { name: action.data.summary }
+      : {}),
+    // 待办事项操作相关信息
+    ...(action.entity === 'todo' && 'text' in action.data
+      ? { name: (action.data as TodoItem).text }
+      : {}),
+    // 导航操作相关信息
+    ...(action.type === 'navigate' && 'book_id' in action.data
+      ? { book_id: action.data.book_id }
+      : {}),
+    ...(action.type === 'navigate' && 'chapter_id' in action.data
+      ? { chapter_id: action.data.chapter_id }
+      : {}),
+    ...(action.type === 'navigate' && 'chapter_title' in action.data
+      ? { chapter_title: action.data.chapter_title }
+      : {}),
+    ...(action.type === 'navigate' && 'paragraph_id' in action.data
+      ? { paragraph_id: action.data.paragraph_id }
+      : {}),
+  };
+};
+
 const getActionDetails = (action: MessageAction) => {
   const actionLabels: Record<MessageAction['type'], string> = {
     create: '创建',
@@ -2310,6 +2256,18 @@ const getActionDetails = (action: MessageAction) => {
       details.push({
         label: '工具',
         value: action.tool_name,
+      });
+    }
+    if (action.keywords && action.keywords.length > 0) {
+      details.push({
+        label: '关键词',
+        value: action.keywords.join('、'),
+      });
+    }
+    if (action.regex_pattern) {
+      details.push({
+        label: '正则表达式',
+        value: action.regex_pattern,
       });
     }
     if (action.chapter_id) {
@@ -2710,7 +2668,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   ></div>
                 </div>
                 <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
-                  <div class="space-y-1 flex flex-wrap gap-1">
+                  <div class="flex flex-wrap gap-1.5">
                     <div
                       :id="`action-${item.messageId}-${item.action.timestamp}`"
                       class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
@@ -3093,12 +3051,31 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
 
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
-  margin: 0.5em 0;
+  margin: 0.75em 0;
   padding-left: 1.5em;
 }
 
+.markdown-content :deep(ul:first-child),
+.markdown-content :deep(ol:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(ul:last-child),
+.markdown-content :deep(ol:last-child) {
+  margin-bottom: 0;
+}
+
 .markdown-content :deep(li) {
-  margin: 0.25em 0;
+  margin: 0.4em 0;
+  line-height: 1.5;
+}
+
+.markdown-content :deep(li:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(li:last-child) {
+  margin-bottom: 0;
 }
 
 .markdown-content :deep(blockquote) {

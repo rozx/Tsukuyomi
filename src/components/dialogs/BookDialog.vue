@@ -7,6 +7,11 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import AutoComplete from 'primevue/autocomplete';
 import Skeleton from 'primevue/skeleton';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
@@ -84,6 +89,14 @@ const openScraper = (url?: string) => {
 
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
+
+// 特殊指令活动标签页
+const specialInstructionsActiveTab = ref<string>('translation');
+
+// 确保始终有默认值
+const currentSpecialInstructionsActiveTab = computed(
+  () => specialInstructionsActiveTab.value || 'translation',
+);
 
 // 展开的卷 ID 集合（用于折叠/展开）
 const expandedVolumes = ref<Set<string>>(new Set());
@@ -223,6 +236,11 @@ const handleExportJson = async () => {
 const handleCancel = () => {
   emit('cancel');
   emit('update:visible', false);
+};
+
+// 处理特殊指令标签页切换
+const handleSpecialInstructionsTabChange = (value: string | number) => {
+  specialInstructionsActiveTab.value = String(value);
 };
 
 // 检查 URL 是否可爬取
@@ -427,6 +445,8 @@ watch(
         // 添加模式：重置表单
         resetForm();
       }
+      // 重置到默认标签页
+      specialInstructionsActiveTab.value = 'translation';
       formErrors.value = {};
       // 等待 DOM 更新后加载字符数
       await nextTick();
@@ -613,71 +633,71 @@ watch(
         </div>
 
         <!-- 特殊指令 -->
-        <div class="space-y-4">
-          <label class="block text-sm font-medium text-moon/90">特殊指令（书籍级别）</label>
-          <small class="text-moon/60 text-xs block mb-2"
-            >这些指令将应用于该书籍的所有章节。章节级别的指令会覆盖书籍级别的指令。</small
+        <div class="space-y-2">
+          <div>
+            <label class="block text-sm font-medium text-moon/90">特殊指令（书籍级别）</label>
+            <small class="text-moon/60 text-xs block mt-1"
+              >这些指令将应用于该书籍的所有章节。章节级别的指令会覆盖书籍级别的指令。</small
+            >
+          </div>
+          <Tabs
+            :value="currentSpecialInstructionsActiveTab"
+            @update:value="handleSpecialInstructionsTabChange"
+            class="special-instructions-tabs"
           >
-
-          <!-- 翻译指令 -->
-          <div class="space-y-2">
-            <label
-              :for="`${idPrefix}-translationInstructions`"
-              class="block text-sm font-medium text-moon/80"
-              >翻译指令</label
-            >
-            <Textarea
-              :id="`${idPrefix}-translationInstructions`"
-              v-model="formData.translationInstructions"
-              placeholder="输入翻译任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行翻译任务时添加到系统提示词中</small
-            >
-          </div>
-
-          <!-- 润色指令 -->
-          <div class="space-y-2">
-            <label
-              :for="`${idPrefix}-polishInstructions`"
-              class="block text-sm font-medium text-moon/80"
-              >润色指令</label
-            >
-            <Textarea
-              :id="`${idPrefix}-polishInstructions`"
-              v-model="formData.polishInstructions"
-              placeholder="输入润色任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行润色任务时添加到系统提示词中</small
-            >
-          </div>
-
-          <!-- 校对指令 -->
-          <div class="space-y-2">
-            <label
-              :for="`${idPrefix}-proofreadingInstructions`"
-              class="block text-sm font-medium text-moon/80"
-              >校对指令</label
-            >
-            <Textarea
-              :id="`${idPrefix}-proofreadingInstructions`"
-              v-model="formData.proofreadingInstructions"
-              placeholder="输入校对任务的特殊指令（可选）"
-              :rows="3"
-              :auto-resize="true"
-              class="w-full"
-            />
-            <small class="text-moon/60 text-xs block"
-              >这些指令将在执行校对任务时添加到系统提示词中</small
-            >
-          </div>
+            <TabList>
+              <Tab value="translation">翻译指令</Tab>
+              <Tab value="polish">润色指令</Tab>
+              <Tab value="proofreading">校对指令</Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel value="translation">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    :id="`${idPrefix}-translationInstructions`"
+                    v-model="formData.translationInstructions"
+                    placeholder="输入翻译任务的特殊指令（可选）"
+                    :rows="6"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行翻译任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+              <TabPanel value="polish">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    :id="`${idPrefix}-polishInstructions`"
+                    v-model="formData.polishInstructions"
+                    placeholder="输入润色任务的特殊指令（可选）"
+                    :rows="6"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行润色任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+              <TabPanel value="proofreading">
+                <div class="space-y-2 pt-2">
+                  <Textarea
+                    :id="`${idPrefix}-proofreadingInstructions`"
+                    v-model="formData.proofreadingInstructions"
+                    placeholder="输入校对任务的特殊指令（可选）"
+                    :rows="6"
+                    :auto-resize="true"
+                    class="w-full"
+                  />
+                  <small class="text-moon/60 text-xs block"
+                    >这些指令将在执行校对任务时添加到系统提示词中</small
+                  >
+                </div>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
         </div>
 
         <!-- 卷和章节（只读） -->
@@ -953,5 +973,30 @@ watch(
 
 :deep(.clear-cover-button.p-button-outlined.p-button-danger:hover) {
   background: rgba(255, 143, 163, 0.1) !important;
+}
+
+.special-instructions-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.special-instructions-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.special-instructions-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tabpanels) {
+  padding: 0;
 }
 </style>

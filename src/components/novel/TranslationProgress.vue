@@ -3,11 +3,17 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   isTranslating?: boolean;
   isPolishing?: boolean;
@@ -30,7 +36,6 @@ const showAITaskHistory = ref(false);
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
-const showTodoList = ref(false);
 
 // Recent AI Tasks - only show translation-related tasks
 // 为了代码逻辑清晰，将 recentAITasks 放在 loadTodos 之前，因为 loadTodos 会使用它（但这不是技术上的要求）
@@ -50,6 +55,11 @@ const loadTodos = () => {
   const currentTaskIds = new Set(recentAITasks.value.map((task) => task.id));
   // 只显示属于当前任务的待办事项
   todos.value = allTodos.filter((todo) => currentTaskIds.has(todo.taskId));
+};
+
+// 获取特定任务的待办事项
+const getTodosForTask = (taskId: string): TodoItem[] => {
+  return todos.value.filter((todo) => todo.taskId === taskId);
 };
 
 // 监听待办事项变化（通过 localStorage 事件）
@@ -154,6 +164,36 @@ const taskFolded = ref<Record<string, boolean>>({});
 
 const toggleTaskFold = (taskId: string) => {
   taskFolded.value[taskId] = !taskFolded.value[taskId];
+};
+
+// Active Tab State for each task
+const activeTab = ref<Record<string, string>>({});
+
+const setActiveTab = (taskId: string, value: string) => {
+  activeTab.value[taskId] = value;
+};
+
+const getActiveTab = (taskId: string): string => {
+  // If user has already selected a tab, use that
+  const savedTab = activeTab.value[taskId];
+  if (savedTab) {
+    return savedTab;
+  }
+  // Otherwise, find the task and default to the tab with content
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (task) {
+    const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
+    const hasOutput = task.outputContent && task.outputContent.trim();
+    const hasTodos = getTodosForTask(taskId).length > 0;
+    // Priority: todos > output > thinking
+    if (hasTodos) {
+      return 'todos';
+    }
+    if (hasOutput && !hasThinking) {
+      return 'output';
+    }
+  }
+  return 'thinking';
 };
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
@@ -481,22 +521,6 @@ watch(
         @click="showAITaskHistory = !showAITaskHistory"
       />
       <Button
-        icon="pi pi-check-square"
-        :class="[
-          'p-button-text p-button-sm translation-progress-todo-toggle',
-          { 'p-highlight': showTodoList },
-        ]"
-        :title="showTodoList ? '隐藏待办事项' : '显示待办事项'"
-        @click="showTodoList = !showTodoList"
-      >
-        <span
-          v-if="todos.filter((t) => !t.completed).length > 0"
-          class="ml-1 px-1 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
-        >
-          {{ todos.filter((t) => !t.completed).length }}
-        </span>
-      </Button>
-      <Button
         icon="pi pi-times"
         label="取消"
         class="p-button-text p-button-sm translation-progress-cancel"
@@ -594,119 +618,166 @@ watch(
               <Transition name="task-content">
                 <div v-if="!taskFolded[task.id]" class="ai-task-content">
                   <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
-                  <div
-                    v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                    class="ai-task-thinking"
+                  <Tabs
+                    :value="getActiveTab(task.id)"
+                    @update:value="(value) => setActiveTab(task.id, String(value))"
+                    class="ai-task-tabs"
                   >
-                    <div class="ai-task-thinking-header">
-                      <span class="ai-task-thinking-label">思考过程：</span>
-                      <Button
-                        :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
-                        :class="[
-                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                          { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
-                        ]"
-                        :title="
-                          autoScrollEnabled[task.id]
-                            ? '禁用自动滚动'
-                            : '启用自动滚动（新内容出现时自动滚动到底部）'
-                        "
-                        @click="toggleAutoScroll(task.id)"
-                      />
-                    </div>
-                    <div
-                      :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
-                      class="ai-task-thinking-text"
-                    >
-                      <template
-                        v-for="(part, index) in formatThinkingMessage(task.thinkingMessage || '')"
-                        :key="index"
+                    <TabList>
+                      <Tab
+                        value="thinking"
+                        :disabled="!task.thinkingMessage || !task.thinkingMessage.trim()"
                       >
+                        思考过程
+                      </Tab>
+                      <Tab
+                        value="output"
+                        :disabled="!task.outputContent || !task.outputContent.trim()"
+                      >
+                        输出内容
+                      </Tab>
+                      <Tab value="todos" :disabled="getTodosForTask(task.id).length === 0">
+                        待办事项
+                        <Badge
+                          v-if="getTodosForTask(task.id).filter((t) => !t.completed).length > 0"
+                          :value="getTodosForTask(task.id).filter((t) => !t.completed).length"
+                          severity="info"
+                          class="ml-1"
+                        />
+                      </Tab>
+                    </TabList>
+                    <TabPanels>
+                      <TabPanel value="thinking">
                         <div
-                          v-if="part.type === 'chunk-separator'"
-                          class="thinking-chunk-separator"
+                          v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                          class="ai-task-thinking"
                         >
-                          <i class="pi pi-minus"></i>
-                          <span>{{ part.chunkInfo }}</span>
-                          <i class="pi pi-minus"></i>
+                          <div class="ai-task-thinking-header">
+                            <span class="ai-task-thinking-label">思考过程：</span>
+                            <Button
+                              :icon="
+                                autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
+                              "
+                              :class="[
+                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                                { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                              ]"
+                              :title="
+                                autoScrollEnabled[task.id]
+                                  ? '禁用自动滚动'
+                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
+                              "
+                              @click="toggleAutoScroll(task.id)"
+                            />
+                          </div>
+                          <div
+                            :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
+                            class="ai-task-thinking-text"
+                          >
+                            <template
+                              v-for="(part, index) in formatThinkingMessage(
+                                task.thinkingMessage || '',
+                              )"
+                              :key="index"
+                            >
+                              <div
+                                v-if="part.type === 'chunk-separator'"
+                                class="thinking-chunk-separator"
+                              >
+                                <i class="pi pi-minus"></i>
+                                <span>{{ part.chunkInfo }}</span>
+                                <i class="pi pi-minus"></i>
+                              </div>
+                              <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
+                                <i class="pi pi-cog"></i>
+                                <span class="thinking-tool-label">调用工具：</span>
+                                <span class="thinking-tool-name">{{ part.toolName }}</span>
+                              </div>
+                              <div
+                                v-else-if="part.type === 'tool-result'"
+                                class="thinking-tool-result"
+                              >
+                                <i class="pi pi-check-circle"></i>
+                                <span class="thinking-tool-label">工具结果：</span>
+                                <span class="thinking-tool-content">{{ part.toolName }}</span>
+                              </div>
+                              <div v-else class="thinking-content">{{ part.text }}</div>
+                            </template>
+                          </div>
                         </div>
-                        <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
-                          <i class="pi pi-cog"></i>
-                          <span class="thinking-tool-label">调用工具：</span>
-                          <span class="thinking-tool-name">{{ part.toolName }}</span>
+                      </TabPanel>
+                      <TabPanel value="output">
+                        <div
+                          v-if="task.outputContent && task.outputContent.trim()"
+                          class="ai-task-output"
+                        >
+                          <div class="ai-task-output-header">
+                            <span class="ai-task-output-label">输出内容：</span>
+                            <Button
+                              :icon="
+                                autoScrollOutputEnabled[task.id]
+                                  ? 'pi pi-arrow-down'
+                                  : 'pi pi-arrows-v'
+                              "
+                              :class="[
+                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                                { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
+                              ]"
+                              :title="
+                                autoScrollOutputEnabled[task.id]
+                                  ? '禁用自动滚动'
+                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
+                              "
+                              @click="toggleAutoScrollOutput(task.id)"
+                            />
+                          </div>
+                          <div
+                            :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
+                            class="ai-task-output-text"
+                          >
+                            {{ task.outputContent }}
+                          </div>
                         </div>
-                        <div v-else-if="part.type === 'tool-result'" class="thinking-tool-result">
-                          <i class="pi pi-check-circle"></i>
-                          <span class="thinking-tool-label">工具结果：</span>
-                          <span class="thinking-tool-content">{{ part.toolName }}</span>
+                      </TabPanel>
+                      <TabPanel value="todos">
+                        <div class="ai-task-todos">
+                          <div
+                            v-if="getTodosForTask(task.id).length === 0"
+                            class="ai-task-todos-empty"
+                          >
+                            <i class="pi pi-info-circle"></i>
+                            <span>该任务暂无待办事项</span>
+                          </div>
+                          <div v-else class="ai-task-todos-list">
+                            <div
+                              v-for="todo in getTodosForTask(task.id)"
+                              :key="todo.id"
+                              class="ai-task-todo-item"
+                              :class="{ 'todo-completed': todo.completed }"
+                            >
+                              <i
+                                class="pi ai-task-todo-check-icon"
+                                :class="
+                                  todo.completed
+                                    ? 'pi-check-circle text-green-400'
+                                    : 'pi-circle text-moon-50'
+                                "
+                              ></i>
+                              <span
+                                class="ai-task-todo-text"
+                                :class="{ 'line-through': todo.completed }"
+                              >
+                                {{ todo.text }}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div v-else class="thinking-content">{{ part.text }}</div>
-                      </template>
-                    </div>
-                  </div>
-                  <div
-                    v-if="task.outputContent && task.outputContent.trim()"
-                    class="ai-task-output"
-                  >
-                    <div class="ai-task-output-header">
-                      <span class="ai-task-output-label">输出内容：</span>
-                      <Button
-                        :icon="
-                          autoScrollOutputEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
-                        "
-                        :class="[
-                          'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                          { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
-                        ]"
-                        :title="
-                          autoScrollOutputEnabled[task.id]
-                            ? '禁用自动滚动'
-                            : '启用自动滚动（新内容出现时自动滚动到底部）'
-                        "
-                        @click="toggleAutoScrollOutput(task.id)"
-                      />
-                    </div>
-                    <div
-                      :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
-                      class="ai-task-output-text"
-                    >
-                      {{ task.outputContent }}
-                    </div>
-                  </div>
+                      </TabPanel>
+                    </TabPanels>
+                  </Tabs>
                 </div>
               </Transition>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <!-- 待办事项列表 -->
-    <div v-if="showTodoList" class="translation-progress-todo-wrapper">
-      <div class="translation-progress-todo">
-        <div class="todo-header">
-          <span class="todo-title">待办事项</span>
-          <span v-if="todos.filter((t) => !t.completed).length > 0" class="todo-count">
-            {{ todos.filter((t) => !t.completed).length }} 个未完成
-          </span>
-        </div>
-        <div v-if="todos.length === 0" class="todo-empty">
-          <i class="pi pi-info-circle"></i>
-          <span>暂无待办事项</span>
-        </div>
-        <div v-else class="todo-list">
-          <div
-            v-for="todo in todos"
-            :key="todo.id"
-            class="todo-item"
-            :class="{ 'todo-completed': todo.completed }"
-          >
-            <i
-              class="pi todo-check-icon"
-              :class="todo.completed ? 'pi-check-circle text-green-400' : 'pi-circle text-moon-50'"
-            ></i>
-            <span class="todo-text" :class="{ 'line-through': todo.completed }">
-              {{ todo.text }}
-            </span>
           </div>
         </div>
       </div>
@@ -1008,6 +1079,40 @@ watch(
   line-height: 1.4;
 }
 
+.ai-task-tabs {
+  margin-top: 0.5rem;
+}
+
+.ai-task-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.ai-task-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.ai-task-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.ai-task-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.ai-task-tabs :deep(.p-tab[disabled]) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ai-task-tabs :deep(.p-tabpanels) {
+  padding: 0;
+}
+
 /* 折叠/展开过渡动画 */
 .task-content-enter-active,
 .task-content-leave-active {
@@ -1027,7 +1132,6 @@ watch(
 }
 
 .ai-task-thinking {
-  margin-top: 0.5rem;
   padding: 0.5rem;
   border-radius: 4px;
   background: var(--white-opacity-3);
@@ -1160,7 +1264,6 @@ watch(
 }
 
 .ai-task-output {
-  margin-top: 0.5rem;
   padding: 0.5rem;
   border-radius: 4px;
   background: var(--green-500-opacity-5);
@@ -1197,40 +1300,16 @@ watch(
   font-size: 0.8125rem;
 }
 
-/* 待办事项列表 */
-.translation-progress-todo-wrapper {
-  border-top: 1px solid var(--white-opacity-20);
-}
-
-.translation-progress-todo {
+.ai-task-todos {
+  padding: 0.5rem;
+  border-radius: 4px;
   background: var(--white-opacity-3);
-  padding: 1rem 1.5rem;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.todo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--white-opacity-10);
-}
-
-.todo-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-}
-
-.todo-count {
+  border: 1px solid var(--white-opacity-5);
   font-size: 0.75rem;
-  color: var(--primary-opacity-80);
-  font-weight: 500;
+  line-height: 1.5;
 }
 
-.todo-empty {
+.ai-task-todos-empty {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1240,13 +1319,15 @@ watch(
   font-size: 0.875rem;
 }
 
-.todo-list {
+.ai-task-todos-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
-.todo-item {
+.ai-task-todo-item {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -1255,29 +1336,25 @@ watch(
   transition: background 0.2s;
 }
 
-.todo-item:hover {
+.ai-task-todo-item:hover {
   background: var(--white-opacity-5);
 }
 
-.todo-item.todo-completed {
+.ai-task-todo-item.todo-completed {
   opacity: 0.6;
 }
 
-.todo-check-icon {
+.ai-task-todo-check-icon {
   font-size: 0.875rem;
   flex-shrink: 0;
   margin-top: 0.125rem;
 }
 
-.todo-text {
+.ai-task-todo-text {
   font-size: 0.8125rem;
   color: var(--moon-opacity-80);
   line-height: 1.4;
   flex: 1;
   word-break: break-word;
-}
-
-.translation-progress-todo-toggle {
-  flex-shrink: 0;
 }
 </style>

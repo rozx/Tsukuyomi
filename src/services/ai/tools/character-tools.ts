@@ -4,6 +4,9 @@ import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
+import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
+import { findUniqueCharactersInText } from 'src/utils/text-matcher';
+import type { Chapter } from 'src/models/novel';
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -371,9 +374,7 @@ export const characterTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const character = book?.characterSettings?.find((c) => c.id === character_id);
-      const previousData = character
-        ? (cloneDeep(character) as CharacterSetting)
-        : undefined;
+      const previousData = character ? (cloneDeep(character) as CharacterSetting) : undefined;
 
       await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
@@ -428,7 +429,9 @@ export const characterTools: ToolDefinition[] = [
       }
 
       // 过滤掉空字符串
-      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
       if (validKeywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -459,9 +462,8 @@ export const characterTools: ToolDefinition[] = [
           char.name.toLowerCase().includes(keyword),
         );
         // 搜索翻译
-        const translationMatch = keywordsLower.some(
-          (keyword) =>
-            char.translation?.translation?.toLowerCase().includes(keyword),
+        const translationMatch = keywordsLower.some((keyword) =>
+          char.translation?.translation?.toLowerCase().includes(keyword),
         );
         // 搜索别名
         const aliasMatch = char.aliases?.some((alias) =>
@@ -506,10 +508,20 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'list_characters',
         description:
-          '列出所有角色设定。在翻译开始前，可以使用此工具获取所有已存在的角色，以便在翻译时保持一致性。',
+          '列出角色设定。可以通过 chapter_id 参数指定章节（只返回该章节中出现的角色），或设置 all_chapters=true 列出所有章节的角色。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有角色。在翻译开始前，可以使用此工具获取相关角色，以便在翻译时保持一致性。',
         parameters: {
           type: 'object',
           properties: {
+            chapter_id: {
+              type: 'string',
+              description:
+                '章节 ID（可选）。如果提供，只返回在该章节中出现的角色。如果不提供且 all_chapters 为 false，则返回所有角色。',
+            },
+            all_chapters: {
+              type: 'boolean',
+              description:
+                '是否列出所有章节的角色（默认 false）。如果为 true，忽略 chapter_id 参数，返回所有角色。',
+            },
             limit: {
               type: 'number',
               description: '返回的角色数量限制（可选，默认返回所有）',
@@ -519,11 +531,11 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { limit } = args;
+      const { chapter_id, all_chapters = false, limit } = args;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
@@ -537,11 +549,49 @@ export const characterTools: ToolDefinition[] = [
           entity: 'character',
           data: {
             tool_name: 'list_characters',
+            chapter_id,
           },
         });
       }
 
       let characters: CharacterSetting[] = book.characterSettings || [];
+
+      // 如果 all_chapters 为 false，需要按章节过滤
+      if (!all_chapters) {
+        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
+        if (chapter_id) {
+          // 查找章节
+          let foundChapter: Chapter | null = null;
+          for (const volume of book.volumes || []) {
+            for (const chapter of volume.chapters || []) {
+              if (chapter.id === chapter_id) {
+                foundChapter = chapter;
+                break;
+              }
+            }
+            if (foundChapter) break;
+          }
+
+          if (foundChapter) {
+            // 确保章节内容已加载
+            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
+            // 获取章节文本内容
+            const chapterText = getChapterContentText(chapterWithContent);
+            if (chapterText) {
+              // 使用文本匹配方法查找在该章节中出现的角色（与章节工具栏相同的方法）
+              characters = findUniqueCharactersInText(chapterText, characters);
+            } else {
+              // 如果章节没有内容，返回空数组
+              characters = [];
+            }
+          } else {
+            // 如果找不到章节，返回空数组
+            characters = [];
+          }
+        }
+        // 如果没有提供 chapter_id，保持现有行为（返回所有）
+      }
+
       if (limit && limit > 0) {
         characters = characters.slice(0, limit);
       }
@@ -559,9 +609,15 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences_count: char.occurrences.length,
+          occurrences_count: char.occurrences?.length || 0,
+          chapter_occurrences: chapter_id
+            ? char.occurrences?.find((occ) => String(occ.chapterId) === String(chapter_id))?.count || 0
+            : undefined,
         })),
-        total: book.characterSettings?.length || 0,
+        total: characters.length,
+        all_characters_count: book.characterSettings?.length || 0,
+        ...(chapter_id ? { chapter_id } : {}),
+        ...(all_chapters ? { all_chapters: true } : {}),
       });
     },
   },

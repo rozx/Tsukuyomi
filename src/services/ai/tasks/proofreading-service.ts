@@ -9,11 +9,6 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, Novel, Chapter } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
-import {
-  findUniqueTermsInText,
-  findUniqueCharactersInText,
-  calculateCharacterScores,
-} from 'src/utils/text-matcher';
 import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/index';
@@ -23,7 +18,6 @@ import { TranslationService } from './translation-service';
 import { getTodosSystemPrompt } from './todo-helper';
 import {
   executeToolCallLoop,
-  checkMaxTurnsReached,
   type AIProcessingStore,
 } from './ai-task-helper';
 
@@ -286,10 +280,6 @@ export class ProofreadingService {
       ========================================
       【工具使用说明】
       ========================================
-      **自动提供的参考**:
-      - 【相关术语参考】: 当前段落中出现的术语（可直接使用，无需调用工具）
-      - 【相关角色参考】: 当前段落中出现的角色（可直接使用，无需调用工具）
-
       **工具使用优先级**:
       1. **高频必用**:
          - \`find_paragraph_by_keywords\`: 检查人名、地名、称谓的一致性（支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
@@ -299,11 +289,11 @@ export class ProofreadingService {
          - \`search_memory_by_keywords\`: 搜索相关的背景设定、角色信息等记忆内容
          - \`get_memory\`: 获取完整记忆内容，确保校对时参考正确的设定
       2. **按需使用**:
-         - \`update_character\`: 发现角色名称不一致时更新
+         - \`update_character\`: 发现角色名称不一致时更新。⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
          - \`update_term\`: 发现术语翻译不一致时更新
          - \`create_memory\`: 保存重要的背景设定、角色信息等记忆内容，以便后续快速参考
       3. **待办事项管理**（用于任务规划）:
-         - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）
+         - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）。⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
          - \`list_todos\`: 查看所有待办事项
          - \`update_todo\`: 更新待办事项的内容或状态
          - \`mark_todo_done\`: 标记待办事项为完成（当你完成了该待办的任务时）
@@ -314,12 +304,13 @@ export class ProofreadingService {
       ========================================
       **⚠️ 重要：只能返回JSON，禁止使用翻译管理工具**
       - ❌ **禁止使用** \`add_translation\`、\`update_translation\`、\`remove_translation\`、\`select_translation\` 等翻译管理工具
-      - ✅ **必须直接返回** JSON 格式的校对结果
+      - ✅ **必须直接返回** JSON 格式的校对结果，包含 status 字段
       - 系统会自动处理翻译的保存和管理，你只需要返回校对内容
 
-      **必须返回有效的 JSON 格式**:
+      **必须返回有效的 JSON 格式，包含 status 字段**:
       \`\`\`json
       {
+        "status": "working",
         "paragraphs": [
           { "id": "段落ID1", "translation": "校对后的段落1" },
           { "id": "段落ID2", "translation": "校对后的段落2" }
@@ -327,51 +318,74 @@ export class ProofreadingService {
       }
       \`\`\`
 
+      **状态字段说明（status）**:
+      - **"planning"**: 准备阶段，正在规划任务、获取上下文、创建待办事项等。在此阶段可以使用工具获取信息、规划任务。
+      - **"working"**: 工作阶段，正在校对段落。可以输出部分校对结果，状态保持为 "working" 直到完成所有段落。
+      - **"completed"**: 完成阶段，当前块的所有段落校对已完成。系统会验证所有段落都有校对（只验证有变化的段落），如果缺少会要求继续工作。
+      - **"done"**: 完成阶段，所有后续操作（创建记忆、更新术语/角色、待办事项等）都已完成，可以进入下一个块。
+
       **格式要求清单**:
-      - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
-      - 段落 ID 必须与原文**完全一致**
-      - **⚠️ 重要：只返回有变化的段落**
-        - 如果段落没有错误或变化，**不要**将其包含在 \`paragraphs\` 数组中
-        - 只返回经过修正或改进的段落
-        - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
+      - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
+      - ⚠️ **重要**：当只更新状态时（如从 planning 到 working，或只是状态更新），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+      - 只有在实际提供校对结果时，才需要包含以下字段：
+        - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+        - 段落 ID 必须与原文**完全一致**
+        - **⚠️ 重要：只返回有变化的段落**
+          - 如果段落没有错误或变化，**不要**将其包含在 \`paragraphs\` 数组中
+          - 只返回经过修正或改进的段落
+          - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
+          - 如果所有段落都没有变化，返回：\`{"status": "completed", "paragraphs": []}\`
       - 必须是有效的 JSON（注意转义特殊字符）
       - **不要使用任何翻译管理工具，只返回JSON**
+      - **在所有状态阶段都可以使用工具**（planning、working、completed、done）
 
       ========================================
-      【执行工作流】
+      【执行工作流（基于状态）】
       ========================================
-      校对每个文本块时，按以下步骤执行：
+      校对每个文本块时，按以下状态流程执行：
 
-      1. **准备阶段**:
-         - 仔细阅读【相关术语参考】和【相关角色参考】
+      1. **规划阶段（status: "planning"）**:
+         - 使用工具获取上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）
+         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色；如果需要所有章节的，设置 \`all_chapters=true\`
          - 检查当前段落的翻译和原文
+         - 可以使用工具获取上下文、创建待办事项等
+         - 准备好后，将状态设置为 "working"
 
-      2. **检查阶段**:
+      2. **工作阶段（status: "working"）**:
          - **文字层面**：逐字检查错别字、标点、语法、词语用法
          - **内容层面**：检查人名、地名、称谓是否一致；检查时间线和逻辑是否合理；检查专业知识/设定是否准确
          - **格式层面**：检查格式、数字用法、引文注释是否规范
          - 如发现不一致，使用工具（如 find_paragraph_by_keywords）查找其他段落中的用法，确保一致性
+         - 可以输出部分校对结果，状态保持为 "working"
+         - 完成所有段落校对后，将状态设置为 "completed"
 
-      3. **修正阶段**:
-         - 只修正确实存在的错误
-         - 保持原意和风格
-         - 确保与全文保持一致
+      3. **完成阶段（status: "completed"）**:
+         - 系统会自动验证所有段落都有校对（只验证有变化的段落）
+         - 如果缺少校对，系统会要求继续工作（状态回到 "working"）
+         - 如果所有段落都完整，系统会询问是否需要后续操作
+         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
+         - 完成所有后续操作后，将状态设置为 "done"
 
-      4. **验证阶段**:
-         - 检查每个段落是否有需要修正的错误
-         - 确保段落 ID 完全对应（仅针对有变化的段落）
-         - 确保 JSON 格式有效
-         - **只将有变化的段落包含在输出中**
+      4. **最终完成（status: "done"）**:
+         - 所有操作已完成
+         - 系统会进入下一个文本块或完成整个任务
 
-      5. **输出阶段**:
-         - 返回符合格式要求的 JSON
-         - **只包含有变化的段落**在 \`paragraphs\` 数组中
-         - 如果所有段落都没有变化，返回空的 \`paragraphs\` 数组：\`{"paragraphs": []}\``;
+      4. **最终完成（status: "done"）**:
+         - 所有操作已完成
+         - 系统会进入下一个文本块或完成整个任务`;
 
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始校对。`;
+      let initialUserPrompt = `开始校对。
+
+**重要：必须使用状态字段（status）**
+- 所有响应必须是有效的 JSON 格式，包含 status 字段
+- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
+- 可以从 "planning" 状态开始，规划任务、获取上下文
+- 准备好后，将状态设置为 "working" 并开始校对
+- 完成所有段落校对后，将状态设置为 "completed"
+- 完成所有后续操作后，将状态设置为 "done"`;
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
@@ -388,6 +402,7 @@ export class ProofreadingService {
         【任务规划建议】
         - 如果需要规划复杂的校对任务，你可以使用 create_todo 工具创建待办事项来规划步骤
         - 例如：为大型章节创建待办事项来跟踪校对进度、一致性检查、格式检查等子任务
+        - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
 
         【执行要点】
         - **文字层面**：检查错别字、标点、语法、词语用法
@@ -408,73 +423,11 @@ export class ProofreadingService {
       const CHUNK_SIZE = ProofreadingService.CHUNK_SIZE;
       const chunks: Array<{
         text: string;
-        context?: string;
         paragraphIds?: string[];
       }> = [];
 
-      // 计算全文的角色出现得分，用于消歧义
-      let characterScores: Map<string, number> | undefined;
-      if (book && book.characterSettings) {
-        const fullText = paragraphsWithTranslation.map((p) => p.text).join('\n');
-        characterScores = calculateCharacterScores(fullText, book.characterSettings);
-      }
-
       let currentChunkText = '';
       let currentChunkParagraphs: Paragraph[] = [];
-
-      // 辅助函数：提取上下文
-      const getContext = (paragraphs: Paragraph[], bookData?: Novel): string => {
-        if (!bookData || paragraphs.length === 0) return '';
-
-        const textContent = paragraphs.map((p) => p.text).join('\n');
-        const contextParts: string[] = [];
-
-        // 查找相关术语
-        const relevantTerms = findUniqueTermsInText(textContent, bookData.terminologies || []);
-        if (relevantTerms.length > 0) {
-          contextParts.push('【相关术语参考】');
-          contextParts.push(
-            relevantTerms
-              .map(
-                (t) =>
-                  `- [ID: ${t.id}] ${t.name}: ${t.translation.translation}${t.description ? ` (${t.description})` : ''}`,
-              )
-              .join('\n'),
-          );
-        }
-
-        // 查找相关角色
-        const relevantCharacters = findUniqueCharactersInText(
-          textContent,
-          bookData.characterSettings || [],
-          characterScores,
-        );
-        if (relevantCharacters.length > 0) {
-          contextParts.push('【相关角色参考】');
-          contextParts.push(
-            relevantCharacters
-              .map((c) => {
-                let charInfo = `- [ID: ${c.id}] ${c.name}: ${c.translation.translation}`;
-                if (c.aliases && c.aliases.length > 0) {
-                  const aliasList = c.aliases
-                    .map((a) => `${a.name}(${a.translation.translation})`)
-                    .join(', ');
-                  charInfo += ` [别名: ${aliasList}]`;
-                }
-                if (c.description) {
-                  charInfo += ` (${c.description})`;
-                }
-                if (c.speakingStyle) {
-                  charInfo += ` [口吻: ${c.speakingStyle}]`;
-                }
-                return charInfo;
-              })
-              .join('\n'),
-          );
-        }
-
-        return contextParts.length > 0 ? contextParts.join('\n') + '\n\n' : '';
-      };
 
       for (const paragraph of paragraphsWithTranslation) {
         // 获取段落的当前翻译
@@ -487,18 +440,13 @@ export class ProofreadingService {
         // 格式化段落：[ID: {id}] 原文: {原文}\n翻译: {当前翻译}
         const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
 
-        // 预测加入新段落后的上下文
-        const nextParagraphs = [...currentChunkParagraphs, paragraph];
-        const nextContext = getContext(nextParagraphs, book);
-
-        // 如果当前块加上新段落和上下文超过限制，且当前块不为空，则先保存当前块
+        // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
         if (
-          currentChunkText.length + paragraphText.length + nextContext.length > CHUNK_SIZE &&
+          currentChunkText.length + paragraphText.length > CHUNK_SIZE &&
           currentChunkText.length > 0
         ) {
           chunks.push({
             text: currentChunkText,
-            context: getContext(currentChunkParagraphs, book),
             paragraphIds: currentChunkParagraphs.map((p) => p.id),
           });
           currentChunkText = '';
@@ -511,7 +459,6 @@ export class ProofreadingService {
       if (currentChunkText.length > 0) {
         chunks.push({
           text: currentChunkText,
-          context: getContext(currentChunkParagraphs, book),
           paragraphIds: currentChunkParagraphs.map((p) => p.id),
         });
       }
@@ -533,7 +480,6 @@ export class ProofreadingService {
         if (!chunk) continue;
 
         const chunkText = chunk.text;
-        const chunkContext = chunk.context || '';
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
@@ -570,20 +516,32 @@ export class ProofreadingService {
 - **格式层面**：检查格式、数字用法、引文注释
 - **一致性**：使用工具查找其他段落中的用法，确保全文一致
 - **最小改动**：只修正确实存在的错误，保持原意和风格
+- ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
 - **待办事项管理**（可选，用于任务规划）:
   - 如果需要规划复杂的校对任务，可以使用 create_todo 创建待办事项来规划步骤
+  - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
   - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落校对`;
         } else {
-          content = `接下来的内容：\n\n${chunkContext}${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落校对`;
         }
 
         history.push({ role: 'user', content });
 
-        // 使用共享的工具调用循环
-        const finalResponseText = await executeToolCallLoop({
+        // 使用共享的工具调用循环（基于状态的流程）
+        const loopResult = await executeToolCallLoop({
           history,
           tools,
           generateText: service.generateText.bind(service),
@@ -597,128 +555,62 @@ export class ProofreadingService {
           taskId,
           aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
           logLabel: 'ProofreadingService',
-          maxTurns: 10,
           includePreview: true,
+          // 对于 proofreading，只验证有变化的段落
+          verifyCompleteness: (expectedIds, receivedTranslations) => {
+            // 只检查已收到的翻译（有变化的段落）
+            // 对于 proofreading，不需要验证所有段落都有翻译，只需要验证返回的段落格式正确
+            return {
+              allComplete: true, // proofreading 只返回有变化的段落，所以总是完整的
+              missingIds: [],
+            };
+          },
         });
 
-        // 检查是否在达到最大回合数后仍未获得校对结果
-        checkMaxTurnsReached(finalResponseText, 10, 'proofreading');
-
-        // 解析 JSON 响应
-        try {
-          // 尝试提取 JSON
-          const jsonMatch = finalResponseText.match(/\{[\s\S]*\}/);
-          let chunkProofreading = '';
-          const extractedProofreadings: Map<string, string> = new Map();
-
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            try {
-              const data = JSON.parse(jsonStr);
-
-              // 优先使用 paragraphs 数组（结构化数据）
-              if (data.paragraphs && Array.isArray(data.paragraphs)) {
-                for (const para of data.paragraphs) {
-                  if (para.id && para.translation) {
-                    extractedProofreadings.set(para.id, para.translation);
-                  }
-                }
-
-                // 使用 translation 字段作为完整文本，如果没有则从 paragraphs 构建
-                if (data.translation) {
-                  chunkProofreading = data.translation;
-                } else if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
-                  // 从 paragraphs 数组构建完整文本
-                  const orderedTexts: string[] = [];
-                  for (const paraId of chunk.paragraphIds) {
-                    const proofreading = extractedProofreadings.get(paraId);
-                    if (proofreading) {
-                      orderedTexts.push(proofreading);
-                    }
-                  }
-                  chunkProofreading = orderedTexts.join('\n\n');
-                }
-              } else if (data.translation) {
-                // 后备方案：只有 translation 字段，尝试从字符串中提取段落ID
-                console.warn(
-                  `[ProofreadingService] ⚠️ JSON中未找到paragraphs数组（块 ${i + 1}/${chunks.length}），将尝试从translation字符串中提取段落ID`,
-                );
-                chunkProofreading = data.translation;
-
-                // 尝试从字符串中提取段落ID（兼容旧格式）
-                const idPattern = /\[ID:\s*([^\]]+)\]\s*([^[]*?)(?=\[ID:|$)/gs;
-                idPattern.lastIndex = 0;
-                let match;
-                while ((match = idPattern.exec(chunkProofreading)) !== null) {
-                  const paragraphId = match[1]?.trim();
-                  const proofreading = match[2]?.trim();
-                  if (paragraphId && proofreading) {
-                    extractedProofreadings.set(paragraphId, proofreading);
-                  }
-                }
-              } else {
-                console.warn(
-                  `[ProofreadingService] ⚠️ AI响应JSON中未找到translation或paragraphs字段（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为校对结果`,
-                );
-                chunkProofreading = finalResponseText;
-              }
-            } catch (e) {
-              console.warn(
-                `[ProofreadingService] ⚠️ 解析AI响应JSON失败（块 ${i + 1}/${chunks.length}）`,
-                e instanceof Error ? e.message : String(e),
-              );
-              // JSON 解析失败，回退到原始文本处理
-              chunkProofreading = finalResponseText;
-            }
-          } else {
-            // 不是 JSON，直接使用原始文本
-            console.warn(
-              `[ProofreadingService] ⚠️ AI响应不是JSON格式（块 ${i + 1}/${chunks.length}），将使用完整原始响应作为校对结果`,
-            );
-            chunkProofreading = finalResponseText;
-          }
-
-          // 处理校对结果：AI 现在只返回有变化的段落，这是预期行为
-          if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
-            // 过滤出有变化的段落（AI 应该已经只返回了有变化的段落，但这里再次验证以确保一致性）
-            const chunkParagraphProofreadings = filterChangedParagraphs(
-              chunk.paragraphIds,
-              extractedProofreadings,
-              originalTranslations,
-            );
-
-            if (chunkParagraphProofreadings.length > 0) {
-              // 按顺序构建文本
-              const orderedProofreadings: string[] = [];
-              for (const paraProofreading of chunkParagraphProofreadings) {
-                orderedProofreadings.push(paraProofreading.translation);
-                paragraphProofreadings.push(paraProofreading);
-              }
-              const orderedText = orderedProofreadings.join('\n\n');
-              proofreadText += orderedText;
-              if (onChunk) {
-                await onChunk({ text: orderedText, done: false });
-              }
-              // 通知段落校对完成
-              if (onParagraphProofreading) {
-                onParagraphProofreading(chunkParagraphProofreadings);
-              }
-            }
-            // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
-          } else {
-            // 没有提取到段落校对（可能是 JSON 解析失败或格式不正确），使用完整文本作为后备
-            proofreadText += chunkProofreading;
-            if (onChunk) {
-              await onChunk({ text: chunkProofreading, done: false });
-            }
-          }
-        } catch (e) {
-          console.warn(
-            `[ProofreadingService] ⚠️ 解析AI响应失败（块 ${i + 1}/${chunks.length}）`,
-            e instanceof Error ? e.message : String(e),
+        // 检查状态
+        if (loopResult.status !== 'done') {
+          throw new Error(
+            `校对任务未完成（状态: ${loopResult.status}）。请重试。`,
           );
-          proofreadText += finalResponseText;
-          if (onChunk) await onChunk({ text: finalResponseText, done: false });
+        }
+
+        // 使用从状态流程中提取的段落校对
+        const extractedProofreadings = loopResult.paragraphs;
+
+        // 处理校对结果：只返回有变化的段落
+        if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
+          // 过滤出有变化的段落
+          const chunkParagraphProofreadings = filterChangedParagraphs(
+            chunk.paragraphIds,
+            extractedProofreadings,
+            originalTranslations,
+          );
+
+          if (chunkParagraphProofreadings.length > 0) {
+            // 按顺序构建文本
+            const orderedProofreadings: string[] = [];
+            for (const paraProofreading of chunkParagraphProofreadings) {
+              orderedProofreadings.push(paraProofreading.translation);
+              paragraphProofreadings.push(paraProofreading);
+            }
+            const orderedText = orderedProofreadings.join('\n\n');
+            proofreadText += orderedText;
+            if (onChunk) {
+              await onChunk({ text: orderedText, done: false });
+            }
+            // 通知段落校对完成
+            if (onParagraphProofreading) {
+              onParagraphProofreading(chunkParagraphProofreadings);
+            }
+          }
+          // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
+        } else {
+          // 没有提取到段落校对，使用完整文本作为后备
+          const fallbackText = loopResult.responseText || '';
+          proofreadText += fallbackText;
+          if (onChunk) {
+            await onChunk({ text: fallbackText, done: false });
+          }
         }
       }
 
