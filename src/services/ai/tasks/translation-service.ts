@@ -303,6 +303,7 @@ export class TranslationService {
       - 如果文本中的角色名称（带敬语）与某个别名**完全匹配**，且该别名已有翻译（\`translation\` 字段），**必须直接使用该翻译**
       - 如果别名中包含敬语但翻译为空，应使用 \`update_character\` 工具补充该别名的翻译
       - ⚠️ **禁止自动创建新的敬语别名**
+      - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
 
       **步骤 2: 查看角色设定**
       - 如果别名中没有找到匹配的翻译，查看角色的 \`description\` 字段
@@ -323,6 +324,7 @@ export class TranslationService {
       **步骤 5: 翻译并保持一致性**
       - 根据以上步骤确定翻译方式后进行翻译
       - **不要**自动添加新的别名
+      - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
       - 如果用户希望固定某个敬语翻译为别名，应由用户手动添加
 
       ========================================
@@ -358,7 +360,8 @@ export class TranslationService {
       ========================================
       **核心规则**:
       - **主名称 (\`name\`)**: 必须是**全名**（如 "田中太郎"）
-      - **别名 (\`aliases\`)**: 名字或姓氏的**单独部分**（如 "田中"、"太郎"），或带敬语的称呼（如 "田中さん"）
+      - **别名 (\`aliases\`)**: 名字或姓氏的**单独部分**（如 "田中"、"太郎"）
+      - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
 
       **翻译前检查**:
       1. 使用 \`list_characters\` 或 \`search_characters_by_keywords\` 工具获取相关角色
@@ -388,6 +391,7 @@ export class TranslationService {
          - 先使用 \`list_characters\` 检查别名是否属于其他角色（避免冲突）
          - 确认不冲突后使用 \`update_character\` 添加
          - ⚠️ 更新别名时，数组中只能包含该角色自己的别名
+         - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
       3. **更新描述**:
          - 描述应包含：角色身份、角色性别（对代词翻译很重要）、角色关系（对敬语翻译很重要）、角色特征
          - 发现描述为空或不匹配时立即更新
@@ -464,12 +468,14 @@ export class TranslationService {
 
       **格式要求清单**:
       - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
-      - 如果有章节标题，必须包含 \`titleTranslation\` 字段
-      - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
-      - 段落 ID 必须与原文**完全一致**
-      - 段落数量必须**1:1 对应**（不能合并或拆分段落）
+      - ⚠️ **重要**：当只更新状态时（如从 planning 到 working，或只是状态更新），**不需要**包含 \`paragraphs\` 和 \`titleTranslation\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+      - 只有在实际提供翻译结果时，才需要包含以下字段：
+        - 如果有章节标题，必须包含 \`titleTranslation\` 字段
+        - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+        - 段落 ID 必须与原文**完全一致**
+        - 段落数量必须**1:1 对应**（不能合并或拆分段落）
+        - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
       - 必须是有效的 JSON（注意转义特殊字符）
-      - 确保 \`paragraphs\` 数组包含所有输入段落的 ID 和对应翻译
       - **不要使用任何翻译管理工具，只返回JSON**
       - **在所有状态阶段都可以使用工具**（planning、working、completed、done）
 
@@ -569,6 +575,7 @@ export class TranslationService {
 
       ⚠️ **关键提醒**:
       - 敬语翻译：别名匹配 > 角色关系 > 历史记录。禁止自动创建敬语别名。
+      - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
       - 数据维护：严禁人名入术语表。发现空翻译立即修复。
       - 一致性：严格遵守已有术语/角色翻译。
       - 格式：保持 JSON 格式，包含 status 字段，段落 ID 对应，1:1 段落对应。
@@ -674,6 +681,7 @@ export class TranslationService {
            - 步骤4: 应用角色关系判断
            - 步骤5: 翻译并保持一致性
            - ⚠️ 禁止自动创建敬语别名
+           - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
         2. **数据维护（发现问题时立即修复）**:
            - 术语/角色严格分离：严禁人名入术语表，严禁术语入角色表
            - 发现空翻译（translation 为空）→ 立即使用 update_term 或 update_character 修复
@@ -696,9 +704,19 @@ export class TranslationService {
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${titleSection}${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落翻译`;
         } else {
-          content = `接下来的内容：\n\n${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落翻译`;
         }
 
         // 重试循环
@@ -746,7 +764,6 @@ export class TranslationService {
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
-              maxTurns: 10,
               includePreview: false,
             });
 

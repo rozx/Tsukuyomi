@@ -292,6 +292,7 @@ export class PolishService {
         - 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。
         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色；如果需要所有章节的，设置 \`all_chapters=true\`
         - 如遇到敬语翻译，必须使用 find_paragraph_by_keywords 检查历史翻译一致性。
+        - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
         - 如遇到新术语和角色，确认需要后直接创建（无需检查词频）。
         - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
         - 如遇到数据问题，必须使用 update_term 或 update_character 修复。
@@ -341,8 +342,10 @@ export class PolishService {
 
         **格式要求清单**:
         - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
-        - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
-        - 段落 ID 必须与原文**完全一致**
+        - ⚠️ **重要**：当只更新状态时（如从 planning 到 working，或只是状态更新），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+        - 只有在实际提供润色结果时，才需要包含以下字段：
+          - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+          - 段落 ID 必须与原文**完全一致**
         - 必须是有效的 JSON（注意转义特殊字符）
         - **不要使用任何翻译管理工具，只返回JSON**
         - **在所有状态阶段都可以使用工具**（planning、working、completed、done）`;
@@ -526,6 +529,7 @@ export class PolishService {
 - **自然流畅**: 摆脱翻译腔，使用地道中文。
 - **工具**: 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数。
 - **历史参考**: 参考翻译历史，混合匹配最佳表达。
+- ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
 - **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。
 - **待办事项管理**（可选，用于任务规划）:
   - 如果需要规划复杂的润色任务，可以使用 create_todo 创建待办事项来规划步骤
@@ -533,9 +537,19 @@ export class PolishService {
   - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落润色`;
         } else {
-          content = `接下来的内容：\n\n${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落润色`;
         }
 
         history.push({ role: 'user', content });
@@ -555,7 +569,6 @@ export class PolishService {
           taskId,
           aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
           logLabel: 'PolishService',
-          maxTurns: 10,
           includePreview: true,
           // 对于 polish，只验证有变化的段落
           verifyCompleteness: (expectedIds, receivedTranslations) => {

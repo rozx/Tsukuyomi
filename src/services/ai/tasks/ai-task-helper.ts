@@ -253,6 +253,7 @@ export function buildContinuePrompt(
   let prompt = `工具调用已完成。请继续完成当前文本块的${taskLabel}任务。
 
 **⚠️ 重要提醒**：
+- **专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当前块完成后，系统会自动提供下一个块。
 - 你正在${taskLabel}以下段落（不要重新开始，继续之前的${taskLabel}任务）：
   段落ID: ${paragraphIdList || '见下方内容'}`;
 
@@ -263,13 +264,19 @@ export function buildContinuePrompt(
   }
 
   const taskSpecificInstructions = {
-    translation: `- 必须返回包含翻译结果的JSON格式响应，包含 status 字段
+    translation: `- 必须返回JSON格式响应，包含 status 字段
+- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 和 \`titleTranslation\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+- 只有在实际提供翻译结果时，才需要包含 paragraphs 数组
 - 不要跳过翻译，必须提供完整的翻译结果
 - 确保 paragraphs 数组中包含所有输入段落的 ID 和对应翻译`,
-    polish: `- 必须返回包含润色结果的JSON格式响应，包含 status 字段
+    polish: `- 必须返回JSON格式响应，包含 status 字段
+- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+- 只有在实际提供润色结果时，才需要包含 paragraphs 数组
 - 不要跳过润色，必须提供完整的润色结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中`,
-    proofreading: `- 必须返回包含校对结果的JSON格式响应，包含 status 字段
+    proofreading: `- 必须返回JSON格式响应，包含 status 字段
+- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+- 只有在实际提供校对结果时，才需要包含 paragraphs 数组
 - 不要跳过校对，必须提供完整的校对结果
 - 只返回有变化的段落，没有变化的段落不要包含在结果中`,
   };
@@ -387,7 +394,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     taskId,
     aiProcessingStore,
     logLabel,
-    maxTurns = 10,
+    maxTurns = Infinity,
     includePreview = false,
     verifyCompleteness,
   } = config;
@@ -405,7 +412,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   };
   const taskLabel = taskTypeLabels[taskType];
 
-  while (currentTurnCount < maxTurns) {
+  while (maxTurns === Infinity || currentTurnCount < maxTurns) {
     currentTurnCount++;
 
     const request: TextGenerationRequest = {
@@ -475,7 +482,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         // 规划阶段：继续规划，直到状态变为 working
         history.push({
           role: 'user',
-          content: `请继续规划任务。当你准备好开始${taskLabel}时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
+          content: `请继续规划任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你准备好开始${taskLabel}当前块时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
         });
       } else if (currentStatus === 'working') {
         // 工作阶段：继续工作
@@ -529,7 +536,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       });
       history.push({
         role: 'user',
-        content: `响应格式错误：${parsed.error}。请确保返回有效的 JSON 格式，包含 status 字段（值必须是 planning、working、completed 或 done 之一）。`,
+        content: `响应格式错误：${parsed.error}。请确保返回有效的 JSON 格式，包含 status 字段（值必须是 planning、working、completed 或 done 之一）。⚠️ **注意**：当只更新状态时，只需返回 \`{"status": "状态值"}\` 即可，不需要包含 paragraphs 或 titleTranslation 字段。`,
       });
       continue;
     }
@@ -562,14 +569,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 规划阶段：继续规划
       history.push({
         role: 'user',
-        content: `请继续规划任务。当你准备好开始${taskLabel}时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
+        content: `请继续规划任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你准备好开始${taskLabel}当前块时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
       });
       continue;
     } else if (currentStatus === 'working') {
       // 工作阶段：继续工作，直到状态变为 completed
       history.push({
         role: 'user',
-        content: `请继续${taskLabel}任务。当你完成当前块的所有段落${taskLabel}时，请将状态设置为 "completed"。`,
+        content: `请继续任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你完成当前块的所有段落${taskLabel}时，请将状态设置为 "completed"。`,
       });
       continue;
     } else if (currentStatus === 'completed') {
@@ -590,7 +597,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           const hasMore = verification.missingIds.length > 10;
           history.push({
             role: 'user',
-            content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
+            content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。**专注于当前文本块**：你只需要处理当前提供的文本块。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';
           continue;
@@ -610,8 +617,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     }
   }
 
-  // 检查是否达到最大回合数
-  if (currentStatus !== 'done' && currentTurnCount >= maxTurns) {
+  // 检查是否达到最大回合数（仅在设置了有限值时才检查）
+  if (currentStatus !== 'done' && maxTurns !== Infinity && currentTurnCount >= maxTurns) {
     throw new Error(
       `AI在${maxTurns}回合内未完成${taskLabel}任务（当前状态: ${currentStatus}）。请重试。`,
     );

@@ -4,6 +4,9 @@ import { useBooksStore } from 'src/stores/books';
 import type { Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
+import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
+import { findUniqueTermsInText } from 'src/utils/text-matcher';
+import type { Chapter } from 'src/models/novel';
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -292,7 +295,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -319,16 +322,38 @@ export const terminologyTools: ToolDefinition[] = [
 
       // 如果 all_chapters 为 false，需要按章节过滤
       if (!all_chapters) {
-        // 如果提供了 chapter_id，使用它；否则尝试从上下文中获取（但上下文没有，所以这里只处理提供了的情况）
+        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
         if (chapter_id) {
-          // 只返回在该章节中出现的术语
-          terms = terms.filter((term) =>
-            term.occurrences.some((occ) => occ.chapterId === chapter_id),
-          );
+          // 查找章节
+          let foundChapter: Chapter | null = null;
+          for (const volume of book.volumes || []) {
+            for (const chapter of volume.chapters || []) {
+              if (chapter.id === chapter_id) {
+                foundChapter = chapter;
+                break;
+              }
+            }
+            if (foundChapter) break;
+          }
+
+          if (foundChapter) {
+            // 确保章节内容已加载
+            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
+            // 获取章节文本内容
+            const chapterText = getChapterContentText(chapterWithContent);
+            if (chapterText) {
+              // 使用文本匹配方法查找在该章节中出现的术语（与章节工具栏相同的方法）
+              terms = findUniqueTermsInText(chapterText, terms);
+            } else {
+              // 如果章节没有内容，返回空数组
+              terms = [];
+            }
+          } else {
+            // 如果找不到章节，返回空数组
+            terms = [];
+          }
         }
         // 如果没有提供 chapter_id，保持现有行为（返回所有）
-        // 注意：由于工具上下文没有当前章节信息，如果用户想要默认只列出当前章节的，
-        // 需要在调用时显式传递 chapter_id 参数
       }
 
       if (limit && limit > 0) {
@@ -342,9 +367,9 @@ export const terminologyTools: ToolDefinition[] = [
           name: term.name,
           translation: term.translation.translation,
           description: term.description,
-          occurrences_count: term.occurrences.length,
+          occurrences_count: term.occurrences?.length || 0,
           chapter_occurrences: chapter_id
-            ? term.occurrences.find((occ) => occ.chapterId === chapter_id)?.count || 0
+            ? term.occurrences?.find((occ) => String(occ.chapterId) === String(chapter_id))?.count || 0
             : undefined,
         })),
         total: terms.length,

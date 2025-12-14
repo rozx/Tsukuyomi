@@ -289,7 +289,7 @@ export class ProofreadingService {
          - \`search_memory_by_keywords\`: 搜索相关的背景设定、角色信息等记忆内容
          - \`get_memory\`: 获取完整记忆内容，确保校对时参考正确的设定
       2. **按需使用**:
-         - \`update_character\`: 发现角色名称不一致时更新
+         - \`update_character\`: 发现角色名称不一致时更新。⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
          - \`update_term\`: 发现术语翻译不一致时更新
          - \`create_memory\`: 保存重要的背景设定、角色信息等记忆内容，以便后续快速参考
       3. **待办事项管理**（用于任务规划）:
@@ -326,13 +326,15 @@ export class ProofreadingService {
 
       **格式要求清单**:
       - **必须包含 status 字段**，值必须是 "planning"、"working"、"completed" 或 "done" 之一
-      - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
-      - 段落 ID 必须与原文**完全一致**
-      - **⚠️ 重要：只返回有变化的段落**
-        - 如果段落没有错误或变化，**不要**将其包含在 \`paragraphs\` 数组中
-        - 只返回经过修正或改进的段落
-        - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
-        - 如果所有段落都没有变化，返回：\`{"status": "completed", "paragraphs": []}\`
+      - ⚠️ **重要**：当只更新状态时（如从 planning 到 working，或只是状态更新），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
+      - 只有在实际提供校对结果时，才需要包含以下字段：
+        - \`paragraphs\` 数组中每个对象必须包含 \`id\` 和 \`translation\`
+        - 段落 ID 必须与原文**完全一致**
+        - **⚠️ 重要：只返回有变化的段落**
+          - 如果段落没有错误或变化，**不要**将其包含在 \`paragraphs\` 数组中
+          - 只返回经过修正或改进的段落
+          - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
+          - 如果所有段落都没有变化，返回：\`{"status": "completed", "paragraphs": []}\`
       - 必须是有效的 JSON（注意转义特殊字符）
       - **不要使用任何翻译管理工具，只返回JSON**
       - **在所有状态阶段都可以使用工具**（planning、working、completed、done）
@@ -514,15 +516,26 @@ export class ProofreadingService {
 - **格式层面**：检查格式、数字用法、引文注释
 - **一致性**：使用工具查找其他段落中的用法，确保全文一致
 - **最小改动**：只修正确实存在的错误，保持原意和风格
+- ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
 - **待办事项管理**（可选，用于任务规划）:
   - 如果需要规划复杂的校对任务，可以使用 create_todo 创建待办事项来规划步骤
   - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
   - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落校对`;
         } else {
-          content = `接下来的内容：\n\n${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}
+
+**⚠️ 重要：专注于当前文本块**
+- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
+- 当前块完成后，系统会自动提供下一个块
+- 请专注于完成当前块的所有段落校对`;
         }
 
         history.push({ role: 'user', content });
@@ -542,7 +555,6 @@ export class ProofreadingService {
           taskId,
           aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
           logLabel: 'ProofreadingService',
-          maxTurns: 10,
           includePreview: true,
           // 对于 proofreading，只验证有变化的段落
           verifyCompleteness: (expectedIds, receivedTranslations) => {
