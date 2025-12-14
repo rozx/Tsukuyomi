@@ -38,6 +38,8 @@ export interface ActionInfo {
         new_title?: string;
         regex_pattern?: string;
         keywords?: string[];
+        translation_keywords?: string[];
+        original_keywords?: string[];
       }
     | {
         memory_id?: string;

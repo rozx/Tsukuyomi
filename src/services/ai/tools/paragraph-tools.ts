@@ -7,7 +7,124 @@ import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import type { Translation, Chapter } from 'src/models/novel';
-import type { ToolDefinition } from './types';
+import type { ToolDefinition, ActionInfo } from './types';
+
+/**
+ * 在文本中替换完整的关键词（作为独立词，不是其他词的一部分）
+ * @param text 要替换的文本
+ * @param keyword 要替换的关键词
+ * @param replacement 替换文本
+ * @returns 替换后的文本
+ */
+export function replaceWholeKeyword(
+  text: string,
+  keyword: string,
+  replacement: string,
+): string {
+  if (!text || !keyword) {
+    return text;
+  }
+
+  // 转义正则表达式特殊字符
+  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // 检查关键词是否包含 CJK 字符（中文、日文、韩文）
+  const hasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(keyword);
+  // 检查文本是否包含 CJK 字符
+  const textHasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(text);
+  // 检查关键词是否只包含ASCII字母（英文单词）
+  const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
+
+  const cjkCharClass = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+
+  let pattern: RegExp;
+
+  if (isEnglishWord && !hasCJK) {
+    // 对于英文单词，使用单词边界
+    pattern = new RegExp(
+      `(^|[^a-zA-Z0-9]|[${cjkCharClass}])${escapedKeyword}([^a-zA-Z0-9]|[${cjkCharClass}]|$)`,
+      'giu',
+    );
+    return text.replace(pattern, (match, before, after) => {
+      // 保留前后的边界字符
+      return (before || '') + replacement + (after || '');
+    });
+  } else if (hasCJK || textHasCJK) {
+    // 对于 CJK 字符，使用更复杂的匹配
+    // 方案1：关键词前后是文本边界或非CJK字符
+    pattern = new RegExp(
+      `(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`,
+      'giu',
+    );
+    let result = text.replace(pattern, (match, before, after) => {
+      return (before || '') + replacement + (after || '');
+    });
+
+    // 如果方案1没有匹配，尝试方案2：关键词在CJK字符中间
+    if (result === text) {
+      // 手动检查并替换
+      const isCJK = (char: string) => /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
+      let searchIndex = 0;
+      const parts: string[] = [];
+      let lastIndex = 0;
+
+      while (true) {
+        const index = text.indexOf(keyword, searchIndex);
+        if (index === -1) {
+          break;
+        }
+
+        const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
+        const afterChar: string = index + keyword.length < text.length
+          ? (text[index + keyword.length] ?? '')
+          : '';
+
+        const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
+        const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
+        const beforeIsCJK = index > 0 && isCJK(beforeChar);
+        const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
+
+        // 匹配条件：前后都是边界，或前后都是CJK，或混合
+        if (
+          (beforeIsBoundary && afterIsBoundary) ||
+          (beforeIsCJK && afterIsCJK) ||
+          (beforeIsBoundary && afterIsCJK) ||
+          (beforeIsCJK && afterIsBoundary)
+        ) {
+          // 添加之前的部分
+          if (index > lastIndex) {
+            parts.push(text.substring(lastIndex, index));
+          }
+          // 添加替换文本
+          parts.push(replacement);
+          lastIndex = index + keyword.length;
+        }
+
+        searchIndex = index + 1;
+      }
+
+      // 添加剩余部分
+      if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+      }
+
+      if (parts.length > 0) {
+        result = parts.join('');
+      }
+    }
+
+    return result;
+  } else {
+    // 对于纯非 CJK 字符（主要是英文），使用单词边界
+    pattern = new RegExp(
+      `(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`,
+      'giu',
+    );
+    return text.replace(pattern, (match, before, after) => {
+      return (before || '') + replacement + (after || '');
+    });
+  }
+}
 
 /**
  * 检查文本中是否包含完整的关键词（作为独立词，不是其他词的一部分）
@@ -103,9 +220,9 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
           break;
         }
         
-        const beforeChar = index > 0 ? text[index - 1] : '';
-        const afterChar = index + keyword.length < text.length 
-          ? text[index + keyword.length] 
+        const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
+        const afterChar: string = index + keyword.length < text.length 
+          ? (text[index + keyword.length] ?? '') 
           : '';
         
         // 检查前后字符
@@ -515,7 +632,7 @@ export const paragraphTools: ToolDefinition[] = [
             keywords: validKeywords.length > 0 ? validKeywords : undefined,
             translation_keywords:
               validTranslationKeywords.length > 0 ? validTranslationKeywords : undefined,
-          },
+          } as ActionInfo['data'],
         });
       }
 
@@ -570,7 +687,7 @@ export const paragraphTools: ToolDefinition[] = [
             const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
             for (const chapterId of chapterIds) {
               const chapter = book.volumes
-                .flatMap((v) => v.chapters || [])
+                ?.flatMap((v) => v.chapters || [])
                 .find((c) => c.id === chapterId);
               if (chapter) {
                 const content = contentsMap.get(chapterId);
@@ -611,7 +728,7 @@ export const paragraphTools: ToolDefinition[] = [
           let targetVolumeIndex: number | null = null;
           let targetChapterIndex: number | null = null;
 
-          if (chapter_id) {
+          if (chapter_id && book.volumes) {
             for (let vIndex = 0; vIndex < book.volumes.length; vIndex++) {
               const volume = book.volumes[vIndex];
               if (volume && volume.chapters) {
@@ -626,6 +743,14 @@ export const paragraphTools: ToolDefinition[] = [
           }
 
           // 收集需要加载的章节
+          if (!book.volumes) {
+            return JSON.stringify({
+              success: true,
+              message: '书籍没有卷',
+              replaced_count: 0,
+            });
+          }
+
           const startVolumeIndex = chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
           const endVolumeIndex =
             chapter_id && targetVolumeIndex !== null
@@ -670,6 +795,14 @@ export const paragraphTools: ToolDefinition[] = [
           }
 
           // 搜索翻译文本
+          if (!book.volumes) {
+            return JSON.stringify({
+              success: true,
+              message: '书籍没有卷',
+              replaced_count: 0,
+            });
+          }
+
           const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
           const searchStartVolumeIndex =
             chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
@@ -1464,7 +1597,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'batch_replace_translations',
         description:
-          '批量替换段落翻译。根据关键词在原文或翻译文本中查找段落，并将匹配段落的翻译替换为新的翻译文本。支持同时搜索原文和翻译文本，如果同时提供两者，则只替换同时满足两个条件的段落。用于批量修正翻译中的错误或统一翻译风格。',
+          '批量替换段落翻译中的关键词部分。根据关键词在原文或翻译文本中查找段落，并只替换匹配的关键词部分（保留翻译文本的其他内容）。支持同时搜索原文和翻译文本，如果同时提供两者，则只替换同时满足两个条件的段落。用于批量修正翻译中的错误或统一翻译风格。重要：工具会智能地只替换匹配的关键词部分，而不是替换整个翻译文本。例如：翻译"大姐abc"中的"大姐"会被替换为"姐姐"，结果变为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），由于无法精确对应，会替换整个翻译文本。',
         parameters: {
           type: 'object',
           properties: {
@@ -1486,7 +1619,7 @@ export const paragraphTools: ToolDefinition[] = [
             },
             replacement_text: {
               type: 'string',
-              description: '新的翻译文本，用于替换匹配段落的翻译',
+              description: '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），会替换整个翻译文本。',
             },
             chapter_id: {
               type: 'string',
@@ -1562,7 +1695,7 @@ export const paragraphTools: ToolDefinition[] = [
             keywords: validKeywords.length > 0 ? validKeywords : undefined,
             original_keywords:
               validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
-          },
+          } as ActionInfo['data'],
         });
       }
 
@@ -1573,7 +1706,7 @@ export const paragraphTools: ToolDefinition[] = [
       let targetVolumeIndex: number | null = null;
       let targetChapterIndex: number | null = null;
 
-      if (chapter_id) {
+      if (chapter_id && book.volumes) {
         // 查找目标章节的位置
         for (let vIndex = 0; vIndex < book.volumes.length; vIndex++) {
           const volume = book.volumes[vIndex];
@@ -1604,6 +1737,17 @@ export const paragraphTools: ToolDefinition[] = [
       const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
 
       // 第一遍：收集需要加载的章节
+      if (!book.volumes) {
+        return JSON.stringify({
+          success: true,
+          message: '书籍没有卷',
+          replaced_count: 0,
+          keywords: validKeywords.length > 0 ? validKeywords : undefined,
+          original_keywords:
+            validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+        });
+      }
+
       const startVolumeIndex = chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
       const endVolumeIndex =
         chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : book.volumes.length - 1;
@@ -1651,6 +1795,17 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 第二遍：在加载的章节中搜索翻译文本
+      if (!book.volumes) {
+        return JSON.stringify({
+          success: true,
+          message: '书籍没有卷',
+          replaced_count: 0,
+          keywords: validKeywords.length > 0 ? validKeywords : undefined,
+          original_keywords:
+            validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+        });
+      }
+
       const searchStartVolumeIndex =
         chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
       const searchEndVolumeIndex =
@@ -1782,6 +1937,47 @@ export const paragraphTools: ToolDefinition[] = [
 
         const oldTranslations: Array<{ translation_id: string; translation: string }> = [];
 
+        // 找到匹配的关键词（用于替换）
+        let matchedKeyword: string | null = null;
+        
+        // 如果提供了翻译关键词，找到匹配的关键词
+        if (validKeywords.length > 0) {
+          for (const translation of paragraph.translations) {
+            for (const keyword of validKeywords) {
+              if (containsWholeKeyword(translation.translation || '', keyword)) {
+                matchedKeyword = keyword;
+                break;
+              }
+            }
+            if (matchedKeyword) break;
+          }
+        }
+        
+        // 如果没有找到匹配的翻译关键词，但提供了原文关键词，使用原文关键词
+        // 注意：这种情况下，我们假设原文关键词对应的翻译部分就是整个翻译文本
+        // 但实际上更合理的做法是只替换匹配的部分，但由于无法精确对应，我们使用替换文本
+        if (!matchedKeyword && validOriginalKeywords.length > 0) {
+          // 对于原文关键词，我们无法精确知道翻译中对应的部分
+          // 所以如果只提供了原文关键词，我们替换整个翻译
+          // 但如果同时提供了翻译关键词，应该优先使用翻译关键词
+          matchedKeyword = null; // 使用 null 表示替换整个翻译
+        }
+
+        // 执行替换的函数
+        const performReplacement = (translation: Translation) => {
+          const oldTranslation = translation.translation || '';
+          
+          if (matchedKeyword) {
+            // 替换匹配的关键词部分
+            translation.translation = normalizeTranslationQuotes(
+              replaceWholeKeyword(oldTranslation, matchedKeyword, replacement_text.trim()),
+            );
+          } else {
+            // 如果没有匹配的关键词（只有原文关键词），替换整个翻译
+            translation.translation = normalizeTranslationQuotes(replacement_text.trim());
+          }
+        };
+
         if (replace_all_translations) {
           // 替换所有翻译版本
           for (const translation of paragraph.translations) {
@@ -1789,7 +1985,7 @@ export const paragraphTools: ToolDefinition[] = [
               translation_id: translation.id,
               translation: translation.translation,
             });
-            translation.translation = normalizeTranslationQuotes(replacement_text.trim());
+            performReplacement(translation);
           }
         } else {
           // 只替换选中的翻译版本
@@ -1802,7 +1998,7 @@ export const paragraphTools: ToolDefinition[] = [
                 translation_id: selectedTranslation.id,
                 translation: selectedTranslation.translation,
               });
-              selectedTranslation.translation = normalizeTranslationQuotes(replacement_text.trim());
+              performReplacement(selectedTranslation);
             }
           } else {
             // 如果没有选中的翻译，替换第一个翻译
@@ -1812,7 +2008,7 @@ export const paragraphTools: ToolDefinition[] = [
                 translation_id: firstTranslation.id,
                 translation: firstTranslation.translation,
               });
-              firstTranslation.translation = normalizeTranslationQuotes(replacement_text.trim());
+              performReplacement(firstTranslation);
               // 同时设置为选中
               paragraph.selectedTranslationId = firstTranslation.id;
             }

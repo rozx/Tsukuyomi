@@ -333,9 +333,12 @@ describe('batch_replace_translations', () => {
     expect(resultObj.replaced_count).toBeGreaterThanOrEqual(2); // para1 和 para2 应该被替换
     
     // 验证翻译已被替换（如果匹配成功）
+    // 注意：现在只替换匹配的关键词部分，而不是整个翻译
     if (resultObj.replaced_count >= 2) {
-      expect(para1.translations[0]?.translation).toBe('新翻译文本');
-      expect(para2.translations[0]?.translation).toBe('新翻译文本');
+      // "这是测试翻译" 中的 "测试" 被替换为 "新翻译文本" → "这是新翻译文本翻译"
+      expect(para1.translations[0]?.translation).toBe('这是新翻译文本翻译');
+      // para2 的翻译是 "这是另一个测试"，"测试" 被替换为 "新翻译文本" → "这是另一个新翻译文本"
+      expect(para2.translations[0]?.translation).toBe('这是另一个新翻译文本');
       expect(para3.translations[0]?.translation).toBe('这是普通翻译'); // 不应该被替换
     }
   });
@@ -387,10 +390,13 @@ describe('batch_replace_translations', () => {
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(3); // 所有三个都应该匹配，因为"测试"是完整词
 
-    // 验证所有翻译已被替换
-    expect(para1.translations[0]?.translation).toBe('新翻译');
-    expect(para2.translations[0]?.translation).toBe('新翻译');
-    expect(para3.translations[0]?.translation).toBe('新翻译');
+    // 验证所有翻译已被替换（只替换关键词部分）
+    // "这是测试翻译" 中的 "测试" 被替换为 "新翻译" → "这是新翻译翻译"
+    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
+    // "这是测试中" 中的 "测试" 被替换为 "新翻译" → "这是新翻译中"
+    expect(para2.translations[0]?.translation).toBe('这是新翻译中');
+    // "这是测试文本" 中的 "测试" 被替换为 "新翻译" → "这是新翻译文本"
+    expect(para3.translations[0]?.translation).toBe('这是新翻译文本');
   });
 
   test('应该只匹配完整的关键词，不匹配部分词（英文）', async () => {
@@ -440,8 +446,12 @@ describe('batch_replace_translations', () => {
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换
 
-    // 验证只有 para1 的翻译被替换
-    expect(para1.translations[0]?.translation).toBe('New translation');
+    // 验证只有 para1 的翻译被替换（只替换关键词部分）
+    // "This is a test." 中的 "test" 被替换为 "New translation" → "This is a New translation."
+    // 注意：normalizeTranslationQuotes 可能会规范化标点符号
+    const replaced = para1.translations[0]?.translation;
+    expect(replaced).toContain('This is a New translation');
+    expect(replaced).not.toContain('test');
     expect(para2.translations[0]?.translation).toBe('This is testing.'); // 不应该被替换
     expect(para3.translations[0]?.translation).toBe('I am tested.'); // 不应该被替换
   });
@@ -540,7 +550,8 @@ describe('batch_replace_translations', () => {
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 同时满足两个条件
 
-    expect(para1.translations[0]?.translation).toBe('新翻译');
+    // "测试翻译" 中的 "测试" 被替换为 "新翻译" → "新翻译翻译"
+    expect(para1.translations[0]?.translation).toBe('新翻译翻译');
     expect(para2.translations[0]?.translation).toBe('普通翻译'); // 原文匹配但翻译不匹配
     expect(para3.translations[0]?.translation).toBe('测试翻译'); // 翻译匹配但原文不匹配
   });
@@ -653,14 +664,14 @@ describe('batch_replace_translations', () => {
     }
 
     // 不提供任何关键词应该抛出错误
-    await expect(
+    await (expect(
       tool.handler(
         {
           replacement_text: '新翻译',
         },
         { bookId: novel.id },
       ),
-    ).rejects.toThrow('必须提供 keywords 或 original_keywords 至少一个关键词数组');
+    ).rejects.toThrow('必须提供 keywords 或 original_keywords 至少一个关键词数组') as unknown as Promise<void>);
   });
 
   test('应该验证替换文本不能为空', async () => {
@@ -681,14 +692,14 @@ describe('batch_replace_translations', () => {
     }
 
     // 不提供替换文本应该抛出错误
-    await expect(
+    await (expect(
       tool.handler(
         {
           keywords: ['测试'],
         },
         { bookId: novel.id },
       ),
-    ).rejects.toThrow('替换文本不能为空');
+    ).rejects.toThrow('替换文本不能为空') as unknown as Promise<void>);
   });
 });
 
