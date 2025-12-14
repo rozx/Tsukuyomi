@@ -2668,7 +2668,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   ></div>
                 </div>
                 <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
-                  <div class="space-y-1 flex flex-wrap gap-1">
+                  <div class="flex flex-wrap gap-1.5">
                     <div
                       :id="`action-${item.messageId}-${item.action.timestamp}`"
                       class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
@@ -3051,12 +3051,31 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
 
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
-  margin: 0.5em 0;
+  margin: 0.75em 0;
   padding-left: 1.5em;
 }
 
+.markdown-content :deep(ul:first-child),
+.markdown-content :deep(ol:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(ul:last-child),
+.markdown-content :deep(ol:last-child) {
+  margin-bottom: 0;
+}
+
 .markdown-content :deep(li) {
-  margin: 0.25em 0;
+  margin: 0.4em 0;
+  line-height: 1.5;
+}
+
+.markdown-content :deep(li:first-child) {
+  margin-top: 0;
+}
+
+.markdown-content :deep(li:last-child) {
+  margin-bottom: 0;
 }
 
 .markdown-content :deep(blockquote) {
