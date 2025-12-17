@@ -19,7 +19,6 @@ const props = defineProps<{
   translatedCharCount: number;
   book: Novel | null;
   bookId?: string;
-  chapterCharacterScores?: Map<string, number> | undefined;
   selectedChapterId: string | null;
   translatingParagraphIds: Set<string>;
   polishingParagraphIds: Set<string>;
@@ -231,7 +230,6 @@ const handleOriginalTextInput = (event: Event) => {
             :terminologies="book?.terminologies || []"
             :character-settings="book?.characterSettings || []"
             v-bind="{
-              ...(chapterCharacterScores ? { characterScores: chapterCharacterScores } : {}),
               ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
               ...(bookId ? { bookId: bookId } : {}),
             }"

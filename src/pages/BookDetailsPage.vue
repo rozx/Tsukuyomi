@@ -20,7 +20,6 @@ import {
   normalizeTranslationSymbols,
   findUniqueTermsInText,
   findUniqueCharactersInText,
-  calculateCharacterScores,
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { cloneDeep } from 'lodash';
@@ -486,16 +485,6 @@ const selectedChapter = computed(() => {
   return null;
 });
 
-// 计算章节范围内的角色出现频率，用于消歧义
-const chapterCharacterScores = computed(() => {
-  if (!selectedChapterWithContent.value || !book.value?.characterSettings) {
-    return undefined;
-  }
-
-  const chapterText = getChapterContentText(selectedChapterWithContent.value);
-  return calculateCharacterScores(chapterText, book.value.characterSettings);
-});
-
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
   if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
@@ -897,7 +886,6 @@ const usedCharacters = computed(() => {
   return findUniqueCharactersInText(
     text,
     book.value.characterSettings,
-    chapterCharacterScores.value,
   );
 });
 
@@ -1886,7 +1874,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :translated-char-count="translatedCharCount"
             :book="book || null"
             :book-id="bookId"
-            :chapter-character-scores="chapterCharacterScores"
             :selected-chapter-id="selectedChapterId"
             :translating-paragraph-ids="translatingParagraphIds"
             :polishing-paragraph-ids="polishingParagraphIds"
