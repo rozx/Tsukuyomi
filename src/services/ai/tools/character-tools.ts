@@ -449,6 +449,7 @@ export const characterTools: ToolDefinition[] = [
           entity: 'character',
           data: {
             tool_name: 'search_characters_by_keywords',
+            keywords: validKeywords,
           },
         });
       }

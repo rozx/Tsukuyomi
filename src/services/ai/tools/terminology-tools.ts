@@ -435,6 +435,7 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'search_terms_by_keywords',
+            keywords: validKeywords,
           },
         });
       }
