@@ -632,6 +632,7 @@ export const paragraphTools: ToolDefinition[] = [
             keywords: validKeywords.length > 0 ? validKeywords : undefined,
             translation_keywords:
               validTranslationKeywords.length > 0 ? validTranslationKeywords : undefined,
+            ...(chapter_id ? { chapter_id } : {}),
           } as ActionInfo['data'],
         });
       }
@@ -993,6 +994,7 @@ export const paragraphTools: ToolDefinition[] = [
           data: {
             tool_name: 'search_paragraphs_by_regex',
             regex_pattern: regex_pattern.trim(),
+            ...(chapter_id ? { chapter_id } : {}),
           },
         });
       }
@@ -1685,19 +1687,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 报告操作开始
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            tool_name: 'batch_replace_translations',
-            keywords: validKeywords.length > 0 ? validKeywords : undefined,
-            original_keywords:
-              validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
-          } as ActionInfo['data'],
-        });
-      }
+      // 注意：不在这里发送 read action，批量替换完成后会发送一个汇总的 update action
 
       // 收集所有匹配的段落
       const allResults: Map<string, ParagraphSearchResult> = new Map();
@@ -1924,7 +1914,7 @@ export const paragraphTools: ToolDefinition[] = [
       const replacedParagraphs: Array<{
         paragraph_id: string;
         chapter_id: string;
-        old_translations: Array<{ translation_id: string; translation: string }>;
+        old_translations: Translation[];
         new_translation: string;
       }> = [];
 
@@ -1935,7 +1925,8 @@ export const paragraphTools: ToolDefinition[] = [
           continue;
         }
 
-        const oldTranslations: Array<{ translation_id: string; translation: string }> = [];
+        // 保存完整的翻译对象以便恢复（包括 id, translation, aiModelId）
+        const oldTranslations: Translation[] = [];
 
         // 找到匹配的关键词（用于替换）
         let matchedKeyword: string | null = null;
@@ -1981,9 +1972,11 @@ export const paragraphTools: ToolDefinition[] = [
         if (replace_all_translations) {
           // 替换所有翻译版本
           for (const translation of paragraph.translations) {
+            // 保存完整的翻译对象（深拷贝）
             oldTranslations.push({
-              translation_id: translation.id,
-              translation: translation.translation,
+              id: translation.id,
+              translation: translation.translation || '',
+              aiModelId: translation.aiModelId,
             });
             performReplacement(translation);
           }
@@ -1994,9 +1987,11 @@ export const paragraphTools: ToolDefinition[] = [
               (t) => t.id === paragraph.selectedTranslationId,
             );
             if (selectedTranslation) {
+              // 保存完整的翻译对象（深拷贝）
               oldTranslations.push({
-                translation_id: selectedTranslation.id,
-                translation: selectedTranslation.translation,
+                id: selectedTranslation.id,
+                translation: selectedTranslation.translation || '',
+                aiModelId: selectedTranslation.aiModelId,
               });
               performReplacement(selectedTranslation);
             }
@@ -2004,9 +1999,11 @@ export const paragraphTools: ToolDefinition[] = [
             // 如果没有选中的翻译，替换第一个翻译
             const firstTranslation = paragraph.translations[0];
             if (firstTranslation) {
+              // 保存完整的翻译对象（深拷贝）
               oldTranslations.push({
-                translation_id: firstTranslation.id,
-                translation: firstTranslation.translation,
+                id: firstTranslation.id,
+                translation: firstTranslation.translation || '',
+                aiModelId: firstTranslation.aiModelId,
               });
               performReplacement(firstTranslation);
               // 同时设置为选中
@@ -2022,34 +2019,44 @@ export const paragraphTools: ToolDefinition[] = [
             old_translations: oldTranslations,
             new_translation: replacement_text.trim(),
           });
-
-          // 报告更新操作
-          if (onAction) {
-            for (const oldTrans of oldTranslations) {
-              onAction({
-                type: 'update',
-                entity: 'translation',
-                data: {
-                  paragraph_id: paragraph.id,
-                  translation_id: oldTrans.translation_id,
-                  old_translation: oldTrans.translation,
-                  new_translation: replacement_text.trim(),
-                },
-                previousData: {
-                  id: oldTrans.translation_id,
-                  translation: oldTrans.translation,
-                  aiModelId:
-                    paragraph.translations.find((t) => t.id === oldTrans.translation_id)
-                      ?.aiModelId || '',
-                },
-              });
-            }
-          }
         }
       }
 
       // 更新书籍（保存更改）
       await booksStore.updateBook(bookId, { volumes: book.volumes });
+
+      // 报告批量替换操作（单个汇总 action，而不是每个替换一个）
+      if (onAction && replacedParagraphs.length > 0) {
+        // 计算总替换数量（包括所有翻译版本）
+        const totalTranslationCount = replacedParagraphs.reduce(
+          (sum, p) => sum + p.old_translations.length,
+          0,
+        );
+
+        onAction({
+          type: 'update',
+          entity: 'translation',
+          data: {
+            tool_name: 'batch_replace_translations',
+            replaced_paragraph_count: replacedParagraphs.length,
+            replaced_translation_count: totalTranslationCount,
+            ...(validKeywords.length > 0 ? { keywords: validKeywords } : {}),
+            ...(validOriginalKeywords.length > 0
+              ? { original_keywords: validOriginalKeywords }
+              : {}),
+            replacement_text: replacement_text.trim(),
+            replace_all_translations,
+          },
+          // 保存所有被替换的翻译数据以便恢复
+          previousData: {
+            replaced_paragraphs: replacedParagraphs.map((p) => ({
+              paragraph_id: p.paragraph_id,
+              chapter_id: p.chapter_id,
+              old_translations: p.old_translations,
+            })),
+          },
+        });
+      }
 
       return JSON.stringify({
         success: true,

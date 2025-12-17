@@ -512,6 +512,7 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'get_occurrences_by_keywords',
+            keywords: keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0),
           },
         });
       }
