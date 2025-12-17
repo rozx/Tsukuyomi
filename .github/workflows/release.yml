@@ -345,18 +345,29 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: bun run build:electron
         env:
+          NODE_ENV: production
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # macOS 代码签名配置（如果已配置证书）
+          # CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          # CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest'
         run: bun run build:electron
         env:
+          NODE_ENV: production
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # Windows 代码签名配置（如果已配置证书）
+          # CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
       - name: Build for Linux
         if: matrix.os == 'ubuntu-latest'
         run: bun run build:electron
         env:
+          NODE_ENV: production
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Package Mac App Bundle

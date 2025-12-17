@@ -66,6 +66,7 @@ bunx puppeteer browsers install chrome || echo "⚠️  Chrome 安装失败，�
 
 # 构建前端应用
 echo "🏗️  构建前端应用..."
+export NODE_ENV=production
 bun run build:spa
 
 echo "✅ 构建完成！"
