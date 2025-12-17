@@ -91,9 +91,6 @@ describe('CharacterSettingService', () => {
       expect(result.aliases[0]?.name).toBe('Ally');
       expect(result.aliases[0]?.translation?.translation).toBe('艾莉');
 
-      // 验证出现次数数组存在（但内容为空，因为是在后台异步更新的）
-      expect(result.occurrences).toBeDefined();
-      expect(Array.isArray(result.occurrences)).toBe(true);
 
       expect(mockUpdateBook).toHaveBeenCalledTimes(1);
     });
@@ -106,7 +103,6 @@ describe('CharacterSettingService', () => {
           sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
-          occurrences: [],
         },
       ];
 
@@ -133,7 +129,6 @@ describe('CharacterSettingService', () => {
           sex: 'female',
           translation: { id: 't1', translation: '爱丽丝', aiModelId: '' },
           aliases: [],
-          occurrences: [],
           description: 'Old description',
         },
       ];
@@ -162,7 +157,6 @@ describe('CharacterSettingService', () => {
           sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
-          occurrences: [],
         },
         {
           id: 'char-2',
@@ -170,7 +164,6 @@ describe('CharacterSettingService', () => {
           sex: undefined,
           translation: { id: 't2', translation: '', aiModelId: '' },
           aliases: [],
-          occurrences: [],
         },
       ];
 
@@ -196,7 +189,6 @@ describe('CharacterSettingService', () => {
           sex: undefined,
           translation: { id: 't1', translation: '', aiModelId: '' },
           aliases: [],
-          occurrences: [],
         },
       ];
 

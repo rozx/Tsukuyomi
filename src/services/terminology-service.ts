@@ -1,5 +1,5 @@
 import type { Occurrence, Terminology, Translation, Novel } from 'src/models/novel';
-import { flatMap, isEmpty, isArray, isEqual } from 'lodash';
+import { flatMap, isEmpty, isArray } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import {
   UniqueIdGenerator,
@@ -9,56 +9,12 @@ import {
   processItemsInBatches,
   ensureChapterContentLoaded,
 } from 'src/utils';
-import co from 'co';
 
 /**
  * 术语服务
  * 负责管理小说中的术语（添加、更新、删除、统计出现次数等）
  */
 export class TerminologyService {
-  /**
-   * 后台更新术语的出现次数
-   * @param bookId 书籍 ID
-   * @param termId 术语 ID
-   * @param termName 术语名称
-   * @param book 书籍对象（用于统计）
-   */
-  private static updateTermOccurrencesInBackground(
-    bookId: string,
-    termId: string,
-    termName: string,
-    book: Novel,
-  ): void {
-    void co(function* () {
-      try {
-        // 统计术语出现次数
-        const countedOccurrences: Occurrence[] = yield TerminologyService.countTermOccurrences(
-          book,
-          termName,
-        );
-
-        const booksStore = useBooksStore();
-        // 获取最新的书籍状态
-        const latestBook = booksStore.getBookById(bookId);
-        if (!latestBook) {
-          throw new Error(`书籍不存在: ${bookId}`);
-        }
-        // 更新术语的出现次数
-        const updatedTerminologies = (latestBook.terminologies || []).map((term) =>
-          term.id === termId ? { ...term, occurrences: countedOccurrences } : term,
-        );
-        yield booksStore.updateBook(bookId, {
-          terminologies: updatedTerminologies,
-          lastEdited: new Date(),
-        });
-
-        console.log(`[TerminologyService] 成功更新术语 "${termName}" 的出现次数`);
-      } catch (error) {
-        console.error(`[TerminologyService] 更新术语 "${termName}" 的出现次数失败:`, error);
-      }
-    });
-  }
-
   /**
    * 统计术语在书籍所有章节中的出现次数
    * 使用分批处理避免阻塞 UI
@@ -124,7 +80,6 @@ export class TerminologyService {
    * @param termData.name 术语名称（必需）
    * @param termData.translation 翻译文本（可选，留空时由 AI 自动翻译）
    * @param termData.description 术语描述（可选）
-   * @param termData.occurrences 出现记录（可选，默认为空数组）
    * @returns 创建的术语对象
    * @throws 如果术语名称已存在，抛出错误
    */
@@ -134,7 +89,6 @@ export class TerminologyService {
       name: string;
       translation?: string;
       description?: string;
-      occurrences?: Occurrence[];
     },
   ): Promise<Terminology> {
     const booksStore = useBooksStore();
@@ -164,16 +118,12 @@ export class TerminologyService {
       aiModelId: '', // 可以后续从默认模型获取
     };
 
-    // 使用提供的 occurrences 或空数组，后台更新出现次数
-    const occurrences = termData.occurrences || [];
-
     // 创建新术语
     const newTerminology: Terminology = {
       id: termId,
       name: termData.name,
       ...(termData.description ? { description: termData.description } : {}),
       translation,
-      occurrences,
     };
 
     // 更新书籍
@@ -182,11 +132,6 @@ export class TerminologyService {
       terminologies: updatedTerminologies,
       lastEdited: new Date(),
     });
-
-    // 后台更新出现次数（如果未提供 occurrences）
-    if (!termData.occurrences || termData.occurrences.length === 0) {
-      this.updateTermOccurrencesInBackground(bookId, termId, termData.name, book);
-    }
 
     return newTerminology;
   }
@@ -236,11 +181,8 @@ export class TerminologyService {
       }
     }
 
-    // 如果名称改变，需要在后台更新出现次数，先使用空数组
-    const updatedName = updates.name ?? existingTerm.name;
-    const occurrences = nameChanged ? [] : existingTerm.occurrences;
-
     // 更新术语
+    const updatedName = updates.name ?? existingTerm.name;
     const updatedTerm: Terminology = {
       id: existingTerm.id,
       name: updatedName,
@@ -252,7 +194,6 @@ export class TerminologyService {
             : existingTerm.translation.translation,
         aiModelId: existingTerm.translation.aiModelId,
       },
-      occurrences,
     };
 
     // 处理 description：如果有值则设置，如果为空字符串则删除属性
@@ -274,11 +215,6 @@ export class TerminologyService {
       terminologies: updatedTerminologies,
       lastEdited: new Date(),
     });
-
-    // 如果名称改变，后台更新出现次数
-    if (nameChanged && updates.name) {
-      this.updateTermOccurrencesInBackground(bookId, termId, updates.name, book);
-    }
 
     return updatedTerm;
   }
@@ -310,101 +246,6 @@ export class TerminologyService {
       terminologies: updatedTerminologies,
       lastEdited: new Date(),
     });
-  }
-
-  /**
-   * 刷新所有术语的出现次数
-   * 当章节内容更新后调用此方法来重新统计所有术语的出现次数
-   * 使用分批处理避免阻塞 UI
-   * @param bookId 书籍 ID
-   */
-  static async refreshAllTermOccurrences(bookId: string): Promise<void> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const terminologies = book.terminologies || [];
-    if (terminologies.length === 0) {
-      return;
-    }
-
-    // 分批处理术语，每批之间让出主线程
-    const updatedTerminologies = await processItemsInBatches(
-      terminologies,
-      async (term) => {
-        const occurrences = await this.countTermOccurrences(book, term.name);
-        const occurrencesChanged = !isEqual(term.occurrences, occurrences);
-        if (occurrencesChanged) {
-          return {
-            ...term,
-            occurrences,
-          };
-        }
-        return term;
-      },
-      5, // 每批处理 5 个术语
-      0, // 让出主线程的延迟时间
-    );
-
-    // 检查是否有任何术语被更新
-    const hasChanges = updatedTerminologies.some(
-      (term, index) => !isEqual(term, terminologies[index]),
-    );
-    if (hasChanges) {
-      await booksStore.updateBook(bookId, {
-        terminologies: updatedTerminologies,
-        lastEdited: new Date(),
-      });
-    }
-  }
-
-  /**
-   * 移除指定章节的出现记录（用于章节删除时的优化）
-   * 比 refreshAllTermOccurrences 更高效，只需移除该章节的记录，无需重新扫描所有章节
-   * @param bookId 书籍 ID
-   * @param chapterId 要移除的章节 ID
-   */
-  static async removeChapterOccurrences(bookId: string, chapterId: string): Promise<void> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const terminologies = book.terminologies || [];
-    if (terminologies.length === 0) {
-      return;
-    }
-
-    // 移除所有术语中该章节的出现记录
-    const updatedTerminologies = terminologies.map((term) => {
-      const filteredOccurrences = (term.occurrences || []).filter(
-        (occ) => occ.chapterId !== chapterId,
-      );
-      // 只有当出现记录发生变化时才返回新对象
-      if (filteredOccurrences.length !== term.occurrences?.length) {
-        return {
-          ...term,
-          occurrences: filteredOccurrences,
-        };
-      }
-      return term;
-    });
-
-    // 检查是否有任何术语被更新
-    const hasChanges = updatedTerminologies.some(
-      (term, index) => !isEqual(term, terminologies[index]),
-    );
-    if (hasChanges) {
-      await booksStore.updateBook(bookId, {
-        terminologies: updatedTerminologies,
-        lastEdited: new Date(),
-      });
-    }
   }
 
   /**
@@ -518,7 +359,6 @@ export class TerminologyService {
                 translation: String(translation),
                 aiModelId: 'manual-import',
               },
-              occurrences: [],
               description: undefined,
             }));
           } else {

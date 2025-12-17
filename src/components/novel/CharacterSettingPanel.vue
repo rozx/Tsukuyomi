@@ -35,7 +35,6 @@ const deletingCharacter = ref<{
   speakingStyle?: string | undefined;
   translations: string;
   aliases: string[];
-  occurrences: number;
   _original: any;
 } | null>(null);
 
@@ -54,7 +53,6 @@ const allCharacterSettings = computed(() => {
     speakingStyle: char.speakingStyle,
     translations: char.translation.translation,
     aliases: char.aliases.map((a: Alias) => a.name),
-    occurrences: char.occurrences.reduce((sum, occ) => sum + occ.count, 0),
     // 保留原始对象引用以便需要时使用
     _original: char,
   }));
@@ -527,7 +525,6 @@ const handleFileSelect = async (event: Event) => {
           :speaking-style="char.speakingStyle"
           :translations="char.translations"
           :aliases="char.aliases"
-          :occurrences="char.occurrences"
           @edit="openEditDialog(char)"
           @delete="handleDelete(char)"
         />

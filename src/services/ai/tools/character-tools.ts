@@ -122,7 +122,6 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences_count: character.occurrences.length,
         },
       });
     },
@@ -195,7 +194,6 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences: character.occurrences,
         },
       });
     },
@@ -338,7 +336,6 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences_count: character.occurrences.length,
         },
       });
     },
@@ -497,7 +494,6 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences_count: char.occurrences.length,
         })),
         count: filteredCharacters.length,
       });
@@ -610,10 +606,6 @@ export const characterTools: ToolDefinition[] = [
             name: alias.name,
             translation: alias.translation.translation,
           })),
-          occurrences_count: char.occurrences?.length || 0,
-          chapter_occurrences: chapter_id
-            ? char.occurrences?.find((occ) => String(occ.chapterId) === String(chapter_id))?.count || 0
-            : undefined,
         })),
         total: characters.length,
         all_characters_count: book.characterSettings?.length || 0,

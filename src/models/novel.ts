@@ -155,7 +155,6 @@ export interface Terminology {
   name: string;
   description?: string | undefined;
   translation: Translation;
-  occurrences: Occurrence[];
 }
 
 // 角色设定
@@ -167,7 +166,6 @@ export interface CharacterSetting {
   speakingStyle?: string | undefined;
   translation: Translation;
   aliases: Alias[];
-  occurrences: Occurrence[];
 }
 
 export interface Occurrence {

@@ -24,8 +24,6 @@ await mock.module('src/composables/useToastHistory', () => ({
   useToastWithHistory: mockUseToastWithHistory,
 }));
 
-const mockRefreshAllTermOccurrences = mock(() => Promise.resolve());
-const mockRefreshAllCharacterOccurrences = mock(() => Promise.resolve());
 
 // Helper functions
 function createTestParagraph(id: string, text: string): Paragraph {
@@ -74,15 +72,6 @@ describe('useEditMode', () => {
     mockToastAdd.mockClear();
     mockUpdateChapter.mockClear();
     mockBooksStoreUpdateBook.mockClear();
-    mockRefreshAllTermOccurrences.mockClear();
-    mockRefreshAllCharacterOccurrences.mockClear();
-
-    spyOn(TerminologyService, 'refreshAllTermOccurrences').mockImplementation(
-      mockRefreshAllTermOccurrences,
-    );
-    spyOn(CharacterSettingService, 'refreshAllCharacterOccurrences').mockImplementation(
-      mockRefreshAllCharacterOccurrences,
-    );
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       updateBook: mockBooksStoreUpdateBook,
     } as any);

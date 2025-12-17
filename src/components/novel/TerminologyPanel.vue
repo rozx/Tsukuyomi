@@ -36,7 +36,6 @@ const allTerminologies = computed(() => {
     name: term.name,
     description: term.description,
     translation: term.translation.translation,
-    occurrences: term.occurrences.reduce((sum, occ) => sum + occ.count, 0),
   }));
 });
 
@@ -69,7 +68,6 @@ const deletingTerminology = ref<{
   name: string;
   description?: string | undefined;
   translation: string;
-  occurrences: number;
 } | null>(null);
 
 // 批量操作相关状态
@@ -516,7 +514,6 @@ const handleFileSelect = async (event: Event) => {
           ...(importedTerm.description !== undefined
             ? { description: importedTerm.description }
             : {}),
-          occurrences: importedTerm.occurrences,
         });
         addedTermIds.push(newTerm.id);
         addedCount++;
@@ -712,7 +709,6 @@ const handleFileSelect = async (event: Event) => {
                     ? terminology.translation.translation
                     : terminology.translation
                 "
-                :occurrences="terminology.occurrences"
                 :show-checkbox="bulkActionMode"
                 :checked="selectedTermIds.has(terminology.id)"
                 :item-id="terminology.id"

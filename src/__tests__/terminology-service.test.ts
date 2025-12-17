@@ -31,7 +31,6 @@ describe('TerminologyService', () => {
             translation: '测试',
             aiModelId: 'model1',
           },
-          occurrences: [],
         },
       ];
       const file = new File([JSON.stringify(validData)], 'test.json', {

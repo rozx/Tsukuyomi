@@ -814,15 +814,6 @@ const sendMessage = async () => {
               details.push(`别名：${character.aliases.length} 个`);
             }
 
-            // 出现次数
-            if (character.occurrences && character.occurrences.length > 0) {
-              const totalOccurrences = character.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -873,12 +864,6 @@ const sendMessage = async () => {
             // 描述
             if (term.description) {
               details.push(`描述：${term.description}`);
-            }
-
-            // 出现次数
-            if (term.occurrences && term.occurrences.length > 0) {
-              const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-              details.push(`出现：${totalOccurrences} 次`);
             }
 
             // 组合消息
@@ -957,12 +942,6 @@ const sendMessage = async () => {
             details.push(`别名：${character.aliases.length} 个`);
           }
 
-          // 出现次数
-          if (character.occurrences && character.occurrences.length > 0) {
-            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push(`出现：${totalOccurrences} 次`);
-          }
-
           // 组合消息
           const mainInfo = parts.join(' | ');
           if (mainInfo && details.length > 0) {
@@ -1035,12 +1014,6 @@ const sendMessage = async () => {
           // 描述
           if (term.description) {
             details.push(`描述：${term.description}`);
-          }
-
-          // 出现次数
-          if (term.occurrences && term.occurrences.length > 0) {
-            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push(`出现：${totalOccurrences} 次`);
           }
 
           // 组合消息
@@ -1323,15 +1296,6 @@ const sendMessage = async () => {
               details.push(`别名：${previousCharacter.aliases.length} 个`);
             }
 
-            // 出现次数
-            if (previousCharacter.occurrences && previousCharacter.occurrences.length > 0) {
-              const totalOccurrences = previousCharacter.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -1390,15 +1354,6 @@ const sendMessage = async () => {
             // 描述
             if (previousTerm.description) {
               details.push(`描述：${previousTerm.description}`);
-            }
-
-            // 出现次数
-            if (previousTerm.occurrences && previousTerm.occurrences.length > 0) {
-              const totalOccurrences = previousTerm.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
             }
 
             // 组合消息

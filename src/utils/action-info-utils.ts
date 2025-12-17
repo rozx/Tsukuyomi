@@ -230,13 +230,6 @@ export function getActionDetails(
               value: term.description,
             });
           }
-          if (term.occurrences && term.occurrences.length > 0) {
-            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push({
-              label: '出现次数',
-              value: `${totalOccurrences} 次`,
-            });
-          }
         }
       } else if (action.entity === 'character') {
         const character = book.characterSettings?.find((c) => c.name === action.name);
@@ -274,13 +267,6 @@ export function getActionDetails(
             details.push({
               label: '别名',
               value: character.aliases.map((a) => a.name).join('、'),
-            });
-          }
-          if (character.occurrences && character.occurrences.length > 0) {
-            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push({
-              label: '出现次数',
-              value: `${totalOccurrences} 次`,
             });
           }
         }
