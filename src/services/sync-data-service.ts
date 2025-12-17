@@ -72,9 +72,10 @@ export class SyncDataService {
           }
         } else {
           // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 只保留在上次同步后新添加的远程模型（lastEdited > lastSyncTime）
+          // 如果是首次同步（syncTime === 0），应用所有远程模型
+          // 否则只保留在上次同步后新添加的远程模型（lastEdited > lastSyncTime）
           // 陈旧的远程模型（lastEdited <= lastSyncTime）会被自动删除，因为本地已删除
-          if (remoteModel.lastEdited && checkIsNewlyAdded(remoteModel.lastEdited, syncTime)) {
+          if (syncTime === 0 || (remoteModel.lastEdited && checkIsNewlyAdded(remoteModel.lastEdited, syncTime))) {
             // 远程新添加的模型，保留
             finalModels.push(remoteModel);
           }
@@ -126,9 +127,10 @@ export class SyncDataService {
           }
         } else {
           // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 只保留在上次同步后新添加的远程书籍（lastEdited > lastSyncTime）
+          // 如果是首次同步（syncTime === 0），应用所有远程书籍
+          // 否则只保留在上次同步后新添加的远程书籍（lastEdited > lastSyncTime）
           // 陈旧的远程书籍（lastEdited <= lastSyncTime）会被自动删除，因为本地已删除
-          if (checkIsNewlyAdded(remoteNovel.lastEdited, syncTime)) {
+          if (syncTime === 0 || checkIsNewlyAdded(remoteNovel.lastEdited, syncTime)) {
             // 远程新添加的书籍，保留
             finalBooks.push(remoteNovel as Novel);
           }
@@ -174,9 +176,10 @@ export class SyncDataService {
           }
         } else {
           // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
+          // 如果是首次同步（syncTime === 0），应用所有远程封面
+          // 否则只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
           // 陈旧的远程封面（addedAt <= lastSyncTime）会被自动删除，因为本地已删除
-          if (checkIsNewlyAdded(remoteCover.addedAt, syncTime)) {
+          if (syncTime === 0 || checkIsNewlyAdded(remoteCover.addedAt, syncTime)) {
             // 远程新添加的封面，保留
             finalCovers.push(remoteCover);
           }

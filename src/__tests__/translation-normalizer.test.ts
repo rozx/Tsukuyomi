@@ -59,6 +59,39 @@ describe('normalizeTranslationQuotes', () => {
     // 多个嵌套的「」引号应该保持不变
     expect(normalizeTranslationQuotes('「「「测试」」」')).toBe('「「「测试」」」');
   });
+
+  test('应该保持单个双引号不变', () => {
+    // 单个引号不应该被转换，保持原样
+    expect(normalizeTranslationQuotes('"测试')).toBe('"测试');
+    expect(normalizeTranslationQuotes('他说"测试')).toBe('他说"测试');
+    expect(normalizeTranslationQuotes('测试"')).toBe('测试"');
+  });
+
+  test('应该保持奇数个双引号不变', () => {
+    // 奇数个引号不应该被转换，保持原样（除了成对的部分）
+    expect(normalizeTranslationQuotes('"测试"另一个"')).toBe('「测试」另一个"');
+    expect(normalizeTranslationQuotes('"a"b"c"d"')).toBe('「a」b「c」d"');
+  });
+
+  test('应该保持单个单引号不变', () => {
+    // 单个单引号不应该被转换，保持原样
+    expect(normalizeTranslationQuotes("'测试")).toBe("'测试");
+    expect(normalizeTranslationQuotes("他说'测试")).toBe("他说'测试");
+    expect(normalizeTranslationQuotes("测试'")).toBe("测试'");
+  });
+
+  test('应该保持奇数个单引号不变', () => {
+    // 奇数个单引号不应该被转换，保持原样（除了成对的部分）
+    expect(normalizeTranslationQuotes("'测试'另一个'")).toBe('『测试』另一个\'');
+    expect(normalizeTranslationQuotes("'a'b'c'd'")).toBe('『a』b『c』d\'');
+  });
+
+  test('应该正确处理混合的单个引号', () => {
+    // 单个双引号和单个单引号混合，单个引号应该保持原样
+    expect(normalizeTranslationQuotes('他说"测试\'内容')).toBe('他说"测试\'内容');
+    // 成对的引号会被转换，单个引号保持原样
+    expect(normalizeTranslationQuotes('他说"测试\'内容"')).toBe('他说「测试\'内容」');
+  });
 });
 
 describe('normalizeTranslationSymbols', () => {

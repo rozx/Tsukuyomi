@@ -5,7 +5,6 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo } from './types';
 
@@ -1421,7 +1420,7 @@ export const paragraphTools: ToolDefinition[] = [
       const idGenerator = new UniqueIdGenerator(existingTranslationIds);
       const newTranslation: Translation = {
         id: idGenerator.generate(),
-        translation: normalizeTranslationQuotes(translation.trim()),
+        translation: translation.trim(),
         aiModelId: modelId,
       };
 
@@ -1960,12 +1959,14 @@ export const paragraphTools: ToolDefinition[] = [
           
           if (matchedKeyword) {
             // 替换匹配的关键词部分
-            translation.translation = normalizeTranslationQuotes(
-              replaceWholeKeyword(oldTranslation, matchedKeyword, replacement_text.trim()),
+            translation.translation = replaceWholeKeyword(
+              oldTranslation,
+              matchedKeyword,
+              replacement_text.trim(),
             );
           } else {
             // 如果没有匹配的关键词（只有原文关键词），替换整个翻译
-            translation.translation = normalizeTranslationQuotes(replacement_text.trim());
+            translation.translation = replacement_text.trim();
           }
         };
 

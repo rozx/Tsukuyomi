@@ -9,7 +9,7 @@
  * - 半角双引号 "" → 日语引号 「」
  * - 半角单引号 '' → 日语单引号 『』
  * - 反之亦然（日语引号 → 全角普通引号）
- * 
+ *
  * 重要：已存在的「」引号永远不会被转换为『』，以保持原文的引号风格
  * @param text 要规范化的文本
  * @returns 规范化后的文本
@@ -20,7 +20,7 @@ export function normalizeTranslationQuotes(text: string): string {
   }
 
   let normalized = text;
-  
+
   // 重要：保护已存在的「」引号，确保它们永远不会被转换为『』
   // 我们只转换半角引号和其他类型的引号，不改变已存在的「」引号
 
@@ -34,74 +34,9 @@ export function normalizeTranslationQuotes(text: string): string {
   // 将成对的半角普通单引号 '' 替换为日语单引号 『』（全角）
   normalized = normalized.replace(/'([^']*)'/g, '『$1』');
   // 将成对的全角单引号 ‘’ 替换为日语单引号 『』
-  normalized = normalized.replace(/‘([^’]*)’/g, '『$1』');
+  normalized = normalized.replace(/‘([^']*)'/g, '『$1』');
 
-  // 处理剩余的单个引号（不成对的情况），采用基于上下文状态的替换策略
-  // 我们需要扫描整个字符串来决定替换为开引号还是闭引号，因为需要考虑已经存在的日语引号
-
-  // 处理双引号 " 和 "" -> 「」
-  // 注意：已存在的「」引号会被保留，不会被转换
-  let inDoubleQuote = false;
-  // 先统计已有的开引号数量，决定初始状态
-  // 但这比较复杂，不如直接重构字符串
-  let result = '';
-  for (let i = 0; i < normalized.length; i++) {
-    const char = normalized[i];
-    if (char === '「') {
-      // 已存在的「引号，直接保留
-      inDoubleQuote = true;
-      result += char;
-    } else if (char === '」') {
-      // 已存在的」引号，直接保留
-      inDoubleQuote = false;
-      result += char;
-    } else if (char === '"' || char === '"' || char === '"') {
-      // 只转换半角或全角普通引号，不改变已存在的「」引号
-      if (inDoubleQuote) {
-        result += '」';
-        inDoubleQuote = false;
-      } else {
-        result += '「';
-        inDoubleQuote = true;
-      }
-    } else {
-      result += char;
-    }
-  }
-  normalized = result;
-
-  // 处理单引号 ' 和 '' -> 『』
-  // 注意：已存在的「」引号不会被转换为『』，只有半角单引号会被转换
-  let inSingleQuote = false;
-  result = '';
-  for (let i = 0; i < normalized.length; i++) {
-    const char = normalized[i];
-    if (char === '『') {
-      // 已存在的『引号，直接保留
-      inSingleQuote = true;
-      result += char;
-    } else if (char === '』') {
-      // 已存在的』引号，直接保留
-      inSingleQuote = false;
-      result += char;
-    } else if (char === '「' || char === '」') {
-      // 已存在的「」引号，直接保留，不参与单引号的处理逻辑
-      // 这确保「」引号永远不会被转换为『』
-      result += char;
-    } else if (char === "'" || char === '\u2018' || char === '\u2019') {
-      // 只转换半角或全角普通单引号，不改变已存在的「」引号
-      if (inSingleQuote) {
-        result += '』';
-        inSingleQuote = false;
-      } else {
-        result += '『';
-        inSingleQuote = true;
-      }
-    } else {
-      result += char;
-    }
-  }
-  normalized = result;
+  // 注意：单个或奇数个引号不会被转换，保持原样
 
   // 将所有半角标点符号转换为全角
   // 逗号：, → ，
@@ -370,4 +305,3 @@ export function normalizeTranslationSymbols(text: string): string {
 
   return normalized;
 }
-
