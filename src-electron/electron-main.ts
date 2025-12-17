@@ -128,8 +128,6 @@ function createWindow() {
     // 生产环境：加载构建后的文件
     // 在 Quasar 构建中，index.html 与 electron-main.js 在同一目录
     // 对于打包后的应用，路径可能有所不同
-    let indexPath: string;
-    
     // 尝试多个可能的路径
     const possiblePaths = [
       join(__dirname, 'index.html'), // 标准路径
@@ -139,7 +137,8 @@ function createWindow() {
     ];
     
     // 找到第一个存在的路径
-    indexPath = possiblePaths.find((path) => existsSync(path)) || possiblePaths[0];
+    const foundPath = possiblePaths.find((path) => existsSync(path));
+    const indexPath = foundPath || possiblePaths[0] || join(__dirname, 'index.html');
     
     console.log(`[Electron] Loading production build`);
     console.log(`[Electron] __dirname: ${__dirname}`);
