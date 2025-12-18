@@ -40,6 +40,12 @@ export function useAutoSync() {
       return;
     }
 
+    // 检查是否已有同步在进行中，避免并发同步
+    if (settingsStore.isSyncing) {
+      console.warn('[useAutoSync] 同步已在进行中，跳过此次自动同步');
+      return;
+    }
+
     try {
       settingsStore.setSyncing(true);
 
@@ -55,6 +61,8 @@ export function useAutoSync() {
             yield settingsStore.updateLastSyncTime();
             // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
             yield settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+            // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+            yield settingsStore.cleanupOldDeletionRecords();
           } catch (error) {
             console.error('[useAutoSync] 更新同步状态失败:', error);
           }
@@ -75,20 +83,29 @@ export function useAutoSync() {
           return;
         }
       } else if (!result.success) {
-        // 下载失败，不继续上传
+        // 下载失败，记录错误但不继续上传
+        const errorMsg = result.error || '从 Gist 下载数据时发生未知错误';
+        console.error('[useAutoSync] 自动同步下载失败:', errorMsg);
         return;
       }
 
       // 2. 然后上传本地更改（包含刚刚合并的远程更改）
       // 注意：上传时使用当前的模型列表，这样远程会包含本地删除后的状态
-      await gistSyncService.uploadToGist(config, {
+      const uploadResult = await gistSyncService.uploadToGist(config, {
         aiModels: aiModelsStore.models,
         appSettings: settingsStore.getAllSettings(),
         novels: booksStore.books,
         coverHistory: coverHistoryStore.covers,
       });
-    } catch {
-      // 静默失败，避免干扰用户
+
+      if (!uploadResult.success) {
+        const errorMsg = uploadResult.error || '上传到 Gist 时发生未知错误';
+        console.error('[useAutoSync] 自动同步上传失败:', errorMsg);
+      }
+    } catch (error) {
+      // 记录错误日志，便于调试
+      const errorMsg = error instanceof Error ? error.message : '自动同步时发生未知错误';
+      console.error('[useAutoSync] 自动同步异常:', errorMsg, error);
     } finally {
       settingsStore.setSyncing(false);
     }

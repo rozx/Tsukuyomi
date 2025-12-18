@@ -369,5 +369,59 @@ describe('数据同步服务 (SyncDataService)', () => {
         }),
       );
     });
+
+    it('当远程数据格式无效时，应抛出错误', async () => {
+      // 测试 novels 不是数组的情况
+      const invalidData1 = {
+        novels: 'not-an-array',
+      } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      await (expect(SyncDataService.applyDownloadedData(invalidData1)).rejects.toThrow() as unknown as Promise<void>);
+
+      // 测试 novel 缺少 id 的情况
+      const invalidData2 = {
+        novels: [{ title: 'Novel without id' }],
+      };
+      await (expect(SyncDataService.applyDownloadedData(invalidData2)).rejects.toThrow() as unknown as Promise<void>);
+
+      // 测试 aiModels 不是数组的情况
+      const invalidData3 = {
+        aiModels: 'not-an-array',
+      } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      await (expect(SyncDataService.applyDownloadedData(invalidData3)).rejects.toThrow() as unknown as Promise<void>);
+
+      // 测试 model 缺少 id 的情况
+      const invalidData4 = {
+        aiModels: [{ name: 'Model without id' }],
+      };
+      await (expect(SyncDataService.applyDownloadedData(invalidData4)).rejects.toThrow() as unknown as Promise<void>);
+
+      // 测试 coverHistory 不是数组的情况
+      const invalidData5 = {
+        coverHistory: 'not-an-array',
+      } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      await (expect(SyncDataService.applyDownloadedData(invalidData5)).rejects.toThrow() as unknown as Promise<void>);
+
+      // 测试 cover 缺少 id 的情况
+      const invalidData6 = {
+        coverHistory: [{ url: 'cover without id' }],
+      };
+      await (expect(SyncDataService.applyDownloadedData(invalidData6)).rejects.toThrow() as unknown as Promise<void>);
+    });
+
+    it('当远程数据为 null 时，应正常处理（不抛出错误）', async () => {
+      const result = await SyncDataService.applyDownloadedData(null);
+      expect(result).toEqual([]);
+    });
+
+    it('应调用 cleanupOldDeletionRecords 清理旧的删除记录', async () => {
+      const remoteData = {
+        novels: [],
+        aiModels: [],
+      };
+
+      await SyncDataService.applyDownloadedData(remoteData);
+
+      expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
+    });
   });
 });

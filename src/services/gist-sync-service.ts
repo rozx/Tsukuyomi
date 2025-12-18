@@ -681,46 +681,82 @@ export class GistSyncService {
           // 将文件分为多个批次，每个批次包含一部分更新和删除
           const allFiles = Object.entries(files);
           const BATCH_SIZE = 10; // 每个请求最多处理 10 个文件
+          const MAX_RETRIES = 3; // 最大重试次数
+          const RETRY_DELAY_BASE = 1000; // 基础重试延迟（毫秒）
+
+          // 辅助函数：执行带重试的批量更新
+          const updateBatchWithRetry = async (
+            batchFiles: Record<string, { content: string } | null>,
+            batchIndex: number,
+          ): Promise<void> => {
+            let lastError: Error | null = null;
+
+            for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+              try {
+                if (!gistId) throw new Error('Gist ID is undefined during batch update');
+                if (!this.octokit) throw new Error('Octokit 客户端未初始化');
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const response: any = await this.octokit.rest.gists.update({
+                  gist_id: gistId,
+                  description: 'Luna AI Translator - Settings and Novels',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  files: batchFiles as any,
+                });
+                // 更新 gistId 和 gistUrl（虽然通常不会变）
+                if (batchIndex === 0) {
+                  gistId = response.data.id;
+                  gistUrl = response.data.html_url;
+                }
+                return; // 成功，退出重试循环
+              } catch (batchError) {
+                lastError = batchError instanceof Error ? batchError : new Error(String(batchError));
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const errorResponse = (batchError as any).response;
+                const errorData = errorResponse?.data;
+                const statusCode = errorResponse?.status;
+
+                // 409 Conflict: 通常意味着 Gist 在我们读取后被修改了，或者并发更新冲突
+                // 不重试，直接抛出错误
+                if (statusCode === 409) {
+                  throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
+                }
+
+                // 对于网络错误和 5xx 错误，可以重试
+                const isRetryable =
+                  !statusCode || // 网络错误（没有状态码）
+                  (statusCode >= 500 && statusCode < 600) || // 5xx 服务器错误
+                  statusCode === 429; // 429 Too Many Requests
+
+                if (isRetryable && attempt < MAX_RETRIES - 1) {
+                  // 计算重试延迟（指数退避）
+                  const delay = RETRY_DELAY_BASE * Math.pow(2, attempt);
+                  console.warn(
+                    `[GistSyncService] 批量更新失败（批次 ${batchIndex}，尝试 ${attempt + 1}/${MAX_RETRIES}），${delay}ms 后重试:`,
+                    lastError.message,
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, delay));
+                  continue; // 重试
+                }
+
+                // 不可重试的错误或已达到最大重试次数
+                console.error(`[GistSyncService] 批量更新失败（批次 ${batchIndex}）:`, lastError);
+                if (errorData) {
+                  console.error('Validation errors:', JSON.stringify(errorData, null, 2));
+                  throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
+                }
+                throw lastError;
+              }
+            }
+
+            // 如果所有重试都失败了，抛出最后一个错误
+            throw lastError || new Error('批量更新失败：未知错误');
+          };
 
           // 优先处理删除操作，以释放配额（如果有配额限制的话）
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
           for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
-
-            try {
-              if (!gistId) throw new Error('Gist ID is undefined during batch update');
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const response: any = await this.octokit.rest.gists.update({
-                gist_id: gistId,
-                description: 'Luna AI Translator - Settings and Novels',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                files: batchFiles as any,
-              });
-              // 更新 gistId 和 gistUrl（虽然通常不会变）
-              if (i === 0) {
-                gistId = response.data.id;
-                gistUrl = response.data.html_url;
-              }
-            } catch (batchError) {
-              // 记录详细的错误信息
-              console.error('Gist batch update failed:', batchError);
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const errorResponse = (batchError as any).response;
-              const errorData = errorResponse?.data;
-
-              if (errorResponse?.status === 409) {
-                // 409 Conflict: 通常意味着 Gist 在我们读取后被修改了，或者并发更新冲突
-                // 尝试重新获取最新的 Gist 内容并重试可能会解决问题，但这是一个复杂的操作
-                // 暂时抛出一个更友好的错误
-                throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
-              }
-
-              if (errorData) {
-                console.error('Validation errors:', JSON.stringify(errorData, null, 2));
-                throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
-              }
-              throw batchError;
-            }
+            await updateBatchWithRetry(batchFiles, Math.floor(i / BATCH_SIZE));
           }
         } catch (error) {
           // 如果是更新失败，我们希望中断并报错

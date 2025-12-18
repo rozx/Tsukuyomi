@@ -27,6 +27,82 @@ export interface RestorableItem {
 export class SyncDataService {
 
   /**
+   * 验证远程数据的完整性
+   * @param remoteData 远程数据
+   * @returns 验证是否通过
+   */
+  private static validateRemoteData(remoteData: {
+    novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  } | null): boolean {
+    if (!remoteData) {
+      return true; // null 数据是有效的（表示没有远程数据）
+    }
+
+    // 验证 novels 数组
+    if (remoteData.novels !== null && remoteData.novels !== undefined) {
+      if (!Array.isArray(remoteData.novels)) {
+        console.error('[SyncDataService] 验证失败: novels 必须是数组');
+        return false;
+      }
+      // 验证每个 novel 的基本结构
+      for (const novel of remoteData.novels) {
+        if (!novel || typeof novel !== 'object') {
+          console.error('[SyncDataService] 验证失败: novel 必须是对象');
+          return false;
+        }
+        if (!novel.id || typeof novel.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: novel 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 aiModels 数组
+    if (remoteData.aiModels !== null && remoteData.aiModels !== undefined) {
+      if (!Array.isArray(remoteData.aiModels)) {
+        console.error('[SyncDataService] 验证失败: aiModels 必须是数组');
+        return false;
+      }
+      // 验证每个 model 的基本结构
+      for (const model of remoteData.aiModels) {
+        if (!model || typeof model !== 'object') {
+          console.error('[SyncDataService] 验证失败: model 必须是对象');
+          return false;
+        }
+        if (!model.id || typeof model.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: model 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 coverHistory 数组
+    if (remoteData.coverHistory !== null && remoteData.coverHistory !== undefined) {
+      if (!Array.isArray(remoteData.coverHistory)) {
+        console.error('[SyncDataService] 验证失败: coverHistory 必须是数组');
+        return false;
+      }
+      // 验证每个 cover 的基本结构
+      for (const cover of remoteData.coverHistory) {
+        if (!cover || typeof cover !== 'object') {
+          console.error('[SyncDataService] 验证失败: cover 必须是对象');
+          return false;
+        }
+        if (!cover.id || typeof cover.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: cover 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // appSettings 可以是任何对象，不需要严格验证
+    return true;
+  }
+
+  /**
    * 应用下载的数据（总是使用最新的 lastEdited 时间）
    * @param remoteData 远程数据
    * @param lastSyncTime 上次同步时间（可选）
@@ -46,6 +122,12 @@ export class SyncDataService {
     // 如果 remoteData 为 null，直接返回
     if (!remoteData) {
       return [];
+    }
+
+    // 验证远程数据的完整性
+    if (!SyncDataService.validateRemoteData(remoteData)) {
+      console.error('[SyncDataService] 远程数据验证失败，拒绝应用数据');
+      throw new Error('远程数据格式无效，无法应用');
     }
 
     const restorableItems: RestorableItem[] = [];
@@ -102,8 +184,9 @@ export class SyncDataService {
         } else {
           // 本地不存在，检查是否在删除记录中
           const deletionRecord = deletedModelIdsMap.get(remoteModel.id);
-          if (deletionRecord) {
+          if (deletionRecord !== undefined) {
             // 在删除记录中，检查删除时间
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
             if (deletionRecord > syncTime) {
               // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
               // 除非是手动检索
@@ -196,11 +279,15 @@ export class SyncDataService {
         } else {
           // 本地不存在，检查是否在删除记录中
           const deletedNovelIds = settingsStore.gistSync.deletedNovelIds || [];
-          const deletionRecord = deletedNovelIds.find((record) => record.id === remoteNovel.id);
+          const deletedNovelIdsMap = new Map<string, number>(
+            deletedNovelIds.map((record) => [record.id, record.deletedAt]),
+          );
+          const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
           
-          if (deletionRecord) {
+          if (deletionRecord !== undefined) {
             // 在删除记录中，检查删除时间
-            if (deletionRecord.deletedAt > syncTime) {
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
+            if (deletionRecord > syncTime) {
               // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
               // 除非是手动检索
               if (isManualRetrieval) {
@@ -209,7 +296,7 @@ export class SyncDataService {
                   id: remoteNovel.id,
                   type: 'novel',
                   title: (remoteNovel as Novel).title || remoteNovel.id,
-                  deletedAt: deletionRecord.deletedAt,
+                  deletedAt: deletionRecord,
                   data: remoteNovel,
                 });
               }
@@ -296,8 +383,9 @@ export class SyncDataService {
         } else {
           // 本地不存在，检查是否在删除记录中
           const deletionRecord = deletedCoverIdsMap.get(remoteCover.id);
-          if (deletionRecord) {
+          if (deletionRecord !== undefined) {
             // 在删除记录中，检查删除时间
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
             if (deletionRecord > syncTime) {
               // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
               // 除非是手动检索
@@ -364,8 +452,10 @@ export class SyncDataService {
       const localSettings = settingsStore.getAllSettings();
       // 比较 lastEdited 时间，使用最新的
       if (shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited)) {
+        // 保存本地的 Gist 同步配置（包括同步状态）
         const currentGistSync = settingsStore.gistSync;
         await settingsStore.importSettings(remoteData.appSettings);
+        // 恢复本地的 Gist 同步配置，确保本地同步状态不被覆盖
         await settingsStore.updateGistSync(currentGistSync);
       }
     }
@@ -423,7 +513,7 @@ export class SyncDataService {
       }
     }
 
-    // 清理旧的删除记录
+    // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
     await settingsStore.cleanupOldDeletionRecords();
 
     // 返回可恢复的项目（仅在手动检索时）
@@ -614,12 +704,29 @@ export class SyncDataService {
     if (remoteData.appSettings) {
       if (shouldUseRemote(localData.appSettings.lastEdited, remoteData.appSettings.lastEdited)) {
         // 使用远程设置，但保留本地的 Gist 同步配置
-        const currentGistSync = localData.appSettings.syncs?.gist;
+        // 这包括 lastSyncTime、lastSyncedModelIds、deletedNovelIds 等本地状态
+        const localGistSync = localData.appSettings.syncs?.gist;
+        const remoteGistSync = remoteData.appSettings.syncs?.gist;
+        
+        // 合并 Gist 同步配置：保留本地的同步状态，但使用远程的其他配置
+        const mergedGistSync = localGistSync
+          ? {
+              ...remoteGistSync,
+              ...localGistSync,
+              // 确保本地的重要状态字段被保留
+              lastSyncTime: localGistSync.lastSyncTime ?? remoteGistSync?.lastSyncTime ?? 0,
+              lastSyncedModelIds: localGistSync.lastSyncedModelIds ?? remoteGistSync?.lastSyncedModelIds,
+              deletedNovelIds: localGistSync.deletedNovelIds ?? remoteGistSync?.deletedNovelIds ?? [],
+              deletedModelIds: localGistSync.deletedModelIds ?? remoteGistSync?.deletedModelIds ?? [],
+              deletedCoverIds: localGistSync.deletedCoverIds ?? remoteGistSync?.deletedCoverIds ?? [],
+            }
+          : remoteGistSync;
+
         finalSettings = {
           ...remoteData.appSettings,
           syncs: {
             ...remoteData.appSettings.syncs,
-            gist: currentGistSync || remoteData.appSettings.syncs?.gist,
+            gist: mergedGistSync,
           },
         };
       }

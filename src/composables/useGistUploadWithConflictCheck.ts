@@ -110,6 +110,8 @@ export function useGistSync() {
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
+            // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+            yield settingsStore.cleanupOldDeletionRecords();
           } catch (error) {
             console.error('[useGistSync] 更新最后同步时间失败:', error);
           }
