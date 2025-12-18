@@ -873,6 +873,29 @@ export class ChapterService {
       return [];
     }
 
+    // 尝试使用全文索引
+    try {
+      const { FullTextIndexService } = await import('src/services/full-text-index-service');
+      const searchOptions: Parameters<typeof FullTextIndexService.search>[2] = {
+        maxResults: maxParagraphs,
+        onlyWithTranslation,
+        searchInOriginal: true,
+        searchInTranslations: false, // 只搜索原文
+      };
+      if (chapterId) {
+        searchOptions.chapterId = chapterId;
+      }
+      const results = await FullTextIndexService.search(novel.id, [keyword.trim()], searchOptions);
+
+      if (results.length > 0) {
+        return results;
+      }
+    } catch (error) {
+      // 如果索引不可用，回退到线性搜索
+      console.warn('Full-text index search failed, falling back to linear search:', error);
+    }
+
+    // 回退到线性搜索
     const trimmedKeyword = keyword.trim().toLowerCase();
 
     // 如果提供了 chapterId，需要找到该章节的位置
