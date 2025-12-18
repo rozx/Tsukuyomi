@@ -10,6 +10,7 @@ import {
 } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter } from 'src/models/novel';
+import { searchRelatedMemories } from './memory-helper';
 
 export const bookTools: ToolDefinition[] = [
   {
@@ -21,12 +22,17 @@ export const bookTools: ToolDefinition[] = [
           '获取当前书籍的详细信息，包括标题、作者、简介、标签、备注以及卷章结构摘要。当需要了解书籍背景、上下文或查看用户备注时使用此工具。',
         parameters: {
           type: 'object',
-          properties: {},
+          properties: {
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+          },
           required: [],
         },
       },
     },
-    handler: async (_args, context: ToolContext) => {
+    handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
 
       if (!bookId) {
@@ -92,9 +98,22 @@ export const bookTools: ToolDefinition[] = [
           },
         };
 
+        // 搜索相关记忆（使用书籍标题和作者作为关键词）
+        const { include_memory = true } = args;
+        let relatedMemories: Array<{ id: string; summary: string }> = [];
+        if (include_memory && bookId) {
+          const keywords: string[] = [];
+          if (book.title) keywords.push(book.title);
+          if (book.author) keywords.push(book.author);
+          if (keywords.length > 0) {
+            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+          }
+        }
+
         return JSON.stringify({
           success: true,
           book: info,
+          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -259,6 +278,10 @@ export const bookTools: ToolDefinition[] = [
               type: 'string',
               description: '章节 ID',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['chapter_id'],
         },
@@ -268,7 +291,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id } = args;
+      const { chapter_id, include_memory = true } = args;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -357,6 +380,16 @@ export const bookTools: ToolDefinition[] = [
             };
           }) || [];
 
+        // 搜索相关记忆（使用章节标题作为关键词）
+        let relatedMemories: Array<{ id: string; summary: string }> = [];
+        if (include_memory && bookId) {
+          const titleOriginal =
+            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+          if (titleOriginal) {
+            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
+          }
+        }
+
         return JSON.stringify({
           success: true,
           chapter: {
@@ -382,6 +415,7 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
+          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -414,7 +448,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id } = args;
+      const { chapter_id, include_memory = true } = args;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -466,6 +500,16 @@ export const bookTools: ToolDefinition[] = [
             (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
           ).length || 0;
 
+        // 搜索相关记忆（使用章节标题作为关键词）
+        let relatedMemories: Array<{ id: string; summary: string }> = [];
+        if (include_memory && bookId) {
+          const titleOriginal =
+            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+          if (titleOriginal) {
+            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
+          }
+        }
+
         return JSON.stringify({
           success: true,
           chapter: {
@@ -490,6 +534,7 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
+          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -513,6 +558,10 @@ export const bookTools: ToolDefinition[] = [
               type: 'string',
               description: '当前章节 ID',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['chapter_id'],
         },
@@ -522,7 +571,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id } = args;
+      const { chapter_id, include_memory = true } = args;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -574,6 +623,16 @@ export const bookTools: ToolDefinition[] = [
             (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
           ).length || 0;
 
+        // 搜索相关记忆（使用章节标题作为关键词）
+        let relatedMemories: Array<{ id: string; summary: string }> = [];
+        if (include_memory && bookId) {
+          const titleOriginal =
+            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+          if (titleOriginal) {
+            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
+          }
+        }
+
         return JSON.stringify({
           success: true,
           chapter: {
@@ -598,6 +657,7 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
+          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
         });
       } catch (error) {
         return JSON.stringify({

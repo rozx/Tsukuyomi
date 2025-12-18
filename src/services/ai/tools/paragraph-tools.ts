@@ -7,6 +7,45 @@ import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo } from './types';
+import { searchRelatedMemories } from './memory-helper';
+
+/**
+ * 从段落文本中提取关键词（用于记忆搜索）
+ * 提取前几个有意义的词，跳过标点和助词
+ * @param text 段落文本
+ * @param maxLength 最大长度（默认 20 个字符）
+ * @returns 关键词数组
+ */
+function extractKeywordsFromParagraph(text: string, maxLength: number = 20): string[] {
+  if (!text || text.trim().length === 0) {
+    return [];
+  }
+
+  // 截取前 maxLength 个字符
+  const truncated = text.trim().substring(0, maxLength);
+  
+  // 移除常见的标点符号和空白字符
+  const cleaned = truncated.replace(/[、。，．！？\s]+/g, '').trim();
+  
+  if (cleaned.length === 0) {
+    return [];
+  }
+
+  // 如果文本很短，直接返回
+  if (cleaned.length <= maxLength) {
+    return [cleaned];
+  }
+
+  // 尝试按常见分隔符分割（如空格、标点等）
+  const parts = cleaned.split(/[\s、。，．！？]+/).filter((p) => p.length > 0);
+  
+  if (parts.length > 0) {
+    // 返回前几个部分（最多3个）
+    return parts.slice(0, 3);
+  }
+
+  return [cleaned];
+}
 
 /**
  * 在文本中替换完整的关键词（作为独立词，不是其他词的一部分）
@@ -272,7 +311,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id } = args;
+      const { paragraph_id, include_memory = true } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -320,6 +359,15 @@ export const paragraphTools: ToolDefinition[] = [
           isSelected: t.id === paragraph.selectedTranslationId,
         })) || [];
 
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && paragraph.text) {
+        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
+        if (keywords.length > 0) {
+          relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+        }
+      }
+
       return JSON.stringify({
         success: true,
         paragraph: {
@@ -350,6 +398,7 @@ export const paragraphTools: ToolDefinition[] = [
           chapterIndex: location.chapterIndex,
           volumeIndex: location.volumeIndex,
         },
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
@@ -371,6 +420,10 @@ export const paragraphTools: ToolDefinition[] = [
               type: 'number',
               description: '要获取的段落数量（默认 3）',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['paragraph_id'],
         },
@@ -380,7 +433,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, count = 3 } = args;
+      const { paragraph_id, count = 3, include_memory = true } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -409,6 +462,19 @@ export const paragraphTools: ToolDefinition[] = [
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && validResults.length > 0) {
+        // 从第一个段落中提取关键词
+        const firstParagraph = validResults[0].paragraph;
+        if (firstParagraph.text) {
+          const keywords = extractKeywordsFromParagraph(firstParagraph.text, 20);
+          if (keywords.length > 0) {
+            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+          }
+        }
+      }
+
       return JSON.stringify({
         success: true,
         paragraphs: validResults.map((result) => ({
@@ -435,6 +501,7 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
@@ -456,6 +523,10 @@ export const paragraphTools: ToolDefinition[] = [
               type: 'number',
               description: '要获取的段落数量（默认 3）',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['paragraph_id'],
         },
@@ -465,7 +536,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, count = 3 } = args;
+      const { paragraph_id, count = 3, include_memory = true } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -494,6 +565,19 @@ export const paragraphTools: ToolDefinition[] = [
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && validResults.length > 0) {
+        // 从第一个段落中提取关键词
+        const firstParagraph = validResults[0].paragraph;
+        if (firstParagraph.text) {
+          const keywords = extractKeywordsFromParagraph(firstParagraph.text, 20);
+          if (keywords.length > 0) {
+            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+          }
+        }
+      }
+
       return JSON.stringify({
         success: true,
         paragraphs: validResults.map((result) => ({
@@ -520,6 +604,7 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
@@ -562,6 +647,10 @@ export const paragraphTools: ToolDefinition[] = [
               description:
                 '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落，用于查看之前如何翻译某个关键词，确保翻译一致性。',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: [],
         },
@@ -577,6 +666,7 @@ export const paragraphTools: ToolDefinition[] = [
         chapter_id,
         max_paragraphs = 1,
         only_with_translation = false,
+        include_memory = true,
       } = args;
 
       // 验证至少提供一个关键词数组
@@ -875,6 +965,21 @@ export const paragraphTools: ToolDefinition[] = [
       // 过滤掉空段落或仅包含符号的段落
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
+      // 搜索相关记忆（使用提供的 keywords 或 translation_keywords）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId) {
+        const searchKeywords: string[] = [];
+        if (validKeywords.length > 0) {
+          searchKeywords.push(...validKeywords);
+        }
+        if (validTranslationKeywords.length > 0) {
+          searchKeywords.push(...validTranslationKeywords);
+        }
+        if (searchKeywords.length > 0) {
+          relatedMemories = await searchRelatedMemories(bookId, searchKeywords, 5);
+        }
+      }
+
       return JSON.stringify({
         success: true,
         paragraphs: validResults.map((result) => ({
@@ -901,6 +1006,7 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
@@ -1048,6 +1154,10 @@ export const paragraphTools: ToolDefinition[] = [
               type: 'string',
               description: '段落 ID',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['paragraph_id'],
         },
@@ -1057,7 +1167,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id } = args;
+      const { paragraph_id, include_memory = true } = args;
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -1104,6 +1214,15 @@ export const paragraphTools: ToolDefinition[] = [
           isLatest: index === (paragraph.translations?.length || 0) - 1, // 是否是最新的翻译
         })) || [];
 
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && paragraph.text) {
+        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
+        if (keywords.length > 0) {
+          relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+        }
+      }
+
       return JSON.stringify({
         success: true,
         paragraph_id: paragraph.id,
@@ -1111,6 +1230,7 @@ export const paragraphTools: ToolDefinition[] = [
         selected_translation_id: paragraph.selectedTranslationId || '',
         translation_history: translationHistory,
         total_count: translationHistory.length,
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
