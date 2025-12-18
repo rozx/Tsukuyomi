@@ -106,7 +106,7 @@ interface LunaAIDB extends DBSchema {
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 6; // 升级到版本 6 以添加 full-text-indexes 存储
+const DB_VERSION = 7; // 升级到版本 7 以支持 full-text-indexes 存储的 lastUpdated 字段
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
