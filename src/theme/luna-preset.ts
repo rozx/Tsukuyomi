@@ -266,7 +266,7 @@ const CUSTOM_CSS = `
   -webkit-backdrop-filter: blur(12px);
   min-width: 380px;
   max-width: 480px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 移除 transition，让 PrimeVue 的过渡系统处理动画 */
 }
 
 .p-toast .p-toast-message-content {
@@ -642,7 +642,7 @@ const LunaPreset = definePreset(Aura, {
         enterFromClass: 'opacity-0 translate-y-[-1rem]',
         enterActiveClass: 'transition-all duration-300 ease-out',
         leaveToClass: 'opacity-0 translate-y-[-0.5rem] scale-95',
-        leaveActiveClass: 'transition-all duration-200 ease-in',
+        leaveActiveClass: 'transition-all duration-300 ease-in',
       },
     },
   },
