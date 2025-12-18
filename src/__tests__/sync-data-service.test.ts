@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
-import { SyncDataService } from '../services/sync-data-service';
+import { SyncDataService, type RestorableItem } from '../services/sync-data-service';
 import { ChapterContentService } from '../services/chapter-content-service';
 
 // Mock Stores
@@ -24,10 +24,16 @@ const mockCoverHistoryStore = {
 };
 
 const mockSettingsStore = {
-  gistSync: { lastSyncTime: 0 },
+  gistSync: {
+    lastSyncTime: 0,
+    deletedNovelIds: [] as Array<{ id: string; deletedAt: number }>,
+    deletedModelIds: [] as Array<{ id: string; deletedAt: number }>,
+    deletedCoverIds: [] as Array<{ id: string; deletedAt: number }>,
+  },
   importSettings: mock((_settings: unknown) => Promise.resolve()),
   updateGistSync: mock((_config: unknown) => Promise.resolve()),
   getAllSettings: mock(() => ({ lastEdited: new Date(0) })),
+  cleanupOldDeletionRecords: mock(() => Promise.resolve()),
 };
 
 // Mock Modules
@@ -69,6 +75,13 @@ describe('数据同步服务 (SyncDataService)', () => {
 
     mockSettingsStore.importSettings.mockClear();
     mockSettingsStore.updateGistSync.mockClear();
+    mockSettingsStore.cleanupOldDeletionRecords.mockClear();
+    mockSettingsStore.gistSync = {
+      lastSyncTime: 0,
+      deletedNovelIds: [],
+      deletedModelIds: [],
+      deletedCoverIds: [],
+    };
   });
 
   afterEach(() => {
@@ -180,6 +193,180 @@ describe('数据同步服务 (SyncDataService)', () => {
       // Should add the remote model
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Remote Model' }),
+      );
+    });
+
+    it('自动同步时不应返回可恢复的项目', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime(); // 删除时间晚于同步时间
+
+      // 设置删除记录
+      mockSettingsStore.gistSync.deletedNovelIds = [
+        { id: 'n1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
+
+      // 自动同步时应该返回空数组
+      expect(result).toEqual([]);
+      // 应该调用 bulkAddBooks（即使传入空数组），但不应该包含已删除的书籍
+      if (mockBooksStore.bulkAddBooks.mock.calls.length > 0) {
+        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+        expect(addedBooks).not.toContainEqual(expect.objectContaining({ id: 'n1' }));
+      }
+    });
+
+    it('手动检索时应返回可恢复的书籍项目', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime(); // 删除时间晚于同步时间
+
+      // 设置删除记录
+      mockSettingsStore.gistSync.deletedNovelIds = [
+        { id: 'n1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
+
+      // 手动检索时应该返回可恢复的项目
+      expect(result).toHaveLength(1);
+      const item = result[0]!;
+      expect(item).toMatchObject({
+        id: 'n1',
+        type: 'novel',
+        title: 'Deleted Novel',
+        deletedAt: deletionTime,
+      });
+      expect(item.data).toMatchObject({ id: 'n1', title: 'Deleted Novel' });
+      // 应该调用 bulkAddBooks，但不应该包含已删除的书籍（需要用户手动选择恢复）
+      if (mockBooksStore.bulkAddBooks.mock.calls.length > 0) {
+        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+        expect(addedBooks).not.toContainEqual(expect.objectContaining({ id: 'n1' }));
+      }
+    });
+
+    it('手动检索时应返回可恢复的模型项目', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime();
+
+      // 设置删除记录
+      mockSettingsStore.gistSync.deletedModelIds = [
+        { id: 'm1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        aiModels: [{ id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
+
+      // 手动检索时应该返回可恢复的项目
+      expect(result).toHaveLength(1);
+      const item = result[0]!;
+      expect(item).toMatchObject({
+        id: 'm1',
+        type: 'model',
+        deletedAt: deletionTime,
+      });
+      expect(item.data).toMatchObject({ id: 'm1', name: 'Deleted Model' });
+    });
+
+    it('手动检索时应返回可恢复的封面项目', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime();
+
+      // 设置删除记录
+      mockSettingsStore.gistSync.deletedCoverIds = [
+        { id: 'c1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        coverHistory: [{ id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
+
+      // 手动检索时应该返回可恢复的项目
+      expect(result).toHaveLength(1);
+      const item = result[0]!;
+      expect(item).toMatchObject({
+        id: 'c1',
+        type: 'cover',
+        deletedAt: deletionTime,
+      });
+      expect(item.data).toMatchObject({ id: 'c1', url: 'deleted.jpg' });
+    });
+
+    it('手动检索时应返回多个不同类型的可恢复项目', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime();
+
+      // 设置多个删除记录
+      mockSettingsStore.gistSync.deletedNovelIds = [
+        { id: 'n1', deletedAt: deletionTime },
+      ];
+      mockSettingsStore.gistSync.deletedModelIds = [
+        { id: 'm1', deletedAt: deletionTime },
+      ];
+      mockSettingsStore.gistSync.deletedCoverIds = [
+        { id: 'c1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
+        aiModels: [{ id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() }],
+        coverHistory: [{ id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
+
+      // 应该返回三个可恢复的项目
+      expect(result).toHaveLength(3);
+      
+      const novelItem = result.find((item) => item.type === 'novel');
+      const modelItem = result.find((item) => item.type === 'model');
+      const coverItem = result.find((item) => item.type === 'cover');
+
+      expect(novelItem).toBeDefined();
+      expect(novelItem?.id).toBe('n1');
+      expect(modelItem).toBeDefined();
+      expect(modelItem?.id).toBe('m1');
+      expect(coverItem).toBeDefined();
+      expect(coverItem?.id).toBe('c1');
+    });
+
+    it('当删除时间早于同步时间且远程有更新时，应自动恢复项目', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      const deletionTime = new Date('2024-01-01').getTime(); // 删除时间早于同步时间
+      const remoteUpdateTime = new Date('2024-01-03').toISOString(); // 远程更新时间晚于同步时间
+
+      // 设置删除记录
+      mockSettingsStore.gistSync.deletedNovelIds = [
+        { id: 'n1', deletedAt: deletionTime },
+      ];
+
+      const remoteData = {
+        novels: [{ id: 'n1', title: 'Updated Novel', lastEdited: remoteUpdateTime }],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
+
+      // 自动同步时应该返回空数组
+      expect(result).toEqual([]);
+      // 应该自动恢复并更新书籍（因为远程有更新）
+      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalled();
+      // 应该从删除记录中移除
+      expect(mockSettingsStore.updateGistSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deletedNovelIds: [],
+        }),
       );
     });
   });
