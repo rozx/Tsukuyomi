@@ -196,6 +196,34 @@ const getActiveTab = (taskId: string): string => {
   return 'thinking';
 };
 
+// 检查任务是否正在思考
+const isTaskThinking = (taskId: string): boolean => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (!task) return false;
+  // 如果状态是 thinking，或者状态是 processing 但还没有输出内容（只有思考消息）
+  // 注意：如果同时有输出内容，优先显示输出指示器，不显示思考指示器
+  const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
+  if (hasOutput) return false; // 如果有输出，不显示思考指示器
+  return (
+    task.status === 'thinking' ||
+    (task.status === 'processing' &&
+      task.thinkingMessage !== undefined &&
+      task.thinkingMessage.trim().length > 0)
+  );
+};
+
+// 检查任务是否正在输出内容
+const isTaskOutputting = (taskId: string): boolean => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (!task) return false;
+  // 状态是 processing 且有输出内容
+  return (
+    task.status === 'processing' &&
+    task.outputContent !== undefined &&
+    task.outputContent.trim().length > 0
+  );
+};
+
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
 const outputContainers = ref<Record<string, HTMLElement | null>>({});
 
@@ -628,13 +656,27 @@ watch(
                         value="thinking"
                         :disabled="!task.thinkingMessage || !task.thinkingMessage.trim()"
                       >
-                        思考过程
+                        <span class="ai-task-tab-label">
+                          思考过程
+                          <i
+                            v-if="isTaskThinking(task.id)"
+                            class="pi pi-spin pi-spinner ai-task-indicator"
+                            title="正在思考..."
+                          ></i>
+                        </span>
                       </Tab>
                       <Tab
                         value="output"
                         :disabled="!task.outputContent || !task.outputContent.trim()"
                       >
-                        输出内容
+                        <span class="ai-task-tab-label">
+                          输出内容
+                          <i
+                            v-if="isTaskOutputting(task.id)"
+                            class="pi pi-spin pi-spinner ai-task-indicator"
+                            title="正在输出内容..."
+                          ></i>
+                        </span>
                       </Tab>
                       <Tab value="todos" :disabled="getTodosForTask(task.id).length === 0">
                         待办事项
@@ -1107,6 +1149,27 @@ watch(
 .ai-task-tabs :deep(.p-tab[disabled]) {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.ai-task-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-task-indicator {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-80);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ai-task-tabs :deep(.p-tabpanels) {
