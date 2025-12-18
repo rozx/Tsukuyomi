@@ -1,4 +1,5 @@
 import type { Terminology, CharacterSetting, Translation } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import type { TodoItem } from 'src/services/todo-list-service';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { ToastCallback } from './toast-helper';
@@ -60,6 +61,7 @@ export interface ActionInfo {
     | Terminology
     | CharacterSetting
     | Translation
+    | Memory
     | TodoItem
     | { title_original?: string; title_translation?: string } // 用于 revert 的原始数据（仅用于 update 操作）
     | {

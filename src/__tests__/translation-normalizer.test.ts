@@ -98,6 +98,8 @@ describe('normalizeTranslationSymbols', () => {
   test('应该规范化引号', () => {
     expect(normalizeTranslationSymbols('他说"你好"')).toBe('他说「你好」');
     expect(normalizeTranslationSymbols("他说'你好'")).toBe('他说『你好』');
+    // 测试包含省略号的引号
+    expect(normalizeTranslationSymbols('"那副太阳镜……总觉得在哪里见过。"')).toBe('「那副太阳镜……总觉得在哪里见过。」');
   });
 
   test('应该规范化多个连续空格', () => {

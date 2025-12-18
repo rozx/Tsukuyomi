@@ -34,6 +34,29 @@ export class ChapterContentService {
       // 更新缓存
       this.contentCache.set(chapterId, content);
       this.evictCacheIfNeeded();
+
+      // 使全文索引失效（异步，不阻塞保存操作）
+      // 从章节内容中提取 bookId（需要从 books store 查找）
+      try {
+        const { FullTextIndexService } = await import('src/services/full-text-index-service');
+        // 尝试从 books store 查找包含此章节的书籍
+        const { BookService } = await import('src/services/book-service');
+        const books = await BookService.getAllBooks();
+        for (const book of books) {
+          if (book.volumes) {
+            for (const volume of book.volumes) {
+              if (volume.chapters?.some((c) => c.id === chapterId)) {
+                // 找到包含此章节的书籍，使索引失效
+                await FullTextIndexService.updateIndexForChapter(book.id, chapterId);
+                break;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // 索引更新失败不影响内容保存
+        console.warn('Failed to update full-text index after saving chapter content:', error);
+      }
     } catch (error) {
       console.error(`Failed to save chapter content for ${chapterId}:`, error);
       throw error;
@@ -222,6 +245,28 @@ export class ChapterContentService {
       await db.delete('chapter-contents', chapterId);
       // 清除缓存
       this.contentCache.delete(chapterId);
+
+      // 使全文索引失效（异步，不阻塞删除操作）
+      try {
+        const { FullTextIndexService } = await import('src/services/full-text-index-service');
+        // 尝试从 books store 查找包含此章节的书籍
+        const { BookService } = await import('src/services/book-service');
+        const books = await BookService.getAllBooks();
+        for (const book of books) {
+          if (book.volumes) {
+            for (const volume of book.volumes) {
+              if (volume.chapters?.some((c) => c.id === chapterId)) {
+                // 找到包含此章节的书籍，使索引失效
+                await FullTextIndexService.updateIndexForChapter(book.id, chapterId);
+                break;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // 索引更新失败不影响内容删除
+        console.warn('Failed to update full-text index after deleting chapter content:', error);
+      }
     } catch (error) {
       console.error(`Failed to delete chapter content for ${chapterId}:`, error);
       throw error;

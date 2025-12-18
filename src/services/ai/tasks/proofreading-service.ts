@@ -19,6 +19,12 @@ import { getTodosSystemPrompt } from './todo-helper';
 import {
   executeToolCallLoop,
   type AIProcessingStore,
+  buildMaintenanceReminder,
+  buildInitialUserPromptBase,
+  addChapterContext,
+  addParagraphContext,
+  addTaskPlanningSuggestions,
+  buildExecutionSection,
 } from './ai-task-helper';
 
 /**
@@ -254,7 +260,10 @@ export class ProofreadingService {
 
       **1. 🔍 文字层面：基础准确性**
       - **错别字、漏字、多字**：检查形近字、音近字误用（如"的/地/得"不分、"在/再"混淆），以及排版或输入错误导致的字词缺失或多余
-      - **标点符号**：检查标点使用是否规范和统一。例如，对话的引号是否正确（全角/半角、中文/西文引号），句号、逗号、顿号等的使用是否符合中文规范
+      - **标点符号**：⚠️ **必须使用全角符号**
+        * 所有标点符号必须使用全角（中文）版本：逗号（，）、句号（。）、问号（？）、感叹号（！）、冒号（：）、分号（；）、引号（" " 或 " "）、括号（（））、破折号（——）、省略号（……）等
+        * 检查标点使用是否规范和统一，确保对话的引号、句号、逗号、顿号等符合中文规范
+        * 数字、英文单词保持半角（符合中文排版规范）
       - **语法和修辞**：修正明显的语病，确保句子结构清晰，表达准确
       - **词语和成语用法**：确认词语和成语的使用是否恰当，是否符合其固有含义。例如，避免"美轮美奂"（形容建筑）用于形容不相干的事物
 
@@ -276,26 +285,36 @@ export class ProofreadingService {
       3. **一致性优先**：确保术语、角色名称、称谓等在全文中保持一致
       4. **参考原文**：校对时参考原文段落，确保翻译准确无误
       5. **参考上下文**：使用工具获取前后段落和章节的上下文，确保校对结果与整体保持一致
+      6. **格式与符号保持**：⚠️ **必须严格保持原文的格式和符号，并使用全角符号**
+         - **必须使用全角符号**：所有标点符号、引号、括号、破折号等必须使用全角（中文）版本
+         - 保持原文的换行、空格、缩进等格式特征
+         - 特殊符号必须原样保留或使用对应的中文全角符号
+         - 数字、英文单词、特殊标记等非翻译内容必须完全保持原样（数字和英文保持半角）
+         - 不要添加或删除任何符号，不要改变符号的位置和类型
 
       ========================================
       【工具使用说明】
       ========================================
       **工具使用优先级**:
       1. **高频必用**:
-         - \`find_paragraph_by_keywords\`: 检查人名、地名、称谓的一致性（支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
+         - \`search_memory_by_keywords\`: 检查称谓一致性前先搜索记忆（检查敬语或称谓翻译时，应先使用此工具搜索记忆中关于该角色敬语翻译的相关信息，然后再使用 \`find_paragraph_by_keywords\` 搜索段落）
+         - \`find_paragraph_by_keywords\`: 检查人名、地名、称谓的一致性（支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节。注意：检查敬语或称谓时，应先使用 \`search_memory_by_keywords\` 搜索记忆，然后再使用此工具）
          - \`get_previous_paragraphs\` / \`get_next_paragraphs\`: 需要更多上下文时
          - \`get_previous_chapter\` / \`get_next_chapter\`: 需要查看前一个或下一个章节的上下文时（用于理解章节间的连贯性和保持一致性）
          - \`get_chapter_info\`: 获取章节信息，了解整体上下文
-         - \`search_memory_by_keywords\`: 搜索相关的背景设定、角色信息等记忆内容
+         - \`search_memory_by_keywords\`: 搜索相关的背景设定、角色信息等记忆内容。⚠️ **检查记忆时效性**：如果找到记忆，应检查信息是否仍然准确和最新。如果发现信息需要更新，应使用 \`update_memory\` 工具更新记忆
          - \`get_memory\`: 获取完整记忆内容，确保校对时参考正确的设定
       2. **按需使用**:
          - \`update_character\`: 发现角色名称不一致时更新。⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
+         - ⚠️ **重要**：如果检查敬语或称谓一致性时，搜索记忆没有找到相关信息，在确认正确的翻译方式后，可以使用 \`create_memory\` 工具创建记忆，保存该角色的敬语翻译方式和角色关系信息，以便后续快速参考。⚠️ **双重检查**：创建记忆前，必须确认**说话者是谁**以及**说话者和被称呼者之间的关系**，确保敬语翻译信息准确无误（敬语的翻译方式取决于说话者和被称呼者的关系）。
+         - \`update_memory\`: 更新记忆。⚠️ **重要**：如果发现记忆中的信息需要更新（如角色关系变化、敬语翻译方式改变等），应使用此工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息。
+         - \`delete_memory\`: 删除记忆。当确定某个 Memory 不再需要时，可以使用此工具删除
          - \`update_term\`: 发现术语翻译不一致时更新
          - \`create_memory\`: 保存重要的背景设定、角色信息等记忆内容，以便后续快速参考
       3. **待办事项管理**（用于任务规划）:
          - \`create_todo\`: 创建待办事项来规划任务步骤（建议在开始复杂任务前使用）。⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
          - \`list_todos\`: 查看所有待办事项
-         - \`update_todo\`: 更新待办事项的内容或状态
+         - \`update_todos\`: 更新待办事项的内容或状态（支持单个或批量更新）
          - \`mark_todo_done\`: 标记待办事项为完成（当你完成了该待办的任务时）
          - \`delete_todo\`: 删除待办事项
 
@@ -335,6 +354,7 @@ export class ProofreadingService {
           - 只返回经过修正或改进的段落
           - 系统会自动比较校对结果与原文，只有真正有变化的段落才会被保存为新翻译
           - 如果所有段落都没有变化，返回：\`{"status": "completed", "paragraphs": []}\`
+        - ⚠️ **重要**：忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出校对内容，系统也不会将它们计入有效段落
       - 必须是有效的 JSON（注意转义特殊字符）
       - **不要使用任何翻译管理工具，只返回JSON**
       - **在所有状态阶段都可以使用工具**（planning、working、completed、done）
@@ -377,43 +397,20 @@ export class ProofreadingService {
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始校对。
-
-**重要：必须使用状态字段（status）**
-- 所有响应必须是有效的 JSON 格式，包含 status 字段
-- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
-- 可以从 "planning" 状态开始，规划任务、获取上下文
-- 准备好后，将状态设置为 "working" 并开始校对
-- 完成所有段落校对后，将状态设置为 "completed"
-- 完成所有后续操作后，将状态设置为 "done"`;
+      let initialUserPrompt = buildInitialUserPromptBase('proofreading');
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
-        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保校对的一致性和连贯性。`;
+        initialUserPrompt = addChapterContext(initialUserPrompt, chapterId, 'proofreading');
       }
 
       // 如果是单段落校对，添加段落 ID 信息以便 AI 获取上下文
       if (currentParagraphId && content.length === 1) {
-        initialUserPrompt += `\n\n**当前段落 ID**: ${currentParagraphId}\n你可以使用工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs 等）获取该段落的前后上下文，以确保校对的一致性和连贯性。`;
+        initialUserPrompt = addParagraphContext(initialUserPrompt, currentParagraphId, 'proofreading');
       }
 
-      initialUserPrompt += `
-
-        【任务规划建议】
-        - 如果需要规划复杂的校对任务，你可以使用 create_todo 工具创建待办事项来规划步骤
-        - 例如：为大型章节创建待办事项来跟踪校对进度、一致性检查、格式检查等子任务
-        - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
-
-        【执行要点】
-        - **文字层面**：检查错别字、标点、语法、词语用法
-        - **内容层面**：检查人名、地名、称谓一致性；检查时间线和逻辑；检查专业知识/设定
-        - **格式层面**：检查格式、数字用法、引文注释
-        - **一致性**：使用工具查找其他段落中的用法，确保全文一致
-        - **最小改动**：只修正确实存在的错误，保持原意和风格
-        - **参考原文**：校对时参考原文段落，确保翻译准确无误
-        - **⚠️ 重要**：只返回有变化的段落。如果段落没有错误或变化，不要包含在返回结果中
-
-        请按 JSON 格式返回，只包含有变化的段落。`;
+      initialUserPrompt = addTaskPlanningSuggestions(initialUserPrompt, 'proofreading');
+      initialUserPrompt += buildExecutionSection('proofreading');
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -509,18 +506,7 @@ export class ProofreadingService {
         }
 
         // 构建当前消息
-        const maintenanceReminder = `
-⚠️ **提醒**:
-- **文字层面**：检查错别字、标点、语法、词语用法
-- **内容层面**：检查人名、地名、称谓一致性；检查时间线和逻辑；检查专业知识/设定
-- **格式层面**：检查格式、数字用法、引文注释
-- **一致性**：使用工具查找其他段落中的用法，确保全文一致
-- **最小改动**：只修正确实存在的错误，保持原意和风格
-- ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
-- **待办事项管理**（可选，用于任务规划）:
-  - 如果需要规划复杂的校对任务，可以使用 create_todo 创建待办事项来规划步骤
-  - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："校对第1-5段，检查错别字和标点，确保术语一致性" 而不是 "校对文本"
-  - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
+        const maintenanceReminder = buildMaintenanceReminder('proofreading');
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}

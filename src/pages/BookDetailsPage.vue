@@ -1035,8 +1035,13 @@ const normalizeChapterSymbols = async () => {
             }
 
             const updatedTranslations = para.translations.map((trans) => {
-              const normalized = normalizeTranslationSymbols(trans.translation);
-              if (normalized !== trans.translation) {
+              // 确保 translation 是字符串
+              if (!trans.translation || typeof trans.translation !== 'string') {
+                return trans;
+              }
+              const original = trans.translation;
+              const normalized = normalizeTranslationSymbols(original);
+              if (normalized !== original) {
                 updatedCount++;
                 return {
                   ...trans,
@@ -1076,6 +1081,16 @@ const normalizeChapterSymbols = async () => {
       };
     });
 
+    // 查找更新后的章节，保存内容到 IndexedDB
+    const updatedChapter = updatedVolumes
+      ?.flatMap((v) => v.chapters || [])
+      .find((c) => c.id === selectedChapterWithContent.value!.id);
+
+    if (updatedChapter && updatedChapter.content) {
+      // 保存更新后的内容到 IndexedDB
+      await ChapterService.saveChapterContent(updatedChapter);
+    }
+
     // 更新书籍
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
@@ -1102,6 +1117,7 @@ const normalizeChapterSymbols = async () => {
         life: 3000,
       });
     } else {
+      // 即使没有更新，也显示提示，让用户知道操作已完成
       toast.add({
         severity: 'info',
         summary: '无需更新',

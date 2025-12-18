@@ -95,10 +95,18 @@ interface LunaAIDB extends DBSchema {
     };
     indexes: { 'by-bookId': string; 'by-lastAccessedAt': number };
   };
+  'full-text-indexes': {
+    key: string;
+    value: {
+      bookId: string;
+      indexData: string; // 序列化的 Fuse.js 索引数据
+      lastUpdated: string; // ISO 日期字符串
+    };
+  };
 }
 
 const DB_NAME = 'luna-ai';
-const DB_VERSION = 5; // 升级到版本 5 以添加 memories 存储
+const DB_VERSION = 7; // 升级到版本 7 以支持 full-text-indexes 存储的 lastUpdated 字段
 
 let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
 
@@ -182,6 +190,11 @@ export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
           });
           memoriesStore.createIndex('by-bookId', 'bookId', { unique: false });
           memoriesStore.createIndex('by-lastAccessedAt', 'lastAccessedAt', { unique: false });
+        }
+
+        // 创建 full-text-indexes 存储（版本 6 新增）
+        if (!db.objectStoreNames.contains('full-text-indexes')) {
+          db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
         }
       },
       blocked() {
@@ -404,6 +417,7 @@ export async function clearAllData(): Promise<void> {
     'thinking-processes',
     'chapter-contents',
     'memories',
+    'full-text-indexes',
   ] as const;
 
   for (const storeName of storeNames) {

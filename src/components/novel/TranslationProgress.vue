@@ -168,32 +168,175 @@ const toggleTaskFold = (taskId: string) => {
 
 // Active Tab State for each task
 const activeTab = ref<Record<string, string>>({});
+// Track the last active state for each task to detect state changes
+const lastActiveState = ref<Record<string, 'thinking' | 'outputting' | 'none'>>({});
+
+// Track last update time for thinkingMessage and outputContent to determine which is actively updating
+const lastThinkingUpdate = ref<Record<string, number>>({});
+const lastOutputUpdate = ref<Record<string, number>>({});
 
 const setActiveTab = (taskId: string, value: string) => {
   activeTab.value[taskId] = value;
 };
 
 const getActiveTab = (taskId: string): string => {
-  // If user has already selected a tab, use that
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (!task) {
+    return activeTab.value[taskId] || 'thinking';
+  }
+
+  // Determine current active state
+  const isThinking = isTaskThinking(taskId);
+  const isOutputting = isTaskOutputting(taskId);
+
+  // Get current active state for comparison
+  const currentActiveState: 'thinking' | 'outputting' | 'none' = isThinking
+    ? 'thinking'
+    : isOutputting
+      ? 'outputting'
+      : 'none';
+
+  // If the active state changed, clear the saved tab to allow auto-switching
+  const lastState = lastActiveState.value[taskId];
+  if (lastState !== undefined && lastState !== currentActiveState) {
+    // State changed - clear saved tab to allow auto-switch
+    delete activeTab.value[taskId];
+  }
+
+  // Update last active state
+  lastActiveState.value[taskId] = currentActiveState;
+
+  // If user has manually selected a tab and state hasn't changed, respect it
   const savedTab = activeTab.value[taskId];
-  if (savedTab) {
+  if (savedTab && lastState === currentActiveState) {
     return savedTab;
   }
-  // Otherwise, find the task and default to the tab with content
-  const task = recentAITasks.value.find((t) => t.id === taskId);
-  if (task) {
+
+  // Determine what the active tab should be based on current state
+  // Note: We don't automatically switch to todos tab - user must manually select it
+  let shouldBeTab: string;
+  if (isOutputting) {
+    shouldBeTab = 'output';
+  } else if (isThinking) {
+    shouldBeTab = 'thinking';
+  } else {
+    // No active state, use content-based default
     const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
     const hasOutput = task.outputContent && task.outputContent.trim();
-    const hasTodos = getTodosForTask(taskId).length > 0;
-    // Priority: todos > output > thinking
-    if (hasTodos) {
-      return 'todos';
-    }
     if (hasOutput && !hasThinking) {
-      return 'output';
+      shouldBeTab = 'output';
+    } else {
+      shouldBeTab = 'thinking';
     }
   }
-  return 'thinking';
+
+  // Otherwise, auto-switch to the appropriate tab
+  return shouldBeTab;
+};
+
+// 检查任务是否正在思考
+const isTaskThinking = (taskId: string): boolean => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (!task) return false;
+  
+  // 如果状态是 'thinking'，检查是否有最近的更新
+  if (task.status === 'thinking') {
+    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+    const now = Date.now();
+    // 如果状态是 thinking 但最近2秒内没有更新，不显示指示器
+    if (thinkingTime > 0 && now - thinkingTime >= 2000) {
+      return false;
+    }
+    return true;
+  }
+  
+  // 如果状态是 'processing'，需要判断是思考还是输出
+  if (task.status === 'processing') {
+    const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
+    if (!hasThinking) {
+      return false;
+    }
+    
+    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+    const now = Date.now();
+    const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
+    
+    // 只有在最近2秒内更新过才显示思考指示器
+    if (!recentThinking) {
+      return false;
+    }
+    
+    const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
+    
+    // 如果只有思考消息，没有输出，显示思考指示器
+    if (!hasOutput) {
+      return true;
+    }
+    
+    // 如果两者都有，根据最后更新时间判断哪个更活跃
+    const outputTime = lastOutputUpdate.value[taskId] || 0;
+    const recentOutput = outputTime > 0 && now - outputTime < 2000;
+    
+    // 如果思考消息最近更新过，而输出内容没有最近更新，显示思考指示器
+    if (recentThinking && !recentOutput) {
+      return true;
+    }
+    // 如果两者都最近更新过，但思考消息更新更晚，显示思考指示器
+    if (recentThinking && recentOutput && thinkingTime > outputTime) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+// 检查任务是否正在输出内容
+const isTaskOutputting = (taskId: string): boolean => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  if (!task) return false;
+  
+  // 只有 'processing' 状态才可能输出
+  if (task.status !== 'processing') {
+    return false;
+  }
+  
+  const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
+  if (!hasOutput) {
+    return false;
+  }
+  
+  // 检查输出内容是否在最近2秒内更新过
+  const outputTime = lastOutputUpdate.value[taskId] || 0;
+  const now = Date.now();
+  const recentOutput = outputTime > 0 && now - outputTime < 2000;
+  
+  // 只有在最近2秒内更新过才显示输出指示器
+  if (!recentOutput) {
+    return false;
+  }
+  
+  // 如果有输出内容且最近更新过，检查是否与思考消息冲突
+  const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
+  
+  // 如果没有思考消息，显示输出指示器
+  if (!hasThinking) {
+    return true;
+  }
+  
+  // 如果两者都有，根据最后更新时间判断
+  const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+  const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
+  
+  // 如果输出内容最近更新过，而思考消息没有最近更新，显示输出指示器
+  if (recentOutput && !recentThinking) {
+    return true;
+  }
+  // 如果两者都最近更新过，但输出内容更新更晚，显示输出指示器
+  if (recentThinking && recentOutput && outputTime > thinkingTime) {
+    return true;
+  }
+  
+  return false;
 };
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
@@ -397,7 +540,25 @@ watch(
       message: task.thinkingMessage,
       length: task.thinkingMessage?.length || 0,
     })),
-  () => {
+  (newTasks, oldTasks) => {
+    // 跟踪思考消息的更新时间
+    const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
+    const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    
+    // 清理已移除任务的跟踪数据
+    for (const taskId of Object.keys(lastThinkingUpdate.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete lastThinkingUpdate.value[taskId];
+      }
+    }
+    
+    for (const task of newTasks) {
+      const oldLength = oldTasksMap.get(task.id) || 0;
+      if (task.length > oldLength) {
+        lastThinkingUpdate.value[task.id] = Date.now();
+      }
+    }
+    
     // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
     nextTick(() => {
       requestAnimationFrame(() => {
@@ -423,7 +584,25 @@ watch(
       message: task.outputContent,
       length: task.outputContent?.length || 0,
     })),
-  () => {
+  (newTasks, oldTasks) => {
+    // 跟踪输出内容的更新时间
+    const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
+    const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    
+    // 清理已移除任务的跟踪数据
+    for (const taskId of Object.keys(lastOutputUpdate.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete lastOutputUpdate.value[taskId];
+      }
+    }
+    
+    for (const task of newTasks) {
+      const oldLength = oldTasksMap.get(task.id) || 0;
+      if (task.length > oldLength) {
+        lastOutputUpdate.value[task.id] = Date.now();
+      }
+    }
+    
     // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
     nextTick(() => {
       requestAnimationFrame(() => {
@@ -628,13 +807,27 @@ watch(
                         value="thinking"
                         :disabled="!task.thinkingMessage || !task.thinkingMessage.trim()"
                       >
-                        思考过程
+                        <span class="ai-task-tab-label">
+                          思考过程
+                          <i
+                            v-if="isTaskThinking(task.id)"
+                            class="pi pi-spin pi-spinner ai-task-indicator"
+                            title="正在思考..."
+                          ></i>
+                        </span>
                       </Tab>
                       <Tab
                         value="output"
                         :disabled="!task.outputContent || !task.outputContent.trim()"
                       >
-                        输出内容
+                        <span class="ai-task-tab-label">
+                          输出内容
+                          <i
+                            v-if="isTaskOutputting(task.id)"
+                            class="pi pi-spin pi-spinner ai-task-indicator"
+                            title="正在输出内容..."
+                          ></i>
+                        </span>
                       </Tab>
                       <Tab value="todos" :disabled="getTodosForTask(task.id).length === 0">
                         待办事项
@@ -1107,6 +1300,27 @@ watch(
 .ai-task-tabs :deep(.p-tab[disabled]) {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.ai-task-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-task-indicator {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-80);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ai-task-tabs :deep(.p-tabpanels) {

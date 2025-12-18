@@ -7,6 +7,7 @@ import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
 import type { Chapter } from 'src/models/novel';
+import { searchRelatedMemories } from './memory-helper';
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -86,16 +87,20 @@ export const terminologyTools: ToolDefinition[] = [
               type: 'string',
               description: '术语名称（日文原文）',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['name'],
         },
       },
     },
-    handler: (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name } = args;
+      const { name, include_memory = true } = args;
       if (!name) {
         throw new Error('术语名称不能为空');
       }
@@ -127,6 +132,12 @@ export const terminologyTools: ToolDefinition[] = [
         });
       }
 
+      // 搜索相关记忆
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId) {
+        relatedMemories = await searchRelatedMemories(bookId, [name], 5);
+      }
+
       return JSON.stringify({
         success: true,
         term: {
@@ -135,6 +146,7 @@ export const terminologyTools: ToolDefinition[] = [
           translation: term.translation.translation,
           description: term.description,
         },
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },
@@ -178,7 +190,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = previousTerm ? (cloneDeep(previousTerm) as Terminology) : undefined;
+      const previousData = previousTerm ? (cloneDeep(previousTerm)) : undefined;
 
       const updates: {
         translation?: string;
@@ -246,7 +258,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const term = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = term ? (cloneDeep(term) as Terminology) : undefined;
+      const previousData = term ? (cloneDeep(term)) : undefined;
 
       await TerminologyService.deleteTerminology(bookId, term_id);
 
@@ -395,16 +407,20 @@ export const terminologyTools: ToolDefinition[] = [
               type: 'boolean',
               description: '是否只返回有翻译的术语（默认 false）',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['keywords'],
         },
       },
     },
-    handler: (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keywords, translation_only = false } = args;
+      const { keywords, translation_only = false, include_memory = true } = args;
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -457,6 +473,12 @@ export const terminologyTools: ToolDefinition[] = [
         return nameMatch || translationMatch;
       });
 
+      // 搜索相关记忆
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId) {
+        relatedMemories = await searchRelatedMemories(bookId, validKeywords, 5);
+      }
+
       return JSON.stringify({
         success: true,
         terms: filteredTerms.map((term: Terminology) => ({
@@ -466,6 +488,7 @@ export const terminologyTools: ToolDefinition[] = [
           description: term.description,
         })),
         count: filteredTerms.length,
+        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
       });
     },
   },

@@ -29,8 +29,9 @@ export function normalizeTranslationQuotes(text: string): string {
   // 注意：正则表达式 /"([^"]*)"/g 只匹配成对的引号（开引号+内容+闭引号）
   normalized = normalized.replace(/"([^"]*)"/g, '「$1」');
   // 将成对的全角双引号 "" 替换为日语引号 「」
-  // 注意：正则表达式 /"([^"]*)"/g 只匹配成对的引号（全角左引号+内容+全角右引号）
-  normalized = normalized.replace(/"([^"]*)"/g, '「$1」');
+  // 注意：正则表达式匹配成对的引号（全角左引号+内容+全角右引号）
+  // 全角左双引号是 U+201C ("), 全角右双引号是 U+201D (")
+  normalized = normalized.replace(/\u201C([^\u201D]*)\u201D/g, '「$1」');
 
   // 处理成对的单引号
   // 将成对的半角普通单引号 '' 替换为日语单引号 『』（全角）
