@@ -374,7 +374,8 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
       1. **规划阶段（planning）**: 使用工具获取上下文${chapterIdNote}；检查术语/角色分离、空翻译、描述不匹配、重复角色；发现问题立即修复；准备就绪后设为 "working"
       2. **工作阶段（working）**: 逐段翻译1:1对应；敬语工作流（别名→角色设定→先搜索记忆再检查历史一致性→关系判断→翻译）；新术语/角色直接创建；发现数据问题立即修复；完成所有段落后设为 "completed"
       ${buildCompletedStageDescription('translation')}
-      ⚠️ **关键**: 敬语翻译（别名>关系>记忆>历史，禁止自动创建别名，严禁将敬语添加为别名）；数据维护（术语/角色分离，发现空翻译立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；所有阶段可使用工具`;
+      ⚠️ **关键**: 敬语翻译（别名>关系>记忆>历史，禁止自动创建别名，严禁将敬语添加为别名）；数据维护（术语/角色分离，发现空翻译立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；所有阶段可使用工具
+      ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出翻译内容，系统也不会将它们计入有效段落`;
   }
 
   if (taskType === 'proofreading') {
@@ -388,6 +389,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
         - **最小改动**：只修正确实错误，保持原意和风格
         - **参考原文**：确保翻译准确无误
         - ⚠️ **只返回有变化的段落**，无变化不包含在结果中
+        - ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出校对内容，系统也不会将它们计入有效段落
 
         请按 JSON 格式返回，只包含有变化的段落。`;
   }
@@ -404,6 +406,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
         2. **工作阶段（working）**: 语气词（符合角色风格）、自然流畅（摆脱翻译腔）、节奏优化、语病修正、角色区分、专有名词统一；完成所有段落后设为 "completed"
         ${buildCompletedStageDescription('polish')}
         ⚠️ **关键**: 只返回有变化的段落；使用工具获取术语/角色/上下文${chapterIdNote}；参考翻译历史混合匹配最佳表达；润色前搜索记忆，完成后可保存摘要；保留原文格式（标点、换行符等）；所有阶段可使用工具
+        ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出润色内容，系统也不会将它们计入有效段落
 
         请按 JSON 格式返回，只包含有变化的段落。`;
   }
@@ -633,7 +636,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     if (parsed.content) {
       if (parsed.content.paragraphs) {
         for (const para of parsed.content.paragraphs) {
-          if (para.id && para.translation) {
+          // 只处理有效的段落翻译（有ID且翻译内容不为空）
+          if (para.id && para.translation && para.translation.trim().length > 0) {
             accumulatedParagraphs.set(para.id, para.translation);
           }
         }
