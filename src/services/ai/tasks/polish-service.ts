@@ -294,7 +294,24 @@ export class PolishService {
         - 你可以参考这些历史翻译，混合匹配不同版本中的优秀表达。
         - 选择最合适的词汇和句式，创造最佳润色结果。
 
-      9. **工具使用**:
+      9. **格式与符号保持**: ⚠️ **必须严格保持原文的格式和符号，并使用全角符号**
+        - **必须使用全角符号**：所有标点符号、引号、括号、破折号等必须使用全角（中文）版本
+          * 逗号：， （不是 ,）
+          * 句号：。 （不是 .）
+          * 问号：？ （不是 ?）
+          * 感叹号：！ （不是 !）
+          * 冒号：： （不是 :）
+          * 分号：； （不是 ;）
+          * 引号：" " 或 " " （不是 " "）
+          * 括号：（） （不是 ()）
+          * 破折号：—— （不是 - 或 --）
+          * 省略号：…… （不是 ...）
+        - 保持原文的换行、空格、缩进等格式特征
+        - 特殊符号（如「」、『』等日文引号）必须原样保留或使用对应的中文全角符号
+        - 数字、英文单词、特殊标记等非翻译内容必须完全保持原样（数字和英文保持半角）
+        - 不要添加或删除任何符号，不要改变符号的位置和类型
+
+      10. **工具使用**:
         - 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。
         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色；如果需要所有章节的，设置 \`all_chapters=true\`
         - 如遇到敬语翻译，必须**首先**使用 \`search_memory_by_keywords\` 搜索记忆中关于该角色敬语翻译的相关信息，**然后**使用 \`find_paragraph_by_keywords\` 检查历史翻译一致性。
@@ -317,12 +334,12 @@ export class PolishService {
           - mark_todo_done: 标记待办事项为完成（当你完成了该待办的任务时）
           - delete_todo: 删除待办事项
 
-      10. **记忆管理**:
+      11. **记忆管理**:
         - **参考记忆**: 润色前可使用 search_memory_by_keywords 搜索相关的背景设定、角色信息等记忆内容，使用 get_memory 获取完整内容，确保润色风格和术语使用的一致性。
         - **保存记忆**: 完成章节润色后，可使用 create_memory 保存章节摘要（需要自己生成 summary）。重要背景设定也可保存供后续参考。
         - **搜索后保存**: 当你通过工具（如 find_paragraph_by_keywords、get_chapter_info、get_previous_chapter、get_next_chapter 等）搜索或检索了大量内容时，应该主动使用 create_memory 保存这些重要信息，以便后续快速参考。
 
-      11. **输出格式（必须严格遵守）**:
+      12. **输出格式（必须严格遵守）**:
         ⚠️ **重要：只能返回JSON，禁止使用翻译管理工具**
         - ❌ **禁止使用** \`add_translation\`、\`update_translation\`、\`remove_translation\`、\`select_translation\` 等翻译管理工具
         - ✅ **必须直接返回** JSON 格式的润色结果，包含 status 字段
