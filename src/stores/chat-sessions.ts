@@ -92,6 +92,7 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   summary?: string; // 会话总结（当消息过多时自动生成）
+  lastSummarizedMessageIndex: number; // 上次总结时的消息数量，用于计算“重置”后的条数
 }
 
 /**
@@ -118,6 +119,10 @@ function loadSessionsFromStorage(): ChatSession[] {
           timestamp:
             typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp,
         })),
+        lastSummarizedMessageIndex:
+          typeof session.lastSummarizedMessageIndex === 'number'
+            ? session.lastSummarizedMessageIndex
+            : 0,
       }));
     }
   } catch (error) {
@@ -204,6 +209,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         context,
         createdAt: now,
         updatedAt: now,
+        lastSummarizedMessageIndex: 0,
       };
 
       this.sessions.push(newSession);
@@ -316,6 +322,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.messages = [];
         session.title = '新会话';
         delete session.summary;
+        session.lastSummarizedMessageIndex = 0;
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
       }
@@ -327,7 +334,8 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     isNearLimit(): boolean {
       const session = this.currentSession;
       if (!session) return false;
-      return session.messages.length >= MESSAGE_LIMIT_THRESHOLD;
+      const countSinceSummary = session.messages.length - (session.lastSummarizedMessageIndex ?? 0);
+      return countSinceSummary >= MESSAGE_LIMIT_THRESHOLD;
     },
 
     /**
@@ -336,7 +344,8 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     isAtLimit(): boolean {
       const session = this.currentSession;
       if (!session) return false;
-      return session.messages.length >= MAX_MESSAGES_PER_SESSION;
+      const countSinceSummary = session.messages.length - (session.lastSummarizedMessageIndex ?? 0);
+      return countSinceSummary >= MAX_MESSAGES_PER_SESSION;
     },
 
     /**
@@ -352,6 +361,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       if (session) {
         // 保存总结，但不清除聊天历史
         session.summary = summary;
+        session.lastSummarizedMessageIndex = session.messages.length;
         // 不修改消息列表，保留所有消息
         // 摘要将在 AssistantService 中用于后续对话的上下文
         session.updatedAt = Date.now();

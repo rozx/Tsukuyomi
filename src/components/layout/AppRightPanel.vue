@@ -15,6 +15,7 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import {
   useChatSessionsStore,
   type ChatMessage,
+  type ChatSession,
   type MessageAction,
   MESSAGE_LIMIT_THRESHOLD,
   MAX_MESSAGES_PER_SESSION,
@@ -48,6 +49,41 @@ const bookDetailsStore = useBookDetailsStore();
 const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
+
+const SUMMARIZING_MESSAGE_CONTENT = '聊天正在总结中...';
+const SUMMARIZED_MESSAGE_CONTENT = '聊天总结完成。';
+const SUMMARIZED_WITH_REASON_MESSAGE_CONTENT = '聊天总结完成，之前的对话历史已自动总结。';
+
+type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
+
+const buildAIMessageHistory = (
+  session: SessionWithSummaryIndex | null,
+): AIChatMessage[] | undefined => {
+  if (!session || !session.messages.length) {
+    return undefined;
+  }
+  const startIndex = session.lastSummarizedMessageIndex ?? 0;
+  const sliced = session.messages
+    .slice(startIndex)
+    .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+    .map((msg) => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    }));
+  return sliced.length > 0 ? sliced : undefined;
+};
+
+// 扩展类型，包含所有可选属性（用于类型断言）
+// 这允许我们在模板中安全地访问这些属性，同时保持类型安全
+type MessageActionWithAllProperties = MessageAction & {
+  replaced_paragraph_count?: number;
+  replaced_translation_count?: number;
+  old_translation?: string;
+  new_translation?: string;
+  old_title?: string;
+  new_title?: string;
+  translation_keywords?: string[];
+};
 
 // 配置 marked 以支持更好的 Markdown 渲染
 marked.setOptions({
@@ -162,6 +198,12 @@ const isSummarizing = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
 
+const getMessagesSinceSummaryCount = (session: SessionWithSummaryIndex | null): number => {
+  if (!session) return messages.value.length;
+  const cutoff = session.lastSummarizedMessageIndex ?? 0;
+  return Math.max(session.messages.length - cutoff, 0);
+};
+
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
@@ -201,6 +243,14 @@ watch(
 // Popover refs for action details
 const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
 const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
+
+// Popover refs for grouped action details
+const groupedActionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
+const hoveredGroupedAction = ref<{
+  actions: MessageAction[];
+  message: ChatMessage;
+  timestamp: number;
+} | null>(null);
 
 // 思考过程折叠状态（messageId -> isExpanded）
 const thinkingExpanded = ref<Map<string, boolean>>(new Map());
@@ -386,9 +436,12 @@ const focusInput = () => {
   });
 };
 
+// 标记是否正在从 store 更新，避免循环
+let isUpdatingFromStore = false;
+
 // 发送消息
 const sendMessage = async () => {
-  const message = inputMessage.value.trim();
+  let message = inputMessage.value.trim();
   if (!message || isSending.value) return;
 
   if (!assistantModel.value) {
@@ -401,10 +454,176 @@ const sendMessage = async () => {
     return;
   }
 
+  // ============================================
+  // 测试功能：手动触发总结（仅用于测试）
+  // ============================================
+  // 当用户消息包含 "[!summarize]" 标记时，手动触发总结操作
+  // 此功能仅用于测试总结功能，生产环境应移除或禁用
+  // ============================================
+  const shouldTriggerSummarize = message.includes('[!summarize]');
+  if (shouldTriggerSummarize) {
+    // 从消息中移除标记
+    const messageAfterRemoval = message.replace(/\[!summarize\]/g, '').trim();
+
+    // 执行总结（无论消息是否为空）
+    try {
+      isSending.value = true;
+      isSummarizing.value = true;
+
+      // 如果消息还有其他内容，先保存到输入框，等总结完成后再发送
+      if (messageAfterRemoval) {
+        inputMessage.value = messageAfterRemoval;
+      } else {
+        inputMessage.value = ''; // 清空输入框
+      }
+
+      // 创建总结消息气泡
+      const summarizationMessageId = (Date.now() - 1).toString();
+      const summarizationMessage: ChatMessage = {
+        id: summarizationMessageId,
+        role: 'assistant',
+        content: SUMMARIZING_MESSAGE_CONTENT,
+        timestamp: Date.now(),
+        isSummarization: true,
+      };
+      messages.value.push(summarizationMessage);
+      const currentSession = chatSessionsStore.currentSession;
+      if (currentSession) {
+        chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+      }
+      scrollToBottom();
+
+      // 构建要总结的消息（排除系统消息和总结消息）
+      const messagesToSummarize = messages.value
+        .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse)
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+      if (messagesToSummarize.length === 0) {
+        toast.add({
+          severity: 'warn',
+          summary: '无法总结',
+          detail: '没有可总结的消息',
+          life: 3000,
+        });
+        isSending.value = false;
+        isSummarizing.value = false;
+        // 移除总结消息气泡
+        const msgIndex = messages.value.findIndex((m) => m.id === summarizationMessageId);
+        if (msgIndex >= 0) {
+          messages.value.splice(msgIndex, 1);
+        }
+        // 如果消息为空，直接返回；否则继续发送消息
+        if (!messageAfterRemoval) {
+          return;
+        }
+        // 继续执行下面的发送消息逻辑
+      } else {
+        // 调用总结功能
+        if (!assistantModel.value) {
+          throw new Error('助手模型未配置');
+        }
+        const summary = await AssistantService.summarizeSession(
+          assistantModel.value,
+          messagesToSummarize,
+          {
+            onChunk: () => {
+              // 总结过程中可以显示进度，但这里简化处理
+            },
+          },
+        );
+
+        // 更新总结消息状态为完成
+        const summarizationMsgIndex = messages.value.findIndex(
+          (m) => m.id === summarizationMessageId,
+        );
+        if (summarizationMsgIndex >= 0) {
+          const existingMsg = messages.value[summarizationMsgIndex];
+          if (existingMsg) {
+            messages.value[summarizationMsgIndex] = {
+              id: existingMsg.id,
+              role: existingMsg.role,
+              content: SUMMARIZED_MESSAGE_CONTENT,
+              timestamp: existingMsg.timestamp,
+              ...(existingMsg.isSummarization !== undefined && {
+                isSummarization: existingMsg.isSummarization,
+              }),
+              ...(existingMsg.actions && { actions: existingMsg.actions }),
+              ...(existingMsg.thinkingProcess && { thinkingProcess: existingMsg.thinkingProcess }),
+            };
+            if (currentSession) {
+              chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+            }
+          }
+        }
+
+        // 保存总结
+        if (currentSession) {
+          chatSessionsStore.summarizeAndReset(summary, currentSession.id);
+        }
+
+        // 创建记忆（如果有 bookId）
+        const context = contextStore.getContext;
+        if (context.currentBookId && summary) {
+          try {
+            const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+            await MemoryService.createMemory(
+              context.currentBookId,
+              summary,
+              `会话摘要：${memorySummary}`,
+            );
+          } catch (error) {
+            console.error('Failed to create memory for session summary:', error);
+          }
+        }
+
+        // 更新本地消息列表
+        isUpdatingFromStore = true;
+        const session = chatSessionsStore.currentSession;
+        if (session) {
+          messages.value = [...session.messages];
+        }
+        await nextTick();
+        isUpdatingFromStore = false;
+      }
+
+      isSummarizing.value = false;
+
+      // 如果消息为空，只执行总结，不发送消息
+      if (!messageAfterRemoval) {
+        isSending.value = false;
+        return;
+      }
+
+      // 如果消息还有其他内容，更新 message 变量并继续执行下面的发送消息逻辑
+      message = messageAfterRemoval;
+    } catch (error) {
+      console.error('Failed to summarize session:', error);
+      isSummarizing.value = false;
+      isSending.value = false;
+      toast.add({
+        severity: 'error',
+        summary: '总结失败',
+        detail: error instanceof Error ? error.message : '未知错误',
+        life: 5000,
+      });
+      return;
+    }
+
+    // 如果消息还有其他内容，继续处理（会在下面继续执行）
+    // ============================================
+    // 测试功能结束
+    // ============================================
+  }
+
   // 检查是否达到限制（在添加新消息之前）
   // 注意：这里检查的是添加新消息后的数量
-  const willExceedLimit = messages.value.length + 1 >= MESSAGE_LIMIT_THRESHOLD;
-  const willReachLimit = messages.value.length + 1 >= MAX_MESSAGES_PER_SESSION;
+  const sessionForLimit = chatSessionsStore.currentSession;
+  const messageCountSinceSummary = getMessagesSinceSummaryCount(sessionForLimit);
+  const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
+  const willReachLimit = messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION;
 
   if (willReachLimit) {
     toast.add({
@@ -429,7 +648,7 @@ const sendMessage = async () => {
       const summarizationMessage: ChatMessage = {
         id: summarizationMessageId,
         role: 'assistant',
-        content: '正在总结聊天会话...',
+        content: SUMMARIZING_MESSAGE_CONTENT,
         timestamp: Date.now(),
         isSummarization: true,
       };
@@ -470,7 +689,7 @@ const sendMessage = async () => {
           messages.value[summarizationMsgIndex] = {
             id: existingMsg.id,
             role: existingMsg.role,
-            content: '✓ 聊天会话总结完成',
+            content: SUMMARIZED_MESSAGE_CONTENT,
             timestamp: existingMsg.timestamp,
             ...(existingMsg.isSummarization !== undefined && {
               isSummarization: existingMsg.isSummarization,
@@ -582,20 +801,15 @@ const sendMessage = async () => {
   const sessionSummary = currentSession?.summary;
 
   try {
-    // 将 store 中的消息转换为 AI ChatMessage 格式（用于连续对话）
-    const messageHistory: AIChatMessage[] | undefined = currentSession?.messages
-      ? currentSession.messages
-          .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
-          .map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          }))
-      : undefined;
+    // 将 store 中的消息转换为 AI ChatMessage 格式（只保留上次总结后的内容）
+    const messageHistory: AIChatMessage[] | undefined = buildAIMessageHistory(currentSession);
 
     // 用于跟踪摘要消息 ID（如果摘要在服务内部触发）
     let internalSummarizationMessageId: string | null = null;
     // 标记是否正在摘要（用于阻止 onChunk 更新助手消息）
     let isSummarizingInternally = false;
+    // 保存摘要前的思考过程，以便在摘要后恢复
+    let savedThinkingProcess: string | undefined = undefined;
 
     // 调用 AssistantService（内部会创建任务并获取 abortController signal）
     const result = await AssistantService.chat(assistantModel.value, message, {
@@ -606,17 +820,25 @@ const sendMessage = async () => {
         // 当服务内部开始摘要时，创建摘要气泡
         isSummarizingInternally = true;
 
-        // 立即移除占位符助手消息，防止显示 AI 响应内容
+        // 在移除助手消息之前，保存其思考过程
         const assistantMsgIndex = messages.value.findIndex((m) => m.id === assistantMessageId);
         if (assistantMsgIndex >= 0) {
-          messages.value.splice(assistantMsgIndex, 1);
+          const assistantMsg = messages.value[assistantMsgIndex];
+          if (assistantMsg) {
+            // 保存思考过程（如果存在）
+            if (assistantMsg.thinkingProcess) {
+              savedThinkingProcess = assistantMsg.thinkingProcess;
+            }
+            // 立即移除占位符助手消息，防止显示 AI 响应内容
+            messages.value.splice(assistantMsgIndex, 1);
+          }
         }
 
         internalSummarizationMessageId = (Date.now() - 1).toString();
         const summarizationMessage: ChatMessage = {
           id: internalSummarizationMessageId,
           role: 'assistant',
-          content: '正在总结聊天会话...',
+          content: SUMMARIZING_MESSAGE_CONTENT,
           timestamp: Date.now(),
           isSummarization: true,
         };
@@ -1469,17 +1691,10 @@ const sendMessage = async () => {
         if (summarizationMsgIndex >= 0) {
           const existingMsg = messages.value[summarizationMsgIndex];
           if (existingMsg) {
-            messages.value[summarizationMsgIndex] = {
-              id: existingMsg.id,
-              role: existingMsg.role,
-              content: '✓ 聊天会话总结完成（由于达到 token 限制，之前的对话历史已自动总结）',
-              timestamp: existingMsg.timestamp,
-              ...(existingMsg.isSummarization !== undefined && {
-                isSummarization: existingMsg.isSummarization,
-              }),
-              ...(existingMsg.actions && { actions: existingMsg.actions }),
-              ...(existingMsg.thinkingProcess && { thinkingProcess: existingMsg.thinkingProcess }),
-            };
+            existingMsg.content = SUMMARIZED_WITH_REASON_MESSAGE_CONTENT;
+            if (existingMsg.isSummarization === undefined) {
+              existingMsg.isSummarization = true;
+            }
             // 更新 store 中的消息历史
             if (sessionId) {
               chatSessionsStore.updateSessionMessages(sessionId, messages.value);
@@ -1492,7 +1707,7 @@ const sendMessage = async () => {
         const summarizationMessage: ChatMessage = {
           id: summarizationMessageId,
           role: 'assistant',
-          content: '✓ 聊天会话总结完成（由于达到 token 限制，之前的对话历史已自动总结）',
+          content: SUMMARIZED_WITH_REASON_MESSAGE_CONTENT,
           timestamp: Date.now(),
           isSummarization: true,
         };
@@ -1509,6 +1724,33 @@ const sendMessage = async () => {
       const session = chatSessionsStore.currentSession;
       if (session) {
         messages.value = [...session.messages];
+
+        // 确保摘要消息在重新加载后仍然存在且内容正确
+        // 因为从 store 重新加载可能会丢失刚刚更新的摘要消息
+        const summarizationMessageContent = SUMMARIZED_WITH_REASON_MESSAGE_CONTENT;
+        if (internalSummarizationMessageId) {
+          const summarizationMsgIndex = messages.value.findIndex(
+            (m) => m.id === internalSummarizationMessageId,
+          );
+          if (summarizationMsgIndex >= 0) {
+            // 如果摘要消息存在，确保内容正确
+            const existingMsg = messages.value[summarizationMsgIndex];
+            if (existingMsg && existingMsg.content !== summarizationMessageContent) {
+              existingMsg.content = summarizationMessageContent;
+              existingMsg.isSummarization = true;
+            }
+          } else {
+            // 如果摘要消息不存在，重新创建它
+            const summarizationMessage: ChatMessage = {
+              id: internalSummarizationMessageId,
+              role: 'assistant',
+              content: summarizationMessageContent,
+              timestamp: Date.now(),
+              isSummarization: true,
+            };
+            messages.value.push(summarizationMessage);
+          }
+        }
       }
       // 使用 nextTick 确保在下一个 tick 重置标记
       await nextTick();
@@ -1537,14 +1779,8 @@ const sendMessage = async () => {
       // 重新获取更新后的会话摘要和消息历史
       const updatedSession = chatSessionsStore.currentSession;
       const updatedSessionSummary = updatedSession?.summary;
-      const updatedMessageHistory: AIChatMessage[] | undefined = updatedSession?.messages
-        ? updatedSession.messages
-            .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
-            .map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            }))
-        : undefined;
+      const updatedMessageHistory: AIChatMessage[] | undefined =
+        buildAIMessageHistory(updatedSession);
 
       // 创建新的助手消息用于继续对话
       assistantMessageId = (Date.now() + 1).toString();
@@ -1553,6 +1789,8 @@ const sendMessage = async () => {
         role: 'assistant',
         content: '',
         timestamp: Date.now(),
+        // 恢复摘要前的思考过程（如果存在）
+        ...(savedThinkingProcess ? { thinkingProcess: savedThinkingProcess } : {}),
       };
       messages.value.push(newAssistantMessage);
       scrollToBottom();
@@ -1843,59 +2081,6 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
-// 停止当前任务
-const stopCurrentTask = async () => {
-  if (!currentTaskId.value) return;
-
-  try {
-    // 停止任务（这会触发 abortController.abort()）
-    await aiProcessingStore.stopTask(currentTaskId.value);
-
-    // 更新最后一条助手消息，显示已取消
-    const lastAssistantMsg = messages.value
-      .slice()
-      .reverse()
-      .find((msg) => msg.role === 'assistant');
-    if (lastAssistantMsg) {
-      if (!lastAssistantMsg.content.trim()) {
-        lastAssistantMsg.content = '**已取消**\n\n用户已停止 AI 思考过程。';
-      } else if (!lastAssistantMsg.content.includes('**已取消**')) {
-        lastAssistantMsg.content += '\n\n**已取消**';
-      }
-      // 清除思考过程活动状态（任务已停止）
-      setThinkingActive(lastAssistantMsg.id, false);
-    }
-
-    // 保存消息到会话
-    const currentSession = chatSessionsStore.currentSession;
-    if (currentSession?.id && messages.value.length > 0) {
-      chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
-    }
-
-    toast.add({
-      severity: 'info',
-      summary: '已停止',
-      detail: 'AI 思考过程已停止',
-      life: 2000,
-    });
-  } catch (error) {
-    console.error('Failed to stop task:', error);
-    toast.add({
-      severity: 'error',
-      summary: '停止失败',
-      detail: error instanceof Error ? error.message : '未知错误',
-      life: 3000,
-    });
-  } finally {
-    // 重置状态，重新启用输入
-    isSending.value = false;
-    currentTaskId.value = null;
-    currentMessageActions.value = [];
-    scrollToBottom();
-    focusInput();
-  }
-};
-
 // 清空聊天
 const clearChat = () => {
   messages.value = [];
@@ -1972,7 +2157,6 @@ watch(
 
 // 监听消息变化，同步到会话
 // 使用 immediate: false 避免初始化时的同步
-let isUpdatingFromStore = false; // 标记是否正在从 store 更新，避免循环
 watch(
   () => messages.value,
   (newMessages) => {
@@ -2095,11 +2279,47 @@ const handleActionPopoverHide = () => {
   hoveredAction.value = null;
 };
 
+// 切换分组操作详情 Popover
+const toggleGroupedActionPopover = (
+  event: Event,
+  actions: MessageAction[],
+  message: ChatMessage,
+  timestamp: number,
+) => {
+  const actionKey = `grouped-${message.id}-${timestamp}`;
+  const popoverRef = groupedActionPopoverRefs.value.get(actionKey);
+
+  if (popoverRef) {
+    hoveredGroupedAction.value = { actions, message, timestamp };
+    popoverRef.toggle(event);
+  }
+};
+
+// 处理鼠标离开事件，关闭分组操作 Popover
+const handleGroupedActionMouseLeave = (_timestamp: number) => {
+  // 注意：这里不能直接通过 timestamp 找到 ref，需要遍历或使用其他方式
+  // 为了简化，我们使用 hoveredGroupedAction 来找到对应的 ref
+  if (hoveredGroupedAction.value) {
+    const actionKey = `grouped-${hoveredGroupedAction.value.message.id}-${hoveredGroupedAction.value.timestamp}`;
+    const popoverRef = groupedActionPopoverRefs.value.get(actionKey);
+
+    if (popoverRef) {
+      popoverRef.hide();
+    }
+  }
+};
+
+// 处理分组操作 Popover 关闭
+const handleGroupedActionPopoverHide = () => {
+  hoveredGroupedAction.value = null;
+};
+
 // 消息显示项类型
 interface MessageDisplayItem {
-  type: 'content' | 'action';
+  type: 'content' | 'action' | 'grouped_action';
   content?: string;
   action?: MessageAction;
+  groupedActions?: MessageAction[]; // 用于分组显示的操作（如多个 todo 创建）
   messageId: string;
   messageRole: 'user' | 'assistant';
   timestamp: number;
@@ -2153,15 +2373,82 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     });
   }
 
-  // 添加所有操作（按时间戳排序，相同时间戳时按添加顺序）
-  for (const { action } of sortedActions) {
-    items.push({
-      type: 'action',
-      action,
-      messageId: message.id,
-      messageRole: message.role,
-      timestamp: action.timestamp,
-    });
+  // 分组处理 todo 创建操作：将连续创建的 todo（时间戳相差小于 1 秒）合并为一个显示项
+  const TODO_GROUP_TIME_WINDOW = 1000; // 1 秒时间窗口
+  let i = 0;
+  while (i < sortedActions.length) {
+    const currentAction = sortedActions[i]?.action;
+    if (!currentAction) {
+      i++;
+      continue;
+    }
+
+    // 检查是否是 todo 创建操作
+    if (currentAction.entity === 'todo' && currentAction.type === 'create') {
+      // 收集连续的 todo 创建操作
+      const todoGroup: MessageAction[] = [currentAction];
+      let j = i + 1;
+
+      // 查找时间戳相近的后续 todo 创建操作
+      while (j < sortedActions.length) {
+        const nextAction = sortedActions[j]?.action;
+        if (!nextAction) {
+          j++;
+          continue;
+        }
+        const timeDiff = nextAction.timestamp - currentAction.timestamp;
+
+        // 如果下一个操作也是 todo 创建，且时间戳相差小于时间窗口，则加入分组
+        if (
+          nextAction.entity === 'todo' &&
+          nextAction.type === 'create' &&
+          timeDiff < TODO_GROUP_TIME_WINDOW
+        ) {
+          todoGroup.push(nextAction);
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      // 如果只有一个 todo，正常显示；如果有多个，使用分组显示
+      const firstTodo = todoGroup[0];
+      if (!firstTodo) {
+        i++;
+        continue;
+      }
+
+      if (todoGroup.length === 1) {
+        items.push({
+          type: 'action',
+          action: firstTodo,
+          messageId: message.id,
+          messageRole: message.role,
+          timestamp: firstTodo.timestamp,
+        });
+      } else {
+        // 创建分组操作项，使用第一个操作的时间戳
+        items.push({
+          type: 'grouped_action',
+          groupedActions: todoGroup,
+          messageId: message.id,
+          messageRole: message.role,
+          timestamp: firstTodo.timestamp,
+        });
+      }
+
+      i = j; // 跳过已处理的操作
+    } else {
+      // 非 todo 创建操作，正常添加
+      items.push({
+        type: 'action',
+        action: currentAction,
+        messageId: message.id,
+        messageRole: message.role,
+        timestamp: currentAction.timestamp,
+      });
+      i++;
+    }
   }
 
   // 按时间戳排序，相同时间戳时使用更精确的排序策略
@@ -2383,6 +2670,77 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                     v-html="renderMarkdown(item.content)"
                   ></div>
                 </div>
+                <div
+                  v-else-if="item.type === 'grouped_action' && item.groupedActions"
+                  class="max-w-[85%] min-w-0"
+                >
+                  <div class="flex flex-wrap gap-1.5">
+                    <div
+                      :id="`grouped-action-${item.messageId}-${item.timestamp}`"
+                      class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help bg-orange-500/25 text-orange-200 border border-orange-500/40 hover:bg-orange-500/35"
+                      @mouseenter="
+                        (e) =>
+                          toggleGroupedActionPopover(
+                            e,
+                            item.groupedActions!,
+                            message,
+                            item.timestamp,
+                          )
+                      "
+                      @mouseleave="() => handleGroupedActionMouseLeave(item.timestamp)"
+                    >
+                      <i class="text-sm pi pi-list" />
+                      <span> 创建 {{ item.groupedActions.length }} 个待办事项 </span>
+                    </div>
+                    <!-- Grouped Action Details Popover -->
+                    <Popover
+                      :ref="
+                        (el) => {
+                          const actionKey = `grouped-${item.messageId}-${item.timestamp}`;
+                          if (el) {
+                            groupedActionPopoverRefs.set(
+                              actionKey,
+                              el as unknown as InstanceType<typeof Popover>,
+                            );
+                          }
+                        }
+                      "
+                      :target="`grouped-action-${item.messageId}-${item.timestamp}`"
+                      :dismissable="true"
+                      :show-close-icon="false"
+                      style="width: 18rem; max-width: 90vw"
+                      class="action-popover"
+                      @hide="handleGroupedActionPopoverHide"
+                    >
+                      <div
+                        v-if="
+                          hoveredGroupedAction &&
+                          hoveredGroupedAction.timestamp === item.timestamp &&
+                          hoveredGroupedAction.message.id === item.messageId
+                        "
+                        class="action-popover-content"
+                      >
+                        <div class="popover-header">
+                          <span class="popover-title"
+                            >创建 {{ item.groupedActions.length }} 个待办事项</span
+                          >
+                        </div>
+                        <div class="popover-details">
+                          <div
+                            v-for="(todoAction, todoIdx) in item.groupedActions"
+                            :key="todoIdx"
+                            class="popover-detail-item"
+                          >
+                            <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
+                            <span class="popover-detail-value">{{
+                              todoAction.name || '待办事项'
+                            }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Popover>
+                  </div>
+                </div>
                 <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
                   <div class="flex flex-wrap gap-1.5">
                     <div
@@ -2510,15 +2868,24 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           "
                           class="font-semibold text-xs"
                         >
-                          批量替换 {{ item.action.replaced_paragraph_count || 0 }} 个段落（共
-                          {{ item.action.replaced_translation_count || 0 }} 个翻译版本）
+                          批量替换
+                          {{
+                            (item.action as MessageActionWithAllProperties)
+                              .replaced_paragraph_count ?? 0
+                          }}
+                          个段落（共
+                          {{
+                            (item.action as MessageActionWithAllProperties)
+                              .replaced_translation_count ?? 0
+                          }}
+                          个翻译版本）
                         </span>
                         <span
                           v-else-if="
                             item.action.entity === 'translation' &&
                             item.action.paragraph_id &&
-                            item.action.old_translation &&
-                            item.action.new_translation
+                            (item.action as MessageActionWithAllProperties).old_translation &&
+                            (item.action as MessageActionWithAllProperties).new_translation
                           "
                           class="font-semibold text-xs"
                         >
@@ -2527,10 +2894,28 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                             >({{ item.action.paragraph_id.substring(0, 8) }})</span
                           >
                           <span class="opacity-70 ml-1">
-                            | {{ item.action.old_translation.substring(0, 20)
-                            }}{{ item.action.old_translation.length > 20 ? '...' : '' }} →
-                            {{ item.action.new_translation.substring(0, 20)
-                            }}{{ item.action.new_translation.length > 20 ? '...' : '' }}
+                            |
+                            {{
+                              (
+                                item.action as MessageActionWithAllProperties
+                              ).old_translation?.substring(0, 20) ?? ''
+                            }}{{
+                              ((item.action as MessageActionWithAllProperties).old_translation
+                                ?.length ?? 0) > 20
+                                ? '...'
+                                : ''
+                            }}
+                            →
+                            {{
+                              (
+                                item.action as MessageActionWithAllProperties
+                              ).new_translation?.substring(0, 20) ?? ''
+                            }}{{
+                              ((item.action as MessageActionWithAllProperties).new_translation
+                                ?.length ?? 0) > 20
+                                ? '...'
+                                : ''
+                            }}
                           </span>
                         </span>
                         <span
@@ -2595,12 +2980,19 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           </span>
                           <span
                             v-if="
-                              item.action.translation_keywords &&
-                              item.action.translation_keywords.length > 0
+                              (item.action as MessageActionWithAllProperties)
+                                .translation_keywords &&
+                              ((item.action as MessageActionWithAllProperties).translation_keywords
+                                ?.length ?? 0) > 0
                             "
                             class="opacity-70 ml-1"
                           >
-                            翻译: {{ item.action.translation_keywords.join('、') }}
+                            翻译:
+                            {{
+                              (
+                                item.action as MessageActionWithAllProperties
+                              ).translation_keywords?.join('、') ?? ''
+                            }}
                           </span>
                           <span v-if="item.action.chapter_id" class="opacity-70 ml-1">
                             | 章节:
@@ -2726,22 +3118,24 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                             item.action.type === 'update' &&
                             item.action.entity === 'chapter' &&
                             item.action.tool_name === 'update_chapter_title' &&
-                            item.action.old_title &&
-                            item.action.new_title
+                            (item.action as MessageActionWithAllProperties).old_title &&
+                            (item.action as MessageActionWithAllProperties).new_title
                           "
                           class="font-semibold text-xs"
                         >
-                          "{{ item.action.old_title }}" → "{{ item.action.new_title }}"
+                          "{{ (item.action as MessageActionWithAllProperties).old_title }}" → "{{
+                            (item.action as MessageActionWithAllProperties).new_title
+                          }}"
                         </span>
                         <span
                           v-else-if="
                             item.action.type === 'update' &&
                             item.action.entity === 'chapter' &&
-                            item.action.new_title
+                            (item.action as MessageActionWithAllProperties).new_title
                           "
                           class="font-semibold text-xs"
                         >
-                          "{{ item.action.new_title }}"
+                          "{{ (item.action as MessageActionWithAllProperties).new_title }}"
                         </span>
                         <span
                           v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
@@ -2879,14 +3273,6 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
             assistantModel.name || assistantModel.id
           }}</span>
           <div class="flex items-center gap-2">
-            <Button
-              v-if="isSending && currentTaskId"
-              label="停止"
-              icon="pi pi-stop"
-              size="small"
-              severity="danger"
-              @click="stopCurrentTask"
-            />
             <Button
               :disabled="!inputMessage.trim() || isSending || !assistantModel"
               label="发送"

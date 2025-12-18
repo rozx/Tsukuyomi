@@ -24,6 +24,19 @@ export const DEFAULT_TEMPERATURE = 0.1;
 export const UNLIMITED_TOKENS = -1;
 
 /**
+ * OpenAI 兼容 API 的 max_tokens 最大值限制
+ * 当前 API 限制为 65536，但配置中允许设置更大的值（如 1M）
+ * 实际发送到 API 时会自动限制到此值
+ */
+export const OPENAI_MAX_TOKENS_LIMIT = 65536;
+
+/**
+ * 配置中允许的最大 token 数（用于 UI 和配置）
+ * 实际发送到 API 时会根据 API 限制进行限制
+ */
+export const CONFIG_MAX_TOKENS_LIMIT = 1_000_000;
+
+/**
  * 导出所有提示词
  */
 export * from './prompts';
