@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { CoverHistoryItem, CoverImage } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
+import { useSettingsStore } from 'src/stores/settings';
 
 /**
  * 从 IndexedDB 加载封面历史
@@ -114,6 +115,22 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
       if (index > -1) {
         this.covers.splice(index, 1);
         await deleteCoverHistoryItemFromDB(id);
+
+        // 记录到删除列表
+        const settingsStore = useSettingsStore();
+        const gistSync = settingsStore.gistSync;
+        const deletedCoverIds = gistSync.deletedCoverIds || [];
+        
+        // 检查是否已存在（避免重复）
+        if (!deletedCoverIds.find((record) => record.id === id)) {
+          deletedCoverIds.push({
+            id,
+            deletedAt: Date.now(),
+          });
+          await settingsStore.updateGistSync({
+            deletedCoverIds,
+          });
+        }
       }
     },
 

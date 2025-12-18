@@ -103,6 +103,22 @@ export const useAIModelsStore = defineStore('aiModels', {
       if (index > -1) {
         this.models.splice(index, 1);
         await aiModelService.deleteModel(id);
+
+        // 记录到删除列表
+        const settingsStore = useSettingsStore();
+        const gistSync = settingsStore.gistSync;
+        const deletedModelIds = gistSync.deletedModelIds || [];
+        
+        // 检查是否已存在（避免重复）
+        if (!deletedModelIds.find((record) => record.id === id)) {
+          deletedModelIds.push({
+            id,
+            deletedAt: Date.now(),
+          });
+          await settingsStore.updateGistSync({
+            deletedModelIds,
+          });
+        }
       }
     },
 
