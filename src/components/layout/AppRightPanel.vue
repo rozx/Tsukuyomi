@@ -2354,25 +2354,6 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     return a.index - b.index;
   });
 
-  // 将消息内容按操作时间戳分段
-  // 第一个内容段：从消息开始到第一个操作之前
-  // 每个操作之后：如果有新内容，显示新内容段
-  // 由于我们不知道内容更新的精确时间戳，我们采用简化策略：
-  // 1. 先显示初始内容（如果有）
-  // 2. 然后按时间顺序显示操作
-  // 3. 操作之后的内容会在流式更新时自动追加到消息内容中
-
-  // 添加初始内容（如果有）
-  if (message.content) {
-    items.push({
-      type: 'content',
-      content: message.content,
-      messageId: message.id,
-      messageRole: message.role,
-      timestamp: message.timestamp,
-    });
-  }
-
   // 分组处理 todo 创建操作：将连续创建的 todo（时间戳相差小于 1 秒）合并为一个显示项
   const TODO_GROUP_TIME_WINDOW = 1000; // 1 秒时间窗口
   let i = 0;
@@ -2451,6 +2432,25 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     }
   }
 
+  // 添加内容（如果有），确保内容始终显示在所有工具调用之后
+  if (message.content) {
+    // 找到所有操作中的最大时间戳，确保内容的时间戳在所有操作之后
+    const maxActionTimestamp =
+      sortedActions.length > 0
+        ? Math.max(...sortedActions.map((a) => a.action.timestamp))
+        : message.timestamp;
+    // 使用最大操作时间戳 + 1，确保内容始终在工具调用之后显示
+    const contentTimestamp = maxActionTimestamp + 1;
+
+    items.push({
+      type: 'content',
+      content: message.content,
+      messageId: message.id,
+      messageRole: message.role,
+      timestamp: contentTimestamp,
+    });
+  }
+
   // 按时间戳排序，相同时间戳时使用更精确的排序策略
   // 为了更准确地反映实际执行顺序，我们需要考虑操作的执行时间
   // 操作是在流式输出过程中添加的，所以操作的 timestamp 应该反映其实际执行时间
@@ -2469,17 +2469,17 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       return 0;
     }
     // 处理内容和操作混合的情况
-    // 由于操作是在流式输出过程中添加的，如果时间戳相同（可能是时间戳精度问题），
-    // 操作应该被视为发生在消息开始输出之后，因此操作应该在内容之后
+    // 由于内容的时间戳已经设置为所有操作的最大时间戳 + 1，正常情况下内容应该在所有操作之后
+    // 但为了处理可能的边界情况，如果时间戳相同，确保内容始终在操作之后
     if (a.type === 'content' && b.type === 'action') {
       // a 是内容，b 是操作
-      // 如果时间戳相同，内容应该在操作之前（因为操作发生在流式输出过程中）
-      return -1;
+      // 内容应该始终在操作之后显示
+      return 1;
     }
     if (a.type === 'action' && b.type === 'content') {
       // a 是操作，b 是内容
-      // 如果时间戳相同，操作应该在内容之后（因为操作发生在流式输出过程中）
-      return 1;
+      // 操作应该始终在内容之前显示
+      return -1;
     }
     return 0;
   });
