@@ -188,26 +188,6 @@ const getActiveTab = (taskId: string): string => {
   // Determine current active state
   const isThinking = isTaskThinking(taskId);
   const isOutputting = isTaskOutputting(taskId);
-  const hasTodos = getTodosForTask(taskId).length > 0;
-
-  // Determine what the active tab should be based on current state
-  let shouldBeTab: string;
-  if (hasTodos) {
-    shouldBeTab = 'todos';
-  } else if (isOutputting) {
-    shouldBeTab = 'output';
-  } else if (isThinking) {
-    shouldBeTab = 'thinking';
-  } else {
-    // No active state, use content-based default
-    const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
-    const hasOutput = task.outputContent && task.outputContent.trim();
-    if (hasOutput && !hasThinking) {
-      shouldBeTab = 'output';
-    } else {
-      shouldBeTab = 'thinking';
-    }
-  }
 
   // Get current active state for comparison
   const currentActiveState: 'thinking' | 'outputting' | 'none' = isThinking
@@ -232,6 +212,24 @@ const getActiveTab = (taskId: string): string => {
     return savedTab;
   }
 
+  // Determine what the active tab should be based on current state
+  // Note: We don't automatically switch to todos tab - user must manually select it
+  let shouldBeTab: string;
+  if (isOutputting) {
+    shouldBeTab = 'output';
+  } else if (isThinking) {
+    shouldBeTab = 'thinking';
+  } else {
+    // No active state, use content-based default
+    const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
+    const hasOutput = task.outputContent && task.outputContent.trim();
+    if (hasOutput && !hasThinking) {
+      shouldBeTab = 'output';
+    } else {
+      shouldBeTab = 'thinking';
+    }
+  }
+
   // Otherwise, auto-switch to the appropriate tab
   return shouldBeTab;
 };
@@ -241,38 +239,51 @@ const isTaskThinking = (taskId: string): boolean => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   if (!task) return false;
   
-  // 如果状态是 'thinking'，总是显示思考指示器
+  // 如果状态是 'thinking'，检查是否有最近的更新
   if (task.status === 'thinking') {
+    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+    const now = Date.now();
+    // 如果状态是 thinking 但最近2秒内没有更新，不显示指示器
+    if (thinkingTime > 0 && now - thinkingTime >= 2000) {
+      return false;
+    }
     return true;
   }
   
   // 如果状态是 'processing'，需要判断是思考还是输出
   if (task.status === 'processing') {
     const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
+    if (!hasThinking) {
+      return false;
+    }
+    
+    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+    const now = Date.now();
+    const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
+    
+    // 只有在最近2秒内更新过才显示思考指示器
+    if (!recentThinking) {
+      return false;
+    }
+    
     const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
     
     // 如果只有思考消息，没有输出，显示思考指示器
-    if (hasThinking && !hasOutput) {
+    if (!hasOutput) {
       return true;
     }
     
     // 如果两者都有，根据最后更新时间判断哪个更活跃
-    if (hasThinking && hasOutput) {
-      const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
-      const outputTime = lastOutputUpdate.value[taskId] || 0;
-      // 如果思考消息最近更新过（在最近2秒内），且输出内容没有在最近更新，显示思考指示器
-      const now = Date.now();
-      const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
-      const recentOutput = outputTime > 0 && now - outputTime < 2000;
-      
-      // 如果思考消息最近更新过，而输出内容没有最近更新，显示思考指示器
-      if (recentThinking && !recentOutput) {
-        return true;
-      }
-      // 如果两者都最近更新过，但思考消息更新更晚，显示思考指示器
-      if (recentThinking && recentOutput && thinkingTime > outputTime) {
-        return true;
-      }
+    const outputTime = lastOutputUpdate.value[taskId] || 0;
+    const recentOutput = outputTime > 0 && now - outputTime < 2000;
+    
+    // 如果思考消息最近更新过，而输出内容没有最近更新，显示思考指示器
+    if (recentThinking && !recentOutput) {
+      return true;
+    }
+    // 如果两者都最近更新过，但思考消息更新更晚，显示思考指示器
+    if (recentThinking && recentOutput && thinkingTime > outputTime) {
+      return true;
     }
   }
   
@@ -294,20 +305,27 @@ const isTaskOutputting = (taskId: string): boolean => {
     return false;
   }
   
-  // 如果有输出内容，检查是否正在活跃输出
+  // 检查输出内容是否在最近2秒内更新过
+  const outputTime = lastOutputUpdate.value[taskId] || 0;
+  const now = Date.now();
+  const recentOutput = outputTime > 0 && now - outputTime < 2000;
+  
+  // 只有在最近2秒内更新过才显示输出指示器
+  if (!recentOutput) {
+    return false;
+  }
+  
+  // 如果有输出内容且最近更新过，检查是否与思考消息冲突
   const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
   
-  // 如果没有思考消息，或者输出内容最近更新过，显示输出指示器
+  // 如果没有思考消息，显示输出指示器
   if (!hasThinking) {
     return true;
   }
   
   // 如果两者都有，根据最后更新时间判断
   const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
-  const outputTime = lastOutputUpdate.value[taskId] || 0;
-  const now = Date.now();
   const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
-  const recentOutput = outputTime > 0 && now - outputTime < 2000;
   
   // 如果输出内容最近更新过，而思考消息没有最近更新，显示输出指示器
   if (recentOutput && !recentThinking) {
@@ -317,13 +335,8 @@ const isTaskOutputting = (taskId: string): boolean => {
   if (recentThinking && recentOutput && outputTime > thinkingTime) {
     return true;
   }
-  // 如果输出内容最近更新过，显示输出指示器
-  if (recentOutput) {
-    return true;
-  }
   
-  // 默认：如果有输出内容但没有活跃的思考，显示输出指示器
-  return true;
+  return false;
 };
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
