@@ -1,5 +1,5 @@
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { SyncDataService } from 'src/services/sync-data-service';
+import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -202,8 +202,8 @@ export function useGistSync() {
    * @param items 要恢复的项目列表
    */
   const restoreDeletedItems = async (
-    items: SyncDataService.RestorableItem[],
-  ): Promise<void> {
+    items: RestorableItem[],
+  ): Promise<void> => {
     const settingsStore = useSettingsStore();
     const gistSync = settingsStore.gistSync;
 
@@ -278,13 +278,13 @@ export function useGistSync() {
   const downloadFromGist = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
-  ): Promise<SyncDataService.RestorableItem[]> => {
+  ): Promise<RestorableItem[]> => {
     setSyncing(true);
     try {
       const { data, error } = await downloadRemoteData(config);
 
       if (error) {
-        return;
+        return [];
       }
 
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
@@ -316,6 +316,7 @@ export function useGistSync() {
       return [];
     } catch (error) {
       console.error('[useGistSync] 下载失败:', error);
+      return [];
     } finally {
       setSyncing(false);
     }

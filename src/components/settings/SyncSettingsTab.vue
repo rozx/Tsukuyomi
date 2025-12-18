@@ -13,7 +13,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { SyncDataService } from 'src/services/sync-data-service';
+import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
@@ -203,7 +203,7 @@ const {
 
 // 恢复对话框状态
 const showRestoreDialog = ref(false);
-const restorableItems = ref<SyncDataService.RestorableItem[]>([]);
+const restorableItems = ref<RestorableItem[]>([]);
 
 // 加载修订历史
 const loadRevisions = async () => {
@@ -798,7 +798,7 @@ const downloadFromGist = async () => {
 };
 
 // 处理恢复对话框
-const handleRestoreItems = async (items: SyncDataService.RestorableItem[]) => {
+const handleRestoreItems = async (items: RestorableItem[]) => {
   await restoreDeletedItemsComposable(items);
   showRestoreDialog.value = false;
   restorableItems.value = [];
