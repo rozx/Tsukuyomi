@@ -7,6 +7,39 @@ import * as BooksStore from '../stores/books';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
+// Mock IndexedDB for FullTextIndexService
+const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
+const mockStorePut = mock(() => Promise.resolve(undefined));
+const mockStoreGetAll = mock(() => Promise.resolve([]));
+
+const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
+  objectStore: () => ({
+    get: mockStoreGet,
+    put: mockStorePut,
+    getAll: mockStoreGetAll,
+  }),
+  done: Promise.resolve(),
+}));
+
+const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
+const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
+const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
+
+const mockDb = {
+  getAll: mock(() => Promise.resolve([])),
+  get: mockGet,
+  put: mockPut,
+  delete: mockDelete,
+  transaction: mockTransaction,
+  objectStoreNames: {
+    contains: mock(() => false), // FullTextIndexService 会检查这个
+  },
+};
+
+await mock.module('src/utils/indexed-db', () => ({
+  getDB: () => Promise.resolve(mockDb),
+}));
+
 // 辅助函数：创建测试用小说
 function createTestNovel(volumes: Volume[] = []): Novel {
   return {
@@ -230,6 +263,43 @@ describe('containsWholeKeyword', () => {
   });
 });
 
+// 创建 mockUpdateBook
+const mockUpdateBook = mock((_bookId: string, _updates: Partial<Novel>) =>
+  Promise.resolve(),
+);
+
+// 创建一个 mock store 对象（在 describe 外部，以便 mock.module 可以访问）
+const mockBooksStore: {
+  books: Novel[];
+  getBookById: (id: string) => Novel | undefined;
+  updateBook: (id: string, updates: Partial<Novel>) => Promise<void>;
+} = {
+  books: [],
+  getBookById: (id: string) => {
+    return mockBooksStore.books.find((book) => book.id === id);
+  },
+  updateBook: mockUpdateBook,
+};
+
+// Mock useBooksStore 在文件顶部
+await mock.module('src/stores/books', () => ({
+  useBooksStore: () => mockBooksStore,
+}));
+
+// Mock useAIModelsStore
+const mockUseAIModelsStore = mock(() => ({
+  getModelById: mock((id: string) => ({
+    id,
+    name: `Model ${id}`,
+    provider: 'openai',
+    model: 'gpt-4',
+  })),
+}));
+
+await mock.module('src/stores/ai-models', () => ({
+  useAIModelsStore: mockUseAIModelsStore,
+}));
+
 describe('batch_replace_translations', () => {
   const mockLoadChapterContent = mock((_chapterId: string) =>
     Promise.resolve(undefined as Paragraph[] | undefined),
@@ -237,16 +307,6 @@ describe('batch_replace_translations', () => {
   const mockLoadChapterContentsBatch = mock((_chapterIds: string[]) =>
     Promise.resolve(new Map<string, Paragraph[]>()),
   );
-  const mockUpdateBook = mock((_bookId: string, _updates: Partial<Novel>) =>
-    Promise.resolve(),
-  );
-  
-  // 创建一个 mock store 对象
-  let mockBooksStore: {
-    books: Novel[];
-    getBookById: (id: string) => Novel | undefined;
-    updateBook: (id: string, updates: Partial<Novel>) => Promise<void>;
-  };
 
   beforeEach(() => {
     mockLoadChapterContent.mockClear();
@@ -260,16 +320,10 @@ describe('batch_replace_translations', () => {
       mockLoadChapterContentsBatch,
     );
 
-    // 创建 mock store，实现 getBookById 从 books 数组查找
-    mockBooksStore = {
-      books: [],
-      getBookById: (id: string) => {
-        return mockBooksStore.books.find((book) => book.id === id);
-      },
-      updateBook: mockUpdateBook,
-    };
+    // 重置 mock store
+    mockBooksStore.books = [];
 
-    // Mock useBooksStore 返回我们的 mock store
+    // Mock useBooksStore 返回我们的 mock store（用于直接导入的情况）
     spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
   });
 
@@ -328,6 +382,29 @@ describe('batch_replace_translations', () => {
 
     const resultObj = JSON.parse(result as string);
     expect(resultObj.success).toBe(true);
+    
+    // 调试：如果 replaced_count 为 0，输出详细信息
+    if (resultObj.replaced_count === 0) {
+      console.log('Result object:', JSON.stringify(resultObj, null, 2));
+      console.log('Novel volumes:', novel.volumes?.length);
+      console.log('Chapter content length:', chapter.content?.length);
+      console.log('Paragraph translations:', chapter.content?.map(p => p.translations?.[0]?.translation));
+      // 验证 useBooksStore mock
+      const { useBooksStore } = await import('src/stores/books');
+      const store = useBooksStore();
+      const bookFromStore = store.getBookById(novel.id);
+      console.log('Book from store:', bookFromStore ? 'found' : 'not found');
+      console.log('Book volumes from store:', bookFromStore?.volumes?.length);
+      if (bookFromStore?.volumes?.[0]?.chapters?.[0]) {
+        console.log('Chapter from store content length:', bookFromStore.volumes[0].chapters[0].content?.length);
+        console.log('Chapter from store content:', bookFromStore.volumes[0].chapters[0].content?.map(p => p.translations?.[0]?.translation));
+      }
+      // 测试 containsWholeKeyword
+      const { containsWholeKeyword } = await import('../services/ai/tools/paragraph-tools');
+      console.log('containsWholeKeyword test 1:', containsWholeKeyword('这是测试翻译', '测试'));
+      console.log('containsWholeKeyword test 2:', containsWholeKeyword('这是另一个测试', '测试'));
+    }
+    
     // 注意：由于使用了完整关键词匹配，"测试" 在 "这是测试翻译" 和 "这是另一个测试" 中都会被匹配
     // 因为 "测试" 是完整的中文词
     expect(resultObj.replaced_count).toBeGreaterThanOrEqual(2); // para1 和 para2 应该被替换
