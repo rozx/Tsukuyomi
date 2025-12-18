@@ -14,6 +14,7 @@ import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './todo-helper';
+import { UNLIMITED_TOKENS } from 'src/constants/ai';
 
 /**
  * Assistant 服务选项
@@ -384,10 +385,15 @@ export class AssistantService {
   }
 
   /**
-   * 估算消息历史的 token 数
-   * 使用保守估算：每个字符 2 tokens（对于日文和中文）
+   * 估算消息历史的 token 数（改进版，支持自定义倍数）
+   * @param messages 消息列表
+   * @param multiplier token 倍数（默认 2.5，更保守；原方法使用 2.0）
+   * @returns 估算的 token 数
    */
-  private static estimateTokenCount(messages: ChatMessage[]): number {
+  private static estimateTokenCount(
+    messages: ChatMessage[],
+    multiplier: number = 2.5,
+  ): number {
     if (!messages || messages.length === 0) return 0;
     const totalContent = messages
       .map((msg) => {
@@ -401,8 +407,83 @@ export class AssistantService {
         return '';
       })
       .join('\n');
-    // 保守估算：每个字符 2 tokens（对于日文和中文）
-    return Math.ceil(totalContent.length * 2);
+    // 使用更保守的估算倍数
+    return Math.ceil(totalContent.length * multiplier);
+  }
+
+  /**
+   * 确保摘要符合 token 限制
+   * @param systemPrompt 系统提示词
+   * @param summary 摘要内容
+   * @param userMessage 用户消息
+   * @param maxTokens 最大 token 数（如果 <= 0 或 UNLIMITED_TOKENS，直接返回原始摘要）
+   * @returns 截断后的摘要（如果原始摘要适合则返回原始摘要）
+   */
+  private static ensureSummaryFitsInContext(
+    systemPrompt: string,
+    summary: string,
+    userMessage: string,
+    maxTokens: number,
+  ): string {
+    // 处理无限制 token 的情况
+    if (maxTokens <= 0 || maxTokens === UNLIMITED_TOKENS) {
+      return summary;
+    }
+
+    // 保留 20% 用于响应生成，使用更保守的估算
+    const availableTokens = Math.floor(maxTokens * 0.8);
+
+    // 估算系统提示词和用户消息的 token 数（使用更保守的倍数 2.5）
+    const systemTokens = this.estimateTokenCount(
+      [{ role: 'system', content: systemPrompt }],
+      2.5,
+    );
+    const userTokens = this.estimateTokenCount([{ role: 'user', content: userMessage }], 2.5);
+
+    // 计算摘要可用的 token 数（预留 10% 缓冲）
+    const summaryTokens = Math.floor((availableTokens - systemTokens - userTokens) * 0.9);
+
+    // 如果可用 token 数不足，直接截断
+    if (summaryTokens <= 0) {
+      // 极端情况：只保留摘要的前 100 个字符
+      return summary.length > 100 ? summary.slice(0, 97) + '...' : summary;
+    }
+
+    // 如果摘要适合，直接返回
+    const currentSummaryTokens = this.estimateTokenCount(
+      [{ role: 'user', content: summary }],
+      2.5,
+    );
+    if (currentSummaryTokens <= summaryTokens) {
+      return summary;
+    }
+
+    // 截断摘要以适配（保守：使用可用量的 90%）
+    const targetTokens = Math.floor(summaryTokens * 0.9);
+    const charsPerToken = 0.4; // 更保守的估算（中文/日文）
+    const maxChars = Math.floor(targetTokens / charsPerToken);
+
+    if (summary.length <= maxChars) {
+      return summary;
+    }
+
+    // 截断并添加省略号（优先截断尾部，保留开头的关键信息）
+    return summary.slice(0, maxChars - 3) + '...';
+  }
+
+  /**
+   * 降级策略：当摘要失败时，使用最近 N 条消息
+   * @param messages 消息历史
+   * @param count 保留的消息数量（默认 5）
+   * @returns 降级后的消息列表
+   */
+  private static getFallbackMessages(messages: ChatMessage[], count: number = 5): ChatMessage[] {
+    // 保留系统消息
+    const systemMessages = messages.filter((msg) => msg.role === 'system');
+    // 保留最后 N 条非系统消息
+    const recentMessages = messages.filter((msg) => msg.role !== 'system').slice(-count);
+
+    return [...systemMessages, ...recentMessages];
   }
 
   /**
@@ -588,6 +669,254 @@ ${messages
   }
 
   /**
+   * 摘要后重试原始请求
+   * @param model AI 模型
+   * @param messages 重建后的消息数组
+   * @param tools 工具列表
+   * @param bookId 书籍 ID
+   * @param options 原始选项
+   * @param taskId 任务 ID
+   * @param sessionId 会话 ID
+   * @param signal 取消信号
+   * @returns 助手结果
+   */
+  private static async retryRequestAfterSummary(
+    model: AIModel,
+    messages: ChatMessage[],
+    tools: any[],
+    bookId: string | null,
+    options: AssistantServiceOptions,
+    taskId: string | undefined,
+    sessionId: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<AssistantResult> {
+    const { onChunk, onAction, onToast, onThinkingChunk, aiProcessingStore } = options;
+
+    // 获取 AI 服务
+    const aiService = AIServiceFactory.getService(model.provider);
+
+    // 构建配置
+    const config: AIServiceConfig = {
+      apiKey: model.apiKey,
+      baseUrl: model.baseUrl,
+      model: model.model,
+      temperature: model.temperature ?? 0.7,
+      maxTokens: model.maxTokens,
+      signal,
+    };
+
+    // 构建请求
+    const request: TextGenerationRequest = {
+      messages,
+      ...(tools.length > 0 ? { tools } : {}),
+      temperature: model.temperature ?? 0.7,
+      maxTokens: model.maxTokens,
+    };
+
+    // 流式生成响应
+    let fullText = '';
+    let toolCalls: AIToolCall[] = [];
+    const allActions: ActionInfo[] = [];
+
+    const result = await aiService.generateText(config, request, async (chunk) => {
+      // 累积流式文本（只累积实际内容，不包括思考内容）
+      if (chunk.text) {
+        fullText += chunk.text;
+      }
+      if (chunk.toolCalls) {
+        toolCalls.push(...chunk.toolCalls);
+      }
+
+      // 保存思考内容到思考过程面板
+      if (aiProcessingStore && taskId && chunk.reasoningContent) {
+        await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+      }
+
+      // 追加输出内容到任务
+      if (aiProcessingStore && taskId && chunk.text) {
+        await aiProcessingStore.appendOutputContent(taskId, chunk.text);
+      }
+
+      // 将思考内容传递到聊天界面（通过 onThinkingChunk 回调）
+      if (onThinkingChunk && chunk.reasoningContent) {
+        await onThinkingChunk(chunk.reasoningContent);
+      }
+
+      // 调用用户回调（只传递实际内容，不传递思考内容）
+      if (onChunk) {
+        const filteredChunk: TextGenerationChunk = {
+          text: chunk.text || '',
+          done: chunk.done,
+          ...(chunk.model ? { model: chunk.model } : {}),
+          ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+        };
+        await onChunk(filteredChunk);
+      }
+    });
+
+    // 使用 result.text 如果存在且不为空，否则使用累积的 fullText
+    if (result.text && result.text.trim()) {
+      fullText = result.text;
+    }
+
+    if (result.toolCalls) {
+      toolCalls = result.toolCalls;
+    }
+
+    // 捕获 reasoning_content
+    const reasoningContent = result.reasoningContent;
+    if (aiProcessingStore && taskId && reasoningContent) {
+      await aiProcessingStore.appendThinkingMessage(taskId, reasoningContent);
+    }
+    if (onThinkingChunk && reasoningContent) {
+      await onThinkingChunk(reasoningContent);
+    }
+
+    // 处理工具调用循环
+    let currentTurnCount = 0;
+    const MAX_TURNS = 50;
+    let finalResponseText = fullText;
+
+    // 将第一次响应添加到历史
+    if (toolCalls.length > 0) {
+      messages.push({
+        role: 'assistant',
+        content: fullText || null,
+        tool_calls: toolCalls,
+        reasoning_content: reasoningContent || null,
+      });
+    } else if (fullText && fullText.trim()) {
+      messages.push({
+        role: 'assistant',
+        content: fullText,
+      });
+    }
+
+    // 工具调用循环
+    while (toolCalls.length > 0 && currentTurnCount < MAX_TURNS) {
+      currentTurnCount++;
+
+      // 检查取消信号
+      if (signal?.aborted) {
+        throw new Error('请求已取消');
+      }
+
+      // 执行工具调用
+      const toolResults = await this.handleToolCalls(
+        toolCalls,
+        bookId,
+        (action) => {
+          allActions.push(action);
+          if (onAction) {
+            onAction(action);
+          }
+        },
+        onToast,
+        taskId,
+        sessionId,
+      );
+
+      // 将工具结果添加到历史
+      messages.push(...toolResults);
+
+      // 再次调用 AI 获取回复
+      const followUpRequest: TextGenerationRequest = {
+        messages,
+        ...(tools.length > 0 ? { tools } : {}),
+        temperature: model.temperature ?? 0.7,
+        maxTokens: model.maxTokens,
+      };
+
+      let followUpText = '';
+      toolCalls = [];
+
+      const followUpResult = await aiService.generateText(config, followUpRequest, async (chunk) => {
+        if (chunk.text) {
+          followUpText += chunk.text;
+        }
+        if (chunk.toolCalls) {
+          toolCalls.push(...chunk.toolCalls);
+        }
+
+        if (aiProcessingStore && taskId && chunk.reasoningContent) {
+          await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+        }
+
+        if (onThinkingChunk && chunk.reasoningContent) {
+          await onThinkingChunk(chunk.reasoningContent);
+        }
+
+        if (onChunk) {
+          const filteredChunk: TextGenerationChunk = {
+            text: chunk.text || '',
+            done: chunk.done,
+            ...(chunk.model ? { model: chunk.model } : {}),
+            ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+          };
+          await onChunk(filteredChunk);
+        }
+      });
+
+      if (followUpResult.text && followUpResult.text.trim()) {
+        followUpText = followUpResult.text;
+      }
+
+      if (followUpResult.toolCalls) {
+        toolCalls = followUpResult.toolCalls;
+      }
+
+      const followUpReasoningContent = followUpResult.reasoningContent;
+      if (aiProcessingStore && taskId && followUpReasoningContent) {
+        await aiProcessingStore.appendThinkingMessage(taskId, followUpReasoningContent);
+      }
+      if (onThinkingChunk && followUpReasoningContent) {
+        await onThinkingChunk(followUpReasoningContent);
+      }
+
+      if (followUpText && followUpText.trim()) {
+        finalResponseText = followUpText;
+      }
+
+      // 将助手回复添加到历史
+      if (toolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: followUpText || null,
+          tool_calls: toolCalls,
+          reasoning_content: followUpReasoningContent || null,
+        });
+      } else if (followUpText && followUpText.trim()) {
+        messages.push({
+          role: 'assistant',
+          content: followUpText,
+        });
+      }
+
+      if (toolCalls.length === 0) {
+        break;
+      }
+    }
+
+    // 更新任务状态
+    if (aiProcessingStore && taskId) {
+      await aiProcessingStore.updateTask(taskId, {
+        status: 'completed',
+        message: '助手回复完成',
+      });
+    }
+
+    // 确保返回的文本不为空
+    const finalText = finalResponseText.trim() || '抱歉，我没有收到有效的回复。请重试。';
+
+    return {
+      text: finalText,
+      ...(taskId ? { taskId: taskId } : {}),
+      actions: allActions,
+      messageHistory: messages,
+    };
+  }
+
+  /**
    * 与助手对话
    * @param model AI 模型
    * @param userMessage 用户消息
@@ -686,12 +1015,37 @@ ${messages
         content: userMessage,
       });
 
+      // 边界检查：检查用户消息长度
+      if (model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS) {
+        const userMessageTokens = this.estimateTokenCount(
+          [{ role: 'user', content: userMessage }],
+          2.5,
+        );
+        if (userMessageTokens >= model.maxTokens * 0.8) {
+          // 用户消息本身就很大，直接返回错误
+          const errorMessage = '用户消息过长，无法处理。请缩短消息长度后重试。';
+          if (aiProcessingStore && taskId) {
+            await aiProcessingStore.updateTask(taskId, {
+              status: 'error',
+              message: errorMessage,
+            });
+          }
+          throw new Error(errorMessage);
+        }
+      }
+
+      // 摘要计数器，防止无限循环
+      let summaryCount = 0;
+      const MAX_SUMMARY_COUNT = 2;
+
       // 检查 token 限制（在发送请求前）
       // 如果模型有 maxTokens 限制（不是 UNLIMITED_TOKENS），检查是否接近或超过限制
-      const estimatedTokens = this.estimateTokenCount(messages);
+      const estimatedTokens = this.estimateTokenCount(messages, 2.5);
       const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
       const shouldSummarizeBeforeRequest =
-        model.maxTokens > 0 && estimatedTokens >= model.maxTokens * TOKEN_THRESHOLD_RATIO;
+        model.maxTokens > 0 &&
+        model.maxTokens !== UNLIMITED_TOKENS &&
+        estimatedTokens >= model.maxTokens * TOKEN_THRESHOLD_RATIO;
 
       if (
         shouldSummarizeBeforeRequest &&
@@ -709,68 +1063,108 @@ ${messages
           }));
 
         if (messagesToSummarize.length > 0) {
-          // 通知组件摘要开始
-          if (options.onSummarizingStart) {
-            options.onSummarizingStart();
-          }
-
-          // 调用总结功能
-          const summaryOptions: {
-            signal?: AbortSignal;
-            onChunk?: TextGenerationStreamCallback;
-          } = {};
-          if (finalSignal) {
-            summaryOptions.signal = finalSignal;
-          }
-          summaryOptions.onChunk = (chunk) => {
-            // 不更新任务状态，静默总结（不显示思考过程）
-            if (onChunk) {
-              void onChunk(chunk);
-            }
-          };
-          const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
-
-          // 创建记忆（如果有 bookId）
-          if (context.currentBookId && summary) {
-            try {
-              const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
-              await MemoryService.createMemory(
-                context.currentBookId,
-                summary,
-                `会话摘要：${memorySummary}`,
-              );
-            } catch (error) {
-              console.error('Failed to create memory for session summary:', error);
-              // 不抛出错误，记忆创建失败不应该影响摘要流程
-            }
-          }
-
-          // 更新任务状态为已完成
-          if (aiProcessingStore && taskId) {
-            await aiProcessingStore.updateTask(taskId, {
-              status: 'completed',
-              message: '会话已总结并重置',
+          // 检查摘要计数器
+          if (summaryCount >= MAX_SUMMARY_COUNT) {
+            // 已达到最大次数，使用降级策略
+            console.warn(
+              '[AssistantService] 摘要次数已达上限，使用降级策略：只保留最近 5 条消息',
+            );
+            const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
+            // 重建消息数组
+            messages.length = 0;
+            messages.push({
+              role: 'system',
+              content: systemPrompt,
             });
-          }
+            messages.push(...fallbackMessages.filter((msg) => msg.role !== 'system'));
+            messages.push({
+              role: 'user',
+              content: userMessage,
+            });
+            // 继续正常流程，不返回
+          } else {
+            // 检查取消信号
+            if (finalSignal?.aborted) {
+              throw new Error('请求已取消');
+            }
 
-          // 返回特殊结果，指示需要重置
-          return {
-            text: '',
-            ...(taskId ? { taskId: taskId } : {}),
-            actions: [],
-            messageHistory: [
-              {
+            // 通知组件摘要开始
+            if (options.onSummarizingStart) {
+              options.onSummarizingStart();
+            }
+
+            // 调用总结功能（不传递 onChunk，防止摘要输出显示在聊天界面）
+            const summaryOptions: {
+              signal?: AbortSignal;
+            } = {};
+            if (finalSignal) {
+              summaryOptions.signal = finalSignal;
+            }
+
+            let summary: string;
+            try {
+              summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+              summaryCount++;
+            } catch (summaryError) {
+              console.error('[AssistantService] 摘要生成失败，使用降级策略', summaryError);
+              // 摘要失败，使用降级策略
+              const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
+              // 重建消息数组
+              messages.length = 0;
+              messages.push({
                 role: 'system',
                 content: systemPrompt,
-              },
-              {
+              });
+              messages.push(...fallbackMessages.filter((msg) => msg.role !== 'system'));
+              messages.push({
                 role: 'user',
                 content: userMessage,
-              },
-            ],
-            needsReset: true,
-            summary,
-          } as AssistantResult & { needsReset: true; summary: string };
+              });
+              // 继续正常流程，不返回
+              summary = ''; // 标记为已处理
+            }
+
+            if (summary) {
+              // 验证并截断摘要以符合 token 限制
+              const truncatedSummary = this.ensureSummaryFitsInContext(
+                systemPrompt,
+                summary,
+                userMessage,
+                model.maxTokens,
+              );
+
+              // 使用摘要更新系统提示词
+              systemPrompt += `\n\n## 之前的对话总结\n\n${truncatedSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+
+              // 创建记忆（如果有 bookId）
+              if (context.currentBookId && summary) {
+                try {
+                  const memorySummary =
+                    summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+                  await MemoryService.createMemory(
+                    context.currentBookId,
+                    summary,
+                    `会话摘要：${memorySummary}`,
+                  );
+                } catch (error) {
+                  console.error('Failed to create memory for session summary:', error);
+                  // 不抛出错误，记忆创建失败不应该影响摘要流程
+                }
+              }
+
+              // 重建消息数组：系统提示词（含摘要）+ 用户消息
+              messages.length = 0;
+              messages.push({
+                role: 'system',
+                content: systemPrompt,
+              });
+              messages.push({
+                role: 'user',
+                content: userMessage,
+              });
+            }
+            // 继续正常请求流程（不提前返回）
+          }
         }
       }
 
@@ -1128,13 +1522,24 @@ ${messages
         taskId,
       });
 
-      // 检查是否是 token 限制错误，如果是，尝试总结并重置
+      // 检查是否是 token 限制错误，如果是，尝试总结并重试
       if (
         this.isTokenLimitError(error) &&
         options.messageHistory &&
-        options.messageHistory.length > 2
+        options.messageHistory.length > 2 &&
+        model.maxTokens > 0 &&
+        model.maxTokens !== UNLIMITED_TOKENS
       ) {
         try {
+          // 摘要计数器，防止无限循环
+          let summaryCount = 0;
+          const MAX_SUMMARY_COUNT = 2;
+
+          // 检查取消信号
+          if (finalSignal?.aborted) {
+            throw new Error('请求已取消');
+          }
+
           // 更新任务状态
           if (aiProcessingStore && taskId) {
             await aiProcessingStore.updateTask(taskId, {
@@ -1152,69 +1557,140 @@ ${messages
             }));
 
           if (messagesToSummarize.length > 0) {
+            // 检查摘要计数器
+            if (summaryCount >= MAX_SUMMARY_COUNT) {
+              // 已达到最大次数，使用降级策略
+              console.warn(
+                '[AssistantService] 摘要次数已达上限，使用降级策略：只保留最近 5 条消息',
+              );
+              const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
+              // 重建消息数组
+              const retryMessages: ChatMessage[] = [
+                {
+                  role: 'system',
+                  content: systemPrompt,
+                },
+                ...fallbackMessages.filter((msg) => msg.role !== 'system'),
+                {
+                  role: 'user',
+                  content: userMessage,
+                },
+              ];
+
+              // 重试原始请求
+              return await this.retryRequestAfterSummary(
+                model,
+                retryMessages,
+                tools,
+                context.currentBookId,
+                options,
+                taskId,
+                sessionId,
+                finalSignal,
+              );
+            }
+
             // 通知组件摘要开始
             if (options.onSummarizingStart) {
               options.onSummarizingStart();
             }
 
-            // 调用总结功能
+            // 调用总结功能（不传递 onChunk，防止摘要输出显示在聊天界面）
             const summaryOptions: {
               signal?: AbortSignal;
-              onChunk?: TextGenerationStreamCallback;
             } = {};
             if (finalSignal) {
               summaryOptions.signal = finalSignal;
             }
-            summaryOptions.onChunk = (chunk) => {
-              // 不更新任务状态，静默总结（不显示思考过程）
-              if (onChunk) {
-                void onChunk(chunk);
-              }
-            };
-            const summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
 
-            // 创建记忆（如果有 bookId）
-            if (context.currentBookId && summary) {
-              try {
-                const memorySummary =
-                  summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
-                await MemoryService.createMemory(
-                  context.currentBookId,
-                  summary,
-                  `会话摘要：${memorySummary}`,
-                );
-              } catch (error) {
-                console.error('Failed to create memory for session summary:', error);
-                // 不抛出错误，记忆创建失败不应该影响摘要流程
-              }
-            }
-
-            // 更新任务状态
-            if (aiProcessingStore && taskId) {
-              await aiProcessingStore.updateTask(taskId, {
-                status: 'completed',
-                message: '会话已总结并重置',
-              });
-            }
-
-            // 返回特殊结果，指示需要重置
-            return {
-              text: '',
-              ...(taskId ? { taskId: taskId } : {}),
-              actions: [],
-              messageHistory: [
+            let summary: string;
+            try {
+              summary = await this.summarizeSession(model, messagesToSummarize, summaryOptions);
+              summaryCount++;
+            } catch (summaryError) {
+              console.error('[AssistantService] 摘要生成失败，使用降级策略', summaryError);
+              // 摘要失败，使用降级策略
+              const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
+              // 重建消息数组
+              const retryMessages: ChatMessage[] = [
                 {
                   role: 'system',
                   content: systemPrompt,
+                },
+                ...fallbackMessages.filter((msg) => msg.role !== 'system'),
+                {
+                  role: 'user',
+                  content: userMessage,
+                },
+              ];
+
+              // 重试原始请求
+              return await this.retryRequestAfterSummary(
+                model,
+                retryMessages,
+                tools,
+                context.currentBookId,
+                options,
+                taskId,
+                sessionId,
+                finalSignal,
+              );
+            }
+
+            if (summary) {
+              // 验证并截断摘要以符合 token 限制
+              const truncatedSummary = this.ensureSummaryFitsInContext(
+                systemPrompt,
+                summary,
+                userMessage,
+                model.maxTokens,
+              );
+
+              // 使用摘要更新系统提示词
+              const updatedSystemPrompt =
+                systemPrompt +
+                `\n\n## 之前的对话总结\n\n${truncatedSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+
+              // 创建记忆（如果有 bookId）
+              if (context.currentBookId && summary) {
+                try {
+                  const memorySummary =
+                    summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
+                  await MemoryService.createMemory(
+                    context.currentBookId,
+                    summary,
+                    `会话摘要：${memorySummary}`,
+                  );
+                } catch (error) {
+                  console.error('Failed to create memory for session summary:', error);
+                  // 不抛出错误，记忆创建失败不应该影响摘要流程
+                }
+              }
+
+              // 重建消息数组：系统提示词（含摘要）+ 用户消息
+              const retryMessages: ChatMessage[] = [
+                {
+                  role: 'system',
+                  content: updatedSystemPrompt,
                 },
                 {
                   role: 'user',
                   content: userMessage,
                 },
-              ],
-              needsReset: true,
-              summary,
-            } as AssistantResult & { needsReset: true; summary: string };
+              ];
+
+              // 重试原始请求
+              return await this.retryRequestAfterSummary(
+                model,
+                retryMessages,
+                tools,
+                context.currentBookId,
+                options,
+                taskId,
+                sessionId,
+                finalSignal,
+              );
+            }
           }
         } catch (summaryError) {
           console.error('[AssistantService] ❌ 总结会话失败', summaryError);
