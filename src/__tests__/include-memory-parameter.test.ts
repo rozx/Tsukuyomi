@@ -62,12 +62,12 @@ await mock.module('src/utils/indexed-db', () => ({
 
 // Mock searchRelatedMemories
 const mockSearchRelatedMemories = mock(
-  async (
+  (
     _bookId: string,
     _keywords: string[],
     _limit: number = 5,
   ): Promise<Array<{ id: string; summary: string }>> => {
-    return [];
+    return Promise.resolve([]);
   },
 );
 
@@ -97,7 +97,7 @@ await mock.module('src/stores/ai-models', () => ({
 
 // Mock useBooksStore
 const mockBooksStore = {
-  getBookById: mock(() => null),
+  getBookById: mock((_id: string): Novel | undefined => undefined),
   updateBook: mock(() => Promise.resolve()),
 };
 await mock.module('src/stores/books', () => ({
@@ -106,7 +106,7 @@ await mock.module('src/stores/books', () => ({
 
 // Mock BookService
 const mockBookService = {
-  getBookById: mock(() => Promise.resolve(null)),
+  getBookById: mock((_id: string, _loadContent?: boolean): Promise<Novel | undefined> => Promise.resolve(undefined)),
 };
 await mock.module('src/services/book-service', () => ({
   BookService: mockBookService,
