@@ -134,7 +134,6 @@ export const terminologyTools: ToolDefinition[] = [
           name: term.name,
           translation: term.translation.translation,
           description: term.description,
-          occurrences: term.occurrences,
         },
       });
     },
@@ -367,10 +366,6 @@ export const terminologyTools: ToolDefinition[] = [
           name: term.name,
           translation: term.translation.translation,
           description: term.description,
-          occurrences_count: term.occurrences?.length || 0,
-          chapter_occurrences: chapter_id
-            ? term.occurrences?.find((occ) => String(occ.chapterId) === String(chapter_id))?.count || 0
-            : undefined,
         })),
         total: terms.length,
         all_terms_count: book.terminologies?.length || 0,
@@ -435,6 +430,7 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'search_terms_by_keywords',
+            keywords: validKeywords,
           },
         });
       }
@@ -468,7 +464,6 @@ export const terminologyTools: ToolDefinition[] = [
           name: term.name,
           translation: term.translation.translation,
           description: term.description,
-          occurrences_count: term.occurrences.length,
         })),
         count: filteredTerms.length,
       });
@@ -512,6 +507,7 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'get_occurrences_by_keywords',
+            keywords: keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0),
           },
         });
       }

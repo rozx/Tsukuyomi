@@ -10,7 +10,6 @@ interface Props {
   sex?: 'male' | 'female' | 'other' | undefined;
   translations?: string | string[] | undefined;
   aliases?: string[] | undefined;
-  occurrences?: number | undefined;
   showCheckbox?: boolean;
   checked?: boolean;
   itemId?: string;
@@ -180,12 +179,6 @@ const isCharacterCard = computed(() => {
     </div>
     <div v-else class="mb-auto"></div>
 
-    <!-- 底部信息 -->
-    <div
-      class="mt-4 pt-3 border-t border-white/5 flex justify-between items-center text-xs text-moon-100/50"
-    >
-      <span>出现次数: {{ occurrences || 0 }}</span>
-    </div>
   </div>
 </template>
 

@@ -29,18 +29,31 @@ export interface MessageAction {
   // 翻译相关信息
   paragraph_id?: string; // 段落 ID（用于 translation）
   translation_id?: string; // 翻译 ID（用于 translation）
+  // 批量替换相关信息
+  replaced_paragraph_count?: number; // 替换的段落数量（用于 batch_replace_translations）
+  replaced_translation_count?: number; // 替换的翻译版本总数（用于 batch_replace_translations）
+  replacement_text?: string; // 替换文本（用于 batch_replace_translations）
+  replace_all_translations?: boolean; // 是否替换所有翻译版本（用于 batch_replace_translations）
+  original_keywords?: string[]; // 原文关键词数组（用于 batch_replace_translations）
   // 读取操作相关信息
   chapter_id?: string; // 章节 ID（用于 read chapter）
   chapter_title?: string; // 章节标题（用于 read chapter）
   character_name?: string; // 角色名称（用于 read character）
   tool_name?: string; // 工具名称（用于 read 操作）
-  keywords?: string[]; // 关键词数组（用于 batch_replace_translations 和 search_memory_by_keywords）
+  keywords?: string[]; // 关键词数组（用于 batch_replace_translations、search_memory_by_keywords 和 find_paragraph_by_keywords）
+  translation_keywords?: string[]; // 翻译关键词数组（用于 find_paragraph_by_keywords）
   regex_pattern?: string; // 正则表达式模式（用于 search_paragraphs_by_regex）
   // Memory 相关信息
   memory_id?: string; // Memory ID（用于 memory 操作）
   keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
+  // 章节更新相关信息
+  old_title?: string; // 旧标题（用于 update_chapter_title）
+  new_title?: string; // 新标题（用于 update_chapter_title）
+  // 翻译更新相关信息
+  old_translation?: string; // 旧翻译（用于 update_translation）
+  new_translation?: string; // 新翻译（用于 update_translation）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用
   // paragraph_id 在 translation、read 和 navigate 操作中都会使用
 }

@@ -23,9 +23,24 @@ let mainWindow: BrowserWindow | null = null;
 let browserPromise: Promise<Browser> | null = null;
 
 // 检测是否为开发环境
-const isDev = process.env.DEV === 'true' || process.env.NODE_ENV !== 'production';
+// 优先检查 app.isPackaged（Electron 打包后的标志）
+// 然后检查环境变量
+const isDev =
+  !app.isPackaged && (process.env.DEV === 'true' || process.env.NODE_ENV !== 'production');
 // 调试模式：通过环境变量控制是否打开开发者工具（用于调试构建）
 const isDebugMode = process.env.ELECTRON_DEBUG === 'true' || isDev;
+
+// 记录环境信息以便调试
+console.log('[Electron] Environment info:', {
+  isPackaged: app.isPackaged,
+  NODE_ENV: process.env.NODE_ENV,
+  DEV: process.env.DEV,
+  ELECTRON_DEBUG: process.env.ELECTRON_DEBUG,
+  isDev,
+  isDebugMode,
+  platform: process.platform,
+  arch: process.arch,
+});
 
 // Normal App Logic
 
@@ -112,60 +127,71 @@ function createWindow() {
   } else {
     // 生产环境：加载构建后的文件
     // 在 Quasar 构建中，index.html 与 electron-main.js 在同一目录
-    const indexPath = join(__dirname, 'index.html');
+    // 对于打包后的应用，路径可能有所不同
+    // 尝试多个可能的路径
+    const possiblePaths = [
+      join(__dirname, 'index.html'), // 标准路径
+      join(__dirname, '../index.html'), // 备用路径
+      join(process.resourcesPath || __dirname, 'index.html'), // 打包后的资源路径
+      join(process.resourcesPath || __dirname, '../index.html'), // 打包后的备用路径
+    ];
+    
+    // 找到第一个存在的路径
+    const foundPath = possiblePaths.find((path) => existsSync(path));
+    const indexPath = foundPath || possiblePaths[0] || join(__dirname, 'index.html');
+    
     console.log(`[Electron] Loading production build`);
     console.log(`[Electron] __dirname: ${__dirname}`);
+    console.log(`[Electron] process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
     console.log(`[Electron] indexPath: ${indexPath}`);
     console.log(`[Electron] File exists: ${existsSync(indexPath)}`);
+    
+    // 列出所有尝试的路径
+    console.log(`[Electron] Tried paths:`, possiblePaths.map((p) => ({ path: p, exists: existsSync(p) })));
 
     // 列出目录内容以便调试
     if (isDebugMode) {
       try {
         const files = readdirSync(__dirname);
         console.log(`[Electron] Files in __dirname:`, files.slice(0, 10));
+        if (process.resourcesPath && process.resourcesPath !== __dirname) {
+          try {
+            const resourceFiles = readdirSync(process.resourcesPath);
+            console.log(`[Electron] Files in process.resourcesPath:`, resourceFiles.slice(0, 10));
+          } catch (e) {
+            console.error('[Electron] Failed to read resourcesPath directory:', e);
+          }
+        }
       } catch (e) {
         console.error('[Electron] Failed to read directory:', e);
       }
     }
 
-    // 检查文件是否存在，如果不存在尝试其他路径
-    if (!existsSync(indexPath)) {
-      const altPath = join(__dirname, '../index.html');
-      console.log(`[Electron] Trying alternative path: ${altPath}`);
-      console.log(`[Electron] Alternative exists: ${existsSync(altPath)}`);
-      if (existsSync(altPath)) {
-        const finalPath = altPath;
-        void mainWindow.loadFile(finalPath).catch((err) => {
-          console.error('[Electron] Failed to load index.html:', err);
-          handleLoadError(mainWindow, err, finalPath);
-        });
-      } else {
-        console.error('[Electron] index.html not found in both locations!');
-        console.error(`[Electron] Tried: ${indexPath}`);
-        console.error(`[Electron] Tried: ${altPath}`);
-        if (mainWindow) {
-          mainWindow.show();
-          // 显示错误信息
-          if (isDebugMode) {
-            void mainWindow.webContents.executeJavaScript(`
-              document.body.innerHTML = '<div style="padding: 20px; font-family: monospace; color: red;">
-                <h1>File Not Found</h1>
-                <p>index.html not found in:</p>
-                <ul>
-                  <li>${indexPath}</li>
-                  <li>${altPath}</li>
-                </ul>
-                <p>Check console for more details.</p>
-              </div>';
-            `);
-          }
-        }
-      }
-    } else {
+    // 检查文件是否存在并加载
+    if (existsSync(indexPath)) {
       void mainWindow.loadFile(indexPath).catch((err) => {
         console.error('[Electron] Failed to load index.html:', err);
         handleLoadError(mainWindow, err, indexPath);
       });
+    } else {
+      console.error('[Electron] index.html not found in any of the tried paths!');
+      console.error(`[Electron] Tried paths:`, possiblePaths);
+      if (mainWindow) {
+        mainWindow.show();
+        // 显示错误信息
+        if (isDebugMode) {
+          void mainWindow.webContents.executeJavaScript(`
+            document.body.innerHTML = '<div style="padding: 20px; font-family: monospace; color: red;">
+              <h1>File Not Found</h1>
+              <p>index.html not found in any of the following paths:</p>
+              <ul>
+                ${possiblePaths.map((p) => `<li>${p}</li>`).join('')}
+              </ul>
+              <p>Check console for more details.</p>
+            </div>';
+          `);
+        }
+      }
     }
 
     // 在调试模式下打开开发者工具（延迟打开以确保窗口已创建）

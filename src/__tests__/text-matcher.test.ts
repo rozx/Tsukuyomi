@@ -9,7 +9,6 @@ describe('matchCharactersInText', () => {
     sex: 'male',
     translation: { id: `trans-${id}`, translation: name, aiModelId: 'test' },
     aliases: aliases.map(a => ({ name: a, translation: { id: `alias-${a}`, translation: a, aiModelId: 'test' } })),
-    occurrences: []
   });
 
   test('should match simple unique characters', () => {
@@ -130,7 +129,6 @@ describe('findUniqueCharactersInText', () => {
     sex: 'male',
     translation: { id: `trans-${id}`, translation: name, aiModelId: 'test' },
     aliases: aliases.map(a => ({ name: a, translation: { id: `alias-${a}`, translation: a, aiModelId: 'test' } })),
-    occurrences: []
   });
 
   test('should return all unique characters that match the text', () => {
@@ -180,7 +178,6 @@ describe('parseTextForHighlighting', () => {
     sex: 'male',
     translation: { id: `trans-${id}`, translation: name, aiModelId: 'test' },
     aliases: aliases.map(a => ({ name: a, translation: { id: `alias-${a}`, translation: a, aiModelId: 'test' } })),
-    occurrences: []
   });
 
   test('should sort characters by occurrences in highlight nodes', () => {

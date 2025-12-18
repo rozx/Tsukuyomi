@@ -1,11 +1,10 @@
 import type {
   CharacterSetting,
   Alias,
-  Occurrence,
   Translation,
   Novel,
 } from 'src/models/novel';
-import { flatMap, isEmpty, isArray, isEqual, sortBy } from 'lodash';
+import { flatMap, isEmpty, isArray, sortBy, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import {
   UniqueIdGenerator,
@@ -17,216 +16,12 @@ import {
   ensureChapterContentLoaded,
 } from 'src/utils';
 import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
-import co from 'co';
 
 /**
  * 角色设定服务
  * 负责管理小说中的角色设定（添加、更新、删除）
  */
 export class CharacterSettingService {
-  /**
-   * 后台更新角色的出现次数
-   * @param bookId 书籍 ID
-   * @param charId 角色 ID
-   * @param character 角色对象（用于统计）
-   * @param book 书籍对象
-   */
-  private static updateCharacterOccurrencesInBackground(
-    bookId: string,
-    charId: string,
-    character: CharacterSetting,
-    book: Novel,
-  ): void {
-    void co(function* () {
-      try {
-        // 统计角色出现次数
-        const countedOccurrences: Occurrence[] = yield CharacterSettingService.countCharacterOccurrences(
-          book,
-          character,
-        );
-
-        const booksStore = useBooksStore();
-        // 获取最新的书籍状态
-        const latestBook = booksStore.getBookById(bookId);
-        if (!latestBook) {
-          throw new Error(`书籍不存在: ${bookId}`);
-        }
-        // 更新角色的出现次数
-        const updatedSettings = (latestBook.characterSettings || []).map((char) =>
-          char.id === charId
-            ? { ...char, occurrences: countedOccurrences }
-            : char,
-        );
-        yield booksStore.updateBook(bookId, {
-          characterSettings: updatedSettings,
-          lastEdited: new Date(),
-        });
-
-        console.log(`[CharacterSettingService] 成功更新角色 "${character.name}" 的出现次数`);
-      } catch (error) {
-        console.error(
-          `[CharacterSettingService] 更新角色 "${character.name}" 的出现次数失败:`,
-          error,
-        );
-      }
-    });
-  }
-
-  /**
-   * 统计角色（包括主名称和所有别名）在书籍所有章节中的出现次数
-   * 使用 text-matcher.ts 中的 matchCharactersInText 进行匹配，支持名称消歧义
-   * 使用分批处理避免阻塞 UI
-   * @param book 书籍对象
-   * @param character 角色对象
-   * @returns 出现记录数组
-   */
-  private static async countCharacterOccurrences(
-    book: Novel,
-    character: CharacterSetting,
-  ): Promise<Occurrence[]> {
-    const occurrencesMap = new Map<string, number>();
-
-    // 扁平化所有章节
-    const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
-
-    // 为了更好的消歧义，先计算所有章节的上下文得分
-    // 收集所有章节的文本内容（分批处理以避免阻塞）
-    let fullText = '';
-    await processItemsInBatches(
-      allChapters,
-      async (chapter) => {
-        const chapterWithContent = await ensureChapterContentLoaded(chapter);
-
-        // 处理段落内容
-        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-          for (const paragraph of chapterWithContent.content) {
-            fullText += paragraph.text + '\n';
-          }
-        }
-        // 处理原始内容
-        if (chapterWithContent.originalContent) {
-          fullText += chapterWithContent.originalContent + '\n';
-        }
-      },
-      10, // 每批处理 10 个章节
-      0, // 让出主线程的延迟时间
-    );
-
-    // 计算上下文得分（使用所有角色，以便更好地消歧义）
-    const allCharacters = book.characterSettings || [];
-    // 确保当前角色包含在匹配列表中（可能尚未添加到 book.characterSettings）
-    const charactersToMatch = allCharacters.some((c) => c.id === character.id)
-      ? allCharacters
-      : [...allCharacters, character];
-    const contextScores = calculateCharacterScores(fullText, charactersToMatch);
-
-    // 遍历所有章节，统计当前角色的出现次数（分批处理）
-    await processItemsInBatches(
-      allChapters,
-      async (chapter) => {
-        const chapterWithContent = await ensureChapterContentLoaded(chapter);
-
-        let chapterText = '';
-
-        // 处理段落内容
-        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-          for (const paragraph of chapterWithContent.content) {
-            chapterText += paragraph.text + '\n';
-          }
-        }
-
-        // 处理原始内容
-        if (chapterWithContent.originalContent) {
-          chapterText += chapterWithContent.originalContent + '\n';
-        }
-
-        if (!chapterText.trim()) {
-          return;
-        }
-
-        // 使用 matchCharactersInText 匹配所有角色（包括主名称和所有别名）
-        // 传入所有角色和上下文得分以支持名称消歧义
-        // 然后过滤出当前角色的匹配
-        const allMatches = matchCharactersInText(chapterText, charactersToMatch, contextScores);
-
-        // 只统计当前角色的匹配次数
-        const characterMatches = allMatches.filter((m) => m.item.id === character.id);
-        const chapterCount = characterMatches.length;
-
-        // 如果该章节有出现，记录到 Map 中
-        if (chapterCount > 0) {
-          occurrencesMap.set(chapter.id, chapterCount);
-        }
-      },
-      10, // 每批处理 10 个章节
-      0, // 让出主线程的延迟时间
-    );
-
-    // 转换为 Occurrence 数组
-    return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
-      chapterId,
-      count,
-    }));
-  }
-
-  /**
-   * 统计名称在书籍所有章节中的出现次数
-   * 使用分批处理避免阻塞 UI
-   * @param book 书籍对象
-   * @param name 角色名称
-   * @returns 出现记录数组
-   */
-  private static async countNameOccurrences(book: Novel, name: string): Promise<Occurrence[]> {
-    const occurrencesMap = new Map<string, number>();
-    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedName, 'g');
-
-    // 扁平化所有章节
-    const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
-
-    // 分批处理章节，每批之间让出主线程
-    await processItemsInBatches(
-      allChapters,
-      async (chapter) => {
-        const chapterWithContent = await ensureChapterContentLoaded(chapter);
-
-        let chapterCount = 0;
-
-        // 从段落中统计
-        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-          for (const paragraph of chapterWithContent.content) {
-            const matches = paragraph.text.match(regex);
-            if (matches) {
-              chapterCount += matches.length;
-            }
-          }
-        }
-
-        // 从原始内容中统计
-        if (chapterWithContent.originalContent) {
-          const matches = chapterWithContent.originalContent.match(regex);
-          if (matches) {
-            chapterCount += matches.length;
-          }
-        }
-
-        // 如果该章节有出现，记录到 Map 中
-        if (chapterCount > 0) {
-          const existingCount = occurrencesMap.get(chapter.id) || 0;
-          occurrencesMap.set(chapter.id, existingCount + chapterCount);
-        }
-      },
-      10, // 每批处理 10 个章节
-      0, // 让出主线程的延迟时间
-    );
-
-    // 转换为 Occurrence 数组
-    return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
-      chapterId,
-      count,
-    }));
-  }
-
   /**
    * 添加新角色设定
    * @param bookId 书籍 ID
@@ -294,17 +89,7 @@ export class CharacterSettingService {
       }
     }
 
-    // 构建临时角色对象用于统计（包括别名）
-    const tempCharacter: CharacterSetting = {
-      id: charId,
-      name: charData.name,
-      sex: charData.sex,
-      translation,
-      aliases,
-      occurrences: [],
-    };
-
-    // 创建新角色设定（先使用空的出现次数，后台更新）
+    // 创建新角色设定
     const newCharacter: CharacterSetting = {
       id: charId,
       name: charData.name,
@@ -313,7 +98,6 @@ export class CharacterSettingService {
       ...(charData.speakingStyle ? { speakingStyle: charData.speakingStyle } : {}),
       translation,
       aliases,
-      occurrences: [], // 后台更新
     };
 
     // 更新书籍
@@ -322,9 +106,6 @@ export class CharacterSettingService {
       characterSettings: updatedSettings,
       lastEdited: new Date(),
     });
-
-    // 后台统计角色出现次数（包括主名称和所有别名）
-    this.updateCharacterOccurrencesInBackground(bookId, charId, tempCharacter, book);
 
     return newCharacter;
   }
@@ -376,19 +157,6 @@ export class CharacterSettingService {
     // 准备更新后的数据
     const updatedName = updates.name ?? existingChar.name;
     
-    // 检查别名是否改变（比较别名名称的集合，不考虑顺序）
-    const existingAliasNames = sortBy(existingChar.aliases || [], 'name').map((a) => a.name);
-    const newAliasNames =
-      updates.aliases !== undefined
-        ? sortBy(updates.aliases, 'name').map((a) => a.name)
-        : existingAliasNames;
-    const aliasesChanged =
-      updates.aliases !== undefined && !isEqual(existingAliasNames, newAliasNames);
-    
-    // 如果名称改变或别名改变，需要在后台重新统计，先使用空数组
-    const needsOccurrenceUpdate = (nameChanged && updates.name) || aliasesChanged;
-    const occurrences = needsOccurrenceUpdate ? [] : existingChar.occurrences;
-
     // 处理翻译更新
     let updatedTranslation = existingChar.translation;
     if (updates.translation !== undefined) {
@@ -458,7 +226,6 @@ export class CharacterSettingService {
       sex: updates.sex !== undefined ? updates.sex : existingChar.sex,
       translation: updatedTranslation,
       aliases: updatedAliases,
-      occurrences: occurrences,
       description: existingChar.description, // 默认保留
       speakingStyle: existingChar.speakingStyle, // 默认保留
     };
@@ -490,45 +257,6 @@ export class CharacterSettingService {
       lastEdited: new Date(),
     });
 
-    // 如果名称或别名改变，后台更新出现次数
-    if (needsOccurrenceUpdate) {
-      // 构建临时别名数组用于统计
-      const tempAliases: Alias[] = [];
-      if (updates.aliases !== undefined) {
-        // 使用更新后的别名
-        for (const aliasData of updates.aliases) {
-          if (!aliasData.name.trim()) continue;
-          const existingAlias = existingChar.aliases?.find((a) => a.name === aliasData.name);
-          if (existingAlias) {
-            tempAliases.push(existingAlias);
-          } else {
-            // 新别名，使用临时对象
-            tempAliases.push({
-              name: aliasData.name,
-              translation: {
-                id: generateShortId(),
-                translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-                aiModelId: '',
-              },
-            });
-          }
-        }
-      } else {
-        // 使用现有别名
-        if (existingChar.aliases && existingChar.aliases.length > 0) {
-          tempAliases.push(...existingChar.aliases);
-        }
-      }
-
-      // 构建临时角色对象用于统计
-      const tempCharacter: CharacterSetting = {
-        ...existingChar,
-        name: updatedName,
-        aliases: tempAliases,
-      };
-
-      this.updateCharacterOccurrencesInBackground(bookId, charId, tempCharacter, book);
-    }
 
     return updatedChar;
   }
@@ -558,102 +286,6 @@ export class CharacterSettingService {
       characterSettings: updatedSettings,
       lastEdited: new Date(),
     });
-  }
-
-  /**
-   * 刷新所有角色的出现次数
-   * 当章节内容更新后调用此方法来重新统计所有角色（包括别名）的出现次数
-   * 使用分批处理避免阻塞 UI
-   * @param bookId 书籍 ID
-   */
-  static async refreshAllCharacterOccurrences(bookId: string): Promise<void> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const characterSettings = book.characterSettings || [];
-    if (characterSettings.length === 0) {
-      return;
-    }
-
-    // 分批处理角色，每批之间让出主线程
-    const updatedCharacterSettings = await processItemsInBatches(
-      characterSettings,
-      async (char) => {
-        // 使用 countCharacterOccurrences 统计（包括主名称和所有别名）
-        const occurrences = await this.countCharacterOccurrences(book, char);
-        const occurrencesChanged = !isEqual(char.occurrences, occurrences);
-        if (occurrencesChanged) {
-          return {
-            ...char,
-            occurrences,
-          };
-        }
-        return char;
-      },
-      3, // 每批处理 3 个角色
-      0, // 让出主线程的延迟时间
-    );
-
-    // 检查是否有任何角色被更新
-    const hasChanges = updatedCharacterSettings.some((char, index) =>
-      !isEqual(char, characterSettings[index]),
-    );
-    if (hasChanges) {
-      await booksStore.updateBook(bookId, {
-        characterSettings: updatedCharacterSettings,
-        lastEdited: new Date(),
-      });
-    }
-  }
-
-  /**
-   * 移除指定章节的出现记录（用于章节删除时的优化）
-   * 比 refreshAllCharacterOccurrences 更高效，只需移除该章节的记录，无需重新扫描所有章节
-   * @param bookId 书籍 ID
-   * @param chapterId 要移除的章节 ID
-   */
-  static async removeChapterOccurrences(bookId: string, chapterId: string): Promise<void> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const characterSettings = book.characterSettings || [];
-    if (characterSettings.length === 0) {
-      return;
-    }
-
-    // 移除所有角色中该章节的出现记录
-    const updatedCharacterSettings = characterSettings.map((char) => {
-      const filteredOccurrences = (char.occurrences || []).filter(
-        (occ) => occ.chapterId !== chapterId,
-      );
-      // 只有当出现记录发生变化时才返回新对象
-      if (filteredOccurrences.length !== char.occurrences?.length) {
-        return {
-          ...char,
-          occurrences: filteredOccurrences,
-        };
-      }
-      return char;
-    });
-
-    // 检查是否有任何角色被更新
-    const hasChanges = updatedCharacterSettings.some((char, index) =>
-      !isEqual(char, characterSettings[index]),
-    );
-    if (hasChanges) {
-      await booksStore.updateBook(bookId, {
-        characterSettings: updatedCharacterSettings,
-        lastEdited: new Date(),
-      });
-    }
   }
 
   /**

@@ -76,7 +76,7 @@ const isAllSelected = computed(() => {
 // 切换全选/取消全选
 const toggleSelectAll = () => {
   if (isAllSelected.value) {
-    selectedTagIndices.value.clear();
+    selectedTagIndices.value = new Set();
   } else {
     selectedTagIndices.value = new Set(translationResult.value.map((_, index) => index));
   }
@@ -84,11 +84,24 @@ const toggleSelectAll = () => {
 
 // 切换单个标签的选择状态
 const toggleTagSelection = (index: number) => {
-  if (selectedTagIndices.value.has(index)) {
-    selectedTagIndices.value.delete(index);
+  const newSet = new Set(selectedTagIndices.value);
+  if (newSet.has(index)) {
+    newSet.delete(index);
   } else {
-    selectedTagIndices.value.add(index);
+    newSet.add(index);
   }
+  selectedTagIndices.value = newSet;
+};
+
+// 处理复选框更新事件
+const handleCheckboxChange = (index: number, value: boolean) => {
+  const newSet = new Set(selectedTagIndices.value);
+  if (value) {
+    newSet.add(index);
+  } else {
+    newSet.delete(index);
+  }
+  selectedTagIndices.value = newSet;
 };
 
 // 获取选中的标签及其索引映射
@@ -359,7 +372,8 @@ const handleTranslate = async () => {
           <Checkbox
             :model-value="selectedTagIndices.has(index)"
             :binary="true"
-            @click.stop="toggleTagSelection(index)"
+            @update:model-value="(val) => handleCheckboxChange(index, val as boolean)"
+            @click.stop
             class="translation-tag-checkbox"
           />
           <span class="translation-tag-text">{{ tag }}</span>

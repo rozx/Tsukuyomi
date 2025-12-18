@@ -5,6 +5,7 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { SyncDataService } from 'src/services/sync-data-service';
+import { isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import type { Novel } from 'src/models/novel';
 import co from 'co';
 
@@ -42,13 +43,14 @@ export function useAutoSync() {
     }
 
     // 处理 AI 模型
-    // AI 模型没有时间戳，使用上次同步时的模型 ID 列表来判断是"远程新添加"还是"本地已删除"
+    // 优先使用 lastEdited 时间戳判断，如果没有时间戳则使用上次同步时的模型 ID 列表来判断是"远程新添加"还是"本地已删除"
     if (
       remoteData.aiModels &&
       Array.isArray(remoteData.aiModels) &&
       remoteData.aiModels.length > 0
     ) {
       const finalModels: any[] = [];
+      const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
       const lastSyncedModelIds = settingsStore.gistSync.lastSyncedModelIds || [];
 
       for (const remoteModel of remoteData.aiModels) {
@@ -66,20 +68,47 @@ export function useAutoSync() {
           }
         } else {
           // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 如果该模型在上次同步时的列表中，说明是本地删除的，不应该添加
-          // 如果不在上次同步时的列表中，说明是远程新添加的，应该添加
-          if (!lastSyncedModelIds.includes(remoteModel.id)) {
-            // 远程新添加的，应该添加
-            finalModels.push(remoteModel);
+          // 优先使用 lastEdited 时间，如果没有则使用 lastSyncedModelIds
+          if (remoteModel.lastEdited) {
+            const remoteTime = new Date(remoteModel.lastEdited).getTime();
+            if (remoteTime > lastSyncTime) {
+              // 远程新添加的，应该添加
+              finalModels.push(remoteModel);
+            }
+            // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
+          } else {
+            // 没有 lastEdited 时间戳，使用 lastSyncedModelIds 判断
+            // 如果不在上次同步时的列表中，说明是远程新添加的，应该添加
+            if (!lastSyncedModelIds.includes(remoteModel.id)) {
+              // 远程新添加的，应该添加
+              finalModels.push(remoteModel);
+            }
+            // 否则，说明是本地已删除的，不添加
           }
-          // 否则，说明是本地已删除的，不添加
         }
       }
 
       // 添加本地独有的模型
+      // 只保留在上次同步后新添加的本地模型（lastEdited > lastSyncTime）
+      // 陈旧的本地模型（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localModel of aiModelsStore.models) {
         if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
-          finalModels.push(localModel);
+          // 检查是否是本地新增的（在上次同步后添加）
+          // 优先使用 lastEdited 时间，如果没有则保留（兼容旧数据）
+          if (localModel.lastEdited) {
+            const localTime = new Date(localModel.lastEdited).getTime();
+            if (localTime > lastSyncTime) {
+              // 本地新增的模型，保留
+              finalModels.push(localModel);
+            }
+            // 如果不在上次同步后添加，说明是陈旧的本地模型，不添加（自动删除）
+          } else {
+            // 没有 lastEdited 时间戳，使用 lastSyncedModelIds 判断
+            // 如果不在上次同步的列表中，说明是本地新添加的，保留
+            if (!lastSyncedModelIds.includes(localModel.id)) {
+              finalModels.push(localModel);
+            }
+          }
         }
       }
 
@@ -128,11 +157,17 @@ export function useAutoSync() {
       }
 
       // 处理本地独有的书籍（本地存在但远程不存在）
+      // 只保留在上次同步后新添加的本地书籍（lastEdited > lastSyncTime）
+      // 陈旧的本地书籍（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localBook of booksStore.books) {
         if (!finalBooksMap.has(localBook.id)) {
-          // 添加本地书籍（确保章节内容已加载）
-          const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
-          finalBooksMap.set(localBook.id, localBookWithContent);
+          // 检查是否是本地新增的（在上次同步后添加）
+          if (checkIsNewlyAdded(localBook.lastEdited, lastSyncTime)) {
+            // 本地新增的书籍，保留（确保章节内容已加载）
+            const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
+            finalBooksMap.set(localBook.id, localBookWithContent);
+          }
+          // 如果不在上次同步后添加，说明是陈旧的本地书籍，不添加（自动删除）
         }
       }
 
@@ -165,19 +200,28 @@ export function useAutoSync() {
             finalCovers.push(localCover);
           }
         } else {
-          // 本地不存在，检查是否是远程新添加的
-          const remoteAddedAt = new Date(remoteCover.addedAt).getTime();
-          if (remoteAddedAt > lastSyncTime) {
-            // 远程新添加的，应该添加
+          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
+          // 只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
+          // 陈旧的远程封面（addedAt <= lastSyncTime）会被自动删除，因为本地已删除
+          if (checkIsNewlyAdded(remoteCover.addedAt, lastSyncTime)) {
+            // 远程新添加的封面，保留
             finalCovers.push(remoteCover);
           }
-          // 否则，说明是本地已删除的，不添加
+          // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
         }
       }
 
+      // 添加本地独有的封面
+      // 只保留在上次同步后新添加的本地封面（addedAt > lastSyncTime）
+      // 陈旧的本地封面（addedAt <= lastSyncTime）会被自动删除，因为远程已删除
       for (const localCover of coverHistoryStore.covers) {
         if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
-          finalCovers.push(localCover);
+          // 检查是否是本地新增的（在上次同步后添加）
+          if (checkIsNewlyAdded(localCover.addedAt, lastSyncTime)) {
+            // 本地新增的封面，保留
+            finalCovers.push(localCover);
+          }
+          // 如果不在上次同步后添加，说明是陈旧的本地封面，不添加（自动删除）
         }
       }
 

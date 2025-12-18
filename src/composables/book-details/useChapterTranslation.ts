@@ -7,7 +7,6 @@ import { TranslationService, PolishService, ProofreadingService } from 'src/serv
 import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
-import { normalizeTranslationQuotes } from 'src/utils';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
@@ -41,7 +40,7 @@ export function useChapterTranslation(
   const createParagraphTranslation = (translation: string, aiModelId: string) => {
     return {
       id: generateShortId(),
-      translation: normalizeTranslationQuotes(translation),
+      translation: translation.trim(),
       aiModelId,
     };
   };
@@ -800,7 +799,7 @@ export function useChapterTranslation(
             if (hasTitleTranslation && result.titleTranslation) {
               const newTitleTranslation = {
                 id: generateShortId(),
-                translation: normalizeTranslationQuotes(result.titleTranslation.trim()),
+                translation: result.titleTranslation.trim(),
                 aiModelId: selectedModel.id,
               };
               updatedTitle = {

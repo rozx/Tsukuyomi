@@ -10,7 +10,6 @@ import { generateShortId } from 'src/utils/id-generator';
 import {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
-  removeChapterOccurrencesInBackground,
 } from 'src/utils';
 import { cloneDeep } from 'lodash';
 
@@ -409,13 +408,6 @@ export function useChapterManagement(
         volumes: updatedVolumes,
         lastEdited: new Date(),
       });
-
-      // 高效移除该章节的出现记录，无需重新扫描所有章节
-      removeChapterOccurrencesInBackground(
-        book.value.id,
-        chapterIdToDelete,
-        'useChapterManagement',
-      );
 
       toast.add({
         severity: 'success',

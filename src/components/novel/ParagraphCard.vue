@@ -23,7 +23,6 @@ const props = defineProps<{
   isPolishing?: boolean;
   isProofreading?: boolean;
   searchQuery?: string;
-  characterScores?: Map<string, number>;
   bookId?: string;
   chapterId?: string;
   id?: string;
@@ -168,7 +167,6 @@ const highlightedText = computed(
       props.paragraph.text,
       props.terminologies,
       props.characterSettings,
-      props.characterScores,
     );
   },
 );

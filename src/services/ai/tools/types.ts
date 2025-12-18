@@ -40,6 +40,11 @@ export interface ActionInfo {
         keywords?: string[];
         translation_keywords?: string[];
         original_keywords?: string[];
+        // 批量替换相关字段
+        replaced_paragraph_count?: number;
+        replaced_translation_count?: number;
+        replacement_text?: string;
+        replace_all_translations?: boolean;
       }
     | {
         memory_id?: string;
@@ -56,7 +61,14 @@ export interface ActionInfo {
     | CharacterSetting
     | Translation
     | TodoItem
-    | { title_original?: string; title_translation?: string }; // 用于 revert 的原始数据（仅用于 update 操作）
+    | { title_original?: string; title_translation?: string } // 用于 revert 的原始数据（仅用于 update 操作）
+    | {
+        replaced_paragraphs?: Array<{
+          paragraph_id: string;
+          chapter_id: string;
+          old_translations: Translation[];
+        }>;
+      }; // 批量替换的原始数据（仅用于 batch_replace_translations 操作）
 }
 
 export interface ToolContext {

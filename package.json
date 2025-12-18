@@ -1,6 +1,6 @@
 {
   "name": "luna-ai-translator",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "Luna AI translator",
   "productName": "Luna AI translator",
   "author": "rozx <rozx@heavyskymobile.com>",
@@ -17,8 +17,8 @@
     "dev:server": "bun --watch run server/app-server.ts",
     "dev:electron": "quasar dev -m electron",
     "build": "quasar build",
-    "build:spa": "quasar build -m spa",
-    "build:electron": "quasar build -m electron",
+    "build:spa": "cross-env NODE_ENV=production quasar build -m spa",
+    "build:electron": "cross-env NODE_ENV=production quasar build -m electron",
     "build:electron:debug": "ELECTRON_DEBUG=true quasar build -m electron",
     "postinstall": "quasar prepare",
     "start:proxy": "bun run server/proxy-server.ts",

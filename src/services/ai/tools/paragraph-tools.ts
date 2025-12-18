@@ -5,7 +5,6 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo } from './types';
 
@@ -16,11 +15,7 @@ import type { ToolDefinition, ActionInfo } from './types';
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
-export function replaceWholeKeyword(
-  text: string,
-  keyword: string,
-  replacement: string,
-): string {
+export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
   if (!text || !keyword) {
     return text;
   }
@@ -52,10 +47,7 @@ export function replaceWholeKeyword(
   } else if (hasCJK || textHasCJK) {
     // 对于 CJK 字符，使用更复杂的匹配
     // 方案1：关键词前后是文本边界或非CJK字符
-    pattern = new RegExp(
-      `(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`,
-      'giu',
-    );
+    pattern = new RegExp(`(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`, 'giu');
     let result = text.replace(pattern, (match, before, after) => {
       return (before || '') + replacement + (after || '');
     });
@@ -63,7 +55,8 @@ export function replaceWholeKeyword(
     // 如果方案1没有匹配，尝试方案2：关键词在CJK字符中间
     if (result === text) {
       // 手动检查并替换
-      const isCJK = (char: string) => /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
+      const isCJK = (char: string) =>
+        /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
       let searchIndex = 0;
       const parts: string[] = [];
       let lastIndex = 0;
@@ -75,9 +68,8 @@ export function replaceWholeKeyword(
         }
 
         const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
-        const afterChar: string = index + keyword.length < text.length
-          ? (text[index + keyword.length] ?? '')
-          : '';
+        const afterChar: string =
+          index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
 
         const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
         const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
@@ -116,10 +108,7 @@ export function replaceWholeKeyword(
     return result;
   } else {
     // 对于纯非 CJK 字符（主要是英文），使用单词边界
-    pattern = new RegExp(
-      `(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`,
-      'giu',
-    );
+    pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, 'giu');
     return text.replace(pattern, (match, before, after) => {
       return (before || '') + replacement + (after || '');
     });
@@ -165,16 +154,16 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
     // 1. 关键词前必须是文本开头或非CJK字符（标点、空格、英文等）
     // 2. 关键词后必须是文本结尾或非CJK字符
     // 3. 如果关键词前后都是CJK字符，也匹配（因为CJK没有单词边界，精确匹配子字符串是可以接受的）
-    
+
     // 定义CJK字符范围（用于字符类）
     const cjkCharClass = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
-    
+
     // 方案1：关键词前后是文本边界或非CJK字符
     const pattern1 = new RegExp(
       `(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`,
       'iu',
     );
-    
+
     // 方案2：关键词前后都是CJK字符或文本边界（使用负向前瞻和后顾）
     // 如果关键词在CJK字符中间，也匹配（因为CJK没有单词边界）
     // 注意：后顾 (?<=...) 需要检查浏览器支持，如果不支持则回退
@@ -189,17 +178,17 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
     } catch (e) {
       pattern2 = null;
     }
-    
+
     // 先尝试方案1（关键词前后是文本边界或非CJK字符）
     if (pattern1.test(text)) {
       return true;
     }
-    
+
     // 如果方案2支持，也尝试方案2
     if (pattern2 && pattern2.test(text)) {
       return true;
     }
-    
+
     // 如果都不匹配，使用手动检查（fallback）
     {
       // 如果不支持后顾，使用方案1，并且对于CJK字符，也允许在CJK字符中间匹配
@@ -207,11 +196,12 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
       if (pattern1.test(text)) {
         return true;
       }
-      
+
       // 检查关键词是否在文本中，并且前后都是CJK字符或边界
       // 需要检查所有出现的位置，因为可能有多个匹配
-      const isCJK = (char: string) => /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
-      
+      const isCJK = (char: string) =>
+        /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
+
       // 检查所有出现的位置
       let searchIndex = 0;
       while (true) {
@@ -219,32 +209,33 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
         if (index === -1) {
           break;
         }
-        
+
         const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
-        const afterChar: string = index + keyword.length < text.length 
-          ? (text[index + keyword.length] ?? '') 
-          : '';
-        
+        const afterChar: string =
+          index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
+
         // 检查前后字符
         const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
         const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
         const beforeIsCJK = index > 0 && isCJK(beforeChar);
         const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
-        
+
         // 匹配条件：
         // 1. 前后都是边界（文本开头/结尾或非CJK字符）
         // 2. 或者前后都是CJK字符（因为CJK没有单词边界，精确匹配子字符串是可以接受的）
         // 3. 或者前是边界后是CJK，或前是CJK后是边界（CJK字符边界也是有效的）
-        if ((beforeIsBoundary && afterIsBoundary) || 
-            (beforeIsCJK && afterIsCJK) ||
-            (beforeIsBoundary && afterIsCJK) ||
-            (beforeIsCJK && afterIsBoundary)) {
+        if (
+          (beforeIsBoundary && afterIsBoundary) ||
+          (beforeIsCJK && afterIsCJK) ||
+          (beforeIsBoundary && afterIsCJK) ||
+          (beforeIsCJK && afterIsBoundary)
+        ) {
           return true;
         }
-        
+
         searchIndex = index + 1;
       }
-      
+
       return false;
     }
   } else {
@@ -252,10 +243,7 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
     // 匹配规则：
     // 1. 关键词前必须是文本开头或非字母数字字符
     // 2. 关键词后必须是文本结尾或非字母数字字符
-    const pattern = new RegExp(
-      `(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`,
-      'iu',
-    );
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, 'iu');
     return pattern.test(text);
   }
 }
@@ -632,6 +620,7 @@ export const paragraphTools: ToolDefinition[] = [
             keywords: validKeywords.length > 0 ? validKeywords : undefined,
             translation_keywords:
               validTranslationKeywords.length > 0 ? validTranslationKeywords : undefined,
+            ...(chapter_id ? { chapter_id } : {}),
           } as ActionInfo['data'],
         });
       }
@@ -753,9 +742,7 @@ export const paragraphTools: ToolDefinition[] = [
 
           const startVolumeIndex = chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
           const endVolumeIndex =
-            chapter_id && targetVolumeIndex !== null
-              ? targetVolumeIndex
-              : book.volumes.length - 1;
+            chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : book.volumes.length - 1;
 
           for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
             const volume = book.volumes[vIndex];
@@ -929,7 +916,8 @@ export const paragraphTools: ToolDefinition[] = [
           properties: {
             regex_pattern: {
               type: 'string',
-              description: '正则表达式模式（字符串格式）。例如："\\d+年" 匹配包含数字和"年"的文本，"[あ-ん]+" 匹配平假名等。',
+              description:
+                '正则表达式模式（字符串格式）。例如："\\d+年" 匹配包含数字和"年"的文本，"[あ-ん]+" 匹配平假名等。',
             },
             chapter_id: {
               type: 'string',
@@ -965,7 +953,11 @@ export const paragraphTools: ToolDefinition[] = [
         only_with_translation = false,
         search_in_translation = false,
       } = args;
-      if (!regex_pattern || typeof regex_pattern !== 'string' || regex_pattern.trim().length === 0) {
+      if (
+        !regex_pattern ||
+        typeof regex_pattern !== 'string' ||
+        regex_pattern.trim().length === 0
+      ) {
         throw new Error('正则表达式模式不能为空');
       }
 
@@ -993,6 +985,7 @@ export const paragraphTools: ToolDefinition[] = [
           data: {
             tool_name: 'search_paragraphs_by_regex',
             regex_pattern: regex_pattern.trim(),
+            ...(chapter_id ? { chapter_id } : {}),
           },
         });
       }
@@ -1419,7 +1412,7 @@ export const paragraphTools: ToolDefinition[] = [
       const idGenerator = new UniqueIdGenerator(existingTranslationIds);
       const newTranslation: Translation = {
         id: idGenerator.generate(),
-        translation: normalizeTranslationQuotes(translation.trim()),
+        translation: translation.trim(),
         aiModelId: modelId,
       };
 
@@ -1619,7 +1612,8 @@ export const paragraphTools: ToolDefinition[] = [
             },
             replacement_text: {
               type: 'string',
-              description: '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），会替换整个翻译文本。',
+              description:
+                '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），会替换整个翻译文本。',
             },
             chapter_id: {
               type: 'string',
@@ -1685,19 +1679,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 报告操作开始
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            tool_name: 'batch_replace_translations',
-            keywords: validKeywords.length > 0 ? validKeywords : undefined,
-            original_keywords:
-              validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
-          } as ActionInfo['data'],
-        });
-      }
+      // 注意：不在这里发送 read action，批量替换完成后会发送一个汇总的 update action
 
       // 收集所有匹配的段落
       const allResults: Map<string, ParagraphSearchResult> = new Map();
@@ -1727,8 +1709,7 @@ export const paragraphTools: ToolDefinition[] = [
             message: '未找到指定的章节',
             replaced_count: 0,
             keywords: validKeywords.length > 0 ? validKeywords : undefined,
-            original_keywords:
-              validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+            original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
           });
         }
       }
@@ -1743,8 +1724,7 @@ export const paragraphTools: ToolDefinition[] = [
           message: '书籍没有卷',
           replaced_count: 0,
           keywords: validKeywords.length > 0 ? validKeywords : undefined,
-          original_keywords:
-            validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+          original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
         });
       }
 
@@ -1801,8 +1781,7 @@ export const paragraphTools: ToolDefinition[] = [
           message: '书籍没有卷',
           replaced_count: 0,
           keywords: validKeywords.length > 0 ? validKeywords : undefined,
-          original_keywords:
-            validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+          original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
         });
       }
 
@@ -1915,8 +1894,7 @@ export const paragraphTools: ToolDefinition[] = [
           message: '未找到匹配的段落',
           replaced_count: 0,
           keywords: validKeywords.length > 0 ? validKeywords : undefined,
-          original_keywords:
-            validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+          original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
         });
       }
 
@@ -1924,7 +1902,7 @@ export const paragraphTools: ToolDefinition[] = [
       const replacedParagraphs: Array<{
         paragraph_id: string;
         chapter_id: string;
-        old_translations: Array<{ translation_id: string; translation: string }>;
+        old_translations: Translation[];
         new_translation: string;
       }> = [];
 
@@ -1935,11 +1913,12 @@ export const paragraphTools: ToolDefinition[] = [
           continue;
         }
 
-        const oldTranslations: Array<{ translation_id: string; translation: string }> = [];
+        // 保存完整的翻译对象以便恢复（包括 id, translation, aiModelId）
+        const oldTranslations: Translation[] = [];
 
         // 找到匹配的关键词（用于替换）
         let matchedKeyword: string | null = null;
-        
+
         // 如果提供了翻译关键词，找到匹配的关键词
         if (validKeywords.length > 0) {
           for (const translation of paragraph.translations) {
@@ -1952,7 +1931,7 @@ export const paragraphTools: ToolDefinition[] = [
             if (matchedKeyword) break;
           }
         }
-        
+
         // 如果没有找到匹配的翻译关键词，但提供了原文关键词，使用原文关键词
         // 注意：这种情况下，我们假设原文关键词对应的翻译部分就是整个翻译文本
         // 但实际上更合理的做法是只替换匹配的部分，但由于无法精确对应，我们使用替换文本
@@ -1966,24 +1945,32 @@ export const paragraphTools: ToolDefinition[] = [
         // 执行替换的函数
         const performReplacement = (translation: Translation) => {
           const oldTranslation = translation.translation || '';
-          
+
           if (matchedKeyword) {
             // 替换匹配的关键词部分
-            translation.translation = normalizeTranslationQuotes(
-              replaceWholeKeyword(oldTranslation, matchedKeyword, replacement_text.trim()),
+            translation.translation = replaceWholeKeyword(
+              oldTranslation,
+              matchedKeyword,
+              replacement_text.trim(),
             );
           } else {
             // 如果没有匹配的关键词（只有原文关键词），替换整个翻译
-            translation.translation = normalizeTranslationQuotes(replacement_text.trim());
+            translation.translation = replacement_text.trim();
           }
         };
 
         if (replace_all_translations) {
           // 替换所有翻译版本
           for (const translation of paragraph.translations) {
+            // 检查 translation 对象是否有效
+            if (!translation || !translation.id) {
+              continue;
+            }
+            // 保存完整的翻译对象（深拷贝）
             oldTranslations.push({
-              translation_id: translation.id,
-              translation: translation.translation,
+              id: translation.id,
+              translation: translation.translation || '',
+              aiModelId: translation.aiModelId || '',
             });
             performReplacement(translation);
           }
@@ -1993,20 +1980,24 @@ export const paragraphTools: ToolDefinition[] = [
             const selectedTranslation = paragraph.translations.find(
               (t) => t.id === paragraph.selectedTranslationId,
             );
-            if (selectedTranslation) {
+            if (selectedTranslation && selectedTranslation.id) {
+              // 保存完整的翻译对象（深拷贝）
               oldTranslations.push({
-                translation_id: selectedTranslation.id,
-                translation: selectedTranslation.translation,
+                id: selectedTranslation.id,
+                translation: selectedTranslation.translation || '',
+                aiModelId: selectedTranslation.aiModelId || '',
               });
               performReplacement(selectedTranslation);
             }
           } else {
             // 如果没有选中的翻译，替换第一个翻译
             const firstTranslation = paragraph.translations[0];
-            if (firstTranslation) {
+            if (firstTranslation && firstTranslation.id) {
+              // 保存完整的翻译对象（深拷贝）
               oldTranslations.push({
-                translation_id: firstTranslation.id,
-                translation: firstTranslation.translation,
+                id: firstTranslation.id,
+                translation: firstTranslation.translation || '',
+                aiModelId: firstTranslation.aiModelId || '',
               });
               performReplacement(firstTranslation);
               // 同时设置为选中
@@ -2022,42 +2013,51 @@ export const paragraphTools: ToolDefinition[] = [
             old_translations: oldTranslations,
             new_translation: replacement_text.trim(),
           });
-
-          // 报告更新操作
-          if (onAction) {
-            for (const oldTrans of oldTranslations) {
-              onAction({
-                type: 'update',
-                entity: 'translation',
-                data: {
-                  paragraph_id: paragraph.id,
-                  translation_id: oldTrans.translation_id,
-                  old_translation: oldTrans.translation,
-                  new_translation: replacement_text.trim(),
-                },
-                previousData: {
-                  id: oldTrans.translation_id,
-                  translation: oldTrans.translation,
-                  aiModelId:
-                    paragraph.translations.find((t) => t.id === oldTrans.translation_id)
-                      ?.aiModelId || '',
-                },
-              });
-            }
-          }
         }
       }
 
       // 更新书籍（保存更改）
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
+      // 报告批量替换操作（单个汇总 action，而不是每个替换一个）
+      if (onAction && replacedParagraphs.length > 0) {
+        // 计算总替换数量（包括所有翻译版本）
+        const totalTranslationCount = replacedParagraphs.reduce(
+          (sum, p) => sum + p.old_translations.length,
+          0,
+        );
+
+        onAction({
+          type: 'update',
+          entity: 'translation',
+          data: {
+            tool_name: 'batch_replace_translations',
+            replaced_paragraph_count: replacedParagraphs.length,
+            replaced_translation_count: totalTranslationCount,
+            ...(validKeywords.length > 0 ? { keywords: validKeywords } : {}),
+            ...(validOriginalKeywords.length > 0
+              ? { original_keywords: validOriginalKeywords }
+              : {}),
+            replacement_text: replacement_text.trim(),
+            replace_all_translations,
+          },
+          // 保存所有被替换的翻译数据以便恢复
+          previousData: {
+            replaced_paragraphs: replacedParagraphs.map((p) => ({
+              paragraph_id: p.paragraph_id,
+              chapter_id: p.chapter_id,
+              old_translations: p.old_translations,
+            })),
+          },
+        });
+      }
+
       return JSON.stringify({
         success: true,
         message: `成功替换 ${replacedParagraphs.length} 个段落的翻译`,
         replaced_count: replacedParagraphs.length,
         keywords: validKeywords.length > 0 ? validKeywords : undefined,
-        original_keywords:
-          validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
+        original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
         replacement_text: replacement_text.trim(),
         replace_all_translations,
         replaced_paragraphs: replacedParagraphs.map((p) => ({

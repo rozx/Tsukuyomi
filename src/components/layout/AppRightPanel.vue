@@ -28,7 +28,15 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { MemoryService } from 'src/services/memory-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
+import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
+import {
+  createMessageActionFromActionInfo,
+  getActionDetails,
+  ACTION_LABELS,
+  ENTITY_LABELS,
+  type ActionDetailsContext,
+} from 'src/utils/action-info-utils';
 import co from 'co';
 
 const ui = useUiStore();
@@ -736,26 +744,6 @@ const sendMessage = async () => {
         scrollToBottom();
 
         // 显示操作通知
-        const actionLabels: Record<ActionInfo['type'], string> = {
-          create: '创建',
-          update: '更新',
-          delete: '删除',
-          web_search: '网络搜索',
-          web_fetch: '网页获取',
-          read: '读取',
-          navigate: '导航',
-        };
-        const entityLabels: Record<ActionInfo['entity'], string> = {
-          term: '术语',
-          character: '角色',
-          web: '网络',
-          translation: '翻译',
-          chapter: '章节',
-          paragraph: '段落',
-          book: '书籍',
-          memory: '记忆',
-          todo: '待办事项',
-        };
 
         // 处理网络搜索和网页获取操作（不显示 toast 通知）
         if (action.type === 'web_search') {
@@ -826,15 +814,6 @@ const sendMessage = async () => {
               details.push(`别名：${character.aliases.length} 个`);
             }
 
-            // 出现次数
-            if (character.occurrences && character.occurrences.length > 0) {
-              const totalOccurrences = character.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -852,7 +831,7 @@ const sendMessage = async () => {
               shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
                 detail,
                 life: 3000,
                 onRevert: async () => {
@@ -887,12 +866,6 @@ const sendMessage = async () => {
               details.push(`描述：${term.description}`);
             }
 
-            // 出现次数
-            if (term.occurrences && term.occurrences.length > 0) {
-              const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -910,7 +883,7 @@ const sendMessage = async () => {
               shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
                 detail,
                 life: 3000,
                 onRevert: async () => {
@@ -925,7 +898,7 @@ const sendMessage = async () => {
             }
           } else {
             // 默认创建消息
-            detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
+            detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
           }
         } else if (
           action.type === 'update' &&
@@ -969,12 +942,6 @@ const sendMessage = async () => {
             details.push(`别名：${character.aliases.length} 个`);
           }
 
-          // 出现次数
-          if (character.occurrences && character.occurrences.length > 0) {
-            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push(`出现：${totalOccurrences} 次`);
-          }
-
           // 组合消息
           const mainInfo = parts.join(' | ');
           if (mainInfo && details.length > 0) {
@@ -994,7 +961,7 @@ const sendMessage = async () => {
             shouldShowRevertToast = true;
             toast.add({
               severity: 'success',
-              summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+              summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
               detail,
               life: 3000,
               onRevert: async () => {
@@ -1049,12 +1016,6 @@ const sendMessage = async () => {
             details.push(`描述：${term.description}`);
           }
 
-          // 出现次数
-          if (term.occurrences && term.occurrences.length > 0) {
-            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push(`出现：${totalOccurrences} 次`);
-          }
-
           // 组合消息
           const mainInfo = parts.join(' | ');
           if (mainInfo && details.length > 0) {
@@ -1074,7 +1035,7 @@ const sendMessage = async () => {
             shouldShowRevertToast = true;
             toast.add({
               severity: 'success',
-              summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+              summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
               detail,
               life: 3000,
               onRevert: async () => {
@@ -1095,6 +1056,123 @@ const sendMessage = async () => {
             });
           }
         } else if (action.type === 'update' && action.entity === 'translation') {
+          // 检查是否是批量替换操作
+          if (
+            'tool_name' in action.data &&
+            action.data.tool_name === 'batch_replace_translations'
+          ) {
+            // 批量替换操作：显示汇总信息
+            const batchData = action.data as {
+              tool_name: string;
+              replaced_paragraph_count: number;
+              replaced_translation_count: number;
+              keywords?: string[];
+              original_keywords?: string[];
+              replacement_text: string;
+              replace_all_translations: boolean;
+            };
+
+            const keywordParts: string[] = [];
+            if (batchData.keywords && batchData.keywords.length > 0) {
+              keywordParts.push(`翻译关键词: ${batchData.keywords.join(', ')}`);
+            }
+            if (batchData.original_keywords && batchData.original_keywords.length > 0) {
+              keywordParts.push(`原文关键词: ${batchData.original_keywords.join(', ')}`);
+            }
+
+            const keywordInfo = keywordParts.length > 0 ? ` | ${keywordParts.join(' | ')}` : '';
+            const replacementPreview =
+              batchData.replacement_text.length > 30
+                ? batchData.replacement_text.substring(0, 30) + '...'
+                : batchData.replacement_text;
+
+            detail = `已批量替换 ${batchData.replaced_paragraph_count} 个段落（共 ${batchData.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
+
+            // 获取 previousData 中的替换数据以便恢复
+            const previousData = action.previousData as
+              | {
+                  replaced_paragraphs: Array<{
+                    paragraph_id: string;
+                    chapter_id: string;
+                    old_translations: Array<{
+                      id: string;
+                      translation: string;
+                      aiModelId: string;
+                    }>;
+                  }>;
+                }
+              | undefined;
+
+            // 添加 revert 功能
+            if (
+              previousData &&
+              previousData.replaced_paragraphs &&
+              contextStore.getContext.currentBookId
+            ) {
+              toast.add({
+                severity: 'success',
+                summary: '批量替换翻译',
+                detail,
+                life: 5000,
+                onRevert: async () => {
+                  if (
+                    previousData &&
+                    previousData.replaced_paragraphs &&
+                    contextStore.getContext.currentBookId
+                  ) {
+                    const bookId = contextStore.getContext.currentBookId;
+                    const booksStore = useBooksStore();
+                    const book = booksStore.getBookById(bookId);
+                    if (!book) return;
+
+                    // 恢复所有被替换的翻译
+                    for (const replacedParagraph of previousData.replaced_paragraphs) {
+                      // 查找段落位置
+                      const location = ChapterService.findParagraphLocation(
+                        book,
+                        replacedParagraph.paragraph_id,
+                      );
+                      if (!location) continue;
+
+                      const { paragraph } = location;
+
+                      // 确保段落有翻译数组
+                      if (!paragraph.translations || paragraph.translations.length === 0) {
+                        continue;
+                      }
+
+                      // 恢复每个翻译
+                      for (const oldTranslation of replacedParagraph.old_translations) {
+                        const translationIndex = paragraph.translations.findIndex(
+                          (t) => t.id === oldTranslation.id,
+                        );
+                        if (translationIndex !== -1 && paragraph.translations[translationIndex]) {
+                          // 恢复原始翻译文本
+                          paragraph.translations[translationIndex]!.translation =
+                            oldTranslation.translation;
+                        }
+                      }
+                    }
+
+                    // 更新书籍
+                    if (book.volumes) {
+                      await booksStore.updateBook(bookId, { volumes: book.volumes });
+                    }
+                  }
+                },
+              });
+            } else {
+              // 如果没有 previousData，仍然显示 toast（但不提供撤销）
+              toast.add({
+                severity: 'success',
+                summary: '批量替换翻译',
+                detail,
+                life: 5000,
+              });
+            }
+            return; // 批量替换操作已处理，不需要继续处理
+          }
+
           // 翻译更新操作：显示详细信息
           if (
             'paragraph_id' in action.data &&
@@ -1130,7 +1208,7 @@ const sendMessage = async () => {
               shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type as ActionInfo['type']]}${entityLabels[action.entity as ActionInfo['entity']]}`,
+                summary: `${ACTION_LABELS[action.type as ActionInfo['type']]}${ENTITY_LABELS[action.entity as ActionInfo['entity']]}`,
                 detail,
                 life: 3000,
                 onRevert: async () => {
@@ -1162,7 +1240,9 @@ const sendMessage = async () => {
                     }
 
                     // 更新书籍
-                    await booksStore.updateBook(bookId, { volumes: book.volumes });
+                    if (book.volumes) {
+                      await booksStore.updateBook(bookId, { volumes: book.volumes });
+                    }
                   }
                 },
               });
@@ -1170,7 +1250,7 @@ const sendMessage = async () => {
               // 如果没有 previousData，仍然显示 toast（但不提供撤销）
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type as ActionInfo['type']]}${entityLabels[action.entity as ActionInfo['entity']]}`,
+                summary: `${ACTION_LABELS[action.type as ActionInfo['type']]}${ENTITY_LABELS[action.entity as ActionInfo['entity']]}`,
                 detail,
                 life: 3000,
               });
@@ -1215,15 +1295,6 @@ const sendMessage = async () => {
               details.push(`别名：${previousCharacter.aliases.length} 个`);
             }
 
-            // 出现次数
-            if (previousCharacter.occurrences && previousCharacter.occurrences.length > 0) {
-              const totalOccurrences = previousCharacter.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -1241,7 +1312,7 @@ const sendMessage = async () => {
               shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
                 detail,
                 life: 3000,
                 onRevert: async () => {
@@ -1284,15 +1355,6 @@ const sendMessage = async () => {
               details.push(`描述：${previousTerm.description}`);
             }
 
-            // 出现次数
-            if (previousTerm.occurrences && previousTerm.occurrences.length > 0) {
-              const totalOccurrences = previousTerm.occurrences.reduce(
-                (sum, occ) => sum + occ.count,
-                0,
-              );
-              details.push(`出现：${totalOccurrences} 次`);
-            }
-
             // 组合消息
             const mainInfo = parts.join(' | ');
             if (mainInfo && details.length > 0) {
@@ -1310,7 +1372,7 @@ const sendMessage = async () => {
               shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
-                summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+                summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
                 detail,
                 life: 3000,
                 onRevert: async () => {
@@ -1333,21 +1395,21 @@ const sendMessage = async () => {
             }
           } else {
             // 默认删除消息
-            detail = `${entityLabels[action.entity]} "${action.data.name}" 已${actionLabels[action.type]}`;
+            detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
           }
         } else if (action.entity === 'memory') {
           // Memory 操作：不显示 toast（根据需求）
           // 只记录到 action info，不显示 toast 消息
         } else {
           // 默认消息
-          detail = `${entityLabels[action.entity]}已${actionLabels[action.type]}`;
+          detail = `${ENTITY_LABELS[action.entity]}已${ACTION_LABELS[action.type]}`;
         }
 
         // 如果没有显示带 revert 的 toast，且不是 memory 操作，显示通用 toast
         if (!shouldShowRevertToast && action.entity !== 'memory') {
           toast.add({
             severity: 'success',
-            summary: `${actionLabels[action.type]}${entityLabels[action.entity]}`,
+            summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
             detail,
             life: 3000,
           });
@@ -1860,6 +1922,20 @@ const createNewSession = async () => {
   messages.value = [];
 };
 
+// 获取章节标题的辅助函数（用于 action 显示）
+const getChapterTitleForAction = (chapterId: string | undefined): string | undefined => {
+  if (!chapterId) return undefined;
+  const currentBookId = contextStore.getContext.currentBookId;
+  if (!currentBookId) return undefined;
+  const book = booksStore.getBookById(currentBookId);
+  if (!book) return undefined;
+  const chapterResult = ChapterService.findChapterById(book, chapterId);
+  if (chapterResult && chapterResult.chapter) {
+    return getChapterDisplayTitle(chapterResult.chapter);
+  }
+  return undefined;
+};
+
 // 加载当前会话的消息
 const loadCurrentSession = async () => {
   isUpdatingFromStore = true; // 标记正在从 store 更新
@@ -1984,373 +2060,13 @@ watch(
 );
 
 // 获取操作详细信息（用于 popover）
-/**
- * 将 ActionInfo 转换为 MessageAction
- * 统一处理所有操作类型的字段映射
- */
-const createMessageActionFromActionInfo = (action: ActionInfo): MessageAction => {
-  const actionName = 'name' in action.data ? action.data.name : undefined;
-  return {
-    type: action.type,
-    entity: action.entity,
-    ...(actionName ? { name: actionName } : {}),
-    timestamp: Date.now(),
-    // 网络操作相关信息
-    ...(action.type === 'web_search' && 'query' in action.data
-      ? { query: action.data.query }
-      : {}),
-    ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
-    // 翻译操作相关信息
-    ...(action.entity === 'translation' &&
-    'paragraph_id' in action.data &&
-    'translation_id' in action.data
-      ? {
-          paragraph_id: action.data.paragraph_id,
-          translation_id: action.data.translation_id,
-        }
-      : {}),
-    // 读取操作相关信息
-    ...(action.type === 'read' && 'chapter_id' in action.data
-      ? { chapter_id: action.data.chapter_id }
-      : {}),
-    ...(action.type === 'read' && 'chapter_title' in action.data
-      ? { chapter_title: action.data.chapter_title }
-      : {}),
-    ...(action.type === 'read' && 'paragraph_id' in action.data
-      ? { paragraph_id: action.data.paragraph_id }
-      : {}),
-    ...(action.type === 'read' && 'character_name' in action.data
-      ? { character_name: action.data.character_name }
-      : {}),
-    ...(action.type === 'read' && 'tool_name' in action.data
-      ? { tool_name: action.data.tool_name }
-      : {}),
-    ...(action.type === 'read' && 'keywords' in action.data
-      ? { keywords: action.data.keywords }
-      : {}),
-    ...(action.type === 'read' && 'regex_pattern' in action.data
-      ? { regex_pattern: action.data.regex_pattern }
-      : {}),
-    // Memory 相关信息
-    ...(action.entity === 'memory' && 'memory_id' in action.data
-      ? { memory_id: action.data.memory_id }
-      : {}),
-    ...(action.entity === 'memory' && 'keyword' in action.data
-      ? { keyword: action.data.keyword }
-      : {}),
-    ...(action.entity === 'memory' && 'summary' in action.data
-      ? { name: action.data.summary }
-      : {}),
-    // 待办事项操作相关信息
-    ...(action.entity === 'todo' && 'text' in action.data
-      ? { name: (action.data as TodoItem).text }
-      : {}),
-    // 导航操作相关信息
-    ...(action.type === 'navigate' && 'book_id' in action.data
-      ? { book_id: action.data.book_id }
-      : {}),
-    ...(action.type === 'navigate' && 'chapter_id' in action.data
-      ? { chapter_id: action.data.chapter_id }
-      : {}),
-    ...(action.type === 'navigate' && 'chapter_title' in action.data
-      ? { chapter_title: action.data.chapter_title }
-      : {}),
-    ...(action.type === 'navigate' && 'paragraph_id' in action.data
-      ? { paragraph_id: action.data.paragraph_id }
-      : {}),
+// 使用工具函数，传入上下文
+const getActionDetailsWithContext = (action: MessageAction) => {
+  const context: ActionDetailsContext = {
+    getBookById: (bookId: string) => booksStore.getBookById(bookId),
+    getCurrentBookId: () => contextStore.getContext.currentBookId,
   };
-};
-
-const getActionDetails = (action: MessageAction) => {
-  const actionLabels: Record<MessageAction['type'], string> = {
-    create: '创建',
-    update: '更新',
-    delete: '删除',
-    web_search: '网络搜索',
-    web_fetch: '网页获取',
-    read: '读取',
-    navigate: '导航',
-  };
-  const entityLabels: Record<MessageAction['entity'], string> = {
-    term: '术语',
-    character: '角色',
-    web: '网络',
-    translation: '翻译',
-    chapter: '章节',
-    paragraph: '段落',
-    book: '书籍',
-    memory: '记忆',
-    todo: '待办事项',
-  };
-
-  const details: {
-    label: string;
-    value: string;
-  }[] = [
-    {
-      label: '操作类型',
-      value: actionLabels[action.type],
-    },
-    {
-      label: '实体类型',
-      value: entityLabels[action.entity],
-    },
-  ];
-
-  if (action.name) {
-    details.push({
-      label: '名称',
-      value: action.name,
-    });
-  }
-
-  // 尝试从当前书籍获取详细信息
-  const currentBookId = contextStore.getContext.currentBookId;
-  if (currentBookId && action.name) {
-    const book = booksStore.getBookById(currentBookId);
-    if (book) {
-      if (action.entity === 'term') {
-        const term = book.terminologies?.find((t) => t.name === action.name);
-        if (term) {
-          if (term.translation?.translation) {
-            details.push({
-              label: '翻译',
-              value: term.translation.translation,
-            });
-          }
-          if (term.description) {
-            details.push({
-              label: '描述',
-              value: term.description,
-            });
-          }
-          if (term.occurrences && term.occurrences.length > 0) {
-            const totalOccurrences = term.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push({
-              label: '出现次数',
-              value: `${totalOccurrences} 次`,
-            });
-          }
-        }
-      } else if (action.entity === 'character') {
-        const character = book.characterSettings?.find((c) => c.name === action.name);
-        if (character) {
-          if (character.translation?.translation) {
-            details.push({
-              label: '翻译',
-              value: character.translation.translation,
-            });
-          }
-          if (character.sex) {
-            const sexLabels: Record<string, string> = {
-              male: '男',
-              female: '女',
-              other: '其他',
-            };
-            details.push({
-              label: '性别',
-              value: sexLabels[character.sex] || character.sex,
-            });
-          }
-          if (character.description) {
-            details.push({
-              label: '描述',
-              value: character.description,
-            });
-          }
-          if (character.speakingStyle) {
-            details.push({
-              label: '说话口吻',
-              value: character.speakingStyle,
-            });
-          }
-          if (character.aliases && character.aliases.length > 0) {
-            details.push({
-              label: '别名',
-              value: character.aliases.map((a) => a.name).join('、'),
-            });
-          }
-          if (character.occurrences && character.occurrences.length > 0) {
-            const totalOccurrences = character.occurrences.reduce((sum, occ) => sum + occ.count, 0);
-            details.push({
-              label: '出现次数',
-              value: `${totalOccurrences} 次`,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  // 处理网络搜索操作
-  if (action.type === 'web_search' && action.entity === 'web') {
-    if (action.query) {
-      details.push({
-        label: '搜索查询',
-        value: action.query,
-      });
-    }
-  }
-
-  // 处理网页获取操作
-  if (action.type === 'web_fetch' && action.entity === 'web') {
-    if (action.url) {
-      details.push({
-        label: '网页 URL',
-        value: action.url,
-      });
-    }
-  }
-
-  // 处理待办事项操作
-  if (action.entity === 'todo') {
-    if (action.name) {
-      details.push({
-        label: '内容',
-        value: action.name,
-      });
-    }
-  }
-
-  // 处理翻译操作
-  if (action.entity === 'translation') {
-    if (action.paragraph_id) {
-      details.push({
-        label: '段落 ID',
-        value: action.paragraph_id,
-      });
-    }
-    if (action.translation_id) {
-      details.push({
-        label: '翻译 ID',
-        value: action.translation_id,
-      });
-    }
-  }
-
-  // 处理 Memory 操作
-  if (action.entity === 'memory') {
-    if (action.memory_id) {
-      details.push({
-        label: 'Memory ID',
-        value: action.memory_id,
-      });
-    }
-    if (action.keyword) {
-      details.push({
-        label: '搜索关键词',
-        value: action.keyword,
-      });
-    }
-    if (action.name) {
-      details.push({
-        label: '摘要',
-        value: action.name,
-      });
-    }
-  }
-
-  // 处理读取操作
-  if (action.type === 'read') {
-    if (action.tool_name) {
-      details.push({
-        label: '工具',
-        value: action.tool_name,
-      });
-    }
-    if (action.keywords && action.keywords.length > 0) {
-      details.push({
-        label: '关键词',
-        value: action.keywords.join('、'),
-      });
-    }
-    if (action.regex_pattern) {
-      details.push({
-        label: '正则表达式',
-        value: action.regex_pattern,
-      });
-    }
-    if (action.chapter_id) {
-      details.push({
-        label: '章节 ID',
-        value: action.chapter_id,
-      });
-    }
-    if (action.chapter_title) {
-      details.push({
-        label: '章节标题',
-        value: action.chapter_title,
-      });
-    }
-    if (action.paragraph_id) {
-      details.push({
-        label: '段落 ID',
-        value: action.paragraph_id,
-      });
-    }
-    if (action.character_name) {
-      details.push({
-        label: '角色名称',
-        value: action.character_name,
-      });
-    }
-    if (action.name) {
-      details.push({
-        label: '名称',
-        value: action.name,
-      });
-    }
-  }
-
-  // 处理导航操作
-  if (action.type === 'navigate') {
-    if (action.book_id) {
-      const book = booksStore.getBookById(action.book_id);
-      if (book) {
-        details.push({
-          label: '书籍',
-          value: book.title,
-        });
-      } else {
-        details.push({
-          label: '书籍 ID',
-          value: action.book_id,
-        });
-      }
-    }
-    if (action.chapter_id) {
-      details.push({
-        label: '章节 ID',
-        value: action.chapter_id,
-      });
-    }
-    if (action.chapter_title) {
-      details.push({
-        label: '章节标题',
-        value: action.chapter_title,
-      });
-    }
-    if (action.paragraph_id) {
-      details.push({
-        label: '段落 ID',
-        value: action.paragraph_id,
-      });
-    }
-  }
-
-  details.push({
-    label: '操作时间',
-    value: new Date(action.timestamp).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }),
-  });
-
-  return details;
+  return getActionDetails(action, context);
 };
 
 // 切换操作详情 Popover
@@ -2745,9 +2461,42 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                             ? '待办事项'
                                             : ''
                         }}
-                        <span v-if="item.action.name" class="font-semibold"
-                          >"{{ item.action.name }}"</span
+                        <span
+                          v-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'get_term' &&
+                            item.action.name
+                          "
+                          class="font-semibold text-xs"
                         >
+                          "{{ item.action.name }}"
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'get_paragraph_info' &&
+                            item.action.chapter_title
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.chapter_title }}"
+                          <span v-if="item.action.paragraph_id" class="opacity-70 ml-1"
+                            >段落 ({{ item.action.paragraph_id.substring(0, 8) }})</span
+                          >
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            (item.action.tool_name === 'get_previous_paragraphs' ||
+                              item.action.tool_name === 'get_next_paragraphs') &&
+                            item.action.paragraph_id
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          {{
+                            item.action.tool_name === 'get_previous_paragraphs' ? '前' : '后'
+                          }}段落 ({{ item.action.paragraph_id.substring(0, 8) }})
+                        </span>
                         <span v-else-if="item.action.query" class="font-semibold"
                           >"{{ item.action.query }}"</span
                         >
@@ -2756,11 +2505,67 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         }}</span>
                         <span
                           v-else-if="
+                            item.action.entity === 'translation' &&
+                            item.action.tool_name === 'batch_replace_translations'
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          批量替换 {{ item.action.replaced_paragraph_count || 0 }} 个段落（共
+                          {{ item.action.replaced_translation_count || 0 }} 个翻译版本）
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.entity === 'translation' &&
+                            item.action.paragraph_id &&
+                            item.action.old_translation &&
+                            item.action.new_translation
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          段落翻译更新
+                          <span v-if="item.action.paragraph_id" class="opacity-70 ml-1"
+                            >({{ item.action.paragraph_id.substring(0, 8) }})</span
+                          >
+                          <span class="opacity-70 ml-1">
+                            | {{ item.action.old_translation.substring(0, 20)
+                            }}{{ item.action.old_translation.length > 20 ? '...' : '' }} →
+                            {{ item.action.new_translation.substring(0, 20)
+                            }}{{ item.action.new_translation.length > 20 ? '...' : '' }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
                             item.action.entity === 'translation' && item.action.paragraph_id
                           "
                           class="font-semibold text-xs"
                         >
                           段落翻译
+                          <span v-if="item.action.paragraph_id" class="opacity-70 ml-1"
+                            >({{ item.action.paragraph_id.substring(0, 8) }})</span
+                          >
+                        </span>
+                        <span v-else-if="item.action.name" class="font-semibold"
+                          >"{{ item.action.name }}"</span
+                        >
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'get_book_info' &&
+                            item.action.book_id
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          书籍信息
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'get_memory' &&
+                            item.action.memory_id
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          Memory ({{ item.action.memory_id.substring(0, 8) }})
                         </span>
                         <span
                           v-else-if="item.action.type === 'read' && item.action.chapter_title"
@@ -2773,6 +2578,130 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           class="font-semibold text-xs"
                         >
                           "{{ item.action.character_name }}"
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'find_paragraph_by_keywords'
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          关键词搜索
+                          <span
+                            v-if="item.action.keywords && item.action.keywords.length > 0"
+                            class="opacity-70 ml-1"
+                          >
+                            原文: {{ item.action.keywords.join('、') }}
+                          </span>
+                          <span
+                            v-if="
+                              item.action.translation_keywords &&
+                              item.action.translation_keywords.length > 0
+                            "
+                            class="opacity-70 ml-1"
+                          >
+                            翻译: {{ item.action.translation_keywords.join('、') }}
+                          </span>
+                          <span v-if="item.action.chapter_id" class="opacity-70 ml-1">
+                            | 章节:
+                            {{
+                              getChapterTitleForAction(item.action.chapter_id) ||
+                              item.action.chapter_id.substring(0, 8)
+                            }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.tool_name === 'search_paragraphs_by_regex' &&
+                            item.action.regex_pattern
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          正则:
+                          {{
+                            item.action.regex_pattern.length > 30
+                              ? item.action.regex_pattern.substring(0, 30) + '...'
+                              : item.action.regex_pattern
+                          }}
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.entity === 'term' &&
+                            item.action.tool_name === 'get_occurrences_by_keywords' &&
+                            item.action.keywords &&
+                            item.action.keywords.length > 0
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          关键词: {{ item.action.keywords.join('、') }}
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.entity === 'character' &&
+                            item.action.tool_name === 'search_characters_by_keywords' &&
+                            item.action.keywords &&
+                            item.action.keywords.length > 0
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          搜索角色
+                          <span class="opacity-70 ml-1">
+                            关键词: {{ item.action.keywords.join('、') }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.entity === 'term' &&
+                            item.action.tool_name === 'search_terms_by_keywords' &&
+                            item.action.keywords &&
+                            item.action.keywords.length > 0
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          搜索术语
+                          <span class="opacity-70 ml-1">
+                            关键词: {{ item.action.keywords.join('、') }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.entity === 'memory' &&
+                            item.action.tool_name === 'search_memory_by_keywords' &&
+                            item.action.keywords &&
+                            item.action.keywords.length > 0
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          搜索记忆
+                          <span class="opacity-70 ml-1">
+                            关键词: {{ item.action.keywords.join('、') }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'read' &&
+                            item.action.keywords &&
+                            item.action.keywords.length > 0
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          关键词: {{ item.action.keywords.join('、') }}
+                        </span>
+                        <span
+                          v-else-if="item.action.type === 'read' && item.action.regex_pattern"
+                          class="font-semibold text-xs"
+                        >
+                          正则:
+                          {{
+                            item.action.regex_pattern.length > 30
+                              ? item.action.regex_pattern.substring(0, 30) + '...'
+                              : item.action.regex_pattern
+                          }}
                         </span>
                         <span
                           v-else-if="item.action.type === 'read' && item.action.tool_name"
@@ -2793,16 +2722,39 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           搜索: "{{ item.action.keyword }}"
                         </span>
                         <span
+                          v-else-if="
+                            item.action.type === 'update' &&
+                            item.action.entity === 'chapter' &&
+                            item.action.tool_name === 'update_chapter_title' &&
+                            item.action.old_title &&
+                            item.action.new_title
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.old_title }}" → "{{ item.action.new_title }}"
+                        </span>
+                        <span
+                          v-else-if="
+                            item.action.type === 'update' &&
+                            item.action.entity === 'chapter' &&
+                            item.action.new_title
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          "{{ item.action.new_title }}"
+                        </span>
+                        <span
                           v-else-if="item.action.type === 'navigate' && item.action.chapter_title"
                           class="font-semibold text-xs"
                         >
                           "{{ item.action.chapter_title }}"
+                          <span v-if="item.action.paragraph_id" class="opacity-70 ml-1">段落</span>
                         </span>
                         <span
                           v-else-if="item.action.type === 'navigate' && item.action.paragraph_id"
                           class="font-semibold text-xs"
                         >
-                          段落
+                          段落 ({{ item.action.paragraph_id.substring(0, 8) }})
                         </span>
                       </span>
                     </div>
@@ -2878,7 +2830,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         </div>
                         <div class="popover-details">
                           <div
-                            v-for="(detail, detailIdx) in getActionDetails(item.action)"
+                            v-for="(detail, detailIdx) in getActionDetailsWithContext(item.action)"
                             :key="detailIdx"
                             class="popover-detail-item"
                           >

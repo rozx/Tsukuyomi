@@ -52,6 +52,7 @@ RUN bunx puppeteer browsers install chrome
 COPY . .
 
 # 构建前端应用
+ENV NODE_ENV=production
 RUN bun run build:spa
 
 # 生产阶段
