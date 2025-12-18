@@ -1109,7 +1109,6 @@ const sendMessage = async () => {
               previousData.replaced_paragraphs &&
               contextStore.getContext.currentBookId
             ) {
-              shouldShowRevertToast = true;
               toast.add({
                 severity: 'success',
                 summary: '批量替换翻译',
