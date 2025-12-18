@@ -466,9 +466,9 @@ export const paragraphTools: ToolDefinition[] = [
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId && validResults.length > 0) {
         // 从第一个段落中提取关键词
-        const firstParagraph = validResults[0].paragraph;
-        if (firstParagraph.text) {
-          const keywords = extractKeywordsFromParagraph(firstParagraph.text, 20);
+        const firstResult = validResults[0];
+        if (firstResult?.paragraph?.text) {
+          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
           if (keywords.length > 0) {
             relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
           }
@@ -569,9 +569,9 @@ export const paragraphTools: ToolDefinition[] = [
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId && validResults.length > 0) {
         // 从第一个段落中提取关键词
-        const firstParagraph = validResults[0].paragraph;
-        if (firstParagraph.text) {
-          const keywords = extractKeywordsFromParagraph(firstParagraph.text, 20);
+        const firstResult = validResults[0];
+        if (firstResult?.paragraph?.text) {
+          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
           if (keywords.length > 0) {
             relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
           }
