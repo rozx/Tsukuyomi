@@ -35,7 +35,7 @@ export function getTodosSystemPrompt(taskId: string, sessionId?: string): string
   prompt += '- **创建待办**：使用 `create_todo` 工具创建新的待办事项来规划任务\n';
   prompt +=
     '- **查看待办**：使用 `list_todos` 工具查看所有待办事项（支持过滤：all/active/completed）\n';
-  prompt += '- **更新待办**：使用 `update_todo` 工具更新待办事项的内容或状态\n';
+  prompt += '- **更新待办**：使用 `update_todos` 工具更新待办事项的内容或状态（支持单个或批量更新）\n';
   prompt += '- **标记完成**：当你完成了一个待办事项时，使用 `mark_todo_done` 工具将其标记为完成\n';
   prompt += '- **删除待办**：使用 `delete_todo` 工具删除不需要的待办事项\n';
   prompt += '\n**重要提示**：\n';

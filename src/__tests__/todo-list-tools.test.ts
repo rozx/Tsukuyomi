@@ -252,11 +252,11 @@ describe('TodoListTools', () => {
     });
   });
 
-  describe('update_todo', () => {
-    test('应该能够更新待办事项的文本', async () => {
+  describe('update_todos', () => {
+    test('应该能够更新待办事项的文本（单个更新）', async () => {
       const todo = TodoListService.createTodo('Original text', taskId);
 
-      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todo');
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
       const result = await tool!.handler({ id: todo.id, text: 'Updated text' }, context);
       const parsed = JSON.parse(result);
 
@@ -267,10 +267,10 @@ describe('TodoListTools', () => {
       expect(updated?.text).toBe('Updated text');
     });
 
-    test('应该能够更新待办事项的完成状态', async () => {
+    test('应该能够更新待办事项的完成状态（单个更新）', async () => {
       const todo = TodoListService.createTodo('Test todo', taskId);
 
-      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todo');
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
       const result = await tool!.handler({ id: todo.id, completed: true }, context);
       const parsed = JSON.parse(result);
 
@@ -279,6 +279,129 @@ describe('TodoListTools', () => {
 
       const updated = TodoListService.getTodoById(todo.id);
       expect(updated?.completed).toBe(true);
+    });
+
+    test('应该能够批量更新多个待办事项', async () => {
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      const todo3 = TodoListService.createTodo('Todo 3', taskId);
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
+      const result = await tool!.handler(
+        {
+          items: [
+            { id: todo1.id, text: 'Updated Todo 1' },
+            { id: todo2.id, completed: true },
+            { id: todo3.id, text: 'Updated Todo 3', completed: true },
+          ],
+        },
+        context,
+      );
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.todos).toBeDefined();
+      expect(parsed.todos).toHaveLength(3);
+      expect(parsed.count).toBe(3);
+      expect(parsed.message).toContain('成功更新 3 个待办事项');
+
+      // 验证更新结果
+      const updated1 = TodoListService.getTodoById(todo1.id);
+      expect(updated1?.text).toBe('Updated Todo 1');
+      expect(updated1?.completed).toBe(false);
+
+      const updated2 = TodoListService.getTodoById(todo2.id);
+      expect(updated2?.text).toBe('Todo 2');
+      expect(updated2?.completed).toBe(true);
+
+      const updated3 = TodoListService.getTodoById(todo3.id);
+      expect(updated3?.text).toBe('Updated Todo 3');
+      expect(updated3?.completed).toBe(true);
+    });
+
+    test('批量更新时应该为每个待办事项调用 onAction 回调', async () => {
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+
+      const actions: unknown[] = [];
+
+      const contextWithAction: ToolContext = {
+        ...context,
+        onAction: (action) => {
+          actions.push(action);
+        },
+      };
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
+      await tool!.handler(
+        {
+          items: [
+            { id: todo1.id, text: 'Updated Todo 1' },
+            { id: todo2.id, completed: true },
+          ],
+        },
+        contextWithAction,
+      );
+
+      expect(actions).toHaveLength(2);
+      actions.forEach((action) => {
+        expect((action as { type: string; entity: string }).type).toBe('update');
+        expect((action as { type: string; entity: string }).entity).toBe('todo');
+      });
+    });
+
+    test('批量更新时应该跳过无效项并继续更新其他项', async () => {
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
+      const result = await tool!.handler(
+        {
+          items: [
+            { id: todo1.id, text: 'Updated Todo 1' },
+            { id: 'non-existent-id', text: 'Should fail' },
+            { id: todo2.id, completed: true },
+          ],
+        },
+        context,
+      );
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.todos).toHaveLength(2); // 只更新了2个有效的待办事项
+      expect(parsed.count).toBe(2);
+      expect(parsed.errors).toBeDefined();
+      expect(parsed.errors.length).toBeGreaterThan(0);
+    });
+
+    test('批量更新时如果所有项都无效应该抛出错误', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
+
+      try {
+        await tool!.handler(
+          {
+            items: [
+              { id: 'non-existent-id-1', text: 'Should fail' },
+              { id: 'non-existent-id-2', completed: true },
+            ],
+          },
+          context,
+        );
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error instanceof Error && error.message).toContain('批量更新待办事项失败');
+      }
+    });
+
+    test('当既没有提供 id 也没有提供 items 时应该抛出错误', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
+
+      try {
+        await tool!.handler({}, context);
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error instanceof Error && error.message).toContain('必须提供 id 或 items 参数之一');
+      }
     });
   });
 

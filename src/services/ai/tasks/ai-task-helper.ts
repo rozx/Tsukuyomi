@@ -556,10 +556,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     // 检查是否有工具调用
     if (result.toolCalls && result.toolCalls.length > 0) {
       // 工具调用在所有状态阶段都允许
+      // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
       history.push({
         role: 'assistant',
         content: result.text || null,
         tool_calls: result.toolCalls,
+        reasoning_content: result.reasoningContent || null, // DeepSeek 要求此字段必须存在
       });
 
       // 执行工具

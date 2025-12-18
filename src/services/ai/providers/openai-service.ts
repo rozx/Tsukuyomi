@@ -188,9 +188,13 @@ export class OpenAIService extends BaseAIService {
                 function: tc.function,
               })),
             };
-            // 如果消息包含 reasoning_content，添加到请求中（DeepSeek 等模型需要）
-            if (msg.reasoning_content !== undefined && msg.reasoning_content !== null) {
+            // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
+            // 如果消息包含 reasoning_content，添加到请求中（即使为 null 也要包含）
+            if (msg.reasoning_content !== undefined) {
               (assistantMsg as any).reasoning_content = msg.reasoning_content;
+            } else {
+              // 如果未定义，设置为 null（DeepSeek 等模型需要此字段存在）
+              (assistantMsg as any).reasoning_content = null;
             }
             return assistantMsg;
           }

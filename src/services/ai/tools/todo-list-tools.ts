@@ -121,60 +121,138 @@ export const todoListTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'update_todo',
-        description: '更新待办事项的内容或状态。可以更新文本内容或标记完成状态。',
+        name: 'update_todos',
+        description:
+          '更新待办事项的内容或状态。可以更新单个待办事项（使用 id 参数）或多个待办事项（使用 items 参数）。可以更新文本内容或标记完成状态。',
         parameters: {
           type: 'object',
           properties: {
             id: {
               type: 'string',
-              description: '待办事项的 ID',
+              description: '单个待办事项的 ID（与 items 参数二选一）',
             },
             text: {
               type: 'string',
-              description: '新的待办事项内容（可选）',
+              description: '新的待办事项内容（可选，仅当使用 id 参数时有效）',
             },
             completed: {
               type: 'boolean',
-              description: '是否标记为完成（可选）',
+              description: '是否标记为完成（可选，仅当使用 id 参数时有效）',
+            },
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: {
+                    type: 'string',
+                    description: '待办事项的 ID',
+                  },
+                  text: {
+                    type: 'string',
+                    description: '新的待办事项内容（可选）',
+                  },
+                  completed: {
+                    type: 'boolean',
+                    description: '是否标记为完成（可选）',
+                  },
+                },
+                required: ['id'],
+              },
+              description: '多个待办事项的更新列表（与 id 参数二选一）。用于批量更新多个待办事项。',
             },
           },
-          required: ['id'],
         },
       },
     },
     handler: (args, { onAction }) => {
-      const { id, text, completed } = args;
-      if (!id) {
-        throw new Error('待办事项 ID 不能为空');
-      }
+      const { id, text, completed, items } = args;
 
-      const updates: { text?: string; completed?: boolean } = {};
-      if (text !== undefined) updates.text = text;
-      if (completed !== undefined) updates.completed = completed;
+      // 支持两种模式：单个更新（id）或批量更新（items）
+      // 优先检查 items 参数（如果提供了有效的数组）
+      if (items && Array.isArray(items) && items.length > 0) {
+        // 批量更新模式
+        const updatedTodos: TodoItem[] = [];
+        const errors: string[] = [];
 
-      const previousTodo = TodoListService.getTodoById(id);
-      const updatedTodo = TodoListService.updateTodo(id, updates);
+        for (const item of items) {
+          if (!item.id) {
+            errors.push('待办事项 ID 不能为空');
+            continue;
+          }
 
-      // 通过 onAction 回调传递操作信息（不需要 toast）
-      if (onAction) {
-        onAction({
-          type: 'update',
-          entity: 'todo',
-          data: updatedTodo,
-          ...(previousTodo ? { previousData: previousTodo } : {}),
+          try {
+            const updates: { text?: string; completed?: boolean } = {};
+            if (item.text !== undefined) updates.text = item.text;
+            if (item.completed !== undefined) updates.completed = item.completed;
+
+            const previousTodo = TodoListService.getTodoById(item.id);
+            const updatedTodo = TodoListService.updateTodo(item.id, updates);
+            updatedTodos.push(updatedTodo);
+
+            // 通过 onAction 回调传递操作信息（不需要 toast）
+            if (onAction) {
+              onAction({
+                type: 'update',
+                entity: 'todo',
+                data: updatedTodo,
+                ...(previousTodo ? { previousData: previousTodo } : {}),
+              });
+            }
+          } catch (error) {
+            errors.push(
+              `更新待办事项 "${item.id}" 失败: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+
+        if (updatedTodos.length === 0) {
+          throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+          todos: updatedTodos.map((todo) => ({
+            id: todo.id,
+            text: todo.text,
+            completed: todo.completed,
+          })),
+          count: updatedTodos.length,
+          ...(errors.length > 0 ? { errors } : {}),
         });
-      }
+      } else if (id) {
+        // 单个更新模式（向后兼容）
 
-      return JSON.stringify({
-        success: true,
-        message: '待办事项更新成功',
-        todo: {
-          id: updatedTodo.id,
-          text: updatedTodo.text,
-          completed: updatedTodo.completed,
-        },
-      });
+        const updates: { text?: string; completed?: boolean } = {};
+        if (text !== undefined) updates.text = text;
+        if (completed !== undefined) updates.completed = completed;
+
+        const previousTodo = TodoListService.getTodoById(id);
+        const updatedTodo = TodoListService.updateTodo(id, updates);
+
+        // 通过 onAction 回调传递操作信息（不需要 toast）
+        if (onAction) {
+          onAction({
+            type: 'update',
+            entity: 'todo',
+            data: updatedTodo,
+            ...(previousTodo ? { previousData: previousTodo } : {}),
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: '待办事项更新成功',
+          todo: {
+            id: updatedTodo.id,
+            text: updatedTodo.text,
+            completed: updatedTodo.completed,
+          },
+        });
+      } else {
+        throw new Error('必须提供 id 或 items 参数之一');
+      }
     },
   },
   {
