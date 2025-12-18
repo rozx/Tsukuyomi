@@ -188,7 +188,9 @@ export class FullTextIndexService {
       // 检查存储是否存在
       if (!db.objectStoreNames.contains('full-text-indexes')) {
         // 存储不存在，说明数据库还未升级，跳过保存
-        console.warn('full-text-indexes store not found, skipping index save. Database may need to be upgraded.');
+        console.warn(
+          'full-text-indexes store not found, skipping index save. Database may need to be upgraded.',
+        );
         return;
       }
       const indexData: FullTextIndex = {
@@ -347,11 +349,16 @@ export class FullTextIndexService {
 
       // 检查是否在原文或翻译中搜索
       // Fuse.js 已经做了匹配，但我们需要根据 searchInOriginal 和 searchInTranslations 选项进一步过滤
+      // 注意：Fuse.js 也会搜索章节标题，所以我们需要验证匹配是否在段落内容中
       let shouldInclude = false;
-      
+
       if (searchInOriginal && searchInTranslations) {
-        // 搜索两者，Fuse.js 结果已经匹配了
-        shouldInclude = true;
+        // 搜索两者，需要验证匹配是否在原文或翻译中（排除仅匹配章节标题的情况）
+        shouldInclude =
+          keywords.some((kw) => doc.originalText.toLowerCase().includes(kw.toLowerCase())) ||
+          doc.translations.some((t) =>
+            keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())),
+          );
       } else if (searchInOriginal) {
         // 只在原文中搜索，检查原文是否匹配任一关键词
         shouldInclude = keywords.some((kw) =>
@@ -475,4 +482,3 @@ export class FullTextIndexService {
     this.indexCache.clear();
   }
 }
-

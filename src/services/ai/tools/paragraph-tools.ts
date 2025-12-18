@@ -23,28 +23,30 @@ function extractKeywordsFromParagraph(text: string, maxLength: number = 20): str
 
   // 截取前 maxLength 个字符
   const truncated = text.trim().substring(0, maxLength);
-  
-  // 移除常见的标点符号和空白字符
-  const cleaned = truncated.replace(/[、。，．！？\s]+/g, '').trim();
-  
-  if (cleaned.length === 0) {
+
+  // 先按常见分隔符分割（如空格、标点等），然后再清理每个部分
+  const parts = truncated.split(/[\s、。，．！？]+/).filter((p) => p.length > 0);
+
+  if (parts.length === 0) {
     return [];
   }
 
-  // 如果文本很短，直接返回
-  if (cleaned.length <= maxLength) {
-    return [cleaned];
+  // 清理每个部分（移除残留的标点符号和空白字符）
+  const cleanedParts = parts
+    .map((p) => p.replace(/[、。，．！？\s]+/g, '').trim())
+    .filter((p) => p.length > 0);
+
+  if (cleanedParts.length === 0) {
+    return [];
   }
 
-  // 尝试按常见分隔符分割（如空格、标点等）
-  const parts = cleaned.split(/[\s、。，．！？]+/).filter((p) => p.length > 0);
-  
-  if (parts.length > 0) {
-    // 返回前几个部分（最多3个）
-    return parts.slice(0, 3);
+  // 如果只有一个部分，直接返回
+  if (cleanedParts.length === 1) {
+    return [cleanedParts[0]!];
   }
 
-  return [cleaned];
+  // 返回前几个部分（最多3个）
+  return cleanedParts.slice(0, 3);
 }
 
 /**
@@ -398,7 +400,9 @@ export const paragraphTools: ToolDefinition[] = [
           chapterIndex: location.chapterIndex,
           volumeIndex: location.volumeIndex,
         },
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -501,7 +505,9 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -604,7 +610,9 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -722,17 +730,13 @@ export const paragraphTools: ToolDefinition[] = [
       if (validKeywords.length > 0) {
         try {
           const { FullTextIndexService } = await import('src/services/full-text-index-service');
-          const indexResults = await FullTextIndexService.search(
-            bookId,
-            validKeywords,
-            {
-              chapterId: chapter_id,
-              maxResults: max_paragraphs * validKeywords.length * 2, // 增加搜索数量以应对去重和后续过滤
-              onlyWithTranslation: only_with_translation,
-              searchInOriginal: true,
-              searchInTranslations: false,
-            },
-          );
+          const indexResults = await FullTextIndexService.search(bookId, validKeywords, {
+            chapterId: chapter_id,
+            maxResults: max_paragraphs * validKeywords.length * 2, // 增加搜索数量以应对去重和后续过滤
+            onlyWithTranslation: only_with_translation,
+            searchInOriginal: true,
+            searchInTranslations: false,
+          });
 
           // 将结果添加到 Map 中，使用段落 ID 作为 key 去重
           for (const result of indexResults) {
@@ -1030,7 +1034,9 @@ export const paragraphTools: ToolDefinition[] = [
           volume_index: result.volumeIndex,
         })),
         count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -1254,7 +1260,9 @@ export const paragraphTools: ToolDefinition[] = [
         selected_translation_id: paragraph.selectedTranslationId || '',
         translation_history: translationHistory,
         total_count: translationHistory.length,
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -2068,7 +2076,11 @@ export const paragraphTools: ToolDefinition[] = [
 
                 // 如果同时提供了两种关键词，段落必须同时满足两个条件
                 // 如果只提供了一种，只需满足那一个条件
-                if (matchesOriginalText && matchesTranslationText && !allResults.has(paragraph.id)) {
+                if (
+                  matchesOriginalText &&
+                  matchesTranslationText &&
+                  !allResults.has(paragraph.id)
+                ) {
                   allResults.set(paragraph.id, {
                     paragraph,
                     paragraphIndex: pIndex,
