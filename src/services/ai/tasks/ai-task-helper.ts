@@ -228,71 +228,187 @@ export async function executeToolCall(
 }
 
 /**
- * 构建工具调用后的继续提示
+ * 构建维护提醒（用于每个文本块）
  */
-export function buildContinuePrompt(
-  taskType: TaskType,
-  paragraphIds: string[] | undefined,
-  chunkText: string,
-  includePreview?: boolean,
-  taskId?: string,
-): string {
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
+export function buildMaintenanceReminder(taskType: TaskType): string {
+  const reminders = {
+    translation: `⚠️ **关键提醒**: 敬语翻译工作流（检查别名→查看角色设定→先搜索记忆再检查历史一致性→应用关系判断→翻译）；数据维护（术语/角色分离，发现问题立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；严禁将敬语添加为别名；待办事项需详细可执行，多步骤需分别创建`,
+    proofreading: `⚠️ **提醒**: 检查文字（错别字、标点、语法）、内容（一致性、逻辑、设定）、格式；使用工具确保全文一致；最小改动原则；严禁将敬语添加为别名；待办事项需详细可执行`,
+    polish: `⚠️ **提醒**: 适当添加语气词符合角色风格；使用地道中文摆脱翻译腔；使用工具获取术语/角色/上下文；参考历史翻译；只返回有变化的段落；严禁将敬语添加为别名；待办事项需详细可执行`,
   };
 
-  const taskLabel = taskTypeLabels[taskType];
-  const paragraphIdList = paragraphIds
-    ? paragraphIds.slice(0, 10).join(', ') + (paragraphIds.length > 10 ? '...' : '')
-    : '';
+  return `\n${reminders[taskType]}`;
+}
 
-  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
+/**
+ * 构建初始用户提示的基础部分
+ */
+export function buildInitialUserPromptBase(taskType: TaskType): string {
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+  };
 
-  let prompt = `工具调用已完成。请继续完成当前文本块的${taskLabel}任务。
+  const taskLabel = taskLabels[taskType];
+  const startAction = taskType === 'translation' ? '开始翻译任务。' : `开始${taskLabel}。`;
+  const workAction = taskType === 'translation' ? '翻译' : taskLabel;
+  const completeAction = taskType === 'translation' ? '翻译' : taskLabel;
 
-**⚠️ 重要提醒**：
-- **专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当前块完成后，系统会自动提供下一个块。
-- 你正在${taskLabel}以下段落（不要重新开始，继续之前的${taskLabel}任务）：
-  段落ID: ${paragraphIdList || '见下方内容'}`;
+  return `${startAction}
 
-  if (includePreview) {
-    const preview = chunkText.split('\n').slice(0, 3).join('\n');
-    const hasMore = chunkText.split('\n').length > 3;
-    prompt += `\n  内容预览: ${preview}${hasMore ? '\n...' : ''}`;
+**重要：必须使用状态字段（status）**
+- 所有响应必须是有效的 JSON 格式，包含 status 字段
+- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
+- 可以从 "planning" 状态开始，规划任务、获取上下文
+- 准备好后，将状态设置为 "working" 并开始${workAction}
+- 完成所有段落${completeAction}后，将状态设置为 "completed"
+- 完成所有后续操作后，将状态设置为 "done"`;
+}
+
+/**
+ * 添加章节上下文到初始提示
+ */
+export function addChapterContext(prompt: string, chapterId: string, taskType: TaskType): string {
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+  };
+  const taskLabel = taskLabels[taskType];
+
+  return `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保${taskLabel}的一致性和连贯性。`;
+}
+
+/**
+ * 添加段落上下文到初始提示
+ */
+export function addParagraphContext(
+  prompt: string,
+  paragraphId: string,
+  taskType: TaskType,
+): string {
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+  };
+  const taskLabel = taskLabels[taskType];
+
+  const tools =
+    taskType === 'proofreading'
+      ? 'find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs'
+      : 'find_paragraph_by_keywords、get_chapter_info';
+
+  return `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，以确保${taskLabel}的一致性和连贯性。`;
+}
+
+/**
+ * 添加任务规划建议到初始提示
+ */
+export function addTaskPlanningSuggestions(prompt: string, taskType: TaskType): string {
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+  };
+  const taskLabel = taskLabels[taskType];
+
+  const examples = {
+    translation: '翻译第1-5段，检查术语一致性，确保角色名称翻译一致',
+    proofreading: '校对第1-5段，检查错别字和标点，确保术语一致性',
+    polish: '润色第1-5段，优化语气词使用，确保自然流畅',
+  };
+
+  const subTasks = {
+    translation: '翻译进度、术语检查、角色一致性检查等子任务',
+    proofreading: '校对进度、一致性检查、格式检查等子任务',
+    polish: '润色进度、术语一致性检查等子任务',
+  };
+
+  return `${prompt}
+
+      【任务规划建议】
+      - 如果需要规划复杂的${taskLabel}任务，你可以使用 \`create_todo\` 工具创建待办事项来规划步骤
+      - 例如：为大型章节创建待办事项来跟踪${subTasks[taskType]}
+      - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："${examples[taskType]}" 而不是 "${taskLabel}文本"
+      - ⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 \`create_todo\` 为每个步骤创建实际的待办任务。例如，如果你计划"1. 获取上下文 2. 检查术语 3. ${taskLabel}段落"，你应该创建3个独立的待办事项，每个步骤一个。
+      - **批量创建**：可以使用 \`items\` 参数一次性创建多个待办事项，例如：\`create_todo(items=["${taskLabel}第1-5段", "${taskLabel}第6-10段", "检查术语一致性"])\`。这样可以更高效地为多步骤任务创建所有待办事项。`;
+}
+
+/**
+ * 构建完成阶段的通用说明
+ */
+export function buildCompletedStageDescription(taskType: TaskType): string {
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+  };
+  const taskLabel = taskLabels[taskType];
+
+  const verificationNote =
+    taskType === 'translation'
+      ? '所有段落都有翻译'
+      : `所有段落都有${taskLabel}（只验证有变化的段落）`;
+
+  return `3. **完成阶段（status: "completed"）**:
+         - 系统会自动验证${verificationNote}
+         - 如果缺少${taskLabel}，系统会要求继续工作（状态回到 "working"）
+         - 如果所有段落都完整，系统会询问是否需要后续操作
+         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
+         - 完成所有后续操作后，将状态设置为 "done"`;
+}
+
+/**
+ * 构建执行要点/清单（任务特定）
+ */
+export function buildExecutionSection(taskType: TaskType, chapterId?: string): string {
+  if (taskType === 'translation') {
+    const chapterIdNote = chapterId
+      ? `\n         - ⚠️ 调用 \`list_terms\` 和 \`list_characters\` 时传递 \`chapter_id\` 参数`
+      : '';
+
+    return `
+      【执行清单】
+      1. **规划阶段（planning）**: 使用工具获取上下文${chapterIdNote}；检查术语/角色分离、空翻译、描述不匹配、重复角色；发现问题立即修复；准备就绪后设为 "working"
+      2. **工作阶段（working）**: 逐段翻译1:1对应；敬语工作流（别名→角色设定→先搜索记忆再检查历史一致性→关系判断→翻译）；新术语/角色直接创建；发现数据问题立即修复；完成所有段落后设为 "completed"
+      ${buildCompletedStageDescription('translation')}
+      ⚠️ **关键**: 敬语翻译（别名>关系>记忆>历史，禁止自动创建别名，严禁将敬语添加为别名）；数据维护（术语/角色分离，发现空翻译立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；所有阶段可使用工具`;
   }
 
-  const taskSpecificInstructions = {
-    translation: `- 必须返回JSON格式响应，包含 status 字段
-- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 和 \`titleTranslation\` 字段，只需返回 \`{"status": "状态值"}\` 即可
-- 只有在实际提供翻译结果时，才需要包含 paragraphs 数组
-- 不要跳过翻译，必须提供完整的翻译结果
-- 确保 paragraphs 数组中包含所有输入段落的 ID 和对应翻译`,
-    polish: `- 必须返回JSON格式响应，包含 status 字段
-- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
-- 只有在实际提供润色结果时，才需要包含 paragraphs 数组
-- 不要跳过润色，必须提供完整的润色结果
-- 只返回有变化的段落，没有变化的段落不要包含在结果中`,
-    proofreading: `- 必须返回JSON格式响应，包含 status 字段
-- ⚠️ **重要**：当只更新状态时（如从 planning 到 working），**不需要**包含 \`paragraphs\` 字段，只需返回 \`{"status": "状态值"}\` 即可
-- 只有在实际提供校对结果时，才需要包含 paragraphs 数组
-- 不要跳过校对，必须提供完整的校对结果
-- 只返回有变化的段落，没有变化的段落不要包含在结果中`,
-  };
+  if (taskType === 'proofreading') {
+    return `
 
-  prompt += `\n${taskSpecificInstructions[taskType]}
-- **必须包含 status 字段**：当前状态必须是 "working"（正在处理）或 "completed"（已完成当前块）
-- 工具调用只是为了获取参考信息，现在请直接返回${taskLabel}结果
-- **待办事项管理**：
-  - 如果需要规划${taskLabel}步骤，可以使用 create_todo 创建待办事项
-  - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤
-  - ⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 create_todo 为每个步骤创建实际的待办任务。例如，如果你计划"1. 获取上下文 2. 检查术语 3. 翻译段落"，你应该创建3个独立的待办事项，每个步骤一个。
-  - **批量创建**：当需要创建多个待办事项时，可以使用 items 参数一次性创建，例如：create_todo(items=["步骤1", "步骤2", "步骤3"])。这样可以更高效地为多步骤任务创建所有待办事项。
-  - 如果已经完成了某个待办事项的任务，使用 mark_todo_done 工具将其标记为完成
-  - 只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记${todosReminder}`;
+        【执行要点】
+        - **文字**：错别字、标点、语法、词语用法
+        - **内容**：人名/地名/称谓一致性、时间线、逻辑、专业知识/设定
+        - **格式**：格式、数字用法、引文注释
+        - **一致性**：使用工具查找其他段落确保全文一致
+        - **最小改动**：只修正确实错误，保持原意和风格
+        - **参考原文**：确保翻译准确无误
+        - ⚠️ **只返回有变化的段落**，无变化不包含在结果中
 
-  return prompt;
+        请按 JSON 格式返回，只包含有变化的段落。`;
+  }
+
+  if (taskType === 'polish') {
+    const chapterIdNote = chapterId
+      ? `；调用 \`list_terms\` 和 \`list_characters\` 时传递 \`chapter_id\` 参数`
+      : '';
+
+    return `
+
+        【执行要点】
+        1. **规划阶段（planning）**: 使用工具获取上下文、创建待办事项；准备就绪后设为 "working"
+        2. **工作阶段（working）**: 语气词（符合角色风格）、自然流畅（摆脱翻译腔）、节奏优化、语病修正、角色区分、专有名词统一；完成所有段落后设为 "completed"
+        ${buildCompletedStageDescription('polish')}
+        ⚠️ **关键**: 只返回有变化的段落；使用工具获取术语/角色/上下文${chapterIdNote}；参考翻译历史混合匹配最佳表达；润色前搜索记忆，完成后可保存摘要；保留原文格式（标点、换行符等）；所有阶段可使用工具
+
+        请按 JSON 格式返回，只包含有变化的段落。`;
+  }
+
+  return '';
 }
 
 /**
@@ -396,7 +512,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     aiProcessingStore,
     logLabel,
     maxTurns = Infinity,
-    includePreview = false,
+    includePreview: _includePreview = false,
     verifyCompleteness,
   } = config;
 
@@ -478,41 +594,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       }
 
-      // 根据当前状态决定下一步提示
-      if (currentStatus === 'planning') {
-        // 规划阶段：继续规划，直到状态变为 working
-        history.push({
-          role: 'user',
-          content: `请继续规划任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你准备好开始${taskLabel}当前块时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
-        });
-      } else if (currentStatus === 'working') {
-        // 工作阶段：继续工作
-        const continuePrompt = buildContinuePrompt(
-          taskType,
-          paragraphIds,
-          chunkText,
-          includePreview,
-          taskId,
-        );
-        history.push({
-          role: 'user',
-          content: continuePrompt,
-        });
-      } else if (currentStatus === 'completed') {
-        // 完成阶段：询问后续操作
-        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
-        history.push({
-          role: 'user',
-          content: postOutputPrompt,
-        });
-      } else if (currentStatus === 'done') {
-        // 完成阶段：应该已经完成，但允许最后的工具调用
-        history.push({
-          role: 'user',
-          content: `所有操作已完成。如果还有需要处理的事项，请继续。否则请保持状态为 "done"。`,
-        });
-      }
-
+      // 工具调用完成后，直接继续循环，让 AI 基于工具结果自然继续
       continue;
     }
 

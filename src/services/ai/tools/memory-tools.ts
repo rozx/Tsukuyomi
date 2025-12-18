@@ -82,7 +82,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'search_memory_by_keywords',
         description:
-          '根据多个关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。支持多个关键词，返回包含所有关键词的 Memory（AND 逻辑）。⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。',
+          '根据多个关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。支持多个关键词，返回包含所有关键词的 Memory（AND 逻辑）。⚠️ **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。⚠️ **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
         parameters: {
           type: 'object',
           properties: {
@@ -228,6 +228,103 @@ export const memoryTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: error instanceof Error ? error.message : '创建 Memory 失败',
+        });
+      }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'update_memory',
+        description:
+          '更新指定的 Memory 记录。当发现记忆中的信息需要更新（如角色关系变化、敬语翻译方式改变等）时，应使用此工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息。',
+        parameters: {
+          type: 'object',
+          properties: {
+            memory_id: {
+              type: 'string',
+              description: 'Memory ID（从 get_memory 或 search_memory_by_keywords 获取）',
+            },
+            content: {
+              type: 'string',
+              description: '更新后的实际内容',
+            },
+            summary: {
+              type: 'string',
+              description: '更新后的摘要（由 AI 生成，用于后续搜索）',
+            },
+          },
+          required: ['memory_id', 'content', 'summary'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        return JSON.stringify({
+          success: false,
+          error: '书籍 ID 不能为空',
+        });
+      }
+      const { memory_id, content, summary } = args;
+      if (!memory_id) {
+        return JSON.stringify({
+          success: false,
+          error: 'Memory ID 不能为空',
+        });
+      }
+      if (!content) {
+        return JSON.stringify({
+          success: false,
+          error: '内容不能为空',
+        });
+      }
+      if (!summary) {
+        return JSON.stringify({
+          success: false,
+          error: '摘要不能为空',
+        });
+      }
+
+      try {
+        // 在更新前获取 Memory 信息，以便在 action 中显示
+        const oldMemory = await MemoryService.getMemory(bookId, memory_id);
+        if (!oldMemory) {
+          return JSON.stringify({
+            success: false,
+            error: `Memory 不存在: ${memory_id}`,
+          });
+        }
+
+        const memory = await MemoryService.updateMemory(bookId, memory_id, content, summary);
+
+        // 报告更新操作
+        if (onAction) {
+          onAction({
+            type: 'update',
+            entity: 'memory',
+            data: {
+              id: memory_id,
+              summary: memory.summary,
+            },
+            previousData: oldMemory,
+          });
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: 'Memory 更新成功',
+          memory: {
+            id: memory.id,
+            summary: memory.summary,
+            createdAt: memory.createdAt,
+            lastAccessedAt: memory.lastAccessedAt,
+          },
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '更新 Memory 失败',
         });
       }
     },

@@ -13,7 +13,7 @@ import { ToolRegistry, type ActionInfo } from '../tools';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
-import { getTodosSystemPrompt, getPostToolCallReminder } from './todo-helper';
+import { getTodosSystemPrompt } from './todo-helper';
 
 /**
  * Assistant 服务选项
@@ -979,17 +979,6 @@ ${messages
               role: 'user',
               content: reminderContent,
             });
-          }
-        } else {
-          // 工具调用完成后，添加待办事项提醒
-          if (taskId) {
-            const todosReminder = getPostToolCallReminder(undefined, taskId, sessionId);
-            if (todosReminder) {
-              messages.push({
-                role: 'user',
-                content: todosReminder,
-              });
-            }
           }
         }
 

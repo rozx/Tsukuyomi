@@ -14,7 +14,15 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { getTodosSystemPrompt } from './todo-helper';
-import { executeToolCallLoop, type AIProcessingStore } from './ai-task-helper';
+import {
+  executeToolCallLoop,
+  type AIProcessingStore,
+  buildMaintenanceReminder,
+  buildInitialUserPromptBase,
+  addChapterContext,
+  addTaskPlanningSuggestions,
+  buildExecutionSection,
+} from './ai-task-helper';
 
 /**
  * 翻译服务选项
@@ -311,9 +319,11 @@ export class TranslationService {
       - 如果描述中缺少关系信息，应使用 \`update_character\` 工具补充
 
       **步骤 3: 检查历史翻译一致性（必须执行）**
-      - 使用 \`find_paragraph_by_keywords\` 工具搜索该角色在之前段落中的翻译
+      - **首先**：使用 \`search_memory_by_keywords\` 工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等）
+      - **然后**：使用 \`find_paragraph_by_keywords\` 工具搜索该角色在之前段落中的翻译
       - 如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节（从开头到当前）
-      - 如果找到之前的翻译，**必须保持一致**
+      - 如果找到之前的翻译或记忆中的相关信息，**必须保持一致**
+      - ⚠️ **重要**：如果找到记忆但发现信息需要更新（如角色关系变化、敬语翻译方式改变等），应使用 \`update_memory\` 工具更新记忆，确保记忆反映最新信息
 
       **步骤 4: 应用角色关系**
       - 根据角色描述中的关系信息决定翻译方式：
@@ -326,6 +336,8 @@ export class TranslationService {
       - **不要**自动添加新的别名
       - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
       - 如果用户希望固定某个敬语翻译为别名，应由用户手动添加
+      - ⚠️ **重要**：如果在步骤3中搜索记忆时没有找到相关信息，在确定如何翻译敬语后，应使用 \`create_memory\` 工具创建记忆，保存该角色的敬语翻译方式和角色关系信息，以便后续快速参考
+      - ⚠️ **双重检查**：创建记忆前，必须确认**说话者是谁**以及**说话者和被称呼者之间的关系**，确保敬语翻译信息准确无误（敬语的翻译方式取决于说话者和被称呼者的关系）
 
       ========================================
       【术语管理工作流】
@@ -407,12 +419,15 @@ export class TranslationService {
       ========================================
       **工具使用优先级**:
       1. **高频必用**:
-         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节）
+         - \`search_memory_by_keywords\`: 敬语翻译前先搜索记忆（翻译敬语时，必须先使用此工具搜索记忆中关于该角色敬语翻译的相关信息，然后再使用 \`find_paragraph_by_keywords\` 搜索段落）
+         - \`find_paragraph_by_keywords\`: 敬语翻译、术语一致性检查（翻译敬语前必须使用，支持多个关键词。如果提供 chapter_id 参数，则仅在指定章节内搜索；否则搜索所有章节。注意：翻译敬语时，应先使用 \`search_memory_by_keywords\` 搜索记忆，然后再使用此工具）
          - \`update_character\`: 补充翻译、添加别名、更新描述
          - \`update_term\`: 补充术语翻译
          - \`list_characters\`: 检查别名冲突、查找重复角色。⚠️ **重要**：如果提供了章节 ID，应传递 \`chapter_id\` 参数以只获取该章节的角色；如果需要所有章节的角色，设置 \`all_chapters=true\`
          - \`list_terms\`: 获取术语列表。⚠️ **重要**：如果提供了章节 ID，应传递 \`chapter_id\` 参数以只获取该章节的术语；如果需要所有章节的术语，设置 \`all_chapters=true\`
-         - \`create_memory\`: 保存记忆，用于保存背景设定、角色信息等记忆内容，每当翻译完成后，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
+         - \`create_memory\`: 保存记忆，用于保存背景设定、角色信息等记忆内容，每当翻译完成后，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考。⚠️ **重要**：翻译敬语时，如果搜索记忆没有找到相关信息，在确定如何翻译敬语后，应使用此工具创建记忆，保存该角色的敬语翻译方式和角色关系信息。⚠️ **双重检查**：创建记忆前，必须确认**说话者是谁**以及**说话者和被称呼者之间的关系**，确保敬语翻译信息准确无误
+         - \`update_memory\`: 更新记忆。⚠️ **重要**：如果发现记忆中的信息需要更新（如角色关系变化、敬语翻译方式改变等），应使用此工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息
+         - \`delete_memory\`: 删除记忆。当确定某个 Memory 不再需要时，可以使用此工具删除
       2. **按需使用**:
          - \`create_character\` / \`create_term\`: 确认需要时直接创建（无需检查词频）
          - \`delete_character\` / \`delete_term\`: 清理无用或重复项
@@ -434,11 +449,17 @@ export class TranslationService {
       1. **参考记忆**:
          - 翻译前可使用 \`search_memory_by_keywords\` 搜索相关的背景设定、角色信息等记忆内容
          - 使用 \`get_memory\` 获取完整内容，确保翻译风格和术语使用的一致性
+         - ⚠️ **重要**：翻译敬语时，必须**首先**使用 \`search_memory_by_keywords\` 搜索记忆中关于该角色敬语翻译的相关信息
+         - ⚠️ **检查记忆时效性**：如果找到记忆，应检查信息是否仍然准确和最新。如果发现信息需要更新，应使用 \`update_memory\` 工具更新记忆
       2. **保存记忆**:
          - 完成章节或者某个情节翻译后，推荐可使用 \`create_memory\` 保存章节摘要（需要自己生成 summary）
          - 重要背景设定也可保存供后续参考
+         - ⚠️ **重要**：翻译敬语时，如果搜索记忆没有找到相关信息，在确定如何翻译敬语后，应使用 \`create_memory\` 创建记忆，保存该角色的敬语翻译方式和角色关系信息，以便后续快速参考
+         - ⚠️ **双重检查**：创建记忆前，必须确认**说话者是谁**以及**说话者和被称呼者之间的关系**，确保敬语翻译信息准确无误（敬语的翻译方式取决于说话者和被称呼者的关系）
+         - ⚠️ **更新记忆**：如果发现已有记忆中的信息需要更新（如角色关系变化、敬语翻译方式改变等），应使用 \`update_memory\` 工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息
       3. **搜索后保存**:
          - 当你通过工具（如 \`find_paragraph_by_keywords\`、\`get_chapter_info\`、\`get_previous_chapter\`、\`get_next_chapter\` 等）搜索或检索了大量内容时，应该主动使用 \`create_memory\` 保存这些重要信息，以便后续快速参考
+         - ⚠️ **更新已有记忆**：如果搜索后发现已有相关记忆但信息需要更新，应使用 \`update_memory\` 工具更新记忆
 
       ========================================
       【输出格式要求（必须严格遵守）】
@@ -517,69 +538,15 @@ export class TranslationService {
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始翻译任务。
-
-**重要：必须使用状态字段（status）**
-- 所有响应必须是有效的 JSON 格式，包含 status 字段
-- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
-- 可以从 "planning" 状态开始，规划任务、获取上下文
-- 准备好后，将状态设置为 "working" 并开始翻译
-- 完成所有段落翻译后，将状态设置为 "completed"
-- 完成所有后续操作后，将状态设置为 "done"`;
+      let initialUserPrompt = buildInitialUserPromptBase('translation');
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
-        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保翻译的一致性和连贯性。`;
+        initialUserPrompt = addChapterContext(initialUserPrompt, chapterId, 'translation');
       }
 
-      initialUserPrompt += `
-
-      【任务规划建议】
-      - 如果需要规划复杂的翻译任务，你可以使用 \`create_todo\` 工具创建待办事项来规划步骤
-      - 例如：为大型章节创建待办事项来跟踪翻译进度、术语检查、角色一致性检查等子任务
-      - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："翻译第1-5段，检查术语一致性，确保角色名称翻译一致" 而不是 "翻译文本"
-      - ⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 \`create_todo\` 为每个步骤创建实际的待办任务。例如，如果你计划"1. 获取上下文 2. 检查术语 3. 翻译段落"，你应该创建3个独立的待办事项，每个步骤一个。
-      - **批量创建**：可以使用 \`items\` 参数一次性创建多个待办事项，例如：\`create_todo(items=["翻译第1-5段", "翻译第6-10段", "检查术语一致性"])\`。这样可以更高效地为多步骤任务创建所有待办事项。
-
-      【执行清单（按状态流程执行）】
-      1. **规划阶段（status: "planning"）**:
-         - 使用工具获取上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords 等）
-         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色
-         - 检查术语/角色分离是否正确（术语表中不能有人名，角色表中不能有术语）
-         - 检查是否有空翻译（translation 为空）→ 立即使用工具更新
-         - 检查是否有描述不匹配 → 立即使用工具更新
-         - 检查是否有重复角色 → 合并（删除重复，添加为别名）
-         - 可以使用工具获取上下文、创建待办事项等
-         - 准备好后，将状态设置为 "working"
-
-      2. **工作阶段（status: "working"）**:
-         - 逐段翻译，严格保证 1:1 段落对应
-         - 遇到敬语时，严格按照工作流执行：
-           (1) 检查角色别名翻译（最高优先级）
-           (2) 查看角色设定（description 中的关系信息）
-           (3) 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
-           (4) 应用角色关系判断
-           (5) 翻译并保持一致性，特别是换行符、标点符号等。
-         - 遇到新术语时：确认需要后直接使用 create_term 创建（无需检查词频）
-         - 遇到新角色时：先使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）
-         - 发现数据问题（空翻译、描述不匹配、重复项、错误分类）时立即使用工具修复
-         - 可以输出部分翻译结果，状态保持为 "working"
-         - 完成所有段落翻译后，将状态设置为 "completed"
-
-      3. **完成阶段（status: "completed"）**:
-         - 系统会自动验证所有段落都有翻译
-         - 如果缺少翻译，系统会要求继续工作（状态回到 "working"）
-         - 如果所有段落都完整，系统会询问是否需要后续操作
-         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
-         - 完成所有后续操作后，将状态设置为 "done"
-
-      ⚠️ **关键提醒**:
-      - 敬语翻译：别名匹配 > 角色关系 > 历史记录。禁止自动创建敬语别名。
-      - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
-      - 数据维护：严禁人名入术语表。发现空翻译立即修复。
-      - 一致性：严格遵守已有术语/角色翻译。
-      - 格式：保持 JSON 格式，包含 status 字段，段落 ID 对应，1:1 段落对应。
-      - 工具使用：在所有状态阶段都可以使用工具。`;
+      initialUserPrompt = addTaskPlanningSuggestions(initialUserPrompt, 'translation');
+      initialUserPrompt += buildExecutionSection('translation', chapterId);
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -672,35 +639,7 @@ export class TranslationService {
 
         // 构建当前消息
         let content = '';
-        const maintenanceReminder = `
-        ⚠️ **关键提醒（每个文本块都必须遵守）**:
-        1. **敬语翻译工作流（必须严格执行）**:
-           - 步骤1: 检查角色别名翻译（最高优先级，必须首先执行）
-           - 步骤2: 查看角色设定（description 中的关系信息）
-           - 步骤3: 使用 find_paragraph_by_keywords 检查历史翻译一致性（必须执行）
-           - 步骤4: 应用角色关系判断
-           - 步骤5: 翻译并保持一致性
-           - ⚠️ 禁止自动创建敬语别名
-           - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充
-        2. **数据维护（发现问题时立即修复）**:
-           - 术语/角色严格分离：严禁人名入术语表，严禁术语入角色表
-           - 发现空翻译（translation 为空）→ 立即使用 update_term 或 update_character 修复
-           - 发现描述不匹配 → 立即使用工具更新
-           - 发现重复角色 → 删除重复，添加为别名
-           - 发现错误分类 → 删除错误项，添加到正确表
-        3. **一致性要求**:
-           - 严格遵守已有术语/角色翻译
-           - 使用 find_paragraph_by_keywords 确保敬语翻译一致性
-           - 新角色创建前必须检查是否为别名
-        4. **输出格式（必须严格遵守）**:
-           - 保持 JSON 格式，段落 ID 完全对应
-           - 确保 1:1 段落对应（不能合并或拆分段落）
-           - paragraphs 数组必须包含所有输入段落的 ID 和对应翻译
-        5. **待办事项管理**（可选，用于任务规划）:
-           - 如果需要规划复杂的翻译任务，可以使用 create_todo 创建待办事项来规划步骤
-           - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："翻译第1-5段，检查术语一致性，确保角色名称翻译一致" 而不是 "翻译文本"
-           - ⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 create_todo 为每个步骤创建实际的待办任务。例如，如果你计划"1. 获取上下文 2. 检查术语 3. 翻译段落"，你应该创建3个独立的待办事项，每个步骤一个。
-           - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
+        const maintenanceReminder = buildMaintenanceReminder('translation');
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';

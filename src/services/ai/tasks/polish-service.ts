@@ -20,6 +20,12 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   verifyParagraphCompleteness,
+  buildMaintenanceReminder,
+  buildInitialUserPromptBase,
+  addChapterContext,
+  addParagraphContext,
+  addTaskPlanningSuggestions,
+  buildExecutionSection,
 } from './ai-task-helper';
 
 /**
@@ -291,7 +297,9 @@ export class PolishService {
       9. **工具使用**:
         - 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。
         - ⚠️ **重要**：如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数，以只获取当前章节相关的术语和角色；如果需要所有章节的，设置 \`all_chapters=true\`
-        - 如遇到敬语翻译，必须使用 find_paragraph_by_keywords 检查历史翻译一致性。
+        - 如遇到敬语翻译，必须**首先**使用 \`search_memory_by_keywords\` 搜索记忆中关于该角色敬语翻译的相关信息，**然后**使用 \`find_paragraph_by_keywords\` 检查历史翻译一致性。
+        - ⚠️ **重要**：如果搜索记忆时没有找到相关信息，在确定如何翻译敬语后，应使用 \`create_memory\` 工具创建记忆，保存该角色的敬语翻译方式和角色关系信息，以便后续快速参考。⚠️ **双重检查**：创建记忆前，必须确认**说话者是谁**以及**说话者和被称呼者之间的关系**，确保敬语翻译信息准确无误（敬语的翻译方式取决于说话者和被称呼者的关系）。
+        - ⚠️ **更新记忆**：如果找到记忆但发现信息需要更新（如角色关系变化、敬语翻译方式改变等），应使用 \`update_memory\` 工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息。
         - ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
         - 如遇到新术语和角色，确认需要后直接创建（无需检查词频）。
         - 如遇到新角色，必须使用 list_characters 检查是否为已存在角色的别名，确认是新角色后创建（必须用全名）。
@@ -353,66 +361,20 @@ export class PolishService {
       history.push({ role: 'system', content: systemPrompt });
 
       // 2. 初始用户提示
-      let initialUserPrompt = `开始润色。
-
-**重要：必须使用状态字段（status）**
-- 所有响应必须是有效的 JSON 格式，包含 status 字段
-- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
-- 可以从 "planning" 状态开始，规划任务、获取上下文
-- 准备好后，将状态设置为 "working" 并开始润色
-- 完成所有段落润色后，将状态设置为 "completed"
-- 完成所有后续操作后，将状态设置为 "done"`;
+      let initialUserPrompt = buildInitialUserPromptBase('polish');
 
       // 如果提供了章节ID，添加到上下文中
       if (chapterId) {
-        initialUserPrompt += `\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保润色的一致性和连贯性。`;
+        initialUserPrompt = addChapterContext(initialUserPrompt, chapterId, 'polish');
       }
 
       // 如果是单段落润色，添加段落 ID 信息以便 AI 获取上下文
       if (currentParagraphId && content.length === 1) {
-        initialUserPrompt += `\n\n**当前段落 ID**: ${currentParagraphId}\n你可以使用工具（如 find_paragraph_by_keywords、get_chapter_info 等）获取该段落的前后上下文，以确保润色的一致性和连贯性。`;
+        initialUserPrompt = addParagraphContext(initialUserPrompt, currentParagraphId, 'polish');
       }
 
-      initialUserPrompt += `
-
-        【任务规划建议】
-        - 如果需要规划复杂的润色任务，你可以使用 create_todo 工具创建待办事项来规划步骤
-        - 例如：为大型章节创建待办事项来跟踪润色进度、术语一致性检查等子任务
-        - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："润色第1-5段，优化语气词使用，确保自然流畅" 而不是 "润色文本"
-
-        【执行要点（按状态流程执行）】
-        1. **规划阶段（status: "planning"）**:
-           - 可以使用工具获取上下文、创建待办事项等
-           - 准备好后，将状态设置为 "working"
-
-        2. **工作阶段（status: "working"）**:
-           - **语气词**: 适当添加，符合角色风格。
-           - **自然流畅**: 摆脱翻译腔，使用地道中文。
-           - **节奏优化**: 调整句子长度和结构。
-           - **语病修正**: 消除语病和不必要重复。
-           - **角色区分**: 根据角色身份、性格、时代背景调整语言。
-           - **专有名词**: 保持术语和角色名称统一。
-           - 可以输出部分润色结果，状态保持为 "working"
-           - 完成所有段落润色后，将状态设置为 "completed"
-
-        3. **完成阶段（status: "completed"）**:
-           - 系统会自动验证所有段落都有润色（只验证有变化的段落）
-           - 如果缺少润色，系统会要求继续工作（状态回到 "working"）
-           - 如果所有段落都完整，系统会询问是否需要后续操作
-           - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
-           - 完成所有后续操作后，将状态设置为 "done"
-
-        ⚠️ **重要提醒**:
-        - 只返回有变化的段落，没有变化的段落不要包含在结果中
-        - 工具使用：在所有状态阶段都可以使用工具
-        - **情感传达**: 准确传达意境和情感。
-        - **历史参考**: 参考翻译历史和之前段落的原文和翻译，混合匹配最佳表达。
-        - **工具使用**: 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数。
-        - **记忆**: 润色前搜索相关记忆，完成后可保存章节摘要。
-        - **保留原文格式**: 保留原文的格式，如标点符号、换行符等。
-        - **⚠️ 重要**: 只返回有变化的段落。如果段落没有改进或变化，不要包含在返回结果中。
-
-        请按 JSON 格式返回，只包含有变化的段落。`;
+      initialUserPrompt = addTaskPlanningSuggestions(initialUserPrompt, 'polish');
+      initialUserPrompt += buildExecutionSection('polish', chapterId);
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -523,18 +485,7 @@ export class PolishService {
         }
 
         // 构建当前消息
-        const maintenanceReminder = `
-        ⚠️ **提醒**:
-- **语气词**: 适当添加，符合角色风格。
-- **自然流畅**: 摆脱翻译腔，使用地道中文。
-- **工具**: 使用工具获取术语、角色和段落上下文（如 list_terms、list_characters、search_terms_by_keywords、search_characters_by_keywords、get_term、get_character 等）。如果提供了章节 ID，调用 \`list_terms\` 和 \`list_characters\` 时应传递 \`chapter_id\` 参数。
-- **历史参考**: 参考翻译历史，混合匹配最佳表达。
-- ⚠️ **严禁将敬语（如"田中さん"、"太郎様"等）添加为别名**：敬语不能作为别名，只能作为已有别名的翻译补充。
-- **⚠️ 重要**: 只返回有变化的段落，没有改进的段落不要包含在结果中。
-- **待办事项管理**（可选，用于任务规划）:
-  - 如果需要规划复杂的润色任务，可以使用 create_todo 创建待办事项来规划步骤
-  - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："润色第1-5段，优化语气词使用，确保自然流畅" 而不是 "润色文本"
-  - 完成待办事项后，使用 mark_todo_done 将其标记为完成`;
+        const maintenanceReminder = buildMaintenanceReminder('polish');
         let content = '';
         if (i === 0) {
           content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}
