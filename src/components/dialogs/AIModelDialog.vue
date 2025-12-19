@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
+import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import ToggleSwitch from 'primevue/toggleswitch';
@@ -138,6 +139,15 @@ const validateForm = (): boolean => {
     formErrors.value.maxTokens = '最大 Token 数不能为负数';
   }
 
+  // contextWindow 为可选字段，如果提供则必须大于 0
+  if (
+    formData.value.contextWindow !== undefined &&
+    formData.value.contextWindow !== null &&
+    formData.value.contextWindow <= 0
+  ) {
+    formErrors.value.contextWindow = '上下文窗口必须大于 0';
+  }
+
   return Object.keys(formErrors.value).length === 0;
 };
 
@@ -262,15 +272,6 @@ const handleSave = () => {
 const handleCancel = () => {
   emit('cancel');
   emit('update:visible', false);
-};
-
-// 获取上下文窗口显示值
-const getContextWindowDisplay = (): string => {
-  const value = formData.value.contextWindow ?? aiConfig.value?.contextWindow;
-  if (value !== undefined && value !== null && typeof value === 'number' && value > 0) {
-    return value.toLocaleString();
-  }
-  return '-';
 };
 
 // 获取可用模型列表
@@ -558,10 +559,10 @@ watch(
         </small>
       </div>
 
-      <!-- AI 配置信息（只读） -->
+      <!-- AI 配置信息 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
-          <label class="block text-sm font-medium text-moon/90">AI 配置信息（只读）</label>
+          <label class="block text-sm font-medium text-moon/90">AI 配置信息</label>
           <Button
             label="获取配置"
             icon="pi pi-download"
@@ -579,17 +580,21 @@ watch(
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
             <label class="text-xs text-moon/70">最大输入 Token</label>
-            <InputText
-              :value="
-                (formData.maxTokens ?? 0) === 0
-                  ? '无限制'
-                  : (formData.maxTokens ?? 0).toLocaleString()
-              "
-              disabled
+            <InputNumber
+              v-model="formData.maxTokens"
+              :min="0"
+              :max="10000000"
+              :use-grouping="true"
+              :show-buttons="false"
+              placeholder="0 表示无限制"
               class="w-full"
+              :class="{ 'p-invalid': formErrors.maxTokens }"
             />
+            <small v-if="formErrors.maxTokens" class="p-error block mt-1">{{
+              formErrors.maxTokens
+            }}</small>
             <small
-              v-if="
+              v-else-if="
                 aiConfig?.maxTokens &&
                 aiConfig.maxTokens > 0 &&
                 formData.maxTokens !== aiConfig.maxTokens
@@ -598,10 +603,38 @@ watch(
             >
               从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
             </small>
+            <small v-else-if="(formData.maxTokens ?? 0) === 0" class="text-xs text-moon/70 block mt-1">
+              0 表示无限制
+            </small>
           </div>
           <div class="space-y-1">
             <label class="text-xs text-moon/70">上下文窗口</label>
-            <InputText :value="getContextWindowDisplay()" disabled class="w-full" />
+            <InputNumber
+              v-model="formData.contextWindow"
+              :min="1"
+              :max="100000000"
+              :use-grouping="true"
+              :show-buttons="false"
+              placeholder="可选，总上下文窗口大小"
+              class="w-full"
+              :class="{ 'p-invalid': formErrors.contextWindow }"
+            />
+            <small v-if="formErrors.contextWindow" class="p-error block mt-1">{{
+              formErrors.contextWindow
+            }}</small>
+            <small
+              v-else-if="
+                aiConfig?.contextWindow &&
+                aiConfig.contextWindow > 0 &&
+                formData.contextWindow !== aiConfig.contextWindow
+              "
+              class="text-xs text-moon/70 block mt-1"
+            >
+              从 AI 获取: {{ aiConfig.contextWindow.toLocaleString() }}
+            </small>
+            <small v-else-if="!formData.contextWindow" class="text-xs text-moon/70 block mt-1">
+              可选字段
+            </small>
           </div>
         </div>
       </div>
