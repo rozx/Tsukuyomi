@@ -3,10 +3,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
-import {
-  getChapterDisplayTitle,
-  getChapterContentText,
-} from 'src/utils/novel-utils';
+import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemories } from './memory-helper';
@@ -112,7 +109,9 @@ export const bookTools: ToolDefinition[] = [
         return JSON.stringify({
           success: true,
           book: info,
-          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -183,7 +182,7 @@ export const bookTools: ToolDefinition[] = [
             for (let chapterIndex = 0; chapterIndex < volume.chapters.length; chapterIndex++) {
               const chapter = volume.chapters[chapterIndex];
               if (!chapter) continue;
-              
+
               // 如果已达到限制，停止处理
               if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
                 break;
@@ -379,7 +378,9 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
-          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -502,7 +503,9 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
-          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -625,7 +628,9 @@ export const bookTools: ToolDefinition[] = [
                 }
               : null,
           },
-          ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
       } catch (error) {
         return JSON.stringify({
@@ -824,9 +829,7 @@ export const bookTools: ToolDefinition[] = [
             typeof updatedTitle === 'string' ? updatedTitle : updatedTitle.original,
           old_title_translation: oldTranslation,
           new_title_translation:
-            typeof updatedTitle === 'string'
-              ? ''
-              : updatedTitle.translation?.translation || '',
+            typeof updatedTitle === 'string' ? '' : updatedTitle.translation?.translation || '',
         });
       } catch (error) {
         return JSON.stringify({
