@@ -2202,8 +2202,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     return a.index - b.index;
   });
 
-  // 分组处理 todo 创建操作：将连续创建的 todo（时间戳相差小于 1 秒）合并为一个显示项
-  const TODO_GROUP_TIME_WINDOW = 1000; // 1 秒时间窗口
+  // 分组处理 todo 创建操作：将连续创建的 todo（相邻时间戳相差小于时间窗口）合并为一个显示项
+  const TODO_GROUP_TIME_WINDOW = 5000; // 5 秒时间窗口（更宽松，以捕获 AI 连续创建的 todo）
   let i = 0;
   while (i < sortedActions.length) {
     const currentAction = sortedActions[i]?.action;
@@ -2217,6 +2217,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       // 收集连续的 todo 创建操作
       const todoGroup: MessageAction[] = [currentAction];
       let j = i + 1;
+      let lastAddedTimestamp = currentAction.timestamp; // 追踪最后添加的 todo 的时间戳
 
       // 查找时间戳相近的后续 todo 创建操作
       while (j < sortedActions.length) {
@@ -2225,7 +2226,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           j++;
           continue;
         }
-        const timeDiff = nextAction.timestamp - currentAction.timestamp;
+        // 比较与上一个 todo 的时间差，而不是与第一个 todo 的时间差
+        // 这样可以正确捕获连续创建的 todo（如 0ms, 800ms, 1600ms 都能被分组）
+        const timeDiff = nextAction.timestamp - lastAddedTimestamp;
 
         // 如果下一个操作也是 todo 创建，且时间戳相差小于时间窗口，则加入分组
         if (
@@ -2234,6 +2237,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           timeDiff < TODO_GROUP_TIME_WINDOW
         ) {
           todoGroup.push(nextAction);
+          lastAddedTimestamp = nextAction.timestamp; // 更新最后添加的时间戳
           j++;
         } else {
           break;
