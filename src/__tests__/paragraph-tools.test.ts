@@ -382,29 +382,7 @@ describe('batch_replace_translations', () => {
 
     const resultObj = JSON.parse(result as string);
     expect(resultObj.success).toBe(true);
-    
-    // 调试：如果 replaced_count 为 0，输出详细信息
-    if (resultObj.replaced_count === 0) {
-      console.log('Result object:', JSON.stringify(resultObj, null, 2));
-      console.log('Novel volumes:', novel.volumes?.length);
-      console.log('Chapter content length:', chapter.content?.length);
-      console.log('Paragraph translations:', chapter.content?.map(p => p.translations?.[0]?.translation));
-      // 验证 useBooksStore mock
-      const { useBooksStore } = await import('src/stores/books');
-      const store = useBooksStore();
-      const bookFromStore = store.getBookById(novel.id);
-      console.log('Book from store:', bookFromStore ? 'found' : 'not found');
-      console.log('Book volumes from store:', bookFromStore?.volumes?.length);
-      if (bookFromStore?.volumes?.[0]?.chapters?.[0]) {
-        console.log('Chapter from store content length:', bookFromStore.volumes[0].chapters[0].content?.length);
-        console.log('Chapter from store content:', bookFromStore.volumes[0].chapters[0].content?.map(p => p.translations?.[0]?.translation));
-      }
-      // 测试 containsWholeKeyword
-      const { containsWholeKeyword } = await import('../services/ai/tools/paragraph-tools');
-      console.log('containsWholeKeyword test 1:', containsWholeKeyword('这是测试翻译', '测试'));
-      console.log('containsWholeKeyword test 2:', containsWholeKeyword('这是另一个测试', '测试'));
-    }
-    
+
     // 注意：由于使用了完整关键词匹配，"测试" 在 "这是测试翻译" 和 "这是另一个测试" 中都会被匹配
     // 因为 "测试" 是完整的中文词
     expect(resultObj.replaced_count).toBeGreaterThanOrEqual(2); // para1 和 para2 应该被替换
