@@ -534,6 +534,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 更新连续状态计数
       consecutivePlanningCount++;
       consecutiveWorkingCount = 0; // 重置其他状态计数
+      consecutiveCompletedCount = 0; // 重置其他状态计数
 
       // 检测循环：如果连续处于 planning 状态超过阈值，强制要求开始工作
       if (consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS) {
@@ -556,6 +557,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 更新连续状态计数
       consecutiveWorkingCount++;
       consecutivePlanningCount = 0; // 重置其他状态计数
+      consecutiveCompletedCount = 0; // 重置其他状态计数
 
       // 检测循环：如果连续处于 working 状态超过阈值且没有输出段落，强制要求完成
       if (consecutiveWorkingCount >= MAX_CONSECUTIVE_STATUS && accumulatedParagraphs.size === 0) {
