@@ -67,6 +67,11 @@ export interface AssistantServiceOptions {
    * 聊天会话 ID（可选），如果提供，待办事项将关联到此会话而不是任务
    */
   sessionId?: string;
+  /**
+   * 跳过 token 限制检查和服务级摘要（可选）
+   * 当 UI 层已经处理了摘要时设置为 true，避免重复摘要
+   */
+  skipTokenLimitSummarization?: boolean;
 }
 
 /**
@@ -347,35 +352,18 @@ search_web（仅用于外部知识，禁止修复本地数据）/fetch_webpage
       '最近对话（重点关注）',
     );
 
-    // 构建总结提示词，强调关注最近、当前和下一个任务
-    const summaryPrompt = `请总结以下对话历史，提取关键信息和上下文。**重要：请重点关注最近、当前和下一个任务**。
-
-总结应该简洁明了，按以下优先级组织内容：
-
-**优先级1（最重要）- 最近、当前和下一个任务**：
-1. 最近讨论的任务和正在进行的工作（翻译、校对、润色等）
-2. 当前正在处理的具体任务和进度
-3. 下一步计划要执行的任务和待办事项
-4. 最近创建或更新的待办事项状态
-
-**优先级2 - 中期重要信息**：
-5. 中期讨论的重要话题和决策
-6. 已解决或讨论的重要事项
-
-**优先级3 - 早期背景信息**：
-7. 对话的主要话题和讨论内容（简要概述）
-8. 用户的主要需求和问题（简要概述）
-
-对话历史：
+    // 构建总结提示词（精简版，减少 token 消耗）
+    const summaryPrompt = `总结以下对话，重点关注：
+1. 当前任务：正在进行的工作和进度
+2. 下一步：待执行的任务和计划
+3. 关键决策：重要的讨论结论
+4. 待办事项：任务状态和内容
 ${earlySection}${middleSection}${recentSection}
 
-**总结要求**：
-- 必须详细描述最近、当前和下一个任务的具体内容和状态
-- 对于早期和中期对话，只需简要概述关键信息
-- 重点关注任务相关的信息（翻译任务、校对任务、待办事项等）
-- 如果对话中提到了待办事项，必须详细说明其状态和内容
-
-请用简洁的中文总结以上对话：`;
+输出格式（使用中文，简洁扼要）：
+- 当前任务：[描述]
+- 下一步：[描述]
+- 关键信息：[描述]`;
 
     // 获取 AI 服务
     const aiService = AIServiceFactory.getService(model.provider);
@@ -390,12 +378,13 @@ ${earlySection}${middleSection}${recentSection}
       signal,
     };
 
-    // 构建请求
+    // 构建请求（使用较低的 maxTokens 来限制摘要长度）
+    const summaryMaxTokens = Math.min(model.maxTokens, 1024); // 摘要不需要太长
     const request: TextGenerationRequest = {
       messages: [
         {
           role: 'system',
-          content: '你是一个专业的对话总结助手，擅长提取对话中的关键信息和上下文。',
+          content: '你是对话总结专家。提取关键信息，输出简洁的结构化摘要。',
         },
         {
           role: 'user',
@@ -403,7 +392,7 @@ ${earlySection}${middleSection}${recentSection}
         },
       ],
       temperature: 0.3,
-      maxTokens: model.maxTokens,
+      maxTokens: summaryMaxTokens,
     };
 
     // 生成总结
@@ -417,7 +406,75 @@ ${earlySection}${middleSection}${recentSection}
       }
     });
 
-    return result.text || fullText;
+    const summary = result.text || fullText;
+
+    // 验证摘要质量
+    const validatedSummary = this.validateSummary(summary);
+    if (!validatedSummary) {
+      console.warn('[AssistantService] 摘要验证失败，返回降级摘要');
+      // 返回一个基本的降级摘要，避免完全失败
+      return this.createFallbackSummary(messages);
+    }
+
+    return validatedSummary;
+  }
+
+  /**
+   * 验证摘要质量
+   * @param summary 摘要内容
+   * @returns 验证后的摘要，如果无效则返回 null
+   */
+  private static validateSummary(summary: string): string | null {
+    if (!summary) {
+      return null;
+    }
+
+    const trimmed = summary.trim();
+
+    // 最小长度检查（至少 20 个字符）
+    if (trimmed.length < 20) {
+      console.warn(`[AssistantService] 摘要太短: ${trimmed.length} 字符`);
+      return null;
+    }
+
+    // 检查是否只是错误信息或无意义内容
+    const invalidPatterns = [
+      /^(error|错误|失败|无法)/i,
+      /^抱歉/,
+      /^我不/,
+      /^sorry/i,
+    ];
+
+    for (const pattern of invalidPatterns) {
+      if (pattern.test(trimmed)) {
+        console.warn(`[AssistantService] 摘要匹配无效模式: ${pattern}`);
+        return null;
+      }
+    }
+
+    return trimmed;
+  }
+
+  /**
+   * 创建降级摘要（当 AI 摘要失败时使用）
+   * @param messages 原始消息列表
+   * @returns 简单的降级摘要
+   */
+  private static createFallbackSummary(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ): string {
+    // 提取最近几条消息的关键内容
+    const recentMessages = messages.slice(-5);
+    const userMessages = recentMessages
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content.slice(0, 50))
+      .join('；');
+
+    if (userMessages) {
+      return `最近讨论：${userMessages}${userMessages.length > 100 ? '...' : ''}`;
+    }
+
+    return '（会话摘要生成失败，已保留最近对话上下文）';
   }
 
   /**
@@ -982,11 +1039,14 @@ ${earlySection}${middleSection}${recentSection}
         }
       }
 
+      // 检查是否需要在请求前进行摘要
+      // 如果 UI 层已经处理了摘要（skipTokenLimitSummarization = true），则跳过此检查
       const shouldSummarizeBeforeRequest =
-        (model.maxTokens > 0 &&
+        !options.skipTokenLimitSummarization &&
+        ((model.maxTokens > 0 &&
           model.maxTokens !== UNLIMITED_TOKENS &&
           estimatedTokens >= model.maxTokens * TOKEN_THRESHOLD_RATIO) ||
-        effectiveMaxTokens === 0; // 如果消息占满了上下文窗口，必须总结
+          effectiveMaxTokens === 0); // 如果消息占满了上下文窗口，必须总结
 
       if (
         shouldSummarizeBeforeRequest &&

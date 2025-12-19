@@ -27,7 +27,6 @@ import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-serv
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
-import { MemoryService } from 'src/services/memory-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
@@ -457,28 +456,53 @@ const sendMessage = async () => {
   // 检查是否达到限制（在添加新消息之前）
   // 注意：这里检查的是添加新消息后的数量
   const sessionForLimit = chatSessionsStore.currentSession;
-  const messageCountSinceSummary = getMessagesSinceSummaryCount(sessionForLimit);
+  let messageCountSinceSummary = getMessagesSinceSummaryCount(sessionForLimit);
   const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
   const willReachLimit = messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION;
 
-  if (willReachLimit) {
-    toast.add({
-      severity: 'warn',
-      summary: '会话消息数已达上限',
-      detail: '请先总结当前会话或创建新会话',
-      life: 3000,
-    });
-    return;
+  // 如果接近或达到限制，先尝试自动总结
+  // 注意：无论是接近限制(40)还是达到限制(50)，都应该先尝试总结，而不是直接阻止
+  let uiPerformedSummarization = false; // 跟踪 UI 是否成功执行了摘要
+
+  if ((willExceedLimit || willReachLimit) && messages.value.length > 0) {
+    // 执行 UI 层摘要
+    const summarizationResult = await performUISummarization();
+
+    if (!summarizationResult.success) {
+      // 摘要失败：如果已达上限则阻止发送，否则继续（可能触发服务层摘要）
+      if (willReachLimit) {
+        return; // performUISummarization 内部已显示错误 toast
+      }
+      // 未达上限，继续发送（可能触发服务层摘要）
+    } else {
+      uiPerformedSummarization = true;
+
+      // 总结成功后，重新检查消息数量
+      const updatedSession = chatSessionsStore.currentSession;
+      messageCountSinceSummary = getMessagesSinceSummaryCount(updatedSession);
+
+      // 如果总结后仍然达到限制（理论上不应该发生，但作为安全检查）
+      if (messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION) {
+        toast.add({
+          severity: 'warn',
+          summary: '会话消息数仍达上限',
+          detail: '请创建新会话继续对话',
+          life: 3000,
+        });
+        return;
+      }
+    }
   }
 
-  // 如果接近限制，自动总结并重置
-  let summarySucceeded = true;
-  if (willExceedLimit && messages.value.length > 0) {
-    try {
-      isSending.value = true;
-      isSummarizing.value = true;
-      // 不显示总结开始的 toast，静默进行
+  /**
+   * 执行 UI 层摘要的辅助函数
+   * @returns 包含成功状态的结果对象
+   */
+  async function performUISummarization(): Promise<{ success: boolean }> {
+    isSending.value = true;
+    isSummarizing.value = true;
 
+    try {
       // 创建总结消息气泡
       const summarizationMessageId = (Date.now() - 1).toString();
       const summarizationMessage: ChatMessage = {
@@ -489,6 +513,7 @@ const sendMessage = async () => {
         isSummarization: true,
       };
       messages.value.push(summarizationMessage);
+
       // 更新 store 中的消息历史
       const currentSession = chatSessionsStore.currentSession;
       if (currentSession) {
@@ -505,6 +530,10 @@ const sendMessage = async () => {
         }));
 
       // 调用总结功能
+      // 注意：此时 assistantModel.value 已在 sendMessage 开头验证过，但 TypeScript 需要再次断言
+      if (!assistantModel.value) {
+        throw new Error('助手模型未配置');
+      }
       const summary = await AssistantService.summarizeSession(
         assistantModel.value,
         messagesToSummarize,
@@ -543,21 +572,8 @@ const sendMessage = async () => {
       // 保存总结（不清除聊天历史）
       chatSessionsStore.summarizeAndReset(summary);
 
-      // 创建记忆（如果有 bookId）
-      const context = contextStore.getContext;
-      if (context.currentBookId && summary) {
-        try {
-          const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
-          await MemoryService.createMemory(
-            context.currentBookId,
-            summary,
-            `会话摘要：${memorySummary}`,
-          );
-        } catch (error) {
-          console.error('Failed to create memory for session summary:', error);
-          // 不抛出错误，记忆创建失败不应该影响摘要流程
-        }
-      }
+      // 注意：记忆创建已移至 AssistantService.requestSummaryReset 中统一处理
+      // 避免重复创建相同的会话摘要记忆
 
       // 更新本地消息列表（使用标记避免触发 watch）
       isUpdatingFromStore = true;
@@ -565,16 +581,13 @@ const sendMessage = async () => {
       if (session) {
         messages.value = [...session.messages];
       }
-      // 使用 nextTick 确保在下一个 tick 重置标记
       await nextTick();
       isUpdatingFromStore = false;
 
-      // 不显示总结成功的 toast，静默完成
-      isSummarizing.value = false;
+      return { success: true };
     } catch (error) {
       console.error('Failed to summarize session:', error);
-      summarySucceeded = false;
-      isSummarizing.value = false;
+
       toast.add({
         severity: 'error',
         summary: '总结失败',
@@ -582,9 +595,8 @@ const sendMessage = async () => {
         life: 5000,
       });
 
-      // 总结失败时，再次检查是否达到限制
-      const currentMessageCount = messages.value.length + 1;
-      if (currentMessageCount >= MAX_MESSAGES_PER_SESSION) {
+      // 总结失败时，检查是否达到限制
+      if (willReachLimit) {
         toast.add({
           severity: 'warn',
           summary: '无法发送消息',
@@ -592,15 +604,13 @@ const sendMessage = async () => {
           life: 5000,
         });
         isSending.value = false;
-        return; // 阻止发送消息
       }
+
+      return { success: false };
     } finally {
-      if (summarySucceeded) {
-        isSending.value = false;
-      }
-      // 确保摘要状态被重置
       isSummarizing.value = false;
-      // 如果总结失败且未达到上限，继续发送消息
+      // 注意：isSending 在成功时保持 true，因为后续会继续发送消息
+      // 只在失败且达到限制时在 catch 中重置为 false
     }
   }
 
@@ -648,10 +658,12 @@ const sendMessage = async () => {
     let savedThinkingProcess: string | undefined = undefined;
 
     // 调用 AssistantService（内部会创建任务并获取 abortController signal）
+    // 如果 UI 已经执行了摘要，告知服务跳过 token 限制检查，避免重复摘要
     const result = await AssistantService.chat(assistantModel.value, message, {
       ...(sessionSummary ? { sessionSummary } : {}),
       ...(messageHistory ? { messageHistory } : {}),
       ...(sessionId ? { sessionId } : {}),
+      ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
       onSummarizingStart: () => {
         // 当服务内部开始摘要时，创建摘要气泡
         isSummarizingInternally = true;
@@ -2190,8 +2202,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     return a.index - b.index;
   });
 
-  // 分组处理 todo 创建操作：将连续创建的 todo（时间戳相差小于 1 秒）合并为一个显示项
-  const TODO_GROUP_TIME_WINDOW = 1000; // 1 秒时间窗口
+  // 分组处理 todo 创建操作：将连续创建的 todo（相邻时间戳相差小于时间窗口）合并为一个显示项
+  const TODO_GROUP_TIME_WINDOW = 5000; // 5 秒时间窗口（更宽松，以捕获 AI 连续创建的 todo）
   let i = 0;
   while (i < sortedActions.length) {
     const currentAction = sortedActions[i]?.action;
@@ -2205,6 +2217,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       // 收集连续的 todo 创建操作
       const todoGroup: MessageAction[] = [currentAction];
       let j = i + 1;
+      let lastAddedTimestamp = currentAction.timestamp; // 追踪最后添加的 todo 的时间戳
 
       // 查找时间戳相近的后续 todo 创建操作
       while (j < sortedActions.length) {
@@ -2213,7 +2226,9 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           j++;
           continue;
         }
-        const timeDiff = nextAction.timestamp - currentAction.timestamp;
+        // 比较与上一个 todo 的时间差，而不是与第一个 todo 的时间差
+        // 这样可以正确捕获连续创建的 todo（如 0ms, 800ms, 1600ms 都能被分组）
+        const timeDiff = nextAction.timestamp - lastAddedTimestamp;
 
         // 如果下一个操作也是 todo 创建，且时间戳相差小于时间窗口，则加入分组
         if (
@@ -2222,6 +2237,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           timeDiff < TODO_GROUP_TIME_WINDOW
         ) {
           todoGroup.push(nextAction);
+          lastAddedTimestamp = nextAction.timestamp; // 更新最后添加的时间戳
           j++;
         } else {
           break;
