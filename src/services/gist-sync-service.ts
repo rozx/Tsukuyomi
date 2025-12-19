@@ -50,12 +50,7 @@ export function extractNovelIdFromChunkFileName(fileName: string): string | null
     const indexPart = beforeDot.substring(underscoreIndex + 1);
     if (/^\d+$/.test(indexPart)) {
       const novelId = beforeDot.substring(prefixLength, underscoreIndex);
-      if (
-        novelId &&
-        novelId.length > 0 &&
-        !novelId.includes('#') &&
-        !novelId.endsWith('-')
-      ) {
+      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
         return novelId;
       }
     }
@@ -67,12 +62,7 @@ export function extractNovelIdFromChunkFileName(fileName: string): string | null
     const indexPart = beforeDot.substring(hashIndex + 1);
     if (/^\d+$/.test(indexPart)) {
       const novelId = beforeDot.substring(prefixLength, hashIndex);
-      if (
-        novelId &&
-        novelId.length > 0 &&
-        !novelId.includes('#') &&
-        !novelId.endsWith('-')
-      ) {
+      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
         return novelId;
       }
     }
@@ -219,23 +209,23 @@ const RETRY_CONFIG = {
  */
 function isRetryableError(error: unknown): boolean {
   if (!error) return false;
-  
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const errorObj = error as any;
   const status = errorObj?.status || errorObj?.response?.status;
-  
+
   // 网络错误（无状态码）
   if (!status) return true;
-  
+
   // 5xx 服务器错误
   if (status >= 500 && status < 600) return true;
-  
+
   // 429 Too Many Requests（速率限制）
   if (status === 429) return true;
-  
+
   // 408 Request Timeout
   if (status === 408) return true;
-  
+
   return false;
 }
 
@@ -252,35 +242,35 @@ async function withRetry<T>(
   config = RETRY_CONFIG,
 ): Promise<T> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 0; attempt < config.maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (!isRetryableError(error)) {
         // 不可重试的错误，立即抛出
         throw lastError;
       }
-      
+
       if (attempt < config.maxRetries - 1) {
         // 计算延迟（指数退避 + 抖动）
         const baseDelay = config.baseDelayMs * Math.pow(2, attempt);
         const jitter = Math.random() * 0.3 * baseDelay; // 添加 30% 的抖动
         const delay = Math.min(baseDelay + jitter, config.maxDelayMs);
-        
+
         console.warn(
           `[GistSyncService] ${operationName} 失败（尝试 ${attempt + 1}/${config.maxRetries}），` +
-          `${Math.round(delay)}ms 后重试:`,
+            `${Math.round(delay)}ms 后重试:`,
           lastError.message,
         );
-        
+
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   // 所有重试都失败了
   throw lastError || new Error(`${operationName} 失败: 未知错误`);
 }
@@ -625,6 +615,15 @@ export class GistSyncService {
       for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
         const novel = novelsWithContent[novelIndex];
         if (!novel) {
+          // 跳过 null 值时也要更新进度，确保进度跟踪准确
+          processedItems = novelIndex + 1;
+          if (onProgress) {
+            onProgress({
+              current: processedItems,
+              total: totalItems,
+              message: `跳过无效书籍 (${processedItems}/${totalItems})`,
+            });
+          }
           continue;
         }
         const serializedNovel = this.serializeDates(novel);
@@ -824,7 +823,8 @@ export class GistSyncService {
                 }
                 return; // 成功，退出重试循环
               } catch (batchError) {
-                lastError = batchError instanceof Error ? batchError : new Error(String(batchError));
+                lastError =
+                  batchError instanceof Error ? batchError : new Error(String(batchError));
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const errorResponse = (batchError as any).response;
                 const errorData = errorResponse?.data;
@@ -871,7 +871,7 @@ export class GistSyncService {
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
           totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
           const finalTotal = totalItems + totalBatches; // 准备阶段 + 上传批次
-          
+
           // 更新进度：开始上传
           if (onProgress) {
             onProgress({
@@ -880,11 +880,11 @@ export class GistSyncService {
               message: '正在上传文件...',
             });
           }
-          
+
           for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
             const batchIndex = Math.floor(i / BATCH_SIZE);
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
-            
+
             // 更新进度：上传批次
             if (onProgress) {
               onProgress({
@@ -893,10 +893,10 @@ export class GistSyncService {
                 message: `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
               });
             }
-            
+
             await updateBatchWithRetry(batchFiles, batchIndex);
           }
-          
+
           // 更新进度：上传完成
           if (onProgress) {
             onProgress({
@@ -948,7 +948,7 @@ export class GistSyncService {
             message: '正在创建 Gist...',
           });
         }
-        
+
         const filesForCreate: Record<string, { content: string }> = {};
         for (const [key, value] of Object.entries(files)) {
           if (value !== null) {
@@ -962,7 +962,7 @@ export class GistSyncService {
         });
         gistId = response.data.id;
         gistUrl = response.data.html_url;
-        
+
         // 更新进度：创建完成
         if (onProgress) {
           onProgress({
@@ -1228,7 +1228,7 @@ export class GistSyncService {
                 const parsedContent = await this.parseGistContent(fullContent);
                 const novel = this.deserializeDates(parsedContent) as Novel;
                 result.novels.push(novel);
-                
+
                 // 更新进度：处理完一本书
                 processedNovels++;
                 if (onProgress) {
@@ -1238,7 +1238,7 @@ export class GistSyncService {
                     message: `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`,
                   });
                 }
-                
+
                 continue; // 成功重组，继续处理下一本书
               } catch {
                 // 如果解析失败，尝试使用未分块文件（如果存在且未截断）
@@ -1285,7 +1285,7 @@ export class GistSyncService {
               const parsedContent = await this.parseGistContent(fileContent);
               const novel = this.deserializeDates(parsedContent) as Novel;
               result.novels.push(novel);
-              
+
               // 更新进度：处理完一本书
               processedNovels++;
               if (onProgress) {
@@ -1330,7 +1330,7 @@ export class GistSyncService {
           }
         }
       }
-      
+
       // 更新进度：下载完成
       if (onProgress) {
         onProgress({
