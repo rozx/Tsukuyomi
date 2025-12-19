@@ -148,6 +148,8 @@ export function useGistSync() {
         // 更新进度：上传完成
         settingsStore.updateSyncProgress({
           message: '上传完成，正在更新状态...',
+          current: 1,
+          total: 1,
         });
 
         // 更新 Gist ID（等待完成）
