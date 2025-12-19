@@ -5,16 +5,109 @@ import { useSettingsStore } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
+import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
+
+/**
+ * 可恢复的项目接口
+ */
+export interface RestorableItem {
+  id: string;
+  type: 'novel' | 'model' | 'cover';
+  title: string;
+  deletedAt: number;
+  data: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+}
 
 /**
  * 同步数据服务
  * 处理上传/下载配置的通用逻辑
  */
 export class SyncDataService {
+
+  /**
+   * 验证远程数据的完整性
+   * @param remoteData 远程数据
+   * @returns 验证是否通过
+   */
+  private static validateRemoteData(remoteData: {
+    novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  } | null): boolean {
+    if (!remoteData) {
+      return true; // null 数据是有效的（表示没有远程数据）
+    }
+
+    // 验证 novels 数组
+    if (remoteData.novels !== null && remoteData.novels !== undefined) {
+      if (!Array.isArray(remoteData.novels)) {
+        console.error('[SyncDataService] 验证失败: novels 必须是数组');
+        return false;
+      }
+      // 验证每个 novel 的基本结构
+      for (const novel of remoteData.novels) {
+        if (!novel || typeof novel !== 'object') {
+          console.error('[SyncDataService] 验证失败: novel 必须是对象');
+          return false;
+        }
+        if (!novel.id || typeof novel.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: novel 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 aiModels 数组
+    if (remoteData.aiModels !== null && remoteData.aiModels !== undefined) {
+      if (!Array.isArray(remoteData.aiModels)) {
+        console.error('[SyncDataService] 验证失败: aiModels 必须是数组');
+        return false;
+      }
+      // 验证每个 model 的基本结构
+      for (const model of remoteData.aiModels) {
+        if (!model || typeof model !== 'object') {
+          console.error('[SyncDataService] 验证失败: model 必须是对象');
+          return false;
+        }
+        if (!model.id || typeof model.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: model 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 coverHistory 数组
+    if (remoteData.coverHistory !== null && remoteData.coverHistory !== undefined) {
+      if (!Array.isArray(remoteData.coverHistory)) {
+        console.error('[SyncDataService] 验证失败: coverHistory 必须是数组');
+        return false;
+      }
+      // 验证每个 cover 的基本结构
+      for (const cover of remoteData.coverHistory) {
+        if (!cover || typeof cover !== 'object') {
+          console.error('[SyncDataService] 验证失败: cover 必须是对象');
+          return false;
+        }
+        if (!cover.id || typeof cover.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: cover 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // appSettings 可以是任何对象，不需要严格验证
+    return true;
+  }
+
   /**
    * 应用下载的数据（总是使用最新的 lastEdited 时间）
+   * @param remoteData 远程数据
+   * @param lastSyncTime 上次同步时间（可选）
+   * @param isManualRetrieval 是否为手动检索（默认 false）。如果为 true，会保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
+   * @returns 如果是手动检索，返回可恢复的项目列表；否则返回空数组
    */
   static async applyDownloadedData(
     remoteData: {
@@ -24,11 +117,20 @@ export class SyncDataService {
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
     lastSyncTime?: number,
-  ): Promise<void> {
+    isManualRetrieval = false,
+  ): Promise<RestorableItem[]> {
     // 如果 remoteData 为 null，直接返回
     if (!remoteData) {
-      return;
+      return [];
     }
+
+    // 验证远程数据的完整性
+    if (!SyncDataService.validateRemoteData(remoteData)) {
+      console.error('[SyncDataService] 远程数据验证失败，拒绝应用数据');
+      throw new Error('远程数据格式无效，无法应用');
+    }
+
+    const restorableItems: RestorableItem[] = [];
 
     const aiModelsStore = useAIModelsStore();
     const booksStore = useBooksStore();
@@ -53,33 +155,81 @@ export class SyncDataService {
     };
 
     // 处理 AI 模型（确保 aiModels 是数组）
+    // 使用删除记录列表来判断是否恢复已删除的模型
     if (
       remoteData.aiModels &&
       Array.isArray(remoteData.aiModels) &&
       remoteData.aiModels.length > 0
     ) {
       const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const deletedModelIds = settingsStore.gistSync.deletedModelIds || [];
+      const deletedModelIdsMap = new Map<string, number>(
+        deletedModelIds.map((record) => [record.id, record.deletedAt]),
+      );
 
       // 收集所有远程模型（使用最新的 lastEdited 时间）
       for (const remoteModel of remoteData.aiModels) {
         const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
         if (localModel) {
           // 比较 lastEdited 时间，使用最新的
-          if (shouldUseRemote(localModel.lastEdited, remoteModel.lastEdited)) {
+          const localTime = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
+          const remoteTime = remoteModel.lastEdited
+            ? new Date(remoteModel.lastEdited).getTime()
+            : 0;
+          if (remoteTime > localTime) {
             finalModels.push(remoteModel);
           } else {
             finalModels.push(localModel);
           }
         } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 如果是首次同步（syncTime === 0），应用所有远程模型
-          // 否则只保留在上次同步后新添加的远程模型（lastEdited > lastSyncTime）
-          // 陈旧的远程模型（lastEdited <= lastSyncTime）会被自动删除，因为本地已删除
-          if (syncTime === 0 || (remoteModel.lastEdited && checkIsNewlyAdded(remoteModel.lastEdited, syncTime))) {
-            // 远程新添加的模型，保留
-            finalModels.push(remoteModel);
+          // 本地不存在，检查是否在删除记录中
+          const deletionRecord = deletedModelIdsMap.get(remoteModel.id);
+          if (deletionRecord !== undefined) {
+            // 在删除记录中，检查删除时间
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
+            if (deletionRecord > syncTime) {
+              // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
+              // 除非是手动检索
+              if (isManualRetrieval) {
+                // 手动检索时，收集可恢复的项目
+                restorableItems.push({
+                  id: remoteModel.id,
+                  type: 'model',
+                  title: (remoteModel as any).name || remoteModel.id, // eslint-disable-line @typescript-eslint/no-explicit-any
+                  deletedAt: deletionRecord,
+                  data: remoteModel,
+                });
+              }
+              // 自动同步时不恢复
+            } else {
+              // 删除时间早于或等于上次同步时间，可能是旧删除，检查远程是否有更新
+              if (remoteModel.lastEdited) {
+                const remoteTime = new Date(remoteModel.lastEdited).getTime();
+                if (remoteTime > syncTime) {
+                  // 远程有更新，恢复（从删除记录中移除）
+                  finalModels.push(remoteModel);
+                  // 从删除记录中移除
+                  const updatedDeletedModelIds = deletedModelIds.filter(
+                    (record) => record.id !== remoteModel.id,
+                  );
+                  await settingsStore.updateGistSync({
+                    deletedModelIds: updatedDeletedModelIds,
+                  });
+                }
+              }
+            }
+          } else {
+            // 不在删除记录中，检查是否是远程新添加的
+            // 如果是首次同步（syncTime === 0），应用所有远程模型
+            // 否则检查 lastEdited 时间
+            if (
+              syncTime === 0 ||
+              (remoteModel.lastEdited && checkIsNewlyAdded(remoteModel.lastEdited, syncTime))
+            ) {
+              // 远程新添加的模型，保留
+              finalModels.push(remoteModel);
+            }
           }
-          // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
         }
       }
 
@@ -104,7 +254,8 @@ export class SyncDataService {
     }
 
     // 处理书籍（确保 novels 是数组）
-    if (remoteData.novels && Array.isArray(remoteData.novels) && remoteData.novels.length > 0) {
+    // 即使远程书籍列表为空，也需要处理（可能远程删除了所有书籍）
+    if (remoteData.novels && Array.isArray(remoteData.novels)) {
       const finalBooks: Novel[] = [];
 
       // 收集所有远程书籍（使用最新的 lastEdited 时间）
@@ -126,25 +277,76 @@ export class SyncDataService {
             finalBooks.push(localNovelWithContent);
           }
         } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 如果是首次同步（syncTime === 0），应用所有远程书籍
-          // 否则只保留在上次同步后新添加的远程书籍（lastEdited > lastSyncTime）
-          // 陈旧的远程书籍（lastEdited <= lastSyncTime）会被自动删除，因为本地已删除
-          if (syncTime === 0 || checkIsNewlyAdded(remoteNovel.lastEdited, syncTime)) {
-            // 远程新添加的书籍，保留
-            finalBooks.push(remoteNovel as Novel);
+          // 本地不存在，检查是否在删除记录中
+          const deletedNovelIds = settingsStore.gistSync.deletedNovelIds || [];
+          const deletedNovelIdsMap = new Map<string, number>(
+            deletedNovelIds.map((record) => [record.id, record.deletedAt]),
+          );
+          const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
+          
+          if (deletionRecord !== undefined) {
+            // 在删除记录中，检查删除时间
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
+            if (deletionRecord > syncTime) {
+              // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
+              // 除非是手动检索
+              if (isManualRetrieval) {
+                // 手动检索时，收集可恢复的项目
+                restorableItems.push({
+                  id: remoteNovel.id,
+                  type: 'novel',
+                  title: (remoteNovel as Novel).title || remoteNovel.id,
+                  deletedAt: deletionRecord,
+                  data: remoteNovel,
+                });
+              }
+              // 自动同步时不恢复
+            } else {
+              // 删除时间早于或等于上次同步时间，可能是旧删除，检查远程是否有更新
+              const remoteTime = new Date(remoteNovel.lastEdited).getTime();
+              if (remoteTime > syncTime) {
+                // 远程有更新，恢复（从删除记录中移除）
+                finalBooks.push(remoteNovel as Novel);
+                // 从删除记录中移除
+                const updatedDeletedNovelIds = deletedNovelIds.filter(
+                  (record) => record.id !== remoteNovel.id,
+                );
+                await settingsStore.updateGistSync({
+                  deletedNovelIds: updatedDeletedNovelIds,
+                });
+              }
+            }
+          } else {
+            // 不在删除记录中，检查是否是远程新添加的
+            // 如果是首次同步（syncTime === 0），应用所有远程书籍
+            // 如果本地书籍列表为空（可能是手动清空后恢复），应用所有远程书籍
+            // 否则只保留在上次同步后新添加的远程书籍（lastEdited > lastSyncTime）
+            if (
+              syncTime === 0 ||
+              booksStore.books.length === 0 ||
+              isManualRetrieval ||
+              checkIsNewlyAdded(remoteNovel.lastEdited, syncTime)
+            ) {
+              // 远程新添加的书籍，保留
+              finalBooks.push(remoteNovel as Novel);
+            }
           }
-          // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
         }
       }
 
       // 添加本地独有的书籍
       // 只保留在上次同步后新添加的本地书籍（lastEdited > lastSyncTime）
       // 陈旧的本地书籍（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
+      // 但如果远程书籍列表为空（可能是远程删除了所有书籍），保留所有本地书籍
       for (const localBook of booksStore.books) {
         if (!remoteData.novels.find((n) => n.id === localBook.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
-          if (checkIsNewlyAdded(localBook.lastEdited, syncTime)) {
+          // 如果远程书籍列表为空，保留所有本地书籍（可能是远程删除了所有书籍）
+          if (
+            remoteData.novels.length === 0 ||
+            isManualRetrieval ||
+            checkIsNewlyAdded(localBook.lastEdited, syncTime)
+          ) {
             // 本地新增的书籍，保留（确保章节内容已加载）
             const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
             finalBooks.push(localBookWithContent);
@@ -164,6 +366,10 @@ export class SyncDataService {
       remoteData.coverHistory.length > 0
     ) {
       const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const deletedCoverIds = settingsStore.gistSync.deletedCoverIds || [];
+      const deletedCoverIdsMap = new Map<string, number>(
+        deletedCoverIds.map((record) => [record.id, record.deletedAt]),
+      );
 
       for (const remoteCover of remoteData.coverHistory) {
         const localCover = coverHistoryStore.covers.find((c) => c.id === remoteCover.id);
@@ -175,15 +381,49 @@ export class SyncDataService {
             finalCovers.push(localCover);
           }
         } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 如果是首次同步（syncTime === 0），应用所有远程封面
-          // 否则只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
-          // 陈旧的远程封面（addedAt <= lastSyncTime）会被自动删除，因为本地已删除
-          if (syncTime === 0 || checkIsNewlyAdded(remoteCover.addedAt, syncTime)) {
-            // 远程新添加的封面，保留
-            finalCovers.push(remoteCover);
+          // 本地不存在，检查是否在删除记录中
+          const deletionRecord = deletedCoverIdsMap.get(remoteCover.id);
+          if (deletionRecord !== undefined) {
+            // 在删除记录中，检查删除时间
+            // deletionRecord 是 number 类型（deletedAt 时间戳）
+            if (deletionRecord > syncTime) {
+              // 删除时间晚于上次同步时间，说明是本地删除的，不恢复
+              // 除非是手动检索
+              if (isManualRetrieval) {
+                // 手动检索时，收集可恢复的项目
+                restorableItems.push({
+                  id: remoteCover.id,
+                  type: 'cover',
+                  title: (remoteCover as any).url || remoteCover.id, // eslint-disable-line @typescript-eslint/no-explicit-any
+                  deletedAt: deletionRecord,
+                  data: remoteCover,
+                });
+              }
+              // 自动同步时不恢复
+            } else {
+              // 删除时间早于或等于上次同步时间，可能是旧删除，检查远程是否有更新
+              const remoteTime = new Date(remoteCover.addedAt).getTime();
+              if (remoteTime > syncTime) {
+                // 远程有更新，恢复（从删除记录中移除）
+                finalCovers.push(remoteCover);
+                // 从删除记录中移除
+                const updatedDeletedCoverIds = deletedCoverIds.filter(
+                  (record) => record.id !== remoteCover.id,
+                );
+                await settingsStore.updateGistSync({
+                  deletedCoverIds: updatedDeletedCoverIds,
+                });
+              }
+            }
+          } else {
+            // 不在删除记录中，检查是否是远程新添加的
+            // 如果是首次同步（syncTime === 0），应用所有远程封面
+            // 否则只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
+            if (syncTime === 0 || checkIsNewlyAdded(remoteCover.addedAt, syncTime)) {
+              // 远程新添加的封面，保留
+              finalCovers.push(remoteCover);
+            }
           }
-          // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
         }
       }
 
@@ -212,11 +452,72 @@ export class SyncDataService {
       const localSettings = settingsStore.getAllSettings();
       // 比较 lastEdited 时间，使用最新的
       if (shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited)) {
+        // 保存本地的 Gist 同步配置（包括同步状态）
         const currentGistSync = settingsStore.gistSync;
         await settingsStore.importSettings(remoteData.appSettings);
+        // 恢复本地的 Gist 同步配置，确保本地同步状态不被覆盖
         await settingsStore.updateGistSync(currentGistSync);
       }
     }
+
+    // 合并删除记录（从远程设置中获取）
+    // 删除记录存储在 appSettings.syncs 中
+    if (remoteData.appSettings?.syncs) {
+      const remoteSyncs = remoteData.appSettings.syncs;
+      const gistSync = remoteSyncs.find((s: any) => s.syncType === 'gist'); // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (gistSync) {
+        const localGistSync = settingsStore.gistSync;
+        
+        // 合并删除记录：保留最新的删除时间戳
+        const mergeDeletionRecords = (
+          local: DeletionRecord[] = [],
+          remote: DeletionRecord[] = [],
+        ): DeletionRecord[] => {
+          const mergedMap = new Map<string, DeletionRecord>();
+          
+          // 添加本地删除记录
+          for (const record of local) {
+            mergedMap.set(record.id, record);
+          }
+          
+          // 合并远程删除记录（保留最新的删除时间）
+          for (const record of remote) {
+            const existing = mergedMap.get(record.id);
+            if (!existing || record.deletedAt > existing.deletedAt) {
+              mergedMap.set(record.id, record);
+            }
+          }
+          
+          return Array.from(mergedMap.values());
+        };
+
+        const mergedDeletedNovelIds = mergeDeletionRecords(
+          localGistSync.deletedNovelIds,
+          gistSync.deletedNovelIds,
+        );
+        const mergedDeletedModelIds = mergeDeletionRecords(
+          localGistSync.deletedModelIds,
+          gistSync.deletedModelIds,
+        );
+        const mergedDeletedCoverIds = mergeDeletionRecords(
+          localGistSync.deletedCoverIds,
+          gistSync.deletedCoverIds,
+        );
+
+        // 更新删除记录
+        await settingsStore.updateGistSync({
+          deletedNovelIds: mergedDeletedNovelIds,
+          deletedModelIds: mergedDeletedModelIds,
+          deletedCoverIds: mergedDeletedCoverIds,
+        });
+      }
+    }
+
+    // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+    await settingsStore.cleanupOldDeletionRecords();
+
+    // 返回可恢复的项目（仅在手动检索时）
+    return isManualRetrieval ? restorableItems : [];
   }
 
   /**
@@ -403,12 +704,29 @@ export class SyncDataService {
     if (remoteData.appSettings) {
       if (shouldUseRemote(localData.appSettings.lastEdited, remoteData.appSettings.lastEdited)) {
         // 使用远程设置，但保留本地的 Gist 同步配置
-        const currentGistSync = localData.appSettings.syncs?.gist;
+        // 这包括 lastSyncTime、lastSyncedModelIds、deletedNovelIds 等本地状态
+        const localGistSync = localData.appSettings.syncs?.gist;
+        const remoteGistSync = remoteData.appSettings.syncs?.gist;
+        
+        // 合并 Gist 同步配置：保留本地的同步状态，但使用远程的其他配置
+        const mergedGistSync = localGistSync
+          ? {
+              ...remoteGistSync,
+              ...localGistSync,
+              // 确保本地的重要状态字段被保留
+              lastSyncTime: localGistSync.lastSyncTime ?? remoteGistSync?.lastSyncTime ?? 0,
+              lastSyncedModelIds: localGistSync.lastSyncedModelIds ?? remoteGistSync?.lastSyncedModelIds,
+              deletedNovelIds: localGistSync.deletedNovelIds ?? remoteGistSync?.deletedNovelIds ?? [],
+              deletedModelIds: localGistSync.deletedModelIds ?? remoteGistSync?.deletedModelIds ?? [],
+              deletedCoverIds: localGistSync.deletedCoverIds ?? remoteGistSync?.deletedCoverIds ?? [],
+            }
+          : remoteGistSync;
+
         finalSettings = {
           ...remoteData.appSettings,
           syncs: {
             ...remoteData.appSettings.syncs,
-            gist: currentGistSync || remoteData.appSettings.syncs?.gist,
+            gist: mergedGistSync,
           },
         };
       }

@@ -1,10 +1,11 @@
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { SyncDataService } from 'src/services/sync-data-service';
+import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { SyncConfig } from 'src/models/sync';
+import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import co from 'co';
 
@@ -109,6 +110,8 @@ export function useGistSync() {
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
+            // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+            yield settingsStore.cleanupOldDeletionRecords();
           } catch (error) {
             console.error('[useGistSync] 更新最后同步时间失败:', error);
           }
@@ -197,26 +200,100 @@ export function useGistSync() {
   };
 
   /**
+   * 恢复已删除的项目
+   * @param items 要恢复的项目列表
+   */
+  const restoreDeletedItems = async (
+    items: RestorableItem[],
+  ): Promise<void> => {
+    const settingsStore = useSettingsStore();
+    const gistSync = settingsStore.gistSync;
+
+    // 按类型分组
+    const novelsToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const modelsToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const coversToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    for (const item of items) {
+      if (item.type === 'novel') {
+        novelsToRestore.push(item.data);
+      } else if (item.type === 'model') {
+        modelsToRestore.push(item.data);
+      } else if (item.type === 'cover') {
+        coversToRestore.push(item.data);
+      }
+    }
+
+    // 恢复书籍
+    if (novelsToRestore.length > 0) {
+      for (const novel of novelsToRestore) {
+        await booksStore.addBook(novel as Novel);
+      }
+    }
+
+    // 恢复模型
+    if (modelsToRestore.length > 0) {
+      for (const model of modelsToRestore) {
+        await aiModelsStore.addModel(model);
+      }
+    }
+
+    // 恢复封面
+    if (coversToRestore.length > 0) {
+      for (const cover of coversToRestore) {
+        await coverHistoryStore.addCover(cover);
+      }
+    }
+
+    // 从删除记录中移除已恢复的项目
+    const deletedNovelIds = (gistSync.deletedNovelIds || []).filter(
+      (record) => !items.some((item) => item.type === 'novel' && item.id === record.id),
+    );
+    const deletedModelIds = (gistSync.deletedModelIds || []).filter(
+      (record) => !items.some((item) => item.type === 'model' && item.id === record.id),
+    );
+    const deletedCoverIds = (gistSync.deletedCoverIds || []).filter(
+      (record) => !items.some((item) => item.type === 'cover' && item.id === record.id),
+    );
+
+    await settingsStore.updateGistSync({
+      deletedNovelIds,
+      deletedModelIds,
+      deletedCoverIds,
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: '恢复成功',
+      detail: `已恢复 ${items.length} 个项目`,
+      life: 3000,
+    });
+  };
+
+  /**
    * 下载并应用远程数据
    * 注意：此函数直接下载并应用远程数据，不进行冲突检查
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
+   * @returns 可恢复的项目列表（如果有）
    */
   const downloadFromGist = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
-  ): Promise<void> => {
+  ): Promise<RestorableItem[]> => {
     setSyncing(true);
     try {
       const { data, error } = await downloadRemoteData(config);
 
       if (error) {
-        return;
+        return [];
       }
 
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
+      // 手动下载时，保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
       if (data) {
-        await SyncDataService.applyDownloadedData(data);
+        const restorableItems = await SyncDataService.applyDownloadedData(data, undefined, true);
+        
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
@@ -224,6 +301,12 @@ export function useGistSync() {
             console.error('[useGistSync] 更新最后同步时间失败:', error);
           }
         });
+
+        // 如果有可恢复的项目，返回它们以便调用者显示对话框
+        if (restorableItems.length > 0) {
+          return restorableItems;
+        }
+
         toast.add({
           severity: 'success',
           summary: '下载成功',
@@ -231,8 +314,11 @@ export function useGistSync() {
           life: 3000,
         });
       }
+      
+      return [];
     } catch (error) {
       console.error('[useGistSync] 下载失败:', error);
+      return [];
     } finally {
       setSyncing(false);
     }
@@ -241,5 +327,6 @@ export function useGistSync() {
   return {
     uploadToGist,
     downloadFromGist,
+    restoreDeletedItems,
   };
 }

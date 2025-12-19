@@ -36,6 +36,9 @@ function createDefaultGistSyncConfig(): SyncConfig {
     secret: '',
     apiEndpoint: '',
     lastSyncedModelIds: [],
+    deletedNovelIds: [],
+    deletedModelIds: [],
+    deletedCoverIds: [],
   };
 }
 
@@ -570,6 +573,19 @@ export const useSettingsStore = defineStore('settings', {
         existingConfig?.lastSyncedModelIds ??
         defaultConfig.lastSyncedModelIds;
 
+      const deletedNovelIds =
+        updates.deletedNovelIds ??
+        existingConfig?.deletedNovelIds ??
+        defaultConfig.deletedNovelIds;
+      const deletedModelIds =
+        updates.deletedModelIds ??
+        existingConfig?.deletedModelIds ??
+        defaultConfig.deletedModelIds;
+      const deletedCoverIds =
+        updates.deletedCoverIds ??
+        existingConfig?.deletedCoverIds ??
+        defaultConfig.deletedCoverIds;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -589,6 +605,9 @@ export const useSettingsStore = defineStore('settings', {
         apiEndpoint:
           updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
         ...(lastSyncedModelIds !== undefined ? { lastSyncedModelIds } : {}),
+        ...(deletedNovelIds !== undefined ? { deletedNovelIds } : {}),
+        ...(deletedModelIds !== undefined ? { deletedModelIds } : {}),
+        ...(deletedCoverIds !== undefined ? { deletedCoverIds } : {}),
       };
 
       if (index >= 0) {
@@ -610,6 +629,57 @@ export const useSettingsStore = defineStore('settings', {
 
       saveSyncToLocalStorage(this.syncs);
       await Promise.resolve();
+    },
+
+    /**
+     * 清理旧的删除记录（超过指定天数的记录）
+     * @param daysToKeep 保留天数，默认 30 天
+     */
+    async cleanupOldDeletionRecords(daysToKeep = 30): Promise<void> {
+      const index = this.syncs.findIndex((sync) => sync.syncType === SyncType.Gist);
+      if (index < 0) {
+        return;
+      }
+
+      const config = this.syncs[index];
+      if (!config) {
+        return;
+      }
+
+      const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
+      let hasChanges = false;
+
+      // 清理书籍删除记录
+      if (config.deletedNovelIds && config.deletedNovelIds.length > 0) {
+        const filtered = config.deletedNovelIds.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length !== config.deletedNovelIds.length) {
+          config.deletedNovelIds = filtered;
+          hasChanges = true;
+        }
+      }
+
+      // 清理模型删除记录
+      if (config.deletedModelIds && config.deletedModelIds.length > 0) {
+        const filtered = config.deletedModelIds.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length !== config.deletedModelIds.length) {
+          config.deletedModelIds = filtered;
+          hasChanges = true;
+        }
+      }
+
+      // 清理封面删除记录
+      if (config.deletedCoverIds && config.deletedCoverIds.length > 0) {
+        const filtered = config.deletedCoverIds.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length !== config.deletedCoverIds.length) {
+          config.deletedCoverIds = filtered;
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        saveSyncToLocalStorage(this.syncs);
+        await Promise.resolve();
+      }
     },
 
     /**

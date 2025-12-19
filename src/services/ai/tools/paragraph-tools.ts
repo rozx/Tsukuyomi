@@ -1926,71 +1926,7 @@ export const paragraphTools: ToolDefinition[] = [
         }
       }
 
-      // 第二遍：在加载的章节中搜索翻译文本
-      // 尝试使用全文索引
-      try {
-        const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        const searchKeywords: string[] = [];
-        if (validOriginalKeywords.length > 0) {
-          searchKeywords.push(...validOriginalKeywords);
-        }
-        if (validKeywords.length > 0) {
-          searchKeywords.push(...validKeywords);
-        }
-
-        if (searchKeywords.length > 0) {
-          const indexResults = await FullTextIndexService.search(bookId, searchKeywords, {
-            chapterId: chapter_id,
-            maxResults: max_replacements * 2, // 获取更多结果以便后续过滤
-            onlyWithTranslation: validKeywords.length > 0, // 如果搜索翻译关键词，只返回有翻译的段落
-            searchInOriginal: validOriginalKeywords.length > 0,
-            searchInTranslations: validKeywords.length > 0,
-          });
-
-          // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
-          for (const result of indexResults) {
-            if (allResults.size >= max_replacements) {
-              break;
-            }
-
-            const paragraph = result.paragraph;
-
-            // 检查原文中是否包含关键词（如果提供了 original_keywords）
-            let matchesOriginalText = true;
-            if (validOriginalKeywords.length > 0) {
-              const paragraphText = paragraph.text || '';
-              matchesOriginalText = validOriginalKeywords.some((kw) =>
-                containsWholeKeyword(paragraphText, kw),
-              );
-            }
-
-            // 检查翻译文本中是否包含关键词（如果提供了 keywords）
-            let matchesTranslationText = true;
-            if (validKeywords.length > 0) {
-              // 如果提供了翻译关键词，段落必须有翻译
-              if (!paragraph.translations || paragraph.translations.length === 0) {
-                continue;
-              }
-              matchesTranslationText = paragraph.translations.some((t) =>
-                validKeywords.some((kw) => containsWholeKeyword(t.translation || '', kw)),
-              );
-            } else {
-              // 如果没有提供翻译关键词，但提供了原文关键词，段落仍然需要有翻译才能替换
-              if (!paragraph.translations || paragraph.translations.length === 0) {
-                continue;
-              }
-            }
-
-            // 如果同时提供了两种关键词，段落必须同时满足两个条件
-            // 如果只提供了一种，只需满足那一个条件
-            if (matchesOriginalText && matchesTranslationText && !allResults.has(paragraph.id)) {
-              allResults.set(paragraph.id, result);
-            }
-          }
-        }
-      } catch (error) {
-        // 如果索引不可用，回退到线性搜索
-        console.warn('Full-text index search failed, falling back to linear search:', error);
+      const runLinearSearch = async (): Promise<string | null> => {
         if (!book.volumes) {
           return JSON.stringify({
             success: true,
@@ -2103,6 +2039,84 @@ export const paragraphTools: ToolDefinition[] = [
           if (allResults.size >= max_replacements) {
             break;
           }
+        }
+
+        return null;
+      };
+
+      // 第二遍：在加载的章节中搜索翻译文本
+      // 尝试使用全文索引
+      let shouldRunLinearSearch = false;
+      try {
+        const { FullTextIndexService } = await import('src/services/full-text-index-service');
+        const searchKeywords: string[] = [];
+        if (validOriginalKeywords.length > 0) {
+          searchKeywords.push(...validOriginalKeywords);
+        }
+        if (validKeywords.length > 0) {
+          searchKeywords.push(...validKeywords);
+        }
+
+        if (searchKeywords.length > 0) {
+          const indexResults = await FullTextIndexService.search(bookId, searchKeywords, {
+            chapterId: chapter_id,
+            maxResults: max_replacements * 2, // 获取更多结果以便后续过滤
+            onlyWithTranslation: validKeywords.length > 0, // 如果搜索翻译关键词，只返回有翻译的段落
+            searchInOriginal: validOriginalKeywords.length > 0,
+            searchInTranslations: validKeywords.length > 0,
+          });
+
+          // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
+          for (const result of indexResults) {
+            if (allResults.size >= max_replacements) {
+              break;
+            }
+
+            const paragraph = result.paragraph;
+
+            // 检查原文中是否包含关键词（如果提供了 original_keywords）
+            let matchesOriginalText = true;
+            if (validOriginalKeywords.length > 0) {
+              const paragraphText = paragraph.text || '';
+              matchesOriginalText = validOriginalKeywords.some((kw) =>
+                containsWholeKeyword(paragraphText, kw),
+              );
+            }
+
+            // 检查翻译文本中是否包含关键词（如果提供了 keywords）
+            let matchesTranslationText = true;
+            if (validKeywords.length > 0) {
+              // 如果提供了翻译关键词，段落必须有翻译
+              if (!paragraph.translations || paragraph.translations.length === 0) {
+                continue;
+              }
+              matchesTranslationText = paragraph.translations.some((t) =>
+                validKeywords.some((kw) => containsWholeKeyword(t.translation || '', kw)),
+              );
+            } else {
+              // 如果没有提供翻译关键词，但提供了原文关键词，段落仍然需要有翻译才能替换
+              if (!paragraph.translations || paragraph.translations.length === 0) {
+                continue;
+              }
+            }
+
+            // 如果同时提供了两种关键词，段落必须同时满足两个条件
+            // 如果只提供了一种，只需满足那一个条件
+            if (matchesOriginalText && matchesTranslationText && !allResults.has(paragraph.id)) {
+              allResults.set(paragraph.id, result);
+            }
+          }
+        }
+      } catch (error) {
+        // 如果索引不可用，回退到线性搜索
+        console.warn('Full-text index search failed, falling back to linear search:', error);
+        shouldRunLinearSearch = true;
+      }
+
+      if (shouldRunLinearSearch || allResults.size < max_replacements) {
+        const fallbackResult = await runLinearSearch();
+        if (fallbackResult) {
+          return fallbackResult;
         }
       }
 

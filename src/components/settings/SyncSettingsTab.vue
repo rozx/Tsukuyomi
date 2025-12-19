@@ -13,12 +13,13 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { SyncDataService } from 'src/services/sync-data-service';
+import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
+import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
 import co from 'co';
 
 // 格式化文件大小
@@ -194,8 +195,15 @@ const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
 
 // 同步相关 - 使用 composable
-const { uploadToGist: uploadToGistComposable, downloadFromGist: downloadFromGistComposable } =
-  useGistSync();
+const {
+  uploadToGist: uploadToGistComposable,
+  downloadFromGist: downloadFromGistComposable,
+  restoreDeletedItems: restoreDeletedItemsComposable,
+} = useGistSync();
+
+// 恢复对话框状态
+const showRestoreDialog = ref(false);
+const restorableItems = ref<RestorableItem[]>([]);
 
 // 加载修订历史
 const loadRevisions = async () => {
@@ -505,7 +513,14 @@ const revertToRevision = (version: string, event?: Event) => {
             void coverHistoryStore.clearHistory();
 
             // 应用下载的数据（总是使用最新的 lastEdited 时间）
-            yield SyncDataService.applyDownloadedData(result.data);
+            // 恢复模式：保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
+            const items = yield SyncDataService.applyDownloadedData(result.data, undefined, true);
+
+            // 如果有可恢复的项目，显示恢复对话框
+            if (items && items.length > 0) {
+              restorableItems.value = items;
+              showRestoreDialog.value = true;
+            }
 
             yield settingsStore.updateLastSyncTime();
             gistLastSyncTime.value = Date.now();
@@ -767,13 +782,34 @@ const downloadFromGist = async () => {
   };
 
   // 使用 composable 处理下载
-  await downloadFromGistComposable(config, (value) => {
+  const items = await downloadFromGistComposable(config, (value) => {
     gistSyncing.value = value;
   });
 
+  // 如果有可恢复的项目，显示恢复对话框
+  if (items && items.length > 0) {
+    restorableItems.value = items;
+    showRestoreDialog.value = true;
+  } else {
+    gistLastSyncTime.value = Date.now();
+    // 重置自动同步定时器
+    setupAutoSync();
+  }
+};
+
+// 处理恢复对话框
+const handleRestoreItems = async (items: RestorableItem[]) => {
+  await restoreDeletedItemsComposable(items);
+  showRestoreDialog.value = false;
+  restorableItems.value = [];
   gistLastSyncTime.value = Date.now();
   // 重置自动同步定时器
   setupAutoSync();
+};
+
+const handleCancelRestore = () => {
+  showRestoreDialog.value = false;
+  restorableItems.value = [];
 };
 
 // 删除 Gist
@@ -1144,6 +1180,13 @@ const deleteGist = () => {
 
     <!-- 确认对话框 -->
     <ConfirmDialog group="sync" />
+    <RestoreDeletedItemsDialog
+      :visible="showRestoreDialog"
+      :items="restorableItems"
+      @update:visible="showRestoreDialog = $event"
+      @restore="handleRestoreItems"
+      @cancel="handleCancelRestore"
+    />
   </div>
 </template>
 

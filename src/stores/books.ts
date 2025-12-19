@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { Novel, Paragraph, Volume, Chapter } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { useSettingsStore } from 'src/stores/settings';
 
 export const useBooksStore = defineStore('books', {
   state: () => ({
@@ -230,6 +231,22 @@ export const useBooksStore = defineStore('books', {
       if (index > -1) {
         this.books.splice(index, 1);
         await BookService.deleteBook(id);
+
+        // 记录到删除列表
+        const settingsStore = useSettingsStore();
+        const gistSync = settingsStore.gistSync;
+        const deletedNovelIds = gistSync.deletedNovelIds || [];
+        
+        // 检查是否已存在（避免重复）
+        if (!deletedNovelIds.find((record) => record.id === id)) {
+          deletedNovelIds.push({
+            id,
+            deletedAt: Date.now(),
+          });
+          await settingsStore.updateGistSync({
+            deletedNovelIds,
+          });
+        }
       }
     },
 

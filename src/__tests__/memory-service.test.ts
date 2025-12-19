@@ -25,9 +25,9 @@ let currentCursorIndex = 0;
 
 const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
   return {
-    objectStore: () => ({
+    objectStore: (storeName?: string) => ({
       get: mockStoreGet,
-      put: mockStorePut,
+      put: mockTransactionStorePut, // 用于 updateAccessTimesBatch 中的更新
       delete: mockStoreDelete,
       clear: mockStoreClear,
       getAll: mockStoreGetAll,
@@ -141,6 +141,15 @@ describe('MemoryService', () => {
     testMemoryData = [];
     currentCursorBookId = null;
     currentCursorIndex = 0;
+    // 清理 MemoryService 的缓存（通过反射访问私有字段）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const service = MemoryService as any;
+    if (service.memoryCache) {
+      service.memoryCache.clear();
+    }
+    if (service.searchResultCache) {
+      service.searchResultCache.clear();
+    }
   });
 
   describe('createMemory', () => {
@@ -164,8 +173,8 @@ describe('MemoryService', () => {
       expect(memory.id.length).toBe(8); // 短 ID 应该是 8 位
       expect(memory.createdAt).toBeGreaterThan(0);
       expect(memory.lastAccessedAt).toBeGreaterThan(0);
-      // 应该调用了 store.put 来保存新的 Memory
-      expect(mockStorePut).toHaveBeenCalled();
+      // 应该调用了 transaction.objectStore().put 来保存新的 Memory
+      expect(mockTransactionStorePut).toHaveBeenCalled();
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
@@ -376,6 +385,15 @@ describe('MemoryService', () => {
       const memories = [createTestMemory('id-1', bookId, '内容1', '测试摘要', 1000, 1000)];
 
       mockIndexGetAll.mockResolvedValue(memories);
+      // Mock store.get 用于 updateAccessTimesBatch
+      mockStoreGet.mockResolvedValue({
+        id: 'id-1',
+        bookId,
+        content: '内容1',
+        summary: '测试摘要',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+      });
 
       const beforeSearch = Date.now();
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
@@ -385,9 +403,10 @@ describe('MemoryService', () => {
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
-      expect(results[0]?.lastAccessedAt).toBeGreaterThanOrEqual(beforeSearch);
-      expect(results[0]?.lastAccessedAt).toBeLessThanOrEqual(afterSearch);
-      // 应该调用了 transaction.store.put 来更新 lastAccessedAt
+      // 等待异步更新完成
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
+      // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
       expect(mockTransactionStorePut).toHaveBeenCalled();
     });
   });
@@ -569,6 +588,15 @@ describe('MemoryService', () => {
       ];
 
       mockIndexGetAll.mockResolvedValue(memories);
+      // Mock store.get 用于 updateAccessTimesBatch
+      mockStoreGet.mockResolvedValue({
+        id: 'id-1',
+        bookId,
+        content: '内容1',
+        summary: '测试摘要',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+      });
 
       const beforeSearch = Date.now();
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
@@ -578,8 +606,11 @@ describe('MemoryService', () => {
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
-      expect(results[0]?.lastAccessedAt).toBeGreaterThanOrEqual(beforeSearch);
-      expect(results[0]?.lastAccessedAt).toBeLessThanOrEqual(afterSearch);
+      // 等待异步更新完成
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
+      // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
+      expect(mockTransactionStorePut).toHaveBeenCalled();
     });
   });
 
@@ -777,7 +808,9 @@ describe('MemoryService', () => {
 
       mockGet.mockResolvedValue(oldMemory);
 
+      const beforeUpdate = Date.now();
       const updatedMemory = await MemoryService.updateMemory(bookId, memoryId, newContent, newSummary);
+      const afterUpdate = Date.now();
 
       expect(updatedMemory).toBeTruthy();
       expect(updatedMemory.id).toBe(memoryId);
@@ -785,7 +818,9 @@ describe('MemoryService', () => {
       expect(updatedMemory.content).toBe(newContent);
       expect(updatedMemory.summary).toBe(newSummary);
       expect(updatedMemory.createdAt).toBe(oldMemory.createdAt);
-      expect(updatedMemory.lastAccessedAt).toBeGreaterThan(oldMemory.lastAccessedAt);
+      // lastAccessedAt 应该被更新为当前时间
+      expect(updatedMemory.lastAccessedAt).toBeGreaterThanOrEqual(beforeUpdate);
+      expect(updatedMemory.lastAccessedAt).toBeLessThanOrEqual(afterUpdate);
       expect(mockPut).toHaveBeenCalled();
     });
 

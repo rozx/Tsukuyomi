@@ -25,228 +25,6 @@ export function useAutoSync() {
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
 
-  /**
-   * 应用下载的数据（总是使用最新的 lastEdited 时间）
-   * 注意：自动同步需要特殊处理（检测本地删除），所以使用自定义逻辑
-   */
-  const applyDownloadedData = async (
-    remoteData: {
-      novels?: any[] | null;
-      aiModels?: any[] | null;
-      appSettings?: any;
-      coverHistory?: any[] | null;
-    } | null,
-  ) => {
-    // 如果 remoteData 为 null，直接返回
-    if (!remoteData) {
-      return;
-    }
-
-    // 处理 AI 模型
-    // 优先使用 lastEdited 时间戳判断，如果没有时间戳则使用上次同步时的模型 ID 列表来判断是"远程新添加"还是"本地已删除"
-    if (
-      remoteData.aiModels &&
-      Array.isArray(remoteData.aiModels) &&
-      remoteData.aiModels.length > 0
-    ) {
-      const finalModels: any[] = [];
-      const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
-      const lastSyncedModelIds = settingsStore.gistSync.lastSyncedModelIds || [];
-
-      for (const remoteModel of remoteData.aiModels) {
-        const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
-        if (localModel) {
-          // 本地存在，比较 lastEdited 时间，使用最新的
-          const localTime = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
-          const remoteTime = remoteModel.lastEdited
-            ? new Date(remoteModel.lastEdited).getTime()
-            : 0;
-          if (remoteTime > localTime) {
-            finalModels.push(remoteModel);
-          } else {
-            finalModels.push(localModel);
-          }
-        } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 优先使用 lastEdited 时间，如果没有则使用 lastSyncedModelIds
-          if (remoteModel.lastEdited) {
-            const remoteTime = new Date(remoteModel.lastEdited).getTime();
-            if (remoteTime > lastSyncTime) {
-              // 远程新添加的，应该添加
-              finalModels.push(remoteModel);
-            }
-            // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
-          } else {
-            // 没有 lastEdited 时间戳，使用 lastSyncedModelIds 判断
-            // 如果不在上次同步时的列表中，说明是远程新添加的，应该添加
-            if (!lastSyncedModelIds.includes(remoteModel.id)) {
-              // 远程新添加的，应该添加
-              finalModels.push(remoteModel);
-            }
-            // 否则，说明是本地已删除的，不添加
-          }
-        }
-      }
-
-      // 添加本地独有的模型
-      // 只保留在上次同步后新添加的本地模型（lastEdited > lastSyncTime）
-      // 陈旧的本地模型（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
-      for (const localModel of aiModelsStore.models) {
-        if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
-          // 检查是否是本地新增的（在上次同步后添加）
-          // 优先使用 lastEdited 时间，如果没有则保留（兼容旧数据）
-          if (localModel.lastEdited) {
-            const localTime = new Date(localModel.lastEdited).getTime();
-            if (localTime > lastSyncTime) {
-              // 本地新增的模型，保留
-              finalModels.push(localModel);
-            }
-            // 如果不在上次同步后添加，说明是陈旧的本地模型，不添加（自动删除）
-          } else {
-            // 没有 lastEdited 时间戳，使用 lastSyncedModelIds 判断
-            // 如果不在上次同步的列表中，说明是本地新添加的，保留
-            if (!lastSyncedModelIds.includes(localModel.id)) {
-              finalModels.push(localModel);
-            }
-          }
-        }
-      }
-
-      void aiModelsStore.clearModels();
-      for (const model of finalModels) {
-        void aiModelsStore.addModel(model);
-      }
-    }
-
-    // 处理书籍（确保 novels 存在且为数组）
-    // 即使远程书籍列表为空，也需要处理（可能远程删除了所有书籍）
-    if (remoteData && remoteData.novels && Array.isArray(remoteData.novels)) {
-      const finalBooksMap = new Map<string, Novel>();
-      const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
-
-      // 处理远程书籍（使用最新的 lastEdited 时间）
-      for (const remoteNovel of remoteData.novels) {
-        const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
-        if (localNovel) {
-          // 本地存在，比较 lastEdited 时间，使用最新的
-          const localTime = new Date(localNovel.lastEdited).getTime();
-          const remoteTime = new Date(remoteNovel.lastEdited).getTime();
-          if (remoteTime > localTime) {
-            // 使用远程书籍，但需要保留本地章节内容
-            const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
-              remoteNovel as Novel,
-              localNovel,
-            );
-            finalBooksMap.set(remoteNovel.id, mergedNovel);
-          } else {
-            // 使用本地书籍，但需要确保章节内容已加载
-            const localNovelWithContent =
-              await SyncDataService.ensureNovelContentLoaded(localNovel);
-            finalBooksMap.set(localNovel.id, localNovelWithContent);
-          }
-        } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 如果远程的 lastEdited 时间晚于上次同步时间，说明是远程新添加的
-          const remoteLastEdited = new Date(remoteNovel.lastEdited).getTime();
-          if (remoteLastEdited > lastSyncTime) {
-            // 远程新添加的，应该添加
-            finalBooksMap.set(remoteNovel.id, remoteNovel as Novel);
-          }
-          // 否则，说明是本地已删除的，不添加
-        }
-      }
-
-      // 处理本地独有的书籍（本地存在但远程不存在）
-      // 只保留在上次同步后新添加的本地书籍（lastEdited > lastSyncTime）
-      // 陈旧的本地书籍（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
-      for (const localBook of booksStore.books) {
-        if (!finalBooksMap.has(localBook.id)) {
-          // 检查是否是本地新增的（在上次同步后添加）
-          if (checkIsNewlyAdded(localBook.lastEdited, lastSyncTime)) {
-            // 本地新增的书籍，保留（确保章节内容已加载）
-            const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
-            finalBooksMap.set(localBook.id, localBookWithContent);
-          }
-          // 如果不在上次同步后添加，说明是陈旧的本地书籍，不添加（自动删除）
-        }
-      }
-
-      const finalBooks = Array.from(finalBooksMap.values());
-      await booksStore.clearBooks();
-      await booksStore.bulkAddBooks(finalBooks);
-    } else if (remoteData && (!remoteData.novels || !Array.isArray(remoteData.novels))) {
-      // 如果远程数据中没有 novels 字段或不是数组，说明可能有问题
-      // 在这种情况下，保留本地书籍不变
-    }
-
-    // 处理封面历史
-    if (
-      remoteData.coverHistory &&
-      Array.isArray(remoteData.coverHistory) &&
-      remoteData.coverHistory.length > 0
-    ) {
-      const finalCovers: any[] = [];
-      const lastSyncTime = settingsStore.gistSync.lastSyncTime || 0;
-
-      for (const remoteCover of remoteData.coverHistory) {
-        const localCover = coverHistoryStore.covers.find((c) => c.id === remoteCover.id);
-        if (localCover) {
-          // 比较 addedAt 时间，使用最新的
-          const localTime = new Date(localCover.addedAt).getTime();
-          const remoteTime = new Date(remoteCover.addedAt).getTime();
-          if (remoteTime > localTime) {
-            finalCovers.push(remoteCover);
-          } else {
-            finalCovers.push(localCover);
-          }
-        } else {
-          // 本地不存在，检查是否是远程新添加的（而不是本地已删除的）
-          // 只保留在上次同步后新添加的远程封面（addedAt > lastSyncTime）
-          // 陈旧的远程封面（addedAt <= lastSyncTime）会被自动删除，因为本地已删除
-          if (checkIsNewlyAdded(remoteCover.addedAt, lastSyncTime)) {
-            // 远程新添加的封面，保留
-            finalCovers.push(remoteCover);
-          }
-          // 如果不在上次同步后添加，说明是本地已删除的，不添加（自动删除）
-        }
-      }
-
-      // 添加本地独有的封面
-      // 只保留在上次同步后新添加的本地封面（addedAt > lastSyncTime）
-      // 陈旧的本地封面（addedAt <= lastSyncTime）会被自动删除，因为远程已删除
-      for (const localCover of coverHistoryStore.covers) {
-        if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
-          // 检查是否是本地新增的（在上次同步后添加）
-          if (checkIsNewlyAdded(localCover.addedAt, lastSyncTime)) {
-            // 本地新增的封面，保留
-            finalCovers.push(localCover);
-          }
-          // 如果不在上次同步后添加，说明是陈旧的本地封面，不添加（自动删除）
-        }
-      }
-
-      void coverHistoryStore.clearHistory();
-      for (const cover of finalCovers) {
-        void coverHistoryStore.addCover(cover);
-      }
-    }
-
-    // 处理设置
-    if (remoteData.appSettings) {
-      const localSettings = settingsStore.getAllSettings();
-      const localTime = localSettings.lastEdited ? new Date(localSettings.lastEdited).getTime() : 0;
-      const remoteTime = remoteData.appSettings.lastEdited
-        ? new Date(remoteData.appSettings.lastEdited).getTime()
-        : 0;
-      // 比较 lastEdited 时间，使用最新的
-      if (remoteTime > localTime) {
-        const currentGistSync = settingsStore.gistSync;
-        // importSettings 已经实现了深度合并，直接调用即可
-        void settingsStore.importSettings(remoteData.appSettings);
-        void settingsStore.updateGistSync(currentGistSync);
-      }
-    }
-  };
 
   /**
    * 执行自动同步
@@ -262,6 +40,12 @@ export function useAutoSync() {
       return;
     }
 
+    // 检查是否已有同步在进行中，避免并发同步
+    if (settingsStore.isSyncing) {
+      console.warn('[useAutoSync] 同步已在进行中，跳过此次自动同步');
+      return;
+    }
+
     try {
       settingsStore.setSyncing(true);
 
@@ -270,12 +54,15 @@ export function useAutoSync() {
 
       if (result.success && result.data) {
         // 直接应用数据（总是使用最新的 lastEdited 时间）
+        // 自动同步时，不返回可恢复的项目（因为 isManualRetrieval = false）
         await SyncDataService.applyDownloadedData(result.data);
         void co(function* () {
           try {
             yield settingsStore.updateLastSyncTime();
             // 更新上次同步时的模型 ID 列表（使用应用后的模型列表）
             yield settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
+            // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+            yield settingsStore.cleanupOldDeletionRecords();
           } catch (error) {
             console.error('[useAutoSync] 更新同步状态失败:', error);
           }
@@ -296,20 +83,29 @@ export function useAutoSync() {
           return;
         }
       } else if (!result.success) {
-        // 下载失败，不继续上传
+        // 下载失败，记录错误但不继续上传
+        const errorMsg = result.error || '从 Gist 下载数据时发生未知错误';
+        console.error('[useAutoSync] 自动同步下载失败:', errorMsg);
         return;
       }
 
       // 2. 然后上传本地更改（包含刚刚合并的远程更改）
       // 注意：上传时使用当前的模型列表，这样远程会包含本地删除后的状态
-      await gistSyncService.uploadToGist(config, {
+      const uploadResult = await gistSyncService.uploadToGist(config, {
         aiModels: aiModelsStore.models,
         appSettings: settingsStore.getAllSettings(),
         novels: booksStore.books,
         coverHistory: coverHistoryStore.covers,
       });
-    } catch {
-      // 静默失败，避免干扰用户
+
+      if (!uploadResult.success) {
+        const errorMsg = uploadResult.error || '上传到 Gist 时发生未知错误';
+        console.error('[useAutoSync] 自动同步上传失败:', errorMsg);
+      }
+    } catch (error) {
+      // 记录错误日志，便于调试
+      const errorMsg = error instanceof Error ? error.message : '自动同步时发生未知错误';
+      console.error('[useAutoSync] 自动同步异常:', errorMsg, error);
     } finally {
       settingsStore.setSyncing(false);
     }

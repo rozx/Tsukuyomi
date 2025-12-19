@@ -6,7 +6,6 @@ import { generateShortId } from 'src/utils/id-generator';
 import {
   getChapterDisplayTitle,
   getChapterContentText,
-  getVolumeDisplayTitle,
 } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter } from 'src/models/novel';
@@ -129,7 +128,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'list_chapters',
         description:
-          '获取书籍的所有章节列表，包括每个章节的 ID、标题、翻译进度等。当需要查看所有可用章节并选择参考章节时使用此工具。',
+          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题和翻译标题。当需要查看所有可用章节并选择参考章节时使用此工具。',
         parameters: {
           type: 'object',
           properties: {
@@ -169,21 +168,11 @@ export const bookTools: ToolDefinition[] = [
         // 收集所有章节
         const allChapters: Array<{
           id: string;
-          title: string;
           title_original: string;
           title_translation: string;
-          volumeIndex: number;
-          chapterIndex: number;
-          volumeId: string;
-          volumeTitle: string;
-          paragraphCount: number;
-          translatedCount: number;
-          translationProgress: number;
         }> = [];
 
         if (book.volumes) {
-          // 如果提供了 limit，只加载前 N 个章节的内容以提升性能
-          // 否则加载所有章节内容（用于统计）
           let chaptersProcessed = 0;
           const maxChaptersToLoad = limit && limit > 0 ? limit : undefined;
 
@@ -200,39 +189,17 @@ export const bookTools: ToolDefinition[] = [
                 break;
               }
 
-              // 按需加载章节内容（用于统计）
-              if (chapter.content === undefined) {
-                const content = await ChapterContentService.loadChapterContent(chapter.id);
-                chapter.content = content || [];
-                chapter.contentLoaded = true;
-              }
-              const chapterTitle = getChapterDisplayTitle(chapter);
               const titleOriginal =
-                typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+                typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
               const titleTranslation =
                 typeof chapter.title === 'string'
                   ? ''
                   : chapter.title.translation?.translation || '';
-              const paragraphCount = chapter.content?.length || 0;
-              const translatedCount =
-                chapter.content?.filter(
-                  (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-                ).length || 0;
-              const translationProgress =
-                paragraphCount > 0 ? (translatedCount / paragraphCount) * 100 : 0;
 
               allChapters.push({
                 id: chapter.id,
-                title: chapterTitle,
                 title_original: titleOriginal,
                 title_translation: titleTranslation,
-                volumeIndex,
-                chapterIndex,
-                volumeId: volume.id,
-                volumeTitle: getVolumeDisplayTitle(volume),
-                paragraphCount,
-                translatedCount,
-                translationProgress: Math.round(translationProgress * 100) / 100,
               });
 
               chaptersProcessed++;
@@ -243,9 +210,6 @@ export const bookTools: ToolDefinition[] = [
               break;
             }
           }
-
-          // 如果没有限制，需要获取总章节数（可能未全部加载）
-          // 这里我们只统计已处理的章节，因为未加载的章节无法统计
         }
 
         // 应用限制
@@ -438,6 +402,10 @@ export const bookTools: ToolDefinition[] = [
             chapter_id: {
               type: 'string',
               description: '当前章节 ID',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
             },
           },
           required: ['chapter_id'],
