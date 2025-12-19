@@ -70,16 +70,15 @@ export function getOutputFormatRules(taskType: TaskType): string {
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
 
-  return `【输出格式】
-❌ 禁止使用翻译管理工具 | ✅ 必须返回JSON
+  return `【输出格式】⚠️ 必须只返回JSON
+❌ 禁止使用翻译管理工具
 
-\`\`\`json
-{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题翻译"' : ''}}
-\`\`\`
+**状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`
+**包含内容时**: \`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题"' : ''}}\`
 
 ${getStatusFieldDescription(taskType)}
 - 段落ID必须与原文完全一致，1:1对应${onlyChanged}
-- 忽略空段落，只更新状态时可省略paragraphs字段
+- ⚠️ **无需自行检查缺失段落**，系统会自动验证并提示补充
 - 所有阶段均可使用工具`;
 }
 
@@ -87,9 +86,6 @@ ${getStatusFieldDescription(taskType)}
  * 获取执行工作流说明（精简版）
  */
 export function getExecutionWorkflowRules(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
-  const taskLabel = taskLabels[taskType];
-
   const workingFocus = {
     translation: '1:1翻译，敬语按流程处理，新术语/角色确认后创建',
     polish: '语气词优化、摆脱翻译腔、节奏调整、角色语言区分',

@@ -226,9 +226,9 @@ export async function executeToolCall(
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `\n⚠️ 1:1对应，敬语按流程处理，禁止敬语别名`,
-    proofreading: `\n⚠️ 最小改动，只返回有变化段落`,
-    polish: `\n⚠️ 只返回有变化段落，参考历史翻译`,
+    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落`,
+    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
+    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
   };
   return reminders[taskType];
 }
@@ -239,7 +239,7 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
 export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
-  return `开始${taskLabel}。返回JSON格式：{"status": "planning|working|completed|done", "paragraphs": [...]}`;
+  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落`;
 }
 
 /**
@@ -500,7 +500,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       });
       history.push({
         role: 'user',
-        content: `响应格式错误：${parsed.error}。请确保返回有效的 JSON 格式，包含 status 字段（值必须是 planning、working、completed 或 done 之一）。⚠️ **注意**：当只更新状态时，只需返回 \`{"status": "状态值"}\` 即可，不需要包含 paragraphs 或 titleTranslation 字段。`,
+        content: `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
     }
@@ -570,7 +570,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         // 正常的 working 响应 - 使用更明确的指令
         history.push({
           role: 'user',
-          content: `收到。继续${taskLabel}当前文本块的段落。完成所有段落后，将状态设置为 "completed"。`,
+          content: `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
         });
       }
       continue;
