@@ -226,9 +226,9 @@ export async function executeToolCall(
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落`,
-    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
-    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
+    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
+    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
   };
   return reminders[taskType];
 }
