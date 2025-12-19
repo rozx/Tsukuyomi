@@ -70,7 +70,13 @@ export interface ActionInfo {
           chapter_id: string;
           old_translations: Translation[];
         }>;
-      }; // 批量替换的原始数据（仅用于 batch_replace_translations 操作）
+      } // 批量替换的原始数据（仅用于 batch_replace_translations 操作）
+    | {
+        description?: string;
+        tags?: string[];
+        author?: string;
+        alternateTitles?: string[];
+      }; // 书籍信息更新的原始数据（仅用于 update_book_info 操作）
 }
 
 export interface ToolContext {

@@ -56,14 +56,20 @@ export function useGistSync() {
         total: 1,
       });
 
-      // 下载远程更改
-      const downloadResult = await gistSyncService.downloadFromGist(config);
+      // 下载远程更改（传递进度回调）
+      const downloadResult = await gistSyncService.downloadFromGist(
+        config,
+        (progress) => {
+          settingsStore.updateSyncProgress({
+            current: progress.current,
+            total: progress.total,
+            message: progress.message,
+          });
+        },
+      );
 
       if (downloadResult.success && downloadResult.data) {
-        settingsStore.updateSyncProgress({
-          current: 1,
-          message: '下载完成',
-        });
+        // 进度已在回调中更新
         return { data: downloadResult.data };
       } else if (!downloadResult.success) {
         // 下载失败
@@ -116,21 +122,31 @@ export function useGistSync() {
     error?: string;
   }> => {
     try {
-      // 更新进度
-      const totalItems = dataToUpload.novels.length + 1; // novels + settings file
+      // 更新进度：开始上传
       settingsStore.updateSyncProgress({
         stage: 'uploading',
         message: `正在上传数据 (${dataToUpload.novels.length} 本书籍)...`,
         current: 0,
-        total: totalItems,
+        total: 1, // 初始值，会在回调中更新
       });
 
-      const result = await gistSyncService.uploadToGist(config, dataToUpload);
+      // 上传数据（传递进度回调）
+      const result = await gistSyncService.uploadToGist(
+        config,
+        dataToUpload,
+        (progress) => {
+          settingsStore.updateSyncProgress({
+            stage: 'uploading',
+            current: progress.current,
+            total: progress.total,
+            message: progress.message,
+          });
+        },
+      );
 
       if (result.success) {
-        // 更新进度
+        // 更新进度：上传完成
         settingsStore.updateSyncProgress({
-          current: settingsStore.syncProgress.total,
           message: '上传完成，正在更新状态...',
         });
 

@@ -538,6 +538,9 @@ export class GistSyncService {
 
   /**
    * 上传数据到 Gist
+   * @param config 同步配置
+   * @param data 要上传的数据
+   * @param onProgress 进度回调（可选）
    */
   async uploadToGist(
     config: SyncConfig,
@@ -547,6 +550,7 @@ export class GistSyncService {
       novels: Novel[];
       coverHistory?: CoverHistoryItem[];
     },
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<SyncResult> {
     try {
       this.validateConfig(config);
@@ -603,7 +607,26 @@ export class GistSyncService {
       // 记录每本书的存储格式（分块或单文件），以便清理旧格式文件
       const novelFormats = new Map<string, 'chunked' | 'single'>();
 
-      for (const novel of novelsWithContent) {
+      // 计算总数：准备阶段（设置文件 + 每本书）+ 上传批次
+      // 先计算上传批次数量（稍后更新）
+      let totalBatches = 0;
+      const totalItems = 1 + novelsWithContent.length; // 1 个设置文件 + N 本书
+      let processedItems = 0;
+
+      // 更新进度：开始处理设置文件
+      if (onProgress) {
+        onProgress({
+          current: processedItems,
+          total: totalItems,
+          message: '正在准备设置文件...',
+        });
+      }
+
+      for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
+        const novel = novelsWithContent[novelIndex];
+        if (!novel) {
+          continue;
+        }
         const serializedNovel = this.serializeDates(novel);
         // 使用压缩格式（去除空格和换行）以减少文件大小
         const jsonContent = JSON.stringify(serializedNovel);
@@ -692,6 +715,16 @@ export class GistSyncService {
             size: contentSize,
             chunked: true,
             chunkCount: chunks.length,
+          });
+        }
+
+        // 更新进度：处理完一本书（设置文件算作第1个，所以从1开始）
+        processedItems = novelIndex + 1;
+        if (onProgress) {
+          onProgress({
+            current: processedItems,
+            total: totalItems,
+            message: `正在准备书籍: ${novel.title} (${processedItems}/${totalItems})`,
           });
         }
       }
@@ -836,9 +869,41 @@ export class GistSyncService {
 
           // 优先处理删除操作，以释放配额（如果有配额限制的话）
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
+          totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
+          const finalTotal = totalItems + totalBatches; // 准备阶段 + 上传批次
+          
+          // 更新进度：开始上传
+          if (onProgress) {
+            onProgress({
+              current: processedItems,
+              total: finalTotal,
+              message: '正在上传文件...',
+            });
+          }
+          
           for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+            const batchIndex = Math.floor(i / BATCH_SIZE);
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
-            await updateBatchWithRetry(batchFiles, Math.floor(i / BATCH_SIZE));
+            
+            // 更新进度：上传批次
+            if (onProgress) {
+              onProgress({
+                current: totalItems + batchIndex + 1,
+                total: finalTotal,
+                message: `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
+              });
+            }
+            
+            await updateBatchWithRetry(batchFiles, batchIndex);
+          }
+          
+          // 更新进度：上传完成
+          if (onProgress) {
+            onProgress({
+              current: finalTotal,
+              total: finalTotal,
+              message: '上传完成，正在验证...',
+            });
           }
         } catch (error) {
           // 如果是更新失败，我们希望中断并报错
@@ -875,6 +940,15 @@ export class GistSyncService {
         }
       } else {
         // 创建新 Gist
+        // 更新进度：开始创建
+        if (onProgress) {
+          onProgress({
+            current: processedItems,
+            total: totalItems,
+            message: '正在创建 Gist...',
+          });
+        }
+        
         const filesForCreate: Record<string, { content: string }> = {};
         for (const [key, value] of Object.entries(files)) {
           if (value !== null) {
@@ -888,6 +962,15 @@ export class GistSyncService {
         });
         gistId = response.data.id;
         gistUrl = response.data.html_url;
+        
+        // 更新进度：创建完成
+        if (onProgress) {
+          onProgress({
+            current: totalItems,
+            total: totalItems,
+            message: '创建完成，正在验证...',
+          });
+        }
       }
 
       // 验证上传的文件（必须在返回成功之前验证）
@@ -921,8 +1004,13 @@ export class GistSyncService {
 
   /**
    * 从 Gist 下载数据
+   * @param config 同步配置
+   * @param onProgress 进度回调（可选）
    */
-  async downloadFromGist(config: SyncConfig): Promise<SyncResult & { data?: GistSyncData }> {
+  async downloadFromGist(
+    config: SyncConfig,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<SyncResult & { data?: GistSyncData }> {
     try {
       this.validateConfig(config);
       this.initializeOctokit(config);
@@ -949,6 +1037,15 @@ export class GistSyncService {
         aiModels: [],
         novels: [],
       };
+
+      // 更新进度：开始下载
+      if (onProgress) {
+        onProgress({
+          current: 0,
+          total: 1,
+          message: '正在下载数据...',
+        });
+      }
 
       // 1. 读取设置文件
       const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
@@ -997,8 +1094,21 @@ export class GistSyncService {
         }
       }
 
+      // 更新进度：开始处理书籍
+      const totalNovels = novelIds.size;
+      if (onProgress && totalNovels > 0) {
+        onProgress({
+          current: 0,
+          total: totalNovels,
+          message: `正在下载 ${totalNovels} 本书籍...`,
+        });
+      }
+
       // 处理每本书
-      for (const novelId of novelIds) {
+      let processedNovels = 0;
+      const novelIdsArray = Array.from(novelIds);
+      for (let novelIndex = 0; novelIndex < novelIdsArray.length; novelIndex++) {
+        const novelId = novelIdsArray[novelIndex];
         try {
           const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
           const metadataFile = gistFiles[metadataFileName];
@@ -1118,6 +1228,17 @@ export class GistSyncService {
                 const parsedContent = await this.parseGistContent(fullContent);
                 const novel = this.deserializeDates(parsedContent) as Novel;
                 result.novels.push(novel);
+                
+                // 更新进度：处理完一本书
+                processedNovels++;
+                if (onProgress) {
+                  onProgress({
+                    current: processedNovels,
+                    total: totalNovels,
+                    message: `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`,
+                  });
+                }
+                
                 continue; // 成功重组，继续处理下一本书
               } catch {
                 // 如果解析失败，尝试使用未分块文件（如果存在且未截断）
@@ -1164,18 +1285,62 @@ export class GistSyncService {
               const parsedContent = await this.parseGistContent(fileContent);
               const novel = this.deserializeDates(parsedContent) as Novel;
               result.novels.push(novel);
+              
+              // 更新进度：处理完一本书
+              processedNovels++;
+              if (onProgress) {
+                onProgress({
+                  current: processedNovels,
+                  total: totalNovels,
+                  message: `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`,
+                });
+              }
             } catch {
               // 继续处理其他书籍
+              processedNovels++;
+              if (onProgress) {
+                onProgress({
+                  current: processedNovels,
+                  total: totalNovels,
+                  message: `跳过无法解析的书籍 (${processedNovels}/${totalNovels})`,
+                });
+              }
               continue;
+            }
+          } else {
+            // 文件不存在，跳过
+            processedNovels++;
+            if (onProgress) {
+              onProgress({
+                current: processedNovels,
+                total: totalNovels,
+                message: `跳过缺失的书籍 (${processedNovels}/${totalNovels})`,
+              });
             }
           }
         } catch {
           // 继续处理其他书籍
+          processedNovels++;
+          if (onProgress) {
+            onProgress({
+              current: processedNovels,
+              total: totalNovels,
+              message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
+            });
+          }
         }
+      }
+      
+      // 更新进度：下载完成
+      if (onProgress) {
+        onProgress({
+          current: totalNovels || 1,
+          total: totalNovels || 1,
+          message: '下载完成',
+        });
       }
 
       // 使用之前收集的 novelIds 来统计总数（这是准确的书籍数量）
-      const totalNovels = novelIds.size;
       const loadedNovels = result.novels.length;
 
       let message = '从 Gist 下载数据成功';
