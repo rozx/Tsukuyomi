@@ -109,7 +109,8 @@ export function getToolUsageInstructions(taskType: TaskType): string {
 - \`find_paragraph_by_keywords\`: 检查历史翻译一致性
 - \`update_character/update_term\`: 补充翻译、更新描述
 - \`create_memory\`: 保存敬语翻译方式等重要信息
-- ${getTodoToolsDescription(taskType)}`;
+- ${getTodoToolsDescription(taskType)}
+⚠️ \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
 }
 
 // ============================================================================
