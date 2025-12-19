@@ -390,10 +390,7 @@ export class AssistantService {
    * @param multiplier token 倍数（默认 2.5，更保守；原方法使用 2.0）
    * @returns 估算的 token 数
    */
-  private static estimateTokenCount(
-    messages: ChatMessage[],
-    multiplier: number = 2.5,
-  ): number {
+  private static estimateTokenCount(messages: ChatMessage[], multiplier: number = 2.5): number {
     if (!messages || messages.length === 0) return 0;
     const totalContent = messages
       .map((msg) => {
@@ -434,10 +431,7 @@ export class AssistantService {
     const availableTokens = Math.floor(maxTokens * 0.8);
 
     // 估算系统提示词和用户消息的 token 数（使用更保守的倍数 2.5）
-    const systemTokens = this.estimateTokenCount(
-      [{ role: 'system', content: systemPrompt }],
-      2.5,
-    );
+    const systemTokens = this.estimateTokenCount([{ role: 'system', content: systemPrompt }], 2.5);
     const userTokens = this.estimateTokenCount([{ role: 'user', content: userMessage }], 2.5);
 
     // 计算摘要可用的 token 数（预留 10% 缓冲）
@@ -450,10 +444,7 @@ export class AssistantService {
     }
 
     // 如果摘要适合，直接返回
-    const currentSummaryTokens = this.estimateTokenCount(
-      [{ role: 'user', content: summary }],
-      2.5,
-    );
+    const currentSummaryTokens = this.estimateTokenCount([{ role: 'user', content: summary }], 2.5);
     if (currentSummaryTokens <= summaryTokens) {
       return summary;
     }
@@ -529,20 +520,63 @@ export class AssistantService {
   ): Promise<string> {
     const { signal, onChunk } = options;
 
-    // 构建总结提示词
-    const summaryPrompt = `请总结以下对话历史，提取关键信息和上下文。总结应该简洁明了，包含：
-1. 对话的主要话题和讨论内容
-2. 用户的主要需求和问题
-3. 已解决或讨论的重要事项
-4. 需要继续关注的内容
+    // 将消息分为早期、中期和最近部分，重点关注最近的消息
+    const totalMessages = messages.length;
+    const recentThreshold = Math.max(1, Math.floor(totalMessages * 0.3)); // 最近30%的消息
+    const middleThreshold = Math.max(1, Math.floor(totalMessages * 0.6)); // 中间30%的消息
+
+    const recentMessages = messages.slice(-recentThreshold);
+    const middleMessages =
+      totalMessages > recentThreshold ? messages.slice(-middleThreshold, -recentThreshold) : [];
+    const earlyMessages =
+      totalMessages > middleThreshold ? messages.slice(0, -middleThreshold) : [];
+
+    // 构建消息历史，突出显示最近的消息
+    const formatMessages = (msgs: typeof messages, startIdx: number, label: string) => {
+      if (msgs.length === 0) return '';
+      return `\n【${label}】\n${msgs
+        .map((msg, idx) => {
+          const role = msg.role === 'user' ? '用户' : '助手';
+          return `[${startIdx + idx + 1}] ${role}: ${msg.content}`;
+        })
+        .join('\n\n')}`;
+    };
+
+    const earlySection = formatMessages(earlyMessages, 0, '早期对话');
+    const middleSection = formatMessages(middleMessages, earlyMessages.length, '中期对话');
+    const recentSection = formatMessages(
+      recentMessages,
+      earlyMessages.length + middleMessages.length,
+      '最近对话（重点关注）',
+    );
+
+    // 构建总结提示词，强调关注最近、当前和下一个任务
+    const summaryPrompt = `请总结以下对话历史，提取关键信息和上下文。**重要：请重点关注最近、当前和下一个任务**。
+
+总结应该简洁明了，按以下优先级组织内容：
+
+**优先级1（最重要）- 最近、当前和下一个任务**：
+1. 最近讨论的任务和正在进行的工作（翻译、校对、润色等）
+2. 当前正在处理的具体任务和进度
+3. 下一步计划要执行的任务和待办事项
+4. 最近创建或更新的待办事项状态
+
+**优先级2 - 中期重要信息**：
+5. 中期讨论的重要话题和决策
+6. 已解决或讨论的重要事项
+
+**优先级3 - 早期背景信息**：
+7. 对话的主要话题和讨论内容（简要概述）
+8. 用户的主要需求和问题（简要概述）
 
 对话历史：
-${messages
-  .map((msg, idx) => {
-    const role = msg.role === 'user' ? '用户' : '助手';
-    return `[${idx + 1}] ${role}: ${msg.content}`;
-  })
-  .join('\n\n')}
+${earlySection}${middleSection}${recentSection}
+
+**总结要求**：
+- 必须详细描述最近、当前和下一个任务的具体内容和状态
+- 对于早期和中期对话，只需简要概述关键信息
+- 重点关注任务相关的信息（翻译任务、校对任务、待办事项等）
+- 如果对话中提到了待办事项，必须详细说明其状态和内容
 
 请用简洁的中文总结以上对话：`;
 
@@ -671,20 +705,18 @@ ${messages
   /**
    * 当会话触发 token 限制时，生成摘要并通知外部重新发起请求
    */
-  private static async requestSummaryReset(
-    params: {
-      model: AIModel;
-      systemPrompt: string;
-      userMessage: string;
-      messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
-      context: { currentBookId: string | null };
-      finalSignal?: AbortSignal;
-      aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
-      taskId?: string;
-      onSummarizingStart?: () => void;
-      originalMessageHistory?: ChatMessage[];
-    },
-  ): Promise<AssistantResult | null> {
+  private static async requestSummaryReset(params: {
+    model: AIModel;
+    systemPrompt: string;
+    userMessage: string;
+    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
+    context: { currentBookId: string | null };
+    finalSignal?: AbortSignal;
+    aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
+    taskId?: string;
+    onSummarizingStart?: () => void;
+    originalMessageHistory?: ChatMessage[];
+  }): Promise<AssistantResult | null> {
     const {
       model,
       systemPrompt,
@@ -916,32 +948,36 @@ ${messages
       let followUpText = '';
       toolCalls = [];
 
-      const followUpResult = await aiService.generateText(config, followUpRequest, async (chunk) => {
-        if (chunk.text) {
-          followUpText += chunk.text;
-        }
-        if (chunk.toolCalls) {
-          toolCalls.push(...chunk.toolCalls);
-        }
+      const followUpResult = await aiService.generateText(
+        config,
+        followUpRequest,
+        async (chunk) => {
+          if (chunk.text) {
+            followUpText += chunk.text;
+          }
+          if (chunk.toolCalls) {
+            toolCalls.push(...chunk.toolCalls);
+          }
 
-        if (aiProcessingStore && taskId && chunk.reasoningContent) {
-          await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-        }
+          if (aiProcessingStore && taskId && chunk.reasoningContent) {
+            await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+          }
 
-        if (onThinkingChunk && chunk.reasoningContent) {
-          await onThinkingChunk(chunk.reasoningContent);
-        }
+          if (onThinkingChunk && chunk.reasoningContent) {
+            await onThinkingChunk(chunk.reasoningContent);
+          }
 
-        if (onChunk) {
-          const filteredChunk: TextGenerationChunk = {
-            text: chunk.text || '',
-            done: chunk.done,
-            ...(chunk.model ? { model: chunk.model } : {}),
-            ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
-          };
-          await onChunk(filteredChunk);
-        }
-      });
+          if (onChunk) {
+            const filteredChunk: TextGenerationChunk = {
+              text: chunk.text || '',
+              done: chunk.done,
+              ...(chunk.model ? { model: chunk.model } : {}),
+              ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+            };
+            await onChunk(filteredChunk);
+          }
+        },
+      );
 
       if (followUpResult.text && followUpResult.text.trim()) {
         followUpText = followUpResult.text;
@@ -1124,7 +1160,7 @@ ${messages
       // 如果模型有 maxTokens 限制（不是 UNLIMITED_TOKENS），检查是否接近或超过限制
       const estimatedTokens = this.estimateTokenCount(messages, 2.5);
       const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
-      
+
       // 检查是否超过模型的最大上下文长度（contextWindow）
       // 如果模型有 contextWindow，需要确保 estimatedTokens + maxTokens <= contextWindow
       let effectiveMaxTokens = model.maxTokens;
@@ -1148,7 +1184,7 @@ ${messages
           }
         }
       }
-      
+
       const shouldSummarizeBeforeRequest =
         (model.maxTokens > 0 &&
           model.maxTokens !== UNLIMITED_TOKENS &&
@@ -1180,7 +1216,9 @@ ${messages
             ...(finalSignal ? { finalSignal } : {}),
             ...(aiProcessingStore ? { aiProcessingStore } : {}),
             ...(taskId ? { taskId } : {}),
-            ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+            ...(options.onSummarizingStart
+              ? { onSummarizingStart: options.onSummarizingStart }
+              : {}),
             ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
           });
 
@@ -1218,19 +1256,19 @@ ${messages
             console.warn(
               `[AssistantService] 总结后消息仍然太大 (${finalEstimatedTokens} tokens)，使用降级策略：只保留最近的消息`,
             );
-            
+
             // 计算需要保留多少 token 给完成（maxTokens）
             const requiredForCompletion = Math.min(
               model.maxTokens || 0,
               Math.floor(model.contextWindow * 0.5), // 最多保留 50% 给完成
             );
             const maxAllowedForMessages = model.contextWindow - requiredForCompletion;
-            
+
             // 逐步减少消息数量，直到符合限制
             let reducedMessages = [...messages];
             let attemptCount = 0;
             const maxAttempts = 20;
-            
+
             while (
               finalEstimatedTokens > maxAllowedForMessages &&
               attemptCount < maxAttempts &&
@@ -1239,18 +1277,23 @@ ${messages
               // 移除中间的消息，只保留系统提示词、最后几条消息和用户消息
               const systemMsg = reducedMessages[0];
               const userMsg = reducedMessages[reducedMessages.length - 1];
-              
+
+              // 确保 systemMsg 和 userMsg 存在
+              if (!systemMsg || !userMsg) {
+                break;
+              }
+
               // 保留最近的消息（不包括系统提示词和用户消息）
               // 每次减少到原来的 50%
               const historyMessages = reducedMessages.slice(1, -1); // 排除系统提示词和用户消息
               const keepCount = Math.max(0, Math.floor(historyMessages.length * 0.5));
               const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
-              
+
               reducedMessages = [systemMsg, ...recentMessages, userMsg];
               finalEstimatedTokens = this.estimateTokenCount(reducedMessages, 2.5);
               attemptCount++;
             }
-            
+
             if (finalEstimatedTokens > maxAllowedForMessages) {
               // 如果仍然太大，只保留系统提示词和用户消息
               const systemMsg = messages.find((m) => m.role === 'system');
@@ -1275,11 +1318,11 @@ ${messages
                 `[AssistantService] 消息历史已减少到 ${reducedMessages.length} 条消息 (${finalEstimatedTokens} tokens)`,
               );
             }
-            
+
             messages.length = 0;
             messages.push(...reducedMessages);
             finalEstimatedTokens = this.estimateTokenCount(messages, 2.5);
-            
+
             // 重新计算可用的 maxTokens
             const newAvailableForCompletion = model.contextWindow - finalEstimatedTokens;
             if (newAvailableForCompletion > 0) {
@@ -1681,7 +1724,9 @@ ${messages
               ...(finalSignal ? { finalSignal } : {}),
               ...(aiProcessingStore ? { aiProcessingStore } : {}),
               ...(taskId ? { taskId } : {}),
-              ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+              ...(options.onSummarizingStart
+                ? { onSummarizingStart: options.onSummarizingStart }
+                : {}),
               ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
             });
 
@@ -1725,11 +1770,9 @@ ${messages
         // 检查是否是取消错误
         const isCancelled =
           error instanceof Error &&
-          (
-            error.message === '请求已取消' ||
+          (error.message === '请求已取消' ||
             error.message.includes('aborted') ||
-            error.name === 'AbortError'
-          );
+            error.name === 'AbortError');
 
         if (isCancelled) {
           await aiProcessingStore.updateTask(taskId, {
