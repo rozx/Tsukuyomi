@@ -2638,7 +2638,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
               >
                 <div
                   v-if="item.type === 'content' && item.content"
-                  class="rounded-lg px-3 py-2 max-w-[85%] min-w-0"
+                  class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 w-full"
                   :class="
                     item.messageRole === 'user'
                       ? 'bg-primary-500/20 text-primary-100'
@@ -2646,7 +2646,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   "
                 >
                   <div
-                    class="text-sm break-words overflow-wrap-anywhere markdown-content"
+                    class="text-sm break-words overflow-wrap-anywhere markdown-content w-full min-w-0"
                     v-html="renderMarkdown(item.content)"
                   ></div>
                 </div>
@@ -3302,6 +3302,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--moon-opacity-90);
   font-size: 0.875rem;
+  max-height: 200px !important;
+  overflow-y: auto !important;
 }
 
 :deep(.p-textarea:focus) {
@@ -3313,6 +3315,12 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   color: var(--moon-opacity-50);
 }
 
+/* 限制 textarea 最大高度，防止布局被破坏 */
+:deep(.p-textarea textarea) {
+  max-height: 200px !important;
+  overflow-y: auto !important;
+}
+
 /* 消息容器滚动条 */
 .messages-container {
   scrollbar-width: thin;
@@ -3322,10 +3330,21 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
 /* Markdown 内容样式 */
 .markdown-content {
   line-height: 1.6;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .markdown-content :deep(p) {
   margin: 0.5em 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content :deep(p:first-child) {
@@ -3351,6 +3370,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   border-radius: 0.25rem;
   font-family: 'Courier New', monospace;
   font-size: 0.9em;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  max-width: 100%;
+  display: inline-block;
 }
 
 .markdown-content :deep(pre) {
@@ -3359,18 +3383,34 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   border-radius: 0.5rem;
   overflow-x: auto;
   margin: 0.75em 0;
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .markdown-content :deep(pre code) {
   background-color: transparent;
   padding: 0;
   border-radius: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  display: block;
 }
 
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
   margin: 0.75em 0;
   padding-left: 1.5em;
+  max-width: 100%;
+  min-width: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .markdown-content :deep(ul:first-child),
@@ -3386,6 +3426,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
 .markdown-content :deep(li) {
   margin: 0.4em 0;
   line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content :deep(li:first-child) {
@@ -3401,11 +3446,39 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   padding-left: 1em;
   margin: 0.75em 0;
   opacity: 0.8;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.markdown-content :deep(table) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  table-layout: fixed;
+}
+
+.markdown-content :deep(table td),
+.markdown-content :deep(table th) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content :deep(a) {
   color: var(--primary-400);
   text-decoration: underline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  max-width: 100%;
 }
 
 .markdown-content :deep(a:hover) {
@@ -3420,6 +3493,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
 .markdown-content :deep(h6) {
   font-weight: 600;
   margin: 0.75em 0 0.5em 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .markdown-content :deep(h1:first-child),
