@@ -403,6 +403,10 @@ export const bookTools: ToolDefinition[] = [
               type: 'string',
               description: '当前章节 ID',
             },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
           },
           required: ['chapter_id'],
         },
