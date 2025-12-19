@@ -798,19 +798,21 @@ const sendMessage = async () => {
 
         // 在调用工具后，创建新的助手消息用于后续回复
         // 这样后续的 AI 回复会显示在新的消息气泡中
-        // 创建新的助手消息
-        const newAssistantMessageId = (Date.now() + 1).toString();
-        const newAssistantMessage: ChatMessage = {
-          id: newAssistantMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-        };
-        messages.value.push(newAssistantMessage);
-        // 更新 assistantMessageId，使后续的 onChunk 更新新消息
-        assistantMessageId = newAssistantMessageId;
-        // 重置当前消息操作列表，因为新消息还没有操作
-        currentMessageActions.value = [];
+        // 但对于 todo 操作，不创建新消息，以便多个 todo 可以在同一消息中分组显示
+        if (action.entity !== 'todo') {
+          const newAssistantMessageId = (Date.now() + 1).toString();
+          const newAssistantMessage: ChatMessage = {
+            id: newAssistantMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+          };
+          messages.value.push(newAssistantMessage);
+          // 更新 assistantMessageId，使后续的 onChunk 更新新消息
+          assistantMessageId = newAssistantMessageId;
+          // 重置当前消息操作列表，因为新消息还没有操作
+          currentMessageActions.value = [];
+        }
         scrollToBottom();
 
         // 显示操作通知
