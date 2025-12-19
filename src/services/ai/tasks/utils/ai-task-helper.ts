@@ -259,10 +259,11 @@ export function addChapterContext(prompt: string, chapterId: string, taskType: T
 
   return (
     `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
-    `你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、` +
-    `find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保${taskLabel}的一致性和连贯性。\n\n` +
-    `⚠️ **重要提醒**: get_chapter_info 等工具**仅用于获取上下文信息**，` +
-    `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
+    `在开始${taskLabel}之前，请先使用 list_terms 和 list_characters 工具获取术语表和角色表，` +
+    `以确保${taskLabel}的一致性和连贯性。` +
+    `你也可以使用 get_previous_chapter 工具获取前一章节的上下文信息，以保持翻译风格和术语的一致性。\n\n` +
+    `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
+    `你只需要处理**当前任务中直接提供给你的段落**，` +
     `不要尝试翻译工具返回的段落内容。`
   );
 }
