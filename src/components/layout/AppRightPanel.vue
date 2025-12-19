@@ -29,7 +29,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
+import type { CharacterSetting, Alias, Terminology, Translation, Novel } from 'src/models/novel';
 import {
   createMessageActionFromActionInfo,
   getActionDetails,
@@ -1639,6 +1639,123 @@ const sendMessage = async () => {
           } else {
             // 默认删除消息
             detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
+          }
+        } else if (action.type === 'update' && action.entity === 'book') {
+          // 书籍更新操作：显示详细信息
+          const bookData = action.data as {
+            book_id?: string;
+            tool_name?: string;
+            description?: string;
+            tags?: string[];
+            author?: string;
+            alternate_titles?: string[];
+          };
+
+          const updatedFields: string[] = [];
+          const details: string[] = [];
+
+          // 检查更新的字段
+          if ('description' in bookData && bookData.description !== undefined) {
+            updatedFields.push('描述');
+            if (bookData.description && bookData.description.trim().length > 0) {
+              const preview =
+                bookData.description.length > 50
+                  ? bookData.description.substring(0, 50) + '...'
+                  : bookData.description;
+              details.push(`描述：${preview}`);
+            } else {
+              details.push('描述：已清除');
+            }
+          }
+
+          if ('tags' in bookData && bookData.tags !== undefined) {
+            updatedFields.push('标签');
+            if (bookData.tags.length > 0) {
+              details.push(`标签：${bookData.tags.join('、')}`);
+            } else {
+              details.push('标签：已清除');
+            }
+          }
+
+          if ('author' in bookData && bookData.author !== undefined) {
+            updatedFields.push('作者');
+            if (bookData.author && bookData.author.trim().length > 0) {
+              details.push(`作者：${bookData.author}`);
+            } else {
+              details.push('作者：已清除');
+            }
+          }
+
+          if ('alternate_titles' in bookData && bookData.alternate_titles !== undefined) {
+            updatedFields.push('别名');
+            if (bookData.alternate_titles.length > 0) {
+              details.push(`别名：${bookData.alternate_titles.join('、')}`);
+            } else {
+              details.push('别名：已清除');
+            }
+          }
+
+          // 组合消息
+          if (updatedFields.length > 0) {
+            if (details.length > 0) {
+              detail = `已更新：${updatedFields.join('、')} | ${details.join(' | ')}`;
+            } else {
+              detail = `已更新：${updatedFields.join('、')}`;
+            }
+          } else {
+            detail = '书籍信息已更新';
+          }
+
+          // 添加 revert 功能
+          const previousBookData = action.previousData as
+            | {
+                description?: string;
+                tags?: string[];
+                author?: string;
+                alternateTitles?: string[];
+              }
+            | undefined;
+
+          if (previousBookData && contextStore.getContext.currentBookId) {
+            shouldShowRevertToast = true;
+            toast.add({
+              severity: 'success',
+              summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
+              detail,
+              life: 3000,
+              onRevert: async () => {
+                if (previousBookData && contextStore.getContext.currentBookId) {
+                  const booksStore = useBooksStore();
+                  const bookId = contextStore.getContext.currentBookId;
+                  const revertUpdates: Partial<Novel> = {};
+
+                  if ('description' in previousBookData) {
+                    revertUpdates.description = previousBookData.description;
+                  }
+                  if ('tags' in previousBookData) {
+                    revertUpdates.tags = previousBookData.tags;
+                  }
+                  if ('author' in previousBookData) {
+                    revertUpdates.author = previousBookData.author;
+                  }
+                  if ('alternateTitles' in previousBookData) {
+                    revertUpdates.alternateTitles = previousBookData.alternateTitles;
+                  }
+
+                  await booksStore.updateBook(bookId, revertUpdates);
+                }
+              },
+            });
+          } else {
+            // 如果没有 previousData，仍然显示 toast（但不提供撤销）
+            // 设置标志以防止通用 toast 处理重复显示
+            shouldShowRevertToast = true;
+            toast.add({
+              severity: 'success',
+              summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
+              detail,
+              life: 3000,
+            });
           }
         } else if (action.entity === 'memory') {
           // Memory 操作：不显示 toast（根据需求）
