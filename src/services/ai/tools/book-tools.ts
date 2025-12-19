@@ -5,7 +5,7 @@ import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
-import type { Chapter } from 'src/models/novel';
+import type { Chapter, Novel } from 'src/models/novel';
 import { searchRelatedMemories } from './memory-helper';
 
 export const bookTools: ToolDefinition[] = [
@@ -835,6 +835,186 @@ export const bookTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: error instanceof Error ? error.message : '更新章节标题失败',
+        });
+      }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'update_book_info',
+        description:
+          '更新书籍的基本信息，包括描述、标签、作者、别名等。可以同时更新多个字段，也可以只更新单个字段。用于完善书籍元数据、修正错误信息或根据用户需求调整书籍信息。',
+        parameters: {
+          type: 'object',
+          properties: {
+            description: {
+              type: 'string',
+              description: '书籍描述（可选，如果提供则更新描述，如果为空字符串则清除描述）',
+            },
+            tags: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '书籍标签数组（可选，如果提供则更新标签）',
+            },
+            author: {
+              type: 'string',
+              description: '作者名称（可选，如果提供则更新作者，如果为空字符串则清除作者）',
+            },
+            alternate_titles: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '别名数组（可选，如果提供则更新别名）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+
+      if (!bookId) {
+        return JSON.stringify({
+          success: false,
+          error: '未提供书籍 ID',
+        });
+      }
+
+      const { description, tags, author, alternate_titles } = args;
+
+      // 检查是否至少提供了一个要更新的字段
+      if (
+        description === undefined &&
+        tags === undefined &&
+        author === undefined &&
+        alternate_titles === undefined
+      ) {
+        return JSON.stringify({
+          success: false,
+          error: '必须至少提供一个要更新的字段（description、tags、author 或 alternate_titles）',
+        });
+      }
+
+      try {
+        // 获取当前书籍信息
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return JSON.stringify({
+            success: false,
+            error: `书籍不存在: ${bookId}`,
+          });
+        }
+
+        // 保存原始数据用于撤销
+        const previousData = {
+          description: book.description,
+          tags: book.tags ? [...book.tags] : undefined,
+          author: book.author,
+          alternateTitles: book.alternateTitles ? [...book.alternateTitles] : undefined,
+        };
+
+        // 构建更新数据
+        const updates: Partial<Novel> = {};
+
+        if (description !== undefined) {
+          updates.description = description.trim() || undefined;
+        }
+
+        if (tags !== undefined) {
+          updates.tags = tags.length > 0 ? tags : undefined;
+        }
+
+        if (author !== undefined) {
+          updates.author = author.trim() || undefined;
+        }
+
+        if (alternate_titles !== undefined) {
+          updates.alternateTitles = alternate_titles.length > 0 ? alternate_titles : undefined;
+        }
+
+        // 更新书籍
+        const booksStore = useBooksStore();
+        await booksStore.updateBook(bookId, updates);
+
+        // 获取更新后的书籍信息
+        const updatedBook = await BookService.getBookById(bookId);
+
+        // 报告操作
+        if (onAction) {
+          onAction({
+            type: 'update',
+            entity: 'book',
+            data: {
+              book_id: bookId,
+              tool_name: 'update_book_info',
+              ...(description !== undefined ? { description: updates.description } : {}),
+              ...(tags !== undefined ? { tags: updates.tags } : {}),
+              ...(author !== undefined ? { author: updates.author } : {}),
+              ...(alternate_titles !== undefined
+                ? { alternate_titles: updates.alternateTitles }
+                : {}),
+            },
+            previousData,
+          });
+        }
+
+        // 构建返回信息
+        const updatedFields: string[] = [];
+        if (description !== undefined) updatedFields.push('描述');
+        if (tags !== undefined) updatedFields.push('标签');
+        if (author !== undefined) updatedFields.push('作者');
+        if (alternate_titles !== undefined) updatedFields.push('别名');
+
+        return JSON.stringify({
+          success: true,
+          message: `书籍信息已更新：${updatedFields.join('、')}`,
+          book_id: bookId,
+          book_title: updatedBook?.title || book.title,
+          updated_fields: {
+            ...(description !== undefined
+              ? {
+                  description: {
+                    old: previousData.description || '无',
+                    new: updates.description || '无',
+                  },
+                }
+              : {}),
+            ...(tags !== undefined
+              ? {
+                  tags: {
+                    old: previousData.tags || [],
+                    new: updates.tags || [],
+                  },
+                }
+              : {}),
+            ...(author !== undefined
+              ? {
+                  author: {
+                    old: previousData.author || '无',
+                    new: updates.author || '无',
+                  },
+                }
+              : {}),
+            ...(alternate_titles !== undefined
+              ? {
+                  alternate_titles: {
+                    old: previousData.alternateTitles || [],
+                    new: updates.alternateTitles || [],
+                  },
+                }
+              : {}),
+          },
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '更新书籍信息失败',
         });
       }
     },

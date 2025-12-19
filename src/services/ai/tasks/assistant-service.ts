@@ -132,8 +132,8 @@ create_term/get_term/update_term/delete_term/list_terms/search_terms_by_keywords
 create_character/get_character/update_character/delete_character/search_characters_by_keywords/list_characters
 - 创建前检查是否已存在或应为别名 | 发现问题必须用 update_character 修复
 
-### 内容（15工具）
-get_book_info/list_chapters/get_chapter_info/get_previous_chapter/get_next_chapter/update_chapter_title
+### 内容（16工具）
+get_book_info/update_book_info（更新描述、标签、作者、别名）/list_chapters/get_chapter_info/get_previous_chapter/get_next_chapter/update_chapter_title
 get_paragraph_info/get_previous_paragraphs(count)/get_next_paragraphs(count)/find_paragraph_by_keywords
 get_translation_history/add_translation/update_translation/remove_translation/select_translation
 batch_replace_translations（智能替换关键词部分，保留其他内容）
