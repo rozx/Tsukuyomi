@@ -134,21 +134,15 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
  * 验证段落翻译完整性
  * @param expectedParagraphIds 期望的段落 ID 列表
  * @param receivedTranslations 已收到的翻译（段落 ID 到翻译文本的映射）
- * @param taskType 任务类型
- * @param skipEmptyParagraphs 是否跳过空段落（用于 polish 和 proofreading）
  * @returns 验证结果
  */
 export function verifyParagraphCompleteness(
   expectedParagraphIds: string[],
   receivedTranslations: Map<string, string>,
-  taskType: TaskType,
-  _skipEmptyParagraphs: boolean = false,
 ): VerificationResult {
   const missingIds: string[] = [];
 
   for (const paraId of expectedParagraphIds) {
-    // 对于 polish 和 proofreading，如果设置了 skipEmptyParagraphs，可以跳过空段落
-    // 但这里我们只检查是否有翻译，不检查段落是否为空
     if (!receivedTranslations.has(paraId)) {
       missingIds.push(paraId);
     }
@@ -417,6 +411,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
 /**
  * 构建输出内容后的后续操作提示
  * 询问 AI 是否需要进行其他操作（如创建记忆、更新术语等）
+ * 注意：为了避免思维模型的分析瘫痪，提示尽量简洁直接
  */
 export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
   const taskTypeLabels = {
@@ -428,25 +423,11 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
   const taskLabel = taskTypeLabels[taskType];
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
 
-  return `${taskLabel}任务的主要输出已完成。现在你可以选择进行以下后续操作（可选）：
+  return `${taskLabel}任务主要输出已完成。${todosReminder}
 
-**可选的后续操作**：
-1. **更新翻译**：如果你想要更新之前返回的翻译内容，可以将状态设置为 "working" 并返回包含更新段落的 JSON。例如：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "更新后的翻译"}]}\`。如果不需要更新，可以跳过此选项。
-2. **创建记忆**：如果翻译过程中发现了重要的背景设定、角色信息、剧情要点等，可以使用 \`create_memory\` 工具保存这些信息，以便后续快速参考
-3. **更新术语/角色**：如果发现术语或角色信息需要更新（如补充翻译、添加别名、更新描述等），可以使用相应的更新工具
-4. **创建待办事项**：如果需要规划后续任务步骤，可以使用 \`create_todo\` 创建待办事项。⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 create_todo 为每个步骤创建实际的待办任务。可以使用 \`items\` 参数批量创建多个待办事项，例如：\`create_todo(items=["步骤1", "步骤2", "步骤3"])\`。
-5. **标记待办完成**：如果已经完成了某个待办事项的任务，使用 \`mark_todo_done\` 工具将其标记为完成
+**后续操作（可选）**：如需创建记忆、更新术语/角色、管理待办事项，请直接调用工具。
 
-**重要说明**：
-- 这些操作都是**可选的**，如果你不需要进行任何后续操作，请返回 JSON 格式，状态设置为 "done"
-- 如果你需要进行后续操作，请直接调用相应的工具
-- 如果不需要任何后续操作，请返回 JSON 格式：\`{"status": "done"}\`，这样系统就会结束当前任务${todosReminder}
-
-**必须返回 JSON 格式**：
-- 如果需要进行后续操作，调用工具后继续返回 JSON，状态保持为 "completed"
-- 如果不需要后续操作，返回：\`{"status": "done"}\`
-
-请告诉我你是否需要进行任何后续操作，或者直接返回状态为 "done" 的 JSON。`;
+**默认操作**：如果不需要后续操作，请返回 \`{"status": "done"}\``;
 }
 
 /**
@@ -475,7 +456,6 @@ export interface ToolCallLoopConfig {
   aiProcessingStore: AIProcessingStore | undefined;
   logLabel: string;
   maxTurns?: number;
-  includePreview?: boolean;
   /**
    * 验证回调：用于服务特定的验证逻辑
    * @param expectedIds 期望的段落 ID 列表
@@ -515,7 +495,6 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     aiProcessingStore,
     logLabel,
     maxTurns = Infinity,
-    includePreview: _includePreview = false,
     verifyCompleteness,
   } = config;
 
@@ -524,6 +503,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   const accumulatedParagraphs = new Map<string, string>();
   let titleTranslation: string | undefined;
   let finalResponseText: string | null = null;
+
+  // 用于检测状态循环：记录每个状态连续出现的次数
+  let consecutivePlanningCount = 0;
+  let consecutiveWorkingCount = 0;
+  let consecutiveCompletedCount = 0;
+  const MAX_CONSECUTIVE_STATUS = 3; // 同一状态最多连续出现 3 次
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -599,6 +584,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       }
 
+      // 工具调用是"生产性"活动，重置循环检测计数器
+      // 这样可以避免在 AI 合法地使用工具获取信息时触发误报
+      consecutivePlanningCount = 0;
+      consecutiveWorkingCount = 0;
+      consecutiveCompletedCount = 0;
+
       // 工具调用完成后，直接继续循环，让 AI 基于工具结果自然继续
       continue;
     }
@@ -655,30 +646,60 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
     // 根据状态处理
     if (currentStatus === 'planning') {
-      // 规划阶段：继续规划
-      history.push({
-        role: 'user',
-        content: `请继续规划任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你准备好开始${taskLabel}当前块时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
-      });
+      // 更新连续状态计数
+      consecutivePlanningCount++;
+      consecutiveWorkingCount = 0; // 重置其他状态计数
+
+      // 检测循环：如果连续处于 planning 状态超过阈值，强制要求开始工作
+      if (consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 planning 状态循环（连续 ${consecutivePlanningCount} 次），强制要求开始工作`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。不要再返回 planning 状态，直接开始${taskLabel}工作。返回格式：\`{"status": "working", "paragraphs": [...]}\``,
+        });
+      } else {
+        // 正常的 planning 响应 - 使用更明确的指令
+        history.push({
+          role: 'user',
+          content: `收到。**专注于当前文本块**。如果你已获取必要信息，**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。如果还需要使用工具获取信息，请调用工具后再更新状态。`,
+        });
+      }
       continue;
     } else if (currentStatus === 'working') {
-      // 工作阶段：继续工作，直到状态变为 completed
-      history.push({
-        role: 'user',
-        content: `请继续任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你完成当前块的所有段落${taskLabel}时，请将状态设置为 "completed"。`,
-      });
+      // 更新连续状态计数
+      consecutiveWorkingCount++;
+      consecutivePlanningCount = 0; // 重置其他状态计数
+
+      // 检测循环：如果连续处于 working 状态超过阈值且没有输出段落，强制要求完成
+      if (consecutiveWorkingCount >= MAX_CONSECUTIVE_STATUS && accumulatedParagraphs.size === 0) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 working 状态循环（连续 ${consecutiveWorkingCount} 次且无输出），强制要求输出内容`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。**现在必须**输出${taskLabel}结果。返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
+        });
+      } else {
+        // 正常的 working 响应 - 使用更明确的指令
+        history.push({
+          role: 'user',
+          content: `收到。继续${taskLabel}当前文本块的段落。完成所有段落后，将状态设置为 "completed"。`,
+        });
+      }
       continue;
     } else if (currentStatus === 'completed') {
+      // 更新连续状态计数
+      consecutiveCompletedCount++;
+      consecutivePlanningCount = 0;
+      consecutiveWorkingCount = 0;
+
       // 完成阶段：验证完整性
       if (paragraphIds && paragraphIds.length > 0) {
         const verification = verifyCompleteness
           ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
-          : verifyParagraphCompleteness(
-              paragraphIds,
-              accumulatedParagraphs,
-              taskType,
-              taskType === 'polish' || taskType === 'proofreading',
-            );
+          : verifyParagraphCompleteness(paragraphIds, accumulatedParagraphs);
 
         if (!verification.allComplete && verification.missingIds.length > 0) {
           // 缺少段落，要求继续工作
@@ -689,16 +710,28 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。**专注于当前文本块**：你只需要处理当前提供的文本块。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';
+          consecutiveCompletedCount = 0; // 重置计数，因为状态回到 working
           continue;
         }
       }
 
-      // 所有段落都完整，询问后续操作
-      const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
-      history.push({
-        role: 'user',
-        content: postOutputPrompt,
-      });
+      // 检测循环：如果连续处于 completed 状态超过阈值，强制要求完成
+      if (consecutiveCompletedCount >= MAX_CONSECUTIVE_STATUS) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 completed 状态循环（连续 ${consecutiveCompletedCount} 次），强制要求完成`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "done"}\`。`,
+        });
+      } else {
+        // 所有段落都完整，询问后续操作
+        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+        history.push({
+          role: 'user',
+          content: postOutputPrompt,
+        });
+      }
       continue;
     } else if (currentStatus === 'done') {
       // 完成：退出循环

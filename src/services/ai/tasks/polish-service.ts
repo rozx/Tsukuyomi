@@ -19,7 +19,6 @@ import { getTodosSystemPrompt } from './todo-helper';
 import {
   executeToolCallLoop,
   type AIProcessingStore,
-  verifyParagraphCompleteness,
   buildMaintenanceReminder,
   buildInitialUserPromptBase,
   addChapterContext,
@@ -463,7 +462,8 @@ export class PolishService {
       // 存储每个段落的原始翻译，用于比较是否有变化
       const originalTranslations = buildOriginalTranslationsMap(paragraphsWithTranslation);
 
-      // 3. 循环处理每个块
+      // 3. 循环处理每个块（带重试机制）
+      const MAX_RETRIES = 2; // 最大重试次数
       for (let i = 0; i < chunks.length; i++) {
         // 检查是否已取消
         if (finalSignal.aborted) {
@@ -521,78 +521,137 @@ export class PolishService {
 - 请专注于完成当前块的所有段落润色`;
         }
 
-        history.push({ role: 'user', content });
+        // 重试循环
+        let retryCount = 0;
+        let chunkProcessed = false;
 
-        // 使用共享的工具调用循环（基于状态的流程）
-        const loopResult = await executeToolCallLoop({
-          history,
-          tools,
-          generateText: service.generateText.bind(service),
-          aiServiceConfig: config,
-          taskType: 'polish',
-          chunkText,
-          paragraphIds: chunk.paragraphIds,
-          bookId: bookId || '',
-          handleAction,
-          onToast,
-          taskId,
-          aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
-          logLabel: 'PolishService',
-          includePreview: true,
-          // 对于 polish，只验证有变化的段落
-          verifyCompleteness: (expectedIds, receivedTranslations) => {
-            // 只检查已收到的翻译（有变化的段落）
-            // 对于 polish，不需要验证所有段落都有翻译，只需要验证返回的段落格式正确
-            return {
-              allComplete: true, // polish 只返回有变化的段落，所以总是完整的
-              missingIds: [],
-            };
-          },
-        });
+        while (retryCount <= MAX_RETRIES && !chunkProcessed) {
+          try {
+            // 如果是重试，移除上次失败的消息
+            if (retryCount > 0) {
+              // 移除上次的用户消息和助手回复（如果有）
+              if (history.length > 0 && history[history.length - 1]?.role === 'user') {
+                history.pop();
+              }
+              if (history.length > 0 && history[history.length - 1]?.role === 'assistant') {
+                history.pop();
+              }
 
-        // 检查状态
-        if (loopResult.status !== 'done') {
-          throw new Error(
-            `润色任务未完成（状态: ${loopResult.status}）。请重试。`,
-          );
-        }
+              console.warn(
+                `[PolishService] ⚠️ 检测到AI降级或错误，重试块 ${i + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
+              );
 
-        // 使用从状态流程中提取的段落润色
-        const extractedPolishes = loopResult.paragraphs;
-
-        // 处理润色结果：只返回有变化的段落
-        if (extractedPolishes.size > 0 && chunk.paragraphIds) {
-          // 过滤出有变化的段落
-          const chunkParagraphPolishes = filterChangedParagraphs(
-            chunk.paragraphIds,
-            extractedPolishes,
-            originalTranslations,
-          );
-
-          if (chunkParagraphPolishes.length > 0) {
-            // 按顺序构建文本
-            const orderedPolishes: string[] = [];
-            for (const paraPolish of chunkParagraphPolishes) {
-              orderedPolishes.push(paraPolish.translation);
-              paragraphPolishes.push(paraPolish);
+              if (aiProcessingStore && taskId) {
+                void aiProcessingStore.updateTask(taskId, {
+                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+                  status: 'processing',
+                });
+              }
             }
-            const orderedText = orderedPolishes.join('\n\n');
-            polishedText += orderedText;
-            if (onChunk) {
-              await onChunk({ text: orderedText, done: false });
+
+            history.push({ role: 'user', content });
+
+            // 使用共享的工具调用循环（基于状态的流程）
+            const loopResult = await executeToolCallLoop({
+              history,
+              tools,
+              generateText: service.generateText.bind(service),
+              aiServiceConfig: config,
+              taskType: 'polish',
+              chunkText,
+              paragraphIds: chunk.paragraphIds,
+              bookId: bookId || '',
+              handleAction,
+              onToast,
+              taskId,
+              aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+              logLabel: 'PolishService',
+              // 对于 polish，只验证有变化的段落
+              verifyCompleteness: (expectedIds, receivedTranslations) => {
+                // 只检查已收到的翻译（有变化的段落）
+                // 对于 polish，不需要验证所有段落都有翻译，只需要验证返回的段落格式正确
+                return {
+                  allComplete: true, // polish 只返回有变化的段落，所以总是完整的
+                  missingIds: [],
+                };
+              },
+            });
+
+            // 检查状态
+            if (loopResult.status !== 'done') {
+              throw new Error(`润色任务未完成（状态: ${loopResult.status}）。请重试。`);
             }
-            // 通知段落润色完成
-            if (onParagraphPolish) {
-              onParagraphPolish(chunkParagraphPolishes);
+
+            // 使用从状态流程中提取的段落润色
+            const extractedPolishes = loopResult.paragraphs;
+
+            // 处理润色结果：只返回有变化的段落
+            if (extractedPolishes.size > 0 && chunk.paragraphIds) {
+              // 过滤出有变化的段落
+              const chunkParagraphPolishes = filterChangedParagraphs(
+                chunk.paragraphIds,
+                extractedPolishes,
+                originalTranslations,
+              );
+
+              if (chunkParagraphPolishes.length > 0) {
+                // 按顺序构建文本
+                const orderedPolishes: string[] = [];
+                for (const paraPolish of chunkParagraphPolishes) {
+                  orderedPolishes.push(paraPolish.translation);
+                  paragraphPolishes.push(paraPolish);
+                }
+                const orderedText = orderedPolishes.join('\n\n');
+                polishedText += orderedText;
+                if (onChunk) {
+                  await onChunk({ text: orderedText, done: false });
+                }
+                // 通知段落润色完成
+                if (onParagraphPolish) {
+                  onParagraphPolish(chunkParagraphPolishes);
+                }
+              }
+              // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
+            } else {
+              // 没有提取到段落润色，使用完整文本作为后备
+              const fallbackText = loopResult.responseText || '';
+              polishedText += fallbackText;
+              if (onChunk) {
+                await onChunk({ text: fallbackText, done: false });
+              }
             }
-          }
-          // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
-        } else {
-          // 没有提取到段落润色，使用完整文本作为后备
-          const fallbackText = loopResult.responseText || '';
-          polishedText += fallbackText;
-          if (onChunk) {
-            await onChunk({ text: fallbackText, done: false });
+
+            // 标记块已成功处理
+            chunkProcessed = true;
+          } catch (error) {
+            // 检查是否是AI降级错误
+            const isDegradedError =
+              error instanceof Error &&
+              (error.message.includes('AI降级检测') || error.message.includes('重复字符'));
+
+            if (isDegradedError) {
+              retryCount++;
+              if (retryCount > MAX_RETRIES) {
+                // 重试次数用尽，抛出错误
+                console.error(
+                  `[PolishService] ❌ AI降级检测失败，块 ${i + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止润色`,
+                  {
+                    块索引: i + 1,
+                    总块数: chunks.length,
+                    重试次数: MAX_RETRIES,
+                    段落ID: chunk.paragraphIds?.slice(0, 3).join(', ') + '...',
+                  },
+                );
+                throw new Error(
+                  `AI降级：检测到重复字符，已重试 ${MAX_RETRIES} 次仍失败。请检查AI服务状态或稍后重试。`,
+                );
+              }
+              // 继续重试循环
+              continue;
+            } else {
+              // 其他错误，直接抛出
+              throw error;
+            }
           }
         }
       }

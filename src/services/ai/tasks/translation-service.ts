@@ -720,7 +720,6 @@ export class TranslationService {
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
-              includePreview: false,
             });
 
             // 检查状态
