@@ -37,11 +37,6 @@ export const OPENAI_MAX_TOKENS_LIMIT = 65536;
 export const CONFIG_MAX_TOKENS_LIMIT = 1_000_000;
 
 /**
- * 导出所有提示词
- */
-export * from './prompts';
-
-/**
  * AI 任务类型标签映射
  */
 export const TASK_TYPE_LABELS: Record<

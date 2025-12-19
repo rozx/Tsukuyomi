@@ -134,21 +134,15 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
  * 验证段落翻译完整性
  * @param expectedParagraphIds 期望的段落 ID 列表
  * @param receivedTranslations 已收到的翻译（段落 ID 到翻译文本的映射）
- * @param taskType 任务类型
- * @param skipEmptyParagraphs 是否跳过空段落（用于 polish 和 proofreading）
  * @returns 验证结果
  */
 export function verifyParagraphCompleteness(
   expectedParagraphIds: string[],
   receivedTranslations: Map<string, string>,
-  taskType: TaskType,
-  _skipEmptyParagraphs: boolean = false,
 ): VerificationResult {
   const missingIds: string[] = [];
 
   for (const paraId of expectedParagraphIds) {
-    // 对于 polish 和 proofreading，如果设置了 skipEmptyParagraphs，可以跳过空段落
-    // 但这里我们只检查是否有翻译，不检查段落是否为空
     if (!receivedTranslations.has(paraId)) {
       missingIds.push(paraId);
     }
@@ -228,42 +222,24 @@ export async function executeToolCall(
 }
 
 /**
- * 构建维护提醒（用于每个文本块）
+ * 构建维护提醒（用于每个文本块）- 精简版
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `⚠️ **关键提醒**: 敬语翻译工作流（检查别名→查看角色设定→先搜索记忆再检查历史一致性→应用关系判断→翻译）；数据维护（术语/角色分离，发现问题立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；严禁将敬语添加为别名；待办事项需详细可执行，多步骤需分别创建`,
-    proofreading: `⚠️ **提醒**: 检查文字（错别字、标点、语法）、内容（一致性、逻辑、设定）、格式；使用工具确保全文一致；最小改动原则；严禁将敬语添加为别名；待办事项需详细可执行`,
-    polish: `⚠️ **提醒**: 适当添加语气词符合角色风格；使用地道中文摆脱翻译腔；使用工具获取术语/角色/上下文；参考历史翻译；只返回有变化的段落；严禁将敬语添加为别名；待办事项需详细可执行`,
+    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落`,
+    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
+    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查`,
   };
-
-  return `\n${reminders[taskType]}`;
+  return reminders[taskType];
 }
 
 /**
- * 构建初始用户提示的基础部分
+ * 构建初始用户提示的基础部分 - 精简版
  */
 export function buildInitialUserPromptBase(taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-  };
-
+  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
-  const startAction = taskType === 'translation' ? '开始翻译任务。' : `开始${taskLabel}。`;
-  const workAction = taskType === 'translation' ? '翻译' : taskLabel;
-  const completeAction = taskType === 'translation' ? '翻译' : taskLabel;
-
-  return `${startAction}
-
-**重要：必须使用状态字段（status）**
-- 所有响应必须是有效的 JSON 格式，包含 status 字段
-- status 值必须是 "planning"、"working"、"completed" 或 "done" 之一
-- 可以从 "planning" 状态开始，规划任务、获取上下文
-- 准备好后，将状态设置为 "working" 并开始${workAction}
-- 完成所有段落${completeAction}后，将状态设置为 "completed"
-- 完成所有后续操作后，将状态设置为 "done"`;
+  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落`;
 }
 
 /**
@@ -304,149 +280,39 @@ export function addParagraphContext(
 }
 
 /**
- * 添加任务规划建议到初始提示
+ * 添加任务规划建议到初始提示 - 精简版
  */
-export function addTaskPlanningSuggestions(prompt: string, taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-  };
-  const taskLabel = taskLabels[taskType];
-
-  const examples = {
-    translation: '翻译第1-5段，检查术语一致性，确保角色名称翻译一致',
-    proofreading: '校对第1-5段，检查错别字和标点，确保术语一致性',
-    polish: '润色第1-5段，优化语气词使用，确保自然流畅',
-  };
-
-  const subTasks = {
-    translation: '翻译进度、术语检查、角色一致性检查等子任务',
-    proofreading: '校对进度、一致性检查、格式检查等子任务',
-    polish: '润色进度、术语一致性检查等子任务',
-  };
-
-  return `${prompt}
-
-      【任务规划建议】
-      - 如果需要规划复杂的${taskLabel}任务，你可以使用 \`create_todo\` 工具创建待办事项来规划步骤
-      - 例如：为大型章节创建待办事项来跟踪${subTasks[taskType]}
-      - ⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。例如："${examples[taskType]}" 而不是 "${taskLabel}文本"
-      - ⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 \`create_todo\` 为每个步骤创建实际的待办任务。例如，如果你计划"1. 获取上下文 2. 检查术语 3. ${taskLabel}段落"，你应该创建3个独立的待办事项，每个步骤一个。
-      - **批量创建**：可以使用 \`items\` 参数一次性创建多个待办事项，例如：\`create_todo(items=["${taskLabel}第1-5段", "${taskLabel}第6-10段", "检查术语一致性"])\`。这样可以更高效地为多步骤任务创建所有待办事项。`;
+export function addTaskPlanningSuggestions(prompt: string, _taskType: TaskType): string {
+  return `${prompt}\n\n可用 \`create_todo\` 规划复杂任务`;
 }
 
 /**
- * 构建完成阶段的通用说明
- */
-export function buildCompletedStageDescription(taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-  };
-  const taskLabel = taskLabels[taskType];
-
-  const verificationNote =
-    taskType === 'translation'
-      ? '所有段落都有翻译'
-      : `所有段落都有${taskLabel}（只验证有变化的段落）`;
-
-  return `3. **完成阶段（status: "completed"）**:
-         - 系统会自动验证${verificationNote}
-         - 如果缺少${taskLabel}，系统会要求继续工作（状态回到 "working"）
-         - 如果所有段落都完整，系统会询问是否需要后续操作
-         - 可以使用工具进行后续操作（创建记忆、更新术语/角色、管理待办事项等）
-         - 完成所有后续操作后，将状态设置为 "done"`;
-}
-
-/**
- * 构建执行要点/清单（任务特定）
+ * 构建执行要点/清单（任务特定）- 精简版
  */
 export function buildExecutionSection(taskType: TaskType, chapterId?: string): string {
-  if (taskType === 'translation') {
-    const chapterIdNote = chapterId
-      ? `\n         - ⚠️ 调用 \`list_terms\` 和 \`list_characters\` 时传递 \`chapter_id\` 参数`
-      : '';
+  const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
 
-    return `
-      【执行清单】
-      1. **规划阶段（planning）**: 使用工具获取上下文${chapterIdNote}；检查术语/角色分离、空翻译、描述不匹配、重复角色；发现问题立即修复；准备就绪后设为 "working"
-      2. **工作阶段（working）**: 逐段翻译1:1对应；敬语工作流（别名→角色设定→先搜索记忆再检查历史一致性→关系判断→翻译）；新术语/角色直接创建；发现数据问题立即修复；完成所有段落后设为 "completed"
-      ${buildCompletedStageDescription('translation')}
-      ⚠️ **关键**: 敬语翻译（别名>关系>记忆>历史，禁止自动创建别名，严禁将敬语添加为别名）；数据维护（术语/角色分离，发现空翻译立即修复）；严格遵守已有翻译一致性；JSON格式1:1对应；所有阶段可使用工具
-      ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出翻译内容，系统也不会将它们计入有效段落`;
+  if (taskType === 'translation') {
+    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | done`;
   }
 
   if (taskType === 'proofreading') {
-    return `
-
-        【执行要点】
-        - **文字**：错别字、标点、语法、词语用法
-        - **内容**：人名/地名/称谓一致性、时间线、逻辑、专业知识/设定
-        - **格式**：格式、数字用法、引文注释
-        - **一致性**：使用工具查找其他段落确保全文一致
-        - **最小改动**：只修正确实错误，保持原意和风格
-        - **参考原文**：确保翻译准确无误
-        - ⚠️ **只返回有变化的段落**，无变化不包含在结果中
-        - ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出校对内容，系统也不会将它们计入有效段落
-
-        请按 JSON 格式返回，只包含有变化的段落。`;
+    return `\n【执行】只返回有变化段落，忽略空段落`;
   }
 
   if (taskType === 'polish') {
-    const chapterIdNote = chapterId
-      ? `；调用 \`list_terms\` 和 \`list_characters\` 时传递 \`chapter_id\` 参数`
-      : '';
-
-    return `
-
-        【执行要点】
-        1. **规划阶段（planning）**: 使用工具获取上下文、创建待办事项；准备就绪后设为 "working"
-        2. **工作阶段（working）**: 语气词（符合角色风格）、自然流畅（摆脱翻译腔）、节奏优化、语病修正、角色区分、专有名词统一；完成所有段落后设为 "completed"
-        ${buildCompletedStageDescription('polish')}
-        ⚠️ **关键**: 只返回有变化的段落；使用工具获取术语/角色/上下文${chapterIdNote}；参考翻译历史混合匹配最佳表达；润色前搜索记忆，完成后可保存摘要；保留原文格式（标点、换行符等）；所有阶段可使用工具
-        ⚠️ **重要**: 忽略空段落（原文为空或只有空白字符的段落），不要为这些段落输出润色内容，系统也不会将它们计入有效段落
-
-        请按 JSON 格式返回，只包含有变化的段落。`;
+    return `\n【执行】只返回有变化段落${chapterNote}，参考历史翻译`;
   }
 
   return '';
 }
 
 /**
- * 构建输出内容后的后续操作提示
- * 询问 AI 是否需要进行其他操作（如创建记忆、更新术语等）
+ * 构建输出内容后的后续操作提示 - 精简版
  */
-export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-  };
-
-  const taskLabel = taskTypeLabels[taskType];
+export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-
-  return `${taskLabel}任务的主要输出已完成。现在你可以选择进行以下后续操作（可选）：
-
-**可选的后续操作**：
-1. **更新翻译**：如果你想要更新之前返回的翻译内容，可以将状态设置为 "working" 并返回包含更新段落的 JSON。例如：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "更新后的翻译"}]}\`。如果不需要更新，可以跳过此选项。
-2. **创建记忆**：如果翻译过程中发现了重要的背景设定、角色信息、剧情要点等，可以使用 \`create_memory\` 工具保存这些信息，以便后续快速参考
-3. **更新术语/角色**：如果发现术语或角色信息需要更新（如补充翻译、添加别名、更新描述等），可以使用相应的更新工具
-4. **创建待办事项**：如果需要规划后续任务步骤，可以使用 \`create_todo\` 创建待办事项。⚠️ **重要**：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，包含明确的任务范围和步骤。⚠️ **关键要求**：如果你规划了一个包含多个步骤的任务，**必须为每个步骤创建一个独立的待办事项**。不要只在文本中列出步骤，而应该使用 create_todo 为每个步骤创建实际的待办任务。可以使用 \`items\` 参数批量创建多个待办事项，例如：\`create_todo(items=["步骤1", "步骤2", "步骤3"])\`。
-5. **标记待办完成**：如果已经完成了某个待办事项的任务，使用 \`mark_todo_done\` 工具将其标记为完成
-
-**重要说明**：
-- 这些操作都是**可选的**，如果你不需要进行任何后续操作，请返回 JSON 格式，状态设置为 "done"
-- 如果你需要进行后续操作，请直接调用相应的工具
-- 如果不需要任何后续操作，请返回 JSON 格式：\`{"status": "done"}\`，这样系统就会结束当前任务${todosReminder}
-
-**必须返回 JSON 格式**：
-- 如果需要进行后续操作，调用工具后继续返回 JSON，状态保持为 "completed"
-- 如果不需要后续操作，返回：\`{"status": "done"}\`
-
-请告诉我你是否需要进行任何后续操作，或者直接返回状态为 "done" 的 JSON。`;
+  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "done"}\``;
 }
 
 /**
@@ -475,7 +341,6 @@ export interface ToolCallLoopConfig {
   aiProcessingStore: AIProcessingStore | undefined;
   logLabel: string;
   maxTurns?: number;
-  includePreview?: boolean;
   /**
    * 验证回调：用于服务特定的验证逻辑
    * @param expectedIds 期望的段落 ID 列表
@@ -515,7 +380,6 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     aiProcessingStore,
     logLabel,
     maxTurns = Infinity,
-    includePreview: _includePreview = false,
     verifyCompleteness,
   } = config;
 
@@ -524,6 +388,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   const accumulatedParagraphs = new Map<string, string>();
   let titleTranslation: string | undefined;
   let finalResponseText: string | null = null;
+
+  // 用于检测状态循环：记录每个状态连续出现的次数
+  let consecutivePlanningCount = 0;
+  let consecutiveWorkingCount = 0;
+  let consecutiveCompletedCount = 0;
+  const MAX_CONSECUTIVE_STATUS = 2; // 同一状态最多连续出现 2 次（加速流程）
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -599,6 +469,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       }
 
+      // 工具调用是"生产性"活动，重置循环检测计数器
+      // 这样可以避免在 AI 合法地使用工具获取信息时触发误报
+      consecutivePlanningCount = 0;
+      consecutiveWorkingCount = 0;
+      consecutiveCompletedCount = 0;
+
       // 工具调用完成后，直接继续循环，让 AI 基于工具结果自然继续
       continue;
     }
@@ -624,7 +500,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       });
       history.push({
         role: 'user',
-        content: `响应格式错误：${parsed.error}。请确保返回有效的 JSON 格式，包含 status 字段（值必须是 planning、working、completed 或 done 之一）。⚠️ **注意**：当只更新状态时，只需返回 \`{"status": "状态值"}\` 即可，不需要包含 paragraphs 或 titleTranslation 字段。`,
+        content: `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
     }
@@ -655,30 +531,62 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
     // 根据状态处理
     if (currentStatus === 'planning') {
-      // 规划阶段：继续规划
-      history.push({
-        role: 'user',
-        content: `请继续规划任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你准备好开始${taskLabel}当前块时，请将状态设置为 "working" 并开始返回${taskLabel}结果。`,
-      });
+      // 更新连续状态计数
+      consecutivePlanningCount++;
+      consecutiveWorkingCount = 0; // 重置其他状态计数
+      consecutiveCompletedCount = 0; // 重置其他状态计数
+
+      // 检测循环：如果连续处于 planning 状态超过阈值，强制要求开始工作
+      if (consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 planning 状态循环（连续 ${consecutivePlanningCount} 次），强制要求开始工作`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。不要再返回 planning 状态，直接开始${taskLabel}工作。返回格式：\`{"status": "working", "paragraphs": [...]}\``,
+        });
+      } else {
+        // 正常的 planning 响应 - 使用更明确的指令
+        history.push({
+          role: 'user',
+          content: `收到。**专注于当前文本块**。如果你已获取必要信息，**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。如果还需要使用工具获取信息，请调用工具后再更新状态。`,
+        });
+      }
       continue;
     } else if (currentStatus === 'working') {
-      // 工作阶段：继续工作，直到状态变为 completed
-      history.push({
-        role: 'user',
-        content: `请继续任务。**专注于当前文本块**：你只需要处理当前提供的文本块，不要考虑其他块的内容。当你完成当前块的所有段落${taskLabel}时，请将状态设置为 "completed"。`,
-      });
+      // 更新连续状态计数
+      consecutiveWorkingCount++;
+      consecutivePlanningCount = 0; // 重置其他状态计数
+      consecutiveCompletedCount = 0; // 重置其他状态计数
+
+      // 检测循环：如果连续处于 working 状态超过阈值且没有输出段落，强制要求完成
+      if (consecutiveWorkingCount >= MAX_CONSECUTIVE_STATUS && accumulatedParagraphs.size === 0) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 working 状态循环（连续 ${consecutiveWorkingCount} 次且无输出），强制要求输出内容`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。**现在必须**输出${taskLabel}结果。返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
+        });
+      } else {
+        // 正常的 working 响应 - 使用更明确的指令
+        history.push({
+          role: 'user',
+          content: `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
+        });
+      }
       continue;
     } else if (currentStatus === 'completed') {
+      // 更新连续状态计数
+      consecutiveCompletedCount++;
+      consecutivePlanningCount = 0;
+      consecutiveWorkingCount = 0;
+
       // 完成阶段：验证完整性
       if (paragraphIds && paragraphIds.length > 0) {
         const verification = verifyCompleteness
           ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
-          : verifyParagraphCompleteness(
-              paragraphIds,
-              accumulatedParagraphs,
-              taskType,
-              taskType === 'polish' || taskType === 'proofreading',
-            );
+          : verifyParagraphCompleteness(paragraphIds, accumulatedParagraphs);
 
         if (!verification.allComplete && verification.missingIds.length > 0) {
           // 缺少段落，要求继续工作
@@ -689,16 +597,28 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。**专注于当前文本块**：你只需要处理当前提供的文本块。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';
+          consecutiveCompletedCount = 0; // 重置计数，因为状态回到 working
           continue;
         }
       }
 
-      // 所有段落都完整，询问后续操作
-      const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
-      history.push({
-        role: 'user',
-        content: postOutputPrompt,
-      });
+      // 检测循环：如果连续处于 completed 状态超过阈值，强制要求完成
+      if (consecutiveCompletedCount >= MAX_CONSECUTIVE_STATUS) {
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到 completed 状态循环（连续 ${consecutiveCompletedCount} 次），强制要求完成`,
+        );
+        history.push({
+          role: 'user',
+          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "done"}\`。`,
+        });
+      } else {
+        // 所有段落都完整，询问后续操作
+        const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
+        history.push({
+          role: 'user',
+          content: postOutputPrompt,
+        });
+      }
       continue;
     } else if (currentStatus === 'done') {
       // 完成：退出循环
@@ -741,4 +661,312 @@ export function checkMaxTurnsReached(
       `AI在工具调用后未返回${taskTypeLabels[taskType]}结果（已达到最大回合数 ${maxTurns}）。请重试。`,
     );
   }
+}
+
+// ============================================================================
+// 以下是新增的共享工具函数（用于减少三个服务的代码重复）
+// ============================================================================
+
+/**
+ * 创建统一的 AbortController，同时监听多个 signal
+ * @param signal 外部传入的取消信号
+ * @param taskAbortController 任务的取消控制器
+ * @returns 统一的控制器和清理函数
+ */
+export function createUnifiedAbortController(
+  signal?: AbortSignal,
+  taskAbortController?: AbortController,
+): { controller: AbortController; cleanup: () => void } {
+  const internalController = new AbortController();
+
+  const abortHandler = () => {
+    internalController.abort();
+  };
+
+  // 监听外部 signal
+  if (signal) {
+    if (signal.aborted) {
+      internalController.abort();
+    } else {
+      signal.addEventListener('abort', abortHandler);
+    }
+  }
+
+  // 监听任务的 abortController
+  if (taskAbortController) {
+    if (taskAbortController.signal.aborted) {
+      internalController.abort();
+    } else {
+      taskAbortController.signal.addEventListener('abort', abortHandler);
+    }
+  }
+
+  // 返回清理函数
+  const cleanup = () => {
+    if (signal) {
+      signal.removeEventListener('abort', abortHandler);
+    }
+    if (taskAbortController) {
+      taskAbortController.signal.removeEventListener('abort', abortHandler);
+    }
+  };
+
+  return { controller: internalController, cleanup };
+}
+
+/**
+ * 初始化 AI 任务
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ * @param modelName 模型名称
+ * @returns 任务 ID 和取消控制器
+ */
+export async function initializeTask(
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+  modelName: string,
+): Promise<{ taskId?: string; abortController?: AbortController }> {
+  if (!aiProcessingStore) {
+    return {};
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  const taskId = await aiProcessingStore.addTask({
+    type: taskType,
+    modelName,
+    status: 'thinking',
+    message: `正在初始化${taskTypeLabels[taskType]}会话...`,
+    thinkingMessage: '',
+  });
+
+  // 获取任务的 abortController
+  const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
+  const abortController = task?.abortController;
+
+  // 避免 exactOptionalPropertyTypes 问题：只有当 abortController 存在时才包含它
+  if (abortController) {
+    return { taskId, abortController };
+  }
+  return { taskId };
+}
+
+/**
+ * 获取特殊指令（书籍级别或章节级别）
+ * @param bookId 书籍 ID
+ * @param chapterId 章节 ID
+ * @param taskType 任务类型
+ * @returns 特殊指令字符串（如果存在）
+ */
+export async function getSpecialInstructions(
+  bookId: string | undefined,
+  chapterId: string | undefined,
+  taskType: TaskType,
+): Promise<string | undefined> {
+  if (!bookId) {
+    return undefined;
+  }
+
+  try {
+    // 动态导入 store 以避免循环依赖
+    const booksStore = (await import('src/stores/books')).useBooksStore();
+    const book = booksStore.getBookById(bookId);
+
+    if (!book) {
+      return undefined;
+    }
+
+    // 如果提供了章节ID，获取章节数据以获取章节级别的特殊指令
+    let chapter;
+    if (chapterId) {
+      for (const volume of book.volumes || []) {
+        const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
+        if (foundChapter) {
+          chapter = foundChapter;
+          break;
+        }
+      }
+    }
+
+    // 根据任务类型获取相应的特殊指令（章节级别覆盖书籍级别）
+    // 根据任务类型获取相应的特殊指令（章节级别覆盖书籍级别）
+    switch (taskType) {
+      case 'translation':
+        return chapter?.translationInstructions || book.translationInstructions;
+      case 'polish':
+        return chapter?.polishInstructions || book.polishInstructions;
+      case 'proofreading':
+        return chapter?.proofreadingInstructions || book.proofreadingInstructions;
+      default:
+        return undefined;
+    }
+  } catch (e) {
+    console.warn(
+      `[getSpecialInstructions] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * 段落格式化函数类型
+ */
+export type ParagraphFormatter<T> = (item: T) => string;
+
+/**
+ * 文本块结构
+ */
+export interface TextChunk {
+  text: string;
+  paragraphIds: string[];
+}
+
+/**
+ * 构建文本块
+ * 将段落列表按大小分割成多个文本块
+ * @param content 段落列表
+ * @param chunkSize 每个块的最大字符数
+ * @param formatParagraph 段落格式化函数
+ * @param filterParagraph 段落过滤函数（可选，默认过滤空段落）
+ * @returns 文本块数组
+ */
+export function buildChunks<T extends { id: string; text?: string }>(
+  content: T[],
+  chunkSize: number,
+  formatParagraph: ParagraphFormatter<T>,
+  filterParagraph?: (item: T) => boolean,
+): TextChunk[] {
+  const chunks: TextChunk[] = [];
+
+  // 默认过滤空段落
+  const shouldInclude = filterParagraph || ((item: T) => !!item.text?.trim());
+
+  let currentChunkText = '';
+  let currentChunkParagraphIds: string[] = [];
+
+  for (const paragraph of content) {
+    // 应用过滤条件
+    if (!shouldInclude(paragraph)) {
+      continue;
+    }
+
+    // 格式化段落
+    const paragraphText = formatParagraph(paragraph);
+
+    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
+    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
+      chunks.push({
+        text: currentChunkText,
+        paragraphIds: [...currentChunkParagraphIds],
+      });
+      currentChunkText = '';
+      currentChunkParagraphIds = [];
+    }
+
+    currentChunkText += paragraphText;
+    currentChunkParagraphIds.push(paragraph.id);
+  }
+
+  // 添加最后一个块
+  if (currentChunkText.length > 0) {
+    chunks.push({
+      text: currentChunkText,
+      paragraphIds: currentChunkParagraphIds,
+    });
+  }
+
+  return chunks;
+}
+
+/**
+ * 检查文本是否只包含符号（不是真正的文本内容）
+ * @param text 要检查的文本
+ * @returns 如果只包含符号，返回 true
+ */
+export function isOnlySymbols(text: string): boolean {
+  if (!text || text.trim().length === 0) {
+    return true;
+  }
+
+  // 移除所有空白字符
+  const trimmed = text.trim();
+
+  // 检查是否只包含标点符号、数字、特殊符号等
+  // 允许的字符：日文假名、汉字、英文字母
+  const hasContent =
+    /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF\u20000-\u2A6DFa-zA-Z]/.test(trimmed);
+
+  return !hasContent;
+}
+
+/**
+ * 处理任务错误
+ * @param error 错误对象
+ * @param taskId 任务 ID
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ */
+export async function handleTaskError(
+  error: unknown,
+  taskId: string | undefined,
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+): Promise<void> {
+  if (!aiProcessingStore || !taskId) {
+    return;
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  // 检查是否是取消错误
+  const isCancelled =
+    error instanceof Error && (error.message === '请求已取消' || error.message.includes('aborted'));
+
+  if (isCancelled) {
+    await aiProcessingStore.updateTask(taskId, {
+      status: 'cancelled',
+      message: '已取消',
+    });
+  } else {
+    await aiProcessingStore.updateTask(taskId, {
+      status: 'error',
+      message: error instanceof Error ? error.message : `${taskTypeLabels[taskType]}出错`,
+    });
+  }
+}
+
+/**
+ * 完成任务
+ * @param taskId 任务 ID
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ */
+export async function completeTask(
+  taskId: string | undefined,
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+): Promise<void> {
+  if (!aiProcessingStore || !taskId) {
+    return;
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  await aiProcessingStore.updateTask(taskId, {
+    status: 'completed',
+    message: `${taskTypeLabels[taskType]}完成`,
+  });
 }

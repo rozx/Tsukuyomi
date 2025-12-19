@@ -26,13 +26,13 @@ export class OpenAIService extends BaseAIService {
       const url = new URL(baseUrl);
       // 规范化路径：移除尾随斜杠
       const normalizedPath = url.pathname.replace(/\/+$/, '') || '/';
-      
+
       // 如果 URL 没有路径或路径仅为根路径，添加 /v1
       if (normalizedPath === '/') {
         url.pathname = '/v1';
         return url.toString();
       }
-      
+
       // 如果已有路径，保持原样（允许用户自定义路径）
       // 但确保路径没有尾随斜杠（除非是根路径）
       url.pathname = normalizedPath;
@@ -128,16 +128,17 @@ export class OpenAIService extends BaseAIService {
 
   /**
    * 发送配置请求到 OpenAI API 并解析响应
+   * 通过提示词要求 AI 返回 JSON 格式，不依赖 response_format 参数（某些模型不支持）
    */
   protected async makeConfigRequest(config: AIServiceConfig): Promise<ParsedResponse> {
     try {
       const client = this.createClient(config);
       const completion = await client.chat.completions.create({
         model: config.model,
-        messages: [{ role: 'user', content: this.CONFIG_PROMPT }],
+        messages: [{ role: 'user', content: this.getConfigPrompt() }],
         // 不设置 max_tokens，让 API 使用默认值（通常是无限制或模型的最大值）
         temperature: DEFAULT_TEMPERATURE,
-        response_format: { type: 'json_object' }, // 要求 JSON 格式响应
+        // 不使用 response_format，通过提示词要求返回 JSON
       });
 
       const content = completion.choices[0]?.message?.content || null;

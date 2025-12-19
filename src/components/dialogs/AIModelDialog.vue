@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
+import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import ToggleSwitch from 'primevue/toggleswitch';
@@ -11,6 +12,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
+import { ConfigService } from 'src/services/ai/tasks/config-service';
 
 const props = withDefaults(
   defineProps<{
@@ -137,107 +139,115 @@ const validateForm = (): boolean => {
     formErrors.value.maxTokens = '最大 Token 数不能为负数';
   }
 
+  // contextWindow 为可选字段，如果提供则必须大于 0
+  if (
+    formData.value.contextWindow !== undefined &&
+    formData.value.contextWindow !== null &&
+    formData.value.contextWindow <= 0
+  ) {
+    formErrors.value.contextWindow = '上下文窗口必须大于 0';
+  }
+
   return Object.keys(formErrors.value).length === 0;
 };
 
 // 测试 AI 模型（获取配置）
 const testModel = async () => {
-  if (!formData.value.apiKey?.trim() || !formData.value.model?.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '提示',
-      detail: '请先填写 API Key 和模型标识',
-      life: 3000,
-    });
-    return;
-  }
-
-  // Gemini 不需要 baseUrl，其他提供商需要
-  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '提示',
-      detail: '请先填写 API Key、基础地址和模型标识',
-      life: 3000,
-    });
-    return;
-  }
-
   isTesting.value = true;
 
   try {
-    // Gemini 使用默认 baseUrl，其他提供商使用用户输入的 baseUrl
-    // 确保 baseUrl 不为空字符串
-    const baseUrl =
-      formData.value.provider === 'gemini'
-        ? undefined
-        : formData.value.baseUrl?.trim() || undefined;
+    // 构建临时模型对象用于配置获取
+    const tempModel: AIModel = {
+      id: props.model?.id || 'temp',
+      name: formData.value.name || '临时模型',
+      provider: formData.value.provider as AIProvider,
+      model: formData.value.model || '',
+      temperature: formData.value.temperature ?? 0.7,
+      maxTokens: formData.value.maxTokens ?? 0,
+      apiKey: formData.value.apiKey || '',
+      baseUrl: formData.value.provider === 'gemini' ? '' : (formData.value.baseUrl || ''),
+      enabled: true,
+      isDefault: formData.value.isDefault || {
+        translation: { enabled: false, temperature: 0.7 },
+        proofreading: { enabled: false, temperature: 0.7 },
+        termsTranslation: { enabled: false, temperature: 0.7 },
+        assistant: { enabled: false, temperature: 0.7 },
+      },
+      lastEdited: new Date(),
+    };
 
-    const result = await AIServiceFactory.getConfig(formData.value.provider as AIProvider, {
-      apiKey: formData.value.apiKey,
-      baseUrl: baseUrl,
-      model: formData.value.model,
-      temperature: formData.value.temperature,
-      maxTokens: formData.value.maxTokens,
-    });
+    const result = await ConfigService.getConfig(tempModel);
 
-    // 保存从 AI 获取的配置信息
-    const config: typeof aiConfig.value = {};
+    // 只有在成功时才处理配置信息
+    if (result.success) {
+      // 保存从 AI 获取的配置信息
+      const config: typeof aiConfig.value = {};
 
-    // 确保 maxTokens 是数字类型
-    if (result.maxTokens !== undefined && result.maxTokens !== null) {
-      const maxTokensValue =
-        typeof result.maxTokens === 'number'
-          ? result.maxTokens
-          : parseInt(String(result.maxTokens), 10);
-      if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
-        config.maxTokens = maxTokensValue;
+      // 确保 maxTokens 是数字类型
+      if (result.maxTokens !== undefined && result.maxTokens !== null) {
+        const maxTokensValue =
+          typeof result.maxTokens === 'number'
+            ? result.maxTokens
+            : parseInt(String(result.maxTokens), 10);
+        if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
+          config.maxTokens = maxTokensValue;
+        }
       }
-    }
 
-    // 确保 contextWindow 是数字类型
-    if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
-      const contextWindowValue =
-        typeof result.modelInfo.contextWindow === 'number'
-          ? result.modelInfo.contextWindow
-          : parseInt(String(result.modelInfo.contextWindow), 10);
-      if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
-        config.contextWindow = contextWindowValue;
+      // 确保 contextWindow 是数字类型
+      if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
+        const contextWindowValue =
+          typeof result.modelInfo.contextWindow === 'number'
+            ? result.modelInfo.contextWindow
+            : parseInt(String(result.modelInfo.contextWindow), 10);
+        if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
+          config.contextWindow = contextWindowValue;
+        }
       }
+
+      aiConfig.value = Object.keys(config).length > 0 ? config : null;
+
+      // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
+      // 注意：maxTokens 为 0 表示无限制，所以只更新大于 0 的值
+      if (config.maxTokens !== undefined && config.maxTokens > 0) {
+        formData.value.maxTokens = config.maxTokens;
+      }
+
+      // 如果获取到 contextWindow，自动更新表单字段（确保是数字）
+      if (config.contextWindow !== undefined && config.contextWindow > 0) {
+        formData.value.contextWindow = config.contextWindow;
+      }
+
+      // 如果模型信息有更新，更新模型字段
+      if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
+        formData.value.model = result.modelInfo.id;
+      }
+
+      // 构建详细信息
+      const details: string[] = [];
+      if (result.maxTokens && result.maxTokens > 0) {
+        details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
+      }
+
+      const detailMessage =
+        details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
+
+      toast.add({
+        severity: 'success',
+        summary: '测试成功',
+        detail: detailMessage,
+        life: 3000,
+      });
+    } else {
+      // 配置获取失败，只显示错误消息
+      toast.add({
+        severity: 'error',
+        summary: '测试失败',
+        detail: result.message,
+        life: 5000,
+      });
     }
 
-    aiConfig.value = Object.keys(config).length > 0 ? config : null;
-
-    // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
-    if (config.maxTokens !== undefined && config.maxTokens > 0) {
-      formData.value.maxTokens = config.maxTokens;
-    }
-
-    // 如果获取到 contextWindow，自动更新表单字段（确保是数字）
-    if (config.contextWindow !== undefined && config.contextWindow > 0) {
-      formData.value.contextWindow = config.contextWindow;
-    }
-
-    // 如果模型信息有更新，更新模型字段
-    if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
-      formData.value.model = result.modelInfo.id;
-    }
-
-    // 构建详细信息
-    const details: string[] = [];
-    if (result.maxTokens && result.maxTokens > 0) {
-      details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
-    }
-
-    const detailMessage =
-      details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
-
-    toast.add({
-      severity: result.success ? 'success' : 'error',
-      summary: result.success ? '测试成功' : '测试失败',
-      detail: detailMessage,
-      life: result.success ? 3000 : 5000,
-    });
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -262,15 +272,6 @@ const handleSave = () => {
 const handleCancel = () => {
   emit('cancel');
   emit('update:visible', false);
-};
-
-// 获取上下文窗口显示值
-const getContextWindowDisplay = (): string => {
-  const value = formData.value.contextWindow ?? aiConfig.value?.contextWindow;
-  if (value !== undefined && value !== null && typeof value === 'number' && value > 0) {
-    return value.toLocaleString();
-  }
-  return '-';
 };
 
 // 获取可用模型列表
@@ -558,10 +559,10 @@ watch(
         </small>
       </div>
 
-      <!-- AI 配置信息（只读） -->
+      <!-- AI 配置信息 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
-          <label class="block text-sm font-medium text-moon/90">AI 配置信息（只读）</label>
+          <label class="block text-sm font-medium text-moon/90">AI 配置信息</label>
           <Button
             label="获取配置"
             icon="pi pi-download"
@@ -579,17 +580,21 @@ watch(
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
             <label class="text-xs text-moon/70">最大输入 Token</label>
-            <InputText
-              :value="
-                (formData.maxTokens ?? 0) === 0
-                  ? '无限制'
-                  : (formData.maxTokens ?? 0).toLocaleString()
-              "
-              disabled
+            <InputNumber
+              v-model="formData.maxTokens"
+              :min="0"
+              :max="10000000"
+              :use-grouping="true"
+              :show-buttons="false"
+              placeholder="0 表示无限制"
               class="w-full"
+              :class="{ 'p-invalid': formErrors.maxTokens }"
             />
+            <small v-if="formErrors.maxTokens" class="p-error block mt-1">{{
+              formErrors.maxTokens
+            }}</small>
             <small
-              v-if="
+              v-else-if="
                 aiConfig?.maxTokens &&
                 aiConfig.maxTokens > 0 &&
                 formData.maxTokens !== aiConfig.maxTokens
@@ -598,10 +603,38 @@ watch(
             >
               从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
             </small>
+            <small v-else-if="(formData.maxTokens ?? 0) === 0" class="text-xs text-moon/70 block mt-1">
+              0 表示无限制
+            </small>
           </div>
           <div class="space-y-1">
             <label class="text-xs text-moon/70">上下文窗口</label>
-            <InputText :value="getContextWindowDisplay()" disabled class="w-full" />
+            <InputNumber
+              v-model="formData.contextWindow"
+              :min="1"
+              :max="100000000"
+              :use-grouping="true"
+              :show-buttons="false"
+              placeholder="可选，总上下文窗口大小"
+              class="w-full"
+              :class="{ 'p-invalid': formErrors.contextWindow }"
+            />
+            <small v-if="formErrors.contextWindow" class="p-error block mt-1">{{
+              formErrors.contextWindow
+            }}</small>
+            <small
+              v-else-if="
+                aiConfig?.contextWindow &&
+                aiConfig.contextWindow > 0 &&
+                formData.contextWindow !== aiConfig.contextWindow
+              "
+              class="text-xs text-moon/70 block mt-1"
+            >
+              从 AI 获取: {{ aiConfig.contextWindow.toLocaleString() }}
+            </small>
+            <small v-else-if="!formData.contextWindow" class="text-xs text-moon/70 block mt-1">
+              可选字段
+            </small>
           </div>
         </div>
       </div>
