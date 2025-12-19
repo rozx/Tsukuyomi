@@ -262,7 +262,7 @@ export function addChapterContext(prompt: string, chapterId: string, taskType: T
     `在开始${taskLabel}之前，请先使用 list_terms 和 list_characters 工具获取术语表和角色表，` +
     `以确保${taskLabel}的一致性和连贯性。` +
     `list_terms 和 list_characters 工具已经包含了当前章节中出现的术语和角色，不需要再额外获取。` +
-    `你也可以使用 get_previous_chapter 工具获取前一章节的上下文信息，以保持翻译风格和术语的一致性。\n\n` +
+    `你也可以使用 get_previous_chapter, get_previous_paragraphs 工具获取上下文信息，以保持翻译风格和术语的一致性。\n\n` +
     `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
     `你只需要处理**当前任务中直接提供给你的段落**，` +
     `不要尝试翻译工具返回的段落内容。`

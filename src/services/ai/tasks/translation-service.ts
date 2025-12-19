@@ -72,6 +72,11 @@ export interface TranslationServiceOptions {
     translations: { id: string; translation: string }[],
   ) => void | Promise<void>;
   /**
+   * 标题翻译回调函数，用于接收标题翻译结果（在收到后立即调用，不等待翻译完成）
+   * @param translation 标题翻译文本
+   */
+  onTitleTranslation?: (translation: string) => void | Promise<void>;
+  /**
    * 取消信号（可选）
    */
   signal?: AbortSignal;
@@ -163,6 +168,7 @@ export class TranslationService {
       chapterId,
       aiProcessingStore,
       onParagraphTranslation,
+      onTitleTranslation,
       onToast,
     } = options || {};
     const actions: ActionInfo[] = [];
@@ -378,6 +384,18 @@ ${getExecutionWorkflowRules('translation')}`;
             // 提取标题翻译（如果是第一个块）
             if (i === 0 && chapterTitle && loopResult.titleTranslation) {
               titleTranslation = loopResult.titleTranslation;
+              // 立即通知标题翻译完成（不等待整个翻译完成）
+              if (onTitleTranslation) {
+                try {
+                  await onTitleTranslation(titleTranslation);
+                } catch (error) {
+                  console.error(
+                    `[TranslationService] ⚠️ 保存标题翻译失败`,
+                    error instanceof Error ? error.message : String(error),
+                  );
+                  // 继续处理，不中断翻译流程
+                }
+              }
             }
 
             // 使用从状态流程中提取的段落翻译
