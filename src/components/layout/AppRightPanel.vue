@@ -2475,8 +2475,11 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     <!-- Resize handle -->
     <div
       ref="resizeHandleRef"
-      class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary-500/30 transition-colors z-20"
-      :class="{ 'bg-primary-500/50': isResizing }"
+      class="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize transition-colors z-30"
+      :class="{
+        'bg-primary-500/50': isResizing,
+        'bg-primary-500/20 hover:bg-primary-500/40': !isResizing,
+      }"
       @mousedown="handleResizeStart"
     />
     <!-- Subtle gradient overlay -->
