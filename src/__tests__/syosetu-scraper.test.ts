@@ -58,4 +58,38 @@ describe('SyosetuScraper', () => {
       ),
     ).toBe(true);
   });
+
+  it('extracts novel description from second .ss div', async () => {
+    const res = await scraper.fetchNovel(idxUrl);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    const novel = res.novel;
+    expect(novel?.description).toBeDefined();
+    expect(novel?.description).toBeTruthy();
+    // 验证描述包含预期内容
+    expect(novel?.description).toContain('主人公「なぜ俺が選ばれたんですか？」');
+    expect(novel?.description).toContain('女神様「貴方には素養があります');
+    expect(novel?.description).toContain('貴方がどんなゲームも100％達成トロコンしないと納得できず');
+    expect(novel?.description).toContain('主人公「なるほど！」');
+    expect(novel?.description).toContain('▼ファンアート頂きました。');
+    expect(novel?.description).toContain('ラノベ扉絵風');
+    expect(novel?.description).toContain('流星ちゃんデザイン');
+    // 验证描述应该包含换行符（因为原HTML中有<br>标签）
+    expect(novel?.description).toContain('\n');
+    // 验证描述长度应该足够长（完整描述应该超过100个字符）
+    expect(novel?.description?.length).toBeGreaterThan(100);
+  });
+
+  it('extracts tags from alert_color links', async () => {
+    const res = await scraper.fetchNovel(idxUrl);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    const novel = res.novel;
+    expect(novel?.tags).toBeDefined();
+    expect(novel?.tags?.length).toBeGreaterThan(0);
+    // 验证标签列表包含预期的标签
+    expect(novel?.tags).toContain('R-15');
+    expect(novel?.tags).toContain('神様転生');
+    expect(novel?.tags).toContain('残酷な描写');
+  });
 });

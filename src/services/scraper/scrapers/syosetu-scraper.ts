@@ -425,22 +425,157 @@ export class SyosetuScraper extends BaseScraper {
     }
 
     // 提取描述
-    let description: string | undefined = $('.novel_ex').first().text().trim();
+    // 优先从 div#maind 中的 .ss div 提取完整描述（而不是被截断的 meta 标签）
+    let description: string | undefined;
+    
+    // 首先尝试从 div#maind 中的 .ss div 中提取描述（完整内容）
+    const maind = $('#maind');
+    if (maind.length > 0) {
+      const ssDivs = maind.find('.ss');
+      if (ssDivs.length >= 2) {
+        // 跳过第一个（标题/作者部分），提取第二个的内容
+        const secondSsDiv = ssDivs.eq(1);
+        if (secondSsDiv.length > 0) {
+          // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
+          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
+            let text = '';
+            element.contents().each((_, node: any) => {
+              const nodeType = String(node.type);
+              if (nodeType === 'text') {
+                // 文本节点，直接添加
+                const nodeText = $(node).text();
+                text += nodeText;
+              } else if (nodeType === 'tag') {
+                const $node = $(node);
+                const tagName = node.tagName?.toLowerCase() || '';
+                if (tagName === 'br') {
+                  // <br> 标签转换为换行
+                  text += '\n';
+                } else if (tagName === 'a' && $node.attr('name') === 'img') {
+                  // 跳过图片链接标记（如【挿絵表示】）
+                  return;
+                } else {
+                  // 其他标签，递归提取内容
+                  const innerText = extractDescriptionText($node);
+                  if (innerText) {
+                    text += innerText;
+                  }
+                }
+              }
+            });
+            return text;
+          };
+          const descText = extractDescriptionText(secondSsDiv);
+          description = descText.trim();
+          // 如果提取到的内容为空或太短，可能不是描述
+          if (description && description.length < 10) {
+            description = undefined;
+          }
+        }
+      } else if (ssDivs.length === 1) {
+        // 如果只有一个 .ss div，检查它是否包含描述内容（而不是标题/作者）
+        const ssDiv = ssDivs.first();
+        const divText = ssDiv.text();
+        // 如果包含常见的描述特征（对话、较长的文本），可能是描述
+        if (divText.length > 50 && (divText.includes('「') || divText.includes('」'))) {
+          // 使用递归方法提取完整的文本内容
+          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
+            let text = '';
+            element.contents().each((_, node: any) => {
+              const nodeType = String(node.type);
+              if (nodeType === 'text') {
+                const nodeText = $(node).text();
+                text += nodeText;
+              } else if (nodeType === 'tag') {
+                const $node = $(node);
+                const tagName = node.tagName?.toLowerCase() || '';
+                if (tagName === 'br') {
+                  text += '\n';
+                } else if (tagName === 'a' && $node.attr('name') === 'img') {
+                  return;
+                } else {
+                  const innerText = extractDescriptionText($node);
+                  if (innerText) {
+                    text += innerText;
+                  }
+                }
+              }
+            });
+            return text;
+          };
+          const descText = extractDescriptionText(ssDiv);
+          description = descText.trim();
+        }
+      }
+    }
+    
+    // 如果从 .ss div 中没有提取到描述，回退到其他选择器
+    if (!description) {
+      description = $('.novel_ex').first().text().trim();
+    }
     if (!description) {
       description = $('.novel_description').first().text().trim();
     }
     if (!description) {
       description = $('meta[name="description"]').attr('content')?.trim();
     }
+    if (!description) {
+      // 最后尝试从 og:description meta 标签提取（通常会被截断，所以优先级最低）
+      const ogDesc = $('meta[property="og:description"]').attr('content')?.trim();
+      // 只有当 og:description 没有被截断（不以"…"结尾）时才使用
+      if (ogDesc && !ogDesc.endsWith('…')) {
+        description = ogDesc;
+      }
+    }
 
     // 提取标签
     const tags: string[] = [];
-    $('.tag, .novel_tag, [class*="tag"]').each((_, el) => {
-      const tagText = $(el).text().trim();
-      if (tagText) {
-        tags.push(tagText);
+    
+    // 首先尝试从第一个 .ss div 中提取标签（格式：タグ：<a class="alert_color">...</a>）
+    const firstSsDiv = $('.ss').first();
+    if (firstSsDiv.length > 0) {
+      // 查找包含 "タグ：" 文本的节点
+      let foundTagLabel = false;
+      firstSsDiv.contents().each((_, node: any) => {
+        const nodeType = String(node.type);
+        if (nodeType === 'text') {
+          const text = $(node).text();
+          if (text.includes('タグ：') || text.includes('タグ:')) {
+            foundTagLabel = true;
+          }
+        } else if (nodeType === 'tag' && foundTagLabel) {
+          const $node = $(node);
+          const tagName = node.tagName?.toLowerCase() || '';
+          // 查找 class="alert_color" 的链接
+          if (tagName === 'a' && $node.hasClass('alert_color')) {
+            const tagText = $node.text().trim();
+            if (tagText && !tags.includes(tagText)) {
+              tags.push(tagText);
+            }
+          }
+        }
+      });
+      
+      // 如果找到了标签，也尝试从该 div 中查找所有 alert_color 链接（以防万一）
+      if (tags.length === 0) {
+        firstSsDiv.find('a.alert_color').each((_, el) => {
+          const tagText = $(el).text().trim();
+          if (tagText && !tags.includes(tagText)) {
+            tags.push(tagText);
+          }
+        });
       }
-    });
+    }
+    
+    // 回退到原有的选择器
+    if (tags.length === 0) {
+      $('.tag, .novel_tag, [class*="tag"]').each((_, el) => {
+        const tagText = $(el).text().trim();
+        if (tagText && !tags.includes(tagText)) {
+          tags.push(tagText);
+        }
+      });
+    }
 
     // 提取章节列表和卷信息
     const chapters: SyosetuChapter[] = [];
