@@ -417,19 +417,21 @@ export function useGistSync() {
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
       // 手动下载时，保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
       if (data) {
-        // 更新进度
+        // 更新进度：进入应用阶段，保持当前的 total，不重置进度
+        const currentProgress = settingsStore.syncProgress;
         settingsStore.updateSyncProgress({
           stage: 'applying',
           message: '正在应用下载的数据...',
-          current: 0,
-          total: 1,
+          // 不重置 current 和 total，保持下载阶段的进度
         });
 
         const restorableItems = await SyncDataService.applyDownloadedData(data, undefined, true);
         
-        // 更新进度
+        // 更新进度：应用完成，确保进度为 100%
+        const finalTotal = currentProgress.total > 0 ? currentProgress.total : 1;
         settingsStore.updateSyncProgress({
-          current: 1,
+          current: finalTotal,
+          total: finalTotal,
           message: '应用完成',
         });
 
