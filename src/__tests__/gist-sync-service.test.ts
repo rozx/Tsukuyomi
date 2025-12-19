@@ -23,6 +23,10 @@ describe('Gist Sync Service - 分块文件名提取', () => {
 
   /**
    * 提取 novelId 的辅助函数（模拟实际代码逻辑）
+   * 支持三种格式（按优先级排序）:
+   * - 最新格式: novel-chunk-{id}_{index}.json（使用 _ 分隔符）
+   * - 旧格式: novel-chunk-{id}#{index}.json（使用 # 分隔符）
+   * - 更旧格式: novel-chunk-{id}-{index}.json（使用 - 分隔符，向后兼容）
    */
   function extractNovelIdFromChunkFileName(fileName: string): string | null {
     if (!fileName.startsWith(NOVEL_CHUNK_PREFIX)) {
@@ -36,7 +40,28 @@ describe('Gist Sync Service - 分块文件名提取', () => {
 
     const beforeDot = fileName.substring(0, dotIndex);
 
-    // 优先尝试新格式（使用 # 分隔符）
+    // 优先尝试最新格式（使用 _ 作为分隔符）
+    const underscoreIndex = beforeDot.lastIndexOf('_');
+    if (
+      underscoreIndex !== -1 &&
+      underscoreIndex > prefixLength &&
+      underscoreIndex < beforeDot.length - 1
+    ) {
+      const indexPart = beforeDot.substring(underscoreIndex + 1);
+      if (/^\d+$/.test(indexPart)) {
+        const novelId = beforeDot.substring(prefixLength, underscoreIndex);
+        if (
+          novelId &&
+          novelId.length > 0 &&
+          !novelId.includes('#') &&
+          !novelId.endsWith('-')
+        ) {
+          return novelId;
+        }
+      }
+    }
+
+    // 尝试旧格式（使用 # 分隔符）
     const hashIndex = beforeDot.lastIndexOf('#');
     if (hashIndex !== -1 && hashIndex > prefixLength && hashIndex < beforeDot.length - 1) {
       const indexPart = beforeDot.substring(hashIndex + 1);
@@ -48,7 +73,7 @@ describe('Gist Sync Service - 分块文件名提取', () => {
       }
     }
 
-    // 向后兼容：尝试旧格式（使用 - 分隔符）
+    // 向后兼容：尝试更旧格式（使用 - 分隔符）
     const lastDashIndex = beforeDot.lastIndexOf('-');
     if (
       lastDashIndex !== -1 &&
@@ -67,7 +92,97 @@ describe('Gist Sync Service - 分块文件名提取', () => {
     return null;
   }
 
-  describe('新格式（使用 # 分隔符）', () => {
+  describe('最新格式（使用 _ 分隔符）', () => {
+    test('应该正确提取简单的 UUID', () => {
+      const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_0.json';
+      const novelId = extractNovelIdFromChunkFileName(fileName);
+      expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
+    });
+
+    test('应该正确提取多个分块文件的 novelId', () => {
+      const testCases = [
+        {
+          fileName: 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_0.json',
+          expected: '00f8fa01-08ab-4623-ad90-b2c023ed0855',
+        },
+        {
+          fileName: 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_1.json',
+          expected: '00f8fa01-08ab-4623-ad90-b2c023ed0855',
+        },
+        {
+          fileName: 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_10.json',
+          expected: '00f8fa01-08ab-4623-ad90-b2c023ed0855',
+        },
+        {
+          fileName: 'novel-chunk-b5a46a69-eea4-43c5-bd28-2e44834ec688_0.json',
+          expected: 'b5a46a69-eea4-43c5-bd28-2e44834ec688',
+        },
+        {
+          fileName: 'novel-chunk-b5a46a69-eea4-43c5-bd28-2e44834ec688_1.json',
+          expected: 'b5a46a69-eea4-43c5-bd28-2e44834ec688',
+        },
+        {
+          fileName: 'novel-chunk-d611475c-5ec0-4d1d-a9f6-edb2d2769759_5.json',
+          expected: 'd611475c-5ec0-4d1d-a9f6-edb2d2769759',
+        },
+      ];
+
+      for (const testCase of testCases) {
+        const novelId = extractNovelIdFromChunkFileName(testCase.fileName);
+        expect(novelId).toBe(testCase.expected);
+      }
+    });
+
+    test('应该处理大索引号', () => {
+      const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_99.json';
+      const novelId = extractNovelIdFromChunkFileName(fileName);
+      expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
+    });
+
+    test('应该从多个分块文件中提取相同的 novelId', () => {
+      const fileNames = [
+        'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_0.json',
+        'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_1.json',
+        'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_2.json',
+      ];
+
+      const novelIds = new Set<string>();
+      for (const fileName of fileNames) {
+        const novelId = extractNovelIdFromChunkFileName(fileName);
+        if (novelId) {
+          novelIds.add(novelId);
+        }
+      }
+
+      // 所有分块文件应该提取出相同的 novelId
+      expect(novelIds.size).toBe(1);
+      expect(novelIds.has('00f8fa01-08ab-4623-ad90-b2c023ed0855')).toBe(true);
+    });
+
+    test('应该区分不同书籍的分块文件', () => {
+      const fileNames = [
+        'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_0.json',
+        'novel-chunk-b5a46a69-eea4-43c5-bd28-2e44834ec688_0.json',
+        'novel-chunk-d611475c-5ec0-4d1d-a9f6-edb2d2769759_0.json',
+      ];
+
+      const novelIds = new Set<string>();
+      for (const fileName of fileNames) {
+        const novelId = extractNovelIdFromChunkFileName(fileName);
+        if (novelId) {
+          novelIds.add(novelId);
+        }
+      }
+
+      // 应该提取出 3 个不同的 novelId
+      expect(novelIds.size).toBe(3);
+      expect(novelIds.has('00f8fa01-08ab-4623-ad90-b2c023ed0855')).toBe(true);
+      expect(novelIds.has('b5a46a69-eea4-43c5-bd28-2e44834ec688')).toBe(true);
+      expect(novelIds.has('d611475c-5ec0-4d1d-a9f6-edb2d2769759')).toBe(true);
+    });
+  });
+
+  describe('旧格式（使用 # 分隔符）', () => {
     test('应该正确提取简单的 UUID', () => {
       const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855#0.json';
       const novelId = extractNovelIdFromChunkFileName(fileName);
@@ -116,14 +231,14 @@ describe('Gist Sync Service - 分块文件名提取', () => {
     });
   });
 
-  describe('旧格式（使用 - 分隔符，向后兼容）', () => {
-    test('应该正确提取简单的 UUID（旧格式）', () => {
+  describe('更旧格式（使用 - 分隔符，向后兼容）', () => {
+    test('应该正确提取简单的 UUID（更旧格式）', () => {
       const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855-0.json';
       const novelId = extractNovelIdFromChunkFileName(fileName);
       expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
     });
 
-    test('应该正确提取多个分块文件的 novelId（旧格式）', () => {
+    test('应该正确提取多个分块文件的 novelId（更旧格式）', () => {
       const testCases = [
         {
           fileName: 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855-0.json',
@@ -164,19 +279,37 @@ describe('Gist Sync Service - 分块文件名提取', () => {
       expect(novelId).toBeNull();
     });
 
-    test('应该处理无效索引的文件名', () => {
+    test('应该处理无效索引的文件名（# 分隔符）', () => {
       const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855#abc.json';
       const novelId = extractNovelIdFromChunkFileName(fileName);
       expect(novelId).toBeNull();
     });
 
-    test('应该处理索引为 0 的情况', () => {
+    test('应该处理无效索引的文件名（_ 分隔符）', () => {
+      const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_abc.json';
+      const novelId = extractNovelIdFromChunkFileName(fileName);
+      expect(novelId).toBeNull();
+    });
+
+    test('应该处理索引为 0 的情况（_ 分隔符）', () => {
+      const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_0.json';
+      const novelId = extractNovelIdFromChunkFileName(fileName);
+      expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
+    });
+
+    test('应该处理索引为 0 的情况（# 分隔符）', () => {
       const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855#0.json';
       const novelId = extractNovelIdFromChunkFileName(fileName);
       expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
     });
 
-    test('应该处理大索引号', () => {
+    test('应该处理大索引号（_ 分隔符）', () => {
+      const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855_99.json';
+      const novelId = extractNovelIdFromChunkFileName(fileName);
+      expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
+    });
+
+    test('应该处理大索引号（# 分隔符）', () => {
       const fileName = 'novel-chunk-00f8fa01-08ab-4623-ad90-b2c023ed0855#99.json';
       const novelId = extractNovelIdFromChunkFileName(fileName);
       expect(novelId).toBe('00f8fa01-08ab-4623-ad90-b2c023ed0855');
