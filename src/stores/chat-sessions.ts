@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'luna-ai-chat-sessions';
+const CURRENT_SESSION_ID_KEY = 'luna-ai-chat-current-session-id';
 const MAX_SESSIONS = 50; // 最多保存 50 个会话
 export const MAX_MESSAGES_PER_SESSION = 50; // 每个会话最多 50 条消息（用户+助手）
 export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总结
@@ -147,6 +148,36 @@ function saveSessionsToStorage(sessions: ChatSession[]): void {
 }
 
 /**
+ * 从 localStorage 加载当前会话 ID
+ */
+function loadCurrentSessionIdFromStorage(): string | null {
+  try {
+    const stored = localStorage.getItem(CURRENT_SESSION_ID_KEY);
+    if (stored) {
+      return stored;
+    }
+  } catch (error) {
+    console.error('Failed to load current session ID from storage:', error);
+  }
+  return null;
+}
+
+/**
+ * 保存当前会话 ID 到 localStorage
+ */
+function saveCurrentSessionIdToStorage(sessionId: string | null): void {
+  try {
+    if (sessionId) {
+      localStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
+    } else {
+      localStorage.removeItem(CURRENT_SESSION_ID_KEY);
+    }
+  } catch (error) {
+    console.error('Failed to save current session ID to storage:', error);
+  }
+}
+
+/**
  * 从消息生成会话标题
  */
 function generateSessionTitle(messages: ChatMessage[]): string {
@@ -193,6 +224,18 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     loadSessions(): void {
       if (this.isLoaded) return;
       this.sessions = loadSessionsFromStorage();
+      // 加载当前会话 ID
+      const savedSessionId = loadCurrentSessionIdFromStorage();
+      // 验证会话 ID 是否仍然存在
+      if (savedSessionId && this.sessions.some((s) => s.id === savedSessionId)) {
+        this.currentSessionId = savedSessionId;
+      } else {
+        // 如果保存的会话 ID 不存在，清除它
+        if (savedSessionId) {
+          saveCurrentSessionIdToStorage(null);
+        }
+        this.currentSessionId = null;
+      }
       this.isLoaded = true;
     },
 
@@ -215,6 +258,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       this.sessions.push(newSession);
       this.currentSessionId = sessionId;
       saveSessionsToStorage(this.sessions);
+      saveCurrentSessionIdToStorage(sessionId);
       return sessionId;
     },
 
@@ -225,6 +269,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       const session = this.sessions.find((s) => s.id === sessionId);
       if (session) {
         this.currentSessionId = sessionId;
+        saveCurrentSessionIdToStorage(sessionId);
       }
     },
 
@@ -307,6 +352,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       this.sessions = this.sessions.filter((s) => s.id !== sessionId);
       if (this.currentSessionId === sessionId) {
         this.currentSessionId = null;
+        saveCurrentSessionIdToStorage(null);
       }
       saveSessionsToStorage(this.sessions);
     },

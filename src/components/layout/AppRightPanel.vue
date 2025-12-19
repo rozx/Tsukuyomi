@@ -316,6 +316,60 @@ const performAutoSummarization = async (): Promise<void> => {
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
 
+// 会话列表 Popover
+const sessionListPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+
+// 切换会话列表 Popover
+const toggleSessionListPopover = (event: Event) => {
+  sessionListPopoverRef.value?.toggle(event);
+};
+
+// 关闭会话列表 Popover
+const hideSessionListPopover = () => {
+  sessionListPopoverRef.value?.hide();
+};
+
+// 获取最近的会话列表（最多5个，排除当前会话）
+const recentSessions = computed(() => {
+  const allSessions = chatSessionsStore.allSessions;
+  const currentSessionId = chatSessionsStore.currentSessionId;
+  return allSessions
+    .filter((session) => session.id !== currentSessionId)
+    .slice(0, 5);
+});
+
+// 切换到指定会话
+const switchToSession = (sessionId: string) => {
+  chatSessionsStore.switchToSession(sessionId);
+  // loadCurrentSession 会通过 watch 自动触发
+  // 切换会话后关闭 popover
+  hideSessionListPopover();
+};
+
+// 格式化会话时间
+const formatSessionTime = (timestamp: number): string => {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) {
+    return '刚刚';
+  } else if (minutes < 60) {
+    return `${minutes}分钟前`;
+  } else if (hours < 24) {
+    return `${hours}小时前`;
+  } else if (days < 7) {
+    return `${days}天前`;
+  } else {
+    return new Date(timestamp).toLocaleDateString('zh-CN', {
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+};
+
 // 加载待办事项列表（优先显示当前会话的待办事项，否则显示当前任务的待办事项）
 const loadTodos = () => {
   const allTodos = TodoListService.getAllTodos();
@@ -2502,6 +2556,15 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           @click="clearChat"
         />
         <Button
+          v-if="chatSessionsStore.allSessions.length > 1"
+          id="session-list-button"
+          aria-label="会话列表"
+          class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+          icon="pi pi-history"
+          size="small"
+          @click="toggleSessionListPopover"
+        />
+        <Button
           aria-label="新聊天"
           class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
           icon="pi pi-comments"
@@ -2510,6 +2573,57 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
         />
       </div>
     </div>
+
+    <!-- Session List Popover -->
+    <Popover
+      ref="sessionListPopoverRef"
+      target="#session-list-button"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 20rem; max-width: 90vw"
+      class="session-list-popover"
+      @hide="hideSessionListPopover"
+    >
+      <div class="session-list-popover-content">
+        <div class="popover-header">
+          <span class="popover-title">最近会话</span>
+          <span
+            v-if="recentSessions.length > 0"
+            class="px-1.5 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
+          >
+            {{ recentSessions.length }}
+          </span>
+        </div>
+        <div v-if="recentSessions.length === 0" class="px-4 py-3 text-xs text-moon-60 text-center">
+          暂无其他会话
+        </div>
+        <div v-else class="popover-sessions-list">
+          <button
+            v-for="session in recentSessions"
+            :key="session.id"
+            class="session-item"
+            :class="{
+              'session-item-active': session.id === chatSessionsStore.currentSessionId,
+            }"
+            @click="switchToSession(session.id)"
+          >
+            <div class="session-item-header">
+              <span class="session-item-title" :title="session.title">
+                {{ session.title }}
+              </span>
+              <span class="session-item-time">
+                {{ formatSessionTime(session.updatedAt) }}
+              </span>
+            </div>
+            <div v-if="session.messages.length > 0" class="session-item-meta">
+              <span class="text-xs text-moon-60">
+                {{ session.messages.length }} 条消息
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </Popover>
 
     <!-- Context info -->
     <div
@@ -3582,5 +3696,97 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   color: var(--moon-opacity-90);
   word-break: break-word;
   line-height: 1.5;
+}
+
+/* Session List Popover 样式 */
+:deep(.session-list-popover .p-popover-content) {
+  padding: 0.75rem 1rem;
+}
+
+.session-list-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.session-list-popover-content .popover-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.session-list-popover-content .popover-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--moon-opacity-100);
+}
+
+.popover-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem;
+  border-radius: 0.375rem;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.session-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.session-item-active {
+  background: rgba(var(--primary-rgb), 0.2);
+  border-color: rgba(var(--primary-rgb), 0.4);
+}
+
+.session-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.session-item-title {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--moon-opacity-90);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item-active .session-item-title {
+  color: var(--moon-opacity-100);
+  font-weight: 600;
+}
+
+.session-item-time {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-50);
+  flex-shrink: 0;
+}
+
+.session-item-meta {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-60);
 }
 </style>
