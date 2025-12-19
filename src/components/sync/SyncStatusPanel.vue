@@ -332,7 +332,7 @@ defineExpose({
             style="height: 6px"
             class="sync-progress-bar"
           />
-          <p class="text-xs text-moon/50 mt-2 truncate">
+          <p class="text-xs text-moon/50 mt-2 truncate" style="width: 274px; height: 16px;">
             {{ syncProgress.message }}
           </p>
         </div>
