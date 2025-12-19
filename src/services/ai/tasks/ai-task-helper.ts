@@ -775,3 +775,311 @@ export function checkMaxTurnsReached(
     );
   }
 }
+
+// ============================================================================
+// 以下是新增的共享工具函数（用于减少三个服务的代码重复）
+// ============================================================================
+
+/**
+ * 创建统一的 AbortController，同时监听多个 signal
+ * @param signal 外部传入的取消信号
+ * @param taskAbortController 任务的取消控制器
+ * @returns 统一的控制器和清理函数
+ */
+export function createUnifiedAbortController(
+  signal?: AbortSignal,
+  taskAbortController?: AbortController,
+): { controller: AbortController; cleanup: () => void } {
+  const internalController = new AbortController();
+
+  const abortHandler = () => {
+    internalController.abort();
+  };
+
+  // 监听外部 signal
+  if (signal) {
+    if (signal.aborted) {
+      internalController.abort();
+    } else {
+      signal.addEventListener('abort', abortHandler);
+    }
+  }
+
+  // 监听任务的 abortController
+  if (taskAbortController) {
+    if (taskAbortController.signal.aborted) {
+      internalController.abort();
+    } else {
+      taskAbortController.signal.addEventListener('abort', abortHandler);
+    }
+  }
+
+  // 返回清理函数
+  const cleanup = () => {
+    if (signal) {
+      signal.removeEventListener('abort', abortHandler);
+    }
+    if (taskAbortController) {
+      taskAbortController.signal.removeEventListener('abort', abortHandler);
+    }
+  };
+
+  return { controller: internalController, cleanup };
+}
+
+/**
+ * 初始化 AI 任务
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ * @param modelName 模型名称
+ * @returns 任务 ID 和取消控制器
+ */
+export async function initializeTask(
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+  modelName: string,
+): Promise<{ taskId?: string; abortController?: AbortController }> {
+  if (!aiProcessingStore) {
+    return {};
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  const taskId = await aiProcessingStore.addTask({
+    type: taskType,
+    modelName,
+    status: 'thinking',
+    message: `正在初始化${taskTypeLabels[taskType]}会话...`,
+    thinkingMessage: '',
+  });
+
+  // 获取任务的 abortController
+  const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
+  const abortController = task?.abortController;
+
+  // 避免 exactOptionalPropertyTypes 问题：只有当 abortController 存在时才包含它
+  if (abortController) {
+    return { taskId, abortController };
+  }
+  return { taskId };
+}
+
+/**
+ * 获取特殊指令（书籍级别或章节级别）
+ * @param bookId 书籍 ID
+ * @param chapterId 章节 ID
+ * @param taskType 任务类型
+ * @returns 特殊指令字符串（如果存在）
+ */
+export async function getSpecialInstructions(
+  bookId: string | undefined,
+  chapterId: string | undefined,
+  taskType: TaskType,
+): Promise<string | undefined> {
+  if (!bookId) {
+    return undefined;
+  }
+
+  try {
+    // 动态导入 store 以避免循环依赖
+    const booksStore = (await import('src/stores/books')).useBooksStore();
+    const book = booksStore.getBookById(bookId);
+
+    if (!book) {
+      return undefined;
+    }
+
+    // 如果提供了章节ID，获取章节数据以获取章节级别的特殊指令
+    let chapter;
+    if (chapterId) {
+      for (const volume of book.volumes || []) {
+        const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
+        if (foundChapter) {
+          chapter = foundChapter;
+          break;
+        }
+      }
+    }
+
+    // 根据任务类型获取相应的特殊指令（章节级别覆盖书籍级别）
+    // 根据任务类型获取相应的特殊指令（章节级别覆盖书籍级别）
+    switch (taskType) {
+      case 'translation':
+        return chapter?.translationInstructions || book.translationInstructions;
+      case 'polish':
+        return chapter?.polishInstructions || book.polishInstructions;
+      case 'proofreading':
+        return chapter?.proofreadingInstructions || book.proofreadingInstructions;
+      default:
+        return undefined;
+    }
+  } catch (e) {
+    console.warn(
+      `[getSpecialInstructions] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * 段落格式化函数类型
+ */
+export type ParagraphFormatter<T> = (item: T) => string;
+
+/**
+ * 文本块结构
+ */
+export interface TextChunk {
+  text: string;
+  paragraphIds: string[];
+}
+
+/**
+ * 构建文本块
+ * 将段落列表按大小分割成多个文本块
+ * @param content 段落列表
+ * @param chunkSize 每个块的最大字符数
+ * @param formatParagraph 段落格式化函数
+ * @param filterParagraph 段落过滤函数（可选，默认过滤空段落）
+ * @returns 文本块数组
+ */
+export function buildChunks<T extends { id: string; text?: string }>(
+  content: T[],
+  chunkSize: number,
+  formatParagraph: ParagraphFormatter<T>,
+  filterParagraph?: (item: T) => boolean,
+): TextChunk[] {
+  const chunks: TextChunk[] = [];
+
+  // 默认过滤空段落
+  const shouldInclude = filterParagraph || ((item: T) => !!item.text?.trim());
+
+  let currentChunkText = '';
+  let currentChunkParagraphIds: string[] = [];
+
+  for (const paragraph of content) {
+    // 应用过滤条件
+    if (!shouldInclude(paragraph)) {
+      continue;
+    }
+
+    // 格式化段落
+    const paragraphText = formatParagraph(paragraph);
+
+    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
+    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
+      chunks.push({
+        text: currentChunkText,
+        paragraphIds: [...currentChunkParagraphIds],
+      });
+      currentChunkText = '';
+      currentChunkParagraphIds = [];
+    }
+
+    currentChunkText += paragraphText;
+    currentChunkParagraphIds.push(paragraph.id);
+  }
+
+  // 添加最后一个块
+  if (currentChunkText.length > 0) {
+    chunks.push({
+      text: currentChunkText,
+      paragraphIds: currentChunkParagraphIds,
+    });
+  }
+
+  return chunks;
+}
+
+/**
+ * 检查文本是否只包含符号（不是真正的文本内容）
+ * @param text 要检查的文本
+ * @returns 如果只包含符号，返回 true
+ */
+export function isOnlySymbols(text: string): boolean {
+  if (!text || text.trim().length === 0) {
+    return true;
+  }
+
+  // 移除所有空白字符
+  const trimmed = text.trim();
+
+  // 检查是否只包含标点符号、数字、特殊符号等
+  // 允许的字符：日文假名、汉字、英文字母
+  const hasContent =
+    /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF\u20000-\u2A6DFa-zA-Z]/.test(trimmed);
+
+  return !hasContent;
+}
+
+/**
+ * 处理任务错误
+ * @param error 错误对象
+ * @param taskId 任务 ID
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ */
+export async function handleTaskError(
+  error: unknown,
+  taskId: string | undefined,
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+): Promise<void> {
+  if (!aiProcessingStore || !taskId) {
+    return;
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  // 检查是否是取消错误
+  const isCancelled =
+    error instanceof Error && (error.message === '请求已取消' || error.message.includes('aborted'));
+
+  if (isCancelled) {
+    await aiProcessingStore.updateTask(taskId, {
+      status: 'cancelled',
+      message: '已取消',
+    });
+  } else {
+    await aiProcessingStore.updateTask(taskId, {
+      status: 'error',
+      message: error instanceof Error ? error.message : `${taskTypeLabels[taskType]}出错`,
+    });
+  }
+}
+
+/**
+ * 完成任务
+ * @param taskId 任务 ID
+ * @param aiProcessingStore AI 处理 Store
+ * @param taskType 任务类型
+ */
+export async function completeTask(
+  taskId: string | undefined,
+  aiProcessingStore: AIProcessingStore | undefined,
+  taskType: TaskType,
+): Promise<void> {
+  if (!aiProcessingStore || !taskId) {
+    return;
+  }
+
+  const taskTypeLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+  };
+
+  await aiProcessingStore.updateTask(taskId, {
+    status: 'completed',
+    message: `${taskTypeLabels[taskType]}完成`,
+  });
+}
