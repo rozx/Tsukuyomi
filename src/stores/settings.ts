@@ -170,6 +170,14 @@ export const useSettingsStore = defineStore('settings', {
     syncs: [] as SyncConfig[],
     isSyncing: false, // 全局同步状态
     isLoaded: false,
+    // 同步进度状态
+    syncProgress: {
+      stage: '' as '' | 'downloading' | 'uploading' | 'applying' | 'merging',
+      message: '',
+      current: 0, // 当前进度
+      total: 0, // 总数
+      percentage: 0, // 百分比 0-100
+    },
   }),
 
   getters: {
@@ -747,6 +755,54 @@ export const useSettingsStore = defineStore('settings', {
      */
     setSyncing(syncing: boolean): void {
       this.isSyncing = syncing;
+      // 如果同步结束，重置进度
+      if (!syncing) {
+        this.resetSyncProgress();
+      }
+    },
+
+    /**
+     * 更新同步进度
+     */
+    updateSyncProgress(progress: {
+      stage?: '' | 'downloading' | 'uploading' | 'applying' | 'merging';
+      message?: string;
+      current?: number;
+      total?: number;
+    }): void {
+      if (progress.stage !== undefined) {
+        this.syncProgress.stage = progress.stage;
+      }
+      if (progress.message !== undefined) {
+        this.syncProgress.message = progress.message;
+      }
+      if (progress.current !== undefined) {
+        this.syncProgress.current = progress.current;
+      }
+      if (progress.total !== undefined) {
+        this.syncProgress.total = progress.total;
+      }
+      // 计算百分比
+      if (this.syncProgress.total > 0) {
+        this.syncProgress.percentage = Math.round(
+          (this.syncProgress.current / this.syncProgress.total) * 100,
+        );
+      } else {
+        this.syncProgress.percentage = 0;
+      }
+    },
+
+    /**
+     * 重置同步进度
+     */
+    resetSyncProgress(): void {
+      this.syncProgress = {
+        stage: '',
+        message: '',
+        current: 0,
+        total: 0,
+        percentage: 0,
+      };
     },
 
     /**

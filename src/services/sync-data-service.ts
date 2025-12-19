@@ -21,6 +21,17 @@ export interface RestorableItem {
 }
 
 /**
+ * 数据备份接口（用于回滚）
+ */
+interface DataBackup {
+  models: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  books: Novel[];
+  covers: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  settings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  gistSync: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
+/**
  * 同步数据服务
  * 处理上传/下载配置的通用逻辑
  */
@@ -103,7 +114,65 @@ export class SyncDataService {
   }
 
   /**
+   * 创建数据备份（用于回滚）
+   */
+  private static createBackup(): DataBackup {
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    return {
+      models: JSON.parse(JSON.stringify(aiModelsStore.models)),
+      books: JSON.parse(JSON.stringify(booksStore.books)),
+      covers: JSON.parse(JSON.stringify(coverHistoryStore.covers)),
+      settings: JSON.parse(JSON.stringify(settingsStore.getAllSettings())),
+      gistSync: JSON.parse(JSON.stringify(settingsStore.gistSync)),
+    };
+  }
+
+  /**
+   * 从备份恢复数据（回滚操作）
+   */
+  private static async restoreFromBackup(backup: DataBackup): Promise<void> {
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    console.warn('[SyncDataService] 正在从备份恢复数据...');
+
+    try {
+      // 恢复 AI 模型
+      await aiModelsStore.clearModels();
+      for (const model of backup.models) {
+        await aiModelsStore.addModel(model);
+      }
+
+      // 恢复书籍
+      await booksStore.clearBooks();
+      await booksStore.bulkAddBooks(backup.books);
+
+      // 恢复封面历史
+      await coverHistoryStore.clearHistory();
+      for (const cover of backup.covers) {
+        await coverHistoryStore.addCover(cover);
+      }
+
+      // 恢复设置
+      await settingsStore.importSettings(backup.settings);
+      await settingsStore.updateGistSync(backup.gistSync);
+
+      console.log('[SyncDataService] 数据恢复完成');
+    } catch (restoreError) {
+      console.error('[SyncDataService] 恢复数据失败:', restoreError);
+      throw new Error('数据恢复失败，请检查本地数据完整性');
+    }
+  }
+
+  /**
    * 应用下载的数据（总是使用最新的 lastEdited 时间）
+   * 包含回滚机制，确保数据完整性
    * @param remoteData 远程数据
    * @param lastSyncTime 上次同步时间（可选）
    * @param isManualRetrieval 是否为手动检索（默认 false）。如果为 true，会保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
@@ -130,6 +199,9 @@ export class SyncDataService {
       throw new Error('远程数据格式无效，无法应用');
     }
 
+    // 创建数据备份（用于回滚）
+    const backup = SyncDataService.createBackup();
+
     const restorableItems: RestorableItem[] = [];
 
     const aiModelsStore = useAIModelsStore();
@@ -139,6 +211,8 @@ export class SyncDataService {
 
     // 如果没有传入 lastSyncTime，从设置中获取
     const syncTime = lastSyncTime ?? settingsStore.gistSync.lastSyncTime ?? 0;
+
+    try {
 
     // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
     const shouldUseRemote = (
@@ -156,11 +230,8 @@ export class SyncDataService {
 
     // 处理 AI 模型（确保 aiModels 是数组）
     // 使用删除记录列表来判断是否恢复已删除的模型
-    if (
-      remoteData.aiModels &&
-      Array.isArray(remoteData.aiModels) &&
-      remoteData.aiModels.length > 0
-    ) {
+    // 注意：即使远程列表为空，也需要处理本地独有的模型
+    if (remoteData.aiModels && Array.isArray(remoteData.aiModels)) {
       const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
       const deletedModelIds = settingsStore.gistSync.deletedModelIds || [];
       const deletedModelIdsMap = new Map<string, number>(
@@ -236,10 +307,16 @@ export class SyncDataService {
       // 添加本地独有的模型
       // 只保留在上次同步后新添加的本地模型（lastEdited > lastSyncTime）
       // 陈旧的本地模型（lastEdited <= lastSyncTime）会被自动删除，因为远程已删除
+      // 但如果远程模型列表为空，保留所有本地模型（避免误删除）
       for (const localModel of aiModelsStore.models) {
         if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
-          if (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime)) {
+          // 如果远程模型列表为空，保留所有本地模型
+          if (
+            remoteData.aiModels.length === 0 ||
+            isManualRetrieval ||
+            (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime))
+          ) {
             // 本地新增的模型，保留
             finalModels.push(localModel);
           }
@@ -360,11 +437,8 @@ export class SyncDataService {
     }
 
     // 处理封面历史（确保 coverHistory 是数组）
-    if (
-      remoteData.coverHistory &&
-      Array.isArray(remoteData.coverHistory) &&
-      remoteData.coverHistory.length > 0
-    ) {
+    // 注意：即使远程列表为空，也需要处理本地独有的封面
+    if (remoteData.coverHistory && Array.isArray(remoteData.coverHistory)) {
       const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
       const deletedCoverIds = settingsStore.gistSync.deletedCoverIds || [];
       const deletedCoverIdsMap = new Map<string, number>(
@@ -430,10 +504,16 @@ export class SyncDataService {
       // 添加本地独有的封面
       // 只保留在上次同步后新添加的本地封面（addedAt > lastSyncTime）
       // 陈旧的本地封面（addedAt <= lastSyncTime）会被自动删除，因为远程已删除
+      // 但如果远程封面列表为空，保留所有本地封面（避免误删除）
       for (const localCover of coverHistoryStore.covers) {
         if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
-          if (checkIsNewlyAdded(localCover.addedAt, syncTime)) {
+          // 如果远程封面列表为空，保留所有本地封面
+          if (
+            remoteData.coverHistory.length === 0 ||
+            isManualRetrieval ||
+            checkIsNewlyAdded(localCover.addedAt, syncTime)
+          ) {
             // 本地新增的封面，保留
             finalCovers.push(localCover);
           }
@@ -513,11 +593,29 @@ export class SyncDataService {
       }
     }
 
-    // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
-    await settingsStore.cleanupOldDeletionRecords();
+      // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+      await settingsStore.cleanupOldDeletionRecords();
 
-    // 返回可恢复的项目（仅在手动检索时）
-    return isManualRetrieval ? restorableItems : [];
+      // 返回可恢复的项目（仅在手动检索时）
+      return isManualRetrieval ? restorableItems : [];
+    } catch (error) {
+      // 发生错误，回滚到备份数据
+      console.error('[SyncDataService] 应用下载数据时发生错误，正在回滚:', error);
+      
+      try {
+        await SyncDataService.restoreFromBackup(backup);
+      } catch (rollbackError) {
+        console.error('[SyncDataService] 回滚失败:', rollbackError);
+        // 回滚也失败了，抛出原始错误和回滚错误
+        throw new Error(
+          `应用数据失败: ${error instanceof Error ? error.message : String(error)}; ` +
+          `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+        );
+      }
+      
+      // 回滚成功，重新抛出原始错误
+      throw error;
+    }
   }
 
   /**

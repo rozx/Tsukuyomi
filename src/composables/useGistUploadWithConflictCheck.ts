@@ -1,3 +1,4 @@
+import { ref } from 'vue';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -7,7 +8,6 @@ import { useSettingsStore } from 'src/stores/settings';
 import type { SyncConfig } from 'src/models/sync';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import co from 'co';
 
 /**
  * Gist 同步 composable
@@ -21,6 +21,19 @@ export function useGistSync() {
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
   const gistSyncService = new GistSyncService();
+  
+  // 用于跟踪待处理的上传（下载失败后等待确认）
+  const pendingUploadData = ref<{
+    config: SyncConfig;
+    localData: {
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    };
+    setSyncing: (value: boolean) => void;
+    onSuccess: ((result: { gistId?: string; isRecreated?: boolean; message?: string }) => void) | undefined;
+  } | null>(null);
 
   /**
    * 下载远程数据
@@ -35,10 +48,22 @@ export function useGistSync() {
     }
 
     try {
+      // 更新进度
+      settingsStore.updateSyncProgress({
+        stage: 'downloading',
+        message: '正在下载远程数据...',
+        current: 0,
+        total: 1,
+      });
+
       // 下载远程更改
       const downloadResult = await gistSyncService.downloadFromGist(config);
 
       if (downloadResult.success && downloadResult.data) {
+        settingsStore.updateSyncProgress({
+          current: 1,
+          message: '下载完成',
+        });
         return { data: downloadResult.data };
       } else if (!downloadResult.success) {
         // 下载失败
@@ -91,31 +116,41 @@ export function useGistSync() {
     error?: string;
   }> => {
     try {
+      // 更新进度
+      const totalItems = dataToUpload.novels.length + 1; // novels + settings file
+      settingsStore.updateSyncProgress({
+        stage: 'uploading',
+        message: `正在上传数据 (${dataToUpload.novels.length} 本书籍)...`,
+        current: 0,
+        total: totalItems,
+      });
+
       const result = await gistSyncService.uploadToGist(config, dataToUpload);
 
       if (result.success) {
-        // 更新 Gist ID
+        // 更新进度
+        settingsStore.updateSyncProgress({
+          current: settingsStore.syncProgress.total,
+          message: '上传完成，正在更新状态...',
+        });
+
+        // 更新 Gist ID（等待完成）
         if (result.gistId) {
-          const gistIdValue = result.gistId;
-          void co(function* () {
-            try {
-              yield settingsStore.setGistId(gistIdValue);
-            } catch (error) {
-              console.error('[useGistSync] 设置 Gist ID 失败:', error);
-            }
-          });
+          try {
+            await settingsStore.setGistId(result.gistId);
+          } catch (error) {
+            console.error('[useGistSync] 设置 Gist ID 失败:', error);
+          }
         }
 
-        // 更新同步时间
-        void co(function* () {
-          try {
-            yield settingsStore.updateLastSyncTime();
-            // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
-            yield settingsStore.cleanupOldDeletionRecords();
-          } catch (error) {
-            console.error('[useGistSync] 更新最后同步时间失败:', error);
-          }
-        });
+        // 更新同步时间（等待完成）
+        try {
+          await settingsStore.updateLastSyncTime();
+          // 清理旧的删除记录（每次同步时都清理，避免记录无限增长）
+          await settingsStore.cleanupOldDeletionRecords();
+        } catch (error) {
+          console.error('[useGistSync] 更新最后同步时间失败:', error);
+        }
 
         if (onSuccess) {
           onSuccess(result);
@@ -155,11 +190,14 @@ export function useGistSync() {
    * @param config 同步配置
    * @param setSyncing 设置同步状态的函数
    * @param onSuccess 成功回调（可选）
+   * @param options 选项
+   *   - forceLocalOnly: 强制使用本地数据（跳过下载），用于用户确认后重试
    */
   const uploadToGist = async (
     config: SyncConfig,
     setSyncing: (value: boolean) => void,
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
+    options?: { forceLocalOnly?: boolean },
   ): Promise<void> => {
     setSyncing(true);
     try {
@@ -171,15 +209,40 @@ export function useGistSync() {
         coverHistory: coverHistoryStore.covers,
       };
 
-      // 如果有 Gist ID，先下载远程数据并合并
+      // 如果有 Gist ID 且不是强制本地模式，先下载远程数据并合并
       let dataToUpload = localData;
-      if (config.syncParams.gistId) {
+      if (config.syncParams.gistId && !options?.forceLocalOnly) {
         const { data: remoteData, error } = await downloadRemoteData(config);
 
         if (error) {
-          // 下载失败，但继续使用本地数据上传（可能是网络问题，不应该阻止上传）
-          console.warn('[useGistSync] 下载远程数据失败，使用本地数据上传:', error);
+          // 下载失败，显示警告让用户选择是否继续
+          console.warn('[useGistSync] 下载远程数据失败:', error);
+          
+          // 保存待处理的上传数据，等待用户确认
+          pendingUploadData.value = {
+            config,
+            localData,
+            setSyncing,
+            onSuccess,
+          };
+          
+          // 显示确认对话框
+          toast.add({
+            severity: 'warn',
+            summary: '下载远程数据失败',
+            detail: `无法获取远程数据进行合并。继续上传可能会覆盖远程更改。错误: ${error}`,
+            life: 10000,
+          });
+          
+          // 返回，等待用户通过 confirmUploadWithLocalData 确认
+          return;
         } else if (remoteData) {
+          // 更新进度
+          settingsStore.updateSyncProgress({
+            stage: 'merging',
+            message: '正在合并本地和远程数据...',
+          });
+
           // 合并本地和远程数据
           const lastSyncTime = settingsStore.gistSync.lastSyncTime ?? 0;
           dataToUpload = await SyncDataService.mergeDataForUpload(
@@ -197,6 +260,52 @@ export function useGistSync() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  /**
+   * 确认使用本地数据上传（当下载失败时）
+   * 用户确认后调用此函数继续上传
+   */
+  const confirmUploadWithLocalData = async (): Promise<void> => {
+    const pending = pendingUploadData.value;
+    if (!pending) {
+      console.warn('[useGistSync] 没有待处理的上传');
+      return;
+    }
+
+    // 清除待处理数据
+    pendingUploadData.value = null;
+
+    // 使用强制本地模式重新上传
+    await uploadToGist(
+      pending.config,
+      pending.setSyncing,
+      pending.onSuccess,
+      { forceLocalOnly: true },
+    );
+  };
+
+  /**
+   * 取消待处理的上传
+   */
+  const cancelPendingUpload = (): void => {
+    if (pendingUploadData.value) {
+      pendingUploadData.value.setSyncing(false);
+      pendingUploadData.value = null;
+      toast.add({
+        severity: 'info',
+        summary: '上传已取消',
+        detail: '已取消上传操作',
+        life: 3000,
+      });
+    }
+  };
+
+  /**
+   * 检查是否有待处理的上传
+   */
+  const hasPendingUpload = (): boolean => {
+    return pendingUploadData.value !== null;
   };
 
   /**
@@ -292,15 +401,28 @@ export function useGistSync() {
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
       // 手动下载时，保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
       if (data) {
+        // 更新进度
+        settingsStore.updateSyncProgress({
+          stage: 'applying',
+          message: '正在应用下载的数据...',
+          current: 0,
+          total: 1,
+        });
+
         const restorableItems = await SyncDataService.applyDownloadedData(data, undefined, true);
         
-        void co(function* () {
-          try {
-            yield settingsStore.updateLastSyncTime();
-          } catch (error) {
-            console.error('[useGistSync] 更新最后同步时间失败:', error);
-          }
+        // 更新进度
+        settingsStore.updateSyncProgress({
+          current: 1,
+          message: '应用完成',
         });
+
+        // 等待更新同步时间完成
+        try {
+          await settingsStore.updateLastSyncTime();
+        } catch (updateError) {
+          console.error('[useGistSync] 更新最后同步时间失败:', updateError);
+        }
 
         // 如果有可恢复的项目，返回它们以便调用者显示对话框
         if (restorableItems.length > 0) {
@@ -316,8 +438,8 @@ export function useGistSync() {
       }
       
       return [];
-    } catch (error) {
-      console.error('[useGistSync] 下载失败:', error);
+    } catch (downloadError) {
+      console.error('[useGistSync] 下载失败:', downloadError);
       return [];
     } finally {
       setSyncing(false);
@@ -328,5 +450,9 @@ export function useGistSync() {
     uploadToGist,
     downloadFromGist,
     restoreDeletedItems,
+    confirmUploadWithLocalData,
+    cancelPendingUpload,
+    hasPendingUpload,
+    pendingUploadData,
   };
 }

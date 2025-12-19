@@ -204,6 +204,88 @@ const MAX_FILE_SIZE = 900 * 1024; // 900KB
 const CHUNK_SIZE = MAX_FILE_SIZE;
 
 /**
+ * 重试配置
+ */
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+};
+
+/**
+ * 检查错误是否可重试
+ * @param error 错误对象
+ * @returns 是否可重试
+ */
+function isRetryableError(error: unknown): boolean {
+  if (!error) return false;
+  
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const errorObj = error as any;
+  const status = errorObj?.status || errorObj?.response?.status;
+  
+  // 网络错误（无状态码）
+  if (!status) return true;
+  
+  // 5xx 服务器错误
+  if (status >= 500 && status < 600) return true;
+  
+  // 429 Too Many Requests（速率限制）
+  if (status === 429) return true;
+  
+  // 408 Request Timeout
+  if (status === 408) return true;
+  
+  return false;
+}
+
+/**
+ * 带重试的异步操作执行器
+ * @param operation 要执行的异步操作
+ * @param operationName 操作名称（用于日志）
+ * @param config 重试配置
+ * @returns 操作结果
+ */
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  operationName: string,
+  config = RETRY_CONFIG,
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < config.maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (!isRetryableError(error)) {
+        // 不可重试的错误，立即抛出
+        throw lastError;
+      }
+      
+      if (attempt < config.maxRetries - 1) {
+        // 计算延迟（指数退避 + 抖动）
+        const baseDelay = config.baseDelayMs * Math.pow(2, attempt);
+        const jitter = Math.random() * 0.3 * baseDelay; // 添加 30% 的抖动
+        const delay = Math.min(baseDelay + jitter, config.maxDelayMs);
+        
+        console.warn(
+          `[GistSyncService] ${operationName} 失败（尝试 ${attempt + 1}/${config.maxRetries}），` +
+          `${Math.round(delay)}ms 后重试:`,
+          lastError.message,
+        );
+        
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  // 所有重试都失败了
+  throw lastError || new Error(`${operationName} 失败: 未知错误`);
+}
+
+/**
  * 同步结果接口
  */
 export interface SyncResult {
@@ -850,10 +932,13 @@ export class GistSyncService {
         throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
       }
 
-      // 获取 Gist
-      const response = await this.octokit.rest.gists.get({
-        gist_id: params.gistId,
-      });
+      // 获取 Gist（带重试机制）
+      const octokit = this.octokit;
+      const gistId = params.gistId;
+      const response = await withRetry(
+        () => octokit.rest.gists.get({ gist_id: gistId }),
+        '下载 Gist',
+      );
 
       const gistFiles = response.data.files;
       if (!gistFiles) {

@@ -32,12 +32,14 @@ export function isTimeDifferent(
  * @param lastEdited 最后编辑时间
  * @param lastSyncTime 上次同步时间（毫秒时间戳）
  * @returns 如果是在上次同步后添加的，返回 true
+ *          如果是首次同步（lastSyncTime <= 0），返回 true（所有项目都应该同步）
  */
 export function isNewlyAdded(
   lastEdited: Date | number | string,
   lastSyncTime: number,
 ): boolean {
-  if (lastSyncTime <= 0) return false;
+  // 首次同步时，所有项目都应该被视为"新添加"的，需要同步
+  if (lastSyncTime <= 0) return true;
   const editedTime = typeof lastEdited === 'string'
     ? new Date(lastEdited).getTime()
     : typeof lastEdited === 'number'
