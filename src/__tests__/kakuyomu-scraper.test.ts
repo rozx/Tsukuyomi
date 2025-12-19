@@ -70,4 +70,30 @@ describe('KakuyomuScraper', () => {
     expect(content).toContain('貞操観念逆転世界');
     expect(content).toContain('男性よりも女性の方が多く');
   });
+
+  it('extracts complete novel description', async () => {
+    const res = await scraper.fetchNovel(url);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    const novel = res.novel;
+    expect(novel?.description).toBeDefined();
+    expect(novel?.description).toBeTruthy();
+    
+    // 验证描述包含 catchphrase
+    expect(novel?.description).toContain('俺が外堀を埋められているのは、貞操観念逆転世界だからだと思う。');
+    
+    // 验证描述包含 introduction 的关键内容
+    expect(novel?.description).toContain('男女比1:2の世界に転生した。');
+    expect(novel?.description).toContain('貞操観念が逆転したこの世界で');
+    expect(novel?.description).toContain('「わたくし、あなたと一局交える覚悟を決めました！」');
+    expect(novel?.description).toContain('「やるかやらないかなら、やるしかないっしょ」');
+    expect(novel?.description).toContain('気がついたらクラスの激重女子たちに囲まれていた');
+    expect(novel?.description).toContain('これは貞操観念逆転世界に転生したと信じてやまない主人公が');
+    
+    // 验证描述包含换行符（因为原HTML中有<br>标签）
+    expect(novel?.description).toContain('\n');
+    
+    // 验证描述长度应该足够长（完整描述应该超过200个字符）
+    expect(novel?.description?.length).toBeGreaterThan(200);
+  });
 });

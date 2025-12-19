@@ -18,6 +18,7 @@ interface ApolloState {
 interface KakuyomuWorkData {
   title: string;
   introduction: string;
+  catchphrase?: string; // catchphrase 可能也在 workData 中
   tagLabels: string[];
   genre: string;
   tableOfContents: Array<{ __ref: string }>;
@@ -370,10 +371,30 @@ export class KakuyomuScraper extends BaseScraper {
       novelId,
     );
 
+    // 优先从 workData 获取完整描述（避免被截断）
+    // workData.introduction 应该包含完整的描述，不会被"続きを読む"截断
+    let description: string | undefined;
+    
+    // 优先使用 workData 中的 catchphrase 和 introduction
+    const catchphrase = workData.catchphrase || this.extractCatchphrase($);
+    const introduction = workData.introduction;
+    
+    if (introduction && introduction.trim().length > 0) {
+      // 如果 introduction 存在，合并 catchphrase 和 introduction
+      if (catchphrase) {
+        description = `${catchphrase}\n\n${introduction}`;
+      } else {
+        description = introduction;
+      }
+    } else {
+      // 如果 workData.introduction 不存在，回退到从 HTML 中提取
+      description = this.extractDescription($);
+    }
+
     return {
       title: workData.title || '未知标题',
       author: this.extractAuthor($),
-      description: this.extractDescription($),
+      description,
       tags: [...(workData.tagLabels || []), workData.genre].filter(Boolean),
       cover: workData.ogImageUrl?.replace(/\?.+$/, ''),
       chapters,
@@ -388,6 +409,21 @@ export class KakuyomuScraper extends BaseScraper {
   private extractAuthor($: cheerio.CheerioAPI): string | undefined {
     const authorText = $('.partialGiftWidgetActivityName').first().text().trim();
     return authorText || undefined;
+  }
+
+  /**
+   * 从页面中提取 catchphrase（第一行）
+   */
+  private extractCatchphrase($: cheerio.CheerioAPI): string | undefined {
+    let catchphraseEl = $('.EyeCatch_catchphrase__tT_m2').first();
+    if (catchphraseEl.length === 0) {
+      catchphraseEl = $('[class*="EyeCatch_catchphrase"]').first();
+    }
+    if (catchphraseEl.length === 0) {
+      catchphraseEl = $('[class*="EyeCatch_container"]').first();
+    }
+    const catchphrase = catchphraseEl.length > 0 ? catchphraseEl.text().trim() : '';
+    return catchphrase || undefined;
   }
 
   /**
@@ -413,27 +449,45 @@ export class KakuyomuScraper extends BaseScraper {
     // 提取 introduction 文本，保留换行符
     let introduction = '';
     if (introductionEl.length > 0) {
-      // 创建一个副本来处理，避免修改原始 DOM
-      const $clone = introductionEl.clone();
+      // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
+      const extractIntroductionText = (element: cheerio.Cheerio<any>): string => {
+        let text = '';
+        element.contents().each((_, node: any) => {
+          const nodeType = String(node.type);
+          if (nodeType === 'text') {
+            // 文本节点，直接添加
+            const nodeText = $(node).text();
+            text += nodeText;
+          } else if (nodeType === 'tag') {
+            const $node = $(node);
+            const tagName = node.tagName?.toLowerCase() || '';
+            if (tagName === 'br') {
+              // <br> 标签转换为换行
+              text += '\n';
+            } else if (tagName === 'p') {
+              // 段落标签，递归提取并添加换行
+              const innerText = extractIntroductionText($node);
+              if (innerText.trim()) {
+                text += innerText.trim() + '\n';
+              } else {
+                // 空段落也添加换行
+                text += '\n';
+              }
+            } else {
+              // 其他标签（如链接等），递归提取内容
+              const innerText = extractIntroductionText($node);
+              if (innerText) {
+                text += innerText;
+              }
+            }
+          }
+        });
+        return text;
+      };
+      
+      introduction = extractIntroductionText(introductionEl).trim();
 
-      // 将 <br> 标签转换为换行符
-      $clone.find('br').replaceWith('\n');
-
-      // 将段落标签转换为换行符
-      $clone.find('p').each((_, el) => {
-        const $p = $(el);
-        const text = $p.text().trim();
-        if (text) {
-          $p.replaceWith(text + '\n');
-        } else {
-          $p.remove();
-        }
-      });
-
-      // 提取文本，保留换行符
-      introduction = $clone.text().trim();
-
-      // 清理多余的换行符（将多个连续换行符合并为单个）
+      // 清理多余的换行符（将多个连续换行符合并为双换行）
       introduction = introduction.replace(/\n{3,}/g, '\n\n');
     }
 
