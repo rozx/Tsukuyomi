@@ -196,11 +196,120 @@ const isSending = ref(false);
 const isSummarizing = ref(false);
 const currentTaskId = ref<string | null>(null);
 const currentMessageActions = ref<MessageAction[]>([]); // 当前消息的操作列表
+const isAutoSummarizing = ref(false); // 是否正在自动总结（AI 响应完成后触发）
 
 const getMessagesSinceSummaryCount = (session: SessionWithSummaryIndex | null): number => {
   if (!session) return messages.value.length;
   const cutoff = session.lastSummarizedMessageIndex ?? 0;
   return Math.max(session.messages.length - cutoff, 0);
+};
+
+/**
+ * 自动执行总结（当 AI 响应完成后消息数量达到限制时触发）
+ * 这个函数独立于 sendMessage，可以在 AI 响应完成后调用
+ */
+const performAutoSummarization = async (): Promise<void> => {
+  // 如果已经在总结或发送中，跳过
+  if (isAutoSummarizing.value || isSummarizing.value || isSending.value) {
+    return;
+  }
+
+  // 检查模型是否可用
+  if (!assistantModel.value) {
+    console.warn('[AppRightPanel] 自动总结跳过：助手模型未配置');
+    return;
+  }
+
+  const currentSession = chatSessionsStore.currentSession;
+  if (!currentSession) {
+    return;
+  }
+
+  // 检查消息数量是否达到阈值
+  const messageCount = getMessagesSinceSummaryCount(currentSession);
+  if (messageCount < MESSAGE_LIMIT_THRESHOLD) {
+    return;
+  }
+
+  isAutoSummarizing.value = true;
+
+  try {
+    // 创建总结消息气泡
+    const summarizationMessageId = Date.now().toString();
+    const summarizationMessage: ChatMessage = {
+      id: summarizationMessageId,
+      role: 'assistant',
+      content: SUMMARIZING_MESSAGE_CONTENT,
+      timestamp: Date.now(),
+      isSummarization: true,
+    };
+    messages.value.push(summarizationMessage);
+
+    // 更新 store 中的消息历史
+    chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+    scrollToBottom();
+
+    // 构建要总结的消息（排除系统消息和总结消息）
+    const messagesToSummarize = messages.value
+      .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse)
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+    // 调用总结功能
+    const summary = await AssistantService.summarizeSession(
+      assistantModel.value,
+      messagesToSummarize,
+      {
+        onChunk: () => {
+          // 总结过程中可以显示进度，但这里简化处理
+        },
+      },
+    );
+
+    // 更新总结消息状态为完成
+    const summarizationMsgIndex = messages.value.findIndex(
+      (m) => m.id === summarizationMessageId,
+    );
+    if (summarizationMsgIndex >= 0) {
+      const existingMsg = messages.value[summarizationMsgIndex];
+      if (existingMsg) {
+        existingMsg.content = SUMMARIZED_MESSAGE_CONTENT;
+        // 更新 store 中的消息历史
+        chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
+      }
+    }
+
+    // 保存总结（不清除聊天历史）
+    chatSessionsStore.summarizeAndReset(summary, currentSession.id);
+
+    // 更新本地消息列表（使用标记避免触发 watch）
+    isUpdatingFromStore = true;
+    const session = chatSessionsStore.currentSession;
+    if (session) {
+      messages.value = [...session.messages];
+    }
+    await nextTick();
+    isUpdatingFromStore = false;
+
+    toast.add({
+      severity: 'info',
+      summary: '自动总结完成',
+      detail: '对话历史已自动总结，以优化后续对话效果',
+      life: 3000,
+    });
+  } catch (error) {
+    console.error('[AppRightPanel] 自动总结失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '自动总结失败',
+      detail: error instanceof Error ? error.message : '未知错误',
+      life: 5000,
+    });
+  } finally {
+    isAutoSummarizing.value = false;
+  }
 };
 
 // 待办事项列表
@@ -800,18 +909,26 @@ const sendMessage = async () => {
         // 这样后续的 AI 回复会显示在新的消息气泡中
         // 但对于 todo 操作，不创建新消息，以便多个 todo 可以在同一消息中分组显示
         if (action.entity !== 'todo') {
-          const newAssistantMessageId = (Date.now() + 1).toString();
-          const newAssistantMessage: ChatMessage = {
-            id: newAssistantMessageId,
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-          };
-          messages.value.push(newAssistantMessage);
-          // 更新 assistantMessageId，使后续的 onChunk 更新新消息
-          assistantMessageId = newAssistantMessageId;
-          // 重置当前消息操作列表，因为新消息还没有操作
-          currentMessageActions.value = [];
+          // 检查是否接近消息限制，如果是，则不创建新消息，防止在单次响应中超出限制
+          const currentSessionForLimit = chatSessionsStore.currentSession;
+          const currentMsgCount = getMessagesSinceSummaryCount(currentSessionForLimit);
+
+          // 只有当消息数量未达到硬限制时才创建新消息
+          if (currentMsgCount < MAX_MESSAGES_PER_SESSION) {
+            const newAssistantMessageId = (Date.now() + 1).toString();
+            const newAssistantMessage: ChatMessage = {
+              id: newAssistantMessageId,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+            };
+            messages.value.push(newAssistantMessage);
+            // 更新 assistantMessageId，使后续的 onChunk 更新新消息
+            assistantMessageId = newAssistantMessageId;
+            // 重置当前消息操作列表，因为新消息还没有操作
+            currentMessageActions.value = [];
+          }
+          // 如果已达到限制，继续使用当前消息，后续会在响应完成后触发自动总结
         }
         scrollToBottom();
 
@@ -1872,6 +1989,15 @@ const sendMessage = async () => {
 
     // 清空操作列表（消息完成后）
     currentMessageActions.value = [];
+
+    // AI 响应完成后，检查是否需要自动总结
+    // 这样可以在 AI 输出多条消息后自动触发总结，而不是等用户下次发消息时才触发
+    const sessionAfterResponse = chatSessionsStore.currentSession;
+    const messageCountAfterResponse = getMessagesSinceSummaryCount(sessionAfterResponse);
+    if (messageCountAfterResponse >= MESSAGE_LIMIT_THRESHOLD) {
+      // 异步执行自动总结，不阻塞当前响应完成
+      void performAutoSummarization();
+    }
   } catch (error) {
     // 检查是否是用户主动取消的错误
     const isAborted =
