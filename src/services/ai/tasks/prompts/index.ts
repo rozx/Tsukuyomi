@@ -30,7 +30,13 @@ export function getDataManagementRules(): string {
 - 角色表：人物全名为主名称，姓/名单独部分为别名（❌禁止放术语）
 - 发现空翻译→立即更新 | 发现重复→删除并合并 | 发现误分类→删除后重建
 
-**角色管理**: 新角色先检查是否为已有角色别名，描述需包含性别/关系/特征`;
+**角色管理**: 新角色先检查是否为已有角色别名，描述需包含性别/关系/特征
+
+⚠️ **保持数据最新**（必须执行）:
+- 翻译过程中发现术语/角色**新信息**（如：新别名、关系变化、能力揭示、性格细节）→ **立即更新** \`update_term\`/\`update_character\`
+- 发现描述**过时或不完整** → **立即补充**最新信息到description/speaking_style
+- 发现翻译**不一致或有误** → **立即修正**翻译
+- 新出现的术语/角色 → 先检查是否已存在，不存在则**立即创建**`;
 }
 
 /**
@@ -93,9 +99,9 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
   };
 
   return `【执行流程】
-1. **planning**: 获取术语/角色列表（传chapter_id），检查数据问题
-2. **working**: ${workingFocus[taskType]}
-3. **completed**: 系统验证完整性，可进行后续操作（创建记忆等）
+1. **planning**: 获取术语/角色列表（传chapter_id），检查数据问题，发现问题**立即修复**
+2. **working**: ${workingFocus[taskType]}；发现新信息**立即更新**术语/角色
+3. **completed**: 系统验证完整性，更新术语/角色描述，创建记忆保存重要发现
 4. **done**: 完成当前块，进入下一块`;
 }
 
@@ -107,7 +113,8 @@ export function getToolUsageInstructions(taskType: TaskType): string {
 - \`list_terms/list_characters\`: 获取术语/角色（传chapter_id）
 - \`search_memory_by_keywords\`: 敬语翻译前先搜索
 - \`find_paragraph_by_keywords\`: 检查历史翻译一致性
-- \`update_character/update_term\`: 补充翻译、更新描述
+- ⭐ \`update_character/update_term\`: **发现新信息立即更新**（补充翻译、更新描述、添加别名、修正错误）
+- \`create_term/create_character\`: 新术语/角色立即创建
 - \`create_memory\`: 保存敬语翻译方式等重要信息
 - ${getTodoToolsDescription(taskType)}
 ⚠️ \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;

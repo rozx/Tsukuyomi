@@ -253,7 +253,14 @@ export function addChapterContext(prompt: string, chapterId: string, taskType: T
   };
   const taskLabel = taskLabels[taskType];
 
-  return `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保${taskLabel}的一致性和连贯性。`;
+  return (
+    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
+    `你可以使用工具（如 get_chapter_info、get_previous_chapter、get_next_chapter、` +
+    `find_paragraph_by_keywords 等）获取该章节的上下文信息，以确保${taskLabel}的一致性和连贯性。\n\n` +
+    `⚠️ **重要提醒**: get_chapter_info 等工具**仅用于获取上下文信息**，` +
+    `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
+    `不要尝试翻译工具返回的段落内容。`
+  );
 }
 
 /**
@@ -276,7 +283,14 @@ export function addParagraphContext(
       ? 'find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs'
       : 'find_paragraph_by_keywords、get_chapter_info';
 
-  return `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，以确保${taskLabel}的一致性和连贯性。`;
+  return (
+    `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n` +
+    `你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，` +
+    `以确保${taskLabel}的一致性和连贯性。\n\n` +
+    `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
+    `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
+    `不要尝试翻译工具返回的段落内容。`
+  );
 }
 
 /**
@@ -500,7 +514,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       });
       history.push({
         role: 'user',
-        content: `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
+        content:
+          `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：` +
+          `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
     }
@@ -543,13 +559,20 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         );
         history.push({
           role: 'user',
-          content: `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。不要再返回 planning 状态，直接开始${taskLabel}工作。返回格式：\`{"status": "working", "paragraphs": [...]}\``,
+          content:
+            `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
+            `**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。` +
+            `不要再返回 planning 状态，直接开始${taskLabel}工作。` +
+            `返回格式：\`{"status": "working", "paragraphs": [...]}\``,
         });
       } else {
         // 正常的 planning 响应 - 使用更明确的指令
         history.push({
           role: 'user',
-          content: `收到。**专注于当前文本块**。如果你已获取必要信息，**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。如果还需要使用工具获取信息，请调用工具后再更新状态。`,
+          content:
+            `收到。**专注于当前文本块**。如果你已获取必要信息，` +
+            `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
+            `如果还需要使用工具获取信息，请调用工具后再更新状态。`,
         });
       }
       continue;
@@ -566,7 +589,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         );
         history.push({
           role: 'user',
-          content: `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。**现在必须**输出${taskLabel}结果。返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
+          content:
+            `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
+            `**现在必须**输出${taskLabel}结果。` +
+            `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
       } else {
         // 正常的 working 响应 - 使用更明确的指令
@@ -594,7 +620,11 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           const hasMore = verification.missingIds.length > 10;
           history.push({
             role: 'user',
-            content: `检测到以下段落缺少${taskLabel}：${missingIdsList}${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。**专注于当前文本块**：你只需要处理当前提供的文本块。请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
+            content:
+              `检测到以下段落缺少${taskLabel}：${missingIdsList}` +
+              `${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。` +
+              `**专注于当前文本块**：你只需要处理当前提供的文本块。` +
+              `请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';
           consecutiveCompletedCount = 0; // 重置计数，因为状态回到 working
