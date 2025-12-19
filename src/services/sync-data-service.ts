@@ -312,9 +312,9 @@ export class SyncDataService {
         if (!remoteData.aiModels.find((m) => m.id === localModel.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
           // 如果远程模型列表为空，保留所有本地模型
+          // 注意：isManualRetrieval 不应该影响是否删除远程已删除的模型
           if (
             remoteData.aiModels.length === 0 ||
-            isManualRetrieval ||
             (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime))
           ) {
             // 本地新增的模型，保留
@@ -419,9 +419,9 @@ export class SyncDataService {
         if (!remoteData.novels.find((n) => n.id === localBook.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
           // 如果远程书籍列表为空，保留所有本地书籍（可能是远程删除了所有书籍）
+          // 注意：isManualRetrieval 不应该影响是否删除远程已删除的书籍
           if (
             remoteData.novels.length === 0 ||
-            isManualRetrieval ||
             checkIsNewlyAdded(localBook.lastEdited, syncTime)
           ) {
             // 本地新增的书籍，保留（确保章节内容已加载）
@@ -509,9 +509,9 @@ export class SyncDataService {
         if (!remoteData.coverHistory.find((c) => c.id === localCover.id)) {
           // 检查是否是本地新增的（在上次同步后添加）
           // 如果远程封面列表为空，保留所有本地封面
+          // 注意：isManualRetrieval 不应该影响是否删除远程已删除的封面
           if (
             remoteData.coverHistory.length === 0 ||
-            isManualRetrieval ||
             checkIsNewlyAdded(localCover.addedAt, syncTime)
           ) {
             // 本地新增的封面，保留
