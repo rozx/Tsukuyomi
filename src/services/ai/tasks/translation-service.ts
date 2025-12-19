@@ -32,9 +32,7 @@ import {
 } from './ai-task-helper';
 import {
   getSymbolFormatRules,
-  getHonorificWorkflowRules,
-  getTerminologyWorkflowRules,
-  getCharacterWorkflowRules,
+  getDataManagementRules,
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
@@ -224,28 +222,16 @@ export class TranslationService {
         ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
         : '';
 
-      const systemPrompt = `你是一个专业的日轻小说翻译助手，负责将日语轻小说翻译为自然流畅的简体中文。${todosPrompt}${specialInstructionsSection}
+      const systemPrompt = `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${specialInstructionsSection}
 
-========================================
-【翻译基本原则】
-========================================
-1. **目标语言**: 简体中文
-2. **翻译风格**: 符合轻小说习惯，自然流畅
-3. **段落对应**: 严格保证 1:1 对应（1个原文段落 = 1个翻译段落）
-4. **术语一致性**: 使用术语表和角色设定表确保翻译一致性
-5. **语气词使用**:
-   - 适当地添加语气词（"呀"、"呢"、"吧"、"啊"等）以增强语气
-   - 不要过度使用，以免影响流畅性
-   - 根据角色的说话风格（speaking_style）准确翻译，不使用与角色不符的语气词
-6. **原文参考**: 参考前面段落或者章节的原文和翻译，确保翻译的一致性，不要出现前后矛盾的情况。
-7. **标题翻译**: 翻译标题时请参考以前章节的标题翻译，确保翻译格式的一致性。可以使用 \`get_previous_chapter\` 工具查看前一个章节的标题翻译作为参考。
-8. ${getSymbolFormatRules()}
+【核心规则】
+1. **1:1对应**: 一个原文段落=一个翻译段落，禁止合并/拆分
+2. **术语一致**: 使用术语表和角色表确保全文一致
+3. **自然流畅**: 符合轻小说风格，适当添加语气词（按角色speaking_style）
+4. **前后一致**: 参考前文翻译，保持人名/术语/风格一致
+5. ${getSymbolFormatRules()}
 
-${getHonorificWorkflowRules()}
-
-${getTerminologyWorkflowRules()}
-
-${getCharacterWorkflowRules()}
+${getDataManagementRules()}
 
 ${getToolUsageInstructions('translation')}
 
