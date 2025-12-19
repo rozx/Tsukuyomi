@@ -912,12 +912,24 @@ export const bookTools: ToolDefinition[] = [
         }
 
         // 保存原始数据用于撤销
-        const previousData = {
-          description: book.description,
-          tags: book.tags ? [...book.tags] : undefined,
-          author: book.author,
-          alternateTitles: book.alternateTitles ? [...book.alternateTitles] : undefined,
-        };
+        const previousData: {
+          description?: string;
+          tags?: string[];
+          author?: string;
+          alternateTitles?: string[];
+        } = {};
+        if (book.description !== undefined) {
+          previousData.description = book.description;
+        }
+        if (book.tags !== undefined) {
+          previousData.tags = [...book.tags];
+        }
+        if (book.author !== undefined) {
+          previousData.author = book.author;
+        }
+        if (book.alternateTitles !== undefined) {
+          previousData.alternateTitles = [...book.alternateTitles];
+        }
 
         // 构建更新数据
         const updates: Partial<Novel> = {};
