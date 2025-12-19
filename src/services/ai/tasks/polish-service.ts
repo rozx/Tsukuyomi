@@ -12,7 +12,7 @@ import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { getTodosSystemPrompt } from './todo-helper';
+import { getTodosSystemPrompt } from './utils/todo-helper';
 import {
   executeToolCallLoop,
   type AIProcessingStore,
@@ -27,7 +27,7 @@ import {
   getSpecialInstructions,
   handleTaskError,
   completeTask,
-} from './ai-task-helper';
+} from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
   getOutputFormatRules,
@@ -353,19 +353,9 @@ ${getExecutionWorkflowRules('polish')}`;
         const maintenanceReminder = buildMaintenanceReminder('polish');
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容：\n\n${chunkText}${maintenanceReminder}
-
-**⚠️ 重要：专注于当前文本块**
-- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
-- 当前块完成后，系统会自动提供下一个块
-- 请专注于完成当前块的所有段落润色`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}
-
-**⚠️ 重要：专注于当前文本块**
-- 你只需要处理当前提供的文本块（第 ${i + 1}/${chunks.length} 部分），不要考虑其他块的内容
-- 当前块完成后，系统会自动提供下一个块
-- 请专注于完成当前块的所有段落润色`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}`;
         }
 
         // 重试循环

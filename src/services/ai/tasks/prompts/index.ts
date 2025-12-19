@@ -3,7 +3,7 @@
  * 精简提示词以提高速度、效率和准确性
  */
 
-import type { TaskType } from '../ai-task-helper';
+import type { TaskType } from '../utils/ai-task-helper';
 
 /**
  * 获取全角符号格式规则（精简版）
@@ -118,6 +118,20 @@ export function getToolUsageInstructions(taskType: TaskType): string {
 - \`create_memory\`: 保存敬语翻译方式等重要信息
 - ${getTodoToolsDescription(taskType)}
 ⚠️ \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
+}
+
+/**
+ * 获取分块处理说明
+ * 告知AI系统将分块提供章节内容，只需关注当前块
+ */
+export function getChunkingInstructions(taskType: TaskType): string {
+  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabel = taskLabels[taskType];
+  return `【分块处理说明】
+⚠️ **重要**：系统会将当前章节分成多个块（chunks）依次提供给你
+- **只需关注当前块**：你只需要处理系统当前提供的文本块，不要考虑其他块的内容
+- **完成当前块后**：当前块完成后（状态设为 "done"），系统会自动提供下一个块
+- **不要提前处理**：不要尝试获取或处理尚未提供的块，专注于完成当前块的所有段落${taskLabel}`;
 }
 
 // ============================================================================

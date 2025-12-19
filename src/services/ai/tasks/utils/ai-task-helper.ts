@@ -17,6 +17,7 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { getPostToolCallReminder } from './todo-helper';
+import { getChunkingInstructions } from '../prompts';
 
 /**
  * 任务类型
@@ -239,7 +240,10 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
 export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
-  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落`;
+  const chunkingInstructions = getChunkingInstructions(taskType);
+  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
+
+${chunkingInstructions}`;
 }
 
 /**
@@ -570,7 +574,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
-            `收到。**专注于当前文本块**。如果你已获取必要信息，` +
+            `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
             `如果还需要使用工具获取信息，请调用工具后再更新状态。`,
         });
@@ -623,7 +627,6 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             content:
               `检测到以下段落缺少${taskLabel}：${missingIdsList}` +
               `${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。` +
-              `**专注于当前文本块**：你只需要处理当前提供的文本块。` +
               `请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';

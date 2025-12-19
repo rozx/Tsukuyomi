@@ -13,7 +13,7 @@ import { ToolRegistry, type ActionInfo } from '../tools';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
-import { getTodosSystemPrompt } from './todo-helper';
+import { getTodosSystemPrompt } from './utils/todo-helper';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 
 /**
