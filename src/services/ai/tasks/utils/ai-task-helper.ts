@@ -27,7 +27,7 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
 /**
  * 状态类型
  */
-export type TaskStatus = 'planning' | 'working' | 'completed' | 'done';
+export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
 
 /**
  * 解析后的 JSON 响应结果
@@ -101,12 +101,12 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
     }
 
     const status = data.status as string;
-    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'done'];
+    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'end'];
 
     if (!validStatuses.includes(status as TaskStatus)) {
       return {
         status: 'working',
-        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 done 之一`,
+        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 end 之一`,
       };
     }
 
@@ -313,7 +313,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
   const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
 
   if (taskType === 'translation') {
-    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | done`;
+    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | end`;
   }
 
   if (taskType === 'proofreading') {
@@ -332,7 +332,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
  */
 export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "done"}\``;
+  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
 }
 
 /**
@@ -644,7 +644,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         );
         history.push({
           role: 'user',
-          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "done"}\`。`,
+          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作
@@ -655,14 +655,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       }
       continue;
-    } else if (currentStatus === 'done') {
+    } else if (currentStatus === 'end') {
       // 完成：退出循环
       break;
     }
   }
 
   // 检查是否达到最大回合数（仅在设置了有限值时才检查）
-  if (currentStatus !== 'done' && maxTurns !== Infinity && currentTurnCount >= maxTurns) {
+  if (currentStatus !== 'end' && maxTurns !== Infinity && currentTurnCount >= maxTurns) {
     throw new Error(
       `AI在${maxTurns}回合内未完成${taskLabel}任务（当前状态: ${currentStatus}）。请重试。`,
     );
