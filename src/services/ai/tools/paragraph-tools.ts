@@ -1742,7 +1742,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'batch_replace_translations',
         description:
-          '批量替换段落翻译中的关键词部分。根据关键词在原文或翻译文本中查找段落，并只替换匹配的关键词部分（保留翻译文本的其他内容）。支持同时搜索原文和翻译文本，如果同时提供两者，则只替换同时满足两个条件的段落。用于批量修正翻译中的错误或统一翻译风格。重要：工具会智能地只替换匹配的关键词部分，而不是替换整个翻译文本。例如：翻译"大姐abc"中的"大姐"会被替换为"姐姐"，结果变为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），由于无法精确对应，会替换整个翻译文本。',
+          '批量替换段落翻译中的关键词部分。根据关键词在原文或翻译文本中查找段落，并只替换匹配的关键词部分（保留翻译文本的其他内容）。支持同时搜索原文和翻译文本，如果同时提供两者，则只替换同时满足两个条件的段落。用于批量修正翻译中的错误或统一翻译风格。重要：工具只会替换匹配的关键词部分，不会替换整个翻译文本。例如：翻译"大姐abc"中的"大姐"会被替换为"姐姐"，结果变为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），工具会在翻译文本中查找对应的关键词进行替换；如果找不到匹配的关键词，则跳过该段落。',
         parameters: {
           type: 'object',
           properties: {
@@ -1765,7 +1765,7 @@ export const paragraphTools: ToolDefinition[] = [
             replacement_text: {
               type: 'string',
               description:
-                '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），会替换整个翻译文本。',
+                '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），工具会在翻译文本中查找对应的关键词进行替换；如果找不到匹配的关键词，则跳过该段落。',
             },
             chapter_id: {
               type: 'string',
@@ -2167,31 +2167,38 @@ export const paragraphTools: ToolDefinition[] = [
           }
         }
 
-        // 如果没有找到匹配的翻译关键词，但提供了原文关键词，使用原文关键词
-        // 注意：这种情况下，我们假设原文关键词对应的翻译部分就是整个翻译文本
-        // 但实际上更合理的做法是只替换匹配的部分，但由于无法精确对应，我们使用替换文本
+        // 如果没有找到匹配的翻译关键词，但提供了原文关键词
+        // 尝试在翻译文本中查找原文关键词（可能在某些情况下相同，如数字、专有名词等）
         if (!matchedKeyword && validOriginalKeywords.length > 0) {
-          // 对于原文关键词，我们无法精确知道翻译中对应的部分
-          // 所以如果只提供了原文关键词，我们替换整个翻译
-          // 但如果同时提供了翻译关键词，应该优先使用翻译关键词
-          matchedKeyword = null; // 使用 null 表示替换整个翻译
+          for (const translation of paragraph.translations) {
+            for (const originalKeyword of validOriginalKeywords) {
+              if (containsWholeKeyword(translation.translation || '', originalKeyword)) {
+                matchedKeyword = originalKeyword;
+                break;
+              }
+            }
+            if (matchedKeyword) break;
+          }
         }
 
-        // 执行替换的函数
+        // 如果没有找到任何匹配的关键词，跳过这个段落（不替换整个段落）
+        if (!matchedKeyword) {
+          continue;
+        }
+
+        // 此时 matchedKeyword 一定不为 null，保存为常量以确保类型安全
+        const keywordToReplace = matchedKeyword;
+
+        // 执行替换的函数（只替换匹配的关键词部分）
         const performReplacement = (translation: Translation) => {
           const oldTranslation = translation.translation || '';
 
-          if (matchedKeyword) {
-            // 替换匹配的关键词部分
-            translation.translation = replaceWholeKeyword(
-              oldTranslation,
-              matchedKeyword,
-              replacement_text.trim(),
-            );
-          } else {
-            // 如果没有匹配的关键词（只有原文关键词），替换整个翻译
-            translation.translation = replacement_text.trim();
-          }
+          // 只替换匹配的关键词部分，不替换整个翻译
+          translation.translation = replaceWholeKeyword(
+            oldTranslation,
+            keywordToReplace,
+            replacement_text.trim(),
+          );
         };
 
         if (replace_all_translations) {

@@ -511,15 +511,21 @@ describe('batch_replace_translations', () => {
     expect(para3.translations[0]?.translation).toBe('I am tested.'); // 不应该被替换
   });
 
-  test('应该支持原文关键词搜索', async () => {
+  test('应该支持原文关键词搜索（仅在翻译文本中找到关键词时才替换）', async () => {
+    // 原文关键词"测试"也在翻译文本中，所以会被替换
     const para1 = createTestParagraph('para1', '这是测试原文', [
-      { id: 'trans1', translation: '翻译1', aiModelId: 'model1' },
+      { id: 'trans1', translation: '这是测试翻译', aiModelId: 'model1' },
     ]);
-    const para2 = createTestParagraph('para2', '这是普通原文', [
+    // 原文关键词"测试"不在翻译文本中，所以会被跳过
+    const para2 = createTestParagraph('para2', '这是测试原文', [
       { id: 'trans2', translation: '翻译2', aiModelId: 'model1' },
     ]);
+    // 原文不包含"测试"，所以不会被匹配
+    const para3 = createTestParagraph('para3', '这是普通原文', [
+      { id: 'trans3', translation: '翻译3', aiModelId: 'model1' },
+    ]);
 
-    const chapter = createTestChapter('chapter1', [para1, para2]);
+    const chapter = createTestChapter('chapter1', [para1, para2, para3]);
     const volume = createTestVolume('volume1', [chapter]);
     const novel = createTestNovel([volume]);
 
@@ -540,7 +546,7 @@ describe('batch_replace_translations', () => {
 
     const onAction = mock(() => {});
 
-    // 使用原文关键词搜索
+    // 使用原文关键词搜索（但只在翻译文本中找到关键词时才替换）
     const result = await tool.handler(
       {
         original_keywords: ['测试'],
@@ -552,10 +558,14 @@ describe('batch_replace_translations', () => {
 
     const resultObj = JSON.parse(result as string);
     expect(resultObj.success).toBe(true);
-    expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换
+    expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换（因为"测试"在翻译文本中）
 
-    expect(para1.translations[0]?.translation).toBe('新翻译');
+    // "这是测试翻译" 中的 "测试" 被替换为 "新翻译" → "这是新翻译翻译"
+    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
+    // para2 的翻译不包含"测试"，所以被跳过，不会被替换
     expect(para2.translations[0]?.translation).toBe('翻译2');
+    // para3 的原文不包含"测试"，所以不会被匹配
+    expect(para3.translations[0]?.translation).toBe('翻译3');
   });
 
   test('应该支持同时使用原文和翻译关键词', async () => {
