@@ -351,11 +351,14 @@ ${getExecutionWorkflowRules('polish')}`;
 
         // 构建当前消息
         const maintenanceReminder = buildMaintenanceReminder('polish');
+        // 计算当前块的段落数量（用于提示AI）
+        const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
+        const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
         let content = '';
         if (i === 0) {
-          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
         }
 
         // 重试循环

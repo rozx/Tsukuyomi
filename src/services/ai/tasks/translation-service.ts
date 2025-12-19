@@ -312,12 +312,15 @@ ${getExecutionWorkflowRules('translation')}`;
         // 构建当前消息
         let content = '';
         const maintenanceReminder = buildMaintenanceReminder('translation');
+        // 计算当前块的段落数量（用于提示AI）
+        const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
+        const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
         if (i === 0) {
           // 如果有标题，在第一个块中包含标题翻译
           const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
-          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${titleSection}${chunkText}${maintenanceReminder}`;
+          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${titleSection}${chunkText}${maintenanceReminder}`;
         } else {
-          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：\n\n${chunkText}${maintenanceReminder}`;
+          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
         }
 
         // 重试循环
