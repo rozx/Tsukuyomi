@@ -13,7 +13,8 @@ import type {
   ConfigJson,
   ConfigParseResult,
 } from 'src/services/ai/types/interfaces';
-import { CONFIG_PROMPT, DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
+import { DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
+import { ConfigService } from '../tasks/config-service';
 
 /**
  * AI 服务基础抽象类
@@ -23,7 +24,9 @@ export abstract class BaseAIService implements AIService {
   /**
    * 获取配置信息的提示词
    */
-  protected readonly CONFIG_PROMPT = CONFIG_PROMPT;
+  protected getConfigPrompt(): string {
+    return ConfigService.getConfigPrompt();
+  }
 
   /**
    * 获取模型配置信息

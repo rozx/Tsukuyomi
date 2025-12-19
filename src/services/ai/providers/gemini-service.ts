@@ -53,7 +53,7 @@ export class GeminiService extends BaseAIService {
           contents: [
             {
               role: 'user',
-              parts: [{ text: this.CONFIG_PROMPT }],
+              parts: [{ text: this.getConfigPrompt() }],
             },
           ],
         },

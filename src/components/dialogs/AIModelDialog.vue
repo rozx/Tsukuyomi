@@ -11,6 +11,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
+import { ConfigService } from 'src/services/ai/tasks/config-service';
 
 const props = withDefaults(
   defineProps<{
@@ -142,102 +143,101 @@ const validateForm = (): boolean => {
 
 // 测试 AI 模型（获取配置）
 const testModel = async () => {
-  if (!formData.value.apiKey?.trim() || !formData.value.model?.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '提示',
-      detail: '请先填写 API Key 和模型标识',
-      life: 3000,
-    });
-    return;
-  }
-
-  // Gemini 不需要 baseUrl，其他提供商需要
-  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '提示',
-      detail: '请先填写 API Key、基础地址和模型标识',
-      life: 3000,
-    });
-    return;
-  }
-
   isTesting.value = true;
 
   try {
-    // Gemini 使用默认 baseUrl，其他提供商使用用户输入的 baseUrl
-    // 确保 baseUrl 不为空字符串
-    const baseUrl =
-      formData.value.provider === 'gemini'
-        ? undefined
-        : formData.value.baseUrl?.trim() || undefined;
+    // 构建临时模型对象用于配置获取
+    const tempModel: AIModel = {
+      id: props.model?.id || 'temp',
+      name: formData.value.name || '临时模型',
+      provider: formData.value.provider as AIProvider,
+      model: formData.value.model || '',
+      temperature: formData.value.temperature ?? 0.7,
+      maxTokens: formData.value.maxTokens ?? 0,
+      apiKey: formData.value.apiKey || '',
+      baseUrl: formData.value.provider === 'gemini' ? '' : (formData.value.baseUrl || ''),
+      enabled: true,
+      isDefault: formData.value.isDefault || {
+        translation: { enabled: false, temperature: 0.7 },
+        proofreading: { enabled: false, temperature: 0.7 },
+        termsTranslation: { enabled: false, temperature: 0.7 },
+        assistant: { enabled: false, temperature: 0.7 },
+      },
+      lastEdited: new Date(),
+    };
 
-    const result = await AIServiceFactory.getConfig(formData.value.provider as AIProvider, {
-      apiKey: formData.value.apiKey,
-      baseUrl: baseUrl,
-      model: formData.value.model,
-      temperature: formData.value.temperature,
-      maxTokens: formData.value.maxTokens,
-    });
+    const result = await ConfigService.getConfig(tempModel);
 
-    // 保存从 AI 获取的配置信息
-    const config: typeof aiConfig.value = {};
+    // 只有在成功时才处理配置信息
+    if (result.success) {
+      // 保存从 AI 获取的配置信息
+      const config: typeof aiConfig.value = {};
 
-    // 确保 maxTokens 是数字类型
-    if (result.maxTokens !== undefined && result.maxTokens !== null) {
-      const maxTokensValue =
-        typeof result.maxTokens === 'number'
-          ? result.maxTokens
-          : parseInt(String(result.maxTokens), 10);
-      if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
-        config.maxTokens = maxTokensValue;
+      // 确保 maxTokens 是数字类型
+      if (result.maxTokens !== undefined && result.maxTokens !== null) {
+        const maxTokensValue =
+          typeof result.maxTokens === 'number'
+            ? result.maxTokens
+            : parseInt(String(result.maxTokens), 10);
+        if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
+          config.maxTokens = maxTokensValue;
+        }
       }
-    }
 
-    // 确保 contextWindow 是数字类型
-    if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
-      const contextWindowValue =
-        typeof result.modelInfo.contextWindow === 'number'
-          ? result.modelInfo.contextWindow
-          : parseInt(String(result.modelInfo.contextWindow), 10);
-      if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
-        config.contextWindow = contextWindowValue;
+      // 确保 contextWindow 是数字类型
+      if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
+        const contextWindowValue =
+          typeof result.modelInfo.contextWindow === 'number'
+            ? result.modelInfo.contextWindow
+            : parseInt(String(result.modelInfo.contextWindow), 10);
+        if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
+          config.contextWindow = contextWindowValue;
+        }
       }
+
+      aiConfig.value = Object.keys(config).length > 0 ? config : null;
+
+      // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
+      // 注意：maxTokens 为 0 表示无限制，所以只更新大于 0 的值
+      if (config.maxTokens !== undefined && config.maxTokens > 0) {
+        formData.value.maxTokens = config.maxTokens;
+      }
+
+      // 如果获取到 contextWindow，自动更新表单字段（确保是数字）
+      if (config.contextWindow !== undefined && config.contextWindow > 0) {
+        formData.value.contextWindow = config.contextWindow;
+      }
+
+      // 如果模型信息有更新，更新模型字段
+      if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
+        formData.value.model = result.modelInfo.id;
+      }
+
+      // 构建详细信息
+      const details: string[] = [];
+      if (result.maxTokens && result.maxTokens > 0) {
+        details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
+      }
+
+      const detailMessage =
+        details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
+
+      toast.add({
+        severity: 'success',
+        summary: '测试成功',
+        detail: detailMessage,
+        life: 3000,
+      });
+    } else {
+      // 配置获取失败，只显示错误消息
+      toast.add({
+        severity: 'error',
+        summary: '测试失败',
+        detail: result.message,
+        life: 5000,
+      });
     }
 
-    aiConfig.value = Object.keys(config).length > 0 ? config : null;
-
-    // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
-    if (config.maxTokens !== undefined && config.maxTokens > 0) {
-      formData.value.maxTokens = config.maxTokens;
-    }
-
-    // 如果获取到 contextWindow，自动更新表单字段（确保是数字）
-    if (config.contextWindow !== undefined && config.contextWindow > 0) {
-      formData.value.contextWindow = config.contextWindow;
-    }
-
-    // 如果模型信息有更新，更新模型字段
-    if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
-      formData.value.model = result.modelInfo.id;
-    }
-
-    // 构建详细信息
-    const details: string[] = [];
-    if (result.maxTokens && result.maxTokens > 0) {
-      details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
-    }
-
-    const detailMessage =
-      details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
-
-    toast.add({
-      severity: result.success ? 'success' : 'error',
-      summary: result.success ? '测试成功' : '测试失败',
-      detail: detailMessage,
-      life: result.success ? 3000 : 5000,
-    });
   } catch (error) {
     toast.add({
       severity: 'error',
