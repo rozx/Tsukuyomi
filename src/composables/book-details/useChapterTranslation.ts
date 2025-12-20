@@ -10,7 +10,6 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
-import co from 'co';
 
 export function useChapterTranslation(
   book: Ref<Novel | undefined>,
@@ -46,12 +45,12 @@ export function useChapterTranslation(
   };
 
   /**
-   * 更新段落翻译的通用辅助函数（立即更新 UI，后台保存）
+   * 更新段落翻译的通用辅助函数（立即更新 UI，然后保存）
    */
-  const updateParagraphsFromResults = (
+  const updateParagraphsFromResults = async (
     paragraphResults: { id: string; translation: string }[],
     aiModelId: string,
-  ) => {
+  ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value) return;
 
     const updatedVolumes = book.value.volumes?.map((volume) => {
@@ -114,19 +113,17 @@ export function useChapterTranslation(
       };
     }
 
-    // 后台保存书籍
+    // 保存书籍（必须等待完成，否则切换章节时翻译可能丢失）
     const bookId = book.value?.id;
     if (bookId && updatedVolumes) {
-      void co(function* () {
-        try {
-          yield booksStore.updateBook(bookId, {
-            volumes: updatedVolumes,
-            lastEdited: new Date(),
-          });
-        } catch (error) {
-          console.error('[useChapterTranslation] 更新书籍失败:', error);
-        }
-      });
+      try {
+        await booksStore.updateBook(bookId, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+      } catch (error) {
+        console.error('[useChapterTranslation] 更新书籍失败:', error);
+      }
     }
   };
 
@@ -136,7 +133,7 @@ export function useChapterTranslation(
    * @param aiModelId AI 模型 ID
    * @param updateSelected 是否更新 selectedChapterWithContent
    */
-  const updateParagraphsAndSave = async ( // eslint-disable-line @typescript-eslint/require-await -- 立即更新UI，后台保存，不需要await
+  const updateParagraphsAndSave = async (
     paragraphUpdates: Map<string, string>,
     aiModelId: string,
     updateSelected: boolean = true,
@@ -203,29 +200,25 @@ export function useChapterTranslation(
       };
     }
 
-    // 后台保存：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
+    // 保存章节内容到 IndexedDB（必须等待完成，否则切换章节时翻译可能丢失）
     if (updatedChapter && updatedChapter.content) {
-      void co(function* () {
-        try {
-          yield ChapterService.saveChapterContent(updatedChapter);
-        } catch (error) {
-          console.error('[useChapterTranslation] 保存章节内容失败:', error);
-        }
-      });
+      try {
+        await ChapterService.saveChapterContent(updatedChapter);
+      } catch (error) {
+        console.error('[useChapterTranslation] 保存章节内容失败:', error);
+      }
     }
 
-    // 后台保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
+    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
     if (book.value) {
-      void co(function* () {
-        try {
-          yield booksStore.updateBook(book.value!.id, {
-            volumes: updatedVolumes,
-            lastEdited: new Date(),
-          });
-        } catch (error) {
-          console.error('[useChapterTranslation] 更新书籍失败:', error);
-        }
-      });
+      try {
+        await booksStore.updateBook(book.value.id, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+      } catch (error) {
+        console.error('[useChapterTranslation] 更新书籍失败:', error);
+      }
     }
   };
 
@@ -234,7 +227,7 @@ export function useChapterTranslation(
    * @param translation 标题翻译文本
    * @param aiModelId AI 模型 ID
    */
-  const updateTitleTranslation = async ( // eslint-disable-line @typescript-eslint/require-await -- 立即更新UI，后台保存，不需要await
+  const updateTitleTranslation = async (
     translation: string,
     aiModelId: string,
   ): Promise<void> => {
@@ -278,19 +271,17 @@ export function useChapterTranslation(
       };
     });
 
-    // 后台保存书籍
+    // 保存书籍（必须等待完成，否则切换章节时翻译可能丢失）
     const bookId = book.value?.id;
     if (bookId && updatedVolumes) {
-      void co(function* () {
-        try {
-          yield booksStore.updateBook(bookId, {
-            volumes: updatedVolumes,
-            lastEdited: new Date(),
-          });
-        } catch (error) {
-          console.error('[useChapterTranslation] 更新标题翻译失败:', error);
-        }
-      });
+      try {
+        await booksStore.updateBook(bookId, {
+          volumes: updatedVolumes,
+          lastEdited: new Date(),
+        });
+      } catch (error) {
+        console.error('[useChapterTranslation] 更新标题翻译失败:', error);
+      }
     }
   };
 
@@ -430,8 +421,8 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphPolish: (paragraphPolishes) => {
-          updateParagraphsFromResults(paragraphPolishes, selectedModel.id);
+        onParagraphPolish: async (paragraphPolishes) => {
+          await updateParagraphsFromResults(paragraphPolishes, selectedModel.id);
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -522,8 +513,8 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphProofreading: (paragraphProofreadings) => {
-          updateParagraphsFromResults(paragraphProofreadings, selectedModel.id);
+        onParagraphProofreading: async (paragraphProofreadings) => {
+          await updateParagraphsFromResults(paragraphProofreadings, selectedModel.id);
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -606,9 +597,9 @@ export function useChapterTranslation(
           // 立即更新标题翻译（不等待整个翻译完成）
           await updateTitleTranslation(translation, selectedModel.id);
         },
-        onParagraphTranslation: (paragraphTranslations) => {
+        onParagraphTranslation: async (paragraphTranslations) => {
           // 使用共享函数更新段落翻译
-          updateParagraphsFromResults(paragraphTranslations, selectedModel.id);
+          await updateParagraphsFromResults(paragraphTranslations, selectedModel.id);
           // 从正在翻译的集合中移除已完成的段落 ID
           paragraphTranslations.forEach((pt) => {
             translatingParagraphIds.value.delete(pt.id);
