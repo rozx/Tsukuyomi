@@ -92,6 +92,102 @@ function mergeParagraphTranslations(
 }
 
 /**
+ * 将远程翻译合并到本地书籍中
+ * 当本地书籍较新时使用，保留本地结构但合并远程翻译
+ * @param localNovel 本地书籍数据（较新）
+ * @param remoteNovel 远程书籍数据（可能有新翻译）
+ * @returns 合并后的书籍数据
+ */
+async function mergeRemoteTranslationsIntoLocalNovel(
+  localNovel: Novel,
+  remoteNovel: Novel | undefined,
+): Promise<Novel> {
+  // 如果远程没有书籍，直接返回本地书籍
+  if (!remoteNovel) {
+    return localNovel;
+  }
+
+  // 如果本地或远程没有 volumes，直接返回本地书籍
+  if (!localNovel.volumes || localNovel.volumes.length === 0 || 
+      !remoteNovel.volumes || remoteNovel.volumes.length === 0) {
+    return localNovel;
+  }
+
+  // 创建远程卷和章节的映射
+  const remoteVolumeMap = new Map<string, Volume>();
+  const remoteChapterMap = new Map<string, Chapter>();
+  
+  for (const volume of remoteNovel.volumes) {
+    remoteVolumeMap.set(volume.id, volume);
+    if (volume.chapters) {
+      for (const chapter of volume.chapters) {
+        remoteChapterMap.set(chapter.id, chapter);
+      }
+    }
+  }
+
+  // 合并翻译到本地书籍
+  const mergedVolumes = await Promise.all(
+    localNovel.volumes.map(async (localVolume) => {
+      if (!localVolume.chapters || localVolume.chapters.length === 0) {
+        return localVolume;
+      }
+
+      const mergedChapters = await Promise.all(
+        localVolume.chapters.map(async (localChapter) => {
+          const remoteChapter = remoteChapterMap.get(localChapter.id);
+          
+          // 如果远程没有这个章节，保持本地章节不变
+          if (!remoteChapter) {
+            return localChapter;
+          }
+
+          // 获取本地章节内容
+          let localContent: Paragraph[] | undefined;
+          if (
+            localChapter.content !== undefined &&
+            localChapter.content !== null &&
+            Array.isArray(localChapter.content) &&
+            localChapter.content.length > 0
+          ) {
+            localContent = localChapter.content;
+          } else {
+            // 从 IndexedDB 加载本地内容
+            localContent = await ChapterContentService.loadChapterContent(localChapter.id);
+          }
+
+          // 如果本地没有内容，保持不变
+          if (!localContent || localContent.length === 0) {
+            return localChapter;
+          }
+
+          // 获取远程章节内容
+          const remoteContent = remoteChapter.content;
+
+          // 合并翻译
+          const mergedContent = mergeParagraphTranslations(localContent, remoteContent);
+
+          return {
+            ...localChapter,
+            content: mergedContent,
+          };
+        }),
+      );
+
+      return {
+        ...localVolume,
+        chapters: mergedChapters,
+      };
+    }),
+  );
+
+  return {
+    ...localNovel,
+    volumes: mergedVolumes,
+  };
+}
+
+/**
  * 可恢复的项目接口
  */
 export interface RestorableItem {
@@ -430,10 +526,15 @@ export class SyncDataService {
             );
             finalBooks.push(mergedNovel);
           } else {
-            // 使用本地书籍，但需要确保章节内容已加载
+            // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
             const localNovelWithContent =
               await SyncDataService.ensureNovelContentLoaded(localNovel);
-            finalBooks.push(localNovelWithContent);
+            // 合并远程翻译到本地书籍
+            const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
+              localNovelWithContent,
+              remoteNovel as Novel,
+            );
+            finalBooks.push(mergedNovel);
           }
         } else {
           // 本地不存在，检查是否在删除记录中
@@ -825,9 +926,14 @@ export class SyncDataService {
           );
           finalBooks.push(mergedNovel);
         } else {
-          // 使用本地书籍，确保章节内容已加载
+          // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
           const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
-          finalBooks.push(localNovelWithContent);
+          // 合并远程翻译到本地书籍
+          const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
+            localNovelWithContent,
+            remoteNovel as Novel,
+          );
+          finalBooks.push(mergedNovel);
         }
       } else {
         // 本地独有的书籍，检查是否是新增的
