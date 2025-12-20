@@ -64,7 +64,7 @@ export function getTodoToolsDescription(taskType: TaskType): string {
 export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
-  return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→done(完成)`;
+  return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→end(完成)`;
 }
 
 /**
@@ -102,7 +102,7 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
 1. **planning**: 获取术语/角色列表（传chapter_id），检查数据问题，发现问题**立即修复**
 2. **working**: ${workingFocus[taskType]}；发现新信息**立即更新**术语/角色
 3. **completed**: 系统验证完整性，更新术语/角色描述，创建记忆保存重要发现
-4. **done**: 完成当前块，进入下一块`;
+4. **end**: 完成当前块，进入下一块`;
 }
 
 /**
@@ -130,7 +130,7 @@ export function getChunkingInstructions(taskType: TaskType): string {
   return `【分块处理说明】
 ⚠️ **重要**：系统会将当前章节分成多个块（chunks）依次提供给你
 - **只需关注当前块**：你只需要处理系统当前提供的文本块，不要考虑其他块的内容
-- **完成当前块后**：当前块完成后（状态设为 "done"），系统会自动提供下一个块
+- **完成当前块后**：当前块完成后（状态设为 "end"），系统会自动提供下一个块
 - **不要提前处理**：不要尝试获取或处理尚未提供的块，专注于完成当前块的所有段落${taskLabel}`;
 }
 

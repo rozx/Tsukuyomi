@@ -27,7 +27,7 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
 /**
  * 状态类型
  */
-export type TaskStatus = 'planning' | 'working' | 'completed' | 'done';
+export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
 
 /**
  * 解析后的 JSON 响应结果
@@ -101,12 +101,12 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
     }
 
     const status = data.status as string;
-    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'done'];
+    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'end'];
 
     if (!validStatuses.includes(status as TaskStatus)) {
       return {
         status: 'working',
-        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 done 之一`,
+        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 end 之一`,
       };
     }
 
@@ -262,7 +262,7 @@ export function addChapterContext(prompt: string, chapterId: string, taskType: T
     `在开始${taskLabel}之前，请先使用 list_terms 和 list_characters 工具获取术语表和角色表，` +
     `以确保${taskLabel}的一致性和连贯性。` +
     `list_terms 和 list_characters 工具已经包含了当前章节中出现的术语和角色，不需要再额外获取。` +
-    `你也可以使用 get_previous_chapter 工具获取前一章节的上下文信息，以保持翻译风格和术语的一致性。\n\n` +
+    `你也可以使用 get_previous_chapter, get_previous_paragraphs 工具获取上下文信息，以保持翻译风格和术语的一致性。\n\n` +
     `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
     `你只需要处理**当前任务中直接提供给你的段落**，` +
     `不要尝试翻译工具返回的段落内容。`
@@ -313,7 +313,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
   const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
 
   if (taskType === 'translation') {
-    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | done`;
+    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | end`;
   }
 
   if (taskType === 'proofreading') {
@@ -332,7 +332,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
  */
 export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "done"}\``;
+  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
 }
 
 /**
@@ -371,6 +371,17 @@ export interface ToolCallLoopConfig {
     expectedIds: string[],
     receivedTranslations: Map<string, string>,
   ) => VerificationResult;
+  /**
+   * 段落翻译提取回调：每当从 AI 响应中提取到段落翻译时立即调用
+   * 用于实时更新 UI，不等待整个循环完成
+   */
+  onParagraphsExtracted?:
+    | ((paragraphs: { id: string; translation: string }[]) => void | Promise<void>)
+    | undefined;
+  /**
+   * 标题翻译提取回调：每当从 AI 响应中提取到标题翻译时立即调用
+   */
+  onTitleExtracted?: ((title: string) => void | Promise<void>) | undefined;
 }
 
 /**
@@ -401,6 +412,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     logLabel,
     maxTurns = Infinity,
     verifyCompleteness,
+    onParagraphsExtracted,
+    onTitleExtracted,
   } = config;
 
   let currentTurnCount = 0;
@@ -533,15 +546,42 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     // 提取内容
     if (parsed.content) {
       if (parsed.content.paragraphs) {
+        const newParagraphs: { id: string; translation: string }[] = [];
         for (const para of parsed.content.paragraphs) {
           // 只处理有效的段落翻译（有ID且翻译内容不为空）
           if (para.id && para.translation && para.translation.trim().length > 0) {
-            accumulatedParagraphs.set(para.id, para.translation);
+            // 只添加新的段落（避免重复）
+            if (!accumulatedParagraphs.has(para.id)) {
+              accumulatedParagraphs.set(para.id, para.translation);
+              newParagraphs.push({ id: para.id, translation: para.translation });
+            }
+          }
+        }
+        if (newParagraphs.length > 0) {
+          // 立即调用回调，不等待循环完成
+          if (onParagraphsExtracted) {
+            try {
+              void Promise.resolve(onParagraphsExtracted(newParagraphs)).catch((error) => {
+                console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
+              });
+            } catch (error) {
+              console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
+            }
           }
         }
       }
-      if (parsed.content.titleTranslation) {
+      if (parsed.content.titleTranslation && !titleTranslation) {
         titleTranslation = parsed.content.titleTranslation;
+        // 立即调用标题回调
+        if (onTitleExtracted) {
+          try {
+            void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+              console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+            });
+          } catch (error) {
+            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+          }
+        }
       }
     }
 
@@ -644,7 +684,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         );
         history.push({
           role: 'user',
-          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "done"}\`。`,
+          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作
@@ -655,14 +695,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       }
       continue;
-    } else if (currentStatus === 'done') {
+    } else if (currentStatus === 'end') {
       // 完成：退出循环
       break;
     }
   }
 
   // 检查是否达到最大回合数（仅在设置了有限值时才检查）
-  if (currentStatus !== 'done' && maxTurns !== Infinity && currentTurnCount >= maxTurns) {
+  if (currentStatus !== 'end' && maxTurns !== Infinity && currentTurnCount >= maxTurns) {
     throw new Error(
       `AI在${maxTurns}回合内未完成${taskLabel}任务（当前状态: ${currentStatus}）。请重试。`,
     );

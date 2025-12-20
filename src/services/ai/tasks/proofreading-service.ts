@@ -406,7 +406,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
             });
 
             // 检查状态
-            if (loopResult.status !== 'done') {
+            if (loopResult.status !== 'end') {
               throw new Error(`校对任务未完成（状态: ${loopResult.status}）。请重试。`);
             }
 
