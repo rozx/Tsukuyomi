@@ -10,6 +10,7 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
+import co from 'co';
 
 export function useChapterTranslation(
   book: Ref<Novel | undefined>,
@@ -116,14 +117,16 @@ export function useChapterTranslation(
     // 后台保存书籍
     const bookId = book.value?.id;
     if (bookId && updatedVolumes) {
-      void booksStore
-        .updateBook(bookId, {
-          volumes: updatedVolumes,
-          lastEdited: new Date(),
-        })
-        .catch((error) => {
+      void co(function* () {
+        try {
+          yield booksStore.updateBook(bookId, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          });
+        } catch (error) {
           console.error('[useChapterTranslation] 更新书籍失败:', error);
-        });
+        }
+      });
     }
   };
 
@@ -133,7 +136,7 @@ export function useChapterTranslation(
    * @param aiModelId AI 模型 ID
    * @param updateSelected 是否更新 selectedChapterWithContent
    */
-  const updateParagraphsAndSave = async (
+  const updateParagraphsAndSave = async ( // eslint-disable-line @typescript-eslint/require-await -- 立即更新UI，后台保存，不需要await
     paragraphUpdates: Map<string, string>,
     aiModelId: string,
     updateSelected: boolean = true,
@@ -192,23 +195,38 @@ export function useChapterTranslation(
 
     // 立即更新 UI（在任何 async 操作之前）
     if (updateSelected && updatedChapter && updatedChapter.content) {
+      // 确保创建全新的对象引用以触发 Vue 响应式更新
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
         ...updatedChapter,
-        content: updatedChapter.content,
+        content: [...updatedChapter.content], // 创建新的数组引用
       };
     }
 
     // 后台保存：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
     if (updatedChapter && updatedChapter.content) {
-      void ChapterService.saveChapterContent(updatedChapter);
+      void co(function* () {
+        try {
+          yield ChapterService.saveChapterContent(updatedChapter);
+        } catch (error) {
+          console.error('[useChapterTranslation] 保存章节内容失败:', error);
+        }
+      });
     }
 
     // 后台保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
-    void booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
+    if (book.value) {
+      void co(function* () {
+        try {
+          yield booksStore.updateBook(book.value!.id, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          });
+        } catch (error) {
+          console.error('[useChapterTranslation] 更新书籍失败:', error);
+        }
+      });
+    }
   };
 
   /**
@@ -216,7 +234,10 @@ export function useChapterTranslation(
    * @param translation 标题翻译文本
    * @param aiModelId AI 模型 ID
    */
-  const updateTitleTranslation = async (translation: string, aiModelId: string): Promise<void> => {
+  const updateTitleTranslation = async ( // eslint-disable-line @typescript-eslint/require-await -- 立即更新UI，后台保存，不需要await
+    translation: string,
+    aiModelId: string,
+  ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value) return;
 
     const newTitleTranslation = {
@@ -260,14 +281,16 @@ export function useChapterTranslation(
     // 后台保存书籍
     const bookId = book.value?.id;
     if (bookId && updatedVolumes) {
-      void booksStore
-        .updateBook(bookId, {
-          volumes: updatedVolumes,
-          lastEdited: new Date(),
-        })
-        .catch((error) => {
+      void co(function* () {
+        try {
+          yield booksStore.updateBook(bookId, {
+            volumes: updatedVolumes,
+            lastEdited: new Date(),
+          });
+        } catch (error) {
           console.error('[useChapterTranslation] 更新标题翻译失败:', error);
-        });
+        }
+      });
     }
   };
 
@@ -1047,7 +1070,7 @@ export function useChapterTranslation(
       total: 0,
       message: '',
     };
-    translatingParagraphIds.value.clear();
+    translatingParagraphIds.value = new Set();
   };
 
   // 取消润色
@@ -1076,7 +1099,7 @@ export function useChapterTranslation(
       total: 0,
       message: '',
     };
-    polishingParagraphIds.value.clear();
+    polishingParagraphIds.value = new Set();
   };
 
   // 校对章节所有段落
@@ -1246,7 +1269,7 @@ export function useChapterTranslation(
       total: 0,
       message: '',
     };
-    proofreadingParagraphIds.value.clear();
+    proofreadingParagraphIds.value = new Set();
   };
 
   // 组件卸载时取消所有任务

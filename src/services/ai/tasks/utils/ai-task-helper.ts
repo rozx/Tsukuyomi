@@ -371,6 +371,17 @@ export interface ToolCallLoopConfig {
     expectedIds: string[],
     receivedTranslations: Map<string, string>,
   ) => VerificationResult;
+  /**
+   * 段落翻译提取回调：每当从 AI 响应中提取到段落翻译时立即调用
+   * 用于实时更新 UI，不等待整个循环完成
+   */
+  onParagraphsExtracted?:
+    | ((paragraphs: { id: string; translation: string }[]) => void | Promise<void>)
+    | undefined;
+  /**
+   * 标题翻译提取回调：每当从 AI 响应中提取到标题翻译时立即调用
+   */
+  onTitleExtracted?: ((title: string) => void | Promise<void>) | undefined;
 }
 
 /**
@@ -401,6 +412,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     logLabel,
     maxTurns = Infinity,
     verifyCompleteness,
+    onParagraphsExtracted,
+    onTitleExtracted,
   } = config;
 
   let currentTurnCount = 0;
@@ -533,15 +546,42 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     // 提取内容
     if (parsed.content) {
       if (parsed.content.paragraphs) {
+        const newParagraphs: { id: string; translation: string }[] = [];
         for (const para of parsed.content.paragraphs) {
           // 只处理有效的段落翻译（有ID且翻译内容不为空）
           if (para.id && para.translation && para.translation.trim().length > 0) {
-            accumulatedParagraphs.set(para.id, para.translation);
+            // 只添加新的段落（避免重复）
+            if (!accumulatedParagraphs.has(para.id)) {
+              accumulatedParagraphs.set(para.id, para.translation);
+              newParagraphs.push({ id: para.id, translation: para.translation });
+            }
+          }
+        }
+        if (newParagraphs.length > 0) {
+          // 立即调用回调，不等待循环完成
+          if (onParagraphsExtracted) {
+            try {
+              void Promise.resolve(onParagraphsExtracted(newParagraphs)).catch((error) => {
+                console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
+              });
+            } catch (error) {
+              console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
+            }
           }
         }
       }
-      if (parsed.content.titleTranslation) {
+      if (parsed.content.titleTranslation && !titleTranslation) {
         titleTranslation = parsed.content.titleTranslation;
+        // 立即调用标题回调
+        if (onTitleExtracted) {
+          try {
+            void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+              console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+            });
+          } catch (error) {
+            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+          }
+        }
       }
     }
 

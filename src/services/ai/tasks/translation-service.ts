@@ -374,6 +374,36 @@ ${getExecutionWorkflowRules('translation')}`;
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
+              // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
+              onParagraphsExtracted: onParagraphTranslation
+                ? async (paragraphs) => {
+                    // 记录到累积列表
+                    for (const para of paragraphs) {
+                      paragraphTranslations.push(para);
+                    }
+                    // 立即调用外部回调
+                    try {
+                      await onParagraphTranslation(paragraphs);
+                    } catch (error) {
+                      console.error(
+                        `[TranslationService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                        error,
+                      );
+                    }
+                  }
+                : undefined,
+              // 立即回调：当标题翻译提取时立即通知（仅第一个块）
+              onTitleExtracted:
+                i === 0 && chapterTitle && onTitleTranslation
+                  ? async (title) => {
+                      titleTranslation = title;
+                      try {
+                        await onTitleTranslation(title);
+                      } catch (error) {
+                        console.error(`[TranslationService] ⚠️ 标题回调失败`, error);
+                      }
+                    }
+                  : undefined,
             });
 
             // 检查状态
@@ -381,55 +411,25 @@ ${getExecutionWorkflowRules('translation')}`;
               throw new Error(`翻译任务未完成（状态: ${loopResult.status}）。请重试。`);
             }
 
-            // 提取标题翻译（如果是第一个块）
-            if (i === 0 && chapterTitle && loopResult.titleTranslation) {
-              titleTranslation = loopResult.titleTranslation;
-              // 立即通知标题翻译完成（不等待整个翻译完成）
-              if (onTitleTranslation) {
-                try {
-                  await onTitleTranslation(titleTranslation);
-                } catch (error) {
-                  console.error(
-                    `[TranslationService] ⚠️ 保存标题翻译失败`,
-                    error instanceof Error ? error.message : String(error),
-                  );
-                  // 继续处理，不中断翻译流程
-                }
-              }
-            }
+            // 注意：标题翻译和段落翻译的回调已经在 executeToolCallLoop 中立即调用
+            // 这里只需要处理 translatedText 用于最终返回
 
-            // 使用从状态流程中提取的段落翻译
+            // 使用从状态流程中提取的段落翻译构建文本
             const extractedTranslations = loopResult.paragraphs;
 
-            // 按顺序组织翻译文本
+            // 按顺序组织翻译文本（用于最终返回）
             if (extractedTranslations.size > 0 && chunk.paragraphIds) {
               const orderedTranslations: string[] = [];
-              const chunkParagraphTranslations: { id: string; translation: string }[] = [];
               for (const paraId of chunk.paragraphIds) {
                 const translation = extractedTranslations.get(paraId);
                 if (translation) {
                   orderedTranslations.push(translation);
-                  const paraTranslation = { id: paraId, translation };
-                  paragraphTranslations.push(paraTranslation);
-                  chunkParagraphTranslations.push(paraTranslation);
                 }
               }
               const orderedText = orderedTranslations.join('\n\n');
               translatedText += orderedText;
               if (onChunk) {
                 await onChunk({ text: orderedText, done: false });
-              }
-              // 通知段落翻译完成
-              if (onParagraphTranslation && chunkParagraphTranslations.length > 0) {
-                try {
-                  await onParagraphTranslation(chunkParagraphTranslations);
-                } catch (error) {
-                  console.error(
-                    `[TranslationService] ⚠️ 保存段落翻译失败（块 ${i + 1}/${chunks.length}）`,
-                    error instanceof Error ? error.message : String(error),
-                  );
-                  // 继续处理，不中断翻译流程
-                }
               }
             } else {
               // 没有提取到段落翻译，使用完整文本作为后备
