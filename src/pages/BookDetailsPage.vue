@@ -610,6 +610,49 @@ watch(
   { immediate: true },
 );
 
+// 监听书籍变化，如果当前章节已打开，重新加载章节内容（用于同步后更新）
+watch(
+  book,
+  async (newBook, oldBook) => {
+    // 只在书籍实际变化时触发（不是初始加载）
+    if (!oldBook || !newBook) {
+      return;
+    }
+
+    // 如果当前有打开的章节，重新加载章节内容
+    if (selectedChapterId.value && selectedChapter.value) {
+      // 检查章节是否仍然存在于新书籍中
+      const chapterStillExists = newBook.volumes?.some((volume) =>
+        volume.chapters?.some((ch) => ch.id === selectedChapterId.value),
+      );
+
+      if (chapterStillExists) {
+        // 重新加载章节内容（从 IndexedDB 加载最新数据）
+        isLoadingChapterContent.value = true;
+        try {
+          const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
+          selectedChapterWithContent.value = chapterWithContent;
+        } catch (error) {
+          console.error('Failed to reload chapter content after book update:', error);
+          // 如果加载失败，至少尝试从书籍对象中获取章节
+          if (selectedChapter.value.content !== undefined) {
+            selectedChapterWithContent.value = selectedChapter.value;
+          }
+        } finally {
+          isLoadingChapterContent.value = false;
+        }
+      } else {
+        // 章节不存在了，清空选中状态
+        selectedChapterWithContent.value = null;
+        if (bookId.value) {
+          void bookDetailsStore.setSelectedChapter(bookId.value, null);
+        }
+      }
+    }
+  },
+  { deep: true },
+);
+
 // 实时更新 context store - 监听书籍变化
 watch(
   bookId,
