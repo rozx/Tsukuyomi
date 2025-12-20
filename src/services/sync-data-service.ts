@@ -4,10 +4,92 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
+import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
+
+/**
+ * 合并段落翻译
+ * 将远程段落的翻译合并到本地段落中
+ * @param localParagraphs 本地段落列表
+ * @param remoteParagraphs 远程段落列表
+ * @returns 合并后的段落列表
+ */
+function mergeParagraphTranslations(
+  localParagraphs: Paragraph[],
+  remoteParagraphs: Paragraph[] | undefined,
+): Paragraph[] {
+  // 如果远程没有段落，直接返回本地段落
+  if (!remoteParagraphs || remoteParagraphs.length === 0) {
+    return localParagraphs;
+  }
+
+  // 创建远程段落的映射（按 ID）
+  const remoteParagraphMap = new Map<string, Paragraph>();
+  for (const remotePara of remoteParagraphs) {
+    remoteParagraphMap.set(remotePara.id, remotePara);
+  }
+
+  // 合并翻译到本地段落
+  const mergedParagraphs: Paragraph[] = localParagraphs.map((localPara) => {
+    const remotePara = remoteParagraphMap.get(localPara.id);
+
+    // 如果远程没有对应段落，保持本地段落不变
+    if (!remotePara) {
+      return localPara;
+    }
+
+    // 如果远程段落没有翻译，保持本地段落不变
+    if (!remotePara.translations || remotePara.translations.length === 0) {
+      return localPara;
+    }
+
+    // 合并翻译：将远程翻译添加到本地翻译中（去重）
+    const localTranslationIds = new Set(
+      (localPara.translations || []).map((t) => t.id),
+    );
+
+    const mergedTranslations: Translation[] = [...(localPara.translations || [])];
+
+    for (const remoteTranslation of remotePara.translations) {
+      // 如果本地没有这个翻译 ID，添加它
+      if (!localTranslationIds.has(remoteTranslation.id)) {
+        mergedTranslations.push(remoteTranslation);
+      }
+    }
+
+    // 确定 selectedTranslationId
+    // 优先使用远程的 selectedTranslationId（如果远程有翻译且本地没有选择的翻译）
+    let selectedTranslationId = localPara.selectedTranslationId;
+
+    // 如果本地没有选择翻译，或者选择的翻译不存在于合并后的翻译列表中
+    const selectedTranslationExists = mergedTranslations.some(
+      (t) => t.id === selectedTranslationId,
+    );
+
+    if (!selectedTranslationId || !selectedTranslationExists) {
+      // 使用远程的 selectedTranslationId（如果存在于合并后的翻译列表中）
+      if (
+        remotePara.selectedTranslationId &&
+        mergedTranslations.some((t) => t.id === remotePara.selectedTranslationId)
+      ) {
+        selectedTranslationId = remotePara.selectedTranslationId;
+      } else if (mergedTranslations.length > 0 && mergedTranslations[0]) {
+        // 否则使用第一个翻译
+        selectedTranslationId = mergedTranslations[0].id;
+      }
+    }
+
+    return {
+      ...localPara,
+      translations: mergedTranslations,
+      selectedTranslationId,
+    };
+  });
+
+  return mergedParagraphs;
+}
 
 /**
  * 可恢复的项目接口
@@ -959,9 +1041,9 @@ export class SyncDataService {
               remoteVolume.chapters.map(async (remoteChapter) => {
                 const localChapter = localVolume.chapters?.find((ch) => ch.id === remoteChapter.id);
 
-                // 如果本地章节存在，尝试保留其内容
+                // 如果本地章节存在，尝试保留其内容并合并远程翻译
                 if (localChapter) {
-                  let contentToPreserve: Paragraph[] | undefined;
+                  let localContent: Paragraph[] | undefined;
 
                   // 首先尝试从本地章节获取（如果已加载）
                   if (
@@ -970,19 +1052,25 @@ export class SyncDataService {
                     Array.isArray(localChapter.content) &&
                     localChapter.content.length > 0
                   ) {
-                    contentToPreserve = localChapter.content;
+                    localContent = localChapter.content;
                   } else {
                     // 如果本地章节没有 content，从 IndexedDB 加载
-                    contentToPreserve = await ChapterContentService.loadChapterContent(
+                    localContent = await ChapterContentService.loadChapterContent(
                       localChapter.id,
                     );
                   }
 
-                  // 如果找到了内容，保留它
-                  if (contentToPreserve !== undefined && contentToPreserve.length > 0) {
+                  // 如果找到了本地内容，保留它并合并远程翻译
+                  if (localContent !== undefined && localContent.length > 0) {
+                    // 获取远程章节内容（如果有的话）
+                    const remoteContent = remoteChapter.content;
+
+                    // 合并翻译：将远程翻译添加到本地段落中
+                    const mergedContent = mergeParagraphTranslations(localContent, remoteContent);
+
                     return {
                       ...remoteChapter,
-                      content: contentToPreserve,
+                      content: mergedContent,
                     } as Chapter;
                   }
                 }
