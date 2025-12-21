@@ -633,8 +633,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         for (const para of parsed.content.paragraphs) {
           // 只处理有效的段落翻译（有ID且翻译内容不为空）
           if (para.id && para.translation && para.translation.trim().length > 0) {
-            // 只添加新的段落（避免重复）
-            if (!accumulatedParagraphs.has(para.id)) {
+            // 允许同一段落在同一任务中被“纠错/改写”
+            // 策略：当翻译内容发生变化时，以最新输出为准（last-write-wins）
+            const prev = accumulatedParagraphs.get(para.id);
+            if (prev !== para.translation) {
               accumulatedParagraphs.set(para.id, para.translation);
               newParagraphs.push({ id: para.id, translation: para.translation });
             }
@@ -653,16 +655,19 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           }
         }
       }
-      if (parsed.content.titleTranslation && !titleTranslation) {
-        titleTranslation = parsed.content.titleTranslation;
-        // 立即调用标题回调
-        if (onTitleExtracted) {
-          try {
-            void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+      if (parsed.content.titleTranslation) {
+        // 同理：允许标题翻译在同一任务中被更新（以最新为准）
+        if (titleTranslation !== parsed.content.titleTranslation) {
+          titleTranslation = parsed.content.titleTranslation;
+          // 立即调用标题回调
+          if (onTitleExtracted) {
+            try {
+              void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+                console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+              });
+            } catch (error) {
               console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-            });
-          } catch (error) {
-            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+            }
           }
         }
       }

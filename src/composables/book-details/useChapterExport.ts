@@ -29,7 +29,13 @@ export function useChapterExport(
     if (!selectedChapter.value || !selectedChapterParagraphs.value.length) return;
 
     try {
-      await ChapterService.exportChapter(selectedChapter.value, type, format, book?.value);
+      // 避免把 `undefined` 作为第 4 个参数显式传入，保持调用签名更干净（也便于测试 mock）
+      const currentBook = book?.value;
+      if (currentBook) {
+        await ChapterService.exportChapter(selectedChapter.value, type, format, currentBook);
+      } else {
+        await ChapterService.exportChapter(selectedChapter.value, type, format);
+      }
 
       // 显示成功消息
       if (format === 'clipboard') {
@@ -66,7 +72,12 @@ export function useChapterExport(
     }
 
     try {
-      await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard', book?.value);
+      const currentBook = book?.value;
+      if (currentBook) {
+        await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard', currentBook);
+      } else {
+        await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard');
+      }
       toast.add({
         severity: 'success',
         summary: '已复制到剪贴板',

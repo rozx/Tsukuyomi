@@ -237,18 +237,32 @@ export function normalizeTranslationSymbols(text: string): string {
     return text;
   }
 
-  // 保护行首和行尾的空格（不 trim 整个字符串）
-  // 按行处理，保护每行的行首和行尾空格
+  // 按行处理：
+  // - 保护行首缩进（leading spaces）
+  // - 行尾空格会被规范化（例如：标点后的多余空格会被移除）
   const lines = text.split('\n');
   const processedLines = lines.map((line) => {
-    // 保存行首和行尾空格
+    // 特殊处理：整行只包含空白字符
+    // 规则与单测一致：2 个及以上空格合并为 1 个全角空格；单个空格保留
+    if (line.trim().length === 0) {
+      // 空行（由 split('\n') 产生）应保持为空，避免把换行符后无内容的行变成全角空格
+      if (line.length === 0) {
+        return '';
+      }
+      if (line === ' ') {
+        return ' ';
+      }
+      // 包含多个空白字符（含多个空格 / tab 等）统一归一为一个全角空格
+      return '\u3000';
+    }
+
+    // 保存行首空格（用于缩进）
     const leadingMatch = line.match(/^(\s*)/);
-    const trailingMatch = line.match(/(\s*)$/);
     const leadingSpaces = leadingMatch ? leadingMatch[1]! : '';
-    const trailingSpaces = trailingMatch ? trailingMatch[1]! : '';
-    
-    // 移除行首和行尾空格进行规范化（保护它们不被规范化规则影响）
-    const contentWithoutSpaces = line.slice(leadingSpaces.length, trailingSpaces.length > 0 ? -trailingSpaces.length : undefined);
+
+    // 移除行首空格后，再移除行尾空格进行规范化
+    // 注意：行尾空格不应无条件“原样保留”，否则会把规范化移除的空格重新拼回去
+    const contentWithoutSpaces = line.slice(leadingSpaces.length).replace(/\s+$/g, '');
     
     // 规范化内容（不包含行首和行尾空格）
     let normalized = contentWithoutSpaces;
@@ -326,8 +340,8 @@ export function normalizeTranslationSymbols(text: string): string {
     normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+$/gm, '$1'); // 行尾标点后的空格（不包括换行符）
     normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+(\r?\n)/g, '$1$2'); // 行尾标点后的空格和换行
 
-    // 恢复行首和行尾空格
-    return leadingSpaces + normalized + trailingSpaces;
+    // 恢复行首缩进（行尾空格不再无条件恢复）
+    return leadingSpaces + normalized;
   });
 
   return processedLines.join('\n');
