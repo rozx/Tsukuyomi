@@ -271,13 +271,6 @@ export class TermTranslationService {
             if (chunk.text) {
               void aiProcessingStore.appendOutputContent(taskId, chunk.text);
             }
-
-            if (chunk.done) {
-              void aiProcessingStore.updateTask(taskId, {
-                status: 'completed',
-                message: '翻译完成',
-              });
-            }
           }
 
           if (onChunk) {
