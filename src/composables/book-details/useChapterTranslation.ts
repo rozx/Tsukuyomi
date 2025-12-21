@@ -295,7 +295,12 @@ export function useChapterTranslation(
         console.error('[useChapterTranslation] ❌ 更新标题翻译失败:', error);
       }
     } else {
-      console.warn('[useChapterTranslation] ⚠️ 无法保存标题翻译：缺少 bookId 或 updatedVolumes');
+      const missingParts: string[] = [];
+      if (!bookId) missingParts.push('bookId 缺失');
+      if (!updatedVolumes) missingParts.push('updatedVolumes 缺失');
+      console.warn(
+        `[useChapterTranslation] ⚠️ 无法保存标题翻译：${missingParts.join('，')}`,
+      );
     }
   };
 
