@@ -393,9 +393,14 @@ export function buildIndependentChunkPrompt(
 【从前一部分继承的规划上下文】
 ${planningContext}
 
-**简短规划阶段**：以上是前一部分的规划上下文，你可以直接使用这些信息。
-如果需要补充或验证信息，可以调用工具，但通常无需重复获取已有的术语/角色信息。
-**准备好后，将状态设置为 "planning" 确认收到上下文**（返回 \`{"status": "planning"}\`）。
+**⚠️ 重要：简短规划阶段**
+以上是前一部分已获取的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息，不要重复调用工具获取**。
+
+**禁止重复调用的工具**：\`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\`、\`list_chapters\` 等已在上下文中提供的工具。
+
+**允许调用的工具**：\`get_previous_paragraphs\`、\`get_next_paragraphs\`、\`find_paragraph_by_keywords\` 等用于获取当前段落前后文上下文的工具。
+
+**现在请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
     } else {
@@ -592,6 +597,22 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             'list_chapters',
           ];
           if (keyTools.includes(toolCall.function.name)) {
+            // 如果是简短规划模式且调用了已获取的工具，给出警告
+            if (isBriefPlanning) {
+              console.warn(
+                `[${logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolCall.function.name}，该工具的结果已在规划上下文中提供`,
+              );
+              // 在工具结果后添加警告信息，提醒 AI 这些信息已经在上下文中
+              const warningMessage = `\n\n⚠️ **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
+              history.push({
+                role: 'tool',
+                content: toolResult.content + warningMessage,
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name,
+              });
+              // 跳过正常的工具结果推送，因为已经推送了带警告的版本
+              continue;
+            }
             planningToolResults.push({
               tool: toolCall.function.name,
               result: toolResult.content,
@@ -599,6 +620,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           }
         }
 
+        // 注意：如果已经在上面推送了带警告的工具结果，这里会跳过（通过 continue）
+        // 否则正常推送工具结果
         history.push({
           role: 'tool',
           content: toolResult.content,
@@ -820,11 +843,11 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       } else {
         // 正常的 planning 响应 - 使用更明确的指令
-        // 如果是简短规划模式，提醒 AI 已有上下文信息，无需重复获取
+        // 如果是简短规划模式，强烈提醒 AI 已有上下文信息，无需重复获取
         const planningInstruction = isBriefPlanning
-          ? `收到。你已继承前一部分的规划上下文，可以直接开始${taskLabel}工作。` +
-            `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
-            `如有需要，可以调用工具补充信息，但通常无需重复获取术语/角色列表。`
+          ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
+            `**⚠️ 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
+            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。`
           : `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
             `如果还需要使用工具获取信息，请调用工具后再更新状态。`;

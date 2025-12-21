@@ -25,12 +25,17 @@ export function useParagraphTranslation(
       .find((c) => c.id === selectedChapterWithContent.value?.id);
 
     if (updatedChapter && updatedChapter.content !== undefined) {
-      // 更新 selectedChapterWithContent，保留现有的 content（如果 updatedChapter 没有 content）
+      // 更新 selectedChapterWithContent，保留现有的 title 和 content（避免覆盖并发更新的标题）
+      // 注意：只更新 content 和 lastEdited，保留现有的 title（可能已被 updateTitleTranslation 更新）
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
         ...updatedChapter,
+        // 保留现有的 title（可能已被 updateTitleTranslation 更新）
+        title: selectedChapterWithContent.value.title,
         // 如果 updatedChapter 有 content，使用它；否则保留现有的 content
         content: updatedChapter.content ?? selectedChapterWithContent.value.content,
+        // 使用最新的 lastEdited 时间戳
+        lastEdited: updatedChapter.lastEdited ?? selectedChapterWithContent.value.lastEdited,
       };
     }
   };
