@@ -407,7 +407,7 @@ ${getExecutionWorkflowRules('polish')}`;
               // 立即回调：当段落润色提取时立即通知（不等待循环完成）
               onParagraphsExtracted:
                 onParagraphPolish && chunk.paragraphIds
-                  ? async (paragraphs) => {
+                  ? (paragraphs) => {
                       // 将数组转换为 Map 供 filterChangedParagraphs 使用
                       const extractedMap = new Map<string, string>();
                       for (const para of paragraphs) {

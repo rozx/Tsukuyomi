@@ -313,16 +313,14 @@ ${getExecutionWorkflowRules('proofreading')}`;
 
         // 为每个 chunk 创建独立的 history，避免上下文共享
         // 每个 chunk 只包含 system prompt 和当前 chunk 的内容
-        const chunkHistory: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
-        ];
+        const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('proofreading');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
-        
+
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
         const content = buildIndependentChunkPrompt(
           'proofreading',
@@ -343,10 +341,16 @@ ${getExecutionWorkflowRules('proofreading')}`;
             // 如果是重试，移除上次失败的消息
             if (retryCount > 0) {
               // 移除上次的用户消息和助手回复（如果有）
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'user') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'user'
+              ) {
                 chunkHistory.pop();
               }
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'assistant') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'assistant'
+              ) {
                 chunkHistory.pop();
               }
 
@@ -389,44 +393,45 @@ ${getExecutionWorkflowRules('proofreading')}`;
                 };
               },
               // 立即回调：当段落校对提取时立即通知（不等待循环完成）
-              onParagraphsExtracted: onParagraphProofreading && chunk.paragraphIds
-                ? async (paragraphs) => {
-                    // 将数组转换为 Map 供 filterChangedParagraphs 使用
-                    const extractedMap = new Map<string, string>();
-                    for (const para of paragraphs) {
-                      if (para.id && para.translation) {
-                        extractedMap.set(para.id, para.translation);
+              onParagraphsExtracted:
+                onParagraphProofreading && chunk.paragraphIds
+                  ? (paragraphs) => {
+                      // 将数组转换为 Map 供 filterChangedParagraphs 使用
+                      const extractedMap = new Map<string, string>();
+                      for (const para of paragraphs) {
+                        if (para.id && para.translation) {
+                          extractedMap.set(para.id, para.translation);
+                        }
+                      }
+
+                      // 过滤出有变化的段落
+                      const changedParagraphs = filterChangedParagraphs(
+                        chunk.paragraphIds!,
+                        extractedMap,
+                        originalTranslations,
+                      );
+
+                      // 立即调用外部回调
+                      if (changedParagraphs.length > 0) {
+                        try {
+                          // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
+                          void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
+                            (error) => {
+                              console.error(
+                                `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                                error,
+                              );
+                            },
+                          );
+                        } catch (error) {
+                          console.error(
+                            `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                            error,
+                          );
+                        }
                       }
                     }
-
-                    // 过滤出有变化的段落
-                    const changedParagraphs = filterChangedParagraphs(
-                      chunk.paragraphIds!,
-                      extractedMap,
-                      originalTranslations,
-                    );
-
-                    // 立即调用外部回调
-                    if (changedParagraphs.length > 0) {
-                      try {
-                        // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
-                        void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
-                          (error) => {
-                            console.error(
-                              `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
-                              error,
-                            );
-                          },
-                        );
-                      } catch (error) {
-                        console.error(
-                          `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
-                          error,
-                        );
-                      }
-                    }
-                  }
-                : undefined,
+                  : undefined,
             });
 
             // 检查状态
@@ -513,11 +518,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
       }
 
       // 使用共享工具完成任务
-      void completeTask(
-        taskId,
-        aiProcessingStore as AIProcessingStore | undefined,
-        'proofreading',
-      );
+      void completeTask(taskId, aiProcessingStore as AIProcessingStore | undefined, 'proofreading');
 
       return {
         text: proofreadText,
