@@ -26,7 +26,7 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '术语的中文翻译',
+              description: '术语的中文翻译。⚠️ **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
             },
             description: {
               type: 'string',
@@ -172,7 +172,7 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '新的翻译文本（可选）',
+              description: '新的翻译文本（可选）。⚠️ **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
             },
             description: {
               type: 'string',
