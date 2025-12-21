@@ -3,13 +3,51 @@
  * 精简提示词以提高速度、效率和准确性
  */
 
-import type { TaskType } from '../utils/ai-task-helper';
+import type { TaskType, TaskStatus } from '../utils/ai-task-helper';
 
 /**
  * 获取全角符号格式规则（精简版）
  */
 export function getSymbolFormatRules(): string {
   return `**格式规则**: 使用全角中文标点（，。？！：；""（）——……），保持原文换行/缩进，数字英文保持半角`;
+}
+
+/**
+ * 获取当前状态信息（用于告知AI当前处于哪个阶段）
+ */
+export function getCurrentStatusInfo(taskType: TaskType, status: TaskStatus): string {
+  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabel = taskLabels[taskType];
+
+  const statusDescriptions: Record<TaskStatus, string> = {
+    planning: `**当前状态：规划阶段 (planning)**
+你当前处于规划阶段，应该：
+- 获取术语表和角色表（使用 \`list_terms\` 和 \`list_characters\`，传入 chapter_id）
+- 检查数据问题（如空翻译、重复项、误分类等），发现问题立即修复
+- 搜索相关记忆（使用 \`search_memory_by_keywords\`）了解上下文
+- 准备开始${taskLabel}工作
+
+完成规划后，将状态设置为 "working" 并开始${taskLabel}。`,
+    working: `**当前状态：${taskLabel}中 (working)**
+你当前处于${taskLabel}阶段，应该：
+- 专注于${taskLabel}工作：${taskType === 'translation' ? '1:1翻译，敬语按流程处理' : taskType === 'polish' ? '语气词优化、摆脱翻译腔、节奏调整' : '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查'}
+- 发现新信息（新术语/角色、关系变化等）立即更新
+- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`
+
+完成所有段落的${taskLabel}后，将状态设置为 "completed"。`,
+    completed: `**当前状态：验证阶段 (completed)**
+你当前处于验证阶段，应该：
+- 系统已自动验证完整性
+- 更新术语/角色描述（如有新发现）
+- 创建记忆保存重要信息（如敬语翻译方式、角色关系等）
+- 检查是否有遗漏或需要修正的地方
+
+如果所有工作已完成，将状态设置为 "end"。`,
+    end: `**当前状态：完成 (end)**
+当前块已完成，系统将自动提供下一个块。`,
+  };
+
+  return statusDescriptions[status];
 }
 
 /**
@@ -64,7 +102,19 @@ export function getTodoToolsDescription(taskType: TaskType): string {
 export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
-  return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→end(完成)`;
+  return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→end(完成)
+
+⚠️ **状态转换规则**（必须严格遵守）:
+- **禁止跳过状态**：必须按照 planning → working → completed → end 的顺序进行
+- **允许的转换**：
+  - planning → working
+  - working → completed
+  - completed → end
+  - completed → working（如果发现缺失段落需要补充）
+- **禁止的转换**：
+  - ❌ working → end（必须经过 completed）
+  - ❌ planning → completed（必须经过 working）
+  - ❌ planning → end（必须经过 working 和 completed）`;
 }
 
 /**
@@ -79,8 +129,10 @@ export function getOutputFormatRules(taskType: TaskType): string {
   return `【输出格式】⚠️ 必须只返回JSON
 ❌ 禁止使用翻译管理工具
 
+**开始任务时**：先将状态设置为 "planning" 开始规划（返回 \`{"status": "planning"}\`）
 **状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`
 **包含内容时**: \`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题"' : ''}}\`
+**标题翻译只要返回一次就好，不要重复返回**
 
 ${getStatusFieldDescription(taskType)}
 - 段落ID必须与原文完全一致，1:1对应${onlyChanged}
@@ -90,6 +142,7 @@ ${getStatusFieldDescription(taskType)}
 
 /**
  * 获取执行工作流说明（精简版）
+ * 注意：详细的状态说明已在 getCurrentStatusInfo 中提供，这里只保留高层次流程
  */
 export function getExecutionWorkflowRules(taskType: TaskType): string {
   const workingFocus = {
@@ -99,10 +152,10 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
   };
 
   return `【执行流程】
-1. **planning**: 获取术语/角色列表（传chapter_id），检查数据问题，发现问题**立即修复**
-2. **working**: ${workingFocus[taskType]}；发现新信息**立即更新**术语/角色
-3. **completed**: 系统验证完整性，更新术语/角色描述，创建记忆保存重要发现
-4. **end**: 完成当前块，进入下一块`;
+1. **planning**: 获取上下文信息，检查数据问题并修复
+2. **working**: ${workingFocus[taskType]}；发现新信息立即更新
+3. **completed**: 系统验证完整性，更新数据，创建记忆
+4. **end**: 完成当前块`;
 }
 
 /**
