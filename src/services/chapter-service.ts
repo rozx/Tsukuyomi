@@ -2226,11 +2226,11 @@ export class ChapterService {
         // 注意：部分来源的段落 text 可能已经包含末尾换行符（例如爬取/导入数据）。
         // 如果我们仍然用 '\n' join，会在段落之间“叠加”换行，导致空行数量被放大。
         // 这里的规则是：只在“当前累计文本末尾不是 \n 且后面还有段落”时补 1 个 '\n' 作为分隔。
-        const body = chapterWithContent.content.reduce((acc, p, idx) => {
+        const body = chapterWithContent.content!.reduce((acc, p, idx) => {
           const text = p.text || '';
           acc += text;
 
-          const isLast = idx === chapterWithContent.content.length - 1;
+          const isLast = idx === chapterWithContent.content!.length - 1;
           if (isLast) return acc;
 
           // 空段落本身不包含任何字符，但它代表一个段落分隔。
@@ -2280,58 +2280,43 @@ export class ChapterService {
 
         content = `${chapterTitle}\n\n${body}`;
       } else {
-      const lines = chapterWithContent.content.map((p) => {
-        const original = p.text;
-        let translation = getParagraphTranslationText(p);
-        
-        // 应用显示/导出层格式化（不写回译文）
-        translation = formatTranslationForDisplay(translation, book, chapterWithContent);
+        // 双语导出：type 只能是 'bilingual'
+        const lines = chapterWithContent.content!.map((p) => {
+          const original = p.text;
+          let translation = getParagraphTranslationText(p);
+          
+          // 应用显示/导出层格式化（不写回译文）
+          translation = formatTranslationForDisplay(translation, book, chapterWithContent);
 
-        // 规范化换行符：确保翻译文本的换行符数量与原文一致
-        // 如果原文没有换行符，翻译也不应有
-        // 如果原文末尾有换行符，翻译也应有
-        let normalizedTranslation = translation || original;
+          // 规范化换行符：确保翻译文本的换行符数量与原文一致
+          // 如果原文没有换行符，翻译也不应有
+          // 如果原文末尾有换行符，翻译也应有
+          let normalizedTranslation = translation || original;
 
-        // 检测原文末尾的换行符数量
-        const originalTrailingNewlines = (original.match(/\n+$/) || [''])[0].length;
-        // 移除翻译末尾的所有换行符
-        normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
-        // 添加与原文相同数量的换行符
-        normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
+          // 检测原文末尾的换行符数量
+          const originalTrailingNewlines = (original.match(/\n+$/) || [''])[0].length;
+          // 移除翻译末尾的所有换行符
+          normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
+          // 添加与原文相同数量的换行符
+          normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
 
-        switch (type) {
-          case 'original':
-            return original;
-          case 'translation':
-            // 规范化后的翻译文本已经包含了与原文一致的换行符
-            return normalizedTranslation;
-          case 'bilingual':
-            return `${original}\n${normalizedTranslation}\n`;
-          default:
-            return '';
-        }
-      });
-      // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
-      const processedLines = lines.map((line) => {
-        const trimmed = line.trim();
-        const isTranslationExport = type === 'translation';
-        if (trimmed === '') {
-          // 空行替换为两个换行符
-          // 译文导出：在现有规则基础上额外 +1 个换行符（n -> n+1）
-          return isTranslationExport ? '\n\n\n' : '\n\n';
-        }
+          // 双语导出：返回原文和翻译的组合
+          return `${original}\n${normalizedTranslation}\n`;
+        });
+        // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
+        const processedLines = lines.map((line) => {
+          const trimmed = line.trim();
+          if (trimmed === '') {
+            // 空行替换为两个换行符
+            return '\n\n';
+          }
 
-        // 非空行：确保以至少一个换行符结尾
-        // 如果末尾已有换行符，保持不变；否则添加一个换行符
-        // 译文导出：在现有规则基础上额外 +1 个换行符（n -> n+1）
-        if (isTranslationExport) {
-          return line.endsWith('\n') ? `${line}\n` : `${line}\n\n`;
-        }
-
-        return line.endsWith('\n') ? line : `${line}\n`;
-      });
-      // 使用空字符串连接，因为每行已包含必要的换行符
-      content = `${chapterTitle}\n\n${processedLines.join('')}`;
+          // 非空行：确保以至少一个换行符结尾
+          // 如果末尾已有换行符，保持不变；否则添加一个换行符
+          return line.endsWith('\n') ? line : `${line}\n`;
+        });
+        // 使用空字符串连接，因为每行已包含必要的换行符
+        content = `${chapterTitle}\n\n${processedLines.join('')}`;
       }
     }
 
