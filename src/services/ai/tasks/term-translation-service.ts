@@ -237,6 +237,94 @@ export class TermTranslationService {
       let jsonRetryCount = 0;
       let finalText = '';
 
+      // 快速路径：对于简单翻译（无 bookId 或短文本），直接进行翻译，不进入工具调用循环
+      const SIMPLE_TRANSLATION_THRESHOLD = 50; // 50 字符以下视为短文本
+      const useFastPath = !bookId || trimmedText.length <= SIMPLE_TRANSLATION_THRESHOLD;
+
+      // 如果使用快速路径且没有工具，直接进行单次翻译
+      if (useFastPath && tools.length === 0) {
+        if (aiProcessingStore && taskId) {
+          void aiProcessingStore.updateTask(taskId, {
+            status: 'processing',
+            message: '正在生成翻译...',
+          });
+        }
+
+        const request: TextGenerationRequest = {
+          messages: history,
+        };
+
+        // 创建包装的 onChunk 回调
+        let firstChunkReceived = false;
+        const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
+          if (finalSignal?.aborted) {
+            throw new Error('翻译已取消');
+          }
+
+          if (aiProcessingStore && taskId) {
+            if (!firstChunkReceived) {
+              void aiProcessingStore.updateTask(taskId, {
+                status: 'processing',
+                message: '正在生成翻译...',
+              });
+              firstChunkReceived = true;
+            }
+
+            if (chunk.reasoningContent) {
+              void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+            }
+
+            if (chunk.text) {
+              void aiProcessingStore.appendOutputContent(taskId, chunk.text);
+            }
+          }
+
+          if (onChunk) {
+            await onChunk(chunk);
+          }
+        };
+
+        const result = await service.generateText(config, request, wrappedOnChunk);
+
+        // 保存思考内容
+        if (aiProcessingStore && taskId && result.reasoningContent) {
+          void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
+        }
+
+        // 解析 JSON 响应
+        const responseText = result.text || '';
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const jsonStr = jsonMatch[0];
+            const parsed = JSON.parse(jsonStr);
+
+            if (parsed && typeof parsed.translation === 'string') {
+              finalText = parsed.translation;
+            } else {
+              throw new Error('AI 响应格式错误：JSON 中缺少 translation 字段。');
+            }
+          } else {
+            throw new Error('AI 响应格式错误：未找到有效的 JSON 格式。');
+          }
+        } catch (parseError) {
+          const errorMessage =
+            parseError instanceof Error ? parseError.message : String(parseError);
+          throw new Error(`AI 响应格式错误：${errorMessage}。无法获取有效翻译。`);
+        }
+
+        // 更新任务状态为完成
+        if (aiProcessingStore && taskId) {
+          void aiProcessingStore.updateTask(taskId, {
+            status: 'completed',
+            message: '翻译完成',
+          });
+        }
+
+        return { text: finalText, ...(taskId ? { taskId } : {}) };
+      }
+
+      // 标准路径：使用工具调用循环
       while (toolCallCount < MAX_TOOL_CALLS) {
         // 检查是否已取消
         if (finalSignal.aborted) {
@@ -348,6 +436,8 @@ export class TermTranslationService {
             // 验证 JSON 结构
             if (parsed && typeof parsed.translation === 'string') {
               finalText = parsed.translation;
+              // 成功解析 JSON，跳出循环
+              break;
             } else {
               console.warn('[TermTranslationService] JSON 格式不正确，缺少 translation 字段');
               // 如果 JSON 格式不正确，检查重试次数
@@ -415,8 +505,6 @@ export class TermTranslationService {
             );
           }
         }
-
-        break;
       }
 
       // 如果达到最大工具调用次数，尝试解析最后一次响应
@@ -455,6 +543,14 @@ export class TermTranslationService {
             'AI 响应格式错误：达到最大工具调用次数，且没有可用的响应内容。无法获取有效翻译。',
           );
         }
+      }
+
+      // 更新任务状态为完成（只在真正完成时更新）
+      if (aiProcessingStore && taskId && finalText) {
+        void aiProcessingStore.updateTask(taskId, {
+          status: 'completed',
+          message: '翻译完成',
+        });
       }
 
       return { text: finalText, ...(taskId ? { taskId } : {}) };
