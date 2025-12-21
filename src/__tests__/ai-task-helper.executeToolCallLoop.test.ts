@@ -1,6 +1,6 @@
 import './setup';
 import { describe, test, expect } from 'bun:test';
-import type { ChatMessage, TextGenerationRequest, AIServiceConfig } from 'src/services/ai/types/ai-service';
+import type { ChatMessage, TextGenerationRequest, AIServiceConfig, AIToolCall } from 'src/services/ai/types/ai-service';
 import { executeToolCallLoop } from 'src/services/ai/tasks/utils/ai-task-helper';
 
 describe('executeToolCallLoop', () => {
@@ -16,14 +16,14 @@ describe('executeToolCallLoop', () => {
     ];
 
     let idx = 0;
-    const generateText = async (
+    const generateText = (
       _config: AIServiceConfig,
       _request: TextGenerationRequest,
       _callback: unknown,
-    ): Promise<{ text: string; toolCalls?: undefined; reasoningContent?: string }> => {
+    ): Promise<{ text: string; toolCalls?: AIToolCall[]; reasoningContent?: string }> => {
       const r = responses[idx] ?? responses[responses.length - 1]!;
       idx++;
-      return { text: r.text, toolCalls: undefined, reasoningContent: null as unknown as string };
+      return Promise.resolve({ text: r.text, reasoningContent: null as unknown as string });
     };
 
     const history: ChatMessage[] = [
