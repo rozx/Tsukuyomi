@@ -30,7 +30,7 @@ export const terminologyTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '术语的详细描述（可选）',
+              description: '术语的简短描述（可选）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['name', 'translation'],
@@ -176,7 +176,7 @@ export const terminologyTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '新的描述（可选，设置为空字符串可删除描述）',
+              description: '新的描述（可选，设置为空字符串可删除描述）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['term_id'],
