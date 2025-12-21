@@ -90,6 +90,46 @@ export class ToolRegistry {
     return allTools.filter((tool) => !excludedToolNames.includes(tool.function.name));
   }
 
+  /**
+   * 获取术语翻译服务允许的工具
+   * 只包含：get_book_info, get/list/search terms, get/list/search characters, get/list/search memory, search paragraphs
+   */
+  static getTermTranslationTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+
+    const allowedToolNames = [
+      // 书籍工具
+      'get_book_info',
+      // 术语工具
+      'get_term',
+      'list_terms',
+      'search_terms_by_keywords',
+      // 角色工具
+      'get_character',
+      'list_characters',
+      'search_characters_by_keywords',
+      // 记忆工具
+      'get_memory',
+      'get_recent_memories', // list memories
+      'search_memory_by_keywords',
+      // 段落搜索工具
+      'find_paragraph_by_keywords',
+      'search_paragraphs_by_regex',
+    ];
+
+    // 获取所有工具
+    const allTools = [
+      ...this.getBookTools(bookId),
+      ...this.getTerminologyTools(bookId),
+      ...this.getCharacterSettingTools(bookId),
+      ...this.getMemoryTools(bookId),
+      ...this.getParagraphTools(bookId),
+    ];
+
+    // 只返回允许的工具
+    return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
+  }
+
   static async handleToolCall(
     toolCall: AIToolCall,
     bookId: string,

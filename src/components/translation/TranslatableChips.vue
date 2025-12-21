@@ -6,6 +6,7 @@ import Dialog from 'primevue/dialog';
 import Checkbox from 'primevue/checkbox';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TermTranslationService } from 'src/services/ai';
 
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 
 const aiModelsStore = useAIModelsStore();
 const aiProcessingStore = useAIProcessingStore();
+const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
 // 翻译状态
@@ -238,9 +240,14 @@ const handleTranslate = async () => {
     // 使用中文顿号是因为它更可能在翻译结果中保留
     const originalText = props.modelValue.join('、');
 
+    // 获取当前上下文
+    const context = contextStore.getContext;
+
     // 使用翻译服务进行翻译，服务会自动管理任务
     const result = await TermTranslationService.translate(originalText, selectedModel, {
       taskType: 'termsTranslation',
+      bookId: context.currentBookId || undefined,
+      chapterId: context.currentChapterId || undefined,
       aiProcessingStore: {
         addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
         updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
