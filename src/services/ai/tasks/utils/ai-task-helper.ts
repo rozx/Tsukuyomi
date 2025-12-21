@@ -17,7 +17,7 @@ import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { getPostToolCallReminder } from './todo-helper';
-import { getChunkingInstructions } from '../prompts';
+import { getChunkingInstructions, getCurrentStatusInfo } from '../prompts';
 
 /**
  * 任务类型
@@ -248,24 +248,12 @@ ${chunkingInstructions}`;
 
 /**
  * 添加章节上下文到初始提示
+ * 注意：工具使用说明已在系统提示词中提供，这里只保留章节ID和简要提醒
  */
-export function addChapterContext(prompt: string, chapterId: string, taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-  };
-  const taskLabel = taskLabels[taskType];
-
+export function addChapterContext(prompt: string, chapterId: string, _taskType: TaskType): string {
   return (
     `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
-    `在开始${taskLabel}之前，请先使用 list_terms 和 list_characters 工具获取术语表和角色表，` +
-    `以确保${taskLabel}的一致性和连贯性。` +
-    `list_terms 和 list_characters 工具已经包含了当前章节中出现的术语和角色，不需要再额外获取。` +
-    `你也可以使用 get_previous_chapter, get_previous_paragraphs 工具获取上下文信息，以保持翻译风格和术语的一致性。\n\n` +
-    `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
-    `你只需要处理**当前任务中直接提供给你的段落**，` +
-    `不要尝试翻译工具返回的段落内容。`
+    `⚠️ **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
   );
 }
 
@@ -333,6 +321,49 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
 export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
   return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
+}
+
+/**
+ * 构建独立的 chunk 提示（避免 max token 问题）
+ * 每个 chunk 独立，提醒 AI 使用工具获取上下文
+ * @param taskType 任务类型
+ * @param chunkIndex 当前 chunk 索引（从 0 开始）
+ * @param totalChunks 总 chunk 数
+ * @param chunkText chunk 文本内容
+ * @param paragraphCountNote 段落数量提示
+ * @param maintenanceReminder 维护提醒
+ * @param chapterId 章节 ID（可选）
+ * @param chapterTitle 章节标题（可选，仅第一个 chunk）
+ * @returns 独立的 chunk 提示
+ */
+export function buildIndependentChunkPrompt(
+  taskType: TaskType,
+  chunkIndex: number,
+  totalChunks: number,
+  chunkText: string,
+  paragraphCountNote: string,
+  maintenanceReminder: string,
+  chapterId?: string,
+  chapterTitle?: string,
+): string {
+  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabel = taskLabels[taskType];
+
+  // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
+  const contextToolsReminder = `\n\n⚠️ **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+
+  // 所有 chunk 都独立，不包含之前的上下文
+  // 第一个 chunk 和后续 chunk 使用相同的格式，只是措辞略有不同
+  if (chunkIndex === 0) {
+    // 第一个 chunk：独立提示，只包含必要的任务信息
+    const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
+    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。
+
+以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${titleSection}${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+  } else {
+    // 后续 chunk：独立提示，不包含之前的上下文
+    return `继续${taskLabel}任务。以下是第 ${chunkIndex + 1}/${totalChunks} 部分内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+  }
 }
 
 /**
@@ -534,14 +565,66 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       history.push({
         role: 'user',
         content:
+          `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
           `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：` +
           `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
     }
 
+    // 验证状态转换是否有效
+    const newStatus: TaskStatus = parsed.status;
+    const previousStatus: TaskStatus = currentStatus;
+
+    // 定义允许的状态转换
+    const validTransitions: Record<TaskStatus, TaskStatus[]> = {
+      planning: ['working'], // planning 只能转换到 working
+      working: ['completed'], // working 只能转换到 completed
+      completed: ['end', 'working'], // completed 可以转换到 end 或回到 working（如果需要补充缺失段落、编辑/优化已翻译的段落）
+      end: [], // end 是终态，不能再转换
+    };
+
+    // 检查状态转换是否有效
+    if (previousStatus !== newStatus) {
+      const allowedNextStatuses: TaskStatus[] | undefined = validTransitions[previousStatus];
+      if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
+        // 无效的状态转换，提醒AI
+        const statusLabels: Record<TaskStatus, string> = {
+          planning: '规划阶段 (planning)',
+          working: `${taskLabel}中 (working)`,
+          completed: '验证阶段 (completed)',
+          end: '完成 (end)',
+        };
+
+        console.warn(
+          `[${logLabel}] ⚠️ 检测到无效的状态转换：${statusLabels[previousStatus]} → ${statusLabels[newStatus]}`,
+        );
+
+        const expectedNextStatus: TaskStatus =
+          (allowedNextStatuses?.[0] as TaskStatus) || 'working';
+        const expectedStatusLabel = statusLabels[expectedNextStatus];
+
+        history.push({
+          role: 'assistant',
+          content: responseText,
+        });
+
+        history.push({
+          role: 'user',
+          content:
+            `⚠️ **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
+            `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
+            `你当前处于 "${statusLabels[previousStatus]}"，应该先转换到 "${expectedStatusLabel}"。\n\n` +
+            `请重新返回正确的状态：{"status": "${expectedNextStatus}"}${newStatus === 'working' && previousStatus === 'planning' ? ' 或包含内容时 {"status": "working", "paragraphs": [...]}' : ''}`,
+        });
+
+        // 不更新状态，继续循环让AI重新响应
+        continue;
+      }
+    }
+
     // 更新状态
-    currentStatus = parsed.status;
+    currentStatus = newStatus;
 
     // 提取内容
     if (parsed.content) {
@@ -550,8 +633,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         for (const para of parsed.content.paragraphs) {
           // 只处理有效的段落翻译（有ID且翻译内容不为空）
           if (para.id && para.translation && para.translation.trim().length > 0) {
-            // 只添加新的段落（避免重复）
-            if (!accumulatedParagraphs.has(para.id)) {
+            // 允许同一段落在同一任务中被“纠错/改写”
+            // 策略：当翻译内容发生变化时，以最新输出为准（last-write-wins）
+            const prev = accumulatedParagraphs.get(para.id);
+            if (prev !== para.translation) {
               accumulatedParagraphs.set(para.id, para.translation);
               newParagraphs.push({ id: para.id, translation: para.translation });
             }
@@ -570,16 +655,19 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           }
         }
       }
-      if (parsed.content.titleTranslation && !titleTranslation) {
-        titleTranslation = parsed.content.titleTranslation;
-        // 立即调用标题回调
-        if (onTitleExtracted) {
-          try {
-            void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+      if (parsed.content.titleTranslation) {
+        // 同理：允许标题翻译在同一任务中被更新（以最新为准）
+        if (titleTranslation !== parsed.content.titleTranslation) {
+          titleTranslation = parsed.content.titleTranslation;
+          // 立即调用标题回调
+          if (onTitleExtracted) {
+            try {
+              void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
+                console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+              });
+            } catch (error) {
               console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-            });
-          } catch (error) {
-            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+            }
           }
         }
       }
@@ -606,6 +694,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
+            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
             `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
             `**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。` +
             `不要再返回 planning 状态，直接开始${taskLabel}工作。` +
@@ -616,6 +705,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
+            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
             `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
             `如果还需要使用工具获取信息，请调用工具后再更新状态。`,
@@ -636,16 +726,38 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
+            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
             `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
             `**现在必须**输出${taskLabel}结果。` +
             `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
       } else {
-        // 正常的 working 响应 - 使用更明确的指令
-        history.push({
-          role: 'user',
-          content: `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
-        });
+        // 检查是否所有段落都已返回
+        let allParagraphsReturned = false;
+        if (paragraphIds && paragraphIds.length > 0) {
+          const verification = verifyCompleteness
+            ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
+            : verifyParagraphCompleteness(paragraphIds, accumulatedParagraphs);
+          allParagraphsReturned = verification.allComplete;
+        }
+
+        if (allParagraphsReturned) {
+          // 所有段落都已返回，提醒 AI 可以将状态改为 "completed"
+          history.push({
+            role: 'user',
+            content:
+              `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
+              `所有段落${taskLabel}已完成。如果不需要继续${taskLabel}，可以将状态设置为 "completed"。`,
+          });
+        } else {
+          // 正常的 working 响应 - 使用更明确的指令
+          history.push({
+            role: 'user',
+            content:
+              `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
+              `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
+          });
+        }
       }
       continue;
     } else if (currentStatus === 'completed') {
@@ -667,6 +779,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           history.push({
             role: 'user',
             content:
+              `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
               `检测到以下段落缺少${taskLabel}：${missingIdsList}` +
               `${hasMore ? ` 等 ${verification.missingIds.length} 个` : ''}。` +
               `请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
@@ -684,14 +797,16 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         );
         history.push({
           role: 'user',
-          content: `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
+          content:
+            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
+            `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作
         const postOutputPrompt = buildPostOutputPrompt(taskType, taskId);
         history.push({
           role: 'user',
-          content: postOutputPrompt,
+          content: `${getCurrentStatusInfo(taskType, currentStatus)}\n\n${postOutputPrompt}`,
         });
       }
       continue;

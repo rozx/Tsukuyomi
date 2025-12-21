@@ -17,9 +17,9 @@ import {
   getTotalChapters,
   getChapterContentText,
   getVolumeDisplayTitle,
-  normalizeTranslationSymbols,
   findUniqueTermsInText,
   findUniqueCharactersInText,
+  formatTranslationForDisplay,
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { cloneDeep } from 'lodash';
@@ -46,7 +46,7 @@ import VolumesList from 'src/components/novel/VolumesList.vue';
 import TermPopover from 'src/components/novel/TermPopover.vue';
 import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
-import SpecialInstructionsPopover from 'src/components/novel/SpecialInstructionsPopover.vue';
+import ChapterSettingsPopover from 'src/components/novel/ChapterSettingsPopover.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -523,7 +523,7 @@ const {
 
 // 初始化导出 composable
 const { exportMenuRef, exportMenuItems, toggleExportMenu, exportChapter, copyAllTranslatedText } =
-  useChapterExport(selectedChapter, selectedChapterParagraphs);
+  useChapterExport(selectedChapter, selectedChapterParagraphs, book);
 
 // 初始化拖拽 composable
 const {
@@ -835,7 +835,7 @@ const {
   saveState,
 );
 
-// 获取段落的选中翻译文本
+// 获取段落的选中翻译文本（应用缩进过滤器）
 const getParagraphTranslationText = (paragraph: Paragraph): string => {
   if (!paragraph.selectedTranslationId || !paragraph.translations) {
     return '';
@@ -843,7 +843,9 @@ const getParagraphTranslationText = (paragraph: Paragraph): string => {
   const selectedTranslation = paragraph.translations.find(
     (t) => t.id === paragraph.selectedTranslationId,
   );
-  return selectedTranslation?.translation || '';
+  const translation = selectedTranslation?.translation || '';
+  // 应用显示层格式化（缩进过滤/符号规范化等）
+  return formatTranslationForDisplay(translation, book.value, selectedChapter.value || undefined);
 };
 
 // 计算已翻译文本的总字符数
@@ -945,15 +947,19 @@ const toggleKeyboardShortcutsPopover = (event: Event) => {
   keyboardShortcutsPopover.value?.toggle(event);
 };
 
-// 特殊指令弹出框状态
-const specialInstructionsPopover = ref<{ toggle: (event: Event) => void } | null>(null);
+// 章节设置弹出框状态
+const chapterSettingsPopover = ref<{ toggle: (event: Event) => void } | null>(null);
 
-const toggleSpecialInstructionsPopover = (event: Event) => {
-  specialInstructionsPopover.value?.toggle(event);
+const toggleChapterSettingsPopover = (event: Event) => {
+  chapterSettingsPopover.value?.toggle(event);
 };
 
-// 保存特殊指令
-const handleSaveSpecialInstructions = async (data: {
+// 保存章节设置
+const handleSaveChapterSettings = async (data: {
+  // 全局设置（书籍级别）
+  preserveIndents?: boolean;
+  normalizeSymbolsOnDisplay?: boolean;
+  // 章节设置（章节级别）
   translationInstructions?: string;
   polishInstructions?: string;
   proofreadingInstructions?: string;
@@ -961,13 +967,25 @@ const handleSaveSpecialInstructions = async (data: {
   if (!book.value) return;
 
   try {
-    // 确保所有字段都有值（如果未提供则使用空字符串，避免 undefined 覆盖现有值）
+    // 全局设置（书籍级别）
+    // 默认保留缩进：未设置时不应过滤掉缩进
+    const preserveIndents = data.preserveIndents ?? true;
+    const normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay ?? false;
+
+    // 章节设置（章节级别）
     const translationInstructions = data.translationInstructions ?? '';
     const polishInstructions = data.polishInstructions ?? '';
     const proofreadingInstructions = data.proofreadingInstructions ?? '';
 
+    // 保存全局设置（书籍级别）
+    await booksStore.updateBook(book.value.id, {
+      preserveIndents,
+      normalizeSymbolsOnDisplay,
+      lastEdited: new Date(),
+    });
+
+    // 如果有选中的章节，保存章节级别的特殊指令
     if (selectedChapter.value) {
-      // 保存章节级别的指令
       const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
         translationInstructions,
         polishInstructions,
@@ -991,193 +1009,31 @@ const handleSaveSpecialInstructions = async (data: {
           proofreadingInstructions,
         };
       }
-
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: '章节特殊指令已保存',
-        life: 3000,
-      });
-    } else {
-      // 保存书籍级别的指令
-      await booksStore.updateBook(book.value.id, {
-        translationInstructions,
-        polishInstructions,
-        proofreadingInstructions,
-        lastEdited: new Date(),
-      });
-
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: '书籍特殊指令已保存',
-        life: 3000,
-      });
     }
+
+    const savedItems: string[] = [];
+    savedItems.push('全局设置');
+    if (selectedChapter.value) {
+      savedItems.push('章节特殊指令');
+    }
+
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已保存 ${savedItems.join('和')}`,
+      life: 3000,
+    });
   } catch (error) {
-    console.error('保存特殊指令失败:', error);
+    console.error('保存设置失败:', error);
     toast.add({
       severity: 'error',
       summary: '保存失败',
-      detail: error instanceof Error ? error.message : '保存特殊指令时发生错误',
+      detail: error instanceof Error ? error.message : '保存设置时发生错误',
       life: 3000,
     });
   }
 };
 
-// 规范化章节符号
-const normalizeChapterSymbols = async () => {
-  if (!book.value || !selectedChapterWithContent.value || !selectedChapterParagraphs.value.length) {
-    return;
-  }
-
-  // 保存状态用于撤销
-  saveState('规范化符号');
-
-  try {
-    let updatedCount = 0;
-    let titleUpdated = false;
-
-    // 更新章节内容
-    const updatedVolumes = book.value.volumes?.map((volume) => {
-      if (!volume.chapters) return volume;
-
-      const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== selectedChapterWithContent.value!.id) return chapter;
-
-        // 规范化章节标题翻译
-        let updatedTitle = chapter.title;
-        if (chapter.title.translation.translation) {
-          const normalizedTitle = normalizeTranslationSymbols(
-            chapter.title.translation.translation,
-          );
-          if (normalizedTitle !== chapter.title.translation.translation) {
-            updatedTitle = {
-              original: chapter.title.original,
-              translation: {
-                ...chapter.title.translation,
-                translation: normalizedTitle,
-              },
-            };
-            titleUpdated = true;
-          }
-        }
-
-        // 使用已加载的章节内容
-        const content = ChapterService.getChapterContentForUpdate(
-          chapter,
-          selectedChapterWithContent.value,
-        );
-
-        // 规范化段落翻译
-        let updatedContent = content;
-        if (content) {
-          updatedContent = content.map((para) => {
-            if (!para.translations || para.translations.length === 0) {
-              return para;
-            }
-
-            const updatedTranslations = para.translations.map((trans) => {
-              // 确保 translation 是字符串
-              if (!trans.translation || typeof trans.translation !== 'string') {
-                return trans;
-              }
-              const original = trans.translation;
-              const normalized = normalizeTranslationSymbols(original);
-              if (normalized !== original) {
-                updatedCount++;
-                return {
-                  ...trans,
-                  translation: normalized,
-                };
-              }
-              return trans;
-            });
-
-            // 如果翻译有更新，返回更新后的段落
-            if (
-              updatedTranslations.some(
-                (t, i) => t.translation !== para.translations?.[i]?.translation,
-              )
-            ) {
-              return {
-                ...para,
-                translations: updatedTranslations,
-              };
-            }
-
-            return para;
-          });
-        }
-
-        return {
-          ...chapter,
-          title: updatedTitle,
-          content: updatedContent,
-          lastEdited: new Date(),
-        };
-      });
-
-      return {
-        ...volume,
-        chapters: updatedChapters,
-      };
-    });
-
-    // 查找更新后的章节，保存内容到 IndexedDB
-    const updatedChapter = updatedVolumes
-      ?.flatMap((v) => v.chapters || [])
-      .find((c) => c.id === selectedChapterWithContent.value!.id);
-
-    if (updatedChapter && updatedChapter.content) {
-      // 保存更新后的内容到 IndexedDB
-      await ChapterService.saveChapterContent(updatedChapter);
-    }
-
-    // 更新书籍
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
-
-    // 更新 selectedChapterWithContent 以反映保存的更改
-    updateSelectedChapterWithContent(updatedVolumes);
-
-    // 显示成功消息
-    const updateDetails: string[] = [];
-    if (updatedCount > 0) {
-      updateDetails.push(`${updatedCount} 个段落翻译`);
-    }
-    if (titleUpdated) {
-      updateDetails.push('章节标题');
-    }
-
-    if (updateDetails.length > 0) {
-      toast.add({
-        severity: 'success',
-        summary: '规范化完成',
-        detail: `已规范化 ${updateDetails.join('和')} 中的符号`,
-        life: 3000,
-      });
-    } else {
-      // 即使没有更新，也显示提示，让用户知道操作已完成
-      toast.add({
-        severity: 'info',
-        summary: '无需更新',
-        detail: '所有翻译中的符号已经规范化',
-        life: 3000,
-      });
-    }
-  } catch (error) {
-    console.error('规范化符号失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '规范化失败',
-      detail: error instanceof Error ? error.message : '规范化符号时发生未知错误',
-      life: 3000,
-    });
-  }
-};
 
 // 打开创建角色对话框
 const openCreateCharacterDialog = () => {
@@ -1808,12 +1664,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     <!-- 键盘快捷键 Popover -->
     <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
 
-    <!-- 特殊指令弹出框 -->
-    <SpecialInstructionsPopover
-      ref="specialInstructionsPopover"
+    <!-- 章节设置弹出框 -->
+    <ChapterSettingsPopover
+      ref="chapterSettingsPopover"
       :book="book || null"
       :chapter="selectedChapter || null"
-      @save="handleSaveSpecialInstructions"
+      @save="handleSaveChapterSettings"
     />
 
     <!-- 编辑术语对话框 -->
@@ -1877,14 +1733,13 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             editMode = value;
           }
         "
-        @normalize="normalizeChapterSymbols"
         @toggle-export="(event: Event) => toggleExportMenu(event)"
         @toggle-term-popover="(event: Event) => toggleTermPopover(event)"
         @toggle-character-popover="(event: Event) => toggleCharacterPopover(event)"
         @translation-button-click="translationButtonClick"
         @toggle-search="toggleSearch"
         @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
-        @toggle-special-instructions="toggleSpecialInstructionsPopover"
+        @toggle-special-instructions="toggleChapterSettingsPopover"
       />
 
       <!-- 搜索工具栏 -->

@@ -2,7 +2,6 @@ import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Chapter, Paragraph, Novel } from 'src/models/novel';
-import { useBooksStore } from 'src/stores/books';
 
 export function useSearchReplace(
   book: Ref<Novel | undefined>,
@@ -11,7 +10,6 @@ export function useSearchReplace(
   updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>,
   currentlyEditingParagraphId?: Ref<string | null>,
 ) {
-  const booksStore = useBooksStore();
   const toast = useToastWithHistory();
 
   // Search State
@@ -22,11 +20,15 @@ export function useSearchReplace(
   const currentSearchMatchIndex = ref(-1);
 
   /**
-   * 获取段落翻译文本
-   * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容
+   * 获取段落翻译文本（原始数据源，禁止应用显示层格式化）
+   *
+   * 重要：搜索/替换必须基于“原始翻译文本”，否则会把显示层的缩进过滤/符号规范化结果
+   * 写回数据库，导致原始缩进与标点永久丢失。
+   *
+   * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容（不应用任何显示层过滤器）
    */
-  const getParagraphTranslationText = (paragraph: Paragraph): string => {
-    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容
+  const getParagraphRawTranslationText = (paragraph: Paragraph): string => {
+    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容（不应用过滤器）
     if (currentlyEditingParagraphId?.value === paragraph.id) {
       const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
       if (paragraphElement) {
@@ -41,7 +43,7 @@ export function useSearchReplace(
       }
     }
 
-    // 否则返回保存的翻译内容
+    // 否则返回保存的翻译内容（原始值，不做任何格式化）
     if (!paragraph.selectedTranslationId || !paragraph.translations) {
       return '';
     }
@@ -51,13 +53,118 @@ export function useSearchReplace(
     return selectedTranslation?.translation || '';
   };
 
+  // Regex escape helper（用于构建“严格匹配”模式）
+  function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * 构建搜索/替换的正则：
+   * - 默认严格按用户输入匹配
+   * - 当开启“显示层符号规范化”时，为提升一致性，允许匹配半角/全角等常见变体
+   *
+   * 注意：即使做“宽松匹配”，我们也只替换命中的片段，不会把整段文本规范化后写回。
+   */
+  const buildSearchRegex = (query: string, flags: string): RegExp => {
+    const q = query ?? '';
+    if (!q) {
+      return new RegExp('$a'); // 永远不匹配
+    }
+
+    const normalizeOnDisplay = book.value?.normalizeSymbolsOnDisplay ?? false;
+    if (!normalizeOnDisplay) {
+      return new RegExp(escapeRegex(q), flags);
+    }
+
+    // 宽松匹配：把常见的半角/全角符号视为等价
+    const symbolMap: Record<string, string> = {
+      ' ': '[ \\u3000]',
+      '　': '[ \\u3000]',
+      ',': '[,，]',
+      '，': '[,，]',
+      '.': '[\\.。]',
+      '。': '[\\.。]',
+      '?': '[\\?？]',
+      '？': '[\\?？]',
+      '!': '[!！]',
+      '！': '[!！]',
+      ':': '[:：]',
+      '：': '[:：]',
+      ';': '[;；]',
+      '；': '[;；]',
+      '(': '[\\(（]',
+      '（': '[\\(（]',
+      ')': '[\\)）]',
+      '）': '[\\)）]',
+      '[': '[\\[【]',
+      '【': '[\\[【]',
+      ']': '[\\]】]',
+      '】': '[\\]】]',
+      '<': '[<＜《]',
+      '＜': '[<＜《]',
+      '《': '[<＜《]',
+      '>': '[>＞》]',
+      '＞': '[>＞》]',
+      '》': '[>＞》]',
+      '"': '["“”]',
+      '“': '["“”]',
+      '”': '["“”]',
+      "'": "['‘’]",
+      '‘': "['‘’]",
+      '’': "['‘’]",
+      '~': '[~～]',
+      '～': '[~～]',
+      '-': '[-－—–]',
+      '－': '[-－—–]',
+      '—': '[-－—–]',
+      '–': '[-－—–]',
+      '…': '(?:…|\\.{3,}|。{3,})',
+    };
+
+    let pattern = '';
+    for (const ch of q) {
+      const mapped = symbolMap[ch];
+      pattern += mapped ?? escapeRegex(ch);
+    }
+    return new RegExp(pattern, flags);
+  };
+
+  /**
+   * 在“原始翻译文本”上执行替换，并尽量保留原始格式：
+   * - preserveIndents=false 时：仅对每行“去掉行首缩进后的内容”做替换，缩进保持不动
+   * - preserveIndents=true 时：直接在整段原文上替换
+   */
+  const replaceOnRawText = (rawText: string): string => {
+    if (!rawText) return rawText;
+
+    const chapter = selectedChapter.value || undefined;
+    const preserveIndents = chapter?.preserveIndents ?? book.value?.preserveIndents ?? true;
+    const regex = buildSearchRegex(searchQuery.value, 'gi');
+
+    if (preserveIndents) {
+      return rawText.replace(regex, replaceQuery.value);
+    }
+
+    return rawText
+      .split('\n')
+      .map((line) => {
+        const leadingMatch = line.match(/^(\s*)/);
+        const leading = leadingMatch ? leadingMatch[1]! : '';
+        const rest = line.slice(leading.length);
+        return leading + rest.replace(regex, replaceQuery.value);
+      })
+      .join('\n');
+  };
+
   // Search Matches
   const searchMatches = computed(() => {
     if (!searchQuery.value || !selectedChapterParagraphs.value) return [];
     const matches: { index: number; id: string }[] = [];
     selectedChapterParagraphs.value.forEach((p, index) => {
-      const text = getParagraphTranslationText(p);
-      if (text && text.toLowerCase().includes(searchQuery.value.toLowerCase())) {
+      const text = getParagraphRawTranslationText(p);
+      // 使用与替换一致的匹配逻辑（大小写不敏感）
+      const re = buildSearchRegex(searchQuery.value, 'i');
+      if (text && re.test(text)) {
         matches.push({ index, id: p.id });
       }
     });
@@ -103,11 +210,6 @@ export function useSearchReplace(
     if (match) scrollToMatch(match.id);
   };
 
-  // Regex escape helper
-  function escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
   const replaceCurrent = async () => {
     const match = searchMatches.value[currentSearchMatchIndex.value];
     if (!match) return;
@@ -116,12 +218,11 @@ export function useSearchReplace(
     const paragraph = selectedChapterParagraphs.value.find((p) => p.id === match.id);
     if (!paragraph) return;
 
-    // 获取当前文本（如果正在编辑，会从 DOM 获取）
-    const text = getParagraphTranslationText(paragraph);
-    const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
-    const newText = text.replace(regex, replaceQuery.value);
+    // 重要：替换必须基于原始文本，避免把显示层格式化结果写回数据库
+    const rawText = getParagraphRawTranslationText(paragraph);
+    const newText = replaceOnRawText(rawText);
 
-    if (newText !== text) {
+    if (newText !== rawText) {
       // 如果段落正在编辑，需要先更新 DOM 中的 textarea，然后再保存
       if (currentlyEditingParagraphId?.value === paragraph.id) {
         const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
@@ -148,69 +249,19 @@ export function useSearchReplace(
     const paragraphs = selectedChapterParagraphs.value;
     if (!paragraphs || paragraphs.length === 0) return;
 
-    const chapter = selectedChapter.value;
-    if (!chapter) return;
-
     let count = 0;
     const matches = [...searchMatches.value];
-
-    // Batch update in memory first
-    // We can't use updateParagraphTranslation here easily because it might save one by one or we want to batch save.
-    // Let's replicate the logic for batch update here or expose a batch update method.
-    // Actually, updating the book object in memory and then saving once is what the original code did.
-
-    // To avoid duplicating complex logic, let's try to do it directly here since we have access to booksStore and book.
-    if (!book.value) return;
-
-    // Create a deep copy or modify directly? Original code modified directly then saved.
-    // We need to iterate over paragraphs and update translations.
-
-    // Since we are in a composable, let's use the store to update.
-    // But we need to construct the updated volumes.
-
-    // Reuse logic from original file:
-
-    // We will update the book object's structure.
-    // NOTE: This assumes `book.value` is reactive and connected to the store or we update the store.
-    // The original code updated `book.value.volumes` then called `booksStore.updateBook`.
-    // `book` prop here is a Ref to the book from the store.
-
-    // Wait, `book` in `BookDetailsPage` comes from `booksStore.getBookById`.
-    // Modifying it directly might not be best practice if it's a store object, but let's follow the original pattern for now
-    // which seemed to modify local state (if it was a copy) or store state.
-    // Actually `booksStore.getBookById` returns the reactive object from the store state in Pinia usually.
-
-    // Let's be safe and clone the volumes to update.
-
-    // However, since we need to update `translation` inside `paragraph.translations`, we need to find them.
-
-    // Let's just implement the loop logic here.
-
-    // We can't easily "update" the local `book.value` if it's read-only from store getters (if it is).
-    // But in the original code: `book` was a computed: `return booksStore.getBookById(bookId.value);`.
-    // And they did `const updatedVolumes = ...` then `booksStore.updateBook`.
-    // Wait, `replaceAll` in original code:
-    /*
-      for (const match of matches) {
-        const paragraph = chapter.content.find(...)
-        // ... update paragraph.translations ...
-      }
-      await booksStore.updateBook(...)
-    */
-    // It seems it was modifying the `paragraph` object in place (which is part of `selectedChapter` which is part of `book`).
-    // This implies `book` is reactive and mutable.
 
     for (const match of matches) {
       // 从 selectedChapterParagraphs 中查找段落，确保使用正确的数据源
       const paragraph = paragraphs.find((p) => p.id === match.id);
       if (!paragraph) continue;
 
-      // 获取当前文本（如果正在编辑，会从 DOM 获取）
-      const text = getParagraphTranslationText(paragraph);
-      const regex = new RegExp(escapeRegex(searchQuery.value), 'gi');
-      const newText = text.replace(regex, replaceQuery.value);
+      // 重要：替换必须基于原始文本，避免把显示层格式化结果写回数据库
+      const rawText = getParagraphRawTranslationText(paragraph);
+      const newText = replaceOnRawText(rawText);
 
-      if (newText !== text) {
+      if (newText !== rawText) {
         // 如果段落正在编辑，需要先更新 DOM 中的 textarea
         if (currentlyEditingParagraphId?.value === paragraph.id) {
           const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
@@ -226,21 +277,12 @@ export function useSearchReplace(
           }
         }
 
-        // 更新保存的翻译内容
-        if (paragraph.selectedTranslationId && paragraph.translations) {
-          const translation = paragraph.translations.find(
-            (t) => t.id === paragraph.selectedTranslationId,
-          );
-          if (translation) {
-            translation.translation = newText;
-            count++;
-          }
-        }
+        await updateParagraphTranslation(paragraph.id, newText);
+        count++;
       }
     }
 
-    if (count > 0 && book.value) {
-      await booksStore.updateBook(book.value.id, { volumes: book.value.volumes });
+    if (count > 0) {
       toast.add({ severity: 'success', summary: `已替换 ${count} 处内容`, life: 3000 });
     }
   };

@@ -160,10 +160,10 @@ defineExpose({
           :key="task.id"
           class="p-4 rounded-lg border border-white/10 bg-white/5"
         >
-          <div class="flex items-start justify-between mb-2">
-            <div class="flex items-center gap-2">
+          <div class="flex items-start justify-between mb-2 gap-2">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
               <i
-                class="pi"
+                class="pi flex-shrink-0"
                 :class="{
                   'pi-spin pi-spinner text-primary':
                     task.status === 'thinking' || task.status === 'processing',
@@ -172,12 +172,12 @@ defineExpose({
                   'pi-ban text-orange-500': task.status === 'cancelled',
                 }"
               />
-              <span class="font-medium text-moon/90">{{ task.modelName }}</span>
-              <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary">{{
+              <span class="font-medium text-moon/90 truncate">{{ task.modelName }}</span>
+              <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary flex-shrink-0">{{
                 TASK_TYPE_LABELS[task.type] || task.type
               }}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-shrink-0">
               <span class="text-xs text-moon/60">{{
                 statusLabels[task.status] || task.status
               }}</span>
@@ -194,7 +194,7 @@ defineExpose({
             </div>
           </div>
 
-          <p v-if="task.message" class="text-sm text-moon/70 mt-2">{{ task.message }}</p>
+          <p v-if="task.message" class="text-sm text-moon/70 mt-2 break-words">{{ task.message }}</p>
 
           <!-- 显示思考消息 -->
           <div
@@ -210,9 +210,9 @@ defineExpose({
             </p>
           </div>
 
-          <div class="flex items-center gap-2 mt-3 text-xs text-moon/50">
+          <div class="flex items-center gap-2 mt-3 text-xs text-moon/50 break-words">
             <span>运行时间: {{ formatDuration(task.startTime, task.endTime) }}</span>
-            <span v-if="task.endTime">
+            <span v-if="task.endTime" class="break-words">
               · 完成于 {{ new Date(task.endTime).toLocaleTimeString('zh-CN') }}
             </span>
           </div>
@@ -230,26 +230,26 @@ defineExpose({
               :key="task.id"
               class="p-3 rounded-lg border border-white/5 bg-white/2"
             >
-              <div class="flex items-start justify-between mb-2">
-                <div class="flex items-center gap-2">
+              <div class="flex items-start justify-between mb-2 gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
                   <i
-                    class="pi text-sm"
+                    class="pi text-sm flex-shrink-0"
                     :class="{
                       'pi-check-circle text-green-500': task.status === 'completed',
                       'pi-times-circle text-red-500': task.status === 'error',
                       'pi-ban text-orange-500': task.status === 'cancelled',
                     }"
                   />
-                  <span class="text-sm text-moon/70">{{ task.modelName }}</span>
-                  <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 text-moon/50">{{
+                  <span class="text-sm text-moon/70 truncate">{{ task.modelName }}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 text-moon/50 flex-shrink-0">{{
                     TASK_TYPE_LABELS[task.type] || task.type
                   }}</span>
                 </div>
-                <span class="text-xs text-moon/50">{{
+                <span class="text-xs text-moon/50 flex-shrink-0">{{
                   formatDuration(task.startTime, task.endTime)
                 }}</span>
               </div>
-              <p v-if="task.message" class="text-xs text-moon/60 mb-2">{{ task.message }}</p>
+              <p v-if="task.message" class="text-xs text-moon/60 mb-2 break-words">{{ task.message }}</p>
               <!-- 显示思考消息（如果有） -->
               <div
                 v-if="task.thinkingMessage && task.thinkingMessage.trim()"
@@ -262,8 +262,8 @@ defineExpose({
                   {{ task.thinkingMessage }}
                 </p>
               </div>
-              <div class="flex items-center gap-2 mt-2 text-xs text-moon/50">
-                <span v-if="task.endTime">
+              <div class="flex items-center gap-2 mt-2 text-xs text-moon/50 break-words">
+                <span v-if="task.endTime" class="break-words">
                   完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
                 </span>
               </div>

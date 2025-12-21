@@ -35,6 +35,21 @@ export interface Novel {
   translationInstructions?: string | undefined;
   polishInstructions?: string | undefined;
   proofreadingInstructions?: string | undefined;
+  /**
+   * 是否保留翻译中的行首空格（缩进）
+   * - true: 保留行首空格
+   * - false: 移除行首空格（过滤缩进）
+   * - undefined: 默认保留行首空格
+   * 章节级别的设置会覆盖书籍级别的设置
+   */
+  preserveIndents?: boolean | undefined;
+
+  /**
+   * 显示/导出时是否自动规范化译文符号（不写回译文）
+   * - true: 显示与导出时规范化（引号、标点、空格等）
+   * - false/undefined: 不规范化（默认）
+   */
+  normalizeSymbolsOnDisplay?: boolean | undefined;
 }
 
 export interface CoverImage {
@@ -124,6 +139,21 @@ export interface Chapter {
   translationInstructions?: string | undefined;
   polishInstructions?: string | undefined;
   proofreadingInstructions?: string | undefined;
+  /**
+   * 是否保留翻译中的行首空格（缩进）
+   * - true: 保留行首空格
+   * - false: 移除行首空格（过滤缩进）
+   * - undefined: 默认保留行首空格
+   * 章节级别的设置会覆盖书籍级别的设置
+   */
+  preserveIndents?: boolean | undefined;
+
+  /**
+   * 显示/导出时是否自动规范化译文符号（不写回译文）
+   * - true: 显示与导出时规范化（引号、标点、空格等）
+   * - false/undefined: 不规范化（默认）
+   */
+  normalizeSymbolsOnDisplay?: boolean | undefined;
 }
 
 export interface Paragraph {

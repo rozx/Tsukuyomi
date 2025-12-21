@@ -15,7 +15,8 @@ export const terminologyTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'create_term',
-        description: '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。',
+        description:
+          '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。⚠️ **重要**：不要创建具有固定/常见翻译的术语（例如：基本的日语词汇、常见的日常用语、标准词典中的标准翻译等）。术语应该只用于需要特殊处理、上下文相关翻译或作品特定的专有名词。❌ **特别禁止**：如果日文术语和中文翻译完全相同（例如：魔王 -> 魔王），**不应**创建术语，除非该术语在作品中有特殊的上下文含义需要特别说明。',
         parameters: {
           type: 'object',
           properties: {

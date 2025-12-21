@@ -1317,7 +1317,7 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph } = location;
+      const { paragraph, chapter } = location;
 
       // 查找要更新的翻译
       if (!paragraph.translations || paragraph.translations.length === 0) {
@@ -1345,8 +1345,9 @@ export const paragraphTools: ToolDefinition[] = [
       }
       const originalTranslation = { ...translationToUpdate };
 
-      // 更新翻译内容
-      translationToUpdate.translation = new_translation.trim();
+      // 更新翻译内容（原样保存，不进行任何处理）
+      // 缩进过滤会在显示和导出时应用
+      translationToUpdate.translation = new_translation;
 
       // 更新书籍（保存更改）
       await booksStore.updateBook(bookId, { volumes: book.volumes });
@@ -1360,7 +1361,7 @@ export const paragraphTools: ToolDefinition[] = [
             paragraph_id,
             translation_id,
             old_translation: originalTranslation.translation,
-            new_translation: new_translation.trim(),
+            new_translation: new_translation,
           },
           previousData: originalTranslation,
         });
@@ -1372,7 +1373,7 @@ export const paragraphTools: ToolDefinition[] = [
         paragraph_id,
         translation_id,
         old_translation: originalTranslation.translation,
-        new_translation: new_translation.trim(),
+        new_translation: new_translation,
       });
     },
   },
@@ -1529,7 +1530,7 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph } = location;
+      const { paragraph, chapter } = location;
 
       // 确定使用的 AI 模型 ID
       let modelId = ai_model_id;
@@ -1559,12 +1560,13 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      // 创建新的翻译对象
+      // 创建新的翻译对象（原样保存，不进行任何处理）
+      // 缩进过滤会在显示和导出时应用
       const existingTranslationIds = paragraph.translations?.map((t) => t.id) || [];
       const idGenerator = new UniqueIdGenerator(existingTranslationIds);
       const newTranslation: Translation = {
         id: idGenerator.generate(),
-        translation: translation.trim(),
+        translation: translation,
         aiModelId: modelId,
       };
 

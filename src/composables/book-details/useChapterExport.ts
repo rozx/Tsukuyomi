@@ -2,13 +2,14 @@ import { ref, computed } from 'vue';
 import type { Ref } from 'vue';
 import type { MenuItem } from 'primevue/menuitem';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type { Chapter } from 'src/models/novel';
+import type { Chapter, Novel } from 'src/models/novel';
 import { ChapterService } from 'src/services/chapter-service';
 import type TieredMenu from 'primevue/tieredmenu';
 
 export function useChapterExport(
   selectedChapter: Ref<Chapter | null>,
   selectedChapterParagraphs: Ref<Array<{ id: string }>>,
+  book?: Ref<Novel | undefined>,
 ) {
   const toast = useToastWithHistory();
 
@@ -28,7 +29,13 @@ export function useChapterExport(
     if (!selectedChapter.value || !selectedChapterParagraphs.value.length) return;
 
     try {
-      await ChapterService.exportChapter(selectedChapter.value, type, format);
+      // 避免把 `undefined` 作为第 4 个参数显式传入，保持调用签名更干净（也便于测试 mock）
+      const currentBook = book?.value;
+      if (currentBook) {
+        await ChapterService.exportChapter(selectedChapter.value, type, format, currentBook);
+      } else {
+        await ChapterService.exportChapter(selectedChapter.value, type, format);
+      }
 
       // 显示成功消息
       if (format === 'clipboard') {
@@ -65,7 +72,12 @@ export function useChapterExport(
     }
 
     try {
-      await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard');
+      const currentBook = book?.value;
+      if (currentBook) {
+        await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard', currentBook);
+      } else {
+        await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard');
+      }
       toast.add({
         severity: 'success',
         summary: '已复制到剪贴板',
