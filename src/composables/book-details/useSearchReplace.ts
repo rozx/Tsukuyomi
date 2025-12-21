@@ -2,6 +2,7 @@ import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Chapter, Paragraph, Novel } from 'src/models/novel';
+import { formatTranslationForDisplay } from 'src/utils';
 import { useBooksStore } from 'src/stores/books';
 
 export function useSearchReplace(
@@ -22,11 +23,11 @@ export function useSearchReplace(
   const currentSearchMatchIndex = ref(-1);
 
   /**
-   * 获取段落翻译文本
-   * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容
+   * 获取段落翻译文本（应用显示层格式化）
+   * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容（不应用过滤器）
    */
   const getParagraphTranslationText = (paragraph: Paragraph): string => {
-    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容
+    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容（不应用过滤器）
     if (currentlyEditingParagraphId?.value === paragraph.id) {
       const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
       if (paragraphElement) {
@@ -41,14 +42,16 @@ export function useSearchReplace(
       }
     }
 
-    // 否则返回保存的翻译内容
+    // 否则返回保存的翻译内容（应用缩进过滤器）
     if (!paragraph.selectedTranslationId || !paragraph.translations) {
       return '';
     }
     const selectedTranslation = paragraph.translations.find(
       (t) => t.id === paragraph.selectedTranslationId,
     );
-    return selectedTranslation?.translation || '';
+    const translation = selectedTranslation?.translation || '';
+    // 应用显示层格式化（缩进过滤/符号规范化等）
+    return formatTranslationForDisplay(translation, book.value, selectedChapter.value || undefined);
   };
 
   // Search Matches

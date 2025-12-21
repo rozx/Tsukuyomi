@@ -18,6 +18,7 @@ export {
   ensureChapterContentLoaded,
 } from './novel-utils';
 export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
+export { filterIndents, formatTranslationForDisplay } from './translation-utils';
 export {
   escapeRegex,
   matchTermsInText,

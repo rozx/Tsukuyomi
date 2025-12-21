@@ -13,6 +13,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useUiStore } from 'src/stores/ui';
 import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
+import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
 
 const props = defineProps<{
@@ -49,7 +50,7 @@ const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
 });
 
-// 获取当前段落的翻译文本
+// 获取当前段落的翻译文本（应用缩进过滤器）
 const translationText = computed(() => {
   if (!props.paragraph.selectedTranslationId || !props.paragraph.translations) {
     return '';
@@ -57,7 +58,27 @@ const translationText = computed(() => {
   const selectedTranslation = props.paragraph.translations.find(
     (t) => t.id === props.paragraph.selectedTranslationId,
   );
-  return selectedTranslation?.translation || '';
+  const translation = selectedTranslation?.translation || '';
+  
+  // 获取书籍和章节上下文以应用缩进过滤器
+  let book = undefined;
+  let chapter = undefined;
+  if (props.bookId) {
+    book = booksStore.books.find((b) => b.id === props.bookId);
+    if (book && props.chapterId) {
+      // 查找章节
+      for (const volume of book.volumes || []) {
+        const foundChapter = volume.chapters?.find((ch) => ch.id === props.chapterId);
+        if (foundChapter) {
+          chapter = foundChapter;
+          break;
+        }
+      }
+    }
+  }
+  
+  // 应用显示层格式化（缩进过滤/符号规范化等）
+  return formatTranslationForDisplay(translation, book, chapter);
 });
 
 const hasTranslation = computed(() => {

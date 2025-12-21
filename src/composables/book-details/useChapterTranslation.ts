@@ -35,11 +35,13 @@ export function useChapterTranslation(
 
   /**
    * 创建新的段落翻译对象
+   * 注意：翻译文本会原样保存，不进行任何处理（包括缩进处理）
+   * 缩进过滤会在显示和导出时应用
    */
   const createParagraphTranslation = (translation: string, aiModelId: string) => {
     return {
       id: generateShortId(),
-      translation: translation.trim(),
+      translation: translation,
       aiModelId,
     };
   };
@@ -235,7 +237,7 @@ export function useChapterTranslation(
 
     const newTitleTranslation = {
       id: generateShortId(),
-      translation: translation.trim(),
+      translation: translation,
       aiModelId,
     };
 

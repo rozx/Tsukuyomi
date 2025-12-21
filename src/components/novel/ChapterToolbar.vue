@@ -44,7 +44,6 @@ const emit = defineEmits<{
   (e: 'undo'): void;
   (e: 'redo'): void;
   (e: 'update:editMode', value: EditMode): void;
-  (e: 'normalize'): void;
   (e: 'toggleExport', event: Event): void;
   (e: 'toggleTermPopover', event: Event): void;
   (e: 'toggleCharacterPopover', event: Event): void;
@@ -137,18 +136,6 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             @click="handleEditModeChange(option.value)"
           />
         </div>
-
-        <!-- 规范化按钮 -->
-        <Button
-          icon="pi pi-code"
-          rounded
-          text
-          size="small"
-          class="!w-8 !h-8 text-moon/70 hover:text-moon"
-          title="规范化符号：格式化本章所有翻译中的符号（引号、标点、空格等）"
-          :disabled="!selectedChapter || !selectedChapterParagraphs.length"
-          @click="emit('normalize')"
-        />
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 

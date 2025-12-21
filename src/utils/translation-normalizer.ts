@@ -237,79 +237,98 @@ export function normalizeTranslationSymbols(text: string): string {
     return text;
   }
 
-  let normalized = text;
+  // 保护行首和行尾的空格（不 trim 整个字符串）
+  // 按行处理，保护每行的行首和行尾空格
+  const lines = text.split('\n');
+  const processedLines = lines.map((line) => {
+    // 保存行首和行尾空格
+    const leadingMatch = line.match(/^(\s*)/);
+    const trailingMatch = line.match(/(\s*)$/);
+    const leadingSpaces = leadingMatch ? leadingMatch[1]! : '';
+    const trailingSpaces = trailingMatch ? trailingMatch[1]! : '';
+    
+    // 移除行首和行尾空格进行规范化（保护它们不被规范化规则影响）
+    const contentWithoutSpaces = line.slice(leadingSpaces.length, trailingSpaces.length > 0 ? -trailingSpaces.length : undefined);
+    
+    // 规范化内容（不包含行首和行尾空格）
+    let normalized = contentWithoutSpaces;
 
-  // 0. 先标记小数点，避免被后续处理影响
-  // 使用临时标记保护小数点（数字.数字 的模式）
-  const decimalMarker = '\uE001'; // 使用私有使用区字符作为临时标记
-  normalized = normalized.replace(/(\d)\.(\d)/g, `$1${decimalMarker}$2`); // 标记小数点
+    // 0. 先标记小数点，避免被后续处理影响
+    // 使用临时标记保护小数点（数字.数字 的模式）
+    const decimalMarker = '\uE001'; // 使用私有使用区字符作为临时标记
+    normalized = normalized.replace(/(\d)\.(\d)/g, `$1${decimalMarker}$2`); // 标记小数点
 
-  // 1. 先处理省略号（在 normalizeTranslationQuotes 之前，避免点号被转换）
-  normalized = normalized.replace(/\.{3,}/g, '…'); // 3个或更多点号转为省略号
+    // 1. 先处理省略号（在 normalizeTranslationQuotes 之前，避免点号被转换）
+    normalized = normalized.replace(/\.{3,}/g, '…'); // 3个或更多点号转为省略号
 
-  // 2. 规范化引号（使用现有的引号规范化逻辑）
-  normalized = normalizeTranslationQuotes(normalized);
+    // 2. 规范化引号（使用现有的引号规范化逻辑）
+    normalized = normalizeTranslationQuotes(normalized);
 
-  // 3. 处理 normalizeTranslationQuotes 转换后的省略号情况（全角句号）
-  normalized = normalized.replace(/。{3,}/g, '…'); // 多个全角句号转为省略号
+    // 3. 处理 normalizeTranslationQuotes 转换后的省略号情况（全角句号）
+    normalized = normalized.replace(/。{3,}/g, '…'); // 多个全角句号转为省略号
 
-  // 4. 修复不匹配的引号对（在 normalizeTranslationQuotes 之后，确保引号格式正确）
-  normalized = fixMismatchedQuotes(normalized);
+    // 4. 修复不匹配的引号对（在 normalizeTranslationQuotes 之后，确保引号格式正确）
+    normalized = fixMismatchedQuotes(normalized);
 
-  // 4. 恢复小数点标记
-  normalized = normalized.replace(new RegExp(decimalMarker, 'g'), '.');
+    // 4. 恢复小数点标记
+    normalized = normalized.replace(new RegExp(decimalMarker, 'g'), '.');
 
-  // 5. 规范化空格：将多个连续空格合并为单个全角空格
-  // 只处理多个连续空格，保留单个空格（因为 normalizeTranslationQuotes 已经处理了标点）
-  normalized = normalized.replace(/[\u0020\u00A0\u3000]{2,}/g, '\u3000'); // 多个连续空格合并为单个全角空格
+    // 5. 规范化空格：将多个连续空格合并为单个全角空格
+    // 只处理多个连续空格，保留单个空格（因为 normalizeTranslationQuotes 已经处理了标点）
+    normalized = normalized.replace(/[\u0020\u00A0\u3000]{2,}/g, '\u3000'); // 多个连续空格合并为单个全角空格
 
-  // 6. 规范化破折号：统一各种破折号格式
-  // 先处理多个连续破折号的情况
-  normalized = normalized.replace(/—{3,}/g, '——'); // 3个或更多破折号转为双破折号
-  normalized = normalized.replace(/–{3,}/g, '——'); // 3个或更多短破折号转为双破折号
-  // 将单个英文破折号（—、–）转换为中文破折号（——）
-  // 使用临时标记避免重复处理
-  const tempMarker = '\uE000'; // 使用私有使用区字符作为临时标记
-  normalized = normalized.replace(/——/g, tempMarker); // 临时标记双破折号
-  normalized = normalized.replace(/—/g, '——'); // 单个 — 转为 ——
-  normalized = normalized.replace(/–/g, '——'); // 单个 – 转为 ——
-  normalized = normalized.replace(new RegExp(tempMarker, 'g'), '——'); // 恢复双破折号
-  // 注意：单个 - 已经在 normalizeTranslationQuotes 中处理为全角 －
+    // 6. 规范化破折号：统一各种破折号格式
+    // 先处理多个连续破折号的情况
+    normalized = normalized.replace(/—{3,}/g, '——'); // 3个或更多破折号转为双破折号
+    normalized = normalized.replace(/–{3,}/g, '——'); // 3个或更多短破折号转为双破折号
+    // 将单个英文破折号（—、–）转换为中文破折号（——）
+    // 使用临时标记避免重复处理
+    const tempMarker = '\uE000'; // 使用私有使用区字符作为临时标记
+    normalized = normalized.replace(/——/g, tempMarker); // 临时标记双破折号
+    normalized = normalized.replace(/—/g, '——'); // 单个 — 转为 ——
+    normalized = normalized.replace(/–/g, '——'); // 单个 – 转为 ——
+    normalized = normalized.replace(new RegExp(tempMarker, 'g'), '——'); // 恢复双破折号
+    // 注意：单个 - 已经在 normalizeTranslationQuotes 中处理为全角 －
 
-  // 7. 规范化书名号：确保使用正确的书名号
-  // 处理已经是全角 < > 的情况（normalizeTranslationQuotes 会转换）
-  normalized = normalized.replace(/([^＜\s])＜([^＜＞]{1,50})＞([^＞\s])/g, '$1《$2》$3');
-  normalized = normalized.replace(/^＜([^＜＞]{1,50})＞([^＞\s])/g, '《$1》$2'); // 行首
-  normalized = normalized.replace(/([^＜\s])＜([^＜＞]{1,50})＞$/g, '$1《$2》'); // 行尾
-  // 处理半角 < > 的情况（如果 normalizeTranslationQuotes 没有处理）
-  normalized = normalized.replace(/([^<\s])<([^<>]{1,50})>([^>\s])/g, '$1《$2》$3');
-  normalized = normalized.replace(/^<([^<>]{1,50})>([^>\s])/g, '《$1》$2'); // 行首
-  normalized = normalized.replace(/([^<\s])<([^<>]{1,50})>$/g, '$1《$2》'); // 行尾
+    // 7. 规范化书名号：确保使用正确的书名号
+    // 处理已经是全角 < > 的情况（normalizeTranslationQuotes 会转换）
+    normalized = normalized.replace(/([^＜\s])＜([^＜＞]{1,50})＞([^＞\s])/g, '$1《$2》$3');
+    normalized = normalized.replace(/^＜([^＜＞]{1,50})＞([^＞\s])/g, '《$1》$2'); // 行首
+    normalized = normalized.replace(/([^＜\s])＜([^＜＞]{1,50})＞$/g, '$1《$2》'); // 行尾
+    // 处理半角 < > 的情况（如果 normalizeTranslationQuotes 没有处理）
+    normalized = normalized.replace(/([^<\s])<([^<>]{1,50})>([^>\s])/g, '$1《$2》$3');
+    normalized = normalized.replace(/^<([^<>]{1,50})>([^>\s])/g, '《$1》$2'); // 行首
+    normalized = normalized.replace(/([^<\s])<([^<>]{1,50})>$/g, '$1《$2》'); // 行尾
 
-  // 8. 规范化间隔号：保持中文间隔号（不转换，因为中文翻译中常用中文间隔号）
-  // 如果需要日文间隔号，可以取消注释下面这行
-  // normalized = normalized.replace(/·/g, '・');
+    // 8. 规范化间隔号：保持中文间隔号（不转换，因为中文翻译中常用中文间隔号）
+    // 如果需要日文间隔号，可以取消注释下面这行
+    // normalized = normalized.replace(/·/g, '・');
 
-  // 9. 规范化数字和标点的组合：确保数字后的句号是全角
-  // 只在数字后直接跟句号且后面是空格、换行或结尾时转换（避免影响小数点）
-  // 小数点后面应该跟数字，所以检查后面不是数字的情况
-  normalized = normalized.replace(/(\d)\.(?![0-9])([\s\n\u3000]|$)/g, '$1。$2'); // 数字后的句号转为全角
+    // 9. 规范化数字和标点的组合：确保数字后的句号是全角
+    // 只在数字后直接跟句号且后面是空格、换行或结尾时转换（避免影响小数点）
+    // 小数点后面应该跟数字，所以检查后面不是数字的情况
+    normalized = normalized.replace(/(\d)\.(?![0-9])([\s\n\u3000]|$)/g, '$1。$2'); // 数字后的句号转为全角
 
-  // 10. 规范化括号内的多余空格：移除括号紧邻的多余空格
-  normalized = normalized.replace(/（\s+/g, '（');
-  normalized = normalized.replace(/\s+）/g, '）');
-  normalized = normalized.replace(/【\s+/g, '【');
-  normalized = normalized.replace(/\s+】/g, '】');
+    // 10. 规范化括号内的多余空格：移除括号紧邻的多余空格
+    normalized = normalized.replace(/（\s+/g, '（');
+    normalized = normalized.replace(/\s+）/g, '）');
+    normalized = normalized.replace(/【\s+/g, '【');
+    normalized = normalized.replace(/\s+】/g, '】');
 
-  // 11. 规范化引号内的多余空格：移除引号紧邻的多余空格
-  normalized = normalized.replace(/「\s+/g, '「');
-  normalized = normalized.replace(/\s+」/g, '」');
-  normalized = normalized.replace(/『\s+/g, '『');
-  normalized = normalized.replace(/\s+』/g, '』');
+    // 11. 规范化引号内的多余空格：移除引号紧邻的多余空格
+    normalized = normalized.replace(/「\s+/g, '「');
+    normalized = normalized.replace(/\s+」/g, '」');
+    normalized = normalized.replace(/『\s+/g, '『');
+    normalized = normalized.replace(/\s+』/g, '』');
 
-  // 12. 规范化行尾标点：移除行尾多余空格（包括换行符前的空格）
-  normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+$/gm, '$1'); // 行尾标点后的空格（不包括换行符）
-  normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+(\r?\n)/g, '$1$2'); // 行尾标点后的空格和换行
+    // 12. 规范化行尾标点：移除行尾多余空格（包括换行符前的空格）
+    // 注意：只移除标点后的空格，不 trim 整个字符串
+    normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+$/gm, '$1'); // 行尾标点后的空格（不包括换行符）
+    normalized = normalized.replace(/([，。！？：；])[\u0020\u00A0\u3000]+(\r?\n)/g, '$1$2'); // 行尾标点后的空格和换行
 
-  return normalized;
+    // 恢复行首和行尾空格
+    return leadingSpaces + normalized + trailingSpaces;
+  });
+
+  return processedLines.join('\n');
 }

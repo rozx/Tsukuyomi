@@ -6,7 +6,7 @@ import Badge from 'primevue/badge';
 import ProgressSpinner from 'primevue/progressspinner';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
-import { getChapterDisplayTitle, getChapterCharCount, formatWordCount } from 'src/utils';
+import { getChapterDisplayTitle, getChapterCharCount, formatWordCount, formatTranslationForDisplay } from 'src/utils';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const props = defineProps<{
@@ -58,7 +58,7 @@ const selectedChapterStats = computed(() => {
   };
 });
 
-// 获取段落的选中翻译文本
+// 获取段落的选中翻译文本（应用显示层格式化）
 const getParagraphTranslationText = (paragraph: Paragraph): string => {
   if (!paragraph.selectedTranslationId || !paragraph.translations) {
     return '';
@@ -66,7 +66,13 @@ const getParagraphTranslationText = (paragraph: Paragraph): string => {
   const selectedTranslation = paragraph.translations.find(
     (t) => t.id === paragraph.selectedTranslationId,
   );
-  return selectedTranslation?.translation || '';
+  const translation = selectedTranslation?.translation || '';
+  // 应用显示层格式化（缩进过滤/符号规范化等）
+  return formatTranslationForDisplay(
+    translation,
+    props.book || undefined,
+    props.selectedChapterWithContent || undefined,
+  );
 };
 
 const handleOriginalTextInput = (event: Event) => {

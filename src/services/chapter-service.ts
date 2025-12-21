@@ -1,6 +1,7 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import { getChapterContentText, getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
 
 /**
@@ -2158,12 +2159,14 @@ export class ChapterService {
    * @param chapter 章节对象
    * @param type 导出类型：'original' 原文、'translation' 翻译、'bilingual' 双语
    * @param format 导出格式：'txt' 文本文件、'json' JSON 文件、'clipboard' 剪贴板
+   * @param book 书籍对象（可选，用于应用缩进过滤设置）
    * @returns Promise，当 format 为 'clipboard' 时返回 Promise，否则返回 void
    */
   static async exportChapter(
     chapter: Chapter,
     type: 'original' | 'translation' | 'bilingual',
     format: 'txt' | 'json' | 'clipboard',
+    book?: Novel,
   ): Promise<void> {
     if (!chapter) {
       throw new Error('章节内容为空，无法导出');
@@ -2199,10 +2202,15 @@ export class ChapterService {
 
     // 构建导出内容
     if (format === 'json') {
-      const data = chapterWithContent.content.map((p) => ({
-        original: p.text,
-        translation: getParagraphTranslationText(p),
-      }));
+      const data = chapterWithContent.content.map((p) => {
+        const translation = getParagraphTranslationText(p);
+        // 应用显示/导出层格式化（不写回译文）
+        const formattedTranslation = formatTranslationForDisplay(translation, book, chapterWithContent);
+        return {
+          original: p.text,
+          translation: formattedTranslation,
+        };
+      });
       content = JSON.stringify(
         {
           title: chapterTitle,
@@ -2214,7 +2222,10 @@ export class ChapterService {
     } else {
       const lines = chapterWithContent.content.map((p) => {
         const original = p.text;
-        const translation = getParagraphTranslationText(p);
+        let translation = getParagraphTranslationText(p);
+        
+        // 应用显示/导出层格式化（不写回译文）
+        translation = formatTranslationForDisplay(translation, book, chapterWithContent);
 
         // 规范化换行符：确保翻译文本的换行符数量与原文一致
         // 如果原文没有换行符，翻译也不应有

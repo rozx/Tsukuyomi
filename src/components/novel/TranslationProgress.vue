@@ -391,11 +391,11 @@ const toggleAutoScroll = (taskId: string) => {
       let container: HTMLElement | null = null;
       
       if (activeTab === 'thinking') {
-        container = thinkingContainers.value[taskId];
+        container = thinkingContainers.value[taskId] ?? null;
       } else if (activeTab === 'output') {
-        container = outputContainers.value[taskId];
+        container = outputContainers.value[taskId] ?? null;
       } else if (activeTab === 'todos') {
-        container = todosContainers.value[taskId];
+        container = todosContainers.value[taskId] ?? null;
       }
       
       if (container) {
@@ -415,7 +415,7 @@ const toggleAutoTabSwitching = (taskId: string) => {
     if (!activeTab.value[taskId]) {
       // 如果没有保存的选择，临时启用自动切换来获取当前应该显示的标签页
       // 先保存当前状态，避免 getActiveTab 清除 activeTab
-      const savedLastState = lastActiveState.value[taskId];
+      const savedLastState = lastActiveState.value[taskId] ?? 'none';
       autoTabSwitchingEnabled.value[taskId] = true;
       const currentTab = getActiveTab(taskId);
       autoTabSwitchingEnabled.value[taskId] = false;
