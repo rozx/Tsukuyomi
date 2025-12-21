@@ -610,7 +610,9 @@ watch(
   { immediate: true },
 );
 
-// 监听书籍变化，如果当前章节已打开，重新加载章节内容（用于同步后更新）
+// 监听书籍变化，如果当前章节被删除，清空选中状态
+// 注意：不再自动同步标题等元数据，因为这会覆盖本地更新
+// 标题和内容的更新应该通过直接赋值或回调处理
 watch(
   book,
   async (newBook, oldBook) => {
@@ -619,35 +621,23 @@ watch(
       return;
     }
 
-    // 如果当前有打开的章节，重新加载章节内容
-    if (selectedChapterId.value && selectedChapter.value) {
+    // 如果当前有打开的章节，检查章节是否仍然存在
+    if (selectedChapterId.value && selectedChapterWithContent.value) {
       // 检查章节是否仍然存在于新书籍中
       const chapterStillExists = newBook.volumes?.some((volume) =>
         volume.chapters?.some((ch) => ch.id === selectedChapterId.value),
       );
 
-      if (chapterStillExists) {
-        // 重新加载章节内容（从 IndexedDB 加载最新数据）
-        isLoadingChapterContent.value = true;
-        try {
-          const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
-          selectedChapterWithContent.value = chapterWithContent;
-        } catch (error) {
-          console.error('Failed to reload chapter content after book update:', error);
-          // 如果加载失败，至少尝试从书籍对象中获取章节
-          if (selectedChapter.value.content !== undefined) {
-            selectedChapterWithContent.value = selectedChapter.value;
-          }
-        } finally {
-          isLoadingChapterContent.value = false;
-        }
-      } else {
+      if (!chapterStillExists) {
         // 章节不存在了，清空选中状态
         selectedChapterWithContent.value = null;
         if (bookId.value) {
           void bookDetailsStore.setSelectedChapter(bookId.value, null);
         }
       }
+      // 注意：如果章节仍存在，不做任何更新
+      // 标题和内容的更新应该通过 updateTitleTranslation 和 updateParagraphs* 函数处理
+      // 这样可以避免 watcher 覆盖刚刚更新的数据
     }
   },
   { deep: true },

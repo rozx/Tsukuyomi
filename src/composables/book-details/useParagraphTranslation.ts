@@ -24,11 +24,13 @@ export function useParagraphTranslation(
       .flatMap((v) => v.chapters || [])
       .find((c) => c.id === selectedChapterWithContent.value?.id);
 
-    if (updatedChapter && updatedChapter.content) {
+    if (updatedChapter && updatedChapter.content !== undefined) {
+      // 更新 selectedChapterWithContent，保留现有的 content（如果 updatedChapter 没有 content）
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
         ...updatedChapter,
-        content: updatedChapter.content,
+        // 如果 updatedChapter 有 content，使用它；否则保留现有的 content
+        content: updatedChapter.content ?? selectedChapterWithContent.value.content,
       };
     }
   };
@@ -77,7 +79,9 @@ export function useParagraphTranslation(
 
     // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
     // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
+    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
+      title: chapter.title,
       content: updatedContent,
       lastEdited: new Date(),
     });
@@ -134,7 +138,9 @@ export function useParagraphTranslation(
 
     // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
     // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
+    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
     const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, {
+      title: chapter.title,
       content: updatedContent,
       lastEdited: new Date(),
     });

@@ -14,13 +14,25 @@ export function getSymbolFormatRules(): string {
 
 /**
  * 获取当前状态信息（用于告知AI当前处于哪个阶段）
+ * @param taskType 任务类型
+ * @param status 当前状态
+ * @param isBriefPlanning 是否为简短规划阶段（用于后续 chunk，已继承前一个 chunk 的规划上下文）
  */
-export function getCurrentStatusInfo(taskType: TaskType, status: TaskStatus): string {
+export function getCurrentStatusInfo(taskType: TaskType, status: TaskStatus, isBriefPlanning?: boolean): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
 
+  // 简短规划阶段的描述（用于后续 chunk）
+  const briefPlanningDescription = `**当前状态：简短规划阶段 (planning)**
+你当前处于简短规划阶段（后续块），已继承前一部分的规划上下文。
+- ✅ 术语表和角色表信息已在上下文中提供
+- 如需补充或验证信息，可以调用工具
+- 通常无需重复获取已有的术语/角色信息
+
+**准备好后，将状态设置为 "working" 开始${taskLabel}。**`;
+
   const statusDescriptions: Record<TaskStatus, string> = {
-    planning: `**当前状态：规划阶段 (planning)**
+    planning: isBriefPlanning ? briefPlanningDescription : `**当前状态：规划阶段 (planning)**
 你当前处于规划阶段，应该：
 - 获取术语表和角色表（使用 \`list_terms\` 和 \`list_characters\`，传入 chapter_id）
 - 检查数据问题（如空翻译、重复项、误分类等），发现问题立即修复

@@ -55,6 +55,9 @@ export function useChapterTranslation(
   ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value) return;
 
+    // 获取当前标题（可能已被 updateTitleTranslation 更新）
+    const currentTitle = selectedChapterWithContent.value.title;
+
     const updatedVolumes = book.value.volumes?.map((volume) => {
       if (!volume.chapters) return volume;
 
@@ -88,6 +91,8 @@ export function useChapterTranslation(
 
         return {
           ...chapter,
+          // 使用 selectedChapterWithContent 中的最新标题
+          title: currentTitle,
           content: updatedContent,
           lastEdited: new Date(),
         };
@@ -107,11 +112,12 @@ export function useChapterTranslation(
       : undefined;
 
     // 立即更新 UI（在任何 async 操作之前）
+    // 注意：只更新 content 和 lastEdited，保留现有的 title（可能已被 updateTitleTranslation 更新）
     if (updatedChapter && updatedChapter.content) {
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
-        ...updatedChapter,
         content: updatedChapter.content,
+        lastEdited: updatedChapter.lastEdited,
       };
     }
 
@@ -141,6 +147,9 @@ export function useChapterTranslation(
     updateSelected: boolean = true,
   ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value || paragraphUpdates.size === 0) return;
+
+    // 获取当前标题（可能已被 updateTitleTranslation 更新）
+    const currentTitle = selectedChapterWithContent.value.title;
 
     const updatedVolumes = book.value.volumes?.map((volume) => {
       if (!volume.chapters) return volume;
@@ -174,6 +183,8 @@ export function useChapterTranslation(
 
         return {
           ...chapter,
+          // 使用 selectedChapterWithContent 中的最新标题
+          title: currentTitle,
           content: updatedContent,
           lastEdited: new Date(),
         };
@@ -195,10 +206,11 @@ export function useChapterTranslation(
     // 立即更新 UI（在任何 async 操作之前）
     if (updateSelected && updatedChapter && updatedChapter.content) {
       // 确保创建全新的对象引用以触发 Vue 响应式更新
+      // 注意：只更新 content 和 lastEdited，保留现有的 title（可能已被 updateTitleTranslation 更新）
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
-        ...updatedChapter,
         content: [...updatedChapter.content], // 创建新的数组引用
+        lastEdited: updatedChapter.lastEdited,
       };
     }
 
@@ -233,7 +245,9 @@ export function useChapterTranslation(
     translation: string,
     aiModelId: string,
   ): Promise<void> => {
-    if (!book.value || !selectedChapterWithContent.value) return;
+    if (!book.value || !selectedChapterWithContent.value) {
+      return;
+    }
 
     const newTitleTranslation = {
       id: generateShortId(),
@@ -281,9 +295,15 @@ export function useChapterTranslation(
           volumes: updatedVolumes,
           lastEdited: new Date(),
         });
+        // 注意：不再调用 updateSelectedChapterWithContent
+        // 因为直接更新 selectedChapterWithContent.value（上面第 253-260 行）已经更新了 UI
+        // 调用 updateSelectedChapterWithContent 可能会覆盖数据
+        console.log('[useChapterTranslation] ✅ 标题翻译已保存');
       } catch (error) {
-        console.error('[useChapterTranslation] 更新标题翻译失败:', error);
+        console.error('[useChapterTranslation] ❌ 更新标题翻译失败:', error);
       }
+    } else {
+      console.warn('[useChapterTranslation] ⚠️ 无法保存标题翻译：缺少 bookId 或 updatedVolumes');
     }
   };
 

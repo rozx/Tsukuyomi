@@ -30,6 +30,8 @@ import {
   handleTaskError,
   completeTask,
   buildIndependentChunkPrompt,
+  buildChapterContextSection,
+  buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -222,11 +224,12 @@ export class TranslationService {
 
       // 1. 系统提示词（使用共享提示词模块）- 每个 chunk 都会使用这个系统提示
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
-      const specialInstructionsSection = specialInstructions
-        ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
-        : '';
+      const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      const systemPrompt = `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+      const systemPrompt = `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】
 1. **1:1对应**: 一个原文段落=一个翻译段落，禁止合并/拆分
@@ -259,6 +262,9 @@ ${getExecutionWorkflowRules('translation')}`;
 
       let translatedText = '';
       const paragraphTranslations: { id: string; translation: string }[] = [];
+
+      // 用于在 chunk 之间共享规划上下文
+      let sharedPlanningContext: string | undefined;
 
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
@@ -302,17 +308,16 @@ ${getExecutionWorkflowRules('translation')}`;
 
         // 为每个 chunk 创建独立的 history，避免上下文共享
         // 每个 chunk 只包含 system prompt 和当前 chunk 的内容
-        const chunkHistory: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
-        ];
+        const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('translation');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
-        
-        // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
+
+        // 使用独立的 chunk 提示，每个 chunk 独立
+        // 后续 chunk 会包含从第一个 chunk 继承的规划上下文
         const content = buildIndependentChunkPrompt(
           'translation',
           i,
@@ -322,6 +327,7 @@ ${getExecutionWorkflowRules('translation')}`;
           maintenanceReminder,
           chapterId,
           i === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
+          i > 0 ? sharedPlanningContext : undefined, // 后续 chunk 传递规划上下文
         );
 
         // 重试循环
@@ -333,10 +339,16 @@ ${getExecutionWorkflowRules('translation')}`;
             // 如果是重试，移除上次失败的消息
             if (retryCount > 0) {
               // 移除上次的用户消息和助手回复（如果有）
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'user') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'user'
+              ) {
                 chunkHistory.pop();
               }
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'assistant') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'assistant'
+              ) {
                 chunkHistory.pop();
               }
 
@@ -355,6 +367,7 @@ ${getExecutionWorkflowRules('translation')}`;
             chunkHistory.push({ role: 'user', content });
 
             // 使用共享的工具调用循环（基于状态的流程）
+            // 后续 chunk 使用简短规划模式（已有规划上下文）
             const loopResult = await executeToolCallLoop({
               history: chunkHistory,
               tools,
@@ -369,6 +382,8 @@ ${getExecutionWorkflowRules('translation')}`;
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
+              // 后续 chunk 使用简短规划模式（已有规划上下文）
+              isBriefPlanning: i > 0 && !!sharedPlanningContext,
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
               onParagraphsExtracted: onParagraphTranslation
                 ? async (paragraphs) => {
@@ -404,6 +419,14 @@ ${getExecutionWorkflowRules('translation')}`;
             // 检查状态
             if (loopResult.status !== 'end') {
               throw new Error(`翻译任务未完成（状态: ${loopResult.status}）。请重试。`);
+            }
+
+            // 从第一个 chunk 提取规划摘要，用于后续 chunk 的上下文共享
+            if (i === 0 && loopResult.planningSummary && !sharedPlanningContext) {
+              sharedPlanningContext = loopResult.planningSummary;
+              console.log(
+                `[TranslationService] ✅ 已提取规划上下文（${sharedPlanningContext.length} 字符），将用于后续 ${chunks.length - 1} 个 chunk`,
+              );
             }
 
             // 注意：标题翻译和段落翻译的回调已经在 executeToolCallLoop 中立即调用

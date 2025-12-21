@@ -23,6 +23,8 @@ import {
   handleTaskError,
   completeTask,
   buildIndependentChunkPrompt,
+  buildChapterContextSection,
+  buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -193,11 +195,12 @@ export class PolishService {
 
       // 1. 系统提示词（使用共享提示词模块）- 每个 chunk 都会使用这个系统提示
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
-      const specialInstructionsSection = specialInstructions
-        ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
-        : '';
+      const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId);
+
+      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】⚠️ 只返回有变化的段落
 1. **语言自然化**: 摆脱翻译腔，使用地道中文表达，适当添加语气词（按角色风格）

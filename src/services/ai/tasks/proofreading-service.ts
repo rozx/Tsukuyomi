@@ -23,6 +23,8 @@ import {
   handleTaskError,
   completeTask,
   buildIndependentChunkPrompt,
+  buildChapterContextSection,
+  buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -192,11 +194,12 @@ export class ProofreadingService {
 
       // 1. 系统提示词（使用共享提示词模块）- 每个 chunk 都会使用这个系统提示
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
-      const specialInstructionsSection = specialInstructions
-        ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
-        : '';
+      const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId);
+
+      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
 
 【校对检查项】⚠️ 只返回有变化的段落
 1. **文字**: 错别字、标点（全角）、语法、词语用法
