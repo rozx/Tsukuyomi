@@ -610,44 +610,97 @@ watch(
   { immediate: true },
 );
 
-// 监听书籍变化，如果当前章节已打开，重新加载章节内容（用于同步后更新）
+// 监听书籍变化，处理章节删除和元数据同步
+// 策略：
+// 1. 如果章节被删除，清空选中状态
+// 2. 如果章节存在且有元数据更新（如标题、webUrl等），根据情况决定是否同步更新：
+//    - 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
+//    - 如果用户未在编辑，或者更新来自外部操作（如同步、在线获取更新），则更新元数据
+// 3. 内容（content）的更新由专门的函数处理，不在此处更新
 watch(
   book,
-  async (newBook, oldBook) => {
+  (newBook, oldBook) => {
     // 只在书籍实际变化时触发（不是初始加载）
     if (!oldBook || !newBook) {
       return;
     }
 
-    // 如果当前有打开的章节，重新加载章节内容
-    if (selectedChapterId.value && selectedChapter.value) {
-      // 检查章节是否仍然存在于新书籍中
-      const chapterStillExists = newBook.volumes?.some((volume) =>
-        volume.chapters?.some((ch) => ch.id === selectedChapterId.value),
-      );
-
-      if (chapterStillExists) {
-        // 重新加载章节内容（从 IndexedDB 加载最新数据）
-        isLoadingChapterContent.value = true;
-        try {
-          const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
-          selectedChapterWithContent.value = chapterWithContent;
-        } catch (error) {
-          console.error('Failed to reload chapter content after book update:', error);
-          // 如果加载失败，至少尝试从书籍对象中获取章节
-          if (selectedChapter.value.content !== undefined) {
-            selectedChapterWithContent.value = selectedChapter.value;
+    // 如果当前有打开的章节
+    if (selectedChapterId.value && selectedChapterWithContent.value) {
+      // 查找新书籍中的对应章节
+      let updatedChapter: Chapter | undefined;
+      for (const volume of newBook.volumes || []) {
+        if (volume.chapters) {
+          const chapter = volume.chapters.find((ch) => ch.id === selectedChapterId.value);
+          if (chapter) {
+            updatedChapter = chapter;
+            break;
           }
-        } finally {
-          isLoadingChapterContent.value = false;
         }
-      } else {
+      }
+
+      if (!updatedChapter) {
         // 章节不存在了，清空选中状态
         selectedChapterWithContent.value = null;
         if (bookId.value) {
           void bookDetailsStore.setSelectedChapter(bookId.value, null);
         }
+        return;
       }
+
+      // 章节存在，检查是否有元数据更新
+      const currentChapter = selectedChapterWithContent.value;
+
+      // 检查元数据是否有变化（不包括 content，因为 content 有独立的更新机制）
+      const hasMetadataChanged =
+        JSON.stringify(currentChapter.title) !== JSON.stringify(updatedChapter.title) ||
+        currentChapter.webUrl !== updatedChapter.webUrl ||
+        currentChapter.lastEdited.getTime() !== updatedChapter.lastEdited.getTime() ||
+        currentChapter.createdAt.getTime() !== updatedChapter.createdAt.getTime() ||
+        currentChapter.originalContent !== updatedChapter.originalContent ||
+        currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
+        currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
+        currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
+        currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
+
+      if (!hasMetadataChanged) {
+        // 元数据没有变化，不需要更新
+        return;
+      }
+
+      // 判断是否应该更新元数据
+      // 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
+      const isUserEditing =
+        currentlyEditingParagraphId.value !== null || isEditingOriginalText.value;
+
+      // 判断更新是否来自外部操作（如同步、在线获取更新）
+      // 通过检查元数据变化类型来判断：
+      // 1. webUrl、originalContent 的变化通常来自外部操作（在线获取更新）
+      // 2. lastEdited 时间显著更新（超过当前时间或与当前时间接近）可能是外部操作
+      const hasExternalMetadataChange =
+        currentChapter.webUrl !== updatedChapter.webUrl ||
+        currentChapter.originalContent !== updatedChapter.originalContent ||
+        (updatedChapter.lastEdited.getTime() > currentChapter.lastEdited.getTime() &&
+          Math.abs(updatedChapter.lastEdited.getTime() - Date.now()) < 10000); // 10秒内的更新可能是外部操作
+
+      // 更新元数据的条件：
+      // 1. 用户未在编辑，或者
+      // 2. 更新来自外部操作（如同步、在线获取更新），此时即使正在编辑也允许更新元数据
+      const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
+
+      if (shouldUpdateMetadata) {
+        // 更新元数据，但保留现有的 content（如果已加载）
+        selectedChapterWithContent.value = {
+          ...currentChapter,
+          ...updatedChapter,
+          // 保留现有的 content，因为 content 的更新由专门的函数处理
+          content: currentChapter.content ?? updatedChapter.content,
+          // 保留 contentLoaded 状态，因为如果当前已加载，应该保持已加载状态
+          contentLoaded: currentChapter.contentLoaded ?? updatedChapter.contentLoaded,
+        };
+      }
+      // 注意：如果用户正在编辑且不是外部更新，不更新元数据，避免覆盖本地编辑
+      // 内容（content）的更新由 updateTitleTranslation 和 updateParagraphs* 函数处理
     }
   },
   { deep: true },
@@ -928,10 +981,7 @@ const usedCharacters = computed(() => {
   const text = getChapterContentText(selectedChapterWithContent.value);
   if (!text) return [];
 
-  return findUniqueCharactersInText(
-    text,
-    book.value.characterSettings,
-  );
+  return findUniqueCharactersInText(text, book.value.characterSettings);
 });
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
@@ -1033,7 +1083,6 @@ const handleSaveChapterSettings = async (data: {
     });
   }
 };
-
 
 // 打开创建角色对话框
 const openCreateCharacterDialog = () => {

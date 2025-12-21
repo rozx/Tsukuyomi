@@ -9,6 +9,7 @@ import Dialog from 'primevue/dialog';
 import ProgressSpinner from 'primevue/progressspinner';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TermTranslationService } from 'src/services/ai';
 
@@ -46,6 +47,7 @@ const inputId = computed<string | undefined>(() => props.id);
 
 const aiModelsStore = useAIModelsStore();
 const aiProcessingStore = useAIProcessingStore();
+const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
 // 翻译状态
@@ -110,8 +112,11 @@ const handleTranslate = async () => {
   }
 
   try {
-    // 使用翻译服务进行翻译，服务会自动管理任务
-    const result = await TermTranslationService.translate(originalText, selectedModel, {
+    // 获取当前上下文
+    const context = contextStore.getContext;
+
+    // 构建选项对象，只在有值时才传递 bookId 和 chapterId
+    const options: Parameters<typeof TermTranslationService.translate>[2] = {
       taskType: 'termsTranslation',
       aiProcessingStore: {
         addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -121,7 +126,18 @@ const handleTranslate = async () => {
         removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
         activeTasks: aiProcessingStore.activeTasks,
       },
-    });
+    };
+
+    // 只在有值时才添加 bookId 和 chapterId
+    if (context.currentBookId) {
+      options.bookId = context.currentBookId;
+    }
+    if (context.currentChapterId) {
+      options.chapterId = context.currentChapterId;
+    }
+
+    // 使用翻译服务进行翻译，服务会自动管理任务
+    const result = await TermTranslationService.translate(originalText, selectedModel, options);
 
     // 保存任务 ID 以便跟踪
     if (result.taskId) {

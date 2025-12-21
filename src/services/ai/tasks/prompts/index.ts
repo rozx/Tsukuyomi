@@ -14,13 +14,31 @@ export function getSymbolFormatRules(): string {
 
 /**
  * 获取当前状态信息（用于告知AI当前处于哪个阶段）
+ * @param taskType 任务类型
+ * @param status 当前状态
+ * @param isBriefPlanning 是否为简短规划阶段（用于后续 chunk，已继承前一个 chunk 的规划上下文）
  */
-export function getCurrentStatusInfo(taskType: TaskType, status: TaskStatus): string {
+export function getCurrentStatusInfo(
+  taskType: TaskType,
+  status: TaskStatus,
+  isBriefPlanning?: boolean,
+): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
 
+  // 简短规划阶段的描述（用于后续 chunk）
+  const briefPlanningDescription = `**当前状态：简短规划阶段 (planning)**
+你当前处于简短规划阶段（后续块），已继承前一部分的规划上下文。
+- ✅ 术语表和角色表信息已在上下文中提供
+- 如需补充或验证信息，可以调用工具
+- 通常无需重复获取已有的术语/角色信息
+
+**准备好后，将状态设置为 "working" 开始${taskLabel}。**`;
+
   const statusDescriptions: Record<TaskStatus, string> = {
-    planning: `**当前状态：规划阶段 (planning)**
+    planning: isBriefPlanning
+      ? briefPlanningDescription
+      : `**当前状态：规划阶段 (planning)**
 你当前处于规划阶段，应该：
 - 获取术语表和角色表（使用 \`list_terms\` 和 \`list_characters\`，传入 chapter_id）
 - 检查数据问题（如空翻译、重复项、误分类等），发现问题立即修复
@@ -68,13 +86,14 @@ export function getDataManagementRules(): string {
 - 术语表：专有名词、概念、技能、地名、物品（❌禁止放人名）
 - 角色表：人物全名为主名称，姓/名单独部分为别名（❌禁止放术语）
 - 发现空翻译→立即更新 | 发现重复→删除并合并 | 发现误分类→删除后重建
+- ⚠️ **术语翻译规则**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）
 
-**角色管理**: 新角色先检查是否为已有角色别名，描述需包含性别/关系/特征
+**角色管理**: 新角色先检查是否为已有角色别名，描述需简短且只包含重要信息（如性别/关系/关键特征）
 
 ⚠️ **保持数据最新**（必须执行）:
 - 翻译过程中发现术语/角色**新信息**（如：新别名、关系变化、能力揭示、性格细节）→ **立即更新** \`update_term\`/\`update_character\`
-- 发现描述**过时或不完整** → **立即补充**最新信息到description/speaking_style
-- 发现翻译**不一致或有误** → **立即修正**翻译
+- 发现描述**过时或不完整** → **立即补充**最新重要信息到description/speaking_style（⚠️ 描述应简短，只包含重要信息）
+- 发现翻译**不一致或有误**或**包含多个选项**（如"路人角色／龙套"）→ **立即修正**为单一翻译
 - 新出现的术语/角色 → 先检查是否已存在，不存在则**立即创建**`;
 }
 

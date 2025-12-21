@@ -117,9 +117,9 @@ const handleOriginalTextInput = (event: Event) => {
     <!-- 翻译预览模式 -->
     <div v-else-if="editMode === 'preview'" class="translation-preview-container">
       <!-- 章节标题 -->
-      <div v-if="selectedChapter" class="preview-chapter-header">
+      <div v-if="selectedChapterWithContent || selectedChapter" class="preview-chapter-header">
         <h1 class="preview-chapter-title">
-          {{ getChapterDisplayTitle(selectedChapter) }}
+          {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter) }}
         </h1>
         <!-- 翻译统计 -->
         <div v-if="selectedChapterParagraphs.length > 0" class="preview-chapter-stats">
@@ -168,7 +168,7 @@ const handleOriginalTextInput = (event: Event) => {
       <div class="chapter-header">
         <div class="flex items-center gap-2">
           <h1 class="chapter-title flex-1">
-            {{ getChapterDisplayTitle(selectedChapter) }}
+            {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter) }}
           </h1>
           <Button
             icon="pi pi-pencil"

@@ -247,6 +247,23 @@ ${chunkingInstructions}`;
 }
 
 /**
+ * 构建章节上下文信息（用于系统提示词）
+ * @param chapterId 章节 ID（可选）
+ * @param chapterTitle 章节标题（可选）
+ * @returns 格式化的章节上下文字符串，如果都没有则返回空字符串
+ */
+export function buildChapterContextSection(chapterId?: string, chapterTitle?: string): string {
+  const parts: string[] = [];
+  if (chapterId) {
+    parts.push(`**当前章节 ID**: \`${chapterId}\``);
+  }
+  if (chapterTitle) {
+    parts.push(`**当前章节标题**: ${chapterTitle}`);
+  }
+  return parts.length > 0 ? `\n\n【当前章节信息】\n${parts.join('\n')}\n` : '';
+}
+
+/**
  * 添加章节上下文到初始提示
  * 注意：工具使用说明已在系统提示词中提供，这里只保留章节ID和简要提醒
  */
@@ -334,6 +351,7 @@ export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): str
  * @param maintenanceReminder 维护提醒
  * @param chapterId 章节 ID（可选）
  * @param chapterTitle 章节标题（可选，仅第一个 chunk）
+ * @param planningContext 从前一个 chunk 继承的规划上下文（可选，用于后续 chunk）
  * @returns 独立的 chunk 提示
  */
 export function buildIndependentChunkPrompt(
@@ -345,6 +363,7 @@ export function buildIndependentChunkPrompt(
   maintenanceReminder: string,
   chapterId?: string,
   chapterTitle?: string,
+  planningContext?: string,
 ): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
@@ -352,17 +371,42 @@ export function buildIndependentChunkPrompt(
   // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
   const contextToolsReminder = `\n\n⚠️ **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
 
-  // 所有 chunk 都独立，不包含之前的上下文
-  // 第一个 chunk 和后续 chunk 使用相同的格式，只是措辞略有不同
+  // 第一个 chunk：完整规划阶段
+  // 注意：章节 ID 已在系统提示词中提供
   if (chunkIndex === 0) {
-    // 第一个 chunk：独立提示，只包含必要的任务信息
-    const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
-    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。
+    // 如果有章节标题，添加明确的翻译指令
+    const titleInstruction =
+      chapterTitle && taskType === 'translation'
+        ? `\n\n**章节标题翻译**：请翻译以下章节标题，并在输出 JSON 中包含 \`titleTranslation\` 字段：
+【章节标题】${chapterTitle}`
+        : '';
 
-以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${titleSection}${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。${titleInstruction}
+
+以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
-    // 后续 chunk：独立提示，不包含之前的上下文
-    return `继续${taskLabel}任务。以下是第 ${chunkIndex + 1}/${totalChunks} 部分内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+    // 后续 chunk：简短规划阶段，包含从前一个 chunk 继承的上下文
+    if (planningContext) {
+      // 有规划上下文：提供简短规划阶段
+      return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。
+
+【从前一部分继承的规划上下文】
+${planningContext}
+
+**⚠️ 重要：简短规划阶段**
+以上是前一部分已获取的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息，不要重复调用工具获取**。
+
+**禁止重复调用的工具**：\`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\`、\`list_chapters\` 等已在上下文中提供的工具。
+
+**允许调用的工具**：\`get_previous_paragraphs\`、\`get_next_paragraphs\`、\`find_paragraph_by_keywords\` 等用于获取当前段落前后文上下文的工具。
+
+**现在请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
+
+以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
+    } else {
+      // 无规划上下文：使用原有的独立提示
+      return `继续${taskLabel}任务。以下是第 ${chunkIndex + 1}/${totalChunks} 部分内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+    }
   }
 }
 
@@ -413,6 +457,11 @@ export interface ToolCallLoopConfig {
    * 标题翻译提取回调：每当从 AI 响应中提取到标题翻译时立即调用
    */
   onTitleExtracted?: ((title: string) => void | Promise<void>) | undefined;
+  /**
+   * 是否为简短规划模式（用于后续 chunk，已继承前一个 chunk 的规划上下文）
+   * 当为 true 时，AI 会收到简化的规划指令，无需重复获取术语/角色信息
+   */
+  isBriefPlanning?: boolean;
 }
 
 /**
@@ -424,6 +473,11 @@ export interface ToolCallLoopResult {
   status: TaskStatus;
   paragraphs: Map<string, string>;
   titleTranslation?: string | undefined;
+  /**
+   * 规划阶段的摘要信息（用于在多个 chunk 之间共享上下文）
+   * 包含 AI 在规划阶段的决策、获取的术语/角色信息等
+   */
+  planningSummary?: string | undefined;
 }
 
 export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<ToolCallLoopResult> {
@@ -445,6 +499,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     verifyCompleteness,
     onParagraphsExtracted,
     onTitleExtracted,
+    isBriefPlanning = false,
   } = config;
 
   let currentTurnCount = 0;
@@ -458,6 +513,11 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   let consecutiveWorkingCount = 0;
   let consecutiveCompletedCount = 0;
   const MAX_CONSECUTIVE_STATUS = 2; // 同一状态最多连续出现 2 次（加速流程）
+
+  // 用于收集规划阶段的信息（在 planning → working 转换时提取摘要）
+  let planningSummary: string | undefined;
+  const planningResponses: string[] = []; // 收集 AI 在规划阶段的响应
+  const planningToolResults: { tool: string; result: string }[] = []; // 收集规划阶段的工具结果
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -525,6 +585,43 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           );
         }
 
+        // 在规划阶段收集工具结果（用于后续 chunk 的上下文共享）
+        if (currentStatus === 'planning') {
+          // 只收集关键工具的结果（术语、角色、记忆等）
+          const keyTools = [
+            'list_terms',
+            'list_characters',
+            'search_memory_by_keywords',
+            'get_chapter_info',
+            'get_book_info',
+            'list_chapters',
+          ];
+          if (keyTools.includes(toolCall.function.name)) {
+            // 如果是简短规划模式且调用了已获取的工具，给出警告
+            if (isBriefPlanning) {
+              console.warn(
+                `[${logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolCall.function.name}，该工具的结果已在规划上下文中提供`,
+              );
+              // 在工具结果后添加警告信息，提醒 AI 这些信息已经在上下文中
+              const warningMessage = `\n\n⚠️ **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
+              history.push({
+                role: 'tool',
+                content: toolResult.content + warningMessage,
+                tool_call_id: toolCall.id,
+                name: toolCall.function.name,
+              });
+              // 跳过正常的工具结果推送，因为已经推送了带警告的版本
+              continue;
+            }
+            planningToolResults.push({
+              tool: toolCall.function.name,
+              result: toolResult.content,
+            });
+          }
+        }
+
+        // 注意：如果已经在上面推送了带警告的工具结果，这里会跳过（通过 continue）
+        // 否则正常推送工具结果
         history.push({
           role: 'tool',
           content: toolResult.content,
@@ -565,7 +662,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       history.push({
         role: 'user',
         content:
-          `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
+          `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
           `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：` +
           `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
@@ -623,17 +720,72 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       }
     }
 
+    // 检测 planning → working 状态转换，提取规划摘要
+    if (previousStatus === 'planning' && newStatus === 'working' && !planningSummary) {
+      // 构建规划摘要
+      const summaryParts: string[] = [];
+
+      // 添加 AI 的规划响应摘要（包括之前的规划响应）
+      if (planningResponses.length > 0) {
+        summaryParts.push('【AI规划决策】');
+        summaryParts.push(planningResponses.join('\n'));
+      }
+
+      // 添加当前转换响应（从 planning 到 working 的响应，这是最终的规划决策）
+      if (responseText && responseText.trim().length > 0) {
+        if (summaryParts.length === 0) {
+          summaryParts.push('【AI规划决策】');
+        }
+        summaryParts.push(responseText);
+      }
+
+      // 添加关键工具结果摘要（精简版）
+      if (planningToolResults.length > 0) {
+        summaryParts.push('\n【已获取的上下文信息】');
+        for (const { tool, result } of planningToolResults) {
+          // 限制每个工具结果的长度，避免过长
+          const truncatedResult =
+            result.length > 500 ? result.slice(0, 500) + '...(已截断)' : result;
+          summaryParts.push(`- ${tool}: ${truncatedResult}`);
+        }
+      }
+
+      if (summaryParts.length > 0) {
+        planningSummary = summaryParts.join('\n');
+        console.log(`[${logLabel}] ✅ 已提取规划摘要（${planningSummary.length} 字符）`);
+      }
+    }
+
     // 更新状态
     currentStatus = newStatus;
 
     // 提取内容
+    // 注意：必须先处理标题翻译，确保标题更新后再处理段落
+    // 这样段落处理时可以读取到最新的标题
     if (parsed.content) {
+      // 1. 先处理标题翻译（必须等待完成）
+      if (parsed.content.titleTranslation) {
+        // 允许标题翻译在同一任务中被更新（以最新为准）
+        if (titleTranslation !== parsed.content.titleTranslation) {
+          titleTranslation = parsed.content.titleTranslation;
+          // 立即调用标题回调，并等待完成
+          if (onTitleExtracted) {
+            try {
+              await Promise.resolve(onTitleExtracted(titleTranslation));
+            } catch (error) {
+              console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+            }
+          }
+        }
+      }
+
+      // 2. 再处理段落翻译（此时标题已更新）
       if (parsed.content.paragraphs) {
         const newParagraphs: { id: string; translation: string }[] = [];
         for (const para of parsed.content.paragraphs) {
           // 只处理有效的段落翻译（有ID且翻译内容不为空）
           if (para.id && para.translation && para.translation.trim().length > 0) {
-            // 允许同一段落在同一任务中被“纠错/改写”
+            // 允许同一段落在同一任务中被"纠错/改写"
             // 策略：当翻译内容发生变化时，以最新输出为准（last-write-wins）
             const prev = accumulatedParagraphs.get(para.id);
             if (prev !== para.translation) {
@@ -643,7 +795,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           }
         }
         if (newParagraphs.length > 0) {
-          // 立即调用回调，不等待循环完成
+          // 立即调用回调，不等待循环完成（但标题已更新）
           if (onParagraphsExtracted) {
             try {
               void Promise.resolve(onParagraphsExtracted(newParagraphs)).catch((error) => {
@@ -651,22 +803,6 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
               });
             } catch (error) {
               console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
-            }
-          }
-        }
-      }
-      if (parsed.content.titleTranslation) {
-        // 同理：允许标题翻译在同一任务中被更新（以最新为准）
-        if (titleTranslation !== parsed.content.titleTranslation) {
-          titleTranslation = parsed.content.titleTranslation;
-          // 立即调用标题回调
-          if (onTitleExtracted) {
-            try {
-              void Promise.resolve(onTitleExtracted(titleTranslation)).catch((error) => {
-                console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-              });
-            } catch (error) {
-              console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
             }
           }
         }
@@ -686,6 +822,11 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       consecutiveWorkingCount = 0; // 重置其他状态计数
       consecutiveCompletedCount = 0; // 重置其他状态计数
 
+      // 收集规划阶段的 AI 响应（用于后续 chunk 的上下文共享）
+      if (responseText && responseText.trim().length > 0) {
+        planningResponses.push(responseText);
+      }
+
       // 检测循环：如果连续处于 planning 状态超过阈值，强制要求开始工作
       if (consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS) {
         console.warn(
@@ -694,7 +835,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
-            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
+            `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
             `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
             `**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。` +
             `不要再返回 planning 状态，直接开始${taskLabel}工作。` +
@@ -702,13 +843,17 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         });
       } else {
         // 正常的 planning 响应 - 使用更明确的指令
+        // 如果是简短规划模式，强烈提醒 AI 已有上下文信息，无需重复获取
+        const planningInstruction = isBriefPlanning
+          ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
+            `**⚠️ 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
+            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。`
+          : `收到。如果你已获取必要信息，` +
+            `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
+            `如果还需要使用工具获取信息，请调用工具后再更新状态。`;
         history.push({
           role: 'user',
-          content:
-            `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `收到。如果你已获取必要信息，` +
-            `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
-            `如果还需要使用工具获取信息，请调用工具后再更新状态。`,
+          content: `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n${planningInstruction}`,
         });
       }
       continue;
@@ -828,6 +973,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     status: currentStatus,
     paragraphs: accumulatedParagraphs,
     titleTranslation,
+    planningSummary,
   };
 }
 
@@ -943,6 +1089,17 @@ export async function initializeTask(
     return { taskId, abortController };
   }
   return { taskId };
+}
+
+/**
+ * 构建特殊指令部分（用于系统提示词）
+ * @param specialInstructions 特殊指令字符串（如果存在）
+ * @returns 格式化的特殊指令部分，如果没有则返回空字符串
+ */
+export function buildSpecialInstructionsSection(specialInstructions?: string): string {
+  return specialInstructions
+    ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
+    : '';
 }
 
 /**
