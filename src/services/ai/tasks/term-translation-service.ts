@@ -233,7 +233,7 @@ export class TermTranslationService {
       // 工具调用循环（最多 10 轮，避免无限循环）
       const MAX_TOOL_CALLS = 10;
       const MAX_JSON_RETRIES = 3; // JSON 格式重试最多 3 次
-      let toolCallCount = 0;
+      let iterationCount = 0; // 循环迭代次数（包括工具调用和 JSON 重试）
       let jsonRetryCount = 0;
       let finalText = '';
 
@@ -325,7 +325,8 @@ export class TermTranslationService {
       }
 
       // 标准路径：使用工具调用循环
-      while (toolCallCount < MAX_TOOL_CALLS) {
+      while (iterationCount < MAX_TOOL_CALLS) {
+        iterationCount++; // 每次循环迭代都递增，确保准确计数
         // 检查是否已取消
         if (finalSignal.aborted) {
           throw new Error('翻译已取消');
@@ -347,7 +348,7 @@ export class TermTranslationService {
             if (!firstChunkReceived) {
               void aiProcessingStore.updateTask(taskId, {
                 status: 'processing',
-                message: toolCallCount > 0 ? '正在使用工具获取上下文...' : '正在生成翻译...',
+                message: iterationCount > 1 ? '正在使用工具获取上下文...' : '正在生成翻译...',
               });
               firstChunkReceived = true;
             }
@@ -375,7 +376,6 @@ export class TermTranslationService {
 
         // 检查是否有工具调用
         if (result.toolCalls && result.toolCalls.length > 0) {
-          toolCallCount++;
 
           // 添加助手消息（包含工具调用）
           history.push({
@@ -507,8 +507,8 @@ export class TermTranslationService {
         }
       }
 
-      // 如果达到最大工具调用次数，尝试解析最后一次响应
-      if (toolCallCount >= MAX_TOOL_CALLS && !finalText) {
+      // 如果达到最大循环迭代次数，尝试解析最后一次响应
+      if (iterationCount >= MAX_TOOL_CALLS && !finalText) {
         console.warn('[TermTranslationService] 达到最大工具调用次数，尝试解析最后一次响应');
         const lastResponse = history[history.length - 1]?.content || '';
         if (lastResponse) {
