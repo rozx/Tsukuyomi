@@ -615,12 +615,11 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
-        // 章节标题 + 空行 + "译文1" + 换行 + 空段落(两个换行符) + "译文2"
-        // 所以 "译文1\n" + "\n\n" + "译文2" = "译文1\n\n\n译文2"
-        expect(content).toContain('Chapter 1\n\n译文1\n\n\n译文2\n');
-        // 验证 "译文1" 和 "译文2" 之间有空行（3个连续的 \n：译文1的\n + 空段落的\n\n）
+        // 译文导出：用单个换行连接段落；1 个空段落会产生 2 个连续的 '\n'（1 个空行）
+        expect(content).toContain('Chapter 1\n\n译文1\n\n译文2');
+        // 验证 "译文1" 和 "译文2" 之间正好是两个换行
         const between = content.split('译文1')[1]!.split('译文2')[0]!;
-        expect(between).toBe('\n\n\n');
+        expect(between).toBe('\n\n');
       });
 
       it('应该正确处理连续空段落（2个空段落 → 3个空行）', async () => {
@@ -636,13 +635,12 @@ describe('ChapterService', () => {
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
         // 验证 "译文2" 和 "译文3" 之间有多个空行
-        // 译文2 结尾的 \n + 第一个空段落的 \n\n + 第二个空段落的 \n\n = \n\n\n\n
-        // 加上译文2的换行符，总共5个连续的\n，显示为3个空行
+        // 2 个连续空段落 => 段落边界产生 3 个连续的 '\n'（2 个空段落 + 连接符）
         const betweenText2AndText3 = content.split('译文2')[1]!.split('译文3')[0]!;
-        expect(betweenText2AndText3).toBe('\n\n\n\n\n');
+        expect(betweenText2AndText3).toBe('\n'.repeat(3));
         
         // 验证整体格式正确
-        expect(content).toMatch(/译文2\n\n\n\n\n译文3/);
+        expect(content).toMatch(/译文2\n{3}译文3/);
       });
 
       it('应该确保每个非空段落至少有一个换行符', async () => {
@@ -654,15 +652,15 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
-        // 每个段落都应该以换行符结尾
-        expect(content).toContain('译文1\n');
-        expect(content).toContain('译文2\n');
-        expect(content).toContain('译文3\n');
+        // 段落之间至少会有 1 个换行分隔；如果段落自身已包含换行，不应额外叠加
+        expect(content).toContain('译文1\n译文2');
+        // 译文2 自带末尾换行，所以与下一段之间仍然只需要 1 个换行分隔
+        expect(content).toContain('译文2\n译文3');
       });
     });
 
     describe('换行处理 - 原文导出', () => {
-      it('应该为没有换行符的段落添加换行符', async () => {
+      it('应该按段落使用单个换行符连接（与 getChapterContentText 一致），不额外注入换行', async () => {
         const chapter = createTestChapterWithContent('Chapter 1', [
           { text: '第一段内容' }, // 没有换行符
           { text: '' }, // 空段落
@@ -671,14 +669,11 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'original', 'clipboard');
 
-        // 每个段落都应该以换行符结尾
-        expect(content).toContain('第一段内容\n');
-        expect(content).toContain('第二段内容\n');
-        // 空段落应该被替换为两个换行符
-        expect(content.split('第一段内容')[1]!.split('第二段内容')[0]).toBe('\n\n\n');
+        // 导出内容：标题 + 空行 + 段落以单个 \n 连接（空段落产生连续的 \n）
+        expect(content).toContain('Chapter 1\n\n第一段内容\n\n第二段内容');
       });
 
-      it('应该保持已有换行符的段落不变', async () => {
+      it('应该保留段落原文中已有的换行符（不会额外处理）', async () => {
         const chapter = createTestChapterWithContent('Chapter 1', [
           { text: '段落1\n' },
           { text: '段落2\n\n' },
@@ -687,11 +682,20 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'original', 'clipboard');
 
-        // 已有换行符的应该保持不变
-        expect(content).toContain('段落1\n');
-        expect(content).toContain('段落2\n\n');
-        // 没有换行符的应该添加
-        expect(content).toContain('段落3\n');
+        // 不应因为“段落分隔”再额外叠加换行（段落2已带 \n\n）
+        expect(content).toContain('Chapter 1\n\n段落1\n段落2\n\n段落3');
+      });
+
+      it('当段落已包含末尾换行符时，不应因为 join 再额外叠加换行', async () => {
+        const chapter = createTestChapterWithContent('Chapter 1', [
+          { text: 'A\n\n\n' }, // 已经有 3 个换行
+          { text: 'B' },
+        ]);
+
+        const content = await getExportedContent(chapter, 'original', 'clipboard');
+
+        // 段落 A 已经以 \n 结尾，段落间不应再补分隔符
+        expect(content).toContain('Chapter 1\n\nA\n\n\nB');
       });
     });
 
@@ -726,6 +730,34 @@ describe('ChapterService', () => {
         // JSON 格式不应该使用换行处理逻辑
         expect(mockClipboardWriteText).not.toHaveBeenCalled();
         expect(mockCreateElement).toHaveBeenCalled();
+      });
+
+      it('TXT 导出在 Windows 下应该使用 CRLF（避免记事本换行显示异常）', async () => {
+        const chapter = createTestChapterWithContent('Chapter 1', [
+          { text: '原文1', translation: '译文1' },
+          { text: '原文2', translation: '译文2' },
+        ]);
+        mockLoadChapterContentForExport.mockResolvedValueOnce(chapter);
+
+        // 设置为 Windows 环境
+        (global.navigator as any).userAgent = 'Windows';
+
+        let blobText = '';
+        const OriginalBlob = (global as any).Blob;
+        (global as any).Blob = function (parts: any[], _options?: any) {
+          blobText = parts.map((p) => String(p)).join('');
+          return {} as any;
+        };
+
+        try {
+          await ChapterService.exportChapter(chapter, 'translation', 'txt');
+        } finally {
+          (global as any).Blob = OriginalBlob;
+        }
+
+        // 应该出现 CRLF，并且不应该有裸的 LF
+        expect(blobText).toContain('\r\n');
+        expect(/(^|[^\r])\n/.test(blobText)).toBe(false);
       });
 
       it('应该正确处理 TXT 格式', async () => {

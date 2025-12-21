@@ -2220,6 +2220,66 @@ export class ChapterService {
         2,
       );
     } else {
+      // 原文导出：保持与应用内“章节文本合并”一致的逻辑（`getChapterContentText`）
+      // 避免导出时额外注入换行，导致在 Word 等软件中出现“回车数暴涨”。
+      if (type === 'original') {
+        // 注意：部分来源的段落 text 可能已经包含末尾换行符（例如爬取/导入数据）。
+        // 如果我们仍然用 '\n' join，会在段落之间“叠加”换行，导致空行数量被放大。
+        // 这里的规则是：只在“当前累计文本末尾不是 \n 且后面还有段落”时补 1 个 '\n' 作为分隔。
+        const body = chapterWithContent.content.reduce((acc, p, idx) => {
+          const text = p.text || '';
+          acc += text;
+
+          const isLast = idx === chapterWithContent.content.length - 1;
+          if (isLast) return acc;
+
+          // 空段落本身不包含任何字符，但它代表一个段落分隔。
+          // 因此需要显式补 1 个换行，避免空段落在导出中“消失”。
+          if (text.trim() === '') {
+            return `${acc}\n`;
+          }
+
+          // 非空段落：仅当当前累计末尾不是换行时，补 1 个换行作为分隔
+          if (!acc.endsWith('\n')) {
+            return `${acc}\n`;
+          }
+
+          return acc;
+        }, '');
+        content = `${chapterTitle}\n\n${body}`;
+      } else if (type === 'translation') {
+        // 译文导出：段落数组本质上代表“每一行/每一个段落”。
+        // 需求（n -> n+1 换行）在这种数据结构下应通过“用单个换行连接段落”自然实现：
+        // - 1 个空段落 -> 两个相邻的 '\n'（显示为 1 个空行）
+        // - n 个连续空段落 -> n+1 个连续 '\n'（显示为 n 个空行）
+        const translations = chapterWithContent.content.map((p) => {
+          let translation = getParagraphTranslationText(p);
+          translation = formatTranslationForDisplay(translation, book, chapterWithContent);
+          return translation ?? '';
+        });
+
+        const body = translations.reduce((acc, text, idx) => {
+          const current = text || '';
+          acc += current;
+
+          const isLast = idx === translations.length - 1;
+          if (isLast) return acc;
+
+          // 空段落需要显式补 1 个换行，避免“空段落消失”
+          if (current.trim() === '') {
+            return `${acc}\n`;
+          }
+
+          // 非空段落：仅当末尾不是换行时，补 1 个换行作为分隔
+          if (!acc.endsWith('\n')) {
+            return `${acc}\n`;
+          }
+
+          return acc;
+        }, '');
+
+        content = `${chapterTitle}\n\n${body}`;
+      } else {
       const lines = chapterWithContent.content.map((p) => {
         const original = p.text;
         let translation = getParagraphTranslationText(p);
@@ -2254,16 +2314,25 @@ export class ChapterService {
       // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
       const processedLines = lines.map((line) => {
         const trimmed = line.trim();
+        const isTranslationExport = type === 'translation';
         if (trimmed === '') {
           // 空行替换为两个换行符
-          return '\n\n';
+          // 译文导出：在现有规则基础上额外 +1 个换行符（n -> n+1）
+          return isTranslationExport ? '\n\n\n' : '\n\n';
         }
+
         // 非空行：确保以至少一个换行符结尾
         // 如果末尾已有换行符，保持不变；否则添加一个换行符
+        // 译文导出：在现有规则基础上额外 +1 个换行符（n -> n+1）
+        if (isTranslationExport) {
+          return line.endsWith('\n') ? `${line}\n` : `${line}\n\n`;
+        }
+
         return line.endsWith('\n') ? line : `${line}\n`;
       });
       // 使用空字符串连接，因为每行已包含必要的换行符
       content = `${chapterTitle}\n\n${processedLines.join('')}`;
+      }
     }
 
     // 执行导出动作
@@ -2278,7 +2347,22 @@ export class ChapterService {
         );
       }
     } else {
-      const blob = new Blob([content], {
+      // Windows 下不少文本查看器（如记事本）要求 CRLF 才能正确显示换行。
+      // 剪贴板粘贴通常会自动处理，但下载的 txt 文件需要我们主动转换。
+      const isWindows =
+        typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
+          ? /Windows/i.test(navigator.userAgent)
+          : false;
+
+      const fileContent =
+        format === 'txt' && isWindows
+          ? content
+              .replace(/\r\n/g, '\n')
+              .replace(/\r/g, '\n')
+              .replace(/\n/g, '\r\n')
+          : content;
+
+      const blob = new Blob([fileContent], {
         type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8',
       });
       const url = URL.createObjectURL(blob);
