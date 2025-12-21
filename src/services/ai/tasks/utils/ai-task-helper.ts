@@ -336,6 +336,53 @@ export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): str
 }
 
 /**
+ * 构建独立的 chunk 提示（避免 max token 问题）
+ * 每个 chunk 独立，提醒 AI 使用工具获取上下文
+ * @param taskType 任务类型
+ * @param chunkIndex 当前 chunk 索引（从 0 开始）
+ * @param totalChunks 总 chunk 数
+ * @param chunkText chunk 文本内容
+ * @param paragraphCountNote 段落数量提示
+ * @param maintenanceReminder 维护提醒
+ * @param chapterId 章节 ID（可选）
+ * @param chapterTitle 章节标题（可选，仅第一个 chunk）
+ * @returns 独立的 chunk 提示
+ */
+export function buildIndependentChunkPrompt(
+  taskType: TaskType,
+  chunkIndex: number,
+  totalChunks: number,
+  chunkText: string,
+  paragraphCountNote: string,
+  maintenanceReminder: string,
+  chapterId?: string,
+  chapterTitle?: string,
+): string {
+  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabel = taskLabels[taskType];
+
+  // 工具提示：提醒 AI 使用工具获取上下文
+  const contextToolsReminder = `\n\n⚠️ **上下文获取**：如果需要上下文信息（如术语、角色、前文段落等），请使用以下工具：
+- \`list_recent_memories\`: 获取最近的记忆/上下文
+- \`get_previous_paragraphs\`: 获取前文段落
+- \`list_terms\`: 获取术语表（可传 chapter_id: ${chapterId || '当前章节'}）
+- \`list_characters\`: 获取角色表（可传 chapter_id: ${chapterId || '当前章节'}）
+- \`get_previous_chapter\`: 获取前一章节信息
+这些工具可以帮助你保持${taskLabel}的一致性和连贯性，但**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+
+  // 所有 chunk 都独立，不包含之前的上下文
+  // 第一个 chunk 和后续 chunk 使用相同的格式，只是措辞略有不同
+  if (chunkIndex === 0) {
+    // 第一个 chunk：独立提示，只包含必要的任务信息
+    const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
+    return `开始${taskLabel}任务。以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${titleSection}${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+  } else {
+    // 后续 chunk：独立提示，不包含之前的上下文
+    return `继续${taskLabel}任务。以下是第 ${chunkIndex + 1}/${totalChunks} 部分内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
+  }
+}
+
+/**
  * 处理工具调用循环
  */
 export interface ToolCallLoopConfig {

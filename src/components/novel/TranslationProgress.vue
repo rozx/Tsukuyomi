@@ -155,9 +155,11 @@ const taskStatusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-// Auto Scroll State
+// Auto Scroll State - 通用设置，适用于所有标签页
 const autoScrollEnabled = ref<Record<string, boolean>>({});
-const autoScrollOutputEnabled = ref<Record<string, boolean>>({});
+
+// Auto Tab Switching State - 自动标签页切换设置
+const autoTabSwitchingEnabled = ref<Record<string, boolean>>({});
 
 // Task Fold State
 const taskFolded = ref<Record<string, boolean>>({});
@@ -182,6 +184,11 @@ const setActiveTab = (taskId: string, value: string) => {
 const getActiveTab = (taskId: string): string => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   if (!task) {
+    return activeTab.value[taskId] || 'thinking';
+  }
+
+  // 如果禁用了自动标签页切换，直接返回用户手动选择的标签页
+  if (autoTabSwitchingEnabled.value[taskId] === false) {
     return activeTab.value[taskId] || 'thinking';
   }
 
@@ -341,6 +348,7 @@ const isTaskOutputting = (taskId: string): boolean => {
 
 const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
 const outputContainers = ref<Record<string, HTMLElement | null>>({});
+const todosContainers = ref<Record<string, HTMLElement | null>>({});
 
 const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
   if (el) {
@@ -358,6 +366,14 @@ const setOutputContainer = (taskId: string, el: HTMLElement | null) => {
   }
 };
 
+const setTodosContainer = (taskId: string, el: HTMLElement | null) => {
+  if (el) {
+    todosContainers.value[taskId] = el;
+  } else {
+    delete todosContainers.value[taskId];
+  }
+};
+
 const scrollToBottom = (container: HTMLElement) => {
   // 使用 requestAnimationFrame 确保在浏览器绘制后滚动
   requestAnimationFrame(() => {
@@ -365,11 +381,23 @@ const scrollToBottom = (container: HTMLElement) => {
   });
 };
 
+// 通用自动滚动切换函数，适用于所有标签页
 const toggleAutoScroll = (taskId: string) => {
   autoScrollEnabled.value[taskId] = !autoScrollEnabled.value[taskId];
   if (autoScrollEnabled.value[taskId]) {
     nextTick(() => {
-      const container = thinkingContainers.value[taskId];
+      // 根据当前激活的标签页滚动对应的容器
+      const activeTab = getActiveTab(taskId);
+      let container: HTMLElement | null = null;
+      
+      if (activeTab === 'thinking') {
+        container = thinkingContainers.value[taskId];
+      } else if (activeTab === 'output') {
+        container = outputContainers.value[taskId];
+      } else if (activeTab === 'todos') {
+        container = todosContainers.value[taskId];
+      }
+      
       if (container) {
         scrollToBottom(container);
       }
@@ -377,15 +405,25 @@ const toggleAutoScroll = (taskId: string) => {
   }
 };
 
-const toggleAutoScrollOutput = (taskId: string) => {
-  autoScrollOutputEnabled.value[taskId] = !autoScrollOutputEnabled.value[taskId];
-  if (autoScrollOutputEnabled.value[taskId]) {
-    nextTick(() => {
-      const container = outputContainers.value[taskId];
-      if (container) {
-        scrollToBottom(container);
-      }
-    });
+// 自动标签页切换开关
+const toggleAutoTabSwitching = (taskId: string) => {
+  const wasEnabled = autoTabSwitchingEnabled.value[taskId] !== false;
+  autoTabSwitchingEnabled.value[taskId] = !wasEnabled;
+  // 默认启用自动切换（undefined 视为 true）
+  if (autoTabSwitchingEnabled.value[taskId] === false) {
+    // 禁用时，确保有保存的标签页选择
+    if (!activeTab.value[taskId]) {
+      // 如果没有保存的选择，临时启用自动切换来获取当前应该显示的标签页
+      // 先保存当前状态，避免 getActiveTab 清除 activeTab
+      const savedLastState = lastActiveState.value[taskId];
+      autoTabSwitchingEnabled.value[taskId] = true;
+      const currentTab = getActiveTab(taskId);
+      autoTabSwitchingEnabled.value[taskId] = false;
+      // 恢复 lastActiveState，避免状态被意外更新
+      lastActiveState.value[taskId] = savedLastState;
+      // 保存当前标签页，这样禁用后就会保持在这个标签页
+      activeTab.value[taskId] = currentTab;
+    }
   }
 };
 
@@ -564,9 +602,13 @@ watch(
       requestAnimationFrame(() => {
         for (const task of recentAITasks.value) {
           if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
-            const container = thinkingContainers.value[task.id];
-            if (container) {
-              container.scrollTop = container.scrollHeight;
+            const activeTab = getActiveTab(task.id);
+            // 只有在思考标签页激活时才滚动思考容器
+            if (activeTab === 'thinking') {
+              const container = thinkingContainers.value[task.id];
+              if (container) {
+                container.scrollTop = container.scrollHeight;
+              }
             }
           }
         }
@@ -607,10 +649,39 @@ watch(
     nextTick(() => {
       requestAnimationFrame(() => {
         for (const task of recentAITasks.value) {
-          if (autoScrollOutputEnabled.value[task.id] && task.outputContent) {
-            const container = outputContainers.value[task.id];
-            if (container) {
-              container.scrollTop = container.scrollHeight;
+          if (autoScrollEnabled.value[task.id] && task.outputContent) {
+            const activeTab = getActiveTab(task.id);
+            // 只有在输出标签页激活时才滚动输出容器
+            if (activeTab === 'output') {
+              const container = outputContainers.value[task.id];
+              if (container) {
+                container.scrollTop = container.scrollHeight;
+              }
+            }
+          }
+        }
+      });
+    });
+  },
+  { deep: true, flush: 'post' },
+);
+
+// Auto scroll watcher for todos
+watch(
+  () => todos.value,
+  () => {
+    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        for (const task of recentAITasks.value) {
+          if (autoScrollEnabled.value[task.id]) {
+            const activeTab = getActiveTab(task.id);
+            // 只有在待办事项标签页激活时才滚动待办事项容器
+            if (activeTab === 'todos') {
+              const container = todosContainers.value[task.id];
+              if (container) {
+                container.scrollTop = container.scrollHeight;
+              }
             }
           }
         }
@@ -786,6 +857,41 @@ watch(
                     formatTaskDuration(task.startTime, task.endTime)
                   }}</span>
                   <Button
+                    :icon="
+                      autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
+                    "
+                    :class="[
+                      'p-button-text p-button-sm ai-task-auto-scroll-toggle',
+                      { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                    ]"
+                    :title="
+                      autoScrollEnabled[task.id]
+                        ? '禁用自动滚动'
+                        : '启用自动滚动（新内容出现时自动滚动到底部）'
+                    "
+                    @click="toggleAutoScroll(task.id)"
+                  />
+                  <Button
+                    :icon="
+                      autoTabSwitchingEnabled[task.id] === false
+                        ? 'pi pi-window-minimize'
+                        : 'pi pi-window-maximize'
+                    "
+                    :class="[
+                      'p-button-text p-button-sm ai-task-auto-tab-switching-toggle',
+                      {
+                        'auto-tab-switching-enabled':
+                          autoTabSwitchingEnabled[task.id] !== false,
+                      },
+                    ]"
+                    :title="
+                      autoTabSwitchingEnabled[task.id] === false
+                        ? '启用自动标签页切换（根据任务状态自动切换标签页）'
+                        : '禁用自动标签页切换（保持当前标签页）'
+                    "
+                    @click="toggleAutoTabSwitching(task.id)"
+                  />
+                  <Button
                     v-if="task.status === 'thinking' || task.status === 'processing'"
                     icon="pi pi-stop"
                     class="p-button-text p-button-sm p-button-danger ai-task-stop"
@@ -847,21 +953,6 @@ watch(
                         >
                           <div class="ai-task-thinking-header">
                             <span class="ai-task-thinking-label">思考过程：</span>
-                            <Button
-                              :icon="
-                                autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
-                              "
-                              :class="[
-                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                                { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
-                              ]"
-                              :title="
-                                autoScrollEnabled[task.id]
-                                  ? '禁用自动滚动'
-                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
-                              "
-                              @click="toggleAutoScroll(task.id)"
-                            />
                           </div>
                           <div
                             :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
@@ -906,23 +997,6 @@ watch(
                         >
                           <div class="ai-task-output-header">
                             <span class="ai-task-output-label">输出内容：</span>
-                            <Button
-                              :icon="
-                                autoScrollOutputEnabled[task.id]
-                                  ? 'pi pi-arrow-down'
-                                  : 'pi pi-arrows-v'
-                              "
-                              :class="[
-                                'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                                { 'auto-scroll-enabled': autoScrollOutputEnabled[task.id] },
-                              ]"
-                              :title="
-                                autoScrollOutputEnabled[task.id]
-                                  ? '禁用自动滚动'
-                                  : '启用自动滚动（新内容出现时自动滚动到底部）'
-                              "
-                              @click="toggleAutoScrollOutput(task.id)"
-                            />
                           </div>
                           <div
                             :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
@@ -941,7 +1015,11 @@ watch(
                             <i class="pi pi-info-circle"></i>
                             <span>该任务暂无待办事项</span>
                           </div>
-                          <div v-else class="ai-task-todos-list">
+                          <div
+                            v-else
+                            :ref="(el) => setTodosContainer(task.id, el as HTMLElement)"
+                            class="ai-task-todos-list"
+                          >
                             <div
                               v-for="todo in getTodosForTask(task.id)"
                               :key="todo.id"
@@ -1382,6 +1460,24 @@ watch(
 }
 
 .ai-task-auto-scroll-toggle.auto-scroll-enabled {
+  color: var(--primary-opacity-80);
+}
+
+.ai-task-auto-tab-switching-toggle {
+  color: var(--moon-opacity-50);
+  padding: 0.25rem;
+  min-width: auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  transition: all 0.2s;
+}
+
+.ai-task-auto-tab-switching-toggle:hover {
+  color: var(--primary-opacity-80);
+  background: var(--white-opacity-5);
+}
+
+.ai-task-auto-tab-switching-toggle.auto-tab-switching-enabled {
   color: var(--primary-opacity-80);
 }
 

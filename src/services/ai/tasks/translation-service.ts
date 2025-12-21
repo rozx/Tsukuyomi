@@ -29,6 +29,7 @@ import {
   isOnlySymbols,
   handleTaskError,
   completeTask,
+  buildIndependentChunkPrompt,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -219,10 +220,7 @@ export class TranslationService {
       // 使用共享工具获取特殊指令
       const specialInstructions = await getSpecialInstructions(bookId, chapterId, 'translation');
 
-      // 初始化消息历史
-      const history: ChatMessage[] = [];
-
-      // 1. 系统提示词（使用共享提示词模块）
+      // 1. 系统提示词（使用共享提示词模块）- 每个 chunk 都会使用这个系统提示
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = specialInstructions
         ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
@@ -246,19 +244,6 @@ ${getMemoryWorkflowRules()}
 ${getOutputFormatRules('translation')}
 
 ${getExecutionWorkflowRules('translation')}`;
-
-      history.push({ role: 'system', content: systemPrompt });
-
-      // 2. 初始用户提示
-      let initialUserPrompt = buildInitialUserPromptBase('translation');
-
-      // 如果提供了章节ID，添加到上下文中
-      if (chapterId) {
-        initialUserPrompt = addChapterContext(initialUserPrompt, chapterId, 'translation');
-      }
-
-      initialUserPrompt = addTaskPlanningSuggestions(initialUserPrompt, 'translation');
-      initialUserPrompt += buildExecutionSection('translation', chapterId);
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -315,19 +300,29 @@ ${getExecutionWorkflowRules('translation')}`;
           onProgress(progress);
         }
 
-        // 构建当前消息
-        let content = '';
+        // 为每个 chunk 创建独立的 history，避免上下文共享
+        // 每个 chunk 只包含 system prompt 和当前 chunk 的内容
+        const chunkHistory: ChatMessage[] = [
+          { role: 'system', content: systemPrompt },
+        ];
+
+        // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('translation');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
-        if (i === 0) {
-          // 如果有标题，在第一个块中包含标题翻译
-          const titleSection = chapterTitle ? `【章节标题】\n${chapterTitle}\n\n` : '';
-          content = `${initialUserPrompt}\n\n以下是第一部分内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${titleSection}${chunkText}${maintenanceReminder}`;
-        } else {
-          content = `接下来的内容（第 ${i + 1}/${chunks.length} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
-        }
+        
+        // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
+        const content = buildIndependentChunkPrompt(
+          'translation',
+          i,
+          chunks.length,
+          chunkText,
+          paragraphCountNote,
+          maintenanceReminder,
+          chapterId,
+          i === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
+        );
 
         // 重试循环
         let retryCount = 0;
@@ -338,11 +333,11 @@ ${getExecutionWorkflowRules('translation')}`;
             // 如果是重试，移除上次失败的消息
             if (retryCount > 0) {
               // 移除上次的用户消息和助手回复（如果有）
-              if (history.length > 0 && history[history.length - 1]?.role === 'user') {
-                history.pop();
+              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'user') {
+                chunkHistory.pop();
               }
-              if (history.length > 0 && history[history.length - 1]?.role === 'assistant') {
-                history.pop();
+              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'assistant') {
+                chunkHistory.pop();
               }
 
               console.warn(
@@ -357,11 +352,11 @@ ${getExecutionWorkflowRules('translation')}`;
               }
             }
 
-            history.push({ role: 'user', content });
+            chunkHistory.push({ role: 'user', content });
 
             // 使用共享的工具调用循环（基于状态的流程）
             const loopResult = await executeToolCallLoop({
-              history,
+              history: chunkHistory,
               tools,
               generateText: service.generateText.bind(service),
               aiServiceConfig: config,
