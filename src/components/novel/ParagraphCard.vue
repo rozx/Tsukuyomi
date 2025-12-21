@@ -50,16 +50,24 @@ const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
 });
 
-// 获取当前段落的翻译文本（应用缩进过滤器）
-const translationText = computed(() => {
+// 获取当前段落的原始翻译文本（未格式化，用于编辑和保存）
+const rawTranslationText = computed(() => {
   if (!props.paragraph.selectedTranslationId || !props.paragraph.translations) {
     return '';
   }
   const selectedTranslation = props.paragraph.translations.find(
     (t) => t.id === props.paragraph.selectedTranslationId,
   );
-  const translation = selectedTranslation?.translation || '';
-  
+  return selectedTranslation?.translation || '';
+});
+
+// 获取当前段落的翻译文本（应用缩进过滤器，用于显示）
+const translationText = computed(() => {
+  const translation = rawTranslationText.value;
+  if (!translation) {
+    return '';
+  }
+
   // 获取书籍和章节上下文以应用缩进过滤器
   let book = undefined;
   let chapter = undefined;
@@ -76,7 +84,7 @@ const translationText = computed(() => {
       }
     }
   }
-  
+
   // 应用显示层格式化（缩进过滤/符号规范化等）
   return formatTranslationForDisplay(translation, book, chapter);
 });
@@ -226,7 +234,6 @@ const handleTermPopoverMouseEnter = () => {
   }
 };
 
-
 // 当术语 Popover 关闭时清理状态
 const handleTermPopoverHide = () => {
   if (termPopoverCloseTimer) {
@@ -238,7 +245,11 @@ const handleTermPopoverHide = () => {
 
 // 处理角色悬停（支持多个匹配的角色）
 // allCharacters 数组已经按出现次数排序（出现次数多的在前）
-const handleCharacterMouseEnter = (event: Event, character: CharacterSetting, allCharacters?: CharacterSetting[]) => {
+const handleCharacterMouseEnter = (
+  event: Event,
+  character: CharacterSetting,
+  allCharacters?: CharacterSetting[],
+) => {
   // 清除关闭定时器
   if (characterPopoverCloseTimer) {
     clearTimeout(characterPopoverCloseTimer);
@@ -273,7 +284,6 @@ const handleCharacterPopoverMouseEnter = () => {
     characterPopoverCloseTimer = null;
   }
 };
-
 
 // 当角色 Popover 关闭时清理状态
 const handleCharacterPopoverHide = () => {
@@ -476,7 +486,8 @@ const handleTranslationDisplayClick = (event: MouseEvent) => {
 
 // 开始编辑翻译
 const onTranslationOpen = () => {
-  editingTranslationValue.value = translationText.value;
+  // 使用原始翻译文本初始化编辑器，避免格式化后的文本被保存到数据库
+  editingTranslationValue.value = rawTranslationText.value;
   // 通知父组件开始编辑
   emit('paragraph-edit-start', props.paragraph.id);
   // 使用 nextTick 确保 DOM 更新后再聚焦
@@ -522,7 +533,8 @@ const onTranslationOpen = () => {
 
 // 保存翻译
 const onTranslationClose = () => {
-  if (editingTranslationValue.value !== translationText.value) {
+  // 与原始翻译文本比较，而不是格式化后的文本
+  if (editingTranslationValue.value !== rawTranslationText.value) {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
   // 通知父组件停止编辑
@@ -537,7 +549,8 @@ const applyTranslation = (closeCallback: () => void) => {
 
 // 取消编辑
 const cancelTranslation = (closeCallback: () => void) => {
-  editingTranslationValue.value = translationText.value;
+  // 恢复为原始翻译文本，而不是格式化后的文本
+  editingTranslationValue.value = rawTranslationText.value;
   closeCallback();
 };
 
@@ -554,7 +567,8 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
   // Escape 键：取消编辑
   else if (event.key === 'Escape') {
     event.preventDefault();
-    editingTranslationValue.value = translationText.value;
+    // 恢复为原始翻译文本，而不是格式化后的文本
+    editingTranslationValue.value = rawTranslationText.value;
     closeCallback();
   }
 };
@@ -904,7 +918,10 @@ defineExpose({
         class="paragraph-translation-wrapper"
       >
         <!-- 正在翻译或润色时显示 skeleton（覆盖现有翻译） -->
-        <div v-if="props.isTranslating || props.isPolishing || props.isProofreading" class="paragraph-translation-skeleton">
+        <div
+          v-if="props.isTranslating || props.isPolishing || props.isProofreading"
+          class="paragraph-translation-skeleton"
+        >
           <Skeleton width="100%" height="1.5rem" />
           <Skeleton width="85%" height="1.5rem" />
           <Skeleton width="70%" height="1.5rem" />
