@@ -55,9 +55,6 @@ export function useChapterTranslation(
   ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value) return;
 
-    // 获取当前标题（可能已被 updateTitleTranslation 更新）
-    const currentTitle = selectedChapterWithContent.value.title;
-
     const updatedVolumes = book.value.volumes?.map((volume) => {
       if (!volume.chapters) return volume;
 
@@ -91,8 +88,7 @@ export function useChapterTranslation(
 
         return {
           ...chapter,
-          // 使用 selectedChapterWithContent 中的最新标题
-          title: currentTitle,
+          // 注意：不包含 title 字段，避免覆盖并发更新的标题翻译
           content: updatedContent,
           lastEdited: new Date(),
         };
@@ -148,9 +144,6 @@ export function useChapterTranslation(
   ): Promise<void> => {
     if (!book.value || !selectedChapterWithContent.value || paragraphUpdates.size === 0) return;
 
-    // 获取当前标题（可能已被 updateTitleTranslation 更新）
-    const currentTitle = selectedChapterWithContent.value.title;
-
     const updatedVolumes = book.value.volumes?.map((volume) => {
       if (!volume.chapters) return volume;
 
@@ -183,8 +176,7 @@ export function useChapterTranslation(
 
         return {
           ...chapter,
-          // 使用 selectedChapterWithContent 中的最新标题
-          title: currentTitle,
+          // 注意：不包含 title 字段，避免覆盖并发更新的标题翻译
           content: updatedContent,
           lastEdited: new Date(),
         };
