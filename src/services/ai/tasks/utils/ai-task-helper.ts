@@ -641,11 +641,28 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
       } else {
-        // 正常的 working 响应 - 使用更明确的指令
-        history.push({
-          role: 'user',
-          content: `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
-        });
+        // 检查是否所有段落都已返回
+        let allParagraphsReturned = false;
+        if (paragraphIds && paragraphIds.length > 0) {
+          const verification = verifyCompleteness
+            ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
+            : verifyParagraphCompleteness(paragraphIds, accumulatedParagraphs);
+          allParagraphsReturned = verification.allComplete;
+        }
+
+        if (allParagraphsReturned) {
+          // 所有段落都已返回，提醒 AI 可以将状态改为 "completed"
+          history.push({
+            role: 'user',
+            content: `所有段落${taskLabel}已完成。如果不需要继续${taskLabel}，可以将状态设置为 "completed"。`,
+          });
+        } else {
+          // 正常的 working 响应 - 使用更明确的指令
+          history.push({
+            role: 'user',
+            content: `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
+          });
+        }
       }
       continue;
     } else if (currentStatus === 'completed') {
