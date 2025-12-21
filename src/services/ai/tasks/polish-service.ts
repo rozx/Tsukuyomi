@@ -17,11 +17,6 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
-  buildInitialUserPromptBase,
-  addChapterContext,
-  addParagraphContext,
-  addTaskPlanningSuggestions,
-  buildExecutionSection,
   createUnifiedAbortController,
   initializeTask,
   getSpecialInstructions,
@@ -138,7 +133,6 @@ export class PolishService {
       aiProcessingStore,
       onParagraphPolish,
       onToast,
-      currentParagraphId,
       chapterId,
     } = options || {};
     const actions: ActionInfo[] = [];
@@ -331,16 +325,14 @@ ${getExecutionWorkflowRules('polish')}`;
 
         // 为每个 chunk 创建独立的 history，避免上下文共享
         // 每个 chunk 只包含 system prompt 和当前 chunk 的内容
-        const chunkHistory: ChatMessage[] = [
-          { role: 'system', content: systemPrompt },
-        ];
+        const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('polish');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
-        
+
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
         const content = buildIndependentChunkPrompt(
           'polish',
@@ -361,10 +353,16 @@ ${getExecutionWorkflowRules('polish')}`;
             // 如果是重试，移除上次失败的消息
             if (retryCount > 0) {
               // 移除上次的用户消息和助手回复（如果有）
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'user') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'user'
+              ) {
                 chunkHistory.pop();
               }
-              if (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'assistant') {
+              if (
+                chunkHistory.length > 1 &&
+                chunkHistory[chunkHistory.length - 1]?.role === 'assistant'
+              ) {
                 chunkHistory.pop();
               }
 
@@ -406,12 +404,55 @@ ${getExecutionWorkflowRules('polish')}`;
                   missingIds: [],
                 };
               },
+              // 立即回调：当段落润色提取时立即通知（不等待循环完成）
+              onParagraphsExtracted:
+                onParagraphPolish && chunk.paragraphIds
+                  ? async (paragraphs) => {
+                      // 将数组转换为 Map 供 filterChangedParagraphs 使用
+                      const extractedMap = new Map<string, string>();
+                      for (const para of paragraphs) {
+                        if (para.id && para.translation) {
+                          extractedMap.set(para.id, para.translation);
+                        }
+                      }
+
+                      // 过滤出有变化的段落
+                      const changedParagraphs = filterChangedParagraphs(
+                        chunk.paragraphIds!,
+                        extractedMap,
+                        originalTranslations,
+                      );
+
+                      // 立即调用外部回调
+                      if (changedParagraphs.length > 0) {
+                        try {
+                          // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
+                          void Promise.resolve(onParagraphPolish(changedParagraphs)).catch(
+                            (error) => {
+                              console.error(
+                                `[PolishService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                                error,
+                              );
+                            },
+                          );
+                        } catch (error) {
+                          console.error(
+                            `[PolishService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                            error,
+                          );
+                        }
+                      }
+                    }
+                  : undefined,
             });
 
             // 检查状态
             if (loopResult.status !== 'end') {
               throw new Error(`润色任务未完成（状态: ${loopResult.status}）。请重试。`);
             }
+
+            // 注意：段落润色的回调已经在 onParagraphsExtracted 中立即调用
+            // 这里只需要处理文本构建和累积用于最终返回
 
             // 使用从状态流程中提取的段落润色
             const extractedPolishes = loopResult.paragraphs;
@@ -437,10 +478,7 @@ ${getExecutionWorkflowRules('polish')}`;
                 if (onChunk) {
                   await onChunk({ text: orderedText, done: false });
                 }
-                // 通知段落润色完成
-                if (onParagraphPolish) {
-                  onParagraphPolish(chunkParagraphPolishes);
-                }
+                // 注意：onParagraphPolish 回调已在 onParagraphsExtracted 中立即调用，这里不再重复调用
               }
               // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
             } else {

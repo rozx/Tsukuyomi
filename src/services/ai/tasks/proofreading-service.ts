@@ -17,11 +17,6 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
-  buildInitialUserPromptBase,
-  addChapterContext,
-  addParagraphContext,
-  addTaskPlanningSuggestions,
-  buildExecutionSection,
   createUnifiedAbortController,
   initializeTask,
   getSpecialInstructions,
@@ -138,7 +133,6 @@ export class ProofreadingService {
       aiProcessingStore,
       onParagraphProofreading,
       onToast,
-      currentParagraphId,
       chapterId,
     } = options || {};
     const actions: ActionInfo[] = [];
@@ -394,12 +388,54 @@ ${getExecutionWorkflowRules('proofreading')}`;
                   missingIds: [],
                 };
               },
+              // 立即回调：当段落校对提取时立即通知（不等待循环完成）
+              onParagraphsExtracted: onParagraphProofreading && chunk.paragraphIds
+                ? async (paragraphs) => {
+                    // 将数组转换为 Map 供 filterChangedParagraphs 使用
+                    const extractedMap = new Map<string, string>();
+                    for (const para of paragraphs) {
+                      if (para.id && para.translation) {
+                        extractedMap.set(para.id, para.translation);
+                      }
+                    }
+
+                    // 过滤出有变化的段落
+                    const changedParagraphs = filterChangedParagraphs(
+                      chunk.paragraphIds!,
+                      extractedMap,
+                      originalTranslations,
+                    );
+
+                    // 立即调用外部回调
+                    if (changedParagraphs.length > 0) {
+                      try {
+                        // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
+                        void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
+                          (error) => {
+                            console.error(
+                              `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                              error,
+                            );
+                          },
+                        );
+                      } catch (error) {
+                        console.error(
+                          `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                          error,
+                        );
+                      }
+                    }
+                  }
+                : undefined,
             });
 
             // 检查状态
             if (loopResult.status !== 'end') {
               throw new Error(`校对任务未完成（状态: ${loopResult.status}）。请重试。`);
             }
+
+            // 注意：段落校对的回调已经在 onParagraphsExtracted 中立即调用
+            // 这里只需要处理文本构建和累积用于最终返回
 
             // 使用从状态流程中提取的段落校对
             const extractedProofreadings = loopResult.paragraphs;
@@ -425,10 +461,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
                 if (onChunk) {
                   await onChunk({ text: orderedText, done: false });
                 }
-                // 通知段落校对完成
-                if (onParagraphProofreading) {
-                  onParagraphProofreading(chunkParagraphProofreadings);
-                }
+                // 注意：onParagraphProofreading 回调已在 onParagraphsExtracted 中立即调用，这里不再重复调用
               }
               // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
             } else {
