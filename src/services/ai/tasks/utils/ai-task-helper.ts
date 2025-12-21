@@ -580,7 +580,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     const validTransitions: Record<TaskStatus, TaskStatus[]> = {
       planning: ['working'], // planning 只能转换到 working
       working: ['completed'], // working 只能转换到 completed
-      completed: ['end', 'working'], // completed 可以转换到 end 或回到 working（如果发现缺失段落）
+      completed: ['end', 'working'], // completed 可以转换到 end 或回到 working（如果需要补充缺失段落、编辑/优化已翻译的段落）
       end: [], // end 是终态，不能再转换
     };
 

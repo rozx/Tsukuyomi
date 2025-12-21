@@ -42,6 +42,7 @@ export function getCurrentStatusInfo(taskType: TaskType, status: TaskStatus): st
 - 创建记忆保存重要信息（如敬语翻译方式、角色关系等）
 - 检查是否有遗漏或需要修正的地方
 
+如果需要补充缺失段落或编辑/优化已${taskLabel}的段落，可以将状态设置为 "working" 继续工作。
 如果所有工作已完成，将状态设置为 "end"。`,
     end: `**当前状态：完成 (end)**
 当前块已完成，系统将自动提供下一个块。`,
@@ -110,7 +111,7 @@ export function getStatusFieldDescription(taskType: TaskType): string {
   - planning → working
   - working → completed
   - completed → end
-  - completed → working（如果发现缺失段落需要补充）
+  - completed → working（如果需要补充缺失段落、编辑/优化已${taskLabel}的段落）
 - **禁止的转换**：
   - ❌ working → end（必须经过 completed）
   - ❌ planning → completed（必须经过 working）
