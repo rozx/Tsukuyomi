@@ -32,8 +32,11 @@ export function useParagraphTranslation(
         ...updatedChapter,
         // 保留现有的 title（可能已被 updateTitleTranslation 更新）
         title: selectedChapterWithContent.value.title,
-        // 如果 updatedChapter 有 content，使用它；否则保留现有的 content
-        content: updatedChapter.content ?? selectedChapterWithContent.value.content,
+        // 如果 updatedChapter 有 content（包括 null），使用它；否则保留现有的 content
+        content:
+          updatedChapter.content !== undefined
+            ? updatedChapter.content
+            : selectedChapterWithContent.value.content,
         // 使用最新的 lastEdited 时间戳
         lastEdited: updatedChapter.lastEdited ?? selectedChapterWithContent.value.lastEdited,
       };
