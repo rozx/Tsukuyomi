@@ -371,9 +371,10 @@ export class TermTranslationService {
                 });
                 continue; // 继续循环，让 AI 重新生成
               } else {
-                // 达到最大重试次数，使用原始文本作为后备
-                console.warn('[TermTranslationService] 达到最大 JSON 重试次数，使用原始文本');
-                finalText = responseText.trim();
+                // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
+                throw new Error(
+                  'AI 响应格式错误：JSON 中缺少 translation 字段。已达到最大重试次数，无法获取有效翻译。',
+                );
               }
             }
           } else {
@@ -392,9 +393,10 @@ export class TermTranslationService {
               });
               continue; // 继续循环，让 AI 重新生成
             } else {
-              // 达到最大重试次数，使用原始文本作为后备
-              console.warn('[TermTranslationService] 达到最大 JSON 重试次数，使用原始文本');
-              finalText = responseText.trim();
+              // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
+              throw new Error(
+                'AI 响应格式错误：未找到有效的 JSON 格式。已达到最大重试次数，无法获取有效翻译。',
+              );
             }
           }
         } catch (parseError) {
@@ -412,9 +414,12 @@ export class TermTranslationService {
             });
             continue; // 继续循环，让 AI 重新生成
           } else {
-            // 达到最大重试次数，使用原始文本作为后备
-            console.warn('[TermTranslationService] 达到最大 JSON 重试次数，使用原始文本');
-            finalText = responseText.trim();
+            // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
+            const errorMessage =
+              parseError instanceof Error ? parseError.message : String(parseError);
+            throw new Error(
+              `AI 响应格式错误：JSON 解析失败（${errorMessage}）。已达到最大重试次数，无法获取有效翻译。`,
+            );
           }
         }
 
@@ -433,14 +438,29 @@ export class TermTranslationService {
               if (parsed && typeof parsed.translation === 'string') {
                 finalText = parsed.translation;
               } else {
-                finalText = lastResponse.trim();
+                throw new Error(
+                  'AI 响应格式错误：达到最大工具调用次数，且最后一次响应中 JSON 格式不正确（缺少 translation 字段）。',
+                );
               }
             } else {
-              finalText = lastResponse.trim();
+              throw new Error(
+                'AI 响应格式错误：达到最大工具调用次数，且最后一次响应中未找到有效的 JSON 格式。',
+              );
             }
-          } catch {
-            finalText = lastResponse.trim();
+          } catch (error) {
+            // 如果是我们抛出的错误，直接抛出
+            if (error instanceof Error && error.message.includes('AI 响应格式错误')) {
+              throw error;
+            }
+            // 否则是 JSON 解析错误
+            throw new Error(
+              `AI 响应格式错误：达到最大工具调用次数，且最后一次响应的 JSON 解析失败。无法获取有效翻译。`,
+            );
           }
+        } else {
+          throw new Error(
+            'AI 响应格式错误：达到最大工具调用次数，且没有可用的响应内容。无法获取有效翻译。',
+          );
         }
       }
 

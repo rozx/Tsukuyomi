@@ -610,9 +610,11 @@ watch(
   { immediate: true },
 );
 
-// 监听书籍变化，如果当前章节被删除，清空选中状态
-// 注意：不再自动同步标题等元数据，因为这会覆盖本地更新
-// 标题和内容的更新应该通过直接赋值或回调处理
+// 监听书籍变化，处理章节删除和元数据同步
+// 策略：
+// 1. 如果章节被删除，清空选中状态
+// 2. 如果章节存在且有元数据更新（如标题、webUrl等），且用户未在编辑，则同步更新元数据
+// 3. 内容（content）的更新由专门的函数处理，不在此处更新
 watch(
   book,
   (newBook, oldBook) => {
@@ -621,23 +623,59 @@ watch(
       return;
     }
 
-    // 如果当前有打开的章节，检查章节是否仍然存在
+    // 如果当前有打开的章节
     if (selectedChapterId.value && selectedChapterWithContent.value) {
-      // 检查章节是否仍然存在于新书籍中
-      const chapterStillExists = newBook.volumes?.some((volume) =>
-        volume.chapters?.some((ch) => ch.id === selectedChapterId.value),
-      );
+      // 查找新书籍中的对应章节
+      let updatedChapter: Chapter | undefined;
+      for (const volume of newBook.volumes || []) {
+        if (volume.chapters) {
+          const chapter = volume.chapters.find((ch) => ch.id === selectedChapterId.value);
+          if (chapter) {
+            updatedChapter = chapter;
+            break;
+          }
+        }
+      }
 
-      if (!chapterStillExists) {
+      if (!updatedChapter) {
         // 章节不存在了，清空选中状态
         selectedChapterWithContent.value = null;
         if (bookId.value) {
           void bookDetailsStore.setSelectedChapter(bookId.value, null);
         }
+        return;
       }
-      // 注意：如果章节仍存在，不做任何更新
-      // 标题和内容的更新应该通过 updateTitleTranslation 和 updateParagraphs* 函数处理
-      // 这样可以避免 watcher 覆盖刚刚更新的数据
+
+      // 章节存在，检查是否有元数据更新
+      // 只在用户未在编辑时才更新元数据，避免覆盖本地编辑
+      const isUserEditing =
+        currentlyEditingParagraphId.value !== null || isEditingOriginalText.value;
+
+      if (!isUserEditing) {
+        // 检查元数据是否有变化（不包括 content，因为 content 有独立的更新机制）
+        const currentChapter = selectedChapterWithContent.value;
+        const hasMetadataChanged =
+          JSON.stringify(currentChapter.title) !== JSON.stringify(updatedChapter.title) ||
+          currentChapter.webUrl !== updatedChapter.webUrl ||
+          currentChapter.lastEdited.getTime() !== updatedChapter.lastEdited.getTime() ||
+          currentChapter.createdAt.getTime() !== updatedChapter.createdAt.getTime() ||
+          currentChapter.originalContent !== updatedChapter.originalContent ||
+          currentChapter.contentLoaded !== updatedChapter.contentLoaded;
+
+        if (hasMetadataChanged) {
+          // 更新元数据，但保留现有的 content（如果已加载）
+          selectedChapterWithContent.value = {
+            ...currentChapter,
+            ...updatedChapter,
+            // 保留现有的 content，因为 content 的更新由专门的函数处理
+            content: currentChapter.content ?? updatedChapter.content,
+            // 保留 contentLoaded 状态，因为如果当前已加载，应该保持已加载状态
+            contentLoaded: currentChapter.contentLoaded ?? updatedChapter.contentLoaded,
+          };
+        }
+      }
+      // 注意：如果用户正在编辑，不更新元数据，避免覆盖本地编辑
+      // 内容（content）的更新由 updateTitleTranslation 和 updateParagraphs* 函数处理
     }
   },
   { deep: true },
