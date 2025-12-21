@@ -27,11 +27,10 @@ export function useParagraphTranslation(
     if (updatedChapter && updatedChapter.content !== undefined) {
       // 更新 selectedChapterWithContent，保留现有的 title 和 content（避免覆盖并发更新的标题）
       // 注意：只更新 content 和 lastEdited，保留现有的 title（可能已被 updateTitleTranslation 更新）
+      // 以及所有其他元数据字段（webUrl、originalContent、指令字段等）
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
-        ...updatedChapter,
-        // 保留现有的 title（可能已被 updateTitleTranslation 更新）
-        title: selectedChapterWithContent.value.title,
+        // 只更新 content 和 lastEdited，不展开整个 updatedChapter 以避免覆盖元数据
         // 如果 updatedChapter 有 content（包括 null），使用它；否则保留现有的 content
         content:
           updatedChapter.content !== undefined
