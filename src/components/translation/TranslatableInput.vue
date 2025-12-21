@@ -115,11 +115,9 @@ const handleTranslate = async () => {
     // 获取当前上下文
     const context = contextStore.getContext;
 
-    // 使用翻译服务进行翻译，服务会自动管理任务
-    const result = await TermTranslationService.translate(originalText, selectedModel, {
+    // 构建选项对象，只在有值时才传递 bookId 和 chapterId
+    const options: Parameters<typeof TermTranslationService.translate>[2] = {
       taskType: 'termsTranslation',
-      bookId: context.currentBookId || undefined,
-      chapterId: context.currentChapterId || undefined,
       aiProcessingStore: {
         addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
         updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
@@ -128,7 +126,18 @@ const handleTranslate = async () => {
         removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
         activeTasks: aiProcessingStore.activeTasks,
       },
-    });
+    };
+
+    // 只在有值时才添加 bookId 和 chapterId
+    if (context.currentBookId) {
+      options.bookId = context.currentBookId;
+    }
+    if (context.currentChapterId) {
+      options.chapterId = context.currentChapterId;
+    }
+
+    // 使用翻译服务进行翻译，服务会自动管理任务
+    const result = await TermTranslationService.translate(originalText, selectedModel, options);
 
     // 保存任务 ID 以便跟踪
     if (result.taskId) {

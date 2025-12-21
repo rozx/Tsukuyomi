@@ -615,7 +615,7 @@ watch(
 // 标题和内容的更新应该通过直接赋值或回调处理
 watch(
   book,
-  async (newBook, oldBook) => {
+  (newBook, oldBook) => {
     // 只在书籍实际变化时触发（不是初始加载）
     if (!oldBook || !newBook) {
       return;
