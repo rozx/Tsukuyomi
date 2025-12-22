@@ -16,7 +16,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'create_character',
         description:
-          '创建新角色设定。⚠️ 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。❌ **错误处理**：如果尝试创建的角色名称已存在（作为其他角色的主名称），将抛出错误 "角色 {name} 已存在"，操作将失败。',
+          '创建新角色设定。[警告] 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。[禁止] **错误处理**：如果尝试创建的角色名称已存在（作为其他角色的主名称），将抛出错误 "角色 {name} 已存在"，操作将失败。',
         parameters: {
           type: 'object',
           properties: {
@@ -35,7 +35,7 @@ export const characterTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '角色的简短描述（可选）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description: '角色的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
             speaking_style: {
               type: 'string',
@@ -133,7 +133,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'get_character',
         description:
-          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -218,7 +218,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'update_character',
         description:
-          '更新现有角色的翻译、描述、性别或别名。⚠️ **重要**：当发现角色的信息需要修正时（如格式错误、翻译错误、描述格式不符合要求等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。❌ **错误处理**：如果尝试添加的别名已属于其他角色（作为其他角色的主名称或别名），该别名将被**静默跳过**，不会添加到当前角色，也不会抛出错误。因此必须在更新前检查所有别名，避免无效操作。',
+          '更新现有角色的翻译、描述、性别或别名。[警告] **重要**：当发现角色的信息需要修正时（如格式错误、翻译错误、描述格式不符合要求等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。[禁止] **错误处理**：如果尝试添加的别名已属于其他角色（作为其他角色的主名称或别名），该别名将被**静默跳过**，不会添加到当前角色，也不会抛出错误。因此必须在更新前检查所有别名，避免无效操作。',
         parameters: {
           type: 'object',
           properties: {
@@ -241,7 +241,7 @@ export const characterTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '新的描述（可选，设置为空字符串可删除描述）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description: '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
             speaking_style: {
               type: 'string',
@@ -264,7 +264,7 @@ export const characterTools: ToolDefinition[] = [
                 required: ['name', 'translation'],
               },
               description:
-                '新的别名数组（可选，将替换所有现有别名）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"。⚠️ 重要：必须确保数组中的每个别名都属于当前角色，不能包含其他角色的名称或别名。在更新前应使用 list_characters 检查每个别名是否属于其他角色。❌ **错误处理**：如果数组中包含的别名已属于其他角色（作为其他角色的主名称或别名），这些冲突的别名将被**静默跳过**，不会添加到当前角色，也不会在返回结果中显示。',
+                '新的别名数组（可选，将替换所有现有别名）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"。[警告] 重要：必须确保数组中的每个别名都属于当前角色，不能包含其他角色的名称或别名。在更新前应使用 list_characters 检查每个别名是否属于其他角色。[禁止] **错误处理**：如果数组中包含的别名已属于其他角色（作为其他角色的主名称或别名），这些冲突的别名将被**静默跳过**，不会添加到当前角色，也不会在返回结果中显示。',
             },
           },
           required: ['character_id'],
@@ -408,7 +408,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'search_characters_by_keywords',
         description:
-          '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的角色。⚠️ **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的角色。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {

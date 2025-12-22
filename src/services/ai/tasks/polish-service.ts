@@ -202,7 +202,7 @@ export class PolishService {
 
       const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
 
-【核心规则】⚠️ 只返回有变化的段落
+【核心规则】[警告] 只返回有变化的段落
 1. **语言自然化**: 摆脱翻译腔，使用地道中文表达，适当添加语气词（按角色风格）
 2. **节奏优化**: 调整句子长度/结构，删除冗余，修正语病
 3. **角色区分**: 对白符合角色身份/性格，参考speaking_style
@@ -334,7 +334,7 @@ ${getExecutionWorkflowRules('polish')}`;
         const maintenanceReminder = buildMaintenanceReminder('polish');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
-        const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
+        const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
         const content = buildIndependentChunkPrompt(

@@ -16,7 +16,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'create_term',
         description:
-          '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。⚠️ **重要**：不要创建具有固定/常见翻译的术语（例如：基本的日语词汇、常见的日常用语、标准词典中的标准翻译等）。术语应该只用于需要特殊处理、上下文相关翻译或作品特定的专有名词。❌ **特别禁止**：如果日文术语和中文翻译完全相同（例如：魔王 -> 魔王），**不应**创建术语，除非该术语在作品中有特殊的上下文含义需要特别说明。',
+          '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。[警告] **重要**：不要创建具有固定/常见翻译的术语（例如：基本的日语词汇、常见的日常用语、标准词典中的标准翻译等）。术语应该只用于需要特殊处理、上下文相关翻译或作品特定的专有名词。[禁止] **特别禁止**：如果日文术语和中文翻译完全相同（例如：魔王 -> 魔王），**不应**创建术语，除非该术语在作品中有特殊的上下文含义需要特别说明。',
         parameters: {
           type: 'object',
           properties: {
@@ -26,11 +26,11 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '术语的中文翻译。⚠️ **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
+              description: '术语的中文翻译。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
             },
             description: {
               type: 'string',
-              description: '术语的简短描述（可选）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description: '术语的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['name', 'translation'],
@@ -80,7 +80,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_term',
         description:
-          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -162,7 +162,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'update_term',
         description:
-          '更新现有术语的翻译或描述。⚠️ **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
+          '更新现有术语的翻译或描述。[警告] **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
         parameters: {
           type: 'object',
           properties: {
@@ -172,11 +172,11 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '新的翻译文本（可选）。⚠️ **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
+              description: '新的翻译文本（可选）。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
             },
             description: {
               type: 'string',
-              description: '新的描述（可选，设置为空字符串可删除描述）。⚠️ **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description: '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['term_id'],
@@ -398,7 +398,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'search_terms_by_keywords',
         description:
-          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。⚠️ **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {

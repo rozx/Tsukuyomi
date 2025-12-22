@@ -314,7 +314,7 @@ ${getExecutionWorkflowRules('translation')}`;
         const maintenanceReminder = buildMaintenanceReminder('translation');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
-        const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
+        const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立
         // 后续 chunk 会包含从第一个 chunk 继承的规划上下文

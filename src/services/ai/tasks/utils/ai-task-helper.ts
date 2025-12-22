@@ -227,9 +227,9 @@ export async function executeToolCall(
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
-    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
-    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    translation: `\n[警告] 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
+    proofreading: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    polish: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
   };
   return reminders[taskType];
 }
@@ -241,7 +241,7 @@ export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
-  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
+  return `开始${taskLabel}。[警告] 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
 
 ${chunkingInstructions}`;
 }
@@ -270,7 +270,7 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 export function addChapterContext(prompt: string, chapterId: string, _taskType: TaskType): string {
   return (
     `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
-    `⚠️ **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
+    `[警告] **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
   );
 }
 
@@ -298,7 +298,7 @@ export function addParagraphContext(
     `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n` +
     `你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，` +
     `以确保${taskLabel}的一致性和连贯性。\n\n` +
-    `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
+    `[警告] **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
     `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
     `不要尝试翻译工具返回的段落内容。`
   );
@@ -369,7 +369,7 @@ export function buildIndependentChunkPrompt(
   const taskLabel = taskLabels[taskType];
 
   // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
-  const contextToolsReminder = `\n\n⚠️ **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
 
   // 第一个 chunk：完整规划阶段
   // 注意：章节 ID 已在系统提示词中提供
@@ -393,7 +393,7 @@ export function buildIndependentChunkPrompt(
 【从前一部分继承的规划上下文】
 ${planningContext}
 
-**⚠️ 重要：简短规划阶段**
+**[警告] 重要：简短规划阶段**
 以上是前一部分已获取的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息，不要重复调用工具获取**。
 
 **禁止重复调用的工具**：\`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\`、\`list_chapters\` 等已在上下文中提供的工具。
@@ -603,7 +603,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
                 `[${logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolCall.function.name}，该工具的结果已在规划上下文中提供`,
               );
               // 在工具结果后添加警告信息，提醒 AI 这些信息已经在上下文中
-              const warningMessage = `\n\n⚠️ **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
+              const warningMessage = `\n\n[警告] **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
               history.push({
                 role: 'tool',
                 content: toolResult.content + warningMessage,
@@ -663,7 +663,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         role: 'user',
         content:
           `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
-          `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：` +
+          `响应格式错误：${parsed.error}。[警告] 只返回JSON，状态可独立返回：` +
           `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
@@ -709,7 +709,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
-            `⚠️ **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
+            `[警告] **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
             `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
             `你当前处于 "${statusLabels[previousStatus]}"，应该先转换到 "${expectedStatusLabel}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}${newStatus === 'working' && previousStatus === 'planning' ? ' 或包含内容时 {"status": "working", "paragraphs": [...]}' : ''}`,
@@ -836,7 +836,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
-            `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
+            `[警告] **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
             `**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。` +
             `不要再返回 planning 状态，直接开始${taskLabel}工作。` +
             `返回格式：\`{"status": "working", "paragraphs": [...]}\``,
@@ -846,8 +846,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         // 如果是简短规划模式，强烈提醒 AI 已有上下文信息，无需重复获取
         const planningInstruction = isBriefPlanning
           ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
-            `**⚠️ 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
-            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。`
+            `**[警告] 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
+            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。` +
+            `仍然注意敬语翻译流程，确保翻译结果准确。`
           : `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
             `如果还需要使用工具获取信息，请调用工具后再更新状态。`;
@@ -872,7 +873,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
+            `[警告] **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
             `**现在必须**输出${taskLabel}结果。` +
             `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
@@ -944,7 +945,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
+            `[警告] 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作

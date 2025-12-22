@@ -317,7 +317,7 @@ async function searchWeb(query: string): Promise<{
           'table.result': $('table.result').length,
         };
 
-        console.warn('[WebSearch] ⚠️ 未找到搜索结果 - 调试信息', {
+        console.warn('[WebSearch] [警告] 未找到搜索结果 - 调试信息', {
           query,
           htmlLength: html.length,
           foundElements: hasResultElements,
@@ -332,7 +332,7 @@ async function searchWeb(query: string): Promise<{
             .get(),
         });
       } else {
-        console.warn('[WebSearch] ⚠️ 未找到搜索结果', {
+        console.warn('[WebSearch] [警告] 未找到搜索结果', {
           query,
           htmlLength: html.length,
         });
@@ -523,7 +523,7 @@ export const webSearchTools: ToolDefinition[] = [
       function: {
         name: 'search_web',
         description:
-          '搜索网络以获取最新信息或回答一般性问题。当用户询问需要最新信息、实时数据或超出 AI 模型训练数据范围的问题时，可以使用此工具。⚠️ 重要：当工具返回 results 数组时，必须仔细阅读每个结果的 title 和 snippet，从中提取关键信息来回答用户的问题。如果返回了 answer 字段，直接使用该答案。只有在搜索失败（success: false）时才使用 AI 的内置知识库。',
+          '搜索网络以获取最新信息或回答一般性问题。当用户询问需要最新信息、实时数据或超出 AI 模型训练数据范围的问题时，可以使用此工具。[警告] 重要：当工具返回 results 数组时，必须仔细阅读每个结果的 title 和 snippet，从中提取关键信息来回答用户的问题。如果返回了 answer 字段，直接使用该答案。只有在搜索失败（success: false）时才使用 AI 的内置知识库。',
         parameters: {
           type: 'object',
           properties: {
@@ -574,7 +574,7 @@ export const webSearchTools: ToolDefinition[] = [
       function: {
         name: 'fetch_webpage',
         description:
-          '直接访问指定的网页并提取其内容。当用户提供了具体的网页 URL 或需要查看特定网页的详细内容时使用此工具。工具会提取网页的标题和主要内容文本，供 AI 分析。⚠️ 重要：使用此工具时，必须仔细阅读返回的 text 内容，从中提取关键信息来回答用户的问题。如果返回了 error，说明无法访问该网页。',
+          '直接访问指定的网页并提取其内容。当用户提供了具体的网页 URL 或需要查看特定网页的详细内容时使用此工具。工具会提取网页的标题和主要内容文本，供 AI 分析。[警告] 重要：使用此工具时，必须仔细阅读返回的 text 内容，从中提取关键信息来回答用户的问题。如果返回了 error，说明无法访问该网页。',
         parameters: {
           type: 'object',
           properties: {

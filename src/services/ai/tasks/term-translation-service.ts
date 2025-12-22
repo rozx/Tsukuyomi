@@ -180,7 +180,7 @@ export class TermTranslationService {
 2. **自然流畅**: 符合轻小说风格，保持术语的准确性
 3. **上下文理解**: 根据当前书籍、章节的上下文来理解术语含义
 
-【工具使用】⭐ **强烈建议在翻译前获取上下文**
+【工具使用】[重要] **强烈建议在翻译前获取上下文**
 你可以使用以下工具获取上下文信息：
 - \`get_book_info\`: 获取当前书籍信息（标题、作者、简介、标签等），了解书籍背景
 - \`get_term\`: 根据术语名称获取术语信息
@@ -200,7 +200,7 @@ export class TermTranslationService {
 2. **理解术语**：基于上下文理解术语的含义和用法
 3. **翻译术语**：提供准确、一致、符合轻小说风格的翻译
 
-**输出格式**：⚠️ **必须只返回 JSON 格式**
+**输出格式**：[警告] **必须只返回 JSON 格式**
 \`\`\`json
 {
   "translation": "翻译结果"
@@ -214,7 +214,7 @@ export class TermTranslationService {
       // 构建用户提示词
       const userPrompt =
         prompt ||
-        `请将以下日文术语翻译为简体中文，保持原文的格式和结构。⚠️ **必须只返回 JSON 格式**：
+        `请将以下日文术语翻译为简体中文，保持原文的格式和结构。[警告] **必须只返回 JSON 格式**：
 \`\`\`json
 {
   "translation": "翻译结果"
@@ -450,7 +450,7 @@ export class TermTranslationService {
                 history.push({
                   role: 'user',
                   content:
-                    '响应格式错误：JSON 中缺少 translation 字段。⚠️ **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
+                    '响应格式错误：JSON 中缺少 translation 字段。[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
                 });
                 continue; // 继续循环，让 AI 重新生成
               } else {
@@ -472,7 +472,7 @@ export class TermTranslationService {
               history.push({
                 role: 'user',
                 content:
-                  '响应格式错误：未找到 JSON 格式。⚠️ **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
+                  '响应格式错误：未找到 JSON 格式。[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
               });
               continue; // 继续循环，让 AI 重新生成
             } else {
@@ -493,7 +493,7 @@ export class TermTranslationService {
             });
             history.push({
               role: 'user',
-              content: `响应格式错误：JSON 解析失败（${parseError instanceof Error ? parseError.message : String(parseError)}）。⚠️ **必须只返回 JSON 格式**：\n\`\`\`json\n{\n  "translation": "翻译结果"\n}\n\`\`\`\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。`,
+              content: `响应格式错误：JSON 解析失败（${parseError instanceof Error ? parseError.message : String(parseError)}）。[警告] **必须只返回 JSON 格式**：\n\`\`\`json\n{\n  "translation": "翻译结果"\n}\n\`\`\`\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。`,
             });
             continue; // 继续循环，让 AI 重新生成
           } else {

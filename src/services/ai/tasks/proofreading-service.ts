@@ -201,7 +201,7 @@ export class ProofreadingService {
 
       const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
 
-【校对检查项】⚠️ 只返回有变化的段落
+【校对检查项】[警告] 只返回有变化的段落
 1. **文字**: 错别字、标点（全角）、语法、词语用法
 2. **内容**: 人名/地名/称谓一致性、时间线/逻辑、设定准确性
 3. **格式**: 段落格式、数字用法统一
@@ -322,7 +322,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
         const maintenanceReminder = buildMaintenanceReminder('proofreading');
         // 计算当前块的段落数量（用于提示AI）
         const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
-        const paragraphCountNote = `\n⚠️ 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
+        const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
         const content = buildIndependentChunkPrompt(
