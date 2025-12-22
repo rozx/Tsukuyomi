@@ -9,6 +9,7 @@ import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useBookDetailsStore } from 'src/stores/book-details';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
@@ -30,9 +31,8 @@ const emit = defineEmits<{
 }>();
 
 const aiProcessingStore = useAIProcessingStore();
+const bookDetailsStore = useBookDetailsStore();
 const toast = useToastWithHistory();
-
-const showAITaskHistory = ref(false);
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
@@ -78,21 +78,10 @@ watch(
   { deep: true },
 );
 
-// Height adjustment state
-const aiHistoryHeight = ref(400); // Default height in pixels
-const isResizing = ref(false);
-const resizeStartY = ref(0);
-const resizeStartHeight = ref(400);
-
-// Load saved height from localStorage
 onMounted(() => {
-  const savedHeight = localStorage.getItem('translation-progress-ai-history-height');
-  if (savedHeight) {
-    const height = parseInt(savedHeight, 10);
-    if (height >= 200 && height <= 800) {
-      aiHistoryHeight.value = height;
-      resizeStartHeight.value = height;
-    }
+  // 确保 store 状态已加载
+  if (!bookDetailsStore.isLoaded) {
+    bookDetailsStore.loadState();
   }
   // 初始化时加载待办事项
   loadTodos();
@@ -100,49 +89,7 @@ onMounted(() => {
   window.addEventListener('storage', handleStorageChange);
 });
 
-// Save height to localStorage
-const saveHeight = (height: number) => {
-  localStorage.setItem('translation-progress-ai-history-height', height.toString());
-};
-
-// Resize handlers
-const handleResizeStart = (e: MouseEvent | TouchEvent) => {
-  e.preventDefault();
-  isResizing.value = true;
-  const clientY = 'touches' in e && e.touches[0] ? e.touches[0].clientY : (e as MouseEvent).clientY;
-  resizeStartY.value = clientY;
-  resizeStartHeight.value = aiHistoryHeight.value;
-  document.addEventListener('mousemove', handleResizeMove);
-  document.addEventListener('mouseup', handleResizeEnd);
-  document.addEventListener('touchmove', handleResizeMove);
-  document.addEventListener('touchend', handleResizeEnd);
-};
-
-const handleResizeMove = (e: MouseEvent | TouchEvent) => {
-  if (!isResizing.value) return;
-  e.preventDefault();
-  const clientY = 'touches' in e && e.touches[0] ? e.touches[0].clientY : (e as MouseEvent).clientY;
-  const deltaY = resizeStartY.value - clientY; // Inverted: dragging up increases height
-  const newHeight = Math.max(200, Math.min(800, resizeStartHeight.value + deltaY));
-  aiHistoryHeight.value = newHeight;
-};
-
-const handleResizeEnd = () => {
-  if (isResizing.value) {
-    isResizing.value = false;
-    saveHeight(aiHistoryHeight.value);
-  }
-  document.removeEventListener('mousemove', handleResizeMove);
-  document.removeEventListener('mouseup', handleResizeEnd);
-  document.removeEventListener('touchmove', handleResizeMove);
-  document.removeEventListener('touchend', handleResizeEnd);
-};
-
 onUnmounted(() => {
-  document.removeEventListener('mousemove', handleResizeMove);
-  document.removeEventListener('mouseup', handleResizeEnd);
-  document.removeEventListener('touchmove', handleResizeMove);
-  document.removeEventListener('touchend', handleResizeEnd);
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
 });
@@ -155,21 +102,22 @@ const taskStatusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-// Auto Scroll State - 通用设置，适用于所有标签页
-const autoScrollEnabled = ref<Record<string, boolean>>({});
+// Auto Scroll State - 从 store 获取，使用 computed 以便响应式更新
+const autoScrollEnabled = computed(() => bookDetailsStore.translationProgress.autoScrollEnabled);
 
-// Auto Tab Switching State - 自动标签页切换设置
-const autoTabSwitchingEnabled = ref<Record<string, boolean>>({});
+// Auto Tab Switching State - 从 store 获取
+const autoTabSwitchingEnabled = computed(() => bookDetailsStore.translationProgress.autoTabSwitchingEnabled);
 
-// Task Fold State
-const taskFolded = ref<Record<string, boolean>>({});
+// Task Fold State - 从 store 获取
+const taskFolded = computed(() => bookDetailsStore.translationProgress.taskFolded);
 
 const toggleTaskFold = (taskId: string) => {
-  taskFolded.value[taskId] = !taskFolded.value[taskId];
+  const currentFolded = taskFolded.value[taskId] || false;
+  bookDetailsStore.setTranslationProgressTaskFolded(taskId, !currentFolded);
 };
 
-// Active Tab State for each task
-const activeTab = ref<Record<string, string>>({});
+// Active Tab State for each task - 从 store 获取
+const activeTab = computed(() => bookDetailsStore.translationProgress.activeTab);
 // Track the last active state for each task to detect state changes
 const lastActiveState = ref<Record<string, 'thinking' | 'outputting' | 'none'>>({});
 
@@ -178,7 +126,7 @@ const lastThinkingUpdate = ref<Record<string, number>>({});
 const lastOutputUpdate = ref<Record<string, number>>({});
 
 const setActiveTab = (taskId: string, value: string) => {
-  activeTab.value[taskId] = value;
+  bookDetailsStore.setTranslationProgressActiveTab(taskId, value);
 };
 
 const getActiveTab = (taskId: string): string => {
@@ -207,7 +155,7 @@ const getActiveTab = (taskId: string): string => {
   const lastState = lastActiveState.value[taskId];
   if (lastState !== undefined && lastState !== currentActiveState) {
     // State changed - clear saved tab to allow auto-switch
-    delete activeTab.value[taskId];
+    bookDetailsStore.clearTranslationProgressActiveTab(taskId);
   }
 
   // Update last active state
@@ -383,8 +331,9 @@ const scrollToBottom = (container: HTMLElement) => {
 
 // 通用自动滚动切换函数，适用于所有标签页
 const toggleAutoScroll = (taskId: string) => {
-  autoScrollEnabled.value[taskId] = !autoScrollEnabled.value[taskId];
-  if (autoScrollEnabled.value[taskId]) {
+  const currentEnabled = autoScrollEnabled.value[taskId] || false;
+  bookDetailsStore.setTranslationProgressAutoScroll(taskId, !currentEnabled);
+  if (!currentEnabled) {
     nextTick(() => {
       // 根据当前激活的标签页滚动对应的容器
       const activeTab = getActiveTab(taskId);
@@ -408,21 +357,24 @@ const toggleAutoScroll = (taskId: string) => {
 // 自动标签页切换开关
 const toggleAutoTabSwitching = (taskId: string) => {
   const wasEnabled = autoTabSwitchingEnabled.value[taskId] !== false;
-  autoTabSwitchingEnabled.value[taskId] = !wasEnabled;
+  const newEnabled = !wasEnabled;
+  bookDetailsStore.setTranslationProgressAutoTabSwitching(taskId, newEnabled);
   // 默认启用自动切换（undefined 视为 true）
-  if (autoTabSwitchingEnabled.value[taskId] === false) {
+  if (!newEnabled) {
     // 禁用时，确保有保存的标签页选择
     if (!activeTab.value[taskId]) {
       // 如果没有保存的选择，临时启用自动切换来获取当前应该显示的标签页
       // 先保存当前状态，避免 getActiveTab 清除 activeTab
       const savedLastState = lastActiveState.value[taskId] ?? 'none';
-      autoTabSwitchingEnabled.value[taskId] = true;
+      // 临时设置 store 状态为 true 来获取当前标签页
+      bookDetailsStore.setTranslationProgressAutoTabSwitching(taskId, true);
       const currentTab = getActiveTab(taskId);
-      autoTabSwitchingEnabled.value[taskId] = false;
+      // 恢复为 false
+      bookDetailsStore.setTranslationProgressAutoTabSwitching(taskId, false);
       // 恢复 lastActiveState，避免状态被意外更新
       lastActiveState.value[taskId] = savedLastState;
       // 保存当前标签页，这样禁用后就会保持在这个标签页
-      activeTab.value[taskId] = currentTab;
+      bookDetailsStore.setTranslationProgressActiveTab(taskId, currentTab);
     }
   }
 };
@@ -718,10 +670,10 @@ watch(
       for (const task of recentAITasks.value) {
         const isActive = task.status === 'thinking' || task.status === 'processing';
         if (!isActive) {
-          taskFolded.value[task.id] = true;
+          bookDetailsStore.setTranslationProgressTaskFolded(task.id, true);
         } else {
           // Ensure active tasks are unfolded
-          taskFolded.value[task.id] = false;
+          bookDetailsStore.setTranslationProgressTaskFolded(task.id, false);
         }
       }
     }
@@ -731,64 +683,10 @@ watch(
 </script>
 
 <template>
-  <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-toolbar">
-    <div class="translation-progress-content">
-      <div class="translation-progress-info">
-        <div class="translation-progress-header">
-          <i
-            :class="[
-              'translation-progress-icon',
-              isProofreading
-                ? 'pi pi-check-circle'
-                : isPolishing
-                  ? 'pi pi-sparkles'
-                  : 'pi pi-language',
-            ]"
-          ></i>
-          <span class="translation-progress-title">{{
-            isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
-          }}</span>
-        </div>
-        <div class="translation-progress-message">
-          {{ progress.message || '正在处理...' }}
-        </div>
-      </div>
-      <div class="translation-progress-bar-wrapper">
-        <ProgressBar
-          :value="progress.total > 0 ? (progress.current / progress.total) * 100 : 0"
-          :show-value="false"
-          class="translation-progress-bar"
-        />
-        <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
-      </div>
-      <Button
-        icon="pi pi-list"
-        :class="[
-          'p-button-text p-button-sm translation-progress-history-toggle',
-          { 'p-highlight': showAITaskHistory },
-        ]"
-        :title="showAITaskHistory ? '隐藏 AI 任务历史' : '显示 AI 任务历史'"
-        @click="showAITaskHistory = !showAITaskHistory"
-      />
-      <Button
-        icon="pi pi-times"
-        label="取消"
-        class="p-button-text p-button-sm translation-progress-cancel"
-        @click="emit('cancel')"
-      />
-    </div>
+  <div class="translation-progress-toolbar">
     <!-- AI 任务历史 -->
-    <div v-if="showAITaskHistory" class="translation-progress-ai-history-wrapper">
-      <div
-        class="translation-progress-ai-history-resize-handle"
-        @mousedown="handleResizeStart"
-        @touchstart="handleResizeStart"
-        :class="{ resizing: isResizing }"
-        title="拖拽调整高度"
-      >
-        <i class="pi pi-grip-lines-vertical"></i>
-      </div>
-      <div class="translation-progress-ai-history" :style="{ height: `${aiHistoryHeight}px` }">
+    <div class="translation-progress-ai-history-wrapper">
+      <div class="translation-progress-ai-history">
         <div class="ai-history-content">
           <div v-if="recentAITasks.length === 0" class="ai-history-empty">
             <i class="pi pi-info-circle"></i>
@@ -1053,26 +951,86 @@ watch(
         </div>
       </div>
     </div>
+    <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-content">
+      <div class="translation-progress-info">
+        <div class="translation-progress-header">
+          <i
+            :class="[
+              'translation-progress-icon',
+              isProofreading
+                ? 'pi pi-check-circle'
+                : isPolishing
+                  ? 'pi pi-sparkles'
+                  : 'pi pi-language',
+            ]"
+          ></i>
+          <span class="translation-progress-title">{{
+            isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
+          }}</span>
+        </div>
+        <div class="translation-progress-message">
+          {{ progress.message || '正在处理...' }}
+        </div>
+      </div>
+      <div class="translation-progress-bar-wrapper">
+        <ProgressBar
+          :value="progress.total > 0 ? (progress.current / progress.total) * 100 : 0"
+          :show-value="false"
+          class="translation-progress-bar"
+        />
+        <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
+      </div>
+      <div class="translation-progress-actions">
+        <Button
+          icon="pi pi-times"
+          label="取消"
+          class="p-button-text p-button-sm translation-progress-cancel"
+          @click="emit('cancel')"
+        />
+      </div>
+    </div>
+    <div v-else class="translation-progress-content">
+      <div class="translation-progress-info">
+        <div class="translation-progress-header">
+          <i class="translation-progress-icon pi pi-list"></i>
+          <span class="translation-progress-title">AI 任务历史</span>
+        </div>
+        <div class="translation-progress-message">
+          查看翻译、润色和校对任务的执行历史
+        </div>
+      </div>
+      <div class="translation-progress-actions">
+        <!-- 无操作按钮 -->
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .translation-progress-toolbar {
-  flex-shrink: 0;
-  padding: 0.75rem 1.5rem;
-  background: var(--white-opacity-95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--white-opacity-20);
-  box-shadow: 0 -2px 12px var(--black-opacity-10);
-  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
 }
 
 .translation-progress-content {
   display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  max-width: 56rem;
-  margin: 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem;
+  flex-shrink: 0;
+  background: var(--white-opacity-95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--white-opacity-20);
+  box-shadow: 0 2px 8px var(--black-opacity-10);
 }
 
 .translation-progress-info {
@@ -1081,6 +1039,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  width: 100%;
 }
 
 .translation-progress-header {
@@ -1108,8 +1067,7 @@ watch(
 
 .translation-progress-bar-wrapper {
   flex: 1;
-  min-width: 200px;
-  max-width: 400px;
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -1125,12 +1083,16 @@ watch(
   font-weight: 500;
   color: var(--moon-opacity-80);
   white-space: nowrap;
-  min-width: 4rem;
+  min-width: 3rem;
   text-align: right;
+  flex-shrink: 0;
 }
 
-.translation-progress-history-toggle {
-  flex-shrink: 0;
+.translation-progress-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .translation-progress-cancel {
@@ -1140,56 +1102,29 @@ watch(
 /* AI 任务历史 */
 .translation-progress-ai-history-wrapper {
   position: relative;
-  border-top: 1px solid var(--white-opacity-20);
-}
-
-.translation-progress-ai-history-resize-handle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: var(--white-opacity-10);
-  cursor: ns-resize;
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  transition: background 0.2s;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.translation-progress-ai-history-resize-handle:hover {
-  background: var(--primary-opacity-30);
-}
-
-.translation-progress-ai-history-resize-handle.resizing {
-  background: var(--primary-opacity-50);
-}
-
-.translation-progress-ai-history-resize-handle i {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-40);
-  pointer-events: none;
-}
-
-.translation-progress-ai-history-resize-handle:hover i,
-.translation-progress-ai-history-resize-handle.resizing i {
-  color: var(--primary-opacity-80);
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .translation-progress-ai-history {
   border-top: 1px solid var(--white-opacity-20);
   background: var(--white-opacity-3);
-  height: 400px;
+  flex: 1;
+  min-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
   resize: none;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .ai-history-content {
-  padding: 1rem 1.5rem;
+  padding: 1rem;
 }
 
 .ai-history-empty {
@@ -1205,7 +1140,7 @@ watch(
 .ai-history-tasks {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .ai-history-clear-actions {
@@ -1225,7 +1160,7 @@ watch(
 }
 
 .ai-history-task-item {
-  padding: 0.75rem;
+  padding: 1.25rem;
   border-radius: 6px;
   border: 1px solid var(--white-opacity-10);
   background: var(--white-opacity-5);
@@ -1257,7 +1192,8 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  min-height: 2.5rem;
 }
 
 .ai-task-info {
@@ -1485,7 +1421,7 @@ watch(
   color: var(--moon-opacity-70);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 400px;
   overflow-y: auto;
   display: block;
   scroll-behavior: smooth;
@@ -1599,7 +1535,7 @@ watch(
   color: var(--moon-opacity-80);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 400px;
   overflow-y: auto;
   display: block;
   scroll-behavior: smooth;
@@ -1633,7 +1569,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 200px;
+  max-height: 400px;
   overflow-y: auto;
 }
 

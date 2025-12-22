@@ -41,6 +41,20 @@ function hasParagraphContent(paragraph: Paragraph | null | undefined): boolean {
 }
 
 /**
+ * 统计文本末尾的换行符数量（统一按 LF 计数）
+ * @param text 输入文本
+ * @returns 末尾连续换行符数量
+ */
+function countTrailingLineBreaks(text: string | null | undefined): number {
+  if (!text) {
+    return 0;
+  }
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const match = normalized.match(/\n+$/);
+  return match ? match[0].length : 0;
+}
+
+/**
  * 章节服务
  * 提供章节获取、更新、合并等通用功能
  */
@@ -2248,34 +2262,47 @@ export class ChapterService {
         }, '');
         content = `${chapterTitle}\n\n${body}`;
       } else if (type === 'translation') {
-        // 译文导出：段落数组本质上代表“每一行/每一个段落”。
-        // 需求（n -> n+1 换行）在这种数据结构下应通过“用单个换行连接段落”自然实现：
-        // - 1 个空段落 -> 两个相邻的 '\n'（显示为 1 个空行）
-        // - n 个连续空段落 -> n+1 个连续 '\n'（显示为 n 个空行）
-        const translations = chapterWithContent.content.map((p) => {
-          let translation = getParagraphTranslationText(p);
-          translation = formatTranslationForDisplay(translation, book, chapterWithContent);
-          return translation ?? '';
-        });
+        // 译文导出：在保持原有段落结构的基础上，确保“原文中 n 个空行 → 导出 n+1 个空行”
+        let consecutiveReturnParagraphs = 0;
+        const body = chapterWithContent.content!.reduce((acc, paragraph, idx, arr) => {
+          let translation = getParagraphTranslationText(paragraph);
+          translation = formatTranslationForDisplay(translation, book, chapterWithContent) ?? '';
 
-        const body = translations.reduce((acc, text, idx) => {
-          const current = text || '';
-          acc += current;
+          const isLast = idx === arr.length - 1;
+          const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
+          const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
 
-          const isLast = idx === translations.length - 1;
-          if (isLast) return acc;
+          let next = acc;
 
-          // 空段落需要显式补 1 个换行，避免“空段落消失”
-          if (current.trim() === '') {
-            return `${acc}\n`;
+          // 如果前面累计了空段落（代表空行），在遇到下一段非空内容前额外补 1 个换行
+          if (!isReturnParagraph && consecutiveReturnParagraphs > 0) {
+            next += '\n';
+            consecutiveReturnParagraphs = 0;
           }
 
-          // 非空段落：仅当末尾不是换行时，补 1 个换行作为分隔
-          if (!acc.endsWith('\n')) {
-            return `${acc}\n`;
+          next += translation;
+
+          if (!isLast) {
+            const translationTrailingBreaks = countTrailingLineBreaks(translation);
+            const originalTrailingBreaks = countTrailingLineBreaks(paragraph.text);
+            const targetBreaks = Math.max(originalTrailingBreaks + 1, 1);
+            const missingBreaks = targetBreaks - translationTrailingBreaks;
+
+            if (missingBreaks > 0) {
+              next += '\n'.repeat(missingBreaks);
+            }
           }
 
-          return acc;
+          if (isReturnParagraph) {
+            consecutiveReturnParagraphs++;
+            // 章节末尾如果以空段落结束，同样需要补 1 个换行来满足 n+1 的需求
+            if (isLast) {
+              next += '\n';
+              consecutiveReturnParagraphs = 0;
+            }
+          }
+
+          return next;
         }, '');
 
         content = `${chapterTitle}\n\n${body}`;
@@ -2294,7 +2321,7 @@ export class ChapterService {
           let normalizedTranslation = translation || original;
 
           // 检测原文末尾的换行符数量
-          const originalTrailingNewlines = (original.match(/\n+$/) || [''])[0].length;
+          const originalTrailingNewlines = countTrailingLineBreaks(original);
           // 移除翻译末尾的所有换行符
           normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
           // 添加与原文相同数量的换行符

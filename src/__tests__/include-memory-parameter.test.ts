@@ -1,10 +1,10 @@
 import './setup';
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import { terminologyTools } from 'src/services/ai/tools/terminology-tools';
 import { characterTools } from 'src/services/ai/tools/character-tools';
 import { bookTools } from 'src/services/ai/tools/book-tools';
 import { paragraphTools } from 'src/services/ai/tools/paragraph-tools';
-import { searchRelatedMemories } from 'src/services/ai/tools/memory-helper';
+import * as MemoryHelperModule from 'src/services/ai/tools/memory-helper';
 import { MemoryService } from 'src/services/memory-service';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
@@ -60,7 +60,7 @@ await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
 
-// Mock searchRelatedMemories
+// Mock searchRelatedMemories（局部使用，不在文件顶层全局 mock）
 const mockSearchRelatedMemories = mock(
   (
     _bookId: string,
@@ -70,10 +70,6 @@ const mockSearchRelatedMemories = mock(
     return Promise.resolve([]);
   },
 );
-
-await mock.module('src/services/ai/tools/memory-helper', () => ({
-  searchRelatedMemories: mockSearchRelatedMemories,
-}));
 
 // Mock useAIModelsStore
 const mockUseAIModelsStore = mock(() => ({
@@ -112,6 +108,8 @@ await mock.module('src/services/book-service', () => ({
   BookService: mockBookService,
 }));
 
+let searchRelatedMemoriesSpy: ReturnType<typeof spyOn>;
+
 describe('include_memory 参数测试', () => {
   const bookId = 'test-book-1';
   const context: ToolContext = {
@@ -120,7 +118,14 @@ describe('include_memory 参数测试', () => {
 
   beforeEach(() => {
     mockSearchRelatedMemories.mockClear();
+    mockSearchRelatedMemories.mockReset();
     mockSearchRelatedMemories.mockResolvedValue([]);
+    if (searchRelatedMemoriesSpy) {
+      searchRelatedMemoriesSpy.mockRestore();
+    }
+    searchRelatedMemoriesSpy = spyOn(MemoryHelperModule, 'searchRelatedMemories').mockImplementation(
+      mockSearchRelatedMemories as unknown as typeof MemoryHelperModule.searchRelatedMemories,
+    );
     // 重置 IndexedDB mocks
     mockStoreGet.mockClear();
     mockStorePut.mockClear();
@@ -133,6 +138,14 @@ describe('include_memory 参数测试', () => {
     mockGet.mockClear();
     mockPut.mockClear();
     mockDelete.mockClear();
+  });
+
+  afterEach(() => {
+    mockSearchRelatedMemories.mockReset();
+    mockSearchRelatedMemories.mockResolvedValue([]);
+    if (searchRelatedMemoriesSpy) {
+      searchRelatedMemoriesSpy.mockRestore();
+    }
   });
 
   describe('terminology-tools', () => {
@@ -570,7 +583,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.term).toBeDefined();
       // 相关记忆应该为空或不存在
       expect(parsed.related_memories).toBeUndefined();
+      
+      // 重置 mock，避免影响后续测试
+      mockSearchRelatedMemories.mockReset();
+      mockSearchRelatedMemories.mockResolvedValue([]);
     });
   });
+
 });
 

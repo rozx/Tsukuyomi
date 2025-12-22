@@ -29,7 +29,7 @@ export function getCurrentStatusInfo(
   // 简短规划阶段的描述（用于后续 chunk）
   const briefPlanningDescription = `**当前状态：简短规划阶段 (planning)**
 你当前处于简短规划阶段（后续块），已继承前一部分的规划上下文。
-- ✅ 术语表和角色表信息已在上下文中提供
+- 术语表和角色表信息已在上下文中提供
 - 如需补充或验证信息，可以调用工具
 - 通常无需重复获取已有的术语/角色信息
 
@@ -71,11 +71,11 @@ export function getCurrentStatusInfo(
 
 /**
  * 获取数据管理规则（合并敬语/术语/角色工作流）
- * ⚠️ 核心规则：严禁将敬语添加为别名
+ * [警告] 核心规则：严禁将敬语添加为别名
  */
 export function getDataManagementRules(): string {
   return `【数据管理规则】
-⚠️ **核心禁止**: 严禁将敬语（如"田中さん"）添加为角色别名
+[警告] **核心禁止**: 严禁将敬语（如"田中さん"）添加为角色别名
 
 **敬语处理流程**:
 1. 查找角色别名翻译 → 2. 检查角色描述中的关系 → 3. 搜索记忆/历史翻译 → 4. 按关系决定翻译方式
@@ -83,16 +83,16 @@ export function getDataManagementRules(): string {
 - 翻译后创建记忆保存敬语翻译方式（需确认说话者和关系）
 
 **术语/角色分离**:
-- 术语表：专有名词、概念、技能、地名、物品（❌禁止放人名）
-- 角色表：人物全名为主名称，姓/名单独部分为别名（❌禁止放术语）
+- 术语表：专有名词、概念、技能、地名、物品（[禁止]禁止放人名）
+- 角色表：人物全名为主名称，姓/名单独部分为别名（[禁止]禁止放术语）
 - 发现空翻译→立即更新 | 发现重复→删除并合并 | 发现误分类→删除后重建
-- ⚠️ **术语翻译规则**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）
+- [警告] **术语翻译规则**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）
 
 **角色管理**: 新角色先检查是否为已有角色别名，描述需简短且只包含重要信息（如性别/关系/关键特征）
 
-⚠️ **保持数据最新**（必须执行）:
+[警告] **保持数据最新**（必须执行）:
 - 翻译过程中发现术语/角色**新信息**（如：新别名、关系变化、能力揭示、性格细节）→ **立即更新** \`update_term\`/\`update_character\`
-- 发现描述**过时或不完整** → **立即补充**最新重要信息到description/speaking_style（⚠️ 描述应简短，只包含重要信息）
+- 发现描述**过时或不完整** → **立即补充**最新重要信息到description/speaking_style（[警告] 描述应简短，只包含重要信息）
 - 发现翻译**不一致或有误**或**包含多个选项**（如"路人角色／龙套"）→ **立即修正**为单一翻译
 - 新出现的术语/角色 → 先检查是否已存在，不存在则**立即创建**`;
 }
@@ -113,7 +113,7 @@ export function getMemoryWorkflowRules(): string {
 export function getTodoToolsDescription(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
-  return `**待办管理**: \`create_todo\`创建详细可执行任务（如"${taskLabel}第1-5段"而非"${taskLabel}文本"），支持批量创建`;
+  return `**待办管理**: 仅复杂任务需要创建待办列表，简单任务可直接处理。如需创建，使用 \`create_todo\` 创建详细可执行任务（如"${taskLabel}第1-5段"而非"${taskLabel}文本"），支持批量创建`;
 }
 
 /**
@@ -124,7 +124,7 @@ export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabel = taskLabels[taskType];
   return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→end(完成)
 
-⚠️ **状态转换规则**（必须严格遵守）:
+[警告] **状态转换规则**（必须严格遵守）:
 - **禁止跳过状态**：必须按照 planning → working → completed → end 的顺序进行
 - **允许的转换**：
   - planning → working
@@ -132,9 +132,9 @@ export function getStatusFieldDescription(taskType: TaskType): string {
   - completed → end
   - completed → working（如果需要补充缺失段落、编辑/优化已${taskLabel}的段落）
 - **禁止的转换**：
-  - ❌ working → end（必须经过 completed）
-  - ❌ planning → completed（必须经过 working）
-  - ❌ planning → end（必须经过 working 和 completed）`;
+  - [禁止] working → end（必须经过 completed）
+  - [禁止] planning → completed（必须经过 working）
+  - [禁止] planning → end（必须经过 working 和 completed）`;
 }
 
 /**
@@ -146,8 +146,8 @@ export function getOutputFormatRules(taskType: TaskType): string {
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
 
-  return `【输出格式】⚠️ 必须只返回JSON
-❌ 禁止使用翻译管理工具
+  return `【输出格式】[警告] 必须只返回JSON
+[禁止] 禁止使用翻译管理工具
 
 **开始任务时**：先将状态设置为 "planning" 开始规划（返回 \`{"status": "planning"}\`）
 **状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`
@@ -156,7 +156,7 @@ export function getOutputFormatRules(taskType: TaskType): string {
 
 ${getStatusFieldDescription(taskType)}
 - 段落ID必须与原文完全一致，1:1对应${onlyChanged}
-- ⚠️ **无需自行检查缺失段落**，系统会自动验证并提示补充
+- [警告] **无需自行检查缺失段落**，系统会自动验证并提示补充
 - 所有阶段均可使用工具`;
 }
 
@@ -186,11 +186,11 @@ export function getToolUsageInstructions(taskType: TaskType): string {
 - \`list_terms/list_characters\`: 获取术语/角色（传chapter_id）
 - \`search_memory_by_keywords\`: 敬语翻译前先搜索
 - \`find_paragraph_by_keywords\`: 检查历史翻译一致性
-- ⭐ \`update_character/update_term\`: **发现新信息立即更新**（补充翻译、更新描述、添加别名、修正错误）
+- [重要] \`update_character/update_term\`: **发现新信息立即更新**（补充翻译、更新描述、添加别名、修正错误）
 - \`create_term/create_character\`: 新术语/角色立即创建
 - \`create_memory\`: 保存敬语翻译方式等重要信息
 - ${getTodoToolsDescription(taskType)}
-⚠️ \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
+[警告] \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
 }
 
 /**
@@ -201,7 +201,7 @@ export function getChunkingInstructions(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
   return `【分块处理说明】
-⚠️ **重要**：系统会将当前章节分成多个块（chunks）依次提供给你
+[警告] **重要**：系统会将当前章节分成多个块（chunks）依次提供给你
 - **只需关注当前块**：你只需要处理系统当前提供的文本块，不要考虑其他块的内容
 - **完成当前块后**：当前块完成后（状态设为 "end"），系统会自动提供下一个块
 - **不要提前处理**：不要尝试获取或处理尚未提供的块，专注于完成当前块的所有段落${taskLabel}`;

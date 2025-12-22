@@ -121,7 +121,7 @@ export class AssistantService {
 
 ## 工具规则
 
-### ⚠️ 查询优先级（必须遵守）
+### [警告] 查询优先级（必须遵守）
 角色/术语查询：**先用数据库工具** → 找不到才用 search_memory_by_keywords
 
 ### 术语（7工具）
@@ -141,7 +141,7 @@ navigate_to_chapter/navigate_to_paragraph
 
 ### 待办（5工具）
 create_todo（支持 items 批量创建）/list_todos/update_todos/mark_todo_done/delete_todo
-- ⚠️ 多步骤任务必须为每步创建独立待办 | 完成后立即 mark_todo_done
+- [警告] 多步骤任务必须为每步创建独立待办 | 完成后立即 mark_todo_done
 
 ### 记忆（5工具）
 create_memory（需自己生成 summary）/get_memory/search_memory_by_keywords/get_recent_memories/delete_memory
@@ -1379,7 +1379,7 @@ ${earlySection}${middleSection}${recentSection}
 
           if (hasWebSearch && shouldUseLocalTools) {
             reminderContent =
-              '⚠️ 重要错误：你刚才在响应中提到要修复/更新/修正角色或术语信息格式问题，但错误地使用了 search_web 工具来搜索网络。这是不对的！\n\n' +
+              '[警告] 重要错误：你刚才在响应中提到要修复/更新/修正角色或术语信息格式问题，但错误地使用了 search_web 工具来搜索网络。这是不对的！\n\n' +
               '对于修复本地数据（角色信息、术语信息）的格式问题，你应该：\n' +
               '1. 使用 get_character 或 search_characters_by_keywords 工具获取角色信息（如果是角色问题）\n' +
               '2. 使用 get_term 或 search_terms_by_keywords 工具获取术语信息（如果是术语问题）\n' +
@@ -1387,7 +1387,7 @@ ${earlySection}${middleSection}${recentSection}
               'search_web 工具只应用于需要外部知识的问题，不应用于修复本地数据格式。请立即使用正确的工具（get_character + update_character 或 get_term + update_term）来完成修复。';
           } else {
             reminderContent =
-              '⚠️ 重要：你刚才在响应中提到要修复/更新/修正问题（例如："让我将其更新"、"我来修正"等），但只调用了查询工具来查看信息。现在你必须使用相应的更新工具（如 update_character、update_term 等）来实际执行修复操作，而不是仅仅告诉用户问题所在。请立即调用更新工具来完成修复。';
+              '[警告] 重要：你刚才在响应中提到要修复/更新/修正问题（例如："让我将其更新"、"我来修正"等），但只调用了查询工具来查看信息。现在你必须使用相应的更新工具（如 update_character、update_term 等）来实际执行修复操作，而不是仅仅告诉用户问题所在。请立即调用更新工具来完成修复。';
           }
 
           if (reminderContent) {

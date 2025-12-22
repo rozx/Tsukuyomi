@@ -784,7 +784,7 @@ const handleFileSelect = async (event: Event) => {
 :deep(.p-dataview) {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   background: transparent !important;
 }

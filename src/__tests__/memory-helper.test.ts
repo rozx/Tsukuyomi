@@ -1,17 +1,37 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
-import { describe, test, expect, beforeEach, spyOn } from 'bun:test';
-import { searchRelatedMemories } from '../services/ai/tools/memory-helper';
+import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import { MemoryService } from '../services/memory-service';
 import type { Memory } from '../models/memory';
+
+let searchRelatedMemories: (
+  bookId: string,
+  keywords: string[],
+  limit?: number,
+) => Promise<Array<{ id: string; summary: string }>>;
 
 describe('searchRelatedMemories', () => {
   let searchMemoriesByKeywordsSpy: ReturnType<typeof spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // 清理其他测试设置的 module mock，确保我们拿到真实实现
+    mock.restore();
+
+    // 重新导入模块，获取最新的（未被 mock 的）实现
+    const memoryHelper = await import('../services/ai/tools/memory-helper');
+    searchRelatedMemories = memoryHelper.searchRelatedMemories;
+    
     searchMemoriesByKeywordsSpy = spyOn(
       MemoryService,
       'searchMemoriesByKeywords',
     ).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    if (searchMemoriesByKeywordsSpy) {
+      searchMemoriesByKeywordsSpy.mockRestore();
+    }
+    // 确保不会影响其他测试
+    mock.restore();
   });
 
   test('应该返回空数组当 bookId 为空', async () => {

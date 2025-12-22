@@ -616,7 +616,7 @@ export class GistSyncService {
         const novel = novelsWithContent[novelIndex];
         if (!novel) {
           // 跳过 null 值时也要更新进度，确保进度跟踪准确
-          processedItems = novelIndex + 1;
+          processedItems = novelIndex + 2; // 1 (设置文件) + novelIndex + 1 (当前书籍)
           if (onProgress) {
             onProgress({
               current: processedItems,
@@ -717,8 +717,8 @@ export class GistSyncService {
           });
         }
 
-        // 更新进度：处理完一本书（设置文件算作第1个，所以从1开始）
-        processedItems = novelIndex + 1;
+        // 更新进度：处理完一本书（设置文件已完成，所以是 1 + novelIndex + 1）
+        processedItems = novelIndex + 2; // 1 (设置文件) + novelIndex + 1 (当前书籍)
         if (onProgress) {
           onProgress({
             current: processedItems,
@@ -873,9 +873,10 @@ export class GistSyncService {
           const finalTotal = totalItems + totalBatches; // 准备阶段 + 上传批次
 
           // 更新进度：开始上传
+          // 确保当前进度反映准备阶段已完成（使用 totalItems 而不是 processedItems）
           if (onProgress) {
             onProgress({
-              current: processedItems,
+              current: totalItems,
               total: finalTotal,
               message: '正在上传文件...',
             });
@@ -940,10 +941,10 @@ export class GistSyncService {
         }
       } else {
         // 创建新 Gist
-        // 更新进度：开始创建
+        // 更新进度：开始创建（准备阶段已完成，使用 totalItems）
         if (onProgress) {
           onProgress({
-            current: processedItems,
+            current: totalItems,
             total: totalItems,
             message: '正在创建 Gist...',
           });

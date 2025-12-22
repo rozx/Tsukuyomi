@@ -52,6 +52,29 @@ export interface VerificationResult {
 }
 
 /**
+ * 规划上下文更新信息
+ */
+export interface PlanningContextUpdate {
+  newTerms?: Array<{ name: string; translation: string }>;
+  newCharacters?: Array<{ name: string; translation: string }>;
+  updatedMemories?: Array<{ id: string; summary: string }>;
+}
+
+/**
+ * 性能指标
+ */
+export interface PerformanceMetrics {
+  totalTime: number;
+  planningTime: number;
+  workingTime: number;
+  completedTime: number;
+  toolCallTime: number;
+  toolCallCount: number;
+  averageToolCallTime: number;
+  chunkProcessingTime: number[];
+}
+
+/**
  * AI 处理 Store 接口
  */
 export interface AIProcessingStore {
@@ -156,6 +179,449 @@ export function verifyParagraphCompleteness(
 }
 
 /**
+ * 生产性工具列表（用于状态循环检测）
+ * 这些工具调用表示 AI 正在积极获取上下文信息
+ */
+const PRODUCTIVE_TOOLS = [
+  'list_terms',
+  'list_characters',
+  'search_memory_by_keywords',
+  'get_chapter_info',
+  'get_book_info',
+  'get_term',
+  'get_character',
+  'get_memory',
+  'get_recent_memories',
+];
+
+/**
+ * 工具调用限制配置（基于工具类型）
+ */
+const TOOL_CALL_LIMITS: Record<string, number> = {
+  list_terms: 2, // 术语表最多调用 2 次
+  list_characters: 2, // 角色表最多调用 2 次
+  get_chapter_info: 2, // 章节信息最多调用 2 次
+  get_book_info: 2, // 书籍信息最多调用 2 次
+  list_chapters: 1, // 章节列表最多调用 1 次
+  search_memory_by_keywords: 5, // 记忆搜索可以多调用几次
+  default: Infinity, // 其他工具无限制
+};
+
+/**
+ * 工具结果截断的最大长度配置
+ */
+const TOOL_RESULT_MAX_LENGTHS: Record<string, number> = {
+  list_terms: 2000,
+  list_characters: 2000,
+  search_memory_by_keywords: 1000,
+  get_chapter_info: 800,
+  get_book_info: 800,
+  default: 500,
+} as const;
+
+/**
+ * 智能截断工具结果
+ * 根据工具类型使用不同的截断策略，保留关键信息
+ * @param tool 工具名称
+ * @param result 工具结果
+ * @returns 截断后的结果
+ */
+export function truncateToolResult(tool: string, result: string): string {
+  const maxLength = TOOL_RESULT_MAX_LENGTHS[tool] ?? TOOL_RESULT_MAX_LENGTHS.default;
+  const safeMaxLength = typeof maxLength === 'number' ? maxLength : 500;
+
+  // 如果结果长度在限制内，直接返回
+  if (result.length <= safeMaxLength) {
+    return result;
+  }
+
+  // 对于结构化数据（术语表、角色表），尝试智能截断
+  if (tool === 'list_terms' || tool === 'list_characters') {
+    try {
+      const data = JSON.parse(result) as unknown[];
+      if (Array.isArray(data) && data.length > 0) {
+        // 保留所有条目，但每个条目只保留关键字段
+        const truncated = data
+          .filter(
+            (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+          )
+          .map((item) => {
+            const truncatedItem: Record<string, unknown> = {
+              id: item.id,
+              name: item.name,
+              translation: item.translation,
+            };
+
+            // 保留其他关键字段，但截断描述等长字段
+            if (item.description && typeof item.description === 'string') {
+              truncatedItem.description =
+                item.description.length > 100
+                  ? item.description.slice(0, 100) + '...'
+                  : item.description;
+            }
+
+            // 保留别名（但限制数量）
+            if (item.aliases && Array.isArray(item.aliases)) {
+              truncatedItem.aliases = item.aliases.slice(0, 5); // 最多保留 5 个别名
+              if (item.aliases.length > 5) {
+                truncatedItem.aliases_note = `（共 ${item.aliases.length} 个别名，仅显示前 5 个）`;
+              }
+            }
+
+            // 保留其他重要字段
+            if (item.speaking_style) {
+              truncatedItem.speaking_style = item.speaking_style;
+            }
+            if (item.relationship) {
+              truncatedItem.relationship = item.relationship;
+            }
+
+            return truncatedItem;
+          });
+
+        const truncatedJson = JSON.stringify(truncated);
+        // 如果截断后的 JSON 仍然太长，使用摘要（但包装为 JSON 格式）
+        if (truncatedJson.length > safeMaxLength) {
+          const summaryItems = truncated.slice(0, 10).map((item) => {
+            const nameValue = item.name;
+            let name = '';
+            if (typeof nameValue === 'string') {
+              name = nameValue;
+            } else if (nameValue !== null && nameValue !== undefined) {
+              if (typeof nameValue === 'number' || typeof nameValue === 'boolean') {
+                name = String(nameValue);
+              } else {
+                name = JSON.stringify(nameValue);
+              }
+            }
+
+            const translationValue = item.translation;
+            let translation = '(无翻译)';
+            if (typeof translationValue === 'string') {
+              translation = translationValue;
+            } else if (translationValue !== null && translationValue !== undefined) {
+              if (typeof translationValue === 'number' || typeof translationValue === 'boolean') {
+                translation = String(translationValue);
+              } else {
+                translation = JSON.stringify(translationValue);
+              }
+            }
+
+            return `${name} → ${translation}`;
+          });
+          // 将摘要包装为 JSON 格式，确保可以被正确解析
+          const summaryText = `共 ${data.length} 项：${summaryItems.join(', ')}${data.length > 10 ? ` 等 ${data.length} 项` : ''}`;
+          return JSON.stringify({
+            _truncated: true,
+            _summary: summaryText,
+            _totalCount: data.length,
+            _displayedCount: Math.min(10, data.length),
+          });
+        }
+
+        return truncatedJson;
+      }
+    } catch {
+      // 如果不是 JSON，使用普通截断
+    }
+  }
+
+  // 对于其他工具，尝试智能截断 JSON
+  // 首先尝试解析为 JSON，如果是有效的 JSON，进行智能截断
+  try {
+    const data = JSON.parse(result);
+
+    // 如果是对象，尝试智能截断
+    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const obj = data as Record<string, unknown>;
+
+      // 递归截断对象中的长字符串字段
+      const truncateObject = (
+        obj: Record<string, unknown>,
+        maxLen: number,
+      ): Record<string, unknown> => {
+        const truncated: Record<string, unknown> = {};
+        let currentLen = 2; // 开始和结束的大括号
+
+        for (const [key, value] of Object.entries(obj)) {
+          // 估算添加这个字段后的长度
+          let valueStr = '';
+          if (value === null) {
+            valueStr = 'null';
+          } else if (typeof value === 'string') {
+            // 字符串值需要转义和引号
+            // 如果字符串太长，截断它
+            if (value.length > 200) {
+              valueStr = JSON.stringify(value.slice(0, 150) + '...(已截断)');
+            } else {
+              valueStr = JSON.stringify(value);
+            }
+          } else if (typeof value === 'object') {
+            // 嵌套对象或数组，递归处理
+            if (Array.isArray(value)) {
+              // 对于数组，如果太长，只保留前几项
+              const arrayStr = JSON.stringify(value);
+              if (arrayStr.length > 300) {
+                const truncatedArray = value.slice(0, 5);
+                valueStr = JSON.stringify(truncatedArray) + '...(数组已截断)';
+              } else {
+                valueStr = arrayStr;
+              }
+            } else {
+              // 嵌套对象，递归截断
+              valueStr = JSON.stringify(truncateObject(value as Record<string, unknown>, maxLen));
+            }
+          } else {
+            valueStr = JSON.stringify(value);
+          }
+
+          const keyStr = `"${key}":`;
+          const fieldStr = `${keyStr}${valueStr}`;
+          const fieldLen = fieldStr.length + (currentLen > 2 ? 1 : 0); // +1 是逗号
+
+          // 如果添加这个字段会超过限制，停止
+          if (currentLen + fieldLen > maxLen - 20) {
+            // 添加截断标记
+            truncated._truncated = true;
+            truncated._truncatedFields =
+              Object.keys(obj).length - Object.keys(truncated).length + 1;
+            break;
+          }
+
+          truncated[key] = value;
+          currentLen += fieldLen;
+        }
+
+        return truncated;
+      };
+
+      // 使用更保守的截断长度（留出 10% 的缓冲空间）
+      const conservativeMaxLen = Math.floor(safeMaxLength * 0.9);
+      const truncated = truncateObject(obj, conservativeMaxLen);
+      let truncatedJson = JSON.stringify(truncated);
+
+      // 如果截断后的 JSON 仍然太长，逐步减少内容直到符合限制
+      if (truncatedJson.length > safeMaxLength) {
+        // 尝试进一步截断：移除一些非关键字段
+        const keyFields = ['success', 'id', 'title', 'name', 'error', 'description'];
+        const minimal: Record<string, unknown> = {
+          _truncated: true,
+        };
+
+        // 只保留关键字段
+        for (const key of keyFields) {
+          if (key in truncated) {
+            minimal[key] = truncated[key];
+          }
+        }
+
+        truncatedJson = JSON.stringify(minimal);
+
+        // 如果仍然太长，使用摘要
+        if (truncatedJson.length > safeMaxLength) {
+          const summary: Record<string, unknown> = {
+            _truncated: true,
+            _summary: `内容过长（${result.length} 字符），已截断`,
+          };
+
+          // 只保留最关键的字段
+          const criticalFields = ['success', 'id', 'title', 'name', 'error'];
+          for (const key of criticalFields) {
+            if (key in obj) {
+              const value = obj[key];
+              // 如果值是字符串且太长，截断它
+              if (typeof value === 'string' && value.length > 50) {
+                summary[key] = value.slice(0, 50) + '...';
+              } else {
+                summary[key] = value;
+              }
+            }
+          }
+
+          truncatedJson = JSON.stringify(summary);
+        }
+      }
+
+      // 最终验证：确保 JSON 在限制内
+      if (truncatedJson.length > safeMaxLength) {
+        // 如果仍然超过限制，使用最小摘要
+        return JSON.stringify({
+          _truncated: true,
+          _summary: `内容过长（${result.length} 字符），已截断`,
+          _tool: tool,
+        });
+      }
+
+      return truncatedJson;
+    }
+
+    // 如果是数组，但不在特殊处理列表中，也尝试截断
+    if (Array.isArray(data)) {
+      const truncated = data.slice(0, Math.floor(safeMaxLength / 100)); // 粗略估算
+      const truncatedJson = JSON.stringify(truncated);
+      if (truncatedJson.length > safeMaxLength) {
+        return JSON.stringify({
+          _truncated: true,
+          _summary: `数组过长（${data.length} 项），已截断`,
+          _totalCount: data.length,
+          _displayedCount: truncated.length,
+        });
+      }
+      return truncatedJson;
+    }
+
+    // 如果是其他类型，直接返回（不应该发生）
+    return JSON.stringify(data);
+  } catch {
+    // 如果不是 JSON 或解析失败，使用普通截断（但确保不会破坏 JSON 结构）
+    // 尝试找到最后一个完整的 JSON 结构
+    const truncated = result.slice(0, safeMaxLength);
+
+    // 尝试修复被截断的 JSON（如果可能）
+    // 查找最后一个完整的键值对或字符串值
+    // 匹配模式：完整的键值对（包括字符串、数字、布尔值、null、对象、数组）
+    const patterns = [
+      /"[^"]*"\s*:\s*"[^"]*"(\s*[,}])/g, // 字符串值
+      /"[^"]*"\s*:\s*\d+(\s*[,}])/g, // 数字值
+      /"[^"]*"\s*:\s*(true|false|null)(\s*[,}])/g, // 布尔值或 null
+      /"[^"]*"\s*:\s*\{[^}]*\}(\s*[,}])/g, // 简单对象值
+    ];
+
+    let fixedTruncated: string | null = null;
+    for (const pattern of patterns) {
+      const matches = truncated.match(pattern);
+      if (matches && matches.length > 0) {
+        const lastMatch = matches[matches.length - 1];
+        if (lastMatch) {
+          const lastIndex = truncated.lastIndexOf(lastMatch);
+          if (lastIndex > 0) {
+            let candidate = truncated.slice(0, lastIndex + lastMatch.length);
+            // 尝试闭合 JSON 结构
+            const openBraces = (candidate.match(/{/g) || []).length;
+            const closeBraces = (candidate.match(/}/g) || []).length;
+            const missingBraces = openBraces - closeBraces;
+            if (missingBraces > 0) {
+              candidate += '}'.repeat(missingBraces);
+            }
+            // 尝试验证是否为有效的 JSON
+            try {
+              JSON.parse(candidate);
+              // 添加截断标记（如果还没有）
+              if (!candidate.includes('_truncated')) {
+                candidate = candidate.slice(0, -1) + ',"_truncated":true}';
+              }
+              fixedTruncated = candidate;
+              break;
+            } catch {
+              // 继续尝试下一个模式
+            }
+          }
+        }
+      }
+    }
+
+    // 如果修复成功，返回修复后的 JSON
+    if (fixedTruncated) {
+      return fixedTruncated;
+    }
+
+    // 如果修复失败，包装为有效的 JSON 对象
+    // 确保内容被正确转义
+    const escapedContent = truncated
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
+
+    return JSON.stringify({
+      _truncated: true,
+      _content: escapedContent.slice(0, safeMaxLength - 100), // 确保总长度在限制内
+      _originalLength: result.length,
+      _tool: tool,
+    });
+  }
+}
+
+/**
+ * 检测规划上下文是否需要更新
+ * @param actions 收集的 actions
+ * @returns 规划上下文更新信息（如果需要更新）
+ */
+export function detectPlanningContextUpdate(
+  actions: ActionInfo[],
+): PlanningContextUpdate | undefined {
+  const newTerms: Array<{ name: string; translation: string }> = [];
+  const newCharacters: Array<{ name: string; translation: string }> = [];
+  const updatedMemories: Array<{ id: string; summary: string }> = [];
+
+  for (const action of actions) {
+    // 检测新创建的术语
+    if (
+      (action.type === 'create' || action.type === 'update') &&
+      action.entity === 'term' &&
+      'name' in action.data
+    ) {
+      const termData = action.data as { name: string; translation?: string };
+      const translation =
+        typeof termData.translation === 'string'
+          ? termData.translation
+          : typeof termData.translation === 'object' && termData.translation !== null
+            ? (termData.translation as { text?: string }).text || ''
+            : '';
+      newTerms.push({
+        name: termData.name,
+        translation,
+      });
+    }
+
+    // 检测新创建的角色
+    if (
+      (action.type === 'create' || action.type === 'update') &&
+      action.entity === 'character' &&
+      'name' in action.data
+    ) {
+      const charData = action.data as { name: string; translation?: string };
+      const translation =
+        typeof charData.translation === 'string'
+          ? charData.translation
+          : typeof charData.translation === 'object' && charData.translation !== null
+            ? (charData.translation as { text?: string }).text || ''
+            : '';
+      newCharacters.push({
+        name: charData.name,
+        translation,
+      });
+    }
+
+    // 检测新创建的记忆
+    if (
+      action.type === 'create' &&
+      action.entity === 'memory' &&
+      'summary' in action.data &&
+      'id' in action.data
+    ) {
+      const memoryData = action.data as { id: string; summary?: string };
+      updatedMemories.push({
+        id: memoryData.id,
+        summary: memoryData.summary || '',
+      });
+    }
+  }
+
+  // 如果有任何更新，返回更新信息
+  if (newTerms.length > 0 || newCharacters.length > 0 || updatedMemories.length > 0) {
+    return {
+      ...(newTerms.length > 0 ? { newTerms } : {}),
+      ...(newCharacters.length > 0 ? { newCharacters } : {}),
+      ...(updatedMemories.length > 0 ? { updatedMemories } : {}),
+    };
+  }
+
+  return undefined;
+}
+
+/**
  * 创建流式处理回调函数
  */
 export function createStreamCallback(config: StreamCallbackConfig): TextGenerationStreamCallback {
@@ -227,9 +693,9 @@ export async function executeToolCall(
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `\n⚠️ 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
-    proofreading: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
-    polish: `\n⚠️ 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    translation: `\n[警告] 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
+    proofreading: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    polish: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
   };
   return reminders[taskType];
 }
@@ -241,7 +707,7 @@ export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
-  return `开始${taskLabel}。⚠️ 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
+  return `开始${taskLabel}。[警告] 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
 
 ${chunkingInstructions}`;
 }
@@ -270,7 +736,7 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 export function addChapterContext(prompt: string, chapterId: string, _taskType: TaskType): string {
   return (
     `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
-    `⚠️ **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
+    `[警告] **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
   );
 }
 
@@ -298,7 +764,7 @@ export function addParagraphContext(
     `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n` +
     `你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，` +
     `以确保${taskLabel}的一致性和连贯性。\n\n` +
-    `⚠️ **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
+    `[警告] **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
     `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
     `不要尝试翻译工具返回的段落内容。`
   );
@@ -369,7 +835,7 @@ export function buildIndependentChunkPrompt(
   const taskLabel = taskLabels[taskType];
 
   // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
-  const contextToolsReminder = `\n\n⚠️ **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
 
   // 第一个 chunk：完整规划阶段
   // 注意：章节 ID 已在系统提示词中提供
@@ -393,7 +859,7 @@ export function buildIndependentChunkPrompt(
 【从前一部分继承的规划上下文】
 ${planningContext}
 
-**⚠️ 重要：简短规划阶段**
+**[警告] 重要：简短规划阶段**
 以上是前一部分已获取的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息，不要重复调用工具获取**。
 
 **禁止重复调用的工具**：\`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\`、\`list_chapters\` 等已在上下文中提供的工具。
@@ -462,6 +928,10 @@ export interface ToolCallLoopConfig {
    * 当为 true 时，AI 会收到简化的规划指令，无需重复获取术语/角色信息
    */
   isBriefPlanning?: boolean;
+  /**
+   * 收集的 actions（用于检测规划上下文更新）
+   */
+  collectedActions?: ActionInfo[];
 }
 
 /**
@@ -478,6 +948,14 @@ export interface ToolCallLoopResult {
    * 包含 AI 在规划阶段的决策、获取的术语/角色信息等
    */
   planningSummary?: string | undefined;
+  /**
+   * 规划上下文更新信息（用于后续 chunk 更新共享上下文）
+   */
+  planningContextUpdate?: PlanningContextUpdate | undefined;
+  /**
+   * 性能指标
+   */
+  metrics?: PerformanceMetrics | undefined;
 }
 
 export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<ToolCallLoopResult> {
@@ -500,6 +978,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     onParagraphsExtracted,
     onTitleExtracted,
     isBriefPlanning = false,
+    collectedActions = [],
   } = config;
 
   let currentTurnCount = 0;
@@ -518,6 +997,23 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   let planningSummary: string | undefined;
   const planningResponses: string[] = []; // 收集 AI 在规划阶段的响应
   const planningToolResults: { tool: string; result: string }[] = []; // 收集规划阶段的工具结果
+
+  // 性能监控
+  const metrics: PerformanceMetrics = {
+    totalTime: 0,
+    planningTime: 0,
+    workingTime: 0,
+    completedTime: 0,
+    toolCallTime: 0,
+    toolCallCount: 0,
+    averageToolCallTime: 0,
+    chunkProcessingTime: [],
+  };
+  const startTime = Date.now();
+  let statusStartTime = Date.now();
+
+  // 工具调用计数（用于限制）
+  const toolCallCounts = new Map<string, number>();
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -562,13 +1058,43 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       });
 
       // 执行工具
+      let hasProductiveTool = false;
       for (const toolCall of result.toolCalls) {
-        if (aiProcessingStore && taskId) {
-          void aiProcessingStore.appendThinkingMessage(
-            taskId,
-            `\n[调用工具: ${toolCall.function.name}]\n`,
+        const toolName = toolCall.function.name;
+
+        // 检查工具调用限制
+        const currentCount = toolCallCounts.get(toolName) || 0;
+        const limit = TOOL_CALL_LIMITS[toolName] ?? TOOL_CALL_LIMITS.default;
+        const safeLimit = typeof limit === 'number' ? limit : Infinity;
+
+        if (safeLimit !== Infinity && currentCount >= safeLimit) {
+          console.warn(
+            `[${logLabel}] ⚠️ 工具 ${toolName} 调用次数已达上限（${safeLimit}），跳过此次调用`,
           );
+          // 添加工具结果，告知 AI 已达到限制
+          history.push({
+            role: 'tool',
+            content: `[警告] 工具 ${toolName} 调用次数已达上限（${safeLimit} 次），请使用已获取的信息继续工作。`,
+            tool_call_id: toolCall.id,
+            name: toolName,
+          });
+          continue;
         }
+
+        // 更新工具调用计数
+        toolCallCounts.set(toolName, currentCount + 1);
+
+        // 检查是否为生产性工具
+        if (PRODUCTIVE_TOOLS.includes(toolName)) {
+          hasProductiveTool = true;
+        }
+
+        if (aiProcessingStore && taskId) {
+          void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
+        }
+
+        // 记录工具调用开始时间
+        const toolCallStartTime = Date.now();
 
         const toolResult = await ToolRegistry.handleToolCall(
           toolCall,
@@ -578,10 +1104,18 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           taskId,
         );
 
+        // 记录工具调用耗时
+        const toolCallDuration = Date.now() - toolCallStartTime;
+        metrics.toolCallTime += toolCallDuration;
+        metrics.toolCallCount++;
+
+        // 使用智能截断处理工具结果
+        const truncatedResult = truncateToolResult(toolName, toolResult.content);
+
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
+            `[工具结果: ${truncatedResult.slice(0, 100)}...]\n`,
           );
         }
 
@@ -596,45 +1130,47 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             'get_book_info',
             'list_chapters',
           ];
-          if (keyTools.includes(toolCall.function.name)) {
+          if (keyTools.includes(toolName)) {
             // 如果是简短规划模式且调用了已获取的工具，给出警告
             if (isBriefPlanning) {
               console.warn(
-                `[${logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolCall.function.name}，该工具的结果已在规划上下文中提供`,
+                `[${logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}，该工具的结果已在规划上下文中提供`,
               );
               // 在工具结果后添加警告信息，提醒 AI 这些信息已经在上下文中
-              const warningMessage = `\n\n⚠️ **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
+              const warningMessage = `\n\n[警告] **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
               history.push({
                 role: 'tool',
-                content: toolResult.content + warningMessage,
+                content: truncatedResult + warningMessage,
                 tool_call_id: toolCall.id,
-                name: toolCall.function.name,
+                name: toolName,
               });
               // 跳过正常的工具结果推送，因为已经推送了带警告的版本
               continue;
             }
             planningToolResults.push({
-              tool: toolCall.function.name,
-              result: toolResult.content,
+              tool: toolName,
+              result: truncatedResult, // 使用截断后的结果
             });
           }
         }
 
         // 注意：如果已经在上面推送了带警告的工具结果，这里会跳过（通过 continue）
-        // 否则正常推送工具结果
+        // 否则正常推送工具结果（使用截断后的结果）
         history.push({
           role: 'tool',
-          content: toolResult.content,
+          content: truncatedResult,
           tool_call_id: toolCall.id,
-          name: toolCall.function.name,
+          name: toolName,
         });
       }
 
-      // 工具调用是"生产性"活动，重置循环检测计数器
+      // 只有生产性工具调用才重置循环检测计数器
       // 这样可以避免在 AI 合法地使用工具获取信息时触发误报
-      consecutivePlanningCount = 0;
-      consecutiveWorkingCount = 0;
-      consecutiveCompletedCount = 0;
+      if (hasProductiveTool) {
+        consecutivePlanningCount = 0;
+        consecutiveWorkingCount = 0;
+        consecutiveCompletedCount = 0;
+      }
 
       // 工具调用完成后，直接继续循环，让 AI 基于工具结果自然继续
       continue;
@@ -663,7 +1199,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         role: 'user',
         content:
           `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
-          `响应格式错误：${parsed.error}。⚠️ 只返回JSON，状态可独立返回：` +
+          `响应格式错误：${parsed.error}。[警告] 只返回JSON，状态可独立返回：` +
           `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
       });
       continue;
@@ -672,6 +1208,23 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     // 验证状态转换是否有效
     const newStatus: TaskStatus = parsed.status;
     const previousStatus: TaskStatus = currentStatus;
+
+    // 记录状态转换时间
+    if (previousStatus !== newStatus) {
+      const statusDuration = Date.now() - statusStartTime;
+      switch (previousStatus) {
+        case 'planning':
+          metrics.planningTime += statusDuration;
+          break;
+        case 'working':
+          metrics.workingTime += statusDuration;
+          break;
+        case 'completed':
+          metrics.completedTime += statusDuration;
+          break;
+      }
+      statusStartTime = Date.now();
+    }
 
     // 定义允许的状态转换
     const validTransitions: Record<TaskStatus, TaskStatus[]> = {
@@ -709,7 +1262,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
-            `⚠️ **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
+            `[警告] **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
             `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
             `你当前处于 "${statusLabels[previousStatus]}"，应该先转换到 "${expectedStatusLabel}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}${newStatus === 'working' && previousStatus === 'planning' ? ' 或包含内容时 {"status": "working", "paragraphs": [...]}' : ''}`,
@@ -739,14 +1292,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         summaryParts.push(responseText);
       }
 
-      // 添加关键工具结果摘要（精简版）
+      // 添加关键工具结果摘要（使用智能截断后的结果）
       if (planningToolResults.length > 0) {
         summaryParts.push('\n【已获取的上下文信息】');
         for (const { tool, result } of planningToolResults) {
-          // 限制每个工具结果的长度，避免过长
-          const truncatedResult =
-            result.length > 500 ? result.slice(0, 500) + '...(已截断)' : result;
-          summaryParts.push(`- ${tool}: ${truncatedResult}`);
+          // 结果已经在收集时进行了智能截断，直接使用
+          summaryParts.push(`- ${tool}: ${result}`);
         }
       }
 
@@ -836,7 +1387,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
-            `⚠️ **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
+            `[警告] **立即开始${taskLabel}**！你已经在规划阶段停留过久。` +
             `**现在必须**将状态设置为 "working" 并**立即输出${taskLabel}结果**。` +
             `不要再返回 planning 状态，直接开始${taskLabel}工作。` +
             `返回格式：\`{"status": "working", "paragraphs": [...]}\``,
@@ -846,8 +1397,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         // 如果是简短规划模式，强烈提醒 AI 已有上下文信息，无需重复获取
         const planningInstruction = isBriefPlanning
           ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
-            `**⚠️ 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
-            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。`
+            `**[警告] 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
+            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。` +
+            `仍然注意敬语翻译流程，确保翻译结果准确。`
           : `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
             `如果还需要使用工具获取信息，请调用工具后再更新状态。`;
@@ -872,7 +1424,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `⚠️ **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
+            `[警告] **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
             `**现在必须**输出${taskLabel}结果。` +
             `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
@@ -944,7 +1496,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `⚠️ 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
+            `[警告] 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作
@@ -968,12 +1520,33 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     );
   }
 
+  // 计算总耗时和平均工具调用时间
+  metrics.totalTime = Date.now() - startTime;
+  metrics.averageToolCallTime =
+    metrics.toolCallCount > 0 ? metrics.toolCallTime / metrics.toolCallCount : 0;
+
+  // 检测规划上下文更新
+  const planningContextUpdate = detectPlanningContextUpdate(collectedActions);
+
+  // 输出性能日志
+  if (aiProcessingStore && taskId) {
+    console.log(`[${logLabel}] 📊 性能指标:`, {
+      总耗时: `${metrics.totalTime}ms`,
+      规划阶段: `${metrics.planningTime}ms`,
+      工作阶段: `${metrics.workingTime}ms`,
+      验证阶段: `${metrics.completedTime}ms`,
+      工具调用: `${metrics.toolCallCount} 次，平均 ${metrics.averageToolCallTime.toFixed(2)}ms`,
+    });
+  }
+
   return {
     responseText: finalResponseText,
     status: currentStatus,
     paragraphs: accumulatedParagraphs,
     titleTranslation,
     planningSummary,
+    planningContextUpdate,
+    metrics,
   };
 }
 

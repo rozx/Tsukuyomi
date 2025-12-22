@@ -24,63 +24,57 @@ let currentCursorBookId: string | null = null;
 let currentCursorIndex = 0;
 
 const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
-  return {
-    objectStore: (storeName?: string) => ({
-      get: mockStoreGet,
-      put: mockTransactionStorePut, // 用于 updateAccessTimesBatch 中的更新
-      delete: mockStoreDelete,
-      clear: mockStoreClear,
-      getAll: mockStoreGetAll,
-      count: mockStoreCount,
-      index: (name: string) => {
-        return {
-          getAll: mockIndexGetAll,
-          count: mockIndexCount,
-          openCursor: (bookId: string) => {
-            // 重置游标状态
-            currentCursorBookId = bookId;
-            currentCursorIndex = 0;
-            const filtered = testMemoryData.filter((m) => m.bookId === bookId);
-            
-            // 创建游标类型
-            type CursorType = {
-              value: Memory;
-              continue: () => Promise<CursorType | null>;
-            } | null;
-            
-            // 创建游标函数
-            const createNextCursor = (): CursorType => {
-              if (currentCursorIndex >= filtered.length) {
-                return null;
-              }
-              const current = filtered[currentCursorIndex];
-              if (!current) {
-                return null;
-              }
-              currentCursorIndex++;
-              
-              return {
-                value: current,
-                continue: () => {
-                  return Promise.resolve(createNextCursor());
-                },
-              };
-            };
-            
-            return Promise.resolve(createNextCursor());
-          },
-        };
-      },
-    }),
-    store: {
-      get: mockStoreGet,
-      put: mockTransactionStorePut, // 用于 searchMemoriesByKeyword 中的更新
-      delete: mockStoreDelete,
-      index: () => ({
+  const objectStore = {
+    get: mockStoreGet,
+    put: mockTransactionStorePut, // 用于 updateAccessTimesBatch 中的更新
+    delete: mockStoreDelete,
+    clear: mockStoreClear,
+    getAll: mockStoreGetAll,
+    count: mockStoreCount,
+    index: (name: string) => {
+      return {
         getAll: mockIndexGetAll,
         count: mockIndexCount,
-      }),
+        openCursor: (bookId: string) => {
+          // 重置游标状态
+          currentCursorBookId = bookId;
+          currentCursorIndex = 0;
+          const filtered = testMemoryData.filter((m) => m.bookId === bookId);
+          
+          // 创建游标类型
+          type CursorType = {
+            value: Memory;
+            continue: () => Promise<CursorType | null>;
+          } | null;
+          
+          // 创建游标函数
+          const createNextCursor = (): CursorType => {
+            if (currentCursorIndex >= filtered.length) {
+              return null;
+            }
+            const current = filtered[currentCursorIndex];
+            if (!current) {
+              return null;
+            }
+            currentCursorIndex++;
+            
+            return {
+              value: current,
+              continue: () => {
+                return Promise.resolve(createNextCursor());
+              },
+            };
+          };
+          
+          return Promise.resolve(createNextCursor());
+        },
+      };
     },
+  };
+  
+  return {
+    objectStore: () => objectStore,
+    store: objectStore, // 用于 updateAccessTimesBatch 中的更新
     done: Promise.resolve(),
   };
 });
