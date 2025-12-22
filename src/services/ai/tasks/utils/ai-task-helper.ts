@@ -367,11 +367,9 @@ export function truncateToolResult(tool: string, result: string): string {
               } else {
                 valueStr = arrayStr;
               }
-            } else if (value !== null) {
+            } else {
               // 嵌套对象，递归截断
               valueStr = JSON.stringify(truncateObject(value as Record<string, unknown>, maxLen));
-            } else {
-              valueStr = 'null';
             }
           } else {
             valueStr = JSON.stringify(value);
