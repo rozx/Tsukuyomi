@@ -612,9 +612,6 @@ export class GistSyncService {
         });
       }
 
-      // 设置文件准备完成，递增进度
-      processedItems = 1;
-
       for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
         const novel = novelsWithContent[novelIndex];
         if (!novel) {
