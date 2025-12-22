@@ -3,7 +3,7 @@ import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
-import { DEFAULT_PROXY_LIST } from 'src/constants/proxy';
+import { DEFAULT_PROXY_LIST, DEFAULT_PROXY_SITE_MAPPING } from 'src/constants/proxy';
 
 const SETTINGS_STORAGE_KEY = 'luna-settings';
 const SYNC_STORAGE_KEY = 'luna-sync-configs';
@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyAutoSwitch: true,
   proxyAutoAddMapping: true,
   proxyList: DEFAULT_PROXY_LIST,
+  proxySiteMapping: DEFAULT_PROXY_SITE_MAPPING,
 };
 
 /**
@@ -89,6 +90,12 @@ function loadSettingsFromLocalStorage(): AppSettings {
         ? new Date(settings.lastEdited)
         : new Date();
 
+      // 合并默认映射和用户映射：用户配置优先，但未配置的网站使用默认值
+      const mergedMapping: Record<string, ProxySiteMappingEntry> = {
+        ...DEFAULT_PROXY_SITE_MAPPING,
+        ...(migratedMapping || {}),
+      };
+
       const loadedSettings: AppSettings = {
         ...DEFAULT_SETTINGS,
         ...settings,
@@ -98,8 +105,8 @@ function loadSettingsFromLocalStorage(): AppSettings {
         },
         // 保留原有的 lastEdited，如果不存在则使用当前时间（这是初始化，不是编辑）
         lastEdited: existingLastEdited,
-        // 使用迁移后的映射
-        proxySiteMapping: migratedMapping,
+        // 使用合并后的映射（默认值 + 用户配置）
+        proxySiteMapping: mergedMapping,
       };
 
       // 如果进行了迁移，保存回 LocalStorage（但不更新 lastEdited，因为这是自动迁移，不是用户编辑）
