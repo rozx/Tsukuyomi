@@ -142,6 +142,34 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 
+        <!-- 搜索按钮 -->
+        <Button
+          :icon="isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search'"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
+          :title="isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)'"
+          @click="emit('toggleSearch')"
+        />
+
+        <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+        <!-- 翻译进度面板切换按钮 -->
+        <Button
+          icon="pi pi-list"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
+          :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
+          @click="emit('toggleTranslationProgress')"
+        />
+
+        <div class="w-px h-4 bg-white/20 mx-2"></div>
+
         <!-- 导出按钮 -->
         <Button
           icon="pi pi-file-export"
@@ -195,20 +223,6 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 
-        <!-- 翻译进度面板切换按钮 -->
-        <Button
-          icon="pi pi-list"
-          rounded
-          text
-          size="small"
-          class="!w-8 !h-8 text-moon/70 hover:text-moon"
-          :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
-          :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
-          @click="emit('toggleTranslationProgress')"
-        />
-
-        <div class="w-px h-4 bg-white/20 mx-2"></div>
-
         <!-- 翻译按钮 -->
         <Button
           v-if="translationStatus.hasNone"
@@ -238,31 +252,6 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 
-        <!-- 特殊指令按钮 -->
-        <Button
-          icon="pi pi-cog"
-          rounded
-          text
-          size="small"
-          class="!w-8 !h-8 text-moon/70 hover:text-moon"
-          title="特殊指令（编辑翻译/润色/校对的特殊指令）"
-          @click="(event: Event) => emit('toggleSpecialInstructions', event)"
-        />
-
-        <div class="w-px h-4 bg-white/20 mx-2"></div>
-
-        <!-- 搜索按钮 -->
-        <Button
-          :icon="isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search'"
-          rounded
-          text
-          size="small"
-          class="!w-8 !h-8 text-moon/70 hover:text-moon"
-          :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
-          :title="isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)'"
-          @click="emit('toggleSearch')"
-        />
-
         <!-- 键盘快捷键按钮 -->
         <Button
           icon="pi pi-info-circle"
@@ -272,6 +261,17 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           class="!w-8 !h-8 text-moon/70 hover:text-moon"
           title="键盘快捷键"
           @click="handleToggleKeyboardShortcuts"
+        />
+
+        <!-- 特殊指令按钮 -->
+        <Button
+          icon="pi pi-cog"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          title="翻译设置"
+          @click="(event: Event) => emit('toggleSpecialInstructions', event)"
         />
       </div>
     </template>
