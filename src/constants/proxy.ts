@@ -62,6 +62,7 @@ export const DEFAULT_PROXY_SITE_MAPPING: Record<string, ProxySiteMappingEntry> =
   'kakuyomu.jp': {
     enabled: true,
     proxies: [
+      DEFAULT_PROXY_LIST.find((p) => p.id === 'corslol')!.url,
       DEFAULT_PROXY_LIST.find((p) => p.id === 'x2u')!.url,
       DEFAULT_PROXY_LIST.find((p) => p.id === 'codetabs')!.url,
     ],
