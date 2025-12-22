@@ -39,6 +39,10 @@ describe('normalizeTranslationQuotes', () => {
     expect(normalizeTranslationQuotes("他说'你好'")).toBe('他说『你好』');
   });
 
+  test('应该将全角单引号对转换为日语单引号', () => {
+    expect(normalizeTranslationQuotes('他说\u2018活该\u2019')).toBe('他说『活该』');
+  });
+
   test('应该将半角标点转换为全角', () => {
     expect(normalizeTranslationQuotes('你好,世界.')).toBe('你好，世界。');
     expect(normalizeTranslationQuotes('你好?世界!')).toBe('你好？世界！');
@@ -100,6 +104,8 @@ describe('normalizeTranslationSymbols', () => {
     expect(normalizeTranslationSymbols("他说'你好'")).toBe('他说『你好』');
     // 测试包含省略号的引号
     expect(normalizeTranslationSymbols('"那副太阳镜……总觉得在哪里见过。"')).toBe('「那副太阳镜……总觉得在哪里见过。」');
+    // 测试全角单引号对
+    expect(normalizeTranslationSymbols('他说\u2018活该\u2019')).toBe('他说『活该』');
   });
 
   test('应该规范化多个连续空格', () => {
@@ -229,6 +235,21 @@ describe('normalizeTranslationSymbols', () => {
     expect(normalizeTranslationSymbols('「让我做一下心理准备"test"」')).toBe('「让我做一下心理准备「test」」');
     // 确保「」引号不会被转换为『』，即使与其他引号混合
     expect(normalizeTranslationSymbols('「让我做一下心理准备」和"其他内容"')).toBe('「让我做一下心理准备」和「其他内容」');
+  });
+
+  test('应该保护 URL 不被规范化', () => {
+    // HTTP URL 应该保持不变
+    expect(normalizeTranslationSymbols('访问 http://example.com 网站')).toBe('访问 http://example.com 网站');
+    // HTTPS URL 应该保持不变
+    expect(normalizeTranslationSymbols('访问 https://example.com/path?query=value 网站')).toBe('访问 https://example.com/path?query=value 网站');
+    // URL 中的符号应该保持不变
+    expect(normalizeTranslationSymbols('链接是 https://example.com:8080/api/v1?param=test&other=value#section')).toBe('链接是 https://example.com:8080/api/v1?param=test&other=value#section');
+    // URL 后跟中文标点应该正常处理
+    expect(normalizeTranslationSymbols('访问 https://example.com，然后继续。')).toBe('访问 https://example.com，然后继续。');
+    // 多个 URL 应该都被保护（URL 前面的冒号会被转换为全角，这是正常的）
+    expect(normalizeTranslationSymbols('链接1: http://site1.com 链接2: https://site2.com/path')).toBe('链接1： http://site1.com 链接2： https://site2.com/path');
+    // URL 内的所有符号都应该被保护
+    expect(normalizeTranslationSymbols('请访问 https://example.com/api?key=value&id=123#section 获取信息')).toBe('请访问 https://example.com/api?key=value&id=123#section 获取信息');
   });
 });
 
