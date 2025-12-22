@@ -509,9 +509,7 @@ describe('ChapterService', () => {
     const mockRevokeObjectURL = mock(() => {});
 
     // Mock ChapterService.loadChapterContent (not ChapterContentService)
-    const mockLoadChapterContentForExport = mock((chapter: Chapter) =>
-      Promise.resolve(chapter),
-    );
+    const mockLoadChapterContentForExport = mock((chapter: Chapter) => Promise.resolve(chapter));
 
     beforeEach(() => {
       mockClipboardWriteText.mockClear();
@@ -606,7 +604,7 @@ describe('ChapterService', () => {
     }
 
     describe('换行处理 - 译文导出', () => {
-      it('应该正确处理空段落（1个空段落 → 1个空行）', async () => {
+      it('应该正确处理空段落（1个空段落 → 2个空行）', async () => {
         const chapter = createTestChapterWithContent('Chapter 1', [
           { text: '原文1', translation: '译文1' },
           { text: '', translation: '' },
@@ -615,11 +613,11 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
-        // 译文导出：用单个换行连接段落；1 个空段落会产生 2 个连续的 '\n'（1 个空行）
-        expect(content).toContain('Chapter 1\n\n译文1\n\n译文2');
-        // 验证 "译文1" 和 "译文2" 之间正好是两个换行
+        // 译文导出：用单个换行连接段落；1 个空段落在导出中应产生 3 个连续 '\n'（2 个空行）
+        expect(content).toContain('Chapter 1\n\n译文1\n\n\n译文2');
+        // 验证 "译文1" 和 "译文2" 之间正好是三个换行
         const between = content.split('译文1')[1]!.split('译文2')[0]!;
-        expect(between).toBe('\n\n');
+        expect(between).toBe('\n'.repeat(3));
       });
 
       it('应该正确处理连续空段落（2个空段落 → 3个空行）', async () => {
@@ -635,12 +633,12 @@ describe('ChapterService', () => {
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
         // 验证 "译文2" 和 "译文3" 之间有多个空行
-        // 2 个连续空段落 => 段落边界产生 3 个连续的 '\n'（2 个空段落 + 连接符）
+        // 2 个连续空段落 => 导出需要 4 个连续 '\n'（3 个空行）
         const betweenText2AndText3 = content.split('译文2')[1]!.split('译文3')[0]!;
-        expect(betweenText2AndText3).toBe('\n'.repeat(3));
-        
+        expect(betweenText2AndText3).toBe('\n'.repeat(4));
+
         // 验证整体格式正确
-        expect(content).toMatch(/译文2\n{3}译文3/);
+        expect(content).toMatch(/译文2\n{4}译文3/);
       });
 
       it('应该确保每个非空段落至少有一个换行符', async () => {
@@ -652,10 +650,32 @@ describe('ChapterService', () => {
 
         const content = await getExportedContent(chapter, 'translation', 'clipboard');
 
-        // 段落之间至少会有 1 个换行分隔；如果段落自身已包含换行，不应额外叠加
+        // 段落之间至少会有 1 个换行分隔；如果原文显式包含换行则补齐 n+1
         expect(content).toContain('译文1\n译文2');
-        // 译文2 自带末尾换行，所以与下一段之间仍然只需要 1 个换行分隔
-        expect(content).toContain('译文2\n译文3');
+        // 原文2 末尾已有 1 个回车，因此导出时应达到 n+1=2 个换行
+        expect(content).toContain('译文2\n\n译文3');
+      });
+
+      it('应该根据原文尾部的换行数量补齐 n+1 个换行', async () => {
+        const chapter = createTestChapterWithContent('Chapter 1', [
+          { text: '原文1\n\n', translation: '译文1' },
+          { text: '原文2', translation: '译文2' },
+        ]);
+
+        const content = await getExportedContent(chapter, 'translation', 'clipboard');
+        const between = content.split('译文1')[1]!.split('译文2')[0]!;
+        expect(between).toBe('\n'.repeat(3));
+      });
+
+      it('当译文自带换行时应仅补足缺失的换行', async () => {
+        const chapter = createTestChapterWithContent('Chapter 1', [
+          { text: '原文1\n\n\n', translation: '译文1\n' },
+          { text: '原文2', translation: '译文2' },
+        ]);
+
+        const content = await getExportedContent(chapter, 'translation', 'clipboard');
+        const between = content.split('译文1')[1]!.split('译文2')[0]!;
+        expect(between).toBe('\n'.repeat(4));
       });
     });
 
