@@ -888,6 +888,24 @@ const {
   saveState,
 );
 
+// 翻译进度面板显示状态
+const showTranslationProgress = ref(false);
+
+// 切换翻译进度面板显示
+const toggleTranslationProgress = () => {
+  showTranslationProgress.value = !showTranslationProgress.value;
+};
+
+// 当翻译/润色/校对开始时，自动显示进度面板
+watch(
+  () => isTranslatingChapter || isPolishingChapter || isProofreadingChapter,
+  (isActive) => {
+    if (isActive) {
+      showTranslationProgress.value = true;
+    }
+  },
+);
+
 // 获取段落的选中翻译文本（应用缩进过滤器）
 const getParagraphTranslationText = (paragraph: Paragraph): string => {
   if (!paragraph.selectedTranslationId || !paragraph.translations) {
@@ -1775,6 +1793,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :is-translating-chapter="isTranslatingChapter"
         :is-polishing-chapter="isPolishingChapter"
         :is-search-visible="isSearchVisible"
+        :show-translation-progress="showTranslationProgress"
+        :can-show-translation-progress="isTranslatingChapter || isPolishingChapter || isProofreadingChapter"
         @undo="undo"
         @redo="redo"
         @update:edit-mode="
@@ -1789,6 +1809,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @toggle-search="toggleSearch"
         @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
         @toggle-special-instructions="toggleChapterSettingsPopover"
+        @toggle-translation-progress="toggleTranslationProgress"
       />
 
       <!-- 搜索工具栏 -->
@@ -1806,10 +1827,13 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @replace-all="replaceAll"
       />
 
-      <div ref="scrollableContentRef" class="scrollable-content">
+      <div ref="scrollableContentRef" class="scrollable-content" :class="{ '!overflow-hidden': showTranslationProgress }">
         <div
           class="page-container"
-          :class="{ '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu }"
+          :class="{
+            '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu,
+            '!h-full !overflow-hidden !min-h-0': showTranslationProgress,
+          }"
         >
           <!-- 术语设置面板 -->
           <TerminologyPanel
@@ -1825,7 +1849,85 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             class="flex-1 min-h-0"
           />
 
-          <!-- 章节内容 -->
+          <!-- 章节内容和翻译进度分割布局 -->
+          <div
+            v-else-if="selectedChapter && showTranslationProgress"
+            class="chapter-content-split-layout"
+          >
+            <!-- 左侧：章节内容 -->
+            <div class="chapter-content-panel">
+              <ChapterContentPanel
+                :selected-chapter="selectedChapter"
+                :selected-chapter-with-content="selectedChapterWithContent"
+                :selected-chapter-paragraphs="selectedChapterParagraphs"
+                :is-loading-chapter-content="isLoadingChapterContent"
+                :edit-mode="editMode"
+                :original-text-edit-value="originalTextEditValue"
+                :translated-char-count="translatedCharCount"
+                :book="book || null"
+                :book-id="bookId"
+                :selected-chapter-id="selectedChapterId"
+                :translating-paragraph-ids="translatingParagraphIds"
+                :polishing-paragraph-ids="polishingParagraphIds"
+                :proofreading-paragraph-ids="proofreadingParagraphIds"
+                :search-query="searchQuery"
+                :selected-paragraph-index="selectedParagraphIndex"
+                :is-keyboard-selected="isKeyboardSelected"
+                :is-click-selected="isClickSelected"
+                :paragraph-card-refs="paragraphCardRefs"
+                @update:original-text-edit-value="
+                  (value: string) => {
+                    originalTextEditValue = value;
+                  }
+                "
+                @open-edit-chapter-dialog="openEditChapterDialog"
+                @cancel-original-text-edit="cancelOriginalTextEdit"
+                @save-original-text-edit="saveOriginalTextEdit"
+                @update-translation="
+                  (paragraphId: string, newTranslation: string) =>
+                    updateParagraphTranslation(paragraphId, newTranslation)
+                "
+                @retranslate-paragraph="retranslateParagraph"
+                @polish-paragraph="polishParagraph"
+                @proofread-paragraph="proofreadParagraph"
+                @select-translation="
+                  (paragraphId: string, translationId: string) =>
+                    selectParagraphTranslation(paragraphId, translationId)
+                "
+                @paragraph-click="handleParagraphClick"
+                @paragraph-edit-start="handleParagraphEditStart"
+                @paragraph-edit-stop="handleParagraphEditStop"
+              />
+            </div>
+
+            <!-- 分割线 -->
+            <div class="split-divider"></div>
+
+            <!-- 右侧：翻译进度 -->
+            <div class="translation-progress-panel">
+              <TranslationProgress
+                :is-translating="isTranslatingChapter"
+                :is-polishing="isPolishingChapter"
+                :is-proofreading="isProofreadingChapter"
+                :progress="
+                  isProofreadingChapter
+                    ? proofreadingProgress
+                    : isPolishingChapter
+                      ? polishProgress
+                      : translationProgress
+                "
+                @cancel="
+                  isProofreadingChapter
+                    ? cancelProofreading()
+                    : isPolishingChapter
+                      ? cancelPolish()
+                      : cancelTranslation()
+                "
+              />
+            </div>
+          </div>
+
+          <!-- 章节内容（无翻译进度时） -->
           <ChapterContentPanel
             v-else-if="selectedChapter"
             :selected-chapter="selectedChapter"
@@ -1878,27 +1980,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           </div>
         </div>
       </div>
-
-      <!-- 翻译/润色进度工具栏 -->
-      <TranslationProgress
-        :is-translating="isTranslatingChapter"
-        :is-polishing="isPolishingChapter"
-        :is-proofreading="isProofreadingChapter"
-        :progress="
-          isProofreadingChapter
-            ? proofreadingProgress
-            : isPolishingChapter
-              ? polishProgress
-              : translationProgress
-        "
-        @cancel="
-          isProofreadingChapter
-            ? cancelProofreading()
-            : isPolishingChapter
-              ? cancelPolish()
-              : cancelTranslation()
-        "
-      />
     </div>
   </div>
 </template>
@@ -2221,6 +2302,46 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   padding-right: 1.5rem;
   padding-bottom: 1.5rem;
   min-height: 100%;
+}
+
+/* 章节内容和翻译进度分割布局 */
+.chapter-content-split-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+  margin: -1.5rem;
+  padding: 1.5rem;
+  flex-direction: row;
+}
+
+.chapter-content-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 1.5rem;
+  margin: -1.5rem;
+  padding: 1.5rem;
+  padding-right: 2.25rem;
+}
+
+.split-divider {
+  width: 1px;
+  background: var(--white-opacity-20);
+  flex-shrink: 0;
+  margin: 0 1.5rem;
+}
+
+.translation-progress-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--white-opacity-3);
 }
 
 /* 未选择章节状态 */

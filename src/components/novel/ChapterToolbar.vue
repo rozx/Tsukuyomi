@@ -38,6 +38,8 @@ const props = defineProps<{
   isTranslatingChapter: boolean;
   isPolishingChapter: boolean;
   isSearchVisible: boolean;
+  showTranslationProgress: boolean;
+  canShowTranslationProgress: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -51,6 +53,7 @@ const emit = defineEmits<{
   (e: 'toggleSearch'): void;
   (e: 'toggleKeyboardShortcuts', event: Event): void;
   (e: 'toggleSpecialInstructions', event: Event): void;
+  (e: 'toggleTranslationProgress'): void;
 }>();
 
 const handleEditModeChange = (value: EditMode) => {
@@ -189,6 +192,20 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
           />
         </div>
+
+        <div class="w-px h-4 bg-white/20 mx-2"></div>
+
+        <!-- 翻译进度面板切换按钮 -->
+        <Button
+          icon="pi pi-list"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
+          :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
+          @click="emit('toggleTranslationProgress')"
+        />
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 
