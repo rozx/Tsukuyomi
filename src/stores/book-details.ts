@@ -3,6 +3,16 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 const STORAGE_KEY = 'luna-ai-book-details-ui';
 
 /**
+ * TranslationProgress 组件的默认状态
+ */
+const DEFAULT_TRANSLATION_PROGRESS_STATE = {
+  autoScrollEnabled: {},
+  autoTabSwitchingEnabled: {},
+  taskFolded: {},
+  activeTab: {},
+} as const;
+
+/**
  * 书籍详情页面 UI 状态
  */
 interface BookDetailsUiState {
@@ -10,6 +20,19 @@ interface BookDetailsUiState {
   expandedVolumes: Record<string, string[]>;
   // 每个书籍的选中章节 ID
   selectedChapter: Record<string, string | null>;
+  // 每个书籍的翻译进度面板显示状态
+  showTranslationProgress: Record<string, boolean>;
+  // TranslationProgress 组件的 toggle 状态
+  translationProgress: {
+    // 每个任务的自动滚动状态
+    autoScrollEnabled: Record<string, boolean>;
+    // 每个任务的自动标签页切换状态
+    autoTabSwitchingEnabled: Record<string, boolean>;
+    // 每个任务的折叠状态
+    taskFolded: Record<string, boolean>;
+    // 每个任务的活动标签页
+    activeTab: Record<string, string>;
+  };
 }
 
 /**
@@ -19,7 +42,14 @@ function loadStateFromStorage(): BookDetailsUiState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      // 确保向后兼容性：如果旧数据没有某些字段，提供默认值
+      return {
+        expandedVolumes: parsed.expandedVolumes || {},
+        selectedChapter: parsed.selectedChapter || {},
+        showTranslationProgress: parsed.showTranslationProgress || {},
+        translationProgress: parsed.translationProgress || { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
+      };
     }
   } catch (error) {
     console.error('Failed to load book details UI state from storage:', error);
@@ -27,6 +57,8 @@ function loadStateFromStorage(): BookDetailsUiState {
   return {
     expandedVolumes: {},
     selectedChapter: {},
+    showTranslationProgress: {},
+    translationProgress: { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
   };
 }
 
@@ -45,6 +77,8 @@ export const useBookDetailsStore = defineStore('book-details', {
   state: (): BookDetailsUiState & { isLoaded: boolean } => ({
     expandedVolumes: {},
     selectedChapter: {},
+    showTranslationProgress: {},
+    translationProgress: { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
     isLoaded: false,
   }),
 
@@ -77,6 +111,15 @@ export const useBookDetailsStore = defineStore('book-details', {
         return state.selectedChapter[bookId] || null;
       };
     },
+
+    /**
+     * 获取指定书籍的翻译进度面板显示状态
+     */
+    getShowTranslationProgress: (state) => {
+      return (bookId: string): boolean => {
+        return state.showTranslationProgress[bookId] || false;
+      };
+    },
   },
 
   actions: {
@@ -91,6 +134,8 @@ export const useBookDetailsStore = defineStore('book-details', {
       const state = loadStateFromStorage();
       this.expandedVolumes = state.expandedVolumes;
       this.selectedChapter = state.selectedChapter;
+      this.showTranslationProgress = state.showTranslationProgress;
+      this.translationProgress = state.translationProgress;
       this.isLoaded = true;
     },
 
@@ -106,10 +151,7 @@ export const useBookDetailsStore = defineStore('book-details', {
         volumeIds.push(volumeId);
       }
       this.expandedVolumes[bookId] = volumeIds;
-      saveStateToStorage({
-        expandedVolumes: this.expandedVolumes,
-        selectedChapter: this.selectedChapter,
-      });
+      this.saveAllState();
     },
 
     /**
@@ -124,10 +166,7 @@ export const useBookDetailsStore = defineStore('book-details', {
         volumeIds.splice(index, 1);
       }
       this.expandedVolumes[bookId] = volumeIds;
-      saveStateToStorage({
-        expandedVolumes: this.expandedVolumes,
-        selectedChapter: this.selectedChapter,
-      });
+      this.saveAllState();
     },
 
     /**
@@ -135,10 +174,7 @@ export const useBookDetailsStore = defineStore('book-details', {
      */
     expandAllVolumes(bookId: string, volumeIds: string[]): void {
       this.expandedVolumes[bookId] = [...volumeIds];
-      saveStateToStorage({
-        expandedVolumes: this.expandedVolumes,
-        selectedChapter: this.selectedChapter,
-      });
+      this.saveAllState();
     },
 
     /**
@@ -146,10 +182,7 @@ export const useBookDetailsStore = defineStore('book-details', {
      */
     collapseAllVolumes(bookId: string): void {
       this.expandedVolumes[bookId] = [];
-      saveStateToStorage({
-        expandedVolumes: this.expandedVolumes,
-        selectedChapter: this.selectedChapter,
-      });
+      this.saveAllState();
     },
 
     /**
@@ -157,10 +190,23 @@ export const useBookDetailsStore = defineStore('book-details', {
      */
     setSelectedChapter(bookId: string, chapterId: string | null): void {
       this.selectedChapter[bookId] = chapterId;
-      saveStateToStorage({
-        expandedVolumes: this.expandedVolumes,
-        selectedChapter: this.selectedChapter,
-      });
+      this.saveAllState();
+    },
+
+    /**
+     * 设置翻译进度面板显示状态
+     */
+    setShowTranslationProgress(bookId: string, show: boolean): void {
+      this.showTranslationProgress[bookId] = show;
+      this.saveAllState();
+    },
+
+    /**
+     * 切换翻译进度面板显示状态
+     */
+    toggleShowTranslationProgress(bookId: string): void {
+      const current = this.showTranslationProgress[bookId] || false;
+      this.setShowTranslationProgress(bookId, !current);
     },
 
     /**
@@ -169,10 +215,67 @@ export const useBookDetailsStore = defineStore('book-details', {
     clearBookState(bookId: string): void {
       delete this.expandedVolumes[bookId];
       delete this.selectedChapter[bookId];
+      delete this.showTranslationProgress[bookId];
+      this.saveAllState();
+    },
+
+    /**
+     * 保存所有状态到 localStorage
+     */
+    saveAllState(): void {
       saveStateToStorage({
         expandedVolumes: this.expandedVolumes,
         selectedChapter: this.selectedChapter,
+        showTranslationProgress: this.showTranslationProgress,
+        translationProgress: this.translationProgress,
       });
+    },
+
+    /**
+     * 设置任务的自动滚动状态
+     */
+    setTranslationProgressAutoScroll(taskId: string, enabled: boolean): void {
+      this.translationProgress.autoScrollEnabled[taskId] = enabled;
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 设置任务的自动标签页切换状态
+     */
+    setTranslationProgressAutoTabSwitching(taskId: string, enabled: boolean): void {
+      this.translationProgress.autoTabSwitchingEnabled[taskId] = enabled;
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 设置任务的折叠状态
+     */
+    setTranslationProgressTaskFolded(taskId: string, folded: boolean): void {
+      this.translationProgress.taskFolded[taskId] = folded;
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 设置任务的活动标签页
+     */
+    setTranslationProgressActiveTab(taskId: string, tab: string): void {
+      this.translationProgress.activeTab[taskId] = tab;
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 清除任务的活动标签页
+     */
+    clearTranslationProgressActiveTab(taskId: string): void {
+      delete this.translationProgress.activeTab[taskId];
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 保存 TranslationProgress 状态（内部使用 saveAllState）
+     */
+    saveTranslationProgressState(): void {
+      this.saveAllState();
     },
   },
 });
