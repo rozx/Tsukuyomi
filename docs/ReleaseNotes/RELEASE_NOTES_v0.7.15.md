@@ -102,6 +102,10 @@
 - **代理设置界面**：
   - 在 `ProxySettingsTab` 中禁用 DataTable 分页，简化界面操作
   - 优化代理设置的用户体验
+- **翻译进度面板布局优化**：
+  - 调整翻译进度面板的 DOM 顺序，将进度内容区域移至 AI 任务历史区域之后
+  - 优化界面元素的视觉层次，提升用户体验
+  - 改进面板布局的响应式表现
 
 ---
 
@@ -135,6 +139,7 @@
 - `src/services/ai/tasks/polish-service.ts`：标准化警告消息（+4 行，-部分代码）
 - `src/services/ai/tasks/proofreading-service.ts`：标准化警告消息（+4 行，-部分代码）
 - `src/components/settings/ProxySettingsTab.vue`：禁用 DataTable 分页（+3 行，-部分代码）
+- `src/components/novel/TranslationProgress.vue`：优化翻译进度面板布局顺序（DOM 结构调整）
 - `src/stores/ai-models.ts`：优化模型处理逻辑（+10 行，-部分代码）
 - `src/stores/settings.ts`：优化设置处理逻辑（+35 行，-部分代码）
 - `docs/TRANSLATION_AI_TASK_FLOW.md`：新增 AI 任务流程文档（+760 行）
@@ -152,7 +157,7 @@
 - **改进优化**: 6 项
 - **问题修复**: 2 项
 - **代码变更**: 约 3305 行新增，241 行删除
-- **修改文件**: 33 个文件
+- **修改文件**: 34 个文件
 
 ---
 
