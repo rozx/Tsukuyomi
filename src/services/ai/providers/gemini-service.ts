@@ -150,10 +150,24 @@ export class GeminiService extends BaseAIService {
                   const sigFromModel = (tc as any)?.extra_content?.google?.thought_signature as
                     | string
                     | undefined;
+                  
+                  // 安全解析工具参数，处理可能的 JSON 解析错误
+                  let args: unknown;
+                  try {
+                    args = JSON.parse(tc.function.arguments);
+                  } catch (parseError) {
+                    console.warn(
+                      `[GeminiService] ⚠️ 工具参数 JSON 解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+                      { toolName: tc.function.name, argumentsPreview: tc.function.arguments?.slice(0, 100) },
+                    );
+                    // 如果解析失败，使用空对象作为后备
+                    args = {};
+                  }
+                  
                   const basePart = {
                     functionCall: {
                       name: tc.function.name,
-                      args: JSON.parse(tc.function.arguments),
+                      args,
                     },
                   } as Record<string, unknown>;
                   // 将签名置于 part 层级（与 functionCall 同级），符合文档示例
@@ -171,13 +185,31 @@ export class GeminiService extends BaseAIService {
             }
             if (msg.role === 'tool') {
               // Gemini 期望 functionResponse
+              // 安全解析工具返回内容，处理可能的 JSON 解析错误
+              let response: unknown;
+              try {
+                // 尝试解析为 JSON
+                response = JSON.parse(msg.content || '{}');
+              } catch (parseError) {
+                // 如果解析失败，将内容作为字符串包装在对象中
+                console.warn(
+                  `[GeminiService] ⚠️ 工具返回内容 JSON 解析失败，使用字符串格式: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+                  { toolName: msg.name, contentPreview: msg.content?.slice(0, 100) },
+                );
+                // 将非 JSON 内容包装为对象，确保 Gemini 可以处理
+                response = {
+                  content: msg.content || '',
+                  _parseError: true,
+                  _originalError: parseError instanceof Error ? parseError.message : String(parseError),
+                };
+              }
               return {
                 role: 'function',
                 parts: [
                   {
                     functionResponse: {
                       name: msg.name, // 必须匹配函数调用名称
-                      response: JSON.parse(msg.content || '{}'),
+                      response,
                     },
                   },
                 ],

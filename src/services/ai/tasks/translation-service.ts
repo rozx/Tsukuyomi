@@ -185,6 +185,9 @@ export class TranslationService {
       }
     };
 
+    // 用于在 chunk 之间共享规划上下文和更新
+    let sharedPlanningContext: string | undefined;
+
     if (!content || content.length === 0) {
       throw new Error('要翻译的内容不能为空');
     }
@@ -262,9 +265,6 @@ ${getExecutionWorkflowRules('translation')}`;
 
       let translatedText = '';
       const paragraphTranslations: { id: string; translation: string }[] = [];
-
-      // 用于在 chunk 之间共享规划上下文
-      let sharedPlanningContext: string | undefined;
 
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
@@ -384,6 +384,8 @@ ${getExecutionWorkflowRules('translation')}`;
               logLabel: 'TranslationService',
               // 后续 chunk 使用简短规划模式（已有规划上下文）
               isBriefPlanning: i > 0 && !!sharedPlanningContext,
+              // 收集 actions 用于检测规划上下文更新
+              collectedActions: actions,
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
               onParagraphsExtracted: onParagraphTranslation
                 ? async (paragraphs) => {
@@ -427,6 +429,38 @@ ${getExecutionWorkflowRules('translation')}`;
               console.log(
                 `[TranslationService] ✅ 已提取规划上下文（${sharedPlanningContext.length} 字符），将用于后续 ${chunks.length - 1} 个 chunk`,
               );
+            }
+
+            // 处理规划上下文更新（从后续 chunk）
+            if (i > 0 && loopResult.planningContextUpdate) {
+              const update = loopResult.planningContextUpdate;
+              const updateParts: string[] = [];
+
+              if (update.newTerms && update.newTerms.length > 0) {
+                updateParts.push(
+                  `新增术语：${update.newTerms.map((t) => `${t.name} → ${t.translation}`).join(', ')}`,
+                );
+              }
+
+              if (update.newCharacters && update.newCharacters.length > 0) {
+                updateParts.push(
+                  `新增角色：${update.newCharacters.map((c) => `${c.name} → ${c.translation}`).join(', ')}`,
+                );
+              }
+
+              if (update.updatedMemories && update.updatedMemories.length > 0) {
+                updateParts.push(
+                  `新增记忆：${update.updatedMemories.map((m) => m.summary).join(', ')}`,
+                );
+              }
+
+              if (updateParts.length > 0) {
+                const updateText = `\n【规划上下文更新】\n${updateParts.join('\n')}\n`;
+                sharedPlanningContext = (sharedPlanningContext || '') + updateText;
+                console.log(
+                  `[TranslationService] ✅ 已更新规划上下文（块 ${i + 1}）：${updateParts.join('; ')}`,
+                );
+              }
             }
 
             // 注意：标题翻译和段落翻译的回调已经在 executeToolCallLoop 中立即调用
