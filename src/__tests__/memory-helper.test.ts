@@ -14,7 +14,7 @@ describe('searchRelatedMemories', () => {
 
   beforeEach(async () => {
     // 清理其他测试设置的 module mock，确保我们拿到真实实现
-    await mock.restore();
+    mock.restore();
 
     // 重新导入模块，获取最新的（未被 mock 的）实现
     const memoryHelper = await import('../services/ai/tools/memory-helper');
@@ -26,12 +26,12 @@ describe('searchRelatedMemories', () => {
     ).mockResolvedValue([]);
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     if (searchMemoriesByKeywordsSpy) {
       searchMemoriesByKeywordsSpy.mockRestore();
     }
     // 确保不会影响其他测试
-    await mock.restore();
+    mock.restore();
   });
 
   test('应该返回空数组当 bookId 为空', async () => {
