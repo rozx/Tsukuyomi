@@ -57,10 +57,10 @@ export const useAIModelsStore = defineStore('aiModels', {
       }
 
       const models = await aiModelService.getAllModels();
-      // 确保 lastEdited 是 Date 对象，如果不存在则使用当前时间
+      // 确保 lastEdited 是 Date 对象，如果不存在则使用 epoch 时间（确保远程模型优先）
       this.models = models.map((model) => ({
         ...model,
-        lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+        lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(0),
       }));
       this.isLoaded = true;
     },
@@ -192,10 +192,10 @@ export const useAIModelsStore = defineStore('aiModels', {
 
       // 批量保存到 IndexedDB
       if (models.length > 0) {
-        // 确保导入的模型都有 lastEdited，如果没有则使用当前时间（这是 CREATE 操作）
+        // 确保导入的模型都有 lastEdited，如果没有则使用 epoch 时间（确保远程模型优先）
         const modelsWithLastEdited = models.map((model) => ({
           ...model,
-          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(0),
         }));
         await aiModelService.bulkSaveModels(modelsWithLastEdited);
         // 重新从 DB 加载，确保状态一致
@@ -203,7 +203,7 @@ export const useAIModelsStore = defineStore('aiModels', {
         // 确保 lastEdited 是 Date 对象
         this.models = loadedModels.map((model) => ({
           ...model,
-          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(),
+          lastEdited: model.lastEdited ? new Date(model.lastEdited) : new Date(0),
         }));
       }
       this.isLoaded = true;

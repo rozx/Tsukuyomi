@@ -420,6 +420,10 @@ export class SyncDataService {
       for (const remoteModel of remoteData.aiModels) {
         const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
         if (localModel) {
+          if (isManualRetrieval) {
+            finalModels.push(remoteModel);
+            continue;
+          }
           // 比较 lastEdited 时间，使用最新的
           const localTime = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
           const remoteTime = remoteModel.lastEdited
@@ -713,8 +717,10 @@ export class SyncDataService {
     // 处理设置
     if (remoteData.appSettings) {
       const localSettings = settingsStore.getAllSettings();
-      // 比较 lastEdited 时间，使用最新的
-      if (shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited)) {
+      // 手动检索时强制使用远程设置，否则比较 lastEdited
+      const shouldApplyRemoteSettings =
+        isManualRetrieval || shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited);
+      if (shouldApplyRemoteSettings) {
         // 保存本地的 Gist 同步配置（包括同步状态）
         const currentGistSync = settingsStore.gistSync;
         await settingsStore.importSettings(remoteData.appSettings);
@@ -991,8 +997,15 @@ export class SyncDataService {
       if (shouldUseRemote(localData.appSettings.lastEdited, remoteData.appSettings.lastEdited)) {
         // 使用远程设置，但保留本地的 Gist 同步配置
         // 这包括 lastSyncTime、lastSyncedModelIds、deletedNovelIds 等本地状态
-        const localGistSync = localData.appSettings.syncs?.gist;
-        const remoteGistSync = remoteData.appSettings.syncs?.gist;
+        // syncs 是一个数组，需要用 find 查找 gist 类型的配置
+        const localSyncs = localData.appSettings.syncs;
+        const remoteSyncs = remoteData.appSettings.syncs;
+        const localGistSync = Array.isArray(localSyncs)
+          ? localSyncs.find((s: any) => s.syncType === 'gist') // eslint-disable-line @typescript-eslint/no-explicit-any
+          : undefined;
+        const remoteGistSync = Array.isArray(remoteSyncs)
+          ? remoteSyncs.find((s: any) => s.syncType === 'gist') // eslint-disable-line @typescript-eslint/no-explicit-any
+          : undefined;
         
         // 合并 Gist 同步配置：保留本地的同步状态，但使用远程的其他配置
         const mergedGistSync = localGistSync
@@ -1008,12 +1021,20 @@ export class SyncDataService {
             }
           : remoteGistSync;
 
+        // 构建合并后的 syncs 数组
+        const mergedSyncs = Array.isArray(remoteSyncs) ? [...remoteSyncs] : [];
+        const gistIndex = mergedSyncs.findIndex((s: any) => s.syncType === 'gist'); // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (mergedGistSync) {
+          if (gistIndex >= 0) {
+            mergedSyncs[gistIndex] = mergedGistSync;
+          } else {
+            mergedSyncs.push(mergedGistSync);
+          }
+        }
+
         finalSettings = {
           ...remoteData.appSettings,
-          syncs: {
-            ...remoteData.appSettings.syncs,
-            gist: mergedGistSync,
-          },
+          syncs: mergedSyncs,
         };
       }
     }

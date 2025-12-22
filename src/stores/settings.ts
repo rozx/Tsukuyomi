@@ -10,9 +10,11 @@ const SYNC_STORAGE_KEY = 'luna-sync-configs';
 
 /**
  * 默认设置
+ * 注意：lastEdited 使用 epoch 时间（1970-01-01），这样在首次同步时远程设置会被优先应用
+ * 当用户实际修改设置时，lastEdited 会被更新为当前时间
  */
 const DEFAULT_SETTINGS: AppSettings = {
-  lastEdited: new Date(),
+  lastEdited: new Date(0), // 使用 epoch 时间，确保远程设置优先
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
   lastOpenedSettingsTab: 0,
@@ -85,10 +87,10 @@ function loadSettingsFromLocalStorage(): AppSettings {
 
       // 合并默认设置，确保所有字段都存在
       // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
-      // 如果不存在，使用当前时间作为初始值（这是初始化，不是编辑）
+      // 如果不存在，使用 epoch 时间作为初始值，确保远程设置优先
       const existingLastEdited = settings.lastEdited
         ? new Date(settings.lastEdited)
-        : new Date();
+        : new Date(0); // 使用 epoch 时间，确保远程设置优先
 
       // 合并默认映射和用户映射：用户配置优先，但未配置的网站使用默认值
       const mergedMapping: Record<string, ProxySiteMappingEntry> = {
@@ -339,18 +341,20 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 获取所有设置（用于导出）
+     * 获取所有设置（用于导出和同步）
+     * 包含 syncs 配置，用于 Gist 同步时合并删除记录
      */
-    getAllSettings(): AppSettings {
-      return { ...this.settings };
+    getAllSettings(): AppSettings & { syncs: SyncConfig[] } {
+      return { ...this.settings, syncs: this.syncs };
     },
 
     /**
      * 导入设置（用于导入）
      * 需要深度合并 taskDefaultModels，避免覆盖现有配置
      * 保留导入的 lastEdited 时间戳（如果存在）
+     * 注意：syncs 配置不在此处处理，由同步逻辑单独处理
      */
-    async importSettings(settings: Partial<AppSettings>): Promise<void> {
+    async importSettings(settings: Partial<AppSettings> & { syncs?: SyncConfig[] }): Promise<void> {
       // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
       let preservedLastEdited: Date | undefined;
       if (settings.lastEdited) {
@@ -367,8 +371,8 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       // 深度合并 taskDefaultModels，确保不会丢失本地配置
-      // 先移除 lastEdited 和 proxySiteMapping，稍后单独处理
-      const { lastEdited: _removed, proxySiteMapping: _proxyMapping, ...settingsWithoutSpecial } = settings;
+      // 先移除 lastEdited、proxySiteMapping 和 syncs（syncs 由同步逻辑单独处理），稍后单独处理
+      const { lastEdited: _removed, proxySiteMapping: _proxyMapping, syncs: _syncs, ...settingsWithoutSpecial } = settings;
       const mergedSettings: Partial<AppSettings> = {
         ...settingsWithoutSpecial,
       };
