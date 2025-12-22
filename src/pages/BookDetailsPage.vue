@@ -1837,11 +1837,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @replace-all="replaceAll"
       />
 
-      <div ref="scrollableContentRef" class="scrollable-content" :class="{ '!overflow-hidden': showTranslationProgress }">
+      <div ref="scrollableContentRef" class="scrollable-content" :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }">
         <div
           class="page-container"
           :class="{
-            '!h-full !overflow-hidden !min-h-0 flex flex-col': !!selectedSettingMenu,
+            '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': !!selectedSettingMenu,
         '!h-full !overflow-hidden !min-h-0': selectedChapter,
         'page-container-split-active': selectedChapter && showTranslationProgress,
           }"
@@ -1862,7 +1862,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
           <!-- 章节内容和翻译进度分割布局 -->
           <div
-            v-if="selectedChapter"
+            v-else-if="selectedChapter"
             class="chapter-content-split-layout split-layout-container"
             :class="{ 'split-layout-active': showTranslationProgress }"
           >
@@ -1941,8 +1941,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             </div>
           </div>
 
-          <!-- 未选择章节时的提示 -->
-          <div v-if="!selectedChapter" class="no-chapter-selected">
+          <!-- 未选择章节时的提示（仅当没有选择设置菜单和章节时显示） -->
+          <div v-else class="no-chapter-selected">
             <i class="pi pi-book-open no-selection-icon"></i>
             <p class="no-selection-text">请从左侧选择一个章节</p>
             <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
