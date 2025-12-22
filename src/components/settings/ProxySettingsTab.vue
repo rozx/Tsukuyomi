@@ -532,8 +532,7 @@ onMounted(async () => {
 
           <DataTable
             :value="proxyList"
-            :paginator="proxyList.length > 5"
-            :rows="5"
+            :paginator="false"
             class="text-xs"
             row-reorder
             @row-reorder="onRowReorder"
