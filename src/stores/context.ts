@@ -1,7 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 
-const STORAGE_KEY = 'luna-ai-context';
+const STORAGE_KEY = 'tsukuyomi-context';
 
 /**
  * 用户上下文状态

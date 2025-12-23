@@ -470,7 +470,7 @@ export default defineConfig((ctx) => {
 
       builder: {
         // https://www.electron.build/configuration/configuration
-        appId: 'luna',
+        appId: 'tsukuyomi',
         // Disable asar to ensure preload script is accessible
         asar: false,
         // Icon configuration for builder

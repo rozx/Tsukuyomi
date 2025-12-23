@@ -2,17 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base layer for the Luna theme */
+/* Base layer for the Tsukuyomi theme */
 @layer base {
   html,
   body,
   #q-app {
     height: 100%;
     @apply bg-night-950 text-moon-50;
+    /* 增强的背景渐变 - 多层月夜效果，添加对比色 */
+    /* Highlight（薄藍）, Accent（銀月）, Secondary（影墨）, 对比色（暖色调）*/
     background-image:
-      radial-gradient(circle at 18% 20%, rgba(128, 222, 234, 0.15), transparent 55%),
-      radial-gradient(circle at 78% -10%, rgba(179, 157, 219, 0.2), transparent 60%),
-      linear-gradient(135deg, #1a1a1a 0%, #263238 50%, #37474f 100%);
+      /* 对比色 - 温暖的琥珀色（与冷色调形成对比）*/
+      radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+      /* 对比色 - 柔和的紫色（与蓝色形成对比）*/
+      radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
+      /* 顶部左侧 - 明亮的月光效果（Highlight 薄藍）*/
+      radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
+      /* 顶部右侧 - 明亮的月光效果（Accent 銀月）*/
+      radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
+      /* 中间左侧 - 中等强度的月光 */
+      radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
+      /* 中间右侧 - 中等强度的月光 */
+      radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%),
+      /* 底部左侧 - 微妙的月光反射 */
+      radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
+      /* 底部右侧 - 微妙的月光反射 */
+      radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
+      /* 中心 - 柔和的月光扩散 */
+      radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
+      /* 基础渐变 - Secondary（影墨）- 增强明暗对比 */
+      linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+    background-attachment: fixed;
   }
 }
 

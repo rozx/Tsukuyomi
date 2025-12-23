@@ -322,7 +322,7 @@ function createMenu() {
               if (!mainWindow) return;
               const result = await dialog.showSaveDialog(mainWindow, {
                 title: '导出设置',
-                defaultPath: `luna-ai-settings-${new Date().toISOString().split('T')[0]}.json`,
+                defaultPath: `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`,
                 filters: [
                   { name: 'JSON Files', extensions: ['json'] },
                   { name: 'All Files', extensions: ['*'] },
@@ -395,7 +395,7 @@ function createMenu() {
         {
           label: '了解更多',
           click: () => {
-            void shell.openExternal('https://github.com/rozx/luna-ai-translator');
+            void shell.openExternal('https://github.com/rozx/Tsukuyomi');
           },
         },
         ...(!isMac
@@ -538,12 +538,12 @@ ${filePath}`,
 void app.whenReady().then(() => {
   // 设置 About 面板信息
   app.setAboutPanelOptions({
-    applicationName: 'Luna AI Translator',
+    applicationName: 'Tsukuyomi - Moonlit Translator',
     applicationVersion: app.getVersion(),
     version: `Version ${app.getVersion()}`,
     copyright: '© 2025 rozx',
     credits: 'Built with Electron, Quasar, and Vue 3',
-    website: 'https://github.com/rozx/luna-ai-translator',
+    website: 'https://github.com/rozx/Tsukuyomi',
   });
 
   createMenu();

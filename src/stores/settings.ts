@@ -5,8 +5,8 @@ import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 import { DEFAULT_PROXY_LIST, DEFAULT_PROXY_SITE_MAPPING } from 'src/constants/proxy';
 
-const SETTINGS_STORAGE_KEY = 'luna-settings';
-const SYNC_STORAGE_KEY = 'luna-sync-configs';
+const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
+const SYNC_STORAGE_KEY = 'tsukuyomi-sync-configs';
 
 /**
  * 默认设置

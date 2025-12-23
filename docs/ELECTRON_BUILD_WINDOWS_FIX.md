@@ -46,7 +46,7 @@ Remove-Item -Path "$env:LOCALAPPDATA\electron-builder\Cache" -Recurse -Force
 
 ```bash
 # 在 WSL 中
-cd /mnt/d/Projects/Luna-Ai/luna-ai-translator
+cd /mnt/d/Projects/Luna-Ai/tsukuyomi-translator
 bun run build:electron
 ```
 

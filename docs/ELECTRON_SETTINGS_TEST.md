@@ -39,7 +39,7 @@
 2. **通过快捷键**: 按 Cmd+E (macOS) 或 Ctrl+E (Windows/Linux)
 3. **预期行为**:
    - 打开系统保存对话框
-   - 默认文件名: `luna-settings-YYYY-MM-DD.json`
+   - 默认文件名: `tsukuyomi-settings-YYYY-MM-DD.json`
    - 选择保存位置后，文件应包含完整的 JSON 数据
 4. **验证数据**:
    ```json

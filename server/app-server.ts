@@ -273,7 +273,7 @@ if (isProduction) {
 // --- Start Server ---
 
 app.listen(PORT, () => {
-  console.log(`Luna AI Translator Server running on port ${PORT}`);
+  console.log(`Tsukuyomi - Moonlit Translator Server running on port ${PORT}`);
   console.log(`Mode: ${isProduction ? 'Production' : 'Development'}`);
   console.log(
     `Proxy Mode: ${PROXY_MODE === 'puppeteer' ? 'Puppeteer (high CPU/memory)' : 'AllOrigins/axios (lightweight)'}`,

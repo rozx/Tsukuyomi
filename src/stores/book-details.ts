@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 
-const STORAGE_KEY = 'luna-ai-book-details-ui';
+const STORAGE_KEY = 'tsukuyomi-book-details-ui';
 
 /**
  * TranslationProgress 组件的默认状态

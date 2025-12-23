@@ -60,7 +60,7 @@ const extractNovelIdFromFilename = (filename: string): string | null => {
 // 获取文件的显示名称和图标
 const getFileDisplayInfo = (filename: string): { displayName: string; icon: string } => {
   // 设置文件显示友好名称
-  if (filename === 'luna-ai-settings.json') {
+  if (filename === 'tsukuyomi-settings.json') {
     return {
       displayName: '应用设置',
       icon: 'pi pi-cog',
@@ -126,8 +126,8 @@ const getGroupedFiles = (
   // 排序：设置文件始终在最前面，其他文件按显示名称排序
   return filesWithDisplayInfo.sort((a, b) => {
     // 设置文件优先
-    const aIsSettings = a.filename === 'luna-ai-settings.json';
-    const bIsSettings = b.filename === 'luna-ai-settings.json';
+    const aIsSettings = a.filename === 'tsukuyomi-settings.json';
+    const bIsSettings = b.filename === 'tsukuyomi-settings.json';
 
     if (aIsSettings && !bIsSettings) {
       return -1;

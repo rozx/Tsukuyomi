@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 
-const STORAGE_KEY = 'luna-ai-ui-state';
+const STORAGE_KEY = 'tsukuyomi-ui-state';
 
 /**
  * 从 localStorage 加载 UI 状态

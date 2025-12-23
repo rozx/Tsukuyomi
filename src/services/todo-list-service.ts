@@ -13,7 +13,7 @@ export interface TodoItem {
   sessionId?: string; // 关联的聊天会话 ID（可选，用于助手聊天会话）
 }
 
-const STORAGE_KEY = 'luna-ai-todo-list';
+const STORAGE_KEY = 'tsukuyomi-todo-list';
 
 /**
  * 从 localStorage 加载所有待办事项

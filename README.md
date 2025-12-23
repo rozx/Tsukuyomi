@@ -1,6 +1,6 @@
-# luna App (luna)
+# Tsukuyomi - Moonlit Translator
 
-Luna AI translator
+Tsukuyomi - Moonlit Translator
 
 ## Install the dependencies
 

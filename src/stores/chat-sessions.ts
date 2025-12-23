@@ -1,8 +1,8 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
 
-const STORAGE_KEY = 'luna-ai-chat-sessions';
-const CURRENT_SESSION_ID_KEY = 'luna-ai-chat-current-session-id';
+const STORAGE_KEY = 'tsukuyomi-chat-sessions';
+const CURRENT_SESSION_ID_KEY = 'tsukuyomi-chat-current-session-id';
 const MAX_SESSIONS = 50; // 最多保存 50 个会话
 export const MAX_MESSAGES_PER_SESSION = 50; // 每个会话最多 50 条消息（用户+助手）
 export const MESSAGE_LIMIT_THRESHOLD = 40; // 当达到 40 条消息时触发总结

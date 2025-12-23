@@ -19,15 +19,41 @@
     <link rel="icon" type="image/ico" href="favicon.ico" />
   </head>
 
+  <!--
+    主题颜色说明（来自 src/constants/theme.ts）：
+    - 增强的背景渐变：多层月夜效果，添加对比色
+      - 对比色：温暖的琥珀色 rgba(255, 183, 77, ...) 和柔和的紫色 rgba(186, 104, 200, ...)
+      - Highlight（薄藍）rgba(109, 136, 168, ...) = Theme.translationText 的基础色
+      - Accent（銀月）rgba(174, 183, 198, ...) = Theme.colors.accent
+      - Primary（月白）rgba(233, 237, 245, ...) = Theme.colors.primary.DEFAULT
+      - Secondary（影墨）渐变：#0A0C0F, #0F1114, #1C1F26, #242730, #2C2F3A
+  -->
   <body
     style="
       margin: 0;
       padding: 0;
-      background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
+      background-image:
+        radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+        radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
+        radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
+        radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
+        radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
+        radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%),
+        radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
+        radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
+        radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
+        linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+      background-attachment: fixed;
       overflow: hidden;
     "
   >
-    <!-- 初始加载屏幕 - 在 Vue 挂载前显示 -->
+    <!--
+      初始加载屏幕 - 在 Vue 挂载前显示
+      主题颜色说明（来自 src/constants/theme.ts）：
+      - 背景渐变：增强的多层月夜效果，添加对比色（与 body 相同）
+      - 加载动画边框：Highlight（薄藍）#6D88A8 = Theme.translationText 的基础色
+      - 文字颜色：Primary（月白）rgba(233, 237, 245, ...) = Theme.colors.primary.DEFAULT
+    -->
     <div
       id="initial-loading-screen"
       style="
@@ -36,7 +62,18 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: linear-gradient(135deg, #050818 0%, #11163b 45%, #1f1f52 100%);
+        background-image:
+          radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+          radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
+          radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
+          radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
+          radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
+          radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%),
+          radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
+          radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
+          radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
+          linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+        background-attachment: fixed;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -47,22 +84,25 @@
     >
       <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem">
         <!-- 加载动画 -->
+        <!-- border-top-color: #6D88A8 = Highlight（薄藍），来自 Theme.translationText 的基础色 -->
         <div
           style="
             width: 4rem;
             height: 4rem;
-            border: 4px solid rgba(253, 253, 255, 0.1);
-            border-top-color: #f0458b;
+            border: 4px solid rgba(233, 237, 245, 0.1);
+            border-top-color: #6D88A8;
             border-radius: 50%;
             animation: spin 1s linear infinite;
           "
         ></div>
+        <!-- color: rgba(233, 237, 245, 0.9) = Primary（月白），来自 Theme.colors.primary.DEFAULT -->
         <p
-          style="color: rgba(253, 253, 255, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0"
+          style="color: rgba(233, 237, 245, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0"
         >
           正在加载应用...
         </p>
-        <p style="color: rgba(253, 253, 255, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
+        <!-- color: rgba(233, 237, 245, 0.6) = Primary（月白）60% 透明度 -->
+        <p style="color: rgba(233, 237, 245, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
       </div>
     </div>
 

@@ -12,7 +12,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
  * Gist 文件名称常量
  */
 const GIST_FILE_NAMES = {
-  SETTINGS: 'luna-ai-settings.json',
+  SETTINGS: 'tsukuyomi-settings.json',
   NOVEL_PREFIX: 'novel-',
   NOVEL_CHUNK_PREFIX: 'novel-chunk-',
 } as const;
@@ -794,12 +794,12 @@ export class GistSyncService {
             }
 
             // 检查文件名是否符合我们的命名规范
-            const isLunaFile =
+            const isTsukuyomiFile =
               filename === GIST_FILE_NAMES.SETTINGS ||
               filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) ||
               filename.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX);
 
-            if (isLunaFile) {
+            if (isTsukuyomiFile) {
               // 如果是我们的文件，且不在上传列表中，说明应该删除
               // 这涵盖了：
               // 1. 书籍被删除
@@ -840,7 +840,7 @@ export class GistSyncService {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const response: any = await this.octokit.rest.gists.update({
                   gist_id: gistId,
-                  description: 'Luna AI Translator - Settings and Novels',
+                  description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   files: batchFiles as any,
                 });
@@ -969,7 +969,7 @@ export class GistSyncService {
           }
 
           const response = await this.octokit.rest.gists.create({
-            description: 'Luna AI Translator - Settings and Novels',
+            description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
             public: false,
             files: filesForCreate,
           });
@@ -995,7 +995,7 @@ export class GistSyncService {
           }
         }
         const response = await this.octokit.rest.gists.create({
-          description: 'Luna AI Translator - Settings and Novels',
+          description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
           public: false,
           files: filesForCreate,
         });

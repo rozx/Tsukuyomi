@@ -31,7 +31,7 @@ export class SettingsService {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `luna-ai-settings-${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`;
 
       // 触发下载
       document.body.appendChild(link);

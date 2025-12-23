@@ -15,6 +15,7 @@ import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { v4 as uuidv4 } from 'uuid';
+import { APP_NAME } from 'src/constants/app';
 
 const router = useRouter();
 const booksStore = useBooksStore();
@@ -203,15 +204,15 @@ onMounted(async () => {
           <div class="flex items-center gap-5">
             <img
               :src="logoPath"
-              alt="Luna AI Translator"
+              :alt="APP_NAME.full"
               class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-2xl shadow-lg ring-2 ring-white/10 transition-transform hover:scale-105"
             />
             <div class="flex flex-col text-left">
               <span class="text-xl sm:text-2xl uppercase tracking-[0.3em] text-moon-50 font-light"
-                >Luna</span
+                >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
               >
               <span class="text-2xl sm:text-3xl font-bold text-moon-100 tracking-wide"
-                >AI Translator</span
+                >{{ APP_NAME.description.en }}</span
               >
             </div>
           </div>

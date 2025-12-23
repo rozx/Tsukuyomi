@@ -4,34 +4,34 @@
  */
 
 export const Theme = {
-  // 颜色 - 使用 TailwindCSS Luna 调色板
+  // 颜色 - 使用 TailwindCSS Tsukuyomi 调色板
   colors: {
-    // 主色 - Luna 粉
+    // 主色 - Primary（月白）
     primary: {
-      DEFAULT: '#f0458b',
-      50: '#fef2f7',
-      100: '#fce7f0',
-      200: '#f9cfe1',
-      300: '#f4a7c8',
-      400: '#ed6ba8',
-      500: '#f0458b',
-      600: '#d91d7a',
-      700: '#b81666',
-      800: '#961455',
-      900: '#7a1145',
-      950: '#4d0a2b',
+      DEFAULT: '#E9EDF5',
+      50: '#F7F4EC', // Paper（和纸）
+      100: '#F5F1F0',
+      200: '#E9EDF5', // Primary（月白）
+      300: '#D8DDE8',
+      400: '#C7CEDB',
+      500: '#B6BECE',
+      600: '#9FA8B8',
+      700: '#8892A2',
+      800: '#717C8C',
+      900: '#5A6676',
+      950: '#435060',
     },
-    // 背景色 - Night 深色
+    // 背景色 - Secondary（影墨）
     night: {
-      DEFAULT: '#0b1026',
-      900: '#0b1026',
-      950: '#070a1a',
+      DEFAULT: '#1C1F26', // Secondary（影墨）
+      900: '#1C1F26',
+      950: '#0F1114',
     },
-    // 文本色 - Moon 浅色
+    // 文本色 - Paper（和纸）
     moon: {
-      DEFAULT: '#f6f3d1',
-      400: '#f1e3a8',
-      500: '#f6f3d1',
+      DEFAULT: '#F7F4EC', // Paper（和纸）
+      400: '#F0EDE4',
+      500: '#F7F4EC',
     },
     // 警告色
     warning: {
@@ -46,9 +46,9 @@ export const Theme = {
     light: 'rgba(255, 255, 255, 0.05)',
     medium: 'rgba(255, 255, 255, 0.08)',
     strong: 'rgba(255, 255, 255, 0.1)',
-    primary: 'rgba(240, 69, 139, 0.1)',
-    primaryLight: 'rgba(240, 69, 139, 0.2)',
-    primaryMedium: 'rgba(240, 69, 139, 0.3)',
+    primary: 'rgba(233, 237, 245, 0.1)', // Primary（月白）
+    primaryLight: 'rgba(233, 237, 245, 0.2)',
+    primaryMedium: 'rgba(233, 237, 245, 0.3)',
   },
 
   // 边框透明度级别
@@ -57,26 +57,26 @@ export const Theme = {
     light: 'rgba(255, 255, 255, 0.1)',
     medium: 'rgba(255, 255, 255, 0.15)',
     strong: 'rgba(255, 255, 255, 0.2)',
-    primary: 'rgba(240, 69, 139, 0.2)',
-    primaryMedium: 'rgba(240, 69, 139, 0.5)',
-    primaryStrong: 'rgba(240, 69, 139, 0.8)',
+    primary: 'rgba(233, 237, 245, 0.2)', // Primary（月白）
+    primaryMedium: 'rgba(233, 237, 245, 0.5)',
+    primaryStrong: 'rgba(233, 237, 245, 0.8)',
   },
 
   // 文本透明度级别
   textOpacity: {
-    disabled: 'rgba(246, 243, 209, 0.4)',
-    muted: 'rgba(246, 243, 209, 0.6)',
-    medium: 'rgba(246, 243, 209, 0.7)',
-    normal: 'rgba(246, 243, 209, 0.8)',
-    strong: 'rgba(246, 243, 209, 0.9)',
-    full: 'rgba(246, 243, 209, 1)',
+    disabled: 'rgba(247, 244, 236, 0.4)', // Paper（和纸）
+    muted: 'rgba(247, 244, 236, 0.6)',
+    medium: 'rgba(247, 244, 236, 0.7)',
+    normal: 'rgba(247, 244, 236, 0.8)',
+    strong: 'rgba(247, 244, 236, 0.9)',
+    full: 'rgba(247, 244, 236, 1)',
   },
 
-  // 翻译文本颜色（带主色色调的文本色）
+  // 翻译文本颜色（Highlight（薄藍））
   translationText: {
-    DEFAULT: 'rgba(240, 69, 139, 0.9)', // primary with high opacity
-    light: 'rgba(240, 69, 139, 0.8)',
-    medium: 'rgba(240, 69, 139, 0.7)',
+    DEFAULT: 'rgba(109, 136, 168, 0.9)', // Highlight（薄藍）with high opacity
+    light: 'rgba(109, 136, 168, 0.8)',
+    medium: 'rgba(109, 136, 168, 0.7)',
   },
 
   // 圆角
@@ -93,8 +93,8 @@ export const Theme = {
     md: '0 2px 4px rgba(0, 0, 0, 0.15)',
     lg: '0 4px 12px rgba(0, 0, 0, 0.15)',
     xl: '0 20px 60px rgba(0, 0, 0, 0.5)',
-    primary: '0 2px 8px rgba(240, 69, 139, 0.3)',
-    primaryHover: '0 4px 12px rgba(240, 69, 139, 0.4)',
+    primary: '0 2px 8px rgba(109, 136, 168, 0.3)', // Highlight（薄藍）
+    primaryHover: '0 4px 12px rgba(109, 136, 168, 0.4)',
   },
 
   // 过渡动画
@@ -130,7 +130,7 @@ export const ThemeClasses = {
   textMuted: 'text-moon/60',
   textDisabled: 'text-moon/40',
   textPrimaryColor: 'text-primary',
-  textTranslation: 'text-translation', // 翻译文本颜色（区别于原文，使用 Luna 粉色调）
+  textTranslation: 'text-translation', // 翻译文本颜色（区别于原文，使用 Highlight（薄藍））
 
   // 圆角
   roundedCard: 'rounded-lg',

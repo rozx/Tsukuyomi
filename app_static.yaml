@@ -1,40 +1,40 @@
 alerts:
-  - rule: DEPLOYMENT_FAILED
-  - rule: DOMAIN_FAILED
+- rule: DEPLOYMENT_FAILED
+- rule: DOMAIN_FAILED
 domains:
-  - domain: luna.rozx.moe
-    type: PRIMARY
+- domain: tsukuyomi.rozx.moe
+  type: PRIMARY
 features:
-  - buildpack-stack=ubuntu-22
+- buildpack-stack=ubuntu-22
 ingress:
   rules:
-    - component:
-        name: luna-ai-translator
-      cors:
-        allow_methods:
-          - GET
-          - POST
-          - PUT
-          - PATCH
-          - DELETE
-          - OPTIONS
-        allow_origins:
-          - regex: .*
-      match:
-        authority:
-          exact: ''
-        path:
-          prefix: /
-name: luna-ai-translator-static
+  - component:
+      name: luna-ai-translator
+    cors:
+      allow_methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+      allow_origins:
+      - regex: .*
+    match:
+      authority:
+        exact: ""
+      path:
+        prefix: /
+name: tsukuyomi-static
 region: sgp
 static_sites:
-  - build_command: bun install && bun run build:spa
-    catchall_document: index.html
-    environment_slug: bun
-    github:
-      branch: main
-      deploy_on_push: true
-      repo: rozx/luna-ai-translator
-    name: luna-ai-translator
-    output_dir: dist/spa
-    source_dir: /
+- build_command: bun install && bun run build:spa
+  catchall_document: index.html
+  environment_slug: bun
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: rozx/luna-ai-translator
+  name: luna-ai-translator
+  output_dir: dist/spa
+  source_dir: /

@@ -11,12 +11,12 @@
 //
 // To customize the theme, update tailwind.config.cjs instead of this file.
 
-$primary: #f0458b; // Luna primary (matches luna-500 in TailwindCSS)
-$secondary: #26a69a;
-$accent: #9c27b0;
+$primary: #E9EDF5; // Primary（月白）(matches primary-200 in TailwindCSS)
+$secondary: #1C1F26; // Secondary（影墨）(matches night-200 in TailwindCSS)
+$accent: #AEB7C6; // Accent（銀月）(matches accent-500 in TailwindCSS)
 
-$dark: #0b1026; // Luna night 900 (matches night-900 in TailwindCSS)
-$dark-page: #070a1a; // Luna night 950 (matches night-950 in TailwindCSS)
+$dark: #1C1F26; // Secondary（影墨）(matches night-200 in TailwindCSS)
+$dark-page: #0F1114; // Dark page (matches night-400 in TailwindCSS)
 
 $positive: #21ba45;
 $negative: #c10015;
