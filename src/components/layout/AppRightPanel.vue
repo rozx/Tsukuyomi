@@ -389,7 +389,7 @@ const loadTodos = () => {
 
 // 监听待办事项变化（通过 localStorage 事件）
 const handleStorageChange = (e: StorageEvent) => {
-  if (e.key === 'luna-ai-todo-list') {
+  if (e.key === 'tsukuyomi-todo-list') {
     loadTodos();
   }
 };

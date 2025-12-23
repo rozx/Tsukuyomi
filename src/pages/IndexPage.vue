@@ -203,7 +203,7 @@ onMounted(async () => {
           <div class="flex items-center gap-5">
             <img
               :src="logoPath"
-              alt="Luna AI Translator"
+              alt="Tsukuyomi - Moonlit Translator"
               class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-2xl shadow-lg ring-2 ring-white/10 transition-transform hover:scale-105"
             />
             <div class="flex flex-col text-left">

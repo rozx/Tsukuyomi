@@ -9,7 +9,7 @@ features:
 ingress:
   rules:
     - component:
-        name: luna-ai-translator
+        name: tsukuyomi-translator
       cors:
         allow_methods:
           - GET
@@ -25,7 +25,7 @@ ingress:
           exact: ''
         path:
           prefix: /
-name: luna-ai-translator-static
+name: tsukuyomi-translator-static
 region: sgp
 static_sites:
   - build_command: bun install && bun run build:spa
@@ -34,7 +34,7 @@ static_sites:
     github:
       branch: main
       deploy_on_push: true
-      repo: rozx/luna-ai-translator
-    name: luna-ai-translator
+      repo: rozx/Tsukuyomi
+    name: tsukuyomi-translator
     output_dir: dist/spa
     source_dir: /

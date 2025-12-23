@@ -1,4 +1,4 @@
-name: luna-ai-translator
+name: tsukuyomi-translator
 region: sgp
 
 # 使用 Dockerfile 部署的配置
@@ -6,7 +6,7 @@ region: sgp
 services:
   - name: luna-app
     github:
-      repo: rozx/luna-ai-translator
+      repo: rozx/Tsukuyomi
       branch: main
       deploy_on_push: true
     source_dir: /

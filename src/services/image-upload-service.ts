@@ -97,7 +97,7 @@ export class ImageUploadService {
         method: 'POST',
         headers: {
           'Content-Type': contentType,
-          'User-Agent': 'Luna-AI-Translator',
+          'User-Agent': 'Tsukuyomi-Moonlit-Translator',
           Connection: 'keep-alive',
         },
         body: imageBuffer,

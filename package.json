@@ -1,8 +1,8 @@
 {
-  "name": "luna-ai-translator",
+  "name": "tsukuyomi-translator",
   "version": "0.7.16",
-  "description": "Luna AI translator",
-  "productName": "Luna AI translator",
+  "description": "Tsukuyomi - Moonlit Translator",
+  "productName": "Tsukuyomi - Moonlit Translator",
   "author": "rozx <rozx@heavyskymobile.com>",
   "type": "module",
   "private": true,

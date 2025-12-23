@@ -1,6 +1,6 @@
-# luna App (luna)
+# Tsukuyomi - Moonlit Translator
 
-Luna AI 小说翻译器
+Tsukuyomi - Moonlit Translator
 
 ## AI 管理
 

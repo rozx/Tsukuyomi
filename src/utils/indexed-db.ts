@@ -34,7 +34,7 @@ interface ChapterContent {
 /**
  * IndexedDB 数据库架构定义
  */
-interface LunaAIDB extends DBSchema {
+interface TsukuyomiDB extends DBSchema {
   books: {
     key: string;
     value: Novel;
@@ -105,17 +105,17 @@ interface LunaAIDB extends DBSchema {
   };
 }
 
-const DB_NAME = 'luna-ai';
+const DB_NAME = 'tsukuyomi';
 const DB_VERSION = 7; // 升级到版本 7 以支持 full-text-indexes 存储的 lastUpdated 字段
 
-let dbPromise: Promise<IDBPDatabase<LunaAIDB>> | null = null;
+let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 
 /**
  * 初始化并获取 IndexedDB 数据库实例
  */
-export async function getDB(): Promise<IDBPDatabase<LunaAIDB>> {
+export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<LunaAIDB>(DB_NAME, DB_VERSION, {
+    dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
       upgrade(db, _oldVersion, _newVersion, _transaction) {
         // 创建 books 存储
         if (!db.objectStoreNames.contains('books')) {
@@ -217,7 +217,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 books
   try {
-    const booksData = localStorage.getItem('luna-ai-books');
+    const booksData = localStorage.getItem('tsukuyomi-books');
     if (booksData) {
       const books = JSON.parse(booksData) as Novel[];
 
@@ -235,7 +235,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      localStorage.removeItem('luna-ai-books');
+      localStorage.removeItem('tsukuyomi-books');
     }
   } catch {
     // 忽略迁移错误
@@ -243,7 +243,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 ai-models
   try {
-    const modelsData = localStorage.getItem('luna-ai-models');
+    const modelsData = localStorage.getItem('tsukuyomi-models');
     if (modelsData) {
       const models = JSON.parse(modelsData) as AIModel[];
 
@@ -255,7 +255,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      localStorage.removeItem('luna-ai-models');
+      localStorage.removeItem('tsukuyomi-models');
     }
   } catch {
     // 忽略迁移错误
@@ -263,7 +263,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 settings
   try {
-    const settingsData = localStorage.getItem('luna-ai-settings');
+    const settingsData = localStorage.getItem('tsukuyomi-settings');
     if (settingsData) {
       const settings = JSON.parse(settingsData) as AppSettings;
 
@@ -271,7 +271,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
         key: string;
       });
 
-      localStorage.removeItem('luna-ai-settings');
+      localStorage.removeItem('tsukuyomi-settings');
     }
   } catch {
     // 忽略迁移错误
@@ -279,7 +279,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 cover-history
   try {
-    const coverHistoryData = localStorage.getItem('luna-ai-cover-history');
+    const coverHistoryData = localStorage.getItem('tsukuyomi-cover-history');
     if (coverHistoryData) {
       const coverHistory = JSON.parse(coverHistoryData) as CoverHistoryItem[];
 
@@ -295,7 +295,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      localStorage.removeItem('luna-ai-cover-history');
+      localStorage.removeItem('tsukuyomi-cover-history');
     }
   } catch {
     // 忽略迁移错误
@@ -303,7 +303,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 sync-configs
   try {
-    const syncData = localStorage.getItem('luna-ai-sync');
+    const syncData = localStorage.getItem('tsukuyomi-sync');
     if (syncData) {
       const syncs = JSON.parse(syncData) as SyncConfig[];
 
@@ -329,7 +329,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      localStorage.removeItem('luna-ai-sync');
+      localStorage.removeItem('tsukuyomi-sync');
     }
   } catch {
     // 忽略迁移错误
@@ -377,7 +377,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
     const stored = await db.get('book-details-ui', 'state');
     if (stored) {
       const { key: _key, ...state } = stored;
-      localStorage.setItem('luna-ai-book-details-ui', JSON.stringify(state));
+      localStorage.setItem('tsukuyomi-book-details-ui', JSON.stringify(state));
       // 可选：从 IndexedDB 删除，因为现在使用 localStorage
       // await db.delete('book-details-ui', 'state');
     }
@@ -390,7 +390,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
     const stored = await db.get('ui-state', 'state');
     if (stored) {
       const { key: _key, ...state } = stored;
-      localStorage.setItem('luna-ai-ui-state', JSON.stringify(state));
+      localStorage.setItem('tsukuyomi-ui-state', JSON.stringify(state));
       // 可选：从 IndexedDB 删除，因为现在使用 localStorage
       // await db.delete('ui-state', 'state');
     }

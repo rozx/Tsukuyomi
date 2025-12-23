@@ -1,6 +1,6 @@
 # Agent Architecture (日本語→简体中文 翻译)
 
-> 项目名称: `luna-ai-translator`
+> 项目名称: `tsukuyomi-translator`
 > 框架与运行环境: 使用 Quasar (Vue 3 + Vite) 构建桌面应用，运行/脚本管理由 **Bun** 驱动。主界面语言为 **简体中文**。
 > 目标: 将日本小说文本高质量翻译为自然流畅的简体中文，并支持后续校对与语料优化。
 

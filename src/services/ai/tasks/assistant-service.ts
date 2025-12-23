@@ -114,7 +114,7 @@ export class AssistantService {
     sessionId?: string,
   ): string {
     const todosPrompt = taskId ? getTodosSystemPrompt(taskId, sessionId) : '';
-    let prompt = `你是 Luna AI Assistant，日语小说翻译助手。${todosPrompt}
+    let prompt = `你是 Tsukuyomi - Moonlit Translator Assistant，日语小说翻译助手。${todosPrompt}
 
 ## 能力
 翻译管理 | 术语/角色设定 | 知识问答 | search_web获取实时信息
