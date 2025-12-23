@@ -29,6 +29,8 @@ export class ChapterContentService {
     // 先检查缓存
     if (this.contentCache.has(chapterId)) {
       const cached = this.contentCache.get(chapterId);
+      // 更新访问顺序（LRU 行为）
+      this.touchCacheEntry(chapterId);
       // 如果缓存为 null（表示不存在），则认为已修改
       if (cached === null) {
         return true;
@@ -52,6 +54,8 @@ export class ChapterContentService {
       // 更新缓存，避免下次再次从 IndexedDB 加载
       this.contentCache.set(chapterId, saved);
       this.evictCacheIfNeeded();
+      // 更新访问顺序（LRU 行为）
+      this.touchCacheEntry(chapterId);
       // 使用 lodash isEqual 进行深度比较
       return !isEqual(saved, newContent);
     } catch (error) {
