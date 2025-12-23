@@ -198,8 +198,8 @@ const PRODUCTIVE_TOOLS = [
  * 工具调用限制配置（基于工具类型）
  */
 const TOOL_CALL_LIMITS: Record<string, number> = {
-  list_terms: 2, // 术语表最多调用 2 次
-  list_characters: 2, // 角色表最多调用 2 次
+  list_terms: 3, // 术语表最多调用 2 次
+  list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、completed 阶段各调用一次）
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
