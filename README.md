@@ -1,4 +1,4 @@
-# Tsukuyomi - Moonlit Translator
+# Tsukuyomi月咏 - Moonlit Translator
 
 Tsukuyomi - Moonlit Translator
 
