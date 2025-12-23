@@ -1,5 +1,6 @@
 import { getDB } from 'src/utils/indexed-db';
 import type { Paragraph, Novel } from 'src/models/novel';
+import { isEqual } from 'lodash';
 
 /**
  * 章节内容存储结构
@@ -16,11 +17,77 @@ interface ChapterContent {
  */
 export class ChapterContentService {
   /**
+   * 检查章节内容是否已修改（与缓存或已保存的内容比较）
+   * @param chapterId 章节 ID
+   * @param newContent 新的章节内容
+   * @returns 如果内容已修改返回 true，否则返回 false
+   */
+  static async hasContentChanged(
+    chapterId: string,
+    newContent: Paragraph[],
+  ): Promise<boolean> {
+    // 先检查缓存
+    if (this.contentCache.has(chapterId)) {
+      const cached = this.contentCache.get(chapterId);
+      // 更新访问顺序（LRU 行为）
+      this.touchCacheEntry(chapterId);
+      // 如果缓存为 null（表示不存在），则认为已修改
+      if (cached === null) {
+        return true;
+      }
+      // 比较缓存内容与新内容（使用 lodash isEqual 进行深度比较）
+      return !isEqual(cached, newContent);
+    }
+
+    // 缓存中没有，从 IndexedDB 加载
+    try {
+      const db = await getDB();
+      const chapterContent = await db.get('chapter-contents', chapterId);
+      if (!chapterContent?.content) {
+        // 不存在，缓存 null 表示不存在，避免重复查询
+        this.contentCache.set(chapterId, null);
+        this.evictCacheIfNeeded();
+        return true;
+      }
+      // 反序列化并比较
+      const saved = JSON.parse(chapterContent.content) as Paragraph[];
+      // 更新缓存，避免下次再次从 IndexedDB 加载
+      this.contentCache.set(chapterId, saved);
+      this.evictCacheIfNeeded();
+      // 更新访问顺序（LRU 行为）
+      this.touchCacheEntry(chapterId);
+      // 使用 lodash isEqual 进行深度比较
+      return !isEqual(saved, newContent);
+    } catch (error) {
+      // 加载失败，为了安全起见，认为已修改
+      // 缓存 null 表示加载失败，避免重复尝试
+      console.warn(`Failed to check content changes for ${chapterId}:`, error);
+      this.contentCache.set(chapterId, null);
+      this.evictCacheIfNeeded();
+      return true;
+    }
+  }
+
+  /**
    * 保存章节内容到独立存储
    * @param chapterId 章节 ID
    * @param content 章节内容（段落数组）
+   * @param options 保存选项
+   * @param options.skipIfUnchanged 如果内容未修改则跳过保存，默认为 false
    */
-  static async saveChapterContent(chapterId: string, content: Paragraph[]): Promise<void> {
+  static async saveChapterContent(
+    chapterId: string,
+    content: Paragraph[],
+    options?: { skipIfUnchanged?: boolean },
+  ): Promise<boolean> {
+    // 如果启用了 skipIfUnchanged，先检查内容是否已修改
+    if (options?.skipIfUnchanged) {
+      const hasChanged = await this.hasContentChanged(chapterId, content);
+      if (!hasChanged) {
+        // 内容未修改，跳过保存
+        return false;
+      }
+    }
     try {
       const db = await getDB();
 
@@ -57,6 +124,7 @@ export class ChapterContentService {
         // 索引更新失败不影响内容保存
         console.warn('Failed to update full-text index after saving chapter content:', error);
       }
+      return true; // 保存成功
     } catch (error) {
       console.error(`Failed to save chapter content for ${chapterId}:`, error);
       throw error;

@@ -198,8 +198,8 @@ const PRODUCTIVE_TOOLS = [
  * 工具调用限制配置（基于工具类型）
  */
 const TOOL_CALL_LIMITS: Record<string, number> = {
-  list_terms: 2, // 术语表最多调用 2 次
-  list_characters: 2, // 角色表最多调用 2 次
+  list_terms: 3, // 术语表最多调用 3 次
+  list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、completed 阶段各调用一次）
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
@@ -1109,13 +1109,13 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         metrics.toolCallTime += toolCallDuration;
         metrics.toolCallCount++;
 
-        // 使用智能截断处理工具结果
-        const truncatedResult = truncateToolResult(toolName, toolResult.content);
+        // 直接使用工具结果，不进行截断
+        const toolResultContent = toolResult.content;
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `[工具结果: ${truncatedResult.slice(0, 100)}...]\n`,
+            `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
           );
         }
 
@@ -1140,7 +1140,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
               const warningMessage = `\n\n[警告] **注意**：此工具的结果已在规划上下文中提供，后续 chunk 无需重复调用此工具。`;
               history.push({
                 role: 'tool',
-                content: truncatedResult + warningMessage,
+                content: toolResultContent + warningMessage,
                 tool_call_id: toolCall.id,
                 name: toolName,
               });
@@ -1149,16 +1149,16 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             }
             planningToolResults.push({
               tool: toolName,
-              result: truncatedResult, // 使用截断后的结果
+              result: toolResultContent, // 使用完整结果
             });
           }
         }
 
         // 注意：如果已经在上面推送了带警告的工具结果，这里会跳过（通过 continue）
-        // 否则正常推送工具结果（使用截断后的结果）
+        // 否则正常推送工具结果（使用完整结果）
         history.push({
           role: 'tool',
-          content: truncatedResult,
+          content: toolResultContent,
           tool_call_id: toolCall.id,
           name: toolName,
         });
@@ -1292,11 +1292,11 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         summaryParts.push(responseText);
       }
 
-      // 添加关键工具结果摘要（使用智能截断后的结果）
+      // 添加关键工具结果摘要
       if (planningToolResults.length > 0) {
         summaryParts.push('\n【已获取的上下文信息】');
         for (const { tool, result } of planningToolResults) {
-          // 结果已经在收集时进行了智能截断，直接使用
+          // 使用完整的工具结果
           summaryParts.push(`- ${tool}: ${result}`);
         }
       }

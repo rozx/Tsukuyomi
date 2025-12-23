@@ -35,8 +35,9 @@ function createTestParagraph(id?: string): Paragraph {
 const mockLoadChapterContent = mock((_chapterId: string) =>
   Promise.resolve(undefined as Paragraph[] | undefined),
 );
-const mockSaveChapterContent = mock((_chapterId: string, _content: Paragraph[]) =>
-  Promise.resolve(),
+const mockSaveChapterContent = mock(
+  (_chapterId: string, _content: Paragraph[], _options?: { skipIfUnchanged?: boolean }) =>
+    Promise.resolve(true),
 );
 const mockDeleteChapterContent = mock((_chapterId: string) => Promise.resolve());
 

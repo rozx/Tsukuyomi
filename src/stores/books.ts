@@ -219,7 +219,13 @@ export const useBooksStore = defineStore('books', {
         }
 
         this.books[index] = updatedBook;
-        await BookService.saveBook(updatedBook);
+        
+        // 优化：如果只更新元数据（如 terminologies、characterSettings 等），不更新 volumes，
+        // 则跳过保存章节内容，提高性能
+        const isOnlyMetadataUpdate = !updates.volumes;
+        await BookService.saveBook(updatedBook, {
+          saveChapterContent: !isOnlyMetadataUpdate,
+        });
       }
     },
 

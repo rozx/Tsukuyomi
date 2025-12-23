@@ -597,18 +597,34 @@ export class GistSyncService {
       // 记录每本书的存储格式（分块或单文件），以便清理旧格式文件
       const novelFormats = new Map<string, 'chunked' | 'single'>();
 
-      // 计算总数：准备阶段（设置文件 + 每本书）+ 上传批次
-      // 先计算上传批次数量（稍后更新）
-      let totalBatches = 0;
-      const totalItems = 1 + novelsWithContent.length; // 1 个设置文件 + N 本书
+      // 计算总数：准备阶段 + 上传批次
+      // 准备阶段：设置文件(1) + 每本书(N)
+      // 上传批次：稍后计算（估算为准备阶段的 1.5 倍，确保进度不会回退）
+      const preparePhaseItems = 1 + novelsWithContent.length; // 1 个设置文件 + N 本书
+      // 初始估算：准备阶段占 60%，上传阶段占 40%
+      // 这个估算值足够大，确保上传阶段不会导致进度回退
+      const estimatedUploadItems = Math.max(Math.ceil(preparePhaseItems * 0.7), 3);
+      let totalItems = preparePhaseItems + estimatedUploadItems;
       let processedItems = 0;
 
       // 更新进度：开始处理设置文件
+      // 确保从 0 开始，使用预计算的 totalItems
+      processedItems = 0;
       if (onProgress) {
         onProgress({
           current: processedItems,
           total: totalItems,
           message: '正在准备设置文件...',
+        });
+      }
+      
+      // 处理设置文件完成后，更新进度
+      processedItems = 1;
+      if (onProgress) {
+        onProgress({
+          current: processedItems,
+          total: totalItems,
+          message: '设置文件准备完成',
         });
       }
 
@@ -618,10 +634,11 @@ export class GistSyncService {
           // 跳过 null 值时也要更新进度，确保进度跟踪准确
           processedItems = novelIndex + 2; // 1 (设置文件) + novelIndex + 1 (当前书籍)
           if (onProgress) {
+            const percentage = Math.round((processedItems / totalItems) * 100);
             onProgress({
               current: processedItems,
               total: totalItems,
-              message: `跳过无效书籍 (${processedItems}/${totalItems})`,
+              message: `跳过无效书籍 (${processedItems}/${totalItems}, ${percentage}%)`,
             });
           }
           continue;
@@ -720,12 +737,23 @@ export class GistSyncService {
         // 更新进度：处理完一本书（设置文件已完成，所以是 1 + novelIndex + 1）
         processedItems = novelIndex + 2; // 1 (设置文件) + novelIndex + 1 (当前书籍)
         if (onProgress) {
+          const percentage = Math.round((processedItems / totalItems) * 100);
           onProgress({
             current: processedItems,
             total: totalItems,
-            message: `正在准备书籍: ${novel.title} (${processedItems}/${totalItems})`,
+            message: `正在准备书籍: ${novel.title} (${processedItems}/${totalItems}, ${percentage}%)`,
           });
         }
+      }
+
+      // 准备阶段完成，确保进度正确更新
+      // 此时 processedItems 应该等于 preparePhaseItems
+      if (onProgress) {
+        onProgress({
+          current: processedItems,
+          total: totalItems,
+          message: '准备完成，正在开始上传...',
+        });
       }
 
       const params = this.getGistParams(config);
@@ -869,15 +897,24 @@ export class GistSyncService {
 
           // 优先处理删除操作，以释放配额（如果有配额限制的话）
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
-          totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
-          const finalTotal = totalItems + totalBatches; // 准备阶段 + 上传批次
+          const totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
+          
+          // 计算实际的上传阶段进度（基于准备阶段结束的位置）
+          // 确保进度只会增加，不会回退
+          const uploadPhaseStart = preparePhaseItems;
+          const uploadPhaseItems = totalBatches;
+          
+          // 如果实际批次数比估算多，更新 totalItems（只增不减）
+          if (uploadPhaseItems > estimatedUploadItems) {
+            totalItems = preparePhaseItems + uploadPhaseItems;
+          }
 
           // 更新进度：开始上传
-          // 确保当前进度反映准备阶段已完成（使用 totalItems 而不是 processedItems）
+          // 使用准备阶段结束的位置作为起点
           if (onProgress) {
             onProgress({
-              current: totalItems,
-              total: finalTotal,
+              current: uploadPhaseStart,
+              total: totalItems,
               message: '正在上传文件...',
             });
           }
@@ -887,10 +924,11 @@ export class GistSyncService {
             const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
 
             // 更新进度：上传批次
+            // 使用连续的进度值，从 uploadPhaseStart 开始递增
             if (onProgress) {
               onProgress({
-                current: totalItems + batchIndex + 1,
-                total: finalTotal,
+                current: uploadPhaseStart + batchIndex + 1,
+                total: totalItems,
                 message: `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
               });
             }
@@ -901,8 +939,8 @@ export class GistSyncService {
           // 更新进度：上传完成
           if (onProgress) {
             onProgress({
-              current: finalTotal,
-              total: finalTotal,
+              current: totalItems,
+              total: totalItems,
               message: '上传完成，正在验证...',
             });
           }
