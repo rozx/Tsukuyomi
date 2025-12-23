@@ -357,8 +357,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-history
   try {
-    // 先检查旧键，再检查新键
+    // 先检查最旧的键，再检查较新的键，最后检查最新的键
     const toastHistoryData =
+      localStorage.getItem('luna-toast-history') ||
       localStorage.getItem('luna-ai-toast-history') ||
       localStorage.getItem('tsukuyomi-toast-history');
     if (toastHistoryData) {
@@ -372,7 +373,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      // 删除旧键和新键（如果存在）
+      // 删除所有可能的旧键（如果存在）
+      localStorage.removeItem('luna-toast-history');
       localStorage.removeItem('luna-ai-toast-history');
       localStorage.removeItem('tsukuyomi-toast-history');
     }
@@ -382,8 +384,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-last-viewed
   try {
-    // 先检查旧键，再检查新键
+    // 先检查最旧的键，再检查较新的键，最后检查最新的键
     const lastViewedData =
+      localStorage.getItem('luna-toast-last-viewed') ||
       localStorage.getItem('luna-ai-toast-last-viewed') ||
       localStorage.getItem('tsukuyomi-toast-last-viewed');
     if (lastViewedData) {
@@ -394,7 +397,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
           timestamp,
         });
       }
-      // 删除旧键和新键（如果存在）
+      // 删除所有可能的旧键（如果存在）
+      localStorage.removeItem('luna-toast-last-viewed');
       localStorage.removeItem('luna-ai-toast-last-viewed');
       localStorage.removeItem('tsukuyomi-toast-last-viewed');
     }
