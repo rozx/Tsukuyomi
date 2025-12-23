@@ -679,6 +679,9 @@ const handleApply = async () => {
 
   // 发出过滤后的小说数据
   emit('apply', filteredNovel);
+  
+  // 立即关闭对话框，让父组件在后台处理保存操作
+  emit('update:visible', false);
 };
 
 // 处理取消
