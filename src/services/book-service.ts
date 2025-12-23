@@ -160,12 +160,16 @@ export class BookService {
     const saveChapterContent = options?.saveChapterContent !== false;
 
     // 1. 先保存所有章节内容到独立存储（仅在需要时）
+    // 优化：只保存修改过的章节内容
     if (saveChapterContent && book.volumes) {
       for (const volume of book.volumes) {
         if (volume.chapters) {
           for (const chapter of volume.chapters) {
             if (chapter.content && chapter.content.length > 0) {
-              await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
+              // 只保存修改过的章节内容
+              await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
+                skipIfUnchanged: true,
+              });
             }
           }
         }

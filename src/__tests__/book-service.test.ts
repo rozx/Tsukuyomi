@@ -33,8 +33,9 @@ await mock.module('src/utils/indexed-db', () => ({
 }));
 
 // Mock ChapterContentService
-const mockSaveChapterContent = mock((_chapterId: string, _content: Paragraph[]) =>
-  Promise.resolve(),
+const mockSaveChapterContent = mock(
+  (_chapterId: string, _content: Paragraph[], _options?: { skipIfUnchanged?: boolean }) =>
+    Promise.resolve(true),
 );
 
 describe('BookService', () => {
@@ -165,8 +166,12 @@ describe('BookService', () => {
 
       // 应该保存两个章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        skipIfUnchanged: true,
+      });
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        skipIfUnchanged: true,
+      });
       // 应该保存书籍元数据
       expect(mockPut).toHaveBeenCalled();
     });
@@ -187,8 +192,12 @@ describe('BookService', () => {
 
       // 应该保存两个章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        skipIfUnchanged: true,
+      });
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        skipIfUnchanged: true,
+      });
       // 应该保存书籍元数据
       expect(mockPut).toHaveBeenCalled();
     });
@@ -230,8 +239,12 @@ describe('BookService', () => {
 
       // 应该只保存有内容的章节（chapter-1 和 chapter-3）
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-3', chapter3.content);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        skipIfUnchanged: true,
+      });
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-3', chapter3.content, {
+        skipIfUnchanged: true,
+      });
       expect(mockSaveChapterContent).not.toHaveBeenCalledWith('chapter-2', expect.anything());
     });
 
@@ -286,8 +299,12 @@ describe('BookService', () => {
 
       // 应该保存所有章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        skipIfUnchanged: true,
+      });
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        skipIfUnchanged: true,
+      });
     });
   });
 });
