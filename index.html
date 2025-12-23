@@ -21,7 +21,8 @@
 
   <!--
     主题颜色说明（来自 src/constants/theme.ts）：
-    - 增强的背景渐变：多层月夜效果，增强对比度
+    - 增强的背景渐变：多层月夜效果，添加对比色
+      - 对比色：温暖的琥珀色 rgba(255, 183, 77, ...) 和柔和的紫色 rgba(186, 104, 200, ...)
       - Highlight（薄藍）rgba(109, 136, 168, ...) = Theme.translationText 的基础色
       - Accent（銀月）rgba(174, 183, 198, ...) = Theme.colors.accent
       - Primary（月白）rgba(233, 237, 245, ...) = Theme.colors.primary.DEFAULT
@@ -32,6 +33,8 @@
       margin: 0;
       padding: 0;
       background-image:
+        radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+        radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
         radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
         radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
         radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
@@ -47,7 +50,7 @@
     <!--
       初始加载屏幕 - 在 Vue 挂载前显示
       主题颜色说明（来自 src/constants/theme.ts）：
-      - 背景渐变：增强的多层月夜效果，增强对比度（与 body 相同）
+      - 背景渐变：增强的多层月夜效果，添加对比色（与 body 相同）
       - 加载动画边框：Highlight（薄藍）#6D88A8 = Theme.translationText 的基础色
       - 文字颜色：Primary（月白）rgba(233, 237, 245, ...) = Theme.colors.primary.DEFAULT
     -->
@@ -60,6 +63,8 @@
         width: 100%;
         height: 100%;
         background-image:
+          radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+          radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
           radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
           radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
           radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),

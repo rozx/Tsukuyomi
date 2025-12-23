@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { APP_VERSION } from 'src/constants/version';
+import { APP_NAME } from 'src/constants/app';
 </script>
 
 <template>
   <footer class="border-t border-white/10 py-3 text-xs text-moon/70 shrink-0">
     <div class="px-3 flex items-center justify-between">
-      <span>© 2025 Tsukuyomi - Moonlit Translator v{{ APP_VERSION }}</span>
+      <span>© 2025 {{ APP_NAME.en }} {{ APP_NAME.zh }} - {{ APP_NAME.description.en }} v{{ APP_VERSION }}</span>
       <a
         href="https://github.com/rozx"
         target="_blank"

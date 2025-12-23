@@ -9,12 +9,16 @@
   #q-app {
     height: 100%;
     @apply bg-night-950 text-moon-50;
-    /* 增强的背景渐变 - 多层月夜效果，增强对比度 */
-    /* Highlight（薄藍）, Accent（銀月）, Secondary（影墨）gradient */
+    /* 增强的背景渐变 - 多层月夜效果，添加对比色 */
+    /* Highlight（薄藍）, Accent（銀月）, Secondary（影墨）, 对比色（暖色调）*/
     background-image:
-      /* 顶部左侧 - 明亮的月光效果（Highlight 薄藍）- 增强对比度 */
+      /* 对比色 - 温暖的琥珀色（与冷色调形成对比）*/
+      radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
+      /* 对比色 - 柔和的紫色（与蓝色形成对比）*/
+      radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
+      /* 顶部左侧 - 明亮的月光效果（Highlight 薄藍）*/
       radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
-      /* 顶部右侧 - 明亮的月光效果（Accent 銀月）- 增强对比度 */
+      /* 顶部右侧 - 明亮的月光效果（Accent 銀月）*/
       radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
       /* 中间左侧 - 中等强度的月光 */
       radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),

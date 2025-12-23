@@ -11,6 +11,7 @@ import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import { getAssetUrl } from 'src/utils';
+import { APP_NAME } from 'src/constants/app';
 
 const ui = useUiStore();
 const { unreadCount } = useToastHistory();
@@ -263,10 +264,12 @@ onUnmounted(() => {
             icon="pi pi-bars"
             @click="ui.toggleSideMenu()"
           />
-          <img :src="logoPath" alt="Tsukuyomi - Moonlit Translator" class="w-8 h-8 flex-shrink-0" />
+          <img :src="logoPath" :alt="APP_NAME.full" class="w-8 h-8 flex-shrink-0" />
           <div class="flex flex-col">
-            <span class="text-xs uppercase tracking-[0.3em] text-moon-50">Tsukuyomi</span>
-            <span class="font-semibold text-moon-100 tracking-wide">Moonlit Translator</span>
+            <span class="text-xs uppercase tracking-[0.3em] text-moon-50"
+              >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
+            >
+            <span class="font-semibold text-moon-100 tracking-wide">{{ APP_NAME.description.en }}</span>
           </div>
         </div>
       </template>

@@ -119,7 +119,7 @@ module.exports = {
         },
         '.bg-tsukuyomi-sky': {
           backgroundImage:
-            'radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%), radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%), radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%), radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%), radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%), radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%), radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%), linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%)',
+            'radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%), radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%), radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%), radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%), radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%), radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%), radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%), radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%), radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%), linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%)',
           backgroundAttachment: 'fixed',
         },
         '.card-base': {

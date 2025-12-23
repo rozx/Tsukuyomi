@@ -13,7 +13,7 @@ export const DEFAULT_PROXY_LIST: Array<{
     id: 'rozx.moe',
     name: 'CORS Tsukuyomi (推荐使用)',
     url: 'https://cors.rozx.moe/?{url}',
-    description: 'Tsukuyomi - Moonlit Translator 默认代理 (#^.^#)。',
+    description: 'Tsukuyomi（月詠） - Moonlit Translator 默认代理 (#^.^#)。',
   },
   {
     id: 'corslol',
