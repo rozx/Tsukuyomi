@@ -217,7 +217,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 books
   try {
-    const booksData = localStorage.getItem('tsukuyomi-books');
+    // 先检查旧键，再检查新键
+    const booksData =
+      localStorage.getItem('luna-ai-books') || localStorage.getItem('tsukuyomi-books');
     if (booksData) {
       const books = JSON.parse(booksData) as Novel[];
 
@@ -235,6 +237,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-books');
       localStorage.removeItem('tsukuyomi-books');
     }
   } catch {
@@ -243,7 +247,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 ai-models
   try {
-    const modelsData = localStorage.getItem('tsukuyomi-models');
+    // 先检查旧键，再检查新键
+    const modelsData =
+      localStorage.getItem('luna-ai-models') || localStorage.getItem('tsukuyomi-models');
     if (modelsData) {
       const models = JSON.parse(modelsData) as AIModel[];
 
@@ -255,6 +261,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-models');
       localStorage.removeItem('tsukuyomi-models');
     }
   } catch {
@@ -263,7 +271,9 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 settings
   try {
-    const settingsData = localStorage.getItem('tsukuyomi-settings');
+    // 先检查旧键，再检查新键
+    const settingsData =
+      localStorage.getItem('luna-ai-settings') || localStorage.getItem('tsukuyomi-settings');
     if (settingsData) {
       const settings = JSON.parse(settingsData) as AppSettings;
 
@@ -271,6 +281,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
         key: string;
       });
 
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-settings');
       localStorage.removeItem('tsukuyomi-settings');
     }
   } catch {
@@ -279,7 +291,10 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 cover-history
   try {
-    const coverHistoryData = localStorage.getItem('tsukuyomi-cover-history');
+    // 先检查旧键，再检查新键
+    const coverHistoryData =
+      localStorage.getItem('luna-ai-cover-history') ||
+      localStorage.getItem('tsukuyomi-cover-history');
     if (coverHistoryData) {
       const coverHistory = JSON.parse(coverHistoryData) as CoverHistoryItem[];
 
@@ -295,6 +310,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-cover-history');
       localStorage.removeItem('tsukuyomi-cover-history');
     }
   } catch {
@@ -303,7 +320,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 sync-configs
   try {
-    const syncData = localStorage.getItem('tsukuyomi-sync');
+    // 先检查旧键，再检查新键
+    const syncData = localStorage.getItem('luna-ai-sync') || localStorage.getItem('tsukuyomi-sync');
     if (syncData) {
       const syncs = JSON.parse(syncData) as SyncConfig[];
 
@@ -329,6 +347,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-sync');
       localStorage.removeItem('tsukuyomi-sync');
     }
   } catch {
@@ -337,7 +357,10 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-history
   try {
-    const toastHistoryData = localStorage.getItem('tsukuyomi-toast-history');
+    // 先检查旧键，再检查新键
+    const toastHistoryData =
+      localStorage.getItem('luna-ai-toast-history') ||
+      localStorage.getItem('tsukuyomi-toast-history');
     if (toastHistoryData) {
       const toastHistory = JSON.parse(toastHistoryData) as ToastHistoryItem[];
 
@@ -349,6 +372,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-toast-history');
       localStorage.removeItem('tsukuyomi-toast-history');
     }
   } catch {
@@ -357,7 +382,10 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-last-viewed
   try {
-    const lastViewedData = localStorage.getItem('tsukuyomi-toast-last-viewed');
+    // 先检查旧键，再检查新键
+    const lastViewedData =
+      localStorage.getItem('luna-ai-toast-last-viewed') ||
+      localStorage.getItem('tsukuyomi-toast-last-viewed');
     if (lastViewedData) {
       const timestamp = parseInt(lastViewedData, 10);
       if (!isNaN(timestamp)) {
@@ -366,6 +394,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
           timestamp,
         });
       }
+      // 删除旧键和新键（如果存在）
+      localStorage.removeItem('luna-ai-toast-last-viewed');
       localStorage.removeItem('tsukuyomi-toast-last-viewed');
     }
   } catch {
