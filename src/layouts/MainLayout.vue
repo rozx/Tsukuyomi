@@ -136,7 +136,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen overflow-hidden bg-luna-sky text-moon-100 flex flex-col">
+  <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
     <!-- 初始数据加载指示器 -->
     <div
       v-if="ui.isInitialDataLoading"
@@ -169,7 +169,7 @@ onUnmounted(() => {
         </div>
       </div>
       <main
-        class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/80 backdrop-blur-xl"
+        class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 backdrop-blur-xl"
       >
         <RouterView />
       </main>

@@ -1,6 +1,6 @@
 import { defineBoot } from '#q-app/wrappers';
 import PrimeVue from 'primevue/config';
-import LunaPreset from 'src/theme/luna-preset';
+import TsukuyomiPreset from 'src/theme/tsukuyomi-preset';
 import ConfirmationService from 'primevue/confirmationservice';
 import ToastService from 'primevue/toastservice';
 
@@ -9,7 +9,7 @@ import 'primeicons/primeicons.css';
 export default defineBoot(({ app }) => {
   app.use(PrimeVue, {
     theme: {
-      preset: LunaPreset,
+      preset: TsukuyomiPreset,
       options: {
         darkModeSelector: '.dark',
         cssLayer: false,

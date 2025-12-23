@@ -116,7 +116,7 @@ const bottomItems: MenuItem[] = [
   >
     <!-- Subtle gradient overlay -->
     <div
-      class="absolute inset-0 bg-gradient-to-b from-luna-500/5 via-transparent to-transparent pointer-events-none"
+      class="absolute inset-0 bg-gradient-to-b from-tsukuyomi-500/5 via-transparent to-transparent pointer-events-none"
     />
 
     <!-- Top section with logo/branding area -->
