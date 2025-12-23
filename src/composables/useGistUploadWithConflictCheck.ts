@@ -146,10 +146,13 @@ export function useGistSync() {
 
       if (result.success) {
         // 更新进度：上传完成
+        // 保持当前的 total 值，只更新 current 和 message，避免进度回退
+        const currentProgress = settingsStore.syncProgress;
+        const finalTotal = currentProgress.total > 0 ? currentProgress.total : 1;
         settingsStore.updateSyncProgress({
           message: '上传完成，正在更新状态...',
-          current: 1,
-          total: 1,
+          current: finalTotal,
+          total: finalTotal,
         });
 
         // 更新 Gist ID（等待完成）
