@@ -794,12 +794,12 @@ export class GistSyncService {
             }
 
             // 检查文件名是否符合我们的命名规范
-            const isLunaFile =
+            const isTsukuyomiFile =
               filename === GIST_FILE_NAMES.SETTINGS ||
               filename.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) ||
               filename.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX);
 
-            if (isLunaFile) {
+            if (isTsukuyomiFile) {
               // 如果是我们的文件，且不在上传列表中，说明应该删除
               // 这涵盖了：
               // 1. 书籍被删除

@@ -337,7 +337,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-history
   try {
-    const toastHistoryData = localStorage.getItem('luna-toast-history');
+    const toastHistoryData = localStorage.getItem('tsukuyomi-toast-history');
     if (toastHistoryData) {
       const toastHistory = JSON.parse(toastHistoryData) as ToastHistoryItem[];
 
@@ -349,7 +349,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
       }
 
       await tx.done;
-      localStorage.removeItem('luna-toast-history');
+      localStorage.removeItem('tsukuyomi-toast-history');
     }
   } catch {
     // 忽略迁移错误
@@ -357,7 +357,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 
   // 迁移 toast-last-viewed
   try {
-    const lastViewedData = localStorage.getItem('luna-toast-last-viewed');
+    const lastViewedData = localStorage.getItem('tsukuyomi-toast-last-viewed');
     if (lastViewedData) {
       const timestamp = parseInt(lastViewedData, 10);
       if (!isNaN(timestamp)) {
@@ -366,7 +366,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
           timestamp,
         });
       }
-      localStorage.removeItem('luna-toast-last-viewed');
+      localStorage.removeItem('tsukuyomi-toast-last-viewed');
     }
   } catch {
     // 忽略迁移错误

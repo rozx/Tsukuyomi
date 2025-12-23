@@ -208,7 +208,7 @@ onMounted(async () => {
             />
             <div class="flex flex-col text-left">
               <span class="text-xl sm:text-2xl uppercase tracking-[0.3em] text-moon-50 font-light"
-                >Luna</span
+                >Tsukuyomi</span
               >
               <span class="text-2xl sm:text-3xl font-bold text-moon-100 tracking-wide"
                 >AI Translator</span
