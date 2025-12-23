@@ -38,31 +38,50 @@ export function useGistSync() {
   /**
    * 下载远程数据
    * @param config 同步配置
+   * @param downloadPhaseMax 下载阶段在整体进度中的最大值（默认 30）
+   * @param overallTotal 整体进度的总数值（默认 100）
    * @returns 下载的数据
    */
   const downloadRemoteData = async (
     config: SyncConfig,
+    downloadPhaseMax: number = 30,
+    overallTotal: number = 100,
   ): Promise<{ data?: any; error?: string }> => {
     if (!config.syncParams.gistId) {
       return {}; // 没有 Gist ID，无需下载
     }
 
     try {
-      // 更新进度
+      // 更新进度：开始下载
       settingsStore.updateSyncProgress({
         stage: 'downloading',
         message: '正在下载远程数据...',
         current: 0,
-        total: 1,
+        total: overallTotal,
       });
 
       // 下载远程更改（传递进度回调）
+      // 将下载阶段的进度映射到整体进度（0 到 downloadPhaseMax）
+      let downloadPhaseTotal: number | undefined = undefined;
       const downloadResult = await gistSyncService.downloadFromGist(
         config,
         (progress) => {
+          // 记录下载阶段的总数（第一次更新时）
+          if (downloadPhaseTotal === undefined) {
+            downloadPhaseTotal = progress.total;
+          }
+
+          // 将下载阶段的进度映射到整体进度
+          // 下载阶段占整体进度的 0 到 downloadPhaseMax
+          // 防止除零错误
+          const mappedCurrent = progress.total > 0
+            ? Math.round((progress.current / progress.total) * downloadPhaseMax)
+            : 0;
+
           settingsStore.updateSyncProgress({
-            current: progress.current,
-            total: progress.total,
+            stage: 'downloading',
+            current: mappedCurrent,
+            total: overallTotal,
             message: progress.message,
           });
         },
@@ -102,6 +121,8 @@ export function useGistSync() {
    * @param dataToUpload 要上传的数据
    * @param onSuccess 成功回调（可选），接收上传结果
    * @param onError 错误回调（可选），接收错误消息
+   * @param uploadPhaseStart 上传阶段在整体进度中的起始位置（默认 0）
+   * @param overallTotal 整体进度的总数值（默认使用上传阶段的 total）
    * @returns 上传结果
    */
   const performUpload = async (
@@ -114,6 +135,8 @@ export function useGistSync() {
     },
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
     onError?: (error: string) => void,
+    uploadPhaseStart: number = 0,
+    overallTotal: number | undefined = undefined,
   ): Promise<{
     success: boolean;
     gistId?: string;
@@ -126,19 +149,35 @@ export function useGistSync() {
       settingsStore.updateSyncProgress({
         stage: 'uploading',
         message: `正在上传数据 (${dataToUpload.novels.length} 本书籍)...`,
-        current: 0,
-        total: 1, // 初始值，会在回调中更新
+        current: uploadPhaseStart,
+        total: overallTotal || 1, // 使用整体总进度，如果没有则使用初始值
       });
 
       // 上传数据（传递进度回调）
+      // 将上传阶段的进度映射到整体进度
+      let uploadPhaseTotal: number | undefined = undefined;
       const result = await gistSyncService.uploadToGist(
         config,
         dataToUpload,
         (progress) => {
+          // 记录上传阶段的总数（第一次更新时）
+          if (uploadPhaseTotal === undefined) {
+            uploadPhaseTotal = progress.total;
+          }
+
+          // 将上传阶段的进度映射到整体进度
+          // 上传阶段占整体进度的剩余部分（从 uploadPhaseStart 到 overallTotal）
+          const uploadPhaseRange = (overallTotal || progress.total) - uploadPhaseStart;
+          // 防止除零错误
+          const mappedCurrent = progress.total > 0
+            ? uploadPhaseStart + Math.round((progress.current / progress.total) * uploadPhaseRange)
+            : uploadPhaseStart;
+          const mappedTotal = overallTotal || progress.total;
+
           settingsStore.updateSyncProgress({
             stage: 'uploading',
-            current: progress.current,
-            total: progress.total,
+            current: mappedCurrent,
+            total: mappedTotal,
             message: progress.message,
           });
         },
@@ -146,9 +185,8 @@ export function useGistSync() {
 
       if (result.success) {
         // 更新进度：上传完成
-        // 保持当前的 total 值，只更新 current 和 message，避免进度回退
-        const currentProgress = settingsStore.syncProgress;
-        const finalTotal = currentProgress.total > 0 ? currentProgress.total : 1;
+        // 使用整体总进度，确保进度达到 100%
+        const finalTotal = overallTotal || settingsStore.syncProgress.total || 1;
         settingsStore.updateSyncProgress({
           message: '上传完成，正在更新状态...',
           current: finalTotal,
@@ -230,10 +268,23 @@ export function useGistSync() {
         coverHistory: coverHistoryStore.covers,
       };
 
+      // 计算整体流程的总进度
+      // 流程：下载(30%) + 合并(10%) + 上传(60%)
+      // 使用一个统一的 total 值，将各个阶段映射到这个 total
+      const OVERALL_TOTAL = 100; // 使用 100 作为总进度单位
+      const DOWNLOAD_PHASE_MAX = 30; // 下载阶段占 30%
+      const MERGE_PHASE_MAX = 10; // 合并阶段占 10%
+      // 上传阶段占剩余 60%（从 40% 到 100%）
+
       // 如果有 Gist ID 且不是强制本地模式，先下载远程数据并合并
       let dataToUpload = localData;
       if (config.syncParams.gistId && !options?.forceLocalOnly) {
-        const { data: remoteData, error } = await downloadRemoteData(config);
+        // 下载阶段：0-30%
+        const { data: remoteData, error } = await downloadRemoteData(
+          config,
+          DOWNLOAD_PHASE_MAX,
+          OVERALL_TOTAL,
+        );
 
         if (error) {
           // 下载失败，显示警告让用户选择是否继续
@@ -258,10 +309,12 @@ export function useGistSync() {
           // 返回，等待用户通过 confirmUploadWithLocalData 确认
           return;
         } else if (remoteData) {
-          // 更新进度
+          // 下载完成，进入合并阶段：30-40%
           settingsStore.updateSyncProgress({
             stage: 'merging',
             message: '正在合并本地和远程数据...',
+            current: DOWNLOAD_PHASE_MAX,
+            total: OVERALL_TOTAL,
           });
 
           // 合并本地和远程数据
@@ -271,11 +324,40 @@ export function useGistSync() {
             remoteData,
             lastSyncTime,
           );
+
+          // 合并完成，准备进入上传阶段：40%
+          settingsStore.updateSyncProgress({
+            stage: 'merging',
+            message: '合并完成，准备上传...',
+            current: DOWNLOAD_PHASE_MAX + MERGE_PHASE_MAX,
+            total: OVERALL_TOTAL,
+          });
+        } else {
+          // 没有远程数据，直接进入上传阶段：0-60%
+          // 重置进度，从上传阶段开始
+          settingsStore.updateSyncProgress({
+            stage: 'uploading',
+            message: '准备上传数据...',
+            current: 0,
+            total: OVERALL_TOTAL,
+          });
         }
+      } else {
+        // 没有 Gist ID 或强制本地模式，直接上传：0-60%
+        settingsStore.updateSyncProgress({
+          stage: 'uploading',
+          message: '准备上传数据...',
+          current: 0,
+          total: OVERALL_TOTAL,
+        });
       }
 
       // 上传合并后的数据
-      await performUpload(config, dataToUpload, onSuccess);
+      // 上传阶段：40-100%（如果有下载合并）或 0-60%（如果直接上传）
+      const uploadPhaseStart = config.syncParams.gistId && !options?.forceLocalOnly
+        ? DOWNLOAD_PHASE_MAX + MERGE_PHASE_MAX
+        : 0;
+      await performUpload(config, dataToUpload, onSuccess, undefined, uploadPhaseStart, OVERALL_TOTAL);
     } catch (error) {
       console.error('[useGistSync] 上传失败:', error);
     } finally {
@@ -413,7 +495,14 @@ export function useGistSync() {
   ): Promise<RestorableItem[]> => {
     setSyncing(true);
     try {
-      const { data, error } = await downloadRemoteData(config);
+      // 计算整体流程的总进度
+      // 流程：下载(70%) + 应用(30%)
+      const OVERALL_TOTAL = 100;
+      const DOWNLOAD_PHASE_MAX = 70; // 下载阶段占 70%
+      const APPLY_PHASE_MAX = 30; // 应用阶段占 30%
+
+      // 下载阶段：0-70%
+      const { data, error } = await downloadRemoteData(config, DOWNLOAD_PHASE_MAX, OVERALL_TOTAL);
 
       if (error) {
         return [];
@@ -422,21 +511,20 @@ export function useGistSync() {
       // 应用下载的数据（总是使用最新的 lastEdited 时间）
       // 手动下载时，保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
       if (data) {
-        // 更新进度：进入应用阶段，保持当前的 total，不重置进度
-        const currentProgress = settingsStore.syncProgress;
+        // 更新进度：进入应用阶段，70-100%
         settingsStore.updateSyncProgress({
           stage: 'applying',
           message: '正在应用下载的数据...',
-          // 不重置 current 和 total，保持下载阶段的进度
+          current: DOWNLOAD_PHASE_MAX,
+          total: OVERALL_TOTAL,
         });
 
         const restorableItems = await SyncDataService.applyDownloadedData(data, undefined, true);
         
         // 更新进度：应用完成，确保进度为 100%
-        const finalTotal = currentProgress.total > 0 ? currentProgress.total : 1;
         settingsStore.updateSyncProgress({
-          current: finalTotal,
-          total: finalTotal,
+          current: OVERALL_TOTAL,
+          total: OVERALL_TOTAL,
           message: '应用完成',
         });
 

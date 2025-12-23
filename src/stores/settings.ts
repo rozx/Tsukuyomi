@@ -774,6 +774,7 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 更新同步进度
+     * 注意：当 stage 未变化时，百分比只会增加不会减少（防止进度回退）
      */
     updateSyncProgress(progress: {
       stage?: '' | 'downloading' | 'uploading' | 'applying' | 'merging';
@@ -781,6 +782,10 @@ export const useSettingsStore = defineStore('settings', {
       current?: number;
       total?: number;
     }): void {
+      // 检查 stage 是否变化（stage 变化时允许重置百分比）
+      const stageChanged = progress.stage !== undefined && progress.stage !== this.syncProgress.stage;
+      const previousPercentage = this.syncProgress.percentage;
+      
       if (progress.stage !== undefined) {
         this.syncProgress.stage = progress.stage;
       }
@@ -795,9 +800,14 @@ export const useSettingsStore = defineStore('settings', {
       }
       // 计算百分比
       if (this.syncProgress.total > 0) {
-        this.syncProgress.percentage = Math.round(
+        const newPercentage = Math.round(
           (this.syncProgress.current / this.syncProgress.total) * 100,
         );
+        // 当 stage 未变化时，百分比只能增加不能减少（防止进度回退）
+        if (stageChanged || newPercentage >= previousPercentage) {
+          this.syncProgress.percentage = newPercentage;
+        }
+        // 如果新百分比更小且 stage 未变化，保持原百分比（但更新 current/total 用于调试）
       } else {
         this.syncProgress.percentage = 0;
       }
