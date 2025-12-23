@@ -151,12 +151,16 @@ export class BookService {
   /**
    * 保存/更新书籍
    * 章节内容会被剥离并单独存储
+   * @param book 书籍对象
+   * @param options 保存选项
+   * @param options.saveChapterContent 是否保存章节内容，默认为 true。如果为 false，则只保存书籍元数据（适用于仅更新术语、角色设定等元数据的场景）
    */
-  static async saveBook(book: Novel): Promise<void> {
+  static async saveBook(book: Novel, options?: { saveChapterContent?: boolean }): Promise<void> {
     const db = await getDB();
+    const saveChapterContent = options?.saveChapterContent !== false;
 
-    // 1. 先保存所有章节内容到独立存储
-    if (book.volumes) {
+    // 1. 先保存所有章节内容到独立存储（仅在需要时）
+    if (saveChapterContent && book.volumes) {
       for (const volume of book.volumes) {
         if (volume.chapters) {
           for (const chapter of volume.chapters) {
