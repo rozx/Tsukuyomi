@@ -422,9 +422,9 @@ describe('batch_replace_translations', () => {
     // Mock FullTextIndexService.search：断言调用方传入 novel 引用，并返回 store 引用的对象
     const { FullTextIndexService } = await import('src/services/full-text-index-service');
     spyOn(FullTextIndexService, 'search').mockImplementation(
-      async (_bookId: string, _keywords: string[], options: any) => {
+      (_bookId: string, _keywords: string[], options: any) => {
         expect(options?.novel).toBe(novel);
-        return [
+        return Promise.resolve([
           {
             paragraph: para1,
             paragraphIndex: 0,
@@ -433,7 +433,7 @@ describe('batch_replace_translations', () => {
             volume,
             volumeIndex: 0,
           } as any,
-        ];
+        ]);
       },
     );
 

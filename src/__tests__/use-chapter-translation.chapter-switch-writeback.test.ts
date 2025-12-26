@@ -40,7 +40,7 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
 
   const aiProcessing = {
     activeTasks: [],
-    addTask: mock(async () => 'task-1'),
+    addTask: mock(() => Promise.resolve('task-1')),
     updateTask: mock(async () => {}),
     appendThinkingMessage: mock(async () => {}),
     appendOutputContent: mock(async () => {}),
@@ -97,10 +97,10 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
       }
     };
 
-    // 当需要懒加载章节内容时，返回“从独立存储加载的内容”
-    spyOn(ChapterService, 'loadChapterContent').mockImplementation(async (ch) => {
-      if (ch.id !== chapterA.id) return { ...ch, content: [], contentLoaded: true };
-      return { ...ch, content: [p1], contentLoaded: true };
+    // 当需要懒加载章节内容时，返回"从独立存储加载的内容"
+    spyOn(ChapterService, 'loadChapterContent').mockImplementation((ch) => {
+      if (ch.id !== chapterA.id) return Promise.resolve({ ...ch, content: [], contentLoaded: true });
+      return Promise.resolve({ ...ch, content: [p1], contentLoaded: true });
     });
 
     // Mock 翻译服务：在 onParagraphTranslation 触发前，先把用户的 UI 选择切到 chapterB
@@ -131,8 +131,8 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
 
     // 写回发生：updateBook 被调用，且 volumes 中 chapterA 的段落 p1 有翻译
     expect(updateBook).toHaveBeenCalled();
-    const lastCall = updateBook.mock.calls[updateBook.mock.calls.length - 1];
-    const [, updates] = lastCall!;
+    const lastCall = updateBook.mock.calls[updateBook.mock.calls.length - 1] as unknown as [string, Partial<Novel>];
+    const [, updates] = lastCall;
     const updatedChapterA = (updates.volumes as any)[0].chapters.find((c: any) => c.id === chapterA.id);
     expect(updatedChapterA).toBeTruthy();
     expect(updatedChapterA.content).toBeTruthy();

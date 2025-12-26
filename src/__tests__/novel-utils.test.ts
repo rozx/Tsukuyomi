@@ -154,7 +154,7 @@ describe('getChapterDisplayTitle with normalization', () => {
         translation: {
           id: 'trans-1',
           translation: '',
-          createdAt: new Date(),
+          aiModelId: '',
         },
       },
       normalizeTitleOnDisplay,
@@ -211,9 +211,8 @@ describe('getChapterDisplayTitle with normalization', () => {
         translation: {
           id: 'trans-1',
           translation: '５１７话 打破停滞的战场吧',
-          createdAt: new Date(),
+          aiModelId: '',
         },
-        selectedTranslationId: 'trans-1',
       },
       normalizeTitleOnDisplay: true,
       lastEdited: new Date(),
@@ -241,7 +240,7 @@ describe('getChapterDisplayTitle with normalization', () => {
         translation: {
           id: 'trans-1',
           translation: '',
-          createdAt: new Date(),
+          aiModelId: '',
         },
       },
       lastEdited: new Date(),
@@ -272,7 +271,7 @@ describe('getChapterDisplayTitle with normalization', () => {
         translation: {
           id: 'trans-1',
           translation: '',
-          createdAt: new Date(),
+          aiModelId: '',
         },
       },
       normalizeTitleOnDisplay: true,
@@ -290,9 +289,8 @@ describe('getChapterDisplayTitle with normalization', () => {
         translation: {
           id: 'trans-1',
           translation: '   ', // 只有空格
-          createdAt: new Date(),
+          aiModelId: '',
         },
-        selectedTranslationId: 'trans-1',
       },
       normalizeTitleOnDisplay: true,
       lastEdited: new Date(),
