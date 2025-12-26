@@ -32,7 +32,9 @@ export function normalizeTranslationQuotes(text: string): string {
   // 对于相同字符的引号（如 "），需要从外到内处理；对于不同字符的引号，使用栈匹配
   /**
    * 优化的引号替换函数，使用改进的配对算法
-   * 时间复杂度：O(n²) for same-character quotes, O(n) for different-character quotes
+   * 时间复杂度：O(n³) worst case for same-character quotes due to triple nested loops,
+   *           但相比原实现去除了递归调用和多次字符串重建，实际性能更好
+   *           O(n) for different-character quotes (stack-based single pass)
    * 空间复杂度：O(n)
    */
   function replaceNestedQuotes(str: string, openChar: string, closeChar: string, replacementOpen: string, replacementClose: string): string {
@@ -72,7 +74,11 @@ export function normalizeTranslationQuotes(text: string): string {
         let closestEndIndex = -1;
         let minDistance = Infinity;
         
-        // 找到距离最近且满足条件的配对 - O(n²) 最坏情况
+        // 找到距离最近且满足条件的配对
+        // 三重嵌套循环结构，worst case O(n³)，但实际场景中：
+        // - 引号数量 << 字符串长度
+        // - 配对后的引号会被跳过，减少迭代次数
+        // - 内层循环通常提前 break
         for (let i = 0; i < quoteIndices.length - 1; i++) {
           if (paired[i]) continue;
           
@@ -82,7 +88,12 @@ export function normalizeTranslationQuotes(text: string): string {
             const startPos = quoteIndices[i]!;
             const endPos = quoteIndices[j]!;
             
-            // 检查这两个引号之间是否有其他未配对的引号 - O(n) 最坏情况
+            // 检查这两个引号之间是否有其他未配对的引号
+            // 这个循环加上外层两个循环形成三重嵌套，worst case 为 O(n³)
+            // 但通常情况下：
+            // 1. 引号数量远小于字符串长度
+            // 2. 大多数引号对会在早期迭代中被配对，减少后续迭代的工作量
+            // 3. 内层循环通常会提前 break
             let hasOtherUnpairedQuotes = false;
             for (let k = i + 1; k < j; k++) {
               if (!paired[k]) {
@@ -99,7 +110,8 @@ export function normalizeTranslationQuotes(text: string): string {
                 continue; // 跳过相邻的引号对
               }
               
-              // 检查两个引号之间是否有实际内容（非已配对引号）- O(n) 最坏情况
+              // 检查两个引号之间是否有实际内容（非已配对引号）
+              // 这个循环在三重嵌套结构中，但大多数情况会提前 break
               let hasContent = false;
               for (let pos = startPos + 1; pos < endPos; pos++) {
                 // 如果这个位置不是引号，说明有内容
@@ -107,7 +119,7 @@ export function normalizeTranslationQuotes(text: string): string {
                   hasContent = true;
                   break;
                 }
-                // 如果是引号，使用 Map 进行 O(1) 查找，检查它是否已配对
+                // 如果是引号，使用 Map 进行 O(1) 查找位置索引，检查它是否已配对
                 const quoteIndex = positionToIndexMap.get(pos);
                 if (quoteIndex !== undefined && !paired[quoteIndex]) {
                   hasContent = true; // 未配对的引号算作内容
