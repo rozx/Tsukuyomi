@@ -803,9 +803,16 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
 /**
  * 构建输出内容后的后续操作提示 - 精简版
  */
-export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
+export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
+
+  // 翻译相关任务：在 completed 阶段额外提醒可回到 working 更新既有译文
+  const canGoBackToWorkingReminder =
+    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
+      ? '如果你想更新任何已输出的译文/润色/校对结果，请将状态改回 `{"status":"working"}` 并只返回需要更新的段落；'
+      : '';
+
+  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
 }
 
 /**
@@ -837,7 +844,7 @@ export function buildIndependentChunkPrompt(
   const taskLabel = taskLabels[taskType];
 
   // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
-  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请仅使用**本次会话提供的工具列表**中的工具获取（工具只用于获取上下文/维护数据）。[禁止] 不要尝试调用未提供的工具；不要将工具返回内容当作${taskLabel}结果直接输出。`;
 
   // 提取当前 chunk 中出现的术语和角色
   // 注意：每次调用时都从 store 重新获取书籍数据，确保包含在前一个 chunk 中创建/更新的术语和角色
@@ -1068,6 +1075,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
   // 工具调用计数（用于限制）
   const toolCallCounts = new Map<string, number>();
+  // 允许的工具名称集合（严格限制：只能调用本次请求提供的 tools）
+  const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -1115,6 +1124,22 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       let hasProductiveTool = false;
       for (const toolCall of result.toolCalls) {
         const toolName = toolCall.function.name;
+
+        // [警告] 严格限制：只能调用本次会话提供的 tools
+        if (!allowedToolNames.has(toolName)) {
+          console.warn(
+            `[${logLabel}] ⚠️ 工具 ${toolName} 未在本次会话提供的 tools 列表中，已拒绝执行`,
+          );
+          history.push({
+            role: 'tool',
+            content:
+              `[警告] 工具 ${toolName} 未在本次会话提供的 tools 列表中，禁止调用。` +
+              `请改用可用工具或基于已有上下文继续${taskLabel}。`,
+            tool_call_id: toolCall.id,
+            name: toolName,
+          });
+          continue;
+        }
 
         // 检查工具调用限制
         const currentCount = toolCallCounts.get(toolName) || 0;
@@ -1550,7 +1575,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `[警告] 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
+            `[警告] 你已经在完成阶段停留过久。` +
+            `如果你还想更新任何已输出的${taskLabel}结果，请将状态改回 \`{"status":"working"}\` 并提交需要更新的段落；` +
+            `如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作

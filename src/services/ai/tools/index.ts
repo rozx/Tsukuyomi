@@ -130,25 +130,12 @@ export class ToolRegistry {
   static getTermTranslationTools(bookId?: string): AITool[] {
     if (!bookId) return [];
 
-    // 只允许的只读工具列表
+    // [重要] 术语翻译服务：只允许 keyword 搜索类工具（search_*_by_keywords）
+    // 目的：避免模型使用其它只读工具（get/list/find 等）导致提示与工具集不一致。
     const allowedToolNames = [
-      // 书籍工具
-      'get_book_info',
-      // 术语工具（只读）
-      'get_term',
-      'list_terms',
       'search_terms_by_keywords',
-      // 角色工具（只读）
-      'get_character',
-      'list_characters',
       'search_characters_by_keywords',
-      // 记忆工具（只读）
-      'get_memory',
-      'get_recent_memories', // list memories
-      'search_memory_by_keywords',
-      // 段落搜索工具（只读）
       'find_paragraph_by_keywords',
-      'search_paragraphs_by_regex',
     ];
 
     // 获取所有工具（包括变更工具）

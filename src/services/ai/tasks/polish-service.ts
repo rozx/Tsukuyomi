@@ -209,7 +209,7 @@ export class PolishService {
 4. **一致性**: 术语/角色名保持全文统一，参考翻译历史混合最佳表达
 5. ${getSymbolFormatRules()}
 
-${getToolUsageInstructions('polish')}
+${getToolUsageInstructions('polish', tools)}
 
 ${getMemoryWorkflowRules()}
 

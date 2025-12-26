@@ -17,6 +17,7 @@ import {
   buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
 import { createUnifiedAbortController } from './utils/ai-task-helper';
+import { getToolScopeRules } from './prompts';
 
 /**
  * 术语翻译服务选项
@@ -154,6 +155,7 @@ export class TermTranslationService {
       // 获取工具（如果有 bookId，提供工具以获取上下文）
       // 术语翻译服务只能使用特定的工具：get_book_info, get/list/search terms/characters/memory
       const tools: AITool[] = bookId ? ToolRegistry.getTermTranslationTools(bookId) : [];
+      const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
@@ -180,25 +182,11 @@ export class TermTranslationService {
 2. **自然流畅**: 符合轻小说风格，保持术语的准确性
 3. **上下文理解**: 根据当前书籍、章节的上下文来理解术语含义
 
-【工具使用】[重要] **强烈建议在翻译前获取上下文**
-你可以使用以下工具获取上下文信息：
-- \`get_book_info\`: 获取当前书籍信息（标题、作者、简介、标签等），了解书籍背景
-- \`get_term\`: 根据术语名称获取术语信息
-- \`list_terms\`: 获取当前章节或书籍的术语表（传入 chapter_id 获取章节术语），确保术语翻译一致性
-- \`search_terms_by_keywords\`: 根据关键词搜索术语
-- \`get_character\`: 根据角色名称获取角色信息
-- \`list_characters\`: 获取当前章节或书籍的角色表（传入 chapter_id 获取章节角色），了解角色关系
-- \`search_characters_by_keywords\`: 根据关键词搜索角色
-- \`get_memory\`: 根据记忆 ID 获取记忆信息
-- \`get_recent_memories\`: 获取最近的记忆列表
-- \`search_memory_by_keywords\`: 搜索相关记忆了解上下文和历史翻译方式
-- \`find_paragraph_by_keywords\`: 根据关键词搜索段落，了解术语在上下文中的使用方式
-- \`search_paragraphs_by_regex\`: 使用正则表达式搜索段落，进行更精确的搜索
+${getToolScopeRules(tools)}
 
-**工作流程**：
-1. **获取上下文**（推荐）：先使用工具获取书籍、章节、术语和角色的上下文信息
-2. **理解术语**：基于上下文理解术语的含义和用法
-3. **翻译术语**：提供准确、一致、符合轻小说风格的翻译
+【工具使用建议】
+- 本服务**只允许**使用 keyword 搜索类工具（\`search_*_by_keywords\`），用于快速检索术语/角色/记忆的相关上下文
+- [禁止] 不要调用 get/list/find/regex 等其它工具（即使你觉得有用）；如果本次未提供所需工具，请说明限制并直接给出翻译
 
 **输出格式**：[警告] **必须只返回 JSON 格式**
 \`\`\`json
@@ -387,6 +375,24 @@ export class TermTranslationService {
 
           // 执行工具调用
           for (const toolCall of result.toolCalls) {
+            // [警告] 严格限制：只能调用本次会话提供的 tools
+            if (!allowedToolNames.has(toolCall.function.name)) {
+              const toolName = toolCall.function.name;
+              console.warn(
+                `[TermTranslationService] ⚠️ 工具 ${toolName} 未在本次会话提供的 tools 列表中，已拒绝执行`,
+              );
+              history.push({
+                role: 'tool',
+                content: JSON.stringify({
+                  success: false,
+                  error: `工具 ${toolName} 未在本次会话提供的 tools 列表中，禁止调用`,
+                }),
+                tool_call_id: toolCall.id,
+                name: toolName,
+              });
+              continue;
+            }
+
             if (aiProcessingStore && taskId) {
               void aiProcessingStore.appendThinkingMessage(
                 taskId,

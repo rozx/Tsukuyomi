@@ -236,7 +236,7 @@ export class TranslationService {
 
 ${getDataManagementRules()}
 
-${getToolUsageInstructions('translation')}
+${getToolUsageInstructions('translation', tools)}
 
 ${getMemoryWorkflowRules()}
 

@@ -212,7 +212,7 @@ export class ProofreadingService {
 - **参考原文**: 确保翻译准确
 - ${getSymbolFormatRules()}
 
-${getToolUsageInstructions('proofreading')}
+${getToolUsageInstructions('proofreading', tools)}
 
 ${getMemoryWorkflowRules()}
 
