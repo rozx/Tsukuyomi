@@ -940,7 +940,7 @@ watch(
                           <div class="flex-1 min-w-0 w-0 overflow-hidden">
                             <div class="flex items-start justify-between gap-2">
                               <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
-                                {{ getChapterDisplayTitle(item.data) }}
+                                {{ getChapterDisplayTitle(item.data, currentBook || undefined) }}
                               </div>
                               <template v-if="getChapterImportStatus(item.data)">
                                 <span :class="getChapterImportStatus(item.data)!.class">
@@ -1015,7 +1015,7 @@ watch(
               >
                 <div class="flex items-start justify-between gap-2 mb-2">
                   <h4 class="text-lg font-semibold text-moon/90 flex-1">
-                    {{ getChapterDisplayTitle(selectedChapter) }}
+                    {{ getChapterDisplayTitle(selectedChapter, currentBook || undefined) }}
                   </h4>
                   <span
                     v-if="selectedChapterImportStatus"

@@ -26,20 +26,182 @@ export function normalizeTranslationQuotes(text: string): string {
 
   // 先处理成对的引号
   // 将成对的半角普通引号 "" 替换为日语引号 「」（全角）
-  // 注意：正则表达式 /"([^"]*)"/g 只匹配成对的引号（开引号+内容+闭引号）
-  normalized = normalized.replace(/"([^"]*)"/g, '「$1」');
-  // 将成对的全角双引号 "" 替换为日语引号 「」
-  // 注意：正则表达式匹配成对的引号（全角左引号+内容+全角右引号）
+  // 注意：需要从外到内处理嵌套引号
+  // 例如：""aaa"" 应该转换为 「「aaa」」，而不是 「」aaa「」
+  // 使用递归方式从外到内处理嵌套引号
+  // 对于相同字符的引号（如 "），需要从外到内处理；对于不同字符的引号，使用栈匹配
+  function replaceNestedQuotes(str: string, openChar: string, closeChar: string, replacementOpen: string, replacementClose: string): string {
+    const isSameChar = openChar === closeChar; // 开引号和闭引号是否相同（如 "）
+    
+    if (isSameChar) {
+      // 当开引号和闭引号相同时，需要从外到内处理嵌套引号
+      // 先统计引号数量
+      const quoteCount = (str.match(new RegExp(openChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+      
+      // 如果没有引号或只有奇数个引号，使用更智能的方法处理成对的引号
+      if (quoteCount === 0 || quoteCount % 2 !== 0) {
+        // 对于奇数个引号，我们需要找到真正的成对引号
+        // 策略：找到所有引号的位置，然后从内到外匹配成对的引号
+        const quoteIndices: number[] = [];
+        const chars = str.split('');
+        
+        // 收集所有引号的位置
+        for (let i = 0; i < chars.length; i++) {
+          if (chars[i] === openChar) {
+            quoteIndices.push(i);
+          }
+        }
+        
+        if (quoteIndices.length === 0) {
+          return str;
+        }
+        
+        // 从内到外匹配成对的引号
+        // 策略：找到所有相邻的引号对（两个引号之间没有其他引号），然后递归处理
+        const pairs: Array<[number, number]> = [];
+        const usedIndices = new Set<number>();
+        
+        // 从内到外匹配：找到所有相邻的引号对（两个引号之间没有其他引号）
+        // 使用贪心算法：总是匹配距离最近的两个引号
+        let changed = true;
+        while (changed) {
+          changed = false;
+          let minDistance = Infinity;
+          let bestPair: [number, number] | null = null;
+          
+          // 找到所有未使用的引号对，选择距离最近的一对
+          for (let i = 0; i < quoteIndices.length - 1; i++) {
+            if (usedIndices.has(quoteIndices[i]!)) continue;
+            
+            const openIndex = quoteIndices[i]!;
+            // 找到下一个未使用的引号
+            for (let j = i + 1; j < quoteIndices.length; j++) {
+              if (usedIndices.has(quoteIndices[j]!)) continue;
+              
+              const closeIndex = quoteIndices[j]!;
+              // 检查这两个引号之间是否有其他未使用的引号
+              const hasOtherQuotes = quoteIndices.some(
+                (idx) => idx > openIndex && idx < closeIndex && !usedIndices.has(idx)
+              );
+              
+              if (!hasOtherQuotes) {
+                // 找到了成对的引号（两个引号之间没有其他引号）
+                const distance = closeIndex - openIndex;
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  bestPair = [openIndex, closeIndex];
+                }
+              }
+            }
+          }
+          
+          // 如果找到了最佳配对，添加到列表中
+          if (bestPair) {
+            pairs.push(bestPair);
+            usedIndices.add(bestPair[0]);
+            usedIndices.add(bestPair[1]);
+            changed = true;
+          }
+        }
+        
+        // 如果没有找到成对的引号，保持原样
+        if (pairs.length === 0) {
+          return str;
+        }
+        
+        // 按开引号位置排序，从后往前处理，避免索引偏移问题
+        pairs.sort((a, b) => b[0] - a[0]);
+        
+        // 构建结果：从后往前处理，使用字符串拼接避免索引偏移
+        let result = str;
+        for (const [openIndex, closeIndex] of pairs) {
+          // 递归处理内部内容
+          const innerContent = str.slice(openIndex + 1, closeIndex);
+          const processedInner = replaceNestedQuotes(innerContent, openChar, closeChar, replacementOpen, replacementClose);
+          
+          // 构建新字符串：前缀 + 开引号 + 处理后的内部内容 + 闭引号 + 后缀
+          const prefix = result.slice(0, openIndex);
+          const suffix = result.slice(closeIndex + 1);
+          result = prefix + replacementOpen + processedInner + replacementClose + suffix;
+        }
+        
+        // 检查结果中是否还有需要处理的引号
+        const remainingQuoteCount = (result.match(new RegExp(openChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+        
+        // 如果还有原始引号需要处理且数量是偶数，继续递归处理
+        if (remainingQuoteCount > 0 && remainingQuoteCount % 2 === 0) {
+          return replaceNestedQuotes(result, openChar, closeChar, replacementOpen, replacementClose);
+        }
+        return result;
+      }
+      
+      // 如果有偶数个引号，从外到内处理
+      // 使用递归：找到最外层的引号对，递归处理内部，然后处理剩余部分
+      const firstIndex = str.indexOf(openChar);
+      if (firstIndex === -1) {
+        return str; // 没有引号，保持原样
+      }
+      
+      // 从后往前找到最后一个引号（与第一个配对，形成最外层）
+      const lastIndex = str.lastIndexOf(closeChar);
+      if (lastIndex === -1 || lastIndex <= firstIndex) {
+        return str; // 没有成对的引号，保持原样
+      }
+      
+      // 递归处理内部内容
+      const innerContent = str.slice(firstIndex + 1, lastIndex);
+      const processedInner = replaceNestedQuotes(innerContent, openChar, closeChar, replacementOpen, replacementClose);
+      
+      // 构建结果：前缀 + 开引号 + 处理后的内部内容 + 闭引号 + 后缀
+      const prefix = str.slice(0, firstIndex);
+      const suffix = str.slice(lastIndex + 1);
+      const newStr = prefix + replacementOpen + processedInner + replacementClose + suffix;
+      
+      // 继续处理剩余部分（可能还有更多引号对）
+      return replaceNestedQuotes(newStr, openChar, closeChar, replacementOpen, replacementClose);
+    } else {
+      // 开引号和闭引号不同，使用栈来匹配
+      const chars = str.split('');
+      const result: string[] = [];
+      const stack: number[] = [];
+      
+      for (let i = 0; i < chars.length; i++) {
+        const char = chars[i]!;
+        if (char === openChar) {
+          stack.push(result.length);
+          result.push(replacementOpen);
+        } else if (char === closeChar && stack.length > 0) {
+          stack.pop();
+          result.push(replacementClose);
+        } else {
+          result.push(char);
+        }
+      }
+      
+      // 如果栈不为空，说明有未配对的引号，需要恢复为原始字符
+      while (stack.length > 0) {
+        const pos = stack.pop()!;
+        if (result[pos] === replacementOpen) {
+          result[pos] = openChar;
+        }
+      }
+      
+      return result.join('');
+    }
+  }
+  
+  // 处理半角双引号
+  normalized = replaceNestedQuotes(normalized, '"', '"', '「', '」');
+  
+  // 处理全角双引号
   // 全角左双引号是 U+201C ("), 全角右双引号是 U+201D (")
-  normalized = normalized.replace(/\u201C([^\u201D]*)\u201D/g, '「$1」');
+  normalized = replaceNestedQuotes(normalized, '\u201C', '\u201D', '「', '」');
 
   // 处理成对的单引号
   // 先处理全角单引号对 ''（U+2018...U+2019），必须在其他单引号模式之前
-  // 注意：正则表达式匹配全角左引号（U+2018）+内容+全角右引号（U+2019）
-  normalized = normalized.replace(/\u2018([^\u2019]*)\u2019/g, '『$1』');
+  normalized = replaceNestedQuotes(normalized, '\u2018', '\u2019', '『', '』');
   // 将成对的 ASCII 单引号 '' 替换为日语单引号 『』
-  // 注意：正则表达式使用 ASCII 单引号字符 U+0027 (')
-  normalized = normalized.replace(/'([^']*)'/g, '『$1』');
+  normalized = replaceNestedQuotes(normalized, "'", "'", '『', '』');
 
   // 重要说明：单个或奇数个引号不会被转换，保持原样
   // 这是因为正则表达式要求匹配完整的引号对（开引号+内容+闭引号）

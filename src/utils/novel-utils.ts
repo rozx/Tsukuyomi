@@ -27,28 +27,103 @@ export function getVolumeDisplayTitle(volume: Volume): string {
 }
 
 /**
+ * 规范化章节标题
+ * 将数字（全角或半角）和汉字之间的半角空格转换为全角空格
+ * 例如：
+ * - ５１７话 打破停滞的战场吧 → ５１７话\u3000打破停滞的战场吧
+ * - 第110话 猫屋花梨很担心姐姐 → 第110话\u3000猫屋花梨很担心姐姐
+ * - 110话 猫屋花梨很担心姐姐 → 110话\u3000猫屋花梨很担心姐姐
+ * @param title 标题文本
+ * @returns 规范化后的标题
+ */
+export function normalizeChapterTitle(title: string): string {
+  // 防御性检查：处理 null、undefined 和非字符串类型
+  if (title == null || typeof title !== 'string') {
+    return title;
+  }
+  
+  // 空字符串直接返回
+  if (title.length === 0) {
+    return title;
+  }
+  
+  // 将数字（全角或半角）和汉字之间的半角空格转换为全角空格
+  // 匹配模式1：全角数字 + (可选汉字) + 半角空格 + 汉字
+  // 匹配模式2：汉字 + 全角数字 + 汉字 + 半角空格 + 汉字
+  // 匹配模式3：汉字 + 半角数字 + 汉字 + 半角空格 + 汉字
+  // 匹配模式4：半角数字 + 汉字 + 半角空格 + 汉字（数字开头，数字后必须有汉字）
+  // 全角数字范围：\uFF10-\uFF19 (０-９)
+  // 半角数字范围：\u0030-\u0039 (0-9)
+  // 汉字范围：\u4e00-\u9fff
+  // 全角空格：\u3000
+  // 注意：模式顺序很重要，先处理更具体的模式（模式2、3），再处理更通用的模式（模式1、4）
+  // 这样可以避免模式1匹配到模式2的一部分
+  let result = title;
+  
+  // 模式2：汉字 + 全角数字 + 汉字 + 半角空格 + 汉字（先处理，避免与模式1冲突）
+  // 例如：第５１７话 打破 → 第５１７话　打破
+  // 注意：数字后必须有汉字，避免匹配 "测试５１７ 内容" 这种情况
+  result = result.replace(/([\u4e00-\u9fff]+[\uFF10-\uFF19]+[\u4e00-\u9fff]+) ([\u4e00-\u9fff])/g, '$1\u3000$2');
+  
+  // 模式3：汉字 + 半角数字 + 汉字 + 半角空格 + 汉字（先处理，避免与模式4冲突）
+  // 例如：第110话 猫屋 → 第110话　猫屋
+  // 注意：数字后必须有汉字，避免匹配 "测试110 内容" 这种情况
+  result = result.replace(/([\u4e00-\u9fff]+[\u0030-\u0039]+[\u4e00-\u9fff]+) ([\u4e00-\u9fff])/g, '$1\u3000$2');
+  
+  // 模式1：全角数字 + (可选汉字) + 半角空格 + 汉字
+  // 例如：５１７话 打破 → ５１７话　打破
+  result = result.replace(/([\uFF10-\uFF19]+[\u4e00-\u9fff]*) ([\u4e00-\u9fff])/g, '$1\u3000$2');
+  
+  // 模式4：半角数字 + 汉字 + 半角空格 + 汉字（数字开头，数字后必须有汉字）
+  // 例如：110话 猫屋 → 110话　猫屋
+  // 注意：数字后必须有汉字，避免匹配 "110 测试" 这种情况
+  result = result.replace(/([\u0030-\u0039]+[\u4e00-\u9fff]+) ([\u4e00-\u9fff])/g, '$1\u3000$2');
+  
+  return result;
+}
+
+/**
  * 获取章节的显示标题（优先使用翻译，否则使用原文）
  * @param chapter 章节对象
+ * @param book 书籍对象（可选，用于获取书籍级别的设置）
  * @returns 显示标题
  */
-export function getChapterDisplayTitle(chapter: Chapter): string {
-  // 防御性检查：确保 title 存在
-  if (!chapter.title) {
+export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
+  // 防御性检查：确保 chapter 和 title 存在
+  if (!chapter || !chapter.title) {
     return '';
   }
   
   // 兼容旧数据：如果 title 是字符串，直接返回
   if (typeof chapter.title === 'string') {
-    return chapter.title;
+    const title: string = chapter.title;
+    // 应用规范化（如果启用）
+    const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+    if (normalize) {
+      return normalizeChapterTitle(title);
+    }
+    return title;
   }
   
   // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
+  let title: string = '';
   if (chapter.title.translation?.translation?.trim()) {
-    return chapter.title.translation.translation;
+    title = chapter.title.translation.translation;
+  } else if (chapter.title.original) {
+    // 返回原文
+    title = chapter.title.original;
+  } else {
+    // 如果既没有翻译也没有原文，返回空字符串
+    return '';
   }
   
-  // 返回原文
-  return chapter.title.original || '';
+  // 应用规范化（如果启用）
+  const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+  if (normalize) {
+    title = normalizeChapterTitle(title);
+  }
+  
+  return title;
 }
 
 /**
