@@ -2850,6 +2850,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   :ref="(el) => setThinkingContentRef(message.id, el as HTMLElement)"
                   class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto thinking-content"
                   :data-message-id="message.id"
+                  style="word-break: break-all; overflow-wrap: anywhere;"
                 >
                   {{ message.thinkingProcess }}
                 </div>
@@ -2861,6 +2862,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                     -webkit-line-clamp: 2;
                     -webkit-box-orient: vertical;
                     overflow: hidden;
+                    word-break: break-all;
+                    overflow-wrap: anywhere;
                   "
                 >
                   {{ getThinkingPreview(message.thinkingProcess) }}
@@ -3813,6 +3816,13 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   color: var(--moon-opacity-90);
   word-break: break-word;
   line-height: 1.5;
+}
+
+/* 思考过程内容样式 - 确保 URL 正确截断 */
+.thinking-content {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 /* Session List Popover 样式 */

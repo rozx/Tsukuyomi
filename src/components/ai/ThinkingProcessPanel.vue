@@ -205,6 +205,7 @@ defineExpose({
             <p
               :ref="(el) => setThinkingMessageRef(task.id, el as HTMLElement)"
               class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
+              style="word-break: break-all; overflow-wrap: anywhere;"
             >
               {{ task.thinkingMessage }}
             </p>
@@ -258,6 +259,7 @@ defineExpose({
                 <p class="text-xs text-moon/50 mb-1">思考过程：</p>
                 <p
                   class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-24 overflow-y-auto"
+                  style="word-break: break-all; overflow-wrap: anywhere;"
                 >
                   {{ task.thinkingMessage }}
                 </p>
