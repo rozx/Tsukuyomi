@@ -1,5 +1,6 @@
 import type { Novel } from 'src/models/novel';
 import { Theme } from 'src/constants/theme';
+import { ProxyService } from 'src/services/proxy-service';
 
 /**
  * 封面服务
@@ -227,12 +228,19 @@ export class CoverService {
 
   /**
    * 获取书籍的封面 URL（如果有自定义封面则返回，否则返回默认封面）
+   * 在 SPA 构建中，外部 URL 会自动使用默认 CORS 代理
    * @param book 书籍对象
    * @returns 封面 URL
    */
   static getCoverUrl(book: Novel): string {
     if (book.cover?.url) {
-      return book.cover.url;
+      const coverUrl = book.cover.url;
+      // 如果是外部 URL（http:// 或 https://），在 SPA 构建中使用 CORS 代理
+      if (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')) {
+        return ProxyService.getProxiedUrlForAI(coverUrl);
+      }
+      // 数据 URL 或其他格式直接返回
+      return coverUrl;
     }
     // 生成默认封面
     return CoverService.generateDefaultCover(book.title, book.author);
