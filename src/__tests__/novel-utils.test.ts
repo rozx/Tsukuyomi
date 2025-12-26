@@ -20,8 +20,8 @@ declare const expect: (actual: unknown) => {
   };
 };
 
-import { normalizeChapterTitle, getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { Chapter, Novel } from 'src/models/novel';
+import { normalizeChapterTitle, getChapterDisplayTitle } from '../utils/novel-utils';
+import type { Chapter, Novel } from '../models/novel';
 
 describe('normalizeChapterTitle', () => {
   test('应该将全角数字和汉字之间的半角空格转换为全角空格', () => {
@@ -66,8 +66,9 @@ describe('normalizeChapterTitle', () => {
 
   test('应该处理空字符串和无效输入', () => {
     expect(normalizeChapterTitle('')).toBe('');
-    expect(normalizeChapterTitle(null as unknown as string)).toBe(null);
-    expect(normalizeChapterTitle(undefined as unknown as string)).toBe(undefined);
+    // null 和 undefined 应该返回空字符串以确保一致的字符串返回类型
+    expect(normalizeChapterTitle(null as unknown as string)).toBe('');
+    expect(normalizeChapterTitle(undefined as unknown as string)).toBe('');
   });
 
   test('不应该转换不匹配的情况', () => {

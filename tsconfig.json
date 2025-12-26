@@ -8,6 +8,10 @@
     "resolveJsonModule": true,
     "types": ["node", "bun"],
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "src/*": ["./src/*"]
+    }
   }
 }

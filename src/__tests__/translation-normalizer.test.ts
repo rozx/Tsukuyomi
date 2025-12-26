@@ -23,7 +23,7 @@ declare const expect: (actual: unknown) => {
 import {
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
-} from 'src/utils/translation-normalizer';
+} from '../utils/translation-normalizer';
 
 describe('normalizeTranslationQuotes', () => {
   test('应该将半角双引号转换为日语引号', () => {
