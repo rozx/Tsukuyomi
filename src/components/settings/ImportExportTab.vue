@@ -91,15 +91,15 @@ const handleFileSelect = async (event: Event) => {
     // 覆盖当前的封面历史数据
     if (result.data.coverHistory.length > 0) {
       // 先清空现有封面历史，然后添加导入的数据
-      void coverHistoryStore.clearHistory();
-      result.data.coverHistory.forEach((cover) => {
-        void coverHistoryStore.addCover(cover);
-      });
+      await coverHistoryStore.clearHistory();
+      for (const cover of result.data.coverHistory) {
+        await coverHistoryStore.addCover(cover);
+      }
     }
 
     // 覆盖当前的应用设置
     if (result.data.appSettings) {
-      void settingsStore.importSettings(result.data.appSettings);
+      await settingsStore.importSettings(result.data.appSettings);
     }
 
     // 覆盖当前的同步设置

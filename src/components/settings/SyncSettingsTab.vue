@@ -509,8 +509,10 @@ const revertToRevision = (version: string, event?: Event) => {
             // 这样 SyncDataService.applyDownloadedData 就会将远程数据视为"新数据"直接添加
             // 从而实现"完全覆盖本地数据"的效果
             yield booksStore.clearBooks();
-            void aiModelsStore.clearModels();
-            void coverHistoryStore.clearHistory();
+            // 这里必须 await，否则会与 applyDownloadedData 内部的导入流程产生竞态：
+            // 如果 clearModels/clearHistory 的 Promise 在导入完成后才 resolve，会把刚导入的数据清空，导致“恢复/下载后模型与封面为空”
+            yield aiModelsStore.clearModels();
+            yield coverHistoryStore.clearHistory();
 
             // 应用下载的数据（总是使用最新的 lastEdited 时间）
             // 恢复模式：保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
