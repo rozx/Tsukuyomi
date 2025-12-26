@@ -41,14 +41,17 @@ export function normalizeTranslationQuotes(text: string): string {
     if (isSameChar) {
       // 当开引号和闭引号相同时，需要配对处理
       // 对于 ""aaa"" 这种情况，indices 是 [0,1,5,6]
-      // 我们要配对 (1,5) 和 (0,6)，而不是 (0,1) 和 (5,6)
-      // 策略：不配对相邻的引号（除非它们之间有非引号内容）
+      // 策略：配对距离最近且中间有实际内容的引号对
+      // 例如：配对 (1,5) 作为内层，然后配对 (0,6) 作为外层
       const quoteIndices: number[] = [];
+      const positionToIndexMap = new Map<number, number>(); // 位置到数组索引的映射，用于 O(1) 查找
       
       // 单次遍历收集所有引号位置 - O(n)
       for (let i = 0; i < str.length; i++) {
         if (str[i] === openChar) {
+          const arrayIndex = quoteIndices.length;
           quoteIndices.push(i);
+          positionToIndexMap.set(i, arrayIndex);
         }
       }
       
@@ -65,11 +68,11 @@ export function normalizeTranslationQuotes(text: string): string {
       let foundPair = true;
       while (foundPair) {
         foundPair = false;
-        let bestI = -1;
-        let bestJ = -1;
+        let closestStartIndex = -1;
+        let closestEndIndex = -1;
         let minDistance = Infinity;
         
-        // 找到距离最近且满足条件的配对
+        // 找到距离最近且满足条件的配对 - O(n²) 最坏情况
         for (let i = 0; i < quoteIndices.length - 1; i++) {
           if (paired[i]) continue;
           
@@ -79,7 +82,7 @@ export function normalizeTranslationQuotes(text: string): string {
             const startPos = quoteIndices[i]!;
             const endPos = quoteIndices[j]!;
             
-            // 检查这两个引号之间是否有其他未配对的引号
+            // 检查这两个引号之间是否有其他未配对的引号 - O(n) 最坏情况
             let hasOtherUnpairedQuotes = false;
             for (let k = i + 1; k < j; k++) {
               if (!paired[k]) {
@@ -90,24 +93,23 @@ export function normalizeTranslationQuotes(text: string): string {
             
             // 如果中间没有其他未配对引号，检查是否相邻（相邻的不配对）
             if (!hasOtherUnpairedQuotes) {
-              // 检查这两个引号之间是否有非引号内容
-              // 如果 endPos - startPos == 1，说明它们是相邻的，不应该配对
-              // 例如：""aaa"" 中，索引 0 和 1 的引号是相邻的，不应配对
+              // 如果 endPos - startPos == 1，说明它们是相邻的引号，不应该配对
+              // 例如：""aaa"" 中，位置 0 和 1 的引号相邻，应该配对位置 1 和 5
               if (endPos - startPos === 1) {
                 continue; // 跳过相邻的引号对
               }
               
-              // 检查两个引号之间是否全是已配对的引号（无实际内容）
+              // 检查两个引号之间是否有实际内容（非已配对引号）- O(n) 最坏情况
               let hasContent = false;
               for (let pos = startPos + 1; pos < endPos; pos++) {
-                // 如果这个位置不是引号，或者是未配对的引号，说明有内容
+                // 如果这个位置不是引号，说明有内容
                 if (str[pos] !== openChar) {
                   hasContent = true;
                   break;
                 }
-                // 如果是引号，检查它是否已配对
-                const quoteIndex = quoteIndices.indexOf(pos);
-                if (quoteIndex !== -1 && !paired[quoteIndex]) {
+                // 如果是引号，使用 Map 进行 O(1) 查找，检查它是否已配对
+                const quoteIndex = positionToIndexMap.get(pos);
+                if (quoteIndex !== undefined && !paired[quoteIndex]) {
                   hasContent = true; // 未配对的引号算作内容
                   break;
                 }
@@ -117,8 +119,8 @@ export function normalizeTranslationQuotes(text: string): string {
                 const distance = endPos - startPos;
                 if (distance < minDistance) {
                   minDistance = distance;
-                  bestI = i;
-                  bestJ = j;
+                  closestStartIndex = i;
+                  closestEndIndex = j;
                   foundPair = true;
                 }
               }
@@ -127,11 +129,11 @@ export function normalizeTranslationQuotes(text: string): string {
         }
         
         // 标记找到的配对并记录替换
-        if (foundPair && bestI !== -1 && bestJ !== -1) {
-          paired[bestI] = true;
-          paired[bestJ] = true;
-          replacements.push({ index: quoteIndices[bestI]!, char: replacementOpen });
-          replacements.push({ index: quoteIndices[bestJ]!, char: replacementClose });
+        if (foundPair && closestStartIndex !== -1 && closestEndIndex !== -1) {
+          paired[closestStartIndex] = true;
+          paired[closestEndIndex] = true;
+          replacements.push({ index: quoteIndices[closestStartIndex]!, char: replacementOpen });
+          replacements.push({ index: quoteIndices[closestEndIndex]!, char: replacementClose });
         }
       }
       
