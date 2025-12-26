@@ -736,6 +736,8 @@ export const paragraphTools: ToolDefinition[] = [
             onlyWithTranslation: only_with_translation,
             searchInOriginal: true,
             searchInTranslations: false,
+            // 传入当前 book 引用，确保返回的段落/章节对象与 booksStore 一致
+            novel: book,
           });
 
           // 将结果添加到 Map 中，使用段落 ID 作为 key 去重
@@ -2066,9 +2068,13 @@ export const paragraphTools: ToolDefinition[] = [
             onlyWithTranslation: validKeywords.length > 0, // 如果搜索翻译关键词，只返回有翻译的段落
             searchInOriginal: validOriginalKeywords.length > 0,
             searchInTranslations: validKeywords.length > 0,
+            // 传入当前 book 引用，确保返回的段落/章节对象与 booksStore 一致
+            novel: book,
           });
 
           // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
+          // 注意：FullTextIndexService.search 已支持传入 novel 引用，这里拿到的 paragraph/chapter
+          // 应与当前 booksStore 中的 book 保持同一引用，可直接修改并保存。
           for (const result of indexResults) {
             if (allResults.size >= max_replacements) {
               break;

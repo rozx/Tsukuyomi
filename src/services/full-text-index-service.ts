@@ -4,6 +4,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { BookService } from 'src/services/book-service';
 import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/services/chapter-service';
+import { ChapterService } from 'src/services/chapter-service';
 
 /**
  * 索引文档结构
@@ -38,6 +39,14 @@ export interface SearchOptions {
   onlyWithTranslation?: boolean;
   searchInOriginal?: boolean; // 是否在原文中搜索（默认 true）
   searchInTranslations?: boolean; // 是否在翻译中搜索（默认 true）
+  /**
+   * 可选：直接提供当前的 novel 引用（例如 Pinia booksStore 中的对象），
+   * 用于确保 search 返回的 paragraph/chapter 引用与调用方保持一致。
+   *
+   * 背景：如果不提供 novel，search 会通过 BookService.getBookById 重新加载一份数据，
+   * 这会导致返回的对象与 UI/store 中的对象不是同一引用，进而引发“修改后保存没生效”的问题。
+   */
+  novel?: Novel;
 }
 
 /**
@@ -294,6 +303,7 @@ export class FullTextIndexService {
       onlyWithTranslation = false,
       searchInOriginal = true,
       searchInTranslations = true,
+      novel: novelOverride,
     } = options;
 
     if (keywords.length === 0) {
@@ -334,7 +344,7 @@ export class FullTextIndexService {
 
     // 转换为 ParagraphSearchResult
     const results: ParagraphSearchResult[] = [];
-    const novel = await BookService.getBookById(bookId, false);
+    const novel = novelOverride ?? (await BookService.getBookById(bookId, false));
     if (!novel || !novel.volumes) {
       return [];
     }
@@ -376,13 +386,26 @@ export class FullTextIndexService {
       }
 
       // 获取章节和段落对象
-      const volume = novel.volumes[doc.volumeIndex];
-      if (!volume || !volume.chapters) continue;
+      //
+      // 注意：索引里同时保存了 index（volumeIndex/chapterIndex/paragraphIndex）与 ID（chapterId/paragraphId）。
+      // 数据结构可能发生过移动（例如移动章节/段落、重建内容等），因此这里做校验与回退：
+      // - 先按 index 快速定位
+      // - 如果 ID 不匹配，则按 ID 查找正确位置
+      let volume = novel.volumes[doc.volumeIndex];
+      let chapter: Chapter | undefined = volume?.chapters?.[doc.chapterIndex];
 
-      const chapter = volume.chapters[doc.chapterIndex];
-      if (!chapter) continue;
+      if (!chapter || chapter.id !== doc.chapterId) {
+        const chapterLocation = ChapterService.findChapterById(novel, doc.chapterId);
+        if (!chapterLocation) {
+          continue;
+        }
+        volume = chapterLocation.volume;
+        chapter = chapterLocation.chapter;
+      }
 
-      // 如果章节内容未加载，加载它
+      if (!volume || !chapter) continue;
+
+      // 如果章节内容未加载，加载它（会写回到传入的 novel 引用中）
       if (chapter.content === undefined) {
         const content = await ChapterContentService.loadChapterContent(chapter.id);
         chapter.content = content || [];
@@ -391,8 +414,18 @@ export class FullTextIndexService {
 
       if (!chapter.content) continue;
 
-      const paragraph = chapter.content[doc.paragraphIndex];
-      if (!paragraph) continue;
+      // 段落定位：先用 index，再校验 ID，不匹配则回退按 ID 查找
+      let resolvedParagraphIndex = doc.paragraphIndex;
+      let paragraph = chapter.content[resolvedParagraphIndex];
+      if (!paragraph || paragraph.id !== doc.paragraphId) {
+        const idx = chapter.content.findIndex((p) => p?.id === doc.paragraphId);
+        if (idx < 0) {
+          continue;
+        }
+        resolvedParagraphIndex = idx;
+        paragraph = chapter.content[resolvedParagraphIndex];
+        if (!paragraph) continue;
+      }
 
       // 如果要求只返回有翻译的段落，检查段落是否有翻译
       if (onlyWithTranslation) {
@@ -407,11 +440,11 @@ export class FullTextIndexService {
 
       results.push({
         paragraph,
-        paragraphIndex: doc.paragraphIndex,
+        paragraphIndex: resolvedParagraphIndex,
         chapter,
-        chapterIndex: doc.chapterIndex,
+        chapterIndex: volume.chapters ? volume.chapters.indexOf(chapter) : doc.chapterIndex,
         volume,
-        volumeIndex: doc.volumeIndex,
+        volumeIndex: novel.volumes.indexOf(volume),
       });
 
       if (results.length >= maxResults) {

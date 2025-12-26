@@ -398,6 +398,76 @@ describe('batch_replace_translations', () => {
     }
   });
 
+  test('当使用全文索引时，应传入 novel 引用并正确替换保存（避免对象引用不一致）', async () => {
+    // 创建测试数据（store 内的真实对象）
+    const para1 = createTestParagraph('para1', '原文1', [
+      { id: 'trans1', translation: '这是测试翻译', aiModelId: 'model1' },
+    ]);
+    const para2 = createTestParagraph('para2', '原文2', [
+      { id: 'trans2', translation: '这是普通翻译', aiModelId: 'model1' },
+    ]);
+
+    const chapter = createTestChapter('chapter1', [para1, para2]);
+    const volume = createTestVolume('volume1', [chapter]);
+    const novel = createTestNovel([volume]);
+
+    // Mock store to return the novel
+    mockBooksStore.books = [novel];
+
+    // chapters already have content, so return empty map
+    mockLoadChapterContentsBatch.mockImplementation((_chapterIds: string[]) => {
+      return Promise.resolve(new Map<string, Paragraph[]>());
+    });
+
+    // Mock FullTextIndexService.search：断言调用方传入 novel 引用，并返回 store 引用的对象
+    const { FullTextIndexService } = await import('src/services/full-text-index-service');
+    spyOn(FullTextIndexService, 'search').mockImplementation(
+      async (_bookId: string, _keywords: string[], options: any) => {
+        expect(options?.novel).toBe(novel);
+        return [
+          {
+            paragraph: para1,
+            paragraphIndex: 0,
+            chapter,
+            chapterIndex: 0,
+            volume,
+            volumeIndex: 0,
+          } as any,
+        ];
+      },
+    );
+
+    // 找到 batch_replace_translations 工具
+    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    expect(tool).toBeDefined();
+    if (!tool || !tool.handler) {
+      throw new Error('工具未找到');
+    }
+
+    const onAction = mock(() => {});
+
+    // 执行批量替换：替换包含"测试"的翻译
+    const result = await tool.handler(
+      {
+        keywords: ['测试'],
+        replacement_text: '新翻译',
+        replace_all_translations: false,
+      },
+      { bookId: novel.id, onAction },
+    );
+
+    const resultObj = JSON.parse(result as string);
+    expect(resultObj.success).toBe(true);
+    expect(resultObj.replaced_count).toBe(1);
+
+    // 关键断言：必须替换到 store 内的真实段落对象
+    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
+    expect(para2.translations[0]?.translation).toBe('这是普通翻译');
+
+    // 并且应触发保存（updateBook）
+    expect(mockUpdateBook).toHaveBeenCalled();
+  });
+
   test('应该只匹配完整的关键词，不匹配部分词', async () => {
     // 创建测试数据
     const para1 = createTestParagraph('para1', '原文1', [
