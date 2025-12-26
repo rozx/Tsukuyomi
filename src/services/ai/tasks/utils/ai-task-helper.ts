@@ -989,6 +989,7 @@ export function buildIndependentChunkPrompt(
 
       if (contextParts.length > 0) {
         currentChunkContext = `\n\n【当前部分出现的术语和角色】\n${contextParts.join('\n')}\n`;
+        currentChunkContext += `提供的角色以及术语信息已为最新，不必使用工具再次获取检查。\n`;
       }
     }
   }
