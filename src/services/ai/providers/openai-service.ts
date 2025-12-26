@@ -173,11 +173,17 @@ export class OpenAIService extends BaseAIService {
       if (request.messages && request.messages.length > 0) {
         messages = request.messages.map((msg) => {
           if (msg.role === 'tool') {
-            return {
+            const toolMsg = {
               role: 'tool',
               content: msg.content || '',
               tool_call_id: msg.tool_call_id!,
             } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
+            // [兼容] 部分 OpenAI 兼容服务（如部分 Moonshot/Kimi 配置）可能需要 name 字段
+            // OpenAI 官方规范中 tool 消息不需要 name，但添加不会影响大多数兼容实现
+            if (msg.name) {
+              (toolMsg as any).name = msg.name;
+            }
+            return toolMsg;
           }
           if (msg.role === 'assistant' && msg.tool_calls) {
             const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
@@ -227,6 +233,9 @@ export class OpenAIService extends BaseAIService {
       // 如果提供了工具，添加到请求参数中
       if (tools && tools.length > 0) {
         requestParams.tools = tools;
+        // [重要] 一些 OpenAI 兼容服务在未显式指定 tool_choice 时不会触发工具调用（尤其是“thinking/推理”模式）
+        // 统一设置为 auto，让模型可以自由决定是否调用工具
+        (requestParams as any).tool_choice = 'auto';
       }
 
       // 如果提供了 signal，添加到请求参数中
@@ -257,6 +266,9 @@ export class OpenAIService extends BaseAIService {
 
       // 用于收集工具调用的片段
       const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
+      // 用于兼容旧式 function_call（部分 OpenAI 兼容实现仍会返回 function_call 而非 tool_calls）
+      // 注意：旧式协议只能表达单一函数调用，因此统一使用 index=0
+      const legacyFunctionCall = { id: 'legacy_function_call', name: '', arguments: '' };
 
       // 处理流式响应
       // 当 stream: true 时，返回的是 Stream<ChatCompletionChunk>
@@ -286,6 +298,15 @@ export class OpenAIService extends BaseAIService {
               if (toolCall.function?.name) current.name = toolCall.function.name;
               if (toolCall.function?.arguments) current.arguments += toolCall.function.arguments;
             }
+          }
+
+          // [兼容] 旧式 function_call（非 tool_calls）
+          const deltaFunctionCall = (delta as any).function_call as
+            | { name?: string; arguments?: string }
+            | undefined;
+          if (deltaFunctionCall) {
+            if (deltaFunctionCall.name) legacyFunctionCall.name = deltaFunctionCall.name;
+            if (deltaFunctionCall.arguments) legacyFunctionCall.arguments += deltaFunctionCall.arguments;
           }
 
           // 获取思考内容（reasoning_content）- 用于保存到思考过程
@@ -327,18 +348,41 @@ export class OpenAIService extends BaseAIService {
       }
 
       // 构建工具调用结果
-      const finalToolCalls = Array.from(toolCallsMap.values()).map((tc) => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: {
-          name: tc.name,
-          arguments: tc.arguments,
-        },
+      const finalToolCalls = Array.from(toolCallsMap.values())
+        .filter((tc) => tc.name && tc.name.trim().length > 0)
+        .map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: tc.arguments,
+          },
+        }));
+
+      // 如果没有 tool_calls，但收到了旧式 function_call，则也视为一个工具调用
+      if (finalToolCalls.length === 0 && legacyFunctionCall.name.trim()) {
+        finalToolCalls.push({
+          id: legacyFunctionCall.id,
+          type: 'function' as const,
+          function: {
+            name: legacyFunctionCall.name,
+            arguments: legacyFunctionCall.arguments,
+          },
+        });
+      }
+
+      const finalToolCallsWithDefaults = finalToolCalls.map((tc, idx) => ({
+        // 某些兼容服务可能不返回 id，这里补一个稳定 id（用于 tool_call_id 对齐）
+        id: tc.id && tc.id.trim() ? tc.id : `tool_call_${idx}`,
+        type: tc.type,
+        function: tc.function,
       }));
+
+      const finalToolCallsNormalized = finalToolCallsWithDefaults;
 
       const text = fullText.trim();
       // 如果没有文本也没有工具调用，且不是空响应（虽然通常不应该发生），则报错
-      if (!text && finalToolCalls.length === 0) {
+      if (!text && finalToolCallsNormalized.length === 0) {
         throw new Error('AI 返回的文本为空');
       }
 
@@ -348,14 +392,14 @@ export class OpenAIService extends BaseAIService {
           text: '',
           done: true,
           model: modelId,
-          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+          ...(finalToolCallsNormalized.length > 0 ? { toolCalls: finalToolCallsNormalized } : {}),
         });
       }
 
       return {
         text,
         model: modelId,
-        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+        ...(finalToolCallsNormalized.length > 0 ? { toolCalls: finalToolCallsNormalized } : {}),
         ...(reasoningContent ? { reasoningContent: reasoningContent.trim() } : {}),
       };
     } catch (error) {

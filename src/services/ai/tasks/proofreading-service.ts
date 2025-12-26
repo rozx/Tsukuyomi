@@ -192,8 +192,8 @@ export class ProofreadingService {
 
     try {
       const service = AIServiceFactory.getService(model.provider);
-      // 排除翻译管理工具，只返回JSON
-      const tools = ToolRegistry.getToolsExcludingTranslationManagement(bookId);
+      // 与翻译服务保持一致：排除翻译管理工具 + 导航/列表工具（让模型专注于当前文本块）
+      const tools = ToolRegistry.getTranslationTools(bookId);
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,

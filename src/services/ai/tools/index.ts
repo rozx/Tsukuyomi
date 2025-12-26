@@ -112,7 +112,7 @@ export class ToolRegistry {
 
   /**
    * 获取工具列表，排除翻译管理工具（add_translation, update_translation, remove_translation, select_translation, batch_replace_translations）
-   * 用于翻译、润色、校对服务，这些服务应该只返回JSON而不是使用工具来管理翻译
+   * 用于需要避免 AI 直接修改翻译历史的服务（例如：润色/校对等只返回 JSON 的服务）
    */
   static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAllTools(bookId);
