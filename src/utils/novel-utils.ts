@@ -34,12 +34,13 @@ export function getVolumeDisplayTitle(volume: Volume): string {
  * - 第110话 猫屋花梨很担心姐姐 → 第110话\u3000猫屋花梨很担心姐姐
  * - 110话 猫屋花梨很担心姐姐 → 110话\u3000猫屋花梨很担心姐姐
  * @param title 标题文本
- * @returns 规范化后的标题
+ * @returns 规范化后的标题，如果输入为 null 或 undefined 则返回空字符串
  */
 export function normalizeChapterTitle(title: string): string {
   // 防御性检查：处理 null、undefined 和非字符串类型
+  // 对于无效输入，返回空字符串以确保一致的字符串返回类型
   if (title == null || typeof title !== 'string') {
-    return title;
+    return '';
   }
   
   // 空字符串直接返回

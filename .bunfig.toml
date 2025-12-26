@@ -11,3 +11,7 @@ auto = true
 # 使用生产依赖（不安装 devDependencies）
 production = false
 
+[test]
+# 测试配置
+preload = ["./src/__tests__/setup.ts"]
+
