@@ -32,6 +32,12 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
 export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
 
 /**
+ * 默认分块大小（与翻译任务保持一致）
+ * [警告] 修改此值会影响 translation/polish/proofreading 三类任务的分块行为
+ */
+export const DEFAULT_TASK_CHUNK_SIZE = 5000;
+
+/**
  * 解析后的 JSON 响应结果
  */
 export interface ParsedResponse {
@@ -709,7 +715,7 @@ export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
-  return `开始${taskLabel}。[警告] 只返回JSON，状态可独立返回：{"status": "planning"}，系统会自动检查缺失段落
+  return `开始${taskLabel}。[警告] 只返回JSON。**默认状态为 planning（无需再返回 planning）**，你可以直接进入 working 并输出内容；如需获取上下文可先调用工具。系统会自动检查缺失段落。
 
 ${chunkingInstructions}`;
 }
@@ -1004,7 +1010,7 @@ export function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。${titleInstruction}${currentChunkContext}
+    return `开始${taskLabel}任务。**默认状态为 planning（无需再返回 planning）**。如需上下文可先调用工具；准备好后直接返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -1015,8 +1021,8 @@ export function buildIndependentChunkPrompt(
 
     return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}
 
-**[警告] 重要：简短规划阶段**
-${briefPlanningNote}**请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
+**[警告] 重要：简短规划阶段（已继承上文规划）**
+${briefPlanningNote}默认状态为 planning（无需再返回 planning），请直接将状态设置为 "working" 并开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }
@@ -1363,14 +1369,21 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         role: 'user',
         content:
           `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
-          `响应格式错误：${parsed.error}。[警告] 只返回JSON，状态可独立返回：` +
-          `\`{"status": "planning"}\`，无需包含paragraphs。系统会自动检查缺失段落。`,
+          `响应格式错误：${parsed.error}。[警告] 只返回JSON。` +
+          `你可以直接返回 \`{"status":"working","paragraphs":[...]}\`（或仅返回 \`{"status":"working"}\`）。` +
+          `系统会自动检查缺失段落。`,
       });
       continue;
     }
 
-    // 验证状态转换是否有效
-    const newStatus: TaskStatus = parsed.status;
+    // 容错：部分模型可能在输出内容时误标为 planning
+    // 规则：当返回包含段落/标题等实际内容时，视作 working（避免多一轮来回）
+    const paragraphs = parsed.content?.paragraphs;
+    const hasContent =
+      !!parsed.content?.titleTranslation || (Array.isArray(paragraphs) && paragraphs.length > 0);
+
+    const newStatus: TaskStatus =
+      parsed.status === 'planning' && hasContent ? 'working' : parsed.status;
     const previousStatus: TaskStatus = currentStatus;
 
     // 记录状态转换时间
@@ -1584,12 +1597,18 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         console.warn(
           `[${logLabel}] ⚠️ 检测到 working 状态循环（连续 ${consecutiveWorkingCount} 次且无输出），强制要求输出内容`,
         );
+
+        const noChangeHint =
+          taskType === 'polish' || taskType === 'proofreading'
+            ? `如果你确认**没有任何需要修改的段落**，请将状态设置为 "completed"（无需输出 paragraphs）；否则请只返回有变化的段落。`
+            : '';
+
         history.push({
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
             `[警告] **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
-            `**现在必须**输出${taskLabel}结果。` +
+            `**现在必须**输出${taskLabel}结果。${noChangeHint}` +
             `返回格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\``,
         });
       } else {

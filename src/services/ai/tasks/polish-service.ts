@@ -17,6 +17,7 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
+  DEFAULT_TASK_CHUNK_SIZE,
   createUnifiedAbortController,
   initializeTask,
   buildBookContextSection,
@@ -112,7 +113,7 @@ export interface PolishResult {
  * 使用 AI 服务进行文本润色，支持术语 CRUD 工具和翻译历史参考
  */
 export class PolishService {
-  static readonly CHUNK_SIZE = 2500;
+  static readonly CHUNK_SIZE = DEFAULT_TASK_CHUNK_SIZE;
 
   /**
    * 润色文本

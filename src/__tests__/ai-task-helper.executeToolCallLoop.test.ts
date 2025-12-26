@@ -11,6 +11,98 @@ import { executeToolCallLoop } from 'src/services/ai/tasks/utils/ai-task-helper'
 import { ToolRegistry } from 'src/services/ai/tools';
 
 describe('executeToolCallLoop', () => {
+  test('planning 状态但已输出内容时，应按 working 处理（避免多一轮）', async () => {
+    const calls: Array<{ paragraphs: Array<{ id: string; translation: string }> }> = [];
+
+    const responses = [
+      // 模型误标：planning 但带 paragraphs
+      { text: `{"status":"planning","paragraphs":[{"id":"p1","translation":"A"}]}` },
+      // 按顺序完成
+      { text: `{"status":"completed"}` },
+      { text: `{"status":"end"}` },
+    ];
+
+    let idx = 0;
+    const generateText = (
+      _config: AIServiceConfig,
+      _request: TextGenerationRequest,
+      _callback: unknown,
+    ): Promise<{ text: string; toolCalls?: AIToolCall[]; reasoningContent?: string }> => {
+      const r = responses[idx] ?? responses[responses.length - 1]!;
+      idx++;
+      return Promise.resolve({ text: r.text, reasoningContent: null as unknown as string });
+    };
+
+    const history: ChatMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'start' },
+    ];
+
+    const result = await executeToolCallLoop({
+      history,
+      tools: [],
+      generateText,
+      aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+      taskType: 'translation',
+      chunkText: 'original chunk text',
+      paragraphIds: ['p1'],
+      bookId: 'book1',
+      handleAction: () => {},
+      onToast: undefined,
+      taskId: undefined,
+      aiProcessingStore: undefined,
+      logLabel: 'Test',
+      maxTurns: 10,
+      onParagraphsExtracted: (paragraphs) => {
+        calls.push({ paragraphs });
+      },
+    });
+
+    expect(result.status).toBe('end');
+    expect(result.paragraphs.get('p1')).toBe('A');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.paragraphs).toEqual([{ id: 'p1', translation: 'A' }]);
+  });
+
+  test('首条响应可直接 working（无需先 planning）', async () => {
+    const responses = [{ text: `{"status":"working"}` }, { text: `{"status":"completed"}` }, { text: `{"status":"end"}` }];
+
+    let idx = 0;
+    const generateText = (
+      _config: AIServiceConfig,
+      _request: TextGenerationRequest,
+      _callback: unknown,
+    ): Promise<{ text: string; toolCalls?: AIToolCall[]; reasoningContent?: string }> => {
+      const r = responses[idx] ?? responses[responses.length - 1]!;
+      idx++;
+      return Promise.resolve({ text: r.text, reasoningContent: null as unknown as string });
+    };
+
+    const history: ChatMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'start' },
+    ];
+
+    const result = await executeToolCallLoop({
+      history,
+      tools: [],
+      generateText,
+      aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+      taskType: 'translation',
+      chunkText: 'original chunk text',
+      paragraphIds: [],
+      bookId: 'book1',
+      handleAction: () => {},
+      onToast: undefined,
+      taskId: undefined,
+      aiProcessingStore: undefined,
+      logLabel: 'Test',
+      maxTurns: 10,
+    });
+
+    expect(result.status).toBe('end');
+  });
+
   test('同一任务内重复输出同一段落/标题时，应允许更新（last-write-wins）', async () => {
     const calls: Array<{ paragraphs: Array<{ id: string; translation: string }> }> = [];
     const titleCalls: string[] = [];

@@ -18,6 +18,7 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
+  DEFAULT_TASK_CHUNK_SIZE,
   createUnifiedAbortController,
   initializeTask,
   getSpecialInstructions,
@@ -121,7 +122,7 @@ export interface TranslationResult {
  * 使用 AI 服务进行文本翻译，支持术语 CRUD 工具
  */
 export class TranslationService {
-  static readonly CHUNK_SIZE = 2500;
+  static readonly CHUNK_SIZE = DEFAULT_TASK_CHUNK_SIZE;
 
   /**
    * 处理工具调用

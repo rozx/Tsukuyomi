@@ -17,6 +17,7 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
+  DEFAULT_TASK_CHUNK_SIZE,
   createUnifiedAbortController,
   initializeTask,
   buildBookContextSection,
@@ -112,7 +113,7 @@ export interface ProofreadingResult {
  * 使用 AI 服务进行文本校对，检查并修正文字、内容和格式层面的错误
  */
 export class ProofreadingService {
-  static readonly CHUNK_SIZE = 2500;
+  static readonly CHUNK_SIZE = DEFAULT_TASK_CHUNK_SIZE;
 
   /**
    * 校对文本

@@ -75,7 +75,7 @@ export function getCurrentStatusInfo(
 你当前处于${taskLabel}阶段，应该：
 - 专注于${taskLabel}工作：${taskType === 'translation' ? '1:1翻译，敬语按流程处理' : taskType === 'polish' ? '语气词优化、摆脱翻译腔、节奏调整' : '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查'}
 - 发现新信息（新术语/角色、关系变化等）立即更新
-- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`
+- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`${taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 paragraphs）'}
 
 完成所有段落的${taskLabel}后，将状态设置为 "completed"。`,
     completed: `**当前状态：验证阶段 (completed)**
@@ -177,8 +177,8 @@ export function getOutputFormatRules(taskType: TaskType): string {
   return `【输出格式】[警告] 必须只返回JSON
 [禁止] 禁止使用翻译管理工具
 
-**开始任务时**：先将状态设置为 "planning" 开始规划（返回 \`{"status": "planning"}\`）
-**状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`
+**默认状态**：系统默认处于 planning，**无需再单独返回 planning**；需要上下文时可先调用工具。
+**状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`（仅当你需要先规划/调用工具且暂不输出内容时）
 **包含内容时**: \`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题"' : ''}}\`
 **标题翻译只要返回一次就好，不要重复返回**
 
