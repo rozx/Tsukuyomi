@@ -171,6 +171,10 @@ export class PolishService {
       aiProcessingStore as AIProcessingStore | undefined,
       'polish',
       model.name,
+      {
+        ...(typeof bookId === 'string' ? { bookId } : {}),
+        ...(typeof chapterId === 'string' ? { chapterId } : {}),
+      },
     );
 
     // 使用共享工具创建统一的 AbortController

@@ -198,6 +198,11 @@ export class TranslationService {
       aiProcessingStore as AIProcessingStore | undefined,
       'translation',
       model.name,
+      {
+        ...(typeof bookId === 'string' ? { bookId } : {}),
+        ...(typeof chapterId === 'string' ? { chapterId } : {}),
+        ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+      },
     );
 
     // 使用共享工具创建统一的 AbortController

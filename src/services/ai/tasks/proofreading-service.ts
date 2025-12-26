@@ -171,6 +171,10 @@ export class ProofreadingService {
       aiProcessingStore as AIProcessingStore | undefined,
       'proofreading',
       model.name,
+      {
+        ...(typeof bookId === 'string' ? { bookId } : {}),
+        ...(typeof chapterId === 'string' ? { chapterId } : {}),
+      },
     );
 
     // 使用共享工具创建统一的 AbortController

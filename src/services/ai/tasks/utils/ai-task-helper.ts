@@ -1715,6 +1715,11 @@ export async function initializeTask(
   aiProcessingStore: AIProcessingStore | undefined,
   taskType: TaskType,
   modelName: string,
+  context?: {
+    bookId?: string;
+    chapterId?: string;
+    chapterTitle?: string;
+  },
 ): Promise<{ taskId?: string; abortController?: AbortController }> {
   if (!aiProcessingStore) {
     return {};
@@ -1732,6 +1737,9 @@ export async function initializeTask(
     status: 'thinking',
     message: `正在初始化${taskTypeLabels[taskType]}会话...`,
     thinkingMessage: '',
+    ...(context?.bookId ? { bookId: context.bookId } : {}),
+    ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
+    ...(context?.chapterTitle ? { chapterTitle: context.chapterTitle } : {}),
   });
 
   // 获取任务的 abortController
