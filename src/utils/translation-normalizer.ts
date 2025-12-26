@@ -30,143 +30,132 @@ export function normalizeTranslationQuotes(text: string): string {
   // 例如：""aaa"" 应该转换为 「「aaa」」，而不是 「」aaa「」
   // 使用递归方式从外到内处理嵌套引号
   // 对于相同字符的引号（如 "），需要从外到内处理；对于不同字符的引号，使用栈匹配
+  /**
+   * 优化的引号替换函数，使用改进的配对算法
+   * 时间复杂度：O(n²) for same-character quotes, O(n) for different-character quotes
+   * 空间复杂度：O(n)
+   */
   function replaceNestedQuotes(str: string, openChar: string, closeChar: string, replacementOpen: string, replacementClose: string): string {
     const isSameChar = openChar === closeChar; // 开引号和闭引号是否相同（如 "）
     
     if (isSameChar) {
-      // 当开引号和闭引号相同时，需要从外到内处理嵌套引号
-      // 先统计引号数量
-      const quoteCount = (str.match(new RegExp(openChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+      // 当开引号和闭引号相同时，需要配对处理
+      // 对于 ""aaa"" 这种情况，indices 是 [0,1,5,6]
+      // 我们要配对 (1,5) 和 (0,6)，而不是 (0,1) 和 (5,6)
+      // 策略：不配对相邻的引号（除非它们之间有非引号内容）
+      const quoteIndices: number[] = [];
       
-      // 如果没有引号或只有奇数个引号，使用更智能的方法处理成对的引号
-      if (quoteCount === 0 || quoteCount % 2 !== 0) {
-        // 对于奇数个引号，我们需要找到真正的成对引号
-        // 策略：找到所有引号的位置，然后从内到外匹配成对的引号
-        const quoteIndices: number[] = [];
-        const chars = str.split('');
-        
-        // 收集所有引号的位置
-        for (let i = 0; i < chars.length; i++) {
-          if (chars[i] === openChar) {
-            quoteIndices.push(i);
-          }
+      // 单次遍历收集所有引号位置 - O(n)
+      for (let i = 0; i < str.length; i++) {
+        if (str[i] === openChar) {
+          quoteIndices.push(i);
         }
+      }
+      
+      if (quoteIndices.length === 0) {
+        return str;
+      }
+      
+      // 使用改进的配对策略：
+      // 1. 找到距离最近的引号对，但它们之间必须有至少一个非引号字符或未配对的引号
+      // 2. 相邻的引号（中间没有任何字符）不应该配对
+      const paired = new Array<boolean>(quoteIndices.length).fill(false);
+      const replacements: Array<{ index: number; char: string }> = [];
+      
+      let foundPair = true;
+      while (foundPair) {
+        foundPair = false;
+        let bestI = -1;
+        let bestJ = -1;
+        let minDistance = Infinity;
         
-        if (quoteIndices.length === 0) {
-          return str;
-        }
-        
-        // 从内到外匹配成对的引号
-        // 策略：找到所有相邻的引号对（两个引号之间没有其他引号），然后递归处理
-        const pairs: Array<[number, number]> = [];
-        const usedIndices = new Set<number>();
-        
-        // 从内到外匹配：找到所有相邻的引号对（两个引号之间没有其他引号）
-        // 使用贪心算法：总是匹配距离最近的两个引号
-        let changed = true;
-        while (changed) {
-          changed = false;
-          let minDistance = Infinity;
-          let bestPair: [number, number] | null = null;
+        // 找到距离最近且满足条件的配对
+        for (let i = 0; i < quoteIndices.length - 1; i++) {
+          if (paired[i]) continue;
           
-          // 找到所有未使用的引号对，选择距离最近的一对
-          for (let i = 0; i < quoteIndices.length - 1; i++) {
-            if (usedIndices.has(quoteIndices[i]!)) continue;
+          for (let j = i + 1; j < quoteIndices.length; j++) {
+            if (paired[j]) continue;
             
-            const openIndex = quoteIndices[i]!;
-            // 找到下一个未使用的引号
-            for (let j = i + 1; j < quoteIndices.length; j++) {
-              if (usedIndices.has(quoteIndices[j]!)) continue;
+            const startPos = quoteIndices[i]!;
+            const endPos = quoteIndices[j]!;
+            
+            // 检查这两个引号之间是否有其他未配对的引号
+            let hasOtherUnpairedQuotes = false;
+            for (let k = i + 1; k < j; k++) {
+              if (!paired[k]) {
+                hasOtherUnpairedQuotes = true;
+                break;
+              }
+            }
+            
+            // 如果中间没有其他未配对引号，检查是否相邻（相邻的不配对）
+            if (!hasOtherUnpairedQuotes) {
+              // 检查这两个引号之间是否有非引号内容
+              // 如果 endPos - startPos == 1，说明它们是相邻的，不应该配对
+              // 例如：""aaa"" 中，索引 0 和 1 的引号是相邻的，不应配对
+              if (endPos - startPos === 1) {
+                continue; // 跳过相邻的引号对
+              }
               
-              const closeIndex = quoteIndices[j]!;
-              // 检查这两个引号之间是否有其他未使用的引号
-              const hasOtherQuotes = quoteIndices.some(
-                (idx) => idx > openIndex && idx < closeIndex && !usedIndices.has(idx)
-              );
+              // 检查两个引号之间是否全是已配对的引号（无实际内容）
+              let hasContent = false;
+              for (let pos = startPos + 1; pos < endPos; pos++) {
+                // 如果这个位置不是引号，或者是未配对的引号，说明有内容
+                if (str[pos] !== openChar) {
+                  hasContent = true;
+                  break;
+                }
+                // 如果是引号，检查它是否已配对
+                const quoteIndex = quoteIndices.indexOf(pos);
+                if (quoteIndex !== -1 && !paired[quoteIndex]) {
+                  hasContent = true; // 未配对的引号算作内容
+                  break;
+                }
+              }
               
-              if (!hasOtherQuotes) {
-                // 找到了成对的引号（两个引号之间没有其他引号）
-                const distance = closeIndex - openIndex;
+              if (hasContent) {
+                const distance = endPos - startPos;
                 if (distance < minDistance) {
                   minDistance = distance;
-                  bestPair = [openIndex, closeIndex];
+                  bestI = i;
+                  bestJ = j;
+                  foundPair = true;
                 }
               }
             }
           }
-          
-          // 如果找到了最佳配对，添加到列表中
-          if (bestPair) {
-            pairs.push(bestPair);
-            usedIndices.add(bestPair[0]);
-            usedIndices.add(bestPair[1]);
-            changed = true;
-          }
         }
         
-        // 如果没有找到成对的引号，保持原样
-        if (pairs.length === 0) {
-          return str;
+        // 标记找到的配对并记录替换
+        if (foundPair && bestI !== -1 && bestJ !== -1) {
+          paired[bestI] = true;
+          paired[bestJ] = true;
+          replacements.push({ index: quoteIndices[bestI]!, char: replacementOpen });
+          replacements.push({ index: quoteIndices[bestJ]!, char: replacementClose });
         }
-        
-        // 按开引号位置排序，从后往前处理，避免索引偏移问题
-        pairs.sort((a, b) => b[0] - a[0]);
-        
-        // 构建结果：从后往前处理，使用字符串拼接避免索引偏移
-        let result = str;
-        for (const [openIndex, closeIndex] of pairs) {
-          // 递归处理内部内容
-          const innerContent = str.slice(openIndex + 1, closeIndex);
-          const processedInner = replaceNestedQuotes(innerContent, openChar, closeChar, replacementOpen, replacementClose);
-          
-          // 构建新字符串：前缀 + 开引号 + 处理后的内部内容 + 闭引号 + 后缀
-          const prefix = result.slice(0, openIndex);
-          const suffix = result.slice(closeIndex + 1);
-          result = prefix + replacementOpen + processedInner + replacementClose + suffix;
-        }
-        
-        // 检查结果中是否还有需要处理的引号
-        const remainingQuoteCount = (result.match(new RegExp(openChar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-        
-        // 如果还有原始引号需要处理且数量是偶数，继续递归处理
-        if (remainingQuoteCount > 0 && remainingQuoteCount % 2 === 0) {
-          return replaceNestedQuotes(result, openChar, closeChar, replacementOpen, replacementClose);
-        }
-        return result;
       }
       
-      // 如果有偶数个引号，从外到内处理
-      // 使用递归：找到最外层的引号对，递归处理内部，然后处理剩余部分
-      const firstIndex = str.indexOf(openChar);
-      if (firstIndex === -1) {
-        return str; // 没有引号，保持原样
+      if (replacements.length === 0) {
+        return str;
       }
       
-      // 从后往前找到最后一个引号（与第一个配对，形成最外层）
-      const lastIndex = str.lastIndexOf(closeChar);
-      if (lastIndex === -1 || lastIndex <= firstIndex) {
-        return str; // 没有成对的引号，保持原样
+      // 按位置从后往前排序，这样替换时不会影响后续索引
+      replacements.sort((a, b) => b.index - a.index);
+      
+      // 构建结果字符串，从后往前替换避免索引偏移
+      let result = str;
+      for (const { index, char } of replacements) {
+        result = result.slice(0, index) + char + result.slice(index + 1);
       }
       
-      // 递归处理内部内容
-      const innerContent = str.slice(firstIndex + 1, lastIndex);
-      const processedInner = replaceNestedQuotes(innerContent, openChar, closeChar, replacementOpen, replacementClose);
-      
-      // 构建结果：前缀 + 开引号 + 处理后的内部内容 + 闭引号 + 后缀
-      const prefix = str.slice(0, firstIndex);
-      const suffix = str.slice(lastIndex + 1);
-      const newStr = prefix + replacementOpen + processedInner + replacementClose + suffix;
-      
-      // 继续处理剩余部分（可能还有更多引号对）
-      return replaceNestedQuotes(newStr, openChar, closeChar, replacementOpen, replacementClose);
+      return result;
     } else {
-      // 开引号和闭引号不同，使用栈来匹配
-      const chars = str.split('');
+      // 开引号和闭引号不同，使用栈来匹配 - O(n) 单次遍历
       const result: string[] = [];
       const stack: number[] = [];
       
-      for (let i = 0; i < chars.length; i++) {
-        const char = chars[i]!;
+      for (let i = 0; i < str.length; i++) {
+        const char = str[i]!;
         if (char === openChar) {
           stack.push(result.length);
           result.push(replacementOpen);
