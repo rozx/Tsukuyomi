@@ -145,7 +145,7 @@ create_todo（支持 items 批量创建）/list_todos/update_todos/mark_todo_don
 
 ### 记忆（5工具）
 create_memory（需自己生成 summary）/get_memory/search_memory_by_keywords/get_recent_memories/delete_memory
-- 检索大量内容后主动保存 | summary 需包含关键词便于搜索
+- 仅在“对未来翻译任务有长期收益、可复用”时保存（如固定译法/稳定敬语规则/风格约定）；一次性信息不要写入 | summary 需包含关键词便于搜索
 
 ### 网络（2工具）
 search_web（仅用于外部知识，禁止修复本地数据）/fetch_webpage

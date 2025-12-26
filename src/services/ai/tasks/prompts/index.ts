@@ -57,7 +57,7 @@ export function getCurrentStatusInfo(
 你当前处于验证阶段，应该：
 - 系统已自动验证完整性
 - 更新术语/角色描述（如有新发现）
-- 创建记忆保存重要信息（如敬语翻译方式、角色关系等）
+- 如有**对未来翻译任务有长期收益、可复用**的重要信息（如稳定的敬语处理规则、固定译法选择等），再创建记忆；一次性信息不要写入记忆
 - 检查是否有遗漏或需要修正的地方
 
 如果需要补充缺失段落或编辑/优化已${taskLabel}的段落，可以将状态设置为 "working" 继续工作。
@@ -80,7 +80,7 @@ export function getDataManagementRules(): string {
 **敬语处理流程**:
 1. 查找角色别名翻译 → 2. 检查角色描述中的关系 → 3. 搜索记忆/历史翻译 → 4. 按关系决定翻译方式
 - 亲密关系→可省略敬语 | 正式关系→保留敬语 | 不明确→按上下文判断
-- 翻译后创建记忆保存敬语翻译方式（需确认说话者和关系）
+- 如形成**可复用且稳定**的敬语翻译约定（需确认说话者和关系），可创建记忆保存；不确定/一次性信息不要写入记忆
 
 **术语/角色分离**:
 - 术语表：专有名词、概念、技能、地名、物品（[禁止]禁止放人名）
@@ -102,9 +102,13 @@ export function getDataManagementRules(): string {
  */
 export function getMemoryWorkflowRules(): string {
   return `【记忆管理】
-- 翻译敬语前先 \`search_memory_by_keywords\` 搜索相关记忆
-- 完成翻译后用 \`create_memory\` 保存重要信息（敬语翻译方式、角色关系等）
-- 发现记忆需更新时用 \`update_memory\` 更新`;
+- 翻译相关任务（翻译/润色/校对）前，先用 \`search_memory_by_keywords\` 搜索相关记忆（优先复用既有约定）
+- **只在“对未来翻译任务有长期收益、可跨段落/跨章节复用”时才创建记忆**（否则不要创建）
+  - ✅ 适合写入（翻译相关）：稳定的敬语/称谓处理规则（明确“谁对谁/关系→中文处理方式”）、固定译法选择与禁忌（同一术语/人名/梗固定一种译法）、长期风格约定（叙述口吻/口癖/标点习惯）、常见翻译纠错规则（例如某词误译纠正）
+  - ❌ 禁止写入：一次性句子翻译、仅本段有效的临时推断/未确认剧情细节、可从原文直接得出的信息、纯进度/任务状态、重复已有术语/角色数据（这些应通过 term/character 工具维护）
+- [警告] **一句话**：一次性信息不要写入记忆
+- 创建记忆时用 \`create_memory\`，并让 summary **包含可检索关键词**（角色名/称谓/术语/规则关键词）
+- 发现记忆需修正或补充时，用 \`update_memory\` 更新（优先更新而不是重复创建）`;
 }
 
 /**
@@ -188,7 +192,7 @@ export function getToolUsageInstructions(taskType: TaskType): string {
 - \`find_paragraph_by_keywords\`: 检查历史翻译一致性
 - [重要] \`update_character/update_term\`: **发现新信息立即更新**（补充翻译、更新描述、添加别名、修正错误）
 - \`create_term/create_character\`: 新术语/角色立即创建
-- \`create_memory\`: 保存敬语翻译方式等重要信息
+- \`create_memory\`: 仅保存**翻译相关、可复用且对未来任务有长期收益**的重要信息（如稳定敬语规则/固定译法/风格约定），一次性信息不要写入
 - ${getTodoToolsDescription(taskType)}
 [警告] \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
 }

@@ -18,10 +18,6 @@ import {
   executeToolCallLoop,
   type AIProcessingStore,
   buildMaintenanceReminder,
-  buildInitialUserPromptBase,
-  addChapterContext,
-  addTaskPlanningSuggestions,
-  buildExecutionSection,
   createUnifiedAbortController,
   initializeTask,
   getSpecialInstructions,
@@ -185,9 +181,6 @@ export class TranslationService {
       }
     };
 
-    // 用于在 chunk 之间共享规划上下文和更新
-    let sharedPlanningContext: string | undefined;
-
     if (!content || content.length === 0) {
       throw new Error('要翻译的内容不能为空');
     }
@@ -212,8 +205,8 @@ export class TranslationService {
 
     try {
       const service = AIServiceFactory.getService(model.provider);
-      // 排除翻译管理工具，只返回JSON
-      const tools = ToolRegistry.getToolsExcludingTranslationManagement(bookId);
+      // 使用翻译专用工具集，排除导航和列表工具，让AI专注于当前文本块
+      const tools = ToolRegistry.getTranslationTools(bookId);
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -317,7 +310,7 @@ ${getExecutionWorkflowRules('translation')}`;
         const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立
-        // 后续 chunk 会包含从第一个 chunk 继承的规划上下文
+        // 每个 chunk 会包含当前 chunk 中出现的术语和角色
         const content = buildIndependentChunkPrompt(
           'translation',
           i,
@@ -327,7 +320,7 @@ ${getExecutionWorkflowRules('translation')}`;
           maintenanceReminder,
           chapterId,
           i === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
-          i > 0 ? sharedPlanningContext : undefined, // 后续 chunk 传递规划上下文
+          bookId, // 传递 bookId 用于提取当前 chunk 中的术语和角色
         );
 
         // 重试循环
@@ -382,8 +375,8 @@ ${getExecutionWorkflowRules('translation')}`;
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
-              // 后续 chunk 使用简短规划模式（已有规划上下文）
-              isBriefPlanning: i > 0 && !!sharedPlanningContext,
+              // 后续 chunk 使用简短规划模式（当前 chunk 的术语和角色已在提示中提供）
+              isBriefPlanning: i > 0,
               // 收集 actions 用于检测规划上下文更新
               collectedActions: actions,
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
@@ -421,46 +414,6 @@ ${getExecutionWorkflowRules('translation')}`;
             // 检查状态
             if (loopResult.status !== 'end') {
               throw new Error(`翻译任务未完成（状态: ${loopResult.status}）。请重试。`);
-            }
-
-            // 从第一个 chunk 提取规划摘要，用于后续 chunk 的上下文共享
-            if (i === 0 && loopResult.planningSummary && !sharedPlanningContext) {
-              sharedPlanningContext = loopResult.planningSummary;
-              console.log(
-                `[TranslationService] ✅ 已提取规划上下文（${sharedPlanningContext.length} 字符），将用于后续 ${chunks.length - 1} 个 chunk`,
-              );
-            }
-
-            // 处理规划上下文更新（从后续 chunk）
-            if (i > 0 && loopResult.planningContextUpdate) {
-              const update = loopResult.planningContextUpdate;
-              const updateParts: string[] = [];
-
-              if (update.newTerms && update.newTerms.length > 0) {
-                updateParts.push(
-                  `新增术语：${update.newTerms.map((t) => `${t.name} → ${t.translation}`).join(', ')}`,
-                );
-              }
-
-              if (update.newCharacters && update.newCharacters.length > 0) {
-                updateParts.push(
-                  `新增角色：${update.newCharacters.map((c) => `${c.name} → ${c.translation}`).join(', ')}`,
-                );
-              }
-
-              if (update.updatedMemories && update.updatedMemories.length > 0) {
-                updateParts.push(
-                  `新增记忆：${update.updatedMemories.map((m) => m.summary).join(', ')}`,
-                );
-              }
-
-              if (updateParts.length > 0) {
-                const updateText = `\n【规划上下文更新】\n${updateParts.join('\n')}\n`;
-                sharedPlanningContext = (sharedPlanningContext || '') + updateText;
-                console.log(
-                  `[TranslationService] ✅ 已更新规划上下文（块 ${i + 1}）：${updateParts.join('; ')}`,
-                );
-              }
             }
 
             // 注意：标题翻译和段落翻译的回调已经在 executeToolCallLoop 中立即调用
