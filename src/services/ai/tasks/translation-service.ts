@@ -28,6 +28,10 @@ import {
   buildIndependentChunkPrompt,
   buildChapterContextSection,
   buildSpecialInstructionsSection,
+  type TextChunk,
+  filterProcessedParagraphs,
+  markProcessedParagraphs,
+  markProcessedParagraphsFromMap,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -249,7 +253,8 @@ ${getExecutionWorkflowRules('translation')}`;
       }
 
       // 使用共享工具切分文本
-      const chunks = buildChunks(
+      // 注意：chunks 会在循环中动态更新，以排除已处理的段落
+      let chunks = buildChunks(
         content,
         TranslationService.CHUNK_SIZE,
         (p) => `[ID: ${p.id}] ${p.text}\n\n`,
@@ -258,29 +263,77 @@ ${getExecutionWorkflowRules('translation')}`;
 
       let translatedText = '';
       const paragraphTranslations: { id: string; translation: string }[] = [];
+      // 跟踪已处理的段落 ID（用于排除已处理的段落，避免重复处理）
+      const processedParagraphIds = new Set<string>();
 
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
-      for (let i = 0; i < chunks.length; i++) {
+      let chunkIndex = 0;
+      while (chunkIndex < chunks.length) {
         // 检查是否已取消
         if (finalSignal.aborted) {
           throw new Error('请求已取消');
         }
 
-        const chunk = chunks[i];
-        if (!chunk) continue;
+        const chunk = chunks[chunkIndex];
+        if (!chunk) {
+          chunkIndex++;
+          continue;
+        }
 
-        const chunkText = chunk.text;
+        // 过滤掉已处理的段落（如果 AI 在之前的 chunk 中处理了更多段落）
+        const unprocessedParagraphIds = filterProcessedParagraphs(
+          chunk,
+          processedParagraphIds,
+          'TranslationService',
+          chunkIndex,
+          chunks.length,
+        );
+        if (!unprocessedParagraphIds) {
+          chunkIndex++;
+          continue;
+        }
+
+        // 如果当前 chunk 包含已处理的段落，需要重新构建 chunk
+        let actualChunk: TextChunk = chunk;
+        if (unprocessedParagraphIds.length < chunk.paragraphIds.length) {
+          // 需要重新构建 chunk，只包含未处理的段落
+          const unprocessedContent = content.filter((p) => unprocessedParagraphIds.includes(p.id));
+          const rebuiltChunks = buildChunks(
+            unprocessedContent,
+            TranslationService.CHUNK_SIZE,
+            (p) => `[ID: ${p.id}] ${p.text}\n\n`,
+            (p) => !!p.text?.trim(),
+          );
+          const firstRebuiltChunk = rebuiltChunks[0];
+          if (firstRebuiltChunk) {
+            actualChunk = firstRebuiltChunk;
+            // 如果还有更多未处理的段落，更新 chunks 列表
+            if (rebuiltChunks.length > 1) {
+              chunks = [
+                ...chunks.slice(0, chunkIndex + 1),
+                ...rebuiltChunks.slice(1),
+                ...chunks.slice(chunkIndex + 1),
+              ];
+            }
+          } else {
+            // 没有未处理的段落，跳过
+            chunkIndex++;
+            continue;
+          }
+        }
+
+        const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
-            message: `正在翻译第 ${i + 1}/${chunks.length} 部分...`,
+            message: `正在翻译第 ${chunkIndex + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
           // 添加块分隔符
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `\n\n[=== 翻译块 ${i + 1}/${chunks.length} ===]\n\n`,
+            `\n\n[=== 翻译块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
           );
         }
 
@@ -291,10 +344,10 @@ ${getExecutionWorkflowRules('translation')}`;
             currentParagraphs?: string[];
           } = {
             total: chunks.length,
-            current: i + 1,
+            current: chunkIndex + 1,
           };
-          if (chunk.paragraphIds) {
-            progress.currentParagraphs = chunk.paragraphIds;
+          if (actualChunk.paragraphIds) {
+            progress.currentParagraphs = actualChunk.paragraphIds;
           }
           onProgress(progress);
         }
@@ -306,20 +359,20 @@ ${getExecutionWorkflowRules('translation')}`;
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('translation');
         // 计算当前块的段落数量（用于提示AI）
-        const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
+        const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立
         // 每个 chunk 会包含当前 chunk 中出现的术语和角色
-        const content = buildIndependentChunkPrompt(
+        const chunkContent = buildIndependentChunkPrompt(
           'translation',
-          i,
+          chunkIndex,
           chunks.length,
           chunkText,
           paragraphCountNote,
           maintenanceReminder,
           chapterId,
-          i === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
+          chunkIndex === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
           bookId, // 传递 bookId 用于提取当前 chunk 中的术语和角色
         );
 
@@ -346,7 +399,7 @@ ${getExecutionWorkflowRules('translation')}`;
               }
 
               console.warn(
-                `[TranslationService] ⚠️ 检测到AI降级或错误，重试块 ${i + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
+                `[TranslationService] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
               );
 
               if (aiProcessingStore && taskId) {
@@ -357,7 +410,7 @@ ${getExecutionWorkflowRules('translation')}`;
               }
             }
 
-            chunkHistory.push({ role: 'user', content });
+            chunkHistory.push({ role: 'user', content: chunkContent });
 
             // 使用共享的工具调用循环（基于状态的流程）
             // 后续 chunk 使用简短规划模式（已有规划上下文）
@@ -368,7 +421,7 @@ ${getExecutionWorkflowRules('translation')}`;
               aiServiceConfig: config,
               taskType: 'translation',
               chunkText,
-              paragraphIds: chunk.paragraphIds,
+              paragraphIds: actualChunk.paragraphIds,
               bookId: bookId || '',
               handleAction,
               onToast,
@@ -376,7 +429,7 @@ ${getExecutionWorkflowRules('translation')}`;
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
               logLabel: 'TranslationService',
               // 后续 chunk 使用简短规划模式（当前 chunk 的术语和角色已在提示中提供）
-              isBriefPlanning: i > 0,
+              isBriefPlanning: chunkIndex > 0,
               // 收集 actions 用于检测规划上下文更新
               collectedActions: actions,
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
@@ -386,12 +439,14 @@ ${getExecutionWorkflowRules('translation')}`;
                     for (const para of paragraphs) {
                       paragraphTranslations.push(para);
                     }
+                    // 标记为已处理
+                    markProcessedParagraphs(paragraphs, processedParagraphIds);
                     // 立即调用外部回调
                     try {
                       await onParagraphTranslation(paragraphs);
                     } catch (error) {
                       console.error(
-                        `[TranslationService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                        `[TranslationService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
                         error,
                       );
                     }
@@ -399,7 +454,7 @@ ${getExecutionWorkflowRules('translation')}`;
                 : undefined,
               // 立即回调：当标题翻译提取时立即通知（仅第一个块）
               onTitleExtracted:
-                i === 0 && chapterTitle && onTitleTranslation
+                chunkIndex === 0 && chapterTitle && onTitleTranslation
                   ? async (title) => {
                       titleTranslation = title;
                       try {
@@ -422,10 +477,13 @@ ${getExecutionWorkflowRules('translation')}`;
             // 使用从状态流程中提取的段落翻译构建文本
             const extractedTranslations = loopResult.paragraphs;
 
+            // 标记所有已处理的段落（包括 AI 可能处理了超出当前 chunk 范围的段落）
+            markProcessedParagraphsFromMap(extractedTranslations, processedParagraphIds);
+
             // 按顺序组织翻译文本（用于最终返回）
-            if (extractedTranslations.size > 0 && chunk.paragraphIds) {
+            if (extractedTranslations.size > 0 && actualChunk.paragraphIds) {
               const orderedTranslations: string[] = [];
-              for (const paraId of chunk.paragraphIds) {
+              for (const paraId of actualChunk.paragraphIds) {
                 const translation = extractedTranslations.get(paraId);
                 if (translation) {
                   orderedTranslations.push(translation);
@@ -447,6 +505,7 @@ ${getExecutionWorkflowRules('translation')}`;
 
             // 标记块已成功处理（在所有处理完成后）
             chunkProcessed = true;
+            chunkIndex++; // 移动到下一个 chunk
           } catch (error) {
             // 检查是否是AI降级错误
             const isDegradedError =
@@ -458,12 +517,12 @@ ${getExecutionWorkflowRules('translation')}`;
               if (retryCount > MAX_RETRIES) {
                 // 重试次数用尽，抛出错误
                 console.error(
-                  `[TranslationService] ❌ AI降级检测失败，块 ${i + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止翻译`,
+                  `[TranslationService] ❌ AI降级检测失败，块 ${chunkIndex + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止翻译`,
                   {
-                    块索引: i + 1,
+                    块索引: chunkIndex + 1,
                     总块数: chunks.length,
                     重试次数: MAX_RETRIES,
-                    段落ID: chunk.paragraphIds?.slice(0, 3).join(', ') + '...',
+                    段落ID: actualChunk.paragraphIds?.slice(0, 3).join(', ') + '...',
                   },
                 );
                 throw new Error(

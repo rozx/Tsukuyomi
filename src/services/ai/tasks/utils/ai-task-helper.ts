@@ -1906,6 +1906,72 @@ export function isOnlySymbols(text: string): boolean {
 }
 
 /**
+ * 通用的 chunk 接口（所有 chunk 类型都必须有 text 和 paragraphIds）
+ */
+export interface BaseChunk {
+  text: string;
+  paragraphIds?: string[];
+}
+
+/**
+ * 过滤并处理 chunk，排除已处理的段落
+ * @param chunk 当前 chunk
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ * @param logLabel 日志标签（用于输出日志）
+ * @param chunkIndex 当前 chunk 索引
+ * @param totalChunks 总 chunk 数
+ * @returns 如果所有段落都已处理，返回 null；否则返回过滤后的未处理段落 ID 列表
+ */
+export function filterProcessedParagraphs(
+  chunk: BaseChunk,
+  processedParagraphIds: Set<string>,
+  logLabel: string,
+  chunkIndex: number,
+  totalChunks: number,
+): string[] | null {
+  const unprocessedParagraphIds = (chunk.paragraphIds || []).filter(
+    (id) => !processedParagraphIds.has(id),
+  );
+
+  if (unprocessedParagraphIds.length === 0) {
+    console.log(`[${logLabel}] ⚠️ 块 ${chunkIndex + 1}/${totalChunks} 的所有段落都已被处理，跳过`);
+    return null;
+  }
+
+  return unprocessedParagraphIds;
+}
+
+/**
+ * 标记已处理的段落
+ * @param paragraphs 段落翻译数组
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ */
+export function markProcessedParagraphs(
+  paragraphs: { id: string; translation: string }[],
+  processedParagraphIds: Set<string>,
+): void {
+  for (const para of paragraphs) {
+    if (para.id) {
+      processedParagraphIds.add(para.id);
+    }
+  }
+}
+
+/**
+ * 从段落翻译 Map 中标记已处理的段落
+ * @param paragraphMap 段落翻译 Map
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ */
+export function markProcessedParagraphsFromMap(
+  paragraphMap: Map<string, string>,
+  processedParagraphIds: Set<string>,
+): void {
+  for (const [paraId] of paragraphMap) {
+    processedParagraphIds.add(paraId);
+  }
+}
+
+/**
  * 处理任务错误
  * @param error 错误对象
  * @param taskId 任务 ID
