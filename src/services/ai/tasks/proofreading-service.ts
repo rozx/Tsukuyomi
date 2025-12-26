@@ -19,6 +19,7 @@ import {
   buildMaintenanceReminder,
   createUnifiedAbortController,
   initializeTask,
+  buildBookContextSection,
   getSpecialInstructions,
   handleTaskError,
   completeTask,
@@ -32,7 +33,6 @@ import {
 import {
   getSymbolFormatRules,
   getOutputFormatRules,
-  getExecutionWorkflowRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
 } from './prompts';
@@ -94,6 +94,10 @@ export interface ProofreadingServiceOptions {
    * 章节 ID（可选），如果提供，将在上下文中提供给 AI
    */
   chapterId?: string;
+  /**
+   * 章节标题（可选），用于在上下文中提供给 AI
+   */
+  chapterTitle?: string;
 }
 
 export interface ProofreadingResult {
@@ -139,6 +143,7 @@ export class ProofreadingService {
       onParagraphProofreading,
       onToast,
       chapterId,
+      chapterTitle,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -174,6 +179,7 @@ export class ProofreadingService {
       {
         ...(typeof bookId === 'string' ? { bookId } : {}),
         ...(typeof chapterId === 'string' ? { chapterId } : {}),
+        ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
       },
     );
 
@@ -203,10 +209,13 @@ export class ProofreadingService {
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      // 构建章节上下文信息
-      const chapterContextSection = buildChapterContextSection(chapterId);
+      // 构建书籍上下文信息（书名/简介/标签）
+      const bookContextSection = await buildBookContextSection(bookId);
 
-      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【校对检查项】[警告] 只返回有变化的段落
 1. **文字**: 错别字、标点（全角）、语法、词语用法
@@ -224,8 +233,7 @@ ${getToolUsageInstructions('proofreading', tools)}
 ${getMemoryWorkflowRules()}
 
 ${getOutputFormatRules('proofreading')}
-
-${getExecutionWorkflowRules('proofreading')}`;
+`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });

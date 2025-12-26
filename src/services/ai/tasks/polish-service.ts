@@ -19,6 +19,7 @@ import {
   buildMaintenanceReminder,
   createUnifiedAbortController,
   initializeTask,
+  buildBookContextSection,
   getSpecialInstructions,
   handleTaskError,
   completeTask,
@@ -32,7 +33,6 @@ import {
 import {
   getSymbolFormatRules,
   getOutputFormatRules,
-  getExecutionWorkflowRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
 } from './prompts';
@@ -94,6 +94,10 @@ export interface PolishServiceOptions {
    * 章节 ID（可选），如果提供，将在上下文中提供给 AI
    */
   chapterId?: string;
+  /**
+   * 章节标题（可选），用于在上下文中提供给 AI
+   */
+  chapterTitle?: string;
 }
 
 export interface PolishResult {
@@ -139,6 +143,7 @@ export class PolishService {
       onParagraphPolish,
       onToast,
       chapterId,
+      chapterTitle,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -174,6 +179,7 @@ export class PolishService {
       {
         ...(typeof bookId === 'string' ? { bookId } : {}),
         ...(typeof chapterId === 'string' ? { chapterId } : {}),
+        ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
       },
     );
 
@@ -204,10 +210,13 @@ export class PolishService {
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      // 构建章节上下文信息
-      const chapterContextSection = buildChapterContextSection(chapterId);
+      // 构建书籍上下文信息（书名/简介/标签）
+      const bookContextSection = await buildBookContextSection(bookId);
 
-      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】[警告] 只返回有变化的段落
 1. **语言自然化**: 摆脱翻译腔，使用地道中文表达，适当添加语气词（按角色风格）
@@ -221,8 +230,7 @@ ${getToolUsageInstructions('polish', tools)}
 ${getMemoryWorkflowRules()}
 
 ${getOutputFormatRules('polish')}
-
-${getExecutionWorkflowRules('polish')}`;
+`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });

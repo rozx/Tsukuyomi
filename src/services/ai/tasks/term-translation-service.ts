@@ -13,6 +13,7 @@ import { AIServiceFactory } from '../index';
 import { ToolRegistry } from '../tools/index';
 import {
   buildChapterContextSection,
+  buildBookContextSection,
   getSpecialInstructions,
   buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
@@ -47,6 +48,10 @@ export interface TermTranslationServiceOptions {
    * 章节 ID（用于获取上下文信息）
    */
   chapterId?: string;
+  /**
+   * 章节标题（可选），用于在上下文中提供给 AI
+   */
+  chapterTitle?: string;
   /**
    * AI 执行操作时的回调（如 CRUD 术语/角色）
    */
@@ -92,6 +97,7 @@ export class TermTranslationService {
       taskType = 'translation',
       bookId,
       chapterId,
+      chapterTitle,
       onAction,
       onToast,
       aiProcessingStore,
@@ -173,9 +179,10 @@ export class TermTranslationService {
         // 获取特殊指令
         const specialInstructions = await getSpecialInstructions(bookId, chapterId, 'translation');
         const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
-        const chapterContextSection = buildChapterContextSection(chapterId);
+        const bookContextSection = await buildBookContextSection(bookId);
+        const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
-        systemPrompt += `${chapterContextSection}${specialInstructionsSection}
+        systemPrompt += `${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】
 1. **术语一致**: 使用术语表和角色表确保翻译一致

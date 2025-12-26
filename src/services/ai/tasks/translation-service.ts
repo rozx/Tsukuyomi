@@ -27,6 +27,7 @@ import {
   completeTask,
   buildIndependentChunkPrompt,
   buildChapterContextSection,
+  buildBookContextSection,
   buildSpecialInstructionsSection,
   type TextChunk,
   filterProcessedParagraphs,
@@ -39,7 +40,6 @@ import {
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
-  getExecutionWorkflowRules,
 } from './prompts';
 
 /**
@@ -231,10 +231,13 @@ export class TranslationService {
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
+      // 构建书籍上下文信息（书名/简介/标签）
+      const bookContextSection = await buildBookContextSection(bookId);
+
       // 构建章节上下文信息
       const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
-      const systemPrompt = `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
+      const systemPrompt = `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】
 1. **1:1对应**: 一个原文段落=一个翻译段落，禁止合并/拆分
@@ -250,8 +253,7 @@ ${getToolUsageInstructions('translation', tools)}
 ${getMemoryWorkflowRules()}
 
 ${getOutputFormatRules('translation')}
-
-${getExecutionWorkflowRules('translation')}`;
+`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });

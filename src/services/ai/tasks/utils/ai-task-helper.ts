@@ -732,12 +732,98 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 }
 
 /**
+ * 构建书籍上下文信息（用于系统提示词）
+ * - 翻译相关任务：提供书名、简介、标签，帮助模型统一风格与用词
+ */
+export function buildBookContextSectionFromBook(book: {
+  title?: string | undefined;
+  description?: string | undefined;
+  tags?: string[] | undefined;
+}): string {
+  const title = typeof book.title === 'string' ? book.title.trim() : '';
+  const description = typeof book.description === 'string' ? book.description.trim() : '';
+  const tags = Array.isArray(book.tags)
+    ? book.tags.filter((t) => typeof t === 'string' && t.trim())
+    : [];
+
+  // 如果都没有，返回空字符串
+  if (!title && !description && tags.length === 0) {
+    return '';
+  }
+
+  // 简介可能很长，做一个保守截断（避免提示词过长）
+  const MAX_DESC_LEN = 600;
+  const normalizedDesc =
+    description.length > MAX_DESC_LEN
+      ? `${description.slice(0, MAX_DESC_LEN)}...(已截断)`
+      : description;
+
+  const parts: string[] = [];
+  if (title) {
+    parts.push(`**书名**: ${title}`);
+  }
+  if (normalizedDesc) {
+    parts.push(`**简介**: ${normalizedDesc}`);
+  }
+  if (tags.length > 0) {
+    parts.push(`**标签**: ${tags.join('、')}`);
+  }
+
+  return `\n\n【书籍信息】\n${parts.join('\n')}\n`;
+}
+
+/**
+ * 获取书籍上下文信息（从 store 获取；必要时回退到 BookService）
+ * @param bookId 书籍 ID
+ */
+export async function buildBookContextSection(bookId?: string): Promise<string> {
+  if (!bookId) return '';
+
+  try {
+    // 动态导入，避免循环依赖与在测试环境中提前初始化 pinia
+    const booksStore = (await import('src/stores/books')).useBooksStore();
+    const storeBook = booksStore.getBookById(bookId);
+    if (storeBook) {
+      return buildBookContextSectionFromBook({
+        title: storeBook.title,
+        description: storeBook.description,
+        tags: storeBook.tags,
+      });
+    }
+
+    // 回退：直接从 IndexedDB 获取（不加载章节内容）
+    const { BookService } = await import('src/services/book-service');
+    const dbBook = await BookService.getBookById(bookId, false);
+    if (dbBook) {
+      return buildBookContextSectionFromBook({
+        title: dbBook.title,
+        description: dbBook.description,
+        tags: dbBook.tags,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      `[buildBookContextSection] ⚠️ 获取书籍上下文失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  return '';
+}
+
+/**
  * 添加章节上下文到初始提示
  * 注意：工具使用说明已在系统提示词中提供，这里只保留章节ID和简要提醒
  */
-export function addChapterContext(prompt: string, chapterId: string, _taskType: TaskType): string {
+export function addChapterContext(
+  prompt: string,
+  chapterId: string,
+  _taskType: TaskType,
+  chapterTitle?: string,
+): string {
+  const titleLine = chapterTitle ? `**当前章节标题**: ${chapterTitle}\n` : '';
   return (
-    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
+    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n${titleLine}` +
     `[警告] **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
   );
 }
@@ -843,8 +929,8 @@ export function buildIndependentChunkPrompt(
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
 
-  // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
-  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请仅使用**本次会话提供的工具列表**中的工具获取（工具只用于获取上下文/维护数据）。[禁止] 不要尝试调用未提供的工具；不要将工具返回内容当作${taskLabel}结果直接输出。`;
+  // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
+  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息可调用工具获取；工具返回内容**不要**当作${taskLabel}结果直接输出。`;
 
   // 提取当前 chunk 中出现的术语和角色
   // 注意：每次调用时都从 store 重新获取书籍数据，确保包含在前一个 chunk 中创建/更新的术语和角色
@@ -930,8 +1016,6 @@ export function buildIndependentChunkPrompt(
 
 **[警告] 重要：简短规划阶段**
 ${briefPlanningNote}**请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
-
-**允许调用的工具**：\`get_previous_paragraphs\`、\`get_next_paragraphs\`、\`find_paragraph_by_keywords\` 等用于获取当前段落前后文上下文的工具。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }
