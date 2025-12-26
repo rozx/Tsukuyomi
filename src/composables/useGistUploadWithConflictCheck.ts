@@ -467,11 +467,21 @@ export function useGistSync() {
     const deletedCoverIds = (gistSync.deletedCoverIds || []).filter(
       (record) => !items.some((item) => item.type === 'cover' && item.id === record.id),
     );
+    const restoredCoverUrls = new Set(
+      items
+        .filter((item) => item.type === 'cover')
+        .map((item) => (item.data?.url ? String(item.data.url).trim() : ''))
+        .filter((u) => u.length > 0),
+    );
+    const deletedCoverUrls = (gistSync.deletedCoverUrls || []).filter(
+      (record) => !restoredCoverUrls.has(String(record.url).trim()),
+    );
 
     await settingsStore.updateGistSync({
       deletedNovelIds,
       deletedModelIds,
       deletedCoverIds,
+      deletedCoverUrls,
     });
 
     toast.add({

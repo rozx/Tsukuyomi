@@ -113,6 +113,7 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
     async removeCover(id: string): Promise<void> {
       const index = this.covers.findIndex((c) => c.id === id);
       if (index > -1) {
+        const coverUrl = this.covers[index]?.url;
         this.covers.splice(index, 1);
         await deleteCoverHistoryItemFromDB(id);
 
@@ -120,6 +121,7 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
         const settingsStore = useSettingsStore();
         const gistSync = settingsStore.gistSync;
         const deletedCoverIds = gistSync.deletedCoverIds || [];
+        const deletedCoverUrls = gistSync.deletedCoverUrls || [];
         
         // 检查是否已存在（避免重复）
         if (!deletedCoverIds.find((record) => record.id === id)) {
@@ -130,6 +132,20 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
           await settingsStore.updateGistSync({
             deletedCoverIds,
           });
+        }
+
+        // 同时按 URL 记录删除（跨设备：同一 URL 可能拥有不同的 id）
+        const normalizedUrl = typeof coverUrl === 'string' ? coverUrl.trim() : '';
+        if (normalizedUrl.length > 0) {
+          if (!deletedCoverUrls.find((record) => record.url === normalizedUrl)) {
+            deletedCoverUrls.push({
+              url: normalizedUrl,
+              deletedAt: Date.now(),
+            });
+            await settingsStore.updateGistSync({
+              deletedCoverUrls,
+            });
+          }
         }
       }
     },

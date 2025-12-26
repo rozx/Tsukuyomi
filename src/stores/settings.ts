@@ -42,6 +42,7 @@ function createDefaultGistSyncConfig(): SyncConfig {
     deletedNovelIds: [],
     deletedModelIds: [],
     deletedCoverIds: [],
+    deletedCoverUrls: [],
   };
 }
 
@@ -604,6 +605,10 @@ export const useSettingsStore = defineStore('settings', {
         updates.deletedCoverIds ??
         existingConfig?.deletedCoverIds ??
         defaultConfig.deletedCoverIds;
+      const deletedCoverUrls =
+        updates.deletedCoverUrls ??
+        existingConfig?.deletedCoverUrls ??
+        defaultConfig.deletedCoverUrls;
 
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
@@ -627,6 +632,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(deletedNovelIds !== undefined ? { deletedNovelIds } : {}),
         ...(deletedModelIds !== undefined ? { deletedModelIds } : {}),
         ...(deletedCoverIds !== undefined ? { deletedCoverIds } : {}),
+        ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
       };
 
       if (index >= 0) {
@@ -691,6 +697,15 @@ export const useSettingsStore = defineStore('settings', {
         const filtered = config.deletedCoverIds.filter((record) => record.deletedAt > cutoffTime);
         if (filtered.length !== config.deletedCoverIds.length) {
           config.deletedCoverIds = filtered;
+          hasChanges = true;
+        }
+      }
+
+      // 清理封面删除记录（按 URL）
+      if (config.deletedCoverUrls && config.deletedCoverUrls.length > 0) {
+        const filtered = config.deletedCoverUrls.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length !== config.deletedCoverUrls.length) {
+          config.deletedCoverUrls = filtered;
           hasChanges = true;
         }
       }

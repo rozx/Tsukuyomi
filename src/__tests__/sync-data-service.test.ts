@@ -1,5 +1,5 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
-import { SyncDataService, type RestorableItem } from '../services/sync-data-service';
+import { SyncDataService } from '../services/sync-data-service';
 import { ChapterContentService } from '../services/chapter-content-service';
 
 // Mock Stores
@@ -29,6 +29,7 @@ const mockSettingsStore = {
     deletedNovelIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedModelIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedCoverIds: [] as Array<{ id: string; deletedAt: number }>,
+    deletedCoverUrls: [] as Array<{ url: string; deletedAt: number }>,
   },
   importSettings: mock((_settings: unknown) => Promise.resolve()),
   updateGistSync: mock((_config: unknown) => Promise.resolve()),
@@ -81,6 +82,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedNovelIds: [],
       deletedModelIds: [],
       deletedCoverIds: [],
+      deletedCoverUrls: [],
     };
   });
 
@@ -108,7 +110,9 @@ describe('数据同步服务 (SyncDataService)', () => {
       // Verify Novels
       expect(mockBooksStore.clearBooks).toHaveBeenCalled();
       expect(mockBooksStore.bulkAddBooks).toHaveBeenCalled();
-      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<
+        Record<string, unknown>
+      >;
       expect(addedBooks[0]).toMatchObject({ id: 'n1', title: 'Remote Novel' });
 
       // Verify Settings
@@ -201,12 +205,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       const deletionTime = new Date('2024-01-02').getTime(); // 删除时间晚于同步时间
 
       // 设置删除记录
-      mockSettingsStore.gistSync.deletedNovelIds = [
-        { id: 'n1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedNovelIds = [{ id: 'n1', deletedAt: deletionTime }];
 
       const remoteData = {
-        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
+        novels: [
+          { id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() },
+        ],
       };
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
@@ -215,7 +219,9 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(result).toEqual([]);
       // 应该调用 bulkAddBooks（即使传入空数组），但不应该包含已删除的书籍
       if (mockBooksStore.bulkAddBooks.mock.calls.length > 0) {
-        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<
+          Record<string, unknown>
+        >;
         expect(addedBooks).not.toContainEqual(expect.objectContaining({ id: 'n1' }));
       }
     });
@@ -225,12 +231,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       const deletionTime = new Date('2024-01-02').getTime(); // 删除时间晚于同步时间
 
       // 设置删除记录
-      mockSettingsStore.gistSync.deletedNovelIds = [
-        { id: 'n1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedNovelIds = [{ id: 'n1', deletedAt: deletionTime }];
 
       const remoteData = {
-        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
+        novels: [
+          { id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() },
+        ],
       };
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
@@ -247,7 +253,9 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(item.data).toMatchObject({ id: 'n1', title: 'Deleted Novel' });
       // 应该调用 bulkAddBooks，但不应该包含已删除的书籍（需要用户手动选择恢复）
       if (mockBooksStore.bulkAddBooks.mock.calls.length > 0) {
-        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as any[];
+        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<
+          Record<string, unknown>
+        >;
         expect(addedBooks).not.toContainEqual(expect.objectContaining({ id: 'n1' }));
       }
     });
@@ -257,12 +265,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       const deletionTime = new Date('2024-01-02').getTime();
 
       // 设置删除记录
-      mockSettingsStore.gistSync.deletedModelIds = [
-        { id: 'm1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedModelIds = [{ id: 'm1', deletedAt: deletionTime }];
 
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() }],
+        aiModels: [
+          { id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() },
+        ],
       };
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
@@ -283,12 +291,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       const deletionTime = new Date('2024-01-02').getTime();
 
       // 设置删除记录
-      mockSettingsStore.gistSync.deletedCoverIds = [
-        { id: 'c1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedCoverIds = [{ id: 'c1', deletedAt: deletionTime }];
 
       const remoteData = {
-        coverHistory: [{ id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() }],
+        coverHistory: [
+          { id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() },
+        ],
       };
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
@@ -309,27 +317,27 @@ describe('数据同步服务 (SyncDataService)', () => {
       const deletionTime = new Date('2024-01-02').getTime();
 
       // 设置多个删除记录
-      mockSettingsStore.gistSync.deletedNovelIds = [
-        { id: 'n1', deletedAt: deletionTime },
-      ];
-      mockSettingsStore.gistSync.deletedModelIds = [
-        { id: 'm1', deletedAt: deletionTime },
-      ];
-      mockSettingsStore.gistSync.deletedCoverIds = [
-        { id: 'c1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedNovelIds = [{ id: 'n1', deletedAt: deletionTime }];
+      mockSettingsStore.gistSync.deletedModelIds = [{ id: 'm1', deletedAt: deletionTime }];
+      mockSettingsStore.gistSync.deletedCoverIds = [{ id: 'c1', deletedAt: deletionTime }];
 
       const remoteData = {
-        novels: [{ id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() }],
-        aiModels: [{ id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() }],
-        coverHistory: [{ id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() }],
+        novels: [
+          { id: 'n1', title: 'Deleted Novel', lastEdited: new Date('2024-01-01').toISOString() },
+        ],
+        aiModels: [
+          { id: 'm1', name: 'Deleted Model', lastEdited: new Date('2024-01-01').toISOString() },
+        ],
+        coverHistory: [
+          { id: 'c1', url: 'deleted.jpg', addedAt: new Date('2024-01-01').toISOString() },
+        ],
       };
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, true);
 
       // 应该返回三个可恢复的项目
       expect(result).toHaveLength(3);
-      
+
       const novelItem = result.find((item) => item.type === 'novel');
       const modelItem = result.find((item) => item.type === 'model');
       const coverItem = result.find((item) => item.type === 'cover');
@@ -348,9 +356,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       const remoteUpdateTime = new Date('2024-01-03').toISOString(); // 远程更新时间晚于同步时间
 
       // 设置删除记录
-      mockSettingsStore.gistSync.deletedNovelIds = [
-        { id: 'n1', deletedAt: deletionTime },
-      ];
+      mockSettingsStore.gistSync.deletedNovelIds = [{ id: 'n1', deletedAt: deletionTime }];
 
       const remoteData = {
         novels: [{ id: 'n1', title: 'Updated Novel', lastEdited: remoteUpdateTime }],
@@ -375,37 +381,49 @@ describe('数据同步服务 (SyncDataService)', () => {
       const invalidData1 = {
         novels: 'not-an-array',
       } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-      await (expect(SyncDataService.applyDownloadedData(invalidData1)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData1),
+      ).rejects.toThrow() as unknown as Promise<void>);
 
       // 测试 novel 缺少 id 的情况
       const invalidData2 = {
         novels: [{ title: 'Novel without id' }],
       };
-      await (expect(SyncDataService.applyDownloadedData(invalidData2)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData2),
+      ).rejects.toThrow() as unknown as Promise<void>);
 
       // 测试 aiModels 不是数组的情况
       const invalidData3 = {
         aiModels: 'not-an-array',
       } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-      await (expect(SyncDataService.applyDownloadedData(invalidData3)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData3),
+      ).rejects.toThrow() as unknown as Promise<void>);
 
       // 测试 model 缺少 id 的情况
       const invalidData4 = {
         aiModels: [{ name: 'Model without id' }],
       };
-      await (expect(SyncDataService.applyDownloadedData(invalidData4)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData4),
+      ).rejects.toThrow() as unknown as Promise<void>);
 
       // 测试 coverHistory 不是数组的情况
       const invalidData5 = {
         coverHistory: 'not-an-array',
       } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-      await (expect(SyncDataService.applyDownloadedData(invalidData5)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData5),
+      ).rejects.toThrow() as unknown as Promise<void>);
 
       // 测试 cover 缺少 id 的情况
       const invalidData6 = {
         coverHistory: [{ url: 'cover without id' }],
       };
-      await (expect(SyncDataService.applyDownloadedData(invalidData6)).rejects.toThrow() as unknown as Promise<void>);
+      await (expect(
+        SyncDataService.applyDownloadedData(invalidData6),
+      ).rejects.toThrow() as unknown as Promise<void>);
     });
 
     it('当远程数据为 null 时，应正常处理（不抛出错误）', async () => {
@@ -422,6 +440,105 @@ describe('数据同步服务 (SyncDataService)', () => {
       await SyncDataService.applyDownloadedData(remoteData);
 
       expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
+    });
+
+    it('当封面在本地按 URL 删除且删除时间晚于同步时间时，自动同步不应恢复该 URL 的远程封面（即使 id 不同）', async () => {
+      const lastSyncTime = new Date('2024-01-01').getTime();
+      const deletionTime = new Date('2024-01-02').getTime();
+
+      mockSettingsStore.gistSync.deletedCoverUrls = [{ url: 'same.jpg', deletedAt: deletionTime }];
+
+      const remoteData = {
+        coverHistory: [
+          { id: 'remote-id', url: 'same.jpg', addedAt: new Date('2024-01-01').toISOString() },
+        ],
+      };
+
+      const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
+      expect(result).toEqual([]);
+      // 不应把该封面写回（即 addCover 不应被调用）
+      expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mergeDataForUpload (上传前合并数据)', () => {
+    it('当远程 aiModels 为空但本地存在旧模型时，应全量带上本地模型（避免远端一直为空）', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      const oldDate = new Date('2024-01-01').toISOString(); // 早于 lastSyncTime
+
+      const localData = {
+        novels: [],
+        aiModels: [{ id: 'm1', name: 'Local Old Model', lastEdited: oldDate }],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [],
+      };
+
+      const remoteData = {
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+
+      expect(merged.aiModels).toHaveLength(1);
+      expect(merged.aiModels[0]).toMatchObject({ id: 'm1', name: 'Local Old Model' });
+    });
+
+    it('当远程 coverHistory 为空但本地存在旧封面时，应全量带上本地封面（避免远端一直为空）', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      const oldAddedAt = new Date('2024-01-01').toISOString(); // 早于 lastSyncTime
+
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [{ id: 'c1', url: 'local.jpg', addedAt: oldAddedAt }],
+      };
+
+      const remoteData = {
+        coverHistory: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+
+      expect(merged.coverHistory).toHaveLength(1);
+      expect(merged.coverHistory[0]).toMatchObject({ id: 'c1', url: 'local.jpg' });
+    });
+
+    it('当本地与远程存在相同 url 但不同 id 的封面时，应按 url 去重只保留一条', async () => {
+      const lastSyncTime = 0;
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [
+          { id: 'c-local', url: 'same.jpg', addedAt: new Date('2024-01-01').toISOString() },
+        ],
+      };
+      const remoteData = {
+        coverHistory: [
+          { id: 'c-remote', url: 'same.jpg', addedAt: new Date('2024-01-02').toISOString() },
+        ],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+      expect(merged.coverHistory).toHaveLength(1);
+      // 应该保留 addedAt 更新的那条（远程）
+      expect(merged.coverHistory[0]).toMatchObject({ id: 'c-remote', url: 'same.jpg' });
     });
   });
 });
