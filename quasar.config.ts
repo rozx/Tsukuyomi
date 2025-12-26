@@ -7,7 +7,7 @@ import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
-export default defineConfig((ctx) => {
+export default defineConfig((ctx: any) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -65,7 +65,7 @@ export default defineConfig((ctx) => {
       // polyfillModulePreload: true,
       // distDir
 
-      extendViteConf(viteConf) {
+      extendViteConf(viteConf: any) {
         // Reduce log noise in terminal
         viteConf.logLevel = 'error';
         // Suppress large chunk size warnings
@@ -106,16 +106,16 @@ export default defineConfig((ctx) => {
           '/api/sda1': {
             target: 'https://p.sda1.dev',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/sda1/, ''),
+            rewrite: (path: string) => path.replace(/^\/api\/sda1/, ''),
             secure: true,
           },
           '/api/syosetu': {
             target: 'https://syosetu.org',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/syosetu/, ''),
+            rewrite: (path: string) => path.replace(/^\/api\/syosetu/, ''),
             secure: true,
-            configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, _req: any, _res: any) => {
                 // 确保请求头正确传递，覆盖客户端请求头
                 proxyReq.setHeader(
                   'User-Agent',
@@ -152,10 +152,10 @@ export default defineConfig((ctx) => {
           '/api/kakuyomu': {
             target: 'https://kakuyomu.jp',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/kakuyomu/, ''),
+            rewrite: (path: string) => path.replace(/^\/api\/kakuyomu/, ''),
             secure: true,
-            configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, _req: any, _res: any) => {
                 // 确保请求头正确传递，覆盖客户端请求头
                 proxyReq.setHeader(
                   'User-Agent',
@@ -192,10 +192,10 @@ export default defineConfig((ctx) => {
           '/api/ncode': {
             target: 'https://ncode.syosetu.com',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/ncode/, ''),
+            rewrite: (path: string) => path.replace(/^\/api\/ncode/, ''),
             secure: true,
-            configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, _req: any, _res: any) => {
                 proxyReq.setHeader(
                   'User-Agent',
                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -220,10 +220,10 @@ export default defineConfig((ctx) => {
           '/api/novel18': {
             target: 'https://novel18.syosetu.com',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/novel18/, ''),
+            rewrite: (path: string) => path.replace(/^\/api\/novel18/, ''),
             secure: true,
-            configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, _req: any, _res: any) => {
                 proxyReq.setHeader(
                   'User-Agent',
                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -248,10 +248,10 @@ export default defineConfig((ctx) => {
           '/api/search': {
             target: 'https://html.duckduckgo.com',
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/search/, '/html'),
+            rewrite: (path: string) => path.replace(/^\/api\/search/, '/html'),
             secure: true,
-            configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, _req, _res) => {
+            configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, _req: any, _res: any) => {
                 proxyReq.setHeader(
                   'User-Agent',
                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -433,7 +433,7 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
       // extendElectronMainConf (esbuildConf) {},
-      extendElectronPreloadConf(_esbuildConf) {
+      extendElectronPreloadConf(_esbuildConf: any) {
         // 确保 preload 脚本被正确打包
         console.log('Building Electron preload script...');
       },

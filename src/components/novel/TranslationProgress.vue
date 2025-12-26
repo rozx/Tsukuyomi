@@ -8,11 +8,13 @@ import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useBookDetailsStore } from 'src/stores/book-details';
+import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
+import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 
 const aiProcessingStore = useAIProcessingStore();
 const bookDetailsStore = useBookDetailsStore();
+const booksStore = useBooksStore();
 const toast = useToastWithHistory();
 
 // 待办事项列表
@@ -46,6 +49,38 @@ const recentAITasks = computed(() => {
     (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
   );
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
+});
+
+/**
+ * 获取任务“当前工作章节”的展示文本
+ * - 优先使用 task.chapterTitle（如果任务创建时提供）
+ * - 否则使用 bookId + chapterId 从 booksStore 反查章节标题
+ * - 最后退化为 chapterId
+ */
+const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
+  const title = task.chapterTitle?.trim();
+  if (title) return title;
+
+  if (task.bookId && task.chapterId) {
+    const book = booksStore.getBookById(task.bookId);
+    if (book?.volumes) {
+      for (const volume of book.volumes) {
+        const chapter = volume.chapters?.find((c) => c.id === task.chapterId);
+        if (chapter) {
+          const displayTitle = getChapterDisplayTitle(chapter, book).trim();
+          if (displayTitle) return displayTitle;
+        }
+      }
+    }
+  }
+
+  return task.chapterId || null;
+};
+
+// 顶部“正在翻译/润色/校对章节”区域：展示当前正在处理的章节（取最新的进行中任务）
+const currentWorkingChapter = computed(() => {
+  const active = recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing');
+  return active ? getWorkingChapterLabel(active) : null;
 });
 
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
@@ -798,6 +833,10 @@ watch(
                   />
                 </div>
               </div>
+              <div v-if="getWorkingChapterLabel(task)" class="ai-task-working-chapter">
+                <span class="ai-task-working-chapter-label">工作章节：</span>
+                <span class="ai-task-working-chapter-title">{{ getWorkingChapterLabel(task) }}</span>
+              </div>
               <Transition name="task-content">
                 <div v-if="!taskFolded[task.id]" class="ai-task-content">
                   <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
@@ -968,6 +1007,9 @@ watch(
             isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
           }}</span>
         </div>
+        <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
+          当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
+        </div>
         <div class="translation-progress-message">
           {{ progress.message || '正在处理...' }}
         </div>
@@ -1063,6 +1105,17 @@ watch(
   font-size: 0.8125rem;
   color: var(--moon-opacity-70);
   line-height: 1.4;
+}
+
+.translation-progress-working-chapter {
+  font-size: 0.8125rem;
+  color: var(--moon-opacity-80);
+  line-height: 1.4;
+}
+
+.working-chapter-title {
+  font-weight: 600;
+  color: var(--moon-opacity-95);
 }
 
 .translation-progress-bar-wrapper {
@@ -1284,6 +1337,29 @@ watch(
   color: var(--moon-opacity-70);
   margin-top: 0.5rem;
   line-height: 1.4;
+}
+
+.ai-task-working-chapter {
+  margin-top: -0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--moon-opacity-70);
+  display: flex;
+  gap: 0.25rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.ai-task-working-chapter-label {
+  color: var(--moon-opacity-60);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ai-task-working-chapter-title {
+  color: var(--moon-opacity-90);
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .ai-task-tabs {

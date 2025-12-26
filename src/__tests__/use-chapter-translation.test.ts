@@ -5,8 +5,11 @@ import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 import { ChapterService } from '../services/chapter-service';
 import * as BooksStore from '../stores/books';
+import * as ToastHistory from 'src/composables/useToastHistory';
+import * as AIModelsStore from 'src/stores/ai-models';
+import * as AIProcessingStore from 'src/stores/ai-processing';
 
-// Mock dependencies
+// Mock dependencies（注意：禁止使用全局 mock.module，避免污染其它测试）
 const mockToastAdd = mock(() => {});
 const mockUseToastWithHistory = mock(() => ({
   add: mockToastAdd,
@@ -28,32 +31,9 @@ const mockUseAIModelsStore = mock(() => ({
   getDefaultModelForTask: mockGetDefaultModelForTask,
 }));
 
-const mockTranslateParagraph = mock(() => Promise.resolve({ translation: '翻译结果' }));
-const mockPolishParagraph = mock(() => Promise.resolve({ translation: '润色结果' }));
 const mockUseAIProcessingStore = mock(() => ({
   activeTasks: [],
   stopTask: mock(() => Promise.resolve()),
-}));
-
-await mock.module('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
-}));
-
-await mock.module('src/stores/ai-models', () => ({
-  useAIModelsStore: mockUseAIModelsStore,
-}));
-
-await mock.module('src/stores/ai-processing', () => ({
-  useAIProcessingStore: mockUseAIProcessingStore,
-}));
-
-await mock.module('src/services/ai', () => ({
-  TranslationService: {
-    translateParagraph: mockTranslateParagraph,
-  },
-  PolishService: {
-    polishParagraph: mockPolishParagraph,
-  },
 }));
 
 const mockUpdateChapter = mock((): Volume[] => []);
@@ -133,8 +113,6 @@ describe('useChapterTranslation', () => {
 
     mockToastAdd.mockClear();
     mockBooksStoreUpdateBook.mockClear();
-    mockTranslateParagraph.mockClear();
-    mockPolishParagraph.mockClear();
     mockUpdateChapter.mockClear();
     mockGetChapterContentForUpdate.mockClear();
     mockAddParagraphTranslation.mockClear();
@@ -147,6 +125,11 @@ describe('useChapterTranslation', () => {
       updateBook: mockBooksStoreUpdateBook,
       getBookById: mock(() => null),
     } as any);
+
+    // composable 依赖的 store/composable：使用 spyOn 局部 mock（避免污染其它测试）
+    spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: mockToastAdd } as any);
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue(mockUseAIModelsStore() as any);
+    spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue(mockUseAIProcessingStore() as any);
 
     spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
     spyOn(ChapterService, 'getChapterContentForUpdate').mockImplementation(

@@ -26,20 +26,185 @@ export function normalizeTranslationQuotes(text: string): string {
 
   // 先处理成对的引号
   // 将成对的半角普通引号 "" 替换为日语引号 「」（全角）
-  // 注意：正则表达式 /"([^"]*)"/g 只匹配成对的引号（开引号+内容+闭引号）
-  normalized = normalized.replace(/"([^"]*)"/g, '「$1」');
-  // 将成对的全角双引号 "" 替换为日语引号 「」
-  // 注意：正则表达式匹配成对的引号（全角左引号+内容+全角右引号）
+  // 注意：需要从外到内处理嵌套引号
+  // 例如：""aaa"" 应该转换为 「「aaa」」，而不是 「」aaa「」
+  // 使用递归方式从外到内处理嵌套引号
+  // 对于相同字符的引号（如 "），需要从外到内处理；对于不同字符的引号，使用栈匹配
+  /**
+   * 优化的引号替换函数，使用改进的配对算法
+   * 时间复杂度：O(n³) worst case for same-character quotes due to triple nested loops,
+   *           但相比原实现去除了递归调用和多次字符串重建，实际性能更好
+   *           O(n) for different-character quotes (stack-based single pass)
+   * 空间复杂度：O(n)
+   */
+  function replaceNestedQuotes(str: string, openChar: string, closeChar: string, replacementOpen: string, replacementClose: string): string {
+    const isSameChar = openChar === closeChar; // 开引号和闭引号是否相同（如 "）
+    
+    if (isSameChar) {
+      // 当开引号和闭引号相同时，需要配对处理
+      // 对于 ""aaa"" 这种情况，indices 是 [0,1,5,6]
+      // 策略：配对距离最近且中间有实际内容的引号对
+      // 例如：配对 (1,5) 作为内层，然后配对 (0,6) 作为外层
+      const quoteIndices: number[] = [];
+      const positionToIndexMap = new Map<number, number>(); // 位置到数组索引的映射，用于 O(1) 查找
+      
+      // 单次遍历收集所有引号位置 - O(n)
+      for (let i = 0; i < str.length; i++) {
+        if (str[i] === openChar) {
+          const arrayIndex = quoteIndices.length;
+          quoteIndices.push(i);
+          positionToIndexMap.set(i, arrayIndex);
+        }
+      }
+      
+      if (quoteIndices.length === 0) {
+        return str;
+      }
+      
+      // 使用改进的配对策略：
+      // 1. 找到距离最近的引号对，但它们之间必须有至少一个非引号字符或未配对的引号
+      // 2. 相邻的引号（中间没有任何字符）不应该配对
+      const paired = new Array<boolean>(quoteIndices.length).fill(false);
+      const replacements: Array<{ index: number; char: string }> = [];
+      
+      let foundPair = true;
+      while (foundPair) {
+        foundPair = false;
+        let closestStartIndex = -1;
+        let closestEndIndex = -1;
+        let minDistance = Infinity;
+        
+        // 找到距离最近且满足条件的配对
+        // 三重嵌套循环结构，worst case O(n³)，但实际场景中：
+        // - 引号数量 << 字符串长度
+        // - 配对后的引号会被跳过，减少迭代次数
+        // - 内层循环通常提前 break
+        for (let i = 0; i < quoteIndices.length - 1; i++) {
+          if (paired[i]) continue;
+          
+          for (let j = i + 1; j < quoteIndices.length; j++) {
+            if (paired[j]) continue;
+            
+            const startPos = quoteIndices[i]!;
+            const endPos = quoteIndices[j]!;
+            
+            // 检查这两个引号之间是否有其他未配对的引号
+            // 这个循环加上外层两个循环形成三重嵌套，worst case 为 O(n³)
+            // 但通常情况下：
+            // 1. 引号数量远小于字符串长度
+            // 2. 大多数引号对会在早期迭代中被配对，减少后续迭代的工作量
+            // 3. 内层循环通常会提前 break
+            let hasOtherUnpairedQuotes = false;
+            for (let k = i + 1; k < j; k++) {
+              if (!paired[k]) {
+                hasOtherUnpairedQuotes = true;
+                break;
+              }
+            }
+            
+            // 如果中间没有其他未配对引号，检查是否相邻（相邻的不配对）
+            if (!hasOtherUnpairedQuotes) {
+              // 如果 endPos - startPos == 1，说明它们是相邻的引号，不应该配对
+              // 例如：""aaa"" 中，位置 0 和 1 的引号相邻，应该配对位置 1 和 5
+              if (endPos - startPos === 1) {
+                continue; // 跳过相邻的引号对
+              }
+              
+              // 检查两个引号之间是否有实际内容（非已配对引号）
+              // 这个循环在三重嵌套结构中，但大多数情况会提前 break
+              let hasContent = false;
+              for (let pos = startPos + 1; pos < endPos; pos++) {
+                // 如果这个位置不是引号，说明有内容
+                if (str[pos] !== openChar) {
+                  hasContent = true;
+                  break;
+                }
+                // 如果是引号，使用 Map 进行 O(1) 查找位置索引，检查它是否已配对
+                const quoteIndex = positionToIndexMap.get(pos);
+                if (quoteIndex !== undefined && !paired[quoteIndex]) {
+                  hasContent = true; // 未配对的引号算作内容
+                  break;
+                }
+              }
+              
+              if (hasContent) {
+                const distance = endPos - startPos;
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestStartIndex = i;
+                  closestEndIndex = j;
+                  foundPair = true;
+                }
+              }
+            }
+          }
+        }
+        
+        // 标记找到的配对并记录替换
+        if (foundPair && closestStartIndex !== -1 && closestEndIndex !== -1) {
+          paired[closestStartIndex] = true;
+          paired[closestEndIndex] = true;
+          replacements.push({ index: quoteIndices[closestStartIndex]!, char: replacementOpen });
+          replacements.push({ index: quoteIndices[closestEndIndex]!, char: replacementClose });
+        }
+      }
+      
+      if (replacements.length === 0) {
+        return str;
+      }
+      
+      // 按位置从后往前排序，这样替换时不会影响后续索引
+      replacements.sort((a, b) => b.index - a.index);
+      
+      // 构建结果字符串，从后往前替换避免索引偏移
+      let result = str;
+      for (const { index, char } of replacements) {
+        result = result.slice(0, index) + char + result.slice(index + 1);
+      }
+      
+      return result;
+    } else {
+      // 开引号和闭引号不同，使用栈来匹配 - O(n) 单次遍历
+      const result: string[] = [];
+      const stack: number[] = [];
+      
+      for (let i = 0; i < str.length; i++) {
+        const char = str[i]!;
+        if (char === openChar) {
+          stack.push(result.length);
+          result.push(replacementOpen);
+        } else if (char === closeChar && stack.length > 0) {
+          stack.pop();
+          result.push(replacementClose);
+        } else {
+          result.push(char);
+        }
+      }
+      
+      // 如果栈不为空，说明有未配对的引号，需要恢复为原始字符
+      while (stack.length > 0) {
+        const pos = stack.pop()!;
+        if (result[pos] === replacementOpen) {
+          result[pos] = openChar;
+        }
+      }
+      
+      return result.join('');
+    }
+  }
+  
+  // 处理半角双引号
+  normalized = replaceNestedQuotes(normalized, '"', '"', '「', '」');
+  
+  // 处理全角双引号
   // 全角左双引号是 U+201C ("), 全角右双引号是 U+201D (")
-  normalized = normalized.replace(/\u201C([^\u201D]*)\u201D/g, '「$1」');
+  normalized = replaceNestedQuotes(normalized, '\u201C', '\u201D', '「', '」');
 
   // 处理成对的单引号
   // 先处理全角单引号对 ''（U+2018...U+2019），必须在其他单引号模式之前
-  // 注意：正则表达式匹配全角左引号（U+2018）+内容+全角右引号（U+2019）
-  normalized = normalized.replace(/\u2018([^\u2019]*)\u2019/g, '『$1』');
+  normalized = replaceNestedQuotes(normalized, '\u2018', '\u2019', '『', '』');
   // 将成对的 ASCII 单引号 '' 替换为日语单引号 『』
-  // 注意：正则表达式使用 ASCII 单引号字符 U+0027 (')
-  normalized = normalized.replace(/'([^']*)'/g, '『$1』');
+  normalized = replaceNestedQuotes(normalized, "'", "'", '『', '』');
 
   // 重要说明：单个或奇数个引号不会被转换，保持原样
   // 这是因为正则表达式要求匹配完整的引号对（开引号+内容+闭引号）

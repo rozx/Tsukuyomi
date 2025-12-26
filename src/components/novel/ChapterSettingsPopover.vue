@@ -23,6 +23,7 @@ const emit = defineEmits<{
       // 全局设置（书籍级别）
       preserveIndents?: boolean;
       normalizeSymbolsOnDisplay?: boolean;
+      normalizeTitleOnDisplay?: boolean;
       // 章节设置（章节级别）
       translationInstructions?: string;
       polishInstructions?: string;
@@ -45,10 +46,12 @@ const currentInstructionTab = computed(() => instructionTab.value || 'translatio
 
 // 全局设置数据（书籍级别）
 // 注意：数据层仍使用 book.preserveIndents（true=保留缩进）
-// UI 层使用“过滤开关”（true=过滤掉缩进，即移除行首空格）
+// UI 层使用"过滤开关"（true=过滤掉缩进，即移除行首空格）
 const filterIndentsEnabled = ref(false);
 // 显示/导出时是否规范化符号（true=开启显示层规范化）
 const normalizeSymbolsOnDisplayEnabled = ref(false);
+// 显示/导出时是否规范化标题（true=开启显示层规范化）
+const normalizeTitleOnDisplayEnabled = ref(false);
 
 // 章节设置数据（章节级别）
 const translationInstructions = ref('');
@@ -64,10 +67,12 @@ watch(
       const preserveIndents = props.book.preserveIndents ?? true;
       filterIndentsEnabled.value = !preserveIndents;
       normalizeSymbolsOnDisplayEnabled.value = props.book.normalizeSymbolsOnDisplay ?? false;
+      normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
     } else {
       // 默认保留缩进（不过滤）
       filterIndentsEnabled.value = false;
       normalizeSymbolsOnDisplayEnabled.value = false;
+      normalizeTitleOnDisplayEnabled.value = false;
     }
 
     // 章节设置（章节级别）
@@ -99,6 +104,7 @@ const handleSave = () => {
   const data: {
     preserveIndents?: boolean;
     normalizeSymbolsOnDisplay?: boolean;
+    normalizeTitleOnDisplay?: boolean;
     translationInstructions?: string;
     polishInstructions?: string;
     proofreadingInstructions?: string;
@@ -107,6 +113,7 @@ const handleSave = () => {
     // preserveIndents: true 表示保留缩进；过滤开关开启时应保存为 false
     preserveIndents: !filterIndentsEnabled.value,
     normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
+    normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
     // 章节设置
     translationInstructions: translationInstructions.value.trim(),
     polishInstructions: polishInstructions.value.trim(),
@@ -184,6 +191,18 @@ defineExpose({
                       </small>
                     </div>
                     <InputSwitch v-model="normalizeSymbolsOnDisplayEnabled" />
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                      <label class="text-sm font-medium text-moon-100 block mb-1">
+                        显示时规范化标题
+                      </label>
+                      <small class="text-moon/60 text-xs block">
+                        启用时，仅在显示和导出时规范化章节标题（如：将全角数字和汉字之间的半角空格转换为全角空格）；不会改写或保存标题内容。
+                      </small>
+                    </div>
+                    <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
                   </div>
                 </div>
               </TabPanel>

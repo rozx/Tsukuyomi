@@ -19,17 +19,20 @@ import {
   buildMaintenanceReminder,
   createUnifiedAbortController,
   initializeTask,
+  buildBookContextSection,
   getSpecialInstructions,
   handleTaskError,
   completeTask,
   buildIndependentChunkPrompt,
   buildChapterContextSection,
   buildSpecialInstructionsSection,
+  filterProcessedParagraphs,
+  markProcessedParagraphs,
+  markProcessedParagraphsFromMap,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
   getOutputFormatRules,
-  getExecutionWorkflowRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
 } from './prompts';
@@ -91,6 +94,10 @@ export interface ProofreadingServiceOptions {
    * 章节 ID（可选），如果提供，将在上下文中提供给 AI
    */
   chapterId?: string;
+  /**
+   * 章节标题（可选），用于在上下文中提供给 AI
+   */
+  chapterTitle?: string;
 }
 
 export interface ProofreadingResult {
@@ -136,6 +143,7 @@ export class ProofreadingService {
       onParagraphProofreading,
       onToast,
       chapterId,
+      chapterTitle,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -168,6 +176,11 @@ export class ProofreadingService {
       aiProcessingStore as AIProcessingStore | undefined,
       'proofreading',
       model.name,
+      {
+        ...(typeof bookId === 'string' ? { bookId } : {}),
+        ...(typeof chapterId === 'string' ? { chapterId } : {}),
+        ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+      },
     );
 
     // 使用共享工具创建统一的 AbortController
@@ -196,10 +209,13 @@ export class ProofreadingService {
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      // 构建章节上下文信息
-      const chapterContextSection = buildChapterContextSection(chapterId);
+      // 构建书籍上下文信息（书名/简介/标签）
+      const bookContextSection = await buildBookContextSection(bookId);
 
-      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【校对检查项】[警告] 只返回有变化的段落
 1. **文字**: 错别字、标点（全角）、语法、词语用法
@@ -212,13 +228,12 @@ export class ProofreadingService {
 - **参考原文**: 确保翻译准确
 - ${getSymbolFormatRules()}
 
-${getToolUsageInstructions('proofreading')}
+${getToolUsageInstructions('proofreading', tools)}
 
 ${getMemoryWorkflowRules()}
 
 ${getOutputFormatRules('proofreading')}
-
-${getExecutionWorkflowRules('proofreading')}`;
+`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -274,28 +289,92 @@ ${getExecutionWorkflowRules('proofreading')}`;
       // 存储每个段落的原始翻译，用于比较是否有变化
       const originalTranslations = buildOriginalTranslationsMap(paragraphsWithTranslation);
 
+      // 跟踪已处理的段落 ID（用于排除已处理的段落，避免重复处理）
+      const processedParagraphIds = new Set<string>();
+
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
-      for (let i = 0; i < chunks.length; i++) {
+      let chunkIndex = 0;
+      while (chunkIndex < chunks.length) {
         // 检查是否已取消
         if (finalSignal.aborted) {
           throw new Error('请求已取消');
         }
 
-        const chunk = chunks[i];
-        if (!chunk) continue;
+        const chunk = chunks[chunkIndex];
+        if (!chunk) {
+          chunkIndex++;
+          continue;
+        }
 
-        const chunkText = chunk.text;
+        // 过滤掉已处理的段落（如果 AI 在之前的 chunk 中处理了更多段落）
+        const unprocessedParagraphIds = filterProcessedParagraphs(
+          chunk,
+          processedParagraphIds,
+          'ProofreadingService',
+          chunkIndex,
+          chunks.length,
+        );
+        if (!unprocessedParagraphIds) {
+          chunkIndex++;
+          continue;
+        }
+
+        // 如果当前 chunk 包含已处理的段落，需要重新构建 chunk
+        let actualChunk = chunk;
+        if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
+          // 需要重新构建 chunk，只包含未处理的段落
+          const unprocessedParagraphs = paragraphsWithTranslation.filter((p) =>
+            unprocessedParagraphIds.includes(p.id),
+          );
+
+          // 重新构建 chunk（保持原有的 chunk 结构）
+          let rebuiltChunkText = '';
+          const rebuiltChunkParagraphIds: string[] = [];
+
+          for (const paragraph of unprocessedParagraphs) {
+            const currentTranslation =
+              paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)
+                ?.translation ||
+              paragraph.translations?.[0]?.translation ||
+              '';
+            const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+
+            if (
+              rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&
+              rebuiltChunkText.length > 0
+            ) {
+              // 如果当前重建的 chunk 加上新段落超过限制，停止添加
+              break;
+            }
+
+            rebuiltChunkText += paragraphText;
+            rebuiltChunkParagraphIds.push(paragraph.id);
+          }
+
+          if (rebuiltChunkText.length > 0) {
+            actualChunk = {
+              text: rebuiltChunkText,
+              paragraphIds: rebuiltChunkParagraphIds,
+            };
+          } else {
+            // 没有未处理的段落，跳过
+            chunkIndex++;
+            continue;
+          }
+        }
+
+        const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
-            message: `正在校对第 ${i + 1}/${chunks.length} 部分...`,
+            message: `正在校对第 ${chunkIndex + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
           // 添加块分隔符
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `\n\n[=== 校对块 ${i + 1}/${chunks.length} ===]\n\n`,
+            `\n\n[=== 校对块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
           );
         }
 
@@ -306,10 +385,10 @@ ${getExecutionWorkflowRules('proofreading')}`;
             currentParagraphs?: string[];
           } = {
             total: chunks.length,
-            current: i + 1,
+            current: chunkIndex + 1,
           };
-          if (chunk.paragraphIds) {
-            progress.currentParagraphs = chunk.paragraphIds;
+          if (actualChunk.paragraphIds) {
+            progress.currentParagraphs = actualChunk.paragraphIds;
           }
           onProgress(progress);
         }
@@ -321,13 +400,13 @@ ${getExecutionWorkflowRules('proofreading')}`;
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('proofreading');
         // 计算当前块的段落数量（用于提示AI）
-        const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
+        const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
-        const content = buildIndependentChunkPrompt(
+        const chunkContent = buildIndependentChunkPrompt(
           'proofreading',
-          i,
+          chunkIndex,
           chunks.length,
           chunkText,
           paragraphCountNote,
@@ -358,7 +437,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
               }
 
               console.warn(
-                `[ProofreadingService] ⚠️ 检测到AI降级或错误，重试块 ${i + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
+                `[ProofreadingService] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
               );
 
               if (aiProcessingStore && taskId) {
@@ -369,7 +448,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
               }
             }
 
-            chunkHistory.push({ role: 'user', content });
+            chunkHistory.push({ role: 'user', content: chunkContent });
 
             // 使用共享的工具调用循环（基于状态的流程）
             const loopResult = await executeToolCallLoop({
@@ -379,7 +458,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
               aiServiceConfig: config,
               taskType: 'proofreading',
               chunkText,
-              paragraphIds: chunk.paragraphIds,
+              paragraphIds: actualChunk.paragraphIds,
               bookId: bookId || '',
               handleAction,
               onToast,
@@ -397,8 +476,11 @@ ${getExecutionWorkflowRules('proofreading')}`;
               },
               // 立即回调：当段落校对提取时立即通知（不等待循环完成）
               onParagraphsExtracted:
-                onParagraphProofreading && chunk.paragraphIds
+                onParagraphProofreading && actualChunk.paragraphIds
                   ? (paragraphs) => {
+                      // 标记所有已处理的段落
+                      markProcessedParagraphs(paragraphs, processedParagraphIds);
+
                       // 将数组转换为 Map 供 filterChangedParagraphs 使用
                       const extractedMap = new Map<string, string>();
                       for (const para of paragraphs) {
@@ -409,7 +491,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
 
                       // 过滤出有变化的段落
                       const changedParagraphs = filterChangedParagraphs(
-                        chunk.paragraphIds!,
+                        actualChunk.paragraphIds!,
                         extractedMap,
                         originalTranslations,
                       );
@@ -421,14 +503,14 @@ ${getExecutionWorkflowRules('proofreading')}`;
                           void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
                             (error) => {
                               console.error(
-                                `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                                `[ProofreadingService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
                                 error,
                               );
                             },
                           );
                         } catch (error) {
                           console.error(
-                            `[ProofreadingService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                            `[ProofreadingService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
                             error,
                           );
                         }
@@ -448,11 +530,14 @@ ${getExecutionWorkflowRules('proofreading')}`;
             // 使用从状态流程中提取的段落校对
             const extractedProofreadings = loopResult.paragraphs;
 
+            // 标记所有已处理的段落（包括 AI 可能处理了超出当前 chunk 范围的段落）
+            markProcessedParagraphsFromMap(extractedProofreadings, processedParagraphIds);
+
             // 处理校对结果：只返回有变化的段落
-            if (extractedProofreadings.size > 0 && chunk.paragraphIds) {
+            if (extractedProofreadings.size > 0 && actualChunk.paragraphIds) {
               // 过滤出有变化的段落
               const chunkParagraphProofreadings = filterChangedParagraphs(
-                chunk.paragraphIds,
+                actualChunk.paragraphIds,
                 extractedProofreadings,
                 originalTranslations,
               );
@@ -483,6 +568,7 @@ ${getExecutionWorkflowRules('proofreading')}`;
 
             // 标记块已成功处理
             chunkProcessed = true;
+            chunkIndex++; // 移动到下一个 chunk
           } catch (error) {
             // 检查是否是AI降级错误
             const isDegradedError =
@@ -494,12 +580,12 @@ ${getExecutionWorkflowRules('proofreading')}`;
               if (retryCount > MAX_RETRIES) {
                 // 重试次数用尽，抛出错误
                 console.error(
-                  `[ProofreadingService] ❌ AI降级检测失败，块 ${i + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止校对`,
+                  `[ProofreadingService] ❌ AI降级检测失败，块 ${chunkIndex + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止校对`,
                   {
-                    块索引: i + 1,
+                    块索引: chunkIndex + 1,
                     总块数: chunks.length,
                     重试次数: MAX_RETRIES,
-                    段落ID: chunk.paragraphIds?.slice(0, 3).join(', ') + '...',
+                    段落ID: actualChunk.paragraphIds?.slice(0, 3).join(', ') + '...',
                   },
                 );
                 throw new Error(

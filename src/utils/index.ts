@@ -12,6 +12,7 @@ export {
   getChapterContentText,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
+  normalizeChapterTitle,
   getCharacterNameVariants,
   isEmptyParagraph,
   hasParagraphTranslation,

@@ -3,13 +3,38 @@
  * 精简提示词以提高速度、效率和准确性
  */
 
+import type { AITool } from 'src/services/ai/types/ai-service';
 import type { TaskType, TaskStatus } from '../utils/ai-task-helper';
+
+function getToolNames(tools?: AITool[]): string[] {
+  if (!tools || tools.length === 0) return [];
+  return tools.map((t) => t.function.name);
+}
+
+/**
+ * 工具范围规则：严格限制 AI 只能调用本次请求提供的 tools
+ */
+export function getToolScopeRules(tools?: AITool[]): string {
+  const toolNames = getToolNames(tools);
+  const toolList =
+    toolNames.length > 0
+      ? toolNames.map((n) => `- \`${n}\``).join('\n')
+      : '- （本次未提供任何工具，请不要尝试调用工具）';
+
+  return `【工具范围】[警告] **只能使用本次会话提供的工具**
+- 你**只能**调用系统在本次请求中提供的 tools（见下方列表）
+- [禁止] 禁止调用任何未在列表中出现的工具（即使你知道它存在、或在其它提示里见过）
+- 如果你需要的工具未提供：请直接继续任务（基于已有上下文）或向用户说明限制
+
+【本次可用工具列表】
+${toolList}`;
+}
 
 /**
  * 获取全角符号格式规则（精简版）
  */
 export function getSymbolFormatRules(): string {
-  return `**格式规则**: 使用全角中文标点（，。？！：；""（）——……），保持原文换行/缩进，数字英文保持半角`;
+  return `**格式规则**: 使用全角中文标点（，。？！：；「」『』（）——……），保持原文换行/缩进，数字英文保持半角`;
 }
 
 /**
@@ -40,9 +65,9 @@ export function getCurrentStatusInfo(
       ? briefPlanningDescription
       : `**当前状态：规划阶段 (planning)**
 你当前处于规划阶段，应该：
-- 获取术语表和角色表（使用 \`list_terms\` 和 \`list_characters\`，传入 chapter_id）
+- 如需术语/角色/记忆等上下文，优先使用**本次会话提供的工具**获取（仅可使用可用工具列表中的工具）
 - 检查数据问题（如空翻译、重复项、误分类等），发现问题立即修复
-- 搜索相关记忆（使用 \`search_memory_by_keywords\`）了解上下文
+- 如有可用的记忆搜索工具，可检索相关记忆了解上下文与历史译法
 - 准备开始${taskLabel}工作
 
 完成规划后，将状态设置为 "working" 并开始${taskLabel}。`,
@@ -57,10 +82,10 @@ export function getCurrentStatusInfo(
 你当前处于验证阶段，应该：
 - 系统已自动验证完整性
 - 更新术语/角色描述（如有新发现）
-- 创建记忆保存重要信息（如敬语翻译方式、角色关系等）
+- 如有**对未来翻译任务有长期收益、可复用**的重要信息（如稳定的敬语处理规则、固定译法选择等），再创建记忆；一次性信息不要写入记忆
 - 检查是否有遗漏或需要修正的地方
 
-如果需要补充缺失段落或编辑/优化已${taskLabel}的段落，可以将状态设置为 "working" 继续工作。
+如果你发现**任何已输出的${taskLabel}结果仍需要更新**（例如：措辞、敬语/称谓处理、术语一致性、语气节奏、错别字/标点/语法等），可以将状态从 "completed" 改回 "working" 继续工作，并**只返回需要更新的段落**即可。
 如果所有工作已完成，将状态设置为 "end"。`,
     end: `**当前状态：完成 (end)**
 当前块已完成，系统将自动提供下一个块。`,
@@ -80,7 +105,7 @@ export function getDataManagementRules(): string {
 **敬语处理流程**:
 1. 查找角色别名翻译 → 2. 检查角色描述中的关系 → 3. 搜索记忆/历史翻译 → 4. 按关系决定翻译方式
 - 亲密关系→可省略敬语 | 正式关系→保留敬语 | 不明确→按上下文判断
-- 翻译后创建记忆保存敬语翻译方式（需确认说话者和关系）
+- 如形成**可复用且稳定**的敬语翻译约定（需确认说话者和关系），可创建记忆保存；不确定/一次性信息不要写入记忆
 
 **术语/角色分离**:
 - 术语表：专有名词、概念、技能、地名、物品（[禁止]禁止放人名）
@@ -102,9 +127,12 @@ export function getDataManagementRules(): string {
  */
 export function getMemoryWorkflowRules(): string {
   return `【记忆管理】
-- 翻译敬语前先 \`search_memory_by_keywords\` 搜索相关记忆
-- 完成翻译后用 \`create_memory\` 保存重要信息（敬语翻译方式、角色关系等）
-- 发现记忆需更新时用 \`update_memory\` 更新`;
+- 翻译相关任务（翻译/润色/校对）前，如本次提供了记忆搜索工具，可优先搜索相关记忆（优先复用既有约定）
+- **只在“对未来翻译任务有长期收益、可跨段落/跨章节复用”时才创建记忆**（否则不要创建）
+  - ✅ 适合写入（翻译相关）：稳定的敬语/称谓处理规则（明确“谁对谁/关系→中文处理方式”）、固定译法选择与禁忌（同一术语/人名/梗固定一种译法）、长期风格约定（叙述口吻/口癖/标点习惯）、常见翻译纠错规则（例如某词误译纠正）
+  - ❌ 禁止写入：一次性句子翻译、仅本段有效的临时推断/未确认剧情细节、可从原文直接得出的信息、纯进度/任务状态、重复已有术语/角色数据（这些应通过 term/character 工具维护）
+- [警告] **一句话**：一次性信息不要写入记忆
+- 如本次提供了创建/更新记忆工具：创建记忆时让 summary **包含可检索关键词**（角色名/称谓/术语/规则关键词）；需修正时优先更新而非重复创建`;
 }
 
 /**
@@ -181,16 +209,16 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
 /**
  * 获取工具使用说明（精简版）
  */
-export function getToolUsageInstructions(taskType: TaskType): string {
-  return `【常用工具】
-- \`list_terms/list_characters\`: 获取术语/角色（传chapter_id）
-- \`search_memory_by_keywords\`: 敬语翻译前先搜索
-- \`find_paragraph_by_keywords\`: 检查历史翻译一致性
-- [重要] \`update_character/update_term\`: **发现新信息立即更新**（补充翻译、更新描述、添加别名、修正错误）
-- \`create_term/create_character\`: 新术语/角色立即创建
-- \`create_memory\`: 保存敬语翻译方式等重要信息
-- ${getTodoToolsDescription(taskType)}
-[警告] \`get_previous_paragraphs/get_next_paragraphs\` 仅用于获取上下文参考，不要用于获取更多段落来处理`;
+export function getToolUsageInstructions(taskType: TaskType, tools?: AITool[]): string {
+  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabel = taskLabels[taskType];
+  return `${getToolScopeRules(tools)}
+
+【工具使用建议】（仅限可用工具列表中的工具）
+- **用途**：工具仅用于获取上下文、维护术语/角色/记忆（如本次提供），以及查询历史翻译一致性
+- **优先级**：能用本地数据工具解决就不要依赖外部信息；如本次提供了网络工具，仅用于外部知识检索
+- **最小必要**：只在确有需要时调用工具，拿到信息后立刻回到${taskLabel}输出
+- ${getTodoToolsDescription(taskType)}`;
 }
 
 /**

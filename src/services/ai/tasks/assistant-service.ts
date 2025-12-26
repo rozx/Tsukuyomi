@@ -5,6 +5,7 @@ import type {
   TextGenerationStreamCallback,
   TextGenerationChunk,
   ChatMessage,
+  AITool,
   AIToolCall,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
@@ -15,6 +16,7 @@ import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
+import { getToolScopeRules } from './prompts';
 
 /**
  * Assistant 服务选项
@@ -110,6 +112,7 @@ export class AssistantService {
       currentChapterId: string | null;
       selectedParagraphId: string | null;
     },
+    tools: AITool[],
     taskId?: string,
     sessionId?: string,
   ): string {
@@ -117,47 +120,14 @@ export class AssistantService {
     let prompt = `你是 Tsukuyomi（月詠） - Moonlit Translator Assistant，日语小说翻译助手。${todosPrompt}
 
 ## 能力
-翻译管理 | 术语/角色设定 | 知识问答 | search_web获取实时信息
+翻译与润色 | 术语/角色设定维护（如本次提供） | 知识问答
 
-## 工具规则
-
-### [警告] 查询优先级（必须遵守）
-角色/术语查询：**先用数据库工具** → 找不到才用 search_memory_by_keywords
-
-### 术语（7工具）
-create_term/get_term/update_term/delete_term/list_terms/search_terms_by_keywords/get_occurrences_by_keywords
-- 创建前检查是否已存在 | list_terms 支持 chapter_id 或 all_chapters
-
-### 角色（6工具）
-create_character/get_character/update_character/delete_character/search_characters_by_keywords/list_characters
-- 创建前检查是否已存在或应为别名 | 发现问题必须用 update_character 修复
-
-### 内容（16工具）
-get_book_info/update_book_info（更新描述、标签、作者、别名）/list_chapters/get_chapter_info/get_previous_chapter/get_next_chapter/update_chapter_title
-get_paragraph_info/get_previous_paragraphs(count)/get_next_paragraphs(count)/find_paragraph_by_keywords
-get_translation_history/add_translation/update_translation/remove_translation/select_translation
-batch_replace_translations（智能替换关键词部分，保留其他内容）
-navigate_to_chapter/navigate_to_paragraph
-
-### 待办（5工具）
-create_todo（支持 items 批量创建）/list_todos/update_todos/mark_todo_done/delete_todo
-- [警告] 多步骤任务必须为每步创建独立待办 | 完成后立即 mark_todo_done
-
-### 记忆（5工具）
-create_memory（需自己生成 summary）/get_memory/search_memory_by_keywords/get_recent_memories/delete_memory
-- 检索大量内容后主动保存 | summary 需包含关键词便于搜索
-
-### 网络（2工具）
-search_web（仅用于外部知识，禁止修复本地数据）/fetch_webpage
-- 必须使用返回结果回答
+${getToolScopeRules(tools)}
 
 ## 关键原则
-1. **发现问题必须修复**：用 update_* 修复，不只告知
-2. **修复流程**：get/search → update（不用 search_web 修复本地数据）
-3. **搜索优先**：部分名称用 search_*_by_keywords，完整名称用 get_*
-4. **创建前检查**：术语/角色创建前必须检查是否已存在
-5. **翻译历史**：最多5版本，用 add/update/remove/select_translation 管理
-
+1. **工具只在可用时使用**：如果某类工具本次未提供，请说明限制并基于现有上下文回答
+2. **本地数据优先**：如提供了术语/角色/段落/记忆等本地工具，优先使用；网络工具仅用于外部知识
+3. **最小必要调用**：只在确有需要时调用工具，拿到信息后立即给出结论或执行下一步
 `;
 
     // 添加上下文信息
@@ -482,12 +452,15 @@ ${earlySection}${middleSection}${recentSection}
    */
   private static async handleToolCalls(
     toolCalls: AIToolCall[],
+    tools: AITool[],
     bookId: string | null,
     onAction?: (action: ActionInfo) => void,
     onToast?: ToastCallback,
     taskId?: string,
     sessionId?: string,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
+    const allowedToolNames = new Set(tools.map((t) => t.function.name));
+
     // 定义需要 bookId 的工具列表
     const toolsRequiringBookId = [
       'create_term',
@@ -528,6 +501,20 @@ ${earlySection}${middleSection}${recentSection}
 
     const results = [];
     for (const toolCall of toolCalls) {
+      // [警告] 严格限制：只能调用本次会话提供的 tools
+      if (!allowedToolNames.has(toolCall.function.name)) {
+        results.push({
+          tool_call_id: toolCall.id,
+          role: 'tool' as const,
+          name: toolCall.function.name,
+          content: JSON.stringify({
+            success: false,
+            error: `工具 ${toolCall.function.name} 未在本次会话提供的 tools 列表中，禁止调用`,
+          }),
+        });
+        continue;
+      }
+
       // 检查工具是否需要 bookId
       if (toolsRequiringBookId.includes(toolCall.function.name) && !bookId) {
         results.push({
@@ -776,6 +763,7 @@ ${earlySection}${middleSection}${recentSection}
       // 执行工具调用
       const toolResults = await this.handleToolCalls(
         toolCalls,
+        tools,
         bookId,
         (action) => {
           allActions.push(action);
@@ -927,8 +915,11 @@ ${earlySection}${middleSection}${recentSection}
       // 但任务对象（包含 abortController）在 store 的 activeTasks 中
     }
 
+    // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
+    const tools = ToolRegistry.getAllTools(context.currentBookId || undefined);
+
     // 构建系统提示词（只传递 ID）- 必须在创建任务之后
-    let systemPrompt = this.buildSystemPrompt(context, taskId, sessionId);
+    let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId);
 
     // 如果当前会话有总结，添加到系统提示词中
     // 注意：这里需要在调用时传入会话信息，因为 store 不能在静态方法中直接使用
@@ -936,9 +927,6 @@ ${earlySection}${middleSection}${recentSection}
     if (options.sessionSummary) {
       systemPrompt += `\n\n## 之前的对话总结\n\n${options.sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
     }
-
-    // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
-    const tools = ToolRegistry.getAllTools(context.currentBookId || undefined);
 
     if (aiProcessingStore && taskId) {
       // 由于 addTask 是异步的，我们需要等待一下或者直接从 store 中查找
@@ -1313,6 +1301,7 @@ ${earlySection}${middleSection}${recentSection}
         // 执行工具调用
         const toolResults = await this.handleToolCalls(
           toolCalls,
+          tools,
           context.currentBookId,
           (action) => {
             allActions.push(action);

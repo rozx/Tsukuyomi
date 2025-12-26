@@ -4,6 +4,8 @@
  * API 文档：https://github.com/daitcl/picgo-plugin-sda1
  */
 
+import { ProxyService } from 'src/services/proxy-service';
+
 export interface UploadResult {
   url: string;
   deleteUrl?: string;
@@ -18,10 +20,8 @@ export interface UploadError {
  * 图片上传服务类
  */
 export class ImageUploadService {
-  // 在开发环境中使用代理，生产环境直接使用 API
-  private static readonly API_URL = import.meta.env.DEV
-    ? '/api/sda1/api/v1/upload_external_noform'
-    : 'https://p.sda1.dev/api/v1/upload_external_noform';
+  // 使用外部 API，在 SPA 构建中会自动通过 CORS proxy 访问
+  private static readonly BASE_API_URL = 'https://p.sda1.dev/api/v1/upload_external_noform';
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
   private static readonly SUPPORTED_FORMATS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
@@ -89,7 +89,12 @@ export class ImageUploadService {
     const imageBuffer = new Uint8Array(arrayBuffer);
 
     // 构建 API URL（文件名需要 URL 编码）
-    const apiUrl = `${this.API_URL}?filename=${encodeURIComponent(fileName)}`;
+    let apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(fileName)}`;
+
+    // 在 SPA 构建中，使用 CORS proxy
+    if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
+      apiUrl = ProxyService.getProxiedUrlForAI(apiUrl);
+    }
 
     try {
       // 发送 POST 请求
@@ -159,6 +164,7 @@ export class ImageUploadService {
 
   /**
    * 删除图片（如果提供了删除 URL）
+   * 在 SPA 构建中，外部 URL 会自动使用默认 CORS 代理
    * @param deleteUrl 删除 URL
    * @returns Promise<void>
    * @throws {Error} 如果删除失败
@@ -168,8 +174,14 @@ export class ImageUploadService {
       throw new Error('删除 URL 不能为空');
     }
 
+    // 如果是外部 URL，在 SPA 构建中使用 CORS 代理
+    let finalDeleteUrl = deleteUrl;
+    if (deleteUrl.startsWith('http://') || deleteUrl.startsWith('https://')) {
+      finalDeleteUrl = ProxyService.getProxiedUrlForAI(deleteUrl);
+    }
+
     try {
-      const response = await fetch(deleteUrl, {
+      const response = await fetch(finalDeleteUrl, {
         method: 'DELETE',
       });
 

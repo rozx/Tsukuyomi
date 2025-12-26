@@ -6,7 +6,7 @@ import ToastService from 'primevue/toastservice';
 
 import 'primeicons/primeicons.css';
 
-export default defineBoot(({ app }) => {
+export default defineBoot(({ app }: any) => {
   app.use(PrimeVue, {
     theme: {
       preset: TsukuyomiPreset,

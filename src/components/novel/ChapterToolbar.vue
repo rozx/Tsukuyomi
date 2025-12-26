@@ -3,7 +3,7 @@ import Menubar from 'primevue/menubar';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
 import Badge from 'primevue/badge';
-import type { Chapter, Paragraph } from 'src/models/novel';
+import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 import { getChapterDisplayTitle } from 'src/utils';
 
@@ -23,6 +23,7 @@ import type { MenuItem } from 'primevue/menuitem';
 
 const props = defineProps<{
   selectedChapter: Chapter | null;
+  book: Novel | null;
   canUndo: boolean;
   canRedo: boolean;
   undoDescription: string | null;
@@ -83,9 +84,9 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
         <span
           v-if="selectedChapter"
           class="text-sm font-bold truncate opacity-90"
-          :title="getChapterDisplayTitle(selectedChapter)"
+          :title="getChapterDisplayTitle(selectedChapter, book || undefined)"
         >
-          {{ getChapterDisplayTitle(selectedChapter) }}
+          {{ getChapterDisplayTitle(selectedChapter, book || undefined) }}
         </span>
       </div>
     </template>

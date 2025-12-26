@@ -23,7 +23,7 @@ declare const expect: (actual: unknown) => {
 import {
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
-} from 'src/utils/translation-normalizer';
+} from '../utils/translation-normalizer';
 
 describe('normalizeTranslationQuotes', () => {
   test('应该将半角双引号转换为日语引号', () => {
@@ -202,6 +202,14 @@ describe('normalizeTranslationSymbols', () => {
 
   test('应该处理引号嵌套', () => {
     expect(normalizeTranslationSymbols('他说"这是\'嵌套\'的引号"')).toBe('他说「这是『嵌套』的引号」');
+    // 测试嵌套的双引号：""aaa"" 应该转换为 「「aaa」」
+    expect(normalizeTranslationSymbols('""aaa""')).toBe('「「aaa」」');
+    // 测试三层嵌套的双引号
+    expect(normalizeTranslationSymbols('"""test"""')).toBe('「「「test」」」');
+    // 测试嵌套的单引号：''aa'' 应该转换为 『『aa』』
+    expect(normalizeTranslationSymbols("''aa''")).toBe('『『aa』』');
+    // 测试三层嵌套的单引号
+    expect(normalizeTranslationSymbols("'''test'''")).toBe('『『『test』』』');
   });
 
   test('应该处理行尾的多种标点', () => {

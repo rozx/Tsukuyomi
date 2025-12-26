@@ -18,6 +18,8 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { getPostToolCallReminder } from './todo-helper';
 import { getChunkingInstructions, getCurrentStatusInfo } from '../prompts';
+import { useBooksStore } from 'src/stores/books';
+import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 
 /**
  * 任务类型
@@ -730,12 +732,98 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 }
 
 /**
+ * 构建书籍上下文信息（用于系统提示词）
+ * - 翻译相关任务：提供书名、简介、标签，帮助模型统一风格与用词
+ */
+export function buildBookContextSectionFromBook(book: {
+  title?: string | undefined;
+  description?: string | undefined;
+  tags?: string[] | undefined;
+}): string {
+  const title = typeof book.title === 'string' ? book.title.trim() : '';
+  const description = typeof book.description === 'string' ? book.description.trim() : '';
+  const tags = Array.isArray(book.tags)
+    ? book.tags.filter((t) => typeof t === 'string' && t.trim())
+    : [];
+
+  // 如果都没有，返回空字符串
+  if (!title && !description && tags.length === 0) {
+    return '';
+  }
+
+  // 简介可能很长，做一个保守截断（避免提示词过长）
+  const MAX_DESC_LEN = 600;
+  const normalizedDesc =
+    description.length > MAX_DESC_LEN
+      ? `${description.slice(0, MAX_DESC_LEN)}...(已截断)`
+      : description;
+
+  const parts: string[] = [];
+  if (title) {
+    parts.push(`**书名**: ${title}`);
+  }
+  if (normalizedDesc) {
+    parts.push(`**简介**: ${normalizedDesc}`);
+  }
+  if (tags.length > 0) {
+    parts.push(`**标签**: ${tags.join('、')}`);
+  }
+
+  return `\n\n【书籍信息】\n${parts.join('\n')}\n`;
+}
+
+/**
+ * 获取书籍上下文信息（从 store 获取；必要时回退到 BookService）
+ * @param bookId 书籍 ID
+ */
+export async function buildBookContextSection(bookId?: string): Promise<string> {
+  if (!bookId) return '';
+
+  try {
+    // 动态导入，避免循环依赖与在测试环境中提前初始化 pinia
+    const booksStore = (await import('src/stores/books')).useBooksStore();
+    const storeBook = booksStore.getBookById(bookId);
+    if (storeBook) {
+      return buildBookContextSectionFromBook({
+        title: storeBook.title,
+        description: storeBook.description,
+        tags: storeBook.tags,
+      });
+    }
+
+    // 回退：直接从 IndexedDB 获取（不加载章节内容）
+    const { BookService } = await import('src/services/book-service');
+    const dbBook = await BookService.getBookById(bookId, false);
+    if (dbBook) {
+      return buildBookContextSectionFromBook({
+        title: dbBook.title,
+        description: dbBook.description,
+        tags: dbBook.tags,
+      });
+    }
+  } catch (e) {
+    console.warn(
+      `[buildBookContextSection] ⚠️ 获取书籍上下文失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  return '';
+}
+
+/**
  * 添加章节上下文到初始提示
  * 注意：工具使用说明已在系统提示词中提供，这里只保留章节ID和简要提醒
  */
-export function addChapterContext(prompt: string, chapterId: string, _taskType: TaskType): string {
+export function addChapterContext(
+  prompt: string,
+  chapterId: string,
+  _taskType: TaskType,
+  chapterTitle?: string,
+): string {
+  const titleLine = chapterTitle ? `**当前章节标题**: ${chapterTitle}\n` : '';
   return (
-    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n` +
+    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n${titleLine}` +
     `[警告] **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
   );
 }
@@ -801,9 +889,16 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
 /**
  * 构建输出内容后的后续操作提示 - 精简版
  */
-export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
+export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-  return `完成。${todosReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
+
+  // 翻译相关任务：在 completed 阶段额外提醒可回到 working 更新既有译文
+  const canGoBackToWorkingReminder =
+    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
+      ? '如果你想更新任何已输出的译文/润色/校对结果，请将状态改回 `{"status":"working"}` 并只返回需要更新的段落；'
+      : '';
+
+  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
 }
 
 /**
@@ -817,7 +912,7 @@ export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): str
  * @param maintenanceReminder 维护提醒
  * @param chapterId 章节 ID（可选）
  * @param chapterTitle 章节标题（可选，仅第一个 chunk）
- * @param planningContext 从前一个 chunk 继承的规划上下文（可选，用于后续 chunk）
+ * @param bookId 书籍 ID（可选，用于提取当前 chunk 中的术语和角色）
  * @returns 独立的 chunk 提示
  */
 export function buildIndependentChunkPrompt(
@@ -829,13 +924,75 @@ export function buildIndependentChunkPrompt(
   maintenanceReminder: string,
   chapterId?: string,
   chapterTitle?: string,
-  planningContext?: string,
+  bookId?: string,
 ): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
 
-  // 工具提示：提醒 AI 使用工具获取上下文（简化版，详细说明在系统提示词中）
-  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息，请使用工具（\`list_terms\`、\`list_characters\`、\`get_previous_paragraphs\` 等）。这些工具**只用于获取上下文**，不要${taskLabel}工具返回的内容。`;
+  // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
+  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息可调用工具获取；工具返回内容**不要**当作${taskLabel}结果直接输出。`;
+
+  // 提取当前 chunk 中出现的术语和角色
+  // 注意：每次调用时都从 store 重新获取书籍数据，确保包含在前一个 chunk 中创建/更新的术语和角色
+  let currentChunkContext = '';
+  if (bookId && chunkText) {
+    const booksStore = useBooksStore();
+    // 从 store 获取最新的书籍数据（包含所有已创建/更新的术语和角色）
+    const book = booksStore.getBookById(bookId);
+    if (book) {
+      // 从当前 chunk 文本中提取出现的术语和角色
+      // 这会自动包含在前一个 chunk 中创建的新术语和角色（因为它们已经在 store 中更新了）
+      const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
+      const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+
+      const contextParts: string[] = [];
+
+      if (terms.length > 0) {
+        const termList = terms.map((t) => `${t.name} → ${t.translation.translation}`).join('、');
+        contextParts.push(`**术语**：${termList}`);
+      }
+
+      if (characters.length > 0) {
+        const characterDetails = characters.map((c) => {
+          const parts: string[] = [];
+          parts.push(`${c.name} → ${c.translation.translation}`);
+
+          if (c.sex) {
+            const sexLabels: Record<string, string> = {
+              male: '男',
+              female: '女',
+              other: '其他',
+            };
+            parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
+          }
+
+          if (c.description) {
+            parts.push(`描述：${c.description}`);
+          }
+
+          if (c.speakingStyle) {
+            parts.push(`说话风格：${c.speakingStyle}`);
+          }
+
+          if (c.aliases && c.aliases.length > 0) {
+            const aliasList = c.aliases
+              .map((a) => `${a.name} → ${a.translation.translation}`)
+              .join('、');
+            parts.push(`别名：${aliasList}`);
+          }
+
+          return parts.join(' | ');
+        });
+
+        contextParts.push(`**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`);
+      }
+
+      if (contextParts.length > 0) {
+        currentChunkContext = `\n\n【当前部分出现的术语和角色】\n${contextParts.join('\n')}\n`;
+        currentChunkContext += `提供的角色以及术语信息已为最新，不必使用工具再次获取检查。\n`;
+      }
+    }
+  }
 
   // 第一个 chunk：完整规划阶段
   // 注意：章节 ID 已在系统提示词中提供
@@ -847,32 +1004,21 @@ export function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。${titleInstruction}
+    return `开始${taskLabel}任务。**请先将状态设置为 "planning" 开始规划**（返回 \`{"status": "planning"}\`）。${titleInstruction}${currentChunkContext}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
-    // 后续 chunk：简短规划阶段，包含从前一个 chunk 继承的上下文
-    if (planningContext) {
-      // 有规划上下文：提供简短规划阶段
-      return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。
+    // 后续 chunk：简短规划阶段，包含当前 chunk 中出现的术语和角色
+    const briefPlanningNote = currentChunkContext
+      ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
+      : '';
 
-【从前一部分继承的规划上下文】
-${planningContext}
+    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}
 
 **[警告] 重要：简短规划阶段**
-以上是前一部分已获取的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息，不要重复调用工具获取**。
-
-**禁止重复调用的工具**：\`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\`、\`list_chapters\` 等已在上下文中提供的工具。
-
-**允许调用的工具**：\`get_previous_paragraphs\`、\`get_next_paragraphs\`、\`find_paragraph_by_keywords\` 等用于获取当前段落前后文上下文的工具。
-
-**现在请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
+${briefPlanningNote}**请直接确认收到上下文**（返回 \`{"status": "planning"}\`），然后立即将状态设置为 "working" 并开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
-    } else {
-      // 无规划上下文：使用原有的独立提示
-      return `继续${taskLabel}任务。以下是第 ${chunkIndex + 1}/${totalChunks} 部分内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
-    }
   }
 }
 
@@ -1014,6 +1160,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
   // 工具调用计数（用于限制）
   const toolCallCounts = new Map<string, number>();
+  // 允许的工具名称集合（严格限制：只能调用本次请求提供的 tools）
+  const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
   const taskTypeLabels = {
     translation: '翻译',
@@ -1061,6 +1209,22 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       let hasProductiveTool = false;
       for (const toolCall of result.toolCalls) {
         const toolName = toolCall.function.name;
+
+        // [警告] 严格限制：只能调用本次会话提供的 tools
+        if (!allowedToolNames.has(toolName)) {
+          console.warn(
+            `[${logLabel}] ⚠️ 工具 ${toolName} 未在本次会话提供的 tools 列表中，已拒绝执行`,
+          );
+          history.push({
+            role: 'tool',
+            content:
+              `[警告] 工具 ${toolName} 未在本次会话提供的 tools 列表中，禁止调用。` +
+              `请改用可用工具或基于已有上下文继续${taskLabel}。`,
+            tool_call_id: toolCall.id,
+            name: toolName,
+          });
+          continue;
+        }
 
         // 检查工具调用限制
         const currentCount = toolCallCounts.get(toolName) || 0;
@@ -1496,7 +1660,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `[警告] 你已经在完成阶段停留过久。如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
+            `[警告] 你已经在完成阶段停留过久。` +
+            `如果你还想更新任何已输出的${taskLabel}结果，请将状态改回 \`{"status":"working"}\` 并提交需要更新的段落；` +
+            `如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
       } else {
         // 所有段落都完整，询问后续操作
@@ -1634,6 +1800,11 @@ export async function initializeTask(
   aiProcessingStore: AIProcessingStore | undefined,
   taskType: TaskType,
   modelName: string,
+  context?: {
+    bookId?: string;
+    chapterId?: string;
+    chapterTitle?: string;
+  },
 ): Promise<{ taskId?: string; abortController?: AbortController }> {
   if (!aiProcessingStore) {
     return {};
@@ -1651,6 +1822,9 @@ export async function initializeTask(
     status: 'thinking',
     message: `正在初始化${taskTypeLabels[taskType]}会话...`,
     thinkingMessage: '',
+    ...(context?.bookId ? { bookId: context.bookId } : {}),
+    ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
+    ...(context?.chapterTitle ? { chapterTitle: context.chapterTitle } : {}),
   });
 
   // 获取任务的 abortController
@@ -1822,6 +1996,72 @@ export function isOnlySymbols(text: string): boolean {
     /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF\u20000-\u2A6DFa-zA-Z]/.test(trimmed);
 
   return !hasContent;
+}
+
+/**
+ * 通用的 chunk 接口（所有 chunk 类型都必须有 text 和 paragraphIds）
+ */
+export interface BaseChunk {
+  text: string;
+  paragraphIds?: string[];
+}
+
+/**
+ * 过滤并处理 chunk，排除已处理的段落
+ * @param chunk 当前 chunk
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ * @param logLabel 日志标签（用于输出日志）
+ * @param chunkIndex 当前 chunk 索引
+ * @param totalChunks 总 chunk 数
+ * @returns 如果所有段落都已处理，返回 null；否则返回过滤后的未处理段落 ID 列表
+ */
+export function filterProcessedParagraphs(
+  chunk: BaseChunk,
+  processedParagraphIds: Set<string>,
+  logLabel: string,
+  chunkIndex: number,
+  totalChunks: number,
+): string[] | null {
+  const unprocessedParagraphIds = (chunk.paragraphIds || []).filter(
+    (id) => !processedParagraphIds.has(id),
+  );
+
+  if (unprocessedParagraphIds.length === 0) {
+    console.log(`[${logLabel}] ⚠️ 块 ${chunkIndex + 1}/${totalChunks} 的所有段落都已被处理，跳过`);
+    return null;
+  }
+
+  return unprocessedParagraphIds;
+}
+
+/**
+ * 标记已处理的段落
+ * @param paragraphs 段落翻译数组
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ */
+export function markProcessedParagraphs(
+  paragraphs: { id: string; translation: string }[],
+  processedParagraphIds: Set<string>,
+): void {
+  for (const para of paragraphs) {
+    if (para.id) {
+      processedParagraphIds.add(para.id);
+    }
+  }
+}
+
+/**
+ * 从段落翻译 Map 中标记已处理的段落
+ * @param paragraphMap 段落翻译 Map
+ * @param processedParagraphIds 已处理的段落 ID 集合
+ */
+export function markProcessedParagraphsFromMap(
+  paragraphMap: Map<string, string>,
+  processedParagraphIds: Set<string>,
+): void {
+  for (const [paraId] of paragraphMap) {
+    processedParagraphIds.add(paraId);
+  }
 }
 
 /**

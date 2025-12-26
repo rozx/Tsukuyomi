@@ -16,7 +16,7 @@ declare module 'vue' {
 // for each client)
 const api = axios.create({ baseURL: 'https://api.example.com' });
 
-export default defineBoot(({ app }) => {
+export default defineBoot(({ app }: any) => {
   // for use inside Vue files (Options API) through this.$axios and this.$api
 
   app.config.globalProperties.$axios = axios;

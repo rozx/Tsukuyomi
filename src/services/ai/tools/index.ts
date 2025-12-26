@@ -1,5 +1,5 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
-import type { ActionInfo } from './types';
+import type { ActionInfo, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
@@ -12,43 +12,79 @@ import { todoListTools } from './todo-list-tools';
 
 export type { ActionInfo };
 
+/**
+ * 工具名称常量
+ */
+const TRANSLATION_MANAGEMENT_TOOLS = [
+  'add_translation',
+  'update_translation',
+  'remove_translation',
+  'select_translation',
+  'batch_replace_translations',
+] as const;
+
+const NAVIGATION_AND_LIST_TOOLS = [
+  'navigate_to_chapter',
+  'navigate_to_paragraph',
+  'get_book_info',
+  'list_chapters',
+  'get_chapter_info',
+  'update_book_info',
+  'list_characters',
+  'list_terms',
+] as const;
+
 export class ToolRegistry {
+  /**
+   * 通用的工具过滤方法
+   */
+  private static filterTools(tools: AITool[], excludedNames: readonly string[]): AITool[] {
+    return tools.filter((tool) => !excludedNames.includes(tool.function.name));
+  }
+
+  /**
+   * 通用的工具映射方法
+   */
+  private static mapTools(toolDefinitions: ToolDefinition[]): AITool[] {
+    return toolDefinitions.map((t) => t.definition);
+  }
+
   static getTerminologyTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return terminologyTools.map((t) => t.definition);
+    return this.mapTools(terminologyTools);
   }
 
   static getCharacterSettingTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return characterTools.map((t) => t.definition);
+    return this.mapTools(characterTools);
   }
 
   static getParagraphTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return paragraphTools.map((t) => t.definition);
+    return this.mapTools(paragraphTools);
   }
 
   static getBookTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return bookTools.map((t) => t.definition);
+    return this.mapTools(bookTools);
   }
 
   static getMemoryTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return memoryTools.map((t) => t.definition);
+    return this.mapTools(memoryTools);
   }
 
   static getNavigationTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return navigationTools.map((t) => t.definition);
+    return this.mapTools(navigationTools);
   }
 
   static getWebSearchTools(): AITool[] {
-    return webSearchTools.map((t) => t.definition);
+    return this.mapTools(webSearchTools);
   }
 
   static getTodoListTools(): AITool[] {
-    return todoListTools.map((t) => t.definition);
+    return this.mapTools(todoListTools);
   }
 
   static getAllTools(bookId?: string): AITool[] {
@@ -80,14 +116,7 @@ export class ToolRegistry {
    */
   static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAllTools(bookId);
-    const excludedToolNames = [
-      'add_translation',
-      'update_translation',
-      'remove_translation',
-      'select_translation',
-      'batch_replace_translations',
-    ];
-    return allTools.filter((tool) => !excludedToolNames.includes(tool.function.name));
+    return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
   }
 
   /**
@@ -101,25 +130,12 @@ export class ToolRegistry {
   static getTermTranslationTools(bookId?: string): AITool[] {
     if (!bookId) return [];
 
-    // 只允许的只读工具列表
+    // [重要] 术语翻译服务：只允许 keyword 搜索类工具（search_*_by_keywords）
+    // 目的：避免模型使用其它只读工具（get/list/find 等）导致提示与工具集不一致。
     const allowedToolNames = [
-      // 书籍工具
-      'get_book_info',
-      // 术语工具（只读）
-      'get_term',
-      'list_terms',
       'search_terms_by_keywords',
-      // 角色工具（只读）
-      'get_character',
-      'list_characters',
       'search_characters_by_keywords',
-      // 记忆工具（只读）
-      'get_memory',
-      'get_recent_memories', // list memories
-      'search_memory_by_keywords',
-      // 段落搜索工具（只读）
       'find_paragraph_by_keywords',
-      'search_paragraphs_by_regex',
     ];
 
     // 获取所有工具（包括变更工具）
@@ -135,16 +151,20 @@ export class ToolRegistry {
     return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
   }
 
-  static async handleToolCall(
-    toolCall: AIToolCall,
-    bookId: string,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-    sessionId?: string,
-  ): Promise<AIToolCallResult> {
-    const functionName = toolCall.function.name;
-    const allTools = [
+  /**
+   * 获取翻译服务允许的工具
+   * 排除翻译管理工具和导航/列表工具，让AI专注于当前文本块
+   */
+  static getTranslationTools(bookId?: string): AITool[] {
+    const allTools = this.getToolsExcludingTranslationManagement(bookId);
+    return this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
+  }
+
+  /**
+   * 获取所有工具定义（用于工具调用处理）
+   */
+  private static getAllToolDefinitions(): ToolDefinition[] {
+    return [
       ...terminologyTools,
       ...characterTools,
       ...paragraphTools,
@@ -154,6 +174,18 @@ export class ToolRegistry {
       ...navigationTools,
       ...todoListTools,
     ];
+  }
+
+  static async handleToolCall(
+    toolCall: AIToolCall,
+    bookId: string,
+    onAction?: (action: ActionInfo) => void,
+    onToast?: ToastCallback,
+    taskId?: string,
+    sessionId?: string,
+  ): Promise<AIToolCallResult> {
+    const functionName = toolCall.function.name;
+    const allTools = this.getAllToolDefinitions();
     const tool = allTools.find((t) => t.definition.function.name === functionName);
 
     if (!tool) {

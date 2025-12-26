@@ -50,6 +50,13 @@ export interface Novel {
    * - false/undefined: 不规范化（默认）
    */
   normalizeSymbolsOnDisplay?: boolean | undefined;
+
+  /**
+   * 显示/导出时是否自动规范化章节标题（不写回标题）
+   * - true: 显示与导出时规范化标题（如：将全角数字和汉字之间的半角空格转换为全角空格）
+   * - false/undefined: 不规范化（默认）
+   */
+  normalizeTitleOnDisplay?: boolean | undefined;
 }
 
 export interface CoverImage {
@@ -154,6 +161,14 @@ export interface Chapter {
    * - false/undefined: 不规范化（默认）
    */
   normalizeSymbolsOnDisplay?: boolean | undefined;
+
+  /**
+   * 显示/导出时是否自动规范化章节标题（不写回标题）
+   * - true: 显示与导出时规范化标题（如：将全角数字和汉字之间的半角空格转换为全角空格）
+   * - false/undefined: 不规范化（默认）
+   * 章节级别的设置会覆盖书籍级别的设置
+   */
+  normalizeTitleOnDisplay?: boolean | undefined;
 }
 
 export interface Paragraph {

@@ -19,6 +19,20 @@ export interface AIProcessingTask {
   message?: string;
   thinkingMessage?: string; // 实际的 AI 思考消息（从流式响应中累积）
   outputContent?: string; // AI 的实际输出内容（翻译/润色/校对结果）
+  /**
+   * 关联的书籍 ID（用于 UI 展示“当前工作章节”等信息）
+   * 注意：该字段可选，兼容历史任务数据
+   */
+  bookId?: string;
+  /**
+   * 关联的章节 ID（用于 UI 展示“当前工作章节”等信息）
+   * 注意：该字段可选，兼容历史任务数据
+   */
+  chapterId?: string;
+  /**
+   * 关联的章节标题（可选，若缺失可通过 bookId + chapterId 再查询）
+   */
+  chapterTitle?: string;
   startTime: number;
   endTime?: number;
   abortController?: AbortController; // 用于取消请求（不持久化）
@@ -59,6 +73,9 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       ...(task.message !== undefined && { message: task.message }),
       ...(task.thinkingMessage !== undefined && { thinkingMessage: task.thinkingMessage }),
       ...(task.outputContent !== undefined && { outputContent: task.outputContent }),
+      ...(task.bookId !== undefined && { bookId: task.bookId }),
+      ...(task.chapterId !== undefined && { chapterId: task.chapterId }),
+      ...(task.chapterTitle !== undefined && { chapterTitle: task.chapterTitle }),
       startTime: task.startTime,
       ...(task.endTime !== undefined && { endTime: task.endTime }),
     };

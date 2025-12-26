@@ -896,6 +896,8 @@ export class ChapterService {
         onlyWithTranslation,
         searchInOriginal: true,
         searchInTranslations: false, // 只搜索原文
+        // 传入当前 novel 引用，确保返回的段落/章节对象与调用方一致
+        novel,
       };
       if (chapterId) {
         searchOptions.chapterId = chapterId;

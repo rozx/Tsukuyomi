@@ -19,17 +19,20 @@ import {
   buildMaintenanceReminder,
   createUnifiedAbortController,
   initializeTask,
+  buildBookContextSection,
   getSpecialInstructions,
   handleTaskError,
   completeTask,
   buildIndependentChunkPrompt,
   buildChapterContextSection,
   buildSpecialInstructionsSection,
+  filterProcessedParagraphs,
+  markProcessedParagraphs,
+  markProcessedParagraphsFromMap,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
   getOutputFormatRules,
-  getExecutionWorkflowRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
 } from './prompts';
@@ -91,6 +94,10 @@ export interface PolishServiceOptions {
    * 章节 ID（可选），如果提供，将在上下文中提供给 AI
    */
   chapterId?: string;
+  /**
+   * 章节标题（可选），用于在上下文中提供给 AI
+   */
+  chapterTitle?: string;
 }
 
 export interface PolishResult {
@@ -136,6 +143,7 @@ export class PolishService {
       onParagraphPolish,
       onToast,
       chapterId,
+      chapterTitle,
     } = options || {};
     const actions: ActionInfo[] = [];
 
@@ -168,6 +176,11 @@ export class PolishService {
       aiProcessingStore as AIProcessingStore | undefined,
       'polish',
       model.name,
+      {
+        ...(typeof bookId === 'string' ? { bookId } : {}),
+        ...(typeof chapterId === 'string' ? { chapterId } : {}),
+        ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+      },
     );
 
     // 使用共享工具创建统一的 AbortController
@@ -197,10 +210,13 @@ export class PolishService {
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-      // 构建章节上下文信息
-      const chapterContextSection = buildChapterContextSection(chapterId);
+      // 构建书籍上下文信息（书名/简介/标签）
+      const bookContextSection = await buildBookContextSection(bookId);
 
-      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${chapterContextSection}${specialInstructionsSection}
+      // 构建章节上下文信息
+      const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+      const systemPrompt = `你是专业的日轻小说润色助手。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
 
 【核心规则】[警告] 只返回有变化的段落
 1. **语言自然化**: 摆脱翻译腔，使用地道中文表达，适当添加语气词（按角色风格）
@@ -209,13 +225,12 @@ export class PolishService {
 4. **一致性**: 术语/角色名保持全文统一，参考翻译历史混合最佳表达
 5. ${getSymbolFormatRules()}
 
-${getToolUsageInstructions('polish')}
+${getToolUsageInstructions('polish', tools)}
 
 ${getMemoryWorkflowRules()}
 
 ${getOutputFormatRules('polish')}
-
-${getExecutionWorkflowRules('polish')}`;
+`;
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
@@ -286,28 +301,105 @@ ${getExecutionWorkflowRules('polish')}`;
       // 存储每个段落的原始翻译，用于比较是否有变化
       const originalTranslations = buildOriginalTranslationsMap(paragraphsWithTranslation);
 
+      // 跟踪已处理的段落 ID（用于排除已处理的段落，避免重复处理）
+      const processedParagraphIds = new Set<string>();
+
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
-      for (let i = 0; i < chunks.length; i++) {
+      let chunkIndex = 0;
+      while (chunkIndex < chunks.length) {
         // 检查是否已取消
         if (finalSignal.aborted) {
           throw new Error('请求已取消');
         }
 
-        const chunk = chunks[i];
-        if (!chunk) continue;
+        const chunk = chunks[chunkIndex];
+        if (!chunk) {
+          chunkIndex++;
+          continue;
+        }
 
-        const chunkText = chunk.text;
+        // 过滤掉已处理的段落（如果 AI 在之前的 chunk 中处理了更多段落）
+        const unprocessedParagraphIds = filterProcessedParagraphs(
+          chunk,
+          processedParagraphIds,
+          'PolishService',
+          chunkIndex,
+          chunks.length,
+        );
+        if (!unprocessedParagraphIds) {
+          chunkIndex++;
+          continue;
+        }
+
+        // 如果当前 chunk 包含已处理的段落，需要重新构建 chunk
+        let actualChunk = chunk;
+        if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
+          // 需要重新构建 chunk，只包含未处理的段落
+          const unprocessedParagraphs = paragraphsWithTranslation.filter((p) =>
+            unprocessedParagraphIds.includes(p.id),
+          );
+
+          // 重新构建 chunk（保持原有的 chunk 结构）
+          let rebuiltChunkText = '';
+          const rebuiltChunkParagraphIds: string[] = [];
+          const rebuiltChunkTranslationHistories = new Map<string, string[]>();
+
+          for (const paragraph of unprocessedParagraphs) {
+            const translations = paragraph.translations || [];
+            const translationHistory = translations
+              .slice()
+              .reverse()
+              .slice(0, 5)
+              .map((t) => t.translation);
+
+            const currentTranslation =
+              translations.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+              translations[0]?.translation ||
+              '';
+            const historyText =
+              translationHistory.length > 0
+                ? `\n翻译历史:\n${translationHistory.map((h, idx) => `  版本${idx + 1}: ${h}`).join('\n')}`
+                : '';
+            const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
+
+            if (
+              rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&
+              rebuiltChunkText.length > 0
+            ) {
+              // 如果当前重建的 chunk 加上新段落超过限制，停止添加
+              break;
+            }
+
+            rebuiltChunkText += paragraphText;
+            rebuiltChunkParagraphIds.push(paragraph.id);
+            rebuiltChunkTranslationHistories.set(paragraph.id, translationHistory);
+          }
+
+          if (rebuiltChunkText.length > 0) {
+            actualChunk = {
+              text: rebuiltChunkText,
+              paragraphIds: rebuiltChunkParagraphIds,
+              translationHistories: rebuiltChunkTranslationHistories,
+            };
+          } else {
+            // 没有未处理的段落，跳过
+            chunkIndex++;
+            continue;
+          }
+        }
+
+        const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
-            message: `正在润色第 ${i + 1}/${chunks.length} 部分...`,
+            message: `正在润色第 ${chunkIndex + 1}/${chunks.length} 部分...`,
             status: 'processing',
           });
           // 添加块分隔符
           void aiProcessingStore.appendThinkingMessage(
             taskId,
-            `\n\n[=== 润色块 ${i + 1}/${chunks.length} ===]\n\n`,
+            `\n\n[=== 润色块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
           );
         }
 
@@ -318,10 +410,10 @@ ${getExecutionWorkflowRules('polish')}`;
             currentParagraphs?: string[];
           } = {
             total: chunks.length,
-            current: i + 1,
+            current: chunkIndex + 1,
           };
-          if (chunk.paragraphIds) {
-            progress.currentParagraphs = chunk.paragraphIds;
+          if (actualChunk.paragraphIds) {
+            progress.currentParagraphs = actualChunk.paragraphIds;
           }
           onProgress(progress);
         }
@@ -333,13 +425,13 @@ ${getExecutionWorkflowRules('polish')}`;
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
         const maintenanceReminder = buildMaintenanceReminder('polish');
         // 计算当前块的段落数量（用于提示AI）
-        const currentChunkParagraphCount = chunk.paragraphIds?.length || 0;
+        const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
-        const content = buildIndependentChunkPrompt(
+        const chunkContent = buildIndependentChunkPrompt(
           'polish',
-          i,
+          chunkIndex,
           chunks.length,
           chunkText,
           paragraphCountNote,
@@ -370,7 +462,7 @@ ${getExecutionWorkflowRules('polish')}`;
               }
 
               console.warn(
-                `[PolishService] ⚠️ 检测到AI降级或错误，重试块 ${i + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
+                `[PolishService] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
               );
 
               if (aiProcessingStore && taskId) {
@@ -381,7 +473,7 @@ ${getExecutionWorkflowRules('polish')}`;
               }
             }
 
-            chunkHistory.push({ role: 'user', content });
+            chunkHistory.push({ role: 'user', content: chunkContent });
 
             // 使用共享的工具调用循环（基于状态的流程）
             const loopResult = await executeToolCallLoop({
@@ -391,7 +483,7 @@ ${getExecutionWorkflowRules('polish')}`;
               aiServiceConfig: config,
               taskType: 'polish',
               chunkText,
-              paragraphIds: chunk.paragraphIds,
+              paragraphIds: actualChunk.paragraphIds,
               bookId: bookId || '',
               handleAction,
               onToast,
@@ -409,8 +501,11 @@ ${getExecutionWorkflowRules('polish')}`;
               },
               // 立即回调：当段落润色提取时立即通知（不等待循环完成）
               onParagraphsExtracted:
-                onParagraphPolish && chunk.paragraphIds
+                onParagraphPolish && actualChunk.paragraphIds
                   ? (paragraphs) => {
+                      // 标记所有已处理的段落
+                      markProcessedParagraphs(paragraphs, processedParagraphIds);
+
                       // 将数组转换为 Map 供 filterChangedParagraphs 使用
                       const extractedMap = new Map<string, string>();
                       for (const para of paragraphs) {
@@ -421,7 +516,7 @@ ${getExecutionWorkflowRules('polish')}`;
 
                       // 过滤出有变化的段落
                       const changedParagraphs = filterChangedParagraphs(
-                        chunk.paragraphIds!,
+                        actualChunk.paragraphIds!,
                         extractedMap,
                         originalTranslations,
                       );
@@ -433,14 +528,14 @@ ${getExecutionWorkflowRules('polish')}`;
                           void Promise.resolve(onParagraphPolish(changedParagraphs)).catch(
                             (error) => {
                               console.error(
-                                `[PolishService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                                `[PolishService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
                                 error,
                               );
                             },
                           );
                         } catch (error) {
                           console.error(
-                            `[PolishService] ⚠️ 段落回调失败（块 ${i + 1}/${chunks.length}）`,
+                            `[PolishService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
                             error,
                           );
                         }
@@ -460,11 +555,14 @@ ${getExecutionWorkflowRules('polish')}`;
             // 使用从状态流程中提取的段落润色
             const extractedPolishes = loopResult.paragraphs;
 
+            // 标记所有已处理的段落（包括 AI 可能处理了超出当前 chunk 范围的段落）
+            markProcessedParagraphsFromMap(extractedPolishes, processedParagraphIds);
+
             // 处理润色结果：只返回有变化的段落
-            if (extractedPolishes.size > 0 && chunk.paragraphIds) {
+            if (extractedPolishes.size > 0 && actualChunk.paragraphIds) {
               // 过滤出有变化的段落
               const chunkParagraphPolishes = filterChangedParagraphs(
-                chunk.paragraphIds,
+                actualChunk.paragraphIds,
                 extractedPolishes,
                 originalTranslations,
               );
@@ -495,6 +593,7 @@ ${getExecutionWorkflowRules('polish')}`;
 
             // 标记块已成功处理
             chunkProcessed = true;
+            chunkIndex++; // 移动到下一个 chunk
           } catch (error) {
             // 检查是否是AI降级错误
             const isDegradedError =
@@ -506,12 +605,12 @@ ${getExecutionWorkflowRules('polish')}`;
               if (retryCount > MAX_RETRIES) {
                 // 重试次数用尽，抛出错误
                 console.error(
-                  `[PolishService] ❌ AI降级检测失败，块 ${i + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止润色`,
+                  `[PolishService] ❌ AI降级检测失败，块 ${chunkIndex + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败，停止润色`,
                   {
-                    块索引: i + 1,
+                    块索引: chunkIndex + 1,
                     总块数: chunks.length,
                     重试次数: MAX_RETRIES,
-                    段落ID: chunk.paragraphIds?.slice(0, 3).join(', ') + '...',
+                    段落ID: actualChunk.paragraphIds?.slice(0, 3).join(', ') + '...',
                   },
                 );
                 throw new Error(

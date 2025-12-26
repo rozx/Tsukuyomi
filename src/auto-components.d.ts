@@ -48,7 +48,6 @@ declare module 'vue' {
     SearchToolbar: typeof import('./components/novel/SearchToolbar.vue')['default']
     SettingCard: typeof import('./components/novel/SettingCard.vue')['default']
     SettingsDialog: typeof import('./components/dialogs/SettingsDialog.vue')['default']
-    SpecialInstructionsPopover: typeof import('./components/novel/SpecialInstructionsPopover.vue')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
     TermEditDialog: typeof import('./components/dialogs/TermEditDialog.vue')['default']
@@ -61,7 +60,6 @@ declare module 'vue' {
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
     TranslationHistoryDialog: typeof import('./components/dialogs/TranslationHistoryDialog.vue')['default']
     TranslationProgress: typeof import('./components/novel/TranslationProgress.vue')['default']
-    TranslationTaskDialog: typeof import('./components/dialogs/TranslationTaskDialog.vue')['default']
     VolumesList: typeof import('./components/novel/VolumesList.vue')['default']
   }
 }

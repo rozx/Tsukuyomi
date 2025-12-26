@@ -1037,6 +1037,7 @@ const handleSaveChapterSettings = async (data: {
   // 全局设置（书籍级别）
   preserveIndents?: boolean;
   normalizeSymbolsOnDisplay?: boolean;
+  normalizeTitleOnDisplay?: boolean;
   // 章节设置（章节级别）
   translationInstructions?: string;
   polishInstructions?: string;
@@ -1049,6 +1050,7 @@ const handleSaveChapterSettings = async (data: {
     // 默认保留缩进：未设置时不应过滤掉缩进
     const preserveIndents = data.preserveIndents ?? true;
     const normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay ?? false;
+    const normalizeTitleOnDisplay = data.normalizeTitleOnDisplay ?? false;
 
     // 章节设置（章节级别）
     const translationInstructions = data.translationInstructions ?? '';
@@ -1059,6 +1061,7 @@ const handleSaveChapterSettings = async (data: {
     await booksStore.updateBook(book.value.id, {
       preserveIndents,
       normalizeSymbolsOnDisplay,
+      normalizeTitleOnDisplay,
       lastEdited: new Date(),
     });
 
@@ -1614,6 +1617,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <!-- 卷和章节列表 -->
         <VolumesList
           :volumes="volumes"
+          :book="book || null"
           :selected-chapter-id="selectedChapterId"
           :is-page-loading="isPageLoading"
           :is-volume-expanded="isVolumeExpanded"
@@ -1788,6 +1792,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       <ChapterToolbar
         v-if="selectedChapter && !selectedSettingMenu"
         :selected-chapter="selectedChapter"
+        :book="book || null"
         :can-undo="canUndo"
         :can-redo="canRedo"
         :undo-description="undoDescription || null"

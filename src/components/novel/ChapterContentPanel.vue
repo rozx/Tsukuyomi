@@ -119,7 +119,7 @@ const handleOriginalTextInput = (event: Event) => {
       <!-- 章节标题 -->
       <div v-if="selectedChapterWithContent || selectedChapter" class="preview-chapter-header">
         <h1 class="preview-chapter-title">
-          {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter) }}
+          {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined) }}
         </h1>
         <!-- 翻译统计 -->
         <div v-if="selectedChapterParagraphs.length > 0" class="preview-chapter-stats">
@@ -168,7 +168,7 @@ const handleOriginalTextInput = (event: Event) => {
       <div class="chapter-header">
         <div class="flex items-center gap-2">
           <h1 class="chapter-title flex-1">
-            {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter) }}
+            {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined) }}
           </h1>
           <Button
             icon="pi pi-pencil"

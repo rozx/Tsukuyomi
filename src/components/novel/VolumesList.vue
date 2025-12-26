@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
-import type { Volume, Chapter } from 'src/models/novel';
+import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 interface DraggedChapter {
@@ -13,6 +13,7 @@ interface DraggedChapter {
 
 const props = defineProps<{
   volumes: Volume[];
+  book: Novel | null;
   selectedChapterId: string | null;
   isPageLoading: boolean;
   isVolumeExpanded: (volumeId: string) => boolean;
@@ -158,7 +159,7 @@ const handleDragLeave = () => {
                 <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
                   <i class="pi pi-bars drag-handle"></i>
                   <i class="pi pi-file chapter-icon"></i>
-                  <span class="chapter-title">{{ getChapterDisplayTitle(chapter) }}</span>
+                  <span class="chapter-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
                 </div>
                 <div class="chapter-actions" @click.stop>
                   <Button

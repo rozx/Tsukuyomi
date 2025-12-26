@@ -755,7 +755,7 @@ watch(
                   <div class="flex-1 min-w-0">
                     <div class="flex items-start justify-between gap-2">
                       <div class="text-sm text-moon/80 line-clamp-2 flex-1">
-                        {{ getChapterDisplayTitle(chapter) || '未命名章节' }}
+                        {{ getChapterDisplayTitle(chapter, book || undefined) || '未命名章节' }}
                       </div>
                       <span class="text-xs text-moon/60 flex-shrink-0">
                         <Skeleton
