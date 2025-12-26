@@ -20,10 +20,8 @@ export interface UploadError {
  * 图片上传服务类
  */
 export class ImageUploadService {
-  // 在开发环境中使用内部代理路径，生产环境使用外部 API
-  private static readonly BASE_API_URL = import.meta.env.DEV
-    ? '/api/sda1/api/v1/upload_external_noform'
-    : 'https://p.sda1.dev/api/v1/upload_external_noform';
+  // 使用外部 API，在 SPA 构建中会自动通过 CORS proxy 访问
+  private static readonly BASE_API_URL = 'https://p.sda1.dev/api/v1/upload_external_noform';
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
   private static readonly SUPPORTED_FORMATS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 
@@ -93,8 +91,8 @@ export class ImageUploadService {
     // 构建 API URL（文件名需要 URL 编码）
     let apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(fileName)}`;
 
-    // 在生产环境的 SPA 构建中，使用 CORS proxy
-    if (!import.meta.env.DEV && (apiUrl.startsWith('http://') || apiUrl.startsWith('https://'))) {
+    // 在 SPA 构建中，使用 CORS proxy
+    if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
       apiUrl = ProxyService.getProxiedUrlForAI(apiUrl);
     }
 
