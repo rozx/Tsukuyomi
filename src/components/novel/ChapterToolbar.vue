@@ -157,20 +157,6 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
 
-        <!-- 翻译进度面板切换按钮 -->
-        <Button
-          icon="pi pi-list"
-          rounded
-          text
-          size="small"
-          class="!w-8 !h-8 text-moon/70 hover:text-moon"
-          :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
-          :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
-          @click="emit('toggleTranslationProgress')"
-        />
-
-        <div class="w-px h-4 bg-white/20 mx-2"></div>
-
         <!-- 导出按钮 -->
         <Button
           icon="pi pi-file-export"
@@ -249,6 +235,18 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           "
           :model="translationButtonMenuItems"
           @click="emit('translationButtonClick')"
+        />
+
+        <!-- 翻译进度面板切换按钮 -->
+        <Button
+          icon="pi pi-list"
+          rounded
+          text
+          size="small"
+          class="!w-8 !h-8 text-moon/70 hover:text-moon"
+          :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
+          :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
+          @click="emit('toggleTranslationProgress')"
         />
 
         <div class="w-px h-4 bg-white/20 mx-2"></div>
