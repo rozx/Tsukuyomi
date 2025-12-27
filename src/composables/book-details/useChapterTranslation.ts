@@ -7,6 +7,7 @@ import { TranslationService, PolishService, ProofreadingService } from 'src/serv
 import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
+import { selectChangedParagraphTranslations } from 'src/utils/translation-updates';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
@@ -252,24 +253,25 @@ export function useChapterTranslation(
    * 批量更新段落翻译并保存（用于增量更新）
    * @param paragraphTranslations 段落翻译数组
    * @param aiModelId AI 模型 ID
-   * @param updatedParagraphIds 已更新段落 ID 集合（用于去重）
+   * @param lastAppliedTranslations 上一次已应用的段落翻译（用于去重，但允许“内容变化”的覆盖更新）
    * @returns 更新后的段落数量
    */
   const updateParagraphsIncrementally = async (
     paragraphTranslations: { id: string; translation: string }[],
     aiModelId: string,
     targetChapterId: string,
-    updatedParagraphIds: Set<string>,
+    lastAppliedTranslations: Map<string, string>,
   ): Promise<number> => {
     if (!book.value) return 0;
 
-    const newTranslations = paragraphTranslations.filter(
-      (pt) => pt.id && pt.translation && !updatedParagraphIds.has(pt.id),
+    // 关键：不能仅用 “段落ID是否出现过” 去重，否则 AI 在 completed → working 的纠错/改写会被过滤掉
+    // 我们只跳过“完全相同的翻译文本”，允许 last-write-wins 的覆盖更新
+    const newTranslations = selectChangedParagraphTranslations(
+      paragraphTranslations,
+      lastAppliedTranslations,
     );
 
     if (newTranslations.length === 0) return 0;
-
-    newTranslations.forEach((pt) => updatedParagraphIds.add(pt.id));
 
     const translationMap = new Map<string, string>();
     newTranslations.forEach((pt) => {
@@ -642,7 +644,7 @@ export function useChapterTranslation(
     translationAbortController.value = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
-    const updatedParagraphIds = new Set<string>();
+    const lastAppliedTranslations = new Map<string, string>();
     const targetChapterId = selectedChapter.value.id;
 
     try {
@@ -696,7 +698,7 @@ export function useChapterTranslation(
             translations,
             selectedModel.id,
             targetChapterId,
-            updatedParagraphIds,
+            lastAppliedTranslations,
           );
         },
         onTitleTranslation: async (translation) => {
@@ -707,7 +709,7 @@ export function useChapterTranslation(
 
       // 构建成功消息（所有段落都已通过 onParagraphTranslation 回调立即更新）
       const actions = result.actions || [];
-      const totalTranslatedCount = updatedParagraphIds.size;
+      const totalTranslatedCount = lastAppliedTranslations.size;
       let messageDetail = `已成功翻译 ${totalTranslatedCount} 个段落`;
       if (actions.length > 0) {
         const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
@@ -799,7 +801,7 @@ export function useChapterTranslation(
     translationAbortController.value = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
-    const updatedParagraphIds = new Set<string>();
+    const lastAppliedTranslations = new Map<string, string>();
     const targetChapterId = selectedChapter.value.id;
 
     try {
@@ -843,7 +845,7 @@ export function useChapterTranslation(
             translations,
             selectedModel.id,
             targetChapterId,
-            updatedParagraphIds,
+            lastAppliedTranslations,
           );
         },
         onTitleTranslation: async (translation) => {
@@ -859,7 +861,7 @@ export function useChapterTranslation(
       });
 
       // 所有段落都已通过 onParagraphTranslation 回调立即更新
-      const totalTranslatedCount = updatedParagraphIds.size;
+      const totalTranslatedCount = lastAppliedTranslations.size;
       toast.add({
         severity: 'success',
         summary: '翻译完成',
@@ -941,7 +943,7 @@ export function useChapterTranslation(
     polishAbortController.value = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
-    const updatedParagraphIds = new Set<string>();
+    const lastAppliedTranslations = new Map<string, string>();
     const targetChapterId = selectedChapter.value.id;
 
     try {
@@ -988,7 +990,7 @@ export function useChapterTranslation(
             translations,
             selectedModel.id,
             targetChapterId,
-            updatedParagraphIds,
+            lastAppliedTranslations,
           );
           // 从正在润色的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
@@ -999,7 +1001,7 @@ export function useChapterTranslation(
 
       // 构建成功消息（所有段落都已通过 onParagraphPolish 回调立即更新）
       const actions = result.actions || [];
-      const totalPolishedCount = updatedParagraphIds.size;
+      const totalPolishedCount = lastAppliedTranslations.size;
       let messageDetail = `已成功润色 ${totalPolishedCount} 个段落`;
       if (actions.length > 0) {
         const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
@@ -1152,7 +1154,7 @@ export function useChapterTranslation(
     proofreadingAbortController.value = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
-    const updatedParagraphIds = new Set<string>();
+    const lastAppliedTranslations = new Map<string, string>();
     const targetChapterId = selectedChapter.value.id;
 
     try {
@@ -1199,7 +1201,7 @@ export function useChapterTranslation(
             translations,
             selectedModel.id,
             targetChapterId,
-            updatedParagraphIds,
+            lastAppliedTranslations,
           );
           // 从正在校对的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
@@ -1210,7 +1212,7 @@ export function useChapterTranslation(
 
       // 构建成功消息（所有段落都已通过 onParagraphProofreading 回调立即更新）
       const actions = result.actions || [];
-      const totalProofreadCount = updatedParagraphIds.size;
+      const totalProofreadCount = lastAppliedTranslations.size;
       let messageDetail = `已成功校对 ${totalProofreadCount} 个段落`;
       if (actions.length > 0) {
         const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
