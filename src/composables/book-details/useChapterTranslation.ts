@@ -369,11 +369,14 @@ export function useChapterTranslation(
     const targetChapterId = selectedChapterWithContent.value.id;
 
     try {
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
       // 调用润色服务
       await PolishService.polish([paragraph], selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
         currentParagraphId: paragraphId,
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -462,11 +465,14 @@ export function useChapterTranslation(
     const targetChapterId = selectedChapterWithContent.value.id;
 
     try {
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
       // 调用校对服务
       await ProofreadingService.proofread([paragraph], selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
         currentParagraphId: paragraphId,
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -548,10 +554,13 @@ export function useChapterTranslation(
     const targetChapterId = selectedChapterWithContent.value.id;
 
     try {
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
       // 调用翻译服务
       await TranslationService.translate([paragraph], selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -641,6 +650,8 @@ export function useChapterTranslation(
 
       // 获取章节标题
       const chapterTitle = selectedChapter.value?.title?.original;
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
 
       // 调用翻译服务
       const result = await TranslationService.translate(paragraphs, selectedModel, {
@@ -650,6 +661,7 @@ export function useChapterTranslation(
         ...(customInstructions?.translationInstructions !== undefined
           ? { customInstructions: customInstructions.translationInstructions }
           : {}),
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -793,6 +805,8 @@ export function useChapterTranslation(
     try {
       // 获取章节标题
       const chapterTitle = selectedChapter.value?.title?.original;
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
 
       // 调用翻译服务，只翻译未翻译的段落
       const result = await TranslationService.translate(untranslatedParagraphs, selectedModel, {
@@ -802,6 +816,7 @@ export function useChapterTranslation(
         ...(customInstructions?.translationInstructions !== undefined
           ? { customInstructions: customInstructions.translationInstructions }
           : {}),
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -930,6 +945,8 @@ export function useChapterTranslation(
     const targetChapterId = selectedChapter.value.id;
 
     try {
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
       // 调用润色服务
       const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
@@ -937,6 +954,7 @@ export function useChapterTranslation(
         ...(customInstructions?.polishInstructions !== undefined
           ? { customInstructions: customInstructions.polishInstructions }
           : {}),
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1138,6 +1156,8 @@ export function useChapterTranslation(
     const targetChapterId = selectedChapter.value.id;
 
     try {
+      // 获取书籍的 chunk size 设置
+      const chunkSize = book.value?.translationChunkSize;
       // 调用校对服务
       const result = await ProofreadingService.proofread(paragraphsWithTranslation, selectedModel, {
         bookId: book.value.id,
@@ -1145,6 +1165,7 @@ export function useChapterTranslation(
         ...(customInstructions?.proofreadingInstructions !== undefined
           ? { customInstructions: customInstructions.proofreadingInstructions }
           : {}),
+        ...(chunkSize !== undefined ? { chunkSize } : {}),
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),

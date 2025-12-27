@@ -99,6 +99,12 @@ export interface PolishServiceOptions {
    * 章节标题（可选），用于在上下文中提供给 AI
    */
   chapterTitle?: string;
+  /**
+   * 分块大小（token 数，可选）
+   * - 如果未提供，使用默认值 DEFAULT_TASK_CHUNK_SIZE
+   * - 用于控制润色任务的分块处理
+   */
+  chunkSize?: number;
 }
 
 export interface PolishResult {
@@ -238,7 +244,7 @@ ${getOutputFormatRules('polish')}
       }
 
       // 切分文本
-      const CHUNK_SIZE = PolishService.CHUNK_SIZE;
+      const CHUNK_SIZE = options?.chunkSize ?? PolishService.CHUNK_SIZE;
       const chunks: Array<{
         text: string;
         paragraphIds?: string[];

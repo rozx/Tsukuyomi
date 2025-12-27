@@ -35,7 +35,7 @@ export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
  * 默认分块大小（与翻译任务保持一致）
  * [警告] 修改此值会影响 translation/polish/proofreading 三类任务的分块行为
  */
-export const DEFAULT_TASK_CHUNK_SIZE = 5000;
+export const DEFAULT_TASK_CHUNK_SIZE = 8000;
 
 /**
  * 解析后的 JSON 响应结果

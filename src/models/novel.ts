@@ -57,6 +57,13 @@ export interface Novel {
    * - false/undefined: 不规范化（默认）
    */
   normalizeTitleOnDisplay?: boolean | undefined;
+  /**
+   * 翻译相关任务的分块大小（字符数，近似 token 数）
+   * - 用于翻译、润色、校对任务的分块处理
+   * - undefined: 使用默认值 8000
+   * - 此设置应用于整个书籍的所有章节
+   */
+  translationChunkSize?: number | undefined;
 }
 
 export interface CoverImage {

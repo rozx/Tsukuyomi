@@ -9,6 +9,7 @@ import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import InputSwitch from 'primevue/inputswitch';
+import InputNumber from 'primevue/inputnumber';
 import type { Novel, Chapter } from 'src/models/novel';
 
 const props = defineProps<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
       preserveIndents?: boolean;
       normalizeSymbolsOnDisplay?: boolean;
       normalizeTitleOnDisplay?: boolean;
+      translationChunkSize?: number;
       // 章节设置（章节级别）
       translationInstructions?: string;
       polishInstructions?: string;
@@ -52,6 +54,8 @@ const filterIndentsEnabled = ref(false);
 const normalizeSymbolsOnDisplayEnabled = ref(false);
 // 显示/导出时是否规范化标题（true=开启显示层规范化）
 const normalizeTitleOnDisplayEnabled = ref(false);
+// 翻译任务分块大小
+const translationChunkSize = ref<number | null>(null);
 
 // 章节设置数据（章节级别）
 const translationInstructions = ref('');
@@ -68,11 +72,13 @@ watch(
       filterIndentsEnabled.value = !preserveIndents;
       normalizeSymbolsOnDisplayEnabled.value = props.book.normalizeSymbolsOnDisplay ?? false;
       normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
+      translationChunkSize.value = props.book.translationChunkSize ?? 8000;
     } else {
       // 默认保留缩进（不过滤）
       filterIndentsEnabled.value = false;
       normalizeSymbolsOnDisplayEnabled.value = false;
       normalizeTitleOnDisplayEnabled.value = false;
+      translationChunkSize.value = 8000;
     }
 
     // 章节设置（章节级别）
@@ -108,12 +114,14 @@ const handleSave = () => {
     translationInstructions?: string;
     polishInstructions?: string;
     proofreadingInstructions?: string;
+    translationChunkSize?: number;
   } = {
     // 全局设置
     // preserveIndents: true 表示保留缩进；过滤开关开启时应保存为 false
     preserveIndents: !filterIndentsEnabled.value,
     normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
     normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
+    translationChunkSize: translationChunkSize.value ?? 8000,
     // 章节设置
     translationInstructions: translationInstructions.value.trim(),
     polishInstructions: polishInstructions.value.trim(),
@@ -203,6 +211,24 @@ defineExpose({
                       </small>
                     </div>
                     <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
+                  </div>
+
+                  <div>
+                    <label class="text-sm font-medium text-moon-100 block mb-1">
+                      翻译任务分块大小（字符数，近似 tokens）
+                    </label>
+                    <InputNumber
+                      v-model="translationChunkSize"
+                      :min="1000"
+                      :max="50000"
+                      :step="500"
+                      :show-buttons="true"
+                      class="w-full"
+                      input-class="w-full"
+                    />
+                    <small class="text-moon/60 text-xs block mt-1">
+                      用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：8000。此设置应用于整个书籍的所有章节。
+                    </small>
                   </div>
                 </div>
               </TabPanel>

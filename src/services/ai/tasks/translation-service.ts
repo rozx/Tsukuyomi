@@ -107,6 +107,12 @@ export interface TranslationServiceOptions {
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
+  /**
+   * 分块大小（token 数，可选）
+   * - 如果未提供，使用默认值 DEFAULT_TASK_CHUNK_SIZE
+   * - 用于控制翻译任务的分块处理
+   */
+  chunkSize?: number;
 }
 
 export interface TranslationResult {
@@ -262,9 +268,10 @@ ${getOutputFormatRules('translation')}
 
       // 使用共享工具切分文本
       // 注意：chunks 会在循环中动态更新，以排除已处理的段落
+      const chunkSize = options?.chunkSize ?? TranslationService.CHUNK_SIZE;
       let chunks = buildChunks(
         content,
-        TranslationService.CHUNK_SIZE,
+        chunkSize,
         (p) => `[ID: ${p.id}] ${p.text}\n\n`,
         (p) => !!p.text?.trim(),
       );
@@ -309,7 +316,7 @@ ${getOutputFormatRules('translation')}
           const unprocessedContent = content.filter((p) => unprocessedParagraphIds.includes(p.id));
           const rebuiltChunks = buildChunks(
             unprocessedContent,
-            TranslationService.CHUNK_SIZE,
+            chunkSize,
             (p) => `[ID: ${p.id}] ${p.text}\n\n`,
             (p) => !!p.text?.trim(),
           );
