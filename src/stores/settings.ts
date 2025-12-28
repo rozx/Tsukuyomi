@@ -4,9 +4,16 @@ import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 import { DEFAULT_PROXY_LIST, DEFAULT_PROXY_SITE_MAPPING } from 'src/constants/proxy';
+import { getDB } from 'src/utils/indexed-db';
 
+// localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
 const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
 const SYNC_STORAGE_KEY = 'tsukuyomi-sync-configs';
+// 旧版本/迁移逻辑曾使用的 key（见 src/utils/indexed-db.ts）
+const LEGACY_SYNC_STORAGE_KEYS = ['luna-ai-sync', 'tsukuyomi-sync'] as const;
+
+// IndexedDB 存储键（与 src/utils/indexed-db.ts 的 schema 一致）
+const SETTINGS_DB_KEY = 'app';
 
 /**
  * 默认设置
@@ -76,48 +83,50 @@ function migrateProxySiteMapping(
 }
 
 /**
- * 从 LocalStorage 加载设置
+ * 标准化/迁移 settings（无论来自 localStorage 还是 IndexedDB）
+ */
+function normalizeLoadedSettings(raw: unknown): AppSettings {
+  const settings = (raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}) as Record<
+    string,
+    unknown
+  >;
+
+  // 迁移 proxySiteMapping
+  const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping as any);
+
+  // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
+  // 如果不存在，使用 epoch 时间作为初始值，确保远程设置优先
+  const existingLastEdited = settings.lastEdited ? new Date(settings.lastEdited as any) : new Date(0);
+
+  // 合并默认映射和用户映射：用户配置优先，但未配置的网站使用默认值
+  const mergedMapping: Record<string, ProxySiteMappingEntry> = {
+    ...DEFAULT_PROXY_SITE_MAPPING,
+    ...(migratedMapping || {}),
+  };
+
+  const loadedSettings: AppSettings = {
+    ...DEFAULT_SETTINGS,
+    ...(settings as any),
+    taskDefaultModels: {
+      ...DEFAULT_SETTINGS.taskDefaultModels,
+      ...(((settings as any).taskDefaultModels as Record<string, string | null | undefined>) || {}),
+    },
+    lastEdited: existingLastEdited,
+    proxySiteMapping: mergedMapping,
+  };
+
+  return loadedSettings;
+}
+
+/**
+ * 从 LocalStorage 加载设置（向后兼容）
  */
 function loadSettingsFromLocalStorage(): AppSettings {
   try {
     const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (stored) {
       const settings = JSON.parse(stored);
-      // 迁移 proxySiteMapping
-      const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping);
-
-      // 合并默认设置，确保所有字段都存在
-      // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
-      // 如果不存在，使用 epoch 时间作为初始值，确保远程设置优先
-      const existingLastEdited = settings.lastEdited
-        ? new Date(settings.lastEdited)
-        : new Date(0); // 使用 epoch 时间，确保远程设置优先
-
-      // 合并默认映射和用户映射：用户配置优先，但未配置的网站使用默认值
-      const mergedMapping: Record<string, ProxySiteMappingEntry> = {
-        ...DEFAULT_PROXY_SITE_MAPPING,
-        ...(migratedMapping || {}),
-      };
-
-      const loadedSettings: AppSettings = {
-        ...DEFAULT_SETTINGS,
-        ...settings,
-        taskDefaultModels: {
-          ...DEFAULT_SETTINGS.taskDefaultModels,
-          ...(settings.taskDefaultModels || {}),
-        },
-        // 保留原有的 lastEdited，如果不存在则使用当前时间（这是初始化，不是编辑）
-        lastEdited: existingLastEdited,
-        // 使用合并后的映射（默认值 + 用户配置）
-        proxySiteMapping: mergedMapping,
-      };
-
-      // 如果进行了迁移，保存回 LocalStorage（但不更新 lastEdited，因为这是自动迁移，不是用户编辑）
-      if (migratedMapping && migratedMapping !== settings.proxySiteMapping) {
-        saveSettingsToLocalStorage(loadedSettings);
-      }
-
-      return loadedSettings;
+      return normalizeLoadedSettings(settings);
     }
   } catch (error) {
     console.error('Failed to load settings from LocalStorage:', error);
@@ -126,31 +135,70 @@ function loadSettingsFromLocalStorage(): AppSettings {
 }
 
 /**
- * 保存设置到 LocalStorage
+ * 从 IndexedDB 加载设置（主存储）
  */
-function saveSettingsToLocalStorage(settings: AppSettings): void {
+async function loadSettingsFromDB(): Promise<AppSettings | null> {
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    const db = await getDB();
+    const stored = await db.get('settings', SETTINGS_DB_KEY);
+    if (!stored) {
+      return null;
+    }
+    // stored 形如 { key: 'app', ...AppSettings }
+    const { key: _key, ...raw } = stored as any;
+    return normalizeLoadedSettings(raw);
   } catch (error) {
-    console.error('Failed to save settings to LocalStorage:', error);
+    console.error('Failed to load settings from IndexedDB:', error);
+    return null;
   }
 }
 
 /**
- * 从 LocalStorage 加载同步配置
+ * 保存设置到 IndexedDB（主存储）
+ */
+async function saveSettingsToDB(settings: AppSettings): Promise<void> {
+  try {
+    const db = await getDB();
+    // 创建一个“纯净”的对象，避免 Proxy/响应式对象导致结构化克隆失败
+    const clean: AppSettings = {
+      lastEdited: settings.lastEdited,
+      scraperConcurrencyLimit: settings.scraperConcurrencyLimit,
+      ...(settings.taskDefaultModels !== undefined ? { taskDefaultModels: settings.taskDefaultModels } : {}),
+      ...(settings.lastOpenedSettingsTab !== undefined ? { lastOpenedSettingsTab: settings.lastOpenedSettingsTab } : {}),
+      ...(settings.proxyEnabled !== undefined ? { proxyEnabled: settings.proxyEnabled } : {}),
+      ...(settings.proxyUrl !== undefined ? { proxyUrl: settings.proxyUrl } : {}),
+      ...(settings.proxyAutoSwitch !== undefined ? { proxyAutoSwitch: settings.proxyAutoSwitch } : {}),
+      ...(settings.proxyAutoAddMapping !== undefined ? { proxyAutoAddMapping: settings.proxyAutoAddMapping } : {}),
+      ...(settings.proxySiteMapping !== undefined ? { proxySiteMapping: settings.proxySiteMapping } : {}),
+      ...(settings.proxyList !== undefined ? { proxyList: settings.proxyList } : {}),
+    };
+
+    await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
+  } catch (error) {
+    console.error('Failed to save settings to IndexedDB:', error);
+  }
+}
+
+/**
+ * 从 LocalStorage 加载同步配置（向后兼容）
  */
 function loadSyncFromLocalStorage(): SyncConfig[] {
   try {
-    const stored = localStorage.getItem(SYNC_STORAGE_KEY);
+    // 兼容多个历史 key：优先读取最新 key，再回退到迁移逻辑用过的旧 key
+    const stored =
+      localStorage.getItem(SYNC_STORAGE_KEY) ??
+      LEGACY_SYNC_STORAGE_KEYS.map((k) => localStorage.getItem(k)).find((v) => v !== null) ??
+      null;
     if (stored) {
       const syncs = JSON.parse(stored);
       if (Array.isArray(syncs)) {
         return syncs.map((syncConfig) => {
+          const base = createDefaultGistSyncConfig();
           return {
-            ...createDefaultGistSyncConfig(),
+            ...base,
             ...syncConfig,
             syncParams: {
-              ...createDefaultGistSyncConfig().syncParams,
+              ...base.syncParams,
               ...(syncConfig.syncParams || {}),
             },
           };
@@ -164,13 +212,73 @@ function loadSyncFromLocalStorage(): SyncConfig[] {
 }
 
 /**
- * 保存同步配置到 LocalStorage
+ * 从 IndexedDB 加载同步配置（主存储）
  */
-function saveSyncToLocalStorage(syncs: SyncConfig[]): void {
+async function loadSyncFromDB(): Promise<SyncConfig[]> {
   try {
-    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs));
+    const db = await getDB();
+    const stored = await db.getAll('sync-configs');
+    // stored 形如 [{ id: 'sync-gist', ...SyncConfig }]
+    return (stored as Array<Record<string, unknown>>).map((item) => {
+      const { id: _id, ...raw } = item as any;
+      const base = createDefaultGistSyncConfig();
+      return {
+        ...base,
+        ...(raw as any),
+        syncParams: {
+          ...base.syncParams,
+          ...(((raw as any).syncParams as Record<string, unknown>) || {}),
+        },
+      } as SyncConfig;
+    });
   } catch (error) {
-    console.error('Failed to save sync to LocalStorage:', error);
+    console.error('Failed to load sync configs from IndexedDB:', error);
+    return [];
+  }
+}
+
+/**
+ * 保存同步配置到 IndexedDB（主存储）
+ */
+async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
+  try {
+    const db = await getDB();
+    const tx = db.transaction('sync-configs', 'readwrite');
+    const store = tx.objectStore('sync-configs');
+
+    // 简化：以当前内存状态为准，覆盖保存
+    await store.clear();
+
+    // 为 id 做稳定生成（同一种 syncType 理论上只有一个；如果出现多个则追加序号）
+    const typeCounter = new Map<string, number>();
+    for (const sync of syncs) {
+      const type = String(sync.syncType ?? 'unknown');
+      const nextIndex = (typeCounter.get(type) ?? 0) + 1;
+      typeCounter.set(type, nextIndex);
+      const id = nextIndex === 1 ? `sync-${type}` : `sync-${type}-${nextIndex}`;
+
+      // 创建纯净对象，避免 Proxy 导致结构化克隆失败
+      const clean: SyncConfig = {
+        enabled: sync.enabled,
+        lastSyncTime: sync.lastSyncTime,
+        syncInterval: sync.syncInterval,
+        syncType: sync.syncType,
+        syncParams: sync.syncParams || {},
+        secret: sync.secret,
+        apiEndpoint: sync.apiEndpoint,
+        ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
+        ...(sync.deletedNovelIds !== undefined ? { deletedNovelIds: sync.deletedNovelIds } : {}),
+        ...(sync.deletedModelIds !== undefined ? { deletedModelIds: sync.deletedModelIds } : {}),
+        ...(sync.deletedCoverIds !== undefined ? { deletedCoverIds: sync.deletedCoverIds } : {}),
+        ...(sync.deletedCoverUrls !== undefined ? { deletedCoverUrls: sync.deletedCoverUrls } : {}),
+      };
+
+      await store.put({ id, ...clean });
+    }
+
+    await tx.done;
+  } catch (error) {
+    console.error('Failed to save sync configs to IndexedDB:', error);
   }
 }
 
@@ -267,15 +375,34 @@ export const useSettingsStore = defineStore('settings', {
 
   actions: {
     /**
-     * 从 LocalStorage 加载设置和同步配置
+     * 加载设置和同步配置
+     * 优先从 IndexedDB 读取（与迁移逻辑一致），localStorage 仅作向后兼容回退
      */
     async loadSettings(): Promise<void> {
       if (this.isLoaded) {
         return;
       }
 
-      this.settings = loadSettingsFromLocalStorage();
-      this.syncs = loadSyncFromLocalStorage();
+      const loadedSettingsFromDB = await loadSettingsFromDB();
+      if (loadedSettingsFromDB) {
+        this.settings = loadedSettingsFromDB;
+      } else {
+        // 兼容：旧版本可能还在 localStorage
+        const loadedFromLocalStorage = loadSettingsFromLocalStorage();
+        this.settings = loadedFromLocalStorage;
+        // 写回 IndexedDB，确保后续一致
+        await saveSettingsToDB(this.settings);
+      }
+
+      const loadedSyncsFromDB = await loadSyncFromDB();
+      if (loadedSyncsFromDB.length > 0) {
+        this.syncs = loadedSyncsFromDB;
+      } else {
+        const loadedSyncsFromLocalStorage = loadSyncFromLocalStorage();
+        this.syncs = loadedSyncsFromLocalStorage;
+        await saveSyncToDB(this.syncs);
+      }
+
       this.isLoaded = true;
       await Promise.resolve();
     },
@@ -301,7 +428,7 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       this.settings = mergedSettings;
-      saveSettingsToLocalStorage(this.settings);
+      await saveSettingsToDB(this.settings);
       await Promise.resolve();
     },
 
@@ -337,7 +464,7 @@ export const useSettingsStore = defineStore('settings', {
      */
     async resetToDefaults(): Promise<void> {
       this.settings = { ...DEFAULT_SETTINGS, lastEdited: new Date() };
-      saveSettingsToLocalStorage(this.settings);
+      await saveSettingsToDB(this.settings);
       await Promise.resolve();
     },
 
@@ -397,7 +524,7 @@ export const useSettingsStore = defineStore('settings', {
       };
 
       this.settings = finalSettings;
-      saveSettingsToLocalStorage(this.settings);
+      await saveSettingsToDB(this.settings);
       await Promise.resolve();
     },
 
@@ -652,7 +779,7 @@ export const useSettingsStore = defineStore('settings', {
         this.syncs.push(updatedConfig);
       }
 
-      saveSyncToLocalStorage(this.syncs);
+      await saveSyncToDB(this.syncs);
       await Promise.resolve();
     },
 
@@ -711,7 +838,7 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       if (hasChanges) {
-        saveSyncToLocalStorage(this.syncs);
+        await saveSyncToDB(this.syncs);
         await Promise.resolve();
       }
     },
@@ -855,7 +982,7 @@ export const useSettingsStore = defineStore('settings', {
           },
         };
       });
-      saveSyncToLocalStorage(this.syncs);
+      await saveSyncToDB(this.syncs);
       await Promise.resolve();
     },
   },

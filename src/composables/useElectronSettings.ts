@@ -54,22 +54,20 @@ export function useElectronSettings() {
       const result = SettingsService.validateAndParseSettings(settings);
 
       if (result.success && result.data) {
-        // 导入 AI 模型
+        // 导入 AI 模型（与网页端导入保持一致：覆盖导入）
         if (result.data.models && result.data.models.length > 0) {
-          for (const model of result.data.models) {
-            await aiModelsStore.addModel(model);
-          }
+          await aiModelsStore.bulkImportModels(result.data.models);
         }
 
-        // 导入书籍
+        // 导入书籍（与网页端导入保持一致：覆盖导入）
         if (result.data.novels && result.data.novels.length > 0) {
-          for (const novel of result.data.novels) {
-            await booksStore.addBook(novel);
-          }
+          await booksStore.clearBooks();
+          await booksStore.bulkAddBooks(result.data.novels);
         }
 
         // 导入封面历史
         if (result.data.coverHistory && result.data.coverHistory.length > 0) {
+          await coverHistoryStore.clearHistory();
           for (const cover of result.data.coverHistory) {
             await coverHistoryStore.addCover(cover);
           }
@@ -77,16 +75,14 @@ export function useElectronSettings() {
 
         // 导入应用设置
         if (result.data.appSettings) {
-          await settingsStore.updateSettings(result.data.appSettings);
+          // 使用 importSettings：保留 lastEdited、深合并 taskDefaultModels，并写入 IndexedDB
+          await settingsStore.importSettings(result.data.appSettings);
         }
 
         // 导入同步配置
         if (result.data.sync && result.data.sync.length > 0) {
-          // 假设只有一个 Gist 同步配置
-          const gistSync = result.data.sync[0];
-          if (gistSync) {
-            await settingsStore.updateGistSync(gistSync);
-          }
+          // 与网页端导入保持一致：覆盖导入 syncs
+          await settingsStore.importSyncs(result.data.sync);
         }
       } else {
         console.error('Import validation failed:', result.error);
