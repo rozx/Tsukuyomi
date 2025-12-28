@@ -20,6 +20,7 @@ import { getPostToolCallReminder } from './todo-helper';
 import { getChunkingInstructions, getCurrentStatusInfo } from '../prompts';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 
 /**
  * 任务类型
@@ -36,6 +37,42 @@ export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
  * [警告] 修改此值会影响 translation/polish/proofreading 三类任务的分块行为
  */
 export const DEFAULT_TASK_CHUNK_SIZE = 8000;
+
+/**
+ * 获取章节第一个“非空”段落的 ID（用于判断任务是否从章节中间开始）
+ * - “非空”定义：text.trim().length > 0
+ * - 若无法获取（无 chapterId / 加载失败 / 无非空段落）则返回 undefined
+ */
+export async function getChapterFirstNonEmptyParagraphId(
+  chapterId?: string,
+  logLabel = 'AITaskHelper',
+): Promise<string | undefined> {
+  if (!chapterId) return undefined;
+  try {
+    const chapterContent = await ChapterContentService.loadChapterContent(chapterId);
+    return chapterContent?.find((p) => !!p?.text?.trim())?.id;
+  } catch (e) {
+    console.warn(
+      `[${logLabel}] ⚠️ 无法获取章节首段信息（chapterId: ${chapterId}）`,
+      e instanceof Error ? e.message : e,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * 判断当前 chunk 是否存在“前文段落”（即起始段落不是章节第一个非空段落）
+ */
+export function getHasPreviousParagraphs(
+  chapterFirstNonEmptyParagraphId?: string,
+  firstParagraphId?: string,
+): boolean {
+  return (
+    !!chapterFirstNonEmptyParagraphId &&
+    !!firstParagraphId &&
+    firstParagraphId !== chapterFirstNonEmptyParagraphId
+  );
+}
 
 /**
  * 解析后的 JSON 响应结果
@@ -919,6 +956,8 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
  * @param chapterId 章节 ID（可选）
  * @param chapterTitle 章节标题（可选，仅第一个 chunk）
  * @param bookId 书籍 ID（可选，用于提取当前 chunk 中的术语和角色）
+ * @param hasPreviousParagraphs 当前 chunk 的起始段落之前是否还有本章节的段落（可选）
+ * @param firstParagraphId 当前 chunk 的第一个段落 ID（可选）
  * @returns 独立的 chunk 提示
  */
 export function buildIndependentChunkPrompt(
@@ -931,6 +970,8 @@ export function buildIndependentChunkPrompt(
   chapterId?: string,
   chapterTitle?: string,
   bookId?: string,
+  hasPreviousParagraphs?: boolean,
+  firstParagraphId?: string,
 ): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
@@ -1000,6 +1041,12 @@ export function buildIndependentChunkPrompt(
     }
   }
 
+  // 起始段落提示：当本次任务从章节中间开始（即起始段落不是章节第一个非空段落）时，提醒 AI 可用工具取前文
+  const startContextHint =
+    hasPreviousParagraphs === true && firstParagraphId
+      ? `\n\n【起始段落位置】\n**起始段落ID**: \`${firstParagraphId}\`\n[提示] 在此之前还有段落。如需前文上下文，可调用 \`get_previous_paragraphs\`（参数 \`paragraph_id\` 传入起始段落ID）。仅用于上下文，不要把工具返回内容当作${taskLabel}结果输出。\n`
+      : '';
+
   // 第一个 chunk：完整规划阶段
   // 注意：章节 ID 已在系统提示词中提供
   if (chunkIndex === 0) {
@@ -1010,7 +1057,7 @@ export function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。**默认状态为 planning（无需再返回 planning）**。如需上下文可先调用工具；准备好后直接返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}
+    return `开始${taskLabel}任务。**默认状态为 planning（无需再返回 planning）**。如需上下文可先调用工具；准备好后直接返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -1019,7 +1066,7 @@ export function buildIndependentChunkPrompt(
       ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
       : '';
 
-    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}
+    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}${startContextHint}
 
 **[警告] 重要：简短规划阶段（已继承上文规划）**
 ${briefPlanningNote}默认状态为 planning（无需再返回 planning），请直接将状态设置为 "working" 并开始${taskLabel}。

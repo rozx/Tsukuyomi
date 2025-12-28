@@ -219,7 +219,7 @@ async function loadSyncFromDB(): Promise<SyncConfig[]> {
     const db = await getDB();
     const stored = await db.getAll('sync-configs');
     // stored 形如 [{ id: 'sync-gist', ...SyncConfig }]
-    return (stored as Array<Record<string, unknown>>).map((item) => {
+    return (stored as unknown as Array<Record<string, unknown>>).map((item) => {
       const { id: _id, ...raw } = item as any;
       const base = createDefaultGistSyncConfig();
       return {

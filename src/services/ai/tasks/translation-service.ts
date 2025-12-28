@@ -34,6 +34,8 @@ import {
   filterProcessedParagraphs,
   markProcessedParagraphs,
   markProcessedParagraphsFromMap,
+  getChapterFirstNonEmptyParagraphId,
+  getHasPreviousParagraphs,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -281,6 +283,12 @@ ${getOutputFormatRules('translation')}
       // 跟踪已处理的段落 ID（用于排除已处理的段落，避免重复处理）
       const processedParagraphIds = new Set<string>();
 
+      // 一次性计算：章节第一个“非空”段落（用于判断本次任务是否从章节中间开始）
+      const chapterFirstNonEmptyParagraphId = await getChapterFirstNonEmptyParagraphId(
+        chapterId,
+        'TranslationService',
+      );
+
       // 3. 循环处理每个块（带重试机制）
       const MAX_RETRIES = 2; // 最大重试次数
       let chunkIndex = 0;
@@ -377,6 +385,12 @@ ${getOutputFormatRules('translation')}
         const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
         const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
 
+        const firstParagraphId = actualChunk.paragraphIds?.[0];
+        const hasPreviousParagraphs = getHasPreviousParagraphs(
+          chapterFirstNonEmptyParagraphId,
+          firstParagraphId,
+        );
+
         // 使用独立的 chunk 提示，每个 chunk 独立
         // 每个 chunk 会包含当前 chunk 中出现的术语和角色
         const chunkContent = buildIndependentChunkPrompt(
@@ -389,6 +403,8 @@ ${getOutputFormatRules('translation')}
           chapterId,
           chunkIndex === 0 ? chapterTitle : undefined, // 只在第一个 chunk 包含标题
           bookId, // 传递 bookId 用于提取当前 chunk 中的术语和角色
+          hasPreviousParagraphs,
+          firstParagraphId,
         );
 
         // 重试循环

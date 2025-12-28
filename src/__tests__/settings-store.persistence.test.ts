@@ -15,37 +15,41 @@ const settingsTable = new Map<string, AnyRecord>();
 const syncConfigsTable = new Map<string, AnyRecord>();
 
 const mockDb = {
-  get: mock(async (storeName: string, key: string) => {
-    if (storeName === 'settings') return settingsTable.get(key);
-    if (storeName === 'sync-configs') return syncConfigsTable.get(key);
-    return undefined;
+  get: mock((storeName: string, key: string) => {
+    if (storeName === 'settings') return Promise.resolve(settingsTable.get(key));
+    if (storeName === 'sync-configs') return Promise.resolve(syncConfigsTable.get(key));
+    return Promise.resolve(undefined);
   }),
-  put: mock(async (storeName: string, value: AnyRecord) => {
+  put: mock((storeName: string, value: AnyRecord) => {
     if (storeName === 'settings') {
       settingsTable.set(String(value.key), value);
-      return;
+      return Promise.resolve(undefined);
     }
     if (storeName === 'sync-configs') {
       syncConfigsTable.set(String(value.id), value);
-      return;
+      return Promise.resolve(undefined);
     }
+    return Promise.resolve(undefined);
   }),
-  getAll: mock(async (storeName: string) => {
-    if (storeName === 'sync-configs') return Array.from(syncConfigsTable.values());
-    return [];
+  getAll: mock((storeName: string) => {
+    if (storeName === 'sync-configs') return Promise.resolve(Array.from(syncConfigsTable.values()));
+    return Promise.resolve([]);
   }),
-  clear: mock(async (storeName: string) => {
+  clear: mock((storeName: string) => {
     if (storeName === 'settings') settingsTable.clear();
     if (storeName === 'sync-configs') syncConfigsTable.clear();
+    return Promise.resolve(undefined);
   }),
   transaction: mock((_storeName: string, _mode: string) => {
     return {
       objectStore: (_name: string) => ({
-        clear: mock(async () => {
+        clear: mock(() => {
           syncConfigsTable.clear();
+          return Promise.resolve(undefined);
         }),
-        put: mock(async (value: AnyRecord) => {
+        put: mock((value: AnyRecord) => {
           syncConfigsTable.set(String(value.id), value);
+          return Promise.resolve(undefined);
         }),
       }),
       done: Promise.resolve(),
@@ -54,7 +58,7 @@ const mockDb = {
 };
 
 await mock.module('src/utils/indexed-db', () => ({
-  getDB: async () => mockDb,
+  getDB: () => Promise.resolve(mockDb),
 }));
 
 // 必须在 mock.module 之后再导入（确保 store 使用的是 mock getDB）
