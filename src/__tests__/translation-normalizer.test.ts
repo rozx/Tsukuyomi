@@ -143,9 +143,18 @@ describe('normalizeTranslationSymbols', () => {
     expect(normalizeTranslationSymbols('他说【 测试 】')).toBe('他说【测试】');
   });
 
-  test('应该移除引号内的多余空格', () => {
-    expect(normalizeTranslationSymbols('他说「 你好 」')).toBe('他说「你好」');
-    expect(normalizeTranslationSymbols('他说『 测试 』')).toBe('他说『测试』');
+  test('默认不应规范化『』「」：应保留引号内侧空格', () => {
+    expect(normalizeTranslationSymbols('他说「 你好 」')).toBe('他说「 你好 」');
+    expect(normalizeTranslationSymbols('他说『 测试 』')).toBe('他说『 测试 』');
+  });
+
+  test('启用 normalizeJapaneseQuotes 时应移除引号内的多余空格', () => {
+    expect(normalizeTranslationSymbols('他说「 你好 」', { normalizeJapaneseQuotes: true })).toBe(
+      '他说「你好」',
+    );
+    expect(normalizeTranslationSymbols('他说『 测试 』', { normalizeJapaneseQuotes: true })).toBe(
+      '他说『测试』',
+    );
   });
 
   test('应该规范化行尾标点', () => {
@@ -222,14 +231,29 @@ describe('normalizeTranslationSymbols', () => {
     expect(normalizeTranslationSymbols('1.5 和 2.0')).toBe('1.5 和 2.0'); // 小数点不应转换
   });
 
-  test('应该修复不匹配的引号对', () => {
+  test('默认不应规范化『』「」：不应修复不匹配的引号对', () => {
+    expect(normalizeTranslationSymbols('「………………嗯？「')).toBe('「………………嗯？「');
+    expect(normalizeTranslationSymbols('」………………嗯？」')).toBe('」………………嗯？」');
+    expect(normalizeTranslationSymbols('『………………嗯？『')).toBe('『………………嗯？『');
+    expect(normalizeTranslationSymbols('』………………嗯？』')).toBe('』………………嗯？』');
+  });
+
+  test('启用 normalizeJapaneseQuotes 时应修复不匹配的引号对', () => {
     // 两个开引号应该修复为一个开引号和一个闭引号（多个省略号不合并）
-    expect(normalizeTranslationSymbols('「………………嗯？「')).toBe('「………………嗯？」');
+    expect(normalizeTranslationSymbols('「………………嗯？「', { normalizeJapaneseQuotes: true })).toBe(
+      '「………………嗯？」',
+    );
     // 两个闭引号应该修复为一个开引号和一个闭引号
-    expect(normalizeTranslationSymbols('」………………嗯？」')).toBe('「………………嗯？」');
+    expect(normalizeTranslationSymbols('」………………嗯？」', { normalizeJapaneseQuotes: true })).toBe(
+      '「………………嗯？」',
+    );
     // 单引号的不匹配
-    expect(normalizeTranslationSymbols('『………………嗯？『')).toBe('『………………嗯？』');
-    expect(normalizeTranslationSymbols('』………………嗯？』')).toBe('『………………嗯？』');
+    expect(normalizeTranslationSymbols('『………………嗯？『', { normalizeJapaneseQuotes: true })).toBe(
+      '『………………嗯？』',
+    );
+    expect(normalizeTranslationSymbols('』………………嗯？』', { normalizeJapaneseQuotes: true })).toBe(
+      '『………………嗯？』',
+    );
   });
 
   test('应该保留已存在的「」引号，不转换为『』', () => {

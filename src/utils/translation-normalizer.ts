@@ -397,10 +397,23 @@ function fixMismatchedQuotes(text: string): string {
  * @param text 要规范化的文本
  * @returns 规范化后的文本
  */
-export function normalizeTranslationSymbols(text: string): string {
+export type NormalizeTranslationSymbolsOptions = {
+  /**
+   * 是否对日文引号『』「」做“配对修复/空格清理”等规范化
+   * 默认 false（按需求：规范化符号时不要规范化『』「」）
+   */
+  normalizeJapaneseQuotes?: boolean;
+};
+
+export function normalizeTranslationSymbols(
+  text: string,
+  options: NormalizeTranslationSymbolsOptions = {},
+): string {
   if (!text || typeof text !== 'string') {
     return text;
   }
+
+  const normalizeJapaneseQuotes = options.normalizeJapaneseQuotes ?? false;
 
   // 按行处理：
   // - 保护行首缩进（leading spaces）
@@ -460,7 +473,10 @@ export function normalizeTranslationSymbols(text: string): string {
     normalized = normalized.replace(/。{3,}/g, '…'); // 多个全角句号转为省略号
 
     // 5. 修复不匹配的引号对（在 normalizeTranslationQuotes 之后，确保引号格式正确）
-    normalized = fixMismatchedQuotes(normalized);
+    // 注意：按需求，默认不修复『』「」配对（避免“normalize 『』「」”）
+    if (normalizeJapaneseQuotes) {
+      normalized = fixMismatchedQuotes(normalized);
+    }
 
     // 6. 恢复小数点标记
     normalized = normalized.replace(new RegExp(decimalMarker, 'g'), '.');
@@ -514,10 +530,13 @@ export function normalizeTranslationSymbols(text: string): string {
     normalized = normalized.replace(/\s+】/g, '】');
 
     // 14. 规范化引号内的多余空格：移除引号紧邻的多余空格
-    normalized = normalized.replace(/「\s+/g, '「');
-    normalized = normalized.replace(/\s+」/g, '」');
-    normalized = normalized.replace(/『\s+/g, '『');
-    normalized = normalized.replace(/\s+』/g, '』');
+    // 注意：按需求，默认不清理『』「」紧邻空格
+    if (normalizeJapaneseQuotes) {
+      normalized = normalized.replace(/「\s+/g, '「');
+      normalized = normalized.replace(/\s+」/g, '」');
+      normalized = normalized.replace(/『\s+/g, '『');
+      normalized = normalized.replace(/\s+』/g, '』');
+    }
 
     // 15. 规范化行尾标点：移除行尾多余空格（包括换行符前的空格）
     // 注意：只移除标点后的空格，不 trim 整个字符串
