@@ -78,14 +78,32 @@ const selectedSettingMenu = ref<'terms' | 'characters' | null>(null);
 
 // 滚动容器引用
 const scrollableContentRef = ref<HTMLElement | null>(null);
+// 章节内容面板（真正的滚动容器是 `.chapter-content-panel`）
+const chapterContentPanelRef = ref<HTMLElement | null>(null);
+
+// 将当前内容滚动到顶部（优先使用章节内容面板，其次使用外层容器兜底）
+const scrollCurrentContentToTop = async () => {
+  await nextTick();
+  const container = chapterContentPanelRef.value ?? scrollableContentRef.value;
+  if (container) {
+    container.scrollTop = 0;
+  }
+};
 
 // 从路由参数获取书籍 ID
 const bookId = computed(() => route.params.id as string);
 
 // 切换卷的展开/折叠状态
-const toggleVolume = (volumeId: string) => {
+const toggleVolumeById = (volumeId: string) => {
   if (!bookId.value) return;
   void bookDetailsStore.toggleVolume(bookId.value, volumeId);
+};
+
+// VolumesList 的事件回调类型在 TS 下允许“0 参数/多参数调用”，这里用 wrapper 放宽参数避免类型报错
+const onToggleVolume = (...args: unknown[]) => {
+  const volumeId = args[0];
+  if (typeof volumeId !== 'string') return;
+  toggleVolumeById(volumeId);
 };
 
 // 检查卷是否展开
@@ -338,18 +356,82 @@ const volumeOptions = computed(() => {
 });
 
 // 导航到章节详情页
-const navigateToChapter = (chapter: Chapter) => {
+const navigateToChapterInternal = (chapter: Chapter) => {
   if (!bookId.value) return;
   // 设置选中的章节
   void bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
   // 清除设置菜单选中状态
   selectedSettingMenu.value = null;
-  // 重置滚动位置到顶部
-  void nextTick(() => {
-    if (scrollableContentRef.value) {
-      scrollableContentRef.value.scrollTop = 0;
-    }
-  });
+  // 重置滚动位置到顶部（注意：真实滚动容器是章节内容面板）
+  void scrollCurrentContentToTop();
+};
+
+const onNavigateToChapter = (...args: unknown[]) => {
+  const chapter = args[0] as Chapter | undefined;
+  if (!chapter) return;
+  navigateToChapterInternal(chapter);
+};
+
+// VolumesList 的事件回调类型在 TS 下允许“0 参数调用”，这里用 wrapper 放宽参数避免类型报错
+const onEditVolume = (...args: unknown[]) => {
+  const volume = args[0];
+  if (!volume) return;
+  openEditVolumeDialog(volume as any);
+};
+
+const onDeleteVolume = (...args: unknown[]) => {
+  const volume = args[0];
+  if (!volume) return;
+  openDeleteVolumeConfirm(volume as any);
+};
+
+const onEditChapter = (...args: unknown[]) => {
+  const chapter = args[0];
+  if (!chapter) return;
+  openEditChapterDialog(chapter as any);
+};
+
+const onDeleteChapter = (...args: unknown[]) => {
+  const chapter = args[0];
+  if (!chapter) return;
+  openDeleteChapterConfirm(chapter as any);
+};
+
+const onDragStart = (...args: unknown[]) => {
+  const event = args[0] as DragEvent | undefined;
+  const chapter = args[1] as Chapter | undefined;
+  const volumeId = args[2] as string | undefined;
+  const index = args[3] as number | undefined;
+  if (!event || !chapter || !volumeId || typeof index !== 'number') return;
+  handleDragStart(event, chapter, volumeId, index);
+};
+
+const onDragEnd = (...args: unknown[]) => {
+  const event = args[0] as DragEvent | undefined;
+  if (!event) return;
+  handleDragEnd(event);
+};
+
+const onDragOver = (...args: unknown[]) => {
+  const event = args[0] as DragEvent | undefined;
+  const volumeId = args[1] as string | undefined;
+  const index = args[2] as number | undefined;
+  if (!event || !volumeId) return;
+  handleDragOver(event, volumeId, index);
+};
+
+const onDrop = (...args: unknown[]) => {
+  const event = args[0] as DragEvent | undefined;
+  const targetVolumeId = args[1] as string | undefined;
+  const targetIndex = args[2] as number | undefined;
+  if (!event || !targetVolumeId) return;
+  void handleDrop(event, targetVolumeId, targetIndex);
+};
+
+const onDragLeave = (...args: unknown[]) => {
+  const event = args[0] as DragEvent | undefined;
+  if (!event) return;
+  handleDragLeave();
 };
 
 // 打开书籍编辑对话框
@@ -577,6 +659,7 @@ watch(
     if (!newChapterId || !selectedChapter.value) {
       selectedChapterWithContent.value = null;
       resetParagraphNavigation();
+      void scrollCurrentContentToTop();
       return;
     }
 
@@ -584,6 +667,7 @@ watch(
     if (selectedChapter.value.content !== undefined) {
       selectedChapterWithContent.value = selectedChapter.value;
       resetParagraphNavigation();
+      void scrollCurrentContentToTop();
       return;
     }
 
@@ -593,6 +677,7 @@ watch(
       const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
       selectedChapterWithContent.value = chapterWithContent;
       resetParagraphNavigation();
+      void scrollCurrentContentToTop();
     } catch (error) {
       console.error('Failed to load chapter content:', error);
       toast.add({
@@ -603,6 +688,7 @@ watch(
       });
       selectedChapterWithContent.value = null;
       resetParagraphNavigation();
+      void scrollCurrentContentToTop();
     } finally {
       isLoadingChapterContent.value = false;
     }
@@ -1628,17 +1714,17 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :dragged-chapter="draggedChapter"
           :drag-over-volume-id="dragOverVolumeId"
           :drag-over-index="dragOverIndex"
-          @toggle-volume="toggleVolume"
-          @navigate-to-chapter="navigateToChapter"
-          @edit-volume="openEditVolumeDialog"
-          @delete-volume="openDeleteVolumeConfirm"
-          @edit-chapter="openEditChapterDialog"
-          @delete-chapter="openDeleteChapterConfirm"
-          @drag-start="handleDragStart"
-          @drag-end="handleDragEnd"
-          @drag-over="handleDragOver"
-          @drop="handleDrop"
-          @drag-leave="handleDragLeave"
+          @toggle-volume="onToggleVolume"
+          @navigate-to-chapter="onNavigateToChapter"
+          @edit-volume="onEditVolume"
+          @delete-volume="onDeleteVolume"
+          @edit-chapter="onEditChapter"
+          @delete-chapter="onDeleteChapter"
+          @drag-start="onDragStart"
+          @drag-end="onDragEnd"
+          @drag-over="onDragOver"
+          @drop="onDrop"
+          @drag-leave="onDragLeave"
         />
 
         <!-- 返回链接 -->
@@ -1813,7 +1899,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :is-polishing-chapter="isPolishingChapter"
         :is-search-visible="isSearchVisible"
         :show-translation-progress="showTranslationProgress"
-        :can-show-translation-progress="isTranslatingChapter || isPolishingChapter || isProofreadingChapter"
+        :can-show-translation-progress="
+          isTranslatingChapter || isPolishingChapter || isProofreadingChapter
+        "
         @undo="undo"
         @redo="redo"
         @update:edit-mode="
@@ -1846,13 +1934,17 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @replace-all="replaceAll"
       />
 
-      <div ref="scrollableContentRef" class="scrollable-content" :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }">
+      <div
+        ref="scrollableContentRef"
+        class="scrollable-content"
+        :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }"
+      >
         <div
           class="page-container"
           :class="{
             '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': !!selectedSettingMenu,
-        '!h-full !overflow-hidden !min-h-0': selectedChapter,
-        'page-container-split-active': selectedChapter && showTranslationProgress,
+            '!h-full !overflow-hidden !min-h-0': selectedChapter,
+            'page-container-split-active': selectedChapter && showTranslationProgress,
           }"
         >
           <!-- 术语设置面板 -->
@@ -1876,7 +1968,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :class="{ 'split-layout-active': showTranslationProgress }"
           >
             <!-- 左侧：章节内容 -->
-            <div class="chapter-content-panel" :class="{ 'panel-with-split': showTranslationProgress }">
+            <div
+              ref="chapterContentPanelRef"
+              class="chapter-content-panel"
+              :class="{ 'panel-with-split': showTranslationProgress }"
+            >
               <ChapterContentPanel
                 :selected-chapter="selectedChapter"
                 :selected-chapter-with-content="selectedChapterWithContent"
