@@ -1,6 +1,6 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
-import { getChapterContentText, getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { getChapterContentText, getChapterDisplayTitle, normalizeChapterTitle } from 'src/utils/novel-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
 
@@ -2195,23 +2195,26 @@ export class ChapterService {
       throw new Error('章节内容为空，无法导出');
     }
 
-    // 根据导出类型选择标题
+    // 根据导出类型选择标题（并应用“显示/导出层标题规范化”，不写回标题）
+    // - 译文/双语：与界面显示一致，优先使用翻译标题
+    // - 原文：强制使用原文标题（即使存在翻译标题）
     let chapterTitle = '';
-    if (!chapter.title) {
-      chapterTitle = '';
-    } else if (typeof chapter.title === 'string') {
-      // 兼容旧数据
-      chapterTitle = chapter.title;
-    } else {
-      // 根据导出类型选择标题
-      if (type === 'original') {
-        // 导出原文时使用原文标题
-        chapterTitle = chapter.title.original || '';
+    if (type === 'original') {
+      if (!chapter.title) {
+        chapterTitle = '';
+      } else if (typeof chapter.title === 'string') {
+        // 兼容旧数据
+        chapterTitle = chapter.title;
       } else {
-        // 导出译文或双语时，优先使用翻译标题，如果没有则使用原文
-        chapterTitle =
-          chapter.title.translation?.translation?.trim() || chapter.title.original || '';
+        chapterTitle = chapter.title.original || '';
       }
+
+      const normalizeEnabled = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+      if (normalizeEnabled) {
+        chapterTitle = normalizeChapterTitle(chapterTitle);
+      }
+    } else {
+      chapterTitle = getChapterDisplayTitle(chapter, book);
     }
 
     let content = '';

@@ -82,7 +82,11 @@ const handleOriginalTextInput = (event: Event) => {
 </script>
 
 <template>
-  <div v-if="selectedChapter" class="chapter-content-container">
+  <div
+    v-if="selectedChapter"
+    class="chapter-content-container"
+    :class="{ 'chapter-content-container--full': editMode === 'original' }"
+  >
     <!-- 加载中状态 -->
     <div v-if="isLoadingChapterContent" class="loading-container">
       <ProgressSpinner
@@ -95,22 +99,17 @@ const handleOriginalTextInput = (event: Event) => {
 
     <!-- 原始文本编辑模式 -->
     <div v-else-if="editMode === 'original'" class="original-text-edit-container">
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <label class="block text-sm font-medium text-moon/90">原始文本</label>
-          <Textarea
-            :value="originalTextEditValue"
-            @input="handleOriginalTextInput"
-            :auto-resize="true"
-            rows="20"
-            class="w-full original-text-textarea"
-            placeholder="输入原始文本..."
-          />
-        </div>
-        <div class="flex gap-2 justify-end">
-          <Button label="取消" class="p-button-text" @click="emit('cancel-original-text-edit')" />
-          <Button label="保存" @click="emit('save-original-text-edit')" />
-        </div>
+      <label class="block text-sm font-medium text-moon/90">原始文本</label>
+      <Textarea
+        :value="originalTextEditValue"
+        @input="handleOriginalTextInput"
+        :auto-resize="false"
+        class="w-full original-text-textarea"
+        placeholder="输入原始文本..."
+      />
+      <div class="flex gap-2 justify-end">
+        <Button label="取消" class="p-button-text" @click="emit('cancel-original-text-edit')" />
+        <Button label="保存" @click="emit('save-original-text-edit')" />
       </div>
     </div>
 
@@ -278,6 +277,17 @@ const handleOriginalTextInput = (event: Event) => {
   margin: 0 auto;
 }
 
+/* 原始文本编辑模式：占满面板宽度/高度，方便编辑 */
+.chapter-content-container--full {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 章节标题区域 */
 .chapter-header {
   margin-bottom: 2rem;
@@ -440,6 +450,11 @@ const handleOriginalTextInput = (event: Event) => {
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
   border-radius: 8px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .original-text-textarea {
@@ -449,6 +464,10 @@ const handleOriginalTextInput = (event: Event) => {
   color: var(--moon-opacity-90);
   background: var(--white-opacity-3);
   border: 1px solid var(--white-opacity-10);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
 }
 
 .original-text-textarea:focus {

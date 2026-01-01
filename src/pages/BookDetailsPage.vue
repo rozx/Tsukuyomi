@@ -780,7 +780,8 @@ onMounted(() => {
   window.addEventListener('scroll', handleScroll, true); // 使用 capture 模式以捕获所有滚动事件
 
   // 注册键盘快捷键
-  window.addEventListener('keydown', handleKeydown);
+  // 使用 capture 模式，确保即使子组件 stopPropagation 也能拦截默认滚动行为
+  window.addEventListener('keydown', handleKeydown, true);
 });
 
 // 组件卸载时清除上下文
@@ -789,7 +790,7 @@ onUnmounted(() => {
   // 清理段落导航相关的 timeout
   cleanupParagraphNavigation();
   // 移除键盘快捷键监听
-  window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('keydown', handleKeydown, true);
   // 移除点击事件监听器
   window.removeEventListener('click', handleClick);
   // 移除鼠标移动事件监听器

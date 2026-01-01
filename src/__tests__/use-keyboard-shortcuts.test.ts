@@ -7,7 +7,8 @@ import type { Chapter, Paragraph } from '../models/novel';
 class MockHTMLElement {
   tagName = 'DIV';
   isContentEditable = false;
-  closest = mock(() => null);
+  // 显式标注返回类型，避免后续测试用例需要返回非空值时出现类型不兼容
+  closest = mock<(selector: string) => Element | null>(() => null);
 }
 
 // Helper functions
@@ -272,6 +273,218 @@ describe('useKeyboardShortcuts', () => {
     const preventDefaultMock = event.preventDefault;
     expect(preventDefaultMock).toHaveBeenCalled();
     expect(showReplace.value).toBe(true);
+  });
+
+  it('在章节内容区域按上下方向键时，应屏蔽默认滚动（仅翻译模式）', () => {
+    const { handleKeydown } = useKeyboardShortcuts(
+      isSearchVisible,
+      toggleSearch,
+      showReplace,
+      nextMatch,
+      prevMatch,
+      copyAllTranslatedText,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapter,
+      selectedSettingMenu,
+      editMode,
+      selectedParagraphIndex,
+      isKeyboardNavigating,
+      isKeyboardSelected,
+      isClickSelected,
+      isProgrammaticScrolling,
+      lastKeyboardNavigationTime,
+      resetNavigationTimeoutId,
+      getNonEmptyParagraphIndices,
+      findNextNonEmptyParagraph,
+      navigateToParagraph,
+      startEditingSelectedParagraph,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+    );
+
+    // 模拟已选中章节，且当前在翻译模式
+    selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
+    editMode.value = 'translation';
+
+    const event = createMockKeyboardEvent('ArrowDown');
+    handleKeydown(event);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).toHaveBeenCalledTimes(1);
+    // 这里可能会触发段落导航；本用例只验证默认滚动被屏蔽
+  });
+
+  it('在原文编辑模式按上下方向键时，不应屏蔽默认行为', () => {
+    const { handleKeydown } = useKeyboardShortcuts(
+      isSearchVisible,
+      toggleSearch,
+      showReplace,
+      nextMatch,
+      prevMatch,
+      copyAllTranslatedText,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapter,
+      selectedSettingMenu,
+      editMode,
+      selectedParagraphIndex,
+      isKeyboardNavigating,
+      isKeyboardSelected,
+      isClickSelected,
+      isProgrammaticScrolling,
+      lastKeyboardNavigationTime,
+      resetNavigationTimeoutId,
+      getNonEmptyParagraphIndices,
+      findNextNonEmptyParagraph,
+      navigateToParagraph,
+      startEditingSelectedParagraph,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+    );
+
+    selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
+    editMode.value = 'original';
+
+    const event = createMockKeyboardEvent('ArrowDown');
+    handleKeydown(event);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).not.toHaveBeenCalled();
+  });
+
+  it('在译文预览模式按上下方向键时，不应屏蔽默认行为', () => {
+    const { handleKeydown } = useKeyboardShortcuts(
+      isSearchVisible,
+      toggleSearch,
+      showReplace,
+      nextMatch,
+      prevMatch,
+      copyAllTranslatedText,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapter,
+      selectedSettingMenu,
+      editMode,
+      selectedParagraphIndex,
+      isKeyboardNavigating,
+      isKeyboardSelected,
+      isClickSelected,
+      isProgrammaticScrolling,
+      lastKeyboardNavigationTime,
+      resetNavigationTimeoutId,
+      getNonEmptyParagraphIndices,
+      findNextNonEmptyParagraph,
+      navigateToParagraph,
+      startEditingSelectedParagraph,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+    );
+
+    selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
+    editMode.value = 'preview';
+
+    const event = createMockKeyboardEvent('ArrowDown');
+    handleKeydown(event);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).not.toHaveBeenCalled();
+  });
+
+  it('在设置面板中按上下方向键时，不应屏蔽默认行为（允许滚动/组件导航）', () => {
+    const { handleKeydown } = useKeyboardShortcuts(
+      isSearchVisible,
+      toggleSearch,
+      showReplace,
+      nextMatch,
+      prevMatch,
+      copyAllTranslatedText,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapter,
+      selectedSettingMenu,
+      editMode,
+      selectedParagraphIndex,
+      isKeyboardNavigating,
+      isKeyboardSelected,
+      isClickSelected,
+      isProgrammaticScrolling,
+      lastKeyboardNavigationTime,
+      resetNavigationTimeoutId,
+      getNonEmptyParagraphIndices,
+      findNextNonEmptyParagraph,
+      navigateToParagraph,
+      startEditingSelectedParagraph,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+    );
+
+    selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
+    selectedSettingMenu.value = 'terms';
+    editMode.value = 'original';
+
+    const event = createMockKeyboardEvent('ArrowDown');
+    handleKeydown(event);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).not.toHaveBeenCalled();
+  });
+
+  it('当焦点位于菜单/下拉等 overlay 内时，不应屏蔽上下方向键默认行为', () => {
+    const overlayTarget = new MockHTMLElement();
+    // 只要调用 closest(...) 就返回非空，模拟在 overlay 内
+    overlayTarget.closest = mock(() => overlayTarget as unknown as Element);
+
+    const { handleKeydown } = useKeyboardShortcuts(
+      isSearchVisible,
+      toggleSearch,
+      showReplace,
+      nextMatch,
+      prevMatch,
+      copyAllTranslatedText,
+      selectedChapterWithContent,
+      selectedChapterParagraphs,
+      selectedChapter,
+      selectedSettingMenu,
+      editMode,
+      selectedParagraphIndex,
+      isKeyboardNavigating,
+      isKeyboardSelected,
+      isClickSelected,
+      isProgrammaticScrolling,
+      lastKeyboardNavigationTime,
+      resetNavigationTimeoutId,
+      getNonEmptyParagraphIndices,
+      findNextNonEmptyParagraph,
+      navigateToParagraph,
+      startEditingSelectedParagraph,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+    );
+
+    selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
+    editMode.value = 'original';
+
+    const event = createMockKeyboardEvent('ArrowDown', { target: overlayTarget as any });
+    handleKeydown(event);
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const preventDefaultMock = event.preventDefault;
+    expect(preventDefaultMock).not.toHaveBeenCalled();
   });
 
   it('应该处理 F3 下一个匹配', () => {

@@ -591,6 +591,7 @@ describe('ChapterService', () => {
       chapter: Chapter,
       type: 'original' | 'translation' | 'bilingual',
       format: 'txt' | 'json' | 'clipboard',
+      book?: Novel,
     ): Promise<string> {
       let exportedContent = '';
       mockClipboardWriteText.mockImplementation((text: string) => {
@@ -600,7 +601,7 @@ describe('ChapterService', () => {
       // Mock loadChapterContent 返回传入的 chapter
       mockLoadChapterContentForExport.mockResolvedValueOnce(chapter);
 
-      await ChapterService.exportChapter(chapter, type, format);
+      await ChapterService.exportChapter(chapter, type, format, book);
       return exportedContent;
     }
 
@@ -807,6 +808,22 @@ describe('ChapterService', () => {
         const exportedText = (mockClipboardWriteText.mock.calls[0] as any)[0] as string;
         expect(exportedText).toContain('Chapter 1');
         expect(exportedText).toContain('译文1');
+      });
+
+      it('复制译文时应规范化章节标题（normalizeTitleOnDisplay=true）', async () => {
+        const chapter = createTestChapterWithContent('第110话 测试', [
+          { text: '原文1', translation: '译文1' },
+        ]);
+        // 设置翻译标题（译文导出时应优先使用翻译标题）
+        if (typeof chapter.title !== 'string') {
+          chapter.title.translation.translation = '第110话 测试';
+        }
+
+        const book = { normalizeTitleOnDisplay: true } as unknown as Novel;
+        const content = await getExportedContent(chapter, 'translation', 'clipboard', book);
+
+        // 半角空格应被替换为全角空格（\u3000）
+        expect(content.startsWith(`第110话\u3000测试\n\n`)).toBe(true);
       });
     });
   });

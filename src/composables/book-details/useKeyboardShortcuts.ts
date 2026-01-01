@@ -41,6 +41,28 @@ export function useKeyboardShortcuts(
     const isInputElement =
       target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
+    const isArrowKey = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    // PrimeVue/可交互弹层（菜单、下拉、对话框等）需要使用方向键进行导航；在这些场景下不要拦截默认行为
+    const isInInteractiveOverlay =
+      !!target.closest(
+        [
+          // PrimeVue 常见 overlay/popup 容器
+          '.p-tieredmenu',
+          '.p-menu',
+          '.p-contextmenu',
+          '.p-dropdown-panel',
+          '.p-multiselect-panel',
+          '.p-overlaypanel',
+          '.p-dialog',
+          // 通用 ARIA role
+          '[role="menu"]',
+          '[role="listbox"]',
+          '[role="tree"]',
+          '[role="grid"]',
+          '[role="combobox"]',
+        ].join(','),
+      );
+
     // Ctrl+F 或 Cmd+F: 打开/关闭查找（如果不在搜索输入框中）
     if ((event.ctrlKey || event.metaKey) && event.key === 'f' && !event.shiftKey) {
       // 如果搜索工具栏已打开且焦点在搜索输入框，不处理（让浏览器默认行为处理）
@@ -141,14 +163,30 @@ export function useKeyboardShortcuts(
       return;
     }
 
+    // 章节内容页：在【翻译模式】下屏蔽上下方向键触发的默认滚动（用于段落键盘导航）
+    // - 原文编辑/译文预览模式：需要允许默认滚动与浏览行为
+    // - 菜单/下拉等 overlay：需要允许方向键默认导航
+    if (
+      isArrowKey &&
+      selectedChapter.value &&
+      !selectedSettingMenu.value &&
+      editMode.value === 'translation' &&
+      !isInInteractiveOverlay &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+    }
+
     // 上下箭头键：在段落之间导航（仅在翻译模式下且不在预览模式下）
     if (
       selectedChapter.value &&
       !selectedSettingMenu.value &&
       editMode.value === 'translation' &&
-      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+      isArrowKey &&
+      !isInInteractiveOverlay
     ) {
-      event.preventDefault();
       if (selectedChapterParagraphs.value.length === 0) return;
 
       // 标记正在使用键盘导航
