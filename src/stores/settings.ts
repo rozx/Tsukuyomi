@@ -1,4 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import { toRaw } from 'vue';
+import { cloneDeepWith } from 'lodash';
 import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
@@ -246,6 +248,19 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
     const tx = db.transaction('sync-configs', 'readwrite');
     const store = tx.objectStore('sync-configs');
 
+    // 使用 lodash 将响应式/Proxy 对象深拷贝为纯对象，避免 IndexedDB structured clone 报错
+    // 注意：toRaw 只对当前 Proxy 生效；cloneDeepWith 会递归处理嵌套对象
+    const toPlain = <T>(value: T): T => {
+      if (value === undefined || value === null) return value;
+      return cloneDeepWith(value, (val) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = toRaw(val as any);
+        // 如果 toRaw 有效（val 是 Proxy），返回 raw 让 lodash 继续深拷贝它
+        if (raw !== val) return raw;
+        return undefined; // 交给 lodash 默认深拷贝
+      }) as T;
+    };
+
     // 简化：以当前内存状态为准，覆盖保存
     await store.clear();
 
@@ -259,18 +274,20 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
 
       // 创建纯净对象，避免 Proxy 导致结构化克隆失败
       const clean: SyncConfig = {
-        enabled: sync.enabled,
-        lastSyncTime: sync.lastSyncTime,
-        syncInterval: sync.syncInterval,
+        enabled: Boolean(sync.enabled),
+        lastSyncTime: Number(sync.lastSyncTime || 0),
+        syncInterval: Number(sync.syncInterval || 0),
         syncType: sync.syncType,
-        syncParams: sync.syncParams || {},
-        secret: sync.secret,
-        apiEndpoint: sync.apiEndpoint,
-        ...(sync.lastSyncedModelIds !== undefined ? { lastSyncedModelIds: sync.lastSyncedModelIds } : {}),
-        ...(sync.deletedNovelIds !== undefined ? { deletedNovelIds: sync.deletedNovelIds } : {}),
-        ...(sync.deletedModelIds !== undefined ? { deletedModelIds: sync.deletedModelIds } : {}),
-        ...(sync.deletedCoverIds !== undefined ? { deletedCoverIds: sync.deletedCoverIds } : {}),
-        ...(sync.deletedCoverUrls !== undefined ? { deletedCoverUrls: sync.deletedCoverUrls } : {}),
+        syncParams: toPlain(sync.syncParams || {}),
+        secret: String(sync.secret || ''),
+        apiEndpoint: String(sync.apiEndpoint || ''),
+        ...(sync.lastSyncedModelIds !== undefined
+          ? { lastSyncedModelIds: toPlain(sync.lastSyncedModelIds) }
+          : {}),
+        ...(sync.deletedNovelIds !== undefined ? { deletedNovelIds: toPlain(sync.deletedNovelIds) } : {}),
+        ...(sync.deletedModelIds !== undefined ? { deletedModelIds: toPlain(sync.deletedModelIds) } : {}),
+        ...(sync.deletedCoverIds !== undefined ? { deletedCoverIds: toPlain(sync.deletedCoverIds) } : {}),
+        ...(sync.deletedCoverUrls !== undefined ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) } : {}),
       };
 
       await store.put({ id, ...clean });
@@ -279,6 +296,15 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
     await tx.done;
   } catch (error) {
     console.error('Failed to save sync configs to IndexedDB:', error);
+  }
+
+  // localStorage 兜底写入（向后兼容 & 避免某些环境 IndexedDB 写入失败导致刷新后 lastSyncTime 回退）
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs));
+    }
+  } catch (error) {
+    console.warn('Failed to save sync configs to LocalStorage (fallback):', error);
   }
 }
 

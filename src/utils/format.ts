@@ -33,14 +33,18 @@ export function formatWordCount(count: number | null): string {
 /**
  * 格式化时间戳为相对时间（如：刚刚、x 分钟前、x 小时前等）
  * @param timestamp 时间戳（毫秒）
+ * @param nowMs 当前时间戳（毫秒，可选）。传入该参数可用于让 UI 基于响应式 now 刷新显示。
  * @returns 格式化后的相对时间字符串
  */
-export function formatRelativeTime(timestamp: number | undefined | null): string {
+export function formatRelativeTime(
+  timestamp: number | undefined | null,
+  nowMs?: number,
+): string {
   if (!timestamp || timestamp === 0) {
     return '从未';
   }
   const date = new Date(timestamp);
-  const now = new Date();
+  const now = nowMs !== undefined ? new Date(nowMs) : new Date();
   const diff = now.getTime() - date.getTime();
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);

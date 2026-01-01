@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
@@ -17,6 +17,21 @@ const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
+
+// 用于驱动相对时间显示的定时刷新（避免“刚刚/xx分钟前”不自动更新）
+const nowMs = ref(Date.now());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  nowTimer = setInterval(() => {
+    nowMs.value = Date.now();
+  }, 10_000); // 10s 刷新一次即可
+});
+onUnmounted(() => {
+  if (nowTimer) {
+    clearInterval(nowTimer);
+    nowTimer = null;
+  }
+});
 
 // 同步相关
 const gistSync = computed(() => settingsStore.gistSync);
@@ -53,8 +68,7 @@ const formatNextSyncTime = computed(() => {
   if (!next) {
     return '未设置';
   }
-  const now = Date.now();
-  const diff = next - now;
+  const diff = next - nowMs.value;
   if (diff <= 0) {
     return '即将同步';
   }
@@ -248,7 +262,7 @@ const getItemTypeLabel = (type: RestorableItem['type']) => {
 
 // 格式化删除时间
 const formatDeletedTime = (timestamp: number) => {
-  return formatRelativeTime(timestamp);
+  return formatRelativeTime(timestamp, nowMs.value);
 };
 
 // 同步进度
@@ -299,7 +313,7 @@ defineExpose({
         <div>
           <label class="text-xs text-moon/60">最后同步时间</label>
           <p class="text-sm text-moon/90 mt-1">
-            {{ formatRelativeTime(gistSync.lastSyncTime) }}
+            {{ formatRelativeTime(gistSync.lastSyncTime, nowMs) }}
           </p>
         </div>
 
@@ -311,7 +325,7 @@ defineExpose({
           <p v-else-if="gistSync.enabled" class="text-sm text-moon/70 mt-1">未设置自动同步</p>
           <p v-else class="text-sm text-moon/70 mt-1">未启用</p>
           <p v-if="gistSync.enabled && nextSyncTime" class="text-xs text-moon/50 mt-1">
-            {{ formatRelativeTime(nextSyncTime) }}
+            {{ formatRelativeTime(nextSyncTime, nowMs) }}
           </p>
         </div>
 
