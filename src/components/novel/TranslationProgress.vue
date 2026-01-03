@@ -16,6 +16,30 @@ import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
+// 节流函数：限制函数执行频率
+function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
+  let lastCall = 0;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return ((...args: Parameters<T>) => {
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCall;
+    
+    if (timeSinceLastCall >= delay) {
+      lastCall = now;
+      func(...args);
+    } else {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = setTimeout(() => {
+        lastCall = Date.now();
+        func(...args);
+        timeoutId = null;
+      }, delay - timeSinceLastCall);
+    }
+  }) as T;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   isTranslating?: boolean;
@@ -104,13 +128,12 @@ const handleStorageChange = (e: StorageEvent) => {
   }
 };
 
-// 监听 recentAITasks 变化，重新加载待办事项
+// 监听 recentAITasks 变化，重新加载待办事项 - 只监听任务 ID 列表变化
 watch(
-  () => recentAITasks.value,
+  () => recentAITasks.value.map((t) => t.id),
   () => {
     loadTodos();
   },
-  { deep: true },
 );
 
 onMounted(() => {
@@ -557,12 +580,43 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
   return parts;
 };
 
-// Auto scroll watcher for thinking message
+// 缓存格式化后的思考消息：用“按 taskId 更新 + 节流”的方式，避免每个 token 都触发全量解析
+const formattedThinkingCache = ref<Record<string, FormattedMessagePart[]>>({});
+
+const updateFormattedThinkingCache = throttle((taskId: string) => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  const msg = task?.thinkingMessage ?? '';
+  formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg) : [];
+}, 200); // 解析开销较大，给更大的节流间隔
+
+// 获取格式化后的思考消息（从缓存中读取）
+const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
+  return formattedThinkingCache.value[taskId] || [];
+};
+
+// 节流后的滚动处理函数
+const handleThinkingScroll = throttle(() => {
+  requestAnimationFrame(() => {
+    for (const task of recentAITasks.value) {
+      if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
+        const activeTab = getActiveTab(task.id);
+        // 只有在思考标签页激活时才滚动思考容器
+        if (activeTab === 'thinking') {
+          const container = thinkingContainers.value[task.id];
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }
+    }
+  });
+}, 100); // 每 100ms 最多执行一次
+
+// Auto scroll watcher for thinking message - 优化为只监听长度变化，避免深度监听
 watch(
   () =>
     recentAITasks.value.map((task) => ({
       id: task.id,
-      message: task.thinkingMessage,
       length: task.thinkingMessage?.length || 0,
     })),
   (newTasks, oldTasks) => {
@@ -576,41 +630,61 @@ watch(
         delete lastThinkingUpdate.value[taskId];
       }
     }
+    // 清理已移除任务的格式化缓存
+    for (const taskId of Object.keys(formattedThinkingCache.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete formattedThinkingCache.value[taskId];
+      }
+    }
     
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
       if (task.length > oldLength) {
         lastThinkingUpdate.value[task.id] = Date.now();
+        // 思考文本变化时，节流更新格式化缓存
+        updateFormattedThinkingCache(task.id);
       }
     }
     
-    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    // 使用节流函数处理滚动
     nextTick(() => {
-      requestAnimationFrame(() => {
-        for (const task of recentAITasks.value) {
-          if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
-            const activeTab = getActiveTab(task.id);
-            // 只有在思考标签页激活时才滚动思考容器
-            if (activeTab === 'thinking') {
-              const container = thinkingContainers.value[task.id];
-              if (container) {
-                container.scrollTop = container.scrollHeight;
-              }
-            }
-          }
-        }
-      });
+      handleThinkingScroll();
     });
   },
-  { deep: true, flush: 'post' },
+  { flush: 'post' },
 );
 
-// Auto scroll watcher for output content
+// 输出内容的显示缓存：避免每个 token 都导致 output 区域整段文本重渲染（大字符串非常容易卡顿）
+const displayedOutputContent = ref<Record<string, string>>({});
+
+const updateDisplayedOutputContent = throttle((taskId: string) => {
+  const task = recentAITasks.value.find((t) => t.id === taskId);
+  displayedOutputContent.value[taskId] = task?.outputContent ?? '';
+}, 100);
+
+// 节流后的输出内容滚动处理函数
+const handleOutputScroll = throttle(() => {
+  requestAnimationFrame(() => {
+    for (const task of recentAITasks.value) {
+      if (autoScrollEnabled.value[task.id] && task.outputContent) {
+        const activeTab = getActiveTab(task.id);
+        // 只有在输出标签页激活时才滚动输出容器
+        if (activeTab === 'output') {
+          const container = outputContainers.value[task.id];
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }
+    }
+  });
+}, 100); // 每 100ms 最多执行一次
+
+// Auto scroll watcher for output content - 优化为只监听长度变化，避免深度监听
 watch(
   () =>
     recentAITasks.value.map((task) => ({
       id: task.id,
-      message: task.outputContent,
       length: task.outputContent?.length || 0,
     })),
   (newTasks, oldTasks) => {
@@ -624,67 +698,66 @@ watch(
         delete lastOutputUpdate.value[taskId];
       }
     }
+    // 清理已移除任务的显示缓存
+    for (const taskId of Object.keys(displayedOutputContent.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete displayedOutputContent.value[taskId];
+      }
+    }
     
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
       if (task.length > oldLength) {
         lastOutputUpdate.value[task.id] = Date.now();
+        // 输出变化时，节流刷新显示文本
+        updateDisplayedOutputContent(task.id);
       }
     }
     
-    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    // 使用节流函数处理滚动
     nextTick(() => {
-      requestAnimationFrame(() => {
-        for (const task of recentAITasks.value) {
-          if (autoScrollEnabled.value[task.id] && task.outputContent) {
-            const activeTab = getActiveTab(task.id);
-            // 只有在输出标签页激活时才滚动输出容器
-            if (activeTab === 'output') {
-              const container = outputContainers.value[task.id];
-              if (container) {
-                container.scrollTop = container.scrollHeight;
-              }
-            }
-          }
-        }
-      });
+      handleOutputScroll();
     });
   },
-  { deep: true, flush: 'post' },
+  { flush: 'post' },
 );
 
-// Auto scroll watcher for todos
+// 节流后的待办事项滚动处理函数
+const handleTodosScroll = throttle(() => {
+  requestAnimationFrame(() => {
+    for (const task of recentAITasks.value) {
+      if (autoScrollEnabled.value[task.id]) {
+        const activeTab = getActiveTab(task.id);
+        // 只有在待办事项标签页激活时才滚动待办事项容器
+        if (activeTab === 'todos') {
+          const container = todosContainers.value[task.id];
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }
+    }
+  });
+}, 100); // 每 100ms 最多执行一次
+
+// Auto scroll watcher for todos - 优化为浅层监听
 watch(
-  () => todos.value,
+  () => todos.value.length,
   () => {
-    // 使用 nextTick 确保 Vue 已更新 DOM，然后使用 requestAnimationFrame 确保浏览器已绘制
+    // 使用节流函数处理滚动
     nextTick(() => {
-      requestAnimationFrame(() => {
-        for (const task of recentAITasks.value) {
-          if (autoScrollEnabled.value[task.id]) {
-            const activeTab = getActiveTab(task.id);
-            // 只有在待办事项标签页激活时才滚动待办事项容器
-            if (activeTab === 'todos') {
-              const container = todosContainers.value[task.id];
-              if (container) {
-                container.scrollTop = container.scrollHeight;
-              }
-            }
-          }
-        }
-      });
+      handleTodosScroll();
     });
   },
-  { deep: true, flush: 'post' },
+  { flush: 'post' },
 );
 
-// Auto-fold inactive tasks when a new task starts
+// Auto-fold inactive tasks when a new task starts - 优化为只监听状态变化
 watch(
   () =>
     recentAITasks.value.map((task) => ({
       id: task.id,
       status: task.status,
-      startTime: task.startTime,
     })),
   (newTasks, oldTasks) => {
     // Find newly started active tasks (status is 'thinking' or 'processing')
@@ -713,7 +786,7 @@ watch(
       }
     }
   },
-  { deep: true, flush: 'post' },
+  { flush: 'post' },
 );
 </script>
 
@@ -896,9 +969,7 @@ watch(
                             class="ai-task-thinking-text"
                           >
                             <template
-                              v-for="(part, index) in formatThinkingMessage(
-                                task.thinkingMessage || '',
-                              )"
+                              v-for="(part, index) in getFormattedThinkingMessage(task.id)"
                               :key="index"
                             >
                               <div
@@ -939,7 +1010,7 @@ watch(
                             :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
                             class="ai-task-output-text"
                           >
-                            {{ task.outputContent }}
+                            {{ displayedOutputContent[task.id] ?? task.outputContent }}
                           </div>
                         </div>
                       </TabPanel>
