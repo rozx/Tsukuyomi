@@ -405,14 +405,31 @@ const handleOriginalTextInput = (event: Event) => {
   gap: 1rem;
   align-items: flex-start;
   position: relative;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 只允许颜色/阴影类过渡，避免 margin/padding 等布局属性过渡导致“滚动抖动” */
+  transition:
+    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.paragraph-with-line-number:has(.paragraph-selected) {
+/* 选中高亮：使用伪元素绘制边框/阴影，避免改变布局尺寸导致滚动“上下跳动” */
+.paragraph-with-line-number::before {
+  content: '';
+  position: absolute;
+  inset: -0.5rem;
   border-radius: 8px;
-  padding: 0.5rem;
-  margin: -0.5rem;
-  border: 1px solid var(--primary-opacity-20);
+  border: 1px solid transparent;
+  box-shadow: 0 0 0 1px transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.paragraph-with-line-number:has(.paragraph-selected)::before {
+  opacity: 1;
+  border-color: var(--primary-opacity-20);
   box-shadow: 0 0 0 1px var(--primary-opacity-15);
 }
 
@@ -430,6 +447,9 @@ const handleOriginalTextInput = (event: Event) => {
   align-self: flex-start;
   line-height: 1.8;
   font-weight: 500;
+  /* 确保在选中伪元素之上 */
+  position: relative;
+  z-index: 1;
 }
 
 .paragraph-with-line-number .paragraph-card {
@@ -437,6 +457,7 @@ const handleOriginalTextInput = (event: Event) => {
   min-width: 0;
   padding-left: 0;
   position: relative;
+  z-index: 1; /* 确保在选中伪元素之上 */
 }
 
 /* 隐藏 ParagraphCard 中的原始段落符号 */
