@@ -139,6 +139,18 @@ export interface StreamCallbackConfig {
   aiProcessingStore: AIProcessingStore | undefined;
   originalText: string;
   logLabel: string;
+  /**
+   * 当前状态（用于验证状态转换）
+   */
+  currentStatus?: TaskStatus;
+  /**
+   * 任务类型（用于生成警告消息）
+   */
+  taskType?: TaskType;
+  /**
+   * 用于停止流的 AbortController（当检测到无效状态时）
+   */
+  abortController?: AbortController;
 }
 
 /**
@@ -670,8 +682,17 @@ export function detectPlanningContextUpdate(
  * 创建流式处理回调函数
  */
 export function createStreamCallback(config: StreamCallbackConfig): TextGenerationStreamCallback {
-  const { taskId, aiProcessingStore, originalText, logLabel } = config;
+  const {
+    taskId,
+    aiProcessingStore,
+    originalText,
+    logLabel,
+    currentStatus,
+    taskType,
+    abortController,
+  } = config;
   let accumulatedText = '';
+  let lastCheckLength = 0; // 上次检查时的文本长度，避免频繁解析
 
   return (c) => {
     // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
@@ -692,6 +713,67 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
       // 检测重复字符（AI降级检测），传入原文进行比较
       if (detectRepeatingCharacters(accumulatedText, originalText, { logLabel })) {
         throw new Error(`AI降级检测：检测到重复字符，停止${logLabel.replace('Service', '')}`);
+      }
+
+      // 实时检测无效状态（每增加一定长度后检查一次，避免频繁解析）
+      if (
+        currentStatus &&
+        taskType &&
+        accumulatedText.length - lastCheckLength > 50 && // 每增加50个字符检查一次
+        accumulatedText.length > 20 // 至少要有一定长度才尝试解析
+      ) {
+        lastCheckLength = accumulatedText.length;
+
+        // 只检测 status 字段（不用 JSON.parse），避免“JSON 尚未闭合/包含嵌套 {}”导致延迟或误判
+        const statusMatch = accumulatedText.match(/"status"\s*:\s*"([^"]+)"/);
+        if (statusMatch && statusMatch[1]) {
+          const status = statusMatch[1];
+          const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'end'];
+
+          // 检查状态值是否有效
+          if (!validStatuses.includes(status as TaskStatus)) {
+            console.warn(`[${logLabel}] ⚠️ 检测到无效状态值: ${status}，立即停止输出`);
+            abortController?.abort();
+            throw new Error(
+              `[警告] 检测到无效状态值: ${status}，必须是 planning、working、completed 或 end 之一`,
+            );
+          }
+
+          // 检查状态转换是否有效
+          const validTransitions: Record<TaskStatus, TaskStatus[]> = {
+            planning: ['working'],
+            working: ['completed'],
+            completed: ['end', 'working'],
+            end: [],
+          };
+
+          const newStatus = status as TaskStatus;
+          if (currentStatus !== newStatus) {
+            const allowedNextStatuses: TaskStatus[] | undefined = validTransitions[currentStatus];
+            if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
+              const taskTypeLabels = {
+                translation: '翻译',
+                polish: '润色',
+                proofreading: '校对',
+              };
+              const taskLabel = taskTypeLabels[taskType];
+              const statusLabels: Record<TaskStatus, string> = {
+                planning: '规划阶段 (planning)',
+                working: `${taskLabel}中 (working)`,
+                completed: '验证阶段 (completed)',
+                end: '完成 (end)',
+              };
+
+              console.warn(
+                `[${logLabel}] ⚠️ 检测到无效的状态转换：${statusLabels[currentStatus]} → ${statusLabels[newStatus]}，立即停止输出`,
+              );
+              abortController?.abort();
+              throw new Error(
+                `[警告] **状态转换错误**：你试图从 "${statusLabels[currentStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。正确的状态转换顺序：planning → working → completed → end`,
+              );
+            }
+          }
+        }
       }
     }
     return Promise.resolve();
@@ -1231,16 +1313,113 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       ...(tools.length > 0 ? { tools } : {}),
     };
 
-    // 创建流式处理回调
-    const streamCallback = createStreamCallback({
+    // 用于存储流式输出中累积的文本（用于无效状态检测时的错误处理）
+    let streamedText = '';
+
+    // 为本次请求创建“可主动中止”的 signal（用于检测到无效状态时立即停止流）
+    // 注意：每个 turn 都必须使用新的 AbortController，否则一旦中止就无法重试
+    const { controller: streamAbortController, cleanup: cleanupAbort } =
+      createUnifiedAbortController(aiServiceConfig.signal);
+    const aiServiceConfigForThisTurn: AIServiceConfig = {
+      ...aiServiceConfig,
+      signal: streamAbortController.signal,
+    };
+
+    // 创建流式处理回调（传入当前状态以便实时检测无效状态）
+    const streamCallbackConfig: StreamCallbackConfig = {
       taskId,
       aiProcessingStore,
       originalText: chunkText,
       logLabel,
-    });
+      currentStatus,
+      taskType,
+      abortController: streamAbortController,
+    };
+    const streamCallback = createStreamCallback(streamCallbackConfig);
 
-    // 调用 AI
-    const result = await generateText(aiServiceConfig, request, streamCallback);
+    // 包装流式回调以捕获累积文本
+    const wrappedStreamCallback: TextGenerationStreamCallback = async (chunk) => {
+      // 累积文本用于错误处理
+      if (chunk.text) {
+        streamedText += chunk.text;
+      }
+      // 调用原始回调
+      return streamCallback(chunk);
+    };
+
+    // 调用 AI（捕获流式回调中抛出的无效状态错误）
+    let result;
+    try {
+      result = await generateText(aiServiceConfigForThisTurn, request, wrappedStreamCallback);
+    } catch (streamError) {
+      // 检查是否是无效状态错误
+      if (
+        streamError instanceof Error &&
+        (streamError.message.includes('无效状态') || streamError.message.includes('状态转换错误'))
+      ) {
+        console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
+
+        // 使用累积的流式文本或结果文本
+        const partialResponse = result?.text || streamedText || '';
+
+        // 立即警告 AI
+        const statusLabels: Record<TaskStatus, string> = {
+          planning: '规划阶段 (planning)',
+          working: `${taskLabel}中 (working)`,
+          completed: '验证阶段 (completed)',
+          end: '完成 (end)',
+        };
+
+        // 解析错误消息以获取详细信息
+        const errorMessage = streamError.message;
+        let warningMessage = errorMessage;
+
+        // 如果错误消息包含状态转换信息，提取并格式化
+        if (errorMessage.includes('状态转换错误')) {
+          const expectedNextStatus: TaskStatus =
+            currentStatus === 'planning'
+              ? 'working'
+              : currentStatus === 'working'
+                ? 'completed'
+                : currentStatus === 'completed'
+                  ? 'end'
+                  : 'working';
+          warningMessage =
+            `[警告] **状态转换错误**：你返回了无效的状态转换。\n\n` +
+            `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
+            `你当前处于 "${statusLabels[currentStatus]}"，应该先转换到 "${statusLabels[expectedNextStatus]}"。\n\n` +
+            `请重新返回正确的状态：{"status": "${expectedNextStatus}"}`;
+        } else if (errorMessage.includes('无效状态值')) {
+          // 无效状态值的警告
+          warningMessage =
+            `[警告] **无效状态值**：你返回了无效的状态值。\n\n` +
+            `**有效的状态值**：planning、working、completed、end\n\n` +
+            `你当前处于 "${statusLabels[currentStatus]}"，请返回正确的状态值。`;
+        }
+
+        // 将部分响应添加到历史（如果有）
+        if (partialResponse.trim()) {
+          history.push({
+            role: 'assistant',
+            content: partialResponse,
+          });
+        }
+
+        // 立即添加警告消息
+        history.push({
+          role: 'user',
+          content: `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n${warningMessage}`,
+        });
+
+        // 继续循环，让 AI 重新响应
+        continue;
+      }
+
+      // 其他错误，重新抛出
+      throw streamError;
+    } finally {
+      cleanupAbort();
+    }
 
     // 保存思考内容
     if (aiProcessingStore && taskId && result.reasoningContent) {
