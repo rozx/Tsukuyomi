@@ -95,7 +95,10 @@ export function useChapterTranslation(
     // - 否则若 book 中已加载 content，直接用
     // - 否则从独立存储中懒加载（用户切走章节时很可能 content 被卸载）
     let loadedChapter: Chapter | null | undefined = undefined;
-    if (selectedChapterWithContent.value?.id === targetChapterId && selectedChapterWithContent.value) {
+    if (
+      selectedChapterWithContent.value?.id === targetChapterId &&
+      selectedChapterWithContent.value
+    ) {
       loadedChapter = selectedChapterWithContent.value;
     } else if (found.chapter.content !== undefined) {
       loadedChapter = found.chapter;
@@ -243,9 +246,7 @@ export function useChapterTranslation(
       const missingParts: string[] = [];
       if (!bookId) missingParts.push('bookId 缺失');
       if (!updatedVolumes) missingParts.push('updatedVolumes 缺失');
-      console.warn(
-        `[useChapterTranslation] ⚠️ 无法保存标题翻译：${missingParts.join('，')}`,
-      );
+      console.warn(`[useChapterTranslation] ⚠️ 无法保存标题翻译：${missingParts.join('，')}`);
     }
   };
 
@@ -278,45 +279,153 @@ export function useChapterTranslation(
       translationMap.set(pt.id, pt.translation);
     });
 
-    await updateParagraphsAndSave(translationMap, aiModelId, targetChapterId, { updateSelected: true });
+    await updateParagraphsAndSave(translationMap, aiModelId, targetChapterId, {
+      updateSelected: true,
+    });
 
     // 从正在翻译的集合中移除已完成的段落 ID，使 skeleton 消失并显示翻译
-    newTranslations.forEach((pt) => {
-      translatingParagraphIds.value.delete(pt.id);
-    });
+    const state = chapterTranslationStates.value.get(targetChapterId);
+    if (state) {
+      newTranslations.forEach((pt) => {
+        state.translatingParagraphIds.delete(pt.id);
+      });
+    }
 
     return newTranslations.length;
   };
 
-  // 翻译章节所有段落的状态
-  const isTranslatingChapter = ref(false);
-  const translationProgress = ref({
-    current: 0,
-    total: 0,
-    message: '',
-  });
-  const translationAbortController = ref<AbortController | null>(null);
-  const translatingParagraphIds = ref<Set<string>>(new Set());
+  // 章节级别的翻译状态管理（按章节ID分别跟踪）
+  type ChapterTranslationState = {
+    isTranslating: boolean;
+    progress: { current: number; total: number; message: string };
+    abortController: AbortController | null;
+    translatingParagraphIds: Set<string>;
+  };
 
-  // 润色章节所有段落的状态
-  const isPolishingChapter = ref(false);
-  const polishProgress = ref({
-    current: 0,
-    total: 0,
-    message: '',
-  });
-  const polishAbortController = ref<AbortController | null>(null);
-  const polishingParagraphIds = ref<Set<string>>(new Set());
+  type ChapterPolishState = {
+    isPolishing: boolean;
+    progress: { current: number; total: number; message: string };
+    abortController: AbortController | null;
+    polishingParagraphIds: Set<string>;
+  };
 
-  // 校对章节所有段落的状态
-  const isProofreadingChapter = ref(false);
-  const proofreadingProgress = ref({
-    current: 0,
-    total: 0,
-    message: '',
+  type ChapterProofreadingState = {
+    isProofreading: boolean;
+    progress: { current: number; total: number; message: string };
+    abortController: AbortController | null;
+    proofreadingParagraphIds: Set<string>;
+  };
+
+  // 使用 Map 存储每个章节的状态，key 为章节ID
+  const chapterTranslationStates = ref<Map<string, ChapterTranslationState>>(new Map());
+  const chapterPolishStates = ref<Map<string, ChapterPolishState>>(new Map());
+  const chapterProofreadingStates = ref<Map<string, ChapterProofreadingState>>(new Map());
+
+  // 获取当前选中章节的状态
+  const currentChapterState = computed(() => {
+    const chapterId = selectedChapter.value?.id;
+    if (!chapterId) return null;
+
+    const translationState = chapterTranslationStates.value.get(chapterId);
+    const polishState = chapterPolishStates.value.get(chapterId);
+    const proofreadingState = chapterProofreadingStates.value.get(chapterId);
+
+    return {
+      translation: translationState || {
+        isTranslating: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        translatingParagraphIds: new Set(),
+      },
+      polish: polishState || {
+        isPolishing: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        polishingParagraphIds: new Set(),
+      },
+      proofreading: proofreadingState || {
+        isProofreading: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        proofreadingParagraphIds: new Set(),
+      },
+    };
   });
-  const proofreadingAbortController = ref<AbortController | null>(null);
-  const proofreadingParagraphIds = ref<Set<string>>(new Set());
+
+  // 向后兼容的状态变量（供外部组件使用）
+  const isTranslatingChapter = computed(
+    () => currentChapterState.value?.translation.isTranslating ?? false,
+  );
+  const translationProgress = computed(
+    () => currentChapterState.value?.translation.progress ?? { current: 0, total: 0, message: '' },
+  );
+  const translatingParagraphIds = computed<Set<string>>(
+    () => currentChapterState.value?.translation.translatingParagraphIds ?? new Set<string>(),
+  );
+  const translationAbortController = computed(
+    () => currentChapterState.value?.translation.abortController ?? null,
+  );
+
+  const isPolishingChapter = computed(() => currentChapterState.value?.polish.isPolishing ?? false);
+  const polishProgress = computed(
+    () => currentChapterState.value?.polish.progress ?? { current: 0, total: 0, message: '' },
+  );
+  const polishingParagraphIds = computed<Set<string>>(
+    () => currentChapterState.value?.polish.polishingParagraphIds ?? new Set<string>(),
+  );
+  const polishAbortController = computed(
+    () => currentChapterState.value?.polish.abortController ?? null,
+  );
+
+  const isProofreadingChapter = computed(
+    () => currentChapterState.value?.proofreading.isProofreading ?? false,
+  );
+  const proofreadingProgress = computed(
+    () => currentChapterState.value?.proofreading.progress ?? { current: 0, total: 0, message: '' },
+  );
+  const proofreadingParagraphIds = computed<Set<string>>(
+    () => currentChapterState.value?.proofreading.proofreadingParagraphIds ?? new Set<string>(),
+  );
+  const proofreadingAbortController = computed(
+    () => currentChapterState.value?.proofreading.abortController ?? null,
+  );
+
+  // 辅助函数：获取或创建章节状态
+  const getOrCreateTranslationState = (chapterId: string): ChapterTranslationState => {
+    if (!chapterTranslationStates.value.has(chapterId)) {
+      chapterTranslationStates.value.set(chapterId, {
+        isTranslating: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        translatingParagraphIds: new Set(),
+      });
+    }
+    return chapterTranslationStates.value.get(chapterId)!;
+  };
+
+  const getOrCreatePolishState = (chapterId: string): ChapterPolishState => {
+    if (!chapterPolishStates.value.has(chapterId)) {
+      chapterPolishStates.value.set(chapterId, {
+        isPolishing: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        polishingParagraphIds: new Set(),
+      });
+    }
+    return chapterPolishStates.value.get(chapterId)!;
+  };
+
+  const getOrCreateProofreadingState = (chapterId: string): ChapterProofreadingState => {
+    if (!chapterProofreadingStates.value.has(chapterId)) {
+      chapterProofreadingStates.value.set(chapterId, {
+        isProofreading: false,
+        progress: { current: 0, total: 0, message: '' },
+        abortController: null,
+        proofreadingParagraphIds: new Set(),
+      });
+    }
+    return chapterProofreadingStates.value.get(chapterId)!;
+  };
 
   // 润色单个段落
   const polishParagraph = async (paragraphId: string) => {
@@ -327,6 +436,8 @@ export function useChapterTranslation(
     ) {
       return;
     }
+
+    const targetChapterId = selectedChapterWithContent.value.id;
 
     // 查找段落
     const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
@@ -363,12 +474,15 @@ export function useChapterTranslation(
       return;
     }
 
+    // 获取该章节的状态
+    const state = getOrCreatePolishState(targetChapterId);
+
     // 添加段落 ID 到正在润色的集合中
-    polishingParagraphIds.value.add(paragraphId);
+    state.polishingParagraphIds.add(paragraphId);
 
     // 创建 AbortController 用于取消润色
     const abortController = new AbortController();
-    const targetChapterId = selectedChapterWithContent.value.id;
+    state.abortController = abortController;
 
     try {
       // 获取书籍的 chunk size 设置
@@ -410,7 +524,8 @@ export function useChapterTranslation(
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在润色的集合中移除段落 ID
-      polishingParagraphIds.value.delete(paragraphId);
+      state.polishingParagraphIds.delete(paragraphId);
+      state.abortController = null;
     }
   };
 
@@ -423,6 +538,8 @@ export function useChapterTranslation(
     ) {
       return;
     }
+
+    const targetChapterId = selectedChapterWithContent.value.id;
 
     // 查找段落
     const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
@@ -459,12 +576,15 @@ export function useChapterTranslation(
       return;
     }
 
+    // 获取该章节的状态
+    const state = getOrCreateProofreadingState(targetChapterId);
+
     // 添加段落 ID 到正在校对的集合中
-    proofreadingParagraphIds.value.add(paragraphId);
+    state.proofreadingParagraphIds.add(paragraphId);
 
     // 创建 AbortController 用于取消校对
     const abortController = new AbortController();
-    const targetChapterId = selectedChapterWithContent.value.id;
+    state.abortController = abortController;
 
     try {
       // 获取书籍的 chunk size 设置
@@ -510,7 +630,8 @@ export function useChapterTranslation(
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在校对的集合中移除段落 ID
-      proofreadingParagraphIds.value.delete(paragraphId);
+      state.proofreadingParagraphIds.delete(paragraphId);
+      state.abortController = null;
     }
   };
 
@@ -523,6 +644,8 @@ export function useChapterTranslation(
     ) {
       return;
     }
+
+    const targetChapterId = selectedChapterWithContent.value.id;
 
     // 查找段落
     const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
@@ -548,12 +671,15 @@ export function useChapterTranslation(
       return;
     }
 
+    // 获取该章节的状态
+    const state = getOrCreateTranslationState(targetChapterId);
+
     // 添加段落 ID 到正在翻译的集合中
-    translatingParagraphIds.value.add(paragraphId);
+    state.translatingParagraphIds.add(paragraphId);
 
     // 创建 AbortController 用于取消翻译
     const abortController = new AbortController();
-    const targetChapterId = selectedChapterWithContent.value.id;
+    state.abortController = abortController;
 
     try {
       // 获取书籍的 chunk size 设置
@@ -581,10 +707,14 @@ export function useChapterTranslation(
         },
         onParagraphTranslation: async (paragraphTranslations) => {
           // 使用共享函数更新段落翻译
-          await updateParagraphsFromResults(paragraphTranslations, selectedModel.id, targetChapterId);
+          await updateParagraphsFromResults(
+            paragraphTranslations,
+            selectedModel.id,
+            targetChapterId,
+          );
           // 从正在翻译的集合中移除已完成的段落 ID
           paragraphTranslations.forEach((pt) => {
-            translatingParagraphIds.value.delete(pt.id);
+            state.translatingParagraphIds.delete(pt.id);
           });
         },
         onAction: (action) => {
@@ -603,7 +733,8 @@ export function useChapterTranslation(
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
       // 从正在翻译的集合中移除段落 ID
-      translatingParagraphIds.value.delete(paragraphId);
+      state.translatingParagraphIds.delete(paragraphId);
+      state.abortController = null;
     }
   };
 
@@ -629,11 +760,14 @@ export function useChapterTranslation(
       return;
     }
 
-    isTranslatingChapter.value = true;
-    translatingParagraphIds.value.clear();
+    const targetChapterId = selectedChapter.value.id;
+    const state = getOrCreateTranslationState(targetChapterId);
+
+    state.isTranslating = true;
+    state.translatingParagraphIds.clear();
 
     // 初始化进度
-    translationProgress.value = {
+    state.progress = {
       current: 0,
       total: 0,
       message: '正在初始化翻译...',
@@ -641,11 +775,10 @@ export function useChapterTranslation(
 
     // 创建 AbortController 用于取消翻译
     const abortController = new AbortController();
-    translationAbortController.value = abortController;
+    state.abortController = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
-    const targetChapterId = selectedChapter.value.id;
 
     try {
       const paragraphs = selectedChapterParagraphs.value;
@@ -674,14 +807,14 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          translationProgress.value = {
+          state.progress = {
             current: progress.current,
             total: progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
           if (progress.currentParagraphs) {
-            translatingParagraphIds.value = new Set(progress.currentParagraphs);
+            state.translatingParagraphIds = new Set(progress.currentParagraphs);
           }
           console.debug('翻译进度:', progress);
         },
@@ -735,16 +868,16 @@ export function useChapterTranslation(
       console.error('翻译失败:', error);
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
-      isTranslatingChapter.value = false;
-      translationAbortController.value = null;
+      state.isTranslating = false;
+      state.abortController = null;
       // 延迟清除进度信息和正在翻译的段落 ID，让用户看到完成状态
       setTimeout(() => {
-        translationProgress.value = {
+        state.progress = {
           current: 0,
           total: 0,
           message: '',
         };
-        translatingParagraphIds.value.clear();
+        state.translatingParagraphIds.clear();
       }, 1000);
     }
   };
@@ -786,11 +919,14 @@ export function useChapterTranslation(
       return;
     }
 
-    isTranslatingChapter.value = true;
-    translatingParagraphIds.value.clear();
+    const targetChapterId = selectedChapter.value.id;
+    const state = getOrCreateTranslationState(targetChapterId);
+
+    state.isTranslating = true;
+    state.translatingParagraphIds.clear();
 
     // 初始化进度
-    translationProgress.value = {
+    state.progress = {
       current: 0,
       total: 0,
       message: '正在初始化翻译...',
@@ -798,11 +934,10 @@ export function useChapterTranslation(
 
     // 创建 AbortController 用于取消翻译
     const abortController = new AbortController();
-    translationAbortController.value = abortController;
+    state.abortController = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
-    const targetChapterId = selectedChapter.value.id;
 
     try {
       // 获取章节标题
@@ -829,14 +964,14 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          translationProgress.value = {
+          state.progress = {
             current: progress.current,
             total: progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
           if (progress.currentParagraphs) {
-            translatingParagraphIds.value = new Set(progress.currentParagraphs);
+            state.translatingParagraphIds = new Set(progress.currentParagraphs);
           }
           console.debug('翻译进度:', progress);
         },
@@ -872,15 +1007,15 @@ export function useChapterTranslation(
       console.error('翻译失败:', error);
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
-      isTranslatingChapter.value = false;
-      translationAbortController.value = null;
+      state.isTranslating = false;
+      state.abortController = null;
       setTimeout(() => {
-        translationProgress.value = {
+        state.progress = {
           current: 0,
           total: 0,
           message: '',
         };
-        translatingParagraphIds.value.clear();
+        state.translatingParagraphIds.clear();
       }, 1000);
     }
   };
@@ -928,11 +1063,14 @@ export function useChapterTranslation(
       return;
     }
 
-    isPolishingChapter.value = true;
-    polishingParagraphIds.value.clear();
+    const targetChapterId = selectedChapter.value.id;
+    const state = getOrCreatePolishState(targetChapterId);
+
+    state.isPolishing = true;
+    state.polishingParagraphIds.clear();
 
     // 初始化进度
-    polishProgress.value = {
+    state.progress = {
       current: 0,
       total: 0,
       message: '正在初始化润色...',
@@ -940,11 +1078,10 @@ export function useChapterTranslation(
 
     // 创建 AbortController 用于取消润色
     const abortController = new AbortController();
-    polishAbortController.value = abortController;
+    state.abortController = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
-    const targetChapterId = selectedChapter.value.id;
 
     try {
       // 获取书籍的 chunk size 设置
@@ -967,14 +1104,14 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          polishProgress.value = {
+          state.progress = {
             current: progress.current,
             total: progress.total,
             message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在润色的段落 ID
           if (progress.currentParagraphs) {
-            polishingParagraphIds.value = new Set(progress.currentParagraphs);
+            state.polishingParagraphIds = new Set(progress.currentParagraphs);
           }
           console.debug('润色进度:', progress);
         },
@@ -994,7 +1131,7 @@ export function useChapterTranslation(
           );
           // 从正在润色的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
-            polishingParagraphIds.value.delete(pt.id);
+            state.polishingParagraphIds.delete(pt.id);
           });
         },
       });
@@ -1027,65 +1164,78 @@ export function useChapterTranslation(
       console.error('润色失败:', error);
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
-      isPolishingChapter.value = false;
-      polishAbortController.value = null;
+      state.isPolishing = false;
+      state.abortController = null;
       // 延迟清除进度信息和正在润色的段落 ID，让用户看到完成状态
       setTimeout(() => {
-        polishProgress.value = {
+        state.progress = {
           current: 0,
           total: 0,
           message: '',
         };
-        polishingParagraphIds.value.clear();
+        state.polishingParagraphIds.clear();
       }, 1000);
     }
   };
 
   // 取消翻译
   const cancelTranslation = () => {
+    const chapterId = selectedChapter.value?.id;
+    if (!chapterId) return;
+
+    const state = chapterTranslationStates.value.get(chapterId);
+    if (!state) return;
+
     // 首先取消本地的 abortController（这是最重要的，因为它会真正停止翻译请求）
-    if (translationAbortController.value) {
-      translationAbortController.value.abort();
-      translationAbortController.value = null;
+    if (state.abortController) {
+      state.abortController.abort();
+      state.abortController = null;
     }
 
-    // 然后取消所有相关的 AI 任务（包括已取消的任务，确保它们的状态正确）
-    // 注意：即使任务已经被标记为 cancelled，我们也要确保它们的 abortController 被取消
+    // 然后取消当前章节相关的 AI 任务
     const allTasks = aiProcessingStore.activeTasks;
-    const translationTasks = allTasks.filter((task) => task.type === 'translation');
+    const translationTasks = allTasks.filter(
+      (task) => task.type === 'translation' && task.chapterId === chapterId,
+    );
 
-    // 取消所有翻译任务（不管状态如何，确保它们的 abortController 被取消）
+    // 取消当前章节的翻译任务
     for (const task of translationTasks) {
-      // 只取消那些还没有完成的任务（包括 thinking、processing、cancelled、error 状态）
-      // 注意：即使任务已经被标记为 cancelled，我们也要确保它的 abortController 被取消
       if (task.status !== 'completed') {
         void aiProcessingStore.stopTask(task.id);
       }
     }
 
     // 更新 UI 状态
-    isTranslatingChapter.value = false;
-    translationProgress.value = {
+    state.isTranslating = false;
+    state.progress = {
       current: 0,
       total: 0,
       message: '',
     };
-    translatingParagraphIds.value = new Set();
+    state.translatingParagraphIds = new Set();
   };
 
   // 取消润色
   const cancelPolish = () => {
+    const chapterId = selectedChapter.value?.id;
+    if (!chapterId) return;
+
+    const state = chapterPolishStates.value.get(chapterId);
+    if (!state) return;
+
     // 首先取消本地的 abortController
-    if (polishAbortController.value) {
-      polishAbortController.value.abort();
-      polishAbortController.value = null;
+    if (state.abortController) {
+      state.abortController.abort();
+      state.abortController = null;
     }
 
-    // 然后取消所有相关的 AI 任务
+    // 然后取消当前章节相关的 AI 任务
     const allTasks = aiProcessingStore.activeTasks;
-    const polishTasks = allTasks.filter((task) => task.type === 'polish');
+    const polishTasks = allTasks.filter(
+      (task) => task.type === 'polish' && task.chapterId === chapterId,
+    );
 
-    // 取消所有润色任务
+    // 取消当前章节的润色任务
     for (const task of polishTasks) {
       if (task.status !== 'completed') {
         void aiProcessingStore.stopTask(task.id);
@@ -1093,13 +1243,13 @@ export function useChapterTranslation(
     }
 
     // 更新 UI 状态
-    isPolishingChapter.value = false;
-    polishProgress.value = {
+    state.isPolishing = false;
+    state.progress = {
       current: 0,
       total: 0,
       message: '',
     };
-    polishingParagraphIds.value = new Set();
+    state.polishingParagraphIds = new Set();
   };
 
   // 校对章节所有段落
@@ -1139,11 +1289,14 @@ export function useChapterTranslation(
       return;
     }
 
-    isProofreadingChapter.value = true;
-    proofreadingParagraphIds.value.clear();
+    const targetChapterId = selectedChapter.value.id;
+    const state = getOrCreateProofreadingState(targetChapterId);
+
+    state.isProofreading = true;
+    state.proofreadingParagraphIds.clear();
 
     // 初始化进度
-    proofreadingProgress.value = {
+    state.progress = {
       current: 0,
       total: 0,
       message: '正在初始化校对...',
@@ -1151,11 +1304,10 @@ export function useChapterTranslation(
 
     // 创建 AbortController 用于取消校对
     const abortController = new AbortController();
-    proofreadingAbortController.value = abortController;
+    state.abortController = abortController;
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
-    const targetChapterId = selectedChapter.value.id;
 
     try {
       // 获取书籍的 chunk size 设置
@@ -1178,14 +1330,14 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          proofreadingProgress.value = {
+          state.progress = {
             current: progress.current,
             total: progress.total,
             message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在校对的段落 ID
           if (progress.currentParagraphs) {
-            proofreadingParagraphIds.value = new Set(progress.currentParagraphs);
+            state.proofreadingParagraphIds = new Set(progress.currentParagraphs);
           }
           console.debug('校对进度:', progress);
         },
@@ -1205,7 +1357,7 @@ export function useChapterTranslation(
           );
           // 从正在校对的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
-            proofreadingParagraphIds.value.delete(pt.id);
+            state.proofreadingParagraphIds.delete(pt.id);
           });
         },
       });
@@ -1238,33 +1390,41 @@ export function useChapterTranslation(
       console.error('校对失败:', error);
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
-      isProofreadingChapter.value = false;
-      proofreadingAbortController.value = null;
+      state.isProofreading = false;
+      state.abortController = null;
       // 延迟清除进度信息和正在校对的段落 ID，让用户看到完成状态
       setTimeout(() => {
-        proofreadingProgress.value = {
+        state.progress = {
           current: 0,
           total: 0,
           message: '',
         };
-        proofreadingParagraphIds.value.clear();
+        state.proofreadingParagraphIds.clear();
       }, 1000);
     }
   };
 
   // 取消校对
   const cancelProofreading = () => {
+    const chapterId = selectedChapter.value?.id;
+    if (!chapterId) return;
+
+    const state = chapterProofreadingStates.value.get(chapterId);
+    if (!state) return;
+
     // 首先取消本地的 abortController
-    if (proofreadingAbortController.value) {
-      proofreadingAbortController.value.abort();
-      proofreadingAbortController.value = null;
+    if (state.abortController) {
+      state.abortController.abort();
+      state.abortController = null;
     }
 
-    // 然后取消所有相关的 AI 任务
+    // 然后取消当前章节相关的 AI 任务
     const allTasks = aiProcessingStore.activeTasks;
-    const proofreadingTasks = allTasks.filter((task) => task.type === 'proofreading');
+    const proofreadingTasks = allTasks.filter(
+      (task) => task.type === 'proofreading' && task.chapterId === chapterId,
+    );
 
-    // 取消所有校对任务
+    // 取消当前章节的校对任务
     for (const task of proofreadingTasks) {
       if (task.status !== 'completed') {
         void aiProcessingStore.stopTask(task.id);
@@ -1272,13 +1432,13 @@ export function useChapterTranslation(
     }
 
     // 更新 UI 状态
-    isProofreadingChapter.value = false;
-    proofreadingProgress.value = {
+    state.isProofreading = false;
+    state.progress = {
       current: 0,
       total: 0,
       message: '',
     };
-    proofreadingParagraphIds.value = new Set();
+    state.proofreadingParagraphIds = new Set();
   };
 
   // 组件卸载时取消所有任务

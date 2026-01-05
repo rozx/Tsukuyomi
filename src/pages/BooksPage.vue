@@ -22,10 +22,7 @@ import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
-import {
-  formatWordCount,
-  getTotalChapters as utilGetTotalChapters,
-} from 'src/utils';
+import { formatWordCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
 import { cloneDeep } from 'lodash';
 
 const router = useRouter();
@@ -742,7 +739,10 @@ const handleSave = async (formData: Partial<Novel>) => {
     <!-- DataView 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0">
       <!-- 加载指示器 -->
-      <div v-if="booksStore.isLoading" class="flex-1 flex items-center justify-center">
+      <div
+        v-if="booksStore.isLoading || !booksStore.isLoaded"
+        class="flex-1 flex items-center justify-center"
+      >
         <div class="text-center">
           <ProgressSpinner
             style="width: 50px; height: 50px"
@@ -755,7 +755,7 @@ const handleSave = async (formData: Partial<Novel>) => {
       </div>
       <!-- 书籍列表 -->
       <DataView
-        v-else
+        v-else-if="booksStore.isLoaded"
         :value="filteredBooks"
         data-key="id"
         :rows="20"
@@ -949,7 +949,13 @@ const handleSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
       <template #footer>
-        <Button label="取消" icon="pi pi-times" class="p-button-text" :disabled="isDeletingBook" @click="cancelDeleteBook" />
+        <Button
+          label="取消"
+          icon="pi pi-times"
+          class="p-button-text"
+          :disabled="isDeletingBook"
+          @click="cancelDeleteBook"
+        />
         <Button
           label="删除"
           icon="pi pi-trash"

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
+import ProgressSpinner from 'primevue/progressspinner';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
@@ -1146,27 +1147,23 @@ const handleSaveChapterSettings = async (data: {
     const polishInstructions = data.polishInstructions ?? '';
     const proofreadingInstructions = data.proofreadingInstructions ?? '';
 
-    // 保存全局设置（书籍级别）
-    await booksStore.updateBook(book.value.id, {
+    // 准备更新数据
+    const updates: Partial<Novel> = {
       preserveIndents,
       normalizeSymbolsOnDisplay,
       normalizeTitleOnDisplay,
       translationChunkSize,
       lastEdited: new Date(),
-    });
+    };
 
-    // 如果有选中的章节，保存章节级别的特殊指令
+    // 如果有选中的章节，同时更新章节级别的特殊指令
     if (selectedChapter.value) {
       const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
         translationInstructions,
         polishInstructions,
         proofreadingInstructions,
       });
-
-      await booksStore.updateBook(book.value.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
+      updates.volumes = updatedVolumes;
 
       // 更新 selectedChapterWithContent 中的特殊指令字段
       if (
@@ -1181,6 +1178,9 @@ const handleSaveChapterSettings = async (data: {
         };
       }
     }
+
+    // 一次性保存所有设置（避免多个 updateBook 调用导致的竞态条件）
+    await booksStore.updateBook(book.value.id, updates);
 
     const savedItems: string[] = [];
     savedItems.push('全局设置');
@@ -1604,8 +1604,23 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 <template>
   <div class="book-details-layout">
-    <!-- 左侧卷/章节面板 -->
-    <aside class="book-sidebar">
+    <!-- 加载指示器 -->
+    <div v-if="!book" class="flex-1 flex items-center justify-center">
+      <div class="text-center">
+        <ProgressSpinner
+          style="width: 50px; height: 50px"
+          strokeWidth="4"
+          animationDuration=".8s"
+          aria-label="加载中"
+        />
+        <p class="text-moon/70 mt-4">正在加载书籍信息...</p>
+      </div>
+    </div>
+
+    <!-- 书籍内容 -->
+    <div v-else class="book-details-layout">
+      <!-- 左侧卷/章节面板 -->
+      <aside class="book-sidebar">
       <div class="sidebar-content">
         <!-- 书籍封面和标题 -->
         <div v-if="book" class="book-header">
@@ -2054,6 +2069,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           </div>
         </div>
       </div>
+    </div>
     </div>
   </div>
 </template>

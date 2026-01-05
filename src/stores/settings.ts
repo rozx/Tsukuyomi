@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
-import { cloneDeepWith } from 'lodash';
+import { cloneDeep, cloneDeepWith } from 'lodash';
 import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
@@ -161,18 +161,41 @@ async function loadSettingsFromDB(): Promise<AppSettings | null> {
 async function saveSettingsToDB(settings: AppSettings): Promise<void> {
   try {
     const db = await getDB();
-    // 创建一个“纯净”的对象，避免 Proxy/响应式对象导致结构化克隆失败
+    // 使用 toRaw 获取原始对象，去除 Vue 响应式包装
+    const rawSettings = toRaw(settings);
+    
+    // 创建一个"纯净"的对象，避免 Proxy/响应式对象导致结构化克隆失败
+    // 使用 cloneDeep 深度克隆嵌套对象，确保去除响应式包装
+    // 确保 Date 对象是普通 Date 实例
     const clean: AppSettings = {
-      lastEdited: settings.lastEdited,
-      scraperConcurrencyLimit: settings.scraperConcurrencyLimit,
-      ...(settings.taskDefaultModels !== undefined ? { taskDefaultModels: settings.taskDefaultModels } : {}),
-      ...(settings.lastOpenedSettingsTab !== undefined ? { lastOpenedSettingsTab: settings.lastOpenedSettingsTab } : {}),
-      ...(settings.proxyEnabled !== undefined ? { proxyEnabled: settings.proxyEnabled } : {}),
-      ...(settings.proxyUrl !== undefined ? { proxyUrl: settings.proxyUrl } : {}),
-      ...(settings.proxyAutoSwitch !== undefined ? { proxyAutoSwitch: settings.proxyAutoSwitch } : {}),
-      ...(settings.proxyAutoAddMapping !== undefined ? { proxyAutoAddMapping: settings.proxyAutoAddMapping } : {}),
-      ...(settings.proxySiteMapping !== undefined ? { proxySiteMapping: settings.proxySiteMapping } : {}),
-      ...(settings.proxyList !== undefined ? { proxyList: settings.proxyList } : {}),
+      lastEdited: rawSettings.lastEdited instanceof Date 
+        ? new Date(rawSettings.lastEdited.getTime()) 
+        : new Date(rawSettings.lastEdited || 0),
+      scraperConcurrencyLimit: rawSettings.scraperConcurrencyLimit,
+      ...(rawSettings.taskDefaultModels !== undefined 
+        ? { taskDefaultModels: cloneDeep(rawSettings.taskDefaultModels) } 
+        : {}),
+      ...(rawSettings.lastOpenedSettingsTab !== undefined 
+        ? { lastOpenedSettingsTab: rawSettings.lastOpenedSettingsTab } 
+        : {}),
+      ...(rawSettings.proxyEnabled !== undefined 
+        ? { proxyEnabled: rawSettings.proxyEnabled } 
+        : {}),
+      ...(rawSettings.proxyUrl !== undefined 
+        ? { proxyUrl: rawSettings.proxyUrl } 
+        : {}),
+      ...(rawSettings.proxyAutoSwitch !== undefined 
+        ? { proxyAutoSwitch: rawSettings.proxyAutoSwitch } 
+        : {}),
+      ...(rawSettings.proxyAutoAddMapping !== undefined 
+        ? { proxyAutoAddMapping: rawSettings.proxyAutoAddMapping } 
+        : {}),
+      ...(rawSettings.proxySiteMapping !== undefined 
+        ? { proxySiteMapping: cloneDeep(rawSettings.proxySiteMapping) } 
+        : {}),
+      ...(rawSettings.proxyList !== undefined 
+        ? { proxyList: cloneDeep(rawSettings.proxyList) } 
+        : {}),
     };
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
