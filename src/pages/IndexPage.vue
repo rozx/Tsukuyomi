@@ -188,8 +188,12 @@ watch(
 
 // 组件挂载时加载书籍
 onMounted(async () => {
-  // 不再需要等待 loadBooks，因为 App.vue 已经在后台加载
-  // 直接加载字符数
+  // 确保书籍数据已加载
+  // 如果 App.vue 已经在后台加载，这里会等待加载完成
+  // loadBooks 内部会检查 isLoaded，避免重复加载
+  await booksStore.loadBooks();
+
+  // 确保书籍数据已加载后再加载字符数
   await loadAllBookCharCounts();
 });
 </script>
@@ -403,7 +407,7 @@ onMounted(async () => {
       </Card>
 
       <!-- 加载状态 -->
-      <Card v-if="booksStore.isLoading || !booksStore.isLoaded">
+      <Card v-else-if="booksStore.isLoading || !booksStore.isLoaded">
         <template #content>
           <div class="flex items-center justify-center py-12">
             <div class="text-center">

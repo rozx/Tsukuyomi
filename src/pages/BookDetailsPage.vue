@@ -1147,27 +1147,23 @@ const handleSaveChapterSettings = async (data: {
     const polishInstructions = data.polishInstructions ?? '';
     const proofreadingInstructions = data.proofreadingInstructions ?? '';
 
-    // 保存全局设置（书籍级别）
-    await booksStore.updateBook(book.value.id, {
+    // 准备更新数据
+    const updates: Partial<Novel> = {
       preserveIndents,
       normalizeSymbolsOnDisplay,
       normalizeTitleOnDisplay,
       translationChunkSize,
       lastEdited: new Date(),
-    });
+    };
 
-    // 如果有选中的章节，保存章节级别的特殊指令
+    // 如果有选中的章节，同时更新章节级别的特殊指令
     if (selectedChapter.value) {
       const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
         translationInstructions,
         polishInstructions,
         proofreadingInstructions,
       });
-
-      await booksStore.updateBook(book.value.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
+      updates.volumes = updatedVolumes;
 
       // 更新 selectedChapterWithContent 中的特殊指令字段
       if (
@@ -1182,6 +1178,9 @@ const handleSaveChapterSettings = async (data: {
         };
       }
     }
+
+    // 一次性保存所有设置（避免多个 updateBook 调用导致的竞态条件）
+    await booksStore.updateBook(book.value.id, updates);
 
     const savedItems: string[] = [];
     savedItems.push('全局设置');
@@ -2069,8 +2068,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
           </div>
         </div>
-        </div>
       </div>
+    </div>
     </div>
   </div>
 </template>
