@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
+import ProgressSpinner from 'primevue/progressspinner';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
@@ -1604,8 +1605,23 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 <template>
   <div class="book-details-layout">
-    <!-- 左侧卷/章节面板 -->
-    <aside class="book-sidebar">
+    <!-- 加载指示器 -->
+    <div v-if="!book" class="flex-1 flex items-center justify-center">
+      <div class="text-center">
+        <ProgressSpinner
+          style="width: 50px; height: 50px"
+          strokeWidth="4"
+          animationDuration=".8s"
+          aria-label="加载中"
+        />
+        <p class="text-moon/70 mt-4">正在加载书籍信息...</p>
+      </div>
+    </div>
+
+    <!-- 书籍内容 -->
+    <div v-else class="book-details-layout">
+      <!-- 左侧卷/章节面板 -->
+      <aside class="book-sidebar">
       <div class="sidebar-content">
         <!-- 书籍封面和标题 -->
         <div v-if="book" class="book-header">
@@ -2052,6 +2068,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             <p class="no-selection-text">请从左侧选择一个章节</p>
             <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
           </div>
+        </div>
         </div>
       </div>
     </div>

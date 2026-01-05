@@ -26,16 +26,29 @@ const contextStore = useContextStore();
 useElectronSettings();
 
 onMounted(async () => {
-  // 确保数据已加载（如果路由守卫已经加载，这里会快速返回）
-  // 这确保了即使直接访问页面，数据也会被加载
-  await Promise.all([
+  // 首次运行时从 localStorage 迁移到 IndexedDB（只执行一次）
+  const hasRun = sessionStorage.getItem('indexeddb-migration-done');
+  if (!hasRun) {
+    try {
+      await migrateFromLocalStorage();
+      sessionStorage.setItem('indexeddb-migration-done', 'true');
+    } catch (error) {
+      console.error('Failed to migrate from localStorage:', error);
+    }
+  }
+
+  // 非阻塞式地加载所有 stores 数据
+  // 不使用 await，让页面立即渲染，数据在后台加载
+  void Promise.all([
     booksStore.loadBooks(),
     aiModelsStore.loadModels(),
     settingsStore.loadSettings(),
     toastHistoryStore.loadHistory(),
     coverHistoryStore.loadCoverHistory(),
     aiProcessingStore.loadThinkingProcesses(),
-  ]);
+  ]).catch((error) => {
+    console.error('Failed to load initial data:', error);
+  });
 
   // 从 localStorage 加载 UI 状态（同步）
   bookDetailsStore.loadState();

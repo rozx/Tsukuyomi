@@ -188,9 +188,8 @@ watch(
 
 // 组件挂载时加载书籍
 onMounted(async () => {
-  if (!booksStore.isLoaded) {
-    await booksStore.loadBooks();
-  }
+  // 不再需要等待 loadBooks，因为 App.vue 已经在后台加载
+  // 直接加载字符数
   await loadAllBookCharCounts();
 });
 </script>
@@ -211,9 +210,9 @@ onMounted(async () => {
               <span class="text-xl sm:text-2xl uppercase tracking-[0.3em] text-moon-50 font-light"
                 >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
               >
-              <span class="text-2xl sm:text-3xl font-bold text-moon-100 tracking-wide"
-                >{{ APP_NAME.description.en }}</span
-              >
+              <span class="text-2xl sm:text-3xl font-bold text-moon-100 tracking-wide">{{
+                APP_NAME.description.en
+              }}</span>
             </div>
           </div>
           <div class="space-y-3 pt-2">
@@ -403,8 +402,25 @@ onMounted(async () => {
         </template>
       </Card>
 
+      <!-- 加载状态 -->
+      <Card v-if="booksStore.isLoading || !booksStore.isLoaded">
+        <template #content>
+          <div class="flex items-center justify-center py-12">
+            <div class="text-center">
+              <ProgressSpinner
+                style="width: 50px; height: 50px"
+                strokeWidth="4"
+                animationDuration=".8s"
+                aria-label="加载中"
+              />
+              <p class="text-moon/70 mt-4">正在加载数据...</p>
+            </div>
+          </div>
+        </template>
+      </Card>
+
       <!-- 空状态 -->
-      <Card v-else-if="!booksStore.isLoading">
+      <Card v-else-if="booksStore.isLoaded && booksStore.books.length === 0">
         <template #content>
           <div class="text-center py-12 space-y-4">
             <i class="pi pi-book text-6xl text-moon/30"></i>
@@ -425,23 +441,6 @@ onMounted(async () => {
                 class="p-button-outlined icon-button-hover"
                 @click="importBookFromWeb"
               />
-            </div>
-          </div>
-        </template>
-      </Card>
-
-      <!-- 加载状态 -->
-      <Card v-else>
-        <template #content>
-          <div class="flex items-center justify-center py-12">
-            <div class="text-center space-y-4">
-              <ProgressSpinner
-                style="width: 50px; height: 50px"
-                strokeWidth="4"
-                animationDuration=".8s"
-                aria-label="加载中"
-              />
-              <p class="text-moon/70">正在加载数据...</p>
             </div>
           </div>
         </template>

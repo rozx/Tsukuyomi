@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -10,6 +10,7 @@ import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
+import ProgressSpinner from 'primevue/progressspinner';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import AIModelDialog from 'src/components/dialogs/AIModelDialog.vue';
@@ -20,8 +21,19 @@ const aiModelsStore = useAIModelsStore();
 const confirm = useConfirm();
 const toast = useToastWithHistory();
 
+// 页面加载状态
+const isPageLoading = ref(true);
+
 // 使用 store 中的模型列表
 const aiModels = computed(() => aiModelsStore.models);
+
+// 组件挂载时加载模型数据
+onMounted(async () => {
+  if (!aiModelsStore.isLoaded) {
+    await aiModelsStore.loadModels();
+  }
+  isPageLoading.value = false;
+});
 
 // 辅助函数
 const getProviderLabel = (provider: string) => {
@@ -271,7 +283,20 @@ const formatApiKey = (apiKey: string): string => {
 
     <!-- DataView 内容区域 -->
     <div class="flex-1 flex flex-col min-h-0">
+      <!-- 加载指示器 -->
+      <div v-if="isPageLoading" class="flex-1 flex items-center justify-center">
+        <div class="text-center">
+          <ProgressSpinner
+            style="width: 50px; height: 50px"
+            strokeWidth="4"
+            animationDuration=".8s"
+            aria-label="加载中"
+          />
+          <p class="text-moon/70 mt-4">正在加载 AI 模型...</p>
+        </div>
+      </div>
       <DataView
+        v-else
         :value="filteredModels"
         data-key="id"
         :rows="10"
