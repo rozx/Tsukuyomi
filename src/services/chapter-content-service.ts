@@ -1,6 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
 import type { Paragraph, Novel } from 'src/models/novel';
-import { isEqual } from 'lodash';
 
 /**
  * 章节内容存储结构
@@ -17,32 +16,51 @@ interface ChapterContent {
  */
 export class ChapterContentService {
   /**
+   * 将章节内容序列化为 JSON 字符串。
+   * 注意：我们使用“序列化快照”来做变更检测，避免“同一对象引用被就地修改”时无法发现变化。
+   */
+  private static serializeContent(content: Paragraph[]): string {
+    return JSON.stringify(content);
+  }
+
+  /**
+   * 缓存条目：同时保存解析后的对象与不可变序列化快照（用于变更检测）
+   */
+  private static contentCache = new Map<string, { parsed: Paragraph[]; serialized: string } | null>();
+  private static readonly CACHE_MAX_SIZE = 100; // 最多缓存 100 个章节
+
+  /**
    * 检查章节内容是否已修改（与缓存或已保存的内容比较）
    * @param chapterId 章节 ID
    * @param newContent 新的章节内容
+   * @param newSerialized newContent 的序列化字符串（可选，用于避免重复 JSON.stringify）
    * @returns 如果内容已修改返回 true，否则返回 false
    */
   static async hasContentChanged(
     chapterId: string,
     newContent: Paragraph[],
+    newSerialized?: string,
   ): Promise<boolean> {
+    const serialized = newSerialized ?? this.serializeContent(newContent);
     // 先检查缓存
     if (this.contentCache.has(chapterId)) {
       const cached = this.contentCache.get(chapterId);
       // 更新访问顺序（LRU 行为）
       this.touchCacheEntry(chapterId);
+      // 理论上 has() 为 true 时 get() 不应返回 undefined，但 TS 无法收窄，且这里兜底更安全
+      if (cached === undefined) {
+        return true;
+      }
       // 如果缓存为 null（表示不存在），则认为已修改
       if (cached === null) {
         return true;
       }
-      // 重要：如果 newContent 与缓存中的对象引用相同，说明内容已被直接修改
-      //（例如通过 AI 工具修改内存中的段落翻译），此时应该强制保存
-      // 这种情况下需要返回 true，确保更改被持久化到 IndexedDB
-      if (cached === newContent) {
-        return true;
-      }
-      // 比较缓存内容与新内容（使用 lodash isEqual 进行深度比较）
-      return !isEqual(cached, newContent);
+      // 重要：缓存中的 parsed 可能与 UI/AI 工具共享引用并被就地修改，
+      // 因此不能用对象深比较或引用相等来判断是否变化。
+      // 必须对比不可变的序列化快照，才能同时正确处理：
+      // - 同引用但未修改（应返回 false）
+      // - 同引用但已就地修改（应返回 true）
+      return cached.serialized !== serialized;
     }
 
     // 缓存中没有，从 IndexedDB 加载
@@ -55,15 +73,16 @@ export class ChapterContentService {
         this.evictCacheIfNeeded();
         return true;
       }
-      // 反序列化并比较
-      const saved = JSON.parse(chapterContent.content) as Paragraph[];
+      const savedSerialized = chapterContent.content;
+      // 反序列化并写入缓存（后续加载可直接复用解析结果）
+      const saved = JSON.parse(savedSerialized) as Paragraph[];
       // 更新缓存，避免下次再次从 IndexedDB 加载
-      this.contentCache.set(chapterId, saved);
+      this.contentCache.set(chapterId, { parsed: saved, serialized: savedSerialized });
       this.evictCacheIfNeeded();
       // 更新访问顺序（LRU 行为）
       this.touchCacheEntry(chapterId);
-      // 使用 lodash isEqual 进行深度比较
-      return !isEqual(saved, newContent);
+      // 使用序列化快照比较，避免“共享引用就地修改”导致的误判
+      return savedSerialized !== serialized;
     } catch (error) {
       // 加载失败，为了安全起见，认为已修改
       // 缓存 null 表示加载失败，避免重复尝试
@@ -86,9 +105,10 @@ export class ChapterContentService {
     content: Paragraph[],
     options?: { skipIfUnchanged?: boolean },
   ): Promise<boolean> {
+    const serialized = this.serializeContent(content);
     // 如果启用了 skipIfUnchanged，先检查内容是否已修改
     if (options?.skipIfUnchanged) {
-      const hasChanged = await this.hasContentChanged(chapterId, content);
+      const hasChanged = await this.hasContentChanged(chapterId, content, serialized);
       if (!hasChanged) {
         // 内容未修改，跳过保存
         return false;
@@ -99,13 +119,13 @@ export class ChapterContentService {
 
       const chapterContent: ChapterContent = {
         chapterId,
-        content: JSON.stringify(content), // 序列化为 JSON 字符串
+        content: serialized, // 序列化为 JSON 字符串
         lastModified: new Date().toISOString(),
       };
 
       await db.put('chapter-contents', chapterContent);
       // 更新缓存
-      this.contentCache.set(chapterId, content);
+      this.contentCache.set(chapterId, { parsed: content, serialized });
       this.evictCacheIfNeeded();
 
       // 使全文索引失效（异步，不阻塞保存操作）
@@ -139,8 +159,7 @@ export class ChapterContentService {
 
   // LRU 内存缓存，避免重复加载
   // 使用 Map 的插入顺序实现 LRU：最近访问的条目会被移动到末尾
-  private static contentCache = new Map<string, Paragraph[] | null>();
-  private static readonly CACHE_MAX_SIZE = 100; // 最多缓存 100 个章节
+  // （定义见文件顶部：contentCache 与 CACHE_MAX_SIZE）
 
   /**
    * 清理缓存（当缓存过大时）
@@ -182,7 +201,12 @@ export class ChapterContentService {
       const cached = this.contentCache.get(chapterId);
       // 更新访问顺序（LRU 行为）
       this.touchCacheEntry(chapterId);
-      return cached === null ? undefined : cached;
+      // 兜底：如果出现 has()==true 但 get()==undefined，则当作缓存未命中，继续走 DB 加载
+      if (cached === undefined) {
+        this.contentCache.delete(chapterId);
+      } else {
+        return cached === null ? undefined : cached.parsed;
+      }
     }
 
     try {
@@ -195,9 +219,10 @@ export class ChapterContentService {
         return undefined;
       }
       // 反序列化 JSON 字符串为段落数组
-      const parsed = JSON.parse(chapterContent.content) as Paragraph[];
+      const serialized = chapterContent.content;
+      const parsed = JSON.parse(serialized) as Paragraph[];
       // 缓存结果
-      this.contentCache.set(chapterId, parsed);
+      this.contentCache.set(chapterId, { parsed, serialized });
       this.evictCacheIfNeeded();
       return parsed;
     } catch (error) {
@@ -226,7 +251,13 @@ export class ChapterContentService {
         const cached = this.contentCache.get(chapterId);
         // 更新访问顺序（LRU 行为）
         this.touchCacheEntry(chapterId);
-        result.set(chapterId, cached === null ? undefined : cached);
+        // 兜底：如果出现 has()==true 但 get()==undefined，则当作缓存未命中
+        if (cached === undefined) {
+          this.contentCache.delete(chapterId);
+          uncachedIds.push(chapterId);
+        } else {
+          result.set(chapterId, cached === null ? undefined : cached.parsed);
+        }
       } else {
         uncachedIds.push(chapterId);
       }
@@ -260,8 +291,9 @@ export class ChapterContentService {
               this.contentCache.set(chapterId, null);
               return { chapterId, content: undefined };
             }
-            const parsed = JSON.parse(chapterContent.content) as Paragraph[];
-            this.contentCache.set(chapterId, parsed);
+            const serialized = chapterContent.content;
+            const parsed = JSON.parse(serialized) as Paragraph[];
+            this.contentCache.set(chapterId, { parsed, serialized });
             return { chapterId, content: parsed };
           } catch (error) {
             console.error(`Failed to load chapter content for ${chapterId}:`, error);

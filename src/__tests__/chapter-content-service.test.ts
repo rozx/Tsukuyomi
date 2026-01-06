@@ -138,6 +138,66 @@ describe('ChapterContentService', () => {
         'DB Error',
       ) as unknown as Promise<void>);
     });
+
+    describe('skipIfUnchanged', () => {
+      it('应该在“刚加载并缓存”的内容未变化时跳过保存（避免同引用误判）', async () => {
+        const chapterId = 'chapter-1';
+        const content = [createTestParagraph(), createTestParagraph()];
+        const chapterContent = {
+          chapterId,
+          content: JSON.stringify(content),
+          lastModified: new Date().toISOString(),
+        };
+
+        // 先从 DB 加载（此时内容会被立即缓存）
+        mockGet.mockResolvedValueOnce(chapterContent);
+        const loaded = await ChapterContentService.loadChapterContent(chapterId);
+        expect(loaded).toEqual(content);
+
+        // 再次保存同一引用，但没有任何修改：应当被 skipIfUnchanged 跳过
+        mockPut.mockClear();
+        mockGet.mockClear();
+        const saved = await ChapterContentService.saveChapterContent(chapterId, loaded!, {
+          skipIfUnchanged: true,
+        });
+
+        expect(saved).toBe(false);
+        expect(mockPut).not.toHaveBeenCalled();
+        // 变更检测应走缓存快照，不应再次访问 DB
+        expect(mockGet).not.toHaveBeenCalled();
+      });
+
+      it('应该在“同引用被就地修改”时仍然保存（确保变更持久化）', async () => {
+        const chapterId = 'chapter-1';
+        const content = [createTestParagraph(), createTestParagraph()];
+        const chapterContent = {
+          chapterId,
+          content: JSON.stringify(content),
+          lastModified: new Date().toISOString(),
+        };
+
+        mockGet.mockResolvedValueOnce(chapterContent);
+        const loaded = await ChapterContentService.loadChapterContent(chapterId);
+        expect(loaded).toBeDefined();
+
+        // 模拟就地修改（例如 AI 工具直接修改内存中的段落）
+        loaded![0]!.text = '已修改的段落文本';
+
+        mockPut.mockClear();
+        const saved = await ChapterContentService.saveChapterContent(chapterId, loaded!, {
+          skipIfUnchanged: true,
+        });
+
+        expect(saved).toBe(true);
+        expect(mockPut).toHaveBeenCalledWith(
+          'chapter-contents',
+          expect.objectContaining({
+            chapterId,
+            content: JSON.stringify(loaded),
+          }),
+        );
+      });
+    });
   });
 
   describe('loadChapterContent', () => {

@@ -74,23 +74,26 @@ export function useChapterTranslation(
    * @param paragraphUpdates 段落更新映射，key 为段落 ID，value 为翻译文本
    * @param aiModelId AI 模型 ID
    * @param updateSelected 是否更新 selectedChapterWithContent
+   * @param skipSave 是否跳过保存到 IndexedDB（用于批量保存优化）
+   * @returns 如果 skipSave=true，返回需要保存的章节对象；否则返回 undefined
    */
   const updateParagraphsAndSave = async (
     paragraphUpdates: Map<string, string>,
     aiModelId: string,
     targetChapterId: string,
-    options?: { updateSelected?: boolean },
-  ): Promise<void> => {
+    options?: { updateSelected?: boolean; skipSave?: boolean },
+  ): Promise<Chapter | undefined> => {
     const updateSelected = options?.updateSelected !== false;
-    if (!book.value || !book.value.volumes || paragraphUpdates.size === 0) return;
+    const skipSave = options?.skipSave === true;
+    if (!book.value || !book.value.volumes || paragraphUpdates.size === 0) return undefined;
 
     const found = ChapterService.findChapterById(book.value, targetChapterId);
     if (!found) {
       console.warn(`[useChapterTranslation] ⚠️ 未找到目标章节: ${targetChapterId}`);
-      return;
+      return undefined;
     }
 
-    // 准备“已加载内容的章节”引用：
+    // 准备"已加载内容的章节"引用：
     // - 如果目标章节正好是当前 UI 章节，优先用 selectedChapterWithContent（它一定是最新内容）
     // - 否则若 book 中已加载 content，直接用
     // - 否则从独立存储中懒加载（用户切走章节时很可能 content 被卸载）
@@ -107,7 +110,7 @@ export function useChapterTranslation(
         loadedChapter = await ChapterService.loadChapterContent(found.chapter);
       } catch (error) {
         console.error('[useChapterTranslation] ❌ 加载章节内容失败:', error);
-        return;
+        return undefined;
       }
     }
 
@@ -135,12 +138,22 @@ export function useChapterTranslation(
         }),
     );
 
+    // 重要：即使在 skipSave 模式下，我们也必须把更新后的 volumes 写回到 book.value，
+    // 否则后续的 batchSaveChapter / updateBook 可能会基于“已卸载 content 的旧 volumes”保存，导致写回丢失。
+    // 这里仅更新内存中的 book 引用；真正的持久化仍由 ChapterService.saveChapterContent / booksStore.updateBook 完成。
+    book.value.volumes = updatedVolumes;
+
     // 找到更新后的章节（用于保存 content / 更新 UI）
     const updatedChapter = updatedVolumes
       .flatMap((v) => v.chapters || [])
       .find((c) => c.id === targetChapterId);
 
-    // 仅当“目标章节仍然是当前 UI 章节”时才更新 UI，避免把用户已切换到的章节覆盖掉
+    if (!updatedChapter) {
+      console.warn(`[useChapterTranslation] ⚠️ 未找到更新后的章节: ${targetChapterId}`);
+      return undefined;
+    }
+
+    // 仅当"目标章节仍然是当前 UI 章节"时才更新 UI，避免把用户已切换到的章节覆盖掉
     if (
       updateSelected &&
       selectedChapterWithContent.value?.id === targetChapterId &&
@@ -151,6 +164,11 @@ export function useChapterTranslation(
         content: [...updatedChapter.content],
         lastEdited: updatedChapter.lastEdited,
       };
+    }
+
+    // 如果跳过保存，只更新内存中的数据并返回章节对象供后续批量保存
+    if (skipSave) {
+      return updatedChapter;
     }
 
     // 保存章节内容到 IndexedDB（必须等待完成，否则切换章节时翻译可能丢失）
@@ -170,6 +188,35 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('[useChapterTranslation] 更新书籍失败:', error);
+    }
+
+    return undefined;
+  };
+
+  /**
+   * 批量保存章节翻译（性能优化：一次保存多个段落）
+   * @param chapterToSave 需要保存的章节对象（来自 updateParagraphsAndSave 的 skipSave 模式）
+   * @param targetChapterId 目标章节 ID
+   */
+  const batchSaveChapter = async (chapterToSave: Chapter, targetChapterId: string): Promise<void> => {
+    if (!book.value || !book.value.volumes) return;
+
+    try {
+      // 保存章节内容到 IndexedDB
+      await ChapterService.saveChapterContent(chapterToSave);
+
+      // 保存书籍元数据
+      await booksStore.updateBook(book.value.id, {
+        volumes: book.value.volumes,
+        lastEdited: new Date(),
+      });
+
+      console.log(
+        `[useChapterTranslation] ✅ 批量保存完成: ${targetChapterId} (${chapterToSave.content?.length || 0} 个段落)`,
+      );
+    } catch (error) {
+      console.error('[useChapterTranslation] 批量保存失败:', error);
+      throw error;
     }
   };
 
@@ -780,6 +827,11 @@ export function useChapterTranslation(
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
 
+    // 用于批量保存：收集最后一个更新后的章节对象
+    let latestChapterForBatchSave: Chapter | undefined;
+    // 标记本次翻译是否失败/中断（用于 finally 中决定是否提示“已保存部分结果”）
+    let translationFailed = false;
+
     try {
       const paragraphs = selectedChapterParagraphs.value;
 
@@ -826,13 +878,32 @@ export function useChapterTranslation(
           toast.add(message);
         },
         onParagraphTranslation: async (translations) => {
-          // 立即更新段落翻译（等待完成以确保保存）
-          await updateParagraphsIncrementally(
-            translations,
+          // 性能优化：使用 skipSave 模式，只更新内存，不立即保存到 IndexedDB
+          // 这样可以避免每个 chunk 都触发一次完整的保存流程
+          const chapterToSave = await updateParagraphsAndSave(
+            new Map(translations.map((t) => [t.id, t.translation])),
             selectedModel.id,
             targetChapterId,
-            lastAppliedTranslations,
+            {
+              updateSelected: true,
+              skipSave: true, // 跳过保存，只更新内存
+            },
           );
+
+          // 保存最新的章节对象，用于最后的批量保存
+          if (chapterToSave) {
+            latestChapterForBatchSave = chapterToSave;
+          }
+
+          // 记录已应用的翻译
+          for (const pt of translations) {
+            lastAppliedTranslations.set(pt.id, pt.translation);
+          }
+
+          // 从正在翻译的集合中移除已完成的段落 ID
+          translations.forEach((pt) => {
+            state.translatingParagraphIds.delete(pt.id);
+          });
         },
         onTitleTranslation: async (translation) => {
           // 立即更新标题翻译（不等待整个翻译完成）
@@ -840,7 +911,7 @@ export function useChapterTranslation(
         },
       });
 
-      // 构建成功消息（所有段落都已通过 onParagraphTranslation 回调立即更新）
+      // 构建成功消息
       const actions = result.actions || [];
       const totalTranslatedCount = lastAppliedTranslations.size;
       let messageDetail = `已成功翻译 ${totalTranslatedCount} 个段落`;
@@ -866,8 +937,35 @@ export function useChapterTranslation(
       });
     } catch (error) {
       console.error('翻译失败:', error);
+      translationFailed = true;
       // 注意：错误 toast 已由 MainLayout.vue 中的任务状态监听器全局处理，这里不再重复显示
     } finally {
+      // 无论成功或失败：只要流式回调已经把翻译写入内存，就尽力落盘，避免异常中断导致刷新丢失
+      if (latestChapterForBatchSave && lastAppliedTranslations.size > 0) {
+        try {
+          await batchSaveChapter(latestChapterForBatchSave, targetChapterId);
+
+          // 翻译失败/取消时，补充提示“已保存部分结果”，避免用户误以为全部丢失
+          if (translationFailed) {
+            const wasAborted = abortController.signal.aborted;
+            toast.add({
+              severity: wasAborted ? 'info' : 'warn',
+              summary: wasAborted ? '已取消翻译（已保存部分结果）' : '翻译中断（已保存部分结果）',
+              detail: `已保存已翻译的 ${lastAppliedTranslations.size} 个段落`,
+              life: 5000,
+            });
+          }
+        } catch (saveError) {
+          console.error('[useChapterTranslation] ❌ 批量保存失败:', saveError);
+          toast.add({
+            severity: 'error',
+            summary: '保存失败',
+            detail: '翻译已更新到内存，但保存到本地数据库失败；请稍后重试或查看控制台日志',
+            life: 6000,
+          });
+        }
+      }
+
       state.isTranslating = false;
       state.abortController = null;
       // 延迟清除进度信息和正在翻译的段落 ID，让用户看到完成状态
