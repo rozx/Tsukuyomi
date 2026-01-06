@@ -35,6 +35,12 @@ export class ChapterContentService {
       if (cached === null) {
         return true;
       }
+      // 重要：如果 newContent 与缓存中的对象引用相同，说明内容已被直接修改
+      //（例如通过 AI 工具修改内存中的段落翻译），此时应该强制保存
+      // 这种情况下需要返回 true，确保更改被持久化到 IndexedDB
+      if (cached === newContent) {
+        return true;
+      }
       // 比较缓存内容与新内容（使用 lodash isEqual 进行深度比较）
       return !isEqual(cached, newContent);
     }

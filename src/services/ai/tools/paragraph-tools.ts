@@ -1352,6 +1352,9 @@ export const paragraphTools: ToolDefinition[] = [
       translationToUpdate.translation = new_translation;
 
       // 更新书籍（保存更改）
+      // 注意：booksStore.updateBook 会调用 BookService.saveBook，进而调用 ChapterContentService.saveChapterContent
+      // 由于我们修改了 ChapterContentService.hasContentChanged 的逻辑，当检测到引用相同时会强制保存
+      // 因此修改后的翻译会被正确持久化到 IndexedDB
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -1464,6 +1467,7 @@ export const paragraphTools: ToolDefinition[] = [
       paragraph.selectedTranslationId = translation_id;
 
       // 更新书籍（保存更改）
+      // 注意：由于我们修改了 ChapterContentService.hasContentChanged 的逻辑，当检测到引用相同时会强制保存
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       return JSON.stringify({
@@ -1591,6 +1595,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：由于我们修改了 ChapterContentService.hasContentChanged 的逻辑，当检测到引用相同时会强制保存
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -1712,6 +1717,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：由于我们修改了 ChapterContentService.hasContentChanged 的逻辑，当检测到引用相同时会强制保存
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -2267,6 +2273,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：由于我们修改了 ChapterContentService.hasContentChanged 的逻辑，当检测到引用相同时会强制保存
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告批量替换操作（单个汇总 action，而不是每个替换一个）
