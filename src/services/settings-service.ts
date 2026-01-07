@@ -236,7 +236,7 @@ export class SettingsService {
           memory.id &&
           memory.bookId &&
           memory.content &&
-          memory.summary &&
+          typeof memory.summary === 'string' &&
           memory.createdAt &&
           memory.lastAccessedAt
         ) {

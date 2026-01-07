@@ -414,6 +414,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 获取 Tavily API Key
+     */
+    tavilyApiKey: (state): string | undefined => {
+      return state.settings.tavilyApiKey;
+    },
+
+    /**
      * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
      */
     gistSync: (state): SyncConfig => {

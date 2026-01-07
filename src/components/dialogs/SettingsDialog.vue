@@ -14,6 +14,7 @@ import ScraperSettingsTab from '../settings/ScraperSettingsTab.vue';
 import ProxySettingsTab from '../settings/ProxySettingsTab.vue';
 import SyncSettingsTab from '../settings/SyncSettingsTab.vue';
 import ImportExportTab from '../settings/ImportExportTab.vue';
+import ApiKeysSettingsTab from '../settings/ApiKeysSettingsTab.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -26,64 +27,56 @@ const emit = defineEmits<{
 const settingsStore = useSettingsStore();
 const { isElectron } = useElectron();
 
-// 将数字索引转换为字符串值
-const tabIndexToString = (index: number): string => String(index);
-const tabStringToIndex = (value: string): number => Number(value);
-
 // 当前选中的标签页值（字符串类型）
 const activeTab = ref('0');
 
-// 计算标签页索引映射（Electron 环境下代理设置标签页被隐藏）
-// 非 Electron: 0=AI模型, 1=代理设置, 2=同步设置, 3=爬虫设置, 4=导入/导出
-// Electron: 0=AI模型, 1=同步设置, 2=爬虫设置, 3=导入/导出
-const getTabValue = (index: number): string => {
-  if (isElectron.value) {
-    // Electron 环境：跳过代理设置标签页
-    // 0=AI模型, 1=同步设置, 2=爬虫设置, 3=导入/导出
-    return String(index);
-  } else {
-    // 非 Electron 环境：包含代理设置标签页
-    // 0=AI模型, 1=代理设置, 2=同步设置, 3=爬虫设置, 4=导入/导出
-    return String(index);
-  }
-};
+// 标签页索引映射：
+// 非 Electron: 0=AI模型, 1=代理设置, 2=API Keys, 3=同步设置, 4=爬虫设置, 5=导入/导出
+// Electron: 0=AI模型, 1=API Keys, 2=同步设置, 3=爬虫设置, 4=导入/导出
 
-// 将保存的标签页索引转换为实际标签页值
+// 将保存的标签页索引转换为实际标签页值（处理向后兼容）
 const convertSavedTabIndex = (savedIndex: number): string => {
   if (isElectron.value) {
     // Electron 环境：代理设置标签页不存在
-    // 如果保存的索引是 1（代理设置），映射到 1（同步设置）
-    // 如果保存的索引 >= 2，需要减 1
-    if (savedIndex === 1) {
-      // 原来是代理设置，现在映射到同步设置
-      return '1';
-    } else if (savedIndex >= 2) {
-      // 原来是同步设置(2)、爬虫设置(3)、导入/导出(4)，现在分别是 1、2、3
-      return String(savedIndex - 1);
-    } else {
-      // AI 模型 (0) 保持不变
-      return '0';
-    }
+    // 旧: 0=AI, 1=代理, 2=同步, 3=爬虫, 4=导入
+    // 新: 0=AI, 1=API Keys, 2=同步, 3=爬虫, 4=导入
+    if (savedIndex === 0) return '0'; // AI
+    if (savedIndex === 1) return '1'; // 代理 → API Keys
+    if (savedIndex >= 2) return String(savedIndex); // 保持原值
+    return '0';
   } else {
-    // 非 Electron 环境：直接使用
-    return String(savedIndex);
+    // 非 Electron 环境：
+    // 旧: 0=AI, 1=代理, 2=同步, 3=爬虫, 4=导入
+    // 新: 0=AI, 1=代理, 2=API Keys, 3=同步, 4=爬虫, 5=导入
+    // 新 API Keys 标签页使用索引 6（避免与旧索引冲突）
+    if (savedIndex === 6) return '2'; // 新 API Keys 标签页
+    if (savedIndex < 2) return String(savedIndex); // AI(0), 代理(1)
+    if (savedIndex >= 2 && savedIndex <= 4) return String(savedIndex + 1); // 同步+1, 爬虫+1, 导入+1
+    return '0';
   }
 };
 
-// 将标签页值转换为保存的索引
+// 将标签页值转换为保存的索引（反向转换，与 convertSavedTabIndex 对应）
 const convertTabValueToIndex = (tabValue: string): number => {
-  const index = Number(tabValue);
+  const tabIndex = Number(tabValue);
   if (isElectron.value) {
-    // Electron 环境：将标签页值转换回原始索引
-    // 0=AI模型(0), 1=同步设置(2), 2=爬虫设置(3), 3=导入/导出(4)
-    if (index === 0) return 0;
-    if (index === 1) return 2; // 同步设置
-    if (index === 2) return 3; // 爬虫设置
-    if (index === 3) return 4; // 导入/导出
+    // Electron 环境：
+    // 旧: 0=AI, 1=代理, 2=同步, 3=爬虫, 4=导入
+    // 新: 0=AI, 1=API Keys, 2=同步, 3=爬虫, 4=导入
+    // 新标签页值直接对应旧索引（代理被 API Keys 替换，索引保持不变）
+    if (tabIndex === 0) return 0; // AI
+    if (tabIndex === 1) return 1; // API Keys → 映射到原代理索引 1
+    if (tabIndex >= 2) return tabIndex; // 同步、爬虫、导入保持原值
     return 0;
   } else {
-    // 非 Electron 环境：直接使用
-    return index;
+    // 非 Electron 环境：
+    // 旧: 0=AI, 1=代理, 2=同步, 3=爬虫, 4=导入
+    // 新: 0=AI, 1=代理, 2=API Keys, 3=同步, 4=爬虫, 5=导入
+    // 新 API Keys 标签页使用索引 6（避免与旧索引冲突）
+    if (tabIndex < 2) return tabIndex; // AI(0), 代理(1) 保持不变
+    if (tabIndex === 2) return 6; // API Keys (新标签页，使用索引 6)
+    if (tabIndex >= 3) return tabIndex - 1; // 同步、爬虫、导入需要减 1 恢复原索引
+    return 0;
   }
 };
 
@@ -98,10 +91,9 @@ const ensureStoreLoaded = async () => {
 const initializeActiveTab = async () => {
   await ensureStoreLoaded();
   const lastTab = settingsStore.lastOpenedSettingsTab;
-  // 将保存的索引转换为当前环境下的标签页值
   const tabValue = convertSavedTabIndex(lastTab);
-  // 确保值在有效范围内
-  const maxTabIndex = isElectron.value ? 3 : 4; // Electron 环境最多 4 个标签页（0-3），非 Electron 最多 5 个（0-4）
+  // Electron 最多 5 个标签页（0-4），非 Electron 最多 6 个（0-5）
+  const maxTabIndex = isElectron.value ? 4 : 5;
   const tabIndex = Number(tabValue);
   if (tabIndex >= 0 && tabIndex <= maxTabIndex) {
     activeTab.value = tabValue;
@@ -122,7 +114,6 @@ watch(
   () => props.visible,
   async (isVisible) => {
     if (isVisible) {
-      // 对话框打开时，重新初始化标签页
       await initializeActiveTab();
     }
   },
@@ -132,11 +123,9 @@ watch(
 const handleTabChange = (value: string | number) => {
   const stringValue = String(value);
   activeTab.value = stringValue;
-  const tabIndex = tabStringToIndex(stringValue);
-  // 将标签页值转换为保存的索引
+  const tabIndex = Number(stringValue);
   const savedIndex = convertTabValueToIndex(stringValue);
-  // 只有当值有效时才保存
-  const maxTabIndex = isElectron.value ? 3 : 4;
+  const maxTabIndex = isElectron.value ? 4 : 5;
   if (tabIndex >= 0 && tabIndex <= maxTabIndex) {
     void settingsStore.setLastOpenedSettingsTab(savedIndex);
   }
@@ -165,9 +154,10 @@ const handleClose = () => {
       <TabList>
         <Tab value="0">AI 模型</Tab>
         <Tab v-if="!isElectron" value="1">代理设置</Tab>
-        <Tab :value="isElectron ? '1' : '2'">同步设置</Tab>
-        <Tab :value="isElectron ? '2' : '3'">爬虫设置</Tab>
-        <Tab :value="isElectron ? '3' : '4'">导入/导出</Tab>
+        <Tab :value="isElectron ? '1' : '2'">API Keys</Tab>
+        <Tab :value="isElectron ? '2' : '3'">同步设置</Tab>
+        <Tab :value="isElectron ? '3' : '4'">爬虫设置</Tab>
+        <Tab :value="isElectron ? '4' : '5'">导入/导出</Tab>
       </TabList>
       <TabPanels>
         <!-- AI 模型默认设置 -->
@@ -180,18 +170,23 @@ const handleClose = () => {
           <ProxySettingsTab />
         </TabPanel>
 
-        <!-- 同步设置 -->
+        <!-- API Keys 设置 -->
         <TabPanel :value="isElectron ? '1' : '2'">
+          <ApiKeysSettingsTab />
+        </TabPanel>
+
+        <!-- 同步设置 -->
+        <TabPanel :value="isElectron ? '2' : '3'">
           <SyncSettingsTab :visible="visible" />
         </TabPanel>
 
         <!-- 爬虫设置 -->
-        <TabPanel :value="isElectron ? '2' : '3'">
+        <TabPanel :value="isElectron ? '3' : '4'">
           <ScraperSettingsTab />
         </TabPanel>
 
         <!-- 导入/导出资料 -->
-        <TabPanel :value="isElectron ? '3' : '4'">
+        <TabPanel :value="isElectron ? '4' : '5'">
           <ImportExportTab />
         </TabPanel>
       </TabPanels>

@@ -89,6 +89,11 @@ export interface AppSettings {
     url: string;
     description?: string;
   }>;
+  /**
+   * Tavily 搜索 API Key
+   * 用于网络搜索功能 (https://tavily.com/)
+   */
+  tavilyApiKey?: string;
 }
 
 export interface Settings {

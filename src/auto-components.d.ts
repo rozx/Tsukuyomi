@@ -15,6 +15,7 @@ declare module 'vue' {
     AddVolumeDialog: typeof import('./components/dialogs/AddVolumeDialog.vue')['default']
     AIModelDialog: typeof import('./components/dialogs/AIModelDialog.vue')['default']
     AIModelSettingsTab: typeof import('./components/settings/AIModelSettingsTab.vue')['default']
+    ApiKeysSettingsTab: typeof import('./components/settings/ApiKeysSettingsTab.vue')['default']
     AppFooter: typeof import('./components/layout/AppFooter.vue')['default']
     AppHeader: typeof import('./components/layout/AppHeader.vue')['default']
     AppMessage: typeof import('./components/common/AppMessage.vue')['default']
