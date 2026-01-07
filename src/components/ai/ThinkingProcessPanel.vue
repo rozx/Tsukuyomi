@@ -174,35 +174,43 @@ const thinkingMessageLengths = ref<Map<string, number>>(new Map());
 let watchDebounceTimer: number | null = null;
 
 // 监听所有任务的思考消息变化，自动滚动到底部
-// 优化：使用 getter 提取需要的数据，避免深度监听整个数组
+// 优化：直接监听 activeTasks，确保能检测到 thinkingMessage 的变化
 // 使用防抖机制，减少 watch 回调的执行频率
 watch(
-  () => aiProcessing.activeTasksList,
+  () => aiProcessing.activeTasks.map((task) => ({
+    id: task.id,
+    thinkingMessageLength: task.thinkingMessage?.length || 0,
+    status: task.status,
+  })),
   (newTasks, oldTasks) => {
     // 清除之前的定时器
     if (watchDebounceTimer !== null) {
       clearTimeout(watchDebounceTimer);
     }
     
-    // 使用防抖，100ms 批量处理一次，减少 watch 回调的执行频率
+    // 使用防抖，100ms 批量处理一次
+    // store 层面已经有 300ms 节流，这里使用较短的防抖时间确保及时响应
     watchDebounceTimer = window.setTimeout(() => {
       // 使用 requestIdleCallback 或 setTimeout 延迟执行，避免阻塞主线程
       const scheduleUpdate = () => {
+        // 获取当前活动的任务列表
+        const activeTasks = aiProcessing.activeTasksList;
+        
         // 当任何任务的思考消息更新时，滚动对应的容器到底部
-        newTasks.forEach((newTask) => {
+        activeTasks.forEach((task) => {
           if (
-            newTask.thinkingMessage &&
-            (newTask.status === 'thinking' || newTask.status === 'processing')
+            task.thinkingMessage &&
+            (task.status === 'thinking' || task.status === 'processing')
           ) {
             // 检查消息是否真的变化了（长度增加表示有新内容）
-            const oldLength = thinkingMessageLengths.value.get(newTask.id) || 0;
-            const newLength = newTask.thinkingMessage.length;
+            const oldLength = thinkingMessageLengths.value.get(task.id) || 0;
+            const newLength = task.thinkingMessage.length;
             
             if (newLength > oldLength) {
               // 更新长度记录
-              thinkingMessageLengths.value.set(newTask.id, newLength);
+              thinkingMessageLengths.value.set(task.id, newLength);
               // 触发滚动（已包含防抖）
-              scrollThinkingMessageToBottom(newTask.id);
+              scrollThinkingMessageToBottom(task.id);
             }
           }
         });
@@ -210,7 +218,8 @@ watch(
         // 清理已完成任务的长度记录
         if (oldTasks) {
           oldTasks.forEach((oldTask) => {
-            if (oldTask.status !== 'thinking' && oldTask.status !== 'processing') {
+            const task = aiProcessing.activeTasks.find((t) => t.id === oldTask.id);
+            if (!task || (task.status !== 'thinking' && task.status !== 'processing')) {
               thinkingMessageLengths.value.delete(oldTask.id);
             }
           });
@@ -316,6 +325,7 @@ onUnmounted(() => {
         <div
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
+          v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length]"
           class="p-4 rounded-lg border border-white/10 bg-white/5"
         >
           <div class="flex items-start justify-between mb-2 gap-2">
@@ -386,6 +396,7 @@ onUnmounted(() => {
             <div
               v-for="task in aiProcessing.completedTasksList.slice(0, 10)"
               :key="task.id"
+              v-memo="[task.id, task.status, task.message]"
               class="p-3 rounded-lg border border-white/5 bg-white/2"
             >
               <div class="flex items-start justify-between mb-2 gap-2">
