@@ -474,6 +474,9 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加思考消息（用于流式响应）
+     * 优化：直接修改属性，让 Pinia 的响应式系统自然工作
+     * 注意：在 Pinia 中，直接修改对象属性会自动触发响应式更新
+     * 不需要每次都创建新数组，这样可以减少不必要的数组复制开销
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendThinkingMessage(id: string, text: string): Promise<void> {
@@ -483,8 +486,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.thinkingMessage = '';
         }
         task.thinkingMessage += text;
-        // 确保响应式更新
-        this.activeTasks = [...this.activeTasks];
+        // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
+        // 不需要创建新数组，减少不必要的开销
         // 保存到 IndexedDB（异步，不阻塞 UI）
         void co(function* () {
           try {
@@ -498,6 +501,9 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加输出内容（用于流式输出）
+     * 优化：直接修改属性，让 Pinia 的响应式系统自然工作
+     * 注意：在 Pinia 中，直接修改对象属性会自动触发响应式更新
+     * 不需要每次都创建新数组，这样可以减少不必要的数组复制开销
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendOutputContent(id: string, text: string): Promise<void> {
@@ -507,8 +513,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.outputContent = '';
         }
         task.outputContent += text;
-        // 确保响应式更新
-        this.activeTasks = [...this.activeTasks];
+        // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
+        // 不需要创建新数组，减少不必要的开销
         // 保存到 IndexedDB（异步，不阻塞 UI）
         void co(function* () {
           try {
