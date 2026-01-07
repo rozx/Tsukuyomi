@@ -9,6 +9,7 @@ import { bookTools } from './book-tools';
 import { memoryTools } from './memory-tools';
 import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
+import { useSettingsStore } from 'src/stores/settings';
 
 export type { ActionInfo };
 
@@ -80,6 +81,16 @@ export class ToolRegistry {
   }
 
   static getWebSearchTools(): AITool[] {
+    // 检查是否已配置 Tavily API Key
+    const settingsStore = useSettingsStore();
+    const apiKey = settingsStore.tavilyApiKey;
+
+    // 如果没有配置 API Key，不返回网络搜索工具
+    if (!apiKey) {
+      console.log('[ToolRegistry] ⚠️ Tavily API Key 未配置，网络搜索工具已禁用');
+      return [];
+    }
+
     return this.mapTools(webSearchTools);
   }
 

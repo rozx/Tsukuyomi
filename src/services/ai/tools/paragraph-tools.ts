@@ -1352,6 +1352,8 @@ export const paragraphTools: ToolDefinition[] = [
       translationToUpdate.translation = new_translation;
 
       // 更新书籍（保存更改）
+      // 注意：booksStore.updateBook 会调用 BookService.saveBook，章节内容保存会启用 skipIfUnchanged。
+      // ChapterContentService 使用“序列化快照”检测变化（含就地修改），既能正确持久化修改，也能避免未修改内容的重复写入。
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -1464,6 +1466,7 @@ export const paragraphTools: ToolDefinition[] = [
       paragraph.selectedTranslationId = translation_id;
 
       // 更新书籍（保存更改）
+      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       return JSON.stringify({
@@ -1591,6 +1594,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -1712,6 +1716,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
@@ -2267,6 +2272,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 更新书籍（保存更改）
+      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
       await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告批量替换操作（单个汇总 action，而不是每个替换一个）

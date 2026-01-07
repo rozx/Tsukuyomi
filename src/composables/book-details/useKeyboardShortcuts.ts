@@ -15,7 +15,7 @@ export function useKeyboardShortcuts(
   selectedChapterParagraphs: ComputedRef<Paragraph[]>,
   // 组件状态
   selectedChapter: Ref<Chapter | null>,
-  selectedSettingMenu: Ref<'terms' | 'characters' | null>,
+  selectedSettingMenu: Ref<'terms' | 'characters' | 'memory' | null>,
   editMode: Ref<'original' | 'translation' | 'preview'>,
   // 段落导航相关
   selectedParagraphIndex: Ref<number | null>,

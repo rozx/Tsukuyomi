@@ -717,6 +717,50 @@ export class MemoryService {
   }
 
   /**
+   * 批量获取多本书籍的所有 Memory
+   * @param bookIds 书籍 ID 列表
+   * @returns Map<bookId, Memory[]> 按书籍 ID 分组的 Memory 列表
+   */
+  static async getAllMemoriesForBooks(bookIds: string[]): Promise<Map<string, Memory[]>> {
+    if (!bookIds || bookIds.length === 0) {
+      return new Map();
+    }
+
+    const result = new Map<string, Memory[]>();
+
+    // 并发加载所有书籍的 Memory
+    await Promise.all(
+      bookIds.map(async (bookId) => {
+        try {
+          const memories = await this.getAllMemories(bookId);
+          if (memories.length > 0) {
+            result.set(bookId, memories);
+          }
+        } catch (error) {
+          console.warn(`[MemoryService] 加载书籍 ${bookId} 的 Memory 失败:`, error);
+          // 不中断其他书籍的加载
+        }
+      }),
+    );
+
+    return result;
+  }
+
+  /**
+   * 批量获取多本书籍的所有 Memory（返回扁平数组）
+   * @param bookIds 书籍 ID 列表
+   * @returns 所有书籍的 Memory 扁平数组
+   */
+  static async getAllMemoriesForBooksFlat(bookIds: string[]): Promise<Memory[]> {
+    const memoriesMap = await this.getAllMemoriesForBooks(bookIds);
+    const allMemories: Memory[] = [];
+    for (const memories of memoriesMap.values()) {
+      allMemories.push(...memories);
+    }
+    return allMemories;
+  }
+
+  /**
    * 获取最近的 Memory（用于 AI 上下文）
    * @param bookId 书籍 ID
    * @param limit 返回的记忆数量限制（默认 10）

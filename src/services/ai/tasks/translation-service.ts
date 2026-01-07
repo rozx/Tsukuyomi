@@ -253,7 +253,8 @@ export class TranslationService {
 2. **术语一致**: 使用术语表和角色表确保全文一致
 3. **自然流畅**: 符合轻小说风格，适当添加语气词（按角色speaking_style）
 4. **前后一致**: 参考前文翻译，保持人名/术语/风格一致
-5. ${getSymbolFormatRules()}
+5. **完整翻译**: [警告] 必须翻译所有单词和短语，禁止在翻译结果中保留未翻译的日语原文（如日文假名、汉字等）
+6. ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
 

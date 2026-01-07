@@ -8,6 +8,8 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { MemoryService } from 'src/services/memory-service';
+import type { Memory } from 'src/models/memory';
 
 const toast = useToastWithHistory();
 const aiModelsStore = useAIModelsStore();
@@ -26,12 +28,17 @@ const exportSettings = async () => {
     booksStore.books,
   );
 
-  // 同步最新的 AI 模型、书籍数据、封面历史、同步设置和应用设置
+  // 使用批量加载方法加载所有 Memory 数据
+  const bookIds = booksStore.books.map((book) => book.id);
+  const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
+  // 同步最新的 AI 模型、书籍数据、封面历史、Memory、同步设置和应用设置
   const settings = {
     aiModels: [...aiModelsStore.models],
     sync: [...settingsStore.syncs],
     novels: novelsWithContent,
     coverHistory: [...coverHistoryStore.covers],
+    memories,
     appSettings: settingsStore.getAllSettings(),
   };
 
@@ -97,6 +104,33 @@ const handleFileSelect = async (event: Event) => {
       }
     }
 
+    // 覆盖当前的 Memory 数据
+    if (result.data.memories && result.data.memories.length > 0) {
+      // Memory 按 bookId 分组并导入
+      const memoriesByBook = new Map<string, Memory[]>();
+      for (const memory of result.data.memories) {
+        if (!memoriesByBook.has(memory.bookId)) {
+          memoriesByBook.set(memory.bookId, []);
+        }
+        memoriesByBook.get(memory.bookId)!.push(memory);
+      }
+
+      // 为每本书导入 Memory
+      for (const [bookId, memories] of memoriesByBook.entries()) {
+        try {
+          for (const memory of memories) {
+            await MemoryService.createMemory(
+              bookId,
+              memory.content,
+              memory.summary,
+            );
+          }
+        } catch (error) {
+          console.warn(`[ImportExportTab] 导入书籍 ${bookId} 的 Memory 失败:`, error);
+        }
+      }
+    }
+
     // 覆盖当前的应用设置
     if (result.data.appSettings) {
       await settingsStore.importSettings(result.data.appSettings);
@@ -135,7 +169,7 @@ const handleFileSelect = async (event: Event) => {
         <div>
           <h3 class="text-sm font-medium text-moon/90 mb-1">导入资料</h3>
           <p class="text-xs text-moon/70">
-            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI 模型配置、书籍数据、封面历史、同步设置和应用设置
+            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI 模型配置、书籍数据、封面历史、Memory、同步设置和应用设置
           </p>
         </div>
         <Button
@@ -153,7 +187,7 @@ const handleFileSelect = async (event: Event) => {
         <div>
           <h3 class="text-sm font-medium text-moon/90 mb-1">导出资料</h3>
           <p class="text-xs text-moon/70">
-            将当前设置（包括 AI 模型配置、书籍数据、封面历史、同步设置和应用设置）导出为 JSON 文件
+            将当前设置（包括 AI 模型配置、书籍数据、封面历史、Memory、同步设置和应用设置）导出为 JSON 文件
           </p>
         </div>
         <Button
