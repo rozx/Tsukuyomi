@@ -1637,7 +1637,7 @@ defineExpose({
   justify-content: flex-start;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  color: var(--moon-opacity-90);
+  color: var(--moon-opacity-100);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
