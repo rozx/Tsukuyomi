@@ -196,6 +196,9 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
       ...(rawSettings.proxyList !== undefined 
         ? { proxyList: cloneDeep(rawSettings.proxyList) } 
         : {}),
+      ...(rawSettings.tavilyApiKey !== undefined 
+        ? { tavilyApiKey: rawSettings.tavilyApiKey } 
+        : {}),
     };
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });

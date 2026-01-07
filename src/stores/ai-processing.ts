@@ -137,6 +137,85 @@ async function clearAllThinkingProcessesFromDB(): Promise<void> {
   }
 }
 
+/**
+ * 节流定时器映射，用于限制每个任务的更新频率
+ * taskId -> { timer: number | null, pendingText: string, lastUpdate: number }
+ */
+const taskThrottleMap = new Map<
+  string,
+  { timer: number | null; pendingText: string; lastUpdate: number }
+>();
+
+/**
+ * 节流更新思考消息（每 300ms 最多更新一次）
+ */
+function throttledUpdateThinkingMessage(
+  task: AIProcessingTask,
+  text: string,
+  updateFn: (task: AIProcessingTask, text: string) => void,
+): void {
+  const throttleInfo = taskThrottleMap.get(task.id);
+  const now = Date.now();
+
+  if (!throttleInfo) {
+    // 第一次更新，立即执行
+    updateFn(task, text);
+    taskThrottleMap.set(task.id, {
+      timer: null,
+      pendingText: '',
+      lastUpdate: now,
+    });
+    return;
+  }
+
+  // 累积待更新的文本
+  throttleInfo.pendingText += text;
+
+  // 如果距离上次更新超过 300ms，立即更新
+  if (now - throttleInfo.lastUpdate >= 300) {
+    if (throttleInfo.pendingText) {
+      updateFn(task, throttleInfo.pendingText);
+      throttleInfo.pendingText = '';
+      throttleInfo.lastUpdate = now;
+    }
+    // 清除之前的定时器
+    if (throttleInfo.timer !== null) {
+      clearTimeout(throttleInfo.timer);
+      throttleInfo.timer = null;
+    }
+  } else {
+    // 距离上次更新不足 300ms，延迟更新
+    if (throttleInfo.timer === null) {
+      const delay = 300 - (now - throttleInfo.lastUpdate);
+      throttleInfo.timer = window.setTimeout(() => {
+        // 检查节流信息是否仍然存在（任务可能已被删除）
+        const currentThrottleInfo = taskThrottleMap.get(task.id);
+        if (currentThrottleInfo && currentThrottleInfo.pendingText) {
+          updateFn(task, currentThrottleInfo.pendingText);
+          currentThrottleInfo.pendingText = '';
+          currentThrottleInfo.lastUpdate = Date.now();
+        }
+        if (currentThrottleInfo) {
+          currentThrottleInfo.timer = null;
+        }
+      }, delay);
+    }
+  }
+}
+
+/**
+ * 清理任务的节流信息
+ */
+function clearTaskThrottle(taskId: string): void {
+  const throttleInfo = taskThrottleMap.get(taskId);
+  if (throttleInfo) {
+    if (throttleInfo.timer !== null) {
+      clearTimeout(throttleInfo.timer);
+    }
+    taskThrottleMap.delete(taskId);
+  }
+}
+
 export const useAIProcessingStore = defineStore('aiProcessing', {
   state: () => ({
     activeTasks: [] as AIProcessingTask[],
@@ -403,6 +482,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           updates.status === 'cancelled'
         ) {
           task.endTime = Date.now();
+          // 清理节流信息
+          clearTaskThrottle(id);
           // 删除关联的待办事项
           try {
             const deletedCount = TodoListService.deleteTodosByTaskId(id);
@@ -444,6 +525,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         if (task.status === 'completed' || task.status === 'cancelled') {
           return;
         }
+        // 清理节流信息
+        clearTaskThrottle(id);
         // 更新任务状态（确保响应式更新）
         task.status = 'cancelled';
         task.message = '已取消';
@@ -474,21 +557,50 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加思考消息（用于流式响应）
+     * 优化：使用节流机制，每 300ms 最多更新一次，大幅减少响应式更新频率
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendThinkingMessage(id: string, text: string): Promise<void> {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
-        if (!task.thinkingMessage) {
-          task.thinkingMessage = '';
-        }
-        task.thinkingMessage += text;
-        // 确保响应式更新
-        this.activeTasks = [...this.activeTasks];
-        // 保存到 IndexedDB（异步，不阻塞 UI）
+        // 使用节流更新，减少响应式更新频率
+        throttledUpdateThinkingMessage(
+          task,
+          text,
+          (t, accumulatedText) => {
+            // 再次检查任务是否仍然存在（可能在节流延迟期间被删除）
+            const currentTask = this.activeTasks.find((task) => task.id === t.id);
+            if (!currentTask) {
+              // 任务已被删除，清理节流信息
+              clearTaskThrottle(t.id);
+              return;
+            }
+            
+            if (!currentTask.thinkingMessage) {
+              currentTask.thinkingMessage = '';
+            }
+            currentTask.thinkingMessage += accumulatedText;
+            // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
+            // 但由于使用了节流，更新频率大幅降低
+            // 为了确保 watch 能检测到变化，需要触发数组引用更新
+            // 但为了性能，只在节流更新时触发一次
+            this.activeTasks = [...this.activeTasks];
+          },
+        );
+
+        // 保存到 IndexedDB（异步，不阻塞 UI，使用节流后的最终值）
+        // 注意：这里保存的是累积的文本，可能不是最新的，但为了性能考虑这是可以接受的
+        // 在生成器函数外部捕获 activeTasks 的引用，避免 ESLint 的 no-this-alias 规则
+        const activeTasksRef = this.activeTasks;
         void co(function* () {
           try {
-            yield saveThinkingProcessToDB(task);
+            // 延迟保存，确保节流更新已完成
+            yield new Promise((resolve) => setTimeout(resolve, 350));
+            // 再次检查任务是否仍然存在
+            const currentTask = activeTasksRef.find((t: AIProcessingTask) => t.id === id);
+            if (currentTask) {
+              yield saveThinkingProcessToDB(currentTask);
+            }
           } catch (error) {
             console.error('Failed to save thinking message to IndexedDB:', error);
           }
@@ -498,6 +610,9 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加输出内容（用于流式输出）
+     * 优化：直接修改属性，让 Pinia 的响应式系统自然工作
+     * 注意：在 Pinia 中，直接修改对象属性会自动触发响应式更新
+     * 不需要每次都创建新数组，这样可以减少不必要的数组复制开销
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendOutputContent(id: string, text: string): Promise<void> {
@@ -507,8 +622,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.outputContent = '';
         }
         task.outputContent += text;
-        // 确保响应式更新
-        this.activeTasks = [...this.activeTasks];
+        // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
+        // 不需要创建新数组，减少不必要的开销
         // 保存到 IndexedDB（异步，不阻塞 UI）
         void co(function* () {
           try {
@@ -527,6 +642,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       const index = this.activeTasks.findIndex((t) => t.id === id);
       if (index > -1) {
         this.activeTasks.splice(index, 1);
+        // 清理节流信息，避免内存泄漏
+        clearTaskThrottle(id);
         await deleteThinkingProcessFromDB(id);
       }
     },
@@ -541,6 +658,11 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
             task.status === 'completed' || task.status === 'error' || task.status === 'cancelled',
         )
         .map((task) => task.id);
+
+      // 清理所有已完成任务的节流信息，避免内存泄漏
+      for (const id of completedTaskIds) {
+        clearTaskThrottle(id);
+      }
 
       // 从内存中移除
       this.activeTasks = this.activeTasks.filter(
@@ -557,6 +679,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
      * 清空所有任务（从内存和 IndexedDB 中删除）
      */
     async clearAllTasks(): Promise<void> {
+      // 清理所有任务的节流信息，避免内存泄漏
+      const allTaskIds = this.activeTasks.map((task) => task.id);
+      for (const id of allTaskIds) {
+        clearTaskThrottle(id);
+      }
+      
       this.activeTasks = [];
       await clearAllThinkingProcessesFromDB();
     },

@@ -150,6 +150,7 @@ const performBatchScroll = () => {
 };
 
 // 滚动到思考消息底部（防抖 + 批处理）
+// 优化：增加防抖时间，减少更新频率
 const scrollThinkingMessageToBottom = (taskId: string) => {
   // 将任务添加到待处理集合
   pendingScrollTasks.value.add(taskId);
@@ -159,37 +160,96 @@ const scrollThinkingMessageToBottom = (taskId: string) => {
     clearTimeout(scrollDebounceTimer);
   }
 
-  // 使用防抖，16ms 约等于一帧的时间
+  // 使用防抖，50ms 减少更新频率，避免频繁滚动导致页面卡顿
   scrollDebounceTimer = window.setTimeout(() => {
     performBatchScroll();
     scrollDebounceTimer = null;
-  }, 16);
+  }, 50);
 };
 
+// 使用 Map 存储每个任务的思考消息长度，用于检测变化
+const thinkingMessageLengths = ref<Map<string, number>>(new Map());
+
+// 防抖定时器，用于批量处理 watch 回调
+let watchDebounceTimer: number | null = null;
+
 // 监听所有任务的思考消息变化，自动滚动到底部
+// 优化：直接监听 activeTasks，确保能检测到 thinkingMessage 的变化
+// 使用防抖机制，减少 watch 回调的执行频率
 watch(
-  () =>
-    aiProcessing.activeTasks.map((task) => ({
-      id: task.id,
-      thinkingMessage: task.thinkingMessage,
-      status: task.status,
-    })),
+  () => aiProcessing.activeTasks.map((task) => ({
+    id: task.id,
+    thinkingMessageLength: task.thinkingMessage?.length || 0,
+    status: task.status,
+  })),
   (newTasks, oldTasks) => {
-    // 当任何任务的思考消息更新时，滚动对应的容器到底部
-    newTasks.forEach((newTask) => {
-      if (
-        newTask.thinkingMessage &&
-        (newTask.status === 'thinking' || newTask.status === 'processing')
-      ) {
-        // 检查消息是否真的变化了（长度增加表示有新内容）
-        const oldTask = oldTasks?.find((t) => t.id === newTask.id);
-        if (!oldTask || newTask.thinkingMessage.length > (oldTask.thinkingMessage?.length || 0)) {
-          scrollThinkingMessageToBottom(newTask.id);
-        }
+    // 清除之前的定时器
+    if (watchDebounceTimer !== null) {
+      clearTimeout(watchDebounceTimer);
+    }
+    
+    // 使用防抖，100ms 批量处理一次
+    // store 层面已经有 300ms 节流，这里使用较短的防抖时间确保及时响应
+    watchDebounceTimer = window.setTimeout(() => {
+      // 使用 requestIdleCallback 或 setTimeout 延迟执行，避免阻塞主线程
+      const scheduleUpdate = () => {
+        // 获取当前活动的任务列表（基于最新状态，不依赖过时的 oldTasks）
+        const activeTasks = aiProcessing.activeTasksList;
+        
+        // 获取当前所有任务的状态映射（用于清理逻辑）
+        const currentTaskStatusMap = new Map<string, 'thinking' | 'processing' | 'completed' | 'error' | 'cancelled'>();
+        aiProcessing.activeTasks.forEach((task) => {
+          currentTaskStatusMap.set(task.id, task.status);
+        });
+        
+        // 当任何任务的思考消息更新时，滚动对应的容器到底部
+        activeTasks.forEach((task) => {
+          if (
+            task.thinkingMessage &&
+            (task.status === 'thinking' || task.status === 'processing')
+          ) {
+            // 检查消息是否真的变化了（长度增加表示有新内容）
+            const oldLength = thinkingMessageLengths.value.get(task.id) || 0;
+            const newLength = task.thinkingMessage.length;
+            
+            if (newLength > oldLength) {
+              // 更新长度记录
+              thinkingMessageLengths.value.set(task.id, newLength);
+              // 触发滚动（已包含防抖）
+              scrollThinkingMessageToBottom(task.id);
+            }
+          }
+        });
+        
+        // 清理已完成任务的长度记录
+        // 基于当前状态进行清理，而不是依赖过时的 oldTasks
+        // 遍历所有已记录的任务 ID，检查它们是否仍然处于活动状态
+        const taskIdsToCleanup: string[] = [];
+        thinkingMessageLengths.value.forEach((_, taskId) => {
+          const currentStatus = currentTaskStatusMap.get(taskId);
+          // 如果任务不存在于当前任务列表中，或者状态不是 'thinking'/'processing'，则清理
+          if (!currentStatus || (currentStatus !== 'thinking' && currentStatus !== 'processing')) {
+            taskIdsToCleanup.push(taskId);
+          }
+        });
+        
+        // 执行清理
+        taskIdsToCleanup.forEach((taskId) => {
+          thinkingMessageLengths.value.delete(taskId);
+        });
+      };
+      
+      // 使用 requestIdleCallback 延迟执行，如果浏览器不支持则使用 setTimeout
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(scheduleUpdate, { timeout: 50 });
+      } else {
+        setTimeout(scheduleUpdate, 0);
       }
-    });
+      
+      watchDebounceTimer = null;
+    }, 100);
   },
-  { deep: true },
+  { flush: 'post' }, // 在 DOM 更新后执行
 );
 
 // Popover ref
@@ -208,6 +268,12 @@ onUnmounted(() => {
   if (scrollDebounceTimer !== null) {
     clearTimeout(scrollDebounceTimer);
     scrollDebounceTimer = null;
+  }
+  
+  // 清理 watch 防抖定时器
+  if (watchDebounceTimer !== null) {
+    clearTimeout(watchDebounceTimer);
+    watchDebounceTimer = null;
   }
 
   // 清理 RAF
@@ -229,6 +295,7 @@ onUnmounted(() => {
   thinkingMessageRefs.value.clear();
   userScrollingStates.value.clear();
   pendingScrollTasks.value.clear();
+  thinkingMessageLengths.value.clear();
 });
 </script>
 
@@ -271,6 +338,7 @@ onUnmounted(() => {
         <div
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
+          v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length]"
           class="p-4 rounded-lg border border-white/10 bg-white/5"
         >
           <div class="flex items-start justify-between mb-2 gap-2">
@@ -341,6 +409,7 @@ onUnmounted(() => {
             <div
               v-for="task in aiProcessing.completedTasksList.slice(0, 10)"
               :key="task.id"
+              v-memo="[task.id, task.status, task.message]"
               class="p-3 rounded-lg border border-white/5 bg-white/2"
             >
               <div class="flex items-start justify-between mb-2 gap-2">

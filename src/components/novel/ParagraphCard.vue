@@ -7,7 +7,6 @@ import Textarea from 'primevue/textarea';
 import Button from 'primevue/button';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/models/novel';
 import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
-import { useAIModelsStore } from 'src/stores/ai-models';
 import { useContextStore } from 'src/stores/context';
 import { useBooksStore } from 'src/stores/books';
 import { useUiStore } from 'src/stores/ui';
@@ -15,6 +14,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
 import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
+import { useContextMenuManager } from 'src/composables/useContextMenuManager';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -41,10 +41,12 @@ const emit = defineEmits<{
   'paragraph-edit-stop': [paragraphId: string];
 }>();
 
-const aiModelsStore = useAIModelsStore();
 const contextStore = useContextStore();
 const booksStore = useBooksStore();
 const uiStore = useUiStore();
+
+// 上下文菜单管理器
+const { showContextMenu } = useContextMenuManager();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
@@ -374,7 +376,7 @@ const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): num
   ) {
     // Firefox
     const caretPos = (
-      document as {
+      document as unknown as {
         caretPositionFromPoint: (
           x: number,
           y: number,
@@ -587,6 +589,7 @@ const handleContextMenuClick = (event: Event) => {
 };
 
 // 处理右键点击段落卡片
+// 追踪上一次右键菜单显示时间，用于检测快速连续触发
 const handleParagraphContextMenu = (event: MouseEvent) => {
   event.preventDefault();
 
@@ -612,12 +615,19 @@ const handleParagraphContextMenu = (event: MouseEvent) => {
   target.style.left = `${event.clientX}px`;
   target.style.top = `${event.clientY}px`;
 
-  // 使用 nextTick 确保 DOM 更新后再显示菜单
+  // 使用 composable 显示上下文菜单
+  // 这会自动隐藏之前活动的菜单
   setTimeout(() => {
     if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
-      contextMenuPopoverRef.value.show(event, target);
+      // 使用 composable 显示菜单，会自动处理隐藏之前的菜单
+      showContextMenu(contextMenuPopoverRef, event, target);
     }
   }, 0);
+};
+
+// 当上下文菜单 Popover 显示时记录状态
+const handleContextMenuPopoverShow = () => {
+  // 菜单显示时的处理（如果需要的话）
 };
 
 // 当上下文菜单 Popover 关闭时清理状态
@@ -1084,6 +1094,7 @@ defineExpose({
       :show-close-icon="false"
       style="width: 16rem"
       class="context-menu-popover"
+      @show="handleContextMenuPopoverShow"
       @hide="handleContextMenuPopoverHide"
     >
       <div class="context-menu-content">
@@ -1167,10 +1178,6 @@ defineExpose({
 
 .paragraph-card:focus {
   outline: none;
-}
-
-.paragraph-card.paragraph-selected {
-  /* 选中效果由外层容器处理，这里不添加样式 */
 }
 
 .paragraph-icon {
