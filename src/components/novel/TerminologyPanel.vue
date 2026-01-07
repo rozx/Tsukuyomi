@@ -580,104 +580,105 @@ const handleFileSelect = async (event: Event) => {
       />
     </div>
 
-    <!-- 内容区域 -->
-    <div class="flex-1 flex flex-col min-h-0 p-6">
-      <!-- 操作栏 -->
-      <div
-        class="flex-shrink-0 flex items-center justify-between gap-3 mb-4 pb-4 border-b border-white/10 flex-nowrap"
-      >
-        <!-- 左侧：批量操作控制 -->
-        <div v-if="bulkActionMode" class="flex items-center gap-3 flex-shrink-0">
+    <!-- 操作栏 -->
+    <div
+      class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+    >
+      <div class="flex items-center justify-between gap-3 flex-nowrap">
+        <!-- 左侧：搜索栏 / 批量操作控制 -->
+        <div v-if="bulkActionMode" class="flex items-center gap-2 flex-shrink-0">
           <Checkbox
             :model-value="isAllSelected"
             :binary="true"
             :indeterminate="isIndeterminate"
             @update:model-value="toggleSelectAll"
           />
-          <span class="text-sm text-moon/70">
-            已选择 {{ selectedTermIds.size }} / {{ terminologies.length }}
+          <span class="text-sm text-moon/70 whitespace-nowrap">
+            {{ selectedTermIds.size }} / {{ terminologies.length }}
           </span>
-          <Button
-            label="批量删除"
-            icon="pi pi-trash"
-            class="p-button-danger flex-shrink-0"
-            :disabled="selectedTermIds.size === 0"
-            @click="handleBulkDelete"
-          />
-          <Button
-            label="取消"
-            icon="pi pi-times"
-            class="p-button-text flex-shrink-0"
-            @click="toggleBulkActionMode"
-          />
         </div>
-        <div v-else class="flex items-center gap-2">
-          <Button
-            label="批量操作"
-            icon="pi pi-check-square"
-            class="p-button-outlined flex-shrink-0"
-            @click="toggleBulkActionMode"
+        <InputGroup v-else class="search-input-group min-w-0 flex-1">
+          <InputGroupAddon>
+            <i class="pi pi-search text-base" />
+          </InputGroupAddon>
+          <InputText
+            v-model="searchQuery"
+            placeholder="搜索术语名称、翻译或描述..."
+            class="search-input"
           />
-        </div>
-
-        <!-- 右侧：搜索和其他操作 -->
-        <div class="flex items-center gap-3 flex-1 justify-end">
-          <InputGroup class="search-input-group min-w-0 flex-shrink">
-            <InputGroupAddon>
-              <i class="pi pi-search text-base" />
-            </InputGroupAddon>
-            <InputText
-              v-model="searchQuery"
-              placeholder="搜索术语名称、翻译或描述..."
-              class="search-input"
+          <InputGroupAddon v-if="searchQuery" class="input-action-addon">
+            <Button
+              icon="pi pi-times"
+              class="p-button-text p-button-sm input-action-button"
+              @click="searchQuery = ''"
+              title="清除搜索"
             />
-            <InputGroupAddon v-if="searchQuery" class="input-action-addon">
-              <Button
-                icon="pi pi-times"
-                class="p-button-text p-button-sm input-action-button"
-                @click="searchQuery = ''"
-                title="清除搜索"
-              />
-            </InputGroupAddon>
-          </InputGroup>
-          <Button
-            label="导出"
-            icon="pi pi-download"
-            class="p-button-outlined flex-shrink-0"
-            :disabled="
-              bulkActionMode || !props.book?.terminologies || props.book.terminologies.length === 0
-            "
-            @click="handleExport"
-          />
-          <Button
-            label="导入"
-            icon="pi pi-upload"
-            class="p-button-outlined flex-shrink-0"
-            :disabled="bulkActionMode"
-            @click="handleImport"
-          />
-          <Button
-            label="添加术语"
-            icon="pi pi-plus"
-            class="p-button-primary flex-shrink-0"
-            :disabled="bulkActionMode"
-            @click="openAddDialog"
-          />
+          </InputGroupAddon>
+        </InputGroup>
+
+        <!-- 右侧：操作按钮 -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <!-- 批量模式下的按钮 -->
+          <template v-if="bulkActionMode">
+            <Button
+              label="删除"
+              icon="pi pi-trash"
+              class="p-button-danger flex-shrink-0"
+              :disabled="selectedTermIds.size === 0"
+              @click="handleBulkDelete"
+            />
+            <Button
+              label="取消"
+              icon="pi pi-times"
+              class="p-button-text flex-shrink-0"
+              @click="toggleBulkActionMode"
+            />
+          </template>
+          <!-- 普通模式下的按钮 -->
+          <template v-else>
+            <Button
+              label="批量"
+              icon="pi pi-check-square"
+              class="p-button-outlined flex-shrink-0"
+              @click="toggleBulkActionMode"
+            />
+            <Button
+              label="导出"
+              icon="pi pi-download"
+              class="p-button-outlined flex-shrink-0"
+              :disabled="!props.book?.terminologies || props.book.terminologies.length === 0"
+              @click="handleExport"
+            />
+            <Button
+              label="导入"
+              icon="pi pi-upload"
+              class="p-button-outlined flex-shrink-0"
+              @click="handleImport"
+            />
+            <Button
+              label="添加术语"
+              icon="pi pi-plus"
+              class="p-button-primary flex-shrink-0"
+              @click="openAddDialog"
+            />
+          </template>
         </div>
       </div>
+    </div>
 
+    <!-- 内容区域 -->
+    <div class="flex-1 p-6 min-h-0">
       <!-- 术语列表 -->
-      <div class="flex-1 flex flex-col min-h-0">
-        <DataView
-          :value="terminologies"
-          data-key="id"
-          layout="grid"
-          :rows="96"
-          :paginator="terminologies.length > 0"
-          :rows-per-page-options="[96, 144, 192, 288]"
-          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
-          class="flex-1 flex flex-col min-h-0"
-        >
+      <DataView
+        :value="terminologies"
+        data-key="id"
+        layout="grid"
+        :rows="96"
+        :paginator="terminologies.length > 0"
+        :rows-per-page-options="[96, 144, 192, 288]"
+        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
+        class="flex-1 flex flex-col min-h-0"
+      >
           <template #empty>
             <div class="text-center py-12">
               <i class="pi pi-book text-4xl text-moon/50 mb-4" />
@@ -719,7 +720,6 @@ const handleFileSelect = async (event: Event) => {
             </div>
           </template>
         </DataView>
-      </div>
     </div>
 
     <!-- 添加术语对话框 -->

@@ -39,6 +39,7 @@ import DeleteTermConfirmDialog from 'src/components/dialogs/DeleteTermConfirmDia
 import DeleteCharacterConfirmDialog from 'src/components/dialogs/DeleteCharacterConfirmDialog.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
+import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
@@ -75,7 +76,7 @@ const showBookDialog = ref(false);
 const showScraperDialog = ref(false);
 
 // 设置菜单状态
-const selectedSettingMenu = ref<'terms' | 'characters' | null>(null);
+const selectedSettingMenu = ref<'terms' | 'characters' | 'memory' | null>(null);
 
 // 滚动容器引用
 const scrollableContentRef = ref<HTMLElement | null>(null);
@@ -470,6 +471,24 @@ const navigateToTermsSetting = () => {
 // 导航到角色设置
 const navigateToCharactersSetting = () => {
   selectedSettingMenu.value = 'characters';
+  // 清除章节选中状态
+  if (bookId.value) {
+    void bookDetailsStore.setSelectedChapter(bookId.value, null);
+  }
+  // 更新上下文：清除章节和段落，保留书籍
+  if (bookId.value) {
+    contextStore.setContext({
+      currentBookId: bookId.value,
+      currentChapterId: null,
+      hoveredParagraphId: null,
+      selectedParagraphId: null,
+    });
+  }
+};
+
+// 导航到 Memory 设置
+const navigateToMemorySetting = () => {
+  selectedSettingMenu.value = 'memory';
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
@@ -1621,455 +1640,470 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     <div v-else class="book-details-layout">
       <!-- 左侧卷/章节面板 -->
       <aside class="book-sidebar">
-      <div class="sidebar-content">
-        <!-- 书籍封面和标题 -->
-        <div v-if="book" class="book-header">
-          <div class="book-header-content" @click="openBookDialog">
-            <i class="pi pi-info-circle book-edit-icon"></i>
-            <div class="book-cover-wrapper">
-              <img
-                :src="book ? getCoverUrl(book) : ''"
-                :alt="book?.title || ''"
-                class="book-cover"
-                @error="
-                  (e) => {
-                    const target = e.target as HTMLImageElement;
-                    if (book) {
-                      target.src = getCoverUrl(book);
+        <div class="sidebar-content">
+          <!-- 书籍封面和标题 -->
+          <div v-if="book" class="book-header">
+            <div class="book-header-content" @click="openBookDialog">
+              <i class="pi pi-info-circle book-edit-icon"></i>
+              <div class="book-cover-wrapper">
+                <img
+                  :src="book ? getCoverUrl(book) : ''"
+                  :alt="book?.title || ''"
+                  class="book-cover"
+                  @error="
+                    (e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (book) {
+                        target.src = getCoverUrl(book);
+                      }
                     }
-                  }
-                "
-              />
-            </div>
-            <div class="book-info">
-              <h3 class="book-title">{{ book.title }}</h3>
-              <div v-if="stats" class="book-stats">
-                <div class="stat-item stat-item-volume">
-                  <i class="pi pi-file stat-icon"></i>
-                  <span class="stat-value">{{ stats.volumeCount }}</span>
-                  <span class="stat-label">卷</span>
-                </div>
-                <span class="stat-separator">|</span>
-                <div class="stat-item stat-item-chapter">
-                  <i class="pi pi-list stat-icon"></i>
-                  <span class="stat-value">{{ stats.chapterCount }}</span>
-                  <span class="stat-label">章</span>
-                </div>
-                <span class="stat-separator">|</span>
-                <div class="stat-item stat-item-wordcount">
-                  <i class="pi pi-align-left stat-icon"></i>
-                  <span class="stat-value">{{ formatWordCount(stats.wordCount) }}</span>
-                </div>
-              </div>
-              <div v-else-if="isStatsCalculating" class="book-stats">
-                <Skeleton width="120px" height="20px" />
-              </div>
-            </div>
-          </div>
-          <div class="book-separator"></div>
-        </div>
-
-        <!-- 设置菜单 -->
-        <div class="settings-menu-wrapper">
-          <div class="settings-menu-items">
-            <button
-              class="settings-menu-item"
-              :class="{ 'settings-menu-item-selected': selectedSettingMenu === 'terms' }"
-              @click="navigateToTermsSetting"
-            >
-              <i class="pi pi-bookmark settings-menu-icon"></i>
-              <span class="settings-menu-label">术语设置</span>
-            </button>
-            <button
-              class="settings-menu-item"
-              :class="{ 'settings-menu-item-selected': selectedSettingMenu === 'characters' }"
-              @click="navigateToCharactersSetting"
-            >
-              <i class="pi pi-users settings-menu-icon"></i>
-              <span class="settings-menu-label">角色设置</span>
-            </button>
-            <button class="settings-menu-item" @click="openScraperDialog">
-              <i class="pi pi-download settings-menu-icon"></i>
-              <span class="settings-menu-label">检查更新</span>
-            </button>
-          </div>
-          <div class="settings-menu-separator"></div>
-        </div>
-
-        <!-- 目录标题和操作按钮 -->
-        <div class="sidebar-title-wrapper">
-          <h2 class="sidebar-title">目录</h2>
-          <div class="sidebar-actions">
-            <Button
-              icon="pi pi-plus"
-              label="新卷"
-              class="p-button-text p-button-sm"
-              size="small"
-              title="添加新卷"
-              @click="showAddVolumeDialog = true"
-            />
-            <Button
-              icon="pi pi-plus-circle"
-              label="新章节"
-              class="p-button-text p-button-sm"
-              size="small"
-              title="添加新章节"
-              @click="openAddChapterDialog"
-            />
-          </div>
-        </div>
-
-        <!-- 卷和章节列表 -->
-        <VolumesList
-          :volumes="volumes"
-          :book="book || null"
-          :selected-chapter-id="selectedChapterId"
-          :is-page-loading="isPageLoading"
-          :is-volume-expanded="isVolumeExpanded"
-          :dragged-chapter="draggedChapter"
-          :drag-over-volume-id="dragOverVolumeId"
-          :drag-over-index="dragOverIndex"
-          @toggle-volume="onToggleVolume"
-          @navigate-to-chapter="onNavigateToChapter"
-          @edit-volume="onEditVolume"
-          @delete-volume="onDeleteVolume"
-          @edit-chapter="onEditChapter"
-          @delete-chapter="onDeleteChapter"
-          @drag-start="onDragStart"
-          @drag-end="onDragEnd"
-          @drag-over="onDragOver"
-          @drop="onDrop"
-          @drag-leave="onDragLeave"
-        />
-
-        <!-- 返回链接 -->
-        <div class="back-link-wrapper">
-          <button class="back-link" @click="() => void router.push('/books')">
-            <i class="pi pi-arrow-left"></i>
-            <span>返回书籍列表</span>
-          </button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- 添加卷对话框 -->
-    <AddVolumeDialog
-      v-model:visible="showAddVolumeDialog"
-      :loading="isAddingVolume"
-      @save="handleAddVolume"
-    />
-
-    <!-- 添加章节对话框 -->
-    <AddChapterDialog
-      v-model:visible="showAddChapterDialog"
-      :volume-options="volumeOptions"
-      :loading="isAddingChapter"
-      @save="handleAddChapter"
-    />
-
-    <!-- 编辑卷对话框 -->
-    <EditVolumeDialog
-      v-model:visible="showEditVolumeDialog"
-      :title="editingVolumeTitle"
-      :translation="editingVolumeTranslation"
-      :loading="isEditingVolume"
-      @save="handleEditVolume"
-    />
-
-    <!-- 编辑章节对话框 -->
-    <EditChapterDialog
-      v-model:visible="showEditChapterDialog"
-      :title="editingChapterTitle || ''"
-      :translation="editingChapterTranslation || ''"
-      :target-volume-id="editingChapterTargetVolumeId || null"
-      :volume-options="volumeOptions"
-      :loading="isEditingChapter"
-      :translation-instructions="editingChapterTranslationInstructions || ''"
-      :polish-instructions="editingChapterPolishInstructions || ''"
-      :proofreading-instructions="editingChapterProofreadingInstructions || ''"
-      @save="handleEditChapter"
-    />
-
-    <!-- 删除卷确认对话框 -->
-    <DeleteVolumeConfirmDialog
-      v-model:visible="showDeleteVolumeConfirm"
-      :volume-title="deletingVolumeTitle"
-      :loading="isDeletingVolume"
-      @confirm="handleDeleteVolume"
-    />
-
-    <!-- 删除章节确认对话框 -->
-    <DeleteChapterConfirmDialog
-      v-model:visible="showDeleteChapterConfirm"
-      :chapter-title="deletingChapterTitle"
-      :loading="isDeletingChapter"
-      @confirm="handleDeleteChapter"
-    />
-
-    <!-- 书籍编辑对话框 -->
-    <BookDialog
-      v-model:visible="showBookDialog"
-      mode="edit"
-      :book="book || null"
-      :loading="isSavingBook"
-      @save="handleBookSave"
-      @cancel="showBookDialog = false"
-    />
-
-    <!-- 从在线获取更新对话框 -->
-    <NovelScraperDialog
-      v-model:visible="showScraperDialog"
-      :current-book="book || null"
-      :initial-url="book?.webUrl?.[0] || ''"
-      :show-novel-info="false"
-      initialFilter="unimported"
-      @apply="handleScraperUpdate"
-    />
-
-    <!-- 导出菜单 -->
-    <TieredMenu ref="exportMenuRef" :model="exportMenuItems" popup />
-
-    <!-- 术语列表 Popover -->
-    <TermPopover
-      ref="termPopover"
-      :used-terms="usedTerms"
-      @edit="openEditTermDialog"
-      @delete="openDeleteTermConfirm"
-      @create="openCreateTermDialog"
-    />
-
-    <!-- 角色设定列表 Popover -->
-    <CharacterPopover
-      ref="characterPopover"
-      :used-characters="usedCharacters"
-      @edit="openEditCharacterDialog"
-      @delete="openDeleteCharacterConfirm"
-      @create="openCreateCharacterDialog"
-    />
-
-    <!-- 键盘快捷键 Popover -->
-    <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
-
-    <!-- 章节设置弹出框 -->
-    <ChapterSettingsPopover
-      ref="chapterSettingsPopover"
-      :book="book || null"
-      :chapter="selectedChapter || null"
-      @save="handleSaveChapterSettings"
-    />
-
-    <!-- 编辑术语对话框 -->
-    <TermEditDialog
-      v-model:visible="showEditTermDialog"
-      :mode="termDialogMode"
-      :term="editingTerm"
-      :loading="isSavingTerm"
-      @save="handleSaveTerm"
-    />
-
-    <!-- 删除术语确认对话框 -->
-    <DeleteTermConfirmDialog
-      v-model:visible="showDeleteTermConfirm"
-      :term-name="deletingTerm?.name || null"
-      :loading="isDeletingTerm"
-      @confirm="confirmDeleteTerm"
-    />
-
-    <!-- 编辑角色对话框 -->
-    <CharacterEditDialog
-      v-model:visible="showEditCharacterDialog"
-      :character="editingCharacter"
-      :loading="isSavingCharacter"
-      @save="handleSaveCharacter"
-    />
-
-    <!-- 删除角色确认对话框 -->
-    <DeleteCharacterConfirmDialog
-      v-model:visible="showDeleteCharacterConfirm"
-      :character-name="deletingCharacter?.name || null"
-      :loading="isDeletingCharacter"
-      @confirm="confirmDeleteCharacter"
-    />
-
-    <!-- 主内容区域 -->
-    <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
-      <!-- 章节阅读工具栏 -->
-      <ChapterToolbar
-        v-if="selectedChapter && !selectedSettingMenu"
-        :selected-chapter="selectedChapter"
-        :book="book || null"
-        :can-undo="canUndo"
-        :can-redo="canRedo"
-        :undo-description="undoDescription || null"
-        :redo-description="redoDescription || null"
-        :edit-mode="editMode"
-        :edit-mode-options="[...editModeOptions]"
-        :selected-chapter-paragraphs="selectedChapterParagraphs"
-        :used-term-count="usedTermCount"
-        :used-character-count="usedCharacterCount"
-        :translation-status="translationStatus"
-        :translation-button-label="translationButtonLabel"
-        :translation-button-menu-items="translationButtonMenuItems"
-        :is-translating-chapter="isTranslatingChapter"
-        :is-polishing-chapter="isPolishingChapter"
-        :is-search-visible="isSearchVisible"
-        :show-translation-progress="showTranslationProgress"
-        :can-show-translation-progress="
-          isTranslatingChapter || isPolishingChapter || isProofreadingChapter
-        "
-        @undo="undo"
-        @redo="redo"
-        @update:edit-mode="
-          (value: EditMode) => {
-            editMode = value;
-          }
-        "
-        @toggle-export="(event: Event) => toggleExportMenu(event)"
-        @toggle-term-popover="(event: Event) => toggleTermPopover(event)"
-        @toggle-character-popover="(event: Event) => toggleCharacterPopover(event)"
-        @translation-button-click="translationButtonClick"
-        @toggle-search="toggleSearch"
-        @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
-        @toggle-special-instructions="toggleChapterSettingsPopover"
-        @toggle-translation-progress="toggleTranslationProgress"
-      />
-
-      <!-- 搜索工具栏 -->
-      <SearchToolbar
-        v-if="selectedChapter && !selectedSettingMenu"
-        v-model:visible="isSearchVisible"
-        v-model:search-query="searchQuery"
-        v-model:replace-query="replaceQuery"
-        v-model:show-replace="showReplace"
-        :matches-count="searchMatches.length"
-        :current-match-index="currentSearchMatchIndex"
-        @next="nextMatch"
-        @prev="prevMatch"
-        @replace="replaceCurrent"
-        @replace-all="replaceAll"
-      />
-
-      <div
-        ref="scrollableContentRef"
-        class="scrollable-content"
-        :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }"
-      >
-        <div
-          class="page-container"
-          :class="{
-            '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': !!selectedSettingMenu,
-            '!h-full !overflow-hidden !min-h-0': selectedChapter,
-            'page-container-split-active': selectedChapter && showTranslationProgress,
-          }"
-        >
-          <!-- 术语设置面板 -->
-          <TerminologyPanel
-            v-if="selectedSettingMenu === 'terms'"
-            :book="book || null"
-            class="flex-1 min-h-0"
-          />
-
-          <!-- 角色设置面板 -->
-          <CharacterSettingPanel
-            v-else-if="selectedSettingMenu === 'characters'"
-            :book="book || null"
-            class="flex-1 min-h-0"
-          />
-
-          <!-- 章节内容和翻译进度分割布局 -->
-          <div
-            v-else-if="selectedChapter"
-            class="chapter-content-split-layout split-layout-container"
-            :class="{ 'split-layout-active': showTranslationProgress }"
-          >
-            <!-- 左侧：章节内容 -->
-            <div
-              ref="chapterContentPanelRef"
-              class="chapter-content-panel"
-              :class="{ 'panel-with-split': showTranslationProgress }"
-            >
-              <ChapterContentPanel
-                :selected-chapter="selectedChapter"
-                :selected-chapter-with-content="selectedChapterWithContent"
-                :selected-chapter-paragraphs="selectedChapterParagraphs"
-                :is-loading-chapter-content="isLoadingChapterContent"
-                :edit-mode="editMode"
-                :original-text-edit-value="originalTextEditValue"
-                :translated-char-count="translatedCharCount"
-                :book="book || null"
-                :book-id="bookId"
-                :selected-chapter-id="selectedChapterId"
-                :translating-paragraph-ids="translatingParagraphIds"
-                :polishing-paragraph-ids="polishingParagraphIds"
-                :proofreading-paragraph-ids="proofreadingParagraphIds"
-                :search-query="searchQuery"
-                :selected-paragraph-index="selectedParagraphIndex"
-                :is-keyboard-selected="isKeyboardSelected"
-                :is-click-selected="isClickSelected"
-                :paragraph-card-refs="paragraphCardRefs"
-                @update:original-text-edit-value="
-                  (value: string) => {
-                    originalTextEditValue = value;
-                  }
-                "
-                @open-edit-chapter-dialog="openEditChapterDialog"
-                @cancel-original-text-edit="cancelOriginalTextEdit"
-                @save-original-text-edit="saveOriginalTextEdit"
-                @update-translation="
-                  (paragraphId: string, newTranslation: string) =>
-                    updateParagraphTranslation(paragraphId, newTranslation)
-                "
-                @retranslate-paragraph="retranslateParagraph"
-                @polish-paragraph="polishParagraph"
-                @proofread-paragraph="proofreadParagraph"
-                @select-translation="
-                  (paragraphId: string, translationId: string) =>
-                    selectParagraphTranslation(paragraphId, translationId)
-                "
-                @paragraph-click="handleParagraphClick"
-                @paragraph-edit-start="handleParagraphEditStart"
-                @paragraph-edit-stop="handleParagraphEditStop"
-              />
-            </div>
-
-            <!-- 分割线 -->
-            <div v-show="showTranslationProgress" class="split-divider"></div>
-
-            <!-- 右侧：翻译进度 -->
-            <div v-show="showTranslationProgress" class="translation-progress-panel">
-              <div class="translation-progress-panel-inner">
-                <TranslationProgress
-                  :is-translating="isTranslatingChapter"
-                  :is-polishing="isPolishingChapter"
-                  :is-proofreading="isProofreadingChapter"
-                  :progress="
-                    isProofreadingChapter
-                      ? proofreadingProgress
-                      : isPolishingChapter
-                        ? polishProgress
-                        : translationProgress
-                  "
-                  @cancel="
-                    isProofreadingChapter
-                      ? cancelProofreading()
-                      : isPolishingChapter
-                        ? cancelPolish()
-                        : cancelTranslation()
                   "
                 />
               </div>
+              <div class="book-info">
+                <h3 class="book-title">{{ book.title }}</h3>
+                <div v-if="stats" class="book-stats">
+                  <div class="stat-item stat-item-volume">
+                    <i class="pi pi-file stat-icon"></i>
+                    <span class="stat-value">{{ stats.volumeCount }}</span>
+                    <span class="stat-label">卷</span>
+                  </div>
+                  <span class="stat-separator">|</span>
+                  <div class="stat-item stat-item-chapter">
+                    <i class="pi pi-list stat-icon"></i>
+                    <span class="stat-value">{{ stats.chapterCount }}</span>
+                    <span class="stat-label">章</span>
+                  </div>
+                  <span class="stat-separator">|</span>
+                  <div class="stat-item stat-item-wordcount">
+                    <i class="pi pi-align-left stat-icon"></i>
+                    <span class="stat-value">{{ formatWordCount(stats.wordCount) }}</span>
+                  </div>
+                </div>
+                <div v-else-if="isStatsCalculating" class="book-stats">
+                  <Skeleton width="120px" height="20px" />
+                </div>
+              </div>
+            </div>
+            <div class="book-separator"></div>
+          </div>
+
+          <!-- 设置菜单 -->
+          <div class="settings-menu-wrapper">
+            <div class="settings-menu-items">
+              <button
+                class="settings-menu-item"
+                :class="{ 'settings-menu-item-selected': selectedSettingMenu === 'terms' }"
+                @click="navigateToTermsSetting"
+              >
+                <i class="pi pi-bookmark settings-menu-icon"></i>
+                <span class="settings-menu-label">术语设置</span>
+              </button>
+              <button
+                class="settings-menu-item"
+                :class="{ 'settings-menu-item-selected': selectedSettingMenu === 'characters' }"
+                @click="navigateToCharactersSetting"
+              >
+                <i class="pi pi-users settings-menu-icon"></i>
+                <span class="settings-menu-label">角色设置</span>
+              </button>
+              <button
+                class="settings-menu-item"
+                :class="{ 'settings-menu-item-selected': selectedSettingMenu === 'memory' }"
+                @click="navigateToMemorySetting"
+              >
+                <i class="pi pi-database settings-menu-icon"></i>
+                <span class="settings-menu-label">记忆管理</span>
+              </button>
+              <button class="settings-menu-item" @click="openScraperDialog">
+                <i class="pi pi-download settings-menu-icon"></i>
+                <span class="settings-menu-label">检查更新</span>
+              </button>
+            </div>
+            <div class="settings-menu-separator"></div>
+          </div>
+
+          <!-- 目录标题和操作按钮 -->
+          <div class="sidebar-title-wrapper">
+            <h2 class="sidebar-title">目录</h2>
+            <div class="sidebar-actions">
+              <Button
+                icon="pi pi-plus"
+                label="新卷"
+                class="p-button-text p-button-sm"
+                size="small"
+                title="添加新卷"
+                @click="showAddVolumeDialog = true"
+              />
+              <Button
+                icon="pi pi-plus-circle"
+                label="新章节"
+                class="p-button-text p-button-sm"
+                size="small"
+                title="添加新章节"
+                @click="openAddChapterDialog"
+              />
             </div>
           </div>
 
-          <!-- 未选择章节时的提示（仅当没有选择设置菜单和章节时显示） -->
-          <div v-else class="no-chapter-selected">
-            <i class="pi pi-book-open no-selection-icon"></i>
-            <p class="no-selection-text">请从左侧选择一个章节</p>
-            <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
+          <!-- 卷和章节列表 -->
+          <VolumesList
+            :volumes="volumes"
+            :book="book || null"
+            :selected-chapter-id="selectedChapterId"
+            :is-page-loading="isPageLoading"
+            :is-volume-expanded="isVolumeExpanded"
+            :dragged-chapter="draggedChapter"
+            :drag-over-volume-id="dragOverVolumeId"
+            :drag-over-index="dragOverIndex"
+            @toggle-volume="onToggleVolume"
+            @navigate-to-chapter="onNavigateToChapter"
+            @edit-volume="onEditVolume"
+            @delete-volume="onDeleteVolume"
+            @edit-chapter="onEditChapter"
+            @delete-chapter="onDeleteChapter"
+            @drag-start="onDragStart"
+            @drag-end="onDragEnd"
+            @drag-over="onDragOver"
+            @drop="onDrop"
+            @drag-leave="onDragLeave"
+          />
+
+          <!-- 返回链接 -->
+          <div class="back-link-wrapper">
+            <button class="back-link" @click="() => void router.push('/books')">
+              <i class="pi pi-arrow-left"></i>
+              <span>返回书籍列表</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 添加卷对话框 -->
+      <AddVolumeDialog
+        v-model:visible="showAddVolumeDialog"
+        :loading="isAddingVolume"
+        @save="handleAddVolume"
+      />
+
+      <!-- 添加章节对话框 -->
+      <AddChapterDialog
+        v-model:visible="showAddChapterDialog"
+        :volume-options="volumeOptions"
+        :loading="isAddingChapter"
+        @save="handleAddChapter"
+      />
+
+      <!-- 编辑卷对话框 -->
+      <EditVolumeDialog
+        v-model:visible="showEditVolumeDialog"
+        :title="editingVolumeTitle"
+        :translation="editingVolumeTranslation"
+        :loading="isEditingVolume"
+        @save="handleEditVolume"
+      />
+
+      <!-- 编辑章节对话框 -->
+      <EditChapterDialog
+        v-model:visible="showEditChapterDialog"
+        :title="editingChapterTitle || ''"
+        :translation="editingChapterTranslation || ''"
+        :target-volume-id="editingChapterTargetVolumeId || null"
+        :volume-options="volumeOptions"
+        :loading="isEditingChapter"
+        :translation-instructions="editingChapterTranslationInstructions || ''"
+        :polish-instructions="editingChapterPolishInstructions || ''"
+        :proofreading-instructions="editingChapterProofreadingInstructions || ''"
+        @save="handleEditChapter"
+      />
+
+      <!-- 删除卷确认对话框 -->
+      <DeleteVolumeConfirmDialog
+        v-model:visible="showDeleteVolumeConfirm"
+        :volume-title="deletingVolumeTitle"
+        :loading="isDeletingVolume"
+        @confirm="handleDeleteVolume"
+      />
+
+      <!-- 删除章节确认对话框 -->
+      <DeleteChapterConfirmDialog
+        v-model:visible="showDeleteChapterConfirm"
+        :chapter-title="deletingChapterTitle"
+        :loading="isDeletingChapter"
+        @confirm="handleDeleteChapter"
+      />
+
+      <!-- 书籍编辑对话框 -->
+      <BookDialog
+        v-model:visible="showBookDialog"
+        mode="edit"
+        :book="book || null"
+        :loading="isSavingBook"
+        @save="handleBookSave"
+        @cancel="showBookDialog = false"
+      />
+
+      <!-- 从在线获取更新对话框 -->
+      <NovelScraperDialog
+        v-model:visible="showScraperDialog"
+        :current-book="book || null"
+        :initial-url="book?.webUrl?.[0] || ''"
+        :show-novel-info="false"
+        initialFilter="unimported"
+        @apply="handleScraperUpdate"
+      />
+
+      <!-- 导出菜单 -->
+      <TieredMenu ref="exportMenuRef" :model="exportMenuItems" popup />
+
+      <!-- 术语列表 Popover -->
+      <TermPopover
+        ref="termPopover"
+        :used-terms="usedTerms"
+        @edit="openEditTermDialog"
+        @delete="openDeleteTermConfirm"
+        @create="openCreateTermDialog"
+      />
+
+      <!-- 角色设定列表 Popover -->
+      <CharacterPopover
+        ref="characterPopover"
+        :used-characters="usedCharacters"
+        @edit="openEditCharacterDialog"
+        @delete="openDeleteCharacterConfirm"
+        @create="openCreateCharacterDialog"
+      />
+
+      <!-- 键盘快捷键 Popover -->
+      <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
+
+      <!-- 章节设置弹出框 -->
+      <ChapterSettingsPopover
+        ref="chapterSettingsPopover"
+        :book="book || null"
+        :chapter="selectedChapter || null"
+        @save="handleSaveChapterSettings"
+      />
+
+      <!-- 编辑术语对话框 -->
+      <TermEditDialog
+        v-model:visible="showEditTermDialog"
+        :mode="termDialogMode"
+        :term="editingTerm"
+        :loading="isSavingTerm"
+        @save="handleSaveTerm"
+      />
+
+      <!-- 删除术语确认对话框 -->
+      <DeleteTermConfirmDialog
+        v-model:visible="showDeleteTermConfirm"
+        :term-name="deletingTerm?.name || null"
+        :loading="isDeletingTerm"
+        @confirm="confirmDeleteTerm"
+      />
+
+      <!-- 编辑角色对话框 -->
+      <CharacterEditDialog
+        v-model:visible="showEditCharacterDialog"
+        :character="editingCharacter"
+        :loading="isSavingCharacter"
+        @save="handleSaveCharacter"
+      />
+
+      <!-- 删除角色确认对话框 -->
+      <DeleteCharacterConfirmDialog
+        v-model:visible="showDeleteCharacterConfirm"
+        :character-name="deletingCharacter?.name || null"
+        :loading="isDeletingCharacter"
+        @confirm="confirmDeleteCharacter"
+      />
+
+      <!-- 主内容区域 -->
+      <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
+        <!-- 章节阅读工具栏 -->
+        <ChapterToolbar
+          v-if="selectedChapter && !selectedSettingMenu"
+          :selected-chapter="selectedChapter"
+          :book="book || null"
+          :can-undo="canUndo"
+          :can-redo="canRedo"
+          :undo-description="undoDescription || null"
+          :redo-description="redoDescription || null"
+          :edit-mode="editMode"
+          :edit-mode-options="[...editModeOptions]"
+          :selected-chapter-paragraphs="selectedChapterParagraphs"
+          :used-term-count="usedTermCount"
+          :used-character-count="usedCharacterCount"
+          :translation-status="translationStatus"
+          :translation-button-label="translationButtonLabel"
+          :translation-button-menu-items="translationButtonMenuItems"
+          :is-translating-chapter="isTranslatingChapter"
+          :is-polishing-chapter="isPolishingChapter"
+          :is-search-visible="isSearchVisible"
+          :show-translation-progress="showTranslationProgress"
+          :can-show-translation-progress="
+            isTranslatingChapter || isPolishingChapter || isProofreadingChapter
+          "
+          @undo="undo"
+          @redo="redo"
+          @update:edit-mode="
+            (value: EditMode) => {
+              editMode = value;
+            }
+          "
+          @toggle-export="(event: Event) => toggleExportMenu(event)"
+          @toggle-term-popover="(event: Event) => toggleTermPopover(event)"
+          @toggle-character-popover="(event: Event) => toggleCharacterPopover(event)"
+          @translation-button-click="translationButtonClick"
+          @toggle-search="toggleSearch"
+          @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
+          @toggle-special-instructions="toggleChapterSettingsPopover"
+          @toggle-translation-progress="toggleTranslationProgress"
+        />
+
+        <!-- 搜索工具栏 -->
+        <SearchToolbar
+          v-if="selectedChapter && !selectedSettingMenu"
+          v-model:visible="isSearchVisible"
+          v-model:search-query="searchQuery"
+          v-model:replace-query="replaceQuery"
+          v-model:show-replace="showReplace"
+          :matches-count="searchMatches.length"
+          :current-match-index="currentSearchMatchIndex"
+          @next="nextMatch"
+          @prev="prevMatch"
+          @replace="replaceCurrent"
+          @replace-all="replaceAll"
+        />
+
+        <div
+          ref="scrollableContentRef"
+          class="scrollable-content"
+          :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }"
+        >
+          <div
+            class="page-container"
+            :class="{
+              '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': !!selectedSettingMenu,
+              '!h-full !overflow-hidden !min-h-0': selectedChapter,
+              'page-container-split-active': selectedChapter && showTranslationProgress,
+            }"
+          >
+            <!-- 术语设置面板 -->
+            <TerminologyPanel
+              v-if="selectedSettingMenu === 'terms'"
+              :book="book || null"
+              class="flex-1 min-h-0"
+            />
+
+            <!-- 角色设置面板 -->
+            <CharacterSettingPanel
+              v-else-if="selectedSettingMenu === 'characters'"
+              :book="book || null"
+              class="flex-1 min-h-0"
+            />
+
+            <!-- Memory 设置面板 -->
+            <MemoryPanel
+              v-else-if="selectedSettingMenu === 'memory'"
+              :book="book || null"
+              class="flex-1 min-h-0"
+            />
+
+            <!-- 章节内容和翻译进度分割布局 -->
+            <div
+              v-else-if="selectedChapter"
+              class="chapter-content-split-layout split-layout-container"
+              :class="{ 'split-layout-active': showTranslationProgress }"
+            >
+              <!-- 左侧：章节内容 -->
+              <div
+                ref="chapterContentPanelRef"
+                class="chapter-content-panel"
+                :class="{ 'panel-with-split': showTranslationProgress }"
+              >
+                <ChapterContentPanel
+                  :selected-chapter="selectedChapter"
+                  :selected-chapter-with-content="selectedChapterWithContent"
+                  :selected-chapter-paragraphs="selectedChapterParagraphs"
+                  :is-loading-chapter-content="isLoadingChapterContent"
+                  :edit-mode="editMode"
+                  :original-text-edit-value="originalTextEditValue"
+                  :translated-char-count="translatedCharCount"
+                  :book="book || null"
+                  :book-id="bookId"
+                  :selected-chapter-id="selectedChapterId"
+                  :translating-paragraph-ids="translatingParagraphIds"
+                  :polishing-paragraph-ids="polishingParagraphIds"
+                  :proofreading-paragraph-ids="proofreadingParagraphIds"
+                  :search-query="searchQuery"
+                  :selected-paragraph-index="selectedParagraphIndex"
+                  :is-keyboard-selected="isKeyboardSelected"
+                  :is-click-selected="isClickSelected"
+                  :paragraph-card-refs="paragraphCardRefs"
+                  @update:original-text-edit-value="
+                    (value: string) => {
+                      originalTextEditValue = value;
+                    }
+                  "
+                  @open-edit-chapter-dialog="openEditChapterDialog"
+                  @cancel-original-text-edit="cancelOriginalTextEdit"
+                  @save-original-text-edit="saveOriginalTextEdit"
+                  @update-translation="
+                    (paragraphId: string, newTranslation: string) =>
+                      updateParagraphTranslation(paragraphId, newTranslation)
+                  "
+                  @retranslate-paragraph="retranslateParagraph"
+                  @polish-paragraph="polishParagraph"
+                  @proofread-paragraph="proofreadParagraph"
+                  @select-translation="
+                    (paragraphId: string, translationId: string) =>
+                      selectParagraphTranslation(paragraphId, translationId)
+                  "
+                  @paragraph-click="handleParagraphClick"
+                  @paragraph-edit-start="handleParagraphEditStart"
+                  @paragraph-edit-stop="handleParagraphEditStop"
+                />
+              </div>
+
+              <!-- 分割线 -->
+              <div v-show="showTranslationProgress" class="split-divider"></div>
+
+              <!-- 右侧：翻译进度 -->
+              <div v-show="showTranslationProgress" class="translation-progress-panel">
+                <div class="translation-progress-panel-inner">
+                  <TranslationProgress
+                    :is-translating="isTranslatingChapter"
+                    :is-polishing="isPolishingChapter"
+                    :is-proofreading="isProofreadingChapter"
+                    :progress="
+                      isProofreadingChapter
+                        ? proofreadingProgress
+                        : isPolishingChapter
+                          ? polishProgress
+                          : translationProgress
+                    "
+                    @cancel="
+                      isProofreadingChapter
+                        ? cancelProofreading()
+                        : isPolishingChapter
+                          ? cancelPolish()
+                          : cancelTranslation()
+                    "
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- 未选择章节时的提示（仅当没有选择设置菜单和章节时显示） -->
+            <div v-else class="no-chapter-selected">
+              <i class="pi pi-book-open no-selection-icon"></i>
+              <p class="no-selection-text">请从左侧选择一个章节</p>
+              <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </div>
   </div>
 </template>

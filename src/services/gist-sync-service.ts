@@ -5,8 +5,10 @@ import type { AppSettings } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { CoverHistoryItem } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { MemoryService } from 'src/services/memory-service';
 
 /**
  * Gist 文件名称常量
@@ -295,6 +297,7 @@ export interface GistSyncData {
   appSettings?: AppSettings;
   novels: Novel[];
   coverHistory?: CoverHistoryItem[];
+  memories?: Memory[];
 }
 
 /**
@@ -539,6 +542,7 @@ export class GistSyncService {
       appSettings: AppSettings;
       novels: Novel[];
       coverHistory?: CoverHistoryItem[];
+      memories?: Memory[];
     },
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<SyncResult> {
@@ -555,16 +559,29 @@ export class GistSyncService {
         data.novels,
       );
 
+      // 在同步前加载所有 Memory 数据（按书籍分组）
+      const memoriesToUpload: Memory[] = [];
+      for (const novel of data.novels) {
+        try {
+          const bookMemories = await MemoryService.getAllMemories(novel.id);
+          memoriesToUpload.push(...bookMemories);
+        } catch (error) {
+          console.warn(`[GistSyncService] 加载书籍 ${novel.title} (${novel.id}) 的 Memory 失败:`, error);
+          // 继续处理其他书籍的 Memory
+        }
+      }
+
       // 准备文件内容
       // 注意：要删除文件，GitHub API 要求使用 null 值
       // 类型定义：Record<string, { content: string } | null>
       const files: Record<string, { content: string } | null> = {};
 
-      // 1. 设置文件（包含 aiModels 和 appSettings）
+      // 1. 设置文件（包含 aiModels、appSettings、coverHistory 和 memories）
       const settingsData = {
         aiModels: this.serializeDates(data.aiModels),
         appSettings: this.serializeDates(data.appSettings),
         coverHistory: data.coverHistory ? this.serializeDates(data.coverHistory) : undefined,
+        memories: memoriesToUpload.length > 0 ? this.serializeDates(memoriesToUpload) : undefined,
       };
 
       const settingsJson = JSON.stringify(settingsData);
@@ -1119,6 +1136,7 @@ export class GistSyncService {
               aiModels?: AIModel[];
               appSettings?: AppSettings;
               coverHistory?: CoverHistoryItem[];
+              memories?: Memory[];
             };
 
             if (settingsData.aiModels) {
@@ -1129,6 +1147,9 @@ export class GistSyncService {
             }
             if (settingsData.coverHistory) {
               result.coverHistory = this.deserializeDates(settingsData.coverHistory);
+            }
+            if (settingsData.memories) {
+              result.memories = this.deserializeDates(settingsData.memories);
             }
           }
         } catch (parseError) {
@@ -1864,6 +1885,7 @@ export class GistSyncService {
               aiModels?: AIModel[];
               appSettings?: AppSettings;
               coverHistory?: CoverHistoryItem[];
+              memories?: Memory[];
             };
 
             if (settingsData.aiModels) {
@@ -1874,6 +1896,9 @@ export class GistSyncService {
             }
             if (settingsData.coverHistory) {
               result.coverHistory = this.deserializeDates(settingsData.coverHistory);
+            }
+            if (settingsData.memories) {
+              result.memories = this.deserializeDates(settingsData.memories);
             }
           }
         } catch (parseError) {

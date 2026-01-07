@@ -5,8 +5,10 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
+import { MemoryService } from 'src/services/memory-service';
 import type { SyncConfig } from 'src/models/sync';
 import type { Novel } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 
 /**
@@ -30,6 +32,7 @@ export function useGistSync() {
       appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: Memory[];
     };
     setSyncing: (value: boolean) => void;
     onSuccess: ((result: { gistId?: string; isRecreated?: boolean; message?: string }) => void) | undefined;
@@ -132,6 +135,7 @@ export function useGistSync() {
       appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: Memory[];
     },
     onSuccess?: (result: { gistId?: string; isRecreated?: boolean; message?: string }) => void,
     onError?: (error: string) => void,
@@ -261,11 +265,16 @@ export function useGistSync() {
     setSyncing(true);
     try {
       // 准备本地数据
+      // 使用批量加载方法加载所有 Memory 数据
+      const bookIds = booksStore.books.map((book) => book.id);
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
       const localData = {
         aiModels: aiModelsStore.models,
         appSettings: settingsStore.getAllSettings(),
         novels: booksStore.books,
         coverHistory: coverHistoryStore.covers,
+        memories,
       };
 
       // 计算整体流程的总进度

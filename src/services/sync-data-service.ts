@@ -4,7 +4,9 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { MemoryService } from 'src/services/memory-service';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
@@ -259,6 +261,7 @@ export class SyncDataService {
       aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
   ): boolean {
     if (!remoteData) {
@@ -317,6 +320,29 @@ export class SyncDataService {
         }
         if (!cover.id || typeof cover.id !== 'string') {
           console.error('[SyncDataService] 验证失败: cover 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 memories 数组
+    if (remoteData.memories !== null && remoteData.memories !== undefined) {
+      if (!Array.isArray(remoteData.memories)) {
+        console.error('[SyncDataService] 验证失败: memories 必须是数组');
+        return false;
+      }
+      // 验证每个 memory 的基本结构
+      for (const memory of remoteData.memories) {
+        if (!memory || typeof memory !== 'object') {
+          console.error('[SyncDataService] 验证失败: memory 必须是对象');
+          return false;
+        }
+        if (!memory.id || typeof memory.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 id');
+          return false;
+        }
+        if (!memory.bookId || typeof memory.bookId !== 'string') {
+          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 bookId');
           return false;
         }
       }
@@ -397,6 +423,7 @@ export class SyncDataService {
       aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
     lastSyncTime?: number,
     isManualRetrieval = false,
@@ -787,6 +814,81 @@ export class SyncDataService {
         }
       }
 
+      // 处理 Memory（确保 memories 是数组）
+      // 即使远程 Memory 列表为空，也需要处理（可能远程删除了所有 Memory）
+      if (remoteData.memories && Array.isArray(remoteData.memories)) {
+        // 将远程 Memory 按 bookId 分组
+        const remoteMemoriesByBook = new Map<string, Memory[]>();
+        for (const remoteMemory of remoteData.memories) {
+          const bookId = remoteMemory.bookId;
+          if (!remoteMemoriesByBook.has(bookId)) {
+            remoteMemoriesByBook.set(bookId, []);
+          }
+          remoteMemoriesByBook.get(bookId)!.push(remoteMemory);
+        }
+
+        // 遍历所有本地书籍，合并 Memory
+        for (const localBook of booksStore.books) {
+          const remoteMemories = remoteMemoriesByBook.get(localBook.id);
+          if (!remoteMemories || remoteMemories.length === 0) {
+            // 远程没有该书籍的 Memory，保留本地 Memory
+            continue;
+          }
+
+          // 获取本地 Memory
+          const localMemories = await MemoryService.getAllMemories(localBook.id);
+
+          // 创建远程 Memory 的映射（按 ID）
+          const remoteMemoryMap = new Map<string, Memory>();
+          for (const remoteMemory of remoteMemories) {
+            remoteMemoryMap.set(remoteMemory.id, remoteMemory);
+          }
+
+          // 合并 Memory：保留最新的 lastAccessedAt 时间
+          for (const localMemory of localMemories) {
+            const remoteMemory = remoteMemoryMap.get(localMemory.id);
+            if (remoteMemory) {
+              // 比较最后访问时间，使用最新的
+              if (remoteMemory.lastAccessedAt > localMemory.lastAccessedAt) {
+                // 远程更新，更新本地 Memory
+                try {
+                  await MemoryService.updateMemory(
+                    localBook.id,
+                    remoteMemory.id,
+                    remoteMemory.content,
+                    remoteMemory.summary,
+                  );
+                } catch (error) {
+                  console.warn(
+                    `[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`,
+                    error,
+                  );
+                }
+              }
+              // 从远程列表中移除已处理的 Memory
+              remoteMemoryMap.delete(localMemory.id);
+            }
+            // 如果本地没有对应的远程 Memory，保持不变（本地独有的 Memory）
+          }
+
+          // 添加远程独有的 Memory
+          for (const remoteMemory of remoteMemoryMap.values()) {
+            try {
+              await MemoryService.createMemory(
+                remoteMemory.bookId,
+                remoteMemory.content,
+                remoteMemory.summary,
+              );
+            } catch (error) {
+              console.warn(
+                `[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`,
+                error,
+              );
+            }
+          }
+        }
+      }
+
       // 处理设置
       if (remoteData.appSettings) {
         const localSettings = settingsStore.getAllSettings();
@@ -918,12 +1020,14 @@ export class SyncDataService {
     aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
     coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    memories: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
   } {
     if (!data) {
       return {
         novels: [],
         aiModels: [],
         coverHistory: [],
+        memories: [],
       };
     }
     return {
@@ -931,6 +1035,7 @@ export class SyncDataService {
       aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
       appSettings: data.appSettings,
       coverHistory: Array.isArray(data.coverHistory) ? data.coverHistory : [],
+      memories: Array.isArray(data.memories) ? data.memories : [],
     };
   }
 
@@ -948,12 +1053,14 @@ export class SyncDataService {
       aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: Memory[];
     },
     remoteData: {
       novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
     lastSyncTime: number,
   ): Promise<{
@@ -961,6 +1068,7 @@ export class SyncDataService {
     aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
     coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    memories: Memory[];
   }> {
     if (!remoteData) {
       // 没有远程数据，直接返回本地数据
@@ -969,6 +1077,7 @@ export class SyncDataService {
         aiModels: localData.aiModels,
         appSettings: localData.appSettings,
         coverHistory: localData.coverHistory,
+        memories: localData.memories,
       };
     }
 
@@ -1215,11 +1324,40 @@ export class SyncDataService {
       }
     }
 
+    // 合并 Memory
+    // Memory 的合并逻辑：对于每个 Memory，保留最新的 lastAccessedAt 时间
+    const finalMemories: Memory[] = [];
+    const remoteMemories = remoteData.memories || [];
+    const remoteMemoryMap = new Map(remoteMemories.map((m: Memory) => [m.id, m]));
+
+    // 处理本地和远程都有的 Memory
+    for (const localMemory of localData.memories) {
+      const remoteMemory = remoteMemoryMap.get(localMemory.id);
+      if (remoteMemory) {
+        // 比较 lastAccessedAt 时间，使用最新的
+        if (remoteMemory.lastAccessedAt > localMemory.lastAccessedAt) {
+          finalMemories.push(remoteMemory);
+        } else {
+          finalMemories.push(localMemory);
+        }
+        remoteMemoryMap.delete(localMemory.id);
+      } else {
+        // 本地独有的 Memory，直接添加
+        finalMemories.push(localMemory);
+      }
+    }
+
+    // 添加远程独有的 Memory
+    for (const remoteMemory of remoteMemoryMap.values()) {
+      finalMemories.push(remoteMemory as Memory);
+    }
+
     return {
       novels: finalBooks,
       aiModels: finalModels,
       appSettings: finalSettings,
       coverHistory: dedupedCovers,
+      memories: finalMemories,
     };
   }
 
@@ -1232,12 +1370,14 @@ export class SyncDataService {
       aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
     remote: {
       novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
       appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       coverHistory?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   ): boolean {
     // 1. 检查书籍
@@ -1305,6 +1445,25 @@ export class SyncDataService {
       if (!remoteCover) return true;
 
       if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) {
+        return true;
+      }
+    }
+
+    // 5. 检查 Memory
+    if (local.memories.length !== (remote.memories || []).length) return true;
+
+    const remoteMemoryMap = new Map((remote.memories || []).map((m) => [m.id, m]));
+    for (const localMemory of local.memories) {
+      const remoteMemory = remoteMemoryMap.get(localMemory.id);
+      if (!remoteMemory) return true;
+
+      // 比较 lastAccessedAt 时间
+      if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) {
+        return true;
+      }
+
+      // 比较内容和摘要（如果时间相同）
+      if (localMemory.content !== remoteMemory.content || localMemory.summary !== remoteMemory.summary) {
         return true;
       }
     }

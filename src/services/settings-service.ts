@@ -1,11 +1,7 @@
-import type {
-  Settings,
-  ExportResult,
-  ImportResult,
-  AppSettings,
-} from 'src/models/settings';
+import type { Settings, ExportResult, ImportResult, AppSettings } from 'src/models/settings';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 
@@ -14,6 +10,18 @@ import { SyncType } from 'src/models/sync';
  * 处理设置的导入和导出
  */
 export class SettingsService {
+  /**
+   * 将值转换为时间戳（number）
+   * 如果已经是 number，直接返回；如果是 Date 或字符串，转换为时间戳
+   * @param value 时间值（Date、number 或字符串）
+   * @returns 时间戳（number）
+   */
+  private static toTimestamp(value: Date | number | string): number {
+    if (typeof value === 'number') {
+      return value;
+    }
+    return new Date(value).getTime();
+  }
   /**
    * 导出设置到 JSON 文件
    * @param settings 要导出的设置数据
@@ -59,11 +67,7 @@ export class SettingsService {
    * @returns 是否为有效的 JSON 文件
    */
   static validateFileType(file: File): boolean {
-    return (
-      file.type.includes('json') ||
-      file.name.endsWith('.json') ||
-      file.name.endsWith('.txt')
-    );
+    return file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
   }
 
   /**
@@ -95,10 +99,7 @@ export class SettingsService {
         } catch (error) {
           resolve({
             success: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : '解析设置文件时发生未知错误',
+            error: error instanceof Error ? error.message : '解析设置文件时发生未知错误',
           });
         }
       };
@@ -145,13 +146,18 @@ export class SettingsService {
     }
 
     // 验证 coverHistory 数组（如果存在）
-    if (
-      settings.coverHistory !== undefined &&
-      !Array.isArray(settings.coverHistory)
-    ) {
+    if (settings.coverHistory !== undefined && !Array.isArray(settings.coverHistory)) {
       return {
         success: false,
         error: '设置数据中的 coverHistory 字段格式无效',
+      };
+    }
+
+    // 验证 memories 数组（如果存在）
+    if (settings.memories !== undefined && !Array.isArray(settings.memories)) {
+      return {
+        success: false,
+        error: '设置数据中的 memories 字段格式无效',
       };
     }
 
@@ -210,18 +216,37 @@ export class SettingsService {
     const validCoverHistory: CoverHistoryItem[] = [];
     if (settings.coverHistory && Array.isArray(settings.coverHistory)) {
       for (const cover of settings.coverHistory) {
-        if (
-          typeof cover === 'object' &&
-          cover.id &&
-          cover.url &&
-          cover.addedAt
-        ) {
+        if (typeof cover === 'object' && cover.id && cover.url && cover.addedAt) {
           // 将日期字符串转换回 Date 对象
           const processedCover: CoverHistoryItem = {
             ...cover,
             addedAt: new Date(cover.addedAt),
           };
           validCoverHistory.push(processedCover);
+        }
+      }
+    }
+
+    // 验证 Memory 记录
+    const validMemories: Memory[] = [];
+    if (settings.memories && Array.isArray(settings.memories)) {
+      for (const memory of settings.memories) {
+        if (
+          typeof memory === 'object' &&
+          memory.id &&
+          memory.bookId &&
+          memory.content &&
+          memory.summary &&
+          memory.createdAt &&
+          memory.lastAccessedAt
+        ) {
+          // Memory 使用时间戳（number），使用辅助函数转换
+          const processedMemory: Memory = {
+            ...memory,
+            createdAt: this.toTimestamp(memory.createdAt),
+            lastAccessedAt: this.toTimestamp(memory.lastAccessedAt),
+          };
+          validMemories.push(processedMemory);
         }
       }
     }
@@ -262,12 +287,12 @@ export class SettingsService {
     if (settings.appSettings && typeof settings.appSettings === 'object') {
       const appSettings = settings.appSettings;
       validAppSettings = {} as AppSettings;
-      
+
       // 验证并处理 lastEdited
       validAppSettings.lastEdited = appSettings.lastEdited
         ? new Date(appSettings.lastEdited)
         : new Date();
-      
+
       // 验证并发数限制
       if (
         typeof appSettings.scraperConcurrencyLimit === 'number' &&
@@ -278,20 +303,22 @@ export class SettingsService {
       } else {
         validAppSettings.scraperConcurrencyLimit = 3; // 默认值
       }
-      
+
       // 验证任务默认模型配置（如果存在）
       if (appSettings.taskDefaultModels && typeof appSettings.taskDefaultModels === 'object') {
         validAppSettings.taskDefaultModels = {};
         const taskDefaultModels = appSettings.taskDefaultModels;
         const validTaskKeys = ['translation', 'proofreading', 'termsTranslation', 'assistant'];
-        
+
         for (const taskKey of validTaskKeys) {
           const modelId = taskDefaultModels[taskKey as keyof typeof taskDefaultModels];
           if (modelId === null || (typeof modelId === 'string' && modelId.length > 0)) {
-            validAppSettings.taskDefaultModels[taskKey as keyof typeof validAppSettings.taskDefaultModels] = modelId;
+            validAppSettings.taskDefaultModels[
+              taskKey as keyof typeof validAppSettings.taskDefaultModels
+            ] = modelId;
           }
         }
-        
+
         // 如果没有任何有效的任务配置，则不设置 taskDefaultModels
         if (Object.keys(validAppSettings.taskDefaultModels).length === 0) {
           delete validAppSettings.taskDefaultModels;
@@ -326,12 +353,13 @@ export class SettingsService {
       validModels.length === 0 &&
       validNovels.length === 0 &&
       validCoverHistory.length === 0 &&
+      validMemories.length === 0 &&
       validSync.length === 0 &&
       !validAppSettings
     ) {
       return {
         success: false,
-        error: '设置数据中没有有效的 AI 模型、书籍、封面历史、同步设置或应用设置',
+        error: '设置数据中没有有效的 AI 模型、书籍、封面历史、Memory、同步设置或应用设置',
       };
     }
 
@@ -345,6 +373,9 @@ export class SettingsService {
     }
     if (validCoverHistory.length > 0) {
       messages.push(`${validCoverHistory.length} 个封面历史记录`);
+    }
+    if (validMemories.length > 0) {
+      messages.push(`${validMemories.length} 条 Memory 记录`);
     }
     if (validSync.length > 0) {
       messages.push(`${validSync.length} 个同步配置`);
@@ -360,10 +391,10 @@ export class SettingsService {
         models: validModels,
         novels: validNovels,
         coverHistory: validCoverHistory,
+        ...(validMemories.length > 0 ? { memories: validMemories } : {}),
         ...(validSync.length > 0 ? { sync: validSync } : {}),
         ...(validAppSettings ? { appSettings: validAppSettings } : {}),
       },
     };
   }
 }
-

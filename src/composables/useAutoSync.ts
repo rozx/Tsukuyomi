@@ -4,7 +4,9 @@ import { GistSyncService } from 'src/services/gist-sync-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { MemoryService } from 'src/services/memory-service';
 import { SyncDataService } from 'src/services/sync-data-service';
+import type { Memory } from 'src/models/memory';
 
 // 单例状态（在模块级别共享）
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -118,12 +120,17 @@ export function useAutoSync() {
         }
 
         // 检查是否需要上传（如果有本地更改）
+        // 使用批量加载方法加载所有 Memory 数据
+        const bookIds = booksStore.books.map((book) => book.id);
+        const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
         const shouldUpload = SyncDataService.hasChangesToUpload(
           {
             novels: booksStore.books,
             aiModels: aiModelsStore.models,
             appSettings: settingsStore.getAllSettings(),
             coverHistory: coverHistoryStore.covers,
+            memories,
           },
           result.data,
         );

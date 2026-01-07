@@ -1,6 +1,7 @@
 import type { AIModel, AIModelDefaultTasks } from '../services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from './novel';
 import type { SyncConfig } from './sync';
+import type { Memory } from './memory';
 
 /**
  * 任务默认模型配置
@@ -95,6 +96,7 @@ export interface Settings {
   sync: SyncConfig[];
   novels: Novel[];
   coverHistory?: CoverHistoryItem[];
+  memories?: Memory[];
   appSettings?: AppSettings;
 }
 
@@ -113,6 +115,7 @@ export interface ImportResult {
     sync?: SyncConfig[];
     novels: Novel[];
     coverHistory: CoverHistoryItem[];
+    memories?: Memory[];
     appSettings?: AppSettings;
   };
 }

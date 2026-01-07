@@ -198,14 +198,17 @@ export function useChapterTranslation(
    * @param chapterToSave 需要保存的章节对象（来自 updateParagraphsAndSave 的 skipSave 模式）
    * @param targetChapterId 目标章节 ID
    */
-  const batchSaveChapter = async (chapterToSave: Chapter, targetChapterId: string): Promise<void> => {
+  const batchSaveChapter = async (
+    chapterToSave: Chapter,
+    targetChapterId: string,
+  ): Promise<void> => {
     if (!book.value || !book.value.volumes) return;
 
     try {
-      // 保存章节内容到 IndexedDB
-      await ChapterService.saveChapterContent(chapterToSave);
-
-      // 保存书籍元数据
+      // 仅需通过 booksStore.updateBook 触发持久化：
+      // - 内部会调用 BookService.saveBook
+      // - 章节内容保存启用 skipIfUnchanged（避免重复写入，并能正确处理“同引用就地修改”）
+      // 直接调用 ChapterService.saveChapterContent 会绕过该优化，导致重复保存。
       await booksStore.updateBook(book.value.id, {
         volumes: book.value.volumes,
         lastEdited: new Date(),
