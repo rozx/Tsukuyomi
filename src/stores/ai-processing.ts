@@ -590,12 +590,13 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
         // 保存到 IndexedDB（异步，不阻塞 UI，使用节流后的最终值）
         // 注意：这里保存的是累积的文本，可能不是最新的，但为了性能考虑这是可以接受的
+        const self = this;
         void co(function* () {
           try {
             // 延迟保存，确保节流更新已完成
             yield new Promise((resolve) => setTimeout(resolve, 350));
             // 再次检查任务是否仍然存在
-            const currentTask = this.activeTasks.find((t) => t.id === id);
+            const currentTask = self.activeTasks.find((t: AIProcessingTask) => t.id === id);
             if (currentTask) {
               yield saveThinkingProcessToDB(currentTask);
             }

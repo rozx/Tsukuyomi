@@ -193,8 +193,14 @@ watch(
     watchDebounceTimer = window.setTimeout(() => {
       // 使用 requestIdleCallback 或 setTimeout 延迟执行，避免阻塞主线程
       const scheduleUpdate = () => {
-        // 获取当前活动的任务列表
+        // 获取当前活动的任务列表（基于最新状态，不依赖过时的 oldTasks）
         const activeTasks = aiProcessing.activeTasksList;
+        
+        // 获取当前所有任务的状态映射（用于清理逻辑）
+        const currentTaskStatusMap = new Map<string, 'thinking' | 'processing' | 'completed' | 'error' | 'cancelled'>();
+        aiProcessing.activeTasks.forEach((task) => {
+          currentTaskStatusMap.set(task.id, task.status);
+        });
         
         // 当任何任务的思考消息更新时，滚动对应的容器到底部
         activeTasks.forEach((task) => {
@@ -216,14 +222,21 @@ watch(
         });
         
         // 清理已完成任务的长度记录
-        if (oldTasks) {
-          oldTasks.forEach((oldTask) => {
-            const task = aiProcessing.activeTasks.find((t) => t.id === oldTask.id);
-            if (!task || (task.status !== 'thinking' && task.status !== 'processing')) {
-              thinkingMessageLengths.value.delete(oldTask.id);
-            }
-          });
-        }
+        // 基于当前状态进行清理，而不是依赖过时的 oldTasks
+        // 遍历所有已记录的任务 ID，检查它们是否仍然处于活动状态
+        const taskIdsToCleanup: string[] = [];
+        thinkingMessageLengths.value.forEach((_, taskId) => {
+          const currentStatus = currentTaskStatusMap.get(taskId);
+          // 如果任务不存在于当前任务列表中，或者状态不是 'thinking'/'processing'，则清理
+          if (!currentStatus || (currentStatus !== 'thinking' && currentStatus !== 'processing')) {
+            taskIdsToCleanup.push(taskId);
+          }
+        });
+        
+        // 执行清理
+        taskIdsToCleanup.forEach((taskId) => {
+          thinkingMessageLengths.value.delete(taskId);
+        });
       };
       
       // 使用 requestIdleCallback 延迟执行，如果浏览器不支持则使用 setTimeout
