@@ -71,6 +71,7 @@ export interface ChatMessage {
   thinkingProcess?: string; // AI 思考过程（仅在 assistant 角色时使用）
   isSummarization?: boolean; // 是否为总结消息（用于标记总结过程的消息气泡）
   isSummaryResponse?: boolean; // 是否为总结响应消息（用于标记包含完整总结内容的消息，应隐藏）
+  isContextMessage?: boolean; // 是否为上下文辅助消息（用于隐藏“工具结果摘要”等不需要展示给用户的消息）
 }
 
 /**

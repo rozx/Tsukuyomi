@@ -64,12 +64,137 @@ const buildAIMessageHistory = (
   const startIndex = session.lastSummarizedMessageIndex ?? 0;
   const sliced = session.messages
     .slice(startIndex)
-    .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
+    .filter(
+      (msg) =>
+        (msg.role === 'user' || msg.role === 'assistant') &&
+        !msg.isSummarization &&
+        !msg.isSummaryResponse,
+    )
     .map((msg) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
     }));
   return sliced.length > 0 ? sliced : undefined;
+};
+
+// 将工具操作记录压缩成“上下文摘要”，用于下一轮对话更好地复用工具结果。
+// 注意：不包含 thinking，也不包含工具原始返回体，只保留关键字段，避免上下文膨胀。
+const truncateForContext = (text: string, maxLen: number): string => {
+  if (!text) return '';
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, Math.max(0, maxLen - 1))}…`;
+};
+
+const formatActionForContext = (action: MessageAction): string => {
+  const title = `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`;
+  const parts: string[] = [];
+
+  if (action.tool_name) parts.push(`工具=${action.tool_name}`);
+  if (action.name) parts.push(`名称=${truncateForContext(action.name, 60)}`);
+  if (action.query) parts.push(`查询=${truncateForContext(action.query, 80)}`);
+  if (action.url) parts.push(`URL=${truncateForContext(action.url, 120)}`);
+
+  if (action.chapter_title) parts.push(`章节=${truncateForContext(action.chapter_title, 60)}`);
+  else if (action.chapter_id) parts.push(`章节ID=${action.chapter_id}`);
+
+  if (action.paragraph_id) parts.push(`段落ID=${action.paragraph_id}`);
+  if (action.translation_id) parts.push(`翻译ID=${action.translation_id}`);
+  if (action.memory_id) parts.push(`MemoryID=${action.memory_id}`);
+
+  if (action.old_translation && action.new_translation) {
+    parts.push(
+      `翻译变更=${truncateForContext(action.old_translation, 60)} → ${truncateForContext(action.new_translation, 60)}`,
+    );
+  }
+
+  if (
+    action.tool_name === 'batch_replace_translations' &&
+    (action.replaced_paragraph_count !== undefined || action.replaced_translation_count !== undefined)
+  ) {
+    const replacedParts: string[] = [];
+    if (action.replaced_paragraph_count !== undefined) {
+      replacedParts.push(`段落=${action.replaced_paragraph_count}`);
+    }
+    if (action.replaced_translation_count !== undefined) {
+      replacedParts.push(`翻译版本=${action.replaced_translation_count}`);
+    }
+    if (action.replacement_text) {
+      replacedParts.push(`替换文本=${truncateForContext(action.replacement_text, 60)}`);
+    }
+    if (replacedParts.length > 0) {
+      parts.push(`批量替换(${replacedParts.join('，')})`);
+    }
+  }
+
+  if (action.keywords && action.keywords.length > 0) {
+    parts.push(`关键词=${action.keywords.slice(0, 6).join('、')}${action.keywords.length > 6 ? '…' : ''}`);
+  }
+
+  return parts.length > 0 ? `${title}：${parts.join('，')}` : title;
+};
+
+const buildContextSummaryContent = (actions: MessageAction[] | undefined): string | null => {
+  if (!actions || actions.length === 0) return null;
+
+  const header = '【上下文：本轮工具操作摘要】';
+  const maxLines = 20;
+  const maxChars = 1500;
+  const lines: string[] = [];
+
+  for (const action of actions.slice(0, maxLines)) {
+    const line = formatActionForContext(action);
+    if (!line) continue;
+    const candidate = `${header}\n${[...lines, `- ${line}`].join('\n')}`;
+    if (candidate.length > maxChars) {
+      break;
+    }
+    lines.push(`- ${line}`);
+  }
+
+  if (lines.length === 0) return null;
+  const content = `${header}\n${lines.join('\n')}`;
+  return content.length > maxChars ? truncateForContext(content, maxChars) : content;
+};
+
+const ensureContextMessagesForLastUserTurn = (): void => {
+  // 找到最后一条用户消息，把其后的助手消息视为“本轮输出”
+  let lastUserIndex = -1;
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m?.role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  if (lastUserIndex < 0) return;
+
+  // 逐个处理本轮内的助手消息：如果有 actions，就插入一条隐藏的 context 消息（避免重复插入）
+  for (let i = lastUserIndex + 1; i < messages.value.length; i++) {
+    const m = messages.value[i];
+    if (!m || m.role !== 'assistant') continue;
+    if (!m.actions || m.actions.length === 0) continue;
+    if (m.isSummarization || m.isSummaryResponse || m.isContextMessage) continue;
+
+    const contextContent = buildContextSummaryContent(m.actions);
+    if (!contextContent) continue;
+
+    const contextId = `${m.id}-context`;
+    const alreadyExists = messages.value.some((x) => x.id === contextId);
+    if (alreadyExists) continue;
+
+    const contextMsg: ChatMessage = {
+      id: contextId,
+      role: 'assistant',
+      content: contextContent,
+      timestamp: Date.now(),
+      isContextMessage: true,
+    };
+
+    // 插入在对应助手消息之后
+    messages.value.splice(i + 1, 0, contextMsg);
+    i++; // 跳过刚插入的 context 消息
+  }
 };
 
 // 扩展类型，包含所有可选属性（用于类型断言）
@@ -2090,6 +2215,9 @@ const sendMessage = async () => {
           setThinkingActive(assistantMessageId, false);
         }
 
+        // 生成隐藏的上下文摘要消息（用于下一轮对话复用工具结果）
+        ensureContextMessagesForLastUserTurn();
+
         // 更新 store 中的消息历史
         if (continueResult.messageHistory && sessionId) {
           // 将 AI 返回的消息历史转换为 ChatMessage 格式并更新
@@ -2151,6 +2279,9 @@ const sendMessage = async () => {
       // 清除思考过程活动状态（消息已完成）
       setThinkingActive(assistantMessageId, false);
     }
+
+    // 生成隐藏的上下文摘要消息（用于下一轮对话复用工具结果）
+    ensureContextMessagesForLastUserTurn();
 
     // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
     // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
@@ -2812,8 +2943,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
       </div>
       <div v-else class="flex flex-col gap-4 w-full">
         <template v-for="message in messages" :key="message.id">
-          <!-- 过滤掉总结响应消息（包含完整总结内容的消息） -->
-          <template v-if="!message.isSummaryResponse">
+          <!-- 过滤掉总结响应消息（包含完整总结内容的消息）与上下文辅助消息（工具摘要等） -->
+          <template v-if="!message.isSummaryResponse && !message.isContextMessage">
             <div
               class="flex flex-col gap-2 w-full"
               :class="message.role === 'user' ? 'items-end' : 'items-start'"
