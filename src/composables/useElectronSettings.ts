@@ -5,6 +5,8 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { MemoryService } from 'src/services/memory-service';
+import type { Memory } from 'src/models/memory';
 
 /**
  * Electron 环境下的设置导入/导出处理
@@ -23,11 +25,16 @@ export function useElectronSettings() {
         booksStore.books,
       );
 
+      // 使用批量加载方法加载所有 Memory 数据
+      const bookIds = booksStore.books.map((book) => book.id);
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
       // 获取当前设置
       const settings = {
         aiModels: aiModelsStore.models,
         novels: novelsWithContent,
         coverHistory: coverHistoryStore.covers,
+        memories,
         sync: settingsStore.syncs,
         appSettings: settingsStore.settings,
       };
@@ -70,6 +77,33 @@ export function useElectronSettings() {
           await coverHistoryStore.clearHistory();
           for (const cover of result.data.coverHistory) {
             await coverHistoryStore.addCover(cover);
+          }
+        }
+
+        // 导入 Memory 数据
+        if (result.data.memories && result.data.memories.length > 0) {
+          // Memory 按 bookId 分组并导入
+          const memoriesByBook = new Map<string, Memory[]>();
+          for (const memory of result.data.memories) {
+            if (!memoriesByBook.has(memory.bookId)) {
+              memoriesByBook.set(memory.bookId, []);
+            }
+            memoriesByBook.get(memory.bookId)!.push(memory);
+          }
+
+          // 为每本书导入 Memory
+          for (const [bookId, memories] of memoriesByBook.entries()) {
+            try {
+              for (const memory of memories) {
+                await MemoryService.createMemory(
+                  bookId,
+                  memory.content,
+                  memory.summary,
+                );
+              }
+            } catch (error) {
+              console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);
+            }
           }
         }
 
