@@ -181,6 +181,10 @@ export function getOutputFormatRules(taskType: TaskType): string {
   const taskLabel = taskLabels[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
+  const strictStateNote =
+    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
+      ? `\n[警告] **严格状态规则**：\n- 只有当 \`status="working"\` 时才允许输出 \`paragraphs/titleTranslation\`\n- 当 \`status="planning"\`、\`status="completed"\` 或 \`status="end"\` 时 **禁止** 输出任何内容字段，否则系统会视为错误状态并要求你立刻重试\n`
+      : '';
 
   return `【输出格式】[警告] 必须只返回JSON
 [禁止] 禁止使用翻译管理工具
@@ -189,6 +193,7 @@ export function getOutputFormatRules(taskType: TaskType): string {
 **状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`（仅当你需要先规划/调用工具且暂不输出内容时）
 **包含内容时**: \`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题"' : ''}}\`
 **标题翻译只要返回一次就好，不要重复返回**
+${strictStateNote}
 
 ${getStatusFieldDescription(taskType)}
 - 段落ID必须与原文完全一致，1:1对应${onlyChanged}

@@ -739,6 +739,26 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
             );
           }
 
+          // 翻译/润色/校对任务：内容必须只在 working 阶段输出
+          // 若模型在 planning/completed/end 阶段输出 paragraphs/titleTranslation，视为错误状态并中止本轮输出（随后由上层纠正并重试）
+          if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
+            const hasContentKey =
+              accumulatedText.includes('"paragraphs"') ||
+              accumulatedText.includes('"titleTranslation"');
+            const newStatus = status as TaskStatus;
+            const invalidStateForContent =
+              newStatus === 'planning' || newStatus === 'completed' || newStatus === 'end';
+            if (hasContentKey && invalidStateForContent) {
+              console.warn(
+                `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${newStatus} 且包含 paragraphs/titleTranslation），立即停止输出`,
+              );
+              abortController?.abort();
+              throw new Error(
+                `状态与内容不匹配：任务只能在 working 阶段输出 paragraphs/titleTranslation（当前 status=${newStatus}）`,
+              );
+            }
+          }
+
           // 检查状态转换是否有效
           const validTransitions: Record<TaskStatus, TaskStatus[]> = {
             planning: ['working'],
@@ -1274,6 +1294,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   let consecutiveCompletedCount = 0;
   const MAX_CONSECUTIVE_STATUS = 2; // 同一状态最多连续出现 2 次（加速流程）
 
+  // 用于检测“状态与内容不匹配”的连续次数（避免模型反复输出错误状态导致无限重试）
+  let consecutiveContentStateMismatchCount = 0;
+  const MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH = 2;
+
   // 用于收集规划阶段的信息（在 planning → working 转换时提取摘要）
   let planningSummary: string | undefined;
   const planningResponses: string[] = []; // 收集 AI 在规划阶段的响应
@@ -1355,7 +1379,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 检查是否是无效状态错误
       if (
         streamError instanceof Error &&
-        (streamError.message.includes('无效状态') || streamError.message.includes('状态转换错误'))
+        (streamError.message.includes('无效状态') ||
+          streamError.message.includes('状态转换错误') ||
+          streamError.message.includes('状态与内容不匹配'))
       ) {
         console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
 
@@ -1395,6 +1421,18 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
             `[警告] **无效状态值**：你返回了无效的状态值。\n\n` +
             `**有效的状态值**：planning、working、completed、end\n\n` +
             `你当前处于 "${statusLabels[currentStatus]}"，请返回正确的状态值。`;
+        } else if (errorMessage.includes('状态与内容不匹配')) {
+          consecutiveContentStateMismatchCount++;
+          if (consecutiveContentStateMismatchCount > MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH) {
+            throw new Error(
+              `AI 多次返回状态与内容不匹配，已超过最大重试次数（${MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH}）。请更换模型或稍后重试。`,
+            );
+          }
+
+          warningMessage =
+            `[警告] **状态与内容不匹配**：你在非 working 状态下输出了 paragraphs/titleTranslation。\n\n` +
+            `本任务中，**只有**当 \`status="working"\` 时才允许输出内容字段。\n\n` +
+            `请你立刻重试：用 \`{"status":"working", ...}\` 重新返回（内容保持一致即可）。`;
         }
 
         // 将部分响应添加到历史（如果有）
@@ -1608,8 +1646,43 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     const hasContent =
       !!parsed.content?.titleTranslation || (Array.isArray(paragraphs) && paragraphs.length > 0);
 
+    // 翻译/润色/校对任务：只要输出 paragraphs/titleTranslation，就必须处于 working
+    // 若状态为 planning/completed/end 且包含内容，视为错误状态：纠正并让模型重试
+    if (
+      (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') &&
+      hasContent &&
+      parsed.status !== 'working'
+    ) {
+      consecutiveContentStateMismatchCount++;
+      if (consecutiveContentStateMismatchCount > MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH) {
+        throw new Error(
+          `AI 多次返回状态与内容不匹配，已超过最大重试次数（${MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH}）。请更换模型或稍后重试。`,
+        );
+      }
+
+      history.push({
+        role: 'assistant',
+        content: responseText,
+      });
+      history.push({
+        role: 'user',
+        content:
+          `${getCurrentStatusInfo(taskType, currentStatus, isBriefPlanning)}\n\n` +
+          `[警告] **状态与内容不匹配**：本任务中，只有当 \`status="working"\` 时才允许输出 ` +
+          `\`paragraphs/titleTranslation\`。\n\n` +
+          `你当前返回的 status="${parsed.status}" 却包含了内容字段。` +
+          `请立刻重试：用 \`{"status":"working", ...}\` 重新返回（内容保持一致即可）。`,
+      });
+      continue;
+    }
+
+    // 已进入正常处理流程，重置 mismatch 计数器
+    consecutiveContentStateMismatchCount = 0;
+
     const newStatus: TaskStatus =
-      parsed.status === 'planning' && hasContent ? 'working' : parsed.status;
+      taskType !== 'translation' && parsed.status === 'planning' && hasContent
+        ? 'working'
+        : parsed.status;
     const previousStatus: TaskStatus = currentStatus;
 
     // 记录状态转换时间

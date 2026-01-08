@@ -11,13 +11,14 @@ import { executeToolCallLoop } from 'src/services/ai/tasks/utils/ai-task-helper'
 import { ToolRegistry } from 'src/services/ai/tools';
 
 describe('executeToolCallLoop', () => {
-  test('planning 状态但已输出内容时，应按 working 处理（避免多一轮）', async () => {
+  const runMismatchRetryTest = async (taskType: 'translation' | 'polish' | 'proofreading') => {
     const calls: Array<{ paragraphs: Array<{ id: string; translation: string }> }> = [];
 
     const responses = [
       // 模型误标：planning 但带 paragraphs
       { text: `{"status":"planning","paragraphs":[{"id":"p1","translation":"A"}]}` },
-      // 按顺序完成
+      // 被纠正后：用 working 重发同一份内容
+      { text: `{"status":"working","paragraphs":[{"id":"p1","translation":"A"}]}` },
       { text: `{"status":"completed"}` },
       { text: `{"status":"end"}` },
     ];
@@ -43,7 +44,7 @@ describe('executeToolCallLoop', () => {
       tools: [],
       generateText,
       aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
-      taskType: 'translation',
+      taskType,
       chunkText: 'original chunk text',
       paragraphIds: ['p1'],
       bookId: 'book1',
@@ -62,6 +63,25 @@ describe('executeToolCallLoop', () => {
     expect(result.paragraphs.get('p1')).toBe('A');
     expect(calls).toHaveLength(1);
     expect(calls[0]?.paragraphs).toEqual([{ id: 'p1', translation: 'A' }]);
+
+    // 历史中应出现纠正提示
+    const corrected = history.some((m) => {
+      const mm = m as unknown as { role: string; content?: string | null };
+      return mm.role === 'user' && typeof mm.content === 'string' && mm.content.includes('状态与内容不匹配');
+    });
+    expect(corrected).toBe(true);
+  };
+
+  test('翻译任务：planning/completed/end 状态下输出内容应纠正并让模型重试', async () => {
+    await runMismatchRetryTest('translation');
+  });
+
+  test('润色任务：planning/completed/end 状态下输出内容应纠正并让模型重试', async () => {
+    await runMismatchRetryTest('polish');
+  });
+
+  test('校对任务：planning/completed/end 状态下输出内容应纠正并让模型重试', async () => {
+    await runMismatchRetryTest('proofreading');
   });
 
   test('首条响应可直接 working（无需先 planning）', async () => {
@@ -113,8 +133,9 @@ describe('executeToolCallLoop', () => {
         text: `{"status":"working","paragraphs":[{"id":"p1","translation":"A"}],"titleTranslation":"T1"}`,
       },
       {
-        text: `{"status":"completed","paragraphs":[{"id":"p1","translation":"B"}],"titleTranslation":"T2"}`,
+        text: `{"status":"working","paragraphs":[{"id":"p1","translation":"B"}],"titleTranslation":"T2"}`,
       },
+      { text: `{"status":"completed"}` },
       { text: `{"status":"end"}` },
     ];
 
