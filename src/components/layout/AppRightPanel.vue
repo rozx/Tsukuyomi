@@ -330,6 +330,24 @@ const getMessagesSinceSummaryCount = (session: SessionWithSummaryIndex | null): 
 };
 
 /**
+ * 构建“需要总结”的消息列表：只取上次总结后的新增消息
+ * 注意：会过滤总结气泡/总结响应/上下文辅助消息，避免污染摘要
+ */
+const buildMessagesToSummarize = (
+  session: SessionWithSummaryIndex,
+  allMessages: ChatMessage[],
+): Array<{ role: 'user' | 'assistant'; content: string }> => {
+  const cutoff = session.lastSummarizedMessageIndex ?? 0;
+  return allMessages
+    .slice(Math.max(0, cutoff))
+    .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse && !msg.isContextMessage)
+    .map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+};
+
+/**
  * 自动执行总结（当 AI 响应完成后消息数量达到限制时触发）
  * 这个函数独立于 sendMessage，可以在 AI 响应完成后调用
  */
@@ -374,19 +392,15 @@ const performAutoSummarization = async (): Promise<void> => {
     chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
     scrollToBottom();
 
-    // 构建要总结的消息（排除系统消息和总结消息）
-    const messagesToSummarize = messages.value
-      .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse)
-      .map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
+    // 构建要总结的消息：只总结上次总结后的新增消息
+    const messagesToSummarize = buildMessagesToSummarize(currentSession, messages.value);
 
     // 调用总结功能
     const summary = await AssistantService.summarizeSession(
       assistantModel.value,
       messagesToSummarize,
       {
+        ...(currentSession.summary ? { previousSummary: currentSession.summary } : {}),
         onChunk: () => {
           // 总结过程中可以显示进度，但这里简化处理
         },
@@ -809,13 +823,12 @@ const sendMessage = async () => {
       }
       scrollToBottom();
 
-      // 构建要总结的消息（排除系统消息和总结消息）
-      const messagesToSummarize = messages.value
-        .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse)
-        .map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
+      if (!currentSession) {
+        throw new Error('当前会话不存在');
+      }
+
+      // 构建要总结的消息：只总结上次总结后的新增消息
+      const messagesToSummarize = buildMessagesToSummarize(currentSession, messages.value);
 
       // 调用总结功能
       // 注意：此时 assistantModel.value 已在 sendMessage 开头验证过，但 TypeScript 需要再次断言
@@ -826,6 +839,7 @@ const sendMessage = async () => {
         assistantModel.value,
         messagesToSummarize,
         {
+          ...(currentSession.summary ? { previousSummary: currentSession.summary } : {}),
           onChunk: () => {
             // 总结过程中可以显示进度，但这里简化处理
           },

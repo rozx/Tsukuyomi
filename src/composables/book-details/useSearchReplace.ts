@@ -1,6 +1,8 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { ChapterService } from 'src/services/chapter-service';
+import { useBooksStore } from 'src/stores/books';
 import type { Chapter, Paragraph, Novel } from 'src/models/novel';
 
 export function useSearchReplace(
@@ -9,6 +11,8 @@ export function useSearchReplace(
   selectedChapterParagraphs: Ref<Paragraph[]>,
   updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>,
   currentlyEditingParagraphId?: Ref<string | null>,
+  saveState?: (description?: string) => void,
+  updateSelectedChapterWithContent?: (updatedVolumes: any) => void,
 ) {
   const toast = useToastWithHistory();
 
@@ -245,46 +249,93 @@ export function useSearchReplace(
 
   const replaceAll = async () => {
     if (!searchMatches.value.length) return;
-    // 使用 selectedChapterParagraphs 来获取段落，因为它来自 selectedChapterWithContent，确保有内容
     const paragraphs = selectedChapterParagraphs.value;
     if (!paragraphs || paragraphs.length === 0) return;
 
-    let count = 0;
-    const matches = [...searchMatches.value];
+    const chapter = selectedChapter.value;
+    const bookValue = book.value;
+    if (!chapter || !bookValue) return;
 
-    for (const match of matches) {
-      // 从 selectedChapterParagraphs 中查找段落，确保使用正确的数据源
+    saveState?.('批量替换');
+
+    const updates = new Map<string, string>();
+    const editedParagraphIds: string[] = [];
+
+    for (const match of searchMatches.value) {
       const paragraph = paragraphs.find((p) => p.id === match.id);
       if (!paragraph) continue;
 
-      // 重要：替换必须基于原始文本，避免把显示层格式化结果写回数据库
       const rawText = getParagraphRawTranslationText(paragraph);
       const newText = replaceOnRawText(rawText);
 
       if (newText !== rawText) {
-        // 如果段落正在编辑，需要先更新 DOM 中的 textarea
+        updates.set(paragraph.id, newText);
         if (currentlyEditingParagraphId?.value === paragraph.id) {
-          const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
-          if (paragraphElement) {
-            const textarea = paragraphElement.querySelector(
-              '.paragraph-translation-edit textarea',
-            ) as HTMLTextAreaElement | null;
-            if (textarea) {
-              textarea.value = newText;
-              // 触发 input 事件以确保 Vue 的 v-model 更新
-              textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-          }
+          editedParagraphIds.push(paragraph.id);
         }
-
-        await updateParagraphTranslation(paragraph.id, newText);
-        count++;
       }
     }
 
-    if (count > 0) {
-      toast.add({ severity: 'success', summary: `已替换 ${count} 处内容`, life: 3000 });
+    if (updates.size === 0) return;
+
+    const booksStore = useBooksStore();
+    const updatedContent = selectedChapterParagraphs.value.map((para) => {
+      const newTranslation = updates.get(para.id);
+      if (newTranslation !== undefined) {
+        return {
+          ...para,
+          translations: para.translations
+            ? para.translations.map((t) =>
+                t.id === para.selectedTranslationId ? { ...t, translation: newTranslation } : t,
+              )
+            : para.translations,
+        };
+      }
+      return para;
+    });
+
+    const updatedChapter: Chapter = {
+      ...chapter,
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+
+    await ChapterService.saveChapterContent(updatedChapter);
+
+    const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
+      content: updatedContent,
+      lastEdited: new Date(),
+    });
+
+    await booksStore.updateBook(bookValue.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+
+    updateSelectedChapterWithContent?.(updatedVolumes);
+
+    for (const [paragraphId, newText] of updates.entries()) {
+      if (editedParagraphIds.includes(paragraphId)) {
+        const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+        if (paragraphElement) {
+          const textarea = paragraphElement.querySelector(
+            '.paragraph-translation-edit textarea',
+          ) as HTMLTextAreaElement | null;
+          if (textarea) {
+            textarea.value = newText;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      }
     }
+
+    for (const id of editedParagraphIds) {
+      if (currentlyEditingParagraphId?.value === id) {
+        currentlyEditingParagraphId.value = null;
+      }
+    }
+
+    toast.add({ severity: 'success', summary: `已替换 ${updates.size} 处内容`, life: 3000 });
   };
 
   // Watchers

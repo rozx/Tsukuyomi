@@ -923,6 +923,8 @@ const {
   selectedChapterParagraphs,
   updateParagraphTranslation,
   currentlyEditingParagraphId,
+  saveState,
+  updateSelectedChapterWithContent,
 );
 
 // 初始化键盘快捷键 composable

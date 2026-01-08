@@ -1077,7 +1077,7 @@ export class SyncDataService {
         aiModels: localData.aiModels,
         appSettings: localData.appSettings,
         coverHistory: localData.coverHistory,
-        memories: localData.memories,
+        memories: localData.memories || [],
       };
     }
 
@@ -1329,9 +1329,10 @@ export class SyncDataService {
     const finalMemories: Memory[] = [];
     const remoteMemories = remoteData.memories || [];
     const remoteMemoryMap = new Map(remoteMemories.map((m: Memory) => [m.id, m]));
+    const localMemories = localData.memories || [];
 
     // 处理本地和远程都有的 Memory
-    for (const localMemory of localData.memories) {
+    for (const localMemory of localMemories) {
       const remoteMemory = remoteMemoryMap.get(localMemory.id);
       if (remoteMemory) {
         // 比较 lastAccessedAt 时间，使用最新的

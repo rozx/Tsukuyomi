@@ -286,11 +286,12 @@ ${getToolScopeRules(tools)}
     model: AIModel,
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
     options: {
+      previousSummary?: string;
       signal?: AbortSignal;
       onChunk?: TextGenerationStreamCallback;
     } = {},
   ): Promise<string> {
-    const { signal, onChunk } = options;
+    const { previousSummary, signal, onChunk } = options;
 
     // 将消息分为早期、中期和最近部分，重点关注最近的消息
     const totalMessages = messages.length;
@@ -322,8 +323,29 @@ ${getToolScopeRules(tools)}
       '最近对话（重点关注）',
     );
 
+    const normalizedPreviousSummary = previousSummary?.trim() ? previousSummary.trim() : '';
+    const previousSummarySection = normalizedPreviousSummary
+      ? `\n\n【已有会话摘要】\n${normalizedPreviousSummary}\n`
+      : '';
+
     // 构建总结提示词（精简版，减少 token 消耗）
-    const summaryPrompt = `总结以下对话，重点关注：
+    const summaryPrompt = normalizedPreviousSummary
+      ? `你将基于“已有会话摘要”，结合“新增对话内容”，生成一份更新后的会话摘要。
+
+要求：
+1. 保留已有摘要中仍然重要的信息（不要丢失关键背景）
+2. 合并新增对话中的新进展、决定与待办事项
+3. 删除已不再相关或被推翻的信息
+4. 输出必须使用中文，简洁、结构化，便于后续继续对话
+${previousSummarySection}
+【新增对话内容】
+${earlySection}${middleSection}${recentSection}
+
+输出格式（使用中文，简洁扼要）：
+- 当前任务：[描述]
+- 下一步：[描述]
+- 关键信息：[描述]`
+      : `总结以下对话，重点关注：
 1. 当前任务：正在进行的工作和进度
 2. 下一步：待执行的任务和计划
 3. 关键决策：重要的讨论结论
@@ -349,7 +371,7 @@ ${earlySection}${middleSection}${recentSection}
     };
 
     // 构建请求（使用较低的 maxTokens 来限制摘要长度）
-    const summaryMaxTokens = Math.min(model.maxTokens, 1024); // 摘要不需要太长
+    const summaryMaxTokens = model.maxTokens > 0 ? Math.min(model.maxTokens, 1024) : 1024; // 摘要不需要太长
     const request: TextGenerationRequest = {
       messages: [
         {
@@ -551,6 +573,7 @@ ${earlySection}${middleSection}${recentSection}
     systemPrompt: string;
     userMessage: string;
     messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
+    previousSummary?: string;
     context: { currentBookId: string | null };
     finalSignal?: AbortSignal;
     aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
@@ -563,6 +586,7 @@ ${earlySection}${middleSection}${recentSection}
       systemPrompt,
       userMessage,
       messagesToSummarize,
+      previousSummary,
       context,
       finalSignal,
       aiProcessingStore,
@@ -585,6 +609,7 @@ ${earlySection}${middleSection}${recentSection}
     try {
       summary = await this.summarizeSession(model, messagesToSummarize, {
         ...(finalSignal ? { signal: finalSignal } : {}),
+        ...(previousSummary ? { previousSummary } : {}),
       });
     } catch (error) {
       console.error('[AssistantService] 摘要生成失败', error);
@@ -1057,6 +1082,7 @@ ${earlySection}${middleSection}${recentSection}
             systemPrompt,
             userMessage,
             messagesToSummarize,
+            ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
             context: { currentBookId: context.currentBookId },
             ...(finalSignal ? { finalSignal } : {}),
             ...(aiProcessingStore ? { aiProcessingStore } : {}),
@@ -1534,12 +1560,17 @@ ${earlySection}${middleSection}${recentSection}
       });
 
       // 检查是否是 token 限制错误，如果是，尝试总结并重试
+      // 注意：maxTokens=0 表示无限制（与 UNLIMITED_TOKENS=-1 类似），不应仅因 maxTokens=0 就触发摘要逻辑
+      const hasPositiveMaxTokensLimit =
+        model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS;
+      const hasContextWindowLimit =
+        typeof model.contextWindow === 'number' && model.contextWindow > 0;
+
       if (
         this.isTokenLimitError(error) &&
         options.messageHistory &&
         options.messageHistory.length > 2 &&
-        model.maxTokens > 0 &&
-        model.maxTokens !== UNLIMITED_TOKENS
+        (hasPositiveMaxTokensLimit || hasContextWindowLimit)
       ) {
         try {
           if (finalSignal?.aborted) {
@@ -1566,6 +1597,7 @@ ${earlySection}${middleSection}${recentSection}
               systemPrompt,
               userMessage,
               messagesToSummarize,
+              ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
               context: { currentBookId: context.currentBookId },
               ...(finalSignal ? { finalSignal } : {}),
               ...(aiProcessingStore ? { aiProcessingStore } : {}),
