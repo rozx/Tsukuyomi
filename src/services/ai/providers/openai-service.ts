@@ -253,9 +253,10 @@ export class OpenAIService extends BaseAIService {
       // 只有当 maxTokens 明确设置且大于 0 时才设置 max_tokens
       // 如果 maxTokens 是 0 或未定义，不设置 max_tokens，让 API 使用默认值（无限制）
       if (maxTokens !== undefined && maxTokens > 0) {
-        // API 限制 max_tokens 最大值为 65536，超过此值会被拒绝
+        // API 限制 max_tokens 有效范围为 [1, 65536]，超过此范围会被拒绝
         // 如果配置的值超过限制，自动限制到 API 允许的最大值
-        requestParams.max_tokens = Math.min(maxTokens, OPENAI_MAX_TOKENS_LIMIT);
+        // 确保值至少为 1（有效范围的最小值）
+        requestParams.max_tokens = Math.max(1, Math.min(maxTokens, OPENAI_MAX_TOKENS_LIMIT));
       }
 
       // 使用流式 API

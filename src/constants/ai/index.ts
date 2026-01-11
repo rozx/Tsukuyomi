@@ -25,10 +25,10 @@ export const UNLIMITED_TOKENS = -1;
 
 /**
  * OpenAI 兼容 API 的 max_tokens 最大值限制
- * 当前 API 限制为 100000，但配置中允许设置更大的值（如 1M）
+ * 当前 API 限制为 65536，但配置中允许设置更大的值（如 1M）
  * 实际发送到 API 时会自动限制到此值
  */
-export const OPENAI_MAX_TOKENS_LIMIT = 100000;
+export const OPENAI_MAX_TOKENS_LIMIT = 65536;
 
 /**
  * 配置中允许的最大 token 数（用于 UI 和配置）
