@@ -9,6 +9,7 @@ import { bookTools } from './book-tools';
 import { memoryTools } from './memory-tools';
 import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
+import { askUserTools } from './ask-user-tools';
 import { useSettingsStore } from 'src/stores/settings';
 
 export type { ActionInfo };
@@ -98,12 +99,18 @@ export class ToolRegistry {
     return this.mapTools(todoListTools);
   }
 
+  static getAskUserTools(): AITool[] {
+    return this.mapTools(askUserTools);
+  }
+
   static getAllTools(bookId?: string): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具始终可用（不需要 bookId）
       ...this.getWebSearchTools(),
       // 待办事项工具始终可用（不需要 bookId）
       ...this.getTodoListTools(),
+      // ask_user 始终可用（不需要 bookId；会阻塞等待用户回答）
+      ...this.getAskUserTools(),
     ];
 
     // 其他工具需要 bookId
@@ -184,6 +191,7 @@ export class ToolRegistry {
       ...memoryTools,
       ...navigationTools,
       ...todoListTools,
+      ...askUserTools,
     ];
   }
 

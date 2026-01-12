@@ -2150,6 +2150,7 @@ export const paragraphTools: ToolDefinition[] = [
       const replacedParagraphs: Array<{
         paragraph_id: string;
         chapter_id: string;
+        old_selected_translation_id: string;
         old_translations: Translation[];
         new_translation: string;
       }> = [];
@@ -2160,6 +2161,9 @@ export const paragraphTools: ToolDefinition[] = [
         if (!paragraph.translations || paragraph.translations.length === 0) {
           continue;
         }
+
+        // 保存段落原始选中翻译 ID（用于撤销时完整恢复）
+        const oldSelectedTranslationId = paragraph.selectedTranslationId || '';
 
         // 保存完整的翻译对象以便恢复（包括 id, translation, aiModelId）
         const oldTranslations: Translation[] = [];
@@ -2265,6 +2269,7 @@ export const paragraphTools: ToolDefinition[] = [
           replacedParagraphs.push({
             paragraph_id: paragraph.id,
             chapter_id: result.chapter.id,
+            old_selected_translation_id: oldSelectedTranslationId,
             old_translations: oldTranslations,
             new_translation: replacement_text.trim(),
           });
@@ -2302,6 +2307,7 @@ export const paragraphTools: ToolDefinition[] = [
             replaced_paragraphs: replacedParagraphs.map((p) => ({
               paragraph_id: p.paragraph_id,
               chapter_id: p.chapter_id,
+              old_selected_translation_id: p.old_selected_translation_id,
               old_translations: p.old_translations,
             })),
           },

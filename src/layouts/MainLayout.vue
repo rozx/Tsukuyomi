@@ -4,6 +4,7 @@ import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import AppRightPanel from '../components/layout/AppRightPanel.vue';
+import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import Toast from 'primevue/toast';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
@@ -12,15 +13,26 @@ import { useAutoSync } from 'src/composables/useAutoSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { useAskUserStore, type AskUserPayload, type AskUserResult } from 'src/stores/ask-user';
 
 const ui = useUiStore();
 const { markAsReadByMessage } = useToastHistory();
 const toast = useToastWithHistory();
 const aiProcessingStore = useAIProcessingStore();
+const askUserStore = useAskUserStore();
 
 // 注册全局 toast 函数，供静态方法使用
 if (typeof window !== 'undefined') {
   (window as unknown as { __lunaToast?: typeof toast.add }).__lunaToast = toast.add.bind(toast);
+}
+
+// 注册全局 ask_user 桥接函数，供工具层使用
+if (typeof window !== 'undefined') {
+  (
+    window as unknown as {
+      __lunaAskUser?: (payload: AskUserPayload) => Promise<AskUserResult>;
+    }
+  ).__lunaAskUser = (payload: AskUserPayload) => askUserStore.ask(payload);
 }
 
 // 跟踪之前的任务状态，用于检测状态变化
@@ -176,6 +188,9 @@ onUnmounted(() => {
 
   <!-- Toast 组件 -->
   <Toast position="top-right" @close="handleToastClose" />
+
+  <!-- ask_user 全屏问答对话框（全局挂载） -->
+  <AskUserDialog />
 
   <!-- 冲突解决对话框 -->
 </template>

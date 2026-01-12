@@ -27,6 +27,7 @@ import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-serv
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { CharacterSetting, Alias, Terminology, Translation, Novel } from 'src/models/novel';
@@ -94,6 +95,10 @@ const formatActionForContext = (action: MessageAction): string => {
   if (action.name) parts.push(`名称=${truncateForContext(action.name, 60)}`);
   if (action.query) parts.push(`查询=${truncateForContext(action.query, 80)}`);
   if (action.url) parts.push(`URL=${truncateForContext(action.url, 120)}`);
+  if (action.question) parts.push(`问题=${truncateForContext(action.question, 120)}`);
+  if (action.answer) parts.push(`答案=${truncateForContext(action.answer, 120)}`);
+  if (action.cancelled) parts.push('已取消');
+  if (typeof action.selected_index === 'number') parts.push(`选项#=${action.selected_index}`);
 
   if (action.chapter_title) parts.push(`章节=${truncateForContext(action.chapter_title, 60)}`);
   else if (action.chapter_id) parts.push(`章节ID=${action.chapter_id}`);
@@ -1476,6 +1481,7 @@ const sendMessage = async () => {
                   replaced_paragraphs: Array<{
                     paragraph_id: string;
                     chapter_id: string;
+                    old_selected_translation_id?: string;
                     old_translations: Array<{
                       id: string;
                       translation: string;
@@ -1507,20 +1513,54 @@ const sendMessage = async () => {
                     const book = booksStore.getBookById(bookId);
                     if (!book) return;
 
-                    // 恢复所有被替换的翻译
-                    for (const replacedParagraph of previousData.replaced_paragraphs) {
-                      // 查找段落位置
-                      const location = ChapterService.findParagraphLocation(
-                        book,
-                        replacedParagraph.paragraph_id,
-                      );
-                      if (!location) continue;
+                    // 先按需加载“被影响的章节”，避免 findParagraphLocation 只能查已加载章节导致撤销失效
+                    const chapterIds = Array.from(
+                      new Set(
+                        previousData.replaced_paragraphs
+                          .map((p) => p.chapter_id)
+                          .filter((id): id is string => !!id),
+                      ),
+                    );
+                    const chaptersToLoad: string[] = [];
+                    for (const chapterId of chapterIds) {
+                      const found = ChapterService.findChapterById(book, chapterId);
+                      if (!found) continue;
+                      if (found.chapter.content === undefined) {
+                        chaptersToLoad.push(chapterId);
+                      }
+                    }
+                    if (chaptersToLoad.length > 0) {
+                      const contentsMap =
+                        await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
+                      for (const chapterId of chaptersToLoad) {
+                        const found = ChapterService.findChapterById(book, chapterId);
+                        if (!found) continue;
+                        const content = contentsMap.get(chapterId);
+                        found.chapter.content = content || [];
+                        found.chapter.contentLoaded = true;
+                      }
+                    }
 
-                      const { paragraph } = location;
+                    // 恢复所有被替换的翻译（基于 chapter_id 定位，避免全书遍历）
+                    for (const replacedParagraph of previousData.replaced_paragraphs) {
+                      const chapterInfo = ChapterService.findChapterById(
+                        book,
+                        replacedParagraph.chapter_id,
+                      );
+                      if (!chapterInfo?.chapter.content) continue;
+                      const paragraph = chapterInfo.chapter.content.find(
+                        (p) => p?.id === replacedParagraph.paragraph_id,
+                      );
+                      if (!paragraph) continue;
 
                       // 确保段落有翻译数组
                       if (!paragraph.translations || paragraph.translations.length === 0) {
                         continue;
+                      }
+
+                      // 恢复段落的选中翻译 ID（批量替换可能会在“无选中翻译”时自动设置）
+                      if ('old_selected_translation_id' in replacedParagraph) {
+                        paragraph.selectedTranslationId = replacedParagraph.old_selected_translation_id || '';
                       }
 
                       // 恢复每个翻译
@@ -1532,6 +1572,8 @@ const sendMessage = async () => {
                           // 恢复原始翻译文本
                           paragraph.translations[translationIndex]!.translation =
                             oldTranslation.translation;
+                          // 恢复原始模型信息（更完整的回滚）
+                          paragraph.translations[translationIndex]!.aiModelId = oldTranslation.aiModelId;
                         }
                       }
                     }

@@ -11,7 +11,7 @@ export const MESSAGE_LIMIT_THRESHOLD = 180; // 当达到 180 条消息时触发�
  * 操作信息（用于在消息中标记 CRUD 操作）
  */
 export interface MessageAction {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate' | 'ask';
   entity:
     | 'term'
     | 'character'
@@ -21,7 +21,8 @@ export interface MessageAction {
     | 'paragraph'
     | 'book'
     | 'memory'
-    | 'todo';
+    | 'todo'
+    | 'user';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
@@ -55,6 +56,12 @@ export interface MessageAction {
   // 翻译更新相关信息
   old_translation?: string; // 旧翻译（用于 update_translation）
   new_translation?: string; // 新翻译（用于 update_translation）
+  // ask_user 问答相关信息
+  question?: string; // 问题（用于 ask_user）
+  answer?: string; // 最终答案（用于 ask_user）
+  selected_index?: number; // 选择的候选答案索引（用于 ask_user）
+  cancelled?: boolean; // 是否取消（用于 ask_user）
+  suggested_answers?: string[]; // 候选答案列表（用于 ask_user）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用
   // paragraph_id 在 translation、read 和 navigate 操作中都会使用
 }

@@ -5,7 +5,15 @@ import type { AITool } from 'src/services/ai/types/ai-service';
 import type { ToastCallback } from './toast-helper';
 
 export interface ActionInfo {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate';
+  type:
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'web_search'
+    | 'web_fetch'
+    | 'read'
+    | 'navigate'
+    | 'ask';
   entity:
     | 'term'
     | 'character'
@@ -15,7 +23,8 @@ export interface ActionInfo {
     | 'paragraph'
     | 'book'
     | 'memory'
-    | 'todo';
+    | 'todo'
+    | 'user';
   data:
     | Terminology
     | CharacterSetting
@@ -56,6 +65,14 @@ export interface ActionInfo {
         tool_name?: string;
         limit?: number;
         sort_by?: string;
+      }
+    | {
+        tool_name: 'ask_user';
+        question: string;
+        suggested_answers?: string[];
+        answer?: string;
+        selected_index?: number;
+        cancelled?: boolean;
       };
   previousData?:
     | Terminology
@@ -68,6 +85,7 @@ export interface ActionInfo {
         replaced_paragraphs?: Array<{
           paragraph_id: string;
           chapter_id: string;
+          old_selected_translation_id?: string;
           old_translations: Translation[];
         }>;
       } // 批量替换的原始数据（仅用于 batch_replace_translations 操作）

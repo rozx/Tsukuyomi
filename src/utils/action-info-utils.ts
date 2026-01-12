@@ -16,6 +16,7 @@ export const ACTION_LABELS: Record<MessageAction['type'], string> = {
   web_fetch: '网页获取',
   read: '读取',
   navigate: '导航',
+  ask: '提问',
 };
 
 /**
@@ -31,6 +32,7 @@ export const ENTITY_LABELS: Record<MessageAction['entity'], string> = {
   book: '书籍',
   memory: '记忆',
   todo: '待办事项',
+  user: '用户',
 };
 
 /**
@@ -165,6 +167,23 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
       : {}),
     ...(action.type === 'navigate' && 'paragraph_id' in action.data
       ? { paragraph_id: action.data.paragraph_id }
+      : {}),
+    // ask_user 问答相关信息
+    ...(action.type === 'ask' && action.entity === 'user' && 'question' in action.data
+      ? {
+          tool_name: 'ask_user',
+          question: action.data.question,
+          ...('answer' in action.data && typeof action.data.answer === 'string'
+            ? { answer: action.data.answer }
+            : {}),
+          ...('selected_index' in action.data && typeof action.data.selected_index === 'number'
+            ? { selected_index: action.data.selected_index }
+            : {}),
+          ...('cancelled' in action.data && action.data.cancelled ? { cancelled: true } : {}),
+          ...('suggested_answers' in action.data && Array.isArray(action.data.suggested_answers)
+            ? { suggested_answers: action.data.suggested_answers }
+            : {}),
+        }
       : {}),
     // 章节更新相关信息
     ...(action.type === 'update' &&

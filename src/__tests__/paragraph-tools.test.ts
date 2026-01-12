@@ -398,6 +398,46 @@ describe('batch_replace_translations', () => {
     }
   });
 
+  test('应该在 onAction.previousData 中保存 old_selected_translation_id，用于撤销恢复', async () => {
+    // 创建测试数据：段落没有选中翻译（selectedTranslationId 为空字符串）
+    const para1 = createTestParagraph('para1', '原文1', [
+      { id: 'trans1', translation: '这是测试翻译', aiModelId: 'model1' },
+    ]);
+    para1.selectedTranslationId = '';
+
+    const chapter = createTestChapter('chapter1', [para1]);
+    const volume = createTestVolume('volume1', [chapter]);
+    const novel = createTestNovel([volume]);
+    mockBooksStore.books = [novel];
+
+    mockLoadChapterContentsBatch.mockImplementation((_chapterIds: string[]) => {
+      return Promise.resolve(new Map<string, Paragraph[]>());
+    });
+
+    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    expect(tool).toBeDefined();
+    if (!tool || !tool.handler) {
+      throw new Error('工具未找到');
+    }
+
+    const onAction = mock(() => {});
+    await tool.handler(
+      {
+        keywords: ['测试'],
+        replacement_text: '新翻译',
+        replace_all_translations: false,
+      },
+      { bookId: novel.id, onAction },
+    );
+
+    expect(onAction).toHaveBeenCalled();
+    const actionArg = (onAction as any).mock.calls[0][0] as any;
+    expect(actionArg?.previousData?.replaced_paragraphs?.length).toBe(1);
+    expect(actionArg.previousData.replaced_paragraphs[0].paragraph_id).toBe('para1');
+    // 关键断言：必须保存旧的选中翻译 ID（这里为空字符串）
+    expect(actionArg.previousData.replaced_paragraphs[0].old_selected_translation_id).toBe('');
+  });
+
   test('当使用全文索引时，应传入 novel 引用并正确替换保存（避免对象引用不一致）', async () => {
     // 创建测试数据（store 内的真实对象）
     const para1 = createTestParagraph('para1', '原文1', [
