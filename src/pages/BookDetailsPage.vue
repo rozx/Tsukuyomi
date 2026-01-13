@@ -1148,6 +1148,7 @@ const handleSaveChapterSettings = async (data: {
   normalizeSymbolsOnDisplay?: boolean;
   normalizeTitleOnDisplay?: boolean;
   translationChunkSize?: number;
+  skipAskUser?: boolean;
   // 章节设置（章节级别）
   translationInstructions?: string;
   polishInstructions?: string;
@@ -1162,6 +1163,7 @@ const handleSaveChapterSettings = async (data: {
     const normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay ?? false;
     const normalizeTitleOnDisplay = data.normalizeTitleOnDisplay ?? false;
     const translationChunkSize = data.translationChunkSize ?? 8000;
+    const skipAskUser = data.skipAskUser ?? false;
 
     // 章节设置（章节级别）
     const translationInstructions = data.translationInstructions ?? '';
@@ -1174,6 +1176,7 @@ const handleSaveChapterSettings = async (data: {
       normalizeSymbolsOnDisplay,
       normalizeTitleOnDisplay,
       translationChunkSize,
+      skipAskUser,
       lastEdited: new Date(),
     };
 

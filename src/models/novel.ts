@@ -64,6 +64,14 @@ export interface Novel {
    * - 此设置应用于整个书籍的所有章节
    */
   translationChunkSize?: number | undefined;
+
+  /**
+   * 是否跳过 AI 追问（ask_user）
+   * - true: 翻译相关任务不提供 ask_user 工具，并在兜底情况下直接返回 cancelled（不弹出问答对话框）
+   * - false/undefined: 默认行为（允许 ask_user）
+   * - 此设置应用于整个书籍的所有章节
+   */
+  skipAskUser?: boolean | undefined;
 }
 
 export interface CoverImage {

@@ -21,6 +21,7 @@ declare module 'vue' {
     AppMessage: typeof import('./components/common/AppMessage.vue')['default']
     AppRightPanel: typeof import('./components/layout/AppRightPanel.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
+    AskUserDialog: typeof import('./components/dialogs/AskUserDialog.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
     ChapterContentPanel: typeof import('./components/novel/ChapterContentPanel.vue')['default']
     ChapterSettingsPopover: typeof import('./components/novel/ChapterSettingsPopover.vue')['default']

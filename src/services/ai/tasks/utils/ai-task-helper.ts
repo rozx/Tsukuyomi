@@ -884,15 +884,17 @@ export function buildBookContextSectionFromBook(book: {
   title?: string | undefined;
   description?: string | undefined;
   tags?: string[] | undefined;
+  skipAskUser?: boolean | undefined;
 }): string {
   const title = typeof book.title === 'string' ? book.title.trim() : '';
   const description = typeof book.description === 'string' ? book.description.trim() : '';
   const tags = Array.isArray(book.tags)
     ? book.tags.filter((t) => typeof t === 'string' && t.trim())
     : [];
+  const skipAskUser = !!book.skipAskUser;
 
   // 如果都没有，返回空字符串
-  if (!title && !description && tags.length === 0) {
+  if (!title && !description && tags.length === 0 && !skipAskUser) {
     return '';
   }
 
@@ -913,6 +915,9 @@ export function buildBookContextSectionFromBook(book: {
   if (tags.length > 0) {
     parts.push(`**标签**: ${tags.join('、')}`);
   }
+  if (skipAskUser) {
+    parts.push('**已开启跳过 AI 追问**: 是（禁止调用 `ask_user`）');
+  }
 
   return `\n\n【书籍信息】\n${parts.join('\n')}\n`;
 }
@@ -925,26 +930,10 @@ export async function buildBookContextSection(bookId?: string): Promise<string> 
   if (!bookId) return '';
 
   try {
-    // 动态导入，避免循环依赖与在测试环境中提前初始化 pinia
-    const booksStore = (await import('src/stores/books')).useBooksStore();
-    const storeBook = booksStore.getBookById(bookId);
-    if (storeBook) {
-      return buildBookContextSectionFromBook({
-        title: storeBook.title,
-        description: storeBook.description,
-        tags: storeBook.tags,
-      });
-    }
-
-    // 回退：直接从 IndexedDB 获取（不加载章节内容）
-    const { BookService } = await import('src/services/book-service');
-    const dbBook = await BookService.getBookById(bookId, false);
-    if (dbBook) {
-      return buildBookContextSectionFromBook({
-        title: dbBook.title,
-        description: dbBook.description,
-        tags: dbBook.tags,
-      });
+    const { GlobalConfig } = await import('src/services/global-config-cache');
+    const source = await GlobalConfig.getBookContextSource(bookId);
+    if (source) {
+      return buildBookContextSectionFromBook(source);
     }
   } catch (e) {
     console.warn(
@@ -954,6 +943,24 @@ export async function buildBookContextSection(bookId?: string): Promise<string> 
   }
 
   return '';
+}
+
+/**
+ * 获取书籍级配置：是否跳过 ask_user（优先 store，必要时回退 BookService）
+ */
+export async function isSkipAskUserEnabled(bookId?: string): Promise<boolean> {
+  if (!bookId) return false;
+
+  try {
+    const { GlobalConfig } = await import('src/services/global-config-cache');
+    return await GlobalConfig.isSkipAskUserEnabledForBook(bookId);
+  } catch (e) {
+    console.warn(
+      `[isSkipAskUserEnabled] ⚠️ 获取书籍设置失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+    return false;
+  }
 }
 
 /**

@@ -97,6 +97,25 @@ const formatActionForContext = (action: MessageAction): string => {
   if (action.url) parts.push(`URL=${truncateForContext(action.url, 120)}`);
   if (action.question) parts.push(`问题=${truncateForContext(action.question, 120)}`);
   if (action.answer) parts.push(`答案=${truncateForContext(action.answer, 120)}`);
+  if (
+    action.tool_name === 'ask_user_batch' &&
+    Array.isArray(action.batch_questions) &&
+    action.batch_questions.length > 0
+  ) {
+    parts.push(`题数=${action.batch_questions.length}`);
+    if (Array.isArray(action.batch_answers) && action.batch_answers.length > 0) {
+      const answered = action.batch_answers.length;
+      parts.push(`已答=${answered}`);
+      // 只展示前 2 题的“Q→A”预览，避免上下文膨胀
+      const previews = action.batch_answers
+        .slice(0, 2)
+        .map((a) => {
+          const q = action.batch_questions?.[a.question_index] ?? `#${a.question_index + 1}`;
+          return `${truncateForContext(q, 40)}→${truncateForContext(a.answer, 40)}`;
+        });
+      if (previews.length > 0) parts.push(`预览=${previews.join('；')}${answered > 2 ? '…' : ''}`);
+    }
+  }
   if (action.cancelled) parts.push('已取消');
   if (typeof action.selected_index === 'number') parts.push(`选项#=${action.selected_index}`);
 

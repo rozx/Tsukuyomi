@@ -11,6 +11,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useContextStore } from 'src/stores/context';
 import { useElectronSettings } from 'src/composables/useElectronSettings';
+import { GlobalConfig } from 'src/services/global-config-cache';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -46,6 +47,8 @@ onMounted(async () => {
     toastHistoryStore.loadHistory(),
     coverHistoryStore.loadCoverHistory(),
     aiProcessingStore.loadThinkingProcesses(),
+    // 初始化全局配置访问层（确保服务/工具层读取配置时不需要再重复读 IndexedDB）
+    GlobalConfig.ensureInitialized(),
   ]).catch((error) => {
     console.error('Failed to load initial data:', error);
   });

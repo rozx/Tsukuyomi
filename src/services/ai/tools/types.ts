@@ -73,6 +73,16 @@ export interface ActionInfo {
         answer?: string;
         selected_index?: number;
         cancelled?: boolean;
+      }
+    | {
+        tool_name: 'ask_user_batch';
+        questions: string[];
+        answers: Array<{
+          question_index: number;
+          answer: string;
+          selected_index?: number;
+        }>;
+        cancelled?: boolean;
       };
   previousData?:
     | Terminology

@@ -13,7 +13,13 @@ import { useAutoSync } from 'src/composables/useAutoSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
-import { useAskUserStore, type AskUserPayload, type AskUserResult } from 'src/stores/ask-user';
+import {
+  useAskUserStore,
+  type AskUserBatchPayload,
+  type AskUserBatchResult,
+  type AskUserPayload,
+  type AskUserResult,
+} from 'src/stores/ask-user';
 
 const ui = useUiStore();
 const { markAsReadByMessage } = useToastHistory();
@@ -31,8 +37,14 @@ if (typeof window !== 'undefined') {
   (
     window as unknown as {
       __lunaAskUser?: (payload: AskUserPayload) => Promise<AskUserResult>;
+      __lunaAskUserBatch?: (payload: AskUserBatchPayload) => Promise<AskUserBatchResult>;
     }
   ).__lunaAskUser = (payload: AskUserPayload) => askUserStore.ask(payload);
+  (
+    window as unknown as {
+      __lunaAskUserBatch?: (payload: AskUserBatchPayload) => Promise<AskUserBatchResult>;
+    }
+  ).__lunaAskUserBatch = (payload: AskUserBatchPayload) => askUserStore.askBatch(payload);
 }
 
 // 跟踪之前的任务状态，用于检测状态变化

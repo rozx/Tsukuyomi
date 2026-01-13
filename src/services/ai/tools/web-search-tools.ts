@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { ToolDefinition, ToolContext } from './types';
-import { useSettingsStore } from 'src/stores/settings';
+import { GlobalConfig } from 'src/services/global-config-cache';
 
 const TAVILY_API_URL = 'https://api.tavily.com';
 
@@ -21,8 +21,8 @@ async function searchWeb(query: string): Promise<{
 }> {
   try {
     // 获取 Tavily API Key
-    const settingsStore = useSettingsStore();
-    const apiKey = settingsStore.tavilyApiKey;
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+    const apiKey = GlobalConfig.getTavilyApiKey();
 
     if (!apiKey) {
       console.warn('[WebSearch] ⚠️ 未配置 Tavily API Key');
@@ -125,8 +125,8 @@ async function fetchWebpage(url: string): Promise<{
     }
 
     // 获取 Tavily API Key
-    const settingsStore = useSettingsStore();
-    const apiKey = settingsStore.tavilyApiKey;
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+    const apiKey = GlobalConfig.getTavilyApiKey();
 
     if (!apiKey) {
       console.warn('[WebPage] ⚠️ 未配置 Tavily API Key');

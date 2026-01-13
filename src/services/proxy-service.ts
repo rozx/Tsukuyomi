@@ -1,7 +1,8 @@
-import { useSettingsStore } from 'src/stores/settings';
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 import { extractRootDomain } from 'src/utils/domain-utils';
 import co from 'co';
+import { GlobalConfig } from 'src/services/global-config-cache';
+import { useSettingsStore } from 'src/stores/settings';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
@@ -9,8 +10,7 @@ import co from 'co';
  * 获取代理显示名称
  */
 function getProxyDisplayName(proxyUrl: string): string {
-  const settingsStore = useSettingsStore();
-  const proxyList = settingsStore.proxyList;
+  const proxyList = GlobalConfig.getProxyList();
   const proxy = proxyList.find((p) => p.url === proxyUrl);
   return proxy ? proxy.name : proxyUrl;
 }
@@ -58,9 +58,8 @@ export class ProxyService {
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
 
     // 检查是否启用了代理
-    const settingsStore = useSettingsStore();
-    const proxyEnabled = settingsStore.proxyEnabled;
-    let proxyUrl = settingsStore.proxyUrl;
+    const proxyEnabled = GlobalConfig.getProxyEnabled();
+    let proxyUrl = GlobalConfig.getProxyUrl();
 
     // 如果启用了代理，优先使用网站特定的代理
     if (proxyEnabled) {
@@ -68,7 +67,7 @@ export class ProxyService {
       if (domain) {
         const rootDomain = extractRootDomain(domain);
         if (rootDomain) {
-          const siteProxies = settingsStore.getProxiesForSite(rootDomain);
+          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
           if (siteProxies.length > 0) {
             // 如果当前代理在网站特定列表中，使用当前代理
             // 否则使用网站特定列表中的第一个
@@ -127,8 +126,7 @@ export class ProxyService {
    * @returns 是否启用代理
    */
   static isProxyEnabled(): boolean {
-    const settingsStore = useSettingsStore();
-    return settingsStore.proxyEnabled ?? false;
+    return GlobalConfig.getProxyEnabled();
   }
 
   /**
@@ -136,8 +134,7 @@ export class ProxyService {
    * @returns 代理 URL 或空字符串
    */
   static getProxyUrl(): string {
-    const settingsStore = useSettingsStore();
-    return settingsStore.proxyUrl ?? '';
+    return GlobalConfig.getProxyUrl();
   }
 
   /**
@@ -182,8 +179,7 @@ export class ProxyService {
    * @returns 下一个代理服务 URL 或 null（如果没有更多代理服务）
    */
   static getNextProxyUrl(originalUrl?: string | null): string | null {
-    const settingsStore = useSettingsStore();
-    const currentUrl = settingsStore.proxyUrl ?? '';
+    const currentUrl = GlobalConfig.getProxyUrl();
 
     // 如果提供了原始 URL，优先使用网站特定的代理列表
     if (originalUrl) {
@@ -191,7 +187,7 @@ export class ProxyService {
       if (domain) {
         const rootDomain = extractRootDomain(domain);
         if (rootDomain) {
-          const siteProxies = settingsStore.getProxiesForSite(rootDomain);
+          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
           if (siteProxies.length > 0) {
             // 查找当前代理在网站特定列表中的索引
             const currentIndex = siteProxies.findIndex((url) => url === currentUrl);
@@ -211,7 +207,7 @@ export class ProxyService {
     }
 
     // 查找当前代理在代理列表中的索引
-    const proxyList = settingsStore.proxyList;
+    const proxyList = GlobalConfig.getProxyList();
     const currentIndex = proxyList.findIndex((proxy) => proxy.url === currentUrl);
 
     // 如果找到当前代理，切换到下一个
@@ -311,8 +307,7 @@ export class ProxyService {
    * @returns 是否已切换到下一个代理服务
    */
   static handleProxyError(error: unknown): boolean {
-    const settingsStore = useSettingsStore();
-    const autoSwitch = settingsStore.proxyAutoSwitch ?? false;
+    const autoSwitch = GlobalConfig.getProxyAutoSwitch();
 
     // 如果未启用自动切换，不处理
     if (!autoSwitch) {
@@ -342,12 +337,11 @@ export class ProxyService {
    * @returns 代理 URL 或 null
    */
   private static getProxyUrlForAttempt(originalUrl: string, attemptIndex: number): string | null {
-    const settingsStore = useSettingsStore();
-    const defaultProxyUrl = settingsStore.proxyUrl ?? '';
+    const defaultProxyUrl = GlobalConfig.getProxyUrl();
     const domain = this.extractDomain(originalUrl);
     const rootDomain = domain ? extractRootDomain(domain) : null;
-    const siteProxies = rootDomain ? settingsStore.getProxiesForSite(rootDomain) : [];
-    const proxyList = settingsStore.proxyList;
+    const siteProxies = rootDomain ? GlobalConfig.getProxiesForSite(rootDomain) : [];
+    const proxyList = GlobalConfig.getProxyList();
 
     // 第一次尝试：优先使用默认代理
     if (attemptIndex === 0) {
@@ -435,11 +429,12 @@ export class ProxyService {
   ): Promise<T> {
     const { skipProxy = false, skipInternalProxy = false, maxRetries = 3 } = options;
     const settingsStore = useSettingsStore();
-    const autoSwitch = settingsStore.proxyAutoSwitch ?? false;
-    const defaultProxyUrl = settingsStore.proxyUrl ?? '';
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+    const autoSwitch = GlobalConfig.getProxyAutoSwitch();
+    const defaultProxyUrl = GlobalConfig.getProxyUrl();
 
     // 如果跳过代理或未启用代理，直接执行请求
-    if (skipProxy || !settingsStore.proxyEnabled) {
+    if (skipProxy || !GlobalConfig.getProxyEnabled()) {
       const proxiedUrl = this.getProxiedUrl(originalUrl, { skipProxy, skipInternalProxy });
       return await requestFn(proxiedUrl);
     }
@@ -465,7 +460,7 @@ export class ProxyService {
         const result = await requestFn(proxiedUrl);
 
         // 如果请求成功，且使用的不是默认代理，且启用了自动添加映射，记录到网站-代理映射中
-        const autoAddMapping = settingsStore.proxyAutoAddMapping ?? true;
+        const autoAddMapping = GlobalConfig.getProxyAutoAddMapping();
         if (
           autoSwitch &&
           autoAddMapping &&

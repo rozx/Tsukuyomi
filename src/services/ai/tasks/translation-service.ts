@@ -30,6 +30,7 @@ import {
   buildChapterContextSection,
   buildBookContextSection,
   buildSpecialInstructionsSection,
+  isSkipAskUserEnabled,
   type TextChunk,
   filterProcessedParagraphs,
   markProcessedParagraphs,
@@ -224,7 +225,8 @@ export class TranslationService {
     try {
       const service = AIServiceFactory.getService(model.provider);
       // 使用翻译专用工具集，排除导航和列表工具，让AI专注于当前文本块
-      const tools = ToolRegistry.getTranslationTools(bookId);
+      const skipAskUser = await isSkipAskUserEnabled(bookId);
+      const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,

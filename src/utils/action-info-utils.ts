@@ -168,8 +168,12 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(action.type === 'navigate' && 'paragraph_id' in action.data
       ? { paragraph_id: action.data.paragraph_id }
       : {}),
-    // ask_user 问答相关信息
-    ...(action.type === 'ask' && action.entity === 'user' && 'question' in action.data
+    // ask_user / ask_user_batch 问答相关信息
+    ...(action.type === 'ask' &&
+    action.entity === 'user' &&
+    'tool_name' in action.data &&
+    action.data.tool_name === 'ask_user' &&
+    'question' in action.data
       ? {
           tool_name: 'ask_user',
           question: action.data.question,
@@ -183,6 +187,19 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
           ...('suggested_answers' in action.data && Array.isArray(action.data.suggested_answers)
             ? { suggested_answers: action.data.suggested_answers }
             : {}),
+        }
+      : {}),
+    ...(action.type === 'ask' &&
+    action.entity === 'user' &&
+    'tool_name' in action.data &&
+    action.data.tool_name === 'ask_user_batch' &&
+    'questions' in action.data &&
+    'answers' in action.data
+      ? {
+          tool_name: 'ask_user_batch',
+          batch_questions: action.data.questions,
+          batch_answers: action.data.answers,
+          ...('cancelled' in action.data && action.data.cancelled ? { cancelled: true } : {}),
         }
       : {}),
     // 章节更新相关信息
@@ -227,6 +244,25 @@ export function getActionDetails(
       label: '名称',
       value: action.name,
     });
+  }
+
+  // 批量问答详情
+  if (action.type === 'ask' && action.entity === 'user' && action.tool_name === 'ask_user_batch') {
+    const questions = action.batch_questions ?? [];
+    const answers = action.batch_answers ?? [];
+    details.push({
+      label: '问题数量',
+      value: `${questions.length} 题`,
+    });
+    for (const ans of answers) {
+      const q = questions[ans.question_index] ?? `#${ans.question_index + 1}`;
+      const aPreview =
+        ans.answer.length > 120 ? ans.answer.substring(0, 120) + '...' : ans.answer;
+      details.push({
+        label: `第 ${ans.question_index + 1} 题`,
+        value: `${q} → ${aPreview}`,
+      });
+    }
   }
 
   // 尝试从当前书籍获取详细信息

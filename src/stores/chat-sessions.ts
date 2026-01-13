@@ -62,6 +62,13 @@ export interface MessageAction {
   selected_index?: number; // 选择的候选答案索引（用于 ask_user）
   cancelled?: boolean; // 是否取消（用于 ask_user）
   suggested_answers?: string[]; // 候选答案列表（用于 ask_user）
+  // ask_user_batch 批量问答相关信息
+  batch_questions?: string[]; // 问题列表（用于 ask_user_batch）
+  batch_answers?: Array<{
+    question_index: number;
+    answer: string;
+    selected_index?: number;
+  }>; // 已答部分/最终答案（用于 ask_user_batch）
   // 注意：chapter_id 和 chapter_title 在 read 和 navigate 操作中都会使用
   // paragraph_id 在 translation、read 和 navigate 操作中都会使用
 }

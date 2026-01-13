@@ -10,7 +10,7 @@ import { memoryTools } from './memory-tools';
 import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
 import { askUserTools } from './ask-user-tools';
-import { useSettingsStore } from 'src/stores/settings';
+import { GlobalConfig } from 'src/services/global-config-cache';
 
 export type { ActionInfo };
 
@@ -83,8 +83,7 @@ export class ToolRegistry {
 
   static getWebSearchTools(): AITool[] {
     // 检查是否已配置 Tavily API Key
-    const settingsStore = useSettingsStore();
-    const apiKey = settingsStore.tavilyApiKey;
+    const apiKey = GlobalConfig.getTavilyApiKey();
 
     // 如果没有配置 API Key，不返回网络搜索工具
     if (!apiKey) {
@@ -173,9 +172,16 @@ export class ToolRegistry {
    * 获取翻译服务允许的工具
    * 排除翻译管理工具和导航/列表工具，让AI专注于当前文本块
    */
-  static getTranslationTools(bookId?: string): AITool[] {
+  static getTranslationTools(bookId?: string, options?: { excludeAskUser?: boolean }): AITool[] {
     const allTools = this.getToolsExcludingTranslationManagement(bookId);
-    return this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
+    let tools = this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
+
+    // 书籍级配置：在翻译相关任务中跳过 ask_user（不向模型提供该工具）
+    if (options?.excludeAskUser) {
+      tools = this.filterTools(tools, ['ask_user', 'ask_user_batch']);
+    }
+
+    return tools;
   }
 
   /**

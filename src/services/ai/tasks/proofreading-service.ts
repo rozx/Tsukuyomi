@@ -32,6 +32,7 @@ import {
   markProcessedParagraphsFromMap,
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
+  isSkipAskUserEnabled,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -202,7 +203,8 @@ export class ProofreadingService {
     try {
       const service = AIServiceFactory.getService(model.provider);
       // 与翻译服务保持一致：排除翻译管理工具 + 导航/列表工具（让模型专注于当前文本块）
-      const tools = ToolRegistry.getTranslationTools(bookId);
+      const skipAskUser = await isSkipAskUserEnabled(bookId);
+      const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,

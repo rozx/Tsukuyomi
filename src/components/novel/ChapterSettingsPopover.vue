@@ -26,6 +26,7 @@ const emit = defineEmits<{
       normalizeSymbolsOnDisplay?: boolean;
       normalizeTitleOnDisplay?: boolean;
       translationChunkSize?: number;
+      skipAskUser?: boolean;
       // 章节设置（章节级别）
       translationInstructions?: string;
       polishInstructions?: string;
@@ -56,6 +57,8 @@ const normalizeSymbolsOnDisplayEnabled = ref(false);
 const normalizeTitleOnDisplayEnabled = ref(false);
 // 翻译任务分块大小
 const translationChunkSize = ref<number | null>(null);
+// 是否跳过 AI 追问（ask_user）
+const skipAskUserEnabled = ref(false);
 
 // 章节设置数据（章节级别）
 const translationInstructions = ref('');
@@ -73,12 +76,14 @@ watch(
       normalizeSymbolsOnDisplayEnabled.value = props.book.normalizeSymbolsOnDisplay ?? false;
       normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
       translationChunkSize.value = props.book.translationChunkSize ?? 8000;
+      skipAskUserEnabled.value = props.book.skipAskUser ?? false;
     } else {
       // 默认保留缩进（不过滤）
       filterIndentsEnabled.value = false;
       normalizeSymbolsOnDisplayEnabled.value = false;
       normalizeTitleOnDisplayEnabled.value = false;
       translationChunkSize.value = 8000;
+      skipAskUserEnabled.value = false;
     }
 
     // 章节设置（章节级别）
@@ -115,6 +120,7 @@ const handleSave = () => {
     polishInstructions?: string;
     proofreadingInstructions?: string;
     translationChunkSize?: number;
+    skipAskUser?: boolean;
   } = {
     // 全局设置
     // preserveIndents: true 表示保留缩进；过滤开关开启时应保存为 false
@@ -122,6 +128,7 @@ const handleSave = () => {
     normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
     normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
     translationChunkSize: translationChunkSize.value ?? 8000,
+    skipAskUser: skipAskUserEnabled.value,
     // 章节设置
     translationInstructions: translationInstructions.value.trim(),
     polishInstructions: polishInstructions.value.trim(),
@@ -177,58 +184,87 @@ defineExpose({
               <!-- 全局设置标签页 -->
               <TabPanel value="global">
                 <div class="space-y-4 pt-2">
-                  <div class="flex items-center justify-between">
-                    <div class="flex-1">
-                      <label class="text-sm font-medium text-moon-100 block mb-1">
-                        过滤行首空格（缩进）
-                      </label>
-                      <small class="text-moon/60 text-xs block">
-                        启用时，在显示和导出翻译时会自动移除行首空格；禁用时保留所有空格。翻译时始终保留原始缩进，此设置仅影响显示和导出。此设置应用于整个书籍的所有章节。
-                      </small>
+                  <!-- 开关设置（统一分组） -->
+                  <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+                    <div class="px-3 py-2 border-b border-white/10">
+                      <div class="text-sm font-medium text-moon-100">开关设置</div>
+                      <div class="text-xs text-moon/60 mt-1">以下开关均为书籍级别设置</div>
                     </div>
-                    <InputSwitch v-model="filterIndentsEnabled" />
+
+                    <div class="divide-y divide-white/10">
+                      <div class="flex items-start justify-between gap-3 p-3">
+                        <div class="flex-1">
+                          <label class="text-sm font-medium text-moon-100 block mb-1">
+                            过滤行首空格（缩进）
+                          </label>
+                          <small class="text-moon/60 text-xs block">
+                            启用时，在显示和导出翻译时会自动移除行首空格；禁用时保留所有空格。翻译时始终保留原始缩进，此设置仅影响显示和导出。此设置应用于整个书籍的所有章节。
+                          </small>
+                        </div>
+                        <InputSwitch v-model="filterIndentsEnabled" />
+                      </div>
+
+                      <div class="flex items-start justify-between gap-3 p-3">
+                        <div class="flex-1">
+                          <label class="text-sm font-medium text-moon-100 block mb-1">
+                            显示时规范化符号
+                          </label>
+                          <small class="text-moon/60 text-xs block">
+                            启用时，仅在显示和导出时规范化译文中的引号、标点、空格等；不会改写或保存译文内容。
+                          </small>
+                        </div>
+                        <InputSwitch v-model="normalizeSymbolsOnDisplayEnabled" />
+                      </div>
+
+                      <div class="flex items-start justify-between gap-3 p-3">
+                        <div class="flex-1">
+                          <label class="text-sm font-medium text-moon-100 block mb-1">
+                            显示时规范化标题
+                          </label>
+                          <small class="text-moon/60 text-xs block">
+                            启用时，仅在显示和导出时规范化章节标题（如：将全角数字和汉字之间的半角空格转换为全角空格）；不会改写或保存标题内容。
+                          </small>
+                        </div>
+                        <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
+                      </div>
+
+                      <div class="flex items-start justify-between gap-3 p-3">
+                        <div class="flex-1">
+                          <label class="text-sm font-medium text-moon-100 block mb-1">
+                            跳过 AI 追问（不弹出问答对话框）
+                          </label>
+                          <small class="text-moon/60 text-xs block">
+                            启用时，本书在翻译/润色/校对任务中不会提供 ask_user 工具，也不会弹出全屏问答对话框；模型需要自行决策或继续执行。
+                          </small>
+                        </div>
+                        <InputSwitch v-model="skipAskUserEnabled" />
+                      </div>
+                    </div>
                   </div>
 
-                  <div class="flex items-center justify-between">
-                    <div class="flex-1">
+                  <!-- 分块设置（独立分组） -->
+                  <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+                    <div class="px-3 py-2 border-b border-white/10">
+                      <div class="text-sm font-medium text-moon-100">分块设置</div>
+                      <div class="text-xs text-moon/60 mt-1">用于翻译相关任务的分块处理</div>
+                    </div>
+                    <div class="p-3">
                       <label class="text-sm font-medium text-moon-100 block mb-1">
-                        显示时规范化符号
+                        翻译任务分块大小（字符数，近似 tokens）
                       </label>
-                      <small class="text-moon/60 text-xs block">
-                        启用时，仅在显示和导出时规范化译文中的引号、标点、空格等；不会改写或保存译文内容。
+                      <InputNumber
+                        v-model="translationChunkSize"
+                        :min="1000"
+                        :max="50000"
+                        :step="500"
+                        :show-buttons="true"
+                        class="w-full"
+                        input-class="w-full"
+                      />
+                      <small class="text-moon/60 text-xs block mt-1">
+                        用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：8000。此设置应用于整个书籍的所有章节。
                       </small>
                     </div>
-                    <InputSwitch v-model="normalizeSymbolsOnDisplayEnabled" />
-                  </div>
-
-                  <div class="flex items-center justify-between">
-                    <div class="flex-1">
-                      <label class="text-sm font-medium text-moon-100 block mb-1">
-                        显示时规范化标题
-                      </label>
-                      <small class="text-moon/60 text-xs block">
-                        启用时，仅在显示和导出时规范化章节标题（如：将全角数字和汉字之间的半角空格转换为全角空格）；不会改写或保存标题内容。
-                      </small>
-                    </div>
-                    <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
-                  </div>
-
-                  <div>
-                    <label class="text-sm font-medium text-moon-100 block mb-1">
-                      翻译任务分块大小（字符数，近似 tokens）
-                    </label>
-                    <InputNumber
-                      v-model="translationChunkSize"
-                      :min="1000"
-                      :max="50000"
-                      :step="500"
-                      :show-buttons="true"
-                      class="w-full"
-                      input-class="w-full"
-                    />
-                    <small class="text-moon/60 text-xs block mt-1">
-                      用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：8000。此设置应用于整个书籍的所有章节。
-                    </small>
                   </div>
                 </div>
               </TabPanel>
@@ -236,61 +272,72 @@ defineExpose({
               <!-- 章节设置标签页 -->
               <TabPanel value="chapter">
                 <div v-if="chapter">
-                  <Tabs
-                    :value="currentInstructionTab"
-                    @update:value="handleInstructionTabChange"
-                    class="chapter-settings-instruction-tabs"
-                  >
-                    <TabList>
-                      <Tab value="translation">翻译指令</Tab>
-                      <Tab value="polish">润色指令</Tab>
-                      <Tab value="proofreading">校对指令</Tab>
-                    </TabList>
-                    <TabPanels>
-                      <TabPanel value="translation">
-                        <div class="space-y-2 pt-2">
-                          <Textarea
-                            v-model="translationInstructions"
-                            placeholder="输入翻译任务的特殊指令（可选）"
-                            :rows="8"
-                            :auto-resize="true"
-                            class="w-full"
-                          />
-                          <small class="text-moon/60 text-xs block"
-                            >这些指令将在执行翻译任务时添加到系统提示词中，仅应用于当前章节</small
-                          >
-                        </div>
-                      </TabPanel>
-                      <TabPanel value="polish">
-                        <div class="space-y-2 pt-2">
-                          <Textarea
-                            v-model="polishInstructions"
-                            placeholder="输入润色任务的特殊指令（可选）"
-                            :rows="8"
-                            :auto-resize="true"
-                            class="w-full"
-                          />
-                          <small class="text-moon/60 text-xs block"
-                            >这些指令将在执行润色任务时添加到系统提示词中，仅应用于当前章节</small
-                          >
-                        </div>
-                      </TabPanel>
-                      <TabPanel value="proofreading">
-                        <div class="space-y-2 pt-2">
-                          <Textarea
-                            v-model="proofreadingInstructions"
-                            placeholder="输入校对任务的特殊指令（可选）"
-                            :rows="8"
-                            :auto-resize="true"
-                            class="w-full"
-                          />
-                          <small class="text-moon/60 text-xs block"
-                            >这些指令将在执行校对任务时添加到系统提示词中，仅应用于当前章节</small
-                          >
-                        </div>
-                      </TabPanel>
-                    </TabPanels>
-                  </Tabs>
+                  <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden mt-2">
+                    <div class="px-3 py-2 border-b border-white/10">
+                      <div class="text-sm font-medium text-moon-100">章节特殊指令</div>
+                      <div class="text-xs text-moon/60 mt-1">
+                        仅作用于当前章节；会添加到对应任务的系统提示词中
+                      </div>
+                    </div>
+
+                    <div class="p-3">
+                      <Tabs
+                        :value="currentInstructionTab"
+                        @update:value="handleInstructionTabChange"
+                        class="chapter-settings-instruction-tabs"
+                      >
+                        <TabList>
+                          <Tab value="translation">翻译指令</Tab>
+                          <Tab value="polish">润色指令</Tab>
+                          <Tab value="proofreading">校对指令</Tab>
+                        </TabList>
+                        <TabPanels>
+                          <TabPanel value="translation">
+                            <div class="space-y-2 pt-2">
+                              <Textarea
+                                v-model="translationInstructions"
+                                placeholder="输入翻译任务的特殊指令（可选）"
+                                :rows="8"
+                                :auto-resize="true"
+                                class="w-full"
+                              />
+                              <small class="text-moon/60 text-xs block">
+                                这些指令将在执行翻译任务时添加到系统提示词中，仅应用于当前章节
+                              </small>
+                            </div>
+                          </TabPanel>
+                          <TabPanel value="polish">
+                            <div class="space-y-2 pt-2">
+                              <Textarea
+                                v-model="polishInstructions"
+                                placeholder="输入润色任务的特殊指令（可选）"
+                                :rows="8"
+                                :auto-resize="true"
+                                class="w-full"
+                              />
+                              <small class="text-moon/60 text-xs block">
+                                这些指令将在执行润色任务时添加到系统提示词中，仅应用于当前章节
+                              </small>
+                            </div>
+                          </TabPanel>
+                          <TabPanel value="proofreading">
+                            <div class="space-y-2 pt-2">
+                              <Textarea
+                                v-model="proofreadingInstructions"
+                                placeholder="输入校对任务的特殊指令（可选）"
+                                :rows="8"
+                                :auto-resize="true"
+                                class="w-full"
+                              />
+                              <small class="text-moon/60 text-xs block">
+                                这些指令将在执行校对任务时添加到系统提示词中，仅应用于当前章节
+                              </small>
+                            </div>
+                          </TabPanel>
+                        </TabPanels>
+                      </Tabs>
+                    </div>
+                  </div>
                 </div>
                 <div v-else class="pt-4 text-center text-moon/60 text-sm">
                   请先选择一个章节
@@ -357,6 +404,45 @@ defineExpose({
 
 .chapter-settings-instruction-tabs :deep(.p-tabpanels) {
   padding: 0;
+}
+
+/* PrimeVue Tabs（v4）实际渲染类名：.p-tabs-list / .p-tabs-panels / .p-tab-panel
+ * 为保证分组背景一致，这里让 Tabs 容器本身透明，从而透出外层 bg-white/5
+ */
+.chapter-settings-instruction-tabs :deep([data-pc-name='tablist']),
+.chapter-settings-instruction-tabs :deep(.p-tabs-list),
+.chapter-settings-instruction-tabs :deep([data-pc-name='tabpanels']),
+.chapter-settings-instruction-tabs :deep(.p-tabs-panels),
+.chapter-settings-instruction-tabs :deep([data-pc-name='tabpanel']),
+.chapter-settings-instruction-tabs :deep(.p-tab-panel) {
+  background: transparent !important;
+}
+
+/* 让章节特殊指令的输入框背景与分组容器（bg-white/5）一致
+ * PrimeVue Textarea 在不同版本/主题下类名可能不同，这里做选择器兜底
+ */
+.chapter-settings-instruction-tabs :deep(.p-textarea),
+.chapter-settings-instruction-tabs :deep(.p-inputtextarea),
+.chapter-settings-instruction-tabs :deep([data-pc-name='textarea']),
+.chapter-settings-instruction-tabs :deep(textarea) {
+  background: var(--white-opacity-5) !important;
+  border: 1px solid var(--white-opacity-10) !important;
+  color: var(--moon-opacity-90) !important;
+}
+
+.chapter-settings-instruction-tabs :deep(.p-textarea:focus),
+.chapter-settings-instruction-tabs :deep(.p-inputtextarea:focus),
+.chapter-settings-instruction-tabs :deep([data-pc-name='textarea']:focus),
+.chapter-settings-instruction-tabs :deep(textarea:focus) {
+  border-color: var(--primary-opacity-50) !important;
+  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.1) !important;
+}
+
+.chapter-settings-instruction-tabs :deep(.p-textarea::placeholder),
+.chapter-settings-instruction-tabs :deep(.p-inputtextarea::placeholder),
+.chapter-settings-instruction-tabs :deep([data-pc-name='textarea']::placeholder),
+.chapter-settings-instruction-tabs :deep(textarea::placeholder) {
+  color: var(--moon-opacity-50) !important;
 }
 </style>
 

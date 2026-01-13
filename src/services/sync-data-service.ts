@@ -3,6 +3,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
+import { GlobalConfig } from 'src/services/global-config-cache';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
@@ -359,14 +360,15 @@ export class SyncDataService {
     const aiModelsStore = useAIModelsStore();
     const booksStore = useBooksStore();
     const coverHistoryStore = useCoverHistoryStore();
-    const settingsStore = useSettingsStore();
+    const settings = GlobalConfig.getAllSettingsSnapshot();
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
 
     return {
       models: JSON.parse(JSON.stringify(aiModelsStore.models)),
       books: JSON.parse(JSON.stringify(booksStore.books)),
       covers: JSON.parse(JSON.stringify(coverHistoryStore.covers)),
-      settings: JSON.parse(JSON.stringify(settingsStore.getAllSettings())),
-      gistSync: JSON.parse(JSON.stringify(settingsStore.gistSync)),
+      settings: JSON.parse(JSON.stringify(settings ?? {})),
+      gistSync: JSON.parse(JSON.stringify(gistSync ?? {})),
     };
   }
 
@@ -428,6 +430,8 @@ export class SyncDataService {
     lastSyncTime?: number,
     isManualRetrieval = false,
   ): Promise<RestorableItem[]> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
     // 如果 remoteData 为 null，直接返回
     if (!remoteData) {
       return [];
@@ -450,7 +454,8 @@ export class SyncDataService {
     const settingsStore = useSettingsStore();
 
     // 如果没有传入 lastSyncTime，从设置中获取
-    const syncTime = lastSyncTime ?? settingsStore.gistSync.lastSyncTime ?? 0;
+    const gistSyncSnapshot = GlobalConfig.getGistSyncSnapshot();
+    const syncTime = lastSyncTime ?? gistSyncSnapshot?.lastSyncTime ?? 0;
 
     try {
       // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
@@ -472,7 +477,7 @@ export class SyncDataService {
       // 注意：即使远程列表为空，也需要处理本地独有的模型
       if (remoteData.aiModels && Array.isArray(remoteData.aiModels)) {
         const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-        const deletedModelIds = settingsStore.gistSync.deletedModelIds || [];
+        const deletedModelIds = gistSyncSnapshot?.deletedModelIds || [];
         const deletedModelIdsMap = new Map<string, number>(
           deletedModelIds.map((record) => [record.id, record.deletedAt]),
         );
@@ -605,7 +610,7 @@ export class SyncDataService {
             }
           } else {
             // 本地不存在，检查是否在删除记录中
-            const deletedNovelIds = settingsStore.gistSync.deletedNovelIds || [];
+            const deletedNovelIds = gistSyncSnapshot?.deletedNovelIds || [];
             const deletedNovelIdsMap = new Map<string, number>(
               deletedNovelIds.map((record) => [record.id, record.deletedAt]),
             );
@@ -691,11 +696,11 @@ export class SyncDataService {
       // 注意：即使远程列表为空，也需要处理本地独有的封面
       if (remoteData.coverHistory && Array.isArray(remoteData.coverHistory)) {
         const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-        const deletedCoverIds = settingsStore.gistSync.deletedCoverIds || [];
+        const deletedCoverIds = gistSyncSnapshot?.deletedCoverIds || [];
         const deletedCoverIdsMap = new Map<string, number>(
           deletedCoverIds.map((record) => [record.id, record.deletedAt]),
         );
-        const deletedCoverUrls = settingsStore.gistSync.deletedCoverUrls || [];
+        const deletedCoverUrls = gistSyncSnapshot?.deletedCoverUrls || [];
         const deletedCoverUrlsMap = new Map<string, number>(
           deletedCoverUrls.map((record: any) => [normalizeCoverUrl(record.url), record.deletedAt]), // eslint-disable-line @typescript-eslint/no-explicit-any
         );
@@ -891,17 +896,19 @@ export class SyncDataService {
 
       // 处理设置
       if (remoteData.appSettings) {
-        const localSettings = settingsStore.getAllSettings();
+        const localSettings = GlobalConfig.getAllSettingsSnapshot() ?? ({} as any);
         // 手动检索时强制使用远程设置，否则比较 lastEdited
         const shouldApplyRemoteSettings =
           isManualRetrieval ||
           shouldUseRemote(localSettings.lastEdited, remoteData.appSettings.lastEdited);
         if (shouldApplyRemoteSettings) {
           // 保存本地的 Gist 同步配置（包括同步状态）
-          const currentGistSync = settingsStore.gistSync;
+          const currentGistSync = GlobalConfig.getGistSyncSnapshot();
           await settingsStore.importSettings(remoteData.appSettings);
           // 恢复本地的 Gist 同步配置，确保本地同步状态不被覆盖
-          await settingsStore.updateGistSync(currentGistSync);
+          if (currentGistSync) {
+            await settingsStore.updateGistSync(currentGistSync);
+          }
         }
       }
 
@@ -911,7 +918,7 @@ export class SyncDataService {
         const remoteSyncs = remoteData.appSettings.syncs;
         const gistSync = remoteSyncs.find((s: any) => s.syncType === 'gist'); // eslint-disable-line @typescript-eslint/no-explicit-any
         if (gistSync) {
-          const localGistSync = settingsStore.gistSync;
+          const localGistSync = (GlobalConfig.getGistSyncSnapshot() ?? {}) as any;
 
           // 合并删除记录：保留最新的删除时间戳
           const mergeDeletionRecords = (
@@ -1070,6 +1077,8 @@ export class SyncDataService {
     coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     memories: Memory[];
   }> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+
     if (!remoteData) {
       // 没有远程数据，直接返回本地数据
       return {
@@ -1096,20 +1105,20 @@ export class SyncDataService {
     };
 
     // 获取删除记录，用于检查远程独有项是否在本地被删除过
-    const settingsStore = useSettingsStore();
-    const deletedModelIds = settingsStore.gistSync.deletedModelIds || [];
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
+    const deletedModelIds = gistSync?.deletedModelIds || [];
     const deletedModelIdsMap = new Map<string, number>(
       deletedModelIds.map((record) => [record.id, record.deletedAt]),
     );
-    const deletedNovelIds = settingsStore.gistSync.deletedNovelIds || [];
+    const deletedNovelIds = gistSync?.deletedNovelIds || [];
     const deletedNovelIdsMap = new Map<string, number>(
       deletedNovelIds.map((record) => [record.id, record.deletedAt]),
     );
-    const deletedCoverIds = settingsStore.gistSync.deletedCoverIds || [];
+    const deletedCoverIds = gistSync?.deletedCoverIds || [];
     const deletedCoverIdsMap = new Map<string, number>(
       deletedCoverIds.map((record) => [record.id, record.deletedAt]),
     );
-    const deletedCoverUrls = settingsStore.gistSync.deletedCoverUrls || [];
+    const deletedCoverUrls = gistSync?.deletedCoverUrls || [];
     const deletedCoverUrlsMap = new Map<string, number>(
       deletedCoverUrls.map((record: any) => [normalizeCoverUrl(record.url), record.deletedAt]), // eslint-disable-line @typescript-eslint/no-explicit-any
     );
