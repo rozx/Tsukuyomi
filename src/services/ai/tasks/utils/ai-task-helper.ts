@@ -30,7 +30,34 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
 /**
  * 状态类型
  */
-export type TaskStatus = 'planning' | 'working' | 'completed' | 'end';
+export type TaskStatus = 'planning' | 'working' | 'review' | 'end';
+
+function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, TaskStatus[]> {
+  // 翻译任务：严格四阶段
+  if (taskType === 'translation') {
+    return {
+      planning: ['working'],
+      working: ['review'],
+      review: ['end', 'working'],
+      end: [],
+    };
+  }
+
+  // 润色/校对：跳过并禁用 review，固定为 planning → working → end
+  return {
+    planning: ['working'],
+    working: ['end'],
+    // 理论上不会进入 review（已禁用）。保底：若发生，允许直接结束，避免卡死。
+    review: ['end'],
+    end: [],
+  };
+}
+
+function getTaskStateWorkflowText(taskType: TaskType): string {
+  return taskType === 'translation'
+    ? 'planning → working → review → end'
+    : 'planning → working → end（润色/校对任务禁止使用 review）';
+}
 
 /**
  * 默认分块大小（与翻译任务保持一致）
@@ -112,7 +139,7 @@ export interface PerformanceMetrics {
   totalTime: number;
   planningTime: number;
   workingTime: number;
-  completedTime: number;
+  reviewTime: number;
   toolCallTime: number;
   toolCallCount: number;
   averageToolCallTime: number;
@@ -181,12 +208,12 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
     }
 
     const status = data.status as string;
-    const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'end'];
+    const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
 
     if (!validStatuses.includes(status as TaskStatus)) {
       return {
         status: 'working',
-        error: `无效的状态值: ${status}，必须是 planning、working、completed 或 end 之一`,
+        error: `无效的状态值: ${status}，必须是 planning、working、review 或 end 之一`,
       };
     }
 
@@ -256,7 +283,7 @@ const PRODUCTIVE_TOOLS = [
  */
 const TOOL_CALL_LIMITS: Record<string, number> = {
   list_terms: 3, // 术语表最多调用 3 次
-  list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、completed 阶段各调用一次）
+  list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、review 阶段各调用一次）
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
@@ -728,26 +755,26 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
         const statusMatch = accumulatedText.match(/"status"\s*:\s*"([^"]+)"/);
         if (statusMatch && statusMatch[1]) {
           const status = statusMatch[1];
-          const validStatuses: TaskStatus[] = ['planning', 'working', 'completed', 'end'];
+          const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
 
           // 检查状态值是否有效
           if (!validStatuses.includes(status as TaskStatus)) {
             console.warn(`[${logLabel}] ⚠️ 检测到无效状态值: ${status}，立即停止输出`);
             abortController?.abort();
             throw new Error(
-              `[警告] 检测到无效状态值: ${status}，必须是 planning、working、completed 或 end 之一`,
+              `[警告] 检测到无效状态值: ${status}，必须是 planning、working、review 或 end 之一`,
             );
           }
 
           // 翻译/润色/校对任务：内容必须只在 working 阶段输出
-          // 若模型在 planning/completed/end 阶段输出 paragraphs/titleTranslation，视为错误状态并中止本轮输出（随后由上层纠正并重试）
+          // 若模型在 planning/review/end 阶段输出 paragraphs/titleTranslation，视为错误状态并中止本轮输出（随后由上层纠正并重试）
           if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
             const hasContentKey =
               accumulatedText.includes('"paragraphs"') ||
               accumulatedText.includes('"titleTranslation"');
             const newStatus = status as TaskStatus;
             const invalidStateForContent =
-              newStatus === 'planning' || newStatus === 'completed' || newStatus === 'end';
+              newStatus === 'planning' || newStatus === 'review' || newStatus === 'end';
             if (hasContentKey && invalidStateForContent) {
               console.warn(
                 `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${newStatus} 且包含 paragraphs/titleTranslation），立即停止输出`,
@@ -760,12 +787,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
           }
 
           // 检查状态转换是否有效
-          const validTransitions: Record<TaskStatus, TaskStatus[]> = {
-            planning: ['working'],
-            working: ['completed'],
-            completed: ['end', 'working'],
-            end: [],
-          };
+          const validTransitions = getValidTransitionsForTaskType(taskType);
 
           const newStatus = status as TaskStatus;
           if (currentStatus !== newStatus) {
@@ -780,7 +802,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
               const statusLabels: Record<TaskStatus, string> = {
                 planning: '规划阶段 (planning)',
                 working: `${taskLabel}中 (working)`,
-                completed: '验证阶段 (completed)',
+                review: '复核阶段 (review)',
                 end: '完成 (end)',
               };
 
@@ -789,7 +811,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
               );
               abortController?.abort();
               throw new Error(
-                `[警告] **状态转换错误**：你试图从 "${statusLabels[currentStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。正确的状态转换顺序：planning → working → completed → end`,
+                `[警告] **状态转换错误**：你试图从 "${statusLabels[currentStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
               );
             }
           }
@@ -1024,7 +1046,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
   const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
 
   if (taskType === 'translation') {
-    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | completed→验证 | end`;
+    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | review→复核 | end`;
   }
 
   if (taskType === 'proofreading') {
@@ -1044,7 +1066,7 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
 export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
   const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
 
-  // 翻译相关任务：在 completed 阶段额外提醒可回到 working 更新既有译文
+  // 翻译相关任务：在 review 阶段额外提醒可回到 working 更新既有译文
   const canGoBackToWorkingReminder =
     taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
       ? '如果你想更新任何已输出的译文/润色/校对结果，请将状态改回 `{"status":"working"}` 并只返回需要更新的段落；'
@@ -1298,7 +1320,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   // 用于检测状态循环：记录每个状态连续出现的次数
   let consecutivePlanningCount = 0;
   let consecutiveWorkingCount = 0;
-  let consecutiveCompletedCount = 0;
+  let consecutiveReviewCount = 0;
   const MAX_CONSECUTIVE_STATUS = 2; // 同一状态最多连续出现 2 次（加速流程）
 
   // 用于检测“状态与内容不匹配”的连续次数（避免模型反复输出错误状态导致无限重试）
@@ -1315,7 +1337,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     totalTime: 0,
     planningTime: 0,
     workingTime: 0,
-    completedTime: 0,
+    reviewTime: 0,
     toolCallTime: 0,
     toolCallCount: 0,
     averageToolCallTime: 0,
@@ -1399,7 +1421,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         const statusLabels: Record<TaskStatus, string> = {
           planning: '规划阶段 (planning)',
           working: `${taskLabel}中 (working)`,
-          completed: '验证阶段 (completed)',
+          review: '复核阶段 (review)',
           end: '完成 (end)',
         };
 
@@ -1409,24 +1431,18 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
         // 如果错误消息包含状态转换信息，提取并格式化
         if (errorMessage.includes('状态转换错误')) {
-          const expectedNextStatus: TaskStatus =
-            currentStatus === 'planning'
-              ? 'working'
-              : currentStatus === 'working'
-                ? 'completed'
-                : currentStatus === 'completed'
-                  ? 'end'
-                  : 'working';
+          const validTransitions = getValidTransitionsForTaskType(taskType);
+          const expectedNextStatus: TaskStatus = validTransitions[currentStatus]?.[0] || 'working';
           warningMessage =
             `[警告] **状态转换错误**：你返回了无效的状态转换。\n\n` +
-            `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
+            `**正确的状态转换顺序**：${getTaskStateWorkflowText(taskType)}\n\n` +
             `你当前处于 "${statusLabels[currentStatus]}"，应该先转换到 "${statusLabels[expectedNextStatus]}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}`;
         } else if (errorMessage.includes('无效状态值')) {
           // 无效状态值的警告
           warningMessage =
             `[警告] **无效状态值**：你返回了无效的状态值。\n\n` +
-            `**有效的状态值**：planning、working、completed、end\n\n` +
+            `**有效的状态值**：planning、working、review、end\n\n` +
             `你当前处于 "${statusLabels[currentStatus]}"，请返回正确的状态值。`;
         } else if (errorMessage.includes('状态与内容不匹配')) {
           consecutiveContentStateMismatchCount++;
@@ -1610,7 +1626,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       if (hasProductiveTool) {
         consecutivePlanningCount = 0;
         consecutiveWorkingCount = 0;
-        consecutiveCompletedCount = 0;
+        consecutiveReviewCount = 0;
       }
 
       // 工具调用完成后，直接继续循环，让 AI 基于工具结果自然继续
@@ -1654,7 +1670,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       !!parsed.content?.titleTranslation || (Array.isArray(paragraphs) && paragraphs.length > 0);
 
     // 翻译/润色/校对任务：只要输出 paragraphs/titleTranslation，就必须处于 working
-    // 若状态为 planning/completed/end 且包含内容，视为错误状态：纠正并让模型重试
+    // 若状态为 planning/review/end 且包含内容，视为错误状态：纠正并让模型重试
     if (
       (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') &&
       hasContent &&
@@ -1702,20 +1718,15 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         case 'working':
           metrics.workingTime += statusDuration;
           break;
-        case 'completed':
-          metrics.completedTime += statusDuration;
+        case 'review':
+          metrics.reviewTime += statusDuration;
           break;
       }
       statusStartTime = Date.now();
     }
 
-    // 定义允许的状态转换
-    const validTransitions: Record<TaskStatus, TaskStatus[]> = {
-      planning: ['working'], // planning 只能转换到 working
-      working: ['completed'], // working 只能转换到 completed
-      completed: ['end', 'working'], // completed 可以转换到 end 或回到 working（如果需要补充缺失段落、编辑/优化已翻译的段落）
-      end: [], // end 是终态，不能再转换
-    };
+    // 定义允许的状态转换（按任务类型区分）
+    const validTransitions = getValidTransitionsForTaskType(taskType);
 
     // 检查状态转换是否有效
     if (previousStatus !== newStatus) {
@@ -1725,7 +1736,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         const statusLabels: Record<TaskStatus, string> = {
           planning: '规划阶段 (planning)',
           working: `${taskLabel}中 (working)`,
-          completed: '验证阶段 (completed)',
+          review: '复核阶段 (review)',
           end: '完成 (end)',
         };
 
@@ -1746,7 +1757,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           role: 'user',
           content:
             `[警告] **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
-            `**正确的状态转换顺序**：planning → working → completed → end\n\n` +
+            `**正确的状态转换顺序**：${getTaskStateWorkflowText(taskType)}\n\n` +
             `你当前处于 "${statusLabels[previousStatus]}"，应该先转换到 "${expectedStatusLabel}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}${newStatus === 'working' && previousStatus === 'planning' ? ' 或包含内容时 {"status": "working", "paragraphs": [...]}' : ''}`,
         });
@@ -1854,7 +1865,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 更新连续状态计数
       consecutivePlanningCount++;
       consecutiveWorkingCount = 0; // 重置其他状态计数
-      consecutiveCompletedCount = 0; // 重置其他状态计数
+      consecutiveReviewCount = 0; // 重置其他状态计数
 
       // 收集规划阶段的 AI 响应（用于后续 chunk 的上下文共享）
       if (responseText && responseText.trim().length > 0) {
@@ -1896,7 +1907,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // 更新连续状态计数
       consecutiveWorkingCount++;
       consecutivePlanningCount = 0; // 重置其他状态计数
-      consecutiveCompletedCount = 0; // 重置其他状态计数
+      consecutiveReviewCount = 0; // 重置其他状态计数
 
       // 检测循环：如果连续处于 working 状态超过阈值且没有输出段落，强制要求完成
       if (consecutiveWorkingCount >= MAX_CONSECUTIVE_STATUS && accumulatedParagraphs.size === 0) {
@@ -1904,9 +1915,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           `[${logLabel}] ⚠️ 检测到 working 状态循环（连续 ${consecutiveWorkingCount} 次且无输出），强制要求输出内容`,
         );
 
+        const finishStatus = taskType === 'translation' ? 'review' : 'end';
         const noChangeHint =
           taskType === 'polish' || taskType === 'proofreading'
-            ? `如果你确认**没有任何需要修改的段落**，请将状态设置为 "completed"（无需输出 paragraphs）；否则请只返回有变化的段落。`
+            ? `如果你确认**没有任何需要修改的段落**，请将状态设置为 "${finishStatus}"（无需输出 paragraphs）；否则请只返回有变化的段落。`
             : '';
 
         history.push({
@@ -1928,31 +1940,37 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         }
 
         if (allParagraphsReturned) {
-          // 所有段落都已返回，提醒 AI 可以将状态改为 "completed"
+          const finishStatus = taskType === 'translation' ? 'review' : 'end';
+          // 所有段落都已返回，提醒 AI 可以结束当前块
           history.push({
             role: 'user',
             content:
               `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-              `所有段落${taskLabel}已完成。如果不需要继续${taskLabel}，可以将状态设置为 "completed"。`,
+              `所有段落${taskLabel}已完成。如果不需要继续${taskLabel}，可以将状态设置为 "${finishStatus}"。` +
+              (taskType === 'polish' || taskType === 'proofreading'
+                ? '（润色/校对任务禁止使用 review）'
+                : ''),
           });
         } else {
           // 正常的 working 响应 - 使用更明确的指令
+          const finishStatus = taskType === 'translation' ? 'review' : 'end';
           history.push({
             role: 'user',
             content:
               `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-              `收到。继续${taskLabel}，完成后设为 "completed"。无需检查缺失段落，系统会自动验证。`,
+              `收到。继续${taskLabel}，完成后设为 "${finishStatus}"。` +
+              (taskType === 'translation' ? '无需检查缺失段落，系统会自动验证。' : ''),
           });
         }
       }
       continue;
-    } else if (currentStatus === 'completed') {
+    } else if (currentStatus === 'review') {
       // 更新连续状态计数
-      consecutiveCompletedCount++;
+      consecutiveReviewCount++;
       consecutivePlanningCount = 0;
       consecutiveWorkingCount = 0;
 
-      // 完成阶段：验证完整性
+      // 复核阶段：验证完整性
       if (paragraphIds && paragraphIds.length > 0) {
         const verification = verifyCompleteness
           ? verifyCompleteness(paragraphIds, accumulatedParagraphs)
@@ -1971,21 +1989,21 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
               `请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`,
           });
           currentStatus = 'working';
-          consecutiveCompletedCount = 0; // 重置计数，因为状态回到 working
+          consecutiveReviewCount = 0; // 重置计数，因为状态回到 working
           continue;
         }
       }
 
-      // 检测循环：如果连续处于 completed 状态超过阈值，强制要求完成
-      if (consecutiveCompletedCount >= MAX_CONSECUTIVE_STATUS) {
+      // 检测循环：如果连续处于 review 状态超过阈值，强制要求结束
+      if (consecutiveReviewCount >= MAX_CONSECUTIVE_STATUS) {
         console.warn(
-          `[${logLabel}] ⚠️ 检测到 completed 状态循环（连续 ${consecutiveCompletedCount} 次），强制要求完成`,
+          `[${logLabel}] ⚠️ 检测到 review 状态循环（连续 ${consecutiveReviewCount} 次），强制要求结束`,
         );
         history.push({
           role: 'user',
           content:
             `${getCurrentStatusInfo(taskType, currentStatus)}\n\n` +
-            `[警告] 你已经在完成阶段停留过久。` +
+            `[警告] 你已经在复核阶段停留过久。` +
             `如果你还想更新任何已输出的${taskLabel}结果，请将状态改回 \`{"status":"working"}\` 并提交需要更新的段落；` +
             `如果不需要后续操作，请**立即**返回 \`{"status": "end"}\`。`,
         });
@@ -2025,7 +2043,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       总耗时: `${metrics.totalTime}ms`,
       规划阶段: `${metrics.planningTime}ms`,
       工作阶段: `${metrics.workingTime}ms`,
-      验证阶段: `${metrics.completedTime}ms`,
+      复核阶段: `${metrics.reviewTime}ms`,
       工具调用: `${metrics.toolCallCount} 次，平均 ${metrics.averageToolCallTime.toFixed(2)}ms`,
     });
   }
@@ -2451,7 +2469,7 @@ export async function completeTask(
   };
 
   await aiProcessingStore.updateTask(taskId, {
-    status: 'completed',
+    status: 'end',
     message: `${taskTypeLabels[taskType]}完成`,
   });
 }

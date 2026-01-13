@@ -430,12 +430,7 @@ ${earlySection}${middleSection}${recentSection}
     }
 
     // 检查是否只是错误信息或无意义内容
-    const invalidPatterns = [
-      /^(error|错误|失败|无法)/i,
-      /^抱歉/,
-      /^我不/,
-      /^sorry/i,
-    ];
+    const invalidPatterns = [/^(error|错误|失败|无法)/i, /^抱歉/, /^我不/, /^sorry/i];
 
     for (const pattern of invalidPatterns) {
       if (pattern.test(trimmed)) {
@@ -638,7 +633,7 @@ ${earlySection}${middleSection}${recentSection}
 
     if (aiProcessingStore && taskId) {
       await aiProcessingStore.updateTask(taskId, {
-        status: 'completed',
+        status: 'end',
         message: '会话已总结，请重新发送请求。',
       });
     }
@@ -889,7 +884,7 @@ ${earlySection}${middleSection}${recentSection}
     // 更新任务状态
     if (aiProcessingStore && taskId) {
       await aiProcessingStore.updateTask(taskId, {
-        status: 'completed',
+        status: 'end',
         message: '助手回复完成',
       });
     }
@@ -1513,7 +1508,7 @@ ${earlySection}${middleSection}${recentSection}
       // 更新任务状态
       if (aiProcessingStore && taskId) {
         await aiProcessingStore.updateTask(taskId, {
-          status: 'completed',
+          status: 'end',
           message: '助手回复完成',
         });
       }
@@ -1561,8 +1556,7 @@ ${earlySection}${middleSection}${recentSection}
 
       // 检查是否是 token 限制错误，如果是，尝试总结并重试
       // 注意：maxTokens=0 表示无限制（与 UNLIMITED_TOKENS=-1 类似），不应仅因 maxTokens=0 就触发摘要逻辑
-      const hasPositiveMaxTokensLimit =
-        model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS;
+      const hasPositiveMaxTokensLimit = model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS;
       const hasContextWindowLimit =
         typeof model.contextWindow === 'number' && model.contextWindow > 0;
 

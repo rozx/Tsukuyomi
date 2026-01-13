@@ -18,7 +18,7 @@ onMounted(async () => {
 const statusLabels: Record<string, string> = {
   thinking: '思考中',
   processing: '处理中',
-  completed: '已完成',
+  end: '已完成',
   error: '错误',
   cancelled: '已取消',
 };
@@ -197,7 +197,10 @@ watch(
         const activeTasks = aiProcessing.activeTasksList;
         
         // 获取当前所有任务的状态映射（用于清理逻辑）
-        const currentTaskStatusMap = new Map<string, 'thinking' | 'processing' | 'completed' | 'error' | 'cancelled'>();
+        const currentTaskStatusMap = new Map<
+          string,
+          'thinking' | 'processing' | 'end' | 'error' | 'cancelled'
+        >();
         aiProcessing.activeTasks.forEach((task) => {
           currentTaskStatusMap.set(task.id, task.status);
         });
@@ -312,11 +315,11 @@ onUnmounted(() => {
         <h3 class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
         <div class="flex items-center gap-2">
           <Button
-            v-if="aiProcessing.completedTasksList.length > 0"
+            v-if="aiProcessing.reviewedTasksList.length > 0"
             icon="pi pi-trash"
             class="p-button-text p-button-danger p-button-sm"
             title="清空已完成"
-            @click="aiProcessing.clearCompletedTasks()"
+            @click="aiProcessing.clearReviewedTasks()"
           />
           <Button
             v-if="aiProcessing.allTasksList.length > 0"
@@ -348,7 +351,7 @@ onUnmounted(() => {
                 :class="{
                   'pi-spin pi-spinner text-primary':
                     task.status === 'thinking' || task.status === 'processing',
-                  'pi-check-circle text-green-500': task.status === 'completed',
+                  'pi-check-circle text-green-500': task.status === 'end',
                   'pi-times-circle text-red-500': task.status === 'error',
                   'pi-ban text-orange-500': task.status === 'cancelled',
                 }"
@@ -402,12 +405,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 已完成的任务 -->
-        <div v-if="aiProcessing.completedTasksList.length > 0" class="mt-6">
+        <!-- 已复核的任务 -->
+        <div v-if="aiProcessing.reviewedTasksList.length > 0" class="mt-6">
           <h4 class="text-sm font-medium text-moon/70 mb-3">已完成的任务</h4>
           <div class="space-y-2">
             <div
-              v-for="task in aiProcessing.completedTasksList.slice(0, 10)"
+              v-for="task in aiProcessing.reviewedTasksList.slice(0, 10)"
               :key="task.id"
               v-memo="[task.id, task.status, task.message]"
               class="p-3 rounded-lg border border-white/5 bg-white/2"
@@ -417,7 +420,7 @@ onUnmounted(() => {
                   <i
                     class="pi text-sm flex-shrink-0"
                     :class="{
-                      'pi-check-circle text-green-500': task.status === 'completed',
+                      'pi-check-circle text-green-500': task.status === 'end',
                       'pi-times-circle text-red-500': task.status === 'error',
                       'pi-ban text-orange-500': task.status === 'cancelled',
                     }"

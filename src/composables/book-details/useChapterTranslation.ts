@@ -315,7 +315,7 @@ export function useChapterTranslation(
   ): Promise<number> => {
     if (!book.value) return 0;
 
-    // 关键：不能仅用 “段落ID是否出现过” 去重，否则 AI 在 completed → working 的纠错/改写会被过滤掉
+    // 关键：不能仅用 “段落ID是否出现过” 去重，否则 AI 在 review → working 的纠错/改写会被过滤掉
     // 我们只跳过“完全相同的翻译文本”，允许 last-write-wins 的覆盖更新
     const newTranslations = selectChangedParagraphTranslations(
       paragraphTranslations,
@@ -1301,7 +1301,7 @@ export function useChapterTranslation(
 
     // 取消当前章节的翻译任务
     for (const task of translationTasks) {
-      if (task.status !== 'completed') {
+      if (task.status !== 'end') {
         void aiProcessingStore.stopTask(task.id);
       }
     }
@@ -1338,7 +1338,7 @@ export function useChapterTranslation(
 
     // 取消当前章节的润色任务
     for (const task of polishTasks) {
-      if (task.status !== 'completed') {
+      if (task.status !== 'end') {
         void aiProcessingStore.stopTask(task.id);
       }
     }
@@ -1527,7 +1527,7 @@ export function useChapterTranslation(
 
     // 取消当前章节的校对任务
     for (const task of proofreadingTasks) {
-      if (task.status !== 'completed') {
+      if (task.status !== 'end') {
         void aiProcessingStore.stopTask(task.id);
       }
     }

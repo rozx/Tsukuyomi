@@ -85,15 +85,15 @@ export function getCurrentStatusInfo(
 - 发现新信息（新术语/角色、关系变化等）立即更新
 - 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`${taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 paragraphs）'}
 
-完成所有段落的${taskLabel}后，将状态设置为 "completed"。`,
-    completed: `**当前状态：验证阶段 (completed)**
-你当前处于验证阶段，应该：
+完成所有段落的${taskLabel}后，将状态设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`,
+    review: `**当前状态：复核阶段 (review)**
+你当前处于复核阶段，应该：
 - 系统已自动验证完整性
 - 更新术语/角色描述（如有新发现）
 - 如有**对未来翻译任务有长期收益、可复用**的重要信息（如稳定的敬语处理规则、固定译法选择等），再创建记忆；一次性信息不要写入记忆
 - 检查是否有遗漏或需要修正的地方
 
-如果你发现**任何已输出的${taskLabel}结果仍需要更新**（例如：措辞、敬语/称谓处理、术语一致性、语气节奏、错别字/标点/语法等），可以将状态从 "completed" 改回 "working" 继续工作，并**只返回需要更新的段落**即可。
+如果你发现**任何已输出的${taskLabel}结果仍需要更新**（例如：措辞、敬语/称谓处理、术语一致性、语气节奏、错别字/标点/语法等），可以将状态从 "review" 改回 "working" 继续工作，并**只返回需要更新的段落**即可。
 如果所有工作已完成，将状态设置为 "end"。`,
     end: `**当前状态：完成 (end)**
 当前块已完成，系统将自动提供下一个块。`,
@@ -158,19 +158,34 @@ export function getTodoToolsDescription(taskType: TaskType): string {
 export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
-  return `**状态**: planning(规划)→working(${taskLabel}中)→completed(验证)→end(完成)
+  if (taskType === 'translation') {
+    return `**状态**: planning(规划)→working(${taskLabel}中)→review(复核)→end(完成)
 
 [警告] **状态转换规则**（必须严格遵守）:
-- **禁止跳过状态**：必须按照 planning → working → completed → end 的顺序进行
+- **禁止跳过状态**：必须按照 planning → working → review → end 的顺序进行
 - **允许的转换**：
   - planning → working
-  - working → completed
-  - completed → end
-  - completed → working（如果需要补充缺失段落、编辑/优化已${taskLabel}的段落）
+  - working → review
+  - review → end
+  - review → working（如果需要补充缺失段落、编辑/优化已${taskLabel}的段落）
 - **禁止的转换**：
-  - [禁止] working → end（必须经过 completed）
-  - [禁止] planning → completed（必须经过 working）
-  - [禁止] planning → end（必须经过 working 和 completed）`;
+  - [禁止] working → end（必须经过 review）
+  - [禁止] planning → review（必须经过 working）
+  - [禁止] planning → end（必须经过 working 和 review）`;
+  }
+
+  // 润色/校对：跳过并禁用 review
+  return `**状态**: planning(规划)→working(${taskLabel}中)→end(完成)
+
+[警告] **状态转换规则**（必须严格遵守）:
+- **禁止跳过状态**：必须按照 planning → working → end 的顺序进行
+- **允许的转换**：
+  - planning → working
+  - working → end
+- **禁止的转换**：
+  - [禁止] working → review（润色/校对任务禁用 review）
+  - [禁止] planning → review（必须经过 working）
+  - [禁止] planning → end（必须经过 working）`;
 }
 
 /**
@@ -183,7 +198,7 @@ export function getOutputFormatRules(taskType: TaskType): string {
   const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
   const strictStateNote =
     taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? `\n[警告] **严格状态规则**：\n- 只有当 \`status="working"\` 时才允许输出 \`paragraphs/titleTranslation\`\n- 当 \`status="planning"\`、\`status="completed"\` 或 \`status="end"\` 时 **禁止** 输出任何内容字段，否则系统会视为错误状态并要求你立刻重试\n`
+      ? `\n[警告] **严格状态规则**：\n- 只有当 \`status="working"\` 时才允许输出 \`paragraphs/titleTranslation\`\n- 当 \`status="planning"\`、\`status="review"\` 或 \`status="end"\` 时 **禁止** 输出任何内容字段，否则系统会视为错误状态并要求你立刻重试\n`
       : '';
 
   return `【输出格式】[警告] 必须只返回JSON
@@ -212,11 +227,18 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
     proofreading: '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查',
   };
 
+  if (taskType === 'translation') {
+    return `【执行流程】
+1. **planning**: 获取上下文信息，检查数据问题并修复
+2. **working**: ${workingFocus[taskType]}；发现新信息立即更新
+3. **review**: 系统复核完整性，更新数据，创建记忆
+4. **end**: 完成当前块`;
+  }
+
   return `【执行流程】
 1. **planning**: 获取上下文信息，检查数据问题并修复
 2. **working**: ${workingFocus[taskType]}；发现新信息立即更新
-3. **completed**: 系统验证完整性，更新数据，创建记忆
-4. **end**: 完成当前块`;
+3. **end**: 完成当前块（润色/校对跳过并禁用 review）`;
 }
 
 /**

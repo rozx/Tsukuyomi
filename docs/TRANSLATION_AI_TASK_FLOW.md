@@ -22,7 +22,7 @@ Tsukuyomi - Moonlit Translator 使用基于状态机的 AI 任务执行流程，
 
 ### 核心特性
 
-- **状态驱动**：使用 `planning → working → completed → end` 状态机控制任务流程
+- **状态驱动**：使用 `planning → working → review → end` 状态机控制任务流程
 - **工具增强**：AI 可以通过工具调用获取上下文信息、管理术语/角色、创建记忆等
 - **分块处理**：将长文本分割为多个块（chunks），每个块独立处理
 - **上下文共享**：第一个块的规划上下文会传递给后续块，避免重复获取
@@ -139,7 +139,7 @@ graph TD
     P --> B
     O -->|是| Q[提示完成]
     Q --> B
-    J -->|completed| R[验证所有段落]
+    J -->|review| R[复核所有段落]
     R --> S{是否有缺失?}
     S -->|是| T[回到 working]
     T --> B
@@ -166,8 +166,8 @@ graph TD
    - 输出结果（段落翻译）
    - 发现新信息立即更新（术语/角色）
 
-3. **completed（验证阶段）**
-   - 系统自动验证完整性
+3. **review（复核阶段）**
+   - 系统自动复核完整性
    - 更新术语/角色描述
    - 创建记忆保存重要信息
 
@@ -177,16 +177,29 @@ graph TD
 
 ### 状态转换规则
 
+#### translation（翻译）
+
 **允许的转换**：
 - `planning → working`：规划完成，开始工作
-- `working → completed`：工作完成，进入验证
-- `completed → end`：验证完成，结束当前块
-- `completed → working`：需要补充缺失段落或编辑已翻译段落
+- `working → review`：工作完成，进入复核
+- `review → end`：复核完成，结束当前块
+- `review → working`：需要补充缺失段落或编辑已翻译段落
 
 **禁止的转换**：
-- `working → end`：必须经过 `completed`
-- `planning → completed`：必须经过 `working`
-- `planning → end`：必须经过 `working` 和 `completed`
+- `working → end`：必须经过 `review`
+- `planning → review`：必须经过 `working`
+- `planning → end`：必须经过 `working` 和 `review`
+
+#### polish / proofreading（润色 / 校对）
+
+**允许的转换**：
+- `planning → working`：规划完成，开始工作
+- `working → end`：工作完成，结束当前块
+
+**禁止的转换**：
+- `working → review`：润色/校对任务**跳过并禁用** `review`
+- `planning → review`：必须经过 `working`
+- `planning → end`：必须经过 `working`
 
 ### 状态循环检测
 
@@ -403,14 +416,14 @@ getCurrentStatusInfo(taskType, status, isBriefPlanning?)
 - 发现新信息（新术语/角色、关系变化等）立即更新
 - 输出翻译结果，格式：`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "翻译结果"}]}`
 
-完成所有段落的翻译后，将状态设置为 "completed"。
+完成所有段落的翻译后，将状态设置为 "review"。
 ```
 
-#### Completed 状态
+#### Review 状态
 
 ```
-**当前状态：验证阶段 (completed)**
-你当前处于验证阶段，应该：
+**当前状态：复核阶段 (review)**
+你当前处于复核阶段，应该：
 - 系统已自动验证完整性
 - 更新术语/角色描述（如有新发现）
 - 创建记忆保存重要信息（如敬语翻译方式、角色关系等）
@@ -724,9 +737,9 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 
 ### 1. 状态转换
 
-- 严格按照 `planning → working → completed → end` 顺序
+- 严格按照 `planning → working → review → end` 顺序
 - 不要在 `planning` 阶段直接输出翻译结果
-- 使用 `completed → working` 补充缺失段落
+- 使用 `review → working` 补充缺失段落
 
 ### 2. 工具使用
 

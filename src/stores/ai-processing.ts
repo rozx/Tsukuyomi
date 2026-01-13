@@ -21,7 +21,7 @@ export interface AIProcessingTask {
     | 'config'
     | 'other';
   modelName: string;
-  status: 'thinking' | 'processing' | 'completed' | 'error' | 'cancelled';
+  status: AIProcessingTaskStatus;
   message?: string;
   thinkingMessage?: string; // 实际的 AI 思考消息（从流式响应中累积）
   outputContent?: string; // AI 的实际输出内容（翻译/润色/校对结果）
@@ -44,6 +44,29 @@ export interface AIProcessingTask {
   abortController?: AbortController; // 用于取消请求（不持久化）
 }
 
+export type AIProcessingTaskStatus = 'thinking' | 'processing' | 'end' | 'error' | 'cancelled';
+
+type LegacyAIProcessingTaskStatus = AIProcessingTaskStatus | 'completed' | 'review';
+
+/**
+ * 兼容迁移：将历史任务状态值规范化到当前枚举集合
+ * - 旧值 `completed` / `review` → 新值 `end`
+ */
+export function normalizeAIProcessingTaskStatus(status: unknown): AIProcessingTaskStatus {
+  // 历史版本：`completed` / `review` 都曾表示“已完成（可清理）”，统一迁移为 `end`
+  if (status === 'completed' || status === 'review') return 'end';
+  if (
+    status === 'thinking' ||
+    status === 'processing' ||
+    status === 'end' ||
+    status === 'error' ||
+    status === 'cancelled'
+  ) {
+    return status;
+  }
+  return 'error';
+}
+
 /**
  * 可序列化的任务（用于 IndexedDB 存储）
  */
@@ -56,8 +79,18 @@ async function loadThinkingProcessesFromDB(): Promise<SerializableTask[]> {
   try {
     const db = await getDB();
     const tasks = await db.getAll('thinking-processes');
+    // 兼容迁移：历史数据中可能存在旧状态值 completed，需要映射为 review
+    const normalizedTasks = tasks.map((t) => {
+      const legacyStatus = (t as { status?: unknown }).status as LegacyAIProcessingTaskStatus;
+      const newStatus = normalizeAIProcessingTaskStatus(legacyStatus);
+      return {
+        ...t,
+        status: newStatus,
+      } as SerializableTask;
+    });
+
     // 按开始时间倒序排列
-    return tasks.sort((a, b) => b.startTime - a.startTime);
+    return normalizedTasks.sort((a, b) => b.startTime - a.startTime);
   } catch (error) {
     console.error('Failed to load thinking processes from DB:', error);
     return [];
@@ -243,13 +276,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
-     * 已完成的任务列表（包括已完成、错误、已取消，按开始时间倒序，最新的在最前面）
+     * 已复核的任务列表（包括已复核、错误、已取消，按开始时间倒序，最新的在最前面）
      */
-    completedTasksList(state): AIProcessingTask[] {
+    reviewedTasksList(state): AIProcessingTask[] {
       return state.activeTasks
         .filter(
-          (task) =>
-            task.status === 'completed' || task.status === 'error' || task.status === 'cancelled',
+          (task) => task.status === 'end' || task.status === 'error' || task.status === 'cancelled',
         )
         .sort((a, b) => b.startTime - a.startTime);
     },
@@ -338,24 +370,24 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
               ...task,
             };
           });
-          
+
           // 检查任务数量，如果超过最大限制，删除最旧的任务
           if (this.activeTasks.length > MAX_AI_PROCESS_HISTORY) {
             // 按开始时间排序，找出最旧的任务（排除正在进行的任务）
             const sortedTasks = [...this.activeTasks]
               .filter((t) => t.status !== 'thinking' && t.status !== 'processing')
               .sort((a, b) => a.startTime - b.startTime);
-            
+
             // 计算需要删除的数量
             const excessCount = this.activeTasks.length - MAX_AI_PROCESS_HISTORY;
             const tasksToDelete = sortedTasks.slice(0, excessCount);
-            
+
             if (tasksToDelete.length > 0) {
               const idsToDelete = tasksToDelete.map((t) => t.id);
-              
+
               // 从内存中删除
               this.activeTasks = this.activeTasks.filter((t) => !idsToDelete.includes(t.id));
-              
+
               // 从 IndexedDB 中删除（异步，不阻塞）
               void co(function* () {
                 try {
@@ -379,7 +411,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
               }
             }
           }
-          
+
           this.isLoaded = true;
         } catch (error) {
           // 如果加载失败，重置标志以便重试
@@ -414,24 +446,24 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         ...task,
       };
       this.activeTasks.push(newTask);
-      
+
       // 检查任务数量，如果超过最大限制，删除最旧的任务
       if (this.activeTasks.length > MAX_AI_PROCESS_HISTORY) {
         // 按开始时间排序，找出最旧的任务（排除正在进行的任务）
         const sortedTasks = [...this.activeTasks]
           .filter((t) => t.status !== 'thinking' && t.status !== 'processing')
           .sort((a, b) => a.startTime - b.startTime);
-        
+
         // 计算需要删除的数量
         const excessCount = this.activeTasks.length - MAX_AI_PROCESS_HISTORY;
         const tasksToDelete = sortedTasks.slice(0, excessCount);
-        
+
         if (tasksToDelete.length > 0) {
           const idsToDelete = tasksToDelete.map((t) => t.id);
-          
+
           // 从内存中删除
           this.activeTasks = this.activeTasks.filter((t) => !idsToDelete.includes(t.id));
-          
+
           // 从 IndexedDB 中删除（异步，不阻塞）
           void co(function* () {
             try {
@@ -455,7 +487,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           }
         }
       }
-      
+
       // 保存到 IndexedDB（异步，不阻塞任务创建）
       // 如果保存失败，任务仍然可以继续执行
       void co(function* () {
@@ -477,7 +509,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       if (task) {
         Object.assign(task, updates);
         if (
-          updates.status === 'completed' ||
+          updates.status === 'end' ||
           updates.status === 'error' ||
           updates.status === 'cancelled'
         ) {
@@ -522,7 +554,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.abortController.abort();
         }
         // 如果任务已经完成或已取消，不需要更新状态
-        if (task.status === 'completed' || task.status === 'cancelled') {
+        if (task.status === 'end' || task.status === 'cancelled') {
           return;
         }
         // 清理节流信息
@@ -564,29 +596,25 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
         // 使用节流更新，减少响应式更新频率
-        throttledUpdateThinkingMessage(
-          task,
-          text,
-          (t, accumulatedText) => {
-            // 再次检查任务是否仍然存在（可能在节流延迟期间被删除）
-            const currentTask = this.activeTasks.find((task) => task.id === t.id);
-            if (!currentTask) {
-              // 任务已被删除，清理节流信息
-              clearTaskThrottle(t.id);
-              return;
-            }
-            
-            if (!currentTask.thinkingMessage) {
-              currentTask.thinkingMessage = '';
-            }
-            currentTask.thinkingMessage += accumulatedText;
-            // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
-            // 但由于使用了节流，更新频率大幅降低
-            // 为了确保 watch 能检测到变化，需要触发数组引用更新
-            // 但为了性能，只在节流更新时触发一次
-            this.activeTasks = [...this.activeTasks];
-          },
-        );
+        throttledUpdateThinkingMessage(task, text, (t, accumulatedText) => {
+          // 再次检查任务是否仍然存在（可能在节流延迟期间被删除）
+          const currentTask = this.activeTasks.find((task) => task.id === t.id);
+          if (!currentTask) {
+            // 任务已被删除，清理节流信息
+            clearTaskThrottle(t.id);
+            return;
+          }
+
+          if (!currentTask.thinkingMessage) {
+            currentTask.thinkingMessage = '';
+          }
+          currentTask.thinkingMessage += accumulatedText;
+          // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
+          // 但由于使用了节流，更新频率大幅降低
+          // 为了确保 watch 能检测到变化，需要触发数组引用更新
+          // 但为了性能，只在节流更新时触发一次
+          this.activeTasks = [...this.activeTasks];
+        });
 
         // 保存到 IndexedDB（异步，不阻塞 UI，使用节流后的最终值）
         // 注意：这里保存的是累积的文本，可能不是最新的，但为了性能考虑这是可以接受的
@@ -649,18 +677,17 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
-     * 清空所有已完成的任务（从内存和 IndexedDB 中删除）
+     * 清空所有已复核/已结束的任务（从内存和 IndexedDB 中删除）
      */
-    async clearCompletedTasks(): Promise<void> {
-      const completedTaskIds = this.activeTasks
+    async clearReviewedTasks(): Promise<void> {
+      const reviewedTaskIds = this.activeTasks
         .filter(
-          (task) =>
-            task.status === 'completed' || task.status === 'error' || task.status === 'cancelled',
+          (task) => task.status === 'end' || task.status === 'error' || task.status === 'cancelled',
         )
         .map((task) => task.id);
 
       // 清理所有已完成任务的节流信息，避免内存泄漏
-      for (const id of completedTaskIds) {
+      for (const id of reviewedTaskIds) {
         clearTaskThrottle(id);
       }
 
@@ -670,7 +697,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       );
 
       // 从 IndexedDB 中删除
-      for (const id of completedTaskIds) {
+      for (const id of reviewedTaskIds) {
         await deleteThinkingProcessFromDB(id);
       }
     },
@@ -684,7 +711,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       for (const id of allTaskIds) {
         clearTaskThrottle(id);
       }
-      
+
       this.activeTasks = [];
       await clearAllThinkingProcessesFromDB();
     },

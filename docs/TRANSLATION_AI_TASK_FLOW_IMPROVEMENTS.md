@@ -6,7 +6,7 @@
 
 ### 优点 ✅
 
-1. **清晰的状态机设计**：`planning → working → completed → end` 状态转换逻辑清晰
+1. **清晰的状态机设计**：`planning → working → review → end` 状态转换逻辑清晰
 2. **工具增强机制**：AI 可以通过工具获取上下文，提高翻译质量
 3. **分块处理**：支持长文本处理，避免上下文过长
 4. **规划上下文共享**：第一个块的规划上下文传递给后续块，减少重复工具调用
@@ -218,8 +218,8 @@ interface PlanningContextUpdate {
   updatedMemories?: Array<{ id: string; summary: string }>;
 }
 
-// 在 completed 阶段检测是否有新信息
-if (currentStatus === 'completed') {
+// 在 review 阶段检测是否有新信息
+if (currentStatus === 'review') {
   // 检测是否有新创建的术语/角色
   const newTerms = actions.filter(a => 
     a.type === 'create_term' || a.type === 'update_term'
@@ -569,8 +569,8 @@ if (previousStatus !== newStatus) {
     case 'working':
       metrics.workingTime += statusDuration;
       break;
-    case 'completed':
-      metrics.completedTime += statusDuration;
+    case 'review':
+      metrics.reviewTime += statusDuration;
       break;
   }
   

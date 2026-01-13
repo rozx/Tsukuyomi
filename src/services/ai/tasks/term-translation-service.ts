@@ -312,7 +312,7 @@ ${getToolScopeRules(tools)}
         // 更新任务状态为完成
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
-            status: 'completed',
+            status: 'end',
             message: '翻译完成',
           });
         }
@@ -372,7 +372,6 @@ ${getToolScopeRules(tools)}
 
         // 检查是否有工具调用
         if (result.toolCalls && result.toolCalls.length > 0) {
-
           // 添加助手消息（包含工具调用）
           history.push({
             role: 'assistant',
@@ -562,7 +561,7 @@ ${getToolScopeRules(tools)}
       // 更新任务状态为完成（只在真正完成时更新）
       if (aiProcessingStore && taskId && finalText) {
         void aiProcessingStore.updateTask(taskId, {
-          status: 'completed',
+          status: 'end',
           message: '翻译完成',
         });
       }

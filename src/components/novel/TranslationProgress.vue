@@ -17,13 +17,16 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
 // 节流函数：限制函数执行频率
-function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
+function throttle<Args extends unknown[]>(
+  func: (...args: Args) => void,
+  delay: number,
+): (...args: Args) => void {
   let lastCall = 0;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return ((...args: Parameters<T>) => {
+  return (...args: Args) => {
     const now = Date.now();
     const timeSinceLastCall = now - lastCall;
-    
+
     if (timeSinceLastCall >= delay) {
       lastCall = now;
       func(...args);
@@ -37,7 +40,7 @@ function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T 
         timeoutId = null;
       }, delay - timeSinceLastCall);
     }
-  }) as T;
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -103,7 +106,9 @@ const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
 
 // 顶部“正在翻译/润色/校对章节”区域：展示当前正在处理的章节（取最新的进行中任务）
 const currentWorkingChapter = computed(() => {
-  const active = recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing');
+  const active = recentAITasks.value.find(
+    (t) => t.status === 'thinking' || t.status === 'processing',
+  );
   return active ? getWorkingChapterLabel(active) : null;
 });
 
@@ -155,7 +160,7 @@ onUnmounted(() => {
 const taskStatusLabels: Record<string, string> = {
   thinking: '思考中',
   processing: '处理中',
-  completed: '已完成',
+  end: '已完成',
   error: '错误',
   cancelled: '已取消',
 };
@@ -164,7 +169,9 @@ const taskStatusLabels: Record<string, string> = {
 const autoScrollEnabled = computed(() => bookDetailsStore.translationProgress.autoScrollEnabled);
 
 // Auto Tab Switching State - 从 store 获取
-const autoTabSwitchingEnabled = computed(() => bookDetailsStore.translationProgress.autoTabSwitchingEnabled);
+const autoTabSwitchingEnabled = computed(
+  () => bookDetailsStore.translationProgress.autoTabSwitchingEnabled,
+);
 
 // Task Fold State - 从 store 获取
 const taskFolded = computed(() => bookDetailsStore.translationProgress.taskFolded);
@@ -251,7 +258,7 @@ const getActiveTab = (taskId: string): string => {
 const isTaskThinking = (taskId: string): boolean => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   if (!task) return false;
-  
+
   // 如果状态是 'thinking'，检查是否有最近的更新
   if (task.status === 'thinking') {
     const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
@@ -262,34 +269,35 @@ const isTaskThinking = (taskId: string): boolean => {
     }
     return true;
   }
-  
+
   // 如果状态是 'processing'，需要判断是思考还是输出
   if (task.status === 'processing') {
-    const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
+    const hasThinking =
+      task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
     if (!hasThinking) {
       return false;
     }
-    
+
     const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
     const now = Date.now();
     const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
-    
+
     // 只有在最近2秒内更新过才显示思考指示器
     if (!recentThinking) {
       return false;
     }
-    
+
     const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
-    
+
     // 如果只有思考消息，没有输出，显示思考指示器
     if (!hasOutput) {
       return true;
     }
-    
+
     // 如果两者都有，根据最后更新时间判断哪个更活跃
     const outputTime = lastOutputUpdate.value[taskId] || 0;
     const recentOutput = outputTime > 0 && now - outputTime < 2000;
-    
+
     // 如果思考消息最近更新过，而输出内容没有最近更新，显示思考指示器
     if (recentThinking && !recentOutput) {
       return true;
@@ -299,7 +307,7 @@ const isTaskThinking = (taskId: string): boolean => {
       return true;
     }
   }
-  
+
   return false;
 };
 
@@ -307,39 +315,39 @@ const isTaskThinking = (taskId: string): boolean => {
 const isTaskOutputting = (taskId: string): boolean => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   if (!task) return false;
-  
+
   // 只有 'processing' 状态才可能输出
   if (task.status !== 'processing') {
     return false;
   }
-  
+
   const hasOutput = task.outputContent !== undefined && task.outputContent.trim().length > 0;
   if (!hasOutput) {
     return false;
   }
-  
+
   // 检查输出内容是否在最近2秒内更新过
   const outputTime = lastOutputUpdate.value[taskId] || 0;
   const now = Date.now();
   const recentOutput = outputTime > 0 && now - outputTime < 2000;
-  
+
   // 只有在最近2秒内更新过才显示输出指示器
   if (!recentOutput) {
     return false;
   }
-  
+
   // 如果有输出内容且最近更新过，检查是否与思考消息冲突
   const hasThinking = task.thinkingMessage !== undefined && task.thinkingMessage.trim().length > 0;
-  
+
   // 如果没有思考消息，显示输出指示器
   if (!hasThinking) {
     return true;
   }
-  
+
   // 如果两者都有，根据最后更新时间判断
   const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
   const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
-  
+
   // 如果输出内容最近更新过，而思考消息没有最近更新，显示输出指示器
   if (recentOutput && !recentThinking) {
     return true;
@@ -348,7 +356,7 @@ const isTaskOutputting = (taskId: string): boolean => {
   if (recentThinking && recentOutput && outputTime > thinkingTime) {
     return true;
   }
-  
+
   return false;
 };
 
@@ -396,7 +404,7 @@ const toggleAutoScroll = (taskId: string) => {
       // 根据当前激活的标签页滚动对应的容器
       const activeTab = getActiveTab(taskId);
       let container: HTMLElement | null = null;
-      
+
       if (activeTab === 'thinking') {
         container = thinkingContainers.value[taskId] ?? null;
       } else if (activeTab === 'output') {
@@ -404,7 +412,7 @@ const toggleAutoScroll = (taskId: string) => {
       } else if (activeTab === 'todos') {
         container = todosContainers.value[taskId] ?? null;
       }
-      
+
       if (container) {
         scrollToBottom(container);
       }
@@ -437,16 +445,16 @@ const toggleAutoTabSwitching = (taskId: string) => {
   }
 };
 
-const clearCompletedTasks = async () => {
+const clearReviewedTasks = async () => {
   try {
-    // Only clear translation-related completed tasks
+    // Only clear translation-related reviewed tasks
     const translationTasks = aiProcessingStore.activeTasks.filter(
       (task) =>
         (task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading') &&
-        (task.status === 'completed' || task.status === 'error' || task.status === 'cancelled'),
+        (task.status === 'end' || task.status === 'error' || task.status === 'cancelled'),
     );
 
-    // Remove each translation-related completed task
+    // Remove each translation-related reviewed task
     for (const task of translationTasks) {
       await aiProcessingStore.removeTask(task.id);
     }
@@ -454,11 +462,11 @@ const clearCompletedTasks = async () => {
     toast.add({
       severity: 'success',
       summary: '清除成功',
-      detail: `已清除 ${translationTasks.length} 个翻译相关的已完成任务`,
+      detail: `已清除 ${translationTasks.length} 个翻译相关的已结束任务`,
       life: 3000,
     });
   } catch (error) {
-    console.error('Failed to clear completed tasks:', error);
+    console.error('Failed to clear reviewed tasks:', error);
     toast.add({
       severity: 'error',
       summary: '清除失败',
@@ -623,7 +631,7 @@ watch(
     // 跟踪思考消息的更新时间
     const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
-    
+
     // 清理已移除任务的跟踪数据
     for (const taskId of Object.keys(lastThinkingUpdate.value)) {
       if (!currentTaskIds.has(taskId)) {
@@ -636,7 +644,7 @@ watch(
         delete formattedThinkingCache.value[taskId];
       }
     }
-    
+
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
       if (task.length > oldLength) {
@@ -645,7 +653,7 @@ watch(
         updateFormattedThinkingCache(task.id);
       }
     }
-    
+
     // 使用节流函数处理滚动
     nextTick(() => {
       handleThinkingScroll();
@@ -691,7 +699,7 @@ watch(
     // 跟踪输出内容的更新时间
     const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
-    
+
     // 清理已移除任务的跟踪数据
     for (const taskId of Object.keys(lastOutputUpdate.value)) {
       if (!currentTaskIds.has(taskId)) {
@@ -704,7 +712,7 @@ watch(
         delete displayedOutputContent.value[taskId];
       }
     }
-    
+
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
       if (task.length > oldLength) {
@@ -713,7 +721,7 @@ watch(
         updateDisplayedOutputContent(task.id);
       }
     }
-    
+
     // 使用节流函数处理滚动
     nextTick(() => {
       handleOutputScroll();
@@ -805,17 +813,16 @@ watch(
             <div
               v-if="
                 recentAITasks.some(
-                  (t) =>
-                    t.status === 'completed' || t.status === 'error' || t.status === 'cancelled',
+                  (t) => t.status === 'end' || t.status === 'error' || t.status === 'cancelled',
                 )
               "
               class="ai-history-clear-actions"
             >
               <Button
                 icon="pi pi-trash"
-                label="清除已完成/已取消的任务"
+                label="清除已完成/错误/已取消的任务"
                 class="p-button-text p-button-sm ai-history-clear-button"
-                @click="clearCompletedTasks"
+                @click="clearReviewedTasks"
               />
             </div>
             <div
@@ -824,7 +831,7 @@ watch(
               class="ai-history-task-item"
               :class="{
                 'task-active': task.status === 'thinking' || task.status === 'processing',
-                'task-completed': task.status === 'completed',
+                'task-ended': task.status === 'end',
                 'task-error': task.status === 'error',
                 'task-cancelled': task.status === 'cancelled',
                 'task-folded': taskFolded[task.id],
@@ -843,7 +850,7 @@ watch(
                     :class="{
                       'pi-spin pi-spinner':
                         task.status === 'thinking' || task.status === 'processing',
-                      'pi-check-circle': task.status === 'completed',
+                      'pi-check-circle': task.status === 'end',
                       'pi-times-circle': task.status === 'error',
                       'pi-ban': task.status === 'cancelled',
                     }"
@@ -863,9 +870,7 @@ watch(
                     formatTaskDuration(task.startTime, task.endTime)
                   }}</span>
                   <Button
-                    :icon="
-                      autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'
-                    "
+                    :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
                     :class="[
                       'p-button-text p-button-sm ai-task-auto-scroll-toggle',
                       { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
@@ -886,8 +891,7 @@ watch(
                     :class="[
                       'p-button-text p-button-sm ai-task-auto-tab-switching-toggle',
                       {
-                        'auto-tab-switching-enabled':
-                          autoTabSwitchingEnabled[task.id] !== false,
+                        'auto-tab-switching-enabled': autoTabSwitchingEnabled[task.id] !== false,
                       },
                     ]"
                     :title="
@@ -908,7 +912,9 @@ watch(
               </div>
               <div v-if="getWorkingChapterLabel(task)" class="ai-task-working-chapter">
                 <span class="ai-task-working-chapter-label">工作章节：</span>
-                <span class="ai-task-working-chapter-title">{{ getWorkingChapterLabel(task) }}</span>
+                <span class="ai-task-working-chapter-title">{{
+                  getWorkingChapterLabel(task)
+                }}</span>
               </div>
               <Transition name="task-content">
                 <div v-if="!taskFolded[task.id]" class="ai-task-content">
@@ -1108,9 +1114,7 @@ watch(
           <i class="translation-progress-icon pi pi-list"></i>
           <span class="translation-progress-title">AI 任务历史</span>
         </div>
-        <div class="translation-progress-message">
-          查看翻译、润色和校对任务的执行历史
-        </div>
+        <div class="translation-progress-message">查看翻译、润色和校对任务的执行历史</div>
       </div>
       <div class="translation-progress-actions">
         <!-- 无操作按钮 -->
@@ -1296,7 +1300,7 @@ watch(
   background: var(--primary-opacity-10);
 }
 
-.ai-history-task-item.task-completed {
+.ai-history-task-item.task-ended {
   border-color: var(--green-500-opacity-30);
   background: var(--green-500-opacity-10);
 }
