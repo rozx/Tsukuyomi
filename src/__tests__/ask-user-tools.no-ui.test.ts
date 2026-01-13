@@ -127,14 +127,14 @@ describe('ask_user tool (no UI fallback)', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).window = {
-      __lunaAskUserBatch: async () => {
-        return {
+      __lunaAskUserBatch: () => {
+        return Promise.resolve({
           cancelled: false,
           answers: [
             { question_index: 0, answer: 'A1' },
             { question_index: 2, answer: 'A3' },
           ],
-        };
+        });
       },
     };
 
@@ -153,7 +153,7 @@ describe('ask_user tool (no UI fallback)', () => {
     expect(Array.isArray(obj.answers)).toBe(true);
 
     expect(onAction).toHaveBeenCalled();
-    const firstCall = onAction.mock.calls[0]?.[0] as any;
+    const firstCall = (onAction.mock.calls[0] as unknown[])?.[0] as any;
     expect(firstCall?.data?.tool_name).toBe('ask_user_batch');
     // 保持原始长度与下标：第 2 题为空字符串占位
     expect(firstCall?.data?.questions).toEqual(['Q1', '', 'Q3']);
