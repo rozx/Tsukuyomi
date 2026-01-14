@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Dialog from 'primevue/dialog';
@@ -83,7 +83,6 @@ const loadMemories = async () => {
 };
 
 // 监听书籍变化
-import { watch } from 'vue';
 watch(
   () => props.book?.id,
   () => {
@@ -91,6 +90,38 @@ watch(
   },
   { immediate: true },
 );
+
+// 监听 Memory 变更（同步/其他入口写入 IndexedDB 时也能刷新 UI）
+let unsubscribeMemoryListener: (() => void) | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+const scheduleRefresh = () => {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    // 不阻塞 UI：只要当前有 book，就刷新
+    void loadMemories();
+  }, 200);
+};
+
+onMounted(() => {
+  unsubscribeMemoryListener = MemoryService.addMemoryChangeListener((event) => {
+    const currentBookId = props.book?.id;
+    if (!currentBookId) return;
+
+    // 只刷新当前书籍的 Memory，避免无谓刷新
+    if (event.detail.bookId !== currentBookId) return;
+
+    scheduleRefresh();
+  });
+});
+
+onUnmounted(() => {
+  if (unsubscribeMemoryListener) unsubscribeMemoryListener();
+  unsubscribeMemoryListener = null;
+
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+});
 
 // 打开添加对话框
 const openAddDialog = () => {

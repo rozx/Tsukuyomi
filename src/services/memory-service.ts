@@ -21,6 +21,37 @@ interface MemoryStorage {
  * 提供 Memory 的 CRUD 操作，支持 LRU 缓存和每本书最多 500 条记录的限制
  */
 export class MemoryService {
+  /**
+   * Memory 变更事件（用于让 UI 在 IndexedDB 变更后自动刷新）
+   * 注意：这是轻量事件总线，不做持久化。
+   */
+  private static readonly memoryEvents = new EventTarget();
+
+  static addMemoryChangeListener(
+    listener: (event: CustomEvent<{ bookId: string; memoryId?: string; action: string }>) => void,
+  ): () => void {
+    const handler = (event: Event) => {
+      listener(event as CustomEvent<{ bookId: string; memoryId?: string; action: string }>);
+    };
+
+    this.memoryEvents.addEventListener('memory-changed', handler);
+    return () => this.memoryEvents.removeEventListener('memory-changed', handler);
+  }
+
+  private static dispatchMemoryChanged(detail: { bookId: string; memoryId?: string; action: string }) {
+    // Bun 测试环境可能没有 CustomEvent，做一个安全降级
+    const hasCustomEvent = typeof (globalThis as any).CustomEvent !== 'undefined';
+    const event = hasCustomEvent
+      ? new CustomEvent('memory-changed', { detail })
+      : (() => {
+          const e = new Event('memory-changed') as Event & { detail?: typeof detail };
+          (e as any).detail = detail;
+          return e;
+        })();
+
+    this.memoryEvents.dispatchEvent(event);
+  }
+
   // LRU 内存缓存，避免重复访问数据库
   // 使用 Map 的插入顺序实现 LRU：最近访问的条目会被移动到末尾
   private static memoryCache = new Map<string, Memory>();
@@ -320,6 +351,8 @@ export class MemoryService {
       // 清除该书籍的搜索结果缓存（因为新增了记忆）
       this.clearSearchCacheForBook(bookId);
 
+      this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
+
       return result;
     } catch (error) {
       console.error('Failed to create memory:', error);
@@ -395,6 +428,8 @@ export class MemoryService {
         this.evictCacheIfNeeded();
         this.clearSearchCacheForBook(bookId);
 
+        this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
+
         return result;
       }
 
@@ -452,6 +487,8 @@ export class MemoryService {
       this.memoryCache.set(cacheKey, result);
       this.evictCacheIfNeeded();
       this.clearSearchCacheForBook(bookId);
+
+      this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
 
       return result;
     } catch (error) {
@@ -760,6 +797,8 @@ export class MemoryService {
       // 清除该书籍的搜索结果缓存（因为记忆内容/摘要已更新）
       this.clearSearchCacheForBook(bookId);
 
+      this.dispatchMemoryChanged({ bookId, memoryId, action: 'updated' });
+
       return result;
     } catch (error) {
       console.error('Failed to update memory:', error);
@@ -802,6 +841,8 @@ export class MemoryService {
 
       // 清除该书籍的搜索结果缓存（因为删除了记忆）
       this.clearSearchCacheForBook(bookId);
+
+      this.dispatchMemoryChanged({ bookId, memoryId, action: 'deleted' });
     } catch (error) {
       console.error('Failed to delete memory:', error);
       if (error instanceof Error) {
