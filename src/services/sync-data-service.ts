@@ -846,7 +846,11 @@ export class SyncDataService {
           // 创建远程 Memory 的映射（按 ID）
           const remoteMemoryMap = new Map<string, Memory>();
           for (const remoteMemory of remoteMemories) {
-            remoteMemoryMap.set(remoteMemory.id, remoteMemory);
+            // 远程可能存在重复 id（历史数据问题），保留 lastAccessedAt 更大的那条
+            const existing = remoteMemoryMap.get(remoteMemory.id);
+            if (!existing || remoteMemory.lastAccessedAt > existing.lastAccessedAt) {
+              remoteMemoryMap.set(remoteMemory.id, remoteMemory);
+            }
           }
 
           // 合并 Memory：保留最新的 lastAccessedAt 时间
@@ -879,10 +883,12 @@ export class SyncDataService {
           // 添加远程独有的 Memory
           for (const remoteMemory of remoteMemoryMap.values()) {
             try {
-              await MemoryService.createMemory(
+              await MemoryService.createMemoryWithId(
                 remoteMemory.bookId,
+                remoteMemory.id,
                 remoteMemory.content,
                 remoteMemory.summary,
+                { createdAt: remoteMemory.createdAt, lastAccessedAt: remoteMemory.lastAccessedAt },
               );
             } catch (error) {
               console.warn(

@@ -328,6 +328,142 @@ export class MemoryService {
   }
 
   /**
+   * 以指定 ID 创建 Memory（用于同步/导入）
+   * 注意：普通创建请使用 createMemory()，它会自动生成全局唯一的短 ID。
+   */
+  static async createMemoryWithId(
+    bookId: string,
+    memoryId: string,
+    content: string,
+    summary: string,
+    timestamps?: { createdAt?: number; lastAccessedAt?: number },
+  ): Promise<Memory> {
+    if (!bookId) {
+      throw new Error('书籍 ID 不能为空');
+    }
+    if (!memoryId) {
+      throw new Error('Memory ID 不能为空');
+    }
+    if (!content) {
+      throw new Error('内容不能为空');
+    }
+    if (!summary) {
+      throw new Error('摘要不能为空');
+    }
+
+    try {
+      const db = await getDB();
+      const tx = db.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      const bookIdIndex = store.index('by-bookId');
+
+      const existing = (await store.get(memoryId)) as MemoryStorage | undefined;
+      if (existing) {
+        // 如果已存在，视为“更新”（避免同步重复创建）
+        if (existing.bookId !== bookId) {
+          throw new Error(`Memory ID 冲突：${memoryId}`);
+        }
+
+        const updatedMemory: MemoryStorage = {
+          ...existing,
+          content,
+          summary,
+          createdAt:
+            typeof timestamps?.createdAt === 'number'
+              ? Math.min(existing.createdAt, timestamps.createdAt)
+              : existing.createdAt,
+          lastAccessedAt:
+            typeof timestamps?.lastAccessedAt === 'number'
+              ? Math.max(existing.lastAccessedAt, timestamps.lastAccessedAt)
+              : existing.lastAccessedAt,
+        };
+
+        await store.put(updatedMemory);
+        await tx.done;
+
+        const result: Memory = {
+          id: updatedMemory.id,
+          bookId: updatedMemory.bookId,
+          content: updatedMemory.content,
+          summary: updatedMemory.summary,
+          createdAt: updatedMemory.createdAt,
+          lastAccessedAt: updatedMemory.lastAccessedAt,
+        };
+
+        const cacheKey = this.getCacheKey(bookId, memoryId);
+        this.memoryCache.set(cacheKey, result);
+        this.evictCacheIfNeeded();
+        this.clearSearchCacheForBook(bookId);
+
+        return result;
+      }
+
+      // 新建：如果达到限制，删除最旧的记录
+      const count = await bookIdIndex.count(bookId);
+      if (count >= MAX_MEMORIES_PER_BOOK) {
+        const allMemories = (await bookIdIndex.getAll(bookId)) as MemoryStorage[];
+
+        let oldestId: string | null = null;
+        let oldestTime = Number.MAX_SAFE_INTEGER;
+
+        for (const memory of allMemories) {
+          if (memory.lastAccessedAt < oldestTime) {
+            oldestTime = memory.lastAccessedAt;
+            oldestId = memory.id;
+          }
+        }
+
+        if (oldestId) {
+          await store.delete(oldestId);
+          const cacheKey = this.getCacheKey(bookId, oldestId);
+          this.memoryCache.delete(cacheKey);
+        }
+      }
+
+      const now = Date.now();
+      const createdAt = typeof timestamps?.createdAt === 'number' ? timestamps.createdAt : now;
+      const lastAccessedAt =
+        typeof timestamps?.lastAccessedAt === 'number'
+          ? timestamps.lastAccessedAt
+          : createdAt;
+
+      const memory: MemoryStorage = {
+        id: memoryId,
+        bookId,
+        content,
+        summary,
+        createdAt,
+        lastAccessedAt: Math.max(lastAccessedAt, createdAt),
+      };
+
+      await store.put(memory);
+      await tx.done;
+
+      const result: Memory = {
+        id: memory.id,
+        bookId: memory.bookId,
+        content: memory.content,
+        summary: memory.summary,
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.lastAccessedAt,
+      };
+
+      const cacheKey = this.getCacheKey(bookId, memory.id);
+      this.memoryCache.set(cacheKey, result);
+      this.evictCacheIfNeeded();
+      this.clearSearchCacheForBook(bookId);
+
+      return result;
+    } catch (error) {
+      console.error('Failed to create memory with id:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('创建 Memory 失败');
+    }
+  }
+
+  /**
    * 根据 ID 获取 Memory
    */
   static async getMemory(bookId: string, memoryId: string): Promise<Memory | null> {

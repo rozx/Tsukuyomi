@@ -37,6 +37,23 @@ const mockSettingsStore = {
   cleanupOldDeletionRecords: mock(() => Promise.resolve()),
 };
 
+const mockMemoryService = {
+  getAllMemories: mock((_bookId: string) => Promise.resolve([] as any[])), // eslint-disable-line @typescript-eslint/no-explicit-any
+  updateMemory: mock(
+    (_bookId: string, _memoryId: string, _content: string, _summary: string) => Promise.resolve(),
+  ),
+  createMemory: mock((_bookId: string, _content: string, _summary: string) => Promise.resolve()),
+  createMemoryWithId: mock(
+    (
+      _bookId: string,
+      _memoryId: string,
+      _content: string,
+      _summary: string,
+      _timestamps?: { createdAt?: number; lastAccessedAt?: number },
+    ) => Promise.resolve(),
+  ),
+};
+
 // Mock Modules
 await mock.module('src/stores/ai-models', () => ({
   useAIModelsStore: () => mockAIModelsStore,
@@ -52,6 +69,10 @@ await mock.module('src/stores/cover-history', () => ({
 
 await mock.module('src/stores/settings', () => ({
   useSettingsStore: () => mockSettingsStore,
+}));
+
+await mock.module('src/services/memory-service', () => ({
+  MemoryService: mockMemoryService,
 }));
 
 // Mock ChapterContentService
@@ -84,6 +105,11 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedCoverIds: [],
       deletedCoverUrls: [],
     };
+
+    mockMemoryService.getAllMemories.mockClear();
+    mockMemoryService.updateMemory.mockClear();
+    mockMemoryService.createMemory.mockClear();
+    mockMemoryService.createMemoryWithId.mockClear();
   });
 
   afterEach(() => {
@@ -458,6 +484,47 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(result).toEqual([]);
       // 不应把该封面写回（即 addCover 不应被调用）
       expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+    });
+
+    it('同步 Memory 时不应因为生成新 ID 而重复创建（应保留远程 memory.id）', async () => {
+      // 本地已有书籍（同步 Memory 合并逻辑依赖 booksStore.books）
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      const remoteMemory = {
+        id: 'abcd1234',
+        bookId: 'b1',
+        content: 'c',
+        summary: 's',
+        createdAt: 1000,
+        lastAccessedAt: 1500,
+      };
+
+      // 第一次：本地没有该 Memory，应该创建（并且使用远程 id）
+      // 第二次：本地已经有该 Memory（同 id），不应该再创建
+      mockMemoryService.getAllMemories
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            ...remoteMemory,
+            // 确保不会触发 updateMemory（远程 lastAccessedAt 不更大）
+            lastAccessedAt: 2000,
+          },
+        ]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'abcd1234',
+        'c',
+        's',
+        expect.objectContaining({ createdAt: 1000, lastAccessedAt: 1500 }),
+      );
+
+      // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
+      expect(mockMemoryService.createMemory).not.toHaveBeenCalled();
     });
   });
 
