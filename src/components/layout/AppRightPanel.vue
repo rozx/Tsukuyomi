@@ -371,6 +371,7 @@ onUnmounted(() => {
   }
   thinkingActiveTimeouts.value.clear();
   thinkingActive.value.clear();
+  thinkingScrollHandlers.value.clear();
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
 });
@@ -615,6 +616,31 @@ const thinkingExpanded = ref<Map<string, boolean>>(new Map());
 // 思考过程内容容器 refs（用于滚动）
 const thinkingContentRefs = ref<Map<string, HTMLElement | null>>(new Map());
 
+// 思考过程展示缓存：避免每个 token 都触发整段文本更新（大字符串极易导致卡顿）
+const displayedThinkingProcess = ref<Record<string, string>>({});
+const displayedThinkingPreview = ref<Record<string, string>>({});
+
+const buildThinkingPreview = (thinkingProcess: string): string => {
+  if (!thinkingProcess) return '';
+  const firstNewlineIndex = thinkingProcess.indexOf('\n');
+  if (firstNewlineIndex < 0) return thinkingProcess;
+  const secondNewlineIndex = thinkingProcess.indexOf('\n', firstNewlineIndex + 1);
+  if (secondNewlineIndex < 0) return thinkingProcess;
+  return thinkingProcess.slice(0, secondNewlineIndex);
+};
+
+const updateDisplayedThinkingProcess = throttle((messageId: string, thinkingProcess: string) => {
+  displayedThinkingProcess.value[messageId] = thinkingProcess;
+  displayedThinkingPreview.value[messageId] = buildThinkingPreview(thinkingProcess);
+}, 120);
+
+const setDisplayedThinkingImmediatelyIfEmpty = (messageId: string, thinkingProcess: string) => {
+  if (displayedThinkingProcess.value[messageId] === undefined) {
+    displayedThinkingProcess.value[messageId] = thinkingProcess;
+    displayedThinkingPreview.value[messageId] = buildThinkingPreview(thinkingProcess);
+  }
+};
+
 // 思考过程活动状态（messageId -> isActive），用于显示加载指示器
 const thinkingActive = ref<Map<string, boolean>>(new Map());
 
@@ -699,6 +725,13 @@ const toggleThinking = (messageId: string) => {
   const willExpand = !current;
   thinkingExpanded.value.set(messageId, willExpand);
 
+  // 展开时，先把最新 thinking 文本同步到展示缓存（避免展开瞬间渲染超大字符串）
+  const msg = messages.value.find((m) => m.id === messageId);
+  if (msg?.thinkingProcess) {
+    setDisplayedThinkingImmediatelyIfEmpty(messageId, msg.thinkingProcess);
+    updateDisplayedThinkingProcess(messageId, msg.thinkingProcess);
+  }
+
   // 如果展开，等待 DOM 更新后滚动到底部
   if (willExpand) {
     void nextTick(() => {
@@ -707,14 +740,6 @@ const toggleThinking = (messageId: string) => {
       scrollToBottom();
     });
   }
-};
-
-// 获取思考过程预览（前2行）
-const getThinkingPreview = (thinkingProcess: string): string => {
-  if (!thinkingProcess) return '';
-  const lines = thinkingProcess.split('\n');
-  if (lines.length <= 2) return thinkingProcess;
-  return lines.slice(0, 2).join('\n');
 };
 
 // 获取默认助手模型
@@ -1106,6 +1131,8 @@ const sendMessage = async () => {
             msg.thinkingProcess = '';
           }
           msg.thinkingProcess += text;
+          setDisplayedThinkingImmediatelyIfEmpty(assistantMessageId, msg.thinkingProcess);
+          updateDisplayedThinkingProcess(assistantMessageId, msg.thinkingProcess);
           // 标记思考过程为活动状态（显示加载指示器）
           markThinkingActive(assistantMessageId);
           // 如果思考过程已展开，滚动到思考过程内容底部
@@ -2190,6 +2217,11 @@ const sendMessage = async () => {
         ...(savedThinkingProcess ? { thinkingProcess: savedThinkingProcess } : {}),
       };
       messages.value.push(newAssistantMessage);
+      if (savedThinkingProcess) {
+        displayedThinkingProcess.value[assistantMessageId] = savedThinkingProcess;
+        displayedThinkingPreview.value[assistantMessageId] =
+          buildThinkingPreview(savedThinkingProcess);
+      }
       scrollToBottom();
 
       // 重置摘要标志
@@ -2218,6 +2250,8 @@ const sendMessage = async () => {
                 msg.thinkingProcess = '';
               }
               msg.thinkingProcess += text;
+              setDisplayedThinkingImmediatelyIfEmpty(assistantMessageId, msg.thinkingProcess);
+              updateDisplayedThinkingProcess(assistantMessageId, msg.thinkingProcess);
               // 标记思考过程为活动状态（显示加载指示器）
               markThinkingActive(assistantMessageId);
               // 如果思考过程已展开，滚动到思考过程内容底部
@@ -2542,6 +2576,30 @@ const loadCurrentSession = async () => {
   } else {
     messages.value = [];
   }
+
+  // 切换/加载会话时，重置与 messageId 相关的 UI 状态与缓存（避免泄漏与误复用）
+  thinkingExpanded.value = new Map();
+  thinkingContentRefs.value.clear();
+  thinkingScrollHandlers.value.clear();
+
+  for (const timeoutId of thinkingActiveTimeouts.value.values()) {
+    clearTimeout(timeoutId);
+  }
+  thinkingActiveTimeouts.value.clear();
+  thinkingActive.value.clear();
+
+  const nextDisplayed: Record<string, string> = {};
+  const nextPreview: Record<string, string> = {};
+  for (const msg of messages.value) {
+    const thinking = msg.thinkingProcess;
+    if (thinking && thinking.trim()) {
+      nextDisplayed[msg.id] = thinking;
+      nextPreview[msg.id] = buildThinkingPreview(thinking);
+    }
+  }
+  displayedThinkingProcess.value = nextDisplayed;
+  displayedThinkingPreview.value = nextPreview;
+
   // 使用 nextTick 确保在下一个 tick 重置标记
   await nextTick();
   isUpdatingFromStore = false;
@@ -2569,6 +2627,10 @@ watch(
 
 // 监听消息变化，同步到会话
 // 使用 immediate: false 避免初始化时的同步
+const syncMessagesToSessionThrottled = throttle((newMessages: ChatMessage[]) => {
+  chatSessionsStore.updateCurrentSessionMessages(newMessages);
+}, 200);
+
 watch(
   () => messages.value,
   (newMessages) => {
@@ -2576,7 +2638,7 @@ watch(
     if (isUpdatingFromStore) {
       return;
     }
-    chatSessionsStore.updateCurrentSessionMessages(newMessages);
+    syncMessagesToSessionThrottled(newMessages);
   },
   { deep: true },
 );
@@ -2602,6 +2664,31 @@ watch(
   },
 );
 
+// 清理已删除消息对应的缓存与 handler，避免长会话内存不断增长
+watch(
+  () => messages.value.map((m) => m.id),
+  (newIds) => {
+    const idSet = new Set(newIds);
+
+    for (const id of Object.keys(displayedThinkingProcess.value)) {
+      if (!idSet.has(id)) {
+        delete displayedThinkingProcess.value[id];
+        delete displayedThinkingPreview.value[id];
+      }
+    }
+
+    for (const id of Array.from(thinkingScrollHandlers.value.keys())) {
+      if (!idSet.has(id)) {
+        thinkingScrollHandlers.value.delete(id);
+        thinkingContentRefs.value.delete(id);
+        thinkingExpanded.value.delete(id);
+        thinkingActive.value.delete(id);
+      }
+    }
+  },
+  { flush: 'post' },
+);
+
 // 监听思考过程更新，如果已展开则滚动到底部
 watch(
   () =>
@@ -2613,6 +2700,7 @@ watch(
     if (!oldValues) return;
 
     const oldLenById = new Map(oldValues.map((v) => [v.id, v.thinkingLen]));
+    const msgById = new Map(messages.value.map((m) => [m.id, m]));
 
     for (const newVal of newValues) {
       const oldLen = oldLenById.get(newVal.id);
@@ -2623,6 +2711,15 @@ watch(
         thinkingExpanded.value.get(newVal.id)
       ) {
         requestScrollThinkingToBottom(newVal.id);
+      }
+
+      if (oldLen !== undefined && newVal.thinkingLen > oldLen && newVal.thinkingLen > 0) {
+        const msg = msgById.get(newVal.id);
+        const thinking = msg?.thinkingProcess;
+        if (thinking) {
+          setDisplayedThinkingImmediatelyIfEmpty(newVal.id, thinking);
+          updateDisplayedThinkingProcess(newVal.id, thinking);
+        }
       }
     }
   },
@@ -3089,8 +3186,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
               <div
                 v-if="
                   message.role === 'assistant' &&
-                  message.thinkingProcess &&
-                  message.thinkingProcess.trim()
+                  displayedThinkingProcess[message.id] &&
+                  displayedThinkingProcess[message.id]?.trim()
                 "
                 class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 bg-white/3 border border-white/10"
               >
@@ -3119,7 +3216,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   :data-message-id="message.id"
                   style="word-break: break-all; overflow-wrap: anywhere"
                 >
-                  {{ message.thinkingProcess }}
+                  {{ displayedThinkingProcess[message.id] }}
                 </div>
                 <div
                   v-else
@@ -3133,7 +3230,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                     overflow-wrap: anywhere;
                   "
                 >
-                  {{ getThinkingPreview(message.thinkingProcess) }}
+                  {{ displayedThinkingPreview[message.id] || displayedThinkingProcess[message.id] }}
                 </div>
               </div>
               <template
