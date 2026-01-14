@@ -71,6 +71,9 @@ const buildAIMessageHistory = (
         !msg.isSummarization &&
         !msg.isSummaryResponse,
     )
+    // [兼容] 过滤空消息：部分 OpenAI 兼容服务（如 Moonshot/Kimi）会拒绝空 content
+    // 也可以避免把 UI 占位符 assistant 气泡（content=''）带入上下文
+    .filter((msg) => Boolean(msg.content && msg.content.trim()))
     .map((msg) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,

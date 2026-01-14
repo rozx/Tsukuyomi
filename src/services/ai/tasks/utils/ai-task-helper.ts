@@ -269,6 +269,8 @@ export function verifyParagraphCompleteness(
 const PRODUCTIVE_TOOLS = [
   'list_terms',
   'list_characters',
+  'list_memories',
+  'list_momeries',
   'search_memory_by_keywords',
   'get_chapter_info',
   'get_book_info',
@@ -284,6 +286,8 @@ const PRODUCTIVE_TOOLS = [
 const TOOL_CALL_LIMITS: Record<string, number> = {
   list_terms: 3, // 术语表最多调用 3 次
   list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、review 阶段各调用一次）
+  list_memories: 1, // Memory 列表通常只需要调用一次
+  list_momeries: 1,
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
@@ -297,6 +301,8 @@ const TOOL_CALL_LIMITS: Record<string, number> = {
 const TOOL_RESULT_MAX_LENGTHS: Record<string, number> = {
   list_terms: 2000,
   list_characters: 2000,
+  list_memories: 1200,
+  list_momeries: 1200,
   search_memory_by_keywords: 1000,
   get_chapter_info: 800,
   get_book_info: 800,
@@ -1493,7 +1499,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
       history.push({
         role: 'assistant',
-        content: result.text || null,
+        // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
+        content: result.text && result.text.trim() ? result.text : '（调用工具）',
         tool_calls: result.toolCalls,
         reasoning_content: result.reasoningContent || null, // DeepSeek 要求此字段必须存在
       });

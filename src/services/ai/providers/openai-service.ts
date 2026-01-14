@@ -175,7 +175,8 @@ export class OpenAIService extends BaseAIService {
           if (msg.role === 'tool') {
             const toolMsg = {
               role: 'tool',
-              content: msg.content || '',
+              // [兼容] 避免部分 OpenAI 兼容服务拒绝空 content
+              content: msg.content && msg.content.trim() ? msg.content : '（工具返回为空）',
               tool_call_id: msg.tool_call_id!,
             } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
             // [兼容] 部分 OpenAI 兼容服务（如部分 Moonshot/Kimi 配置）可能需要 name 字段
@@ -186,9 +187,12 @@ export class OpenAIService extends BaseAIService {
             return toolMsg;
           }
           if (msg.role === 'assistant' && msg.tool_calls) {
+            // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
+            const safeAssistantContent =
+              typeof msg.content === 'string' && msg.content.trim() ? msg.content : '（调用工具）';
             const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
               role: 'assistant',
-              content: msg.content,
+              content: safeAssistantContent,
               tool_calls: msg.tool_calls.map((tc) => ({
                 id: tc.id,
                 type: 'function',
@@ -210,6 +214,17 @@ export class OpenAIService extends BaseAIService {
             content: msg.content || '',
             name: msg.name,
           } as OpenAI.Chat.Completions.ChatCompletionMessageParam;
+        });
+
+        // [兼容] 清理空消息：部分 OpenAI 兼容服务会拒绝空 content（尤其是 assistant/user/system）
+        // - 保留 tool 消息（已在上面兜底 content）
+        // - 保留包含 tool_calls 的 assistant 消息（已在上面兜底 content）
+        messages = messages.filter((m) => {
+          if (m.role === 'tool') return true;
+          // assistant tool_calls 在上面分支已保证 content 非空，这里直接保留
+          if (m.role === 'assistant' && (m as any).tool_calls) return true;
+          const content = (m as any).content;
+          return typeof content === 'string' ? content.trim().length > 0 : Boolean(content);
         });
       } else {
         messages = [{ role: 'user', content: request.prompt || '' }];

@@ -5,15 +5,7 @@ import type { AITool } from 'src/services/ai/types/ai-service';
 import type { ToastCallback } from './toast-helper';
 
 export interface ActionInfo {
-  type:
-    | 'create'
-    | 'update'
-    | 'delete'
-    | 'web_search'
-    | 'web_fetch'
-    | 'read'
-    | 'navigate'
-    | 'ask';
+  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate' | 'ask';
   entity:
     | 'term'
     | 'character'
@@ -64,7 +56,9 @@ export interface ActionInfo {
         id?: string;
         tool_name?: string;
         limit?: number;
+        offset?: number;
         sort_by?: string;
+        include_content?: boolean;
       }
     | {
         tool_name: 'ask_user';

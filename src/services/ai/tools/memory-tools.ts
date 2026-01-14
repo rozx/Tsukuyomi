@@ -1,7 +1,166 @@
 import { MemoryService } from 'src/services/memory-service';
 import type { ToolDefinition } from './types';
+import type { ToolContext } from './types';
+
+function createListMemoriesHandler(toolName: 'list_memories' | 'list_momeries') {
+  return async (
+    args: {
+      offset?: number;
+      limit?: number;
+      sort_by?: string;
+      include_content?: boolean;
+    },
+    context: ToolContext,
+  ) => {
+    const { bookId, onAction } = context;
+    if (!bookId) {
+      return JSON.stringify({
+        success: false,
+        error: '书籍 ID 不能为空',
+      });
+    }
+
+    const {
+      offset = 0,
+      limit = 20,
+      sort_by = 'lastAccessedAt',
+      include_content = false,
+    } = args ?? {};
+
+    const validOffset = Math.max(0, Math.floor(Number(offset) || 0));
+    const validLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 20)), 100);
+    const validSortBy = sort_by === 'createdAt' ? 'createdAt' : 'lastAccessedAt';
+    const includeContent = Boolean(include_content);
+
+    try {
+      const allMemories = await MemoryService.getAllMemories(bookId);
+
+      const sorted = [...allMemories].sort((a, b) =>
+        validSortBy === 'createdAt'
+          ? b.createdAt - a.createdAt
+          : b.lastAccessedAt - a.lastAccessedAt,
+      );
+
+      const total = sorted.length;
+      const page = sorted.slice(validOffset, validOffset + validLimit);
+
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'memory',
+          data: {
+            offset: validOffset,
+            limit: validLimit,
+            sort_by: validSortBy,
+            include_content: includeContent,
+            tool_name: toolName,
+          },
+        });
+      }
+
+      return JSON.stringify({
+        success: true,
+        memories: page.map((m) => {
+          const base = {
+            id: m.id,
+            summary: m.summary,
+            createdAt: m.createdAt,
+            lastAccessedAt: m.lastAccessedAt,
+          };
+
+          return includeContent ? { ...base, content: m.content } : base;
+        }),
+        count: page.length,
+        total,
+        offset: validOffset,
+        limit: validLimit,
+        sort_by: validSortBy,
+      });
+    } catch (error) {
+      return JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : '列出 Memory 失败',
+      });
+    }
+  };
+}
 
 export const memoryTools: ToolDefinition[] = [
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'list_memories',
+        description:
+          '列出指定书籍的 Memory 列表（用于管理/调试）。支持分页与排序，默认仅返回轻量字段（id/summary/createdAt/lastAccessedAt）。如需完整内容，请设置 include_content=true。',
+        parameters: {
+          type: 'object',
+          properties: {
+            offset: {
+              type: 'number',
+              description: '分页偏移量（从 0 开始）',
+              minimum: 0,
+            },
+            limit: {
+              type: 'number',
+              description: '返回数量（默认 20，建议不超过 50）',
+              minimum: 1,
+              maximum: 100,
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['createdAt', 'lastAccessedAt'],
+              description:
+                '排序方式：createdAt 按创建时间（最新在前），lastAccessedAt 按最后访问时间（默认）',
+            },
+            include_content: {
+              type: 'boolean',
+              description: '是否返回完整内容 content（默认 false）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: createListMemoriesHandler('list_memories'),
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'list_momeries',
+        description: '（拼写容错别名）列出指定书籍的 Memory 列表。行为与 list_memories 完全一致。',
+        parameters: {
+          type: 'object',
+          properties: {
+            offset: {
+              type: 'number',
+              description: '分页偏移量（从 0 开始）',
+              minimum: 0,
+            },
+            limit: {
+              type: 'number',
+              description: '返回数量（默认 20，建议不超过 50）',
+              minimum: 1,
+              maximum: 100,
+            },
+            sort_by: {
+              type: 'string',
+              enum: ['createdAt', 'lastAccessedAt'],
+              description:
+                '排序方式：createdAt 按创建时间（最新在前），lastAccessedAt 按最后访问时间（默认）',
+            },
+            include_content: {
+              type: 'boolean',
+              description: '是否返回完整内容 content（默认 false）',
+            },
+          },
+          required: [],
+        },
+      },
+    },
+    handler: createListMemoriesHandler('list_momeries'),
+  },
   {
     definition: {
       type: 'function',
@@ -91,7 +250,8 @@ export const memoryTools: ToolDefinition[] = [
               items: {
                 type: 'string',
               },
-              description: '搜索关键词数组（将在 Memory 的摘要中搜索，返回包含所有关键词的 Memory）',
+              description:
+                '搜索关键词数组（将在 Memory 的摘要中搜索，返回包含所有关键词的 Memory）',
             },
           },
           required: ['keywords'],
@@ -114,7 +274,9 @@ export const memoryTools: ToolDefinition[] = [
       }
 
       // 过滤掉空字符串
-      const validKeywords = keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0);
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
       if (validKeywords.length === 0) {
         return JSON.stringify({
           success: false,
@@ -334,8 +496,7 @@ export const memoryTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'delete_memory',
-        description:
-          '删除指定的 Memory 记录。当确定某个 Memory 不再需要时，可以使用此工具删除。',
+        description: '删除指定的 Memory 记录。当确定某个 Memory 不再需要时，可以使用此工具删除。',
         parameters: {
           type: 'object',
           properties: {
@@ -418,7 +579,8 @@ export const memoryTools: ToolDefinition[] = [
             sort_by: {
               type: 'string',
               enum: ['createdAt', 'lastAccessedAt'],
-              description: '排序方式：createdAt 按创建时间（最新创建的在前），lastAccessedAt 按最后访问时间（默认）',
+              description:
+                '排序方式：createdAt 按创建时间（最新创建的在前），lastAccessedAt 按最后访问时间（默认）',
             },
           },
           required: [],
@@ -479,4 +641,3 @@ export const memoryTools: ToolDefinition[] = [
     },
   },
 ];
-

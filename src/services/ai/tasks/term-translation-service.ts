@@ -375,7 +375,8 @@ ${getToolScopeRules(tools)}
           // 添加助手消息（包含工具调用）
           history.push({
             role: 'assistant',
-            content: result.text || null,
+            // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
+            content: result.text && result.text.trim() ? result.text : '（调用工具）',
             tool_calls: result.toolCalls,
             reasoning_content: result.reasoningContent || null,
           });

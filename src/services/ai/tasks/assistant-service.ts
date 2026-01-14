@@ -760,7 +760,9 @@ ${earlySection}${middleSection}${recentSection}
     if (toolCalls.length > 0) {
       messages.push({
         role: 'assistant',
-        content: fullText || null,
+        // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
+        // OpenAI 官方允许 null，但这里统一给一个极短占位符，避免 400：message must not be empty
+        content: fullText && fullText.trim() ? fullText : '（调用工具）',
         tool_calls: toolCalls,
         reasoning_content: reasoningContent || null,
       });
@@ -865,7 +867,8 @@ ${earlySection}${middleSection}${recentSection}
       if (toolCalls.length > 0) {
         messages.push({
           role: 'assistant',
-          content: followUpText || null,
+          // [兼容] 同上：避免 assistant content 为空导致部分兼容服务报错
+          content: followUpText && followUpText.trim() ? followUpText : '（调用工具）',
           tool_calls: toolCalls,
           reasoning_content: followUpReasoningContent || null,
         });
@@ -1300,10 +1303,10 @@ ${earlySection}${middleSection}${recentSection}
       // OpenAI API 要求：如果有 tool_calls，content 可以是 null；如果没有 tool_calls，content 必须有内容
       // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
       if (toolCalls.length > 0) {
-        // 有工具调用，content 可以是 null
+        // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
         messages.push({
           role: 'assistant',
-          content: fullText || null,
+          content: fullText && fullText.trim() ? fullText : '（调用工具）',
           tool_calls: toolCalls,
           reasoning_content: reasoningContent || null, // DeepSeek 要求此字段必须存在
         });

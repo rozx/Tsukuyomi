@@ -34,6 +34,8 @@ const NAVIGATION_AND_LIST_TOOLS = [
   'update_book_info',
   'list_characters',
   'list_terms',
+  'list_memories',
+  'list_momeries',
 ] as const;
 
 export class ToolRegistry {
