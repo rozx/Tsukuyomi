@@ -56,6 +56,38 @@ const SUMMARIZED_WITH_REASON_MESSAGE_CONTENT = '聊天总结完成，之前的�
 
 type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
 
+// 节流函数：限制函数执行频率（用于滚动/渲染更新，避免 token 级触发导致卡顿）
+function throttle<Args extends unknown[]>(
+  func: (...args: Args) => void,
+  delay: number,
+): (...args: Args) => void {
+  let lastCall = 0;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  return (...args: Args) => {
+    const now = Date.now();
+    const remaining = delay - (now - lastCall);
+
+    if (remaining <= 0) {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      lastCall = now;
+      func(...args);
+      return;
+    }
+
+    if (!timeoutId) {
+      timeoutId = setTimeout(() => {
+        lastCall = Date.now();
+        timeoutId = null;
+        func(...args);
+      }, remaining);
+    }
+  };
+}
+
 const buildAIMessageHistory = (
   session: SessionWithSummaryIndex | null,
 ): AIChatMessage[] | undefined => {
@@ -110,12 +142,10 @@ const formatActionForContext = (action: MessageAction): string => {
       const answered = action.batch_answers.length;
       parts.push(`已答=${answered}`);
       // 只展示前 2 题的“Q→A”预览，避免上下文膨胀
-      const previews = action.batch_answers
-        .slice(0, 2)
-        .map((a) => {
-          const q = action.batch_questions?.[a.question_index] ?? `#${a.question_index + 1}`;
-          return `${truncateForContext(q, 40)}→${truncateForContext(a.answer, 40)}`;
-        });
+      const previews = action.batch_answers.slice(0, 2).map((a) => {
+        const q = action.batch_questions?.[a.question_index] ?? `#${a.question_index + 1}`;
+        return `${truncateForContext(q, 40)}→${truncateForContext(a.answer, 40)}`;
+      });
       if (previews.length > 0) parts.push(`预览=${previews.join('；')}${answered > 2 ? '…' : ''}`);
     }
   }
@@ -137,7 +167,8 @@ const formatActionForContext = (action: MessageAction): string => {
 
   if (
     action.tool_name === 'batch_replace_translations' &&
-    (action.replaced_paragraph_count !== undefined || action.replaced_translation_count !== undefined)
+    (action.replaced_paragraph_count !== undefined ||
+      action.replaced_translation_count !== undefined)
   ) {
     const replacedParts: string[] = [];
     if (action.replaced_paragraph_count !== undefined) {
@@ -155,7 +186,9 @@ const formatActionForContext = (action: MessageAction): string => {
   }
 
   if (action.keywords && action.keywords.length > 0) {
-    parts.push(`关键词=${action.keywords.slice(0, 6).join('、')}${action.keywords.length > 6 ? '…' : ''}`);
+    parts.push(
+      `关键词=${action.keywords.slice(0, 6).join('、')}${action.keywords.length > 6 ? '…' : ''}`,
+    );
   }
 
   return parts.length > 0 ? `${title}：${parts.join('，')}` : title;
@@ -435,9 +468,7 @@ const performAutoSummarization = async (): Promise<void> => {
     );
 
     // 更新总结消息状态为完成
-    const summarizationMsgIndex = messages.value.findIndex(
-      (m) => m.id === summarizationMessageId,
-    );
+    const summarizationMsgIndex = messages.value.findIndex((m) => m.id === summarizationMessageId);
     if (summarizationMsgIndex >= 0) {
       const existingMsg = messages.value[summarizationMsgIndex];
       if (existingMsg) {
@@ -499,9 +530,7 @@ const hideSessionListPopover = () => {
 const recentSessions = computed(() => {
   const allSessions = chatSessionsStore.allSessions;
   const currentSessionId = chatSessionsStore.currentSessionId;
-  return allSessions
-    .filter((session) => session.id !== currentSessionId)
-    .slice(0, 5);
+  return allSessions.filter((session) => session.id !== currentSessionId).slice(0, 5);
 });
 
 // 切换到指定会话
@@ -640,12 +669,28 @@ const setThinkingContentRef = (messageId: string, el: HTMLElement | null) => {
 
 // 滚动思考过程内容到底部
 const scrollThinkingToBottom = (messageId: string) => {
-  void nextTick(() => {
-    const container = thinkingContentRefs.value.get(messageId);
-    if (container) {
-      container.scrollTop = container.scrollHeight;
-    }
+  const container = thinkingContentRefs.value.get(messageId);
+  if (!container) return;
+  // 使用 requestAnimationFrame 确保在浏览器绘制后滚动，减少抖动与重排
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
   });
+};
+
+// 为每条消息单独节流滚动，避免 thinking 高频更新导致 UI 卡死
+const thinkingScrollHandlers = ref<Map<string, () => void>>(new Map());
+
+const requestScrollThinkingToBottom = (messageId: string) => {
+  let handler = thinkingScrollHandlers.value.get(messageId);
+  if (!handler) {
+    handler = throttle(() => {
+      void nextTick(() => {
+        scrollThinkingToBottom(messageId);
+      });
+    }, 100);
+    thinkingScrollHandlers.value.set(messageId, handler);
+  }
+  handler();
 };
 
 // 切换思考过程折叠状态
@@ -657,7 +702,7 @@ const toggleThinking = (messageId: string) => {
   // 如果展开，等待 DOM 更新后滚动到底部
   if (willExpand) {
     void nextTick(() => {
-      scrollThinkingToBottom(messageId);
+      requestScrollThinkingToBottom(messageId);
       // 同时滚动消息容器到底部，确保思考过程气泡可见
       scrollToBottom();
     });
@@ -704,10 +749,19 @@ const contextInfo = computed(() => {
 const scrollToBottom = () => {
   void nextTick(() => {
     if (messagesContainerRef.value) {
-      messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight;
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.value) {
+          messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight;
+        }
+      });
     }
   });
 };
+
+// 流式输出时，使用节流版本避免每个 token 都触发 nextTick + 滚动
+const scrollToBottomThrottled = throttle(() => {
+  scrollToBottom();
+}, 100);
 
 // 聚焦输入框
 const focusInput = () => {
@@ -1036,7 +1090,7 @@ const sendMessage = async () => {
         if (msg) {
           if (chunk.text) {
             msg.content += chunk.text;
-            scrollToBottom();
+            scrollToBottomThrottled();
           }
         }
       },
@@ -1056,9 +1110,9 @@ const sendMessage = async () => {
           markThinkingActive(assistantMessageId);
           // 如果思考过程已展开，滚动到思考过程内容底部
           if (thinkingExpanded.value.get(assistantMessageId)) {
-            scrollThinkingToBottom(assistantMessageId);
+            requestScrollThinkingToBottom(assistantMessageId);
           }
-          scrollToBottom();
+          scrollToBottomThrottled();
         }
       },
       onToast: (message) => {
@@ -1582,7 +1636,8 @@ const sendMessage = async () => {
 
                       // 恢复段落的选中翻译 ID（批量替换可能会在“无选中翻译”时自动设置）
                       if ('old_selected_translation_id' in replacedParagraph) {
-                        paragraph.selectedTranslationId = replacedParagraph.old_selected_translation_id || '';
+                        paragraph.selectedTranslationId =
+                          replacedParagraph.old_selected_translation_id || '';
                       }
 
                       // 恢复每个翻译
@@ -1595,7 +1650,8 @@ const sendMessage = async () => {
                           paragraph.translations[translationIndex]!.translation =
                             oldTranslation.translation;
                           // 恢复原始模型信息（更完整的回滚）
-                          paragraph.translations[translationIndex]!.aiModelId = oldTranslation.aiModelId;
+                          paragraph.translations[translationIndex]!.aiModelId =
+                            oldTranslation.aiModelId;
                         }
                       }
                     }
@@ -2150,7 +2206,7 @@ const sendMessage = async () => {
             if (msg) {
               if (chunk.text) {
                 msg.content += chunk.text;
-                scrollToBottom();
+                scrollToBottomThrottled();
               }
             }
           },
@@ -2166,9 +2222,9 @@ const sendMessage = async () => {
               markThinkingActive(assistantMessageId);
               // 如果思考过程已展开，滚动到思考过程内容底部
               if (thinkingExpanded.value.get(assistantMessageId)) {
-                scrollThinkingToBottom(assistantMessageId);
+                requestScrollThinkingToBottom(assistantMessageId);
               }
-              scrollToBottom();
+              scrollToBottomThrottled();
             }
           },
           onToast: (message) => {
@@ -2548,25 +2604,29 @@ watch(
 
 // 监听思考过程更新，如果已展开则滚动到底部
 watch(
-  () => messages.value.map((m) => ({ id: m.id, thinkingProcess: m.thinkingProcess })),
+  () =>
+    messages.value.map((m) => ({
+      id: m.id,
+      thinkingLen: m.thinkingProcess ? m.thinkingProcess.length : 0,
+    })),
   (newValues, oldValues) => {
     if (!oldValues) return;
 
-    // 检查每个消息的思考过程是否更新
+    const oldLenById = new Map(oldValues.map((v) => [v.id, v.thinkingLen]));
+
     for (const newVal of newValues) {
-      const oldVal = oldValues.find((v) => v.id === newVal.id);
+      const oldLen = oldLenById.get(newVal.id);
       if (
-        oldVal &&
-        oldVal.thinkingProcess !== newVal.thinkingProcess &&
-        newVal.thinkingProcess &&
+        oldLen !== undefined &&
+        newVal.thinkingLen > oldLen &&
+        newVal.thinkingLen > 0 &&
         thinkingExpanded.value.get(newVal.id)
       ) {
-        // 思考过程已更新且已展开，滚动到底部
-        scrollThinkingToBottom(newVal.id);
+        requestScrollThinkingToBottom(newVal.id);
       }
     }
   },
-  { deep: true },
+  { flush: 'post' },
 );
 
 // 监听助手输入消息状态，自动填充输入框
@@ -2942,9 +3002,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
               </span>
             </div>
             <div v-if="session.messages.length > 0" class="session-item-meta">
-              <span class="text-xs text-moon-60">
-                {{ session.messages.length }} 条消息
-              </span>
+              <span class="text-xs text-moon-60"> {{ session.messages.length }} 条消息 </span>
             </div>
           </button>
         </div>
@@ -3059,7 +3117,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   :ref="(el) => setThinkingContentRef(message.id, el as HTMLElement)"
                   class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto thinking-content"
                   :data-message-id="message.id"
-                  style="word-break: break-all; overflow-wrap: anywhere;"
+                  style="word-break: break-all; overflow-wrap: anywhere"
                 >
                   {{ message.thinkingProcess }}
                 </div>
