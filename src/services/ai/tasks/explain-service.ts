@@ -78,6 +78,24 @@ export interface ExplainResult {
  * 使用 AI 助手服务解释日文文本的含义、语法和文化背景
  */
 export class ExplainService {
+  private static buildExplainMemorySummary(selectedText: string): string {
+    const trimmed = selectedText.trim().replace(/\s+/g, ' ');
+    const preview = trimmed.length > 30 ? `${trimmed.slice(0, 30)}...` : trimmed;
+    return `文本解释：${preview}`;
+  }
+
+  private static buildExplainMemoryContent(selectedText: string, explanation: string): string {
+    const original = selectedText.trim();
+    const explanationTrimmed = explanation.trim();
+    const originalShort = original.length > 200 ? `${original.slice(0, 200)}...` : original;
+    const explanationShort =
+      explanationTrimmed.length > 600
+        ? `${explanationTrimmed.slice(0, 600)}...`
+        : explanationTrimmed;
+
+    return `原文（节选）：\n${originalShort}\n\n解释要点（节选）：\n${explanationShort}`;
+  }
+
   /**
    * 准备文本发送到助手输入框
    * @param text 要发送的文本
@@ -175,19 +193,40 @@ export class ExplainService {
     // 使用 AssistantService 处理解释请求
     const result = await AssistantService.chat(model, explainPrompt, assistantOptions);
 
-    // 创建记忆（如果有 bookId 且解释成功）
+    // 解释类记忆：保持“短且可复用”，优先合并更新而不是重复创建
     if (result.text && selectedText) {
       const contextStore = useContextStore();
       const context = contextStore.getContext;
       if (context.currentBookId) {
         try {
-          // 构建记忆内容：包含原始文本和解释
-          const memoryContent = `原文：\n${selectedText}\n\n解释：\n${result.text}`;
-          const memorySummary =
-            selectedText.length > 50
-              ? `文本解释：${selectedText.slice(0, 50)}...`
-              : `文本解释：${selectedText}`;
-          await MemoryService.createMemory(context.currentBookId, memoryContent, memorySummary);
+          const memorySummary = this.buildExplainMemorySummary(selectedText);
+          const memoryContent = this.buildExplainMemoryContent(selectedText, result.text);
+
+          // 先尝试找到并更新已有“文本解释”记忆（避免重复创建）
+          const candidates = await MemoryService.searchMemoriesByKeywords(context.currentBookId, [
+            '文本解释',
+          ]);
+
+          const trimmedSelectedText = selectedText.trim();
+          const existing = candidates.find((m) => {
+            if (!m.summary.startsWith('文本解释：')) return false;
+            // 优先按内容命中（最稳定）
+            if (trimmedSelectedText && m.content.includes(trimmedSelectedText)) return true;
+            // 次选：按摘要预览命中
+            const preview = trimmedSelectedText.replace(/\s+/g, ' ').slice(0, 20);
+            return preview.length > 0 && m.summary.includes(preview);
+          });
+
+          if (existing) {
+            await MemoryService.updateMemory(
+              context.currentBookId,
+              existing.id,
+              memoryContent,
+              memorySummary,
+            );
+          } else {
+            await MemoryService.createMemory(context.currentBookId, memoryContent, memorySummary);
+          }
         } catch (error) {
           console.error('Failed to create memory for explanation:', error);
           // 不抛出错误，记忆创建失败不应该影响解释流程

@@ -197,11 +197,7 @@ ${getToolScopeRules(tools)}
 - [禁止] 不要调用 get/list/find/regex 等其它工具（即使你觉得有用）；如果本次未提供所需工具，请说明限制并直接给出翻译
 
 **输出格式**：[警告] **必须只返回 JSON 格式**
-\`\`\`json
-{
-  "translation": "翻译结果"
-}
-\`\`\`
+示例：{"translation":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
 `;
@@ -211,11 +207,7 @@ ${getToolScopeRules(tools)}
       const userPrompt =
         prompt ||
         `请将以下日文术语翻译为简体中文，保持原文的格式和结构。[警告] **必须只返回 JSON 格式**：
-\`\`\`json
-{
-  "translation": "翻译结果"
-}
-\`\`\`
+示例：{"translation":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
 待翻译术语：\n\n${trimmedText}`;

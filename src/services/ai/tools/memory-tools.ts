@@ -324,7 +324,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'create_memory',
         description:
-          '创建新的 Memory 记录，用于存储大块内容（如背景设定、章节摘要等）。AI 会自动生成摘要。当需要保存重要信息供后续参考时使用此工具。',
+          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。记忆应短且可检索（summary 含关键词，content 用少量要点）。',
         parameters: {
           type: 'object',
           properties: {
@@ -400,7 +400,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'update_memory',
         description:
-          '更新指定的 Memory 记录。当发现记忆中的信息需要更新（如角色关系变化、敬语翻译方式改变等）时，应使用此工具更新记忆，确保记忆反映最新信息。记忆应该经常更新以反映最新的信息。',
+          '更新指定的 Memory 记录（推荐）。当发现新信息或需要修正时，优先把新旧信息合并成更短、更清晰、可复用的规则/约定；避免重复创建多条相似记忆。summary 请保留可检索关键词，content 用少量要点表达。',
         parameters: {
           type: 'object',
           properties: {

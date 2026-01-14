@@ -868,9 +868,9 @@ export async function executeToolCall(
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
   const reminders = {
-    translation: `\n[警告] 只返回JSON，状态可独立返回，系统会检查缺失段落。注意：空段落已被过滤，不包含在内容中`,
-    proofreading: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
-    polish: `\n[警告] 只返回JSON，只返回有变化段落，系统会检查。注意：空段落已被过滤，不包含在内容中`,
+    translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
+    proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
+    polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
   };
   return reminders[taskType];
 }
@@ -882,7 +882,7 @@ export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
-  return `开始${taskLabel}。[警告] 只返回JSON。**默认状态为 planning（无需再返回 planning）**，你可以直接进入 working 并输出内容；如需获取上下文可先调用工具。系统会自动检查缺失段落。
+  return `开始${taskLabel}。
 
 ${chunkingInstructions}`;
 }
@@ -1194,7 +1194,7 @@ export function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。**默认状态为 planning（无需再返回 planning）**。如需上下文可先调用工具；准备好后直接返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
+    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -1206,7 +1206,7 @@ export function buildIndependentChunkPrompt(
     return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}${startContextHint}
 
 **[警告] 重要：简短规划阶段（已继承上文规划）**
-${briefPlanningNote}默认状态为 planning（无需再返回 planning），请直接将状态设置为 "working" 并开始${taskLabel}。
+${briefPlanningNote}请直接将状态设置为 "working" 并开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }
@@ -1898,8 +1898,8 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         // 如果是简短规划模式，强烈提醒 AI 已有上下文信息，无需重复获取
         const planningInstruction = isBriefPlanning
           ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
-            `**[警告] 禁止重复调用** \`list_terms\`、\`list_characters\`、\`get_chapter_info\`、\`get_book_info\` 等已在上下文中提供的工具。` +
-            `只有在需要获取当前段落的前后文上下文时，才可以使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等工具。` +
+            `如需补充信息，优先使用**本次会话提供的工具**，并遵循“最小必要”原则（拿到信息就立刻回到任务输出）。` +
+            `只有在需要获取当前段落的前后文上下文时，才建议使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等段落上下文工具。` +
             `仍然注意敬语翻译流程，确保翻译结果准确。`
           : `收到。如果你已获取必要信息，` +
             `**现在**将状态设置为 "working" 并开始输出${taskLabel}结果。` +
