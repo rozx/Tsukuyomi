@@ -64,7 +64,7 @@ export function getCurrentStatusInfo(
 你当前处于简短规划阶段（后续块），已继承前一部分的规划上下文。
 - 术语表和角色表信息已在上下文中提供
 - 如需补充或验证信息，可以调用工具
-- 无需重复获取已有的术语/角色信息
+- 无需重复获取已有的术语/角色信息，使用随文章提供的角色/术语表，除非未提供，否则不必调用工具获取
 
 **准备好后，将状态设置为 "working" 开始${taskLabel}。**`;
 
@@ -253,15 +253,22 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
 /**
  * 获取工具使用说明（精简版）
  */
-export function getToolUsageInstructions(taskType: TaskType, tools?: AITool[]): string {
+export function getToolUsageInstructions(
+  taskType: TaskType,
+  tools?: AITool[],
+  skipAskUser?: boolean,
+): string {
   const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
   const taskLabel = taskLabels[taskType];
+  const askLine = !skipAskUser
+    ? '- **询问**: 如遇到需要用户确认的问题，可以使用相关工具向用户提问，询问应该一次性解决所有疑问，保证用户体验'
+    : '';
   return `${getToolScopeRules(tools)}
 
 【工具使用建议】（仅限可用工具列表中的工具）
 - **用途**：工具仅用于获取上下文、维护术语/角色/记忆（如本次提供），以及查询历史翻译一致性
 - **优先级**：能用本地数据工具解决就不要依赖外部信息；如本次提供了网络工具，仅用于外部知识检索
-- **最小必要**：只在确有需要时调用工具，拿到信息后立刻回到${taskLabel}输出
+${askLine ? askLine + '\n' : ''}- **最小必要**：只在确有需要时调用工具，拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;
 }
 

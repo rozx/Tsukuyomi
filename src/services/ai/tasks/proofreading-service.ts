@@ -241,7 +241,7 @@ export class ProofreadingService {
 - **参考原文**: 确保翻译准确，特别是标点符号。
 - ${getSymbolFormatRules()}
 
-${getToolUsageInstructions('proofreading', tools)}
+${getToolUsageInstructions('proofreading', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}
 
