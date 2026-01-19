@@ -504,7 +504,7 @@ ${getOutputFormatRules('proofreading')}
 
                       // 过滤出有变化的段落
                       const changedParagraphs = filterChangedParagraphs(
-                        actualChunk.paragraphIds!,
+                        actualChunk.paragraphIds,
                         extractedMap,
                         originalTranslations,
                       );

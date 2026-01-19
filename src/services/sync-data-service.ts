@@ -13,6 +13,67 @@ import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 
 /**
+ * 检查章节摘要是否需要上传到远程
+ * 场景：有时 book.lastEdited 可能与远程相同（例如合并后时间被对齐），
+ * 但章节摘要（chapter.summary）在其中一端缺失。
+ *
+ * 规则（保守，避免误覆盖远程）：
+ * - 仅当“本地有非空摘要、远程缺失/为空”时返回 true
+ * - 远程有摘要但本地缺失时返回 false（应由下载合并补齐，不应上传覆盖）
+ */
+function hasLocalChapterSummaryMissingInRemote(localNovel: any, remoteNovel: any): boolean {
+  const localVolumes = localNovel?.volumes;
+  const remoteVolumes = remoteNovel?.volumes;
+
+  if (!Array.isArray(localVolumes) || localVolumes.length === 0) {
+    return false;
+  }
+  if (!Array.isArray(remoteVolumes) || remoteVolumes.length === 0) {
+    // 远程没有 volumes：如果本地存在摘要，说明远程缺失，需要上传
+    for (const v of localVolumes) {
+      const chapters = v?.chapters;
+      if (!Array.isArray(chapters)) continue;
+      for (const ch of chapters) {
+        const localSummary = typeof ch?.summary === 'string' ? ch.summary.trim() : '';
+        if (localSummary) return true;
+      }
+    }
+    return false;
+  }
+
+  const remoteSummaryMap = new Map<string, string>();
+  for (const v of remoteVolumes) {
+    const chapters = v?.chapters;
+    if (!Array.isArray(chapters)) continue;
+    for (const ch of chapters) {
+      const id = typeof ch?.id === 'string' ? ch.id : '';
+      if (!id) continue;
+      const summary = typeof ch?.summary === 'string' ? ch.summary.trim() : '';
+      remoteSummaryMap.set(id, summary);
+    }
+  }
+
+  for (const v of localVolumes) {
+    const chapters = v?.chapters;
+    if (!Array.isArray(chapters)) continue;
+    for (const ch of chapters) {
+      const id = typeof ch?.id === 'string' ? ch.id : '';
+      if (!id) continue;
+      const localSummary = typeof ch?.summary === 'string' ? ch.summary.trim() : '';
+      if (!localSummary) continue;
+
+      const remoteSummary = remoteSummaryMap.get(id);
+      // 远程缺少该章节，或章节存在但摘要为空 → 需要上传补齐
+      if (remoteSummary === undefined || remoteSummary === '') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * 合并段落翻译
  * 将远程段落的翻译合并到本地段落中
  * @param localParagraphs 本地段落列表
@@ -93,6 +154,28 @@ function mergeParagraphTranslations(
 }
 
 /**
+ * 合并章节摘要（chapter.summary）
+ * 规则：
+ * 1) 只有一方有摘要：使用有摘要的一方
+ * 2) 两边都有且不同：按 lastEdited 选择更新的一方
+ * 3) 两边都没有：返回 undefined
+ */
+function mergeChapterSummary(localChapter: Chapter, remoteChapter: Chapter): string | undefined {
+  const localSummary = typeof localChapter.summary === 'string' ? localChapter.summary.trim() : '';
+  const remoteSummary =
+    typeof remoteChapter.summary === 'string' ? remoteChapter.summary.trim() : '';
+
+  if (!localSummary && !remoteSummary) return undefined;
+  if (!localSummary) return remoteSummary;
+  if (!remoteSummary) return localSummary;
+  if (localSummary === remoteSummary) return localSummary;
+
+  const localTime = localChapter.lastEdited ? new Date(localChapter.lastEdited).getTime() : 0;
+  const remoteTime = remoteChapter.lastEdited ? new Date(remoteChapter.lastEdited).getTime() : 0;
+  return remoteTime > localTime ? remoteSummary : localSummary;
+}
+
+/**
  * 将远程翻译合并到本地书籍中
  * 当本地书籍较新时使用，保留本地结构但合并远程翻译
  * @param localNovel 本地书籍数据（较新）
@@ -147,6 +230,9 @@ async function mergeRemoteTranslationsIntoLocalNovel(
             return localChapter;
           }
 
+          // 无论是否合并内容，都要合并章节摘要，避免摘要不同步
+          const mergedSummary = mergeChapterSummary(localChapter, remoteChapter);
+
           // 获取本地章节内容
           let localContent: Paragraph[] | undefined;
           if (
@@ -163,7 +249,10 @@ async function mergeRemoteTranslationsIntoLocalNovel(
 
           // 如果本地没有内容，保持不变
           if (!localContent || localContent.length === 0) {
-            return localChapter;
+            return {
+              ...localChapter,
+              summary: mergedSummary,
+            };
           }
 
           // 获取远程章节内容
@@ -174,6 +263,7 @@ async function mergeRemoteTranslationsIntoLocalNovel(
 
           return {
             ...localChapter,
+            summary: mergedSummary,
             content: mergedContent,
           };
         }),
@@ -868,10 +958,7 @@ export class SyncDataService {
                     remoteMemory.summary,
                   );
                 } catch (error) {
-                  console.warn(
-                    `[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`,
-                    error,
-                  );
+                  console.warn(`[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`, error);
                 }
               }
               // 从远程列表中移除已处理的 Memory
@@ -891,10 +978,7 @@ export class SyncDataService {
                 { createdAt: remoteMemory.createdAt, lastAccessedAt: remoteMemory.lastAccessedAt },
               );
             } catch (error) {
-              console.warn(
-                `[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`,
-                error,
-              );
+              console.warn(`[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`, error);
             }
           }
         }
@@ -1408,6 +1492,11 @@ export class SyncDataService {
       if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) {
         return true;
       }
+
+      // lastEdited 相同但章节摘要本地有、远程缺失：也需要上传（避免摘要永远不同步）
+      if (hasLocalChapterSummaryMissingInRemote(localNovel, remoteNovel)) {
+        return true;
+      }
     }
 
     // 2. 检查 AI 模型
@@ -1479,7 +1568,10 @@ export class SyncDataService {
       }
 
       // 比较内容和摘要（如果时间相同）
-      if (localMemory.content !== remoteMemory.content || localMemory.summary !== remoteMemory.summary) {
+      if (
+        localMemory.content !== remoteMemory.content ||
+        localMemory.summary !== remoteMemory.summary
+      ) {
         return true;
       }
     }
@@ -1519,6 +1611,14 @@ export class SyncDataService {
               remoteVolume.chapters.map(async (remoteChapter) => {
                 const localChapter = localVolume.chapters?.find((ch) => ch.id === remoteChapter.id);
 
+                // 优先构造一个已合并摘要的章节元数据，避免后续分支遗漏 summary
+                const remoteChapterWithMergedSummary: Chapter = localChapter
+                  ? ({
+                      ...remoteChapter,
+                      summary: mergeChapterSummary(localChapter, remoteChapter),
+                    } as Chapter)
+                  : (remoteChapter as Chapter);
+
                 // 如果本地章节存在，尝试保留其内容并合并远程翻译
                 if (localChapter) {
                   let localContent: Paragraph[] | undefined;
@@ -1545,7 +1645,7 @@ export class SyncDataService {
                     const mergedContent = mergeParagraphTranslations(localContent, remoteContent);
 
                     return {
-                      ...remoteChapter,
+                      ...remoteChapterWithMergedSummary,
                       content: mergedContent,
                     } as Chapter;
                   }
@@ -1563,13 +1663,13 @@ export class SyncDataService {
                   );
                   if (contentFromDB && contentFromDB.length > 0) {
                     return {
-                      ...remoteChapter,
+                      ...remoteChapterWithMergedSummary,
                       content: contentFromDB,
                     } as Chapter;
                   }
                 }
 
-                return remoteChapter as Chapter;
+                return remoteChapterWithMergedSummary;
               }),
             );
 

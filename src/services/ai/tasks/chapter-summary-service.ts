@@ -216,7 +216,7 @@ export class ChapterSummaryService {
           const newChapters = [...v.chapters];
           const targetChapter = newChapters[chapterIndex];
           if (targetChapter) {
-            newChapters[chapterIndex] = { ...targetChapter, summary };
+            newChapters[chapterIndex] = { ...targetChapter, summary, lastEdited: new Date() };
           }
           return { ...v, chapters: newChapters };
         }

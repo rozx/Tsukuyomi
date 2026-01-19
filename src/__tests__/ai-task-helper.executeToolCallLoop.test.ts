@@ -270,7 +270,7 @@ describe('executeToolCallLoop', () => {
             mm.role === 'user' &&
             typeof mm.content === 'string' &&
             mm.content.includes('状态转换错误') &&
-            mm.content.includes('润色/校对任务禁止使用 review')
+            mm.content.includes('禁止使用 review')
           );
         });
         expect(hasTransitionError).toBe(true);

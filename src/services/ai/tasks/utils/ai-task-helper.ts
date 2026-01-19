@@ -369,7 +369,6 @@ const PRODUCTIVE_TOOLS = [
   'list_terms',
   'list_characters',
   'list_memories',
-  'list_momeries',
   'search_memory_by_keywords',
   'get_chapter_info',
   'get_book_info',
@@ -385,8 +384,7 @@ const PRODUCTIVE_TOOLS = [
 const TOOL_CALL_LIMITS: Record<string, number> = {
   list_terms: 3, // 术语表最多调用 3 次
   list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、review 阶段各调用一次）
-  list_memories: 1, // Memory 列表通常只需要调用一次
-  list_momeries: 1,
+  list_memories: 3, // Memory 列表通常只需要调用一次
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
@@ -401,7 +399,6 @@ const TOOL_RESULT_MAX_LENGTHS: Record<string, number> = {
   list_terms: 2000,
   list_characters: 2000,
   list_memories: 1200,
-  list_momeries: 1200,
   search_memory_by_keywords: 1000,
   get_chapter_info: 800,
   get_book_info: 800,

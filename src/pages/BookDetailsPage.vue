@@ -939,7 +939,7 @@ const handleReSummarizeChapter = async (chapterId: string) => {
               const newChapters = [...v.chapters];
               const targetChapter = newChapters[chIndex];
               if (targetChapter) {
-                newChapters[chIndex] = { ...targetChapter, summary };
+                newChapters[chIndex] = { ...targetChapter, summary, lastEdited: new Date() };
               }
               return { ...v, chapters: newChapters };
             }

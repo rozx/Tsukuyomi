@@ -95,6 +95,71 @@
 			],
 			"isBackground": false,
 			"group": "test"
+		},
+		{
+			"label": "Lint",
+			"type": "shell",
+			"command": "bun run lint",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Type Check",
+			"type": "shell",
+			"command": "bun run type-check",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Run Failing Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts src/__tests__/memory-tools.list-memories.test.ts",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run Memory Tools Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run Memory Alias Test",
+			"type": "shell",
+			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts -t \"别名\"",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run ExecuteToolCallLoop Polish Proofreading Test",
+			"type": "shell",
+			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts -t \"润色/校对任务\"",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run Updated Failing Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Run ExecuteToolCallLoop Test Only",
+			"type": "shell",
+			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts -t \"润色/校对任务\"",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "Re-run Previously Failing Tests",
+			"type": "shell",
+			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+			"isBackground": false,
+			"group": "test"
 		}
 	]
 }

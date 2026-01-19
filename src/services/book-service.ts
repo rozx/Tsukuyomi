@@ -16,6 +16,8 @@ export class BookService {
     const { content, ...chapterWithoutContent } = chapter;
     return {
       ...chapterWithoutContent,
+      // 显式保留章节摘要，避免在极端情况下被结构解构/rest 丢失
+      summary: chapter.summary,
       contentLoaded: content !== undefined,
     };
   }

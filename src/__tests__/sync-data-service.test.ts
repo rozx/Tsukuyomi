@@ -39,8 +39,8 @@ const mockSettingsStore = {
 
 const mockMemoryService = {
   getAllMemories: mock((_bookId: string) => Promise.resolve([] as any[])), // eslint-disable-line @typescript-eslint/no-explicit-any
-  updateMemory: mock(
-    (_bookId: string, _memoryId: string, _content: string, _summary: string) => Promise.resolve(),
+  updateMemory: mock((_bookId: string, _memoryId: string, _content: string, _summary: string) =>
+    Promise.resolve(),
   ),
   createMemory: mock((_bookId: string, _content: string, _summary: string) => Promise.resolve()),
   createMemoryWithId: mock(
@@ -181,6 +181,144 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Local Model' }),
       );
+    });
+
+    it('同步时应保留本地章节摘要（远程缺失 summary 不应覆盖）', async () => {
+      const localLastEdited = new Date('2024-01-03').toISOString();
+      const remoteLastEdited = new Date('2024-01-02').toISOString();
+
+      // 本地书籍较新 → 走 mergeRemoteTranslationsIntoLocalNovel 分支
+      mockBooksStore.books = [
+        {
+          id: 'n1',
+          title: 'Local Novel',
+          lastEdited: localLastEdited,
+          createdAt: new Date('2024-01-01').toISOString(),
+          volumes: [
+            {
+              id: 'v1',
+              title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
+              chapters: [
+                {
+                  id: 'c1',
+                  title: {
+                    original: 'c',
+                    translation: { id: 't2', translation: '', aiModelId: '' },
+                  },
+                  summary: '本地摘要',
+                  lastEdited: localLastEdited,
+                  createdAt: new Date('2024-01-01').toISOString(),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const remoteData = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: remoteLastEdited,
+            createdAt: new Date('2024-01-01').toISOString(),
+            volumes: [
+              {
+                id: 'v1',
+                title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
+                chapters: [
+                  {
+                    id: 'c1',
+                    title: {
+                      original: 'c',
+                      translation: { id: 't2', translation: '', aiModelId: '' },
+                    },
+                    // 远程缺失 summary
+                    lastEdited: remoteLastEdited,
+                    createdAt: new Date('2024-01-01').toISOString(),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      await SyncDataService.applyDownloadedData(remoteData);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const summary = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.summary;
+      expect(summary).toBe('本地摘要');
+    });
+
+    it('同步时应从远程补齐章节摘要（本地缺失 summary 时）', async () => {
+      const localLastEdited = new Date('2024-01-03').toISOString();
+      const remoteLastEdited = new Date('2024-01-02').toISOString();
+
+      // 本地书籍较新 → 走 mergeRemoteTranslationsIntoLocalNovel 分支
+      mockBooksStore.books = [
+        {
+          id: 'n1',
+          title: 'Local Novel',
+          lastEdited: localLastEdited,
+          createdAt: new Date('2024-01-01').toISOString(),
+          volumes: [
+            {
+              id: 'v1',
+              title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
+              chapters: [
+                {
+                  id: 'c1',
+                  title: {
+                    original: 'c',
+                    translation: { id: 't2', translation: '', aiModelId: '' },
+                  },
+                  // 本地缺失 summary
+                  lastEdited: localLastEdited,
+                  createdAt: new Date('2024-01-01').toISOString(),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const remoteData = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: remoteLastEdited,
+            createdAt: new Date('2024-01-01').toISOString(),
+            volumes: [
+              {
+                id: 'v1',
+                title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
+                chapters: [
+                  {
+                    id: 'c1',
+                    title: {
+                      original: 'c',
+                      translation: { id: 't2', translation: '', aiModelId: '' },
+                    },
+                    summary: '远程摘要',
+                    lastEdited: remoteLastEdited,
+                    createdAt: new Date('2024-01-01').toISOString(),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      await SyncDataService.applyDownloadedData(remoteData);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const summary = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.summary;
+      expect(summary).toBe('远程摘要');
     });
 
     it('应保留上次同步后新增的本地数据', async () => {
@@ -501,15 +639,13 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       // 第一次：本地没有该 Memory，应该创建（并且使用远程 id）
       // 第二次：本地已经有该 Memory（同 id），不应该再创建
-      mockMemoryService.getAllMemories
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            ...remoteMemory,
-            // 确保不会触发 updateMemory（远程 lastAccessedAt 不更大）
-            lastAccessedAt: 2000,
-          },
-        ]);
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          ...remoteMemory,
+          // 确保不会触发 updateMemory（远程 lastAccessedAt 不更大）
+          lastAccessedAt: 2000,
+        },
+      ]);
 
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
@@ -606,6 +742,130 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(merged.coverHistory).toHaveLength(1);
       // 应该保留 addedAt 更新的那条（远程）
       expect(merged.coverHistory[0]).toMatchObject({ id: 'c-remote', url: 'same.jpg' });
+    });
+  });
+
+  describe('hasChangesToUpload (检测是否需要上传)', () => {
+    it('当书籍 lastEdited 相同但本地章节摘要存在、远程缺失时，应触发上传', () => {
+      const sameTime = new Date('2024-01-03').toISOString();
+
+      const local = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Local Novel',
+            lastEdited: sameTime,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    summary: '本地摘要',
+                    lastEdited: sameTime,
+                    createdAt: sameTime,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        aiModels: [],
+        appSettings: { lastEdited: sameTime },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const remote = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: sameTime,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    // 远程缺失 summary
+                    lastEdited: sameTime,
+                    createdAt: sameTime,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        aiModels: [],
+        appSettings: { lastEdited: sameTime },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const shouldUpload = SyncDataService.hasChangesToUpload(local as any, remote as any);
+      expect(shouldUpload).toBe(true);
+    });
+
+    it('当书籍 lastEdited 相同且远程章节摘要存在、本地缺失时，不应触发上传（避免覆盖远程摘要）', () => {
+      const sameTime = new Date('2024-01-03').toISOString();
+
+      const local = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Local Novel',
+            lastEdited: sameTime,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    // 本地缺失 summary
+                    lastEdited: sameTime,
+                    createdAt: sameTime,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        aiModels: [],
+        appSettings: { lastEdited: sameTime },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const remote = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: sameTime,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    summary: '远程摘要',
+                    lastEdited: sameTime,
+                    createdAt: sameTime,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        aiModels: [],
+        appSettings: { lastEdited: sameTime },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const shouldUpload = SyncDataService.hasChangesToUpload(local as any, remote as any);
+      expect(shouldUpload).toBe(false);
     });
   });
 });
