@@ -3,7 +3,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
-import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
+import { isEmptyOrSymbolOnly, CJK_CHAR_CLASS, hasCJK, isCJK } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo } from './types';
@@ -65,17 +65,17 @@ export function replaceWholeKeyword(text: string, keyword: string, replacement: 
   const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // 检查关键词是否包含 CJK 字符（中文、日文、韩文）
-  const hasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(keyword);
+  const containsCJK = hasCJK(keyword);
   // 检查文本是否包含 CJK 字符
-  const textHasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(text);
+  const textHasCJK = hasCJK(text);
   // 检查关键词是否只包含ASCII字母（英文单词）
   const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
 
-  const cjkCharClass = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+  const cjkCharClass = CJK_CHAR_CLASS;
 
   let pattern: RegExp;
 
-  if (isEnglishWord && !hasCJK) {
+  if (isEnglishWord && !containsCJK) {
     // 对于英文单词，使用单词边界
     pattern = new RegExp(
       `(^|[^a-zA-Z0-9]|[${cjkCharClass}])${escapedKeyword}([^a-zA-Z0-9]|[${cjkCharClass}]|$)`,
@@ -85,7 +85,7 @@ export function replaceWholeKeyword(text: string, keyword: string, replacement: 
       // 保留前后的边界字符
       return (before || '') + replacement + (after || '');
     });
-  } else if (hasCJK || textHasCJK) {
+  } else if (containsCJK || textHasCJK) {
     // 对于 CJK 字符，使用更复杂的匹配
     // 方案1：关键词前后是文本边界或非CJK字符
     pattern = new RegExp(`(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`, 'giu');
@@ -96,8 +96,6 @@ export function replaceWholeKeyword(text: string, keyword: string, replacement: 
     // 如果方案1没有匹配，尝试方案2：关键词在CJK字符中间
     if (result === text) {
       // 手动检查并替换
-      const isCJK = (char: string) =>
-        /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
       let searchIndex = 0;
       const parts: string[] = [];
       let lastIndex = 0;
@@ -171,24 +169,24 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
   const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   // 检查关键词是否包含 CJK 字符（中文、日文、韩文）
-  const hasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(keyword);
+  const containsCJK = hasCJK(keyword);
   // 检查文本是否包含 CJK 字符
-  const textHasCJK = /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(text);
+  const textHasCJK = hasCJK(text);
   // 检查关键词是否只包含ASCII字母（英文单词）
   const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
 
   // 如果关键词是英文单词，即使文本包含CJK字符，也使用英文单词边界匹配
-  if (isEnglishWord && !hasCJK) {
+  if (isEnglishWord && !containsCJK) {
     // 对于英文单词，使用单词边界
     // 但需要考虑混合语言情况：如果前后是CJK字符，也应该匹配
-    const cjkCharClass = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+    const cjkCharClass = CJK_CHAR_CLASS;
     // 匹配：前后是文本边界、非字母数字字符、或CJK字符
     const pattern = new RegExp(
       `(^|[^a-zA-Z0-9]|[${cjkCharClass}])${escapedKeyword}([^a-zA-Z0-9]|[${cjkCharClass}]|$)`,
       'iu',
     );
     return pattern.test(text);
-  } else if (hasCJK || textHasCJK) {
+  } else if (containsCJK || textHasCJK) {
     // 对于包含 CJK 字符的情况，需要特殊处理
     // CJK 文本没有明确的单词边界，所以匹配精确的子字符串
     // 匹配规则：
@@ -197,7 +195,7 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
     // 3. 如果关键词前后都是CJK字符，也匹配（因为CJK没有单词边界，精确匹配子字符串是可以接受的）
 
     // 定义CJK字符范围（用于字符类）
-    const cjkCharClass = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+    const cjkCharClass = CJK_CHAR_CLASS;
 
     // 方案1：关键词前后是文本边界或非CJK字符
     const pattern1 = new RegExp(
@@ -240,8 +238,6 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
 
       // 检查关键词是否在文本中，并且前后都是CJK字符或边界
       // 需要检查所有出现的位置，因为可能有多个匹配
-      const isCJK = (char: string) =>
-        /[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/.test(char);
 
       // 检查所有出现的位置
       let searchIndex = 0;
@@ -290,6 +286,172 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
 }
 
 export const paragraphTools: ToolDefinition[] = [
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_paragraph_position',
+        description:
+          '获取段落在章节中的位置信息，包括段落在章节中的索引、章节中段落的总数，以及可选的前后段落。用于了解当前段落在章节中的位置，方便进行上下文分析。',
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+            include_previous: {
+              type: 'boolean',
+              description: '是否包含前 x 个段落（默认 false）',
+            },
+            include_next: {
+              type: 'boolean',
+              description: '是否包含后 x 个段落（默认 false）',
+            },
+            previous_count: {
+              type: 'number',
+              description: '前段落数量（默认 3）',
+            },
+            next_count: {
+              type: 'number',
+              description: '后段落数量（默认 3）',
+            },
+          },
+          required: ['paragraph_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const {
+        paragraph_id,
+        include_previous = false,
+        include_next = false,
+        previous_count = 3,
+        next_count = 3,
+      } = args;
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph, chapter, paragraphIndex, chapterIndex, volume, volumeIndex } = location;
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            paragraph_id,
+            chapter_id: chapter.id,
+            tool_name: 'get_paragraph_position',
+          },
+        });
+      }
+
+      // 计算章节中段落的总数
+      const totalParagraphs = chapter.content?.length || 0;
+
+      // 构建响应
+      const response: {
+        success: true;
+        paragraph_id: string;
+        chapter_id: string;
+        chapter_title: string;
+        paragraph_index: number;
+        total_paragraphs: number;
+        progress_percentage: number;
+        previous_paragraphs?: Array<{
+          id: string;
+          text: string;
+          translation: string;
+          paragraph_index: number;
+        }>;
+        next_paragraphs?: Array<{
+          id: string;
+          text: string;
+          translation: string;
+          paragraph_index: number;
+        }>;
+      } = {
+        success: true,
+        paragraph_id: paragraph.id,
+        chapter_id: chapter.id,
+        chapter_title: getChapterDisplayTitle(chapter),
+        paragraph_index: paragraphIndex,
+        total_paragraphs: totalParagraphs,
+        progress_percentage:
+          totalParagraphs > 0 ? Math.round(((paragraphIndex + 1) / totalParagraphs) * 100) : 0,
+      };
+
+      // 可选：获取前 x 个段落
+      if (include_previous) {
+        const previousResults = await ChapterService.getPreviousParagraphsAsync(
+          book,
+          paragraph_id,
+          previous_count,
+        );
+        // 过滤掉空段落或仅包含符号的段落
+        const validPreviousResults = previousResults.filter(
+          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
+        );
+        response.previous_paragraphs = validPreviousResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          paragraph_index: result.paragraphIndex,
+        }));
+      }
+
+      // 可选：获取后 x 个段落
+      if (include_next) {
+        const nextResults = await ChapterService.getNextParagraphsAsync(
+          book,
+          paragraph_id,
+          next_count,
+        );
+        // 过滤掉空段落或仅包含符号的段落
+        const validNextResults = nextResults.filter(
+          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
+        );
+        response.next_paragraphs = validNextResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          paragraph_index: result.paragraphIndex,
+        }));
+      }
+
+      return JSON.stringify(response);
+    },
+  },
   {
     definition: {
       type: 'function',
@@ -831,6 +993,8 @@ export const paragraphTools: ToolDefinition[] = [
           }
         } else {
           // 只提供了翻译关键词，需要遍历所有段落
+          // 限制处理的章节数量，防止在没有 chapter_id 且索引失败时性能过低
+          const MAX_CHAPTERS_TO_LOAD = 50;
           const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
 
           // 如果提供了 chapter_id，需要找到该章节的位置
@@ -884,9 +1048,16 @@ export const paragraphTools: ToolDefinition[] = [
               if (!chapter) continue;
 
               if (chapter.content === undefined) {
+                if (chaptersToLoad.length >= MAX_CHAPTERS_TO_LOAD) {
+                  console.warn(
+                    `[paragraphTools] 搜索章节过多，限制在前 ${MAX_CHAPTERS_TO_LOAD} 章`,
+                  );
+                  break;
+                }
                 chaptersToLoad.push({ chapter, vIndex, cIndex });
               }
             }
+            if (chaptersToLoad.length >= MAX_CHAPTERS_TO_LOAD) break;
           }
 
           // 批量加载需要的章节

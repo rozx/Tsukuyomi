@@ -35,9 +35,7 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
  * @param paragraphs 段落数组
  * @returns 段落ID到原始翻译文本的映射
  */
-export function buildOriginalTranslationsMap(
-  paragraphs: Paragraph[],
-): Map<string, string> {
+export function buildOriginalTranslationsMap(paragraphs: Paragraph[]): Map<string, string> {
   const originalTranslations = new Map<string, string>();
   for (const paragraph of paragraphs) {
     const currentTranslation =
@@ -88,3 +86,26 @@ export function filterChangedParagraphs(
   return changedParagraphs;
 }
 
+/**
+ * CJK 字符类正则表达式字符串（中文、日文、韩文）
+ */
+export const CJK_CHAR_CLASS = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+
+/**
+ * 检查文本是否包含 CJK 字符
+ * @param text 要检查的文本
+ * @returns 如果包含 CJK 字符，返回 true
+ */
+export function hasCJK(text: string): boolean {
+  return new RegExp(`[${CJK_CHAR_CLASS}]`).test(text);
+}
+
+/**
+ * 检查字符是否为 CJK 字符
+ * @param char 要检查的字符
+ * @returns 如果是 CJK 字符，返回 true
+ */
+export function isCJK(char: string): boolean {
+  if (!char || char.length === 0) return false;
+  return hasCJK(char);
+}

@@ -2,7 +2,7 @@ import { MemoryService } from 'src/services/memory-service';
 import type { ToolDefinition } from './types';
 import type { ToolContext } from './types';
 
-function createListMemoriesHandler(toolName: 'list_memories' | 'list_momeries') {
+function createListMemoriesHandler(toolName: 'list_memories') {
   return async (
     args: {
       offset?: number;
@@ -123,43 +123,6 @@ export const memoryTools: ToolDefinition[] = [
       },
     },
     handler: createListMemoriesHandler('list_memories'),
-  },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_momeries',
-        description: '（拼写容错别名）列出指定书籍的 Memory 列表。行为与 list_memories 完全一致。',
-        parameters: {
-          type: 'object',
-          properties: {
-            offset: {
-              type: 'number',
-              description: '分页偏移量（从 0 开始）',
-              minimum: 0,
-            },
-            limit: {
-              type: 'number',
-              description: '返回数量（默认 20，建议不超过 50）',
-              minimum: 1,
-              maximum: 100,
-            },
-            sort_by: {
-              type: 'string',
-              enum: ['createdAt', 'lastAccessedAt'],
-              description:
-                '排序方式：createdAt 按创建时间（最新在前），lastAccessedAt 按最后访问时间（默认）',
-            },
-            include_content: {
-              type: 'boolean',
-              description: '是否返回完整内容 content（默认 false）',
-            },
-          },
-          required: [],
-        },
-      },
-    },
-    handler: createListMemoriesHandler('list_momeries'),
   },
   {
     definition: {

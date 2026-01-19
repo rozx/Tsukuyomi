@@ -35,8 +35,7 @@ const NAVIGATION_AND_LIST_TOOLS = [
   'list_characters',
   'list_terms',
   'list_memories',
-  'list_momeries',
-] as const;
+];
 
 export class ToolRegistry {
   /**
