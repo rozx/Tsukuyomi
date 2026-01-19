@@ -76,12 +76,12 @@ export const bookTools: ToolDefinition[] = [
           // 结构摘要
           structure:
             book.volumes?.map((v) => ({
-              title: v.title.original,
-              translation: v.title.translation?.translation,
+              title: typeof v.title === 'string' ? v.title : v.title.original,
+              translation: typeof v.title === 'string' ? '' : v.title.translation?.translation,
               chapter_count: v.chapters?.length || 0,
               chapters: v.chapters?.map((c) => ({
-                title: c.title.original,
-                translation: c.title.translation?.translation,
+                title: typeof c.title === 'string' ? c.title : c.title.original,
+                translation: typeof c.title === 'string' ? '' : c.title.translation?.translation,
               })),
             })) || [],
           // 统计信息
