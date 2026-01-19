@@ -44,7 +44,7 @@ describe('SyosetuScraper', () => {
     expect(novel?.title).toBe('異世界転生周回プレイもの - ハーメルン');
     expect(novel?.volumes?.length).toBe(3);
     const v = novel?.volumes?.[0];
-    expect(v?.title.original).toBe('転生前');
+    expect(typeof v?.title === 'string' ? v.title : v?.title.original).toBe('転生前');
     expect(v?.chapters?.length).toBe(1);
   });
 

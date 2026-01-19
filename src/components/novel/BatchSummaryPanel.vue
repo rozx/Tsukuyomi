@@ -142,7 +142,9 @@ const processQueue = () => {
 };
 
 const processChapter = async (chapter: Chapter) => {
-  processing.value.set(chapter.id, chapter.title.original);
+  const chapterOriginalTitle =
+    typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+  processing.value.set(chapter.id, chapterOriginalTitle);
 
   try {
     // 1. Ensure content is loaded
@@ -169,7 +171,7 @@ const processChapter = async (chapter: Chapter) => {
     // Note: We use the existing logic which updates `chapter.summary` in the store.
     await ChapterSummaryService.generateSummary(chapter.id, contentText, {
       bookId: bookId.value,
-      chapterTitle: chapter.title.original,
+      chapterTitle: chapterOriginalTitle,
       aiProcessingStore, // Pass the store instance for tracking
       force: true, // We already filtered, so force is fine (or implied by overwrite)
       signal: abortController.value?.signal,
@@ -178,10 +180,10 @@ const processChapter = async (chapter: Chapter) => {
     completed.value.add(chapter.id);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
-      console.log(`Summary generation for ${chapter.title.original} was aborted.`);
+      console.log(`Summary generation for ${chapterOriginalTitle} was aborted.`);
       return; // Case: stopped by user
     }
-    console.error(`Failed to summarize chapter ${chapter.title.original}:`, error);
+    console.error(`Failed to summarize chapter ${chapterOriginalTitle}:`, error);
     failed.value.add(chapter.id);
   } finally {
     processing.value.delete(chapter.id);
@@ -288,10 +290,10 @@ defineExpose({
             <div
               v-for="[id, title] of Array.from(processing.entries())"
               :key="id"
-              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded flex items-center gap-2 truncate overflow-hidden whitespace-nowrap"
+              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded flex items-center gap-2"
             >
-              <i class="pi pi-spinner animate-spin text-primary-400 text-[10px]"></i>
-              {{ title || id }}
+              <i class="pi pi-spinner animate-spin text-primary-400 text-[10px] flex-shrink-0"></i>
+              <span class="truncate flex-1">{{ title || id }}</span>
             </div>
           </div>
         </div>

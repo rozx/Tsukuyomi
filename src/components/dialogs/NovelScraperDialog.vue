@@ -582,7 +582,7 @@ const handleApply = async () => {
         .map((chapter) => ({
           chapterId: chapter.id,
           webUrl: chapter.webUrl!,
-          title: chapter.title.original,
+          title: typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
         }));
 
       // 使用 ScraperService 批量获取章节内容，使用设置中的并发数限制
@@ -679,7 +679,7 @@ const handleApply = async () => {
 
   // 发出过滤后的小说数据
   emit('apply', filteredNovel);
-  
+
   // 立即关闭对话框，让父组件在后台处理保存操作
   emit('update:visible', false);
 };

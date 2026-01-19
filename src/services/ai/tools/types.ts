@@ -42,6 +42,7 @@ export interface ActionInfo {
         keywords?: string[];
         translation_keywords?: string[];
         original_keywords?: string[];
+        volume_ids?: string[];
         // 批量替换相关字段
         replaced_paragraph_count?: number;
         replaced_translation_count?: number;

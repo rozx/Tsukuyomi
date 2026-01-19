@@ -86,10 +86,12 @@ export interface CoverHistoryItem extends CoverImage {
 
 export interface Volume {
   id: string;
-  title: {
-    original: string;
-    translation: Translation;
-  };
+  title:
+    | string
+    | {
+        original: string;
+        translation: Translation;
+      };
   description?: string | undefined;
   cover?: CoverImage | undefined;
   chapters?: Chapter[] | undefined;
@@ -97,10 +99,12 @@ export interface Volume {
 
 export interface Chapter {
   id: string;
-  title: {
-    original: string;
-    translation: Translation;
-  };
+  title:
+    | string
+    | {
+        original: string;
+        translation: Translation;
+      };
   webUrl?: string | undefined; // 网络地址
   summary?: string | undefined; // 章节摘要
 

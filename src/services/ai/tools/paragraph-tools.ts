@@ -654,13 +654,25 @@ export const paragraphTools: ToolDefinition[] = [
             '',
           chapter: {
             id: result.chapter.id,
-            title: result.chapter.title.original,
-            title_translation: result.chapter.title.translation?.translation || '',
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
           },
           volume: {
             id: result.volume.id,
-            title: result.volume.title.original,
-            title_translation: result.volume.title.translation?.translation || '',
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
           },
           paragraph_index: result.paragraphIndex,
           chapter_index: result.chapterIndex,
@@ -759,13 +771,25 @@ export const paragraphTools: ToolDefinition[] = [
             '',
           chapter: {
             id: result.chapter.id,
-            title: result.chapter.title.original,
-            title_translation: result.chapter.title.translation?.translation || '',
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
           },
           volume: {
             id: result.volume.id,
-            title: result.volume.title.original,
-            title_translation: result.volume.title.translation?.translation || '',
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
           },
           paragraph_index: result.paragraphIndex,
           chapter_index: result.chapterIndex,
@@ -1194,13 +1218,25 @@ export const paragraphTools: ToolDefinition[] = [
             '',
           chapter: {
             id: result.chapter.id,
-            title: result.chapter.title.original,
-            title_translation: result.chapter.title.translation?.translation || '',
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
           },
           volume: {
             id: result.volume.id,
-            title: result.volume.title.original,
-            title_translation: result.volume.title.translation?.translation || '',
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
           },
           paragraph_index: result.paragraphIndex,
           chapter_index: result.chapterIndex,
@@ -1325,13 +1361,25 @@ export const paragraphTools: ToolDefinition[] = [
             '',
           chapter: {
             id: result.chapter.id,
-            title: result.chapter.title.original,
-            title_translation: result.chapter.title.translation?.translation || '',
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
           },
           volume: {
             id: result.volume.id,
-            title: result.volume.title.original,
-            title_translation: result.volume.title.translation?.translation || '',
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
           },
           paragraph_index: result.paragraphIndex,
           chapter_index: result.chapterIndex,

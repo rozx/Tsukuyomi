@@ -207,7 +207,12 @@ export class ChapterSummaryService {
       const booksStore = useBooksStore();
 
       // 重要：在保存前重新获取最新的小说状态，因为在批量生成过程中，novel 变量可能已过时
-      const latestNovel = booksStore.books.find((b) => b.id === bookId) || novel;
+      const latestNovel = booksStore.books.find((b) => b.id === bookId);
+
+      if (!latestNovel) {
+        console.warn(`[ChapterSummaryService] 保存摘要时未找到书籍: ${bookId}，可能已被删除`);
+        throw new Error(`保存失败：书籍 ${bookId} 不再存在`);
+      }
 
       // 构建更新后的卷列表
       const updatedVolumes = latestNovel.volumes?.map((v: Volume) => {
