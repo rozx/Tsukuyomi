@@ -43,6 +43,23 @@ const progressPercentage = computed(() => {
   return Math.round((processed / totalTasks.value) * 100);
 });
 
+const allChapters = computed(() => {
+  if (!currentBook.value?.volumes) return [];
+  const chapters: Chapter[] = [];
+  for (const volume of currentBook.value.volumes) {
+    if (volume.chapters) {
+      chapters.push(...volume.chapters);
+    }
+  }
+  return chapters;
+});
+
+const missingSummaryCount = computed(() => {
+  return allChapters.value.filter((chapter) => !chapter.summary || !chapter.summary.trim()).length;
+});
+
+const totalChaptersCount = computed(() => allChapters.value.length);
+
 const isFinished = computed(() => {
   return (
     totalTasks.value > 0 &&
@@ -76,18 +93,8 @@ const startBatch = () => {
   isRunning.value = true;
   abortController.value = new AbortController();
 
-  // Flatten chapters
-  const allChapters: Chapter[] = [];
-  if (currentBook.value.volumes) {
-    for (const volume of currentBook.value.volumes) {
-      if (volume.chapters) {
-        allChapters.push(...volume.chapters);
-      }
-    }
-  }
-
   // Filter chapters
-  queue.value = allChapters.filter((chapter) => {
+  queue.value = allChapters.value.filter((chapter) => {
     if (overwrite.value) return true;
     return !chapter.summary || !chapter.summary.trim();
   });
@@ -207,7 +214,20 @@ defineExpose({
 
       <!-- Configuration -->
       <div v-else-if="!isRunning && totalTasks === 0 && !isFinished" class="flex flex-col gap-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+          <div class="text-sm font-medium text-moon-100 book-title-container">
+            <i class="pi pi-book mr-2 text-primary-400"></i>
+            {{ currentBook.title }}
+          </div>
+          <div class="flex items-center gap-4 text-xs text-moon-50">
+            <span>共 {{ totalChaptersCount }} 章节</span>
+            <span :class="missingSummaryCount > 0 ? 'text-amber-400' : 'text-green-400'">
+              {{ missingSummaryCount }} 章待生成
+            </span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between px-1">
           <label class="text-sm text-moon-70">覆盖现有摘要</label>
           <InputSwitch v-model="overwrite" />
         </div>
@@ -218,7 +238,12 @@ defineExpose({
           <span v-else>仅生成缺少摘要的章节。</span>
         </div>
 
-        <Button label="开始生成" icon="pi pi-play" @click="startBatch" :disabled="!currentBook" />
+        <Button
+          :label="isRunning ? '正在准备...' : '开始生成'"
+          icon="pi pi-play"
+          @click="startBatch"
+          :disabled="!currentBook || (!overwrite && missingSummaryCount === 0)"
+        />
       </div>
 
       <!-- Progress -->
@@ -231,7 +256,10 @@ defineExpose({
         </div>
         <ProgressBar :value="progressPercentage" :show-value="false" style="height: 6px" />
 
-        <div class="text-xs text-moon-50 mb-2 truncate" v-if="currentBook">
+        <div
+          class="text-xs text-moon-50 mb-2 truncate overflow-hidden text-ellipsis whitespace-nowrap"
+          v-if="currentBook"
+        >
           <i class="pi pi-book mr-1"></i> {{ currentBook.title }}
         </div>
 
