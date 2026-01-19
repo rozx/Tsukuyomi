@@ -14,10 +14,7 @@ import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Volume } from 'src/models/novel';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
-import { terminologyTools } from 'src/services/ai/tools/terminology-tools';
-import { characterTools } from 'src/services/ai/tools/character-tools';
-import { ToolRegistry } from 'src/services/ai/tools';
-import type { ChatMessage, AIToolCallResult } from 'src/services/ai/types/ai-service';
+import type { ChatMessage } from 'src/services/ai/types/ai-service';
 
 export interface ChapterSummaryServiceOptions {
   bookId: string;
@@ -110,10 +107,8 @@ export class ChapterSummaryService {
 1. 概括主要剧情发展。
 2. 提及登场的关键角色。
 3. 语言通顺流畅，字数控制在 200 字以内。
-4. 如有不确定的术语或角色，可使用工具查询确认。
-5. 只调用工具搜寻未提供的术语以及角色。
-6. 不要重复调用工具。
-7.【重要】最终只返回摘要内容，不要包含任何其他解释或前言。
+4.【重要】相关角色以及术语已提供。
+5.【重要】最终只返回摘要内容，不要包含任何其他解释或前言。
 `;
 
       // 查找相关术语和角色
@@ -171,14 +166,6 @@ export class ChapterSummaryService {
 
       const userPrompt = `章节标题：${chapterTitle || '未知'}${contextInfo}\n\n内容：\n${content}`;
 
-      const searchTools = [
-        ...terminologyTools.map((t) => t.definition),
-        ...characterTools.map((t) => t.definition),
-      ].filter((t) => {
-        const name = t.function.name;
-        return name.startsWith('get_') || name.startsWith('list_') || name.startsWith('search_');
-      });
-
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -188,82 +175,28 @@ export class ChapterSummaryService {
         void aiProcessingStore.appendThinkingMessage(taskId, '正在阅读并分析章节内容...');
       }
 
-      let currentTurn = 0;
-      const maxTurns = 5;
-      let finalSummary = '';
+      // 调用 AI 生成摘要
+      const response = await service.generateText(
+        {
+          apiKey: model.apiKey,
+          baseUrl: model.baseUrl,
+          model: model.model,
+          temperature: 0.3,
+          signal: finalController.signal,
+        },
+        {
+          messages,
+        },
+        (chunk: TextGenerationChunk) => {
+          // 流式输出处理（可选）
+        },
+      );
 
-      while (currentTurn < maxTurns) {
-        currentTurn++;
-        let turnText = '';
+      const summary = response.text.trim();
 
-        // 调用 AI
-        const response = await service.generateText(
-          {
-            apiKey: model.apiKey,
-            baseUrl: model.baseUrl,
-            model: model.model,
-            temperature: 0.3,
-            signal: finalController.signal,
-          },
-          {
-            messages,
-            tools: searchTools,
-          },
-          (chunk: TextGenerationChunk) => {
-            if (chunk.text) {
-              turnText += chunk.text;
-            }
-          },
-        );
-
-        if (response.toolCalls && response.toolCalls.length > 0) {
-          // 工具调用
-          if (aiProcessingStore && taskId) {
-            if (turnText && turnText.trim()) {
-              await aiProcessingStore.appendThinkingMessage(taskId, '\n' + turnText.trim());
-            }
-            await aiProcessingStore.appendThinkingMessage(taskId, '\n正在查询相关信息...');
-          }
-
-          // 添加助手消息
-          messages.push({
-            role: 'assistant',
-            content: turnText || null,
-            tool_calls: response.toolCalls,
-          });
-
-          // 执行工具
-          for (const call of response.toolCalls) {
-            const result = await ToolRegistry.handleToolCall(
-              call,
-              bookId,
-              (action) => {
-                console.log('[ChapterSummaryService] Tool Action:', action);
-              },
-              (message) => {
-                console.log(`[ChapterSummaryService] Toast:`, message);
-              },
-              taskId,
-            );
-
-            messages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              name: call.function.name,
-              content: result.content,
-            });
-          }
-        } else {
-          // 最终结果
-          finalSummary = response.text.trim();
-          if (aiProcessingStore && taskId && finalSummary) {
-            await aiProcessingStore.appendOutputContent(taskId, finalSummary);
-          }
-          break;
-        }
+      if (aiProcessingStore && taskId && summary) {
+        await aiProcessingStore.appendOutputContent(taskId, summary);
       }
-
-      const summary = finalSummary;
 
       if (!summary) {
         throw new Error('AI 未返回有效的摘要内容');
