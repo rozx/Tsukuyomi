@@ -127,13 +127,17 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'list_chapters',
         description:
-          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题和翻译标题。当需要查看所有可用章节并选择参考章节时使用此工具。',
+          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题、翻译标题和章节摘要。当需要查看所有可用章节并选择参考章节时使用此工具。支持分页（offset/limit）。',
         parameters: {
           type: 'object',
           properties: {
             limit: {
               type: 'number',
               description: '可选，限制返回的章节数量（默认返回所有章节）',
+            },
+            offset: {
+              type: 'number',
+              description: '可选，跳过的章节数量（用于分页，默认为 0）',
             },
           },
           required: [],
@@ -144,7 +148,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { limit } = args;
+      const { limit, offset = 0 } = args;
 
       try {
         const book = await BookService.getBookById(bookId);
@@ -173,9 +177,6 @@ export const bookTools: ToolDefinition[] = [
         }> = [];
 
         if (book.volumes) {
-          let chaptersProcessed = 0;
-          const maxChaptersToLoad = limit && limit > 0 ? limit : undefined;
-
           for (let volumeIndex = 0; volumeIndex < book.volumes.length; volumeIndex++) {
             const volume = book.volumes[volumeIndex];
             if (!volume || !volume.chapters) continue;
@@ -183,11 +184,6 @@ export const bookTools: ToolDefinition[] = [
             for (let chapterIndex = 0; chapterIndex < volume.chapters.length; chapterIndex++) {
               const chapter = volume.chapters[chapterIndex];
               if (!chapter) continue;
-
-              // 如果已达到限制，停止处理
-              if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
-                break;
-              }
 
               const titleOriginal =
                 typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
@@ -202,19 +198,17 @@ export const bookTools: ToolDefinition[] = [
                 title_translation: titleTranslation,
                 summary: chapter.summary || '',
               });
-
-              chaptersProcessed++;
-            }
-
-            // 如果已达到限制，停止处理卷
-            if (maxChaptersToLoad && chaptersProcessed >= maxChaptersToLoad) {
-              break;
             }
           }
         }
 
-        // 应用限制
-        const chapters = limit && limit > 0 ? allChapters.slice(0, limit) : allChapters;
+        // 应用分页 (limit / offset)
+        // offset: 跳过的数量
+        // limit: 返回的数量
+        const startIndex = offset && offset > 0 ? offset : 0;
+        const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
+
+        const chapters = allChapters.slice(startIndex, endIndex);
 
         return JSON.stringify({
           success: true,
@@ -233,9 +227,216 @@ export const bookTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
+        name: 'list_chapters_by_volume',
+        description:
+          '获取按卷分组的书籍章节列表。当需要了解书籍的分卷结构、按卷查找章节或查看每卷包含的章节详情时使用此工具。返回结果包含卷信息和该卷下的章节列表（含ID、标题、摘要）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            volume_ids: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '要获取章节的卷 ID 列表',
+            },
+          },
+          required: ['volume_ids'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      }
+      const { volume_ids } = args;
+
+      if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
+        return JSON.stringify({ success: false, error: '必须提供有效的 volume_ids 列表' });
+      }
+
+      try {
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        }
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'book',
+            data: {
+              book_id: bookId,
+              tool_name: 'list_chapters_by_volume',
+              volume_ids,
+            },
+          });
+        }
+
+        const volumes: any[] = [];
+
+        if (book.volumes) {
+          for (const volume of book.volumes) {
+            if (volume_ids.includes(volume.id)) {
+              const volumeTitleOriginal =
+                typeof volume.title === 'string' ? volume.title : volume.title.original || '';
+              const volumeTitleTranslation =
+                typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
+
+              const chapters =
+                volume.chapters?.map((chapter) => ({
+                  id: chapter.id,
+                  title_original:
+                    typeof chapter.title === 'string'
+                      ? chapter.title
+                      : chapter.title.original || '',
+                  title_translation:
+                    typeof chapter.title === 'string'
+                      ? ''
+                      : chapter.title.translation?.translation || '',
+                  summary: chapter.summary || '',
+                })) || [];
+
+              volumes.push({
+                id: volume.id,
+                title_original: volumeTitleOriginal,
+                title_translation: volumeTitleTranslation,
+                chapters,
+                chapterCount: chapters.length,
+              });
+            }
+          }
+        }
+
+        return JSON.stringify({
+          success: true,
+          volumes,
+          totalVolumes: volumes.length,
+          totalChapters: volumes.reduce((acc, v) => acc + v.chapterCount, 0),
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '获取分卷章节列表失败',
+        });
+      }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'search_chapter_summaries',
+        description:
+          '通过关键词搜索章节摘要。当需要根据剧情内容、特定事件或人物行为查找对应章节时使用此工具。返回包含关键词的章节列表（含ID、标题、摘要片段）。',
+        parameters: {
+          type: 'object',
+          properties: {
+            keywords: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+              description: '搜索关键词列表（至少提供一个）',
+            },
+            limit: {
+              type: 'number',
+              description: '限制返回结果的数量（默认 10）',
+            },
+          },
+          required: ['keywords'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      }
+      const { keywords, limit = 10 } = args;
+
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        return JSON.stringify({ success: false, error: '必须提供搜索关键词' });
+      }
+
+      try {
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        }
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'chapter',
+            data: {
+              book_id: bookId,
+              tool_name: 'search_chapter_summaries',
+              keywords,
+            },
+          });
+        }
+
+        const matches: Array<{
+          id: string;
+          title: string;
+          summary: string;
+          match_score: number;
+          matched_keywords: string[];
+        }> = [];
+
+        if (book.volumes) {
+          for (const volume of book.volumes) {
+            if (!volume.chapters) continue;
+            for (const chapter of volume.chapters) {
+              if (!chapter.summary) continue;
+
+              const matchedKeywords: string[] = [];
+              let score = 0;
+
+              for (const keyword of keywords) {
+                if (chapter.summary.includes(keyword)) {
+                  matchedKeywords.push(keyword);
+                  score++;
+                }
+              }
+
+              if (score > 0) {
+                matches.push({
+                  id: chapter.id,
+                  title: getChapterDisplayTitle(chapter),
+                  summary: chapter.summary,
+                  match_score: score,
+                  matched_keywords: matchedKeywords,
+                });
+              }
+            }
+          }
+        }
+
+        // 按匹配分数排序（降序）并应用限制
+        const sortedMatches = matches.sort((a, b) => b.match_score - a.match_score).slice(0, limit);
+
+        return JSON.stringify({
+          success: true,
+          matches: sortedMatches,
+        });
+      } catch (error) {
+        return JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : '搜索章节摘要失败',
+        });
+      }
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
         name: 'get_chapter_info',
         description:
-          '获取章节的详细信息，包括标题、原文内容、段落列表、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
+          '获取章节的详细信息，包括标题、原文内容、段落列表、章节摘要、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
         parameters: {
           type: 'object',
           properties: {
@@ -364,6 +565,7 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -398,7 +600,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_previous_chapter',
         description:
-          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {
@@ -410,6 +612,10 @@ export const bookTools: ToolDefinition[] = [
               type: 'boolean',
               description: '是否在响应中包含相关的记忆信息（默认 true）',
             },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
           },
           required: ['chapter_id'],
         },
@@ -419,7 +625,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, include_memory = true } = args;
+      const { chapter_id, include_memory = true, summary_only = false } = args;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -456,14 +662,16 @@ export const bookTools: ToolDefinition[] = [
 
         // 如果章节内容未加载，从 IndexedDB 加载
         let chapterContent = '';
-        if (chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          if (content) {
-            chapter.content = content;
-            chapter.contentLoaded = true;
+        if (!summary_only) {
+          if (chapter.content === undefined) {
+            const content = await ChapterContentService.loadChapterContent(chapter.id);
+            if (content) {
+              chapter.content = content;
+              chapter.contentLoaded = true;
+            }
           }
+          chapterContent = getChapterContentText(chapter);
         }
-        chapterContent = getChapterContentText(chapter);
 
         const paragraphCount = chapter.content?.length || 0;
         const translatedCount =
@@ -490,6 +698,7 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -523,7 +732,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_next_chapter',
         description:
-          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {
@@ -535,6 +744,10 @@ export const bookTools: ToolDefinition[] = [
               type: 'boolean',
               description: '是否在响应中包含相关的记忆信息（默认 true）',
             },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
           },
           required: ['chapter_id'],
         },
@@ -544,7 +757,7 @@ export const bookTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, include_memory = true } = args;
+      const { chapter_id, include_memory = true, summary_only = false } = args;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -581,14 +794,16 @@ export const bookTools: ToolDefinition[] = [
 
         // 如果章节内容未加载，从 IndexedDB 加载
         let chapterContent = '';
-        if (chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          if (content) {
-            chapter.content = content;
-            chapter.contentLoaded = true;
+        if (!summary_only) {
+          if (chapter.content === undefined) {
+            const content = await ChapterContentService.loadChapterContent(chapter.id);
+            if (content) {
+              chapter.content = content;
+              chapter.contentLoaded = true;
+            }
           }
+          chapterContent = getChapterContentText(chapter);
         }
-        chapterContent = getChapterContentText(chapter);
 
         const paragraphCount = chapter.content?.length || 0;
         const translatedCount =
@@ -615,6 +830,7 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
