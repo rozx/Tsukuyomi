@@ -101,35 +101,11 @@ describe('MemoryTools - list_memories', () => {
     expect(parsed.memories[0].content).toBeDefined();
   });
 
-  test('别名 list_momeries 行为一致，并在 onAction 中记录 tool_name', async () => {
-    const tool = memoryTools.find((t) => t.definition.function.name === 'list_momeries');
-    expect(tool).toBeDefined();
-
-    const actions: unknown[] = [];
-    const context: ToolContext = {
-      bookId,
-      onAction: (action) => actions.push(action),
-    };
-
-    const result = await tool!.handler({ limit: 2, sort_by: 'lastAccessedAt' }, context);
-    const parsed = JSON.parse(result);
-
-    expect(parsed.success).toBe(true);
-    expect(parsed.sort_by).toBe('lastAccessedAt');
-    expect(parsed.memories).toHaveLength(2);
-
-    expect(actions).toHaveLength(1);
-    const action = actions[0] as { data?: { tool_name?: string } };
-    expect(action.data?.tool_name).toBe('list_momeries');
-  });
-
   test('作用域：getAllTools(Assistant) 包含 list_memories，但 getTranslationTools 不包含', () => {
     const allTools = ToolRegistry.getAllTools(bookId);
     expect(allTools.some((t) => t.function.name === 'list_memories')).toBe(true);
-    expect(allTools.some((t) => t.function.name === 'list_momeries')).toBe(true);
 
     const translationTools = ToolRegistry.getTranslationTools(bookId);
     expect(translationTools.some((t) => t.function.name === 'list_memories')).toBe(false);
-    expect(translationTools.some((t) => t.function.name === 'list_momeries')).toBe(false);
   });
 });

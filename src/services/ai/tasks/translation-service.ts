@@ -13,6 +13,7 @@ import { AIServiceFactory } from '../index';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import { ChapterSummaryService } from './chapter-summary-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
 import {
   executeToolCallLoop,
@@ -214,6 +215,31 @@ export class TranslationService {
         ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
       },
     );
+
+    // 触发章节摘要生成（后台运行，仅当提供 chapterId 和 bookId 时）
+    if (chapterId && bookId && content.length > 0) {
+      // 构建完整的源文本
+      const fullSourceText = content
+        .map((p) => p.text || '')
+        .filter((t) => t.trim().length > 0)
+        .join('\n\n');
+
+      if (fullSourceText.trim()) {
+        // 异步运行，不等待
+        void ChapterSummaryService.generateSummary(chapterId, fullSourceText, {
+          bookId,
+          ...(chapterTitle ? { chapterTitle } : {}),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          aiProcessingStore: aiProcessingStore as any,
+          onSuccess: (summary: string) =>
+            console.log(`[TranslationService] 自动生成章节摘要成功: ${summary.slice(0, 30)}...`),
+          onError: (error: unknown) =>
+            console.error('[TranslationService] 自动生成章节摘要失败:', error),
+        }).catch((error: unknown) => {
+          console.error('[TranslationService] 触发章节摘要服务异常:', error);
+        });
+      }
+    }
 
     // 使用共享工具创建统一的 AbortController
     const { controller: internalController, cleanup: cleanupAbort } = createUnifiedAbortController(

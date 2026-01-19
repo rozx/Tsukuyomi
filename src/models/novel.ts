@@ -102,6 +102,7 @@ export interface Chapter {
     translation: Translation;
   };
   webUrl?: string | undefined; // 网络地址
+  summary?: string | undefined; // 章节摘要
 
   /**
    * 章节内容（懒加载）

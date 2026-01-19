@@ -50,9 +50,7 @@ describe('BookService', () => {
     mockSaveChapterContent.mockClear();
 
     // Mock ChapterContentService.saveChapterContent
-    spyOn(ChapterContentService, 'saveChapterContent').mockImplementation(
-      mockSaveChapterContent,
-    );
+    spyOn(ChapterContentService, 'saveChapterContent').mockImplementation(mockSaveChapterContent);
   });
 
   afterEach(() => {
@@ -69,7 +67,7 @@ describe('BookService', () => {
   it('should get a book by id', async () => {
     const mockBook = { id: '1', title: 'Test' };
     mockGet.mockResolvedValueOnce(mockBook);
-    
+
     const book = await BookService.getBookById('1');
     expect(book).toEqual(mockBook as Novel);
     expect(mockGet).toHaveBeenCalledWith('books', '1');
@@ -306,6 +304,27 @@ describe('BookService', () => {
         skipIfUnchanged: true,
       });
     });
+
+    it('should preserve chapter summary when stripping content for storage', async () => {
+      const chapterWithSummary: Chapter = {
+        ...createTestChapter('chapter-1', [createTestParagraph()]),
+        summary: '这是章节摘要',
+      };
+      const volume = createTestVolume('volume-1', [chapterWithSummary]);
+      const book: Novel = {
+        id: 'book-1',
+        title: 'Test Book',
+        volumes: [volume],
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      await BookService.saveBook(book);
+
+      // 书籍元数据应该被保存，且 chapters 仍应包含 summary 字段
+      const savedBook = mockPut.mock.calls[0]?.[1] as any;
+      const savedSummary = savedBook?.volumes?.[0]?.chapters?.[0]?.summary;
+      expect(savedSummary).toBe('这是章节摘要');
+    });
   });
 });
-

@@ -10,6 +10,8 @@ import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import BatchSummaryPanel from 'src/components/novel/BatchSummaryPanel.vue';
+import { debounce } from 'lodash';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
@@ -65,6 +67,7 @@ const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => 
 );
 const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
+const batchSummaryPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
 const toggleHistoryDialog = (event: Event) => {
   toastHistoryRef.value?.toggle(event);
@@ -72,6 +75,10 @@ const toggleHistoryDialog = (event: Event) => {
 
 const toggleThinkingPanel = (event: Event) => {
   thinkingPanelRef.value?.toggle(event);
+};
+
+const toggleBatchSummaryPanel = (event: Event) => {
+  batchSummaryPanelRef.value?.toggle(event);
 };
 
 const toggleSyncPanel = (event: Event) => {
@@ -217,6 +224,10 @@ const formatNextSyncTime = computed(() => {
 // 定期检查定时器
 let checkInterval: ReturnType<typeof setInterval> | null = null;
 
+const debouncedWatchSyncConfig = debounce(() => {
+  watchSyncConfig();
+}, 500);
+
 // 监听同步配置和下次同步时间的变化
 watch(
   [
@@ -226,7 +237,7 @@ watch(
     nextSyncTime,
   ],
   () => {
-    watchSyncConfig();
+    debouncedWatchSyncConfig();
   },
   { immediate: true },
 );
@@ -269,7 +280,9 @@ onUnmounted(() => {
             <span class="text-xs uppercase tracking-[0.3em] text-moon-50"
               >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
             >
-            <span class="font-semibold text-moon-100 tracking-wide">{{ APP_NAME.description.en }}</span>
+            <span class="font-semibold text-moon-100 tracking-wide">{{
+              APP_NAME.description.en
+            }}</span>
           </div>
         </div>
       </template>
@@ -304,6 +317,17 @@ onUnmounted(() => {
             <span v-if="gistSync.enabled" class="text-sm uppercase tracking-wide text-moon-60">{{
               formatNextSyncTime
             }}</span>
+          </Button>
+
+          <!-- AI 批量摘要按钮 -->
+          <Button
+            v-if="$route.params.id"
+            aria-label="批量摘要"
+            class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
+            @click="toggleBatchSummaryPanel"
+          >
+            <i class="pi pi-list text-lg" />
+            <span class="text-sm text-moon-70 hidden sm:inline">批量摘要</span>
           </Button>
 
           <!-- 消息历史按钮 -->
@@ -342,6 +366,9 @@ onUnmounted(() => {
 
     <!-- AI 思考过程 Popover -->
     <ThinkingProcessPanel ref="thinkingPanelRef" />
+
+    <!-- 批量摘要生成 Popover -->
+    <BatchSummaryPanel ref="batchSummaryPanelRef" />
   </header>
 </template>
 

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
@@ -11,7 +10,7 @@ interface DraggedChapter {
   sourceIndex: number;
 }
 
-const props = defineProps<{
+const _props = defineProps<{
   volumes: Volume[];
   book: Novel | null;
   selectedChapterId: string | null;
@@ -153,13 +152,30 @@ const handleDragLeave = () => {
                 draggable="true"
                 @dragstart="handleDragStart($event, chapter, volume.id, index)"
                 @dragend="handleDragEnd($event)"
-                @dragover.prevent="handleDragOver($event, volume.id, index)"
-                @drop="handleDrop($event, volume.id, index)"
+                @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
+                @drop.stop="handleDrop($event, volume.id, index)"
               >
                 <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
                   <i class="pi pi-bars drag-handle"></i>
                   <i class="pi pi-file chapter-icon"></i>
-                  <span class="chapter-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
+                  <span class="chapter-title">{{
+                    getChapterDisplayTitle(chapter, book || undefined)
+                  }}</span>
+                  <i
+                    v-if="chapter.summary"
+                    class="pi pi-info-circle summary-icon"
+                    v-tooltip.bottom="{
+                      value: chapter.summary,
+                      pt: {
+                        text: {
+                          style: {
+                            maxWidth: '300px',
+                            whiteSpace: 'pre-wrap',
+                          },
+                        },
+                      },
+                    }"
+                  ></i>
                 </div>
                 <div class="chapter-actions" @click.stop>
                   <Button
@@ -320,7 +336,7 @@ const handleDragLeave = () => {
   font-size: 0.8125rem;
   color: var(--moon-opacity-80);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: move;
+  cursor: pointer;
 }
 
 .chapter-item:hover {
@@ -332,7 +348,6 @@ const handleDragLeave = () => {
 
 .chapter-item.dragging {
   opacity: 0.5;
-  cursor: grabbing;
 }
 
 .chapter-item.drag-over {
@@ -411,6 +426,26 @@ const handleDragLeave = () => {
   font-size: inherit;
 }
 
+.summary-icon {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-50);
+  cursor: help;
+  flex-shrink: 0;
+  margin-left: 0.25rem;
+  opacity: 0;
+  transition:
+    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chapter-item:hover .summary-icon {
+  opacity: 1;
+}
+
+.summary-icon:hover {
+  color: var(--primary-opacity-90);
+}
+
 /* 折叠/展开动画 */
 .slide-down-enter-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -451,4 +486,3 @@ const handleDragLeave = () => {
   text-align: center;
 }
 </style>
-

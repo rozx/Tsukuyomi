@@ -7,7 +7,7 @@ description: Prepare the project for a new release
 2. Create a new release note file under `docs/ReleaseNotes`.
    - File naming convention: `docs/ReleaseNotes/RELEASE_NOTES_vx.xx.md` (replace `x.xx` with the actual version).
    - Use other files in `docs/ReleaseNotes/` as a reference for the format.
-   - Compare changes between current version (current branch) and last version (last release tag).
+   - Compare changes between current version and last version.
    - **Important**: The content of the release note MUST be in **Chinese**.
 
 3. Perform a final quality check to ensure deployment readiness.

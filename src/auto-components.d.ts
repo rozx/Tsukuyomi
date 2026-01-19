@@ -22,6 +22,7 @@ declare module 'vue' {
     AppRightPanel: typeof import('./components/layout/AppRightPanel.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     AskUserDialog: typeof import('./components/dialogs/AskUserDialog.vue')['default']
+    BatchSummaryPanel: typeof import('./components/novel/BatchSummaryPanel.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
     ChapterContentPanel: typeof import('./components/novel/ChapterContentPanel.vue')['default']
     ChapterSettingsPopover: typeof import('./components/novel/ChapterSettingsPopover.vue')['default']

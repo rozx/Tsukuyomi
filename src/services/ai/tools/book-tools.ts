@@ -169,6 +169,7 @@ export const bookTools: ToolDefinition[] = [
           id: string;
           title_original: string;
           title_translation: string;
+          summary: string;
         }> = [];
 
         if (book.volumes) {
@@ -199,6 +200,7 @@ export const bookTools: ToolDefinition[] = [
                 id: chapter.id,
                 title_original: titleOriginal,
                 title_translation: titleTranslation,
+                summary: chapter.summary || '',
               });
 
               chaptersProcessed++;

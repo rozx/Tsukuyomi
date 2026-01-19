@@ -40,7 +40,14 @@ export const CONFIG_MAX_TOKENS_LIMIT = 1_000_000;
  * AI 任务类型标签映射
  */
 export const TASK_TYPE_LABELS: Record<
-  'translation' | 'proofreading' | 'polish' | 'termsTranslation' | 'assistant' | 'config' | 'other',
+  | 'translation'
+  | 'proofreading'
+  | 'polish'
+  | 'termsTranslation'
+  | 'assistant'
+  | 'config'
+  | 'chapter_summary'
+  | 'other',
   string
 > = {
   translation: '翻译',
@@ -49,5 +56,6 @@ export const TASK_TYPE_LABELS: Record<
   termsTranslation: '术语翻译',
   assistant: '助手',
   config: '配置获取',
+  chapter_summary: '章节摘要',
   other: '其他',
 } as const;

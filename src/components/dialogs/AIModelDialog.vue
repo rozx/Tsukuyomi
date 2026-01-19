@@ -165,7 +165,7 @@ const testModel = async () => {
       temperature: formData.value.temperature ?? 0.7,
       maxTokens: formData.value.maxTokens ?? 0,
       apiKey: formData.value.apiKey || '',
-      baseUrl: formData.value.provider === 'gemini' ? '' : (formData.value.baseUrl || ''),
+      baseUrl: formData.value.provider === 'gemini' ? '' : formData.value.baseUrl || '',
       enabled: true,
       isDefault: formData.value.isDefault || {
         translation: { enabled: false, temperature: 0.7 },
@@ -195,7 +195,10 @@ const testModel = async () => {
       }
 
       // 确保 contextWindow 是数字类型
-      if (result.modelInfo?.contextWindow !== undefined && result.modelInfo.contextWindow !== null) {
+      if (
+        result.modelInfo?.contextWindow !== undefined &&
+        result.modelInfo.contextWindow !== null
+      ) {
         const contextWindowValue =
           typeof result.modelInfo.contextWindow === 'number'
             ? result.modelInfo.contextWindow
@@ -247,7 +250,6 @@ const testModel = async () => {
         life: 5000,
       });
     }
-
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -603,7 +605,10 @@ watch(
             >
               从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
             </small>
-            <small v-else-if="(formData.maxTokens ?? 0) === 0" class="text-xs text-moon/70 block mt-1">
+            <small
+              v-else-if="(formData.maxTokens ?? 0) === 0"
+              class="text-xs text-moon/70 block mt-1"
+            >
               0 表示无限制
             </small>
           </div>
@@ -738,7 +743,7 @@ watch(
                 <label
                   :for="`${idPrefix}-default-termsTranslation`"
                   class="ml-2 text-sm cursor-pointer"
-                  >术语翻译</label
+                  >术语翻译 / 章节摘要</label
                 >
               </div>
               <span

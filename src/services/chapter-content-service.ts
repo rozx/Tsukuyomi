@@ -26,7 +26,10 @@ export class ChapterContentService {
   /**
    * 缓存条目：同时保存解析后的对象与不可变序列化快照（用于变更检测）
    */
-  private static contentCache = new Map<string, { parsed: Paragraph[]; serialized: string } | null>();
+  private static contentCache = new Map<
+    string,
+    { parsed: Paragraph[]; serialized: string } | null
+  >();
   private static readonly CACHE_MAX_SIZE = 100; // 最多缓存 100 个章节
 
   /**
@@ -458,6 +461,8 @@ export class ChapterContentService {
             const content = await ChapterContentService.loadChapterContent(chapter.id);
             return {
               ...chapter,
+              // 显式保留章节摘要，避免在某些结构/Proxy 场景下丢失
+              summary: chapter.summary,
               content: content || [],
               contentLoaded: true,
             };

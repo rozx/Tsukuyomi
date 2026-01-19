@@ -1,0 +1,13 @@
+- [x] Create `src/components/novel/BatchSummaryPanel.vue`
+  - [x] Implement Popover structure
+  - [x] Add Overwrite toggle
+  - [x] Add Start/Stop button
+  - [x] Implement batch scheduling logic (queue + concurrency limit)
+  - [x] Implement progress display
+- [x] Update `src/components/layout/AppHeader.vue`
+  - [x] Import `BatchSummaryPanel`
+  - [x] Add "Batch Summary" button (icon: `pi pi-list` or similar) next to AI panel button
+  - [x] Connect button to toggle Popover
+- [x] Manual Check: Verify batch generation starts and tasks appear in AI Panel
+- [x] Manual Check: Verify concurrency limit works
+- [x] Manual Check: Verify stop functionality

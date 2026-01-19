@@ -21,11 +21,14 @@ import { getChunkingInstructions, getCurrentStatusInfo } from '../prompts';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import type { AIModel } from 'src/services/ai/types/ai-model';
+import { useAIModelsStore } from 'src/stores/ai-models';
+import type { Paragraph } from 'src/models/novel';
 
 /**
  * 任务类型
  */
-export type TaskType = 'translation' | 'polish' | 'proofreading';
+export type TaskType = 'translation' | 'polish' | 'proofreading' | 'chapter_summary';
 
 /**
  * 状态类型
@@ -43,7 +46,7 @@ function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, 
     };
   }
 
-  // 润色/校对：跳过并禁用 review，固定为 planning → working → end
+  // 润色/校对/章节摘要：跳过并禁用 review，固定为 planning → working → end
   return {
     planning: ['working'],
     working: ['end'],
@@ -56,7 +59,7 @@ function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, 
 function getTaskStateWorkflowText(taskType: TaskType): string {
   return taskType === 'translation'
     ? 'planning → working → review → end'
-    : 'planning → working → end（润色/校对任务禁止使用 review）';
+    : 'planning → working → end（润色/校对/摘要任务禁止使用 review）';
 }
 
 /**
@@ -99,6 +102,102 @@ export function getHasPreviousParagraphs(
     !!firstParagraphId &&
     firstParagraphId !== chapterFirstNonEmptyParagraphId
   );
+}
+
+/**
+ * 为特定任务获取 AI 模型
+ * 优先使用书籍特定任务模型，其次是书籍默认模型，最后是全局默认任务模型
+ * @param bookId 书籍 ID
+ * @param taskType 任务类型
+ * @returns AI 模型
+ */
+export async function getAIModelForTask(
+  bookId: string,
+  taskType: 'translation' | 'polish' | 'proofreading' | 'termsTranslation',
+): Promise<AIModel> {
+  const booksStore = useBooksStore();
+  const aiModelsStore = useAIModelsStore();
+
+  const novel = booksStore.books.find((b) => b.id === bookId);
+  if (!novel) {
+    // 这种情况下通常应该已经加载了，但为了健壮性，这里不直接抛错，而是尝试获取全局默认
+    console.warn(`[AITaskHelper] 找不到 ID 为 ${bookId} 的书籍，将使用全局默认模型`);
+  }
+
+  // 1. 映射任务类型到存储的任务类型
+  // Novel 模型和 AIModel 默认任务配置中，润色(polish)和校对(proofreading)统一使用 proofreading 配置
+  const storeTaskType = taskType === 'polish' ? 'proofreading' : taskType;
+
+  // 2. 尝试从小说配置中获取
+  let model: AIModel | undefined = novel?.defaultAIModel?.[storeTaskType];
+
+  // 3. 如果没有特定任务模型，尝试获取全局默认
+  if (!model) {
+    if (!aiModelsStore.isLoaded) {
+      await aiModelsStore.loadModels();
+    }
+    model = aiModelsStore.getDefaultModelForTask(storeTaskType);
+  }
+
+  if (!model || !model.enabled) {
+    const taskNameMap: Record<string, string> = {
+      translation: '翻译',
+      polish: '润色',
+      proofreading: '校对',
+      termsTranslation: '术语/摘要',
+    };
+    throw new Error(`未配置“${taskNameMap[taskType]}”模型，请在设置中配置。`);
+  }
+
+  return model;
+}
+
+/**
+ * 构建格式化的块数据（用于校对或润色）
+ * @param paragraphs 段落列表
+ * @param chunkSize 块大小限制
+ * @returns 格式化后的块列表
+ */
+export function buildFormattedChunks(
+  paragraphs: Paragraph[],
+  chunkSize: number,
+): Array<{ text: string; paragraphIds: string[] }> {
+  const chunks: Array<{ text: string; paragraphIds: string[] }> = [];
+  let currentChunkText = '';
+  let currentChunkParagraphIds: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    // 获取段落的当前翻译
+    const currentTranslation =
+      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+      paragraph.translations?.[0]?.translation ||
+      '';
+
+    // 格式化段落：[ID: {id}] 原文: {原文}\n翻译: {当前翻译}
+    const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+
+    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
+    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
+      chunks.push({
+        text: currentChunkText,
+        paragraphIds: currentChunkParagraphIds,
+      });
+      currentChunkText = '';
+      currentChunkParagraphIds = [];
+    }
+    currentChunkText += paragraphText;
+    currentChunkParagraphIds.push(paragraph.id);
+  }
+
+  // 添加最后一个块
+  if (currentChunkText.length > 0) {
+    chunks.push({
+      text: currentChunkText,
+      paragraphIds: currentChunkParagraphIds,
+    });
+  }
+
+  return chunks;
 }
 
 /**
@@ -270,7 +369,6 @@ const PRODUCTIVE_TOOLS = [
   'list_terms',
   'list_characters',
   'list_memories',
-  'list_momeries',
   'search_memory_by_keywords',
   'get_chapter_info',
   'get_book_info',
@@ -286,352 +384,13 @@ const PRODUCTIVE_TOOLS = [
 const TOOL_CALL_LIMITS: Record<string, number> = {
   list_terms: 3, // 术语表最多调用 3 次
   list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、review 阶段各调用一次）
-  list_memories: 1, // Memory 列表通常只需要调用一次
-  list_momeries: 1,
+  list_memories: 3, // Memory 列表通常只需要调用一次
   get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
   list_chapters: 1, // 章节列表最多调用 1 次
   search_memory_by_keywords: 5, // 记忆搜索可以多调用几次
   default: Infinity, // 其他工具无限制
 };
-
-/**
- * 工具结果截断的最大长度配置
- */
-const TOOL_RESULT_MAX_LENGTHS: Record<string, number> = {
-  list_terms: 2000,
-  list_characters: 2000,
-  list_memories: 1200,
-  list_momeries: 1200,
-  search_memory_by_keywords: 1000,
-  get_chapter_info: 800,
-  get_book_info: 800,
-  default: 500,
-} as const;
-
-/**
- * 智能截断工具结果
- * 根据工具类型使用不同的截断策略，保留关键信息
- * @param tool 工具名称
- * @param result 工具结果
- * @returns 截断后的结果
- */
-export function truncateToolResult(tool: string, result: string): string {
-  const maxLength = TOOL_RESULT_MAX_LENGTHS[tool] ?? TOOL_RESULT_MAX_LENGTHS.default;
-  const safeMaxLength = typeof maxLength === 'number' ? maxLength : 500;
-
-  // 如果结果长度在限制内，直接返回
-  if (result.length <= safeMaxLength) {
-    return result;
-  }
-
-  // 对于结构化数据（术语表、角色表），尝试智能截断
-  if (tool === 'list_terms' || tool === 'list_characters') {
-    try {
-      const data = JSON.parse(result) as unknown[];
-      if (Array.isArray(data) && data.length > 0) {
-        // 保留所有条目，但每个条目只保留关键字段
-        const truncated = data
-          .filter(
-            (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
-          )
-          .map((item) => {
-            const truncatedItem: Record<string, unknown> = {
-              id: item.id,
-              name: item.name,
-              translation: item.translation,
-            };
-
-            // 保留其他关键字段，但截断描述等长字段
-            if (item.description && typeof item.description === 'string') {
-              truncatedItem.description =
-                item.description.length > 100
-                  ? item.description.slice(0, 100) + '...'
-                  : item.description;
-            }
-
-            // 保留别名（但限制数量）
-            if (item.aliases && Array.isArray(item.aliases)) {
-              truncatedItem.aliases = item.aliases.slice(0, 5); // 最多保留 5 个别名
-              if (item.aliases.length > 5) {
-                truncatedItem.aliases_note = `（共 ${item.aliases.length} 个别名，仅显示前 5 个）`;
-              }
-            }
-
-            // 保留其他重要字段
-            if (item.speaking_style) {
-              truncatedItem.speaking_style = item.speaking_style;
-            }
-            if (item.relationship) {
-              truncatedItem.relationship = item.relationship;
-            }
-
-            return truncatedItem;
-          });
-
-        const truncatedJson = JSON.stringify(truncated);
-        // 如果截断后的 JSON 仍然太长，使用摘要（但包装为 JSON 格式）
-        if (truncatedJson.length > safeMaxLength) {
-          const summaryItems = truncated.slice(0, 10).map((item) => {
-            const nameValue = item.name;
-            let name = '';
-            if (typeof nameValue === 'string') {
-              name = nameValue;
-            } else if (nameValue !== null && nameValue !== undefined) {
-              if (typeof nameValue === 'number' || typeof nameValue === 'boolean') {
-                name = String(nameValue);
-              } else {
-                name = JSON.stringify(nameValue);
-              }
-            }
-
-            const translationValue = item.translation;
-            let translation = '(无翻译)';
-            if (typeof translationValue === 'string') {
-              translation = translationValue;
-            } else if (translationValue !== null && translationValue !== undefined) {
-              if (typeof translationValue === 'number' || typeof translationValue === 'boolean') {
-                translation = String(translationValue);
-              } else {
-                translation = JSON.stringify(translationValue);
-              }
-            }
-
-            return `${name} → ${translation}`;
-          });
-          // 将摘要包装为 JSON 格式，确保可以被正确解析
-          const summaryText = `共 ${data.length} 项：${summaryItems.join(', ')}${data.length > 10 ? ` 等 ${data.length} 项` : ''}`;
-          return JSON.stringify({
-            _truncated: true,
-            _summary: summaryText,
-            _totalCount: data.length,
-            _displayedCount: Math.min(10, data.length),
-          });
-        }
-
-        return truncatedJson;
-      }
-    } catch {
-      // 如果不是 JSON，使用普通截断
-    }
-  }
-
-  // 对于其他工具，尝试智能截断 JSON
-  // 首先尝试解析为 JSON，如果是有效的 JSON，进行智能截断
-  try {
-    const data = JSON.parse(result);
-
-    // 如果是对象，尝试智能截断
-    if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-      const obj = data as Record<string, unknown>;
-
-      // 递归截断对象中的长字符串字段
-      const truncateObject = (
-        obj: Record<string, unknown>,
-        maxLen: number,
-      ): Record<string, unknown> => {
-        const truncated: Record<string, unknown> = {};
-        let currentLen = 2; // 开始和结束的大括号
-
-        for (const [key, value] of Object.entries(obj)) {
-          // 估算添加这个字段后的长度
-          let valueStr = '';
-          if (value === null) {
-            valueStr = 'null';
-          } else if (typeof value === 'string') {
-            // 字符串值需要转义和引号
-            // 如果字符串太长，截断它
-            if (value.length > 200) {
-              valueStr = JSON.stringify(value.slice(0, 150) + '...(已截断)');
-            } else {
-              valueStr = JSON.stringify(value);
-            }
-          } else if (typeof value === 'object') {
-            // 嵌套对象或数组，递归处理
-            if (Array.isArray(value)) {
-              // 对于数组，如果太长，只保留前几项
-              const arrayStr = JSON.stringify(value);
-              if (arrayStr.length > 300) {
-                const truncatedArray = value.slice(0, 5);
-                valueStr = JSON.stringify(truncatedArray) + '...(数组已截断)';
-              } else {
-                valueStr = arrayStr;
-              }
-            } else {
-              // 嵌套对象，递归截断
-              valueStr = JSON.stringify(truncateObject(value as Record<string, unknown>, maxLen));
-            }
-          } else {
-            valueStr = JSON.stringify(value);
-          }
-
-          const keyStr = `"${key}":`;
-          const fieldStr = `${keyStr}${valueStr}`;
-          const fieldLen = fieldStr.length + (currentLen > 2 ? 1 : 0); // +1 是逗号
-
-          // 如果添加这个字段会超过限制，停止
-          if (currentLen + fieldLen > maxLen - 20) {
-            // 添加截断标记
-            truncated._truncated = true;
-            truncated._truncatedFields =
-              Object.keys(obj).length - Object.keys(truncated).length + 1;
-            break;
-          }
-
-          truncated[key] = value;
-          currentLen += fieldLen;
-        }
-
-        return truncated;
-      };
-
-      // 使用更保守的截断长度（留出 10% 的缓冲空间）
-      const conservativeMaxLen = Math.floor(safeMaxLength * 0.9);
-      const truncated = truncateObject(obj, conservativeMaxLen);
-      let truncatedJson = JSON.stringify(truncated);
-
-      // 如果截断后的 JSON 仍然太长，逐步减少内容直到符合限制
-      if (truncatedJson.length > safeMaxLength) {
-        // 尝试进一步截断：移除一些非关键字段
-        const keyFields = ['success', 'id', 'title', 'name', 'error', 'description'];
-        const minimal: Record<string, unknown> = {
-          _truncated: true,
-        };
-
-        // 只保留关键字段
-        for (const key of keyFields) {
-          if (key in truncated) {
-            minimal[key] = truncated[key];
-          }
-        }
-
-        truncatedJson = JSON.stringify(minimal);
-
-        // 如果仍然太长，使用摘要
-        if (truncatedJson.length > safeMaxLength) {
-          const summary: Record<string, unknown> = {
-            _truncated: true,
-            _summary: `内容过长（${result.length} 字符），已截断`,
-          };
-
-          // 只保留最关键的字段
-          const criticalFields = ['success', 'id', 'title', 'name', 'error'];
-          for (const key of criticalFields) {
-            if (key in obj) {
-              const value = obj[key];
-              // 如果值是字符串且太长，截断它
-              if (typeof value === 'string' && value.length > 50) {
-                summary[key] = value.slice(0, 50) + '...';
-              } else {
-                summary[key] = value;
-              }
-            }
-          }
-
-          truncatedJson = JSON.stringify(summary);
-        }
-      }
-
-      // 最终验证：确保 JSON 在限制内
-      if (truncatedJson.length > safeMaxLength) {
-        // 如果仍然超过限制，使用最小摘要
-        return JSON.stringify({
-          _truncated: true,
-          _summary: `内容过长（${result.length} 字符），已截断`,
-          _tool: tool,
-        });
-      }
-
-      return truncatedJson;
-    }
-
-    // 如果是数组，但不在特殊处理列表中，也尝试截断
-    if (Array.isArray(data)) {
-      const truncated = data.slice(0, Math.floor(safeMaxLength / 100)); // 粗略估算
-      const truncatedJson = JSON.stringify(truncated);
-      if (truncatedJson.length > safeMaxLength) {
-        return JSON.stringify({
-          _truncated: true,
-          _summary: `数组过长（${data.length} 项），已截断`,
-          _totalCount: data.length,
-          _displayedCount: truncated.length,
-        });
-      }
-      return truncatedJson;
-    }
-
-    // 如果是其他类型，直接返回（不应该发生）
-    return JSON.stringify(data);
-  } catch {
-    // 如果不是 JSON 或解析失败，使用普通截断（但确保不会破坏 JSON 结构）
-    // 尝试找到最后一个完整的 JSON 结构
-    const truncated = result.slice(0, safeMaxLength);
-
-    // 尝试修复被截断的 JSON（如果可能）
-    // 查找最后一个完整的键值对或字符串值
-    // 匹配模式：完整的键值对（包括字符串、数字、布尔值、null、对象、数组）
-    const patterns = [
-      /"[^"]*"\s*:\s*"[^"]*"(\s*[,}])/g, // 字符串值
-      /"[^"]*"\s*:\s*\d+(\s*[,}])/g, // 数字值
-      /"[^"]*"\s*:\s*(true|false|null)(\s*[,}])/g, // 布尔值或 null
-      /"[^"]*"\s*:\s*\{[^}]*\}(\s*[,}])/g, // 简单对象值
-    ];
-
-    let fixedTruncated: string | null = null;
-    for (const pattern of patterns) {
-      const matches = truncated.match(pattern);
-      if (matches && matches.length > 0) {
-        const lastMatch = matches[matches.length - 1];
-        if (lastMatch) {
-          const lastIndex = truncated.lastIndexOf(lastMatch);
-          if (lastIndex > 0) {
-            let candidate = truncated.slice(0, lastIndex + lastMatch.length);
-            // 尝试闭合 JSON 结构
-            const openBraces = (candidate.match(/{/g) || []).length;
-            const closeBraces = (candidate.match(/}/g) || []).length;
-            const missingBraces = openBraces - closeBraces;
-            if (missingBraces > 0) {
-              candidate += '}'.repeat(missingBraces);
-            }
-            // 尝试验证是否为有效的 JSON
-            try {
-              JSON.parse(candidate);
-              // 添加截断标记（如果还没有）
-              if (!candidate.includes('_truncated')) {
-                candidate = candidate.slice(0, -1) + ',"_truncated":true}';
-              }
-              fixedTruncated = candidate;
-              break;
-            } catch {
-              // 继续尝试下一个模式
-            }
-          }
-        }
-      }
-    }
-
-    // 如果修复成功，返回修复后的 JSON
-    if (fixedTruncated) {
-      return fixedTruncated;
-    }
-
-    // 如果修复失败，包装为有效的 JSON 对象
-    // 确保内容被正确转义
-    const escapedContent = truncated
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
-
-    return JSON.stringify({
-      _truncated: true,
-      _content: escapedContent.slice(0, safeMaxLength - 100), // 确保总长度在限制内
-      _originalLength: result.length,
-      _tool: tool,
-    });
-  }
-}
 
 /**
  * 检测规划上下文是否需要更新
@@ -803,6 +562,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
                 translation: '翻译',
                 polish: '润色',
                 proofreading: '校对',
+                chapter_summary: '章节摘要',
               };
               const taskLabel = taskTypeLabels[taskType];
               const statusLabels: Record<TaskStatus, string> = {
@@ -871,6 +631,7 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
     translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
     proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
     polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
+    chapter_summary: '',
   };
   return reminders[taskType];
 }
@@ -879,7 +640,12 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
  * 构建初始用户提示的基础部分 - 精简版
  */
 export function buildInitialUserPromptBase(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
   return `开始${taskLabel}。
@@ -1020,6 +786,7 @@ export function addParagraphContext(
     translation: '翻译',
     proofreading: '校对',
     polish: '润色',
+    chapter_summary: '章节摘要',
   };
   const taskLabel = taskLabels[taskType];
 
@@ -1110,7 +877,12 @@ export function buildIndependentChunkPrompt(
   hasPreviousParagraphs?: boolean,
   firstParagraphId?: string,
 ): string {
-  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
 
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
@@ -1361,6 +1133,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
   const taskLabel = taskTypeLabels[taskType];
 
@@ -2079,6 +1852,7 @@ export function checkMaxTurnsReached(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   if (!finalResponseText || finalResponseText.trim().length === 0) {
@@ -2164,6 +1938,7 @@ export async function initializeTask(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   const taskId = await aiProcessingStore.addTask({
@@ -2435,6 +2210,7 @@ export async function handleTaskError(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   // 检查是否是取消错误
@@ -2473,6 +2249,7 @@ export async function completeTask(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   await aiProcessingStore.updateTask(taskId, {
