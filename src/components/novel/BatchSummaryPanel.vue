@@ -21,6 +21,7 @@ const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 // State
 const overwrite = ref(false);
 const isRunning = ref(false);
+const isCancelled = ref(false);
 const queue = ref<Chapter[]>([]);
 const processing = ref<Map<string, string>>(new Map());
 const completed = ref<Set<string>>(new Set());
@@ -83,6 +84,7 @@ const reset = () => {
   failed.value.clear();
   totalTasks.value = 0;
   isRunning.value = false;
+  isCancelled.value = false;
 };
 
 const startBatch = () => {
@@ -112,6 +114,7 @@ const startBatch = () => {
 };
 const stopBatch = () => {
   isRunning.value = false;
+  isCancelled.value = true;
   if (abortController.value) {
     abortController.value.abort();
     abortController.value = null;
@@ -257,7 +260,7 @@ defineExpose({
         <ProgressBar :value="progressPercentage" :show-value="false" style="height: 6px" />
 
         <div
-          class="text-xs text-moon-50 mb-2 truncate overflow-hidden text-ellipsis whitespace-nowrap"
+          class="text-xs text-moon-50 mb-2 max-w-[280px] truncate overflow-hidden whitespace-nowrap"
           v-if="currentBook"
         >
           <i class="pi pi-book mr-1"></i> {{ currentBook.title }}
@@ -285,7 +288,7 @@ defineExpose({
             <div
               v-for="[id, title] of Array.from(processing.entries())"
               :key="id"
-              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded truncate flex items-center gap-2"
+              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded flex items-center gap-2 truncate overflow-hidden whitespace-nowrap"
             >
               <i class="pi pi-spinner animate-spin text-primary-400 text-[10px]"></i>
               {{ title || id }}
@@ -303,9 +306,13 @@ defineExpose({
           />
         </div>
 
-        <div v-if="isFinished" class="flex flex-col gap-2 mt-2">
-          <div class="text-center text-green-400 text-sm font-medium">
-            <i class="pi pi-check-circle mr-1"></i> 完成
+        <div v-if="isFinished || isCancelled" class="flex flex-col gap-2 mt-2">
+          <div
+            class="text-center text-sm font-medium"
+            :class="isFinished ? 'text-green-400' : 'text-amber-400'"
+          >
+            <i :class="isFinished ? 'pi pi-check-circle' : 'pi pi-pause-circle'" class="mr-1"></i>
+            {{ isFinished ? '完成' : '已取消' }}
           </div>
           <Button label="返回" severity="secondary" size="small" @click="reset" />
         </div>
