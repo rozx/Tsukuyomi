@@ -56,7 +56,12 @@ export function getCurrentStatusInfo(
   status: TaskStatus,
   isBriefPlanning?: boolean,
 ): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
 
   // 简短规划阶段的描述（用于后续 chunk）
@@ -82,9 +87,19 @@ export function getCurrentStatusInfo(
 完成规划后，将状态设置为 "working" 并开始${taskLabel}。`,
     working: `**当前状态：${taskLabel}中 (working)**
 你当前处于${taskLabel}阶段，应该：
-- 专注于${taskLabel}工作：${taskType === 'translation' ? '1:1翻译，敬语按流程处理' : taskType === 'polish' ? '语气词优化、摆脱翻译腔、节奏调整' : '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查'}
+- 专注于${taskLabel}工作：${
+      taskType === 'translation'
+        ? '1:1翻译，敬语按流程处理'
+        : taskType === 'chapter_summary'
+          ? '生成章节摘要，概括主要情节'
+          : taskType === 'polish'
+            ? '语气词优化、摆脱翻译腔、节奏调整'
+            : '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查'
+    }
 - 发现新信息（新术语/角色、关系变化等）立即更新
-- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`${taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 paragraphs）'}
+- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`${
+      taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 paragraphs）'
+    }
 
 完成所有段落的${taskLabel}后，将状态设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`,
     review: `**当前状态：复核阶段 (review)**
@@ -156,7 +171,12 @@ export function getMemoryWorkflowRules(): string {
  * 获取待办事项工具描述（精简版）
  */
 export function getTodoToolsDescription(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   return `**待办管理**: 仅复杂任务需要创建待办列表，简单任务可直接处理。如需创建，使用 \`create_todo\` 创建详细可执行任务（如"${taskLabel}第1-5段"而非"${taskLabel}文本"），支持批量创建`;
 }
@@ -165,7 +185,12 @@ export function getTodoToolsDescription(taskType: TaskType): string {
  * 获取状态字段说明（精简版）
  */
 export function getStatusFieldDescription(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   if (taskType === 'translation') {
     return `**状态**: planning(规划)→working(${taskLabel}中)→review(复核)→end(完成)
@@ -183,7 +208,7 @@ export function getStatusFieldDescription(taskType: TaskType): string {
   - [禁止] planning → end（必须经过 working 和 review）`;
   }
 
-  // 润色/校对：跳过并禁用 review
+  // 润色/校对/摘要：跳过并禁用 review
   return `**状态**: planning(规划)→working(${taskLabel}中)→end(完成)
 
 [警告] **状态转换规则**（必须严格遵守）:
@@ -192,7 +217,7 @@ export function getStatusFieldDescription(taskType: TaskType): string {
   - planning → working
   - working → end
 - **禁止的转换**：
-  - [禁止] working → review（润色/校对任务禁用 review）
+  - [禁止] working → review（润色/校对/摘要任务禁用 review）
   - [禁止] planning → review（必须经过 working）
   - [禁止] planning → end（必须经过 working）`;
 }
@@ -201,7 +226,12 @@ export function getStatusFieldDescription(taskType: TaskType): string {
  * 获取输出格式要求（精简版）
  */
 export function getOutputFormatRules(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
@@ -234,6 +264,7 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
     translation: '1:1翻译，敬语按流程处理，新术语/角色确认后创建',
     polish: '语气词优化、摆脱翻译腔、节奏调整、角色语言区分',
     proofreading: '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查',
+    chapter_summary: '生成章节摘要：概括主要情节、关键人物和事件，控制在200字以内',
   };
 
   if (taskType === 'translation') {
@@ -258,7 +289,12 @@ export function getToolUsageInstructions(
   tools?: AITool[],
   skipAskUser?: boolean,
 ): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   const askLine = !skipAskUser
     ? '- **询问**: 如遇到需要用户确认的问题，可以使用相关工具向用户提问，询问应该一次性解决所有疑问，保证用户体验'
@@ -277,7 +313,12 @@ ${askLine ? askLine + '\n' : ''}- **最小必要**：只在确有需要时调用
  * 告知AI系统将分块提供章节内容，只需关注当前块
  */
 export function getChunkingInstructions(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', polish: '润色', proofreading: '校对' };
+  const taskLabels = {
+    translation: '翻译',
+    polish: '润色',
+    proofreading: '校对',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   return `【分块处理说明】
 [警告] **重要**：系统会将当前章节分成多个块（chunks）依次提供给你

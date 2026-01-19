@@ -6,7 +6,12 @@ import Badge from 'primevue/badge';
 import ProgressSpinner from 'primevue/progressspinner';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
-import { getChapterDisplayTitle, getChapterCharCount, formatWordCount, formatTranslationForDisplay } from 'src/utils';
+import {
+  getChapterDisplayTitle,
+  getChapterCharCount,
+  formatWordCount,
+  formatTranslationForDisplay,
+} from 'src/utils';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const props = defineProps<{
@@ -28,6 +33,7 @@ const props = defineProps<{
   isKeyboardSelected: boolean;
   isClickSelected: boolean;
   paragraphCardRefs: Map<string, InstanceType<typeof ParagraphCard>>;
+  isSummarizing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +49,7 @@ const emit = defineEmits<{
   (e: 'paragraph-click', paragraphId: string): void;
   (e: 'paragraph-edit-start', paragraphId: string): void;
   (e: 'paragraph-edit-stop', paragraphId: string): void;
+  (e: 're-summarize-chapter', chapterId: string): void;
 }>();
 
 // 获取选中章节的统计信息
@@ -89,11 +96,7 @@ const handleOriginalTextInput = (event: Event) => {
   >
     <!-- 加载中状态 -->
     <div v-if="isLoadingChapterContent" class="loading-container">
-      <ProgressSpinner
-        style="width: 3rem; height: 3rem"
-        stroke-width="4"
-        animation-duration="1s"
-      />
+      <ProgressSpinner style="width: 3rem; height: 3rem" stroke-width="4" animation-duration="1s" />
       <p class="loading-text">正在加载章节内容...</p>
     </div>
 
@@ -118,7 +121,9 @@ const handleOriginalTextInput = (event: Event) => {
       <!-- 章节标题 -->
       <div v-if="selectedChapterWithContent || selectedChapter" class="preview-chapter-header">
         <h1 class="preview-chapter-title">
-          {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined) }}
+          {{
+            getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined)
+          }}
         </h1>
         <!-- 翻译统计 -->
         <div v-if="selectedChapterParagraphs.length > 0" class="preview-chapter-stats">
@@ -161,13 +166,17 @@ const handleOriginalTextInput = (event: Event) => {
       </div>
     </div>
 
-    <!-- 翻译模式（默认） -->
     <template v-else>
       <!-- 章节标题 -->
       <div class="chapter-header">
         <div class="flex items-center gap-2">
           <h1 class="chapter-title flex-1">
-            {{ getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined) }}
+            {{
+              getChapterDisplayTitle(
+                selectedChapterWithContent || selectedChapter,
+                book || undefined,
+              )
+            }}
           </h1>
           <Button
             icon="pi pi-pencil"
@@ -186,7 +195,9 @@ const handleOriginalTextInput = (event: Event) => {
           <span class="chapter-stat-separator">|</span>
           <div class="chapter-stat-item">
             <i class="pi pi-align-left chapter-stat-icon"></i>
-            <span class="chapter-stat-value">{{ formatWordCount(selectedChapterStats.charCount) }}</span>
+            <span class="chapter-stat-value">{{
+              formatWordCount(selectedChapterStats.charCount)
+            }}</span>
           </div>
         </div>
         <div v-if="selectedChapter.lastUpdated" class="chapter-meta">
@@ -211,6 +222,40 @@ const handleOriginalTextInput = (event: Event) => {
           <i class="pi pi-external-link"></i>
           <span>查看原文</span>
         </a>
+
+        <!-- 章节摘要 -->
+        <div
+          v-if="selectedChapter.summary"
+          class="chapter-summary-section mt-4 p-4 bg-white/5 rounded-lg border border-white/10"
+        >
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-medium text-moon/80 flex items-center gap-2">
+              <i class="pi pi-align-justify text-primary/70"></i>
+              章节摘要
+            </h3>
+            <Button
+              icon="pi pi-refresh"
+              label="重新生成"
+              class="p-button-text p-button-sm !text-xs !py-1"
+              :loading="isSummarizing"
+              :disabled="isSummarizing"
+              @click="emit('re-summarize-chapter', selectedChapter.id)"
+            />
+          </div>
+          <p class="text-sm text-moon/90 leading-relaxed whitespace-pre-wrap">
+            {{ selectedChapter.summary }}
+          </p>
+        </div>
+        <div v-else class="chapter-summary-section mt-4">
+          <Button
+            icon="pi pi-sparkles"
+            label="生成摘要"
+            class="p-button-outlined p-button-sm text-sm"
+            :loading="isSummarizing"
+            :disabled="isSummarizing"
+            @click="emit('re-summarize-chapter', selectedChapter.id)"
+          />
+        </div>
       </div>
 
       <!-- 章节段落列表 -->
@@ -245,16 +290,20 @@ const handleOriginalTextInput = (event: Event) => {
             :id="`paragraph-${paragraph.id}`"
             :selected="selectedParagraphIndex === index && (isKeyboardSelected || isClickSelected)"
             @update-translation="
-              (paragraphId: string, newTranslation: string) => emit('update-translation', paragraphId, newTranslation)
+              (paragraphId: string, newTranslation: string) =>
+                emit('update-translation', paragraphId, newTranslation)
             "
             @retranslate="(paragraphId: string) => emit('retranslate-paragraph', paragraphId)"
             @polish="(paragraphId: string) => emit('polish-paragraph', paragraphId)"
             @proofread="(paragraphId: string) => emit('proofread-paragraph', paragraphId)"
             @select-translation="
-              (paragraphId: string, translationId: string) => emit('select-translation', paragraphId, translationId)
+              (paragraphId: string, translationId: string) =>
+                emit('select-translation', paragraphId, translationId)
             "
             @paragraph-click="(paragraphId: string) => emit('paragraph-click', paragraphId)"
-            @paragraph-edit-start="(paragraphId: string) => emit('paragraph-edit-start', paragraphId)"
+            @paragraph-edit-start="
+              (paragraphId: string) => emit('paragraph-edit-start', paragraphId)
+            "
             @paragraph-edit-stop="(paragraphId: string) => emit('paragraph-edit-stop', paragraphId)"
           />
         </div>
@@ -630,4 +679,3 @@ const handleOriginalTextInput = (event: Event) => {
   margin: 0;
 }
 </style>
-

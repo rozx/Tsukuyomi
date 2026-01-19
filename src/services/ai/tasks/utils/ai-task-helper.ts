@@ -25,7 +25,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 /**
  * 任务类型
  */
-export type TaskType = 'translation' | 'polish' | 'proofreading';
+export type TaskType = 'translation' | 'polish' | 'proofreading' | 'chapter_summary';
 
 /**
  * 状态类型
@@ -43,7 +43,7 @@ function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, 
     };
   }
 
-  // 润色/校对：跳过并禁用 review，固定为 planning → working → end
+  // 润色/校对/章节摘要：跳过并禁用 review，固定为 planning → working → end
   return {
     planning: ['working'],
     working: ['end'],
@@ -56,7 +56,7 @@ function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, 
 function getTaskStateWorkflowText(taskType: TaskType): string {
   return taskType === 'translation'
     ? 'planning → working → review → end'
-    : 'planning → working → end（润色/校对任务禁止使用 review）';
+    : 'planning → working → end（润色/校对/摘要任务禁止使用 review）';
 }
 
 /**
@@ -803,6 +803,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
                 translation: '翻译',
                 polish: '润色',
                 proofreading: '校对',
+                chapter_summary: '章节摘要',
               };
               const taskLabel = taskTypeLabels[taskType];
               const statusLabels: Record<TaskStatus, string> = {
@@ -871,6 +872,7 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
     translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
     proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
     polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
+    chapter_summary: '',
   };
   return reminders[taskType];
 }
@@ -879,7 +881,12 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
  * 构建初始用户提示的基础部分 - 精简版
  */
 export function buildInitialUserPromptBase(taskType: TaskType): string {
-  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
   return `开始${taskLabel}。
@@ -1020,6 +1027,7 @@ export function addParagraphContext(
     translation: '翻译',
     proofreading: '校对',
     polish: '润色',
+    chapter_summary: '章节摘要',
   };
   const taskLabel = taskLabels[taskType];
 
@@ -1110,7 +1118,12 @@ export function buildIndependentChunkPrompt(
   hasPreviousParagraphs?: boolean,
   firstParagraphId?: string,
 ): string {
-  const taskLabels = { translation: '翻译', proofreading: '校对', polish: '润色' };
+  const taskLabels = {
+    translation: '翻译',
+    proofreading: '校对',
+    polish: '润色',
+    chapter_summary: '章节摘要',
+  };
   const taskLabel = taskLabels[taskType];
 
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
@@ -1361,6 +1374,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
   const taskLabel = taskTypeLabels[taskType];
 
@@ -2079,6 +2093,7 @@ export function checkMaxTurnsReached(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   if (!finalResponseText || finalResponseText.trim().length === 0) {
@@ -2164,6 +2179,7 @@ export async function initializeTask(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   const taskId = await aiProcessingStore.addTask({
@@ -2435,6 +2451,7 @@ export async function handleTaskError(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   // 检查是否是取消错误
@@ -2473,6 +2490,7 @@ export async function completeTask(
     translation: '翻译',
     polish: '润色',
     proofreading: '校对',
+    chapter_summary: '章节摘要',
   };
 
   await aiProcessingStore.updateTask(taskId, {

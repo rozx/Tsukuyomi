@@ -12,7 +12,7 @@ const settingsStore = useSettingsStore();
 const taskLabels: Record<keyof AIModelDefaultTasks, string> = {
   translation: TASK_TYPE_LABELS.translation,
   proofreading: '校对和润色', // proofreading 任务用于校对和润色
-  termsTranslation: TASK_TYPE_LABELS.termsTranslation,
+  termsTranslation: '术语翻译 / 章节摘要', // termsTranslation 任务也用于章节摘要
   assistant: TASK_TYPE_LABELS.assistant,
 };
 

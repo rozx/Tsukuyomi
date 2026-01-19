@@ -7,7 +7,7 @@ description: Perform a comprehensive code review on active or specified files.
    - If no specific files are mentioned, look for recent changes.
 
 2. **Automated Checks**:
-   - Run `npm run lint` (if available) to catch static analysis errors.
+   - Run `bun lint` and `bun type-check` (if available) to catch static analysis errors.
    - Check for any 'TODO' or 'FIXME' comments that should be addressed.
 
 3. **Manual Logic Review**:
