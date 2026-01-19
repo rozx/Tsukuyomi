@@ -248,7 +248,10 @@ export function useChapterTranslation(
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
         title: {
-          original: selectedChapterWithContent.value.title.original,
+          original:
+            typeof selectedChapterWithContent.value.title === 'string'
+              ? selectedChapterWithContent.value.title
+              : selectedChapterWithContent.value.title.original,
           translation: newTitleTranslation,
         },
         lastEdited: new Date(),
@@ -264,7 +267,7 @@ export function useChapterTranslation(
         return {
           ...chapter,
           title: {
-            original: chapter.title.original,
+            original: typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             translation: newTitleTranslation,
           },
           lastEdited: new Date(),
@@ -839,7 +842,10 @@ export function useChapterTranslation(
       const paragraphs = selectedChapterParagraphs.value;
 
       // 获取章节标题
-      const chapterTitle = selectedChapter.value?.title?.original;
+      const chapterTitle =
+        typeof selectedChapter.value?.title === 'string'
+          ? selectedChapter.value.title
+          : selectedChapter.value?.title?.original;
       // 获取书籍的 chunk size 设置
       const chunkSize = book.value?.translationChunkSize;
 
@@ -1042,7 +1048,10 @@ export function useChapterTranslation(
 
     try {
       // 获取章节标题
-      const chapterTitle = selectedChapter.value?.title?.original;
+      const chapterTitle =
+        typeof selectedChapter.value?.title === 'string'
+          ? selectedChapter.value.title
+          : selectedChapter.value?.title?.original;
       // 获取书籍的 chunk size 设置
       const chunkSize = book.value?.translationChunkSize;
 

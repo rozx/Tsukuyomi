@@ -65,7 +65,8 @@ describe('ChapterService', () => {
       const updatedVolumes = ChapterService.addVolume(novel, 'New Volume');
 
       expect(updatedVolumes.length).toBe(1);
-      expect(updatedVolumes[0]!.title.original).toBe('New Volume');
+      const title = updatedVolumes[0]!.title;
+      expect(typeof title === 'string' ? title : title.original).toBe('New Volume');
       expect(updatedVolumes[0]!.id).toBeDefined();
       expect(updatedVolumes[0]!.chapters).toEqual([]);
     });
@@ -84,7 +85,8 @@ describe('ChapterService', () => {
 
       expect(updatedVolumes.length).toBe(2);
       expect(updatedVolumes[0]).toEqual(volume1);
-      expect(updatedVolumes[1]!.title.original).toBe('V2');
+      const title = updatedVolumes[1]!.title;
+      expect(typeof title === 'string' ? title : title.original).toBe('V2');
     });
   });
 
@@ -104,7 +106,8 @@ describe('ChapterService', () => {
 
       expect(updatedVolumes.length).toBe(1);
       expect(updatedVolumes[0]!.id).toBe('v1');
-      expect(updatedVolumes[0]!.title.original).toBe('Updated V1');
+      const title = updatedVolumes[0]!.title;
+      expect(typeof title === 'string' ? title : title.original).toBe('Updated V1');
     });
 
     it('如果不更改则应保留其他属性', () => {
@@ -199,8 +202,11 @@ describe('ChapterService', () => {
       const updatedVolumes = ChapterService.addChapter(novel, 'v1', 'New Chapter');
 
       expect(updatedVolumes[0]?.chapters?.length).toBe(1);
-      expect(updatedVolumes[0]?.chapters?.[0]?.title.original).toBe('New Chapter');
-      expect(updatedVolumes[0]?.chapters?.[0]?.id).toBeDefined();
+      const chapter = updatedVolumes[0]?.chapters?.[0];
+      if (!chapter) throw new Error('Chapter not found');
+      const title = chapter.title;
+      expect(typeof title === 'string' ? title : title.original).toBe('New Chapter');
+      expect(chapter.id).toBeDefined();
     });
 
     it('如果卷不存在则不做任何更改', () => {
@@ -233,8 +239,11 @@ describe('ChapterService', () => {
 
       const updatedVolumes = ChapterService.updateChapter(novel, 'c1', { title: 'Updated C1' });
 
-      expect(updatedVolumes[0]?.chapters?.[0]?.title.original).toBe('Updated C1');
-      expect(updatedVolumes[0]?.chapters?.[0]?.id).toBe('c1');
+      const chapter = updatedVolumes[0]?.chapters?.[0];
+      if (!chapter) throw new Error('Chapter not found');
+      const title = chapter.title;
+      expect(typeof title === 'string' ? title : title.original).toBe('Updated C1');
+      expect(chapter.id).toBe('c1');
     });
 
     it('应该移动章节到另一个卷', () => {

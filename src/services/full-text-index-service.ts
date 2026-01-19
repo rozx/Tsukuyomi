@@ -111,8 +111,10 @@ export class FullTextIndexService {
           chapterWithContent = chapter;
         }
 
-        const chapterTitleOriginal = chapter.title.original || '';
-        const chapterTitleTranslation = chapter.title.translation?.translation || '';
+        const chapterTitleOriginal =
+          typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+        const chapterTitleTranslation =
+          typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
 
         if (chapterWithContent.content) {
           for (let pIndex = 0; pIndex < chapterWithContent.content.length; pIndex++) {
