@@ -288,10 +288,10 @@ defineExpose({
             <div
               v-for="[id, title] of Array.from(processing.entries())"
               :key="id"
-              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded flex items-center gap-2 truncate overflow-hidden whitespace-nowrap"
+              class="text-xs text-moon-80 bg-white/5 px-2 py-1 rounded flex items-center gap-2"
             >
-              <i class="pi pi-spinner animate-spin text-primary-400 text-[10px]"></i>
-              {{ title || id }}
+              <i class="pi pi-spinner animate-spin text-primary-400 text-[10px] flex-shrink-0"></i>
+              <span class="truncate flex-1">{{ title || id }}</span>
             </div>
           </div>
         </div>
