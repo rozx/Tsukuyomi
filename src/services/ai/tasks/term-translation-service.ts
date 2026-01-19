@@ -4,13 +4,11 @@ import type {
   TextGenerationRequest,
   TextGenerationStreamCallback,
   ChatMessage,
-  AITool,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { AIServiceFactory } from '../index';
-import { ToolRegistry } from '../tools/index';
 import {
   buildChapterContextSection,
   buildBookContextSection,
@@ -18,7 +16,9 @@ import {
   buildSpecialInstructionsSection,
 } from './utils/ai-task-helper';
 import { createUnifiedAbortController } from './utils/ai-task-helper';
-import { getToolScopeRules } from './prompts';
+import { BookService } from 'src/services/book-service';
+import { useBooksStore } from 'src/stores/books';
+import { findUniqueCharactersInText, findUniqueTermsInText } from 'src/utils/text-matcher';
 
 /**
  * 术语翻译服务选项
@@ -98,8 +98,8 @@ export class TermTranslationService {
       bookId,
       chapterId,
       chapterTitle,
-      onAction,
-      onToast,
+      onAction: _onAction,
+      onToast: _onToast,
       aiProcessingStore,
     } = options || {};
 
@@ -158,11 +158,6 @@ export class TermTranslationService {
     try {
       const service = AIServiceFactory.getService(model.provider);
 
-      // 获取工具（如果有 bookId，提供工具以获取上下文）
-      // 术语翻译服务只能使用特定的工具：get_book_info, get/list/search terms/characters/memory
-      const tools: AITool[] = bookId ? ToolRegistry.getTermTranslationTools(bookId) : [];
-      const allowedToolNames = new Set(tools.map((t) => t.function.name));
-
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -174,7 +169,7 @@ export class TermTranslationService {
       // 构建系统提示词
       let systemPrompt = '你是专业的日轻小说翻译助手，将日语术语翻译为自然流畅的简体中文。\n\n';
 
-      // 如果有 bookId 和 chapterId，添加上下文信息和工具使用说明
+      // 如果有 bookId 和 chapterId，添加上下文信息（禁止工具调用）
       if (bookId) {
         // 获取特殊指令
         const specialInstructions = await getSpecialInstructions(bookId, chapterId, 'translation');
@@ -190,17 +185,76 @@ export class TermTranslationService {
 3. **上下文理解**: 根据当前书籍、章节的上下文来理解术语含义
 4. **完整翻译**: [警告] 必须翻译所有单词和短语，禁止在翻译结果中保留未翻译的日语原文（如日文假名、汉字等）
 
-${getToolScopeRules(tools)}
-
-【工具使用建议】
-- 本服务**只允许**使用 keyword 搜索类工具（\`search_*_by_keywords\`），用于快速检索术语/角色/记忆的相关上下文
-- [禁止] 不要调用 get/list/find/regex 等其它工具（即使你觉得有用）；如果本次未提供所需工具，请说明限制并直接给出翻译
-
 **输出格式**：[警告] **必须只返回 JSON 格式**
 示例：{"translation":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
 `;
+      }
+
+      // 构建“相关术语/角色”上下文（仅提供与当前待翻译文本匹配的项）
+      let relatedContextInfo = '';
+      if (bookId) {
+        const booksStore = useBooksStore();
+        const novel =
+          booksStore.books.find((b) => b.id === bookId) ||
+          (await BookService.getBookById(bookId, false));
+        if (novel) {
+          const foundTerms = findUniqueTermsInText(trimmedText, novel.terminologies || []);
+          const foundCharacters = findUniqueCharactersInText(
+            trimmedText,
+            novel.characterSettings || [],
+          );
+
+          if (foundTerms.length > 0 || foundCharacters.length > 0) {
+            relatedContextInfo += '\n\n相关背景信息（从当前书籍中匹配到）：\n';
+            if (foundCharacters.length > 0) {
+              const characterDetails = foundCharacters
+                .map((c) => {
+                  const parts: string[] = [];
+                  const sexLabels: Record<string, string> = {
+                    male: '男',
+                    female: '女',
+                    other: '其他',
+                  };
+
+                  parts.push(`ID：${c.id}`);
+                  parts.push(`${c.name} → ${c.translation.translation}`);
+
+                  parts.push(`性别：${c.sex ? sexLabels[c.sex] || c.sex : '未设置'}`);
+                  parts.push(`描述：${c.description || '无'}`);
+                  parts.push(`说话风格：${c.speakingStyle || '无'}`);
+
+                  if (c.aliases && c.aliases.length > 0) {
+                    const aliasList = c.aliases
+                      .map((a) => `${a.name} → ${a.translation.translation}`)
+                      .join('、');
+                    parts.push(`别名：${aliasList}`);
+                  } else {
+                    parts.push('别名：无');
+                  }
+                  return parts.join(' | ');
+                })
+                .join('\n');
+
+              relatedContextInfo += `登场角色：\n${characterDetails}\n`;
+            }
+
+            if (foundTerms.length > 0) {
+              relatedContextInfo +=
+                '相关术语：\n' +
+                foundTerms
+                  .map(
+                    (t) =>
+                      `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+                  )
+                  .join('\n') +
+                '\n';
+            }
+
+            console.log('术语翻译 - 相关上下文信息：', relatedContextInfo);
+          }
+        }
       }
 
       // 构建用户提示词
@@ -210,7 +264,7 @@ ${getToolScopeRules(tools)}
 示例：{"translation":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
-待翻译术语：\n\n${trimmedText}`;
+待翻译术语：\n\n${trimmedText}${relatedContextInfo}`;
 
       // 创建消息历史
       const history: ChatMessage[] = [
@@ -218,23 +272,19 @@ ${getToolScopeRules(tools)}
         { role: 'user', content: userPrompt },
       ];
 
-      // 工具调用循环（最多 10 轮，避免无限循环）
-      const MAX_TOOL_CALLS = 10;
-      const MAX_JSON_RETRIES = 3; // JSON 格式重试最多 3 次
-      let iterationCount = 0; // 循环迭代次数（包括工具调用和 JSON 重试）
+      const MAX_JSON_RETRIES = 3;
       let jsonRetryCount = 0;
       let finalText = '';
 
-      // 快速路径：对于简单翻译（无 bookId 或短文本），直接进行翻译，不进入工具调用循环
-      const SIMPLE_TRANSLATION_THRESHOLD = 50; // 50 字符以下视为短文本
-      const useFastPath = !bookId || trimmedText.length <= SIMPLE_TRANSLATION_THRESHOLD;
+      while (jsonRetryCount <= MAX_JSON_RETRIES) {
+        if (finalSignal.aborted) {
+          throw new Error('翻译已取消');
+        }
 
-      // 如果使用快速路径且没有工具，直接进行单次翻译
-      if (useFastPath && tools.length === 0) {
         if (aiProcessingStore && taskId) {
           void aiProcessingStore.updateTask(taskId, {
             status: 'processing',
-            message: '正在生成翻译...',
+            message: jsonRetryCount > 0 ? '正在重试获取规范 JSON 输出...' : '正在生成翻译...',
           });
         }
 
@@ -242,7 +292,6 @@ ${getToolScopeRules(tools)}
           messages: history,
         };
 
-        // 创建包装的 onChunk 回调
         let firstChunkReceived = false;
         const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
           if (finalSignal?.aborted) {
@@ -274,280 +323,41 @@ ${getToolScopeRules(tools)}
 
         const result = await service.generateText(config, request, wrappedOnChunk);
 
-        // 保存思考内容
         if (aiProcessingStore && taskId && result.reasoningContent) {
           void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
         }
 
-        // 解析 JSON 响应
-        const responseText = result.text || '';
-        try {
-          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            const parsed = JSON.parse(jsonStr);
-
-            if (parsed && typeof parsed.translation === 'string') {
-              finalText = parsed.translation;
-            } else {
-              throw new Error('AI 响应格式错误：JSON 中缺少 translation 字段。');
-            }
-          } else {
-            throw new Error('AI 响应格式错误：未找到有效的 JSON 格式。');
-          }
-        } catch (parseError) {
-          const errorMessage =
-            parseError instanceof Error ? parseError.message : String(parseError);
-          throw new Error(`AI 响应格式错误：${errorMessage}。无法获取有效翻译。`);
-        }
-
-        // 更新任务状态为完成
-        if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            status: 'end',
-            message: '翻译完成',
-          });
-        }
-
-        return { text: finalText, ...(taskId ? { taskId } : {}) };
-      }
-
-      // 标准路径：使用工具调用循环
-      while (iterationCount < MAX_TOOL_CALLS) {
-        iterationCount++; // 每次循环迭代都递增，确保准确计数
-        // 检查是否已取消
-        if (finalSignal.aborted) {
-          throw new Error('翻译已取消');
-        }
-
-        const request: TextGenerationRequest = {
-          messages: history,
-          ...(tools.length > 0 ? { tools } : {}),
-        };
-
-        // 创建包装的 onChunk 回调
-        let firstChunkReceived = false;
-        const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
-          if (finalSignal?.aborted) {
-            throw new Error('翻译已取消');
-          }
-
-          if (aiProcessingStore && taskId) {
-            if (!firstChunkReceived) {
-              void aiProcessingStore.updateTask(taskId, {
-                status: 'processing',
-                message: iterationCount > 1 ? '正在使用工具获取上下文...' : '正在生成翻译...',
-              });
-              firstChunkReceived = true;
-            }
-
-            if (chunk.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-            }
-
-            if (chunk.text) {
-              void aiProcessingStore.appendOutputContent(taskId, chunk.text);
-            }
-          }
-
-          if (onChunk) {
-            await onChunk(chunk);
-          }
-        };
-
-        const result = await service.generateText(config, request, wrappedOnChunk);
-
-        // 保存思考内容
-        if (aiProcessingStore && taskId && result.reasoningContent) {
-          void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-        }
-
-        // 检查是否有工具调用
-        if (result.toolCalls && result.toolCalls.length > 0) {
-          // 添加助手消息（包含工具调用）
-          history.push({
-            role: 'assistant',
-            // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
-            content: result.text && result.text.trim() ? result.text : '（调用工具）',
-            tool_calls: result.toolCalls,
-            reasoning_content: result.reasoningContent || null,
-          });
-
-          // 执行工具调用
-          for (const toolCall of result.toolCalls) {
-            // [警告] 严格限制：只能调用本次会话提供的 tools
-            if (!allowedToolNames.has(toolCall.function.name)) {
-              const toolName = toolCall.function.name;
-              console.warn(
-                `[TermTranslationService] ⚠️ 工具 ${toolName} 未在本次会话提供的 tools 列表中，已拒绝执行`,
-              );
-              history.push({
-                role: 'tool',
-                content: JSON.stringify({
-                  success: false,
-                  error: `工具 ${toolName} 未在本次会话提供的 tools 列表中，禁止调用`,
-                }),
-                tool_call_id: toolCall.id,
-                name: toolName,
-              });
-              continue;
-            }
-
-            if (aiProcessingStore && taskId) {
-              void aiProcessingStore.appendThinkingMessage(
-                taskId,
-                `\n[调用工具: ${toolCall.function.name}]\n`,
-              );
-            }
-
-            const toolResult = await ToolRegistry.handleToolCall(
-              toolCall,
-              bookId || '',
-              onAction,
-              onToast,
-              taskId,
-            );
-
-            if (aiProcessingStore && taskId) {
-              void aiProcessingStore.appendThinkingMessage(
-                taskId,
-                `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-              );
-            }
-
-            // 添加工具结果到历史
-            history.push({
-              role: 'tool',
-              content: toolResult.content,
-              tool_call_id: toolCall.id,
-              name: toolCall.function.name,
-            });
-          }
-
-          // 继续循环，让 AI 基于工具结果继续
-          continue;
-        }
-
-        // 没有工具调用，解析 JSON 响应
         const responseText = result.text || '';
 
-        // 尝试从响应中提取 JSON
         try {
-          // 尝试提取 JSON（支持代码块格式）
           const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const jsonStr = jsonMatch[0];
-            const parsed = JSON.parse(jsonStr);
-
-            // 验证 JSON 结构
-            if (parsed && typeof parsed.translation === 'string') {
-              finalText = parsed.translation;
-              // 成功解析 JSON，跳出循环
-              break;
-            } else {
-              console.warn('[TermTranslationService] JSON 格式不正确，缺少 translation 字段');
-              // 如果 JSON 格式不正确，检查重试次数
-              if (jsonRetryCount < MAX_JSON_RETRIES) {
-                jsonRetryCount++;
-                history.push({
-                  role: 'assistant',
-                  content: responseText,
-                });
-                history.push({
-                  role: 'user',
-                  content:
-                    '响应格式错误：JSON 中缺少 translation 字段。[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
-                });
-                continue; // 继续循环，让 AI 重新生成
-              } else {
-                // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
-                throw new Error(
-                  'AI 响应格式错误：JSON 中缺少 translation 字段。已达到最大重试次数，无法获取有效翻译。',
-                );
-              }
-            }
-          } else {
-            // 如果没有找到 JSON，检查重试次数
-            if (jsonRetryCount < MAX_JSON_RETRIES) {
-              jsonRetryCount++;
-              console.warn('[TermTranslationService] 响应中未找到 JSON 格式，要求重新返回');
-              history.push({
-                role: 'assistant',
-                content: responseText,
-              });
-              history.push({
-                role: 'user',
-                content:
-                  '响应格式错误：未找到 JSON 格式。[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
-              });
-              continue; // 继续循环，让 AI 重新生成
-            } else {
-              // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
-              throw new Error(
-                'AI 响应格式错误：未找到有效的 JSON 格式。已达到最大重试次数，无法获取有效翻译。',
-              );
-            }
+          if (!jsonMatch) {
+            throw new Error('未找到有效的 JSON 格式');
           }
+
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (!parsed || typeof parsed.translation !== 'string') {
+            throw new Error('JSON 中缺少 translation 字段');
+          }
+
+          finalText = parsed.translation;
+          break;
         } catch (parseError) {
-          // JSON 解析失败，检查重试次数
-          if (jsonRetryCount < MAX_JSON_RETRIES) {
-            jsonRetryCount++;
-            console.warn('[TermTranslationService] JSON 解析失败，要求重新返回:', parseError);
-            history.push({
-              role: 'assistant',
-              content: responseText,
-            });
-            history.push({
-              role: 'user',
-              content: `响应格式错误：JSON 解析失败（${parseError instanceof Error ? parseError.message : String(parseError)}）。[警告] **必须只返回 JSON 格式**：\n\`\`\`json\n{\n  "translation": "翻译结果"\n}\n\`\`\`\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。`,
-            });
-            continue; // 继续循环，让 AI 重新生成
-          } else {
-            // 达到最大重试次数，抛出错误而不是使用可能不正确的原始文本
+          if (jsonRetryCount >= MAX_JSON_RETRIES) {
             const errorMessage =
               parseError instanceof Error ? parseError.message : String(parseError);
             throw new Error(
-              `AI 响应格式错误：JSON 解析失败（${errorMessage}）。已达到最大重试次数，无法获取有效翻译。`,
+              `AI 响应格式错误：${errorMessage}。已达到最大重试次数，无法获取有效翻译。`,
             );
           }
-        }
-      }
 
-      // 如果达到最大循环迭代次数，尝试解析最后一次响应
-      if (iterationCount >= MAX_TOOL_CALLS && !finalText) {
-        console.warn('[TermTranslationService] 达到最大工具调用次数，尝试解析最后一次响应');
-        const lastResponse = history[history.length - 1]?.content || '';
-        if (lastResponse) {
-          try {
-            const jsonMatch = lastResponse.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
-              if (parsed && typeof parsed.translation === 'string') {
-                finalText = parsed.translation;
-              } else {
-                throw new Error(
-                  'AI 响应格式错误：达到最大工具调用次数，且最后一次响应中 JSON 格式不正确（缺少 translation 字段）。',
-                );
-              }
-            } else {
-              throw new Error(
-                'AI 响应格式错误：达到最大工具调用次数，且最后一次响应中未找到有效的 JSON 格式。',
-              );
-            }
-          } catch (error) {
-            // 如果是我们抛出的错误，直接抛出
-            if (error instanceof Error && error.message.includes('AI 响应格式错误')) {
-              throw error;
-            }
-            // 否则是 JSON 解析错误
-            throw new Error(
-              `AI 响应格式错误：达到最大工具调用次数，且最后一次响应的 JSON 解析失败。无法获取有效翻译。`,
-            );
-          }
-        } else {
-          throw new Error(
-            'AI 响应格式错误：达到最大工具调用次数，且没有可用的响应内容。无法获取有效翻译。',
-          );
+          jsonRetryCount++;
+          history.push({ role: 'assistant', content: responseText });
+          history.push({
+            role: 'user',
+            content:
+              '响应格式错误：[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
+          });
         }
       }
 
