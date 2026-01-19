@@ -1,5 +1,4 @@
 import type { TextGenerationChunk } from 'src/services/ai/types/ai-service';
-import type { AIModel } from 'src/services/ai/types/ai-model';
 import { AIServiceFactory } from '../index';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import {
@@ -7,13 +6,13 @@ import {
   completeTask,
   handleTaskError,
   createUnifiedAbortController,
+  getAIModelForTask,
   type AIProcessingStore,
 } from './utils/ai-task-helper';
 import { ChapterService } from 'src/services/chapter-service';
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Volume } from 'src/models/novel';
-import { useAIModelsStore } from 'src/stores/ai-models';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { terminologyTools } from 'src/services/ai/tools/terminology-tools';
 import { characterTools } from 'src/services/ai/tools/character-tools';
@@ -34,6 +33,10 @@ export interface ChapterSummaryServiceOptions {
   onSuccess?: (summary: string) => void;
   onError?: (error: unknown) => void;
   force?: boolean;
+  /**
+   * 取消信号（可选）
+   */
+  signal?: AbortSignal | undefined;
 }
 
 export class ChapterSummaryService {
@@ -55,7 +58,13 @@ export class ChapterSummaryService {
     }
 
     // 0. 检查摘要是否已存在
-    const novel = await BookService.getBookById(bookId, false);
+    // 优先从 store 获取最新的书籍状态，避免在批量处理中覆盖其他章节的更新
+    const booksStoreForCheck = useBooksStore();
+    let novel = booksStoreForCheck.books.find((b) => b.id === bookId);
+    if (!novel) {
+      novel = await BookService.getBookById(bookId, false);
+    }
+
     if (!novel) {
       throw new Error(`找不到 ID 为 ${bookId} 的书籍`);
     }
@@ -67,21 +76,8 @@ export class ChapterSummaryService {
       return chapter.chapter.summary;
     }
 
-    // 2. 确定使用的模型（使用术语翻译模型）
-    let model: AIModel | undefined = novel.defaultAIModel?.termsTranslation;
-
-    if (!model) {
-      // 如果没有特定配置，使用全局默认
-      const aiModelsStore = useAIModelsStore();
-      if (!aiModelsStore.isLoaded) {
-        await aiModelsStore.loadModels();
-      }
-      model = aiModelsStore.getDefaultModelForTask('termsTranslation');
-    }
-
-    if (!model || !model.enabled) {
-      throw new Error('未配置“术语翻译”模型，无法生成摘要。请在设置中配置术语翻译模型。');
-    }
+    // 2. 确定使用的模型（使用术语翻译模型用于摘要生成）
+    const model = await getAIModelForTask(bookId, 'termsTranslation');
 
     // 初始化任务
     const { taskId, abortController } = await initializeTask(
@@ -97,7 +93,7 @@ export class ChapterSummaryService {
 
     // 创建统一的 AbortController
     const { controller: finalController, cleanup: cleanupAbort } = createUnifiedAbortController(
-      undefined,
+      options.signal,
       abortController,
     );
 
@@ -277,8 +273,11 @@ export class ChapterSummaryService {
       // 使用 booksStore.updateBook 确保同时更新持久化存储和内存状态
       const booksStore = useBooksStore();
 
+      // 重要：在保存前重新获取最新的小说状态，因为在批量生成过程中，novel 变量可能已过时
+      const latestNovel = booksStore.books.find((b) => b.id === bookId) || novel;
+
       // 构建更新后的卷列表
-      const updatedVolumes = novel.volumes?.map((v: Volume) => {
+      const updatedVolumes = latestNovel.volumes?.map((v: Volume) => {
         const chapterIndex = v.chapters?.findIndex((c) => c.id === chapterId);
         if (chapterIndex !== undefined && chapterIndex !== -1 && v.chapters) {
           const newChapters = [...v.chapters];
@@ -301,11 +300,15 @@ export class ChapterSummaryService {
       }
 
       // 完成任务
-      void completeTask(
-        taskId,
-        aiProcessingStore as AIProcessingStore | undefined,
-        'chapter_summary',
-      );
+      try {
+        await completeTask(
+          taskId,
+          aiProcessingStore as AIProcessingStore | undefined,
+          'chapter_summary',
+        );
+      } catch (error) {
+        console.error('[ChapterSummaryService] 完成任务时出错:', error);
+      }
 
       return summary;
     } catch (error) {

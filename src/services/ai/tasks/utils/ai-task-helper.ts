@@ -21,6 +21,9 @@ import { getChunkingInstructions, getCurrentStatusInfo } from '../prompts';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import type { AIModel } from 'src/services/ai/types/ai-model';
+import { useAIModelsStore } from 'src/stores/ai-models';
+import type { Paragraph } from 'src/models/novel';
 
 /**
  * 任务类型
@@ -99,6 +102,102 @@ export function getHasPreviousParagraphs(
     !!firstParagraphId &&
     firstParagraphId !== chapterFirstNonEmptyParagraphId
   );
+}
+
+/**
+ * 为特定任务获取 AI 模型
+ * 优先使用书籍特定任务模型，其次是书籍默认模型，最后是全局默认任务模型
+ * @param bookId 书籍 ID
+ * @param taskType 任务类型
+ * @returns AI 模型
+ */
+export async function getAIModelForTask(
+  bookId: string,
+  taskType: 'translation' | 'polish' | 'proofreading' | 'termsTranslation',
+): Promise<AIModel> {
+  const booksStore = useBooksStore();
+  const aiModelsStore = useAIModelsStore();
+
+  const novel = booksStore.books.find((b) => b.id === bookId);
+  if (!novel) {
+    // 这种情况下通常应该已经加载了，但为了健壮性，这里不直接抛错，而是尝试获取全局默认
+    console.warn(`[AITaskHelper] 找不到 ID 为 ${bookId} 的书籍，将使用全局默认模型`);
+  }
+
+  // 1. 映射任务类型到存储的任务类型
+  // Novel 模型和 AIModel 默认任务配置中，润色(polish)和校对(proofreading)统一使用 proofreading 配置
+  const storeTaskType = taskType === 'polish' ? 'proofreading' : taskType;
+
+  // 2. 尝试从小说配置中获取
+  let model: AIModel | undefined = novel?.defaultAIModel?.[storeTaskType];
+
+  // 3. 如果没有特定任务模型，尝试获取全局默认
+  if (!model) {
+    if (!aiModelsStore.isLoaded) {
+      await aiModelsStore.loadModels();
+    }
+    model = aiModelsStore.getDefaultModelForTask(storeTaskType);
+  }
+
+  if (!model || !model.enabled) {
+    const taskNameMap: Record<string, string> = {
+      translation: '翻译',
+      polish: '润色',
+      proofreading: '校对',
+      termsTranslation: '术语/摘要',
+    };
+    throw new Error(`未配置“${taskNameMap[taskType]}”模型，请在设置中配置。`);
+  }
+
+  return model;
+}
+
+/**
+ * 构建格式化的块数据（用于校对或润色）
+ * @param paragraphs 段落列表
+ * @param chunkSize 块大小限制
+ * @returns 格式化后的块列表
+ */
+export function buildFormattedChunks(
+  paragraphs: Paragraph[],
+  chunkSize: number,
+): Array<{ text: string; paragraphIds: string[] }> {
+  const chunks: Array<{ text: string; paragraphIds: string[] }> = [];
+  let currentChunkText = '';
+  let currentChunkParagraphIds: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    // 获取段落的当前翻译
+    const currentTranslation =
+      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+      paragraph.translations?.[0]?.translation ||
+      '';
+
+    // 格式化段落：[ID: {id}] 原文: {原文}\n翻译: {当前翻译}
+    const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+
+    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
+    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
+      chunks.push({
+        text: currentChunkText,
+        paragraphIds: currentChunkParagraphIds,
+      });
+      currentChunkText = '';
+      currentChunkParagraphIds = [];
+    }
+    currentChunkText += paragraphText;
+    currentChunkParagraphIds.push(paragraph.id);
+  }
+
+  // 添加最后一个块
+  if (currentChunkText.length > 0) {
+    chunks.push({
+      text: currentChunkText,
+      paragraphIds: currentChunkParagraphIds,
+    });
+  }
+
+  return chunks;
 }
 
 /**

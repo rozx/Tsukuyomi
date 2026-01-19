@@ -37,6 +37,7 @@ import {
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
+  buildFormattedChunks,
 } from './utils/ai-task-helper';
 import {
   getSymbolFormatRules,
@@ -119,6 +120,53 @@ export interface ProofreadingResult {
   taskId?: string;
   paragraphTranslations?: { id: string; translation: string }[];
   actions?: ActionInfo[];
+}
+
+/**
+ * 重建 chunk，只包含未处理的段落
+ * @param paragraphsWithTranslation 所有包含翻译的段落
+ * @param unprocessedParagraphIds 未处理的段落 ID 列表
+ * @param CHUNK_SIZE chunk 大小限制
+ * @returns 重建后的 chunk，如果没有未处理的段落则返回 null
+ */
+function rebuildChunk(
+  paragraphsWithTranslation: Paragraph[],
+  unprocessedParagraphIds: string[],
+  CHUNK_SIZE: number,
+): { text: string; paragraphIds: string[] } | null {
+  const unprocessedParagraphs = paragraphsWithTranslation.filter((p) =>
+    unprocessedParagraphIds.includes(p.id),
+  );
+
+  let rebuiltChunkText = '';
+  const rebuiltChunkParagraphIds: string[] = [];
+
+  for (const paragraph of unprocessedParagraphs) {
+    const currentTranslation =
+      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+      paragraph.translations?.[0]?.translation ||
+      '';
+    const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+
+    if (
+      rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&
+      rebuiltChunkText.length > 0
+    ) {
+      break;
+    }
+
+    rebuiltChunkText += paragraphText;
+    rebuiltChunkParagraphIds.push(paragraph.id);
+  }
+
+  if (rebuiltChunkText.length > 0) {
+    return {
+      text: rebuiltChunkText,
+      paragraphIds: rebuiltChunkParagraphIds,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -258,47 +306,7 @@ ${getOutputFormatRules('proofreading')}
 
       // 切分文本
       const CHUNK_SIZE = options?.chunkSize ?? ProofreadingService.CHUNK_SIZE;
-      const chunks: Array<{
-        text: string;
-        paragraphIds?: string[];
-      }> = [];
-
-      let currentChunkText = '';
-      let currentChunkParagraphs: Paragraph[] = [];
-
-      for (const paragraph of paragraphsWithTranslation) {
-        // 获取段落的当前翻译
-        const currentTranslation =
-          paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)
-            ?.translation ||
-          paragraph.translations?.[0]?.translation ||
-          '';
-
-        // 格式化段落：[ID: {id}] 原文: {原文}\n翻译: {当前翻译}
-        const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
-
-        // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
-        if (
-          currentChunkText.length + paragraphText.length > CHUNK_SIZE &&
-          currentChunkText.length > 0
-        ) {
-          chunks.push({
-            text: currentChunkText,
-            paragraphIds: currentChunkParagraphs.map((p) => p.id),
-          });
-          currentChunkText = '';
-          currentChunkParagraphs = [];
-        }
-        currentChunkText += paragraphText;
-        currentChunkParagraphs.push(paragraph);
-      }
-      // 添加最后一个块
-      if (currentChunkText.length > 0) {
-        chunks.push({
-          text: currentChunkText,
-          paragraphIds: currentChunkParagraphs.map((p) => p.id),
-        });
-      }
+      const chunks = buildFormattedChunks(paragraphsWithTranslation, CHUNK_SIZE);
 
       let proofreadText = '';
       const paragraphProofreadings: { id: string; translation: string }[] = [];
@@ -346,45 +354,17 @@ ${getOutputFormatRules('proofreading')}
         // 如果当前 chunk 包含已处理的段落，需要重新构建 chunk
         let actualChunk = chunk;
         if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
-          // 需要重新构建 chunk，只包含未处理的段落
-          const unprocessedParagraphs = paragraphsWithTranslation.filter((p) =>
-            unprocessedParagraphIds.includes(p.id),
+          const rebuiltChunk = rebuildChunk(
+            paragraphsWithTranslation,
+            unprocessedParagraphIds,
+            CHUNK_SIZE,
           );
-
-          // 重新构建 chunk（保持原有的 chunk 结构）
-          let rebuiltChunkText = '';
-          const rebuiltChunkParagraphIds: string[] = [];
-
-          for (const paragraph of unprocessedParagraphs) {
-            const currentTranslation =
-              paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)
-                ?.translation ||
-              paragraph.translations?.[0]?.translation ||
-              '';
-            const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
-
-            if (
-              rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&
-              rebuiltChunkText.length > 0
-            ) {
-              // 如果当前重建的 chunk 加上新段落超过限制，停止添加
-              break;
-            }
-
-            rebuiltChunkText += paragraphText;
-            rebuiltChunkParagraphIds.push(paragraph.id);
-          }
-
-          if (rebuiltChunkText.length > 0) {
-            actualChunk = {
-              text: rebuiltChunkText,
-              paragraphIds: rebuiltChunkParagraphIds,
-            };
-          } else {
+          if (!rebuiltChunk) {
             // 没有未处理的段落，跳过
             chunkIndex++;
             continue;
           }
+          actualChunk = rebuiltChunk;
         }
 
         const chunkText = actualChunk.text;
@@ -531,22 +511,15 @@ ${getOutputFormatRules('proofreading')}
 
                       // 立即调用外部回调
                       if (changedParagraphs.length > 0) {
-                        try {
-                          // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
-                          void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
-                            (error) => {
-                              console.error(
-                                `[ProofreadingService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
-                                error,
-                              );
-                            },
-                          );
-                        } catch (error) {
-                          console.error(
-                            `[ProofreadingService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
-                            error,
-                          );
-                        }
+                        // 使用 void 来调用，因为类型定义是 void，但实际可能是 async 函数
+                        void Promise.resolve(onParagraphProofreading(changedParagraphs)).catch(
+                          (error) => {
+                            console.error(
+                              `[ProofreadingService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
+                              error,
+                            );
+                          },
+                        );
                       }
                     }
                   : undefined,
@@ -652,7 +625,15 @@ ${getOutputFormatRules('proofreading')}
       }
 
       // 使用共享工具完成任务
-      void completeTask(taskId, aiProcessingStore as AIProcessingStore | undefined, 'proofreading');
+      try {
+        await completeTask(
+          taskId,
+          aiProcessingStore as AIProcessingStore | undefined,
+          'proofreading',
+        );
+      } catch (error) {
+        console.error('[ProofreadingService] 完成任务时出错:', error);
+      }
 
       return {
         text: proofreadText,
