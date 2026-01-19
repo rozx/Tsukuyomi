@@ -8,7 +8,11 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph } from 'src/models/novel';
 import { AIServiceFactory } from '../index';
 
-import { buildOriginalTranslationsMap, filterChangedParagraphs } from 'src/utils';
+import {
+  buildOriginalTranslationsMap,
+  filterChangedParagraphs,
+  reconstructChunkText,
+} from 'src/utils';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -462,7 +466,7 @@ ${getOutputFormatRules('polish')}
           maintenanceReminder,
           chapterId,
           undefined,
-          undefined,
+          bookId,
           hasPreviousParagraphs,
           firstParagraphId,
         );
@@ -596,25 +600,37 @@ ${getOutputFormatRules('polish')}
               );
 
               if (chunkParagraphPolishes.length > 0) {
-                // 按顺序构建文本
-                const orderedPolishes: string[] = [];
+                // 按顺序构建完整文本（合并变化和未变化的段落）
+                const orderedText = reconstructChunkText(
+                  actualChunk.paragraphIds,
+                  extractedPolishes,
+                  originalTranslations,
+                );
+                polishedText += orderedText;
+
+                // 记录变更列表（只记录有变化的）
                 for (const paraPolish of chunkParagraphPolishes) {
-                  orderedPolishes.push(paraPolish.translation);
                   paragraphPolishes.push(paraPolish);
                 }
-                const orderedText = orderedPolishes.join('\n\n');
-                polishedText += orderedText;
+
                 if (onChunk) {
                   await onChunk({ text: orderedText, done: false });
                 }
-                // 注意：onParagraphPolish 回调已在 onParagraphsExtracted 中立即调用，这里不再重复调用
               }
               // 如果所有段落都没有变化，不添加任何内容（这是预期行为）
             } else {
-              // 没有提取到段落润色，使用完整文本作为后备
-              const fallbackText = loopResult.responseText || '';
+              // 没有提取到段落变化，说明AI认为无需修改，直接使用原始翻译构建文本
+              const chunkOriginalTranslations: string[] = [];
+              if (actualChunk.paragraphIds) {
+                for (const paraId of actualChunk.paragraphIds) {
+                  chunkOriginalTranslations.push(originalTranslations.get(paraId) || '');
+                }
+              }
+              const fallbackText = chunkOriginalTranslations.join('\n\n');
               polishedText += fallbackText;
+
               if (onChunk) {
+                // 如果需要，也可以流回原始文本，或者什么都不发
                 await onChunk({ text: fallbackText, done: false });
               }
             }

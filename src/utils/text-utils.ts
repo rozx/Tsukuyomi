@@ -109,3 +109,29 @@ export function isCJK(char: string): boolean {
   if (!char || char.length === 0) return false;
   return hasCJK(char);
 }
+
+/**
+ * 重组 Chunk 文本
+ * 逻辑：遍历段落 ID，优先使用新翻译，如果新翻译不存在则回退到原始翻译
+ * @param paragraphIds 当前 chunk 的段落 ID 列表
+ * @param newTranslations 新翻译映射 (Map<id, translation>)
+ * @param originalTranslations 原始翻译映射 (Map<id, translation>)
+ * @returns 重组后的完整文本
+ */
+export function reconstructChunkText(
+  paragraphIds: string[],
+  newTranslations: Map<string, string>,
+  originalTranslations: Map<string, string>,
+): string {
+  const orderedSegments: string[] = [];
+  for (const paraId of paragraphIds) {
+    const newTranslation = newTranslations.get(paraId);
+    if (newTranslation !== undefined) {
+      orderedSegments.push(newTranslation);
+    } else {
+      // 回退到原始翻译
+      orderedSegments.push(originalTranslations.get(paraId) || '');
+    }
+  }
+  return orderedSegments.join('\n\n');
+}

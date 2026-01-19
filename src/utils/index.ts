@@ -38,6 +38,7 @@ export {
   buildOriginalTranslationsMap,
   hasTranslationChanged,
   filterChangedParagraphs,
+  reconstructChunkText,
 } from './text-utils';
 export { isTimeDifferent, isNewlyAdded } from './time-utils';
 export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
