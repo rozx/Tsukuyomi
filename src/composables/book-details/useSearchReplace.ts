@@ -3,7 +3,7 @@ import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
-import type { Chapter, Paragraph, Novel } from 'src/models/novel';
+import type { Chapter, Paragraph, Novel, Volume } from 'src/models/novel';
 
 export function useSearchReplace(
   book: Ref<Novel | undefined>,
@@ -12,7 +12,7 @@ export function useSearchReplace(
   updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>,
   currentlyEditingParagraphId?: Ref<string | null>,
   saveState?: (description?: string) => void,
-  updateSelectedChapterWithContent?: (updatedVolumes: any) => void,
+  updateSelectedChapterWithContent?: (updatedVolumes: Volume[]) => void,
 ) {
   const toast = useToastWithHistory();
 
@@ -164,10 +164,10 @@ export function useSearchReplace(
   const searchMatches = computed(() => {
     if (!searchQuery.value || !selectedChapterParagraphs.value) return [];
     const matches: { index: number; id: string }[] = [];
+    // 使用与替换一致的匹配逻辑（大小写不敏感）
+    const re = buildSearchRegex(searchQuery.value, 'i');
     selectedChapterParagraphs.value.forEach((p, index) => {
       const text = getParagraphRawTranslationText(p);
-      // 使用与替换一致的匹配逻辑（大小写不敏感）
-      const re = buildSearchRegex(searchQuery.value, 'i');
       if (text && re.test(text)) {
         matches.push({ index, id: p.id });
       }
@@ -185,7 +185,10 @@ export function useSearchReplace(
 
   const toggleSearch = () => {
     isSearchVisible.value = !isSearchVisible.value;
-    if (!isSearchVisible.value) {
+  };
+
+  watch(isSearchVisible, (newValue) => {
+    if (!newValue) {
       searchQuery.value = '';
       replaceQuery.value = '';
       showReplace.value = false;
@@ -196,7 +199,7 @@ export function useSearchReplace(
         if (input) input.focus();
       });
     }
-  };
+  });
 
   const nextMatch = () => {
     if (!searchMatches.value.length) return;
@@ -242,8 +245,13 @@ export function useSearchReplace(
         }
       }
 
-      await updateParagraphTranslation(match.id, newText);
-      toast.add({ severity: 'success', summary: '已替换', life: 3000 });
+      try {
+        await updateParagraphTranslation(match.id, newText);
+        toast.add({ severity: 'success', summary: '已替换', life: 3000 });
+      } catch (error) {
+        console.error('Failed to replace paragraph translation:', error);
+        toast.add({ severity: 'error', summary: '替换失败', detail: '无法保存更改', life: 3000 });
+      }
     }
   };
 
@@ -300,19 +308,25 @@ export function useSearchReplace(
       lastEdited: new Date(),
     };
 
-    await ChapterService.saveChapterContent(updatedChapter);
+    try {
+      await ChapterService.saveChapterContent(updatedChapter);
 
-    const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
-      content: updatedContent,
-      lastEdited: new Date(),
-    });
+      const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
+        content: updatedContent,
+        lastEdited: new Date(),
+      });
 
-    await booksStore.updateBook(bookValue.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
+      await booksStore.updateBook(bookValue.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
 
-    updateSelectedChapterWithContent?.(updatedVolumes);
+      updateSelectedChapterWithContent?.(updatedVolumes);
+    } catch (error) {
+      console.error('Failed to replace all:', error);
+      toast.add({ severity: 'error', summary: '批量替换失败', detail: '无法保存更改', life: 3000 });
+      return;
+    }
 
     for (const [paragraphId, newText] of updates.entries()) {
       if (editedParagraphIds.includes(paragraphId)) {

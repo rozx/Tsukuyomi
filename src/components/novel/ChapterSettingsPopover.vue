@@ -161,12 +161,10 @@ defineExpose({
 
 <template>
   <Popover ref="popover" style="width: 32rem; max-width: 90vw">
-    <div class="flex flex-col max-h-[80vh] overflow-hidden">
+    <div class="flex flex-col h-[600px] overflow-hidden">
       <div class="p-3 border-b border-white/10">
         <h4 class="font-medium text-moon-100">翻译设置</h4>
-        <p class="text-xs text-moon/60 mt-1">
-          全局设置应用于整个书籍，章节设置仅应用于当前章节
-        </p>
+        <p class="text-xs text-moon/60 mt-1">全局设置应用于整个书籍，章节设置仅应用于当前章节</p>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto">
         <div class="p-4">
@@ -234,7 +232,8 @@ defineExpose({
                             跳过 AI 追问（不弹出问答对话框）
                           </label>
                           <small class="text-moon/60 text-xs block">
-                            启用时，本书在翻译/润色/校对任务中不会提供 ask_user 工具，也不会弹出全屏问答对话框；模型需要自行决策或继续执行。
+                            启用时，本书在翻译/润色/校对任务中不会提供 ask_user
+                            工具，也不会弹出全屏问答对话框；模型需要自行决策或继续执行。
                           </small>
                         </div>
                         <InputSwitch v-model="skipAskUserEnabled" />
@@ -339,9 +338,7 @@ defineExpose({
                     </div>
                   </div>
                 </div>
-                <div v-else class="pt-4 text-center text-moon/60 text-sm">
-                  请先选择一个章节
-                </div>
+                <div v-else class="pt-4 text-center text-moon/60 text-sm">请先选择一个章节</div>
               </TabPanel>
             </TabPanels>
           </Tabs>
@@ -445,4 +442,3 @@ defineExpose({
   color: var(--moon-opacity-50) !important;
 }
 </style>
-
