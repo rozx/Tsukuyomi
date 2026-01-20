@@ -37,137 +37,112 @@ export function normalizeTranslationQuotes(text: string): string {
    *           O(n) for different-character quotes (stack-based single pass)
    * 空间复杂度：O(n)
    */
-  function replaceNestedQuotes(str: string, openChar: string, closeChar: string, replacementOpen: string, replacementClose: string): string {
+  function replaceNestedQuotes(
+    str: string,
+    openChar: string,
+    closeChar: string,
+    replacementOpen: string,
+    replacementClose: string,
+  ): string {
     const isSameChar = openChar === closeChar; // 开引号和闭引号是否相同（如 "）
-    
+
     if (isSameChar) {
       // 当开引号和闭引号相同时，需要配对处理
-      // 对于 ""aaa"" 这种情况，indices 是 [0,1,5,6]
-      // 策略：配对距离最近且中间有实际内容的引号对
-      // 例如：配对 (1,5) 作为内层，然后配对 (0,6) 作为外层
       const quoteIndices: number[] = [];
-      const positionToIndexMap = new Map<number, number>(); // 位置到数组索引的映射，用于 O(1) 查找
-      
-      // 单次遍历收集所有引号位置 - O(n)
       for (let i = 0; i < str.length; i++) {
         if (str[i] === openChar) {
-          const arrayIndex = quoteIndices.length;
           quoteIndices.push(i);
-          positionToIndexMap.set(i, arrayIndex);
         }
       }
-      
+
       if (quoteIndices.length === 0) {
         return str;
       }
-      
-      // 使用改进的配对策略：
-      // 1. 找到距离最近的引号对，但它们之间必须有至少一个非引号字符或未配对的引号
-      // 2. 相邻的引号（中间没有任何字符）不应该配对
-      const paired = new Array<boolean>(quoteIndices.length).fill(false);
-      const replacements: Array<{ index: number; char: string }> = [];
-      
-      let foundPair = true;
-      while (foundPair) {
-        foundPair = false;
-        let closestStartIndex = -1;
-        let closestEndIndex = -1;
-        let minDistance = Infinity;
-        
-        // 找到距离最近且满足条件的配对
-        // 三重嵌套循环结构，worst case O(n³)，但实际场景中：
-        // - 引号数量 << 字符串长度
-        // - 配对后的引号会被跳过，减少迭代次数
-        // - 内层循环通常提前 break
-        for (let i = 0; i < quoteIndices.length - 1; i++) {
-          if (paired[i]) continue;
-          
-          for (let j = i + 1; j < quoteIndices.length; j++) {
-            if (paired[j]) continue;
-            
-            const startPos = quoteIndices[i]!;
-            const endPos = quoteIndices[j]!;
-            
-            // 检查这两个引号之间是否有其他未配对的引号
-            // 这个循环加上外层两个循环形成三重嵌套，worst case 为 O(n³)
-            // 但通常情况下：
-            // 1. 引号数量远小于字符串长度
-            // 2. 大多数引号对会在早期迭代中被配对，减少后续迭代的工作量
-            // 3. 内层循环通常会提前 break
-            let hasOtherUnpairedQuotes = false;
-            for (let k = i + 1; k < j; k++) {
-              if (!paired[k]) {
-                hasOtherUnpairedQuotes = true;
-                break;
-              }
-            }
-            
-            // 如果中间没有其他未配对引号，检查是否相邻（相邻的不配对）
-            if (!hasOtherUnpairedQuotes) {
-              // 如果 endPos - startPos == 1，说明它们是相邻的引号，不应该配对
-              // 例如：""aaa"" 中，位置 0 和 1 的引号相邻，应该配对位置 1 和 5
-              if (endPos - startPos === 1) {
-                continue; // 跳过相邻的引号对
-              }
-              
-              // 检查两个引号之间是否有实际内容（非已配对引号）
-              // 这个循环在三重嵌套结构中，但大多数情况会提前 break
-              let hasContent = false;
-              for (let pos = startPos + 1; pos < endPos; pos++) {
-                // 如果这个位置不是引号，说明有内容
-                if (str[pos] !== openChar) {
-                  hasContent = true;
-                  break;
-                }
-                // 如果是引号，使用 Map 进行 O(1) 查找位置索引，检查它是否已配对
-                const quoteIndex = positionToIndexMap.get(pos);
-                if (quoteIndex !== undefined && !paired[quoteIndex]) {
-                  hasContent = true; // 未配对的引号算作内容
-                  break;
-                }
-              }
-              
-              if (hasContent) {
-                const distance = endPos - startPos;
-                if (distance < minDistance) {
-                  minDistance = distance;
-                  closestStartIndex = i;
-                  closestEndIndex = j;
-                  foundPair = true;
-                }
-              }
-            }
+
+      // 动态规划求解最优配对
+      // 目标：最大化配对数量，同时最小化配对内容的总长度，优先满足非交叉嵌套
+      // 这种方法可以正确处理 sequential quotes (如 "A" "B") 和 nested quotes (如 ""A"")
+      const memo = new Map<
+        string,
+        { cost: number; pairs: Array<{ start: number; end: number }> }
+      >();
+      const SKIP_PENALTY = 1_000_000;
+
+      function solve(
+        offset: number,
+        count: number,
+      ): { cost: number; pairs: Array<{ start: number; end: number }> } {
+        if (count === 0) return { cost: 0, pairs: [] };
+
+        const key = `${offset},${count}`;
+        if (memo.has(key)) return memo.get(key)!;
+
+        // 选项1: 跳过当前范围的第一个引号
+        const skipRes = solve(offset + 1, count - 1);
+        let bestRes: { cost: number; pairs: Array<{ start: number; end: number }> } = {
+          cost: skipRes.cost + SKIP_PENALTY,
+          pairs: skipRes.pairs,
+        };
+
+        // 选项2: 将第一个引号与后续某个引号配对
+        const startRealIdx = quoteIndices[offset]!;
+        for (let k = 1; k < count; k++) {
+          const endRealIdx = quoteIndices[offset + k]!;
+
+          // 检查规则：相邻引号不配对 (end - start === 1)
+          if (endRealIdx - startRealIdx === 1) continue;
+
+          // 递归解决内部和外部
+          // 内部：offset + 1, 数量 k - 1
+          const insideRes = solve(offset + 1, k - 1);
+          // 外部：offset + k + 1, 数量 count - 1 - k
+          const outsideRes = solve(offset + k + 1, count - 1 - k);
+
+          const currentCost = endRealIdx - startRealIdx + insideRes.cost + outsideRes.cost;
+
+          if (currentCost <= bestRes.cost) {
+            bestRes = {
+              cost: currentCost,
+              pairs: [
+                { start: startRealIdx, end: endRealIdx },
+                ...insideRes.pairs,
+                ...outsideRes.pairs,
+              ],
+            };
           }
         }
-        
-        // 标记找到的配对并记录替换
-        if (foundPair && closestStartIndex !== -1 && closestEndIndex !== -1) {
-          paired[closestStartIndex] = true;
-          paired[closestEndIndex] = true;
-          replacements.push({ index: quoteIndices[closestStartIndex]!, char: replacementOpen });
-          replacements.push({ index: quoteIndices[closestEndIndex]!, char: replacementClose });
-        }
+
+        memo.set(key, bestRes);
+        return bestRes;
       }
-      
-      if (replacements.length === 0) {
+
+      const resultPairs = solve(0, quoteIndices.length).pairs;
+
+      if (resultPairs.length === 0) {
         return str;
       }
-      
-      // 按位置从后往前排序，这样替换时不会影响后续索引
+
+      // 收集所有替换操作
+      const replacements: Array<{ index: number; char: string }> = [];
+      for (const { start, end } of resultPairs) {
+        replacements.push({ index: start, char: replacementOpen });
+        replacements.push({ index: end, char: replacementClose });
+      }
+
+      // 按位置从后往前排序
       replacements.sort((a, b) => b.index - a.index);
-      
-      // 构建结果字符串，从后往前替换避免索引偏移
+
       let result = str;
       for (const { index, char } of replacements) {
         result = result.slice(0, index) + char + result.slice(index + 1);
       }
-      
+
       return result;
     } else {
       // 开引号和闭引号不同，使用栈来匹配 - O(n) 单次遍历
       const result: string[] = [];
       const stack: number[] = [];
-      
+
       for (let i = 0; i < str.length; i++) {
         const char = str[i]!;
         if (char === openChar) {
@@ -180,7 +155,7 @@ export function normalizeTranslationQuotes(text: string): string {
           result.push(char);
         }
       }
-      
+
       // 如果栈不为空，说明有未配对的引号，需要恢复为原始字符
       while (stack.length > 0) {
         const pos = stack.pop()!;
@@ -188,14 +163,14 @@ export function normalizeTranslationQuotes(text: string): string {
           result[pos] = openChar;
         }
       }
-      
+
       return result.join('');
     }
   }
-  
+
   // 处理半角双引号
   normalized = replaceNestedQuotes(normalized, '"', '"', '「', '」');
-  
+
   // 处理全角双引号
   // 全角左双引号是 U+201C ("), 全角右双引号是 U+201D (")
   normalized = replaceNestedQuotes(normalized, '\u201C', '\u201D', '「', '」');
@@ -441,7 +416,7 @@ export function normalizeTranslationSymbols(
     // 移除行首空格后，再移除行尾空格进行规范化
     // 注意：行尾空格不应无条件“原样保留”，否则会把规范化移除的空格重新拼回去
     const contentWithoutSpaces = line.slice(leadingSpaces.length).replace(/\s+$/g, '');
-    
+
     // 规范化内容（不包含行首和行尾空格）
     let normalized = contentWithoutSpaces;
 
@@ -462,6 +437,15 @@ export function normalizeTranslationSymbols(
     // 使用临时标记保护小数点（数字.数字 的模式）
     const decimalMarker = '\uE001'; // 使用私有使用区字符作为临时标记
     normalized = normalized.replace(/(\d)\.(\d)/g, `$1${decimalMarker}$2`); // 标记小数点
+
+    // 2.5 先保护【】内的纯空格内容，避免被后续的空格规范化（Step 8）和括号清理（Step 13）影响
+    const bracketMarker = '\uE003';
+    const bracketPlaceholders: string[] = [];
+    normalized = normalized.replace(/【([\u0020\u00A0\u3000]+)】/g, (match) => {
+      const placeholder = `${bracketMarker}${bracketPlaceholders.length}${bracketMarker}`;
+      bracketPlaceholders.push(match);
+      return placeholder;
+    });
 
     // 2. 先处理省略号（在 normalizeTranslationQuotes 之前，避免点号被转换）
     normalized = normalized.replace(/\.{3,}/g, '…'); // 3个或更多点号转为省略号
@@ -528,6 +512,12 @@ export function normalizeTranslationSymbols(
     normalized = normalized.replace(/\s+）/g, '）');
     normalized = normalized.replace(/【\s+/g, '【');
     normalized = normalized.replace(/\s+】/g, '】');
+
+    // 13.5 恢复【】内的纯空格内容
+    bracketPlaceholders.forEach((content, index) => {
+      const placeholder = `${bracketMarker}${index}${bracketMarker}`;
+      normalized = normalized.replace(placeholder, content);
+    });
 
     // 14. 规范化引号内的多余空格：移除引号紧邻的多余空格
     // 注意：按需求，默认不清理『』「」紧邻空格

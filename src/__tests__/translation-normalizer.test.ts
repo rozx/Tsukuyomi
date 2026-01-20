@@ -86,15 +86,15 @@ describe('normalizeTranslationQuotes', () => {
 
   test('应该保持奇数个单引号不变', () => {
     // 奇数个单引号不应该被转换，保持原样（除了成对的部分）
-    expect(normalizeTranslationQuotes("'测试'另一个'")).toBe('『测试』另一个\'');
-    expect(normalizeTranslationQuotes("'a'b'c'd'")).toBe('『a』b『c』d\'');
+    expect(normalizeTranslationQuotes("'测试'另一个'")).toBe("『测试』另一个'");
+    expect(normalizeTranslationQuotes("'a'b'c'd'")).toBe("『a』b『c』d'");
   });
 
   test('应该正确处理混合的单个引号', () => {
     // 单个双引号和单个单引号混合，单个引号应该保持原样
     expect(normalizeTranslationQuotes('他说"测试\'内容')).toBe('他说"测试\'内容');
     // 成对的引号会被转换，单个引号保持原样
-    expect(normalizeTranslationQuotes('他说"测试\'内容"')).toBe('他说「测试\'内容」');
+    expect(normalizeTranslationQuotes('他说"测试\'内容"')).toBe("他说「测试'内容」");
   });
 });
 
@@ -103,7 +103,9 @@ describe('normalizeTranslationSymbols', () => {
     expect(normalizeTranslationSymbols('他说"你好"')).toBe('他说「你好」');
     expect(normalizeTranslationSymbols("他说'你好'")).toBe('他说『你好』');
     // 测试包含省略号的引号
-    expect(normalizeTranslationSymbols('"那副太阳镜……总觉得在哪里见过。"')).toBe('「那副太阳镜……总觉得在哪里见过。」');
+    expect(normalizeTranslationSymbols('"那副太阳镜……总觉得在哪里见过。"')).toBe(
+      '「那副太阳镜……总觉得在哪里见过。」',
+    );
     // 测试全角单引号对
     expect(normalizeTranslationSymbols('他说\u2018活该\u2019')).toBe('他说『活该』');
   });
@@ -210,7 +212,9 @@ describe('normalizeTranslationSymbols', () => {
   });
 
   test('应该处理引号嵌套', () => {
-    expect(normalizeTranslationSymbols('他说"这是\'嵌套\'的引号"')).toBe('他说「这是『嵌套』的引号」');
+    expect(normalizeTranslationSymbols('他说"这是\'嵌套\'的引号"')).toBe(
+      '他说「这是『嵌套』的引号」',
+    );
     // 测试嵌套的双引号：""aaa"" 应该转换为 「「aaa」」
     expect(normalizeTranslationSymbols('""aaa""')).toBe('「「aaa」」');
     // 测试三层嵌套的双引号
@@ -222,7 +226,9 @@ describe('normalizeTranslationSymbols', () => {
   });
 
   test('应该处理行尾的多种标点', () => {
-    expect(normalizeTranslationSymbols('测试，  \n测试。  \n测试？  ')).toBe('测试，\n测试。\n测试？');
+    expect(normalizeTranslationSymbols('测试，  \n测试。  \n测试？  ')).toBe(
+      '测试，\n测试。\n测试？',
+    );
   });
 
   test('应该处理数字和标点的边界情况', () => {
@@ -264,24 +270,63 @@ describe('normalizeTranslationSymbols', () => {
     // 多个嵌套的「」引号应该保持不变
     expect(normalizeTranslationSymbols('「「「测试」」」')).toBe('「「「测试」」」');
     // 混合情况：外层的「」应该保持不变，内层的半角引号应该转换
-    expect(normalizeTranslationSymbols('「让我做一下心理准备"test"」')).toBe('「让我做一下心理准备「test」」');
+    expect(normalizeTranslationSymbols('「让我做一下心理准备"test"」')).toBe(
+      '「让我做一下心理准备「test」」',
+    );
     // 确保「」引号不会被转换为『』，即使与其他引号混合
-    expect(normalizeTranslationSymbols('「让我做一下心理准备」和"其他内容"')).toBe('「让我做一下心理准备」和「其他内容」');
+    expect(normalizeTranslationSymbols('「让我做一下心理准备」和"其他内容"')).toBe(
+      '「让我做一下心理准备」和「其他内容」',
+    );
   });
 
   test('应该保护 URL 不被规范化', () => {
     // HTTP URL 应该保持不变
-    expect(normalizeTranslationSymbols('访问 http://example.com 网站')).toBe('访问 http://example.com 网站');
+    expect(normalizeTranslationSymbols('访问 http://example.com 网站')).toBe(
+      '访问 http://example.com 网站',
+    );
     // HTTPS URL 应该保持不变
-    expect(normalizeTranslationSymbols('访问 https://example.com/path?query=value 网站')).toBe('访问 https://example.com/path?query=value 网站');
+    expect(normalizeTranslationSymbols('访问 https://example.com/path?query=value 网站')).toBe(
+      '访问 https://example.com/path?query=value 网站',
+    );
     // URL 中的符号应该保持不变
-    expect(normalizeTranslationSymbols('链接是 https://example.com:8080/api/v1?param=test&other=value#section')).toBe('链接是 https://example.com:8080/api/v1?param=test&other=value#section');
+    expect(
+      normalizeTranslationSymbols(
+        '链接是 https://example.com:8080/api/v1?param=test&other=value#section',
+      ),
+    ).toBe('链接是 https://example.com:8080/api/v1?param=test&other=value#section');
     // URL 后跟中文标点应该正常处理
-    expect(normalizeTranslationSymbols('访问 https://example.com，然后继续。')).toBe('访问 https://example.com，然后继续。');
+    expect(normalizeTranslationSymbols('访问 https://example.com，然后继续。')).toBe(
+      '访问 https://example.com，然后继续。',
+    );
     // 多个 URL 应该都被保护（URL 前面的冒号会被转换为全角，这是正常的）
-    expect(normalizeTranslationSymbols('链接1: http://site1.com 链接2: https://site2.com/path')).toBe('链接1： http://site1.com 链接2： https://site2.com/path');
+    expect(
+      normalizeTranslationSymbols('链接1: http://site1.com 链接2: https://site2.com/path'),
+    ).toBe('链接1： http://site1.com 链接2： https://site2.com/path');
     // URL 内的所有符号都应该被保护
-    expect(normalizeTranslationSymbols('请访问 https://example.com/api?key=value&id=123#section 获取信息')).toBe('请访问 https://example.com/api?key=value&id=123#section 获取信息');
+    expect(
+      normalizeTranslationSymbols(
+        '请访问 https://example.com/api?key=value&id=123#section 获取信息',
+      ),
+    ).toBe('请访问 https://example.com/api?key=value&id=123#section 获取信息');
+  });
+
+  test('应该正确处理连续的引号（间隔很短）', () => {
+    // 之前算法可能错误配对的情况
+    expect(normalizeTranslationSymbols('"勇者"和"魔王"')).toBe('「勇者」和「魔王」');
+    expect(normalizeTranslationSymbols('"A"b"C"')).toBe('「A」b「C」');
+    // 间隔只有一个字符
+    expect(normalizeTranslationSymbols('"A"x"B"')).toBe('「A」x「B」');
+  });
+
+  test('应该保留【】内的纯空格（填空题格式）', () => {
+    // 纯空格内容不应被 trim 或合并
+    const input = '【　　　　　　　　】';
+    expect(normalizeTranslationSymbols(input)).toBe(input);
+
+    // 普通空格也应保留
+    expect(normalizeTranslationSymbols('【       】')).toBe('【       】');
+
+    // 但如果有内容，两侧空格仍应被移除（保持原有逻辑）
+    expect(normalizeTranslationSymbols('【  测试内容  】')).toBe('【测试内容】');
   });
 });
-
