@@ -185,8 +185,8 @@ export class TermTranslationService {
 3. **上下文理解**: 根据当前书籍、章节的上下文来理解术语含义
 4. **完整翻译**: [警告] 必须翻译所有单词和短语，禁止在翻译结果中保留未翻译的日语原文（如日文假名、汉字等）
 
-**输出格式**：[警告] **必须只返回 JSON 格式**
-示例：{"translation":"翻译结果"}
+**输出格式**：[警告] **必须只返回 JSON 格式**（使用简化键名 t=translation）
+示例：{"t":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
 `;
@@ -260,8 +260,8 @@ export class TermTranslationService {
       // 构建用户提示词
       const userPrompt =
         prompt ||
-        `请将以下日文术语翻译为简体中文，保持原文的格式和结构。[警告] **必须只返回 JSON 格式**：
-示例：{"translation":"翻译结果"}
+        `请将以下日文术语翻译为简体中文，保持原文的格式和结构。[警告] **必须只返回 JSON 格式**（使用简化键名 t=translation）：
+示例：{"t":"翻译结果"}
 只返回 JSON，不要包含任何其他内容、说明或代码块标记。
 
 待翻译术语：\n\n${trimmedText}${relatedContextInfo}`;
@@ -336,11 +336,13 @@ export class TermTranslationService {
           }
 
           const parsed = JSON.parse(jsonMatch[0]);
-          if (!parsed || typeof parsed.translation !== 'string') {
-            throw new Error('JSON 中缺少 translation 字段');
+          // 支持简化格式 "t" 和完整格式 "translation"
+          const translation = parsed.t ?? parsed.translation;
+          if (!parsed || typeof translation !== 'string') {
+            throw new Error('JSON 中缺少 t/translation 字段');
           }
 
-          finalText = parsed.translation;
+          finalText = translation;
           break;
         } catch (parseError) {
           if (jsonRetryCount >= MAX_JSON_RETRIES) {
@@ -356,7 +358,7 @@ export class TermTranslationService {
           history.push({
             role: 'user',
             content:
-              '响应格式错误：[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "translation": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
+              '响应格式错误：[警告] **必须只返回 JSON 格式**：\n```json\n{\n  "t": "翻译结果"\n}\n```\n只返回 JSON，不要包含任何其他内容、说明或代码块标记。',
           });
         }
       }

@@ -33,7 +33,39 @@ export type TaskType = 'translation' | 'polish' | 'proofreading' | 'chapter_summ
 /**
  * 状态类型
  */
+
 export type TaskStatus = 'planning' | 'working' | 'review' | 'end';
+
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  translation: '翻译',
+  polish: '润色',
+  proofreading: '校对',
+  chapter_summary: '章节摘要',
+};
+
+export const MAX_DESC_LEN = 600;
+
+export function getStatusLabel(status: TaskStatus, taskType: TaskType): string {
+  if (status === 'working') {
+    return `${TASK_TYPE_LABELS[taskType]}中 (working)`;
+  }
+  const labels: Record<Exclude<TaskStatus, 'working'>, string> = {
+    planning: '规划阶段 (planning)',
+    review: '复核阶段 (review)',
+    end: '完成 (end)',
+  };
+  return labels[status];
+}
+
+function extractTranslation(translation: unknown): string {
+  if (typeof translation === 'string') {
+    return translation;
+  }
+  if (typeof translation === 'object' && translation !== null) {
+    return (translation as { text?: string }).text || '';
+  }
+  return '';
+}
 
 function getValidTransitionsForTaskType(taskType: TaskType): Record<TaskStatus, TaskStatus[]> {
   // 翻译任务：严格四阶段
@@ -140,13 +172,9 @@ export async function getAIModelForTask(
   }
 
   if (!model || !model.enabled) {
-    const taskNameMap: Record<string, string> = {
-      translation: '翻译',
-      polish: '润色',
-      proofreading: '校对',
-      termsTranslation: '术语/摘要',
-    };
-    throw new Error(`未配置“${taskNameMap[taskType]}”模型，请在设置中配置。`);
+    const label =
+      taskType === 'termsTranslation' ? '术语/摘要' : TASK_TYPE_LABELS[taskType as TaskType];
+    throw new Error(`未配置“${label}”模型，请在设置中配置。`);
   }
 
   return model;
@@ -173,8 +201,9 @@ export function buildFormattedChunks(
       paragraph.translations?.[0]?.translation ||
       '';
 
-    // 格式化段落：[ID: {id}] 原文: {原文}\n翻译: {当前翻译}
-    const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+    // 格式化段落：[{index}] [ID: {id}] 原文: {原文}\n翻译: {当前翻译}
+    let index = currentChunkParagraphIds.length;
+    let paragraphText = `[${index}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
 
     // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
     if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
@@ -184,6 +213,9 @@ export function buildFormattedChunks(
       });
       currentChunkText = '';
       currentChunkParagraphIds = [];
+      // 这里的 index 重置为 0，并重新生成 paragraphText
+      index = 0;
+      paragraphText = `[${index}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
     }
     currentChunkText += paragraphText;
     currentChunkParagraphIds.push(paragraph.id);
@@ -281,10 +313,12 @@ export interface StreamCallbackConfig {
 
 /**
  * 解析和验证 JSON 响应（带状态字段）
+ * 支持简化格式：s=status, p=paragraphs, i=index, t=translation, tt=titleTranslation
  * @param responseText AI 返回的文本
+ * @param paragraphIds 可选的段落 ID 列表，用于将索引映射回实际 ID
  * @returns 解析后的结果，包含状态和内容
  */
-export function parseStatusResponse(responseText: string): ParsedResponse {
+export function parseStatusResponse(responseText: string, paragraphIds?: string[]): ParsedResponse {
   try {
     // 尝试提取 JSON
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -298,15 +332,16 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
     const jsonStr = jsonMatch[0];
     const data = JSON.parse(jsonStr);
 
-    // 验证状态字段
-    if (!data.status || typeof data.status !== 'string') {
+    // 验证状态字段（支持 s 或 status）
+    const statusValue = data.s ?? data.status;
+    if (!statusValue || typeof statusValue !== 'string') {
       return {
         status: 'working',
-        error: 'JSON 中缺少 status 字段',
+        error: 'JSON 中缺少 status/s 字段',
       };
     }
 
-    const status = data.status as string;
+    const status = statusValue;
     const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
 
     if (!validStatuses.includes(status as TaskStatus)) {
@@ -316,13 +351,38 @@ export function parseStatusResponse(responseText: string): ParsedResponse {
       };
     }
 
-    // 提取内容（如果有）
+    // 提取内容（如果有）- 支持简化格式
     const content: ParsedResponse['content'] = {};
-    if (data.paragraphs && Array.isArray(data.paragraphs)) {
-      content.paragraphs = data.paragraphs;
+
+    // 解析段落（支持 p 或 paragraphs）
+    const paragraphsData = data.p ?? data.paragraphs;
+    if (paragraphsData && Array.isArray(paragraphsData)) {
+      content.paragraphs = paragraphsData.map(
+        (item: { i?: number; id?: string; t?: string; translation?: string }) => {
+          // 支持简化格式 (i, t) 和完整格式 (id, translation)
+          let id: string;
+          if (typeof item.i === 'number' && paragraphIds && paragraphIds[item.i] !== undefined) {
+            // 使用索引映射回实际 ID
+            id = paragraphIds[item.i] as string;
+          } else if (typeof item.id === 'string') {
+            // 直接使用 ID
+            id = item.id;
+          } else if (typeof item.i === 'number') {
+            // 没有映射表时，将索引转为字符串作为临时 ID
+            id = String(item.i);
+          } else {
+            id = '';
+          }
+          const translation = item.t ?? item.translation ?? '';
+          return { id, translation };
+        },
+      );
     }
-    if (data.titleTranslation && typeof data.titleTranslation === 'string') {
-      content.titleTranslation = data.titleTranslation;
+
+    // 解析标题翻译（支持 tt 或 titleTranslation）
+    const titleValue = data.tt ?? data.titleTranslation;
+    if (titleValue && typeof titleValue === 'string') {
+      content.titleTranslation = titleValue;
     }
 
     return {
@@ -412,12 +472,7 @@ export function detectPlanningContextUpdate(
       'name' in action.data
     ) {
       const termData = action.data as { name: string; translation?: string };
-      const translation =
-        typeof termData.translation === 'string'
-          ? termData.translation
-          : typeof termData.translation === 'object' && termData.translation !== null
-            ? (termData.translation as { text?: string }).text || ''
-            : '';
+      const translation = extractTranslation(termData.translation);
       newTerms.push({
         name: termData.name,
         translation,
@@ -431,12 +486,7 @@ export function detectPlanningContextUpdate(
       'name' in action.data
     ) {
       const charData = action.data as { name: string; translation?: string };
-      const translation =
-        typeof charData.translation === 'string'
-          ? charData.translation
-          : typeof charData.translation === 'object' && charData.translation !== null
-            ? (charData.translation as { text?: string }).text || ''
-            : '';
+      const translation = extractTranslation(charData.translation);
       newCharacters.push({
         name: charData.name,
         translation,
@@ -516,8 +566,9 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
       ) {
         lastCheckLength = accumulatedText.length;
 
-        // 只检测 status 字段（不用 JSON.parse），避免“JSON 尚未闭合/包含嵌套 {}”导致延迟或误判
-        const statusMatch = accumulatedText.match(/"status"\s*:\s*"([^"]+)"/);
+        // 只检测 status/s 字段（不用 JSON.parse），避免"JSON 尚未闭合/包含嵌套 {}"导致延迟或误判
+        // 支持简化格式 "s" 和完整格式 "status"
+        const statusMatch = accumulatedText.match(/"(?:s|status)"\s*:\s*"([^"]+)"/);
         if (statusMatch && statusMatch[1]) {
           const status = statusMatch[1];
           const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
@@ -532,21 +583,23 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
           }
 
           // 翻译/润色/校对任务：内容必须只在 working 阶段输出
-          // 若模型在 planning/review/end 阶段输出 paragraphs/titleTranslation，视为错误状态并中止本轮输出（随后由上层纠正并重试）
+          // 若模型在 planning/review/end 阶段输出 p/paragraphs/tt/titleTranslation，视为错误状态并中止本轮输出
           if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
-            const hasContentKey =
-              accumulatedText.includes('"paragraphs"') ||
-              accumulatedText.includes('"titleTranslation"');
+            // 使用正则检测 JSON 键（key 后面紧跟冒号），避免误判字符串内部的 "p"
+            // 支持简化格式 (p, tt) 和完整格式 (paragraphs, titleTranslation)
+            const contentKeyRegex = /"(?:p|paragraphs|tt|titleTranslation)"\s*:/;
+            const hasContentKey = contentKeyRegex.test(accumulatedText);
+
             const newStatus = status as TaskStatus;
             const invalidStateForContent =
               newStatus === 'planning' || newStatus === 'review' || newStatus === 'end';
             if (hasContentKey && invalidStateForContent) {
               console.warn(
-                `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${newStatus} 且包含 paragraphs/titleTranslation），立即停止输出`,
+                `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${newStatus} 且包含内容字段），立即停止输出`,
               );
               abortController?.abort();
               throw new Error(
-                `状态与内容不匹配：任务只能在 working 阶段输出 paragraphs/titleTranslation（当前 status=${newStatus}）`,
+                `状态与内容不匹配：任务只能在 working 阶段输出 p/tt（当前 status=${newStatus}）`,
               );
             }
           }
@@ -558,26 +611,12 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
           if (currentStatus !== newStatus) {
             const allowedNextStatuses: TaskStatus[] | undefined = validTransitions[currentStatus];
             if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
-              const taskTypeLabels = {
-                translation: '翻译',
-                polish: '润色',
-                proofreading: '校对',
-                chapter_summary: '章节摘要',
-              };
-              const taskLabel = taskTypeLabels[taskType];
-              const statusLabels: Record<TaskStatus, string> = {
-                planning: '规划阶段 (planning)',
-                working: `${taskLabel}中 (working)`,
-                review: '复核阶段 (review)',
-                end: '完成 (end)',
-              };
-
               console.warn(
-                `[${logLabel}] ⚠️ 检测到无效的状态转换：${statusLabels[currentStatus]} → ${statusLabels[newStatus]}，立即停止输出`,
+                `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(currentStatus, taskType)} → ${getStatusLabel(newStatus, taskType)}，立即停止输出`,
               );
               abortController?.abort();
               throw new Error(
-                `[警告] **状态转换错误**：你试图从 "${statusLabels[currentStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
+                `[警告] **状态转换错误**：你试图从 "${getStatusLabel(currentStatus, taskType)}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
               );
             }
           }
@@ -640,13 +679,7 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
  * 构建初始用户提示的基础部分 - 精简版
  */
 export function buildInitialUserPromptBase(taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-    chapter_summary: '章节摘要',
-  };
-  const taskLabel = taskLabels[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const chunkingInstructions = getChunkingInstructions(taskType);
   return `开始${taskLabel}。
 
@@ -693,7 +726,6 @@ export function buildBookContextSectionFromBook(book: {
   }
 
   // 简介可能很长，做一个保守截断（避免提示词过长）
-  const MAX_DESC_LEN = 600;
   const normalizedDesc =
     description.length > MAX_DESC_LEN
       ? `${description.slice(0, MAX_DESC_LEN)}...(已截断)`
@@ -782,13 +814,7 @@ export function addParagraphContext(
   paragraphId: string,
   taskType: TaskType,
 ): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-    chapter_summary: '章节摘要',
-  };
-  const taskLabel = taskLabels[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   const tools =
     taskType === 'proofreading'
@@ -877,13 +903,7 @@ export function buildIndependentChunkPrompt(
   hasPreviousParagraphs?: boolean,
   firstParagraphId?: string,
 ): string {
-  const taskLabels = {
-    translation: '翻译',
-    proofreading: '校对',
-    polish: '润色',
-    chapter_summary: '章节摘要',
-  };
-  const taskLabel = taskLabels[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
   const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息可调用工具获取；工具返回内容**不要**当作${taskLabel}结果直接输出。`;
@@ -1040,6 +1060,10 @@ export interface ToolCallLoopConfig {
    * 收集的 actions（用于检测规划上下文更新）
    */
   collectedActions?: ActionInfo[];
+  /**
+   * 当前 chunk 索引（用于错误日志）
+   */
+  chunkIndex?: number;
 }
 
 /**
@@ -1129,13 +1153,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
   // 允许的工具名称集合（严格限制：只能调用本次请求提供的 tools）
   const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-  const taskLabel = taskTypeLabels[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   while (maxTurns === Infinity || currentTurnCount < maxTurns) {
     currentTurnCount++;
@@ -1194,15 +1212,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
 
         // 使用累积的流式文本或结果文本
-        const partialResponse = result?.text || streamedText || '';
+        const partialResponse = result?.text !== undefined ? result.text : streamedText || '';
 
         // 立即警告 AI
-        const statusLabels: Record<TaskStatus, string> = {
-          planning: '规划阶段 (planning)',
-          working: `${taskLabel}中 (working)`,
-          review: '复核阶段 (review)',
-          end: '完成 (end)',
-        };
 
         // 解析错误消息以获取详细信息
         const errorMessage = streamError.message;
@@ -1215,14 +1227,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           warningMessage =
             `[警告] **状态转换错误**：你返回了无效的状态转换。\n\n` +
             `**正确的状态转换顺序**：${getTaskStateWorkflowText(taskType)}\n\n` +
-            `你当前处于 "${statusLabels[currentStatus]}"，应该先转换到 "${statusLabels[expectedNextStatus]}"。\n\n` +
+            `你当前处于 "${getStatusLabel(currentStatus, taskType)}"，应该先转换到 "${getStatusLabel(expectedNextStatus, taskType)}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}`;
         } else if (errorMessage.includes('无效状态值')) {
           // 无效状态值的警告
           warningMessage =
             `[警告] **无效状态值**：你返回了无效的状态值。\n\n` +
             `**有效的状态值**：planning、working、review、end\n\n` +
-            `你当前处于 "${statusLabels[currentStatus]}"，请返回正确的状态值。`;
+            `你当前处于 "${getStatusLabel(currentStatus, taskType)}"，请返回正确的状态值。`;
         } else if (errorMessage.includes('状态与内容不匹配')) {
           consecutiveContentStateMismatchCount++;
           if (consecutiveContentStateMismatchCount > MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH) {
@@ -1300,9 +1312,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         }
 
         // 检查工具调用限制
+        // 检查工具调用限制
         const currentCount = toolCallCounts.get(toolName) || 0;
         const limit = TOOL_CALL_LIMITS[toolName] ?? TOOL_CALL_LIMITS.default;
-        const safeLimit = typeof limit === 'number' ? limit : Infinity;
+        const safeLimit = limit as number;
 
         if (safeLimit !== Infinity && currentCount >= safeLimit) {
           console.warn(
@@ -1382,6 +1395,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
                 name: toolName,
               });
               // 跳过正常的工具结果推送，因为已经推送了带警告的版本
+              // [DEBUG] 这里 continue 会跳过后续的 history.push，这是预期的行为
               continue;
             }
             planningToolResults.push({
@@ -1419,11 +1433,14 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 
     // 检测重复字符
     if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
-      throw new Error(`AI降级检测：最终响应中检测到重复字符`);
+      throw new Error(
+        `AI降级检测：最终响应中检测到重复字符（chunkIndex: ${config.chunkIndex ?? 'unknown'}, paragraphCount: ${paragraphIds?.length ?? 0}）`,
+      );
     }
 
     // 解析状态响应
-    const parsed = parseStatusResponse(responseText);
+    // 传入 paragraphIds 以支持索引映射（Simplified Schema: i -> id）
+    const parsed = parseStatusResponse(responseText, paragraphIds);
 
     if (parsed.error) {
       // JSON 解析失败，要求重试
@@ -1513,20 +1530,12 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
       const allowedNextStatuses: TaskStatus[] | undefined = validTransitions[previousStatus];
       if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
         // 无效的状态转换，提醒AI
-        const statusLabels: Record<TaskStatus, string> = {
-          planning: '规划阶段 (planning)',
-          working: `${taskLabel}中 (working)`,
-          review: '复核阶段 (review)',
-          end: '完成 (end)',
-        };
-
         console.warn(
-          `[${logLabel}] ⚠️ 检测到无效的状态转换：${statusLabels[previousStatus]} → ${statusLabels[newStatus]}`,
+          `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(previousStatus, taskType)} → ${getStatusLabel(newStatus, taskType)}`,
         );
 
         const expectedNextStatus: TaskStatus =
           (allowedNextStatuses?.[0] as TaskStatus) || 'working';
-        const expectedStatusLabel = statusLabels[expectedNextStatus];
 
         history.push({
           role: 'assistant',
@@ -1536,9 +1545,9 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
         history.push({
           role: 'user',
           content:
-            `[警告] **状态转换错误**：你试图从 "${statusLabels[previousStatus]}" 直接转换到 "${statusLabels[newStatus]}"，这是**禁止的**。\n\n` +
+            `[警告] **状态转换错误**：你试图从 "${getStatusLabel(previousStatus, taskType)}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。\n\n` +
             `**正确的状态转换顺序**：${getTaskStateWorkflowText(taskType)}\n\n` +
-            `你当前处于 "${statusLabels[previousStatus]}"，应该先转换到 "${expectedStatusLabel}"。\n\n` +
+            `你当前处于 "${getStatusLabel(previousStatus, taskType)}"，应该先转换到 "${getStatusLabel(expectedNextStatus, taskType)}"。\n\n` +
             `请重新返回正确的状态：{"status": "${expectedNextStatus}"}${newStatus === 'working' && previousStatus === 'planning' ? ' 或包含内容时 {"status": "working", "paragraphs": [...]}' : ''}`,
         });
 
@@ -1596,7 +1605,7 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           // 立即调用标题回调，并等待完成
           if (onTitleExtracted) {
             try {
-              await Promise.resolve(onTitleExtracted(titleTranslation));
+              await onTitleExtracted(titleTranslation);
             } catch (error) {
               console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
             }
@@ -1623,11 +1632,10 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
           // 立即调用回调，不等待循环完成（但标题已更新）
           if (onParagraphsExtracted) {
             try {
-              void Promise.resolve(onParagraphsExtracted(newParagraphs)).catch((error) => {
-                console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
-              });
+              await onParagraphsExtracted(newParagraphs);
             } catch (error) {
               console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
+              // 根据需要决定是否抛出错误
             }
           }
         }
@@ -1848,16 +1856,9 @@ export function checkMaxTurnsReached(
   maxTurns: number,
   taskType: TaskType,
 ): asserts finalResponseText is string {
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-
   if (!finalResponseText || finalResponseText.trim().length === 0) {
     throw new Error(
-      `AI在工具调用后未返回${taskTypeLabels[taskType]}结果（已达到最大回合数 ${maxTurns}）。请重试。`,
+      `AI在工具调用后未返回${TASK_TYPE_LABELS[taskType]}结果（已达到最大回合数 ${maxTurns}）。请重试。`,
     );
   }
 }
@@ -1934,18 +1935,11 @@ export async function initializeTask(
     return {};
   }
 
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-
   const taskId = await aiProcessingStore.addTask({
     type: taskType,
     modelName,
     status: 'thinking',
-    message: `正在初始化${taskTypeLabels[taskType]}会话...`,
+    message: `正在初始化${TASK_TYPE_LABELS[taskType]}会话...`,
     thinkingMessage: '',
     ...(context?.bookId ? { bookId: context.bookId } : {}),
     ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
@@ -1992,7 +1986,8 @@ export async function getSpecialInstructions(
 
   try {
     // 动态导入 store 以避免循环依赖
-    const booksStore = (await import('src/stores/books')).useBooksStore();
+    await Promise.resolve(); // 保持 async 签名兼容性
+    const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
@@ -2033,9 +2028,11 @@ export async function getSpecialInstructions(
 }
 
 /**
- * 段落格式化函数类型
+ * 段落格式化函数类型（带 chunk 内索引）
+ * @param item 段落对象
+ * @param indexInChunk 段落在当前 chunk 内的 0-based 索引
  */
-export type ParagraphFormatter<T> = (item: T) => string;
+export type ParagraphFormatter<T> = (item: T, indexInChunk: number) => string;
 
 /**
  * 文本块结构
@@ -2050,7 +2047,7 @@ export interface TextChunk {
  * 将段落列表按大小分割成多个文本块
  * @param content 段落列表
  * @param chunkSize 每个块的最大字符数
- * @param formatParagraph 段落格式化函数
+ * @param formatParagraph 段落格式化函数（第二个参数为 chunk 内的 0-based 索引）
  * @param filterParagraph 段落过滤函数（可选，默认过滤空段落）
  * @returns 文本块数组
  */
@@ -2074,8 +2071,9 @@ export function buildChunks<T extends { id: string; text?: string }>(
       continue;
     }
 
-    // 格式化段落
-    const paragraphText = formatParagraph(paragraph);
+    // 格式化段落（传入 chunk 内索引）
+    const indexInChunk = currentChunkParagraphIds.length;
+    const paragraphText = formatParagraph(paragraph, indexInChunk);
 
     // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
     if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
@@ -2085,9 +2083,13 @@ export function buildChunks<T extends { id: string; text?: string }>(
       });
       currentChunkText = '';
       currentChunkParagraphIds = [];
+      // 重新格式化（新 chunk 的索引为 0）
+      const newIndexInChunk = 0;
+      const newParagraphText = formatParagraph(paragraph, newIndexInChunk);
+      currentChunkText += newParagraphText;
+    } else {
+      currentChunkText += paragraphText;
     }
-
-    currentChunkText += paragraphText;
     currentChunkParagraphIds.push(paragraph.id);
   }
 
@@ -2206,13 +2208,6 @@ export async function handleTaskError(
     return;
   }
 
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-
   // 检查是否是取消错误
   const isCancelled =
     error instanceof Error && (error.message === '请求已取消' || error.message.includes('aborted'));
@@ -2225,7 +2220,7 @@ export async function handleTaskError(
   } else {
     await aiProcessingStore.updateTask(taskId, {
       status: 'error',
-      message: error instanceof Error ? error.message : `${taskTypeLabels[taskType]}出错`,
+      message: error instanceof Error ? error.message : `${TASK_TYPE_LABELS[taskType]}出错`,
     });
   }
 }
@@ -2245,15 +2240,8 @@ export async function completeTask(
     return;
   }
 
-  const taskTypeLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-
   await aiProcessingStore.updateTask(taskId, {
     status: 'end',
-    message: `${taskTypeLabels[taskType]}完成`,
+    message: `${TASK_TYPE_LABELS[taskType]}完成`,
   });
 }

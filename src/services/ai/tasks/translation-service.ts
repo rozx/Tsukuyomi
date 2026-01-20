@@ -304,7 +304,7 @@ ${getOutputFormatRules('translation')}
       let chunks = buildChunks(
         content,
         chunkSize,
-        (p) => `[ID: ${p.id}] ${p.text}\n\n`,
+        (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
         (p) => !!p.text?.trim(),
       );
 
@@ -355,7 +355,7 @@ ${getOutputFormatRules('translation')}
           const rebuiltChunks = buildChunks(
             unprocessedContent,
             chunkSize,
-            (p) => `[ID: ${p.id}] ${p.text}\n\n`,
+            (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
             (p) => !!p.text?.trim(),
           );
           const firstRebuiltChunk = rebuiltChunks[0];

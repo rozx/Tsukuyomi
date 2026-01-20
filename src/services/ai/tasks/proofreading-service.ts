@@ -146,7 +146,8 @@ function rebuildChunk(
       paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
       paragraph.translations?.[0]?.translation ||
       '';
-    const paragraphText = `[ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+    const index = rebuiltChunkParagraphIds.length;
+    const paragraphText = `[${index}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
 
     if (
       rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&

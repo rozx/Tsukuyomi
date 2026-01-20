@@ -97,8 +97,8 @@ export function getCurrentStatusInfo(
             : '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查'
     }
 - 发现新信息（新术语/角色、关系变化等）立即更新
-- 输出${taskLabel}结果，格式：\`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]}\`${
-      taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 paragraphs）'
+- 输出${taskLabel}结果，格式：\`{"s": "working", "p": [{"i": 段落序号, "t": "${taskLabel}结果"}]}\`${
+      taskType === 'translation' ? '' : '（只返回有变化的段落；若无变化可不返回 p）'
     }
 
 完成所有段落的${taskLabel}后，将状态设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`,
@@ -234,23 +234,24 @@ export function getOutputFormatRules(taskType: TaskType): string {
   };
   const taskLabel = taskLabels[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
-  const titleNote = taskType === 'translation' ? '，有标题时加 titleTranslation' : '';
+  const titleNote = taskType === 'translation' ? '，有标题时加 tt（标题翻译）' : '';
   const strictStateNote =
     taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? `\n[警告] **严格状态规则**：\n- 只有当 \`status="working"\` 时才允许输出 \`paragraphs/titleTranslation\`\n- 当 \`status="planning"\`、\`status="review"\` 或 \`status="end"\` 时 **禁止** 输出任何内容字段，否则系统会视为错误状态并要求你立刻重试\n`
+      ? `\n[警告] **严格状态规则**：\n- 只有当 \`s="working"\` 时才允许输出 \`p/tt\`\n- 当 \`s="planning"\`、\`s="review"\` 或 \`s="end"\` 时 **禁止** 输出任何内容字段，否则系统会视为错误状态并要求你立刻重试\n`
       : '';
 
-  return `【输出格式】[警告] 必须只返回JSON
+  return `【输出格式】[警告] 必须只返回JSON（使用简化键名）
 [禁止] 禁止使用翻译管理工具
 
+**JSON键名映射**：s=status, p=paragraphs, i=段落序号(整数), t=translation, tt=titleTranslation
 **默认状态**：系统默认处于 planning，**无需再单独返回 planning**；需要上下文时可先调用工具。
-**状态可独立返回**（无需paragraphs）: \`{"status": "planning"}\`（仅当你需要先规划/调用工具且暂不输出内容时）
-**包含内容时**: \`{"status": "working", "paragraphs": [{"id": "段落ID", "translation": "${taskLabel}结果"}]${titleNote ? ', "titleTranslation": "标题"' : ''}}\`
+**状态可独立返回**（无需p）: \`{"s": "planning"}\`（仅当你需要先规划/调用工具且暂不输出内容时）
+**包含内容时**: \`{"s": "working", "p": [{"i": 0, "t": "${taskLabel}结果"}]${titleNote ? ', "tt": "标题翻译"' : ''}}\`
 **标题翻译只要返回一次就好，不要重复返回**
 ${strictStateNote}
 
 ${getStatusFieldDescription(taskType)}
-- 段落ID必须与原文完全一致，1:1对应${onlyChanged}
+- 段落序号(i)必须与原文序号完全一致，1:1对应${onlyChanged}
 - [警告] **无需自行检查缺失段落**，系统会自动验证并提示补充
 - 所有阶段均可使用工具`;
 }

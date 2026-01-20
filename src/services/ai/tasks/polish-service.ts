@@ -282,7 +282,8 @@ ${getOutputFormatRules('polish')}
           translationHistory.length > 0
             ? `\n翻译历史:\n${translationHistory.map((h, idx) => `  版本${idx + 1}: ${h}`).join('\n')}`
             : '';
-        const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
+        let index = currentChunkParagraphs.length;
+        let paragraphText = `[${index}] [ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
 
         // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
         if (
@@ -297,6 +298,10 @@ ${getOutputFormatRules('polish')}
           currentChunkText = '';
           currentChunkParagraphs = [];
           currentChunkTranslationHistories = new Map();
+
+          // Reset index and rebuild text for next chunk
+          index = 0;
+          paragraphText = `[${index}] [ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
         }
         currentChunkText += paragraphText;
         currentChunkParagraphs.push(paragraph);
@@ -383,7 +388,8 @@ ${getOutputFormatRules('polish')}
               translationHistory.length > 0
                 ? `\n翻译历史:\n${translationHistory.map((h, idx) => `  版本${idx + 1}: ${h}`).join('\n')}`
                 : '';
-            const paragraphText = `[ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
+            const index = rebuiltChunkParagraphIds.length;
+            const paragraphText = `[${index}] [ID: ${paragraph.id}] ${paragraph.text}\n当前翻译: ${currentTranslation}${historyText}\n\n`;
 
             if (
               rebuiltChunkText.length + paragraphText.length > CHUNK_SIZE &&
