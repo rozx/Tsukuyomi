@@ -7,7 +7,7 @@ import type {
   AIToolCall,
   AITool,
 } from 'src/services/ai/types/ai-service';
-import { executeToolCallLoop } from 'src/services/ai/tasks/utils/ai-task-helper';
+import { executeToolCallLoop } from 'src/services/ai/tasks/utils';
 import { ToolRegistry } from 'src/services/ai/tools';
 
 describe('executeToolCallLoop', () => {

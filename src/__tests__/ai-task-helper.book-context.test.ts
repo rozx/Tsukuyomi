@@ -1,6 +1,6 @@
 import './setup';
 import { describe, test, expect } from 'bun:test';
-import { buildBookContextSectionFromBook } from 'src/services/ai/tasks/utils/ai-task-helper';
+import { buildBookContextSectionFromBook } from 'src/services/ai/tasks/utils';
 
 describe('buildBookContextSectionFromBook', () => {
   test('无任何书籍信息时返回空字符串', () => {
@@ -45,5 +45,3 @@ describe('buildBookContextSectionFromBook', () => {
     expect(s).toContain('**标签**: 奇幻、冒险');
   });
 });
-
-

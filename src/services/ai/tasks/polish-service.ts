@@ -37,7 +37,7 @@ import {
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
-} from './utils/ai-task-helper';
+} from './utils';
 import {
   getSymbolFormatRules,
   getOutputFormatRules,

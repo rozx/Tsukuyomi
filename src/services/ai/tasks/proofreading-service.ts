@@ -38,7 +38,7 @@ import {
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
   buildFormattedChunks,
-} from './utils/ai-task-helper';
+} from './utils';
 import {
   getSymbolFormatRules,
   getOutputFormatRules,

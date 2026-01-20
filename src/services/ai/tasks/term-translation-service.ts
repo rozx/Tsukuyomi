@@ -14,8 +14,8 @@ import {
   buildBookContextSection,
   getSpecialInstructions,
   buildSpecialInstructionsSection,
-} from './utils/ai-task-helper';
-import { createUnifiedAbortController } from './utils/ai-task-helper';
+} from './utils';
+import { createUnifiedAbortController } from './utils';
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueCharactersInText, findUniqueTermsInText } from 'src/utils/text-matcher';

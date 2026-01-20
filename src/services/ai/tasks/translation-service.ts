@@ -38,7 +38,7 @@ import {
   markProcessedParagraphsFromMap,
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
-} from './utils/ai-task-helper';
+} from './utils';
 import {
   getSymbolFormatRules,
   getDataManagementRules,

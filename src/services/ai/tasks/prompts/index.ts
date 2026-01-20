@@ -4,7 +4,7 @@
  */
 
 import type { AITool } from 'src/services/ai/types/ai-service';
-import type { TaskType, TaskStatus } from '../utils/ai-task-helper';
+import type { TaskType, TaskStatus } from '../utils';
 
 function getToolNames(tools?: AITool[]): string[] {
   if (!tools || tools.length === 0) return [];
@@ -326,29 +326,4 @@ export function getChunkingInstructions(taskType: TaskType): string {
 - **只需关注当前块**：你只需要处理系统当前提供的文本块，不要考虑其他块的内容
 - **完成当前块后**：当前块完成后（状态设为 "end"），系统会自动提供下一个块
 - **不要提前处理**：不要尝试获取或处理尚未提供的块，专注于完成当前块的所有段落${taskLabel}`;
-}
-
-// ============================================================================
-// 保留旧函数名以保持向后兼容性（内部调用新的合并函数）
-// ============================================================================
-
-/**
- * @deprecated 使用 getDataManagementRules() 替代
- */
-export function getHonorificWorkflowRules(): string {
-  return getDataManagementRules();
-}
-
-/**
- * @deprecated 使用 getDataManagementRules() 替代
- */
-export function getTerminologyWorkflowRules(): string {
-  return ''; // 已合并到 getDataManagementRules
-}
-
-/**
- * @deprecated 使用 getDataManagementRules() 替代
- */
-export function getCharacterWorkflowRules(): string {
-  return ''; // 已合并到 getDataManagementRules
 }

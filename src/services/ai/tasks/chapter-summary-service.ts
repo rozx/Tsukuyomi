@@ -8,7 +8,7 @@ import {
   createUnifiedAbortController,
   getAIModelForTask,
   type AIProcessingStore,
-} from './utils/ai-task-helper';
+} from './utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
