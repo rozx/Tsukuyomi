@@ -10,6 +10,11 @@ import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
 import { MemoryService } from 'src/services/memory-service';
 import { useContextStore } from 'src/stores/context';
+import {
+  buildExplainPrompt,
+  buildExplainMemorySummary,
+  buildExplainMemoryContent,
+} from './prompts';
 
 /**
  * 解释服务选项
@@ -78,24 +83,6 @@ export interface ExplainResult {
  * 使用 AI 助手服务解释日文文本的含义、语法和文化背景
  */
 export class ExplainService {
-  private static buildExplainMemorySummary(selectedText: string): string {
-    const trimmed = selectedText.trim().replace(/\s+/g, ' ');
-    const preview = trimmed.length > 30 ? `${trimmed.slice(0, 30)}...` : trimmed;
-    return `文本解释：${preview}`;
-  }
-
-  private static buildExplainMemoryContent(selectedText: string, explanation: string): string {
-    const original = selectedText.trim();
-    const explanationTrimmed = explanation.trim();
-    const originalShort = original.length > 200 ? `${original.slice(0, 200)}...` : original;
-    const explanationShort =
-      explanationTrimmed.length > 600
-        ? `${explanationTrimmed.slice(0, 600)}...`
-        : explanationTrimmed;
-
-    return `原文（节选）：\n${originalShort}\n\n解释要点（节选）：\n${explanationShort}`;
-  }
-
   /**
    * 准备文本发送到助手输入框
    * @param text 要发送的文本
@@ -111,7 +98,7 @@ export class ExplainService {
    * @returns 解释提示词
    */
   static generatePrompt(selectedText: string): string {
-    return `请简短精要地解释以下日文文本的含义、语法和文化背景，和这本书的关联或者意义：\n\n${selectedText}`;
+    return buildExplainPrompt(selectedText);
   }
 
   /**
@@ -199,8 +186,8 @@ export class ExplainService {
       const context = contextStore.getContext;
       if (context.currentBookId) {
         try {
-          const memorySummary = this.buildExplainMemorySummary(selectedText);
-          const memoryContent = this.buildExplainMemoryContent(selectedText, result.text);
+          const memorySummary = buildExplainMemorySummary(selectedText);
+          const memoryContent = buildExplainMemoryContent(selectedText, result.text);
 
           // 先尝试找到并更新已有“文本解释”记忆（避免重复创建）
           const candidates = await MemoryService.searchMemoriesByKeywords(context.currentBookId, [

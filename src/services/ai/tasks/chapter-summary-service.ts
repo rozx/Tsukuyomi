@@ -15,6 +15,7 @@ import { useBooksStore } from 'src/stores/books';
 import type { Volume } from 'src/models/novel';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import type { ChatMessage } from 'src/services/ai/types/ai-service';
+import { buildChapterSummarySystemPrompt, buildChapterSummaryUserPrompt } from './prompts';
 
 export interface ChapterSummaryServiceOptions {
   bookId: string;
@@ -102,14 +103,7 @@ export class ChapterSummaryService {
       const service = AIServiceFactory.getService(model.provider);
 
       // 构建提示词
-      const systemPrompt = `你是一位专业的轻小说编辑。请阅读以下章节内容（可能是日语原文），并用简体中文生成一个简洁的章节摘要。
-要求：
-1. 概括主要剧情发展。
-2. 提及登场的关键角色。
-3. 语言通顺流畅，字数控制在 200 字以内。
-4.【重要】相关角色以及术语已提供。
-5.【重要】最终只返回摘要内容，不要包含任何其他解释或前言。
-`;
+      const systemPrompt = buildChapterSummarySystemPrompt();
 
       // 查找相关术语和角色
       const foundTerms = findUniqueTermsInText(content, novel.terminologies || []);
@@ -164,7 +158,11 @@ export class ChapterSummaryService {
         }
       }
 
-      const userPrompt = `章节标题：${chapterTitle || '未知'}${contextInfo}\n\n内容：\n${content}`;
+      const userPrompt = buildChapterSummaryUserPrompt({
+        chapterTitle,
+        contextInfo,
+        content,
+      });
 
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPrompt },
@@ -187,7 +185,7 @@ export class ChapterSummaryService {
         {
           messages,
         },
-        (chunk: TextGenerationChunk) => {
+        (_chunk: TextGenerationChunk) => {
           // 流式输出处理（可选）
         },
       );

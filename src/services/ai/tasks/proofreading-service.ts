@@ -39,13 +39,7 @@ import {
   isSkipAskUserEnabled,
   buildFormattedChunks,
 } from './utils';
-import {
-  getSymbolFormatRules,
-  getOutputFormatRules,
-  getToolUsageInstructions,
-  getMemoryWorkflowRules,
-  getDataManagementRules,
-} from './prompts';
+import { buildProofreadingSystemPrompt } from './prompts';
 
 /**
  * 校对服务选项
@@ -280,29 +274,14 @@ export class ProofreadingService {
       // 构建章节上下文信息
       const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
-      const systemPrompt = `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
-
-【校对检查项】[警告] 只返回有变化的段落
-1. **文字**: 错别字、标点（全角）、语法、词语用法
-2. **内容**: 人名/地名/称谓一致性、时间线/逻辑、设定准确性
-3. **准确性**: 保持原意，避免误译、漏译、增译。并根据上下文找出最准确的表达。
-4. **格式**: 段落格式、数字用法统一
-5. **完整翻译**: [警告] 检查并修正任何明显未翻译的日语原文（尤其是假名、助词、语尾等），确保所有内容都已翻译为中文
-
-【校对原则】
-- **最小改动**: 只修正错误，保持原意和风格
-- **一致性优先**: 术语/角色名全文统一，用工具检查历史翻译
-- **参考原文**: 确保翻译准确，特别是标点符号。
-- ${getSymbolFormatRules()}
-
-${getDataManagementRules()}
-
-${getToolUsageInstructions('proofreading', tools, skipAskUser)}
-
-${getMemoryWorkflowRules()}
-
-${getOutputFormatRules('proofreading')}
-`;
+      const systemPrompt = buildProofreadingSystemPrompt({
+        todosPrompt,
+        bookContextSection,
+        chapterContextSection,
+        specialInstructionsSection,
+        tools,
+        skipAskUser,
+      });
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
