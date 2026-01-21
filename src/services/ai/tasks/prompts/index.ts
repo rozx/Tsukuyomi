@@ -140,7 +140,8 @@ export function getDataManagementRules(): string {
 **角色管理**: 新角色先检查是否为已有角色别名，描述需简短且只包含重要信息（如性别/关系/关键特征）
 
 [警告] **保持数据最新**（必须执行）:
-- 翻译过程中发现术语/角色**新信息**（如：新别名、关系变化、能力揭示、性格细节、人物全名的出现）→ **立即更新** \`update_term\`/\`update_character\`
+- 发现**人物全名**（如当前角色使用了简称/姓氏，但原文出现了全名）→ **必须立即更新**角色设置：将主名称更新为全名，原名称移入别名
+- 翻译过程中发现术语/角色**新信息**（如：新别名、关系变化、能力揭示、性格细节）→ **立即更新** \`update_term\`/\`update_character\`
 - 发现描述**过时或不完整** → **立即补充**最新重要信息到description/speaking_style（[警告] 描述应简短，只包含重要信息）
 - 发现翻译**不一致或有误**或**包含多个选项**（如"路人角色／龙套"）→ **立即修正**为单一翻译
 - 新出现的术语/角色 → 先检查是否已存在，不存在则**立即创建**`;
@@ -307,23 +308,4 @@ export function getToolUsageInstructions(
 - **优先级**：能用本地数据工具解决就不要依赖外部信息；如本次提供了网络工具，仅用于外部知识检索
 ${askLine ? askLine + '\n' : ''}- **最小必要**：只在确有需要时调用工具，拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;
-}
-
-/**
- * 获取分块处理说明
- * 告知AI系统将分块提供章节内容，只需关注当前块
- */
-export function getChunkingInstructions(taskType: TaskType): string {
-  const taskLabels = {
-    translation: '翻译',
-    polish: '润色',
-    proofreading: '校对',
-    chapter_summary: '章节摘要',
-  };
-  const taskLabel = taskLabels[taskType];
-  return `【分块处理说明】
-[警告] **重要**：系统会将当前章节分成多个块（chunks）依次提供给你
-- **只需关注当前块**：你只需要处理系统当前提供的文本块，不要考虑其他块的内容
-- **完成当前块后**：当前块完成后（状态设为 "end"），系统会自动提供下一个块
-- **不要提前处理**：不要尝试获取或处理尚未提供的块，专注于完成当前块的所有段落${taskLabel}`;
 }

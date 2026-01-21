@@ -43,6 +43,7 @@ import {
   getOutputFormatRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
+  getDataManagementRules,
 } from './prompts';
 
 /**
@@ -241,6 +242,9 @@ export class PolishService {
 5. **一致性**: 术语/角色名保持全文统一，参考翻译历史混合最佳表达。并且确保前后段落风格一致，标点符号统一。
 6. **完整翻译检查**: [警告] 检查并修正任何明显未翻译的日语原文（尤其是假名、助词、语尾等），确保所有内容都已翻译为中文
 7. ${getSymbolFormatRules()}
+
+${getDataManagementRules()}
+
 ${getToolUsageInstructions('polish', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}

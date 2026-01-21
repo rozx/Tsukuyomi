@@ -44,6 +44,7 @@ import {
   getOutputFormatRules,
   getToolUsageInstructions,
   getMemoryWorkflowRules,
+  getDataManagementRules,
 } from './prompts';
 
 /**
@@ -293,6 +294,8 @@ export class ProofreadingService {
 - **一致性优先**: 术语/角色名全文统一，用工具检查历史翻译
 - **参考原文**: 确保翻译准确，特别是标点符号。
 - ${getSymbolFormatRules()}
+
+${getDataManagementRules()}
 
 ${getToolUsageInstructions('proofreading', tools, skipAskUser)}
 

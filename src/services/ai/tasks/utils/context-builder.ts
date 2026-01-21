@@ -1,6 +1,5 @@
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
-import { getChunkingInstructions } from '../prompts';
 import { getPostToolCallReminder } from './todo-helper';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
@@ -59,10 +58,8 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
  */
 export function buildInitialUserPromptBase(taskType: TaskType): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
-  const chunkingInstructions = getChunkingInstructions(taskType);
-  return `开始${taskLabel}。
-
-${chunkingInstructions}`;
+  // getChunkingInstructions is removed
+  return `开始${taskLabel}。`;
 }
 
 /**
