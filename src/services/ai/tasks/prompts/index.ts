@@ -10,6 +10,7 @@ export * from './polish';
 export * from './chapter-summary';
 export * from './term-translation';
 export * from './explain';
+export * from './assistant';
 
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { TaskType, TaskStatus } from '../utils';
@@ -242,7 +243,9 @@ export function getToolUsageInstructions(
   skipAskUser?: boolean,
 ): string {
   const taskLabel = TASK_LABELS[taskType];
-  const askUserLine = !skipAskUser ? '- **询问**: 用 `ask_user` 一次性解决所有疑问\n' : '';
+  const askUserLine = !skipAskUser
+    ? '- **询问**: 当有需要用户确认/做决定时，用 `ask_user_batch` 一次性解决所有疑问\n'
+    : '';
   return `${getToolScopeRules(tools)}
 
 【工具使用建议】
