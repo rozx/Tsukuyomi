@@ -329,7 +329,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'search_chapter_summaries',
         description:
-          '通过关键词搜索章节摘要。当需要根据剧情内容、特定事件或人物行为查找对应章节时使用此工具。返回包含关键词的章节列表（含ID、标题、摘要片段）。',
+          '通过关键词搜索章节摘要。当需要根据剧情内容、特定事件或人物行为查找对应章节时使用此工具。返回包含关键词的章节列表（含ID、标题、摘要片段），使用中文搜索。',
         parameters: {
           type: 'object',
           properties: {
@@ -368,7 +368,7 @@ export const bookTools: ToolDefinition[] = [
         // 报告读取操作
         if (onAction) {
           onAction({
-            type: 'read',
+            type: 'search',
             entity: 'chapter',
             data: {
               book_id: bookId,

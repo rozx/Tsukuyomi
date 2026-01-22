@@ -11,7 +11,16 @@ export const MESSAGE_LIMIT_THRESHOLD = 180; // 当达到 180 条消息时触发�
  * 操作信息（用于在消息中标记 CRUD 操作）
  */
 export interface MessageAction {
-  type: 'create' | 'update' | 'delete' | 'web_search' | 'web_fetch' | 'read' | 'navigate' | 'ask';
+  type:
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'web_search'
+    | 'web_fetch'
+    | 'read'
+    | 'navigate'
+    | 'ask'
+    | 'search';
   entity:
     | 'term'
     | 'character'

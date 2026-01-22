@@ -30,7 +30,14 @@ import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { CharacterSetting, Alias, Terminology, Translation, Novel } from 'src/models/novel';
+import type {
+  CharacterSetting,
+  Alias,
+  Terminology,
+  Translation,
+  Novel,
+  Chapter,
+} from 'src/models/novel';
 import {
   createMessageActionFromActionInfo,
   getActionDetails,
@@ -752,22 +759,125 @@ const contextInfo = computed(() => {
   const context = contextStore.getContext;
   const info: string[] = [];
 
+  let currentChapter: Chapter | undefined;
+  let currentBook: Novel | undefined;
+
   if (context.currentBookId) {
     const book = booksStore.getBookById(context.currentBookId);
     if (book) {
+      currentBook = book;
       info.push(`书籍：${book.title}`);
+
+      // 查找当前章节对象
+      if (context.currentChapterId && book.volumes) {
+        for (const volume of book.volumes) {
+          if (volume.chapters) {
+            const found = volume.chapters.find((c) => c.id === context.currentChapterId);
+            if (found) {
+              currentChapter = found;
+              break;
+            }
+          }
+        }
+      }
     } else {
       info.push('当前书籍');
     }
   }
+
   if (context.currentChapterId) {
-    info.push('当前章节');
+    if (currentChapter) {
+      const title = getChapterDisplayTitle(currentChapter, currentBook);
+      info.push(title ? `章节：${title}` : '当前章节');
+    } else {
+      info.push('当前章节');
+    }
   }
+
   if (context.selectedParagraphId) {
-    info.push('当前段落');
+    let paraIndex = -1;
+    if (currentChapter && currentChapter.content) {
+      paraIndex = currentChapter.content.findIndex((p) => p.id === context.selectedParagraphId);
+    }
+
+    if (paraIndex >= 0) {
+      // 显示 1-based 索引
+      info.push(`段落：#${paraIndex + 1}`);
+    } else {
+      info.push('当前段落');
+    }
   }
 
   return info.length > 0 ? info.join(' | ') : '无上下文';
+});
+
+// 会话统计信息
+// 会话统计信息
+const sessionStats = computed(() => {
+  if (messages.value.length === 0) return null;
+
+  // 计算距离上次总结的消息数量
+  const currentSession = chatSessionsStore.currentSession;
+  const cutoff = currentSession?.lastSummarizedMessageIndex ?? 0;
+
+  // 过滤掉不计数的系统消息/辅助消息，以及工具调用消息
+  // 只统计：用户消息 + 包含实际内容的助手消息（非纯工具调用）
+  const messagesToCount = messages.value.slice(cutoff).filter((msg) => {
+    // 1. 过滤总结相关和辅助消息
+    if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
+
+    // 2. 统计用户消息
+    if (msg.role === 'user') return true;
+
+    // 3. 统计助手消息，但排除纯工具调用
+    if (msg.role === 'assistant') {
+      // 检查是否包含 actions（即工具调用结果）
+      if (msg.actions && msg.actions.length > 0) {
+        // 如果同时有大量文本内容，可能需要统计，但根据 "tool call shouldn't take count"
+        // 我们假设只要包含 actions 或者是为了由于 tools 产生的 tool-use 消息，就不计入 "对话轮数/消息限制"
+        return false;
+      }
+      // 排除那些 content 为空或只包含 "（调用工具）" 等占位符的消息
+      if (!msg.content || msg.content === '（调用工具）') return false;
+
+      return true;
+    }
+
+    return false;
+  });
+
+  const currentCount = messagesToCount.length;
+
+  // 估算 Token 数量
+  const msgsForCount = messages.value.map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content || '',
+  }));
+  // 使用 any 类型转换以兼容 AIChatMessage 类型
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tokens = AssistantService.estimateTokenCount(msgsForCount as any[]);
+
+  const maxTokens = assistantModel.value?.contextWindow || 0;
+  let tokenPercentage = 0;
+
+  if (maxTokens > 0) {
+    tokenPercentage = Math.round((tokens / maxTokens) * 100);
+  }
+
+  // 计算消息数量进度百分比
+  const msgPercentage = Math.min(Math.round((currentCount / MESSAGE_LIMIT_THRESHOLD) * 100), 100);
+
+  // 取两者的最大值作为总体使用百分比
+  const maxPercentage = Math.max(tokenPercentage, msgPercentage);
+
+  return {
+    currentCount,
+    limit: MESSAGE_LIMIT_THRESHOLD,
+    tokens,
+    maxTokens,
+    // 显示 "上下文使用: 45% (80/180 消息 | 4000 Tokens)"
+    summary: `上下文使用: ${maxPercentage}% (${currentCount}/${MESSAGE_LIMIT_THRESHOLD} 消息 | ${tokens} Tokens)`,
+  };
 });
 
 // 滚动到底部
@@ -1244,8 +1354,8 @@ const sendMessage = async () => {
           return;
         }
 
-        // 处理读取操作（不显示 toast 通知，但会在消息中显示操作标签）
-        if (action.type === 'read') {
+        // 处理读取和搜索操作（不显示 toast 通知，但会在消息中显示操作标签）
+        if (action.type === 'read' || action.type === 'search') {
           return;
         }
 
@@ -2081,6 +2191,9 @@ const sendMessage = async () => {
         },
         activeTasks: aiProcessingStore.activeTasks,
       },
+      onTaskCreated: (taskId) => {
+        currentTaskId.value = taskId;
+      },
     });
 
     // 保存 taskId（从 result 中获取，因为任务是在 AssistantService 内部创建的）
@@ -2336,6 +2449,9 @@ const sendMessage = async () => {
             },
             activeTasks: aiProcessingStore.activeTasks,
           },
+          onTaskCreated: (taskId) => {
+            currentTaskId.value = taskId;
+          },
         });
 
         // 处理继续对话的结果
@@ -2516,6 +2632,25 @@ const sendMessage = async () => {
     scrollToBottom();
     // 聚焦输入框
     focusInput();
+  }
+};
+
+// 停止生成
+const stopGeneration = async () => {
+  if (currentTaskId.value) {
+    try {
+      await aiProcessingStore.stopTask(currentTaskId.value);
+    } catch (e) {
+      console.error('停止任务失败 (可能已完成)', e);
+    }
+    isSending.value = false;
+    currentTaskId.value = null;
+    toast.add({
+      severity: 'info',
+      summary: '操作',
+      detail: '已停止生成',
+      life: 3000,
+    });
   }
 };
 
@@ -2767,9 +2902,13 @@ const getActionDetailsWithContext = (action: MessageAction) => {
 };
 
 // 切换操作详情 Popover
-const toggleActionPopover = (event: Event, action: MessageAction, message: ChatMessage) => {
-  const actionKey = `${message.id}-${action.timestamp}`;
-  const popoverRef = actionPopoverRefs.value.get(actionKey);
+const toggleActionPopover = (
+  event: Event,
+  action: MessageAction,
+  message: ChatMessage,
+  popoverKey: string,
+) => {
+  const popoverRef = actionPopoverRefs.value.get(popoverKey);
 
   if (popoverRef) {
     hoveredAction.value = { action, message };
@@ -2778,9 +2917,12 @@ const toggleActionPopover = (event: Event, action: MessageAction, message: ChatM
 };
 
 // 处理鼠标离开事件，关闭 Popover
-const handleActionMouseLeave = (action: MessageAction, message: ChatMessage) => {
-  const actionKey = `${message.id}-${action.timestamp}`;
-  const popoverRef = actionPopoverRefs.value.get(actionKey);
+const handleActionMouseLeave = (
+  action: MessageAction,
+  message: ChatMessage,
+  popoverKey: string,
+) => {
+  const popoverRef = actionPopoverRefs.value.get(popoverKey);
 
   if (popoverRef) {
     popoverRef.hide();
@@ -3336,6 +3478,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           item.action.type === 'delete',
                         'bg-purple-500/25 text-purple-200 border border-purple-500/40 hover:bg-purple-500/35':
                           item.action.type === 'web_search',
+                        'bg-fuchsia-500/25 text-fuchsia-200 border border-fuchsia-500/40 hover:bg-fuchsia-500/35':
+                          item.action.type === 'search',
                         'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/35':
                           item.action.type === 'web_fetch',
                         'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35':
@@ -3345,8 +3489,23 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         'bg-orange-500/25 text-orange-200 border border-orange-500/40 hover:bg-orange-500/35':
                           item.action.entity === 'todo',
                       }"
-                      @mouseenter="(e) => toggleActionPopover(e, item.action!, message)"
-                      @mouseleave="() => handleActionMouseLeave(item.action!, message)"
+                      @mouseenter="
+                        (e) =>
+                          toggleActionPopover(
+                            e,
+                            item.action!,
+                            message,
+                            `${item.messageId}-${item.action!.timestamp}-${itemIdx}`,
+                          )
+                      "
+                      @mouseleave="
+                        () =>
+                          handleActionMouseLeave(
+                            item.action!,
+                            message,
+                            `${item.messageId}-${item.action!.timestamp}-${itemIdx}`,
+                          )
+                      "
                     >
                       <i
                         class="text-sm"
@@ -3354,7 +3513,8 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                           'pi pi-plus-circle': item.action.type === 'create',
                           'pi pi-pencil': item.action.type === 'update',
                           'pi pi-trash': item.action.type === 'delete',
-                          'pi pi-search': item.action.type === 'web_search',
+                          'pi pi-search':
+                            item.action.type === 'web_search' || item.action.type === 'search',
                           'pi pi-link': item.action.type === 'web_fetch',
                           'pi pi-eye': item.action.type === 'read',
                           'pi pi-arrow-right': item.action.type === 'navigate',
@@ -3371,13 +3531,15 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                 ? '删除'
                                 : item.action.type === 'web_search'
                                   ? '网络搜索'
-                                  : item.action.type === 'web_fetch'
-                                    ? '网页获取'
-                                    : item.action.type === 'read'
-                                      ? '读取'
-                                      : item.action.type === 'navigate'
-                                        ? '导航'
-                                        : ''
+                                  : item.action.type === 'search'
+                                    ? '搜索'
+                                    : item.action.type === 'web_fetch'
+                                      ? '网页获取'
+                                      : item.action.type === 'read'
+                                        ? '读取'
+                                        : item.action.type === 'navigate'
+                                          ? '导航'
+                                          : ''
                         }}
                         {{
                           item.action.entity === 'term'
@@ -3585,6 +3747,21 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         </span>
                         <span
                           v-else-if="
+                            item.action.type === 'search' &&
+                            item.action.tool_name === 'search_chapter_summaries'
+                          "
+                          class="font-semibold text-xs"
+                        >
+                          搜索摘要
+                          <span
+                            v-if="item.action.keywords && item.action.keywords.length > 0"
+                            class="opacity-70 ml-1"
+                          >
+                            : {{ item.action.keywords.join('、') }}
+                          </span>
+                        </span>
+                        <span
+                          v-else-if="
                             item.action.type === 'read' &&
                             item.action.tool_name === 'search_paragraphs_by_regex' &&
                             item.action.regex_pattern
@@ -3737,7 +3914,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                     <Popover
                       :ref="
                         (el) => {
-                          const actionKey = `${item.messageId}-${item.action!.timestamp}`;
+                          const actionKey = `${item.messageId}-${item.action!.timestamp}-${itemIdx}`;
                           if (el) {
                             actionPopoverRefs.set(
                               actionKey,
@@ -3772,13 +3949,15 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                                     ? '删除'
                                     : item.action.type === 'web_search'
                                       ? '网络搜索'
-                                      : item.action.type === 'web_fetch'
-                                        ? '网页获取'
-                                        : item.action.type === 'read'
-                                          ? '读取'
-                                          : item.action.type === 'navigate'
-                                            ? '导航'
-                                            : ''
+                                      : item.action.type === 'search'
+                                        ? '搜索'
+                                        : item.action.type === 'web_fetch'
+                                          ? '网页获取'
+                                          : item.action.type === 'read'
+                                            ? '读取'
+                                            : item.action.type === 'navigate'
+                                              ? '导航'
+                                              : ''
                             }}
                             {{
                               item.action.entity === 'term'
@@ -3849,17 +4028,23 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           @keydown="handleKeydown"
         />
         <div class="flex items-center justify-between">
-          <span v-if="!assistantModel" class="text-xs text-moon-50">未配置助手模型</span>
-          <span v-else class="text-xs text-moon-50">{{
-            assistantModel.name || assistantModel.id
-          }}</span>
+          <div class="flex items-center gap-2 text-xs text-moon-50">
+            <span v-if="!assistantModel">未配置助手模型</span>
+            <span v-else>{{ assistantModel.name || assistantModel.id }}</span>
+            <i
+              v-if="sessionStats"
+              class="pi pi-chart-pie hover:text-moon-100 cursor-help transition-colors"
+              v-tooltip.top="sessionStats.summary"
+            ></i>
+          </div>
           <div class="flex items-center gap-2">
             <Button
-              :disabled="!inputMessage.trim() || isSending || !assistantModel"
-              label="发送"
-              icon="pi pi-send"
+              :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
+              :label="isSending ? '停止' : '发送'"
+              :icon="isSending ? 'pi pi-stop-circle' : 'pi pi-send'"
+              :severity="isSending ? 'danger' : 'primary'"
               size="small"
-              @click="sendMessage"
+              @click="isSending ? stopGeneration() : sendMessage()"
             />
           </div>
         </div>

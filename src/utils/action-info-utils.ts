@@ -17,6 +17,7 @@ export const ACTION_LABELS: Record<MessageAction['type'], string> = {
   read: '读取',
   navigate: '导航',
   ask: '提问',
+  search: '搜索',
 };
 
 /**
@@ -65,9 +66,7 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(actionName ? { name: actionName } : {}),
     timestamp: Date.now(),
     // 网络操作相关信息
-    ...(action.type === 'web_search' && 'query' in action.data
-      ? { query: action.data.query }
-      : {}),
+    ...(action.type === 'web_search' && 'query' in action.data ? { query: action.data.query } : {}),
     ...(action.type === 'web_fetch' && 'url' in action.data ? { url: action.data.url } : {}),
     // 翻译操作相关信息
     ...(action.entity === 'translation' &&
@@ -129,9 +128,7 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(action.type === 'read' && 'tool_name' in action.data
       ? { tool_name: action.data.tool_name }
       : {}),
-    ...(action.type === 'read' && 'book_id' in action.data
-      ? { book_id: action.data.book_id }
-      : {}),
+    ...(action.type === 'read' && 'book_id' in action.data ? { book_id: action.data.book_id } : {}),
     ...(action.type === 'read' && 'keywords' in action.data
       ? { keywords: action.data.keywords }
       : {}),
@@ -140,6 +137,16 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
       : {}),
     ...(action.type === 'read' && 'regex_pattern' in action.data
       ? { regex_pattern: action.data.regex_pattern }
+      : {}),
+    // 搜索操作相关信息
+    ...(action.type === 'search' && 'tool_name' in action.data
+      ? { tool_name: action.data.tool_name }
+      : {}),
+    ...(action.type === 'search' && 'keywords' in action.data
+      ? { keywords: action.data.keywords }
+      : {}),
+    ...(action.type === 'search' && 'book_id' in action.data
+      ? { book_id: action.data.book_id }
       : {}),
     // Memory 相关信息
     ...(action.entity === 'memory' && 'memory_id' in action.data
@@ -203,19 +210,13 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
         }
       : {}),
     // 章节更新相关信息
-    ...(action.type === 'update' &&
-    action.entity === 'chapter' &&
-    'old_title' in action.data
+    ...(action.type === 'update' && action.entity === 'chapter' && 'old_title' in action.data
       ? { old_title: action.data.old_title }
       : {}),
-    ...(action.type === 'update' &&
-    action.entity === 'chapter' &&
-    'new_title' in action.data
+    ...(action.type === 'update' && action.entity === 'chapter' && 'new_title' in action.data
       ? { new_title: action.data.new_title }
       : {}),
-    ...(action.type === 'update' &&
-    action.entity === 'chapter' &&
-    'tool_name' in action.data
+    ...(action.type === 'update' && action.entity === 'chapter' && 'tool_name' in action.data
       ? { tool_name: action.data.tool_name }
       : {}),
   };
@@ -256,8 +257,7 @@ export function getActionDetails(
     });
     for (const ans of answers) {
       const q = questions[ans.question_index] ?? `#${ans.question_index + 1}`;
-      const aPreview =
-        ans.answer.length > 120 ? ans.answer.substring(0, 120) + '...' : ans.answer;
+      const aPreview = ans.answer.length > 120 ? ans.answer.substring(0, 120) + '...' : ans.answer;
       details.push({
         label: `第 ${ans.question_index + 1} 题`,
         value: `${q} → ${aPreview}`,
@@ -541,7 +541,9 @@ export function getActionDetails(
         }
         if (book.description) {
           const preview =
-            book.description.length > 100 ? book.description.substring(0, 100) + '...' : book.description;
+            book.description.length > 100
+              ? book.description.substring(0, 100) + '...'
+              : book.description;
           details.push({
             label: '简介',
             value: preview,
@@ -779,6 +781,18 @@ export function getActionDetails(
     }
   }
 
+  // 处理搜索操作
+  if (action.type === 'search') {
+    if (action.tool_name === 'search_chapter_summaries') {
+      if (action.keywords && action.keywords.length > 0) {
+        details.push({
+          label: '搜索关键词',
+          value: action.keywords.join('、'),
+        });
+      }
+    }
+  }
+
   // 处理章节更新操作
   if (action.type === 'update' && action.entity === 'chapter') {
     if (action.tool_name === 'update_chapter_title') {
@@ -903,4 +917,3 @@ export function getActionDetails(
 
   return details;
 }
-

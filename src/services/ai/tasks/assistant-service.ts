@@ -22,6 +22,54 @@ import {
   SUMMARY_SYSTEM_PROMPT,
 } from './prompts';
 
+// 常量定义
+const DEFAULT_TOKEN_ESTIMATION_MULTIPLIER = 2.5;
+const MAX_TOOL_CALL_TURNS = 50;
+const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
+const SUMMARY_TEMPERATURE = 0.3;
+const DEFAULT_TEMPERATURE = 0.7;
+
+// 定义需要 bookId 的工具列表
+const TOOLS_REQUIRING_BOOK_ID = [
+  'create_term',
+  'get_term',
+  'update_term',
+  'delete_term',
+  'list_terms',
+  'search_terms_by_keywords',
+  'get_occurrences_by_keywords',
+  'create_character',
+  'get_character',
+  'update_character',
+  'delete_character',
+  'search_characters_by_keywords',
+  'list_characters',
+  'get_book_info',
+  'list_chapters',
+  'get_chapter_info',
+  'get_previous_chapter',
+  'get_next_chapter',
+  'update_chapter_title',
+  'get_paragraph_info',
+  'get_previous_paragraphs',
+  'get_next_paragraphs',
+  'find_paragraph_by_keywords',
+  'get_translation_history',
+  'add_translation',
+  'update_translation',
+  'remove_translation',
+  'select_translation',
+  'get_memory',
+  'list_memories',
+  'get_recent_memories',
+  'search_memory_by_keywords',
+  'create_memory',
+  'update_memory',
+  'delete_memory',
+  'navigate_to_chapter',
+  'navigate_to_paragraph',
+];
+
 /**
  * Assistant 服务选项
  */
@@ -78,6 +126,10 @@ export interface AssistantServiceOptions {
    * 当 UI 层已经处理了摘要时设置为 true，避免重复摘要
    */
   skipTokenLimitSummarization?: boolean;
+  /**
+   * 任务创建时的回调（可选），用于获取任务 ID
+   */
+  onTaskCreated?: (taskId: string) => void;
 }
 
 /**
@@ -131,7 +183,10 @@ export class AssistantService {
    * @param multiplier token 倍数（默认 2.5，更保守；原方法使用 2.0）
    * @returns 估算的 token 数
    */
-  private static estimateTokenCount(messages: ChatMessage[], multiplier: number = 2.5): number {
+  public static estimateTokenCount(
+    messages: ChatMessage[],
+    multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+  ): number {
     if (!messages || messages.length === 0) return 0;
     const totalContent = messages
       .map((msg) => {
@@ -140,7 +195,13 @@ export class AssistantService {
         }
         // 如果有 tool_calls，估算其 token 数
         if ('tool_calls' in msg && msg.tool_calls) {
-          return JSON.stringify(msg.tool_calls);
+          try {
+            return JSON.stringify(msg.tool_calls);
+          } catch (error) {
+            console.warn('Token count serialization error:', error);
+            // 避免循环引用导致序列化失败
+            return 'tool_calls_placeholder';
+          }
         }
         return '';
       })
@@ -171,9 +232,15 @@ export class AssistantService {
     // 保留 20% 用于响应生成，使用更保守的估算
     const availableTokens = Math.floor(maxTokens * 0.8);
 
-    // 估算系统提示词和用户消息的 token 数（使用更保守的倍数 2.5）
-    const systemTokens = this.estimateTokenCount([{ role: 'system', content: systemPrompt }], 2.5);
-    const userTokens = this.estimateTokenCount([{ role: 'user', content: userMessage }], 2.5);
+    // 估算系统提示词和用户消息的 token 数（使用更保守的倍数）
+    const systemTokens = this.estimateTokenCount(
+      [{ role: 'system', content: systemPrompt }],
+      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+    );
+    const userTokens = this.estimateTokenCount(
+      [{ role: 'user', content: userMessage }],
+      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+    );
 
     // 计算摘要可用的 token 数（预留 10% 缓冲）
     const summaryTokens = Math.floor((availableTokens - systemTokens - userTokens) * 0.9);
@@ -185,7 +252,10 @@ export class AssistantService {
     }
 
     // 如果摘要适合，直接返回
-    const currentSummaryTokens = this.estimateTokenCount([{ role: 'user', content: summary }], 2.5);
+    const currentSummaryTokens = this.estimateTokenCount(
+      [{ role: 'user', content: summary }],
+      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+    );
     if (currentSummaryTokens <= summaryTokens) {
       return summary;
     }
@@ -311,7 +381,7 @@ export class AssistantService {
       apiKey: model.apiKey,
       baseUrl: model.baseUrl,
       model: model.model,
-      temperature: 0.3, // 使用较低温度以获得更准确的总结
+      temperature: SUMMARY_TEMPERATURE, // 使用较低温度以获得更准确的总结
       maxTokens: model.maxTokens,
       signal,
     };
@@ -329,7 +399,7 @@ export class AssistantService {
           content: summaryPrompt,
         },
       ],
-      temperature: 0.3,
+      temperature: SUMMARY_TEMPERATURE,
       maxTokens: summaryMaxTokens,
     };
 
@@ -425,45 +495,7 @@ export class AssistantService {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
     // 定义需要 bookId 的工具列表
-    const toolsRequiringBookId = [
-      'create_term',
-      'get_term',
-      'update_term',
-      'delete_term',
-      'list_terms',
-      'search_terms_by_keywords',
-      'get_occurrences_by_keywords',
-      'create_character',
-      'get_character',
-      'update_character',
-      'delete_character',
-      'search_characters_by_keywords',
-      'list_characters',
-      'get_book_info',
-      'list_chapters',
-      'get_chapter_info',
-      'get_previous_chapter',
-      'get_next_chapter',
-      'update_chapter_title',
-      'get_paragraph_info',
-      'get_previous_paragraphs',
-      'get_next_paragraphs',
-      'find_paragraph_by_keywords',
-      'get_translation_history',
-      'add_translation',
-      'update_translation',
-      'remove_translation',
-      'select_translation',
-      'get_memory',
-      'list_memories',
-      'get_recent_memories',
-      'search_memory_by_keywords',
-      'create_memory',
-      'update_memory',
-      'delete_memory',
-      'navigate_to_chapter',
-      'navigate_to_paragraph',
-    ];
+    const toolsRequiringBookId = TOOLS_REQUIRING_BOOK_ID;
 
     const results = [];
     for (const toolCall of toolCalls) {
@@ -628,7 +660,7 @@ export class AssistantService {
       apiKey: model.apiKey,
       baseUrl: model.baseUrl,
       model: model.model,
-      temperature: model.temperature ?? 0.7,
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
       maxTokens: model.maxTokens,
       signal,
     };
@@ -637,7 +669,7 @@ export class AssistantService {
     const request: TextGenerationRequest = {
       messages,
       ...(tools.length > 0 ? { tools } : {}),
-      temperature: model.temperature ?? 0.7,
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
       maxTokens: model.maxTokens,
     };
 
@@ -702,7 +734,7 @@ export class AssistantService {
 
     // 处理工具调用循环
     let currentTurnCount = 0;
-    const MAX_TURNS = 50;
+    // const MAX_TURNS = 50; // 使用常量 MAX_TOOL_CALL_TURNS
     let finalResponseText = fullText;
 
     // 将第一次响应添加到历史
@@ -723,7 +755,7 @@ export class AssistantService {
     }
 
     // 工具调用循环
-    while (toolCalls.length > 0 && currentTurnCount < MAX_TURNS) {
+    while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
       currentTurnCount++;
 
       // 检查取消信号
@@ -754,7 +786,7 @@ export class AssistantService {
       const followUpRequest: TextGenerationRequest = {
         messages,
         ...(tools.length > 0 ? { tools } : {}),
-        temperature: model.temperature ?? 0.7,
+        temperature: model.temperature ?? DEFAULT_TEMPERATURE,
         maxTokens: model.maxTokens,
       };
 
@@ -882,6 +914,11 @@ export class AssistantService {
         message: '正在处理助手请求...',
       });
 
+      // 通知外部任务已创建
+      if (options.onTaskCreated) {
+        options.onTaskCreated(taskId);
+      }
+
       // 获取任务的 abortController signal（用于停止按钮）
       // 注意：这里需要从 store 中获取任务，因为 addTask 返回的是 id
       // 但任务对象（包含 abortController）在 store 的 activeTasks 中
@@ -955,7 +992,7 @@ export class AssistantService {
       if (model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS) {
         const userMessageTokens = this.estimateTokenCount(
           [{ role: 'user', content: userMessage }],
-          2.5,
+          DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
         );
         if (userMessageTokens >= model.maxTokens * 0.8) {
           // 用户消息本身就很大，直接返回错误
@@ -972,8 +1009,11 @@ export class AssistantService {
 
       // 检查 token 限制（在发送请求前）
       // 如果模型有 maxTokens 限制（不是 UNLIMITED_TOKENS），检查是否接近或超过限制
-      const estimatedTokens = this.estimateTokenCount(messages, 2.5);
-      const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
+      const estimatedTokens = this.estimateTokenCount(
+        messages,
+        DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+      );
+      // const TOKEN_THRESHOLD_RATIO = 0.85; // 使用常量
 
       // 检查是否超过模型的最大上下文长度（contextWindow）
       // 如果模型有 contextWindow，需要确保 estimatedTokens + maxTokens <= contextWindow
@@ -1063,7 +1103,10 @@ export class AssistantService {
       const aiService = AIServiceFactory.getService(model.provider);
 
       // 重新计算 estimatedTokens（可能在总结后消息已改变）
-      let finalEstimatedTokens = this.estimateTokenCount(messages, 2.5);
+      let finalEstimatedTokens = this.estimateTokenCount(
+        messages,
+        DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+      );
       // 再次检查并调整 maxTokens（如果消息在总结后仍然很大）
       let finalMaxTokens = effectiveMaxTokens;
       if (model.contextWindow && model.contextWindow > 0) {
@@ -1108,7 +1151,10 @@ export class AssistantService {
               const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
 
               reducedMessages = [systemMsg, ...recentMessages, userMsg];
-              finalEstimatedTokens = this.estimateTokenCount(reducedMessages, 2.5);
+              finalEstimatedTokens = this.estimateTokenCount(
+                reducedMessages,
+                DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+              );
               attemptCount++;
             }
 
@@ -1127,7 +1173,10 @@ export class AssistantService {
               } else {
                 reducedMessages.push({ role: 'user', content: userMessage });
               }
-              finalEstimatedTokens = this.estimateTokenCount(reducedMessages, 2.5);
+              finalEstimatedTokens = this.estimateTokenCount(
+                reducedMessages,
+                DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+              );
               console.warn(
                 `[AssistantService] 消息历史已减少到最小：只保留系统提示词和用户消息 (${finalEstimatedTokens} tokens)`,
               );
@@ -1139,7 +1188,10 @@ export class AssistantService {
 
             messages.length = 0;
             messages.push(...reducedMessages);
-            finalEstimatedTokens = this.estimateTokenCount(messages, 2.5);
+            finalEstimatedTokens = this.estimateTokenCount(
+              messages,
+              DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+            );
 
             // 重新计算可用的 maxTokens
             const newAvailableForCompletion = model.contextWindow - finalEstimatedTokens;
@@ -1159,7 +1211,7 @@ export class AssistantService {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
         model: model.model, // 使用实际的模型名称，而不是内部 ID
-        temperature: model.temperature ?? 0.7,
+        temperature: model.temperature ?? DEFAULT_TEMPERATURE,
         maxTokens: finalMaxTokens,
         signal: finalSignal,
       };
@@ -1168,7 +1220,7 @@ export class AssistantService {
       const request: TextGenerationRequest = {
         messages,
         ...(tools.length > 0 ? { tools } : {}),
-        temperature: model.temperature ?? 0.7,
+        temperature: model.temperature ?? DEFAULT_TEMPERATURE,
         maxTokens: finalMaxTokens,
       };
 
@@ -1245,7 +1297,7 @@ export class AssistantService {
 
       // 处理工具调用 - 使用循环处理，像 translation-service.ts 一样
       let currentTurnCount = 0;
-      const MAX_TURNS = 50; // 最大工具调用轮数
+      // const MAX_TURNS = 50; // 使用常量 MAX_TOOL_CALL_TURNS
       let finalResponseText = fullText;
 
       // 将第一次响应添加到历史
@@ -1268,7 +1320,7 @@ export class AssistantService {
       }
 
       // 工具调用循环
-      while (toolCalls.length > 0 && currentTurnCount < MAX_TURNS) {
+      while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
         currentTurnCount++;
 
         // 执行工具调用
@@ -1290,81 +1342,11 @@ export class AssistantService {
         // 将工具结果添加到历史
         messages.push(...toolResults);
 
-        // 检查 AI 的响应中是否提到了要修复/更新/修正等操作
-        const needsFixKeywords = [
-          '修复',
-          '更新',
-          '修正',
-          '修改',
-          '更改',
-          '调整',
-          '纠正',
-          '将其',
-          '将其更新',
-          '将其修正',
-          '将其修复',
-        ];
-        const mentionedFix = needsFixKeywords.some((keyword) =>
-          (finalResponseText || fullText).includes(keyword),
-        );
-
-        // 检查工具调用中是否只包含了查询工具，而没有更新工具
-        const queryOnlyTools = [
-          'get_character',
-          'get_term',
-          'list_characters',
-          'list_terms',
-          'search_characters_by_keywords',
-          'search_terms_by_keywords',
-          'get_book_info',
-          'get_chapter_info',
-          'get_previous_chapter',
-          'get_next_chapter',
-          'update_chapter_title',
-          'get_paragraph_info',
-          'get_previous_paragraphs',
-          'get_next_paragraphs',
-          'find_paragraph_by_keywords',
-          'get_occurrences_by_keywords',
-        ];
-        const hasUpdateTool = toolCalls.some((tc) => !queryOnlyTools.includes(tc.function.name));
-
-        // 检查是否错误地使用了 search_web 来修复本地数据
-        const hasWebSearch = toolCalls.some((tc) => tc.function.name === 'search_web');
-        const shouldUseLocalTools =
-          mentionedFix &&
-          (fullText.includes('角色') || fullText.includes('术语') || fullText.includes('格式'));
-
-        // 如果 AI 提到了要修复，但只调用了查询工具，添加提示
-        if (mentionedFix && !hasUpdateTool) {
-          let reminderContent = '';
-
-          if (hasWebSearch && shouldUseLocalTools) {
-            reminderContent =
-              '[警告] 重要错误：你刚才在响应中提到要修复/更新/修正角色或术语信息格式问题，但错误地使用了 search_web 工具来搜索网络。这是不对的！\n\n' +
-              '对于修复本地数据（角色信息、术语信息）的格式问题，你应该：\n' +
-              '1. 使用 get_character 或 search_characters_by_keywords 工具获取角色信息（如果是角色问题）\n' +
-              '2. 使用 get_term 或 search_terms_by_keywords 工具获取术语信息（如果是术语问题）\n' +
-              '3. 然后使用 update_character 或 update_term 工具直接修复格式问题\n\n' +
-              'search_web 工具只应用于需要外部知识的问题，不应用于修复本地数据格式。请立即使用正确的工具（get_character + update_character 或 get_term + update_term）来完成修复。';
-          } else {
-            reminderContent =
-              '[警告] 重要：你刚才在响应中提到要修复/更新/修正问题（例如："让我将其更新"、"我来修正"等），但只调用了查询工具来查看信息。现在你必须使用相应的更新工具（如 update_character、update_term 等）来实际执行修复操作，而不是仅仅告诉用户问题所在。请立即调用更新工具来完成修复。';
-          }
-
-          if (reminderContent) {
-            messages.push({
-              role: 'user',
-              content: reminderContent,
-            });
-          }
-        }
-
         // 再次调用 AI 获取回复
         const followUpRequest: TextGenerationRequest = {
           messages,
           ...(tools.length > 0 ? { tools } : {}),
-          temperature: model.temperature ?? 0.7,
+          temperature: model.temperature ?? DEFAULT_TEMPERATURE,
           maxTokens: model.maxTokens,
         };
 
