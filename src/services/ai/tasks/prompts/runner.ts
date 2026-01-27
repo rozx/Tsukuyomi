@@ -130,12 +130,26 @@ export function getWorkingContinuePrompt(taskType: TaskType): string {
  */
 export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: number[]): string {
   const taskLabel = TASK_LABELS[taskType];
-  const missingIndicesList = missingIndices.slice(0, 10).join(', ');
-  const hasMore = missingIndices.length > 10;
+
+  // Helper to format indices as ranges (e.g. "1, 2, 3" -> "1-3")
+  const ranges: string[] = [];
+  const sorted = [...missingIndices].sort((a, b) => a - b);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const start = sorted[i];
+    if (start === undefined) continue;
+    let end = start;
+    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) {
+      end = sorted[i + 1]!;
+      i++;
+    }
+    ranges.push(start === end ? `${start}` : `${start}-${end}`);
+  }
+
+  const missingIndicesList = ranges.join(', ');
 
   return (
-    `检测到以下段落（index）缺少${taskLabel}结果：${missingIndicesList}` +
-    `${hasMore ? ` 等 ${missingIndices.length} 个` : ''}。` +
+    `检测到以下段落（index）缺少${taskLabel}结果：${missingIndicesList}。` +
     `请将状态设置为 "working" 并补全这些段落的${taskLabel}（需包含 index）。`
   );
 }
