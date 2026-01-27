@@ -1,14 +1,4 @@
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type {
-  AIServiceConfig,
-  TextGenerationRequest,
-  TextGenerationStreamCallback,
-  AITool,
-  AIToolCall,
-  ChatMessage,
-} from 'src/services/ai/types/ai-service';
-import type { ActionInfo } from 'src/services/ai/tools/types';
-import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 
 /**
  * 任务类型

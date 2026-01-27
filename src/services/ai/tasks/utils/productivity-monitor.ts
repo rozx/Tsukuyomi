@@ -24,10 +24,8 @@ export const TOOL_CALL_LIMITS: Record<string, number> = {
   list_terms: 3, // 术语表最多调用 3 次
   list_characters: 3, // 角色表最多调用 3 次（允许在 planning、working、review 阶段各调用一次）
   list_memories: 3, // Memory 列表通常只需要调用一次
-  get_chapter_info: 2, // 章节信息最多调用 2 次
   get_book_info: 2, // 书籍信息最多调用 2 次
-  list_chapters: 1, // 章节列表最多调用 1 次
-  search_memory_by_keywords: 5, // 记忆搜索可以多调用几次
+  list_chapters: 2, // 章节列表最多调用 2 次
   default: Infinity, // 其他工具无限制
 };
 
