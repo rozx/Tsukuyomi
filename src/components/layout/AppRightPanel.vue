@@ -1364,6 +1364,11 @@ const sendMessage = async () => {
           return;
         }
 
+        // 处理用户问答操作（不显示 toast 通知，已有全屏 UI）
+        if (action.type === 'ask') {
+          return;
+        }
+
         // 处理待办事项操作（不显示 toast 通知，根据需求）
         if (action.entity === 'todo') {
           // 刷新待办事项列表
