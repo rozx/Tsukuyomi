@@ -778,11 +778,15 @@ class TaskLoopSession {
         : verifyParagraphCompleteness(paragraphIds, this.accumulatedParagraphs);
 
       if (!verification.allComplete && verification.missingIds.length > 0) {
+        const missingIndices = verification.missingIds
+          .map((id) => paragraphIds.indexOf(id))
+          .filter((idx) => idx !== -1);
+
         this.config.history.push({
           role: 'user',
           content:
             `${this.getCurrentStatusInfoMsg()}\n\n` +
-            getMissingParagraphsPrompt(taskType, verification.missingIds),
+            getMissingParagraphsPrompt(taskType, missingIndices),
         });
         this.currentStatus = 'working';
         this.consecutiveReviewCount = 0;
