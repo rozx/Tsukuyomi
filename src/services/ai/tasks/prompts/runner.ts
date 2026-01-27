@@ -128,15 +128,15 @@ export function getWorkingContinuePrompt(taskType: TaskType): string {
 /**
  * 获取复核阶段缺失段落提示
  */
-export function getMissingParagraphsPrompt(taskType: TaskType, missingIds: string[]): string {
+export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: number[]): string {
   const taskLabel = TASK_LABELS[taskType];
-  const missingIdsList = missingIds.slice(0, 10).join(', ');
-  const hasMore = missingIds.length > 10;
+  const missingIndicesList = missingIndices.slice(0, 10).join(', ');
+  const hasMore = missingIndices.length > 10;
 
   return (
-    `检测到以下段落缺少${taskLabel}：${missingIdsList}` +
-    `${hasMore ? ` 等 ${missingIds.length} 个` : ''}。` +
-    `请将状态设置为 "working" 并继续完成这些段落的${taskLabel}。`
+    `检测到以下段落（index）缺少${taskLabel}结果：${missingIndicesList}` +
+    `${hasMore ? ` 等 ${missingIndices.length} 个` : ''}。` +
+    `请将状态设置为 "working" 并补全这些段落的${taskLabel}（需包含 index）。`
   );
 }
 
