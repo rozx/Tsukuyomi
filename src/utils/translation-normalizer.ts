@@ -476,16 +476,23 @@ export function normalizeTranslationSymbols(
     normalized = normalized.replace(/[\u0020\u00A0\u3000]{2,}/g, '\u3000'); // 多个连续空格合并为单个全角空格
 
     // 9. 规范化破折号：统一各种破折号格式
-    // 先处理多个连续破折号的情况
-    normalized = normalized.replace(/—{3,}/g, '——'); // 3个或更多破折号转为双破折号
-    normalized = normalized.replace(/–{3,}/g, '——'); // 3个或更多短破折号转为双破折号
     // 将单个英文破折号（—、–）转换为中文破折号（——）
-    // 使用临时标记避免重复处理
-    const tempMarker = '\uE000'; // 使用私有使用区字符作为临时标记
-    normalized = normalized.replace(/——/g, tempMarker); // 临时标记双破折号
+    // 使用临时标记保护 2 个或更多的连续破折号，避免被重复处理
+    const dashMarker = '\uE004'; // 使用私有使用区字符作为临时标记（破折号专用）
+    const dashPlaceholders: string[] = [];
+    // 保护 2 个或更多的连续破折号
+    normalized = normalized.replace(/—{2,}/g, (match) => {
+      const placeholder = `${dashMarker}${dashPlaceholders.length}${dashMarker}`;
+      dashPlaceholders.push(match);
+      return placeholder;
+    });
     normalized = normalized.replace(/—/g, '——'); // 单个 — 转为 ——
     normalized = normalized.replace(/–/g, '——'); // 单个 – 转为 ——
-    normalized = normalized.replace(new RegExp(tempMarker, 'g'), '——'); // 恢复双破折号
+    // 恢复被保护的连续破折号
+    dashPlaceholders.forEach((dashes, index) => {
+      const placeholder = `${dashMarker}${index}${dashMarker}`;
+      normalized = normalized.replace(placeholder, dashes);
+    });
     // 注意：单个 - 已经在 normalizeTranslationQuotes 中处理为全角 －
 
     // 10. 规范化书名号：确保使用正确的书名号

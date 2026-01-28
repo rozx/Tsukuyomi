@@ -117,9 +117,10 @@ describe('normalizeTranslationSymbols', () => {
   });
 
   test('应该规范化破折号', () => {
-    expect(normalizeTranslationSymbols('他说—这是测试')).toBe('他说——这是测试');
-    expect(normalizeTranslationSymbols('他说–这是测试')).toBe('他说——这是测试');
+    expect(normalizeTranslationSymbols('他说—这是测试')).toBe('他说——这是测试'); // 单个em dash转为双破折号
+    expect(normalizeTranslationSymbols('他说–这是测试')).toBe('他说——这是测试'); // 单个en dash转为双破折号
     expect(normalizeTranslationSymbols('他说——这是测试')).toBe('他说——这是测试'); // 已经是双破折号，保持不变
+    expect(normalizeTranslationSymbols('他说————这是测试')).toBe('他说————这是测试'); // 4个破折号保留
   });
 
   test('应该规范化省略号', () => {
@@ -203,7 +204,8 @@ describe('normalizeTranslationSymbols', () => {
   });
 
   test('应该处理多个连续破折号', () => {
-    expect(normalizeTranslationSymbols('他说———')).toBe('他说——'); // 多个破折号应该被处理
+    expect(normalizeTranslationSymbols('他说———')).toBe('他说———'); // 3个及以上破折号应被保留
+    expect(normalizeTranslationSymbols('他说————')).toBe('他说————'); // 4个破折号应被保留
   });
 
   test('应该处理书名号中的内容', () => {
