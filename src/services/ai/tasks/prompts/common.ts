@@ -186,7 +186,11 @@ export function getMemoryWorkflowRules(): string {
  */
 export function getTodoToolsDescription(taskType: TaskType): string {
   const taskLabel = TASK_LABELS[taskType];
-  return `**待办管理**: 复杂任务用 \`create_todo\` 创建详细任务（如"${taskLabel}第1-5段"）`;
+  return `**待办管理**:
+  - 复杂任务用 \`create_todo\` 创建详细任务（如"${taskLabel}第1-5段"）
+  - 简单任务直接处理，无需创建待办
+  - 任务完成时用 \`mark_todo_done\` 标记完成， 无需删除
+  `;
 }
 
 /**
