@@ -1,5 +1,5 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
-import type { ActionInfo, ToolDefinition } from './types';
+import type { ActionInfo, ToolDefinition, ChunkBoundaries } from './types';
 import type { ToastCallback } from './toast-helper';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
@@ -209,6 +209,7 @@ export class ToolRegistry {
     onToast?: ToastCallback,
     taskId?: string,
     sessionId?: string,
+    paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -246,6 +247,16 @@ export class ToolRegistry {
         argsDisplay,
       );
 
+      // 构建块边界信息（如果提供了 paragraphIds）
+      let chunkBoundaries: ChunkBoundaries | undefined;
+      if (paragraphIds && paragraphIds.length > 0) {
+        chunkBoundaries = {
+          allowedParagraphIds: new Set(paragraphIds),
+          firstParagraphId: paragraphIds[0]!,
+          lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
+        };
+      }
+
       // 将 taskId 和 sessionId 传递给工具上下文（由服务层自动提供）
       const result = await tool.handler(args, {
         ...(bookId ? { bookId } : {}),
@@ -253,6 +264,7 @@ export class ToolRegistry {
         ...(sessionId ? { sessionId } : {}),
         ...(onAction ? { onAction } : {}),
         ...(onToast ? { onToast } : {}),
+        ...(chunkBoundaries ? { chunkBoundaries } : {}),
       });
 
       // 记录工具调用成功

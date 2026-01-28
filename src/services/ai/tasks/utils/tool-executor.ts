@@ -20,6 +20,7 @@ import type { AIProcessingStore } from './task-types';
 
 /**
  * 执行工具调用
+ * @param paragraphIds 当前块的段落 ID 列表，用于边界限制（可选）
  */
 export async function executeToolCall(
   toolCall: AIToolCall,
@@ -28,6 +29,7 @@ export async function executeToolCall(
   onToast: ToastCallback | undefined,
   taskId: string | undefined,
   aiProcessingStore: AIProcessingStore | undefined,
+  paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
 ): Promise<void> {
   if (aiProcessingStore && taskId) {
     void aiProcessingStore.appendThinkingMessage(
@@ -36,13 +38,15 @@ export async function executeToolCall(
     );
   }
 
-  // 执行工具
+  // 执行工具，传入段落 ID 列表以启用块边界限制
   const toolResult = await ToolRegistry.handleToolCall(
     toolCall,
     bookId,
     handleAction,
     onToast,
     taskId,
+    undefined, // sessionId 不需要
+    paragraphIds,
   );
 
   if (aiProcessingStore && taskId) {

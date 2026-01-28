@@ -97,6 +97,7 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
     } = { paragraphs: [] };
 
     let hasParsedAny = false;
+    let invalidStatusValue: string | undefined;
 
     // 遍历所有找到的 JSON 对象
     for (const data of jsonMatches) {
@@ -108,6 +109,9 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
         const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
         if (validStatuses.includes(statusValue as TaskStatus)) {
           finalStatus = statusValue as TaskStatus;
+        } else {
+          // 记录无效的状态值
+          invalidStatusValue = statusValue;
         }
       }
 
@@ -150,6 +154,12 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
     if (!finalStatus) {
       if (accumulatedContent.paragraphs.length > 0 || accumulatedContent.titleTranslation) {
         finalStatus = 'working';
+      } else if (invalidStatusValue) {
+        // 如果检测到无效的状态值，返回明确的错误信息
+        return {
+          status: 'working',
+          error: `无效的状态值: "${invalidStatusValue}"。有效的状态值为：planning、working、review、end。`,
+        };
       } else {
         return {
           status: 'working',

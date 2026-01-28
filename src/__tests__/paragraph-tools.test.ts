@@ -1,6 +1,6 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-import { containsWholeKeyword } from '../services/ai/tools/paragraph-tools';
+import { containsWholeKeyword, replaceWholeKeyword } from '../services/ai/tools/paragraph-tools';
 import { paragraphTools } from '../services/ai/tools/paragraph-tools';
 import { ChapterContentService } from '../services/chapter-content-service';
 import * as BooksStore from '../stores/books';
@@ -878,3 +878,256 @@ describe('batch_replace_translations', () => {
   });
 });
 
+
+
+describe('chunk boundary enforcement', () => {
+  // 辅助函数：创建块边界信息
+  function createChunkBoundaries(paragraphIds: string[]) {
+    return {
+      allowedParagraphIds: new Set(paragraphIds),
+      firstParagraphId: paragraphIds[0] || '',
+      lastParagraphId: paragraphIds[paragraphIds.length - 1] || '',
+    };
+  }
+
+  beforeEach(() => {
+    // 重置 mock store
+    mockBooksStore.books = [];
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  describe('get_next_paragraphs', () => {
+    test('应该允许访问块内的后续段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para1, para2, para3] 内请求 para1 的下一个段落
+      const result = await tool.handler(
+        { paragraph_id: 'para1', count: 2 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(2);
+      expect(resultObj.paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.paragraphs[1]?.id).toBe('para3');
+    });
+
+    test('应该阻止访问块外的后续段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+      const para4 = createTestParagraph('para4', '原文4');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3, para4]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para1, para2] 内请求 para2 的下一个段落（para3 在块外）
+      const result = await tool.handler(
+        { paragraph_id: 'para2', count: 2 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+      expect(resultObj.error).toContain('para1');
+      expect(resultObj.error).toContain('para2');
+    });
+
+    test('没有 chunkBoundaries 时应该允许访问任何段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 没有 chunkBoundaries 时应该允许访问所有段落
+      const result = await tool.handler(
+        { paragraph_id: 'para1', count: 2 },
+        { bookId: novel.id }, // 没有 chunkBoundaries
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(2);
+    });
+
+    test('请求的起始段落不在块内时应该返回错误', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 请求 para3，但块中只有 [para1, para2]
+      const result = await tool.handler(
+        { paragraph_id: 'para3', count: 1 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+    });
+  });
+
+  describe('get_previous_paragraphs', () => {
+    test('应该允许访问块内的前序段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_previous_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para1, para2, para3] 内请求 para3 的前一个段落
+      const result = await tool.handler(
+        { paragraph_id: 'para3', count: 2 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(2);
+      expect(resultObj.paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.paragraphs[1]?.id).toBe('para1');
+    });
+
+    test('应该阻止访问块外的前序段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_previous_paragraphs');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para2, para3] 内请求 para2 的前一个段落（para1 在块外）
+      const result = await tool.handler(
+        { paragraph_id: 'para2', count: 2 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para2', 'para3']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+    });
+  });
+
+  describe('get_paragraph_position', () => {
+    test('include_next 应该只返回块内的后续段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para1, para2] 内请求 para1 的位置，包含后续段落
+      const result = await tool.handler(
+        { paragraph_id: 'para1', include_next: true, next_count: 5 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      // 虽然请求了 5 个后续段落，但块内只有 para2
+      expect(resultObj.next_paragraphs?.length).toBe(1);
+      expect(resultObj.next_paragraphs[0]?.id).toBe('para2');
+    });
+
+    test('include_previous 应该只返回块内的前序段落', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      // 在块 [para2, para3] 内请求 para3 的位置，包含前序段落
+      const result = await tool.handler(
+        { paragraph_id: 'para3', include_previous: true, previous_count: 5 },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para2', 'para3']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      // 虽然请求了 5 个前序段落，但块内只有 para2
+      expect(resultObj.previous_paragraphs?.length).toBe(1);
+      expect(resultObj.previous_paragraphs[0]?.id).toBe('para2');
+    });
+
+    test('段落不在块内时应该返回错误', async () => {
+      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+      expect(tool).toBeDefined();
+      if (!tool?.handler) throw new Error('工具未找到');
+
+      const result = await tool.handler(
+        { paragraph_id: 'para3' },
+        { bookId: 'novel-1', chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+    });
+  });
+});

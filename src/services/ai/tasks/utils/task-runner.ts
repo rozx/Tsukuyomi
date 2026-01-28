@@ -422,6 +422,8 @@ class TaskLoopSession {
         handleAction,
         onToast,
         taskId,
+        undefined, // sessionId
+        this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
       );
       this.metrics.toolCallTime += Date.now() - start;
       this.metrics.toolCallCount++;

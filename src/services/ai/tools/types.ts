@@ -111,12 +111,31 @@ export interface ActionInfo {
       }; // 书籍信息更新的原始数据（仅用于 update_book_info 操作）
 }
 
+/**
+ * 块边界信息，用于限制 AI 只能访问当前处理块内的段落
+ * 仅在 translation/polish/proofreading 等分块处理任务中提供
+ */
+export interface ChunkBoundaries {
+  /** 当前块允许访问的段落 ID 集合（用于 O(1) 边界检查） */
+  allowedParagraphIds: Set<string>;
+  /** 当前块的第一个段落 ID（用于错误提示） */
+  firstParagraphId: string;
+  /** 当前块的最后一个段落 ID（用于错误提示） */
+  lastParagraphId: string;
+}
+
 export interface ToolContext {
   bookId?: string; // 某些工具（如网络搜索）不需要 bookId
   taskId?: string; // AI 任务 ID，由服务层自动提供，用于关联待办事项等
   sessionId?: string; // 聊天会话 ID，由服务层自动提供，用于关联助手聊天的待办事项
   onAction?: (action: ActionInfo) => void;
   onToast?: ToastCallback; // Toast 回调函数，用于在工具中直接显示 toast
+  /**
+   * 块边界信息（可选）
+   * 仅在 translation/polish/proofreading 等分块任务中提供，用于限制 AI 只能访问当前块内的段落
+   * 如果未提供，工具可以访问所有段落（如 AI 助手聊天场景）
+   */
+  chunkBoundaries?: ChunkBoundaries;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
