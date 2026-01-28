@@ -153,7 +153,7 @@ export function getDataManagementRules(): string {
   return `【数据管理规则】
 ⛔ **核心禁止**: 严禁将敬语（如"田中さん"）添加为角色别名
 
-**敬语处理**: 查别名翻译→检查关系→搜索记忆→按关系决定（亲密可省略/正式保留）
+**敬语处理**: 查别名翻译→检查关系→搜索记忆→检查之前的翻译→按关系决定（亲密可省略/正式保留）
 
 **术语/角色分离**:
 - 术语表：专有名词、概念、技能、地名、物品（⛔ 禁止放人名）
@@ -282,7 +282,7 @@ export function getToolUsageInstructions(
   return `${getToolScopeRules(tools)}
 
 【工具使用建议】
-- 用途：获取上下文、维护术语/角色/记忆、查询历史翻译
+- 用途：获取上下文、维护术语/角色/记忆、查询历史翻译、查询待办事项。
 - 优先用本地数据，网络工具仅用于外部知识
 ${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;

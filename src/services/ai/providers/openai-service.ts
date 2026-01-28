@@ -279,6 +279,7 @@ export class OpenAIService extends BaseAIService {
       let fullText = '';
       let reasoningContent = ''; // 累积思考内容
       let modelId = config.model;
+      let isThinking = false; // 是否正在处理思考内容（<think>标签）
 
       // 用于收集工具调用的片段
       const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
@@ -322,31 +323,74 @@ export class OpenAIService extends BaseAIService {
             | undefined;
           if (deltaFunctionCall) {
             if (deltaFunctionCall.name) legacyFunctionCall.name = deltaFunctionCall.name;
-            if (deltaFunctionCall.arguments) legacyFunctionCall.arguments += deltaFunctionCall.arguments;
+            if (deltaFunctionCall.arguments)
+              legacyFunctionCall.arguments += deltaFunctionCall.arguments;
           }
 
           // 获取思考内容（reasoning_content）- 用于保存到思考过程
-          const deltaReasoningContent = (delta as any).reasoning_content || '';
-          if (deltaReasoningContent) {
-            reasoningContent += deltaReasoningContent;
-          }
+          // 优先处理标准字段
+          let chunkReasoningContent = (delta as any).reasoning_content || '';
 
-          // 获取实际内容（content）- 用于最终输出和聊天显示
-          const content = delta.content || '';
+          // 获取原始内容（content）
+          const rawContent = delta.content || '';
+          let chunkText = '';
+
+          // 处理 <think> 标签过滤
+          // 即使 rawContent 为空，只要 processingThink 为 true，也可能需要在后续处理
+          if (rawContent) {
+            // 简单的状态机处理流式 <think> 标签
+            let processingContent = rawContent;
+
+            while (processingContent.length > 0) {
+              if (isThinking) {
+                // 正在思考模式中，寻找结束标签 </think>
+                const endTagIndex = processingContent.indexOf('</think>');
+                if (endTagIndex !== -1) {
+                  // 找到结束标签
+                  chunkReasoningContent += processingContent.substring(0, endTagIndex);
+                  isThinking = false;
+                  // 移除已处理部分和标签，继续处理剩余部分
+                  processingContent = processingContent.substring(endTagIndex + 8); // 8 is length of </think>
+                } else {
+                  // 未找到结束标签，全部内容由于思考
+                  chunkReasoningContent += processingContent;
+                  processingContent = '';
+                }
+              } else {
+                // 正常模式，寻找开始标签 <think>
+                const startTagIndex = processingContent.indexOf('<think>');
+                if (startTagIndex !== -1) {
+                  // 找到开始标签
+                  chunkText += processingContent.substring(0, startTagIndex); // 标签前的是文本
+                  isThinking = true;
+                  // 移除已处理部分和标签，继续处理剩余部分
+                  processingContent = processingContent.substring(startTagIndex + 7); // 7 is length of <think>
+                } else {
+                  // 未找到开始标签，全部内容视为文本
+                  chunkText += processingContent;
+                  processingContent = '';
+                }
+              }
+            }
+          }
 
           // 只有实际内容（非思考内容）才累积到 fullText
-          if (content) {
-            fullText += content;
+          if (chunkText) {
+            fullText += chunkText;
           }
 
-          // 如果提供了回调函数，传递实际内容和思考内容（但思考内容应被过滤，不显示在聊天中）
-          // 思考内容通过 reasoningContent 字段传递，供上层保存到思考过程
-          if (onChunk && (content || deltaReasoningContent)) {
+          // 累积思考内容
+          if (chunkReasoningContent) {
+            reasoningContent += chunkReasoningContent;
+          }
+
+          // 如果提供了回调函数，传递实际内容和思考内容
+          if (onChunk && (chunkText || chunkReasoningContent)) {
             const chunkData: TextGenerationChunk = {
-              text: content, // 只传递实际内容用于聊天显示
+              text: chunkText, // 只传递经过过滤的实际内容
               done: false,
               model: chunk.model || modelId,
-              ...(deltaReasoningContent ? { reasoningContent: deltaReasoningContent } : {}), // 传递思考内容供保存
+              ...(chunkReasoningContent ? { reasoningContent: chunkReasoningContent } : {}), // 传递提取出的思考内容
             };
 
             await onChunk(chunkData);

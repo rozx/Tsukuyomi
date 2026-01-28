@@ -38,7 +38,11 @@ import {
   markProcessedParagraphsFromMap,
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
+  buildPreviousChapterSection,
 } from './utils';
+import { useBooksStore } from 'src/stores/books';
+import { ChapterService } from 'src/services/chapter-service';
+import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { buildTranslationSystemPrompt } from './prompts';
 
 /**
@@ -268,10 +272,32 @@ export class TranslationService {
       // 构建章节上下文信息
       const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
+      // 获取前一章节信息（如果可用）
+      let previousChapterSection = '';
+      if (bookId && chapterId) {
+        try {
+          const booksStore = useBooksStore();
+          // 确保拿到最新的 book 对象
+          const book = booksStore.getBookById(bookId);
+          if (book) {
+            const prev = ChapterService.getPreviousChapter(book, chapterId);
+            if (prev) {
+              const prevTitle = getChapterDisplayTitle(prev.chapter);
+              const prevSummary = prev.chapter.summary;
+              previousChapterSection = buildPreviousChapterSection(prevTitle, prevSummary);
+            }
+          }
+        } catch (error) {
+          console.warn('[TranslationService] 获取前一章节信息失败:', error);
+          // 忽略错误，不影响主流程
+        }
+      }
+
       const systemPrompt = buildTranslationSystemPrompt({
         todosPrompt,
         bookContextSection,
         chapterContextSection,
+        previousChapterSection,
         specialInstructionsSection,
         tools,
         skipAskUser,

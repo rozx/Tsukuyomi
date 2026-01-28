@@ -150,7 +150,7 @@ export class GeminiService extends BaseAIService {
                   const sigFromModel = (tc as any)?.extra_content?.google?.thought_signature as
                     | string
                     | undefined;
-                  
+
                   // 安全解析工具参数，处理可能的 JSON 解析错误
                   let args: unknown;
                   try {
@@ -158,12 +158,15 @@ export class GeminiService extends BaseAIService {
                   } catch (parseError) {
                     console.warn(
                       `[GeminiService] ⚠️ 工具参数 JSON 解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-                      { toolName: tc.function.name, argumentsPreview: tc.function.arguments?.slice(0, 100) },
+                      {
+                        toolName: tc.function.name,
+                        argumentsPreview: tc.function.arguments?.slice(0, 100),
+                      },
                     );
                     // 如果解析失败，使用空对象作为后备
                     args = {};
                   }
-                  
+
                   const basePart = {
                     functionCall: {
                       name: tc.function.name,
@@ -200,7 +203,8 @@ export class GeminiService extends BaseAIService {
                 response = {
                   content: msg.content || '',
                   _parseError: true,
-                  _originalError: parseError instanceof Error ? parseError.message : String(parseError),
+                  _originalError:
+                    parseError instanceof Error ? parseError.message : String(parseError),
                 };
               }
               return {
@@ -268,10 +272,11 @@ export class GeminiService extends BaseAIService {
 
         const chunkFunctionCalls = chunk.functionCalls();
 
-        // 从 parts 中分别提取思考内容和实际响应文本
-        // chunk.text() 可能会包含所有内容（包括思考内容），所以我们需要直接从 parts 中提取
+        // 优先从 parts 提取，因为 .text() 可能合并了思考过程
+        const isThinkingEnabled = !!generationConfig.thinkingConfig?.includeThoughts;
         let chunkText = '';
         let chunkReasoningContent = '';
+
         try {
           // 尝试从 chunk 的 parts 中提取内容
           // Gemini SDK 的 chunk 对象可能包含 parts 属性，但类型定义可能不完整
@@ -280,36 +285,44 @@ export class GeminiService extends BaseAIService {
           // 尝试从 candidates 中获取 parts，或者直接从 chunk 获取（如果 SDK 结构不同）
           const parts = chunkAny.candidates?.[0]?.content?.parts || chunkAny.parts || [];
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (const part of parts as any[]) {
-            if (part.text) {
-              // 检查是否有 thought 属性（Gemini 3 Pro 的思考内容）
-              // 注意：API 可能返回 thought: true，或者不返回 thought 属性
-              if (part.thought === true) {
-                // 如果 part 有 thought: true，则这是思考内容
-                chunkReasoningContent += part.text;
-              } else {
-                // 否则是实际响应文本
-                chunkText += part.text;
+          if (parts && parts.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            for (const part of parts as any[]) {
+              if (part.text) {
+                // 检查是否有 thought 属性（Gemini 2/3 Flash Thinking 的思考内容）
+                // 只有当明确启用了思考模式时，才检查 thought 属性
+                if (isThinkingEnabled && part.thought === true) {
+                  chunkReasoningContent += part.text;
+                } else {
+                  // 如果未启用思考模式，或者 part.thought 不为 true，则视为普通文本
+                  chunkText += part.text;
+                }
               }
+            }
+          } else if (!isThinkingEnabled) {
+            // 只有在未启用思考模式时，才回退到使用 chunk.text()
+            // 因为如果启用了思考模式，chunk.text() 会包含混杂的思考内容，导致泄露
+            // 如果 parts 为空且启用了思考模式，可能是纯工具调用 chunk，或者是解析问题
+            // 但为了安全起见，我们不使用 chunk.text()
+            const fallbackText = chunk.text();
+            if (fallbackText) {
+              chunkText = fallbackText;
             }
           }
         } catch (error) {
-          // 如果无法访问 parts，回退到使用 chunk.text()
-          // 这种情况下可能无法区分思考内容和实际响应
-          console.debug('无法访问 chunk parts，回退到 chunk.text():', error);
-          const fallbackText = chunk.text();
-          if (fallbackText) {
-            chunkText = fallbackText;
-          }
-        }
-
-        // 如果没有从 parts 中提取到文本，回退到使用 chunk.text()
-        // 这确保在 SDK 版本不支持 parts 时仍能正常工作
-        if (!chunkText && !chunkReasoningContent) {
-          const fallbackText = chunk.text();
-          if (fallbackText) {
-            chunkText = fallbackText;
+          console.debug('chunk 解析出错:', error);
+          // 出错时，仅在未启用思考模式时回退
+          if (!isThinkingEnabled) {
+            try {
+              const fallbackText = chunk.text();
+              if (fallbackText) {
+                chunkText = fallbackText;
+              }
+            } catch {
+              // ignore
+            }
+          } else {
+            console.warn('[GeminiService] 启用思考模式时解析出错，跳过 fallback 以防泄露', error);
           }
         }
 

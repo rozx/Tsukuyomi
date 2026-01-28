@@ -80,6 +80,26 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 }
 
 /**
+ * 构建前一个章节的上下文信息（用于系统提示词）
+ * @param title 前一章节标题
+ * @param summary 前一章节摘要
+ * @returns 格式化的前文信息，如果都没有则返回空字符串
+ */
+export function buildPreviousChapterSection(title?: string, summary?: string): string {
+  if (!title && !summary) return '';
+
+  const parts: string[] = [];
+  if (title) {
+    parts.push(`**前一章节标题**: ${title}`);
+  }
+  if (summary) {
+    parts.push(`**前一章节摘要**: ${summary}`);
+  }
+
+  return `\n\n【前文信息】\n${parts.join('\n')}\n`;
+}
+
+/**
  * 构建书籍上下文信息（用于系统提示词）
  * - 翻译相关任务：提供书名、简介、标签，帮助模型统一风格与用词
  */
