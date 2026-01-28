@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { getDB } from 'src/utils/indexed-db';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TASK_TYPE_LABELS, type AIWorkflowStatus } from 'src/constants/ai';
 import { TodoListService } from 'src/services/todo-list-service';
 import co from 'co';
 
@@ -23,6 +23,7 @@ export interface AIProcessingTask {
     | 'other';
   modelName: string;
   status: AIProcessingTaskStatus;
+  workflowStatus?: AIWorkflowStatus; // 详细的工作流状态 (planning, working, review, end)
   message?: string;
   thinkingMessage?: string; // 实际的 AI 思考消息（从流式响应中累积）
   outputContent?: string; // AI 的实际输出内容（翻译/润色/校对结果）
@@ -110,6 +111,7 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       type: task.type,
       modelName: task.modelName,
       status: task.status,
+      ...(task.workflowStatus !== undefined && { workflowStatus: task.workflowStatus }),
       ...(task.message !== undefined && { message: task.message }),
       ...(task.thinkingMessage !== undefined && { thinkingMessage: task.thinkingMessage }),
       ...(task.outputContent !== undefined && { outputContent: task.outputContent }),

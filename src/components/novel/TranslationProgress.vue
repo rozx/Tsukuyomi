@@ -12,7 +12,7 @@ import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-proce
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
@@ -102,6 +102,15 @@ const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
   }
 
   return task.chapterId || null;
+};
+
+const getTaskStatusLabel = (task: AIProcessingTask) => {
+  if (task.status === 'error') return '错误';
+  if (task.status === 'cancelled') return '已取消';
+  if (task.workflowStatus) {
+    return AI_WORKFLOW_STATUS_LABELS[task.workflowStatus] || task.workflowStatus;
+  }
+  return taskStatusLabels[task.status] || task.status;
 };
 
 // 顶部“正在翻译/润色/校对章节”区域：展示当前正在处理的章节（取最新的进行中任务）
@@ -861,9 +870,7 @@ watch(
                     severity="info"
                     class="ai-task-type-badge"
                   />
-                  <span class="ai-task-status">{{
-                    taskStatusLabels[task.status] || task.status
-                  }}</span>
+                  <span class="ai-task-status">{{ getTaskStatusLabel(task) }}</span>
                 </div>
                 <div class="ai-task-meta">
                   <span class="ai-task-duration">{{

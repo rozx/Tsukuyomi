@@ -65,9 +65,6 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 完成规划后，将状态设置为 "working" 并开始${taskLabel}。`;
 }
 
-/**
- * 获取工作中阶段描述
- */
 function getWorkingStateDescription(taskType: TaskType): string {
   const taskLabel = TASK_LABELS[taskType];
   let focusDesc = '';
@@ -90,7 +87,8 @@ function getWorkingStateDescription(taskType: TaskType): string {
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
 - 发现新信息立即更新
-- 输出格式：\`{"s": "working", "p": [{"i": 段落序号, "t": "${taskLabel}结果"}]}\`${onlyChangedNote}
+- 输出格式：**单独**以JSON格式输出内容 ${onlyChangedNote}
+- ⚠️ 严禁将 status 与 paragraphs 放在同一个 JSON 对象中
 
 完成后设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`;
 }
@@ -194,50 +192,52 @@ export function getTodoToolsDescription(taskType: TaskType): string {
 /**
  * 获取状态字段说明（精简版）
  */
+const STATE_TRANSITION_RULES = {
+  translation: `⚠️ **状态转换规则**:
+- 必须按顺序：planning → working → review → end
+- 允许：review → working（补充/优化已翻译段落）
+- ⛔ 禁止跳过（working→end / planning→review / planning→end）`,
+  other: `⚠️ **状态转换规则**:
+- 必须按顺序：planning → working → end
+- ⛔ 禁止：working→review（禁用review）/ planning→end`,
+};
+
 export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabel = TASK_LABELS[taskType];
-  if (taskType === 'translation') {
-    return `**状态**: planning→working(${taskLabel}中)→review→end
+  const rules =
+    taskType === 'translation' ? STATE_TRANSITION_RULES.translation : STATE_TRANSITION_RULES.other;
+  const reviewState = taskType === 'translation' ? '→review' : '';
 
-⚠️ **状态转换规则**:
-- 必须按顺序：planning → working → review → end
-- 允许：review → working（补充/优化已${taskLabel}段落）
-- ⛔ 禁止跳过（working→end / planning→review / planning→end）`;
-  }
+  return `**状态**: planning→working(${taskLabel}中)${reviewState}→end
 
-  // 润色/校对/摘要：跳过并禁用 review
-  return `**状态**: planning→working(${taskLabel}中)→end
-
-⚠️ **状态转换规则**:
-- 必须按顺序：planning → working → end
-- ⛔ 禁止：working→review（禁用review）/ planning→end`;
+${rules}
+`;
 }
 
-/**
- * 获取输出格式要求（精简版）
- */
 export function getOutputFormatRules(taskType: TaskType): string {
   const taskLabel = TASK_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const hasTitle = taskType === 'translation';
 
-  const strictStates = ['translation', 'polish', 'proofreading'];
-  const strictStateNote = strictStates.includes(taskType)
-    ? `\n⚠️ **严格状态规则**：只有 \`s="working"\` 时才能输出 \`p/tt\`，其他状态禁止输出内容字段\n`
-    : '';
-
-  const jsonContent = `{"s": "working", "p": [{"i": 0, "t": "${taskLabel}结果"}]${hasTitle ? ', "tt": "标题翻译"' : ''}}`;
+  // 这里的示例只包含内容，不含 status
+  const jsonContent = `{"p": [{"i": 0, "t": "${taskLabel}结果"}]${hasTitle ? ', "tt": "标题翻译"' : ''}}`;
   const titleNote = hasTitle ? '\n（标题翻译只返回一次）' : '';
 
-  return `【输出格式】⚠️ 必须只返回JSON（使用简化键名）
+  return `【输出格式】⚠️ 必须只返回 JSON（使用简化键名）
 
 **JSON键名**：s=status, p=paragraphs, i=段落序号, t=translation${hasTitle ? ', tt=titleTranslation（标题翻译）' : ''}
 **默认 planning**，需上下文时先调用工具
-**包含内容**: \`${jsonContent}\`${titleNote}
-${strictStateNote}
+
+⚠️ **状态切换独立性（核心）**:
+- 状态变更（s字段）必须单独输出一个JSON对象：\`{"s": "working"}\`
+- 翻译内容（p/tt字段）必须单独输出一个JSON对象：\`${jsonContent}\`${titleNote}
+- **严禁**将 s 与 p/tt 混在同一个 JSON 对象中！
+
 ${getStatusFieldDescription(taskType)}
 - 段落序号(i)与原文1:1对应${onlyChanged}
-- ${taskType === 'translation' ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}，所有阶段可用工具`;
+- ${taskType === 'translation' ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}，所有阶段可用工具
+- ⛔ 除working状态时禁止输出翻译（p字段）
+`;
 }
 
 /**

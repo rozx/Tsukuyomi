@@ -303,6 +303,12 @@ class TaskLoopSession {
     // Update status
     this.currentStatus = newStatus;
 
+    if (aiProcessingStore && taskId && previousStatus !== newStatus) {
+      void aiProcessingStore.updateTask(taskId, {
+        workflowStatus: newStatus,
+      });
+    }
+
     // Extract content (Title / Paragraphs)
     await this.extractContent(parsed);
 

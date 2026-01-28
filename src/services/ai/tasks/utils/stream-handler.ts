@@ -78,57 +78,81 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
       ) {
         lastCheckLength = accumulatedText.length;
 
-        // 只检测 status/s 字段（不用 JSON.parse），避免"JSON 尚未闭合/包含嵌套 {}"导致延迟或误判
-        // 支持简化格式 "s" 和完整格式 "status"
-        const statusMatch = accumulatedText.match(/"(?:s|status)"\s*:\s*"([^"]+)"/);
-        if (statusMatch && statusMatch[1]) {
-          const status = statusMatch[1];
+        // 使用 matchAll 获取所有状态变更和内容出现的历史，以支持分离的 JSON 对象（如 {"s":"working"} ... {"p":...}）
+        const statusRegex = /"(?:s|status)"\s*:\s*"([^"]+)"/g;
+        const contentKeyRegex = /"(?:p|paragraphs|tt|titleTranslation)"\s*:/g;
+
+        const statusMatches = [...accumulatedText.matchAll(statusRegex)];
+        const contentMatches = [...accumulatedText.matchAll(contentKeyRegex)];
+
+        // 1. 验证状态转换历史 (Validation History)
+        // 从初始状态开始，依次验证流中的每一个状态变更是否合法
+        let effectiveStatus = currentStatus;
+
+        for (const match of statusMatches) {
+          const newStatus = match[1] as TaskStatus; // 捕获组 1 是状态值
           const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
 
           // 检查状态值是否有效
-          if (!validStatuses.includes(status as TaskStatus)) {
-            console.warn(`[${logLabel}] ⚠️ 检测到无效状态值: ${status}，立即停止输出`);
+          if (!validStatuses.includes(newStatus)) {
+            console.warn(`[${logLabel}] ⚠️ 检测到无效状态值: ${newStatus}，立即停止输出`);
             abortController?.abort();
             throw new Error(
-              `[警告] 检测到无效状态值: ${status}，必须是 planning、working、review 或 end 之一`,
+              `[警告] 检测到无效状态值: ${newStatus}，必须是 planning、working、review 或 end 之一`,
             );
           }
 
-          // 翻译/润色/校对任务：内容必须只在 working 阶段输出
-          // 若模型在 planning/review/end 阶段输出 p/paragraphs/tt/titleTranslation，视为错误状态并中止本轮输出
-          if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
-            // 使用正则检测 JSON 键（key 后面紧跟冒号），避免误判字符串内部的 "p"
-            // 支持简化格式 (p, tt) 和完整格式 (paragraphs, titleTranslation)
-            const contentKeyRegex = /"(?:p|paragraphs|tt|titleTranslation)"\s*:/;
-            const hasContentKey = contentKeyRegex.test(accumulatedText);
-
-            const newStatus = status as TaskStatus;
-            const invalidStateForContent =
-              newStatus === 'planning' || newStatus === 'review' || newStatus === 'end';
-            if (hasContentKey && invalidStateForContent) {
+          // 检查状态转换是否有效
+          if (effectiveStatus && effectiveStatus !== newStatus) {
+            const validTransitions = getValidTransitionsForTaskType(taskType);
+            const allowedNextStatuses = validTransitions[effectiveStatus];
+            if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
               console.warn(
-                `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${newStatus} 且包含内容字段），立即停止输出`,
+                `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(effectiveStatus, taskType)} → ${getStatusLabel(newStatus, taskType)}，立即停止输出`,
               );
               abortController?.abort();
               throw new Error(
-                `状态与内容不匹配：任务只能在 working 阶段输出 p/tt（当前 status=${newStatus}）`,
+                `[警告] **状态转换错误**：你试图从 "${getStatusLabel(effectiveStatus, taskType)}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
               );
             }
           }
+          // 更新有效状态，用于下一次循环检测
+          effectiveStatus = newStatus;
+        }
 
-          // 检查状态转换是否有效
-          const validTransitions = getValidTransitionsForTaskType(taskType);
+        // 2. 验证内容输出时机的合法性 (Content Validation)
+        // 翻译/润色/校对任务：内容必须只在 working 阶段输出
+        if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
+          for (const contentMatch of contentMatches) {
+            const contentIndex = contentMatch.index;
+            if (contentIndex === undefined) continue;
 
-          const newStatus = status as TaskStatus;
-          if (currentStatus !== newStatus) {
-            const allowedNextStatuses: TaskStatus[] | undefined = validTransitions[currentStatus];
-            if (!allowedNextStatuses || !allowedNextStatuses.includes(newStatus)) {
+            // 确定该内容出现时的“生效状态”
+            // 规则：找到 index 小于 contentIndex 的最后一个状态变更；如果没有，则使用初始状态
+            let activeStatusAtMoment = currentStatus;
+
+            // 找最后一个 index < contentIndex 的 statusMatch
+            // statusMatches 是按 index 排序的，所以可以倒序查找
+            for (let i = statusMatches.length - 1; i >= 0; i--) {
+              const sMatch = statusMatches[i];
+              if (sMatch && sMatch.index !== undefined && sMatch.index < contentIndex) {
+                activeStatusAtMoment = sMatch[1] as TaskStatus;
+                break;
+              }
+            }
+
+            const invalidStateForContent =
+              activeStatusAtMoment === 'planning' ||
+              activeStatusAtMoment === 'review' ||
+              activeStatusAtMoment === 'end';
+
+            if (invalidStateForContent) {
               console.warn(
-                `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(currentStatus, taskType)} → ${getStatusLabel(newStatus, taskType)}，立即停止输出`,
+                `[${logLabel}] ⚠️ 检测到内容与状态不匹配（status=${activeStatusAtMoment} 且包含内容字段），立即停止输出`,
               );
               abortController?.abort();
               throw new Error(
-                `[警告] **状态转换错误**：你试图从 "${getStatusLabel(currentStatus, taskType)}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
+                `状态与内容不匹配：任务只能在 working 阶段输出 p/tt（当前 status=${activeStatusAtMoment}）`,
               );
             }
           }
@@ -213,6 +237,7 @@ export async function initializeTask(
     status: 'thinking',
     message: `正在初始化${TASK_TYPE_LABELS[taskType]}会话...`,
     thinkingMessage: '',
+    workflowStatus: 'planning',
     ...(context?.bookId ? { bookId: context.bookId } : {}),
     ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
     ...(context?.chapterTitle ? { chapterTitle: context.chapterTitle } : {}),
@@ -280,6 +305,7 @@ export async function completeTask(
 
   await aiProcessingStore.updateTask(taskId, {
     status: 'end',
+    workflowStatus: 'end',
     message: `${TASK_TYPE_LABELS[taskType]}完成`,
   });
 }
