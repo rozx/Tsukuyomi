@@ -50,53 +50,6 @@ function extractKeywordsFromParagraph(text: string, maxLength: number = 20): str
 }
 
 /**
- * 检查段落 ID 是否在允许的块边界内
- * @param paragraphId 要检查的段落 ID
- * @param chunkBoundaries 块边界信息
- * @returns 如果段落 ID 在边界内，返回 true
- */
-function isParagraphInChunk(paragraphId: string, chunkBoundaries: ChunkBoundaries | undefined): boolean {
-  if (!chunkBoundaries) {
-    return true; // 没有边界限制，允许访问
-  }
-  return chunkBoundaries.allowedParagraphIds.has(paragraphId);
-}
-
-/**
- * 获取超出边界错误信息
- * @param chunkBoundaries 块边界信息
- * @returns 错误信息字符串
- */
-function getOutOfBoundsError(chunkBoundaries: ChunkBoundaries | undefined): string {
-  if (!chunkBoundaries) {
-    return JSON.stringify({
-      success: false,
-      error: '无法获取段落，段落不在当前处理范围内。',
-    });
-  }
-  return JSON.stringify({
-    success: false,
-    error: `无法获取超出当前翻译范围的段落。当前处理范围：段落 ${chunkBoundaries.firstParagraphId} 至 ${chunkBoundaries.lastParagraphId}。请专注于翻译当前提供的段落。`,
-  });
-}
-
-/**
- * 过滤段落列表，只保留在当前块边界内的段落
- * @param results 段落搜索结果列表
- * @param chunkBoundaries 块边界信息
- * @returns 过滤后的结果列表
- */
-function filterResultsByChunkBoundary<T extends { paragraph: { id: string } }>(
-  results: T[],
-  chunkBoundaries: ChunkBoundaries | undefined,
-): T[] {
-  if (!chunkBoundaries) {
-    return results;
-  }
-  return results.filter((result) => chunkBoundaries.allowedParagraphIds.has(result.paragraph.id));
-}
-
-/**
  * 在文本中替换完整的关键词（作为独立词，不是其他词的一部分）
  * @param text 要替换的文本
  * @param keyword 要替换的关键词
@@ -368,7 +321,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, chunkBoundaries }) => {
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -383,10 +336,10 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('段落 ID 不能为空');
       }
 
-      // 检查段落是否在块边界内
-      if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-        return getOutOfBoundsError(chunkBoundaries);
-      }
+      // 检查段落是否在块边界内 (Removed restriction to allow context view)
+      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
 
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
@@ -403,7 +356,14 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph, chapter, paragraphIndex, chapterIndex, volume, volumeIndex } = location;
+      const {
+        paragraph,
+        chapter,
+        paragraphIndex,
+        chapterIndex: _chapterIndex,
+        volume: _volume,
+        volumeIndex: _volumeIndex,
+      } = location;
 
       // 报告读取操作
       if (onAction) {
@@ -461,11 +421,11 @@ export const paragraphTools: ToolDefinition[] = [
           previous_count,
         );
         // 过滤掉空段落或仅包含符号的段落
-        let validPreviousResults = previousResults.filter(
+        const validPreviousResults = previousResults.filter(
           (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
         );
-        // 应用块边界限制
-        validPreviousResults = filterResultsByChunkBoundary(validPreviousResults, chunkBoundaries);
+        // 移除块边界过滤
+        // validPreviousResults = filterResultsByChunkBoundary(validPreviousResults, chunkBoundaries);
         response.previous_paragraphs = validPreviousResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
@@ -487,11 +447,11 @@ export const paragraphTools: ToolDefinition[] = [
           next_count,
         );
         // 过滤掉空段落或仅包含符号的段落
-        let validNextResults = nextResults.filter(
+        const validNextResults = nextResults.filter(
           (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
         );
-        // 应用块边界限制
-        validNextResults = filterResultsByChunkBoundary(validNextResults, chunkBoundaries);
+        // 移除块边界过滤
+        // validNextResults = filterResultsByChunkBoundary(validNextResults, chunkBoundaries);
         response.next_paragraphs = validNextResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
@@ -651,7 +611,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, chunkBoundaries }) => {
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -667,9 +627,9 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 检查起始段落是否在块边界内
-      if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-        return getOutOfBoundsError(chunkBoundaries);
-      }
+      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
 
       // 报告读取操作
       if (onAction) {
@@ -687,15 +647,15 @@ export const paragraphTools: ToolDefinition[] = [
       const results = await ChapterService.getPreviousParagraphsAsync(book, paragraph_id, count);
 
       // 过滤掉空段落或仅包含符号的段落
-      let validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
-      // 应用块边界限制（只保留在当前块内的段落）
-      validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
+      // 移除块边界限制，允许跨 chunk 获取上下文
+      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
 
       // 如果过滤后没有结果，说明请求超出了块边界
-      if (chunkBoundaries && validResults.length === 0) {
-        return getOutOfBoundsError(chunkBoundaries);
-      }
+      // if (chunkBoundaries && validResults.length === 0) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
 
       // 搜索相关记忆（从段落文本中提取关键词）
       let relatedMemories: Array<{ id: string; summary: string }> = [];
@@ -781,7 +741,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, chunkBoundaries }) => {
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -797,9 +757,9 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 检查起始段落是否在块边界内
-      if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-        return getOutOfBoundsError(chunkBoundaries);
-      }
+      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
 
       // 报告读取操作
       if (onAction) {
@@ -817,15 +777,15 @@ export const paragraphTools: ToolDefinition[] = [
       const results = await ChapterService.getNextParagraphsAsync(book, paragraph_id, count);
 
       // 过滤掉空段落或仅包含符号的段落
-      let validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
-      // 应用块边界限制（只保留在当前块内的段落）
-      validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
+      // 移除块边界限制，允许跨 chunk 获取上下文
+      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
 
       // 如果过滤后没有结果，说明请求超出了块边界
-      if (chunkBoundaries && validResults.length === 0) {
-        return getOutOfBoundsError(chunkBoundaries);
-      }
+      // if (chunkBoundaries && validResults.length === 0) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
 
       // 搜索相关记忆（从段落文本中提取关键词）
       let relatedMemories: Array<{ id: string; summary: string }> = [];

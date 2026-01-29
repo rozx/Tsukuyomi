@@ -45,7 +45,8 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
 5. **前后一致**: 必须参考前文翻译的段落、标题和相关记忆，保持标题/人名/术语/风格/称呼一致。翻译前使用工具获取相关信息。
 6. **保持原意**: 避免误译、漏译、增译。根据上下文找出最准确的表达。
 7. **完整翻译**: ⚠️ 必须翻译所有单词和短语，禁止在翻译结果中保留明显未翻译的日语原文（尤其是假名、助词、语尾等）
-8. ${getSymbolFormatRules()}
+8. **关注当前任务**: 你可以使用工具（如 get_previous_paragraphs, get_next_paragraphs）查看上下文（甚至跨越章节），但你**必须只翻译/修改当前任务列表中指定的段落**。上下文仅供参考，切勿翻译上下文段落作为输出。
+9. ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
 

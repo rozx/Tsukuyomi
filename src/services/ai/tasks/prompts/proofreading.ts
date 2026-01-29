@@ -46,6 +46,7 @@ export function buildProofreadingSystemPrompt(params: ProofreadingSystemPromptPa
 - **最小改动**: 只修正错误，保持原意和风格
 - **一致性优先**: 术语/角色名全文统一，用工具检查历史翻译
 - **参考原文**: 确保翻译准确，特别是标点符号。
+- **关注当前任务**: 你可以使用工具（如 get_previous_paragraphs, get_next_paragraphs）查看上下文（甚至跨越章节），但你**必须只校对/修改当前任务列表中指定的段落**。上下文仅供参考，切勿修改上下文段落作为输出。
 - ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}

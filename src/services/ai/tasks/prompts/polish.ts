@@ -42,7 +42,8 @@ export function buildPolishSystemPrompt(params: PolishSystemPromptParams): strin
 4. **角色区分**: 对白符合角色身份/性格，参考speaking_style
 5. **一致性**: 术语/角色名保持全文统一，参考翻译历史混合最佳表达。并且确保前后段落风格一致，标点符号统一。
 7. **完整翻译检查**: ⚠️ 检查并修正任何明显未翻译的日语原文（包括假名、助词、语尾等），确保所有内容都已翻译为中文
-8. ${getSymbolFormatRules()}
+8. **关注当前任务**: 你可以使用工具（如 get_previous_paragraphs, get_next_paragraphs）查看上下文（甚至跨越章节），但你**必须只润色/修改当前任务列表中指定的段落**。上下文仅供参考，切勿修改上下文段落作为输出。
+9. ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
 
