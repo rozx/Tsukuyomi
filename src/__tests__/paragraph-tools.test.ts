@@ -52,11 +52,7 @@ function createTestNovel(volumes: Volume[] = []): Novel {
 }
 
 // 辅助函数：创建测试用段落
-function createTestParagraph(
-  id?: string,
-  text?: string,
-  translations?: Translation[],
-): Paragraph {
+function createTestParagraph(id?: string, text?: string, translations?: Translation[]): Paragraph {
   const paraId = id || generateShortId();
   const transId = generateShortId();
   return {
@@ -74,11 +70,7 @@ function createTestParagraph(
 }
 
 // 辅助函数：创建测试用章节
-function createTestChapter(
-  id?: string,
-  paragraphs?: Paragraph[],
-  title?: string,
-): Chapter {
+function createTestChapter(id?: string, paragraphs?: Paragraph[], title?: string): Chapter {
   return {
     id: id || generateShortId(),
     title: {
@@ -264,9 +256,7 @@ describe('containsWholeKeyword', () => {
 });
 
 // 创建 mockUpdateBook
-const mockUpdateBook = mock((_bookId: string, _updates: Partial<Novel>) =>
-  Promise.resolve(),
-);
+const mockUpdateBook = mock((_bookId: string, _updates: Partial<Novel>) => Promise.resolve());
 
 // 创建一个 mock store 对象（在 describe 外部，以便 mock.module 可以访问）
 const mockBooksStore: {
@@ -313,9 +303,7 @@ describe('batch_replace_translations', () => {
     mockLoadChapterContentsBatch.mockClear();
     mockUpdateBook.mockClear();
 
-    spyOn(ChapterContentService, 'loadChapterContent').mockImplementation(
-      mockLoadChapterContent,
-    );
+    spyOn(ChapterContentService, 'loadChapterContent').mockImplementation(mockLoadChapterContent);
     spyOn(ChapterContentService, 'loadChapterContentsBatch').mockImplementation(
       mockLoadChapterContentsBatch,
     );
@@ -349,11 +337,11 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // 验证书籍可以被找到
     expect(mockBooksStore.getBookById(novel.id)).toBeDefined();
     expect(mockBooksStore.getBookById(novel.id)?.id).toBe(novel.id);
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     // (chapters are already loaded with content, so no need to load from service)
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -361,7 +349,9 @@ describe('batch_replace_translations', () => {
     });
 
     // 找到 batch_replace_translations 工具
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -386,7 +376,7 @@ describe('batch_replace_translations', () => {
     // 注意：由于使用了完整关键词匹配，"测试" 在 "这是测试翻译" 和 "这是另一个测试" 中都会被匹配
     // 因为 "测试" 是完整的中文词
     expect(resultObj.replaced_count).toBeGreaterThanOrEqual(2); // para1 和 para2 应该被替换
-    
+
     // 验证翻译已被替换（如果匹配成功）
     // 注意：现在只替换匹配的关键词部分，而不是整个翻译
     if (resultObj.replaced_count >= 2) {
@@ -414,7 +404,9 @@ describe('batch_replace_translations', () => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
     if (!tool || !tool.handler) {
       throw new Error('工具未找到');
@@ -478,7 +470,9 @@ describe('batch_replace_translations', () => {
     );
 
     // 找到 batch_replace_translations 工具
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
     if (!tool || !tool.handler) {
       throw new Error('工具未找到');
@@ -526,13 +520,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -582,13 +578,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -641,13 +639,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -695,13 +695,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -748,13 +750,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -790,13 +794,15 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -825,13 +831,15 @@ describe('batch_replace_translations', () => {
     const novel = createTestNovel([]);
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -846,20 +854,24 @@ describe('batch_replace_translations', () => {
         },
         { bookId: novel.id },
       ),
-    ).rejects.toThrow('必须提供 keywords 或 original_keywords 至少一个关键词数组') as unknown as Promise<void>);
+    ).rejects.toThrow(
+      '必须提供 keywords 或 original_keywords 至少一个关键词数组',
+    ) as unknown as Promise<void>);
   });
 
   test('应该验证替换文本不能为空', async () => {
     const novel = createTestNovel([]);
     // Mock store to return the novel
     mockBooksStore.books = [novel];
-    
+
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
     });
 
-    const tool = paragraphTools.find((t) => t.definition.function?.name === 'batch_replace_translations');
+    const tool = paragraphTools.find(
+      (t) => t.definition.function?.name === 'batch_replace_translations',
+    );
     expect(tool).toBeDefined();
 
     if (!tool || !tool.handler) {
@@ -877,8 +889,6 @@ describe('batch_replace_translations', () => {
     ).rejects.toThrow('替换文本不能为空') as unknown as Promise<void>);
   });
 });
-
-
 
 describe('chunk boundary enforcement', () => {
   // 辅助函数：创建块边界信息
@@ -910,7 +920,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_next_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -927,7 +939,7 @@ describe('chunk boundary enforcement', () => {
       expect(resultObj.paragraphs[1]?.id).toBe('para3');
     });
 
-    test('应该阻止访问块外的后续段落', async () => {
+    test('应该允许访问块外的后续段落（忽略块边界）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const para2 = createTestParagraph('para2', '原文2');
       const para3 = createTestParagraph('para3', '原文3');
@@ -938,7 +950,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_next_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -949,10 +963,10 @@ describe('chunk boundary enforcement', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
-      expect(resultObj.error).toContain('para1');
-      expect(resultObj.error).toContain('para2');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(2);
+      expect(resultObj.paragraphs[0]?.id).toBe('para3');
+      expect(resultObj.paragraphs[1]?.id).toBe('para4');
     });
 
     test('没有 chunkBoundaries 时应该允许访问任何段落', async () => {
@@ -965,7 +979,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_next_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -980,7 +996,7 @@ describe('chunk boundary enforcement', () => {
       expect(resultObj.paragraphs.length).toBe(2);
     });
 
-    test('请求的起始段落不在块内时应该返回错误', async () => {
+    test('请求的起始段落不在块内时应该允许访问（忽略块边界）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const para2 = createTestParagraph('para2', '原文2');
       const para3 = createTestParagraph('para3', '原文3');
@@ -990,7 +1006,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_next_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_next_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1001,8 +1019,8 @@ describe('chunk boundary enforcement', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(0); // para3 is last
     });
   });
 
@@ -1017,7 +1035,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_previous_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_previous_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1034,7 +1054,7 @@ describe('chunk boundary enforcement', () => {
       expect(resultObj.paragraphs[1]?.id).toBe('para1');
     });
 
-    test('应该阻止访问块外的前序段落', async () => {
+    test('应该允许访问块外的前序段落（忽略块边界）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const para2 = createTestParagraph('para2', '原文2');
       const para3 = createTestParagraph('para3', '原文3');
@@ -1044,7 +1064,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_previous_paragraphs');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_previous_paragraphs',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1055,13 +1077,14 @@ describe('chunk boundary enforcement', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraphs.length).toBe(1); // Only para1 is before para2
+      expect(resultObj.paragraphs[0]?.id).toBe('para1');
     });
   });
 
   describe('get_paragraph_position', () => {
-    test('include_next 应该只返回块内的后续段落', async () => {
+    test('include_next 应该返回所有后续段落（忽略块边界）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const para2 = createTestParagraph('para2', '原文2');
       const para3 = createTestParagraph('para3', '原文3');
@@ -1071,7 +1094,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_paragraph_position',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1083,12 +1108,12 @@ describe('chunk boundary enforcement', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      // 虽然请求了 5 个后续段落，但块内只有 para2
-      expect(resultObj.next_paragraphs?.length).toBe(1);
+      expect(resultObj.next_paragraphs?.length).toBe(2);
       expect(resultObj.next_paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.next_paragraphs[1]?.id).toBe('para3');
     });
 
-    test('include_previous 应该只返回块内的前序段落', async () => {
+    test('include_previous 应该返回所有前序段落（忽略块边界）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const para2 = createTestParagraph('para2', '原文2');
       const para3 = createTestParagraph('para3', '原文3');
@@ -1098,7 +1123,9 @@ describe('chunk boundary enforcement', () => {
       const novel = createTestNovel([volume]);
       mockBooksStore.books = [novel];
 
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_paragraph_position',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1110,24 +1137,34 @@ describe('chunk boundary enforcement', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      // 虽然请求了 5 个前序段落，但块内只有 para2
-      expect(resultObj.previous_paragraphs?.length).toBe(1);
+      expect(resultObj.previous_paragraphs?.length).toBe(2);
       expect(resultObj.previous_paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.previous_paragraphs[1]?.id).toBe('para1');
     });
 
-    test('段落不在块内时应该返回错误', async () => {
-      const tool = paragraphTools.find((t) => t.definition.function?.name === 'get_paragraph_position');
+    test('段落不在块内时应该允许访问（忽略块边界）', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+      mockBooksStore.books = [novel];
+
+      const tool = paragraphTools.find(
+        (t) => t.definition.function?.name === 'get_paragraph_position',
+      );
       expect(tool).toBeDefined();
       if (!tool?.handler) throw new Error('工具未找到');
 
       const result = await tool.handler(
         { paragraph_id: 'para3' },
-        { bookId: 'novel-1', chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
+        { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('无法获取超出当前翻译范围的段落');
+      expect(resultObj.success).toBe(true);
     });
   });
 });
