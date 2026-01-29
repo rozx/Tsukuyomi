@@ -47,6 +47,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
   } = config;
   let accumulatedText = '';
   let lastCheckLength = 0; // 上次检查时的文本长度，避免频繁解析
+  let lastCheckedContentIndex = 0; // 上次检查的内容匹配索引，避免重复验证
 
   return (c) => {
     // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
@@ -123,9 +124,17 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
         // 2. 验证内容输出时机的合法性 (Content Validation)
         // 翻译/润色/校对任务：内容必须只在 working 阶段输出
         if (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') {
-          for (const contentMatch of contentMatches) {
+          // 仅验证新增的内容匹配项
+          const newContentMatches = contentMatches.filter(
+            (m) => m.index !== undefined && m.index > lastCheckedContentIndex,
+          );
+
+          for (const contentMatch of newContentMatches) {
             const contentIndex = contentMatch.index;
             if (contentIndex === undefined) continue;
+
+            // 更新最后检查的索引
+            lastCheckedContentIndex = contentIndex;
 
             // 确定该内容出现时的“生效状态”
             // 规则：找到 index 小于 contentIndex 的最后一个状态变更；如果没有，则使用初始状态

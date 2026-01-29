@@ -60,8 +60,11 @@ function extractJsonObjects(text: string): any[] {
         const jsonStr = text.substring(startIndex, i + 1);
         try {
           results.push(JSON.parse(jsonStr));
-        } catch {
+        } catch (e) {
           // Skip invalid JSON chunks
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Skipping invalid JSON chunk:', e);
+          }
         }
         startIndex = -1;
       }
@@ -135,6 +138,29 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
           },
         );
         accumulatedContent.paragraphs.push(...parsedParas);
+      }
+
+      // 3. 检测独立的段落对象（没有 p/paragraphs 包装，直接包含 i/id + t/translation）
+      // 这种情况在 polish/proofreading 任务中可能出现
+      const hasParagraphId = typeof data.i === 'number' || typeof data.id === 'string';
+      const hasTranslation = typeof data.t === 'string' || typeof data.translation === 'string';
+      const isStandaloneParagraph = hasParagraphId && hasTranslation && !data.p && !data.paragraphs;
+
+      if (isStandaloneParagraph) {
+        let id: string;
+        if (typeof data.i === 'number' && paragraphIds && paragraphIds[data.i] !== undefined) {
+          id = paragraphIds[data.i] as string;
+        } else if (typeof data.id === 'string') {
+          id = data.id;
+        } else if (typeof data.i === 'number') {
+          id = String(data.i);
+        } else {
+          id = '';
+        }
+        const translation = data.t ?? data.translation ?? '';
+        if (id && translation) {
+          accumulatedContent.paragraphs.push({ id, translation });
+        }
       }
 
       const titleValue = data.tt ?? data.titleTranslation;

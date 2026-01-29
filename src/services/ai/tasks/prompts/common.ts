@@ -1,5 +1,6 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { TaskType, TaskStatus } from '../utils';
+import { getTaskStateWorkflowText } from '../utils';
 
 /** 任务类型标签映射（模块级常量，避免重复定义） */
 export const TASK_LABELS: Record<TaskType, string> = {
@@ -196,20 +197,10 @@ export function getTodoToolsDescription(taskType: TaskType): string {
 /**
  * 获取状态字段说明（精简版）
  */
-const STATE_TRANSITION_RULES = {
-  translation: `⚠️ **状态转换规则**:
-- 必须按顺序：planning → working → review → end
-- 允许：review → working（补充/优化已翻译段落）
-- ⛔ 禁止跳过（working→end / planning→review / planning→end）`,
-  other: `⚠️ **状态转换规则**:
-- 必须按顺序：planning → working → end
-- ⛔ 禁止：working→review（禁用review）/ planning→end`,
-};
-
 export function getStatusFieldDescription(taskType: TaskType): string {
   const taskLabel = TASK_LABELS[taskType];
-  const rules =
-    taskType === 'translation' ? STATE_TRANSITION_RULES.translation : STATE_TRANSITION_RULES.other;
+  const rules = `⚠️ **状态转换规则**:
+- ${getTaskStateWorkflowText(taskType)}`;
   const reviewState = taskType === 'translation' ? '→review' : '';
 
   return `**状态**: planning→working(${taskLabel}中)${reviewState}→end
@@ -225,7 +216,14 @@ export function getOutputFormatRules(taskType: TaskType): string {
 
   // 这里的示例只包含内容，不含 status
   const jsonContent = `{"p": [{"i": 0, "t": "${taskLabel}结果"}]${hasTitle ? ', "tt": "标题翻译"' : ''}}`;
+  const individualContent = `{"i": 0, "t": "${taskLabel}结果"}`;
   const titleNote = hasTitle ? '\n（标题翻译只返回一次）' : '';
+
+  // 对于非翻译任务（polish/proofreading），支持返回单个段落对象
+  const individualNote =
+    taskType !== 'translation'
+      ? '\n- 支持两种格式：数组格式 `{"p": [...]}` 或单个段落 `{"i": 0, "t": "..."}`'
+      : '';
 
   return `【输出格式】⚠️ 必须只返回 JSON（使用简化键名）
 
@@ -234,7 +232,7 @@ export function getOutputFormatRules(taskType: TaskType): string {
 
 ⚠️ **状态切换独立性（核心）**:
 - 状态变更（s字段）必须单独输出一个JSON对象：\`{"s": "working"}\`
-- 翻译内容（p/tt字段）必须单独输出一个JSON对象：\`${jsonContent}\`${titleNote}
+- 翻译内容必须单独输出一个JSON对象：\`${jsonContent}\`${individualNote}${titleNote}
 - **严禁**将 s 与 p/tt 混在同一个 JSON 对象中！
 
 ${getStatusFieldDescription(taskType)}
