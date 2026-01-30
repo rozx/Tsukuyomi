@@ -11,17 +11,17 @@ export function getVolumeDisplayTitle(volume: Volume): string {
   if (!volume.title) {
     return '';
   }
-  
+
   // 兼容旧数据：如果 title 是字符串，直接返回
   if (typeof volume.title === 'string') {
     return volume.title;
   }
-  
+
   // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
   if (volume.title.translation?.translation?.trim()) {
     return volume.title.translation.translation;
   }
-  
+
   // 返回原文
   return volume.title.original || '';
 }
@@ -42,12 +42,12 @@ export function normalizeChapterTitle(title: string): string {
   if (title == null || typeof title !== 'string') {
     return '';
   }
-  
+
   // 空字符串直接返回
   if (title.length === 0) {
     return title;
   }
-  
+
   // 将“章节号标记”与后续内容之间的半角空格转换为全角空格。
   //
   // 规则（对应测试用例）：
@@ -80,7 +80,7 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
   if (!chapter || !chapter.title) {
     return '';
   }
-  
+
   // 兼容旧数据：如果 title 是字符串，直接返回
   if (typeof chapter.title === 'string') {
     const title: string = chapter.title;
@@ -91,7 +91,7 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
     }
     return title;
   }
-  
+
   // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
   let title: string = '';
   if (chapter.title.translation?.translation?.trim()) {
@@ -103,13 +103,13 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
     // 如果既没有翻译也没有原文，返回空字符串
     return '';
   }
-  
+
   // 应用规范化（如果启用）
   const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
   if (normalize) {
     title = normalizeChapterTitle(title);
   }
-  
+
   return title;
 }
 
@@ -123,12 +123,12 @@ export function getChapterCharCount(chapter: Chapter): number {
   if (chapter.content && chapter.content.length > 0) {
     return chapter.content.reduce((total, para) => total + para.text.length, 0);
   }
-  
+
   // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
   if (chapter.originalContent) {
     return chapter.originalContent.length;
   }
-  
+
   return 0;
 }
 
@@ -142,18 +142,18 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
   if (chapter.content && chapter.content.length > 0) {
     return chapter.content.reduce((total, para) => total + para.text.length, 0);
   }
-  
+
   // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
   if (chapter.originalContent) {
     return chapter.originalContent.length;
   }
-  
+
   // 如果都没有，尝试从 IndexedDB 加载内容
   const content = await ChapterContentService.loadChapterContent(chapter.id);
   if (content && content.length > 0) {
     return content.reduce((total, para) => total + para.text.length, 0);
   }
-  
+
   return 0;
 }
 
@@ -179,7 +179,7 @@ export async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
     return 0;
   }
   const counts = await Promise.all(
-    volume.chapters.map((chapter) => getChapterCharCountAsync(chapter))
+    volume.chapters.map((chapter) => getChapterCharCountAsync(chapter)),
   );
   return counts.reduce((total, count) => total + count, 0);
 }
@@ -205,9 +205,7 @@ export async function getNovelCharCountAsync(novel: Novel): Promise<number> {
   if (!novel.volumes || novel.volumes.length === 0) {
     return 0;
   }
-  const counts = await Promise.all(
-    novel.volumes.map((volume) => getVolumeCharCountAsync(volume))
-  );
+  const counts = await Promise.all(novel.volumes.map((volume) => getVolumeCharCountAsync(volume)));
   return counts.reduce((total, count) => total + count, 0);
 }
 
@@ -235,12 +233,12 @@ export function getChapterContentText(chapter: Chapter): string {
     return '';
   }
   // 爬取时每一行都是一个段落，所以用单个换行符连接以匹配原始格式
-  return chapter.content.map(para => para.text).join('\n');
+  return chapter.content.map((para) => para.text).join('\n');
 }
 
 /**
  * 获取角色名称的所有变体（用于匹配）
- * 包括：原文、去空格版本、分割后的部分
+ * 包括：原文、去空格版本、去除括号内注音版本、分割后的部分
  * @param name 角色名称
  * @returns 名称变体数组
  */
@@ -251,10 +249,10 @@ export function getCharacterNameVariants(name: string): string[] {
 
   const variants = new Set<string>();
   const trimmedName = name.trim();
-  
+
   // 1. 添加原文
   variants.add(trimmedName);
-  
+
   // 2. 添加去空格/符号版本 (只移除空格和常见分隔符，保留其他内容)
   // 移除空格 (全角/半角)、点、中间点
   const noSeparatorName = trimmedName.replace(/[\s\u3000・.,]+/g, '');
@@ -262,14 +260,23 @@ export function getCharacterNameVariants(name: string): string[] {
     variants.add(noSeparatorName);
   }
 
-  // 3. 分割部分
+  // 3. 添加去除括号内注音的版本
+  // 匹配日文注音格式：汉字（假名）或 漢字(仮名)
+  // 例如：鵜（う）飼（かい）→ 鵜飼
+  const noFuriganaName = trimmedName.replace(/[（(][^）)]*[）)]/g, '');
+  if (noFuriganaName && noFuriganaName !== trimmedName) {
+    variants.add(noFuriganaName);
+  }
+
+  // 4. 分割部分
   // 按空格、中间点等分割
   const parts = trimmedName.split(/[\s\u3000・.,]+/);
   if (parts.length > 1) {
-    parts.forEach(part => {
-      if (part && part.trim().length > 0) { // 避免空字符串
-         // 过滤掉过短的纯数字/符号部分可能更好，但名字部分可能只有1-2个字，如 "桜"
-         // 这里不做过多的长度过滤，相信用户输入的名称
+    parts.forEach((part) => {
+      if (part && part.trim().length > 0) {
+        // 避免空字符串
+        // 过滤掉过短的纯数字/符号部分可能更好，但名字部分可能只有1-2个字，如 "桜"
+        // 这里不做过多的长度过滤，相信用户输入的名称
         variants.add(part.trim());
       }
     });
@@ -312,7 +319,7 @@ export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chap
   if (chapter.content !== undefined) {
     return chapter;
   }
-  
+
   const content = await ChapterContentService.loadChapterContent(chapter.id);
   if (content) {
     return {
@@ -321,6 +328,6 @@ export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chap
       contentLoaded: true,
     };
   }
-  
+
   return chapter;
 }

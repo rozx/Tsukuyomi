@@ -26,56 +26,56 @@ Tsukuyomi 是一个 AI 驱动的日本小说翻译工具，支持从日本小说
 
 ### 前端框架与运行时
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **Bun** | >=1.0.0 | JavaScript 运行时与包管理器 |
-| **Vue 3** | ^3.5.25 | 前端框架（Composition API） |
-| **Quasar** | ^2.18.6 | UI 框架与构建工具 |
-| **Vite** | (内置) | 构建工具与开发服务器 |
-| **TypeScript** | ^5.9.3 | 类型系统（严格模式） |
+| 技术           | 版本    | 用途                        |
+| -------------- | ------- | --------------------------- |
+| **Bun**        | >=1.0.0 | JavaScript 运行时与包管理器 |
+| **Vue 3**      | ^3.5.25 | 前端框架（Composition API） |
+| **Quasar**     | ^2.18.6 | UI 框架与构建工具           |
+| **Vite**       | (内置)  | 构建工具与开发服务器        |
+| **TypeScript** | ^5.9.3  | 类型系统（严格模式）        |
 
 ### UI 组件与样式
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **PrimeVue** | ^4.5.0 | 主要 UI 组件库 |
-| **Tailwind CSS** | ^3.4.18 | 工具类 CSS 框架 |
-| **Quasar 组件** | ^2.18.6 | 补充 UI 组件（`q-` 前缀） |
-| **PrimeIcons** | ^7.0.0 | 图标库 |
+| 技术             | 版本    | 用途                      |
+| ---------------- | ------- | ------------------------- |
+| **PrimeVue**     | ^4.5.0  | 主要 UI 组件库            |
+| **Tailwind CSS** | ^3.4.18 | 工具类 CSS 框架           |
+| **Quasar 组件**  | ^2.18.6 | 补充 UI 组件（`q-` 前缀） |
+| **PrimeIcons**   | ^7.0.0  | 图标库                    |
 
 ### 状态管理与数据
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **Pinia** | ^3.0.4 | 全局状态管理 |
-| **idb** | ^8.0.3 | IndexedDB 封装库 |
-| **IndexedDB** | - | 本地数据持久化 |
+| 技术          | 版本   | 用途             |
+| ------------- | ------ | ---------------- |
+| **Pinia**     | ^3.0.4 | 全局状态管理     |
+| **idb**       | ^8.0.3 | IndexedDB 封装库 |
+| **IndexedDB** | -      | 本地数据持久化   |
 
 ### AI 与网络
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **openai** | ^6.9.1 | OpenAI API SDK |
-| **@google/generative-ai** | ^0.24.1 | Gemini API SDK |
-| **axios** | ^1.13.2 | HTTP 客户端 |
-| **cheerio** | ^1.1.2 | 服务器端 HTML 解析 |
-| **marked** | ^17.0.1 | Markdown 解析 |
+| 技术                      | 版本    | 用途               |
+| ------------------------- | ------- | ------------------ |
+| **openai**                | ^6.9.1  | OpenAI API SDK     |
+| **@google/generative-ai** | ^0.24.1 | Gemini API SDK     |
+| **axios**                 | ^1.13.2 | HTTP 客户端        |
+| **cheerio**               | ^1.1.2  | 服务器端 HTML 解析 |
+| **marked**                | ^17.0.1 | Markdown 解析      |
 
 ### 桌面端 (Electron)
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **electron** | ^39.2.4 | 桌面应用框架 |
-| **puppeteer** | ^24.31.0 | 浏览器自动化（用于爬虫） |
-| **puppeteer-in-electron** | ^3.0.5 | Electron 集成 Puppeteer |
-| **puppeteer-extra-plugin-stealth** | ^2.11.2 | 反检测插件 |
+| 技术                               | 版本     | 用途                     |
+| ---------------------------------- | -------- | ------------------------ |
+| **electron**                       | ^39.2.4  | 桌面应用框架             |
+| **puppeteer**                      | ^24.31.0 | 浏览器自动化（用于爬虫） |
+| **puppeteer-in-electron**          | ^3.0.5   | Electron 集成 Puppeteer  |
+| **puppeteer-extra-plugin-stealth** | ^2.11.2  | 反检测插件               |
 
 ### 后端服务器
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| **express** | ^4.22.1 | Web 服务器框架 |
-| **http-proxy-middleware** | ^3.0.5 | 开发代理 |
+| 技术                      | 版本    | 用途           |
+| ------------------------- | ------- | -------------- |
+| **express**               | ^4.22.1 | Web 服务器框架 |
+| **http-proxy-middleware** | ^3.0.5  | 开发代理       |
 
 ---
 
@@ -227,17 +227,17 @@ project-root/
 
 主要服务:
 
-| 服务 | 职责 |
-|------|------|
-| `book-service.ts` | 书籍的 CRUD 操作，管理 IndexedDB 中的书籍数据 |
-| `chapter-service.ts` | 章节管理、段落搜索 |
-| `chapter-content-service.ts` | 章节内容的独立存储和加载（懒加载机制） |
-| `terminology-service.ts` | 术语表管理 |
-| `character-setting-service.ts` | 角色设定管理 |
-| `memory-service.ts` | AI 记忆的存储和检索（LRU 缓存） |
-| `gist-sync-service.ts` | GitHub Gist 同步功能 |
-| `sync-data-service.ts` | 数据同步服务 |
-| `ai-model-service.ts` | AI 模型配置管理 |
+| 服务                           | 职责                                          |
+| ------------------------------ | --------------------------------------------- |
+| `book-service.ts`              | 书籍的 CRUD 操作，管理 IndexedDB 中的书籍数据 |
+| `chapter-service.ts`           | 章节管理、段落搜索                            |
+| `chapter-content-service.ts`   | 章节内容的独立存储和加载（懒加载机制）        |
+| `terminology-service.ts`       | 术语表管理                                    |
+| `character-setting-service.ts` | 角色设定管理                                  |
+| `memory-service.ts`            | AI 记忆的存储和检索（LRU 缓存）               |
+| `gist-sync-service.ts`         | GitHub Gist 同步功能                          |
+| `sync-data-service.ts`         | 数据同步服务                                  |
+| `ai-model-service.ts`          | AI 模型配置管理                               |
 
 #### 3. Composables 层 (`src/composables/`)
 
@@ -245,15 +245,15 @@ Vue 3 Composition API 封装的业务逻辑，连接 Services 和 Components。
 
 主要 composables:
 
-| Composable | 职责 |
-|------------|------|
-| `useChapterTranslation.ts` | 章节翻译逻辑 |
-| `useParagraphTranslation.ts` | 段落翻译逻辑 |
-| `useEditMode.ts` | 编辑模式管理 |
-| `useChapterDragDrop.ts` | 章节拖拽排序 |
-| `useChapterExport.ts` | 章节导出功能 |
-| `useKeyboardShortcuts.ts` | 键盘快捷键管理 |
-| `useToastHistory.ts` | Toast 历史记录 |
+| Composable                   | 职责           |
+| ---------------------------- | -------------- |
+| `useChapterTranslation.ts`   | 章节翻译逻辑   |
+| `useParagraphTranslation.ts` | 段落翻译逻辑   |
+| `useEditMode.ts`             | 编辑模式管理   |
+| `useChapterDragDrop.ts`      | 章节拖拽排序   |
+| `useChapterExport.ts`        | 章节导出功能   |
+| `useKeyboardShortcuts.ts`    | 键盘快捷键管理 |
+| `useToastHistory.ts`         | Toast 历史记录 |
 
 #### 4. Stores 层 (`src/stores/`)
 
@@ -261,14 +261,14 @@ Pinia 全局状态管理，用于跨组件共享状态。
 
 主要 stores:
 
-| Store | 职责 |
-|-------|------|
-| `books.ts` | 书籍列表和当前书籍状态 |
-| `book-details.ts` | 书籍详情页状态 |
-| `ai-processing.ts` | AI 处理队列和状态 |
-| `settings.ts` | 应用设置 |
-| `context.ts` | 当前上下文（选中的章节、段落等） |
-| `toast-history.ts` | Toast 通知历史 |
+| Store              | 职责                             |
+| ------------------ | -------------------------------- |
+| `books.ts`         | 书籍列表和当前书籍状态           |
+| `book-details.ts`  | 书籍详情页状态                   |
+| `ai-processing.ts` | AI 处理队列和状态                |
+| `settings.ts`      | 应用设置                         |
+| `context.ts`       | 当前上下文（选中的章节、段落等） |
+| `toast-history.ts` | Toast 通知历史                   |
 
 #### 5. Components 层 (`src/components/`)
 
@@ -349,24 +349,24 @@ scraper/
 ```typescript
 interface Paragraph {
   id: string;
-  text: string;                          // 原文
-  selectedTranslationId: string;         // 当前选中的翻译版本
-  translations: Translation[];           // 所有翻译版本
+  text: string; // 原文
+  selectedTranslationId: string; // 当前选中的翻译版本
+  translations: Translation[]; // 所有翻译版本
 }
 
 interface Translation {
   id: string;
-  translation: string;                   // 译文
-  aiModelId: string;                     // 使用的 AI 模型
+  translation: string; // 译文
+  aiModelId: string; // 使用的 AI 模型
 }
 ```
 
 ### 4. ID 生成规范
 
-| 实体类型 | ID 格式 | 示例 |
-|----------|---------|------|
-| Novel (书籍) | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
-| Volume, Chapter, Paragraph, 等 | 8位十六进制短 ID | `e58ed763` |
+| 实体类型                       | ID 格式          | 示例                                   |
+| ------------------------------ | ---------------- | -------------------------------------- |
+| Novel (书籍)                   | UUID v4          | `550e8400-e29b-41d4-a716-446655440000` |
+| Volume, Chapter, Paragraph, 等 | 8位十六进制短 ID | `e58ed763`                             |
 
 使用 `UniqueIdGenerator` 确保组内唯一性:
 
@@ -390,7 +390,7 @@ import type { Novel, Chapter } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 
 // ❌ 错误
-import { Novel, Chapter } from 'src/models/novel';  // 类型未使用 type
+import { Novel, Chapter } from 'src/models/novel'; // 类型未使用 type
 ```
 
 - **路径别名**: 使用 `src/*` 别名导入
@@ -424,14 +424,14 @@ const emit = defineEmits<{
 
 ### 命名规范
 
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| Service 类 | PascalCase + Service 后缀 | `BookService`, `TerminologyService` |
-| 文件名 | kebab-case | `book-service.ts`, `paragraph-card.vue` |
-| 测试文件 | `.test.ts` 后缀 | `book-service.test.ts` |
-| 变量/函数 | camelCase | `getAllBooks`, `chapterId` |
-| 常量 | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT` |
-| 类型/接口 | PascalCase | `Novel`, `Chapter` |
+| 类型       | 规范                      | 示例                                    |
+| ---------- | ------------------------- | --------------------------------------- |
+| Service 类 | PascalCase + Service 后缀 | `BookService`, `TerminologyService`     |
+| 文件名     | kebab-case                | `book-service.ts`, `paragraph-card.vue` |
+| 测试文件   | `.test.ts` 后缀           | `book-service.test.ts`                  |
+| 变量/函数  | camelCase                 | `getAllBooks`, `chapterId`              |
+| 常量       | UPPER_SNAKE_CASE          | `MAX_RETRY_COUNT`                       |
+| 类型/接口  | PascalCase                | `Novel`, `Chapter`                      |
 
 ### 格式化规范
 
@@ -492,18 +492,18 @@ afterEach(() => {
 
 数据库名称: `tsukuyomi`，版本: `7`
 
-| 存储名称 | 键路径 | 用途 |
-|----------|--------|------|
-| `books` | `id` | 书籍元数据（不含章节内容） |
-| `chapter-contents` | `chapterId` | 章节内容独立存储 |
-| `ai-models` | `id` | AI 模型配置 |
-| `settings` | `key` | 应用设置 |
-| `sync-configs` | `id` | 同步配置 |
-| `cover-history` | `id` | 封面历史 |
-| `toast-history` | `id` | Toast 历史 |
-| `thinking-processes` | `id` | AI 思考过程 |
-| `memories` | `id` | AI 记忆 |
-| `full-text-indexes` | `bookId` | 全文搜索索引 |
+| 存储名称             | 键路径      | 用途                       |
+| -------------------- | ----------- | -------------------------- |
+| `books`              | `id`        | 书籍元数据（不含章节内容） |
+| `chapter-contents`   | `chapterId` | 章节内容独立存储           |
+| `ai-models`          | `id`        | AI 模型配置                |
+| `settings`           | `key`       | 应用设置                   |
+| `sync-configs`       | `id`        | 同步配置                   |
+| `cover-history`      | `id`        | 封面历史                   |
+| `toast-history`      | `id`        | Toast 历史                 |
+| `thinking-processes` | `id`        | AI 思考过程                |
+| `memories`           | `id`        | AI 记忆                    |
+| `full-text-indexes`  | `bookId`    | 全文搜索索引               |
 
 ### Date 序列化
 
@@ -566,19 +566,19 @@ console.error('Failed to load book:', error);
 
 ### 端口配置
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| Vite 开发服务器 | 9000 | 前端开发 |
+| 服务               | 端口 | 说明            |
+| ------------------ | ---- | --------------- |
+| Vite 开发服务器    | 9000 | 前端开发        |
 | Express 应用服务器 | 8080 | 后端 API 和代理 |
 
 ### 环境变量
 
-| 变量 | 用途 |
-|------|------|
-| `NODE_ENV` | `production` 或 `development` |
-| `PORT` | 应用服务器端口（默认 8080） |
-| `VITE_PORT` | Vite 服务器端口（默认 9000） |
-| `PROXY_MODE` | `puppeteer` 或 `allorigins` |
+| 变量             | 用途                            |
+| ---------------- | ------------------------------- |
+| `NODE_ENV`       | `production` 或 `development`   |
+| `PORT`           | 应用服务器端口（默认 8080）     |
+| `VITE_PORT`      | Vite 服务器端口（默认 9000）    |
+| `PROXY_MODE`     | `puppeteer` 或 `allorigins`     |
 | `ELECTRON_DEBUG` | `true` 启用 Electron 开发者工具 |
 
 ---
@@ -588,7 +588,7 @@ console.error('Failed to load book:', error);
 1. **API Keys**: AI 模型的 API Key 存储在本地 IndexedDB，不会上传到服务器
 2. **CORS 代理**: 开发时使用 Vite 代理，生产环境使用 Express 代理服务器
 3. **XSS 防护**: 使用 DOMPurify 清理用户输入和外部内容
-4. **Electron 安全**: 
+4. **Electron 安全**:
    - 禁用 `nodeIntegration`，启用 `contextIsolation`
    - Preload 脚本提供安全的 IPC 通信
    - 禁用 `webSecurity` 以允许爬虫绕过 CORS（仅在 Electron 中）
@@ -609,11 +609,11 @@ bun run build:spa
 
 构建输出目录: `dist/electron/`
 
-| 平台 | 输出格式 |
-|------|----------|
+| 平台    | 输出格式        |
+| ------- | --------------- |
 | Windows | Portable `.exe` |
-| macOS | `.app` bundle |
-| Linux | AppImage |
+| macOS   | `.app` bundle   |
+| Linux   | AppImage        |
 
 ```bash
 bun run build:electron
@@ -624,7 +624,7 @@ bun run build:electron
 ## 重要提醒
 
 1. **代码质量检查**: 完成修改后必须运行 `bun run lint` 和 `bun run type-check`
-2. **中文优先**: 所有代码注释和 UI 文本使用简体中文
+2. **中文优先**: 所有代码注释和 UI 文本，和回答均使用简体中文
 3. **遵循现有风格**: 创建新组件/服务前，先参考现有实现
 4. **DRY 原则**: 不重复代码，提取可复用的函数/组件
 5. **鲁棒性**: 注意边界情况，确保代码健壮性

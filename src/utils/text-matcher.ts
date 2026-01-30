@@ -6,12 +6,99 @@ export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * 去除文本中的注音（括号内的假名）
+ * 例如：鵜（う）飼（かい）→ 鵜飼
+ * @param text 原始文本
+ * @returns 去除注音后的文本
+ */
+export function removeFurigana(text: string): string {
+  return text.replace(/[（(][^）)]*[）)]/g, '');
+}
+
+/**
+ * 去除注音并返回位置映射
+ * 映射：去除注音后的文本中的每个位置对应到原始文本中的位置
+ * @param text 原始文本
+ * @returns { textWithoutFurigana: string, positionMap: number[], lengthMap: number[] }
+ */
+export interface FuriganaMapResult {
+  textWithoutFurigana: string;
+  positionMap: number[];
+  lengthMap: number[];
+}
+
+/**
+ * 去除注音并返回位置映射
+ * 映射：去除注音后的文本中的每个位置对应到原始文本中的位置
+ * @param text 原始文本
+ * @returns { textWithoutFurigana: string, positionMap: number[], lengthMap: number[] }
+ */
+export function removeFuriganaWithMap(text: string): FuriganaMapResult {
+  const textWithoutFurigana: string[] = [];
+  const positionMap: number[] = []; // 去除注音后文本中的每个位置对应的原始文本位置
+  const lengthMap: number[] = []; // 去除注音后文本中的每个位置对应的原始文本长度
+  let originalIndex = 0;
+
+  while (originalIndex < text.length) {
+    const char = text[originalIndex];
+    if (!char) break;
+
+    // 检查是否是注音的开始
+    if (char === '（' || char === '(') {
+      // 找到注音的结束
+      const endIndex = text.indexOf(char === '（' ? '）' : ')', originalIndex);
+      if (endIndex !== -1) {
+        // 跳过整个注音（不添加到 textWithoutFurigana）
+        // 但需要记录下一个字符的位置映射
+        originalIndex = endIndex + 1;
+        continue;
+      }
+    }
+
+    // 不是注音，添加到结果中
+    textWithoutFurigana.push(char);
+    positionMap.push(originalIndex);
+
+    // 计算这个字符到下一个非注音字符之间的长度（包括注音）
+    let charLength = 1;
+    let nextIndex = originalIndex + 1;
+    while (nextIndex < text.length) {
+      const nextChar = text[nextIndex];
+      if (nextChar === '（' || nextChar === '(') {
+        // 找到注音的结束
+        const furiganaEndIndex = text.indexOf(nextChar === '（' ? '）' : ')', nextIndex);
+        if (furiganaEndIndex !== -1) {
+          // 包含注音的长度
+          charLength += furiganaEndIndex - nextIndex + 1;
+          nextIndex = furiganaEndIndex + 1;
+        } else {
+          break;
+        }
+      } else {
+        // 下一个非注音字符，停止
+        break;
+      }
+    }
+    lengthMap.push(charLength);
+
+    originalIndex++;
+  }
+
+  return {
+    textWithoutFurigana: textWithoutFurigana.join(''),
+    positionMap,
+    lengthMap,
+  };
+}
+
 export interface MatchResult<T> {
   item: T;
   matchedName: string;
   index: number;
   length: number;
   type: 'term' | 'character';
+  matchedText?: string; // 原始文本中的匹配内容（包含注音）
 }
 
 export interface HighlightNode {
@@ -28,7 +115,18 @@ export interface HighlightNode {
  * @param terms 术语列表
  * @returns 匹配结果数组
  */
-export function matchTermsInText(text: string, terms: Terminology[]): MatchResult<Terminology>[] {
+/**
+ * 在文本中查找术语
+ * @param text 文本
+ * @param terms 术语列表
+ * @param parsedText 可选的预解析文本（避免重复解析）
+ * @returns 匹配结果数组
+ */
+export function matchTermsInText(
+  text: string,
+  terms: Terminology[],
+  parsedText?: FuriganaMapResult,
+): MatchResult<Terminology>[] {
   if (!text || !terms || terms.length === 0) {
     return [];
   }
@@ -55,17 +153,30 @@ export function matchTermsInText(text: string, terms: Terminology[]): MatchResul
   const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
   const regex = new RegExp(`(${namePatterns})`, 'g');
 
+  // 在去除注音的文本中匹配，并使用位置映射
+  const { textWithoutFurigana, positionMap, lengthMap } = parsedText || removeFuriganaWithMap(text);
+
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(textWithoutFurigana)) !== null) {
     const matchedText = match[0];
     const term = termMap.get(matchedText);
     if (term) {
+      // 使用位置映射将匹配位置转换回原始文本中的位置
+      const originalIndex = positionMap[match.index] ?? match.index;
+      // 计算原始文本中的匹配长度（考虑注音）
+      let originalLength = 0;
+      for (let i = 0; i < matchedText.length; i++) {
+        originalLength += lengthMap[match.index + i] ?? 1;
+      }
+      // 获取原始文本中的匹配内容（包含注音）
+      const matchedOriginalText = text.substring(originalIndex, originalIndex + originalLength);
       matches.push({
         item: term,
         matchedName: matchedText,
-        index: match.index,
-        length: matchedText.length,
+        index: originalIndex,
+        length: originalLength,
         type: 'term',
+        matchedText: matchedOriginalText,
       });
     }
   }
@@ -80,17 +191,23 @@ export function matchTermsInText(text: string, terms: Terminology[]): MatchResul
  * @param contextScores 可选的上下文得分（用于消歧义），通常是整章或整卷的统计
  * @returns 匹配结果数组
  */
-export function matchCharactersInText(
+/**
+ * 内部辅助函数：扫描文本中的角色匹配
+ */
+function scanCharacterMatches(
   text: string,
   characters: CharacterSetting[],
-  contextScores?: Map<string, number>,
-): MatchResult<CharacterSetting>[] {
+  parsedText?: FuriganaMapResult,
+) {
   if (!text || !characters || characters.length === 0) {
-    return [];
+    return {
+      rawMatches: [],
+      localScores: new Map<string, number>(),
+      nameToCharsMap: new Map<string, CharacterSetting[]>(),
+    };
   }
 
   // 1. 构建名称到角色的映射（一对多）
-  // Map<name, CharacterSetting[]>
   const nameToCharsMap = new Map<string, CharacterSetting[]>();
   const validNames = new Set<string>();
 
@@ -113,26 +230,42 @@ export function matchCharactersInText(
     }
   }
 
-  if (validNames.size === 0) return [];
+  if (validNames.size === 0) {
+    return {
+      rawMatches: [],
+      localScores: new Map<string, number>(),
+      nameToCharsMap,
+    };
+  }
 
   // 2. 准备正则匹配
-  // 按长度降序排序，优先匹配较长的名称
   const sortedNames = Array.from(validNames).sort((a, b) => b.length - a.length);
   const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
   const regex = new RegExp(`(${namePatterns})`, 'g');
 
-  // 3. 第一次扫描：记录原始匹配并计算角色在文本中的出现得分
-  // 得分策略：只要角色的任意名字（包括有歧义的）出现在文本中，该角色得分+1
-  const rawMatches: { name: string; index: number; length: number }[] = [];
-  const localScores = new Map<string, number>(); // charId -> score
+  // 在去除注音的文本中匹配，并使用位置映射
+  const { textWithoutFurigana, positionMap, lengthMap } = parsedText || removeFuriganaWithMap(text);
+
+  // 3. 扫描匹配并计算得分
+  const rawMatches: { name: string; index: number; length: number; matchedText: string }[] = [];
+  const localScores = new Map<string, number>();
 
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(textWithoutFurigana)) !== null) {
     const matchedText = match[0];
+    const originalIndex = positionMap[match.index] ?? match.index;
+
+    let originalLength = 0;
+    for (let i = 0; i < matchedText.length; i++) {
+      originalLength += lengthMap[match.index + i] ?? 1;
+    }
+
+    const matchedOriginalText = text.substring(originalIndex, originalIndex + originalLength);
     rawMatches.push({
       name: matchedText,
-      index: match.index,
-      length: matchedText.length,
+      index: originalIndex,
+      length: originalLength,
+      matchedText: matchedOriginalText,
     });
 
     const possibleChars = nameToCharsMap.get(matchedText);
@@ -144,10 +277,35 @@ export function matchCharactersInText(
     }
   }
 
+  return { rawMatches, localScores, nameToCharsMap };
+}
+
+/**
+ * 在文本中查找角色（包括别名和变体）
+ * @param text 文本
+ * @param characters 角色列表
+ * @param contextScores 可选的上下文得分（用于消歧义），通常是整章或整卷的统计
+ * @param parsedText 可选的预解析文本
+ * @returns 匹配结果数组
+ */
+export function matchCharactersInText(
+  text: string,
+  characters: CharacterSetting[],
+  contextScores?: Map<string, number>,
+  parsedText?: FuriganaMapResult,
+): MatchResult<CharacterSetting>[] {
+  const { rawMatches, localScores, nameToCharsMap } = scanCharacterMatches(
+    text,
+    characters,
+    parsedText,
+  );
+
+  if (rawMatches.length === 0) return [];
+
   // 4. 构建最终结果 - 包含所有匹配的角色，而不只是得分最高的
   // 对于每个匹配位置，返回所有可能的角色
   const matches: MatchResult<CharacterSetting>[] = [];
-  
+
   for (const raw of rawMatches) {
     const possibleChars = nameToCharsMap.get(raw.name);
     if (possibleChars && possibleChars.length > 0) {
@@ -173,6 +331,7 @@ export function matchCharactersInText(
           index: raw.index,
           length: raw.length,
           type: 'character',
+          matchedText: raw.matchedText,
         });
       }
     }
@@ -187,57 +346,20 @@ export function matchCharactersInText(
  * @param characters 角色列表
  * @returns Map<characterId, score>
  */
+/**
+ * 计算文本中各角色的出现得分（不返回匹配详情，仅用于统计上下文）
+ * @param text 文本
+ * @param characters 角色列表
+ * @param parsedText 可选的预解析文本
+ * @returns Map<characterId, score>
+ */
 export function calculateCharacterScores(
   text: string,
   characters: CharacterSetting[],
+  parsedText?: FuriganaMapResult,
 ): Map<string, number> {
-  if (!text || !characters || characters.length === 0) {
-    return new Map();
-  }
-
-  const nameToCharsMap = new Map<string, CharacterSetting[]>();
-  const validNames = new Set<string>();
-
-  for (const char of characters) {
-    const allNames = new Set([
-      ...getCharacterNameVariants(char.name),
-      ...(char.aliases?.flatMap((a) => getCharacterNameVariants(a.name)) || []),
-    ]);
-
-    for (const name of allNames) {
-      if (name && name.trim()) {
-        const trimmedName = name.trim();
-        validNames.add(trimmedName);
-
-        if (!nameToCharsMap.has(trimmedName)) {
-          nameToCharsMap.set(trimmedName, []);
-        }
-        nameToCharsMap.get(trimmedName)?.push(char);
-      }
-    }
-  }
-
-  if (validNames.size === 0) return new Map();
-
-  const sortedNames = Array.from(validNames).sort((a, b) => b.length - a.length);
-  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-  const regex = new RegExp(`(${namePatterns})`, 'g');
-
-  const scores = new Map<string, number>();
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    const matchedText = match[0];
-    const possibleChars = nameToCharsMap.get(matchedText);
-    if (possibleChars) {
-      for (const char of possibleChars) {
-        const currentScore = scores.get(char.id) || 0;
-        scores.set(char.id, currentScore + 1);
-      }
-    }
-  }
-
-  return scores;
+  // 复用扫描逻辑
+  return scanCharacterMatches(text, characters, parsedText).localScores;
 }
 
 /**
@@ -256,9 +378,12 @@ export function parseTextForHighlighting(
 ): HighlightNode[] {
   if (!text) return [];
 
+  // 预解析注音，避免多次解析
+  const parsedText = removeFuriganaWithMap(text);
+
   const allMatches: MatchResult<Terminology | CharacterSetting>[] = [
-    ...matchTermsInText(text, terms),
-    ...matchCharactersInText(text, characters, contextScores),
+    ...matchTermsInText(text, terms, parsedText),
+    ...matchCharactersInText(text, characters, contextScores, parsedText),
   ];
 
   if (allMatches.length === 0) {
@@ -287,21 +412,24 @@ export function parseTextForHighlighting(
 
   // 合并相同位置的多个角色匹配
   // Map<positionKey, { match: MatchResult, characters: CharacterSetting[] }>
-  const positionMap = new Map<string, {
-    match: MatchResult<Terminology | CharacterSetting>;
-    characters: CharacterSetting[];
-  }>();
+  const positionMap = new Map<
+    string,
+    {
+      match: MatchResult<Terminology | CharacterSetting>;
+      characters: CharacterSetting[];
+    }
+  >();
 
   for (const match of allMatches) {
     const positionKey = `${match.index}-${match.length}`;
-    
+
     if (match.type === 'character') {
       const char = match.item as CharacterSetting;
       const existing = positionMap.get(positionKey);
-      
+
       if (existing) {
         // 如果已存在，添加角色到列表（避免重复）
-        const charIdSet = new Set(existing.characters.map(c => c.id));
+        const charIdSet = new Set(existing.characters.map((c) => c.id));
         if (!charIdSet.has(char.id)) {
           existing.characters.push(char);
         }
@@ -344,7 +472,7 @@ export function parseTextForHighlighting(
     match: MatchResult<Terminology | CharacterSetting>;
     characters: CharacterSetting[];
   }> = [];
-  
+
   for (const entry of positionMap.values()) {
     let hasOverlap = false;
 
@@ -353,7 +481,10 @@ export function parseTextForHighlighting(
       const existingEnd = existing.match.index + existing.match.length;
 
       // 检查是否有重叠（但允许相同位置的多个角色）
-      if (entry.match.index !== existing.match.index || entry.match.length !== existing.match.length) {
+      if (
+        entry.match.index !== existing.match.index ||
+        entry.match.length !== existing.match.length
+      ) {
         if (
           (entry.match.index >= existing.match.index && entry.match.index < existingEnd) ||
           (currentEnd > existing.match.index && currentEnd <= existingEnd) ||
@@ -379,7 +510,7 @@ export function parseTextForHighlighting(
 
   for (const entry of filteredMatches) {
     const match = entry.match;
-    
+
     // 添加匹配项前面的普通文本
     if (match.index > lastIndex) {
       nodes.push({
@@ -392,8 +523,14 @@ export function parseTextForHighlighting(
     if (match.type === 'term') {
       nodes.push({
         type: 'term',
-        content: match.matchedName,
+        content:
+          (match as MatchResult<Terminology>).matchedText ||
+          Array.from(text)
+            .slice(match.index, match.index + match.length)
+            .join(''), // 使用原始文本中的内容
         term: match.item as Terminology,
+        // 如果有重叠的角色，也包含在节点中
+        ...(entry.characters.length > 0 ? { characters: entry.characters } : {}),
       });
     } else {
       // 角色匹配：包含所有匹配的角色
@@ -402,7 +539,11 @@ export function parseTextForHighlighting(
         const firstCharacter = characters[0];
         nodes.push({
           type: 'character',
-          content: match.matchedName,
+          content:
+            (match as MatchResult<CharacterSetting>).matchedText ||
+            Array.from(text)
+              .slice(match.index, match.index + match.length)
+              .join(''), // 使用原始文本中的内容
           ...(firstCharacter ? { character: firstCharacter } : {}), // 第一个角色用于向后兼容
           characters: characters, // 所有匹配的角色
         });
@@ -451,11 +592,11 @@ export function findUniqueCharactersInText(
 ): CharacterSetting[] {
   // matchCharactersInText 现在会返回所有匹配的角色，包括同一文本匹配多个角色的情况
   const matches = matchCharactersInText(text, characters, contextScores);
-  
+
   // 计算每个角色的出现次数（用于排序）
   const characterCounts = new Map<string, number>();
   const characterMap = new Map<string, CharacterSetting>();
-  
+
   // 遍历所有匹配，提取唯一角色并统计出现次数
   // 如果同一文本匹配多个角色，所有匹配的角色都会被包含
   matches.forEach((m) => {
@@ -463,22 +604,22 @@ export function findUniqueCharactersInText(
     characterMap.set(charId, m.item);
     characterCounts.set(charId, (characterCounts.get(charId) || 0) + 1);
   });
-  
+
   // 按出现次数排序（出现次数多的在前）
   const uniqueCharacters = Array.from(characterMap.values()).sort((a, b) => {
     const countA = characterCounts.get(a.id) || 0;
     const countB = characterCounts.get(b.id) || 0;
-    
+
     // 如果出现次数相同，使用上下文得分作为次要排序依据
     if (countA === countB) {
       const contextScoreA = contextScores?.get(a.id) || 0;
       const contextScoreB = contextScores?.get(b.id) || 0;
       return contextScoreB - contextScoreA;
     }
-    
+
     return countB - countA;
   });
-  
+
   return uniqueCharacters;
 }
 
