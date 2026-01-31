@@ -11,6 +11,8 @@ export type TaskType = 'translation' | 'polish' | 'proofreading' | 'chapter_summ
  */
 export type TaskStatus = AIWorkflowStatus;
 
+export const VALID_TASK_STATUSES: TaskStatus[] = ['planning', 'working', 'review', 'end'];
+
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {
   translation: '翻译',
   polish: '润色',

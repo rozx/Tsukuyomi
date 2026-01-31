@@ -1,4 +1,5 @@
 import type { TaskStatus } from './task-types';
+import { VALID_TASK_STATUSES } from './task-types';
 
 /**
  * 解析后的 JSON 响应结果
@@ -23,11 +24,32 @@ export interface VerificationResult {
 }
 
 /**
+ * 解析段落 ID（提取为独立函数以减少重复代码）
+ * @param item 包含 i/id 的对象
+ * @param paragraphIds 段落 ID 列表（用于将索引映射回实际 ID）
+ * @returns 解析后的段落 ID
+ */
+function resolveParagraphId(item: { i?: number; id?: string }, paragraphIds?: string[]): string {
+  if (typeof item.id === 'string') {
+    return item.id;
+  }
+  if (typeof item.i === 'number' && paragraphIds?.[item.i] !== undefined) {
+    return paragraphIds[item.i]!;
+  }
+  if (typeof item.i === 'number') {
+    console.warn(`[response-parser] 段落索引 ${item.i} 超出范围，使用字符串转换`);
+    return String(item.i);
+  }
+  console.warn('[response-parser] 无法解析段落 ID，返回空字符串');
+  return '';
+}
+
+/**
  * 提取字符串中的 JSON 对象（支持不规范的流式输出）
  * 使用简单的括号计数算法，比正则更稳健，可以处理 JSON 对象之间的无关文本
  */
-function extractJsonObjects(text: string): any[] {
-  const results: any[] = [];
+function extractJsonObjects(text: string): Record<string, unknown>[] {
+  const results: Record<string, unknown>[] = [];
   let braceCount = 0;
   let startIndex = -1;
   let inString = false;
@@ -109,8 +131,7 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
       // 1. 提取状态 (s / status)
       const statusValue = data.s ?? data.status;
       if (statusValue && typeof statusValue === 'string') {
-        const validStatuses: TaskStatus[] = ['planning', 'working', 'review', 'end'];
-        if (validStatuses.includes(statusValue as TaskStatus)) {
+        if (VALID_TASK_STATUSES.includes(statusValue as TaskStatus)) {
           finalStatus = statusValue as TaskStatus;
         } else {
           // 记录无效的状态值
@@ -121,22 +142,12 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
       // 2. 提取内容 (p / paragraphs, tt / titleTranslation)
       const paragraphsData = data.p ?? data.paragraphs;
       if (paragraphsData && Array.isArray(paragraphsData)) {
-        const parsedParas = paragraphsData.map(
-          (item: { i?: number; id?: string; t?: string; translation?: string }) => {
-            let id: string;
-            if (typeof item.i === 'number' && paragraphIds && paragraphIds[item.i] !== undefined) {
-              id = paragraphIds[item.i] as string;
-            } else if (typeof item.id === 'string') {
-              id = item.id;
-            } else if (typeof item.i === 'number') {
-              id = String(item.i);
-            } else {
-              id = '';
-            }
-            const translation = item.t ?? item.translation ?? '';
-            return { id, translation };
-          },
-        );
+        const parsedParas = paragraphsData.map((item: unknown) => {
+          const pItem = item as { i?: number; id?: string; t?: string; translation?: string };
+          const id = resolveParagraphId(pItem, paragraphIds);
+          const translation = pItem.t ?? pItem.translation ?? '';
+          return { id, translation };
+        });
         accumulatedContent.paragraphs.push(...parsedParas);
       }
 
@@ -147,17 +158,14 @@ export function parseStatusResponse(responseText: string, paragraphIds?: string[
       const isStandaloneParagraph = hasParagraphId && hasTranslation && !data.p && !data.paragraphs;
 
       if (isStandaloneParagraph) {
-        let id: string;
-        if (typeof data.i === 'number' && paragraphIds && paragraphIds[data.i] !== undefined) {
-          id = paragraphIds[data.i] as string;
-        } else if (typeof data.id === 'string') {
-          id = data.id;
-        } else if (typeof data.i === 'number') {
-          id = String(data.i);
-        } else {
-          id = '';
-        }
-        const translation = data.t ?? data.translation ?? '';
+        // Construct a clean object for resolveParagraphId to avoid 'as any' and ExactOptionalPropertyTypes issues
+        const paraInput: { i?: number; id?: string } = {};
+        if (typeof data.i === 'number') paraInput.i = data.i;
+        if (typeof data.id === 'string') paraInput.id = data.id;
+
+        const id = resolveParagraphId(paraInput, paragraphIds);
+        const tVal = data.t ?? data.translation;
+        const translation = typeof tVal === 'string' ? tVal : '';
         if (id && translation) {
           accumulatedContent.paragraphs.push({ id, translation });
         }

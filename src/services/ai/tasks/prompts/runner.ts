@@ -2,10 +2,10 @@ import {
   getStatusLabel,
   getValidTransitionsForTaskType,
   getTaskStateWorkflowText,
+  TASK_TYPE_LABELS,
   type TaskStatus,
   type TaskType,
 } from '../utils/task-types';
-import { TASK_LABELS } from './common';
 
 /**
  * 获取流式输出错误提示
@@ -62,7 +62,7 @@ export function getPlanningLoopPrompt(
   isBriefPlanning: boolean,
   isLoopDetected: boolean,
 ): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   if (isLoopDetected) {
     return (
@@ -87,7 +87,7 @@ export function getPlanningLoopPrompt(
  * 获取工作阶段循环提示（无输出）
  */
 export function getWorkingLoopPrompt(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const finishStatus = taskType === 'translation' ? 'review' : 'end';
   const noChangeHint =
     taskType === 'polish' || taskType === 'proofreading'
@@ -105,7 +105,7 @@ export function getWorkingLoopPrompt(taskType: TaskType): string {
  * 获取工作阶段完成提示
  */
 export function getWorkingFinishedPrompt(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const finishStatus = taskType === 'translation' ? 'review' : 'end';
   const note =
     taskType === 'polish' || taskType === 'proofreading' ? '（润色/校对任务禁止使用 review）' : '';
@@ -119,7 +119,7 @@ export function getWorkingFinishedPrompt(taskType: TaskType): string {
  * 获取工作阶段继续提示
  */
 export function getWorkingContinuePrompt(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const finishStatus = taskType === 'translation' ? 'review' : 'end';
   const note = taskType === 'translation' ? '无需检查缺失段落，系统会自动验证。' : '';
   return `收到。继续${taskLabel}，完成后设为 "${finishStatus}"。` + note;
@@ -129,7 +129,7 @@ export function getWorkingContinuePrompt(taskType: TaskType): string {
  * 获取复核阶段缺失段落提示
  */
 export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: number[]): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   // Helper to format indices as ranges (e.g. "1, 2, 3" -> "1-3")
   const ranges: string[] = [];
@@ -158,7 +158,7 @@ export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: n
  * 获取复核阶段循环提示
  */
 export function getReviewLoopPrompt(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   return (
     `[警告] 你已经在复核阶段停留过久。` +
     `如果你还想更新任何已输出的${taskLabel}结果，请将状态改回 \`{"status":"working"}\` 并提交需要更新的段落；` +
@@ -193,7 +193,7 @@ export function getContentStateMismatchPrompt(status: string): string {
  * 获取未授权工具警告
  */
 export function getUnauthorizedToolPrompt(taskType: TaskType, toolName: string): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   return (
     `[警告] 工具 ${toolName} 未在本次会话提供的 tools 列表中，禁止调用。` +
     `请改用可用工具或基于已有上下文继续${taskLabel}。`

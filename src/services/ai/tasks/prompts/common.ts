@@ -1,14 +1,6 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { TaskType, TaskStatus } from '../utils';
-import { getTaskStateWorkflowText } from '../utils';
-
-/** 任务类型标签映射（模块级常量，避免重复定义） */
-export const TASK_LABELS: Record<TaskType, string> = {
-  translation: '翻译',
-  polish: '润色',
-  proofreading: '校对',
-  chapter_summary: '章节摘要',
-};
+import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
 function getToolNames(tools?: AITool[]): string[] {
   if (!tools || tools.length === 0) return [];
@@ -67,7 +59,7 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 }
 
 function getWorkingStateDescription(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   let focusDesc = '';
   switch (taskType) {
     case 'translation':
@@ -128,7 +120,7 @@ export function getCurrentStatusInfo(
   status: TaskStatus,
   isBriefPlanning?: boolean,
 ): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
 
   switch (status) {
     case 'planning':
@@ -186,7 +178,7 @@ export function getMemoryWorkflowRules(): string {
  * 获取待办事项工具描述（精简版）
  */
 export function getTodoToolsDescription(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   return `**待办管理**:
   - 复杂任务用 \`create_todo\` 创建详细任务（如"${taskLabel}第1-5段"）
   - 简单任务直接处理，无需创建待办
@@ -198,7 +190,7 @@ export function getTodoToolsDescription(taskType: TaskType): string {
  * 获取状态字段说明（精简版）
  */
 export function getStatusFieldDescription(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const rules = `⚠️ **状态转换规则**:
 - ${getTaskStateWorkflowText(taskType)}`;
   const reviewState = taskType === 'translation' ? '→review' : '';
@@ -210,7 +202,7 @@ ${rules}
 }
 
 export function getOutputFormatRules(taskType: TaskType): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const hasTitle = taskType === 'translation';
 
@@ -277,7 +269,7 @@ export function getToolUsageInstructions(
   tools?: AITool[],
   skipAskUser?: boolean,
 ): string {
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   const askUserLine = !skipAskUser
     ? '- **询问**: 当有需要用户确认/做决定时，用 `ask_user_batch` 一次性解决所有疑问\n'
     : '';
