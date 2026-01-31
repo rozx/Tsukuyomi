@@ -175,7 +175,11 @@ const taskStatusLabels: Record<string, string> = {
 };
 
 // Auto Scroll State - 从 store 获取，使用 computed 以便响应式更新
-const autoScrollEnabled = computed(() => bookDetailsStore.translationProgress.autoScrollEnabled);
+// 默认启用自动滚动（undefined 视为 true）
+const autoScrollEnabled = computed(() => {
+  const storeValue = bookDetailsStore.translationProgress.autoScrollEnabled;
+  return (taskId: string) => storeValue[taskId] !== false;
+});
 
 // Auto Tab Switching State - 从 store 获取
 const autoTabSwitchingEnabled = computed(
@@ -406,7 +410,7 @@ const scrollToBottom = (container: HTMLElement) => {
 
 // 通用自动滚动切换函数，适用于所有标签页
 const toggleAutoScroll = (taskId: string) => {
-  const currentEnabled = autoScrollEnabled.value[taskId] || false;
+  const currentEnabled = autoScrollEnabled.value(taskId);
   bookDetailsStore.setTranslationProgressAutoScroll(taskId, !currentEnabled);
   if (!currentEnabled) {
     nextTick(() => {
@@ -615,7 +619,7 @@ const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => 
 const handleThinkingScroll = throttle(() => {
   requestAnimationFrame(() => {
     for (const task of recentAITasks.value) {
-      if (autoScrollEnabled.value[task.id] && task.thinkingMessage) {
+      if (autoScrollEnabled.value(task.id) && task.thinkingMessage) {
         const activeTab = getActiveTab(task.id);
         // 只有在思考标签页激活时才滚动思考容器
         if (activeTab === 'thinking') {
@@ -683,7 +687,7 @@ const updateDisplayedOutputContent = throttle((taskId: string) => {
 const handleOutputScroll = throttle(() => {
   requestAnimationFrame(() => {
     for (const task of recentAITasks.value) {
-      if (autoScrollEnabled.value[task.id] && task.outputContent) {
+      if (autoScrollEnabled.value(task.id) && task.outputContent) {
         const activeTab = getActiveTab(task.id);
         // 只有在输出标签页激活时才滚动输出容器
         if (activeTab === 'output') {
@@ -743,7 +747,7 @@ watch(
 const handleTodosScroll = throttle(() => {
   requestAnimationFrame(() => {
     for (const task of recentAITasks.value) {
-      if (autoScrollEnabled.value[task.id]) {
+      if (autoScrollEnabled.value(task.id)) {
         const activeTab = getActiveTab(task.id);
         // 只有在待办事项标签页激活时才滚动待办事项容器
         if (activeTab === 'todos') {
@@ -877,13 +881,13 @@ watch(
                     formatTaskDuration(task.startTime, task.endTime)
                   }}</span>
                   <Button
-                    :icon="autoScrollEnabled[task.id] ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
+                    :icon="autoScrollEnabled(task.id) ? 'pi pi-arrow-down' : 'pi pi-arrows-v'"
                     :class="[
                       'p-button-text p-button-sm ai-task-auto-scroll-toggle',
-                      { 'auto-scroll-enabled': autoScrollEnabled[task.id] },
+                      { 'auto-scroll-enabled': autoScrollEnabled(task.id) },
                     ]"
                     :title="
-                      autoScrollEnabled[task.id]
+                      autoScrollEnabled(task.id)
                         ? '禁用自动滚动'
                         : '启用自动滚动（新内容出现时自动滚动到底部）'
                     "
