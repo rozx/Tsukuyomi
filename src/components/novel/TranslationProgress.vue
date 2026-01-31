@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Ref } from 'vue';
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
@@ -16,14 +17,33 @@ import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
-// 节流函数：限制函数执行频率
+// 常量定义
+const UPDATE_THRESHOLD_MS = 2000; // 更新时间阈值（毫秒）
+const THROTTLE_DELAY_MS = 100; // 节流延迟（毫秒）
+const FORMAT_CACHE_THROTTLE_MS = 200; // 格式化缓存节流延迟（毫秒）
+const MAX_TASK_CONTENT_HEIGHT = 2000; // 任务内容最大高度（像素）
+
+// 任务状态标签
+const taskStatusLabels: Record<string, string> = {
+  thinking: '思考中',
+  processing: '处理中',
+  end: '已完成',
+  error: '错误',
+  cancelled: '已取消',
+};
+
+// 节流函数：限制函数执行频率，支持清理
 function throttle<Args extends unknown[]>(
   func: (...args: Args) => void,
   delay: number,
-): (...args: Args) => void {
+): {
+  fn: (...args: Args) => void;
+  cleanup: () => void;
+} {
   let lastCall = 0;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Args) => {
+
+  const throttledFn = (...args: Args) => {
     const now = Date.now();
     const timeSinceLastCall = now - lastCall;
 
@@ -41,7 +61,19 @@ function throttle<Args extends unknown[]>(
       }, delay - timeSinceLastCall);
     }
   };
+
+  const cleanup = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return { fn: throttledFn, cleanup };
 }
+
+// 存储所有节流函数的清理函数
+const throttleCleanups: Array<() => void> = [];
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
@@ -164,15 +196,19 @@ onMounted(() => {
 onUnmounted(() => {
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
+  // 清理所有节流函数的 timeout
+  for (const cleanup of throttleCleanups) {
+    cleanup();
+  }
+  // 清理缓存
+  formattedThinkingCache.value = {};
+  displayedOutputContent.value = {};
+  outputBreakPositions.value = {};
+  pendingOutputBreak.value = {};
+  lastThinkingUpdate.value = {};
+  lastOutputUpdate.value = {};
+  lastActiveState.value = {};
 });
-
-const taskStatusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  end: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
 
 // Auto Scroll State - 从 store 获取，使用 computed 以便响应式更新
 // 默认启用自动滚动（undefined 视为 true）
@@ -203,8 +239,55 @@ const lastActiveState = ref<Record<string, 'thinking' | 'outputting' | 'none'>>(
 const lastThinkingUpdate = ref<Record<string, number>>({});
 const lastOutputUpdate = ref<Record<string, number>>({});
 
+// 公共函数：检查是否最近更新过
+const isRecentlyUpdated = (
+  taskId: string,
+  updateMap: Ref<Record<string, number>>,
+  threshold = UPDATE_THRESHOLD_MS,
+): boolean => {
+  const updateTime = updateMap.value[taskId] || 0;
+  const now = Date.now();
+  return updateTime > 0 && now - updateTime < threshold;
+};
+
 const setActiveTab = (taskId: string, value: string) => {
   bookDetailsStore.setTranslationProgressActiveTab(taskId, value);
+};
+
+// 辅助函数：检查是否应该自动切换标签页
+const shouldAutoSwitchTab = (taskId: string): boolean => {
+  return autoTabSwitchingEnabled.value[taskId] !== false;
+};
+
+// 辅助函数：获取当前活跃状态
+const getCurrentActiveState = (taskId: string): 'thinking' | 'outputting' | 'none' => {
+  const isThinking = isTaskThinking(taskId);
+  const isOutputting = isTaskOutputting(taskId);
+  return isThinking ? 'thinking' : isOutputting ? 'outputting' : 'none';
+};
+
+// 辅助函数：检测状态是否改变
+const detectStateChange = (taskId: string): boolean => {
+  const currentState = getCurrentActiveState(taskId);
+  const lastState = lastActiveState.value[taskId];
+  return lastState !== undefined && lastState !== currentState;
+};
+
+// 辅助函数：根据内容确定默认标签页
+const determineDefaultTab = (task: AIProcessingTask): string => {
+  const isThinking = isTaskThinking(task.id);
+  const isOutputting = isTaskOutputting(task.id);
+
+  if (isOutputting) {
+    return 'output';
+  } else if (isThinking) {
+    return 'thinking';
+  }
+
+  // 无活跃状态，使用内容基础默认值
+  const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
+  const hasOutput = task.outputContent && task.outputContent.trim();
+  return hasOutput && !hasThinking ? 'output' : 'thinking';
 };
 
 const getActiveTab = (taskId: string): string => {
@@ -214,57 +297,29 @@ const getActiveTab = (taskId: string): string => {
   }
 
   // 如果禁用了自动标签页切换，直接返回用户手动选择的标签页
-  if (autoTabSwitchingEnabled.value[taskId] === false) {
+  if (!shouldAutoSwitchTab(taskId)) {
     return activeTab.value[taskId] || 'thinking';
   }
 
-  // Determine current active state
-  const isThinking = isTaskThinking(taskId);
-  const isOutputting = isTaskOutputting(taskId);
-
-  // Get current active state for comparison
-  const currentActiveState: 'thinking' | 'outputting' | 'none' = isThinking
-    ? 'thinking'
-    : isOutputting
-      ? 'outputting'
-      : 'none';
-
-  // If the active state changed, clear the saved tab to allow auto-switching
+  const currentState = getCurrentActiveState(taskId);
   const lastState = lastActiveState.value[taskId];
-  if (lastState !== undefined && lastState !== currentActiveState) {
-    // State changed - clear saved tab to allow auto-switch
+
+  // 如果状态改变，清除保存的标签页以允许自动切换
+  if (detectStateChange(taskId)) {
     bookDetailsStore.clearTranslationProgressActiveTab(taskId);
   }
 
-  // Update last active state
-  lastActiveState.value[taskId] = currentActiveState;
+  // 更新最后活跃状态
+  lastActiveState.value[taskId] = currentState;
 
-  // If user has manually selected a tab and state hasn't changed, respect it
+  // 如果用户手动选择了标签页且状态未改变，尊重用户选择
   const savedTab = activeTab.value[taskId];
-  if (savedTab && lastState === currentActiveState) {
+  if (savedTab && lastState === currentState) {
     return savedTab;
   }
 
-  // Determine what the active tab should be based on current state
-  // Note: We don't automatically switch to todos tab - user must manually select it
-  let shouldBeTab: string;
-  if (isOutputting) {
-    shouldBeTab = 'output';
-  } else if (isThinking) {
-    shouldBeTab = 'thinking';
-  } else {
-    // No active state, use content-based default
-    const hasThinking = task.thinkingMessage && task.thinkingMessage.trim();
-    const hasOutput = task.outputContent && task.outputContent.trim();
-    if (hasOutput && !hasThinking) {
-      shouldBeTab = 'output';
-    } else {
-      shouldBeTab = 'thinking';
-    }
-  }
-
-  // Otherwise, auto-switch to the appropriate tab
-  return shouldBeTab;
+  // 否则，自动切换到适当的标签页
+  return determineDefaultTab(task);
 };
 
 // 检查任务是否正在思考
@@ -276,8 +331,8 @@ const isTaskThinking = (taskId: string): boolean => {
   if (task.status === 'thinking') {
     const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
     const now = Date.now();
-    // 如果状态是 thinking 但最近2秒内没有更新，不显示指示器
-    if (thinkingTime > 0 && now - thinkingTime >= 2000) {
+    // 如果状态是 thinking 但最近阈值内没有更新，不显示指示器
+    if (thinkingTime > 0 && now - thinkingTime >= UPDATE_THRESHOLD_MS) {
       return false;
     }
     return true;
@@ -291,11 +346,9 @@ const isTaskThinking = (taskId: string): boolean => {
       return false;
     }
 
-    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
-    const now = Date.now();
-    const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
+    const recentThinking = isRecentlyUpdated(taskId, lastThinkingUpdate);
 
-    // 只有在最近2秒内更新过才显示思考指示器
+    // 只有在最近阈值内更新过才显示思考指示器
     if (!recentThinking) {
       return false;
     }
@@ -308,14 +361,15 @@ const isTaskThinking = (taskId: string): boolean => {
     }
 
     // 如果两者都有，根据最后更新时间判断哪个更活跃
-    const outputTime = lastOutputUpdate.value[taskId] || 0;
-    const recentOutput = outputTime > 0 && now - outputTime < 2000;
+    const recentOutput = isRecentlyUpdated(taskId, lastOutputUpdate);
 
     // 如果思考消息最近更新过，而输出内容没有最近更新，显示思考指示器
     if (recentThinking && !recentOutput) {
       return true;
     }
     // 如果两者都最近更新过，但思考消息更新更晚，显示思考指示器
+    const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+    const outputTime = lastOutputUpdate.value[taskId] || 0;
     if (recentThinking && recentOutput && thinkingTime > outputTime) {
       return true;
     }
@@ -339,12 +393,10 @@ const isTaskOutputting = (taskId: string): boolean => {
     return false;
   }
 
-  // 检查输出内容是否在最近2秒内更新过
-  const outputTime = lastOutputUpdate.value[taskId] || 0;
-  const now = Date.now();
-  const recentOutput = outputTime > 0 && now - outputTime < 2000;
+  // 检查输出内容是否在最近阈值内更新过
+  const recentOutput = isRecentlyUpdated(taskId, lastOutputUpdate);
 
-  // 只有在最近2秒内更新过才显示输出指示器
+  // 只有在最近阈值内更新过才显示输出指示器
   if (!recentOutput) {
     return false;
   }
@@ -358,14 +410,15 @@ const isTaskOutputting = (taskId: string): boolean => {
   }
 
   // 如果两者都有，根据最后更新时间判断
-  const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
-  const recentThinking = thinkingTime > 0 && now - thinkingTime < 2000;
+  const recentThinking = isRecentlyUpdated(taskId, lastThinkingUpdate);
 
   // 如果输出内容最近更新过，而思考消息没有最近更新，显示输出指示器
   if (recentOutput && !recentThinking) {
     return true;
   }
   // 如果两者都最近更新过，但输出内容更新更晚，显示输出指示器
+  const thinkingTime = lastThinkingUpdate.value[taskId] || 0;
+  const outputTime = lastOutputUpdate.value[taskId] || 0;
   if (recentThinking && recentOutput && outputTime > thinkingTime) {
     return true;
   }
@@ -377,24 +430,24 @@ const thinkingContainers = ref<Record<string, HTMLElement | null>>({});
 const outputContainers = ref<Record<string, HTMLElement | null>>({});
 const todosContainers = ref<Record<string, HTMLElement | null>>({});
 
-const setThinkingContainer = (taskId: string, el: HTMLElement | null) => {
-  if (el) {
+const setThinkingContainer = (taskId: string, el: unknown) => {
+  if (el instanceof HTMLElement) {
     thinkingContainers.value[taskId] = el;
   } else {
     delete thinkingContainers.value[taskId];
   }
 };
 
-const setOutputContainer = (taskId: string, el: HTMLElement | null) => {
-  if (el) {
+const setOutputContainer = (taskId: string, el: unknown) => {
+  if (el instanceof HTMLElement) {
     outputContainers.value[taskId] = el;
   } else {
     delete outputContainers.value[taskId];
   }
 };
 
-const setTodosContainer = (taskId: string, el: HTMLElement | null) => {
-  if (el) {
+const setTodosContainer = (taskId: string, el: unknown) => {
+  if (el instanceof HTMLElement) {
     todosContainers.value[taskId] = el;
   } else {
     delete todosContainers.value[taskId];
@@ -415,14 +468,14 @@ const toggleAutoScroll = (taskId: string) => {
   if (!currentEnabled) {
     nextTick(() => {
       // 根据当前激活的标签页滚动对应的容器
-      const activeTab = getActiveTab(taskId);
+      const currentActiveTab = getActiveTab(taskId);
       let container: HTMLElement | null = null;
 
-      if (activeTab === 'thinking') {
+      if (currentActiveTab === 'thinking') {
         container = thinkingContainers.value[taskId] ?? null;
-      } else if (activeTab === 'output') {
+      } else if (currentActiveTab === 'output') {
         container = outputContainers.value[taskId] ?? null;
-      } else if (activeTab === 'todos') {
+      } else if (currentActiveTab === 'todos') {
         container = todosContainers.value[taskId] ?? null;
       }
 
@@ -608,7 +661,9 @@ const updateFormattedThinkingCache = throttle((taskId: string) => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   const msg = task?.thinkingMessage ?? '';
   formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg) : [];
-}, 200); // 解析开销较大，给更大的节流间隔
+}, FORMAT_CACHE_THROTTLE_MS);
+// 注册清理函数
+throttleCleanups.push(updateFormattedThinkingCache.cleanup);
 
 // 获取格式化后的思考消息（从缓存中读取）
 const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
@@ -631,7 +686,9 @@ const handleThinkingScroll = throttle(() => {
       }
     }
   });
-}, 100); // 每 100ms 最多执行一次
+}, THROTTLE_DELAY_MS);
+// 注册清理函数
+throttleCleanups.push(handleThinkingScroll.cleanup);
 
 // Auto scroll watcher for thinking message - 优化为只监听长度变化，避免深度监听
 watch(
@@ -644,6 +701,7 @@ watch(
     // 跟踪思考消息的更新时间
     const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    const currentTaskMap = new Map(recentAITasks.value.map((task) => [task.id, task]));
 
     // 清理已移除任务的跟踪数据
     for (const taskId of Object.keys(lastThinkingUpdate.value)) {
@@ -660,16 +718,28 @@ watch(
 
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
+      if (task.length < oldLength) {
+        const currentTask = currentTaskMap.get(task.id);
+        const message = currentTask?.thinkingMessage ?? '';
+        formattedThinkingCache.value[task.id] = message ? formatThinkingMessage(message) : [];
+        lastThinkingUpdate.value[task.id] = Date.now();
+        continue;
+      }
       if (task.length > oldLength) {
         lastThinkingUpdate.value[task.id] = Date.now();
         // 思考文本变化时，节流更新格式化缓存
-        updateFormattedThinkingCache(task.id);
+        updateFormattedThinkingCache.fn(task.id);
+        const currentTask = currentTaskMap.get(task.id);
+        const outputLength = currentTask?.outputContent?.length ?? 0;
+        if (outputLength > 0) {
+          pendingOutputBreak.value[task.id] = true;
+        }
       }
     }
 
     // 使用节流函数处理滚动
     nextTick(() => {
-      handleThinkingScroll();
+      handleThinkingScroll.fn();
     });
   },
   { flush: 'post' },
@@ -678,10 +748,48 @@ watch(
 // 输出内容的显示缓存：避免每个 token 都导致 output 区域整段文本重渲染（大字符串非常容易卡顿）
 const displayedOutputContent = ref<Record<string, string>>({});
 
+// 输出内容分段换行：当思考返回后再次输出时，在新输出前插入换行
+const outputBreakPositions = ref<Record<string, number[]>>({});
+const pendingOutputBreak = ref<Record<string, boolean>>({});
+
+const shouldInsertLineBreak = (text: string, position: number): boolean => {
+  if (position <= 0 || position > text.length) return false;
+  const prevChar = text.charAt(position - 1);
+  const nextChar = text.charAt(position);
+  return prevChar !== '\n' && prevChar !== '\r' && nextChar !== '\n' && nextChar !== '\r';
+};
+
+const insertOutputBreaks = (text: string, breaks: number[]): string => {
+  if (!text || breaks.length === 0) return text;
+  let result = '';
+  let lastIndex = 0;
+  for (const position of breaks) {
+    if (position <= lastIndex || position > text.length) {
+      continue;
+    }
+    result += text.slice(lastIndex, position);
+    if (shouldInsertLineBreak(text, position)) {
+      result += '\n';
+    }
+    lastIndex = position;
+  }
+  result += text.slice(lastIndex);
+  return result;
+};
+
+const buildDisplayedOutputContent = (taskId: string, content: string): string => {
+  const breaks = outputBreakPositions.value[taskId];
+  if (!breaks || breaks.length === 0) return content;
+  return insertOutputBreaks(content, breaks);
+};
+
 const updateDisplayedOutputContent = throttle((taskId: string) => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
-  displayedOutputContent.value[taskId] = task?.outputContent ?? '';
-}, 100);
+  const content = task?.outputContent ?? '';
+  displayedOutputContent.value[taskId] = buildDisplayedOutputContent(taskId, content);
+}, THROTTLE_DELAY_MS);
+// 注册清理函数
+throttleCleanups.push(updateDisplayedOutputContent.cleanup);
 
 // 节流后的输出内容滚动处理函数
 const handleOutputScroll = throttle(() => {
@@ -699,7 +807,9 @@ const handleOutputScroll = throttle(() => {
       }
     }
   });
-}, 100); // 每 100ms 最多执行一次
+}, THROTTLE_DELAY_MS);
+// 注册清理函数
+throttleCleanups.push(handleOutputScroll.cleanup);
 
 // Auto scroll watcher for output content - 优化为只监听长度变化，避免深度监听
 watch(
@@ -712,6 +822,7 @@ watch(
     // 跟踪输出内容的更新时间
     const oldTasksMap = new Map((oldTasks || []).map((t) => [t.id, t.length]));
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    const currentTaskMap = new Map(recentAITasks.value.map((task) => [task.id, task]));
 
     // 清理已移除任务的跟踪数据
     for (const taskId of Object.keys(lastOutputUpdate.value)) {
@@ -725,19 +836,51 @@ watch(
         delete displayedOutputContent.value[taskId];
       }
     }
+    // 清理已移除任务的分段状态
+    for (const taskId of Object.keys(outputBreakPositions.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete outputBreakPositions.value[taskId];
+      }
+    }
+    for (const taskId of Object.keys(pendingOutputBreak.value)) {
+      if (!currentTaskIds.has(taskId)) {
+        delete pendingOutputBreak.value[taskId];
+      }
+    }
 
     for (const task of newTasks) {
       const oldLength = oldTasksMap.get(task.id) || 0;
+      if (task.length < oldLength) {
+        const currentTask = currentTaskMap.get(task.id);
+        const outputContent = currentTask?.outputContent ?? '';
+        displayedOutputContent.value[task.id] = buildDisplayedOutputContent(task.id, outputContent);
+        outputBreakPositions.value[task.id] = [];
+        pendingOutputBreak.value[task.id] = false;
+        lastOutputUpdate.value[task.id] = Date.now();
+        continue;
+      }
       if (task.length > oldLength) {
+        if (pendingOutputBreak.value[task.id]) {
+          const breaks = outputBreakPositions.value[task.id] || [];
+          const currentTask = currentTaskMap.get(task.id);
+          const outputContent = currentTask?.outputContent ?? '';
+          if (shouldInsertLineBreak(outputContent, oldLength)) {
+            if (!breaks.includes(oldLength)) {
+              breaks.push(oldLength);
+            }
+            outputBreakPositions.value[task.id] = breaks;
+          }
+          pendingOutputBreak.value[task.id] = false;
+        }
         lastOutputUpdate.value[task.id] = Date.now();
         // 输出变化时，节流刷新显示文本
-        updateDisplayedOutputContent(task.id);
+        updateDisplayedOutputContent.fn(task.id);
       }
     }
 
     // 使用节流函数处理滚动
     nextTick(() => {
-      handleOutputScroll();
+      handleOutputScroll.fn();
     });
   },
   { flush: 'post' },
@@ -759,7 +902,9 @@ const handleTodosScroll = throttle(() => {
       }
     }
   });
-}, 100); // 每 100ms 最多执行一次
+}, THROTTLE_DELAY_MS);
+// 注册清理函数
+throttleCleanups.push(handleTodosScroll.cleanup);
 
 // Auto scroll watcher for todos - 优化为浅层监听
 watch(
@@ -767,7 +912,7 @@ watch(
   () => {
     // 使用节流函数处理滚动
     nextTick(() => {
-      handleTodosScroll();
+      handleTodosScroll.fn();
     });
   },
   { flush: 'post' },
@@ -982,7 +1127,7 @@ watch(
                             <span class="ai-task-thinking-label">思考过程：</span>
                           </div>
                           <div
-                            :ref="(el) => setThinkingContainer(task.id, el as HTMLElement)"
+                            :ref="(el) => setThinkingContainer(task.id, el)"
                             class="ai-task-thinking-text"
                           >
                             <template
@@ -1024,7 +1169,7 @@ watch(
                             <span class="ai-task-output-label">输出内容：</span>
                           </div>
                           <div
-                            :ref="(el) => setOutputContainer(task.id, el as HTMLElement)"
+                            :ref="(el) => setOutputContainer(task.id, el)"
                             class="ai-task-output-text"
                           >
                             {{ displayedOutputContent[task.id] ?? task.outputContent }}
@@ -1042,7 +1187,7 @@ watch(
                           </div>
                           <div
                             v-else
-                            :ref="(el) => setTodosContainer(task.id, el as HTMLElement)"
+                            :ref="(el) => setTodosContainer(task.id, el)"
                             class="ai-task-todos-list"
                           >
                             <div
