@@ -1,6 +1,6 @@
 {
   "name": "tsukuyomi-translator",
-  "version": "0.8.4",
+  "version": "0.8.4.1",
   "description": "Tsukuyomi - Moonlit Translator",
   "productName": "Tsukuyomi - Moonlit Translator",
   "author": "rozx <rozx@heavyskymobile.com>",
@@ -12,6 +12,7 @@
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",
     "bump": "bun scripts/bump-version.ts",
+    "setup:git-hooks": "powershell -ExecutionPolicy Bypass -File scripts/setup-git-hooks.ps1",
     "dev": "quasar dev && bun --watch run server/app-server.ts",
     "dev:vite": "quasar dev",
     "dev:server": "bun --watch run server/app-server.ts",

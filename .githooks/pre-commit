@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Pre-commit hook: Automatically bump build version on every commit
+# This hook runs the bump-version.ts script with the 'build' option
+
+echo "📦 Bumping build version..."
+bun scripts/bump-version.ts build
+
+# Check if the version bump was successful
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to bump build version. Aborting commit."
+    exit 1
+fi
+
+# Stage the updated files (package.json and src/constants/version.ts)
+git add package.json src/constants/version.ts
+
+echo "✅ Build version bumped successfully"
+exit 0

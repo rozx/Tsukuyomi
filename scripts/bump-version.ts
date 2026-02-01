@@ -1,12 +1,15 @@
 #!/usr/bin/env bun
 /**
  * Bump version in package.json and src/constants/version.ts
- * Usage: bun scripts/bump-version.ts <major|minor|patch|version>
+ * Usage: bun scripts/bump-version.ts <major|minor|patch|build|version>
  * Examples:
- *   bun scripts/bump-version.ts major     - Bump major version
- *   bun scripts/bump-version.ts minor     - Bump minor version
- *   bun scripts/bump-version.ts patch     - Bump patch version
+ *   bun scripts/bump-version.ts major     - Bump major version (e.g., 0.8.4.5 -> 1.0.0.0)
+ *   bun scripts/bump-version.ts minor     - Bump minor version (e.g., 0.8.4.5 -> 0.9.0.0)
+ *   bun scripts/bump-version.ts patch     - Bump patch version (e.g., 0.8.4.5 -> 0.8.5.0)
+ *   bun scripts/bump-version.ts build     - Bump build version (e.g., 0.8.4.5 -> 0.8.4.6)
  *   bun scripts/bump-version.ts 0.5.18    - Set version directly
+ *
+ * Note: When bumping major/minor/patch, build number is reset to 0
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -31,9 +34,10 @@ async function promptVersionType(): Promise<string> {
     console.log('  1) major - 主版本号升级 (Major version bump)');
     console.log('  2) minor - 次版本号升级 (Minor version bump)');
     console.log('  3) patch - 补丁版本号升级 (Patch version bump)');
+    console.log('  4) build - 构建号升级 (Build version bump)');
     console.log('');
 
-    rl.question('请输入选项 (1/2/3): ', (answer) => {
+    rl.question('请输入选项 (1/2/3/4): ', (answer) => {
       rl.close();
       const choice = answer.trim().toLowerCase();
 
@@ -43,8 +47,12 @@ async function promptVersionType(): Promise<string> {
         resolve('minor');
       } else if (choice === '3' || choice === 'patch') {
         resolve('patch');
+      } else if (choice === '4' || choice === 'build') {
+        resolve('build');
       } else {
-        console.error('❌ 无效的选项，请重新运行脚本 (Invalid choice, please run the script again)');
+        console.error(
+          '❌ 无效的选项，请重新运行脚本 (Invalid choice, please run the script again)',
+        );
         process.exit(1);
       }
     });
@@ -70,13 +78,13 @@ async function main() {
     // Validate version format before parsing
     // Remove any pre-release or build metadata (e.g., "1.0.0-alpha" -> "1.0.0")
     const cleanVersion = version.split('-')[0].split('+')[0];
-    // Support versions with 2 parts (x.y) or 3 parts (x.y.z)
-    const versionRegex = /^\d+\.\d+(\.\d+)?$/;
+    // Support versions with 2 parts (x.y), 3 parts (x.y.z), or 4 parts (x.y.z.build)
+    const versionRegex = /^\d+\.\d+(\.\d+)?(\.\d+)?$/;
 
     if (!versionRegex.test(cleanVersion)) {
       throw new Error(
         `Invalid version format in package.json: "${version}". ` +
-          `Expected format: x.y or x.y.z (e.g., "0.5" or "0.5.18"). ` +
+          `Expected format: x.y, x.y.z, or x.y.z.build (e.g., "0.5", "0.5.18", or "0.5.18.1"). ` +
           `Current version must be a valid semver format before bumping.`,
       );
     }
@@ -87,25 +95,28 @@ async function main() {
       parts.push('0');
     }
     const [major, minor, patch] = parts.map(Number);
+    const build = parts.length > 3 ? Number(parts[3]) : 0;
 
     // Validate parsed numbers are not NaN
-    if (isNaN(major) || isNaN(minor) || isNaN(patch)) {
+    if (isNaN(major) || isNaN(minor) || isNaN(patch) || isNaN(build)) {
       throw new Error(
         `Failed to parse version "${version}". ` +
-          `Parsed values: major=${major}, minor=${minor}, patch=${patch}. ` +
-          `Please ensure the version is in x.y or x.y.z format.`,
+          `Parsed values: major=${major}, minor=${minor}, patch=${patch}, build=${build}. ` +
+          `Please ensure the version is in x.y, x.y.z, or x.y.z.build format.`,
       );
     }
 
     if (bumpType === 'major') {
-      version = `${major + 1}.0.0`;
+      version = `${major + 1}.0.0.0`;
     } else if (bumpType === 'minor') {
-      version = `${major}.${minor + 1}.0`;
+      version = `${major}.${minor + 1}.0.0`;
     } else if (bumpType === 'patch') {
-      version = `${major}.${minor}.${patch + 1}`;
+      version = `${major}.${minor}.${patch + 1}.0`;
+    } else if (bumpType === 'build') {
+      version = `${major}.${minor}.${patch}.${build + 1}`;
     } else {
-      // Validate version string if it looks like a version (support both x.y and x.y.z)
-      if (/^\d+\.\d+(\.\d+)?$/.test(bumpType)) {
+      // Validate version string if it looks like a version (support x.y, x.y.z, or x.y.z.build)
+      if (/^\d+\.\d+(\.\d+)?(\.\d+)?$/.test(bumpType)) {
         version = bumpType;
         // Normalize 2-part versions to 3-part format
         const versionParts = version.split('.');
@@ -114,7 +125,7 @@ async function main() {
         }
       } else {
         // Allow setting arbitrary version string if needed, but warn
-        console.warn('Warning: Version does not look like x.y or x.y.z');
+        console.warn('Warning: Version does not look like x.y, x.y.z, or x.y.z.build');
         version = bumpType;
       }
     }
@@ -127,7 +138,7 @@ async function main() {
     // Update src/constants/version.ts
     const versionFileContent = `// 应用版本号
 // 此文件由 scripts/bump-version.ts 自动生成，请勿手动修改
-// 如需更新版本，请运行: bun scripts/bump-version.ts <major|minor|patch|version>
+// 如需更新版本，请运行: bun scripts/bump-version.ts <major|minor|patch|build|version>
 export const APP_VERSION = '${version}';
 `;
 
