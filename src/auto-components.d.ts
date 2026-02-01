@@ -38,7 +38,6 @@ declare module 'vue' {
     EditChapterDialog: typeof import('./components/dialogs/EditChapterDialog.vue')['default']
     EditVolumeDialog: typeof import('./components/dialogs/EditVolumeDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
-    InputText: typeof import('primevue/inputtext')['default']
     KeyboardShortcutsPopover: typeof import('./components/novel/KeyboardShortcutsPopover.vue')['default']
     MemoryPanel: typeof import('./components/novel/MemoryPanel.vue')['default']
     Menu: typeof import('primevue/menu')['default']

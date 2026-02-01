@@ -16,6 +16,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { throttle } from 'src/utils/throttle';
 
 // 常量定义
 const UPDATE_THRESHOLD_MS = 2000; // 更新时间阈值（毫秒）
@@ -32,50 +33,9 @@ const taskStatusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-// 节流函数：限制函数执行频率，支持清理
-function throttle<Args extends unknown[]>(
-  func: (...args: Args) => void,
-  delay: number,
-): {
-  fn: (...args: Args) => void;
-  cleanup: () => void;
-} {
-  let lastCall = 0;
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  const throttledFn = (...args: Args) => {
-    const now = Date.now();
-    const timeSinceLastCall = now - lastCall;
-
-    if (timeSinceLastCall >= delay) {
-      lastCall = now;
-      func(...args);
-    } else {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      timeoutId = setTimeout(() => {
-        lastCall = Date.now();
-        func(...args);
-        timeoutId = null;
-      }, delay - timeSinceLastCall);
-    }
-  };
-
-  const cleanup = () => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-    }
-  };
-
-  return { fn: throttledFn, cleanup };
-}
-
 // 存储所有节流函数的清理函数
 const throttleCleanups: Array<() => void> = [];
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const props = defineProps<{
   isTranslating?: boolean;
   isPolishing?: boolean;
@@ -200,7 +160,7 @@ onUnmounted(() => {
   for (const cleanup of throttleCleanups) {
     cleanup();
   }
-  // 清理缓存
+  // 清理缓存和状态，显式设置为 null 以帮助垃圾回收
   formattedThinkingCache.value = {};
   displayedOutputContent.value = {};
   outputBreakPositions.value = {};
@@ -208,6 +168,16 @@ onUnmounted(() => {
   lastThinkingUpdate.value = {};
   lastOutputUpdate.value = {};
   lastActiveState.value = {};
+  // 清理容器引用
+  for (const taskId of Object.keys(thinkingContainers.value)) {
+    thinkingContainers.value[taskId] = null;
+  }
+  for (const taskId of Object.keys(outputContainers.value)) {
+    outputContainers.value[taskId] = null;
+  }
+  for (const taskId of Object.keys(todosContainers.value)) {
+    todosContainers.value[taskId] = null;
+  }
 });
 
 // Auto Scroll State - 从 store 获取，使用 computed 以便响应式更新
@@ -233,7 +203,8 @@ const toggleTaskFold = (taskId: string) => {
 // Active Tab State for each task - 从 store 获取
 const activeTab = computed(() => bookDetailsStore.translationProgress.activeTab);
 // Track the last active state for each task to detect state changes
-const lastActiveState = ref<Record<string, 'thinking' | 'outputting' | 'none'>>({});
+// 使用 Partial 允许键不存在时返回 undefined
+const lastActiveState = ref<Partial<Record<string, 'thinking' | 'outputting' | 'none'>>>({});
 
 // Track last update time for thinkingMessage and outputContent to determine which is actively updating
 const lastThinkingUpdate = ref<Record<string, number>>({});
@@ -270,6 +241,7 @@ const getCurrentActiveState = (taskId: string): 'thinking' | 'outputting' | 'non
 const detectStateChange = (taskId: string): boolean => {
   const currentState = getCurrentActiveState(taskId);
   const lastState = lastActiveState.value[taskId];
+  // 检查 lastState 是否存在且与当前状态不同
   return lastState !== undefined && lastState !== currentState;
 };
 
@@ -434,7 +406,8 @@ const setThinkingContainer = (taskId: string, el: unknown) => {
   if (el instanceof HTMLElement) {
     thinkingContainers.value[taskId] = el;
   } else {
-    delete thinkingContainers.value[taskId];
+    // 显式设置为 null 以帮助垃圾回收，避免内存泄漏
+    thinkingContainers.value[taskId] = null;
   }
 };
 
@@ -442,7 +415,8 @@ const setOutputContainer = (taskId: string, el: unknown) => {
   if (el instanceof HTMLElement) {
     outputContainers.value[taskId] = el;
   } else {
-    delete outputContainers.value[taskId];
+    // 显式设置为 null 以帮助垃圾回收，避免内存泄漏
+    outputContainers.value[taskId] = null;
   }
 };
 
@@ -450,7 +424,8 @@ const setTodosContainer = (taskId: string, el: unknown) => {
   if (el instanceof HTMLElement) {
     todosContainers.value[taskId] = el;
   } else {
-    delete todosContainers.value[taskId];
+    // 显式设置为 null 以帮助垃圾回收，避免内存泄漏
+    todosContainers.value[taskId] = null;
   }
 };
 
@@ -561,18 +536,16 @@ interface FormattedMessagePart {
   chunkInfo?: string;
 }
 
+// 提取正则表达式为模块级常量，避免重复创建
+const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
+const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
+const TOOL_RESULT_PATTERN = /\[工具结果: ([^\]]+)\]/g;
+
 const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
   if (!message) return [];
 
   const parts: FormattedMessagePart[] = [];
   let currentIndex = 0;
-
-  // 匹配块分隔符：[=== 翻译块 X/Y ===] 或 [=== 润色块 X/Y ===] 或 [=== 校对块 X/Y ===]
-  const chunkSeparatorPattern = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
-  // 匹配工具调用：[调用工具: 工具名]
-  const toolCallPattern = /\[调用工具: ([^\]]+)\]/g;
-  // 匹配工具结果：[工具结果: ...]
-  const toolResultPattern = /\[工具结果: ([^\]]+)\]/g;
 
   // 收集所有匹配项及其位置
   const matches: Array<{
@@ -582,20 +555,20 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
   }> = [];
 
   let match;
-  while ((match = chunkSeparatorPattern.exec(message)) !== null) {
+  while ((match = CHUNK_SEPARATOR_PATTERN.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'chunk-separator', match });
   }
-  chunkSeparatorPattern.lastIndex = 0;
+  CHUNK_SEPARATOR_PATTERN.lastIndex = 0;
 
-  while ((match = toolCallPattern.exec(message)) !== null) {
+  while ((match = TOOL_CALL_PATTERN.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'tool-call', match });
   }
-  toolCallPattern.lastIndex = 0;
+  TOOL_CALL_PATTERN.lastIndex = 0;
 
-  while ((match = toolResultPattern.exec(message)) !== null) {
+  while ((match = TOOL_RESULT_PATTERN.exec(message)) !== null) {
     matches.push({ index: match.index, type: 'tool-result', match });
   }
-  toolResultPattern.lastIndex = 0;
+  TOOL_RESULT_PATTERN.lastIndex = 0;
 
   // 按位置排序
   matches.sort((a, b) => a.index - b.index);
@@ -703,16 +676,19 @@ watch(
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
     const currentTaskMap = new Map(recentAITasks.value.map((task) => [task.id, task]));
 
-    // 清理已移除任务的跟踪数据
+    // 清理已移除任务的跟踪数据（统一清理逻辑）
+    const cleanupTaskData = (taskId: string) => {
+      delete lastThinkingUpdate.value[taskId];
+      delete formattedThinkingCache.value[taskId];
+      // 清理容器引用
+      if (thinkingContainers.value[taskId]) {
+        thinkingContainers.value[taskId] = null;
+      }
+    };
+
     for (const taskId of Object.keys(lastThinkingUpdate.value)) {
       if (!currentTaskIds.has(taskId)) {
-        delete lastThinkingUpdate.value[taskId];
-      }
-    }
-    // 清理已移除任务的格式化缓存
-    for (const taskId of Object.keys(formattedThinkingCache.value)) {
-      if (!currentTaskIds.has(taskId)) {
-        delete formattedThinkingCache.value[taskId];
+        cleanupTaskData(taskId);
       }
     }
 
@@ -824,27 +800,21 @@ watch(
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
     const currentTaskMap = new Map(recentAITasks.value.map((task) => [task.id, task]));
 
-    // 清理已移除任务的跟踪数据
+    // 清理已移除任务的跟踪数据（统一清理逻辑）
+    const cleanupTaskData = (taskId: string) => {
+      delete lastOutputUpdate.value[taskId];
+      delete displayedOutputContent.value[taskId];
+      delete outputBreakPositions.value[taskId];
+      delete pendingOutputBreak.value[taskId];
+      // 清理容器引用
+      if (outputContainers.value[taskId]) {
+        outputContainers.value[taskId] = null;
+      }
+    };
+
     for (const taskId of Object.keys(lastOutputUpdate.value)) {
       if (!currentTaskIds.has(taskId)) {
-        delete lastOutputUpdate.value[taskId];
-      }
-    }
-    // 清理已移除任务的显示缓存
-    for (const taskId of Object.keys(displayedOutputContent.value)) {
-      if (!currentTaskIds.has(taskId)) {
-        delete displayedOutputContent.value[taskId];
-      }
-    }
-    // 清理已移除任务的分段状态
-    for (const taskId of Object.keys(outputBreakPositions.value)) {
-      if (!currentTaskIds.has(taskId)) {
-        delete outputBreakPositions.value[taskId];
-      }
-    }
-    for (const taskId of Object.keys(pendingOutputBreak.value)) {
-      if (!currentTaskIds.has(taskId)) {
-        delete pendingOutputBreak.value[taskId];
+        cleanupTaskData(taskId);
       }
     }
 

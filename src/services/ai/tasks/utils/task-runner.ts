@@ -55,8 +55,12 @@ import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
 
 // Constants
+import { AI_ERROR_MARKERS } from './error-constants';
+
+// 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
-const MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH = 2;
+// 最大连续内容状态不匹配次数（内容与状态不一致时的重试次数）
+const MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH = 3;
 
 /**
  * 处理工具调用循环
@@ -240,6 +244,7 @@ class TaskLoopSession {
     );
 
     let result;
+    let hasError = false;
     try {
       result = await this.config.generateText(
         { ...aiServiceConfig, signal: streamAbortController.signal },
@@ -247,9 +252,15 @@ class TaskLoopSession {
         wrappedStreamCallback,
       );
     } catch (error) {
+      hasError = true;
       return this.handleGenerationError(error, streamedText);
     } finally {
       cleanupAbort();
+    }
+
+    // 如果发生错误，不再继续处理
+    if (hasError || !result) {
+      return { shouldContinue: false };
     }
 
     // Save reasoning
@@ -331,6 +342,21 @@ class TaskLoopSession {
       currentStatus: this.currentStatus,
       taskType: this.config.taskType,
       abortController: abortController,
+      // 状态更新回调：stream-handler 可以更新共享状态
+      onStatusChange: async (newStatus: TaskStatus) => {
+        // 同步更新 TaskLoopSession 的状态
+        this.currentStatus = newStatus;
+        // 同步更新 store 的 workflowStatus，让 UI 实时显示
+        if (this.config.aiProcessingStore && this.config.taskId) {
+          try {
+            await this.config.aiProcessingStore.updateTask(this.config.taskId, {
+              workflowStatus: newStatus,
+            });
+          } catch (error) {
+            console.error(`[${this.config.logLabel}] ⚠️ 更新任务状态失败:`, error);
+          }
+        }
+      },
     };
     const baseCallback = createStreamCallback(streamCallbackConfig);
 
@@ -347,9 +373,9 @@ class TaskLoopSession {
     const { logLabel } = this.config;
     if (
       error instanceof Error &&
-      (error.message.includes('无效状态') ||
-        error.message.includes('状态转换错误') ||
-        error.message.includes('状态与内容不匹配'))
+      (error.message.includes(AI_ERROR_MARKERS.INVALID_STATUS) ||
+        error.message.includes(AI_ERROR_MARKERS.INVALID_TRANSITION) ||
+        error.message.includes(AI_ERROR_MARKERS.CONTENT_STATE_MISMATCH))
     ) {
       console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
       const partialResponse = streamedText || '';
@@ -437,22 +463,15 @@ class TaskLoopSession {
         );
       }
 
-      // 4. 收集规划阶段信息
-      this.collectPlanningInfo(toolName, toolResultContent, toolCall);
+      // 4. 收集规划阶段信息，返回是否已处理
+      const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
 
-      // Warning mechanism for repeating calls (handled inside collectPlanningInfo via continue if brief planning)
-      // If brief planning warning triggered, history.push handles it.
-
-      // 如果没有在 collectPlanningInfo 中特殊处理(例如发出警告)，则正常记录
-      // 注意：BriefPlanning 的警告逻辑比较特殊，这里为了简化，我们在 collectPlanningInfo 内部判断
-      // 如果 collectPlanningInfo 认为不需要额外 push tool result (例如改为警告 push)，它会返回 true
-      // 但为了代码简单，我们保留原来的逻辑: BriefPlanning 警告也是一个 Tool Role 消息。
-      // 为防止重复 push, 我们检查 history 尾部是否已经是该 tool_call_id
-      const lastMsg = history.length > 0 ? history[history.length - 1] : undefined;
-      if (lastMsg && lastMsg.role === 'tool' && lastMsg.tool_call_id === toolCall.id) {
+      // 如果 collectPlanningInfo 已处理（例如简短规划模式下的警告），则跳过后续推送
+      if (alreadyHandled) {
         continue;
       }
 
+      // 正常记录工具结果
       history.push({
         role: 'tool',
         content: toolResultContent,
@@ -508,8 +527,8 @@ class TaskLoopSession {
     this.toolCallCounts.set(toolName, current + 1);
   }
 
-  private collectPlanningInfo(toolName: string, content: string, toolCall: AIToolCall) {
-    if (this.currentStatus !== 'planning') return;
+  private collectPlanningInfo(toolName: string, content: string, toolCall: AIToolCall): boolean {
+    if (this.currentStatus !== 'planning') return false;
 
     const keyTools = [
       'list_terms',
@@ -524,17 +543,20 @@ class TaskLoopSession {
       if (this.config.isBriefPlanning) {
         console.warn(`[${this.config.logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}`);
         const warning = getBriefPlanningToolWarningPrompt();
+        // 验证 content 不为空
+        const toolResultContent = content || '';
         this.config.history.push({
           role: 'tool',
-          content: content + warning,
+          content: toolResultContent + warning,
           tool_call_id: toolCall.id,
           name: toolName,
         });
-        // 这一推入会导致 processToolCalls 最后不需要再推入
-        return;
+        // 返回 true 表示已处理，processToolCalls 不应再推入
+        return true;
       }
       this.planningToolResults.push({ tool: toolName, result: content });
     }
+    return false;
   }
 
   private handleParseError(error: string, responseText: string) {
@@ -878,7 +900,8 @@ class TaskLoopSession {
 }
 
 /**
- * 检查是否达到最大回合数限制（已废弃，状态检查在 executeToolCallLoop 中处理）
+ * @deprecated 状态检查在 executeToolCallLoop 中处理
+ * 检查是否达到最大回合数限制（已废弃）
  * 保留此函数以保持向后兼容性
  */
 export function checkMaxTurnsReached(

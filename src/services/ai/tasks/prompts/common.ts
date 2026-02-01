@@ -2,16 +2,11 @@ import type { AITool } from 'src/services/ai/types/ai-service';
 import type { TaskType, TaskStatus } from '../utils';
 import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
-function getToolNames(tools?: AITool[]): string[] {
-  if (!tools || tools.length === 0) return [];
-  return tools.map((t) => t.function.name);
-}
-
 /**
  * 工具范围规则：严格限制 AI 只能调用本次请求提供的 tools
  */
 export function getToolScopeRules(tools?: AITool[]): string {
-  const toolNames = getToolNames(tools);
+  const toolNames = tools?.map((t) => t.function.name) ?? [];
   const toolList =
     toolNames.length > 0
       ? toolNames.map((n) => `- \`${n}\``).join('\n')

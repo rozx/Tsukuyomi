@@ -10,6 +10,7 @@ import {
   VALID_TASK_STATUSES,
 } from './task-types';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
+import { AI_ERROR_MARKERS } from './error-constants';
 
 // 常量定义
 /**
@@ -77,6 +78,10 @@ export interface StreamCallbackConfig {
    * 用于停止流的 AbortController（当检测到无效状态时）
    */
   abortController?: AbortController;
+  /**
+   * 状态更新回调（用于在 callback 间同步状态）
+   */
+  onStatusChange?: (newStatus: TaskStatus) => void;
 }
 
 /**
@@ -98,6 +103,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
     currentStatus,
     taskType,
     abortController,
+    onStatusChange,
   } = config;
   let accumulatedText = '';
   // 追踪当前生效的状态，初始化为传入的 currentStatus
@@ -220,7 +226,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
               // 返回 Promise.reject 以便调用者捕获错误
               return Promise.reject(
                 new Error(
-                  `[警告] 检测到无效状态值: ${rawStatus}，必须是 ${VALID_TASK_STATUSES.join('、')} 之一`,
+                  `[警告] 检测到${AI_ERROR_MARKERS.INVALID_STATUS}值: ${rawStatus}，必须是 ${VALID_TASK_STATUSES.join('、')} 之一`,
                 ),
               );
             }
@@ -245,13 +251,15 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
                 if (abortController) abortController.abort();
                 return Promise.reject(
                   new Error(
-                    `[警告] **状态转换错误**：你试图从 "${currentStatusLabel}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
+                    `[警告] **${AI_ERROR_MARKERS.INVALID_TRANSITION}**：你试图从 "${currentStatusLabel}" 直接转换到 "${getStatusLabel(newStatus, taskType)}"，这是**禁止的**。正确的状态转换顺序：${getTaskStateWorkflowText(taskType)}`,
                   ),
                 );
               }
             }
             // 更新当前运行状态
             runningStatus = newStatus;
+            // 同步状态到外部（如 TaskLoopSession）
+            onStatusChange?.(newStatus);
           } else if (event.type === 'content') {
             // 验证内容输出时机的合法性
             if (taskType && CONTENT_TASK_TYPES.has(taskType)) {
@@ -265,7 +273,7 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
                 if (abortController) abortController.abort();
                 return Promise.reject(
                   new Error(
-                    `状态与内容不匹配：任务只能在 working 阶段输出 p/tt（当前 status=${runningStatus}）`,
+                    `${AI_ERROR_MARKERS.CONTENT_STATE_MISMATCH}：任务只能在 working 阶段输出 p/tt（当前 status=${runningStatus}）`,
                   ),
                 );
               }
