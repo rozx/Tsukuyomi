@@ -432,7 +432,7 @@ export class TranslationService {
 
         // 使用独立的 chunk 提示，每个 chunk 独立
         // 每个 chunk 会包含当前 chunk 中出现的术语和角色
-        const chunkContent = buildIndependentChunkPrompt(
+        const chunkContent = await buildIndependentChunkPrompt(
           'translation',
           chunkIndex,
           chunks.length,

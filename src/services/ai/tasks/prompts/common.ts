@@ -165,6 +165,14 @@ export function getMemoryWorkflowRules(): string {
 - 使用顺序：\`get_recent_memories\` → \`search_memory_by_keywords\` → \`get_memory\`
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
+- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）；通用背景/世界观用 \`book\`。可同时附加多个实体。
+- **补齐附件**：发现记忆缺少或错误附件时，用 \`update_memory\` 纠正（替换 \`attached_to\`）。
+
+**附件示例**：
+- 角色背景 → \`attached_to=[{type:"character", id:"..."}]\`
+- 术语定义 → \`attached_to=[{type:"term", id:"..."}]\`
+- 章节摘要 → \`attached_to=[{type:"chapter", id:"..."}]\`
+- 全书设定 → \`attached_to=[{type:"book", id:"..."}]\`
 
 **字段约束**：summary ≤40字 + 关键词 | content 1-3条要点（总 ≤300字）`;
 }

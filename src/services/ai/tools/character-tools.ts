@@ -7,7 +7,7 @@ import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
 import type { Chapter } from 'src/models/novel';
-import { searchRelatedMemories } from './memory-helper';
+import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -189,7 +189,13 @@ export const characterTools: ToolDefinition[] = [
       // 搜索相关记忆
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId) {
-        relatedMemories = await searchRelatedMemories(bookId, [name], 5);
+        const aliasKeywords = character.aliases?.map((alias) => alias.name) || [];
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          [{ type: 'character', id: character.id }],
+          [name, ...aliasKeywords],
+          5,
+        );
       }
 
       return JSON.stringify({
@@ -500,7 +506,16 @@ export const characterTools: ToolDefinition[] = [
       // 搜索相关记忆
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId) {
-        relatedMemories = await searchRelatedMemories(bookId, validKeywords, 5);
+        const attachments = filteredCharacters.map((char) => ({
+          type: 'character' as const,
+          id: char.id,
+        }));
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          attachments,
+          validKeywords,
+          5,
+        );
       }
 
       return JSON.stringify({

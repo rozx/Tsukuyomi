@@ -7,7 +7,7 @@ import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
 import type { Chapter } from 'src/models/novel';
-import { searchRelatedMemories } from './memory-helper';
+import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -137,7 +137,12 @@ export const terminologyTools: ToolDefinition[] = [
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId) {
         try {
-          relatedMemories = await searchRelatedMemories(bookId, [name], 5);
+          relatedMemories = await searchRelatedMemoriesHybrid(
+            bookId,
+            [{ type: 'term', id: term.id }],
+            [name],
+            5,
+          );
         } catch (error) {
           // 静默失败，不影响主要功能
           console.warn('Failed to search related memories:', error);
@@ -482,7 +487,16 @@ export const terminologyTools: ToolDefinition[] = [
       // 搜索相关记忆
       let relatedMemories: Array<{ id: string; summary: string }> = [];
       if (include_memory && bookId) {
-        relatedMemories = await searchRelatedMemories(bookId, validKeywords, 5);
+        const attachments = filteredTerms.map((term) => ({
+          type: 'term' as const,
+          id: term.id,
+        }));
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          attachments,
+          validKeywords,
+          5,
+        );
       }
 
       return JSON.stringify({

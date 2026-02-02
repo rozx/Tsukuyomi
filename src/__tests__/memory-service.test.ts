@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import { MemoryService } from '../services/memory-service';
-import type { Memory } from '../models/memory';
+import type { Memory, MemoryAttachment } from '../models/memory';
 
 // Mock IndexedDB
 const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
@@ -15,7 +15,7 @@ const mockIndexGetAll = mock<(_key: string) => Promise<Memory[]>>((_key: string)
 );
 const mockIndexCount = mock((_key: string) => Promise.resolve(0));
 
-const mockTransactionStorePut = mock(() => Promise.resolve(undefined));
+const mockTransactionStorePut = mock((_val: unknown) => Promise.resolve(undefined));
 
 // 用于存储测试数据的内存存储，供游标使用
 let testMemoryData: Memory[] = [];
@@ -40,13 +40,13 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
           currentCursorBookId = bookId;
           currentCursorIndex = 0;
           const filtered = testMemoryData.filter((m) => m.bookId === bookId);
-          
+
           // 创建游标类型
           type CursorType = {
             value: Memory;
             continue: () => Promise<CursorType | null>;
           } | null;
-          
+
           // 创建游标函数
           const createNextCursor = (): CursorType => {
             if (currentCursorIndex >= filtered.length) {
@@ -57,7 +57,7 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
               return null;
             }
             currentCursorIndex++;
-            
+
             return {
               value: current,
               continue: () => {
@@ -65,13 +65,13 @@ const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
               },
             };
           };
-          
+
           return Promise.resolve(createNextCursor());
         },
       };
     },
   };
-  
+
   return {
     objectStore: () => objectStore,
     store: objectStore, // 用于 updateAccessTimesBatch 中的更新
@@ -104,6 +104,7 @@ function createTestMemory(
   summary: string,
   createdAt?: number,
   lastAccessedAt?: number,
+  attachedTo?: MemoryAttachment[],
 ): Memory {
   const now = Date.now();
   return {
@@ -111,6 +112,7 @@ function createTestMemory(
     bookId,
     content,
     summary,
+    attachedTo: attachedTo ?? [{ type: 'book', id: bookId }],
     createdAt: createdAt || now,
     lastAccessedAt: lastAccessedAt || now,
   };
@@ -203,7 +205,7 @@ describe('MemoryService', () => {
       mockIndexGetAll.mockResolvedValue(oldMemories);
       // 设置测试数据，供游标使用
       testMemoryData = oldMemories;
-      
+
       // Mock: ID 检查返回 undefined（ID 不存在，可以使用）
       mockStoreGet.mockResolvedValue(undefined);
 
@@ -212,6 +214,26 @@ describe('MemoryService', () => {
       expect(memory).toBeTruthy();
       // 应该调用了 store.delete 来删除最旧的记录（通过事务内的 store）
       expect(mockStoreDelete).toHaveBeenCalled();
+    });
+
+    it('应该支持创建时传入附件', async () => {
+      const bookId = 'book-1';
+      const content = '这是测试内容';
+      const summary = '测试摘要';
+      const attachments: MemoryAttachment[] = [
+        { type: 'character', id: 'char-1' },
+        { type: 'term', id: 'term-1' },
+      ];
+
+      mockIndexCount.mockResolvedValue(0);
+      mockStoreGet.mockResolvedValue(undefined);
+
+      await MemoryService.createMemory(bookId, content, summary, attachments);
+
+      const putCall = mockTransactionStorePut.mock.calls[0];
+      expect(putCall).toBeDefined();
+      const savedMemory = putCall?.[0] as Memory;
+      expect(savedMemory.attachedTo).toEqual(attachments);
     });
   });
 
@@ -292,6 +314,25 @@ describe('MemoryService', () => {
       expect(result?.lastAccessedAt).toBeLessThanOrEqual(afterAccess + 10); // 允许 10ms 误差
       // 应该调用了 put 来更新 lastAccessedAt
       expect(mockPut).toHaveBeenCalled();
+    });
+
+    it('应该为缺少 attachedTo 的旧数据补默认附件', async () => {
+      const bookId = 'book-1';
+      const memoryId = 'legacy-memory';
+      const legacyMemory = {
+        id: memoryId,
+        bookId,
+        content: '旧内容',
+        summary: '旧摘要',
+        createdAt: 1000,
+        lastAccessedAt: 1000,
+      } as unknown as Memory;
+
+      mockGet.mockResolvedValue(legacyMemory);
+
+      const result = await MemoryService.getMemory(bookId, memoryId);
+
+      expect(result?.attachedTo).toEqual([{ type: 'book', id: bookId }]);
     });
   });
 
@@ -517,6 +558,155 @@ describe('MemoryService', () => {
     });
   });
 
+  describe('getMemoriesByAttachment', () => {
+    it('应该按附件查询并按 lastAccessedAt 倒序排序', async () => {
+      const bookId = 'book-1';
+      const attachment: MemoryAttachment = { type: 'character', id: 'char-1' };
+
+      const memory1 = createTestMemory('id-1', bookId, '内容1', '摘要1', 1000, 3000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+      const memory2 = createTestMemory('id-2', bookId, '内容2', '摘要2', 1001, 2000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+      const memory3 = createTestMemory('id-3', bookId, '内容3', '摘要3', 1002, 4000, [
+        { type: 'term', id: 'term-1' },
+      ]);
+
+      mockIndexGetAll.mockResolvedValue([memory2, memory3, memory1]);
+
+      const results = await MemoryService.getMemoriesByAttachment(bookId, attachment);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]?.id).toBe('id-1');
+      expect(results[1]?.id).toBe('id-2');
+    });
+
+    it('应该过滤掉不包含目标附件的记录', async () => {
+      const bookId = 'book-1';
+      const attachment: MemoryAttachment = { type: 'character', id: 'char-1' };
+
+      const memory1 = createTestMemory('id-1', bookId, '内容1', '摘要1', 1000, 3000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+      const memory2 = createTestMemory('id-2', bookId, '内容2', '摘要2', 1001, 2000, [
+        { type: 'character', id: 'char-2' },
+      ]);
+
+      mockIndexGetAll.mockResolvedValue([memory1, memory2]);
+
+      const results = await MemoryService.getMemoriesByAttachment(bookId, attachment);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.id).toBe('id-1');
+    });
+
+    it('应该在附件参数不完整时抛出错误', async () => {
+      const bookId = 'book-1';
+
+      await (expect(
+        MemoryService.getMemoriesByAttachment(bookId, {
+          type: '',
+          id: '',
+        } as unknown as MemoryAttachment),
+      ).rejects.toThrow('附件信息不能为空') as unknown as Promise<void>);
+    });
+
+    it('应该异步更新访问时间', async () => {
+      const bookId = 'book-1';
+      const attachment: MemoryAttachment = { type: 'character', id: 'char-1' };
+
+      const memory1 = createTestMemory('id-1', bookId, '内容1', '摘要1', 1000, 2000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+
+      mockIndexGetAll.mockResolvedValue([memory1]);
+      mockStoreGet.mockResolvedValue(memory1);
+
+      await MemoryService.getMemoriesByAttachment(bookId, attachment);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockTransactionStorePut).toHaveBeenCalled();
+    });
+  });
+
+  describe('getMemoriesByAttachments', () => {
+    it('应该按 OR 逻辑查询并去重', async () => {
+      const bookId = 'book-1';
+      const attachments: MemoryAttachment[] = [
+        { type: 'character', id: 'char-1' },
+        { type: 'term', id: 'term-1' },
+      ];
+
+      const memory1 = createTestMemory('id-1', bookId, '内容1', '摘要1', 1000, 3000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+      const memory2 = createTestMemory('id-2', bookId, '内容2', '摘要2', 1001, 2000, [
+        { type: 'term', id: 'term-1' },
+      ]);
+      const memory3 = createTestMemory('id-3', bookId, '内容3', '摘要3', 1002, 4000, [
+        { type: 'character', id: 'char-1' },
+        { type: 'term', id: 'term-1' },
+      ]);
+
+      mockIndexGetAll.mockImplementation((key: unknown) => {
+        // Implementation switched to use getAll(bookId) and filter in memory
+        if (key === bookId) {
+          return Promise.resolve([memory1, memory2, memory3]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const results = await MemoryService.getMemoriesByAttachments(bookId, attachments);
+
+      expect(results).toHaveLength(3);
+      expect(results[0]?.id).toBe('id-3');
+      expect(results[1]?.id).toBe('id-1');
+      expect(results[2]?.id).toBe('id-2');
+    });
+
+    it('应该忽略无效附件并在没有有效附件时抛出错误', async () => {
+      const bookId = 'book-1';
+
+      await (expect(MemoryService.getMemoriesByAttachments(bookId, [])).rejects.toThrow(
+        '附件数组不能为空',
+      ) as unknown as Promise<void>);
+    });
+
+    it('应该异步更新访问时间', async () => {
+      const bookId = 'book-1';
+      const attachments: MemoryAttachment[] = [{ type: 'character', id: 'char-1' }];
+
+      const memory1 = createTestMemory('id-1', bookId, '内容1', '摘要1', 1000, 2000, [
+        { type: 'character', id: 'char-1' },
+      ]);
+
+      mockIndexGetAll.mockResolvedValue([memory1]);
+      mockStoreGet.mockResolvedValue(memory1);
+
+      await MemoryService.getMemoriesByAttachments(bookId, attachments);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockTransactionStorePut).toHaveBeenCalled();
+    });
+
+    it('应该处理大量附件查询结果（500 条）', async () => {
+      const bookId = 'book-1';
+      const attachments: MemoryAttachment[] = [{ type: 'character', id: 'char-1' }];
+      const memories = Array.from({ length: 500 }, (_, i) =>
+        createTestMemory(`id-${i}`, bookId, `内容${i}`, `摘要${i}`, 1000 + i, 1000 + i, [
+          { type: 'character', id: 'char-1' },
+        ]),
+      );
+
+      mockIndexGetAll.mockResolvedValue(memories);
+
+      const results = await MemoryService.getMemoriesByAttachments(bookId, attachments);
+
+      expect(results).toHaveLength(500);
+    });
+  });
+
   describe('不同书籍的隔离', () => {
     it('应该确保不同书籍的 Memory 相互隔离', async () => {
       const bookId1 = 'book-1';
@@ -670,7 +860,12 @@ describe('MemoryService', () => {
 
       // 更新 Memory
       mockGet.mockResolvedValue(oldMemory);
-      const updatedMemory = await MemoryService.updateMemory(bookId, memoryId, newContent, newSummary);
+      const updatedMemory = await MemoryService.updateMemory(
+        bookId,
+        memoryId,
+        newContent,
+        newSummary,
+      );
 
       expect(updatedMemory.content).toBe(newContent);
       expect(updatedMemory.summary).toBe(newSummary);
@@ -716,10 +911,9 @@ describe('MemoryService', () => {
 
       mockIndexGetAll.mockResolvedValue(memories);
 
-      const results: Memory[] = await (MemoryService.searchMemoriesByKeywords(
-        bookId,
-        [keyword],
-      ) as Promise<Memory[]>);
+      const results: Memory[] = await (MemoryService.searchMemoriesByKeywords(bookId, [
+        keyword,
+      ]) as Promise<Memory[]>);
 
       expect(results).toHaveLength(1);
 
@@ -803,7 +997,12 @@ describe('MemoryService', () => {
       mockGet.mockResolvedValue(oldMemory);
 
       const beforeUpdate = Date.now();
-      const updatedMemory = await MemoryService.updateMemory(bookId, memoryId, newContent, newSummary);
+      const updatedMemory = await MemoryService.updateMemory(
+        bookId,
+        memoryId,
+        newContent,
+        newSummary,
+      );
       const afterUpdate = Date.now();
 
       expect(updatedMemory).toBeTruthy();
@@ -824,9 +1023,9 @@ describe('MemoryService', () => {
 
       mockGet.mockResolvedValue(undefined);
 
-      await (expect(
-        MemoryService.updateMemory(bookId, memoryId, '内容', '摘要'),
-      ).rejects.toThrow(`Memory 不存在: ${memoryId}`) as unknown as Promise<void>);
+      await (expect(MemoryService.updateMemory(bookId, memoryId, '内容', '摘要')).rejects.toThrow(
+        `Memory 不存在: ${memoryId}`,
+      ) as unknown as Promise<void>);
     });
 
     it('应该在 Memory 不属于指定书籍时抛出错误', async () => {
@@ -842,21 +1041,59 @@ describe('MemoryService', () => {
     });
 
     it('应该在参数为空时抛出错误', async () => {
-      await (expect(
-        MemoryService.updateMemory('', 'memory-1', '内容', '摘要'),
-      ).rejects.toThrow('书籍 ID 不能为空') as unknown as Promise<void>);
+      await (expect(MemoryService.updateMemory('', 'memory-1', '内容', '摘要')).rejects.toThrow(
+        '书籍 ID 不能为空',
+      ) as unknown as Promise<void>);
 
-      await (expect(
-        MemoryService.updateMemory('book-1', '', '内容', '摘要'),
-      ).rejects.toThrow('Memory ID 不能为空') as unknown as Promise<void>);
+      await (expect(MemoryService.updateMemory('book-1', '', '内容', '摘要')).rejects.toThrow(
+        'Memory ID 不能为空',
+      ) as unknown as Promise<void>);
 
-      await (expect(
-        MemoryService.updateMemory('book-1', 'memory-1', '', '摘要'),
-      ).rejects.toThrow('内容不能为空') as unknown as Promise<void>);
+      await (expect(MemoryService.updateMemory('book-1', 'memory-1', '', '摘要')).rejects.toThrow(
+        '内容不能为空',
+      ) as unknown as Promise<void>);
 
-      await (expect(
-        MemoryService.updateMemory('book-1', 'memory-1', '内容', ''),
-      ).rejects.toThrow('摘要不能为空') as unknown as Promise<void>);
+      await (expect(MemoryService.updateMemory('book-1', 'memory-1', '内容', '')).rejects.toThrow(
+        '摘要不能为空',
+      ) as unknown as Promise<void>);
+    });
+
+    it('应该支持更新附件', async () => {
+      const bookId = 'book-1';
+      const memoryId = 'memory-1';
+      const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要');
+      const newAttachments: MemoryAttachment[] = [{ type: 'term', id: 'term-1' }];
+
+      mockGet.mockResolvedValue(oldMemory);
+
+      const updatedMemory = await MemoryService.updateMemory(
+        bookId,
+        memoryId,
+        '新内容',
+        '新摘要',
+        newAttachments,
+      );
+
+      expect(updatedMemory.attachedTo).toEqual(newAttachments);
+    });
+
+    it('应该在传入空附件数组时回退到默认书籍附件', async () => {
+      const bookId = 'book-1';
+      const memoryId = 'memory-1';
+      const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要');
+
+      mockGet.mockResolvedValue(oldMemory);
+
+      const updatedMemory = await MemoryService.updateMemory(
+        bookId,
+        memoryId,
+        '新内容',
+        '新摘要',
+        [], // 传入空数组
+      );
+
+      // 应该被规范化为默认的书籍附件
+      expect(updatedMemory.attachedTo).toEqual([{ type: 'book', id: bookId }]);
     });
   });
 

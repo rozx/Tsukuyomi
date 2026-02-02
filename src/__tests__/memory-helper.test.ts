@@ -1,10 +1,16 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import { MemoryService } from '../services/memory-service';
-import type { Memory } from '../models/memory';
+import type { Memory, MemoryAttachment } from '../models/memory';
 
 let searchRelatedMemories: (
   bookId: string,
+  keywords: string[],
+  limit?: number,
+) => Promise<Array<{ id: string; summary: string }>>;
+let searchRelatedMemoriesHybrid: (
+  bookId: string,
+  attachments: MemoryAttachment[],
   keywords: string[],
   limit?: number,
 ) => Promise<Array<{ id: string; summary: string }>>;
@@ -19,7 +25,7 @@ describe('searchRelatedMemories', () => {
     // 重新导入模块，获取最新的（未被 mock 的）实现
     const memoryHelper = await import('../services/ai/tools/memory-helper');
     searchRelatedMemories = memoryHelper.searchRelatedMemories;
-    
+
     searchMemoriesByKeywordsSpy = spyOn(
       MemoryService,
       'searchMemoriesByKeywords',
@@ -59,6 +65,7 @@ describe('searchRelatedMemories', () => {
         bookId: 'book-1',
         content: '完整内容1',
         summary: '摘要1',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
       },
@@ -67,6 +74,7 @@ describe('searchRelatedMemories', () => {
         bookId: 'book-1',
         content: '完整内容2',
         summary: '摘要2',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
       },
@@ -75,6 +83,7 @@ describe('searchRelatedMemories', () => {
         bookId: 'book-1',
         content: '完整内容3',
         summary: '摘要3',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
         createdAt: Date.now(),
         lastAccessedAt: Date.now(),
       },
@@ -100,6 +109,7 @@ describe('searchRelatedMemories', () => {
       bookId: 'book-1',
       content: `完整内容${i}`,
       summary: `摘要${i}`,
+      attachedTo: [{ type: 'book', id: 'book-1' }],
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
     }));
@@ -119,6 +129,7 @@ describe('searchRelatedMemories', () => {
       bookId: 'book-1',
       content: `完整内容${i}`,
       summary: `摘要${i}`,
+      attachedTo: [{ type: 'book', id: 'book-1' }],
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
     }));
@@ -151,6 +162,7 @@ describe('searchRelatedMemories', () => {
         bookId: 'book-1',
         content: '完整内容',
         summary: '摘要',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
         createdAt: 1234567890,
         lastAccessedAt: 1234567890,
       },
@@ -171,3 +183,114 @@ describe('searchRelatedMemories', () => {
   });
 });
 
+describe('searchRelatedMemoriesHybrid', () => {
+  let searchMemoriesByKeywordsSpy: ReturnType<typeof spyOn>;
+  let getMemoriesByAttachmentsSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(async () => {
+    mock.restore();
+
+    const memoryHelper = await import('../services/ai/tools/memory-helper');
+    searchRelatedMemoriesHybrid = memoryHelper.searchRelatedMemoriesHybrid;
+
+    searchMemoriesByKeywordsSpy = spyOn(
+      MemoryService,
+      'searchMemoriesByKeywords',
+    ).mockResolvedValue([]);
+    getMemoriesByAttachmentsSpy = spyOn(
+      MemoryService,
+      'getMemoriesByAttachments',
+    ).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    if (searchMemoriesByKeywordsSpy) {
+      searchMemoriesByKeywordsSpy.mockRestore();
+    }
+    if (getMemoriesByAttachmentsSpy) {
+      getMemoriesByAttachmentsSpy.mockRestore();
+    }
+    mock.restore();
+  });
+
+  test('附件优先，关键词补充，去重并保持顺序', async () => {
+    const attachedMemories: Memory[] = [
+      {
+        id: 'm1',
+        bookId: 'book-1',
+        content: '内容1',
+        summary: '摘要1',
+        attachedTo: [{ type: 'character', id: 'char-1' }],
+        createdAt: 1,
+        lastAccessedAt: 1,
+      },
+      {
+        id: 'm2',
+        bookId: 'book-1',
+        content: '内容2',
+        summary: '摘要2',
+        attachedTo: [{ type: 'character', id: 'char-1' }],
+        createdAt: 2,
+        lastAccessedAt: 2,
+      },
+    ];
+    const keywordMemories: Memory[] = [
+      {
+        id: 'm2',
+        bookId: 'book-1',
+        content: '内容2',
+        summary: '摘要2',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
+        createdAt: 2,
+        lastAccessedAt: 2,
+      },
+      {
+        id: 'm3',
+        bookId: 'book-1',
+        content: '内容3',
+        summary: '摘要3',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
+        createdAt: 3,
+        lastAccessedAt: 3,
+      },
+    ];
+
+    getMemoriesByAttachmentsSpy.mockResolvedValue(attachedMemories);
+    searchMemoriesByKeywordsSpy.mockResolvedValue(keywordMemories);
+
+    const result = await searchRelatedMemoriesHybrid(
+      'book-1',
+      [{ type: 'character', id: 'char-1' }],
+      ['角色名'],
+      5,
+    );
+
+    expect(result).toEqual([
+      { id: 'm1', summary: '摘要1' },
+      { id: 'm2', summary: '摘要2' },
+      { id: 'm3', summary: '摘要3' },
+    ]);
+  });
+
+  test('仅关键词时仍可查询', async () => {
+    const keywordMemories: Memory[] = [
+      {
+        id: 'm1',
+        bookId: 'book-1',
+        content: '内容1',
+        summary: '摘要1',
+        attachedTo: [{ type: 'book', id: 'book-1' }],
+        createdAt: 1,
+        lastAccessedAt: 1,
+      },
+    ];
+
+    searchMemoriesByKeywordsSpy.mockResolvedValue(keywordMemories);
+
+    const result = await searchRelatedMemoriesHybrid('book-1', [], ['关键词'], 5);
+
+    expect(getMemoriesByAttachmentsSpy).not.toHaveBeenCalled();
+    expect(searchMemoriesByKeywordsSpy).toHaveBeenCalledWith('book-1', ['关键词']);
+    expect(result).toEqual([{ id: 'm1', summary: '摘要1' }]);
+  });
+});

@@ -450,7 +450,7 @@ export class PolishService {
         );
 
         // 使用独立的 chunk 提示，每个 chunk 独立，提醒 AI 使用工具获取上下文
-        const chunkContent = buildIndependentChunkPrompt(
+        const chunkContent = await buildIndependentChunkPrompt(
           'polish',
           chunkIndex,
           chunks.length,

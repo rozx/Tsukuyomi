@@ -60,10 +60,11 @@ await mock.module('src/utils/indexed-db', () => ({
   getDB: () => Promise.resolve(mockDb),
 }));
 
-// Mock searchRelatedMemories（局部使用，不在文件顶层全局 mock）
-const mockSearchRelatedMemories = mock(
+// Mock searchRelatedMemoriesHybrid（局部使用，不在文件顶层全局 mock）
+const mockSearchRelatedMemoriesHybrid = mock(
   (
     _bookId: string,
+    _attachments: Array<{ type: string; id: string }>,
     _keywords: string[],
     _limit: number = 5,
   ): Promise<Array<{ id: string; summary: string }>> => {
@@ -117,15 +118,18 @@ describe('include_memory 参数测试', () => {
   };
 
   beforeEach(() => {
-    mockSearchRelatedMemories.mockClear();
-    mockSearchRelatedMemories.mockReset();
-    mockSearchRelatedMemories.mockResolvedValue([]);
+    mockSearchRelatedMemoriesHybrid.mockClear();
+    mockSearchRelatedMemoriesHybrid.mockReset();
+    mockSearchRelatedMemoriesHybrid.mockResolvedValue([]);
     if (searchRelatedMemoriesSpy) {
       searchRelatedMemoriesSpy.mockRestore();
     }
-    searchRelatedMemoriesSpy = spyOn(MemoryHelperModule, 'searchRelatedMemories').mockImplementation(
-      mockSearchRelatedMemories as unknown as typeof MemoryHelperModule.searchRelatedMemories,
-    );
+    const hybridMock =
+      mockSearchRelatedMemoriesHybrid as unknown as typeof MemoryHelperModule.searchRelatedMemoriesHybrid;
+    searchRelatedMemoriesSpy = spyOn(
+      MemoryHelperModule,
+      'searchRelatedMemoriesHybrid',
+    ).mockImplementation(hybridMock);
     // 重置 IndexedDB mocks
     mockStoreGet.mockClear();
     mockStorePut.mockClear();
@@ -141,8 +145,8 @@ describe('include_memory 参数测试', () => {
   });
 
   afterEach(() => {
-    mockSearchRelatedMemories.mockReset();
-    mockSearchRelatedMemories.mockResolvedValue([]);
+    mockSearchRelatedMemoriesHybrid.mockReset();
+    mockSearchRelatedMemoriesHybrid.mockResolvedValue([]);
     if (searchRelatedMemoriesSpy) {
       searchRelatedMemoriesSpy.mockRestore();
     }
@@ -195,7 +199,7 @@ describe('include_memory 参数测试', () => {
         { id: 'memory-1', summary: '相关记忆1' },
         { id: 'memory-2', summary: '相关记忆2' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = terminologyTools.find((t) => t.definition.function.name === 'get_term');
       expect(tool).toBeDefined();
@@ -206,7 +210,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.term).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(bookId, ['テスト'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [{ type: 'term', id: 'term-1' }],
+        ['テスト'],
+        5,
+      );
     });
 
     test('get_term: include_memory=false 时不应该搜索相关记忆', async () => {
@@ -219,14 +228,14 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.term).toBeDefined();
       expect(parsed.related_memories).toBeUndefined();
-      expect(mockSearchRelatedMemories).not.toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).not.toHaveBeenCalled();
     });
 
     test('get_term: 默认 include_memory 应该为 true', async () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = terminologyTools.find((t) => t.definition.function.name === 'get_term');
       expect(tool).toBeDefined();
@@ -236,14 +245,14 @@ describe('include_memory 参数测试', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.related_memories).toBeDefined();
-      expect(mockSearchRelatedMemories).toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalled();
     });
 
     test('search_terms_by_keywords: include_memory=true 时应该搜索相关记忆', async () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = terminologyTools.find(
         (t) => t.definition.function.name === 'search_terms_by_keywords',
@@ -259,7 +268,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.terms).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(bookId, ['テスト'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [{ type: 'term', id: 'term-1' }],
+        ['テスト'],
+        5,
+      );
     });
 
     test('search_terms_by_keywords: include_memory=false 时不应该搜索相关记忆', async () => {
@@ -277,7 +291,7 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.terms).toBeDefined();
       expect(parsed.related_memories).toBeUndefined();
-      expect(mockSearchRelatedMemories).not.toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).not.toHaveBeenCalled();
     });
   });
 
@@ -315,7 +329,7 @@ describe('include_memory 参数测试', () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = characterTools.find((t) => t.definition.function.name === 'get_character');
       expect(tool).toBeDefined();
@@ -329,7 +343,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.character).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(bookId, ['テストキャラ'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [{ type: 'character', id: 'char-1' }],
+        ['テストキャラ'],
+        5,
+      );
     });
 
     test('get_character: include_memory=false 时不应该搜索相关记忆', async () => {
@@ -345,14 +364,14 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.character).toBeDefined();
       expect(parsed.related_memories).toBeUndefined();
-      expect(mockSearchRelatedMemories).not.toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).not.toHaveBeenCalled();
     });
 
     test('search_characters_by_keywords: include_memory=true 时应该搜索相关记忆', async () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = characterTools.find(
         (t) => t.definition.function.name === 'search_characters_by_keywords',
@@ -368,7 +387,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.characters).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(bookId, ['テスト'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [{ type: 'character', id: 'char-1' }],
+        ['テスト'],
+        5,
+      );
     });
   });
 
@@ -393,7 +417,7 @@ describe('include_memory 参数测试', () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = bookTools.find((t) => t.definition.function.name === 'get_book_info');
       expect(tool).toBeDefined();
@@ -404,8 +428,9 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.book).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
         bookId,
+        [{ type: 'book', id: bookId }],
         ['Test Book', 'Test Author'],
         5,
       );
@@ -421,7 +446,7 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.book).toBeDefined();
       expect(parsed.related_memories).toBeUndefined();
-      expect(mockSearchRelatedMemories).not.toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).not.toHaveBeenCalled();
     });
   });
 
@@ -487,7 +512,7 @@ describe('include_memory 参数测试', () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = paragraphTools.find((t) => t.definition.function.name === 'get_paragraph_info');
       expect(tool).toBeDefined();
@@ -498,7 +523,7 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.paragraph).toBeDefined();
       // 注意：由于 extractKeywordsFromParagraph 会从段落文本中提取关键词，这里只验证是否调用了搜索
-      expect(mockSearchRelatedMemories).toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalled();
     });
 
     test('get_paragraph_info: include_memory=false 时不应该搜索相关记忆', async () => {
@@ -514,14 +539,14 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.paragraph).toBeDefined();
       expect(parsed.related_memories).toBeUndefined();
-      expect(mockSearchRelatedMemories).not.toHaveBeenCalled();
+      expect(mockSearchRelatedMemoriesHybrid).not.toHaveBeenCalled();
     });
 
     test('find_paragraph_by_keywords: include_memory=true 时应该搜索相关记忆', async () => {
       const mockMemories: Array<{ id: string; summary: string }> = [
         { id: 'memory-1', summary: '相关记忆1' },
       ];
-      mockSearchRelatedMemories.mockResolvedValue(mockMemories);
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue(mockMemories);
 
       const tool = paragraphTools.find(
         (t) => t.definition.function.name === 'find_paragraph_by_keywords',
@@ -537,7 +562,12 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.paragraphs).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemories).toHaveBeenCalledWith(bookId, ['テスト'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [],
+        ['テスト'],
+        5,
+      );
     });
   });
 
@@ -570,7 +600,7 @@ describe('include_memory 参数测试', () => {
     });
 
     test('当记忆搜索失败时应该静默处理，不影响主要功能', async () => {
-      mockSearchRelatedMemories.mockRejectedValue(new Error('Memory search failed'));
+      mockSearchRelatedMemoriesHybrid.mockRejectedValue(new Error('Memory search failed'));
 
       const tool = terminologyTools.find((t) => t.definition.function.name === 'get_term');
       expect(tool).toBeDefined();
@@ -585,10 +615,9 @@ describe('include_memory 参数测试', () => {
       expect(parsed.related_memories).toBeUndefined();
       
       // 重置 mock，避免影响后续测试
-      mockSearchRelatedMemories.mockReset();
-      mockSearchRelatedMemories.mockResolvedValue([]);
+      mockSearchRelatedMemoriesHybrid.mockReset();
+      mockSearchRelatedMemoriesHybrid.mockResolvedValue([]);
     });
   });
 
 });
-

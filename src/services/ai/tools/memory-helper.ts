@@ -1,4 +1,5 @@
 import { MemoryService } from 'src/services/memory-service';
+import type { MemoryAttachment } from 'src/models/memory';
 
 /**
  * 搜索相关记忆并返回简化格式（只包含 id 和 summary）
@@ -44,3 +45,59 @@ export async function searchRelatedMemories(
   }
 }
 
+/**
+ * 附件 + 关键词混合检索相关记忆（并行、合并、去重）
+ * - 优先返回附件命中的记忆
+ * - 再补充关键词命中的记忆
+ */
+export async function searchRelatedMemoriesHybrid(
+  bookId: string,
+  attachments: MemoryAttachment[],
+  keywords: string[],
+  limit: number = 5,
+): Promise<Array<{ id: string; summary: string }>> {
+  if (!bookId) {
+    return [];
+  }
+
+  const validAttachments = Array.isArray(attachments)
+    ? attachments.filter((attachment) => !!attachment?.type && !!attachment?.id)
+    : [];
+  const validKeywords = Array.isArray(keywords)
+    ? keywords.map((keyword) => keyword?.trim()).filter((keyword) => !!keyword)
+    : [];
+
+  if (validAttachments.length === 0 && validKeywords.length === 0) {
+    return [];
+  }
+
+  try {
+    const [attachedMemories, keywordMemories] = await Promise.all([
+      validAttachments.length > 0
+        ? MemoryService.getMemoriesByAttachments(bookId, validAttachments)
+        : Promise.resolve([]),
+      validKeywords.length > 0
+        ? MemoryService.searchMemoriesByKeywords(bookId, validKeywords)
+        : Promise.resolve([]),
+    ]);
+
+    const merged = new Map<string, { id: string; summary: string }>();
+
+    for (const memory of attachedMemories) {
+      if (!merged.has(memory.id)) {
+        merged.set(memory.id, { id: memory.id, summary: memory.summary });
+      }
+    }
+
+    for (const memory of keywordMemories) {
+      if (!merged.has(memory.id)) {
+        merged.set(memory.id, { id: memory.id, summary: memory.summary });
+      }
+    }
+
+    return Array.from(merged.values()).slice(0, limit);
+  } catch (error) {
+    console.warn('Failed to search related memories (hybrid):', error);
+    return [];
+  }
+}

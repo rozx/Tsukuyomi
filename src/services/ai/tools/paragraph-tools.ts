@@ -7,7 +7,7 @@ import { isEmptyOrSymbolOnly, CJK_CHAR_CLASS, hasCJK, isCJK } from 'src/utils/te
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo, ToolContext, ChunkBoundaries } from './types';
-import { searchRelatedMemories } from './memory-helper';
+import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 /**
  * 从段落文本中提取关键词（用于记忆搜索）
@@ -544,7 +544,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (include_memory && bookId && paragraph.text) {
         const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
         if (keywords.length > 0) {
-          relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
         }
       }
 
@@ -665,7 +665,7 @@ export const paragraphTools: ToolDefinition[] = [
         if (firstResult?.paragraph?.text) {
           const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
           if (keywords.length > 0) {
-            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
           }
         }
       }
@@ -795,7 +795,7 @@ export const paragraphTools: ToolDefinition[] = [
         if (firstResult?.paragraph?.text) {
           const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
           if (keywords.length > 0) {
-            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
           }
         }
       }
@@ -1243,7 +1243,7 @@ export const paragraphTools: ToolDefinition[] = [
           searchKeywords.push(...validTranslationKeywords);
         }
         if (searchKeywords.length > 0) {
-          relatedMemories = await searchRelatedMemories(bookId, searchKeywords, 5);
+          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], searchKeywords, 5);
         }
       }
 
@@ -1512,7 +1512,7 @@ export const paragraphTools: ToolDefinition[] = [
       if (include_memory && bookId && paragraph.text) {
         const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
         if (keywords.length > 0) {
-          relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
+          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
         }
       }
 

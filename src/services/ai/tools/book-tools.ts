@@ -6,7 +6,7 @@ import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter, Novel } from 'src/models/novel';
-import { searchRelatedMemories } from './memory-helper';
+import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 export const bookTools: ToolDefinition[] = [
   {
@@ -101,9 +101,12 @@ export const bookTools: ToolDefinition[] = [
           const keywords: string[] = [];
           if (book.title) keywords.push(book.title);
           if (book.author) keywords.push(book.author);
-          if (keywords.length > 0) {
-            relatedMemories = await searchRelatedMemories(bookId, keywords, 5);
-          }
+          relatedMemories = await searchRelatedMemoriesHybrid(
+            bookId,
+            [{ type: 'book', id: bookId }],
+            keywords,
+            5,
+          );
         }
 
         return JSON.stringify({
@@ -551,9 +554,12 @@ export const bookTools: ToolDefinition[] = [
         if (include_memory && bookId) {
           const titleOriginal =
             typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          if (titleOriginal) {
-            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
-          }
+          relatedMemories = await searchRelatedMemoriesHybrid(
+            bookId,
+            [{ type: 'chapter', id: chapter.id }],
+            titleOriginal ? [titleOriginal] : [],
+            5,
+          );
         }
 
         return JSON.stringify({
@@ -684,9 +690,12 @@ export const bookTools: ToolDefinition[] = [
         if (include_memory && bookId) {
           const titleOriginal =
             typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          if (titleOriginal) {
-            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
-          }
+          relatedMemories = await searchRelatedMemoriesHybrid(
+            bookId,
+            [{ type: 'chapter', id: chapter.id }],
+            titleOriginal ? [titleOriginal] : [],
+            5,
+          );
         }
 
         return JSON.stringify({
@@ -816,9 +825,12 @@ export const bookTools: ToolDefinition[] = [
         if (include_memory && bookId) {
           const titleOriginal =
             typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          if (titleOriginal) {
-            relatedMemories = await searchRelatedMemories(bookId, [titleOriginal], 5);
-          }
+          relatedMemories = await searchRelatedMemoriesHybrid(
+            bookId,
+            [{ type: 'chapter', id: chapter.id }],
+            titleOriginal ? [titleOriginal] : [],
+            5,
+          );
         }
 
         return JSON.stringify({

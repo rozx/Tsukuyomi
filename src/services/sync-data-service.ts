@@ -956,6 +956,7 @@ export class SyncDataService {
                     remoteMemory.id,
                     remoteMemory.content,
                     remoteMemory.summary,
+                    remoteMemory.attachedTo,
                   );
                 } catch (error) {
                   console.warn(`[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`, error);
@@ -970,13 +971,28 @@ export class SyncDataService {
           // 添加远程独有的 Memory
           for (const remoteMemory of remoteMemoryMap.values()) {
             try {
-              await MemoryService.createMemoryWithId(
-                remoteMemory.bookId,
-                remoteMemory.id,
-                remoteMemory.content,
-                remoteMemory.summary,
-                { createdAt: remoteMemory.createdAt, lastAccessedAt: remoteMemory.lastAccessedAt },
-              );
+              const timestamps = {
+                createdAt: remoteMemory.createdAt,
+                lastAccessedAt: remoteMemory.lastAccessedAt,
+              };
+              if (remoteMemory.attachedTo && remoteMemory.attachedTo.length > 0) {
+                await MemoryService.createMemoryWithId(
+                  remoteMemory.bookId,
+                  remoteMemory.id,
+                  remoteMemory.content,
+                  remoteMemory.summary,
+                  timestamps,
+                  remoteMemory.attachedTo,
+                );
+              } else {
+                await MemoryService.createMemoryWithId(
+                  remoteMemory.bookId,
+                  remoteMemory.id,
+                  remoteMemory.content,
+                  remoteMemory.summary,
+                  timestamps,
+                );
+              }
             } catch (error) {
               console.warn(`[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`, error);
             }

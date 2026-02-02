@@ -287,7 +287,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'create_memory',
         description:
-          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。记忆应短且可检索（summary 含关键词，content 用少量要点）。',
+          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。记忆应短且可检索（summary 含关键词，content 用少量要点）。如记忆与角色/术语/章节相关，请使用 attached_to 进行关联；可同时关联多个实体。示例：attached_to=[{type:"character", id:"char_001"}]。',
         parameters: {
           type: 'object',
           properties: {
@@ -298,6 +298,26 @@ export const memoryTools: ToolDefinition[] = [
             summary: {
               type: 'string',
               description: '内容的摘要（由 AI 生成，用于后续搜索）',
+            },
+            attached_to: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: {
+                    type: 'string',
+                    enum: ['book', 'character', 'term', 'chapter'],
+                    description: '附件类型',
+                  },
+                  id: {
+                    type: 'string',
+                    description: '附件实体 ID',
+                  },
+                },
+                required: ['type', 'id'],
+              },
+              description:
+                '可选：将记忆关联到特定实体（默认自动关联到书籍）。示例：[{type:"character", id:"char_001"}]',
             },
           },
           required: ['content', 'summary'],
@@ -311,7 +331,7 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { content, summary } = args;
+      const { content, summary, attached_to } = args;
       if (!content) {
         return JSON.stringify({
           success: false,
@@ -326,7 +346,7 @@ export const memoryTools: ToolDefinition[] = [
       }
 
       try {
-        const memory = await MemoryService.createMemory(bookId, content, summary);
+        const memory = await MemoryService.createMemory(bookId, content, summary, attached_to);
 
         // 报告创建操作
         if (onAction) {
@@ -363,7 +383,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'update_memory',
         description:
-          '更新指定的 Memory 记录（推荐）。当发现新信息或需要修正时，优先把新旧信息合并成更短、更清晰、可复用的规则/约定；避免重复创建多条相似记忆。summary 请保留可检索关键词，content 用少量要点表达。',
+          '更新指定的 Memory 记录（推荐）。当发现新信息或需要修正时，优先把新旧信息合并成更短、更清晰、可复用的规则/约定；避免重复创建多条相似记忆。summary 请保留可检索关键词，content 用少量要点表达。如发现记忆缺少/错误附件，可用 attached_to 替换修正。示例：attached_to=[{type:"term", id:"term_001"}]。',
         parameters: {
           type: 'object',
           properties: {
@@ -379,6 +399,26 @@ export const memoryTools: ToolDefinition[] = [
               type: 'string',
               description: '更新后的摘要（由 AI 生成，用于后续搜索）',
             },
+            attached_to: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: {
+                    type: 'string',
+                    enum: ['book', 'character', 'term', 'chapter'],
+                    description: '附件类型',
+                  },
+                  id: {
+                    type: 'string',
+                    description: '附件实体 ID',
+                  },
+                },
+                required: ['type', 'id'],
+              },
+              description:
+                '可选：替换当前记忆的附件列表；未提供则保留原附件。',
+            },
           },
           required: ['memory_id', 'content', 'summary'],
         },
@@ -391,7 +431,7 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id, content, summary } = args;
+      const { memory_id, content, summary, attached_to } = args;
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -421,7 +461,13 @@ export const memoryTools: ToolDefinition[] = [
           });
         }
 
-        const memory = await MemoryService.updateMemory(bookId, memory_id, content, summary);
+        const memory = await MemoryService.updateMemory(
+          bookId,
+          memory_id,
+          content,
+          summary,
+          attached_to,
+        );
 
         // 报告更新操作
         if (onAction) {

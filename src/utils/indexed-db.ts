@@ -90,10 +90,14 @@ interface TsukuyomiDB extends DBSchema {
       bookId: string;
       content: string;
       summary: string;
+      attachedTo: { type: string; id: string }[];
       createdAt: number;
       lastAccessedAt: number;
     };
-    indexes: { 'by-bookId': string; 'by-lastAccessedAt': number };
+    indexes: {
+      'by-bookId': string;
+      'by-lastAccessedAt': number;
+    };
   };
   'full-text-indexes': {
     key: string;
@@ -106,7 +110,7 @@ interface TsukuyomiDB extends DBSchema {
 }
 
 const DB_NAME = 'tsukuyomi';
-const DB_VERSION = 7; // 升级到版本 7 以支持 full-text-indexes 存储的 lastUpdated 字段
+const DB_VERSION = 8; // 升级版本保持为 8，但移除了无效的 by-attachedTo 索引
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 
@@ -191,6 +195,7 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
           memoriesStore.createIndex('by-bookId', 'bookId', { unique: false });
           memoriesStore.createIndex('by-lastAccessedAt', 'lastAccessedAt', { unique: false });
         }
+        // 版本 8：不再使用 by-attachedTo 索引（已废弃）
 
         // 创建 full-text-indexes 存储（版本 6 新增）
         if (!db.objectStoreNames.contains('full-text-indexes')) {
