@@ -167,6 +167,7 @@ export function getMemoryWorkflowRules(): string {
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
 - **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）；通用背景/世界观用 \`book\`。可同时附加多个实体。
 - **补齐附件**：发现记忆缺少或错误附件时，用 \`update_memory\` 纠正（替换 \`attached_to\`）。
+- **记忆顺序**：先建立相关术语/角色后，再建立/更新记忆。这样可以方便添加附件。
 
 **附件示例**：
 - 角色背景 → \`attached_to=[{type:"character", id:"..."}]\`
