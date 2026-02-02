@@ -64,6 +64,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
           const base = {
             id: m.id,
             summary: m.summary,
+            attached_to: m.attachedTo,
             createdAt: m.createdAt,
             lastAccessedAt: m.lastAccessedAt,
           };
@@ -186,6 +187,7 @@ export const memoryTools: ToolDefinition[] = [
             id: memory.id,
             content: memory.content,
             summary: memory.summary,
+            attached_to: memory.attachedTo,
             createdAt: memory.createdAt,
             lastAccessedAt: memory.lastAccessedAt,
           },
@@ -268,6 +270,7 @@ export const memoryTools: ToolDefinition[] = [
             id: memory.id,
             summary: memory.summary,
             content: memory.content,
+            attached_to: memory.attachedTo,
             createdAt: memory.createdAt,
             lastAccessedAt: memory.lastAccessedAt,
           })),
@@ -317,7 +320,11 @@ export const memoryTools: ToolDefinition[] = [
                 required: ['type', 'id'],
               },
               description:
-                '可选：将记忆关联到特定实体（默认自动关联到书籍）。示例：[{type:"character", id:"char_001"}]',
+                '可选：将此记忆关联到特定的实体（角色、术语、章节等），以便更有针对性地组织和检索信息。默认情况下会关联到当前书籍。\n' +
+                '- type: 实体类型，可选值："character" (角色), "term" (术语), "chapter" (章节), "book" (书籍).\n' +
+                '- id: 实体的唯一标识符 (例如角色ID "char_xxx", 术语ID "term_xxx").\n' +
+                '示例：[{"type": "character", "id": "char_001"}, {"type": "term", "id": "term_002"}]。\n' +
+                '关联后，当处理相关实体时，更有可能检索到此记忆。',
             },
           },
           required: ['content', 'summary'],
@@ -366,6 +373,7 @@ export const memoryTools: ToolDefinition[] = [
           memory: {
             id: memory.id,
             summary: memory.summary,
+            attached_to: memory.attachedTo,
             createdAt: memory.createdAt,
           },
         });
@@ -417,7 +425,11 @@ export const memoryTools: ToolDefinition[] = [
                 required: ['type', 'id'],
               },
               description:
-                '可选：替换当前记忆的附件列表；未提供则保留原附件。',
+                '可选：**完全替换**当前记忆的附件列表。注意：如果提供了此参数，原有的附件将被覆盖；如果未提供，则保留原有附件。\n' +
+                '用于修正错误的关联或更新关联实体。\n' +
+                '- type: 实体类型，可选值："character", "term", "chapter", "book".\n' +
+                '- id: 实体的唯一标识符.\n' +
+                '示例：[{"type": "character", "id": "char_001"}] (这将移除所有旧关联，仅保留与 char_001 的关联)。',
             },
           },
           required: ['memory_id', 'content', 'summary'],
@@ -488,6 +500,7 @@ export const memoryTools: ToolDefinition[] = [
           memory: {
             id: memory.id,
             summary: memory.summary,
+            attached_to: memory.attachedTo,
             createdAt: memory.createdAt,
             lastAccessedAt: memory.lastAccessedAt,
           },
@@ -635,6 +648,7 @@ export const memoryTools: ToolDefinition[] = [
             id: memory.id,
             summary: memory.summary,
             content: memory.content,
+            attached_to: memory.attachedTo,
             createdAt: memory.createdAt,
             lastAccessedAt: memory.lastAccessedAt,
           })),
