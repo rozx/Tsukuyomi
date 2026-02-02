@@ -261,20 +261,22 @@ const removeAlias = (index: number) => {
     </div>
 
     <template #footer>
-      <Button
-        label="取消"
-        icon="pi pi-times"
-        class="p-button-text"
-        @click="handleClose"
-        :disabled="loading"
-      />
-      <Button
-        label="保存"
-        icon="pi pi-check"
-        class="p-button-primary"
-        @click="handleSave"
-        :loading="loading"
-      />
+      <div class="flex justify-end gap-2 mt-6">
+        <Button
+          label="取消"
+          icon="pi pi-times"
+          class="p-button-text"
+          @click="handleClose"
+          :disabled="loading"
+        />
+        <Button
+          label="保存"
+          icon="pi pi-check"
+          class="p-button-primary"
+          @click="handleSave"
+          :loading="loading"
+        />
+      </div>
     </template>
   </Dialog>
 </template>

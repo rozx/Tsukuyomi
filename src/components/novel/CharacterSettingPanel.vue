@@ -447,12 +447,7 @@ const handleFileSelect = async (event: Event) => {
       </p>
       <AppMessage
         severity="info"
-        message="提示：翻译、别名和描述字段留空时，AI 在翻译章节时会自动添加、更新或删除这些内容"
-        :closable="false"
-      />
-      <AppMessage
-        severity="info"
-        message="注意：AI 在翻译过程中会根据需要自动创建、更新或删除角色设置项目，以优化翻译质量"
+        message="翻译、别名和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除角色以优化翻译质量。"
         :closable="false"
       />
     </div>
@@ -562,8 +557,19 @@ const handleFileSelect = async (event: Event) => {
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" :disabled="isDeleting" @click="showDeleteConfirm = false" />
-        <Button label="删除" class="p-button-danger" :loading="isDeleting" :disabled="isDeleting" @click="confirmDeleteCharacter" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeleting"
+          @click="showDeleteConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeleting"
+          :disabled="isDeleting"
+          @click="confirmDeleteCharacter"
+        />
       </template>
     </Dialog>
 

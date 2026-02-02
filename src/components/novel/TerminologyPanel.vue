@@ -225,7 +225,7 @@ const confirmDeleteTerm = async () => {
     const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
 
     await TerminologyService.deleteTerminology(props.book.id, terminology.id);
-    
+
     toast.add({
       severity: 'success',
       summary: '删除成功',
@@ -570,12 +570,7 @@ const handleFileSelect = async (event: Event) => {
       </p>
       <AppMessage
         severity="info"
-        message="提示：翻译和描述字段留空时，AI 在翻译章节时会自动填充或更新这些内容"
-        :closable="false"
-      />
-      <AppMessage
-        severity="info"
-        message="注意：AI 在翻译过程中会根据需要自动创建、更新或删除术语设置项目，以优化翻译质量"
+        message="翻译和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除术语以优化翻译质量。"
         :closable="false"
       />
     </div>
@@ -679,47 +674,47 @@ const handleFileSelect = async (event: Event) => {
         paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
         class="flex-1 flex flex-col min-h-0"
       >
-          <template #empty>
-            <div class="text-center py-12">
-              <i class="pi pi-book text-4xl text-moon/50 mb-4" />
-              <p class="text-moon/70">
-                {{ searchQuery ? '未找到匹配的术语' : '暂无术语' }}
-              </p>
-              <Button
-                v-if="!searchQuery"
-                label="添加第一个术语"
-                icon="pi pi-plus"
-                class="p-button-primary mt-4"
-                @click="openAddDialog"
-              />
-            </div>
-          </template>
+        <template #empty>
+          <div class="text-center py-12">
+            <i class="pi pi-book text-4xl text-moon/50 mb-4" />
+            <p class="text-moon/70">
+              {{ searchQuery ? '未找到匹配的术语' : '暂无术语' }}
+            </p>
+            <Button
+              v-if="!searchQuery"
+              label="添加第一个术语"
+              icon="pi pi-plus"
+              class="p-button-primary mt-4"
+              @click="openAddDialog"
+            />
+          </div>
+        </template>
 
-          <template #grid="slotProps">
-            <div
-              class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
-              style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)))"
-            >
-              <SettingCard
-                v-for="terminology in slotProps.items"
-                :key="terminology.id"
-                :title="terminology.name"
-                :description="terminology.description"
-                :translations="
-                  terminology.translation && typeof terminology.translation === 'object'
-                    ? terminology.translation.translation
-                    : terminology.translation
-                "
-                :show-checkbox="bulkActionMode"
-                :checked="selectedTermIds.has(terminology.id)"
-                :item-id="terminology.id"
-                @edit="openEditDialog(terminology)"
-                @delete="handleDelete(terminology)"
-                @check="handleTermCheck"
-              />
-            </div>
-          </template>
-        </DataView>
+        <template #grid="slotProps">
+          <div
+            class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
+            style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)))"
+          >
+            <SettingCard
+              v-for="terminology in slotProps.items"
+              :key="terminology.id"
+              :title="terminology.name"
+              :description="terminology.description"
+              :translations="
+                terminology.translation && typeof terminology.translation === 'object'
+                  ? terminology.translation.translation
+                  : terminology.translation
+              "
+              :show-checkbox="bulkActionMode"
+              :checked="selectedTermIds.has(terminology.id)"
+              :item-id="terminology.id"
+              @edit="openEditDialog(terminology)"
+              @delete="handleDelete(terminology)"
+              @check="handleTermCheck"
+            />
+          </div>
+        </template>
+      </DataView>
     </div>
 
     <!-- 添加术语对话框 -->
@@ -754,8 +749,19 @@ const handleFileSelect = async (event: Event) => {
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" :disabled="isDeleting" @click="showDeleteConfirm = false" />
-        <Button label="删除" class="p-button-danger" :loading="isDeleting" :disabled="isDeleting" @click="confirmDeleteTerm" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeleting"
+          @click="showDeleteConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeleting"
+          :disabled="isDeleting"
+          @click="confirmDeleteTerm"
+        />
       </template>
     </Dialog>
 

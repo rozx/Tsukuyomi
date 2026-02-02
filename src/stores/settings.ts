@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
-import { cloneDeep, cloneDeepWith } from 'lodash';
+import { cloneDeep } from 'lodash';
 import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
@@ -88,17 +88,16 @@ function migrateProxySiteMapping(
  * 标准化/迁移 settings（无论来自 localStorage 还是 IndexedDB）
  */
 function normalizeLoadedSettings(raw: unknown): AppSettings {
-  const settings = (raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}) as Record<
-    string,
-    unknown
-  >;
+  const settings = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
 
   // 迁移 proxySiteMapping
   const migratedMapping = migrateProxySiteMapping(settings.proxySiteMapping as any);
 
   // 保留原有的 lastEdited（如果存在），这是 READ 操作，不应该更新 lastEdited
   // 如果不存在，使用 epoch 时间作为初始值，确保远程设置优先
-  const existingLastEdited = settings.lastEdited ? new Date(settings.lastEdited as any) : new Date(0);
+  const existingLastEdited = settings.lastEdited
+    ? new Date(settings.lastEdited as any)
+    : new Date(0);
 
   // 合并默认映射和用户映射：用户配置优先，但未配置的网站使用默认值
   const mergedMapping: Record<string, ProxySiteMappingEntry> = {
@@ -163,42 +162,37 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
     const db = await getDB();
     // 使用 toRaw 获取原始对象，去除 Vue 响应式包装
     const rawSettings = toRaw(settings);
-    
+
     // 创建一个"纯净"的对象，避免 Proxy/响应式对象导致结构化克隆失败
     // 使用 cloneDeep 深度克隆嵌套对象，确保去除响应式包装
     // 确保 Date 对象是普通 Date 实例
     const clean: AppSettings = {
-      lastEdited: rawSettings.lastEdited instanceof Date 
-        ? new Date(rawSettings.lastEdited.getTime()) 
-        : new Date(rawSettings.lastEdited || 0),
+      lastEdited:
+        rawSettings.lastEdited instanceof Date
+          ? new Date(rawSettings.lastEdited.getTime())
+          : new Date(rawSettings.lastEdited || 0),
       scraperConcurrencyLimit: rawSettings.scraperConcurrencyLimit,
-      ...(rawSettings.taskDefaultModels !== undefined 
-        ? { taskDefaultModels: cloneDeep(rawSettings.taskDefaultModels) } 
+      ...(rawSettings.taskDefaultModels !== undefined
+        ? { taskDefaultModels: cloneDeep(rawSettings.taskDefaultModels) }
         : {}),
-      ...(rawSettings.lastOpenedSettingsTab !== undefined 
-        ? { lastOpenedSettingsTab: rawSettings.lastOpenedSettingsTab } 
+      ...(rawSettings.lastOpenedSettingsTab !== undefined
+        ? { lastOpenedSettingsTab: rawSettings.lastOpenedSettingsTab }
         : {}),
-      ...(rawSettings.proxyEnabled !== undefined 
-        ? { proxyEnabled: rawSettings.proxyEnabled } 
+      ...(rawSettings.proxyEnabled !== undefined ? { proxyEnabled: rawSettings.proxyEnabled } : {}),
+      ...(rawSettings.proxyUrl !== undefined ? { proxyUrl: rawSettings.proxyUrl } : {}),
+      ...(rawSettings.proxyAutoSwitch !== undefined
+        ? { proxyAutoSwitch: rawSettings.proxyAutoSwitch }
         : {}),
-      ...(rawSettings.proxyUrl !== undefined 
-        ? { proxyUrl: rawSettings.proxyUrl } 
+      ...(rawSettings.proxyAutoAddMapping !== undefined
+        ? { proxyAutoAddMapping: rawSettings.proxyAutoAddMapping }
         : {}),
-      ...(rawSettings.proxyAutoSwitch !== undefined 
-        ? { proxyAutoSwitch: rawSettings.proxyAutoSwitch } 
+      ...(rawSettings.proxySiteMapping !== undefined
+        ? { proxySiteMapping: cloneDeep(rawSettings.proxySiteMapping) }
         : {}),
-      ...(rawSettings.proxyAutoAddMapping !== undefined 
-        ? { proxyAutoAddMapping: rawSettings.proxyAutoAddMapping } 
+      ...(rawSettings.proxyList !== undefined
+        ? { proxyList: cloneDeep(rawSettings.proxyList) }
         : {}),
-      ...(rawSettings.proxySiteMapping !== undefined 
-        ? { proxySiteMapping: cloneDeep(rawSettings.proxySiteMapping) } 
-        : {}),
-      ...(rawSettings.proxyList !== undefined 
-        ? { proxyList: cloneDeep(rawSettings.proxyList) } 
-        : {}),
-      ...(rawSettings.tavilyApiKey !== undefined 
-        ? { tavilyApiKey: rawSettings.tavilyApiKey } 
-        : {}),
+      ...(rawSettings.tavilyApiKey !== undefined ? { tavilyApiKey: rawSettings.tavilyApiKey } : {}),
     };
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
@@ -252,10 +246,10 @@ async function loadSyncFromDB(): Promise<SyncConfig[]> {
       const base = createDefaultGistSyncConfig();
       return {
         ...base,
-        ...(raw as any),
+        ...raw,
         syncParams: {
           ...base.syncParams,
-          ...(((raw as any).syncParams as Record<string, unknown>) || {}),
+          ...((raw.syncParams as Record<string, unknown>) || {}),
         },
       } as SyncConfig;
     });
@@ -275,16 +269,11 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
     const store = tx.objectStore('sync-configs');
 
     // 使用 lodash 将响应式/Proxy 对象深拷贝为纯对象，避免 IndexedDB structured clone 报错
-    // 注意：toRaw 只对当前 Proxy 生效；cloneDeepWith 会递归处理嵌套对象
     const toPlain = <T>(value: T): T => {
       if (value === undefined || value === null) return value;
-      return cloneDeepWith(value, (val) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = toRaw(val as any);
-        // 如果 toRaw 有效（val 是 Proxy），返回 raw 让 lodash 继续深拷贝它
-        if (raw !== val) return raw;
-        return undefined; // 交给 lodash 默认深拷贝
-      }) as T;
+      // 先 toRaw 获取原始对象（如果是顶层 Proxy），然后 cloneDeep 确保所有嵌套的 Proxy 也被转换为纯对象
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return cloneDeep(toRaw(value as any)) as T;
     };
 
     // 简化：以当前内存状态为准，覆盖保存
@@ -310,10 +299,18 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.lastSyncedModelIds !== undefined
           ? { lastSyncedModelIds: toPlain(sync.lastSyncedModelIds) }
           : {}),
-        ...(sync.deletedNovelIds !== undefined ? { deletedNovelIds: toPlain(sync.deletedNovelIds) } : {}),
-        ...(sync.deletedModelIds !== undefined ? { deletedModelIds: toPlain(sync.deletedModelIds) } : {}),
-        ...(sync.deletedCoverIds !== undefined ? { deletedCoverIds: toPlain(sync.deletedCoverIds) } : {}),
-        ...(sync.deletedCoverUrls !== undefined ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) } : {}),
+        ...(sync.deletedNovelIds !== undefined
+          ? { deletedNovelIds: toPlain(sync.deletedNovelIds) }
+          : {}),
+        ...(sync.deletedModelIds !== undefined
+          ? { deletedModelIds: toPlain(sync.deletedModelIds) }
+          : {}),
+        ...(sync.deletedCoverIds !== undefined
+          ? { deletedCoverIds: toPlain(sync.deletedCoverIds) }
+          : {}),
+        ...(sync.deletedCoverUrls !== undefined
+          ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) }
+          : {}),
       };
 
       await store.put({ id, ...clean });
@@ -559,7 +556,12 @@ export const useSettingsStore = defineStore('settings', {
 
       // 深度合并 taskDefaultModels，确保不会丢失本地配置
       // 先移除 lastEdited、proxySiteMapping 和 syncs（syncs 由同步逻辑单独处理），稍后单独处理
-      const { lastEdited: _removed, proxySiteMapping: _proxyMapping, syncs: _syncs, ...settingsWithoutSpecial } = settings;
+      const {
+        lastEdited: _removed,
+        proxySiteMapping: _proxyMapping,
+        syncs: _syncs,
+        ...settingsWithoutSpecial
+      } = settings;
       const mergedSettings: Partial<AppSettings> = {
         ...settingsWithoutSpecial,
       };
@@ -579,7 +581,9 @@ export const useSettingsStore = defineStore('settings', {
         // 如果有保留的 lastEdited，使用它；否则保留本地的 lastEdited（同步操作不应该更新 lastEdited）
         lastEdited: preservedLastEdited || this.settings.lastEdited,
         // 使用迁移后的 proxySiteMapping
-        ...(migratedProxySiteMapping !== undefined ? { proxySiteMapping: migratedProxySiteMapping } : {}),
+        ...(migratedProxySiteMapping !== undefined
+          ? { proxySiteMapping: migratedProxySiteMapping }
+          : {}),
       };
 
       this.settings = finalSettings;
@@ -699,7 +703,11 @@ export const useSettingsStore = defineStore('settings', {
      * @param oldProxyUrl 旧的代理 URL
      * @param newProxyUrl 新的代理 URL
      */
-    async changeProxyForSite(site: string, oldProxyUrl: string, newProxyUrl: string): Promise<void> {
+    async changeProxyForSite(
+      site: string,
+      oldProxyUrl: string,
+      newProxyUrl: string,
+    ): Promise<void> {
       const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
       if (!mapping[site]) {
         mapping[site] = { enabled: true, proxies: [] };
@@ -762,7 +770,9 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 重新排序代理列表
      */
-    async reorderProxies(newOrder: Array<{ id: string; name: string; url: string; description?: string }>): Promise<void> {
+    async reorderProxies(
+      newOrder: Array<{ id: string; name: string; url: string; description?: string }>,
+    ): Promise<void> {
       await this.updateSettings({ proxyList: newOrder });
     },
 
@@ -780,17 +790,11 @@ export const useSettingsStore = defineStore('settings', {
         defaultConfig.lastSyncedModelIds;
 
       const deletedNovelIds =
-        updates.deletedNovelIds ??
-        existingConfig?.deletedNovelIds ??
-        defaultConfig.deletedNovelIds;
+        updates.deletedNovelIds ?? existingConfig?.deletedNovelIds ?? defaultConfig.deletedNovelIds;
       const deletedModelIds =
-        updates.deletedModelIds ??
-        existingConfig?.deletedModelIds ??
-        defaultConfig.deletedModelIds;
+        updates.deletedModelIds ?? existingConfig?.deletedModelIds ?? defaultConfig.deletedModelIds;
       const deletedCoverIds =
-        updates.deletedCoverIds ??
-        existingConfig?.deletedCoverIds ??
-        defaultConfig.deletedCoverIds;
+        updates.deletedCoverIds ?? existingConfig?.deletedCoverIds ?? defaultConfig.deletedCoverIds;
       const deletedCoverUrls =
         updates.deletedCoverUrls ??
         existingConfig?.deletedCoverUrls ??
@@ -984,9 +988,10 @@ export const useSettingsStore = defineStore('settings', {
       total?: number;
     }): void {
       // 检查 stage 是否变化（stage 变化时允许重置百分比）
-      const stageChanged = progress.stage !== undefined && progress.stage !== this.syncProgress.stage;
+      const stageChanged =
+        progress.stage !== undefined && progress.stage !== this.syncProgress.stage;
       const previousPercentage = this.syncProgress.percentage;
-      
+
       if (progress.stage !== undefined) {
         this.syncProgress.stage = progress.stage;
       }

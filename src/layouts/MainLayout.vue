@@ -6,6 +6,7 @@ import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import AppRightPanel from '../components/layout/AppRightPanel.vue';
 import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import Toast from 'primevue/toast';
+import ConfirmDialog from 'primevue/confirmdialog';
 import { RouterView } from 'vue-router';
 import { useUiStore } from '../stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
@@ -53,7 +54,7 @@ const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
 // 监听 AI 任务状态变化
 watch(
   () => aiProcessingStore.activeTasks,
-  (newTasks, oldTasks) => {
+  (newTasks, _oldTasks) => {
     // 收集本周期内取消的任务
     const cancelledTasks: AIProcessingTask[] = [];
     const errorTasks: AIProcessingTask[] = [];
@@ -200,6 +201,7 @@ onUnmounted(() => {
 
   <!-- Toast 组件 -->
   <Toast position="top-right" @close="handleToastClose" />
+  <ConfirmDialog />
 
   <!-- ask_user 全屏问答对话框（全局挂载） -->
   <AskUserDialog />

@@ -7,11 +7,13 @@ import Textarea from 'primevue/textarea';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import InputText from 'primevue/inputtext';
+import Dropdown from 'primevue/dropdown';
 import ProgressSpinner from 'primevue/progressspinner';
-import SettingCard from './SettingCard.vue';
+import MemoryCard from './MemoryCard.vue';
+import MemoryDetailDialog from './MemoryDetailDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import type { Novel } from 'src/models/novel';
-import type { Memory } from 'src/models/memory';
+import type { Memory, MemoryAttachmentType } from 'src/models/memory';
 import { MemoryService } from 'src/services/memory-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 
@@ -27,25 +29,142 @@ const isLoading = ref(false);
 // 搜索关键词
 const searchQuery = ref('');
 
-// Memory 列表
-const memories = ref<Memory[]>([]);
-const filteredMemories = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return memories.value;
+// 筛选状态
+const filterType = ref<'all' | MemoryAttachmentType>('all');
+const filterEntityId = ref<string | null>(null);
+
+// 筛选选项
+const typeOptions = [
+  { label: '全部', value: 'all', icon: 'pi pi-th-large' },
+  { label: '书籍级', value: 'book', icon: 'pi pi-book' },
+  { label: '角色', value: 'character', icon: 'pi pi-user' },
+  { label: '术语', value: 'term', icon: 'pi pi-tag' },
+  { label: '章节', value: 'chapter', icon: 'pi pi-file' },
+];
+
+// 实体筛选选项（根据类型动态生成）
+const entityOptions = computed(() => {
+  if (!props.book || filterType.value === 'all') return [];
+
+  const options: Array<{ label: string; value: string; count: number }> = [];
+
+  switch (filterType.value) {
+    case 'character':
+      props.book.characterSettings?.forEach((char) => {
+        const count = memories.value.filter((m) =>
+          m.attachedTo?.some((a) => a.type === 'character' && a.id === char.id),
+        ).length;
+        if (count > 0) {
+          options.push({ label: char.name, value: char.id, count });
+        }
+      });
+      break;
+    case 'term':
+      props.book.terminologies?.forEach((term) => {
+        const count = memories.value.filter((m) =>
+          m.attachedTo?.some((a) => a.type === 'term' && a.id === term.id),
+        ).length;
+        if (count > 0) {
+          options.push({ label: term.name, value: term.id, count });
+        }
+      });
+      break;
+    case 'chapter':
+      props.book.volumes?.forEach((volume) => {
+        volume.chapters?.forEach((chapter) => {
+          const count = memories.value.filter((m) =>
+            m.attachedTo?.some((a) => a.type === 'chapter' && a.id === chapter.id),
+          ).length;
+          if (count > 0) {
+            const chapterTitle =
+              typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+            options.push({ label: chapterTitle, value: chapter.id, count });
+          }
+        });
+      });
+      break;
   }
 
-  const query = searchQuery.value.toLowerCase().trim();
-  return memories.value.filter((memory) => {
-    const content = memory.content.toLowerCase();
-    const summary = (memory.summary || '').toLowerCase();
-    return content.includes(query) || summary.includes(query);
+  return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
+});
+
+// 类型筛选计数
+const typeCounts = computed(() => {
+  const counts = {
+    all: memories.value.length,
+    book: 0,
+    character: 0,
+    term: 0,
+    chapter: 0,
+  };
+
+  memories.value.forEach((memory) => {
+    memory.attachedTo?.forEach((att) => {
+      if (counts[att.type] !== undefined) {
+        counts[att.type]++;
+      }
+    });
   });
+
+  return counts;
+});
+
+// 是否有激活的筛选
+const hasActiveFilters = computed(() => {
+  return (
+    filterType.value !== 'all' || filterEntityId.value !== null || searchQuery.value.trim() !== ''
+  );
+});
+
+// Memory 列表
+const memories = ref<Memory[]>([]);
+
+// 筛选后的记忆列表
+const filteredMemories = computed(() => {
+  let result = memories.value;
+
+  // 类型筛选
+  if (filterType.value !== 'all') {
+    result = result.filter((memory) => memory.attachedTo?.some((a) => a.type === filterType.value));
+  }
+
+  // 实体筛选
+  if (filterEntityId.value) {
+    result = result.filter((memory) =>
+      memory.attachedTo?.some((a) => a.id === filterEntityId.value),
+    );
+  }
+
+  // 搜索筛选
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim();
+    result = result.filter((memory) => {
+      const content = memory.content.toLowerCase();
+      const summary = (memory.summary || '').toLowerCase();
+      return content.includes(query) || summary.includes(query);
+    });
+  }
+
+  return result;
+});
+
+// 清除所有筛选
+function clearFilters() {
+  filterType.value = 'all';
+  filterEntityId.value = null;
+  searchQuery.value = '';
+}
+
+// 当类型改变时，清除实体筛选
+watch(filterType, () => {
+  filterEntityId.value = null;
 });
 
 // 对话框状态
 const showAddDialog = ref(false);
-const showEditDialog = ref(false);
 const showDeleteConfirm = ref(false);
+const showDetailDialog = ref(false);
+const openDetailDialogInEditMode = ref(false);
 const selectedMemory = ref<Memory | null>(null);
 const deletingMemory = ref<Memory | null>(null);
 
@@ -87,6 +206,7 @@ watch(
   () => props.book?.id,
   () => {
     loadMemories();
+    clearFilters();
   },
   { immediate: true },
 );
@@ -132,14 +252,11 @@ const openAddDialog = () => {
   showAddDialog.value = true;
 };
 
-// 打开编辑对话框
-const openEditDialog = (memory: Memory) => {
+// 打开详情对话框
+const openDetailDialog = (memory: Memory, inEditMode: boolean = false) => {
   selectedMemory.value = memory;
-  formData.value = {
-    content: memory.content,
-    summary: memory.summary || '',
-  };
-  showEditDialog.value = true;
+  openDetailDialogInEditMode.value = inEditMode;
+  showDetailDialog.value = true;
 };
 
 // 打开删除确认对话框
@@ -169,6 +286,7 @@ const confirmDeleteMemory = async () => {
     // 从列表中移除
     memories.value = memories.value.filter((m) => m.id !== memory.id);
     showDeleteConfirm.value = false;
+    showDetailDialog.value = false;
     deletingMemory.value = null;
   } catch (error) {
     console.error('删除 Memory 失败:', error);
@@ -183,7 +301,7 @@ const confirmDeleteMemory = async () => {
   }
 };
 
-// 保存 Memory
+// 保存 Memory（仅用于添加新记忆）
 const handleSave = async () => {
   if (!props.book) {
     toast.add({
@@ -209,41 +327,22 @@ const handleSave = async () => {
   isSaving.value = true;
 
   try {
-    if (showAddDialog.value) {
-      // 添加新 Memory
-      const newMemory = await MemoryService.createMemory(
-        props.book.id,
-        formData.value.content.trim(),
-        formData.value.summary.trim(),
-      );
+    // 添加新 Memory
+    const newMemory = await MemoryService.createMemory(
+      props.book.id,
+      formData.value.content.trim(),
+      formData.value.summary.trim(),
+    );
 
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: '已成功添加 记忆',
-        life: 3000,
-        onRevert: () => MemoryService.deleteMemory(props.book!.id, newMemory.id),
-      });
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: '已成功添加 记忆',
+      life: 3000,
+      onRevert: () => MemoryService.deleteMemory(props.book!.id, newMemory.id),
+    });
 
-      showAddDialog.value = false;
-    } else if (showEditDialog.value && selectedMemory.value) {
-      // 编辑现有 Memory
-      await MemoryService.updateMemory(
-        props.book.id,
-        selectedMemory.value.id,
-        formData.value.content.trim(),
-        formData.value.summary.trim(),
-      );
-
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: '已成功更新 记忆',
-        life: 3000,
-      });
-
-      showEditDialog.value = false;
-    }
+    showAddDialog.value = false;
 
     // 重新加载列表
     await loadMemories();
@@ -265,6 +364,85 @@ const handleDelete = (memory: Memory) => {
   if (!props.book) return;
   openDeleteConfirm(memory);
 };
+
+// 处理按附件筛选
+function handleFilterByAttachment(type: string, id: string) {
+  filterType.value = type as MemoryAttachmentType;
+  filterEntityId.value = id;
+}
+
+// 处理导航（从详情对话框）
+function handleNavigate(type: MemoryAttachmentType, id: string) {
+  // 关闭详情对话框
+  showDetailDialog.value = false;
+  // 应用筛选
+  handleFilterByAttachment(type, id);
+}
+
+// 处理从详情对话框保存记忆
+async function handleSaveMemory(memoryId: string, summary: string, content: string) {
+  if (!props.book) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '没有选择书籍',
+      life: 3000,
+    });
+    return;
+  }
+
+  if (!content.trim()) {
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: '记忆内容不能为空',
+      life: 3000,
+    });
+    return;
+  }
+
+  isSaving.value = true;
+
+  try {
+    await MemoryService.updateMemory(props.book.id, memoryId, content.trim(), summary.trim());
+
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: '已成功更新 记忆',
+      life: 3000,
+    });
+
+    // 更新本地数据
+    const index = memories.value.findIndex((m) => m.id === memoryId);
+    if (index !== -1) {
+      memories.value[index] = {
+        ...memories.value[index],
+        summary: summary.trim(),
+        content: content.trim(),
+      } as Memory;
+    }
+
+    // 更新选中的记忆
+    if (selectedMemory.value?.id === memoryId) {
+      selectedMemory.value = {
+        ...selectedMemory.value,
+        summary: summary.trim(),
+        content: content.trim(),
+      } as Memory;
+    }
+  } catch (error) {
+    console.error('保存 Memory 失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: '保存失败',
+      detail: error instanceof Error ? error.message : '保存 记忆时发生未知错误',
+      life: 5000,
+    });
+  } finally {
+    isSaving.value = false;
+  }
+}
 
 // 格式化时间戳
 const formatDate = (timestamp: number) => {
@@ -288,6 +466,7 @@ const handleExport = () => {
       id: m.id,
       summary: m.summary,
       content: m.content,
+      attachedTo: m.attachedTo,
       createdAt: m.createdAt,
       lastAccessedAt: m.lastAccessedAt,
     }));
@@ -420,12 +599,7 @@ const handleFileSelect = async (event: Event) => {
       </p>
       <AppMessage
         severity="info"
-        message="提示：记忆由 AI 自动管理，用户无需手动创建或编辑。AI 在翻译过程中会根据需要自动创建、更新记忆"
-        :closable="false"
-      />
-      <AppMessage
-        severity="warn"
-        message="注意：手动添加或编辑的记忆可能会被 AI 覆盖，建议仅在必要时进行手动干预"
+        message="记忆由 AI 自动管理，会在翻译过程中自动创建和更新。手动编辑的记忆可能会被覆盖，建议仅在必要时干预。"
         :closable="false"
       />
     </div>
@@ -434,18 +608,15 @@ const handleFileSelect = async (event: Event) => {
     <div
       class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
-      <div class="flex items-center justify-between gap-3 flex-nowrap">
-        <!-- 左侧：搜索栏 -->
-        <div class="flex-1 flex items-center gap-3">
-          <InputGroup class="search-input-group min-w-0 flex-shrink">
+      <div class="flex items-center justify-between gap-3">
+        <!-- 左侧：搜索和筛选 -->
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <!-- 搜索栏 -->
+          <InputGroup class="search-input-group flex-shrink-0" style="width: 240px">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
-            <InputText
-              v-model="searchQuery"
-              placeholder="搜索 记忆内容或摘要..."
-              class="search-input"
-            />
+            <InputText v-model="searchQuery" placeholder="搜索记忆..." class="search-input" />
             <InputGroupAddon v-if="searchQuery" class="input-action-addon">
               <Button
                 icon="pi pi-times"
@@ -455,27 +626,77 @@ const handleFileSelect = async (event: Event) => {
               />
             </InputGroupAddon>
           </InputGroup>
+
+          <!-- 类型筛选 -->
+          <Dropdown
+            v-model="filterType"
+            :options="typeOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="类型"
+            class="w-32"
+          >
+            <template #option="slotProps">
+              <div class="flex items-center gap-2">
+                <i :class="slotProps.option.icon"></i>
+                <span>{{ slotProps.option.label }}</span>
+                <span class="ml-auto text-xs text-moon-100/40">
+                  {{ typeCounts[slotProps.option.value as keyof typeof typeCounts] }}
+                </span>
+              </div>
+            </template>
+          </Dropdown>
+
+          <!-- 实体筛选（仅在选择了类型时显示） -->
+          <Dropdown
+            v-if="filterType !== 'all'"
+            v-model="filterEntityId"
+            :options="entityOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="实体"
+            class="w-40"
+            show-clear
+          >
+            <template #option="slotProps">
+              <div class="flex items-center gap-2">
+                <span>{{ slotProps.option.label }}</span>
+                <span class="ml-auto text-xs text-moon-100/40">
+                  {{ slotProps.option.count }}
+                </span>
+              </div>
+            </template>
+          </Dropdown>
+
+          <!-- 清除筛选按钮 -->
+          <Button
+            v-if="hasActiveFilters"
+            icon="pi pi-filter-slash"
+            class="p-button-text p-button-sm"
+            @click="clearFilters"
+            title="清除筛选"
+          />
         </div>
 
         <!-- 右侧：操作按钮 -->
         <div class="flex items-center gap-2 flex-shrink-0">
           <Button
-            label="导出"
             icon="pi pi-download"
-            class="p-button-outlined"
+            class="p-button-outlined p-button-sm"
             :disabled="memories.length === 0"
             @click="handleExport"
+            title="导出"
           />
           <Button
-            label="导入"
             icon="pi pi-upload"
-            class="p-button-outlined"
+            class="p-button-outlined p-button-sm"
             @click="handleImport"
+            title="导入"
           />
           <Button
-            label="添加 记忆"
+            label="添加"
             icon="pi pi-plus"
-            class="p-button-primary"
+            class="p-button-primary p-button-sm"
             :disabled="!book"
             @click="openAddDialog"
           />
@@ -502,10 +723,17 @@ const handleFileSelect = async (event: Event) => {
             <template v-else>
               <i class="pi pi-database text-4xl text-moon/50 mb-4" />
               <p class="text-moon/70">
-                {{ searchQuery ? '未找到匹配的 记忆' : '暂无 记忆，AI 会在翻译过程中自动创建' }}
+                {{ hasActiveFilters ? '未找到匹配的记忆' : '暂无 记忆，AI 会在翻译过程中自动创建' }}
               </p>
               <Button
-                v-if="!searchQuery && book"
+                v-if="hasActiveFilters"
+                label="清除筛选"
+                icon="pi pi-filter-slash"
+                class="p-button-outlined mt-4"
+                @click="clearFilters"
+              />
+              <Button
+                v-else-if="!searchQuery && book"
                 label="手动添加 记忆"
                 icon="pi pi-plus"
                 class="p-button-outlined mt-4"
@@ -520,14 +748,14 @@ const handleFileSelect = async (event: Event) => {
             class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 pb-4"
             style="grid-template-columns: repeat(auto-fill, minmax(300px, min(1fr, 500px)))"
           >
-            <SettingCard
+            <MemoryCard
               v-for="memory in slotProps.items"
               :key="memory.id"
-              :title="memory.summary || '无标题'"
-              :description="memory.content"
-              :translations="`最后访问: ${formatDate(memory.lastAccessedAt)}`"
-              @edit="openEditDialog(memory)"
-              @delete="handleDelete(memory)"
+              :memory="memory"
+              :book-id="book?.id || ''"
+              @click="openDetailDialog"
+              @delete="handleDelete"
+              @filter-by-attachment="handleFilterByAttachment"
             />
           </div>
         </template>
@@ -547,11 +775,7 @@ const handleFileSelect = async (event: Event) => {
           <label class="block text-sm font-medium text-moon/90 mb-2">
             摘要 <span class="text-moon/60">(可选)</span>
           </label>
-          <InputText
-            v-model="formData.summary"
-            placeholder="记忆的简短描述..."
-            class="w-full"
-          />
+          <InputText v-model="formData.summary" placeholder="记忆的简短描述..." class="w-full" />
         </div>
 
         <div>
@@ -575,62 +799,7 @@ const handleFileSelect = async (event: Event) => {
           @click="showAddDialog = false"
           :disabled="isSaving"
         />
-        <Button
-          label="保存"
-          icon="pi pi-check"
-          :loading="isSaving"
-          @click="handleSave"
-        />
-      </template>
-    </Dialog>
-
-    <!-- 编辑 Memory 对话框 -->
-    <Dialog
-      v-model:visible="showEditDialog"
-      modal
-      header="编辑 记忆"
-      :style="{ width: '600px' }"
-      :closable="!isSaving"
-    >
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-moon/90 mb-2">
-            摘要 <span class="text-moon/60">(可选)</span>
-          </label>
-          <InputText
-            v-model="formData.summary"
-            placeholder="记忆的简短描述..."
-            class="w-full"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-moon/90 mb-2">
-            内容 <span class="text-red-500">*</span>
-          </label>
-          <Textarea
-            v-model="formData.content"
-            rows="8"
-            placeholder="输入 记忆的详细内容..."
-            class="w-full"
-          />
-        </div>
-      </div>
-
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          text
-          @click="showEditDialog = false"
-          :disabled="isSaving"
-        />
-        <Button
-          label="保存"
-          icon="pi pi-check"
-          :loading="isSaving"
-          @click="handleSave"
-        />
+        <Button label="保存" icon="pi pi-check" :loading="isSaving" @click="handleSave" />
       </template>
     </Dialog>
 
@@ -643,19 +812,39 @@ const handleFileSelect = async (event: Event) => {
       :draggable="false"
     >
       <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除这条 记忆吗？
-        </p>
+        <p class="text-moon/90">确定要删除这条 记忆吗？</p>
         <p v-if="deletingMemory" class="text-sm text-moon/70 truncate">
           {{ deletingMemory.summary || deletingMemory.content.slice(0, 50) }}
         </p>
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
       <template #footer>
-        <Button label="取消" class="p-button-text" :disabled="isDeleting" @click="showDeleteConfirm = false" />
-        <Button label="删除" class="p-button-danger" :loading="isDeleting" :disabled="isDeleting" @click="confirmDeleteMemory" />
+        <Button
+          label="取消"
+          class="p-button-text"
+          :disabled="isDeleting"
+          @click="showDeleteConfirm = false"
+        />
+        <Button
+          label="删除"
+          class="p-button-danger"
+          :loading="isDeleting"
+          :disabled="isDeleting"
+          @click="confirmDeleteMemory"
+        />
       </template>
     </Dialog>
+
+    <!-- 详情对话框 -->
+    <MemoryDetailDialog
+      v-model:visible="showDetailDialog"
+      :memory="selectedMemory"
+      :book-id="book?.id || ''"
+      :initial-edit-mode="openDetailDialogInEditMode"
+      @save="handleSaveMemory"
+      @delete="openDeleteConfirm"
+      @navigate="handleNavigate"
+    />
 
     <!-- 隐藏的文件输入 -->
     <input
