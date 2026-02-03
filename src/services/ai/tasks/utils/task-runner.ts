@@ -39,12 +39,7 @@ import {
   createUnifiedAbortController,
   type StreamCallbackConfig,
 } from './stream-handler';
-import {
-  parseStatusResponse,
-  verifyParagraphCompleteness,
-  type VerificationResult,
-  type ParsedResponse,
-} from './response-parser';
+import { verifyParagraphCompleteness, type VerificationResult } from './response-parser';
 import {
   detectPlanningContextUpdate,
   PRODUCTIVE_TOOLS,
@@ -179,6 +174,11 @@ class TaskLoopSession {
   private consecutiveContentStateMismatchCount = 0;
   private toolCallCounts = new Map<string, number>();
 
+  // Tool call results tracking (for new tool-based approach)
+  private pendingStatusUpdate: TaskStatus | undefined;
+  private pendingParagraphTranslations: { id: string; translation: string }[] = [];
+  private pendingTitleTranslation: string | undefined;
+
   // Config & Helpers
   private allowedToolNames: Set<string>;
   private taskLabel: string;
@@ -274,7 +274,7 @@ class TaskLoopSession {
       return { shouldContinue: true };
     }
 
-    // Process text response
+    // Process text response (tool-based approach)
     const responseText = result.text || '';
     this.finalResponseText = responseText;
 
@@ -284,44 +284,49 @@ class TaskLoopSession {
       );
     }
 
-    const parsed = parseStatusResponse(responseText, this.config.paragraphIds);
-
-    if (parsed.error) {
-      this.handleParseError(parsed.error, responseText);
-      return { shouldContinue: true };
-    }
-
-    // Handle mismatch between status and content
-    if (this.hasStatusContentMismatch(parsed)) {
-      this.handleContentStateMismatch(parsed.status, responseText);
-      return { shouldContinue: true };
-    }
-    this.consecutiveContentStateMismatchCount = 0;
-
-    // Determine new status and potential transitions
-    const newStatus = this.determineNewStatus(parsed);
+    // 使用工具调用结果替代 JSON 解析
     const previousStatus = this.currentStatus;
+    let newStatus: TaskStatus | undefined;
 
-    // Validate transition
-    if (!this.isValidTransition(previousStatus, newStatus)) {
-      this.handleInvalidTransition(previousStatus, newStatus, responseText);
-      return { shouldContinue: true };
+    // 检查是否有来自工具调用的状态更新
+    if (this.pendingStatusUpdate) {
+      newStatus = this.pendingStatusUpdate;
+      this.pendingStatusUpdate = undefined; // 清除待处理状态
     }
 
-    this.trackStatusDuration(previousStatus, newStatus);
-    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
+    // 如果有状态更新，验证并应用
+    if (newStatus && newStatus !== previousStatus) {
+      // Validate transition
+      if (!this.isValidTransition(previousStatus, newStatus)) {
+        this.handleInvalidTransition(previousStatus, newStatus, responseText);
+        return { shouldContinue: true };
+      }
 
-    // Update status
-    this.currentStatus = newStatus;
+      this.trackStatusDuration(previousStatus, newStatus);
+      this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
 
-    if (aiProcessingStore && taskId && previousStatus !== newStatus) {
-      void aiProcessingStore.updateTask(taskId, {
-        workflowStatus: newStatus,
-      });
+      // Update status
+      this.currentStatus = newStatus;
+
+      if (aiProcessingStore && taskId) {
+        void aiProcessingStore.updateTask(taskId, {
+          workflowStatus: newStatus,
+        });
+      }
     }
 
-    // Extract content (Title / Paragraphs)
-    await this.extractContent(parsed);
+    // 处理标题翻译（来自工具调用）
+    if (this.pendingTitleTranslation) {
+      this.titleTranslation = this.pendingTitleTranslation;
+      if (this.config.onTitleExtracted) {
+        try {
+          await this.config.onTitleExtracted(this.titleTranslation);
+        } catch (error) {
+          console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+        }
+      }
+      this.pendingTitleTranslation = undefined; // 清除待处理标题
+    }
 
     // Add assistant response to history
     history.push({ role: 'assistant', content: responseText });
@@ -339,25 +344,10 @@ class TaskLoopSession {
       aiProcessingStore: this.config.aiProcessingStore,
       originalText: this.config.chunkText,
       logLabel: this.config.logLabel,
-      currentStatus: this.currentStatus,
       taskType: this.config.taskType,
       abortController: abortController,
-      // 状态更新回调：stream-handler 可以更新共享状态
-      onStatusChange: async (newStatus: TaskStatus) => {
-        // 同步更新 TaskLoopSession 的状态
-        this.currentStatus = newStatus;
-        // 同步更新 store 的 workflowStatus，让 UI 实时显示
-        if (this.config.aiProcessingStore && this.config.taskId) {
-          try {
-            await this.config.aiProcessingStore.updateTask(this.config.taskId, {
-              workflowStatus: newStatus,
-            });
-          } catch (error) {
-            console.error(`[${this.config.logLabel}] ⚠️ 更新任务状态失败:`, error);
-          }
-        }
-      },
     };
+
     const baseCallback = createStreamCallback(streamCallbackConfig);
 
     return async (chunk) => {
@@ -463,7 +453,10 @@ class TaskLoopSession {
         );
       }
 
-      // 4. 收集规划阶段信息，返回是否已处理
+      // 4. 捕获新工具调用的结果
+      this.captureToolCallResult(toolName, toolResultContent);
+
+      // 5. 收集规划阶段信息，返回是否已处理
       const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
 
       // 如果 collectPlanningInfo 已处理（例如简短规划模式下的警告），则跳过后续推送
@@ -527,6 +520,39 @@ class TaskLoopSession {
     this.toolCallCounts.set(toolName, current + 1);
   }
 
+  /**
+   * 捕获新工具调用的结果
+   * 用于替代 JSON 解析的工具调用方式
+   */
+  private captureToolCallResult(toolName: string, content: string): void {
+    try {
+      const result = JSON.parse(content);
+
+      if (toolName === 'update_task_status' && result.success) {
+        // 捕获状态更新
+        const newStatus = result.new_status as TaskStatus;
+        if (newStatus) {
+          this.pendingStatusUpdate = newStatus;
+        }
+      } else if (toolName === 'add_translation_batch' && result.success) {
+        // 捕获段落翻译
+        // 注意：实际的翻译数据已经在工具内部保存到数据库
+        // 这里我们只记录成功信息，不需要额外处理
+        // 但为了保持兼容性，我们触发回调
+        const processedCount = result.processed_count || 0;
+        console.log(`[${this.config.logLabel}] ✅ 批量翻译提交成功: ${processedCount} 个段落`);
+      } else if (toolName === 'update_chapter_title' && result.success) {
+        // 捕获标题翻译
+        const translatedTitle = result.translated_title as string;
+        if (translatedTitle) {
+          this.pendingTitleTranslation = translatedTitle;
+        }
+      }
+    } catch {
+      // JSON 解析失败，忽略
+    }
+  }
+
   private collectPlanningInfo(toolName: string, content: string, toolCall: AIToolCall): boolean {
     if (this.currentStatus !== 'planning') return false;
 
@@ -566,43 +592,6 @@ class TaskLoopSession {
       role: 'user',
       content: `${this.getCurrentStatusInfoMsg()}\n\n` + getParseErrorPrompt(error),
     });
-  }
-
-  private hasStatusContentMismatch(parsed: ParsedResponse): boolean {
-    const hasContent =
-      !!parsed.content?.titleTranslation ||
-      (Array.isArray(parsed.content?.paragraphs) && parsed.content.paragraphs.length > 0);
-    const { taskType } = this.config;
-    return (
-      (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') &&
-      hasContent &&
-      parsed.status !== 'working'
-    );
-  }
-
-  private handleContentStateMismatch(status: string, responseText: string) {
-    this.consecutiveContentStateMismatchCount++;
-    if (this.consecutiveContentStateMismatchCount > MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH) {
-      throw new Error(
-        `AI 多次返回状态与内容不匹配，已超过最大重试次数（${MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH}）。`,
-      );
-    }
-    this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: `${this.getCurrentStatusInfoMsg()}\n\n` + getContentStateMismatchPrompt(status),
-    });
-  }
-
-  private determineNewStatus(parsed: ParsedResponse): TaskStatus {
-    const { taskType } = this.config;
-    const hasContent =
-      !!parsed.content?.titleTranslation ||
-      (Array.isArray(parsed.content?.paragraphs) && parsed.content.paragraphs.length > 0);
-
-    return taskType !== 'translation' && parsed.status === 'planning' && hasContent
-      ? 'working'
-      : parsed.status;
   }
 
   private isValidTransition(prev: TaskStatus, next: TaskStatus): boolean {
@@ -667,45 +656,6 @@ class TaskLoopSession {
         console.log(
           `[${this.config.logLabel}] ✅ 已提取规划摘要（${this.planningSummary.length} 字符）`,
         );
-      }
-    }
-  }
-
-  private async extractContent(parsed: ParsedResponse) {
-    const { onTitleExtracted, onParagraphsExtracted, logLabel } = this.config;
-
-    // 1. Title
-    if (parsed.content?.titleTranslation) {
-      if (this.titleTranslation !== parsed.content.titleTranslation) {
-        this.titleTranslation = parsed.content.titleTranslation;
-        if (onTitleExtracted) {
-          try {
-            await onTitleExtracted(this.titleTranslation);
-          } catch (error) {
-            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-          }
-        }
-      }
-    }
-
-    // 2. Paragraphs
-    if (parsed.content?.paragraphs) {
-      const newParagraphs: { id: string; translation: string }[] = [];
-      for (const para of parsed.content.paragraphs) {
-        if (para.id && para.translation && para.translation.trim().length > 0) {
-          const prev = this.accumulatedParagraphs.get(para.id);
-          if (prev !== para.translation) {
-            this.accumulatedParagraphs.set(para.id, para.translation);
-            newParagraphs.push({ id: para.id, translation: para.translation });
-          }
-        }
-      }
-      if (newParagraphs.length > 0 && onParagraphsExtracted) {
-        try {
-          await onParagraphsExtracted(newParagraphs);
-        } catch (error) {
-          console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
-        }
       }
     }
   }

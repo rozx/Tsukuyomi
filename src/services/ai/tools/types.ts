@@ -136,6 +136,12 @@ export interface ToolContext {
    * 如果未提供，工具可以访问所有段落（如 AI 助手聊天场景）
    */
   chunkBoundaries?: ChunkBoundaries;
+  /**
+   * AI 处理 Store（可选）
+   * 用于任务状态工具访问和更新任务状态
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  aiProcessingStore?: any;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

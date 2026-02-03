@@ -42,7 +42,7 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 已继承前一部分的规划上下文，术语/角色表已提供。
 - 如需补充信息可调用工具，无需重复获取已有信息
 
-**准备好后，将状态设置为 "working" 开始${taskLabel}。**`;
+**准备好后，使用 \`update_task_status({"status": "working"})\` 开始${taskLabel}。**`;
   }
 
   return `**当前状态：规划阶段 (planning)**
@@ -50,7 +50,7 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 - 检查数据问题（空翻译、重复项、误分类）并立即修复
 - 可检索记忆了解历史译法
 
-完成规划后，将状态设置为 "working" 并开始${taskLabel}。`;
+完成规划后，使用 \`update_task_status({"status": "working"})\` 并开始${taskLabel}。`;
 }
 
 function getWorkingStateDescription(taskType: TaskType): string {
@@ -71,14 +71,17 @@ function getWorkingStateDescription(taskType: TaskType): string {
   }
 
   const onlyChangedNote = taskType === 'translation' ? '' : '（只返回有变化的段落）';
+  const nextStatus = taskType === 'translation' ? 'review' : 'end';
+  const nextStatusNote =
+    taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
 - 发现新信息立即更新
-- 输出格式：**单独**以JSON格式输出内容 ${onlyChangedNote}
-- ⚠️ 严禁将 status 与 paragraphs 放在同一个 JSON 对象中
+- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}
+- ⚠️ **不要输出 JSON**，直接调用工具
 
-完成后设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`;
+完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
 }
 
 /**
@@ -92,8 +95,8 @@ function getReviewStateDescription(taskLabel: string): string {
 - 如看到对日后翻译有帮助的信息，可复用信息优先合并到已有记忆
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
 
-如需更新已输出的${taskLabel}结果，可将状态改回 "working" 并只返回需更新的段落。
-完成后设置为 "end"。`;
+如需更新已输出的${taskLabel}结果，可将状态改回 "working" 并调用工具提交更新。
+完成后使用 \`update_task_status({"status": "end"})\`。`;
 }
 
 /**
@@ -205,36 +208,65 @@ ${rules}
 `;
 }
 
+/**
+ * 获取工具化输出格式规则（新方式：使用工具调用替代 JSON）
+ */
 export function getOutputFormatRules(taskType: TaskType): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
-  const hasTitle = taskType === 'translation';
+  const isTranslation = taskType === 'translation';
 
-  // 这里的示例只包含内容，不含 status
-  const jsonContent = `{"p": [{"i": 0, "t": "${taskLabel}结果"}]${hasTitle ? ', "tt": "标题翻译"' : ''}}`;
-  const individualContent = `{"i": 0, "t": "${taskLabel}结果"}`;
-  const titleNote = hasTitle ? '\n（标题翻译只返回一次）' : '';
+  const titleToolSection = isTranslation
+    ? `
+3. \`update_chapter_title\` - 提交章节标题翻译
+   - 在 working 状态下调用
+   - 示例：调用工具 \`update_chapter_title\` 参数：{"chapter_id": "章节ID", "translated_title": "标题翻译"}
+`
+    : '';
 
-  // 对于非翻译任务（polish/proofreading），支持返回单个段落对象
-  const individualNote =
-    taskType !== 'translation'
-      ? '\n- 支持两种格式：数组格式 `{"p": [...]}` 或单个段落 `{"i": 0, "t": "..."}`'
-      : '';
+  const workflowSteps = isTranslation
+    ? `1. planning 阶段：使用工具获取上下文信息
+2. working 阶段：翻译，使用 \`add_translation_batch\` 提交结果，使用 \`update_chapter_title\` 提交标题
+3. review 阶段：检查并完善
+4. end 阶段：使用 \`update_task_status\` 标记完成`
+    : `1. planning 阶段：使用工具获取上下文信息
+2. working 阶段：${taskLabel}，使用 \`add_translation_batch\` 提交结果
+3. end 阶段：使用 \`update_task_status\` 标记完成`;
 
-  return `【输出格式】⚠️ 必须只返回 JSON（使用简化键名）
+  const toolRestriction = isTranslation
+    ? '⛔ **只能在 working 状态下调用 `add_translation_batch` 和 `update_chapter_title`**'
+    : '⛔ **只能在 working 状态下调用 `add_translation_batch`**';
 
-**JSON键名**：s=status, p=paragraphs, i=段落序号, t=translation${hasTitle ? ', tt=titleTranslation（标题翻译）' : ''}
-**默认 planning**，需上下文时先调用工具
+  const statusDesc = isTranslation
+    ? `1. \`update_task_status\` - 更新任务状态
+   - 规划阶段完成后：调用 \`update_task_status\` 参数：{"status": "working"}
+   - 翻译完成后：调用 \`update_task_status\` 参数：{"status": "review"}
+   - 复核完成后：调用 \`update_task_status\` 参数：{"status": "end"}
+   - **特别说明**：在 review 阶段如需修正，可调用 \`update_task_status\` 将状态切回 "working"`
+    : `1. \`update_task_status\` - 更新任务状态
+   - 规划阶段完成后：调用 \`update_task_status\` 参数：{"status": "working"}
+   - ${taskLabel}完成后：调用 \`update_task_status\` 参数：{"status": "end"}`;
 
-⚠️ **状态切换独立性（核心）**:
-- 状态变更（s字段）必须单独输出一个JSON对象：\`{"s": "working"}\`
-- 翻译内容必须单独输出一个JSON对象：\`${jsonContent}\`${individualNote}${titleNote}
-- **严禁**将 s 与 p/tt 混在同一个 JSON 对象中！
+  return `【输出格式】⚠️ **不要输出 JSON，使用工具调用**
+
+⛔ **禁止**：直接输出 JSON 格式的翻译结果或状态变更
+✅ **正确**：使用 Function Calling 工具提交结果
+
+**必须使用的工具**：
+${statusDesc}
+
+2. \`add_translation_batch\` - 批量提交段落翻译
+   - 在 working 状态下调用
+   - 一次可提交多个段落
+   - 最多 100 个段落/批次
+${titleToolSection}
+**工作流程**：
+${workflowSteps}
 
 ${getStatusFieldDescription(taskType)}
-- 段落序号(i)与原文1:1对应${onlyChanged}
-- ${taskType === 'translation' ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}，所有阶段可用工具
-- ⛔ 除working状态时禁止输出翻译（p字段）
+- 段落 ID 与原文1:1对应${onlyChanged}
+- ${isTranslation ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}
+${toolRestriction}
 `;
 }
 
@@ -262,7 +294,7 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
   return `【执行流程】
 1. **planning**: 获取上下文信息，检查数据问题并修复
 2. **working**: ${focus}；发现新信息立即更新
-3. **end**: 完成当前块（润色/校对跳过并禁用 review）`;
+3. **end**: 完成当前块（润色/校对/摘要任务跳过并禁用 review）`;
 }
 
 /**

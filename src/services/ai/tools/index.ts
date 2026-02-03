@@ -10,6 +10,8 @@ import { memoryTools } from './memory-tools';
 import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
 import { askUserTools } from './ask-user-tools';
+import { taskStatusTools } from './task-status-tools';
+import { translationTools } from './translation-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 
 export type { ActionInfo };
@@ -199,6 +201,8 @@ export class ToolRegistry {
       ...navigationTools,
       ...todoListTools,
       ...askUserTools,
+      ...taskStatusTools,
+      ...translationTools,
     ];
   }
 

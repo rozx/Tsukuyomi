@@ -1,6 +1,80 @@
 import { MemoryService } from 'src/services/memory-service';
+import { useBooksStore } from 'src/stores/books';
 import type { ToolDefinition } from './types';
 import type { ToolContext } from './types';
+
+/**
+ * 验证 attached_to 实体是否存在
+ * @param bookId 书籍 ID
+ * @param attachedTo 附件列表
+ * @returns 验证结果，包含是否有效和错误信息
+ */
+function validateAttachedToEntities(
+  bookId: string,
+  attachedTo?: Array<{ type: string; id: string }>,
+): { valid: boolean; errors: string[] } {
+  if (!attachedTo || attachedTo.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  const errors: string[] = [];
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+
+  if (!book) {
+    return { valid: false, errors: ['书籍不存在'] };
+  }
+
+  for (const attachment of attachedTo) {
+    const { type, id } = attachment;
+
+    switch (type) {
+      case 'book':
+        // book 类型必须匹配当前书籍 ID
+        if (id !== bookId) {
+          errors.push(`书籍 ID "${id}" 不存在或不匹配当前书籍`);
+        }
+        break;
+
+      case 'character': {
+        const characterExists = book.characterSettings?.some((c) => c.id === id);
+        if (!characterExists) {
+          errors.push(`角色 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      case 'term': {
+        const termExists = book.terminologies?.some((t) => t.id === id);
+        if (!termExists) {
+          errors.push(`术语 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      case 'chapter': {
+        let chapterExists = false;
+        if (book.volumes) {
+          for (const volume of book.volumes) {
+            if (volume.chapters?.some((c) => c.id === id)) {
+              chapterExists = true;
+              break;
+            }
+          }
+        }
+        if (!chapterExists) {
+          errors.push(`章节 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      default:
+        errors.push(`未知的附件类型: "${type}"`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
 
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (
@@ -352,6 +426,15 @@ export const memoryTools: ToolDefinition[] = [
         });
       }
 
+      // 验证 attached_to 实体是否存在
+      const validation = validateAttachedToEntities(bookId, attached_to);
+      if (!validation.valid) {
+        return JSON.stringify({
+          success: false,
+          error: `附件验证失败：${validation.errors.join('; ')}，请检查附件类型和 ID 是否正确。如果角色/术语未创建，请先创建。`,
+        });
+      }
+
       try {
         const memory = await MemoryService.createMemory(bookId, content, summary, attached_to);
 
@@ -461,6 +544,17 @@ export const memoryTools: ToolDefinition[] = [
           success: false,
           error: '摘要不能为空',
         });
+      }
+
+      // 如果提供了 attached_to，验证实体是否存在
+      if (attached_to !== undefined) {
+        const validation = validateAttachedToEntities(bookId, attached_to);
+        if (!validation.valid) {
+          return JSON.stringify({
+            success: false,
+            error: `附件验证失败：${validation.errors.join('; ')}，请检查附件类型和 ID 是否正确。如果角色/术语未创建，请先创建。`,
+          });
+        }
       }
 
       try {
