@@ -1,0 +1,202 @@
+[
+  {
+    "id": "front-page",
+    "title": "使用指南",
+    "file": "front-page.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "Tsukuyomi 翻译器核心功能介绍和快速入门"
+  },
+  {
+    "id": "v0.8.4",
+    "title": "v0.8.4",
+    "file": "RELEASE_NOTES_v0.8.4.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "批量章节摘要、AI 用户交互工具、记忆管理增强"
+  },
+  {
+    "id": "v0.8.3",
+    "title": "v0.8.3",
+    "file": "RELEASE_NOTES_v0.8.3.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "章节内容懒加载、角色设定管理"
+  },
+  {
+    "id": "v0.8.2",
+    "title": "v0.8.2",
+    "file": "RELEASE_NOTES_v0.8.2.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "术语管理增强、AI 工具优化"
+  },
+  {
+    "id": "v0.8.1",
+    "title": "v0.8.1",
+    "file": "RELEASE_NOTES_v0.8.1.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "UI 改进、性能优化"
+  },
+  {
+    "id": "v0.7.16",
+    "title": "v0.7.16",
+    "file": "RELEASE_NOTES_v0.7.16.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "Bug 修复和稳定性改进"
+  },
+  {
+    "id": "v0.7.15",
+    "title": "v0.7.15",
+    "file": "RELEASE_NOTES_v0.7.15.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能增强和用户体验优化"
+  },
+  {
+    "id": "v0.7.14",
+    "title": "v0.7.14",
+    "file": "RELEASE_NOTES_v0.7.14.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "新增功能和改进"
+  },
+  {
+    "id": "v0.7.13",
+    "title": "v0.7.13",
+    "file": "RELEASE_NOTES_v0.7.13.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "性能优化和 Bug 修复"
+  },
+  {
+    "id": "v0.7.12",
+    "title": "v0.7.12",
+    "file": "RELEASE_NOTES_v0.7.12.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能更新"
+  },
+  {
+    "id": "v0.7.9",
+    "title": "v0.7.9",
+    "file": "RELEASE_NOTES_v0.7.9.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "Bug 修复"
+  },
+  {
+    "id": "v0.7.8",
+    "title": "v0.7.8",
+    "file": "RELEASE_NOTES_v0.7.8.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能增强"
+  },
+  {
+    "id": "v0.7.7",
+    "title": "v0.7.7",
+    "file": "RELEASE_NOTES_v0.7.7.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "改进和优化"
+  },
+  {
+    "id": "v0.7.6",
+    "title": "v0.7.6",
+    "file": "RELEASE_NOTES_v0.7.6.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "稳定性改进"
+  },
+  {
+    "id": "v0.7.5",
+    "title": "v0.7.5",
+    "file": "RELEASE_NOTES_v0.7.5.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "用户体验优化"
+  },
+  {
+    "id": "v0.7.4",
+    "title": "v0.7.4",
+    "file": "RELEASE_NOTES_v0.7.4.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能更新"
+  },
+  {
+    "id": "v0.7.3",
+    "title": "v0.7.3",
+    "file": "RELEASE_NOTES_v0.7.3.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "Bug 修复"
+  },
+  {
+    "id": "v0.7.2",
+    "title": "v0.7.2",
+    "file": "RELEASE_NOTES_v0.7.2.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "改进和优化"
+  },
+  {
+    "id": "v0.7.1",
+    "title": "v0.7.1",
+    "file": "RELEASE_NOTES_v0.7.1.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "稳定性修复"
+  },
+  {
+    "id": "v0.7.0",
+    "title": "v0.7.0",
+    "file": "RELEASE_NOTES_v0.7.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "大版本更新"
+  },
+  {
+    "id": "v0.6.11",
+    "title": "v0.6.11",
+    "file": "RELEASE_NOTES_v0.6.11.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能改进"
+  },
+  {
+    "id": "v0.6.10",
+    "title": "v0.6.10",
+    "file": "RELEASE_NOTES_v0.6.10.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "Bug 修复"
+  },
+  {
+    "id": "v0.6.9",
+    "title": "v0.6.9",
+    "file": "RELEASE_NOTES_v0.6.9.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "优化更新"
+  },
+  {
+    "id": "v0.6.8",
+    "title": "v0.6.8",
+    "file": "RELEASE_NOTES_v0.6.8.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "功能增强"
+  },
+  {
+    "id": "v0.6.7",
+    "title": "v0.6.7",
+    "file": "RELEASE_NOTES_v0.6.7.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "初始版本发布说明"
+  }
+]
