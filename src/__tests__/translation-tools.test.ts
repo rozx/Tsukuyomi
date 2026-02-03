@@ -10,39 +10,6 @@ import type { AIProcessingStore } from '../services/ai/tasks/utils/task-types';
 import type { ChunkBoundaries } from '../services/ai/tools/types';
 import { MAX_TRANSLATION_BATCH_SIZE } from '../services/ai/constants';
 
-// Mock IndexedDB for FullTextIndexService
-const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockStoreGetAll = mock(() => Promise.resolve([]));
-
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
-  objectStore: () => ({
-    get: mockStoreGet,
-    put: mockStorePut,
-    getAll: mockStoreGetAll,
-  }),
-  done: Promise.resolve(),
-}));
-
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-
-const mockDb = {
-  getAll: mock(() => Promise.resolve([])),
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  transaction: mockTransaction,
-  objectStoreNames: {
-    contains: mock(() => false),
-  },
-};
-
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
-
 // Mock BookService
 const mockGetBookById = mock((_bookId: string) => Promise.resolve(undefined as Novel | undefined));
 const mockSaveBook = mock((_book: Novel) => Promise.resolve());

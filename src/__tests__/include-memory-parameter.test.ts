@@ -10,56 +10,6 @@ import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
 
-// Mock IndexedDB
-const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockStoreDelete = mock(() => Promise.resolve(undefined));
-const mockStoreGetAll = mock(() => Promise.resolve([]));
-const mockStoreCount = mock(() => Promise.resolve(0));
-
-const mockIndexGetAll = mock(() => Promise.resolve([]));
-const mockIndexCount = mock(() => Promise.resolve(0));
-
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
-  objectStore: () => ({
-    get: mockStoreGet,
-    put: mockStorePut,
-    delete: mockStoreDelete,
-    getAll: mockStoreGetAll,
-    count: mockStoreCount,
-    index: () => ({
-      getAll: mockIndexGetAll,
-      count: mockIndexCount,
-    }),
-  }),
-  store: {
-    index: () => ({
-      getAll: mockIndexGetAll,
-      count: mockIndexCount,
-    }),
-  },
-  done: Promise.resolve(),
-}));
-
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-
-const mockDb = {
-  getAll: mock(() => Promise.resolve([])),
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  transaction: mockTransaction,
-  objectStoreNames: {
-    contains: mock(() => false),
-  },
-};
-
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
-
 // Mock searchRelatedMemoriesHybrid（局部使用，不在文件顶层全局 mock）
 const mockSearchRelatedMemoriesHybrid = mock(
   (
@@ -103,7 +53,9 @@ await mock.module('src/stores/books', () => ({
 
 // Mock BookService
 const mockBookService = {
-  getBookById: mock((_id: string, _loadContent?: boolean): Promise<Novel | undefined> => Promise.resolve(undefined)),
+  getBookById: mock(
+    (_id: string, _loadContent?: boolean): Promise<Novel | undefined> => Promise.resolve(undefined),
+  ),
 };
 await mock.module('src/services/book-service', () => ({
   BookService: mockBookService,
@@ -130,18 +82,6 @@ describe('include_memory 参数测试', () => {
       MemoryHelperModule,
       'searchRelatedMemoriesHybrid',
     ).mockImplementation(hybridMock);
-    // 重置 IndexedDB mocks
-    mockStoreGet.mockClear();
-    mockStorePut.mockClear();
-    mockStoreDelete.mockClear();
-    mockStoreGetAll.mockClear();
-    mockStoreCount.mockClear();
-    mockIndexGetAll.mockClear();
-    mockIndexCount.mockClear();
-    mockTransaction.mockClear();
-    mockGet.mockClear();
-    mockPut.mockClear();
-    mockDelete.mockClear();
   });
 
   afterEach(() => {
@@ -259,10 +199,7 @@ describe('include_memory 参数测试', () => {
       );
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { keywords: ['テスト'], include_memory: true },
-        context,
-      );
+      const result = await tool!.handler({ keywords: ['テスト'], include_memory: true }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
@@ -282,10 +219,7 @@ describe('include_memory 参数测试', () => {
       );
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { keywords: ['テスト'], include_memory: false },
-        context,
-      );
+      const result = await tool!.handler({ keywords: ['テスト'], include_memory: false }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
@@ -334,10 +268,7 @@ describe('include_memory 参数测试', () => {
       const tool = characterTools.find((t) => t.definition.function.name === 'get_character');
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { name: 'テストキャラ', include_memory: true },
-        context,
-      );
+      const result = await tool!.handler({ name: 'テストキャラ', include_memory: true }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
@@ -355,10 +286,7 @@ describe('include_memory 参数测试', () => {
       const tool = characterTools.find((t) => t.definition.function.name === 'get_character');
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { name: 'テストキャラ', include_memory: false },
-        context,
-      );
+      const result = await tool!.handler({ name: 'テストキャラ', include_memory: false }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
@@ -378,10 +306,7 @@ describe('include_memory 参数测试', () => {
       );
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { keywords: ['テスト'], include_memory: true },
-        context,
-      );
+      const result = await tool!.handler({ keywords: ['テスト'], include_memory: true }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
@@ -553,21 +478,13 @@ describe('include_memory 参数测试', () => {
       );
       expect(tool).toBeDefined();
 
-      const result = await tool!.handler(
-        { keywords: ['テスト'], include_memory: true },
-        context,
-      );
+      const result = await tool!.handler({ keywords: ['テスト'], include_memory: true }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(parsed.paragraphs).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
-        bookId,
-        [],
-        ['テスト'],
-        5,
-      );
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(bookId, [], ['テスト'], 5);
     });
   });
 
@@ -613,11 +530,10 @@ describe('include_memory 参数测试', () => {
       expect(parsed.term).toBeDefined();
       // 相关记忆应该为空或不存在
       expect(parsed.related_memories).toBeUndefined();
-      
+
       // 重置 mock，避免影响后续测试
       mockSearchRelatedMemoriesHybrid.mockReset();
       mockSearchRelatedMemoriesHybrid.mockResolvedValue([]);
     });
   });
-
 });

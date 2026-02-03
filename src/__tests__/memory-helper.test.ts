@@ -1,23 +1,15 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { Memory, MemoryAttachment } from '../models/memory';
+import { MemoryService } from 'src/services/memory-service';
+import {
+  searchRelatedMemories,
+  searchRelatedMemoriesHybrid,
+} from 'src/services/ai/tools/memory-helper';
 
 // 模拟 MemoryService
 let mockSearchMemoriesByKeywords: ReturnType<typeof mock>;
 let mockGetMemoriesByAttachments: ReturnType<typeof mock>;
-
-// 动态导入的函数
-let searchRelatedMemories: (
-  bookId: string,
-  keywords: string[],
-  limit?: number,
-) => Promise<Array<{ id: string; summary: string }>>;
-let searchRelatedMemoriesHybrid: (
-  bookId: string,
-  attachments: MemoryAttachment[],
-  keywords: string[],
-  limit?: number,
-) => Promise<Array<{ id: string; summary: string }>>;
 
 describe('searchRelatedMemories', () => {
   beforeEach(async () => {
@@ -25,19 +17,16 @@ describe('searchRelatedMemories', () => {
     mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
     mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));
 
-    // 使用 mock.module 模拟 MemoryService 模块
-    // 注意：必须在导入依赖模块之前设置 mock
-    await mock.module('src/services/memory-service', () => ({
-      MemoryService: {
-        searchMemoriesByKeywords: mockSearchMemoriesByKeywords,
-        getMemoriesByAttachments: mockGetMemoriesByAttachments,
-      },
-    }));
+    spyOn(MemoryService, 'searchMemoriesByKeywords').mockImplementation(
+      mockSearchMemoriesByKeywords as typeof MemoryService.searchMemoriesByKeywords,
+    );
+    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
+      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    );
+  });
 
-    // 在 mock 设置后动态导入依赖模块
-    const memoryHelper = await import('../services/ai/tools/memory-helper');
-    searchRelatedMemories = memoryHelper.searchRelatedMemories;
-    searchRelatedMemoriesHybrid = memoryHelper.searchRelatedMemoriesHybrid;
+  afterEach(() => {
+    mock.restore();
   });
 
   test('应该返回空数组当 bookId 为空', async () => {
@@ -195,18 +184,16 @@ describe('searchRelatedMemoriesHybrid', () => {
     mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
     mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));
 
-    // 使用 mock.module 模拟 MemoryService 模块
-    await mock.module('src/services/memory-service', () => ({
-      MemoryService: {
-        searchMemoriesByKeywords: mockSearchMemoriesByKeywords,
-        getMemoriesByAttachments: mockGetMemoriesByAttachments,
-      },
-    }));
+    spyOn(MemoryService, 'searchMemoriesByKeywords').mockImplementation(
+      mockSearchMemoriesByKeywords as typeof MemoryService.searchMemoriesByKeywords,
+    );
+    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
+      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    );
+  });
 
-    // 在 mock 设置后动态导入依赖模块
-    const memoryHelper = await import('../services/ai/tools/memory-helper');
-    searchRelatedMemories = memoryHelper.searchRelatedMemories;
-    searchRelatedMemoriesHybrid = memoryHelper.searchRelatedMemoriesHybrid;
+  afterEach(() => {
+    mock.restore();
   });
 
   test('附件优先，关键词补充，去重并保持顺序', async () => {

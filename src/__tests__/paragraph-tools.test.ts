@@ -7,39 +7,6 @@ import * as BooksStore from '../stores/books';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
-// Mock IndexedDB for FullTextIndexService
-const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockStoreGetAll = mock(() => Promise.resolve([]));
-
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
-  objectStore: () => ({
-    get: mockStoreGet,
-    put: mockStorePut,
-    getAll: mockStoreGetAll,
-  }),
-  done: Promise.resolve(),
-}));
-
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-
-const mockDb = {
-  getAll: mock(() => Promise.resolve([])),
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  transaction: mockTransaction,
-  objectStoreNames: {
-    contains: mock(() => false), // FullTextIndexService 会检查这个
-  },
-};
-
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
-
 // 辅助函数：创建测试用小说
 function createTestNovel(volumes: Volume[] = []): Novel {
   return {

@@ -1,7 +1,8 @@
 import './setup';
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
+import { MemoryService } from 'src/services/memory-service';
 
 // Mock functions
 let mockCreateMemory: ReturnType<typeof mock>;
@@ -10,7 +11,7 @@ let mockGetBookById: ReturnType<typeof mock>;
 
 // Dynamic imports
 let memoryTools: any;
-let MemoryService: any;
+let memoryService: typeof MemoryService;
 
 describe('MemoryTools - attachments', () => {
   const bookId = 'book-1';
@@ -55,20 +56,20 @@ describe('MemoryTools - attachments', () => {
       }),
     }));
 
-    // Mock MemoryService
-    await mock.module('src/services/memory-service', () => ({
-      MemoryService: {
-        createMemory: mockCreateMemory,
-        updateMemory: mockUpdateMemory,
-        getMemory: mock(() => Promise.resolve(baseMemory)),
-      },
-    }));
-
     // Import modules after mocking
     const toolsModule = await import('src/services/ai/tools/memory-tools');
     memoryTools = toolsModule.memoryTools;
-    const serviceModule = await import('src/services/memory-service');
-    MemoryService = serviceModule.MemoryService;
+    memoryService = MemoryService;
+
+    spyOn(memoryService, 'createMemory').mockImplementation(
+      mockCreateMemory as typeof MemoryService.createMemory,
+    );
+    spyOn(memoryService, 'updateMemory').mockImplementation(
+      mockUpdateMemory as typeof MemoryService.updateMemory,
+    );
+    spyOn(memoryService, 'getMemory').mockImplementation(
+      mock(() => Promise.resolve(baseMemory)) as typeof MemoryService.getMemory,
+    );
   });
 
   afterEach(() => {

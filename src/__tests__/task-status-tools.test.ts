@@ -7,39 +7,6 @@ import type {
   TaskStatus,
 } from '../services/ai/tasks/utils/task-types';
 
-// Mock IndexedDB
-const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockStoreGetAll = mock(() => Promise.resolve([]));
-
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => ({
-  objectStore: () => ({
-    get: mockStoreGet,
-    put: mockStorePut,
-    getAll: mockStoreGetAll,
-  }),
-  done: Promise.resolve(),
-}));
-
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-
-const mockDb = {
-  getAll: mock(() => Promise.resolve([])),
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  transaction: mockTransaction,
-  objectStoreNames: {
-    contains: mock(() => false),
-  },
-};
-
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
-
 // 辅助函数：创建 AI Processing Store
 const createMockAIProcessingStore = (
   tasks: Array<{

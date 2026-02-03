@@ -71,9 +71,7 @@ await mock.module('src/stores/settings', () => ({
   useSettingsStore: () => mockSettingsStore,
 }));
 
-await mock.module('src/services/memory-service', () => ({
-  MemoryService: mockMemoryService,
-}));
+import { MemoryService } from 'src/services/memory-service';
 
 // Mock ChapterContentService
 
@@ -110,6 +108,19 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockMemoryService.updateMemory.mockClear();
     mockMemoryService.createMemory.mockClear();
     mockMemoryService.createMemoryWithId.mockClear();
+
+    spyOn(MemoryService, 'getAllMemories').mockImplementation(
+      mockMemoryService.getAllMemories as typeof MemoryService.getAllMemories,
+    );
+    spyOn(MemoryService, 'updateMemory').mockImplementation(
+      mockMemoryService.updateMemory as unknown as typeof MemoryService.updateMemory,
+    );
+    spyOn(MemoryService, 'createMemory').mockImplementation(
+      mockMemoryService.createMemory as unknown as typeof MemoryService.createMemory,
+    );
+    spyOn(MemoryService, 'createMemoryWithId').mockImplementation(
+      mockMemoryService.createMemoryWithId as unknown as typeof MemoryService.createMemoryWithId,
+    );
   });
 
   afterEach(() => {

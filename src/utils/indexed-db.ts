@@ -114,6 +114,14 @@ const DB_VERSION = 8; // 升级版本保持为 8，但移除了无效的 by-atta
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 
+export async function resetDbForTests(): Promise<void> {
+  try {
+    await clearAllData();
+  } catch {
+    // 忽略测试环境清理错误
+  }
+}
+
 /**
  * 初始化并获取 IndexedDB 数据库实例
  */

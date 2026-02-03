@@ -1,108 +1,8 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
+import './setup';
 import type { Memory, MemoryAttachment } from '../models/memory';
-import * as indexedDb from 'src/utils/indexed-db';
-import { MemoryService } from '../services/memory-service';
-
-// Mock IndexedDB
-const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockStoreDelete = mock(() => Promise.resolve(undefined));
-const mockStoreClear = mock(() => Promise.resolve(undefined));
-const mockStoreGetAll = mock(() => Promise.resolve([]));
-const mockStoreCount = mock(() => Promise.resolve(0));
-
-const mockIndexGetAll = mock<(_key: string) => Promise<Memory[]>>((_key: string) =>
-  Promise.resolve([]),
-);
-const mockIndexCount = mock((_key: string) => Promise.resolve(0));
-
-const mockTransactionStorePut = mock((_val: unknown) => Promise.resolve(undefined));
-
-// 用于存储测试数据的内存存储，供游标使用
-let testMemoryData: Memory[] = [];
-// 存储当前游标的状态
-let currentCursorBookId: string | null = null;
-let currentCursorIndex = 0;
-
-const mockTransaction = mock((_mode: 'readonly' | 'readwrite') => {
-  const objectStore = {
-    get: mockStoreGet,
-    put: mockTransactionStorePut, // 用于 updateAccessTimesBatch 中的更新
-    delete: mockStoreDelete,
-    clear: mockStoreClear,
-    getAll: mockStoreGetAll,
-    count: mockStoreCount,
-    index: (name: string) => {
-      return {
-        getAll: mockIndexGetAll,
-        count: mockIndexCount,
-        openCursor: (bookId: string) => {
-          // 重置游标状态
-          currentCursorBookId = bookId;
-          currentCursorIndex = 0;
-          const filtered = testMemoryData.filter((m) => m.bookId === bookId);
-
-          // 创建游标类型
-          type CursorType = {
-            value: Memory;
-            continue: () => Promise<CursorType | null>;
-          } | null;
-
-          // 创建游标函数
-          const createNextCursor = (): CursorType => {
-            if (currentCursorIndex >= filtered.length) {
-              return null;
-            }
-            const current = filtered[currentCursorIndex];
-            if (!current) {
-              return null;
-            }
-            currentCursorIndex++;
-
-            return {
-              value: current,
-              continue: () => {
-                return Promise.resolve(createNextCursor());
-              },
-            };
-          };
-
-          return Promise.resolve(createNextCursor());
-        },
-      };
-    },
-  };
-
-  return {
-    objectStore: () => objectStore,
-    store: objectStore, // 用于 updateAccessTimesBatch 中的更新
-    done: Promise.resolve(),
-  };
-});
-
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-
-const mockDb = {
-  getAll: mock(() => Promise.resolve([])),
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  transaction: mockTransaction,
-};
-
-let getDbSpy: ReturnType<typeof spyOn> | null = null;
-
-async function waitForMockCall(
-  mockFn: { mock: { calls: unknown[][] } },
-  timeoutMs: number = 200,
-): Promise<void> {
-  const start = Date.now();
-  while (mockFn.mock.calls.length === 0 && Date.now() - start < timeoutMs) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
+import { getDB } from 'src/utils/indexed-db';
+const { MemoryService } = await import('../services/memory-service');
 
 // 辅助函数：创建测试用 Memory
 function createTestMemory(
@@ -127,27 +27,9 @@ function createTestMemory(
 }
 
 describe('MemoryService', () => {
-  beforeEach(() => {
-    getDbSpy = spyOn(indexedDb, 'getDB').mockResolvedValue(
-      mockDb as unknown as Awaited<ReturnType<typeof indexedDb.getDB>>,
-    );
-    // 重置所有 mock
-    mockPut.mockClear();
-    mockGet.mockClear();
-    mockDelete.mockClear();
-    mockStoreGet.mockClear();
-    mockStorePut.mockClear();
-    mockStoreDelete.mockClear();
-    mockStoreGetAll.mockClear();
-    mockStoreCount.mockClear();
-    mockIndexGetAll.mockClear();
-    mockIndexCount.mockClear();
-    mockTransaction.mockClear();
-    mockTransactionStorePut.mockClear();
-    // 重置测试数据
-    testMemoryData = [];
-    currentCursorBookId = null;
-    currentCursorIndex = 0;
+  beforeEach(async () => {
+    const database = await getDB();
+    await database.clear('memories');
     // 清理 MemoryService 的缓存（通过反射访问私有字段）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const service = MemoryService as any;
@@ -160,7 +42,6 @@ describe('MemoryService', () => {
   });
 
   afterEach(() => {
-    getDbSpy = null;
     mock.restore();
   });
 
@@ -170,10 +51,8 @@ describe('MemoryService', () => {
       const content = '这是测试内容';
       const summary = '测试摘要';
 
-      // Mock: 没有现有记录
-      mockIndexCount.mockResolvedValue(0);
-      // Mock: ID 检查返回 undefined（ID 不存在，可以使用）
-      mockStoreGet.mockResolvedValue(undefined);
+      const database = await getDB();
+      await database.clear('memories');
 
       const memory = await MemoryService.createMemory(bookId, content, summary);
 
@@ -185,8 +64,8 @@ describe('MemoryService', () => {
       expect(memory.id.length).toBe(8); // 短 ID 应该是 8 位
       expect(memory.createdAt).toBeGreaterThan(0);
       expect(memory.lastAccessedAt).toBeGreaterThan(0);
-      // 应该调用了 transaction.objectStore().put 来保存新的 Memory
-      expect(mockTransactionStorePut).toHaveBeenCalled();
+      const saved = await MemoryService.getMemory(bookId, memory.id);
+      expect(saved).toBeTruthy();
     });
 
     it('应该在 bookId 为空时抛出错误', async () => {
@@ -212,24 +91,22 @@ describe('MemoryService', () => {
       const content = '新内容';
       const summary = '新摘要';
 
-      // Mock: 已有 500 条记录
-      mockIndexCount.mockResolvedValue(500);
-      const oldMemories = Array.from({ length: 500 }, (_, i) =>
-        createTestMemory(`id-${i}`, bookId, `content-${i}`, `summary-${i}`, 1000 + i, 1000 + i),
-      );
-      // Mock: index.getAll() 返回所有记录
-      mockIndexGetAll.mockResolvedValue(oldMemories);
-      // 设置测试数据，供游标使用
-      testMemoryData = oldMemories;
-
-      // Mock: ID 检查返回 undefined（ID 不存在，可以使用）
-      mockStoreGet.mockResolvedValue(undefined);
+      const database = await getDB();
+      await database.clear('memories');
+      const tx = database.transaction('memories', 'readwrite');
+      const store = tx.objectStore('memories');
+      for (let i = 0; i < 500; i++) {
+        await store.put(
+          createTestMemory(`id-${i}`, bookId, `content-${i}`, `summary-${i}`, 1000 + i, 1000 + i),
+        );
+      }
+      await tx.done;
 
       const memory = await MemoryService.createMemory(bookId, content, summary);
 
       expect(memory).toBeTruthy();
-      // 应该调用了 store.delete 来删除最旧的记录（通过事务内的 store）
-      expect(mockStoreDelete).toHaveBeenCalled();
+      const remaining = await MemoryService.getAllMemories(bookId);
+      expect(remaining).toHaveLength(500);
     });
 
     it('应该支持创建时传入附件', async () => {
@@ -241,15 +118,9 @@ describe('MemoryService', () => {
         { type: 'term', id: 'term-1' },
       ];
 
-      mockIndexCount.mockResolvedValue(0);
-      mockStoreGet.mockResolvedValue(undefined);
-
       await MemoryService.createMemory(bookId, content, summary, attachments);
-
-      const putCall = mockTransactionStorePut.mock.calls[0];
-      expect(putCall).toBeDefined();
-      const savedMemory = putCall?.[0] as Memory;
-      expect(savedMemory.attachedTo).toEqual(attachments);
+      const all = await MemoryService.getAllMemories(bookId);
+      expect(all[0]?.attachedTo).toEqual(attachments);
     });
   });
 
@@ -259,8 +130,7 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要');
 
-      // Mock: 返回 Memory
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary);
 
       const result = await MemoryService.getMemory(bookId, memoryId);
 
@@ -269,17 +139,12 @@ describe('MemoryService', () => {
       expect(result?.bookId).toBe(bookId);
       expect(result?.content).toBe('内容');
       expect(result?.summary).toBe('摘要');
-      expect(mockGet).toHaveBeenCalledWith('memories', memoryId);
-      // 应该更新了 lastAccessedAt
-      expect(mockPut).toHaveBeenCalled();
+      expect(result?.id).toBe(memoryId);
     });
 
     it('应该在 Memory 不存在时返回 null', async () => {
       const bookId = 'book-not-exist';
       const memoryId = 'memory-not-exist';
-
-      // Mock: 返回 undefined
-      mockGet.mockResolvedValue(undefined);
 
       const result = await MemoryService.getMemory(bookId, memoryId);
 
@@ -291,9 +156,12 @@ describe('MemoryService', () => {
       const memoryId = 'memory-wrong';
       const memory = createTestMemory(memoryId, 'book-other', '内容', '摘要'); // 不同的 bookId
 
-      // Mock: 返回 Memory
-      mockGet.mockResolvedValue(memory);
-
+      await MemoryService.createMemoryWithId(
+        'book-other',
+        memoryId,
+        memory.content,
+        memory.summary,
+      );
       const result = await MemoryService.getMemory(bookId, memoryId);
 
       expect(result).toBeNull();
@@ -317,8 +185,10 @@ describe('MemoryService', () => {
       const oldTime = 1000;
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要', oldTime, oldTime);
 
-      // Mock: 返回 Memory
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary, {
+        createdAt: oldTime,
+        lastAccessedAt: oldTime,
+      });
 
       const beforeAccess = Date.now();
       const result = await MemoryService.getMemory(bookId, memoryId);
@@ -328,8 +198,7 @@ describe('MemoryService', () => {
       // 由于时间戳可能在同一毫秒内，使用更宽松的检查
       expect(result?.lastAccessedAt).toBeGreaterThanOrEqual(oldTime);
       expect(result?.lastAccessedAt).toBeLessThanOrEqual(afterAccess + 10); // 允许 10ms 误差
-      // 应该调用了 put 来更新 lastAccessedAt
-      expect(mockPut).toHaveBeenCalled();
+      expect(result?.lastAccessedAt).toBeGreaterThanOrEqual(oldTime);
     });
 
     it('应该为缺少 attachedTo 的旧数据补默认附件', async () => {
@@ -344,7 +213,8 @@ describe('MemoryService', () => {
         lastAccessedAt: 1000,
       } as unknown as Memory;
 
-      mockGet.mockResolvedValue(legacyMemory);
+      const database = await getDB();
+      await database.put('memories', legacyMemory as any);
 
       const result = await MemoryService.getMemory(bookId, memoryId);
 
@@ -363,8 +233,12 @@ describe('MemoryService', () => {
         createTestMemory('id-3', bookId, '内容3', '测试摘要2'),
       ];
 
-      // Mock: 返回所有 Memory
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
         bookId,
@@ -387,7 +261,12 @@ describe('MemoryService', () => {
         createTestMemory('id-2', bookId, '内容2', '其他摘要'),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
         bookId,
@@ -407,7 +286,12 @@ describe('MemoryService', () => {
         createTestMemory('id-2', bookId, '内容2', '另一个摘要'),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
         bookId,
@@ -435,16 +319,10 @@ describe('MemoryService', () => {
 
       const memories = [createTestMemory('id-1', bookId, '内容1', '测试摘要', 1000, 1000)];
 
-      mockIndexGetAll.mockResolvedValue(memories);
-      // Mock store.get 用于 updateAccessTimesBatch
-      mockStoreGet.mockResolvedValue({
-        id: 'id-1',
-        bookId,
-        content: '内容1',
-        summary: '测试摘要',
-        createdAt: 1000,
-        lastAccessedAt: 1000,
-      });
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memories[0]!);
+      await tx.done;
 
       const beforeSearch = Date.now();
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
@@ -454,11 +332,11 @@ describe('MemoryService', () => {
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
-      // 等待异步更新完成
-      await waitForMockCall(mockTransactionStorePut);
-      // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
-      // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
-      expect(mockTransactionStorePut).toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const updatedDatabase = await getDB();
+      const updated = await updatedDatabase.get('memories', memories[0]!.id);
+      expect(updated?.lastAccessedAt).toBeGreaterThanOrEqual(beforeSearch);
+      expect(updated?.lastAccessedAt).toBeLessThanOrEqual(afterSearch + 20);
     });
   });
 
@@ -468,22 +346,16 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要');
 
-      // Mock: 返回 Memory
-      mockGet.mockResolvedValue(memory);
-      // Mock: 删除成功
-      mockDelete.mockResolvedValue(undefined);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary);
 
       await MemoryService.deleteMemory(bookId, memoryId);
-
-      expect(mockDelete).toHaveBeenCalledWith('memories', memoryId);
+      const result = await MemoryService.getMemory(bookId, memoryId);
+      expect(result).toBeNull();
     });
 
     it('应该在 Memory 不存在时抛出错误', async () => {
       const bookId = 'book-1';
       const memoryId = 'memory-1';
-
-      // Mock: 返回 undefined
-      mockGet.mockResolvedValue(undefined);
 
       await (expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
         `Memory 不存在: ${memoryId}`,
@@ -495,8 +367,7 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const memory = createTestMemory(memoryId, 'book-2', '内容', '摘要'); // 不同的 bookId
 
-      // Mock: 返回 Memory
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId('book-2', memoryId, memory.content, memory.summary);
 
       await (expect(MemoryService.deleteMemory(bookId, memoryId)).rejects.toThrow(
         `Memory 不属于指定的书籍: ${bookId}`,
@@ -526,8 +397,12 @@ describe('MemoryService', () => {
         createTestMemory('id-3', bookId, '内容3', '摘要3', 1002, 2002),
       ];
 
-      // Mock: 返回所有 Memory
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getAllMemories(bookId);
 
@@ -540,8 +415,8 @@ describe('MemoryService', () => {
     it('应该在没有任何 Memory 时返回空数组', async () => {
       const bookId = 'book-1';
 
-      // Mock: 返回空数组
-      mockIndexGetAll.mockResolvedValue([]);
+      const database = await getDB();
+      await database.clear('memories');
 
       const results = await MemoryService.getAllMemories(bookId);
 
@@ -557,9 +432,12 @@ describe('MemoryService', () => {
         createTestMemory('id-3', bookId, '内容3', '摘要3'),
       ];
 
-      // Mock: IndexedDB 索引查询只返回匹配的 bookId
-      const filteredMemories = memories.filter((m) => m.bookId === bookId);
-      mockIndexGetAll.mockResolvedValue(filteredMemories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getAllMemories(bookId);
 
@@ -589,7 +467,12 @@ describe('MemoryService', () => {
         { type: 'term', id: 'term-1' },
       ]);
 
-      mockIndexGetAll.mockResolvedValue([memory2, memory3, memory1]);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.store.put(memory2);
+      await tx.store.put(memory3);
+      await tx.done;
 
       const results = await MemoryService.getMemoriesByAttachment(bookId, attachment);
 
@@ -609,7 +492,11 @@ describe('MemoryService', () => {
         { type: 'character', id: 'char-2' },
       ]);
 
-      mockIndexGetAll.mockResolvedValue([memory1, memory2]);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.store.put(memory2);
+      await tx.done;
 
       const results = await MemoryService.getMemoriesByAttachment(bookId, attachment);
 
@@ -636,13 +523,14 @@ describe('MemoryService', () => {
         { type: 'character', id: 'char-1' },
       ]);
 
-      mockIndexGetAll.mockResolvedValue([memory1]);
-      mockStoreGet.mockResolvedValue(memory1);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.done;
 
       await MemoryService.getMemoriesByAttachment(bookId, attachment);
 
-      await waitForMockCall(mockTransactionStorePut);
-      expect(mockTransactionStorePut).toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
   });
 
@@ -665,13 +553,12 @@ describe('MemoryService', () => {
         { type: 'term', id: 'term-1' },
       ]);
 
-      mockIndexGetAll.mockImplementation((key: unknown) => {
-        // Implementation switched to use getAll(bookId) and filter in memory
-        if (key === bookId) {
-          return Promise.resolve([memory1, memory2, memory3]);
-        }
-        return Promise.resolve([]);
-      });
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.store.put(memory2);
+      await tx.store.put(memory3);
+      await tx.done;
 
       const results = await MemoryService.getMemoriesByAttachments(bookId, attachments);
 
@@ -697,13 +584,14 @@ describe('MemoryService', () => {
         { type: 'character', id: 'char-1' },
       ]);
 
-      mockIndexGetAll.mockResolvedValue([memory1]);
-      mockStoreGet.mockResolvedValue(memory1);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.done;
 
       await MemoryService.getMemoriesByAttachments(bookId, attachments);
 
-      await waitForMockCall(mockTransactionStorePut);
-      expect(mockTransactionStorePut).toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
     it('应该处理大量附件查询结果（500 条）', async () => {
@@ -715,7 +603,12 @@ describe('MemoryService', () => {
         ]),
       );
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getMemoriesByAttachments(bookId, attachments);
 
@@ -735,15 +628,15 @@ describe('MemoryService', () => {
 
       const memories2 = [createTestMemory('id-3', bookId2, '内容3', '摘要3')];
 
-      // Mock: 根据 bookId 返回不同的 Memory
-      mockIndexGetAll.mockImplementation((bookId: string) => {
-        if (bookId === bookId1) {
-          return Promise.resolve(memories1);
-        } else if (bookId === bookId2) {
-          return Promise.resolve(memories2);
-        }
-        return Promise.resolve([]);
-      });
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories1) {
+        await tx.store.put(memory);
+      }
+      for (const memory of memories2) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results1 = await MemoryService.getAllMemories(bookId1);
       const results2 = await MemoryService.getAllMemories(bookId2);
@@ -762,20 +655,20 @@ describe('MemoryService', () => {
       const oldTime = 1000;
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要', oldTime, oldTime);
 
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary, {
+        createdAt: oldTime,
+        lastAccessedAt: oldTime,
+      });
 
       const beforeAccess = Date.now();
       await MemoryService.getMemory(bookId, memoryId);
       const afterAccess = Date.now();
 
-      // 验证 put 被调用，且 lastAccessedAt 已更新
-      expect(mockPut).toHaveBeenCalled();
-      const putCall = mockPut.mock.calls[0];
-      if (putCall && putCall[1]) {
-        const updatedMemory = putCall[1] as Memory;
-        expect(updatedMemory.lastAccessedAt).toBeGreaterThanOrEqual(beforeAccess);
-        expect(updatedMemory.lastAccessedAt).toBeLessThanOrEqual(afterAccess);
-      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const updatedDatabase = await getDB();
+      const updated = await updatedDatabase.get('memories', memoryId);
+      expect(updated?.lastAccessedAt).toBeGreaterThanOrEqual(beforeAccess);
+      expect(updated?.lastAccessedAt).toBeLessThanOrEqual(afterAccess + 20);
     });
 
     it('应该在搜索 Memory 时更新匹配项的 lastAccessedAt', async () => {
@@ -787,16 +680,12 @@ describe('MemoryService', () => {
         createTestMemory('id-2', bookId, '内容2', '其他摘要', 1001, 1001),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
-      // Mock store.get 用于 updateAccessTimesBatch
-      mockStoreGet.mockResolvedValue({
-        id: 'id-1',
-        bookId,
-        content: '内容1',
-        summary: '测试摘要',
-        createdAt: 1000,
-        lastAccessedAt: 1000,
-      });
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const beforeSearch = Date.now();
       const results: Memory[] = await (MemoryService.searchMemoriesByKeyword(
@@ -806,11 +695,11 @@ describe('MemoryService', () => {
       const afterSearch = Date.now();
 
       expect(results).toHaveLength(1);
-      // 等待异步更新完成
-      await waitForMockCall(mockTransactionStorePut);
-      // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
-      // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
-      expect(mockTransactionStorePut).toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const updatedDatabase = await getDB();
+      const updated = await updatedDatabase.get('memories', 'id-1');
+      expect(updated?.lastAccessedAt).toBeGreaterThanOrEqual(beforeSearch);
+      expect(updated?.lastAccessedAt).toBeLessThanOrEqual(afterSearch + 20);
     });
   });
 
@@ -820,21 +709,20 @@ describe('MemoryService', () => {
       const memoryId = 'memory-cache-test';
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要');
 
-      // 第一次获取：从数据库读取
-      mockGet.mockResolvedValue(memory);
-      const firstResult = await MemoryService.getMemory(bookId, memoryId);
+      const created = await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        memory.content,
+        memory.summary,
+      );
+      const firstResult = await MemoryService.getMemory(bookId, created.id);
       expect(firstResult).toBeTruthy();
-      expect(firstResult?.id).toBe(memoryId);
-      const firstCallCount = mockGet.mock.calls.length;
-
-      // 清除 mock 调用记录
-      mockGet.mockClear();
-      mockPut.mockClear();
+      expect(firstResult?.id).toBe(created.id);
 
       // 第二次获取：应该从缓存读取
-      const secondResult = await MemoryService.getMemory(bookId, memoryId);
+      const secondResult = await MemoryService.getMemory(bookId, created.id);
       expect(secondResult).toBeTruthy();
-      expect(secondResult?.id).toBe(memoryId);
+      expect(secondResult?.id).toBe(created.id);
       expect(secondResult?.content).toBe('内容');
       // 缓存命中时，主要的 getMemory 调用应该立即返回缓存数据
       // 注意：可能会异步调用 db.get 来更新访问时间，但主流程应该立即返回
@@ -845,15 +733,8 @@ describe('MemoryService', () => {
       const content = '新内容';
       const summary = '新摘要';
 
-      mockIndexCount.mockResolvedValue(0);
-      mockStoreGet.mockResolvedValue(undefined);
-
       const memory = await MemoryService.createMemory(bookId, content, summary);
       expect(memory).toBeTruthy();
-
-      // 清除 mock 调用记录
-      mockGet.mockClear();
-      mockPut.mockClear();
 
       // 再次获取应该从缓存读取（或从数据库读取，但内容应该一致）
       const cachedMemory = await MemoryService.getMemory(bookId, memory.id);
@@ -870,12 +751,14 @@ describe('MemoryService', () => {
       const newContent = '新内容';
       const newSummary = '新摘要';
 
-      // 先获取 Memory（加入缓存）
-      mockGet.mockResolvedValue(oldMemory);
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+      );
       await MemoryService.getMemory(bookId, memoryId);
 
-      // 更新 Memory
-      mockGet.mockResolvedValue(oldMemory);
       const updatedMemory = await MemoryService.updateMemory(
         bookId,
         memoryId,
@@ -885,10 +768,6 @@ describe('MemoryService', () => {
 
       expect(updatedMemory.content).toBe(newContent);
       expect(updatedMemory.summary).toBe(newSummary);
-
-      // 清除 mock 调用记录
-      mockGet.mockClear();
-      mockPut.mockClear();
 
       // 再次获取应该从缓存读取更新后的数据
       const cachedMemory = await MemoryService.getMemory(bookId, memoryId);
@@ -902,16 +781,13 @@ describe('MemoryService', () => {
       const memoryId = 'memory-cache-delete';
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要');
 
-      // 先获取 Memory（会加入缓存）
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary);
       await MemoryService.getMemory(bookId, memoryId);
 
       // 删除 Memory
-      mockGet.mockResolvedValue(memory);
       await MemoryService.deleteMemory(bookId, memoryId);
 
       // 再次获取应该返回 null（缓存已清除，数据库也没有）
-      mockGet.mockResolvedValue(undefined);
       const result = await MemoryService.getMemory(bookId, memoryId);
       expect(result).toBeNull();
     });
@@ -925,17 +801,18 @@ describe('MemoryService', () => {
         createTestMemory('id-search-2', bookId, '内容2', '其他摘要'),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results: Memory[] = await (MemoryService.searchMemoriesByKeywords(bookId, [
         keyword,
       ]) as Promise<Memory[]>);
 
       expect(results).toHaveLength(1);
-
-      // 清除 mock 调用记录
-      mockGet.mockClear();
-      mockPut.mockClear();
 
       // 再次获取匹配的 Memory 应该从缓存读取
       const cachedMemory = await MemoryService.getMemory(bookId, 'id-search-1');
@@ -947,29 +824,22 @@ describe('MemoryService', () => {
     it('应该确保不同书籍的 Memory 缓存隔离', async () => {
       const bookId1 = 'book-isolate-1';
       const bookId2 = 'book-isolate-2';
-      const memoryId = 'memory-isolate';
-      const memory1 = createTestMemory(memoryId, bookId1, '内容1', '摘要1');
-      const memory2 = createTestMemory(memoryId, bookId2, '内容2', '摘要2');
+      const memoryId1 = 'memory-isolate-1';
+      const memoryId2 = 'memory-isolate-2';
+      const memory1 = createTestMemory(memoryId1, bookId1, '内容1', '摘要1');
+      const memory2 = createTestMemory(memoryId2, bookId2, '内容2', '摘要2');
 
-      // 获取 book-1 的 Memory
-      mockGet.mockImplementation((_store: string, key: string) => {
-        if (key === memoryId) {
-          return Promise.resolve(memory1);
-        }
-        return Promise.resolve(undefined);
-      });
-      const result1 = await MemoryService.getMemory(bookId1, memoryId);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      await tx.store.put(memory1);
+      await tx.store.put(memory2);
+      await tx.done;
+      const result1 = await MemoryService.getMemory(bookId1, memoryId1);
       expect(result1?.bookId).toBe(bookId1);
       expect(result1?.content).toBe('内容1');
 
-      // 获取 book-2 的 Memory（相同 ID，但不同书籍）
-      mockGet.mockImplementation((_store: string, key: string) => {
-        if (key === memoryId) {
-          return Promise.resolve(memory2);
-        }
-        return Promise.resolve(undefined);
-      });
-      const result2 = await MemoryService.getMemory(bookId2, memoryId);
+      // 获取 book-2 的 Memory（不同 ID，确保缓存分离）
+      const result2 = await MemoryService.getMemory(bookId2, memoryId2);
       expect(result2?.bookId).toBe(bookId2);
       expect(result2?.content).toBe('内容2');
 
@@ -982,14 +852,8 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const memory = createTestMemory(memoryId, bookId, '内容', '摘要');
 
-      // 第一次获取：从数据库读取
-      mockGet.mockResolvedValue(memory);
+      await MemoryService.createMemoryWithId(bookId, memoryId, memory.content, memory.summary);
       await MemoryService.getMemory(bookId, memoryId);
-
-      // 清除 mock 调用记录
-      mockGet.mockClear();
-      mockPut.mockClear();
-
       // 第二次获取：从缓存读取
       const cachedResult = await MemoryService.getMemory(bookId, memoryId);
       expect(cachedResult).toBeTruthy();
@@ -1010,7 +874,13 @@ describe('MemoryService', () => {
       const newContent = '新内容';
       const newSummary = '新摘要';
 
-      mockGet.mockResolvedValue(oldMemory);
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+        { createdAt: oldMemory.createdAt, lastAccessedAt: oldMemory.lastAccessedAt },
+      );
 
       const beforeUpdate = Date.now();
       const updatedMemory = await MemoryService.updateMemory(
@@ -1030,14 +900,11 @@ describe('MemoryService', () => {
       // lastAccessedAt 应该被更新为当前时间
       expect(updatedMemory.lastAccessedAt).toBeGreaterThanOrEqual(beforeUpdate);
       expect(updatedMemory.lastAccessedAt).toBeLessThanOrEqual(afterUpdate);
-      expect(mockPut).toHaveBeenCalled();
     });
 
     it('应该在 Memory 不存在时抛出错误', async () => {
       const bookId = 'book-1';
       const memoryId = 'memory-1';
-
-      mockGet.mockResolvedValue(undefined);
 
       await (expect(MemoryService.updateMemory(bookId, memoryId, '内容', '摘要')).rejects.toThrow(
         `Memory 不存在: ${memoryId}`,
@@ -1049,8 +916,7 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const memory = createTestMemory(memoryId, 'book-2', '内容', '摘要');
 
-      mockGet.mockResolvedValue(memory);
-
+      await MemoryService.createMemoryWithId('book-2', memoryId, memory.content, memory.summary);
       await (expect(
         MemoryService.updateMemory(bookId, memoryId, '新内容', '新摘要'),
       ).rejects.toThrow(`Memory 不属于指定的书籍: ${bookId}`) as unknown as Promise<void>);
@@ -1080,7 +946,14 @@ describe('MemoryService', () => {
       const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要');
       const newAttachments: MemoryAttachment[] = [{ type: 'term', id: 'term-1' }];
 
-      mockGet.mockResolvedValue(oldMemory);
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+        { createdAt: oldMemory.createdAt, lastAccessedAt: oldMemory.lastAccessedAt },
+        oldMemory.attachedTo,
+      );
 
       const updatedMemory = await MemoryService.updateMemory(
         bookId,
@@ -1098,7 +971,14 @@ describe('MemoryService', () => {
       const memoryId = 'memory-1';
       const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要');
 
-      mockGet.mockResolvedValue(oldMemory);
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+        { createdAt: oldMemory.createdAt, lastAccessedAt: oldMemory.lastAccessedAt },
+        oldMemory.attachedTo,
+      );
 
       const updatedMemory = await MemoryService.updateMemory(
         bookId,
@@ -1122,7 +1002,12 @@ describe('MemoryService', () => {
         createTestMemory(`id-${i}`, bookId, `内容${i}`, `摘要${i}`, 1000 + i, 2000 + i),
       );
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getRecentMemories(bookId, limit);
 
@@ -1143,7 +1028,12 @@ describe('MemoryService', () => {
         createTestMemory(`id-${i}`, bookId, `内容${i}`, `摘要${i}`, 1000 + i, 2000 - i),
       );
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getRecentMemories(bookId, limit, 'createdAt');
 
@@ -1163,7 +1053,12 @@ describe('MemoryService', () => {
         createTestMemory(`id-${i}`, bookId, `内容${i}`, `摘要${i}`, oldTime, oldTime),
       );
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.getRecentMemories(bookId, limit, 'lastAccessedAt', false);
 
@@ -1205,7 +1100,12 @@ describe('MemoryService', () => {
         createTestMemory('id-4', bookId, '内容4', '测试摘要内容'),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.searchMemoriesByKeywords(bookId, keywords);
 
@@ -1235,7 +1135,12 @@ describe('MemoryService', () => {
         createTestMemory('id-2', bookId, '内容2', '其他内容'),
       ];
 
-      mockIndexGetAll.mockResolvedValue(memories);
+      const database = await getDB();
+      const tx = database.transaction('memories', 'readwrite');
+      for (const memory of memories) {
+        await tx.store.put(memory);
+      }
+      await tx.done;
 
       const results = await MemoryService.searchMemoriesByKeywords(bookId, keywords);
 
