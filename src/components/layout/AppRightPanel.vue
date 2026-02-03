@@ -610,7 +610,17 @@ const hideSessionListPopover = () => {
 const recentSessions = computed(() => {
   const allSessions = chatSessionsStore.allSessions;
   const currentSessionId = chatSessionsStore.currentSessionId;
-  return allSessions.filter((session) => session.id !== currentSessionId).slice(0, 5);
+  const currentBookId = contextStore.getContext.currentBookId;
+
+  return allSessions
+    .filter((session) => {
+      // 过滤掉当前会话
+      if (session.id === currentSessionId) return false;
+      // 仅保留与当前书籍 ID 匹配的会话（如果当前没有书籍 ID，则保留无书籍 ID 的会话）
+      return session.context?.bookId === currentBookId;
+    })
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 5);
 });
 
 // 切换到指定会话
@@ -3477,6 +3487,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                   style="
                     display: -webkit-box;
                     -webkit-line-clamp: 2;
+                    line-clamp: 2;
                     -webkit-box-orient: vertical;
                     overflow: hidden;
                     word-break: break-all;
