@@ -1,6 +1,7 @@
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
-import { MemoryService } from '../services/memory-service';
+import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import type { Memory, MemoryAttachment } from '../models/memory';
+import * as indexedDb from 'src/utils/indexed-db';
+import { MemoryService } from '../services/memory-service';
 
 // Mock IndexedDB
 const mockStoreGet = mock((_key: string) => Promise.resolve(undefined as unknown));
@@ -91,10 +92,17 @@ const mockDb = {
   transaction: mockTransaction,
 };
 
-// Mock the module
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
+let getDbSpy: ReturnType<typeof spyOn> | null = null;
+
+async function waitForMockCall(
+  mockFn: { mock: { calls: unknown[][] } },
+  timeoutMs: number = 200,
+): Promise<void> {
+  const start = Date.now();
+  while (mockFn.mock.calls.length === 0 && Date.now() - start < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 // 辅助函数：创建测试用 Memory
 function createTestMemory(
@@ -120,6 +128,9 @@ function createTestMemory(
 
 describe('MemoryService', () => {
   beforeEach(() => {
+    getDbSpy = spyOn(indexedDb, 'getDB').mockResolvedValue(
+      mockDb as unknown as Awaited<ReturnType<typeof indexedDb.getDB>>,
+    );
     // 重置所有 mock
     mockPut.mockClear();
     mockGet.mockClear();
@@ -146,6 +157,11 @@ describe('MemoryService', () => {
     if (service.searchResultCache) {
       service.searchResultCache.clear();
     }
+  });
+
+  afterEach(() => {
+    getDbSpy = null;
+    mock.restore();
   });
 
   describe('createMemory', () => {
@@ -439,7 +455,7 @@ describe('MemoryService', () => {
 
       expect(results).toHaveLength(1);
       // 等待异步更新完成
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForMockCall(mockTransactionStorePut);
       // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
       // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
       expect(mockTransactionStorePut).toHaveBeenCalled();
@@ -625,7 +641,7 @@ describe('MemoryService', () => {
 
       await MemoryService.getMemoriesByAttachment(bookId, attachment);
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForMockCall(mockTransactionStorePut);
       expect(mockTransactionStorePut).toHaveBeenCalled();
     });
   });
@@ -686,7 +702,7 @@ describe('MemoryService', () => {
 
       await MemoryService.getMemoriesByAttachments(bookId, attachments);
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForMockCall(mockTransactionStorePut);
       expect(mockTransactionStorePut).toHaveBeenCalled();
     });
 
@@ -791,7 +807,7 @@ describe('MemoryService', () => {
 
       expect(results).toHaveLength(1);
       // 等待异步更新完成
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForMockCall(mockTransactionStorePut);
       // 注意：lastAccessedAt 的更新是异步的，所以返回的结果可能还是旧值
       // 但应该调用了 transaction.objectStore().put 来更新 lastAccessedAt
       expect(mockTransactionStorePut).toHaveBeenCalled();

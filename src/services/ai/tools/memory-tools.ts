@@ -1,7 +1,6 @@
 import { MemoryService } from 'src/services/memory-service';
 import { useBooksStore } from 'src/stores/books';
-import type { ToolDefinition } from './types';
-import type { ToolContext } from './types';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 
 /**
  * 验证 attached_to 实体是否存在
@@ -11,7 +10,7 @@ import type { ToolContext } from './types';
  */
 function validateAttachedToEntities(
   bookId: string,
-  attachedTo?: Array<{ type: string; id: string }>,
+  attachedTo?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>,
 ): { valid: boolean; errors: string[] } {
   if (!attachedTo || attachedTo.length === 0) {
     return { valid: true, errors: [] };
@@ -68,8 +67,11 @@ function validateAttachedToEntities(
         break;
       }
 
-      default:
-        errors.push(`未知的附件类型: "${type}"`);
+      default: {
+        const unknownType = type as string;
+        errors.push(`未知的附件类型: "${unknownType}"`);
+        break;
+      }
     }
   }
 
@@ -77,16 +79,14 @@ function validateAttachedToEntities(
 }
 
 function createListMemoriesHandler(toolName: 'list_memories') {
-  return async (
-    args: {
+  return async (args: Record<string, unknown>, context: ToolContext) => {
+    const { bookId, onAction } = context;
+    const parsedArgs = parseToolArgs<{
       offset?: number;
       limit?: number;
       sort_by?: string;
       include_content?: boolean;
-    },
-    context: ToolContext,
-  ) => {
-    const { bookId, onAction } = context;
+    }>(args);
     if (!bookId) {
       return JSON.stringify({
         success: false,
@@ -99,7 +99,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
       limit = 20,
       sort_by = 'lastAccessedAt',
       include_content = false,
-    } = args ?? {};
+    } = parsedArgs;
 
     const validOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const validLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 20)), 100);
@@ -218,14 +218,16 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ memory_id: string }>(args);
       if (!bookId) {
         return JSON.stringify({
           success: false,
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id } = args;
+      const { memory_id } = parsedArgs;
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -304,7 +306,9 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { keywords } = args;
+      const { keywords } = args as {
+        keywords: string[];
+      };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         return JSON.stringify({
           success: false,
@@ -412,7 +416,11 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { content, summary, attached_to } = args;
+      const { content, summary, attached_to } = args as {
+        content: string;
+        summary: string;
+        attached_to?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>;
+      };
       if (!content) {
         return JSON.stringify({
           success: false,
@@ -526,7 +534,12 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id, content, summary, attached_to } = args;
+      const { memory_id, content, summary, attached_to } = args as {
+        memory_id: string;
+        content: string;
+        summary: string;
+        attached_to?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>;
+      };
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -632,7 +645,9 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id } = args;
+      const { memory_id } = args as {
+        memory_id: string;
+      };
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -703,7 +718,13 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        limit?: number;
+        sort_by?: string;
+      }>(args);
+
       if (!bookId) {
         return JSON.stringify({
           success: false,
@@ -711,7 +732,7 @@ export const memoryTools: ToolDefinition[] = [
         });
       }
 
-      const { limit = 10, sort_by = 'lastAccessedAt' } = args;
+      const { limit = 10, sort_by = 'lastAccessedAt' } = parsedArgs;
       const validLimit = Math.min(Math.max(1, Math.floor(limit || 10)), 50); // 限制在 1-50 之间
       const validSortBy = sort_by === 'createdAt' ? 'createdAt' : 'lastAccessedAt';
 

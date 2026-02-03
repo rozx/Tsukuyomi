@@ -331,7 +331,13 @@ export const paragraphTools: ToolDefinition[] = [
         include_next = false,
         previous_count = 3,
         next_count = 3,
-      } = args;
+      } = args as {
+        paragraph_id: string;
+        include_previous?: boolean;
+        include_next?: boolean;
+        previous_count?: number;
+        next_count?: number;
+      };
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -491,7 +497,10 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, include_memory = true } = args;
+      const { paragraph_id, include_memory = true } = args as {
+        paragraph_id: string;
+        include_memory?: boolean;
+      };
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -615,7 +624,15 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, count = 3, include_memory = true } = args;
+      const {
+        paragraph_id,
+        count = 3,
+        include_memory = true,
+      } = args as {
+        paragraph_id: string;
+        count?: number;
+        include_memory?: boolean;
+      };
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -745,7 +762,15 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, count = 3, include_memory = true } = args;
+      const {
+        paragraph_id,
+        count = 3,
+        include_memory = true,
+      } = args as {
+        paragraph_id: string;
+        count?: number;
+        include_memory?: boolean;
+      };
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -903,7 +928,14 @@ export const paragraphTools: ToolDefinition[] = [
         max_paragraphs = 1,
         only_with_translation = false,
         include_memory = true,
-      } = args;
+      } = args as {
+        keywords?: string[];
+        translation_keywords?: string[];
+        chapter_id?: string;
+        max_paragraphs?: number;
+        only_with_translation?: boolean;
+        include_memory?: boolean;
+      };
 
       // 验证至少提供一个关键词数组
       if (
@@ -959,7 +991,7 @@ export const paragraphTools: ToolDefinition[] = [
         try {
           const { FullTextIndexService } = await import('src/services/full-text-index-service');
           const indexResults = await FullTextIndexService.search(bookId, validKeywords, {
-            chapterId: chapter_id,
+            ...(chapter_id ? { chapterId: chapter_id } : {}),
             maxResults: max_paragraphs * validKeywords.length * 2, // 增加搜索数量以应对去重和后续过滤
             onlyWithTranslation: only_with_translation,
             searchInOriginal: true,
@@ -982,7 +1014,7 @@ export const paragraphTools: ToolDefinition[] = [
             const results = await ChapterService.searchParagraphsByKeywordAsync(
               book,
               keyword,
-              chapter_id,
+              chapter_id || undefined,
               max_paragraphs * validKeywords.length, // 增加搜索数量以应对去重
               only_with_translation,
             );
@@ -1339,7 +1371,13 @@ export const paragraphTools: ToolDefinition[] = [
         max_paragraphs = 1,
         only_with_translation = false,
         search_in_translation = false,
-      } = args;
+      } = args as {
+        regex_pattern: string;
+        chapter_id?: string;
+        max_paragraphs?: number;
+        only_with_translation?: boolean;
+        search_in_translation?: boolean;
+      };
       if (
         !regex_pattern ||
         typeof regex_pattern !== 'string' ||
@@ -1381,7 +1419,7 @@ export const paragraphTools: ToolDefinition[] = [
       const results = await ChapterService.searchParagraphsByRegexAsync(
         book,
         regex_pattern.trim(),
-        chapter_id,
+        chapter_id || undefined,
         max_paragraphs,
         only_with_translation,
         search_in_translation,
@@ -1460,7 +1498,10 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, include_memory = true } = args;
+      const { paragraph_id, include_memory = true } = args as {
+        paragraph_id: string;
+        include_memory?: boolean;
+      };
       if (!paragraph_id) {
         throw new Error('段落 ID 不能为空');
       }
@@ -1560,7 +1601,11 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, translation_id, new_translation } = args;
+      const { paragraph_id, translation_id, new_translation } = args as {
+        paragraph_id: string;
+        translation_id: string;
+        new_translation: string;
+      };
       if (!paragraph_id || !translation_id || !new_translation) {
         throw new Error('段落 ID、翻译 ID 和新翻译内容不能为空');
       }
@@ -1669,7 +1714,10 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, translation_id } = args;
+      const { paragraph_id, translation_id } = args as {
+        paragraph_id: string;
+        translation_id: string;
+      };
       if (!paragraph_id || !translation_id) {
         throw new Error('段落 ID 和翻译 ID 不能为空');
       }
@@ -1775,7 +1823,17 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, translation, ai_model_id, set_as_selected = true } = args;
+      const {
+        paragraph_id,
+        translation,
+        ai_model_id,
+        set_as_selected = true,
+      } = args as {
+        paragraph_id: string;
+        translation: string;
+        ai_model_id?: string;
+        set_as_selected?: boolean;
+      };
       if (!paragraph_id || !translation) {
         throw new Error('段落 ID 和翻译内容不能为空');
       }
@@ -1912,7 +1970,10 @@ export const paragraphTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { paragraph_id, translation_id } = args;
+      const { paragraph_id, translation_id } = args as {
+        paragraph_id: string;
+        translation_id: string;
+      };
       if (!paragraph_id || !translation_id) {
         throw new Error('段落 ID 和翻译 ID 不能为空');
       }
@@ -2067,7 +2128,14 @@ export const paragraphTools: ToolDefinition[] = [
         chapter_id,
         replace_all_translations = false,
         max_replacements = 100,
-      } = args;
+      } = args as {
+        keywords?: string[];
+        original_keywords?: string[];
+        replacement_text: string;
+        chapter_id?: string;
+        replace_all_translations?: boolean;
+        max_replacements?: number;
+      };
       if (!replacement_text || typeof replacement_text !== 'string') {
         throw new Error('替换文本不能为空');
       }
@@ -2329,7 +2397,7 @@ export const paragraphTools: ToolDefinition[] = [
 
         if (searchKeywords.length > 0) {
           const indexResults = await FullTextIndexService.search(bookId, searchKeywords, {
-            chapterId: chapter_id,
+            ...(chapter_id ? { chapterId: chapter_id } : {}),
             maxResults: max_replacements * 2, // 获取更多结果以便后续过滤
             onlyWithTranslation: validKeywords.length > 0, // 如果搜索翻译关键词，只返回有翻译的段落
             searchInOriginal: validOriginalKeywords.length > 0,

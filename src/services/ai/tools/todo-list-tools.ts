@@ -30,7 +30,10 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction, taskId, sessionId }) => {
-      const { text, items } = args;
+      const { text, items } = args as {
+        text?: string;
+        items?: string[];
+      };
       if (!taskId) {
         throw new Error(
           '任务 ID 未提供，待办事项必须关联到 AI 任务。这通常表示服务层未正确传递任务上下文。',
@@ -166,7 +169,12 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id, text, completed, items } = args;
+      const { id, text, completed, items } = args as {
+        id?: string;
+        text?: string;
+        completed?: boolean;
+        items?: Array<{ id: string; text?: string; completed?: boolean }>;
+      };
 
       // 支持两种模式：单个更新（id）或批量更新（items）
       // 优先检查 items 参数（如果提供了有效的数组）
@@ -274,7 +282,9 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id } = args;
+      const { id } = args as {
+        id: string;
+      };
       if (!id) {
         throw new Error('待办事项 ID 不能为空');
       }
@@ -322,7 +332,9 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id } = args;
+      const { id } = args as {
+        id: string;
+      };
       if (!id) {
         throw new Error('待办事项 ID 不能为空');
       }
@@ -374,7 +386,9 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { taskId, sessionId }) => {
-      const { filter = 'all' } = args;
+      const { filter = 'all' } = args as {
+        filter?: 'all' | 'active' | 'completed';
+      };
 
       if (!taskId) {
         throw new Error('任务 ID 未提供，无法列出待办事项。这通常表示服务层未正确传递任务上下文。');

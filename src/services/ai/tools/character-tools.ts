@@ -2,7 +2,7 @@
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
-import type { ToolDefinition } from './types';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
@@ -35,7 +35,8 @@ export const characterTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '角色的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description:
+                '角色的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
             speaking_style: {
               type: 'string',
@@ -66,11 +67,20 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        name: string;
+        translation: string;
+        sex?: string;
+        description?: string;
+        speaking_style?: string;
+        aliases?: Array<{ name: string; translation: string }>;
+      }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, translation, sex, description, speaking_style, aliases } = args;
+      const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (!name || !translation) {
         throw new Error('角色名称和翻译不能为空');
       }
@@ -119,7 +129,7 @@ export const characterTools: ToolDefinition[] = [
           sex: character.sex,
           description: character.description,
           speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
+          aliases: character.aliases?.map((alias: any) => ({
             name: alias.name,
             translation: alias.translation.translation,
           })),
@@ -150,11 +160,13 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ name: string; include_memory?: boolean }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, include_memory = true } = args;
+      const { name, include_memory = true } = parsedArgs;
       if (!name) {
         throw new Error('角色名称不能为空');
       }
@@ -247,7 +259,8 @@ export const characterTools: ToolDefinition[] = [
             },
             description: {
               type: 'string',
-              description: '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description:
+                '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
             speaking_style: {
               type: 'string',
@@ -277,11 +290,22 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        character_id: string;
+        name?: string;
+        translation?: string;
+        sex?: string;
+        description?: string;
+        speaking_style?: string;
+        aliases?: Array<{ name: string; translation: string }>;
+      }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { character_id, name, translation, sex, description, speaking_style, aliases } = args;
+      const { character_id, name, translation, sex, description, speaking_style, aliases } =
+        parsedArgs;
       if (!character_id) {
         throw new Error('角色 ID 不能为空');
       }
@@ -318,7 +342,7 @@ export const characterTools: ToolDefinition[] = [
       }
       if (aliases !== undefined) {
         updates.aliases = (aliases as Array<{ name: string; translation: string }>).map(
-          (alias) => ({
+          (alias: { name: string; translation: string }) => ({
             name: alias.name,
             translation: normalizeTranslationQuotes(alias.translation),
           }),
@@ -376,11 +400,13 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ character_id: string }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { character_id } = args;
+      const { character_id } = parsedArgs;
       if (!character_id) {
         throw new Error('角色 ID 不能为空');
       }
@@ -438,11 +464,17 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        keywords: string[];
+        translation_only?: boolean;
+        include_memory?: boolean;
+      }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keywords, translation_only = false, include_memory = true } = args;
+      const { keywords, translation_only = false, include_memory = true } = parsedArgs;
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -510,12 +542,7 @@ export const characterTools: ToolDefinition[] = [
           type: 'character' as const,
           id: char.id,
         }));
-        relatedMemories = await searchRelatedMemoriesHybrid(
-          bookId,
-          attachments,
-          validKeywords,
-          5,
-        );
+        relatedMemories = await searchRelatedMemoriesHybrid(bookId, attachments, validKeywords, 5);
       }
 
       return JSON.stringify({
@@ -568,11 +595,17 @@ export const characterTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        chapter_id?: string;
+        all_chapters?: boolean;
+        limit?: number;
+      }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { chapter_id, all_chapters = false, limit } = args;
+      const { chapter_id, all_chapters = false, limit } = parsedArgs;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {

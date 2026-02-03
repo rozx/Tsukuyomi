@@ -21,6 +21,28 @@ interface AddTranslationBatchArgs {
   paragraphs: TranslationBatchItem[];
 }
 
+// ============ Constants ============
+
+const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
+
+// 错误消息常量
+const ERROR_MESSAGES = {
+  MISSING_IDENTIFIER: '必须提供 index 或 paragraph_id',
+  MISSING_CHUNK_LIST: '提供了 index 但没有可用的 chunk 段落列表',
+  INDEX_OUT_OF_RANGE: (index: number, max: number) =>
+    `索引 ${index} 超出范围（有效范围: 0-${max}）`,
+  EMPTY_PARAGRAPH_LIST: '段落列表不能为空',
+  BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
+    `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
+  EMPTY_PARAGRAPH_ITEM: (index: number) => `批次中第 ${index + 1} 个段落项为空`,
+  INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
+  MISSING_TRANSLATION: (index: number) =>
+    `批次中第 ${index + 1} 个段落缺少翻译文本 (translated_text)`,
+  DUPLICATE_PARAGRAPHS: (ids: string[]) => `批次中存在重复的段落 ID: ${ids.join(', ')}`,
+  OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
+    `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
+} as const;
+
 /**
  * 解析段落标识符（优先 paragraph_id，其次 index）
  */
@@ -32,23 +54,19 @@ function resolveParagraphId(
     return { id: item.paragraph_id };
   }
   if (typeof item.index !== 'number') {
-    return { id: null, error: '必须提供 index 或 paragraph_id' };
+    return { id: null, error: ERROR_MESSAGES.MISSING_IDENTIFIER };
   }
   if (!chunkParagraphIds || chunkParagraphIds.length === 0) {
-    return { id: null, error: '提供了 index 但没有可用的 chunk 段落列表' };
+    return { id: null, error: ERROR_MESSAGES.MISSING_CHUNK_LIST };
   }
   if (item.index < 0 || item.index >= chunkParagraphIds.length) {
     return {
       id: null,
-      error: `索引 ${item.index} 超出范围（有效范围: 0-${chunkParagraphIds.length - 1}）`,
+      error: ERROR_MESSAGES.INDEX_OUT_OF_RANGE(item.index, chunkParagraphIds.length - 1),
     };
   }
   return { id: chunkParagraphIds[item.index]! };
 }
-
-// ============ Constants ============
-
-const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
 
 // ============ Status Validation ============
 
@@ -103,7 +121,7 @@ function validateBatchArgs(
   if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
     return {
       valid: false,
-      error: '段落列表不能为空',
+      error: ERROR_MESSAGES.EMPTY_PARAGRAPH_LIST,
     };
   }
 
@@ -111,7 +129,7 @@ function validateBatchArgs(
   if (paragraphs.length > MAX_BATCH_SIZE) {
     return {
       valid: false,
-      error: `单次批次最多支持 ${MAX_BATCH_SIZE} 个段落，当前批次包含 ${paragraphs.length} 个段落`,
+      error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, MAX_BATCH_SIZE),
     };
   }
 
@@ -123,7 +141,7 @@ function validateBatchArgs(
     if (!item) {
       return {
         valid: false,
-        error: `批次中第 ${i + 1} 个段落项为空`,
+        error: ERROR_MESSAGES.EMPTY_PARAGRAPH_ITEM(i),
       };
     }
 
@@ -132,7 +150,7 @@ function validateBatchArgs(
     if (error || !id) {
       return {
         valid: false,
-        error: `批次中第 ${i + 1} 个段落: ${error || '无效的段落标识'}`,
+        error: ERROR_MESSAGES.INVALID_PARAGRAPH(i, error || '无效的段落标识'),
       };
     }
 
@@ -141,7 +159,7 @@ function validateBatchArgs(
     if (!item.translated_text || typeof item.translated_text !== 'string') {
       return {
         valid: false,
-        error: `批次中第 ${i + 1} 个段落缺少翻译文本 (translated_text)`,
+        error: ERROR_MESSAGES.MISSING_TRANSLATION(i),
       };
     }
   }
@@ -191,7 +209,7 @@ function validateParagraphsInRange(
   if (invalidIds.length > 0) {
     return {
       valid: false,
-      error: `以下段落不在当前任务范围内: ${invalidIds.slice(0, 5).join(', ')}${invalidIds.length > 5 ? ` 等 ${invalidIds.length} 个段落` : ''}`,
+      error: ERROR_MESSAGES.OUT_OF_RANGE_PARAGRAPHS(invalidIds, invalidIds.length),
     };
   }
 
@@ -377,7 +395,7 @@ export const translationTools: ToolDefinition[] = [
     },
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction, chunkBoundaries, taskId, aiProcessingStore } = context;
-      const { paragraphs } = args as AddTranslationBatchArgs;
+      const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
       // 验证任务状态 - 只能在 working 状态下调用
       const statusValidation = validateTaskStatus(aiProcessingStore, taskId);
@@ -404,7 +422,7 @@ export const translationTools: ToolDefinition[] = [
       if (duplicateCheck.hasDuplicates) {
         return JSON.stringify({
           success: false,
-          error: `批次中存在重复的段落 ID: ${duplicateCheck.duplicates.join(', ')}`,
+          error: ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates),
         });
       }
 

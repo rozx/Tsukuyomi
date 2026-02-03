@@ -2,6 +2,7 @@ import type { Terminology, CharacterSetting, Translation } from 'src/models/nove
 import type { Memory } from 'src/models/memory';
 import type { TodoItem } from 'src/services/todo-list-service';
 import type { AITool } from 'src/services/ai/types/ai-service';
+import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import type { ToastCallback } from './toast-helper';
 
 export interface ActionInfo {
@@ -143,14 +144,23 @@ export interface ToolContext {
    * AI 处理 Store（可选）
    * 用于任务状态工具访问和更新任务状态
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  aiProcessingStore?: any;
+  aiProcessingStore?: AIProcessingStore;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ToolHandler = (args: any, context: ToolContext) => Promise<string> | string;
+export type ToolHandler = (
+  args: Record<string, unknown>,
+  context: ToolContext,
+) => Promise<string> | string;
 
 export interface ToolDefinition {
   definition: AITool;
   handler: ToolHandler;
+}
+
+/**
+ * 类型辅助函数：安全地将 Record<string, unknown> 转换为具体类型
+ * 用于工具 handler 中提取参数
+ */
+export function parseToolArgs<T>(args: Record<string, unknown>): T {
+  return args as unknown as T;
 }

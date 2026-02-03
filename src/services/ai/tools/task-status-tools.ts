@@ -92,7 +92,15 @@ function getTaskCurrentStatus(
   }
 
   const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
-  return task?.workflowStatus as TaskStatus | undefined;
+  const status = task?.workflowStatus;
+
+  // 验证状态值有效性
+  if (status !== undefined && !isValidStatus(status)) {
+    console.warn(`[getTaskCurrentStatus] 无效的状态值: ${String(status)}，任务ID: ${taskId}`);
+    return undefined;
+  }
+
+  return status;
 }
 
 /**
@@ -141,7 +149,7 @@ export const taskStatusTools: ToolDefinition[] = [
     },
     handler: async (args, context: ToolContext) => {
       const { taskId, onAction } = context;
-      const { status, reason } = args as { status: string; reason?: string };
+      const { status, reason: _reason } = args as { status: string; reason?: string };
 
       // 验证状态值
       if (!isValidStatus(status)) {
@@ -153,7 +161,7 @@ export const taskStatusTools: ToolDefinition[] = [
 
       // 获取 AI 处理 Store（由服务层注入）
       // 限制：当前工具只能在提供 aiProcessingStore 的调用链中使用（已在文档记录）
-      const aiProcessingStore = context.aiProcessingStore as AIProcessingStore | undefined;
+      const aiProcessingStore = context.aiProcessingStore;
 
       if (!taskId) {
         return JSON.stringify({

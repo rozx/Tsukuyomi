@@ -75,8 +75,12 @@ describe('stream-handler', () => {
       const config = createConfig();
       const callback = createStreamCallback(config);
 
-      // Simulate large output
-      const largeChunk = 'x'.repeat(10000);
+      // Simulate large output with varied text to avoid triggering degradation detection
+      const sentences = Array.from(
+        { length: 100 },
+        (_, i) => `This is sentence number ${i} with some varied content. `,
+      );
+      const largeChunk = sentences.join('');
 
       for (let i = 0; i < 10; i++) {
         await callback({ text: largeChunk, done: false });

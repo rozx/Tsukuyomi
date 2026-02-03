@@ -4,7 +4,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
-import type { ToolDefinition, ToolContext } from './types';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import type { Chapter, Novel } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 
@@ -30,6 +30,7 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
 
       if (!bookId) {
         return JSON.stringify({
@@ -95,7 +96,7 @@ export const bookTools: ToolDefinition[] = [
         };
 
         // 搜索相关记忆（使用书籍标题和作者作为关键词）
-        const { include_memory = true } = args;
+        const { include_memory = true } = parsedArgs;
         let relatedMemories: Array<{ id: string; summary: string }> = [];
         if (include_memory && bookId) {
           const keywords: string[] = [];
@@ -148,10 +149,11 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { limit, offset = 0 } = args;
+      const { limit, offset = 0 } = parsedArgs;
 
       try {
         const book = await BookService.getBookById(bookId);
@@ -249,10 +251,11 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { volume_ids } = args;
+      const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
         return JSON.stringify({ success: false, error: '必须提供有效的 volume_ids 列表' });
@@ -353,10 +356,11 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ keywords: string[]; limit?: number }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { keywords, limit = 10 } = args;
+      const { keywords, limit = 10 } = parsedArgs;
 
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         return JSON.stringify({ success: false, error: '必须提供搜索关键词' });
@@ -457,10 +461,11 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ chapter_id: string; include_memory?: boolean }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, include_memory = true } = args;
+      const { chapter_id, include_memory = true } = parsedArgs;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -628,10 +633,15 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        include_memory?: boolean;
+        summary_only?: boolean;
+      }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, include_memory = true, summary_only = false } = args;
+      const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -763,10 +773,15 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        include_memory?: boolean;
+        summary_only?: boolean;
+      }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, include_memory = true, summary_only = false } = args;
+      const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -898,10 +913,15 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        title_original?: string;
+        title_translation?: string;
+      }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { chapter_id, title_original, title_translation } = args;
+      const { chapter_id, title_original, title_translation } = parsedArgs;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -961,7 +981,7 @@ export const bookTools: ToolDefinition[] = [
                 aiModelId: '',
               },
             };
-          } else {
+          } else if (title_translation) {
             // 只更新翻译
             updatedTitle = {
               original: existingChapter.title,
@@ -971,6 +991,9 @@ export const bookTools: ToolDefinition[] = [
                 aiModelId: '',
               },
             };
+          } else {
+            // 不应该到达这里，因为前面有逻辑检查
+            updatedTitle = existingChapter.title;
           }
         } else {
           // 新数据格式
@@ -993,7 +1016,7 @@ export const bookTools: ToolDefinition[] = [
               original: title_original.trim(),
               translation: existingChapter.title.translation,
             };
-          } else {
+          } else if (title_translation) {
             // 只更新翻译
             updatedTitle = {
               original: existingChapter.title.original,
@@ -1008,6 +1031,9 @@ export const bookTools: ToolDefinition[] = [
                     aiModelId: '',
                   },
             };
+          } else {
+            // 不应该发生
+            updatedTitle = existingChapter.title;
           }
         }
 
@@ -1108,6 +1134,12 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        description?: string;
+        tags?: string[];
+        author?: string;
+        alternate_titles?: string[];
+      }>(args);
 
       if (!bookId) {
         return JSON.stringify({
@@ -1116,7 +1148,7 @@ export const bookTools: ToolDefinition[] = [
         });
       }
 
-      const { description, tags, author, alternate_titles } = args;
+      const { description, tags, author, alternate_titles } = parsedArgs;
 
       // 检查是否至少提供了一个要更新的字段
       if (

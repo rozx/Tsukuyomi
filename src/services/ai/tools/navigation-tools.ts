@@ -33,7 +33,9 @@ export const navigationTools: ToolDefinition[] = [
         });
       }
 
-      const { chapter_id } = args;
+      const { chapter_id } = args as {
+        chapter_id: string;
+      };
       if (!chapter_id) {
         return JSON.stringify({
           success: false,
@@ -130,7 +132,9 @@ export const navigationTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph_id } = args;
+      const { paragraph_id } = args as {
+        paragraph_id: string;
+      };
       if (!paragraph_id) {
         return JSON.stringify({
           success: false,
@@ -190,4 +194,3 @@ export const navigationTools: ToolDefinition[] = [
     },
   },
 ];
-

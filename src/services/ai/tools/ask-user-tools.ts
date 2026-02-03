@@ -1,4 +1,4 @@
-import type { ToolDefinition, ToolContext } from './types';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import type {
   AskUserBatchPayload,
   AskUserBatchResult,
@@ -52,10 +52,11 @@ export const askUserTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args: AskUserPayload, context: ToolContext) => {
+    handler: async (args, context: ToolContext) => {
       const { onAction } = context;
+      const parsedArgs = parseToolArgs<AskUserPayload>(args);
 
-      const question = typeof args?.question === 'string' ? args.question.trim() : '';
+      const question = typeof parsedArgs?.question === 'string' ? parsedArgs.question.trim() : '';
       if (!question) {
         return JSON.stringify({ success: false, error: 'question 不能为空' });
       }
@@ -71,8 +72,8 @@ export const askUserTools: ToolDefinition[] = [
               tool_name: 'ask_user',
               question,
               cancelled: true,
-              ...(Array.isArray(args.suggested_answers)
-                ? { suggested_answers: args.suggested_answers }
+              ...(Array.isArray(parsedArgs.suggested_answers)
+                ? { suggested_answers: parsedArgs.suggested_answers }
                 : {}),
             },
           });
@@ -87,16 +88,22 @@ export const askUserTools: ToolDefinition[] = [
 
       const payload: AskUserPayload = {
         question,
-        ...(Array.isArray(args.suggested_answers)
-          ? { suggested_answers: args.suggested_answers }
+        ...(Array.isArray(parsedArgs.suggested_answers)
+          ? { suggested_answers: parsedArgs.suggested_answers }
           : {}),
-        ...(typeof args.allow_free_text === 'boolean'
-          ? { allow_free_text: args.allow_free_text }
+        ...(typeof parsedArgs.allow_free_text === 'boolean'
+          ? { allow_free_text: parsedArgs.allow_free_text }
           : {}),
-        ...(typeof args.placeholder === 'string' ? { placeholder: args.placeholder } : {}),
-        ...(typeof args.submit_label === 'string' ? { submit_label: args.submit_label } : {}),
-        ...(typeof args.cancel_label === 'string' ? { cancel_label: args.cancel_label } : {}),
-        ...(typeof args.max_length === 'number' ? { max_length: args.max_length } : {}),
+        ...(typeof parsedArgs.placeholder === 'string'
+          ? { placeholder: parsedArgs.placeholder }
+          : {}),
+        ...(typeof parsedArgs.submit_label === 'string'
+          ? { submit_label: parsedArgs.submit_label }
+          : {}),
+        ...(typeof parsedArgs.cancel_label === 'string'
+          ? { cancel_label: parsedArgs.cancel_label }
+          : {}),
+        ...(typeof parsedArgs.max_length === 'number' ? { max_length: parsedArgs.max_length } : {}),
       };
 
       // 通过全局桥接等待用户回答（类似 __lunaToast 的思路）
@@ -216,10 +223,11 @@ export const askUserTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args: AskUserBatchPayload, context: ToolContext) => {
+    handler: async (args, context: ToolContext) => {
       const { onAction } = context;
+      const parsedArgs = parseToolArgs<AskUserBatchPayload>(args);
 
-      const questions = Array.isArray(args?.questions) ? args.questions : [];
+      const questions = Array.isArray(parsedArgs?.questions) ? parsedArgs.questions : [];
       // 注意：ask-user store 会过滤空问题，但会保留原始 question_index（基于输入数组下标）。
       // 因此这里用于 action 记录的 questions 也必须保持“按原始下标对齐”的数组，避免后续通过
       // questions[question_index] 映射时发生错位/越界。

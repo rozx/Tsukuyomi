@@ -1,8 +1,12 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
-import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-import { MemoryService } from '../services/memory-service';
+import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import type { Memory, MemoryAttachment } from '../models/memory';
 
+// 模拟 MemoryService
+let mockSearchMemoriesByKeywords: ReturnType<typeof mock>;
+let mockGetMemoriesByAttachments: ReturnType<typeof mock>;
+
+// 动态导入的函数
 let searchRelatedMemories: (
   bookId: string,
   keywords: string[],
@@ -16,46 +20,42 @@ let searchRelatedMemoriesHybrid: (
 ) => Promise<Array<{ id: string; summary: string }>>;
 
 describe('searchRelatedMemories', () => {
-  let searchMemoriesByKeywordsSpy: ReturnType<typeof spyOn>;
-
   beforeEach(async () => {
-    // 清理其他测试设置的 module mock，确保我们拿到真实实现
-    mock.restore();
+    // 创建 mock 函数
+    mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
+    mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));
 
-    // 重新导入模块，获取最新的（未被 mock 的）实现
+    // 使用 mock.module 模拟 MemoryService 模块
+    // 注意：必须在导入依赖模块之前设置 mock
+    await mock.module('src/services/memory-service', () => ({
+      MemoryService: {
+        searchMemoriesByKeywords: mockSearchMemoriesByKeywords,
+        getMemoriesByAttachments: mockGetMemoriesByAttachments,
+      },
+    }));
+
+    // 在 mock 设置后动态导入依赖模块
     const memoryHelper = await import('../services/ai/tools/memory-helper');
     searchRelatedMemories = memoryHelper.searchRelatedMemories;
-
-    searchMemoriesByKeywordsSpy = spyOn(
-      MemoryService,
-      'searchMemoriesByKeywords',
-    ).mockResolvedValue([]);
-  });
-
-  afterEach(() => {
-    if (searchMemoriesByKeywordsSpy) {
-      searchMemoriesByKeywordsSpy.mockRestore();
-    }
-    // 确保不会影响其他测试
-    mock.restore();
+    searchRelatedMemoriesHybrid = memoryHelper.searchRelatedMemoriesHybrid;
   });
 
   test('应该返回空数组当 bookId 为空', async () => {
     const result = await searchRelatedMemories('', ['keyword']);
     expect(result).toEqual([]);
-    expect(searchMemoriesByKeywordsSpy).not.toHaveBeenCalled();
+    expect(mockSearchMemoriesByKeywords).not.toHaveBeenCalled();
   });
 
   test('应该返回空数组当 keywords 为空', async () => {
     const result = await searchRelatedMemories('book-1', []);
     expect(result).toEqual([]);
-    expect(searchMemoriesByKeywordsSpy).not.toHaveBeenCalled();
+    expect(mockSearchMemoriesByKeywords).not.toHaveBeenCalled();
   });
 
   test('应该返回空数组当 keywords 为 null', async () => {
     const result = await searchRelatedMemories('book-1', null as unknown as string[]);
     expect(result).toEqual([]);
-    expect(searchMemoriesByKeywordsSpy).not.toHaveBeenCalled();
+    expect(mockSearchMemoriesByKeywords).not.toHaveBeenCalled();
   });
 
   test('应该调用 MemoryService.searchMemoriesByKeywords 并返回简化的记忆', async () => {
@@ -89,11 +89,11 @@ describe('searchRelatedMemories', () => {
       },
     ];
 
-    searchMemoriesByKeywordsSpy.mockResolvedValue(mockMemories);
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(mockMemories));
 
     const result = await searchRelatedMemories('book-1', ['keyword1', 'keyword2']);
 
-    expect(searchMemoriesByKeywordsSpy).toHaveBeenCalledWith('book-1', ['keyword1', 'keyword2']);
+    expect(mockSearchMemoriesByKeywords).toHaveBeenCalledWith('book-1', ['keyword1', 'keyword2']);
     expect(result).toEqual([
       { id: 'memory-1', summary: '摘要1' },
       { id: 'memory-2', summary: '摘要2' },
@@ -109,12 +109,12 @@ describe('searchRelatedMemories', () => {
       bookId: 'book-1',
       content: `完整内容${i}`,
       summary: `摘要${i}`,
-      attachedTo: [{ type: 'book', id: 'book-1' }],
+      attachedTo: [{ type: 'book' as const, id: 'book-1' }],
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
     }));
 
-    searchMemoriesByKeywordsSpy.mockResolvedValue(mockMemories);
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(mockMemories));
 
     const result = await searchRelatedMemories('book-1', ['keyword'], 5);
 
@@ -129,12 +129,12 @@ describe('searchRelatedMemories', () => {
       bookId: 'book-1',
       content: `完整内容${i}`,
       summary: `摘要${i}`,
-      attachedTo: [{ type: 'book', id: 'book-1' }],
+      attachedTo: [{ type: 'book' as const, id: 'book-1' }],
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
     }));
 
-    searchMemoriesByKeywordsSpy.mockResolvedValue(mockMemories);
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(mockMemories));
 
     const result = await searchRelatedMemories('book-1', ['keyword']);
 
@@ -142,17 +142,23 @@ describe('searchRelatedMemories', () => {
   });
 
   test('应该静默处理错误并返回空数组', async () => {
-    const consoleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {});
-    searchMemoriesByKeywordsSpy.mockRejectedValue(new Error('Database error'));
+    const originalWarn = console.warn;
+    const warnCalls: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
+    };
+
+    mockSearchMemoriesByKeywords.mockImplementation(() =>
+      Promise.reject(new Error('Database error')),
+    );
 
     const result = await searchRelatedMemories('book-1', ['keyword']);
 
     expect(result).toEqual([]);
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      'Failed to search related memories:',
-      expect.any(Error),
-    );
-    consoleWarnSpy.mockRestore();
+    expect(warnCalls.length).toBeGreaterThan(0);
+    expect(warnCalls[0]?.[0]).toBe('Failed to search related memories:');
+
+    console.warn = originalWarn;
   });
 
   test('应该只返回 id 和 summary，不返回其他字段', async () => {
@@ -168,7 +174,7 @@ describe('searchRelatedMemories', () => {
       },
     ];
 
-    searchMemoriesByKeywordsSpy.mockResolvedValue(mockMemories);
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(mockMemories));
 
     const result = await searchRelatedMemories('book-1', ['keyword']);
 
@@ -184,33 +190,23 @@ describe('searchRelatedMemories', () => {
 });
 
 describe('searchRelatedMemoriesHybrid', () => {
-  let searchMemoriesByKeywordsSpy: ReturnType<typeof spyOn>;
-  let getMemoriesByAttachmentsSpy: ReturnType<typeof spyOn>;
-
   beforeEach(async () => {
-    mock.restore();
+    // 创建 mock 函数
+    mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
+    mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));
 
+    // 使用 mock.module 模拟 MemoryService 模块
+    await mock.module('src/services/memory-service', () => ({
+      MemoryService: {
+        searchMemoriesByKeywords: mockSearchMemoriesByKeywords,
+        getMemoriesByAttachments: mockGetMemoriesByAttachments,
+      },
+    }));
+
+    // 在 mock 设置后动态导入依赖模块
     const memoryHelper = await import('../services/ai/tools/memory-helper');
+    searchRelatedMemories = memoryHelper.searchRelatedMemories;
     searchRelatedMemoriesHybrid = memoryHelper.searchRelatedMemoriesHybrid;
-
-    searchMemoriesByKeywordsSpy = spyOn(
-      MemoryService,
-      'searchMemoriesByKeywords',
-    ).mockResolvedValue([]);
-    getMemoriesByAttachmentsSpy = spyOn(
-      MemoryService,
-      'getMemoriesByAttachments',
-    ).mockResolvedValue([]);
-  });
-
-  afterEach(() => {
-    if (searchMemoriesByKeywordsSpy) {
-      searchMemoriesByKeywordsSpy.mockRestore();
-    }
-    if (getMemoriesByAttachmentsSpy) {
-      getMemoriesByAttachmentsSpy.mockRestore();
-    }
-    mock.restore();
   });
 
   test('附件优先，关键词补充，去重并保持顺序', async () => {
@@ -255,8 +251,8 @@ describe('searchRelatedMemoriesHybrid', () => {
       },
     ];
 
-    getMemoriesByAttachmentsSpy.mockResolvedValue(attachedMemories);
-    searchMemoriesByKeywordsSpy.mockResolvedValue(keywordMemories);
+    mockGetMemoriesByAttachments.mockImplementation(() => Promise.resolve(attachedMemories));
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(keywordMemories));
 
     const result = await searchRelatedMemoriesHybrid(
       'book-1',
@@ -285,12 +281,12 @@ describe('searchRelatedMemoriesHybrid', () => {
       },
     ];
 
-    searchMemoriesByKeywordsSpy.mockResolvedValue(keywordMemories);
+    mockSearchMemoriesByKeywords.mockImplementation(() => Promise.resolve(keywordMemories));
 
     const result = await searchRelatedMemoriesHybrid('book-1', [], ['关键词'], 5);
 
-    expect(getMemoriesByAttachmentsSpy).not.toHaveBeenCalled();
-    expect(searchMemoriesByKeywordsSpy).toHaveBeenCalledWith('book-1', ['关键词']);
+    expect(mockGetMemoriesByAttachments).not.toHaveBeenCalled();
+    expect(mockSearchMemoriesByKeywords).toHaveBeenCalledWith('book-1', ['关键词']);
     expect(result).toEqual([{ id: 'm1', summary: '摘要1' }]);
   });
 });
