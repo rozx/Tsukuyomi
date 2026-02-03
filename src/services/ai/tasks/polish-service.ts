@@ -514,6 +514,7 @@ export class PolishService {
               onToast,
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+              aiModelId: model.id,
               logLabel: 'PolishService',
               // 对于 polish，只验证有变化的段落
               verifyCompleteness: (_expectedIds, _receivedTranslations) => {

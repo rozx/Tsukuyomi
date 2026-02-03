@@ -228,6 +228,7 @@ export class ToolRegistry {
     paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aiProcessingStore?: any, // AI 处理 Store，用于任务状态工具
+    aiModelId?: string,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -281,6 +282,7 @@ export class ToolRegistry {
         ...(bookId ? { bookId } : {}),
         ...(taskId ? { taskId } : {}),
         ...(sessionId ? { sessionId } : {}),
+        ...(aiModelId ? { aiModelId } : {}),
         ...(onAction ? { onAction } : {}),
         ...(onToast ? { onToast } : {}),
         ...(chunkBoundaries ? { chunkBoundaries } : {}),

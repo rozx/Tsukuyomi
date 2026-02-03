@@ -439,7 +439,19 @@ export const translationTools: ToolDefinition[] = [
       const task = aiProcessingStore?.activeTasks.find(
         (t: { id: string; type?: string }) => t.id === taskId,
       );
-      const taskType = task?.type;
+      const taskType = typeof task?.type === 'string' ? task.type : undefined;
+      if (!taskType) {
+        return JSON.stringify({
+          success: false,
+          error: `无法确定任务类型，请检查任务信息。taskId=${taskId || 'unknown'}`,
+        });
+      }
+      if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
+        return JSON.stringify({
+          success: false,
+          error: `任务类型不支持批量提交: ${taskType}`,
+        });
+      }
       const isPolishOrProofreading = taskType === 'polish' || taskType === 'proofreading';
 
       // 构建处理项（将 resolvedIds 与 translated_text 配对）
@@ -449,10 +461,17 @@ export const translationTools: ToolDefinition[] = [
       }));
 
       // 处理批次
+      const aiModelId = context.aiModelId;
+      if (!aiModelId) {
+        return JSON.stringify({
+          success: false,
+          error: '未提供 AI 模型 ID，无法写入翻译来源',
+        });
+      }
       const result = await processTranslationBatch(
         bookId,
         processItems,
-        taskId || 'unknown',
+        aiModelId,
         isPolishOrProofreading,
       );
 

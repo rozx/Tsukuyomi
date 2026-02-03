@@ -41,12 +41,14 @@ Tsukuyomi - Moonlit Translator 使用基于状态机的 AI 任务执行流程，
 **功能**：将日语小说文本翻译为简体中文
 
 **特点**：
+
 - 支持章节标题翻译
 - 1:1 段落对应（禁止合并/拆分）
 - 自动术语和角色管理
 - 敬语处理流程
 
 **配置**：
+
 - 块大小：2500 字符
 - 温度：`model.isDefault.translation?.temperature ?? 0.7`
 
@@ -57,11 +59,13 @@ Tsukuyomi - Moonlit Translator 使用基于状态机的 AI 任务执行流程，
 **功能**：翻译单个术语或短语
 
 **特点**：
+
 - 快速路径：短文本（≤50字符）或无 bookId 时直接翻译
 - 标准路径：使用工具获取上下文信息
 - 只返回 JSON 格式
 
 **配置**：
+
 - 温度：`model.isDefault.termsTranslation?.temperature ?? 0.7`
 - 最大工具调用次数：10
 - JSON 重试次数：3
@@ -73,6 +77,7 @@ Tsukuyomi - Moonlit Translator 使用基于状态机的 AI 任务执行流程，
 **功能**：优化已翻译文本的表达
 
 **特点**：
+
 - 语气词优化
 - 摆脱翻译腔
 - 节奏调整
@@ -85,6 +90,7 @@ Tsukuyomi - Moonlit Translator 使用基于状态机的 AI 任务执行流程，
 **功能**：检查翻译文本的错误
 
 **特点**：
+
 - 文字检查（错别字/标点/语法）
 - 内容检查（一致性/逻辑）
 - 格式检查
@@ -180,12 +186,14 @@ graph TD
 #### translation（翻译）
 
 **允许的转换**：
+
 - `planning → working`：规划完成，开始工作
 - `working → review`：工作完成，进入复核
 - `review → end`：复核完成，结束当前块
 - `review → working`：需要补充缺失段落或编辑已翻译段落
 
 **禁止的转换**：
+
 - `working → end`：必须经过 `review`
 - `planning → review`：必须经过 `working`
 - `planning → end`：必须经过 `working` 和 `review`
@@ -193,10 +201,12 @@ graph TD
 #### polish / proofreading（润色 / 校对）
 
 **允许的转换**：
+
 - `planning → working`：规划完成，开始工作
 - `working → end`：工作完成，结束当前块
 
 **禁止的转换**：
+
 - `working → review`：润色/校对任务**跳过并禁用** `review`
 - `planning → review`：必须经过 `working`
 - `planning → end`：必须经过 `working`
@@ -234,10 +244,11 @@ const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
 #### 3. 章节上下文信息
 
 ```typescript
-buildChapterContextSection(chapterId, chapterTitle)
+buildChapterContextSection(chapterId, chapterTitle);
 ```
 
 格式：
+
 ```
 【当前章节信息】
 **当前章节 ID**: `章节ID`
@@ -247,10 +258,11 @@ buildChapterContextSection(chapterId, chapterTitle)
 #### 4. 特殊指令（用户自定义）
 
 ```typescript
-buildSpecialInstructionsSection(specialInstructions)
+buildSpecialInstructionsSection(specialInstructions);
 ```
 
 格式：
+
 ```
 ========================================
 【特殊指令（用户自定义）】
@@ -272,10 +284,11 @@ buildSpecialInstructionsSection(specialInstructions)
 #### 6. 数据管理规则
 
 ```typescript
-getDataManagementRules()
+getDataManagementRules();
 ```
 
 包含：
+
 - 敬语处理流程
 - 术语/角色分离规则
 - 数据更新规则
@@ -284,7 +297,7 @@ getDataManagementRules()
 #### 7. 工具使用说明
 
 ```typescript
-getToolUsageInstructions('translation')
+getToolUsageInstructions('translation');
 ```
 
 包含常用工具列表和使用建议。
@@ -292,7 +305,7 @@ getToolUsageInstructions('translation')
 #### 8. 记忆管理规则
 
 ```typescript
-getMemoryWorkflowRules()
+getMemoryWorkflowRules();
 ```
 
 包含记忆的创建、搜索和更新流程。
@@ -300,10 +313,11 @@ getMemoryWorkflowRules()
 #### 9. 输出格式要求
 
 ```typescript
-getOutputFormatRules('translation')
+getOutputFormatRules('translation');
 ```
 
 包含：
+
 - JSON 格式要求
 - 状态字段说明
 - 段落 ID 对应规则
@@ -311,7 +325,7 @@ getOutputFormatRules('translation')
 #### 10. 执行工作流说明
 
 ```typescript
-getExecutionWorkflowRules('translation')
+getExecutionWorkflowRules('translation');
 ```
 
 包含各阶段的工作重点。
@@ -331,10 +345,11 @@ buildIndependentChunkPrompt(
   chapterId,
   chapterTitle, // 只在第一个块包含
   undefined, // 无规划上下文
-)
+);
 ```
 
 格式：
+
 ```
 开始翻译任务。**请先将状态设置为 "planning" 开始规划**（返回 `{"status": "planning"}`）。
 
@@ -353,6 +368,7 @@ buildIndependentChunkPrompt(
 #### 后续块（Chunk > 0）
 
 如果有规划上下文：
+
 ```
 继续翻译任务（第 X/总数 部分）。
 
@@ -376,6 +392,7 @@ buildIndependentChunkPrompt(
 ```
 
 如果没有规划上下文：
+
 ```
 继续翻译任务。以下是第 X/总数 部分内容：[段落数量提示]
 
@@ -463,6 +480,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
    - 每个工具调用包含 `id`、`function.name`、`function.arguments`
 
 2. **执行工具调用**
+
    ```typescript
    const toolResult = await ToolRegistry.handleToolCall(
      toolCall,
@@ -474,6 +492,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
    ```
 
 3. **添加工具结果到历史**
+
    ```typescript
    history.push({
      role: 'tool',
@@ -489,6 +508,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
 ### 常用工具
 
 #### 术语管理
+
 - `list_terms`: 获取术语表（支持 `chapter_id`）
 - `get_term`: 根据名称获取术语
 - `search_terms_by_keywords`: 搜索术语
@@ -497,6 +517,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
 - `delete_term`: 删除术语
 
 #### 角色管理
+
 - `list_characters`: 获取角色表（支持 `chapter_id`）
 - `get_character`: 根据名称获取角色
 - `search_characters_by_keywords`: 搜索角色
@@ -505,6 +526,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
 - `delete_character`: 删除角色
 
 #### 记忆管理
+
 - `search_memory_by_keywords`: 搜索记忆
 - `get_memory`: 获取记忆
 - `get_recent_memories`: 获取最近记忆
@@ -512,6 +534,7 @@ const tools = ToolRegistry.getTermTranslationTools(bookId);
 - `update_memory`: 更新记忆
 
 #### 上下文获取
+
 - `get_book_info`: 获取书籍信息
 - `get_chapter_info`: 获取章节信息
 - `get_previous_paragraphs`: 获取前文段落
@@ -553,24 +576,22 @@ const chunks = buildChunks(
 if (previousStatus === 'planning' && newStatus === 'working' && !planningSummary) {
   // 构建规划摘要
   const summaryParts: string[] = [];
-  
+
   // AI 规划决策
   if (planningResponses.length > 0) {
     summaryParts.push('【AI规划决策】');
     summaryParts.push(planningResponses.join('\n'));
   }
-  
+
   // 关键工具结果摘要
   if (planningToolResults.length > 0) {
     summaryParts.push('\n【已获取的上下文信息】');
     for (const { tool, result } of planningToolResults) {
-      const truncatedResult = result.length > 500 
-        ? result.slice(0, 500) + '...(已截断)' 
-        : result;
+      const truncatedResult = result.length > 500 ? result.slice(0, 500) + '...(已截断)' : result;
       summaryParts.push(`- ${tool}: ${truncatedResult}`);
     }
   }
-  
+
   planningSummary = summaryParts.join('\n');
 }
 ```
@@ -603,10 +624,10 @@ while (retryCount <= MAX_RETRIES && !chunkProcessed) {
     // 处理块
     chunkProcessed = true;
   } catch (error) {
-    const isDegradedError = 
+    const isDegradedError =
       error instanceof Error &&
       (error.message.includes('AI降级检测') || error.message.includes('重复字符'));
-    
+
     if (isDegradedError) {
       retryCount++;
       if (retryCount > MAX_RETRIES) {
@@ -648,6 +669,7 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 **主要方法**：`translate(content, model, options)`
 
 **流程**：
+
 1. 初始化任务和 AbortController
 2. 构建系统提示词
 3. 切分文本为块
@@ -660,6 +682,7 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 6. 完成任务
 
 **返回**：
+
 ```typescript
 {
   text: string; // 完整翻译文本
@@ -675,11 +698,13 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 **主要方法**：`translate(text, model, options)`
 
 **流程**：
+
 1. 快速路径检查（短文本或无 bookId）
 2. 标准路径：工具调用循环
 3. JSON 格式验证和重试
 
 **返回**：
+
 ```typescript
 {
   text: string; // 翻译结果
@@ -692,6 +717,7 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 **核心函数**：`executeToolCallLoop(config)`
 
 **功能**：
+
 - 管理状态转换
 - 执行工具调用
 - 解析状态响应
@@ -700,6 +726,7 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 - 收集规划摘要
 
 **返回**：
+
 ```typescript
 {
   responseText: string | null;
@@ -709,6 +736,10 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
   planningSummary?: string;
 }
 ```
+
+### 已知限制
+
+- `update_task_status` 依赖工具调用链注入 `aiProcessingStore`，在未提供该上下文的场景无法更新任务状态。
 
 ---
 
@@ -770,4 +801,3 @@ if (jsonRetryCount < MAX_JSON_RETRIES) {
 ## 总结
 
 Tsukuyomi - Moonlit Translator 的翻译相关 AI 任务流程采用状态机驱动、工具增强、分块处理的架构，通过精心设计的提示词和错误处理机制，实现了高质量、高效率的翻译功能。系统支持实时更新、上下文共享和智能重试，为用户提供了流畅的翻译体验。
-

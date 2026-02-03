@@ -491,6 +491,7 @@ export class AssistantService {
     onToast?: ToastCallback,
     taskId?: string,
     sessionId?: string,
+    aiModelId?: string,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
@@ -535,6 +536,9 @@ export class AssistantService {
         onToast,
         taskId,
         sessionId,
+        undefined, // paragraphIds
+        undefined, // aiProcessingStore
+        aiModelId,
       );
       results.push(result);
     }
@@ -777,6 +781,7 @@ export class AssistantService {
         onToast,
         taskId,
         sessionId,
+        model.id,
       );
 
       // 将工具结果添加到历史
@@ -1339,6 +1344,7 @@ export class AssistantService {
           onToast,
           taskId,
           sessionId,
+          model.id,
         );
 
         // 将工具结果添加到历史

@@ -73,6 +73,7 @@ export interface ToolCallLoopConfig {
   onToast: ToastCallback | undefined;
   taskId: string | undefined;
   aiProcessingStore: AIProcessingStore | undefined;
+  aiModelId?: string;
   logLabel: string;
   maxTurns?: number;
   /**
@@ -404,6 +405,7 @@ class TaskLoopSession {
         undefined, // sessionId
         this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
         aiProcessingStore, // 传入 AI 处理 Store
+        this.config.aiModelId,
       );
       this.metrics.toolCallTime += Date.now() - start;
       this.metrics.toolCallCount++;

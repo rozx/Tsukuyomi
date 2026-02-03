@@ -497,6 +497,7 @@ export class TranslationService {
               onToast,
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+              aiModelId: model.id,
               logLabel: 'TranslationService',
               // 后续 chunk 使用简短规划模式（当前 chunk 的术语和角色已在提示中提供）
               isBriefPlanning: chunkIndex > 0,

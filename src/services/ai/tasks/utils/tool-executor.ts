@@ -29,6 +29,7 @@ export async function executeToolCall(
   onToast: ToastCallback | undefined,
   taskId: string | undefined,
   aiProcessingStore: AIProcessingStore | undefined,
+  aiModelId: string | undefined,
   paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
 ): Promise<void> {
   if (aiProcessingStore && taskId) {
@@ -48,6 +49,7 @@ export async function executeToolCall(
     undefined, // sessionId 不需要
     paragraphIds,
     aiProcessingStore, // 传入 AI 处理 Store
+    aiModelId,
   );
 
   if (aiProcessingStore && taskId) {

@@ -42,7 +42,7 @@ export interface StreamCallbackConfig {
 /**
  * 创建流式处理回调函数
  * 简化版本：仅处理思考内容、输出内容和降级检测
- * 状态和内容现在通过工具调用处理，不再从 JSON 中解析
+ * 详见 OpenSpec 变更说明：openspec/changes/agent-tools-instead-of-json/design.md
  */
 export function createStreamCallback(config: StreamCallbackConfig): TextGenerationStreamCallback {
   const { taskId, aiProcessingStore, originalText, logLabel, taskType, abortController } = config;

@@ -151,10 +151,8 @@ export const taskStatusTools: ToolDefinition[] = [
         });
       }
 
-      // 获取 AI 处理 Store（从 context 的 taskId 推断）
-      // 注意：这里需要通过某种方式获取 store 实例
-      // 由于 store 是通过 Pinia 创建的，我们需要在服务层注入
-      // 这里使用一个变通方案：通过 context 传递 store 实例
+      // 获取 AI 处理 Store（由服务层注入）
+      // 限制：当前工具只能在提供 aiProcessingStore 的调用链中使用（已在文档记录）
       const aiProcessingStore = context.aiProcessingStore as AIProcessingStore | undefined;
 
       if (!taskId) {
