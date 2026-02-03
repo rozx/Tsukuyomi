@@ -65,23 +65,27 @@ export function useMemoryAttachments(options: UseMemoryAttachmentsOptions) {
   }
 
   /**
-   * 获取角色名称
+   * 获取角色名称（优先使用翻译）
    */
   function getCharacterName(bookIdValue: string, charId: string): string | undefined {
     const book = booksStore.getBookById(bookIdValue);
     if (!book?.characterSettings) return undefined;
     const char = book.characterSettings.find((c) => c.id === charId);
-    return char?.name;
+    if (!char) return undefined;
+    // 优先使用翻译，如果没有则使用原文
+    return char.translation?.translation || char.name;
   }
 
   /**
-   * 获取术语名称
+   * 获取术语名称（优先使用翻译）
    */
   function getTermName(bookIdValue: string, termId: string): string | undefined {
     const book = booksStore.getBookById(bookIdValue);
     if (!book?.terminologies) return undefined;
     const term = book.terminologies.find((t) => t.id === termId);
-    return term?.name;
+    if (!term) return undefined;
+    // 优先使用翻译，如果没有则使用原文
+    return term.translation?.translation || term.name;
   }
 
   /**
@@ -188,10 +192,12 @@ export function useMemoryAttachments(options: UseMemoryAttachmentsOptions) {
         nameCache.value.set(cacheKey, name);
       }
 
+      // 如果查找不到实体，标记为已删除
+      const finalName = name === undefined ? '[已删除]' : name;
       result.push({
         ...attachment,
-        name: name || '',
-        loading: name === undefined,
+        name: finalName,
+        loading: false,
       });
     }
 

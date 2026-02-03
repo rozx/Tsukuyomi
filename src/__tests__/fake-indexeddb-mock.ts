@@ -5,10 +5,12 @@
  * 这样可以避免模块缓存问题
  */
 
-import { fakeIndexedDB } from 'fake-indexeddb/auto';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - fake-indexeddb/auto 的类型定义在 package.json exports 中有问题
+import { fakeIndexedDB as createFakeIndexedDB } from 'fake-indexeddb/auto';
 
 // 创建共享的 fake-indexeddb 实例
-export const fakeIndexedDB = fakeIndexedDB();
+export const fakeIndexedDB = createFakeIndexedDB();
 
 // 导出创建数据库的函数（如果需要）
 export const createFakeDB = (name = 'tsukuyomi-test', version = 1) => {

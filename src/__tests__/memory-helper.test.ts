@@ -12,7 +12,7 @@ let mockSearchMemoriesByKeywords: ReturnType<typeof mock>;
 let mockGetMemoriesByAttachments: ReturnType<typeof mock>;
 
 describe('searchRelatedMemories', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     // 创建 mock 函数
     mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
     mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));
@@ -179,7 +179,7 @@ describe('searchRelatedMemories', () => {
 });
 
 describe('searchRelatedMemoriesHybrid', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     // 创建 mock 函数
     mockSearchMemoriesByKeywords = mock(() => Promise.resolve([]));
     mockGetMemoriesByAttachments = mock(() => Promise.resolve([]));

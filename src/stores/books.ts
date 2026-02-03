@@ -17,7 +17,9 @@ export const useBooksStore = defineStore('books', {
      */
     getBookById: (state) => {
       return (id: string): Novel | undefined => {
-        return state.books.find((book) => book.id === id);
+        // 每次调用时重新访问 state.books 以保持响应性
+        const books = state.books;
+        return books.find((book) => book.id === id);
       };
     },
   },

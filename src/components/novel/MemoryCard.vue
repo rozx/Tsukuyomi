@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import type { Memory, MemoryAttachment } from 'src/models/memory';
 import MemoryAttachmentTag from './MemoryAttachmentTag.vue';
 import { useMemoryAttachments } from 'src/composables/useMemoryAttachments';
+import { useBooksStore } from 'src/stores/books';
 
 interface Props {
   memory: Memory;
@@ -26,12 +27,30 @@ const emit = defineEmits<{
 }>();
 
 // 使用 useMemoryAttachments composable
-const { resolveNames } = useMemoryAttachments({
+const { resolveNames, clearCache, cacheSize } = useMemoryAttachments({
   bookId: computed(() => props.bookId),
 });
 
+// 监听当前书籍的角色和术语变化，清除缓存并重新解析
+const booksStore = useBooksStore();
+const currentBook = computed(() => booksStore.getBookById(props.bookId));
+
+watch(
+  () => ({
+    characterSettings: currentBook.value?.characterSettings,
+    terminologies: currentBook.value?.terminologies,
+  }),
+  () => {
+    clearCache();
+  },
+  { deep: true },
+);
+
 // 附件名称状态（计算属性，自动响应缓存变化）
+// 依赖 cacheSize 确保在缓存清除后重新计算
 const attachmentsWithNames = computed(() => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _cache = cacheSize.value; // 作为依赖，触发重新计算
   if (!props.memory.attachedTo || props.memory.attachedTo.length === 0) {
     return [];
   }

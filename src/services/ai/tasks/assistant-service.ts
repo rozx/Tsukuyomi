@@ -26,7 +26,7 @@ import {
 const DEFAULT_TOKEN_ESTIMATION_MULTIPLIER = 2.5;
 const MAX_TOOL_CALL_TURNS = 50;
 const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
-const SUMMARY_TEMPERATURE = 0.3;
+const SUMMARY_TEMPERATURE = 1;
 const DEFAULT_TEMPERATURE = 0.7;
 
 // 定义需要 bookId 的工具列表
