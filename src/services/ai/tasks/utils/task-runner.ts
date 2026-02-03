@@ -358,133 +358,178 @@ class TaskLoopSession {
     result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
     assistantText: string,
   ) {
-    const { history, aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
+    this.appendAssistantToolCallMessage(result, assistantText);
 
-    // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content
+    if (!result.toolCalls) return;
+
+    let hasProductiveTool = false;
+
+    for (const toolCall of result.toolCalls) {
+      if (!this.shouldProcessToolCall(toolCall)) {
+        continue;
+      }
+
+      const toolName = toolCall.function.name;
+      hasProductiveTool = this.prepareToolCall(toolName) || hasProductiveTool;
+
+      const toolResultContent = await this.executeToolCall(toolCall, toolName);
+
+      await this.handleToolCallResult(toolCall, toolName, toolResultContent, assistantText);
+    }
+
+    if (hasProductiveTool) {
+      this.resetConsecutiveCounters();
+    }
+  }
+
+  private appendAssistantToolCallMessage(
+    result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
+    assistantText: string,
+  ) {
+    const { history } = this.config;
     history.push({
       role: 'assistant',
       content: assistantText && assistantText.trim() ? assistantText : '（调用工具）',
       ...(result.toolCalls ? { tool_calls: result.toolCalls } : {}),
       reasoning_content: result.reasoningContent || null,
     });
+  }
 
-    let hasProductiveTool = false;
+  private shouldProcessToolCall(toolCall: AIToolCall): boolean {
+    const toolName = toolCall.function.name;
+    if (!this.allowedToolNames.has(toolName)) {
+      this.handleUnauthorizedTool(toolCall);
+      return false;
+    }
 
-    if (!result.toolCalls) return;
+    if (this.isToolLimitReached(toolName)) {
+      this.handleToolLimitReached(toolCall);
+      return false;
+    }
 
-    for (const toolCall of result.toolCalls) {
-      const toolName = toolCall.function.name;
+    return true;
+  }
 
-      // 1. 验证工具是否允许
-      if (!this.allowedToolNames.has(toolName)) {
-        this.handleUnauthorizedTool(toolCall);
-        continue;
-      }
+  private prepareToolCall(toolName: string): boolean {
+    this.updateToolCounters(toolName);
+    return PRODUCTIVE_TOOLS.includes(toolName);
+  }
 
-      // 2. 检查调用限制
-      if (this.isToolLimitReached(toolName)) {
-        this.handleToolLimitReached(toolCall);
-        continue;
-      }
+  private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<string> {
+    const { aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
+    }
 
-      // 3. 执行工具
-      this.updateToolCounters(toolName);
-      if (PRODUCTIVE_TOOLS.includes(toolName)) hasProductiveTool = true;
+    const start = Date.now();
+    const toolResult = await ToolRegistry.handleToolCall(
+      toolCall,
+      bookId,
+      handleAction,
+      onToast,
+      taskId,
+      undefined, // sessionId
+      this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
+      aiProcessingStore, // 传入 AI 处理 Store
+      this.config.aiModelId,
+    );
+    this.metrics.toolCallTime += Date.now() - start;
+    this.metrics.toolCallCount++;
 
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
-      }
-
-      const start = Date.now();
-      const toolResult = await ToolRegistry.handleToolCall(
-        toolCall,
-        bookId,
-        handleAction,
-        onToast,
+    const toolResultContent = toolResult.content;
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.appendThinkingMessage(
         taskId,
-        undefined, // sessionId
-        this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
-        aiProcessingStore, // 传入 AI 处理 Store
-        this.config.aiModelId,
+        `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
       );
-      this.metrics.toolCallTime += Date.now() - start;
-      this.metrics.toolCallCount++;
+    }
 
-      const toolResultContent = toolResult.content;
+    return toolResultContent;
+  }
 
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.appendThinkingMessage(
-          taskId,
-          `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
-        );
-      }
+  private async handleToolCallResult(
+    toolCall: AIToolCall,
+    toolName: string,
+    toolResultContent: string,
+    assistantText: string,
+  ) {
+    const { history } = this.config;
 
-      // 4. 捕获新工具调用的结果
-      this.captureToolCallResult(toolName, toolResultContent);
+    this.captureToolCallResult(toolName, toolResultContent);
 
-      // 4.1 如果状态更新已发生，立即切换并推送对应状态提示
-      if (toolName === 'update_task_status' && this.pendingStatusUpdate) {
-        const previousStatus = this.currentStatus;
-        const newStatus = this.pendingStatusUpdate;
-        this.pendingStatusUpdate = undefined;
+    this.applyPendingStatusUpdate(toolName, assistantText);
 
-        if (!this.isValidTransition(previousStatus, newStatus)) {
-          this.handleInvalidTransition(previousStatus, newStatus, assistantText);
-        } else {
-          this.trackStatusDuration(previousStatus, newStatus);
-          this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
-          this.currentStatus = newStatus;
+    await this.handleBatchExtraction(toolName, toolCall, toolResultContent);
 
-          if (aiProcessingStore && taskId) {
-            void aiProcessingStore.updateTask(taskId, {
-              workflowStatus: newStatus,
-            });
-          }
+    const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
+    if (alreadyHandled) {
+      return;
+    }
 
-          const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
-          history.push({ role: 'user', content: statusPrompt });
-        }
-      }
+    history.push({
+      role: 'tool',
+      content: toolResultContent,
+      tool_call_id: toolCall.id,
+      name: toolName,
+    });
+  }
 
-      // 4.1 处理 add_translation_batch 的段落提取（工具模式）
-      if (toolName === 'add_translation_batch') {
-        const extracted = this.extractParagraphsFromBatchToolCall(toolCall, toolResultContent);
-        if (extracted.length > 0) {
-          for (const para of extracted) {
-            this.accumulatedParagraphs.set(para.id, para.translation);
-          }
-          if (this.config.onParagraphsExtracted) {
-            try {
-              await this.config.onParagraphsExtracted(extracted);
-            } catch (error) {
-              console.error(
-                `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
-                error,
-              );
-            }
-          }
-        }
-      }
+  private applyPendingStatusUpdate(toolName: string, assistantText: string) {
+    const { history, aiProcessingStore, taskId } = this.config;
+    if (toolName !== 'update_task_status' || !this.pendingStatusUpdate) {
+      return;
+    }
 
-      // 5. 收集规划阶段信息，返回是否已处理
-      const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
+    const previousStatus = this.currentStatus;
+    const newStatus = this.pendingStatusUpdate;
+    this.pendingStatusUpdate = undefined;
 
-      // 如果 collectPlanningInfo 已处理（例如简短规划模式下的警告），则跳过后续推送
-      if (alreadyHandled) {
-        continue;
-      }
+    if (!this.isValidTransition(previousStatus, newStatus)) {
+      this.handleInvalidTransition(previousStatus, newStatus, assistantText);
+      return;
+    }
 
-      // 正常记录工具结果
-      history.push({
-        role: 'tool',
-        content: toolResultContent,
-        tool_call_id: toolCall.id,
-        name: toolName,
+    this.trackStatusDuration(previousStatus, newStatus);
+    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
+    this.currentStatus = newStatus;
+
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.updateTask(taskId, {
+        workflowStatus: newStatus,
       });
     }
 
-    if (hasProductiveTool) {
-      this.resetConsecutiveCounters();
+    const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
+    history.push({ role: 'user', content: statusPrompt });
+  }
+
+  private async handleBatchExtraction(
+    toolName: string,
+    toolCall: AIToolCall,
+    toolResultContent: string,
+  ) {
+    if (toolName !== 'add_translation_batch') {
+      return;
+    }
+
+    const extracted = this.extractParagraphsFromBatchToolCall(toolCall, toolResultContent);
+    if (extracted.length === 0) {
+      return;
+    }
+
+    for (const para of extracted) {
+      this.accumulatedParagraphs.set(para.id, para.translation);
+    }
+
+    if (this.config.onParagraphsExtracted) {
+      try {
+        await this.config.onParagraphsExtracted(extracted);
+      } catch (error) {
+        console.error(
+          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
+          error,
+        );
+      }
     }
   }
 

@@ -66,10 +66,15 @@ export const useBooksStore = defineStore('books', {
     /**
      * 更新书籍
      */
-    async updateBook(id: string, updates: Partial<Novel>): Promise<void> {
+    async updateBook(
+      id: string,
+      updates: Partial<Novel>,
+      options?: { persist?: boolean; saveChapterContent?: boolean },
+    ): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
       if (index > -1) {
         const existingBook = this.books[index];
+        const persist = options?.persist !== false;
         // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
         const updatesWithLastEdited: Partial<Novel> = {
           ...updates,
@@ -90,14 +95,11 @@ export const useBooksStore = defineStore('books', {
             existingBook.volumes.map((v) => [v.id, v]),
           );
           const existingChaptersMap = new Map<string, Map<string, Chapter>>();
-          
+
           // 为每个卷创建章节 Map
           for (const volume of existingBook.volumes) {
             if (volume.chapters) {
-              existingChaptersMap.set(
-                volume.id,
-                new Map(volume.chapters.map((ch) => [ch.id, ch])),
-              );
+              existingChaptersMap.set(volume.id, new Map(volume.chapters.map((ch) => [ch.id, ch])));
             }
           }
 
@@ -219,13 +221,17 @@ export const useBooksStore = defineStore('books', {
         }
 
         this.books[index] = updatedBook;
-        
-        // 优化：如果只更新元数据（如 terminologies、characterSettings 等），不更新 volumes，
-        // 则跳过保存章节内容，提高性能
-        const isOnlyMetadataUpdate = !updates.volumes;
-        await BookService.saveBook(updatedBook, {
-          saveChapterContent: !isOnlyMetadataUpdate,
-        });
+
+        if (persist) {
+          // 优化：如果只更新元数据（如 terminologies、characterSettings 等），不更新 volumes，
+          // 则跳过保存章节内容，提高性能
+          const isOnlyMetadataUpdate = !updates.volumes;
+          const saveChapterContent =
+            options?.saveChapterContent ?? (isOnlyMetadataUpdate ? false : true);
+          await BookService.saveBook(updatedBook, {
+            saveChapterContent,
+          });
+        }
       }
     },
 
@@ -242,7 +248,7 @@ export const useBooksStore = defineStore('books', {
         const settingsStore = useSettingsStore();
         const gistSync = settingsStore.gistSync;
         const deletedNovelIds = gistSync.deletedNovelIds || [];
-        
+
         // 检查是否已存在（避免重复）
         if (!deletedNovelIds.find((record) => record.id === id)) {
           deletedNovelIds.push({

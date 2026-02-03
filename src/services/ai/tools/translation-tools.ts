@@ -251,16 +251,10 @@ async function processTranslationBatch(
       }
     }
 
-    // 检查所有段落是否存在
-    const missingParagraphIds: string[] = [];
-    for (const item of items) {
-      const paragraph = targetParagraphs.find((p) => p.id === item.paragraphId);
-      if (!paragraph) {
-        missingParagraphIds.push(item.paragraphId);
-      }
-    }
-
-    // 如果有段落未找到，返回错误（原子性操作）
+    const targetParagraphsMap = new Map(targetParagraphs.map((p) => [p.id, p]));
+    const missingParagraphIds = items
+      .filter((item) => !targetParagraphsMap.has(item.paragraphId))
+      .map((item) => item.paragraphId);
     if (missingParagraphIds.length > 0) {
       return {
         success: false,
@@ -273,9 +267,8 @@ async function processTranslationBatch(
     let processedCount = 0;
 
     for (const item of items) {
-      const paragraph = targetParagraphs.find((p) => p.id === item.paragraphId);
+      const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
-        // 理论上不会到达这里，因为前面已经检查过了
         continue;
       }
 
@@ -332,10 +325,9 @@ async function processTranslationBatch(
     const booksStore = useBooksStore();
     const existingBook = booksStore.getBookById(bookId);
     if (existingBook) {
-      await booksStore.updateBook(bookId, { volumes: book.volumes });
-    } else {
-      await BookService.saveBook(book);
+      await booksStore.updateBook(bookId, { volumes: book.volumes }, { persist: false });
     }
+    await BookService.saveBook(book);
 
     return { success: true, processedCount };
   } catch (error) {
