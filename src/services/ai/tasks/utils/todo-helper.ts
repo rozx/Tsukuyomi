@@ -25,31 +25,19 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
     return '';
   }
 
-  let prompt =
-    '\n========================================\n【待办事项管理】\n========================================\n';
-  prompt += '你可以使用待办事项来规划和管理任务。以下是当前待办事项列表。\n\n';
+  let prompt = '\n【待办事项】\n';
 
   activeTodos.forEach((todo, index) => {
     prompt += `${index + 1}. [${todo.id}] ${todo.text}\n`;
   });
 
-  prompt += '\n**待办事项工具使用说明**：\n';
-  prompt += '- **创建待办**：使用 `create_todo` 工具创建新的待办事项来规划任务\n';
   prompt +=
-    '- **查看待办**：使用 `list_todos` 工具查看所有待办事项（支持过滤：all/active/completed）\n';
-  prompt +=
-    '- **更新待办**：使用 `update_todos` 工具更新待办事项的内容或状态（支持单个或批量更新）\n';
-  prompt += '- **标记完成**：当你完成了一个待办事项时，使用 `mark_todo_done` 工具将其标记为完成\n';
-  prompt += '- **删除待办**：使用 `delete_todo` 工具删除不需要的待办事项\n';
-  prompt += '\n**重要提示**：\n';
-  prompt += '- **优先处理现有待办**：如果当前任务与某个待办事项相关，请优先完成它\n';
-  prompt +=
-    '- **仅在需要时创建新待办**：只有当任务确实较复杂、需要分步跟踪进度时，才建议使用 `create_todo` 创建待办事项\n';
-  prompt +=
-    '- **创建要具体可执行**：待办事项应包含明确范围与动作。例如："翻译第1-5段，检查术语一致性"，而不是 "翻译文本"\n';
-  prompt +=
-    '- **多步骤任务可拆分**：如需跟踪多步骤进度，可为每个步骤创建独立待办；也可用 `items` 参数批量创建\n';
-  prompt += '- **完成就标记**：只有真正完成时才使用 `mark_todo_done` 标记完成\n';
+    '\n**可用工具**：create_todo | list_todos | update_todos | mark_todo_done | delete_todo\n';
+  prompt += '\n**使用指南**：\n';
+  prompt += '- 优先完成现有待办事项\n';
+  prompt += '- 仅在任务复杂需分步跟踪时创建新待办\n';
+  prompt += '- 待办描述应具体可执行（如："翻译第1-5段，检查术语一致性"）\n';
+  prompt += '- 完成后使用 mark_todo_done 标记\n';
 
   return prompt;
 }

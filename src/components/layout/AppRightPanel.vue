@@ -1400,6 +1400,10 @@ const sendMessage = async () => {
 
           // 只有当消息数量未达到硬限制时才创建新消息
           if (currentMsgCount < MAX_MESSAGES_PER_SESSION) {
+            // 首先，标记当前消息的思考过程为非活动状态
+            // 捕获旧 ID 以便在更新 assistantMessageId 后使用
+            const oldAssistantMessageId = assistantMessageId;
+
             const newAssistantMessageId = (Date.now() + 1).toString();
             const newAssistantMessage: ChatMessage = {
               id: newAssistantMessageId,
@@ -1408,14 +1412,23 @@ const sendMessage = async () => {
               timestamp: Date.now(),
             };
             messages.value.push(newAssistantMessage);
-            // 更新 assistantMessageId，使后续的 onChunk 更新新消息
+
+            // 更新 assistantMessageId，使后续的 onChunk 和 onThinkingChunk 都更新到新消息
             assistantMessageId = newAssistantMessageId;
+
+            // 使用旧 ID 停止思考动画
+            setThinkingActive(oldAssistantMessageId, false);
+
             // 重置当前消息操作列表，因为新消息还没有操作
             currentMessageActions.value = [];
+
+            // 滚动到底部以显示新消息气泡
+            scrollToBottom();
           }
           // 如果已达到限制，继续使用当前消息，后续会在响应完成后触发自动总结
+        } else {
+          scrollToBottom();
         }
-        scrollToBottom();
 
         // 显示操作通知
 
@@ -2862,14 +2875,45 @@ watch(
   { deep: true },
 );
 
-// 监听上下文变化，更新会话上下文
+// 监听上下文变化，处理书籍切换时的会话管理
 watch(
   () => contextStore.getContext,
-  (context) => {
+  (newContext, oldContext) => {
+    const newBookId = newContext.currentBookId;
+    const oldBookId = oldContext?.currentBookId;
+
+    // 如果书籍变化了，需要切换或创建会话
+    if (newBookId !== oldBookId) {
+      if (newBookId) {
+        // 尝试找到该书籍的现有会话（查找最近更新的、与此书籍关联的会话）
+        const sessions = chatSessionsStore.allSessions.filter(
+          (s) => s.context.bookId === newBookId,
+        );
+        // 按更新时间倒序排序 (allSessions 已经排序了，但为了保险起见我们可以直接取第一个，或者再次确认)
+        // chatSessionsStore.allSessions 实际上已经按 updatedAt 排序了 (getters implementation)
+        // 但 find 只返回第一个匹配的。如果 allSessions 是排序的，find 应该返回最新的。
+        // 为了明确意图，我们可以不做额外排序，或者明确取第一个。
+        // 这里 allSessions getter 已经排序: return [...state.sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+        const existingSession = sessions.length > 0 ? sessions[0] : undefined;
+
+        if (existingSession) {
+          // 切换到现有会话
+          chatSessionsStore.switchToSession(existingSession.id);
+        } else {
+          // 创建新会话
+          createNewSession();
+        }
+      } else {
+        // 如果没有书籍上下文，创建一个新会话（无书籍关联）
+        createNewSession();
+      }
+    }
+
+    // 更新当前会话的上下文
     chatSessionsStore.updateCurrentSessionContext({
-      bookId: context.currentBookId,
-      chapterId: context.currentChapterId,
-      paragraphId: context.selectedParagraphId,
+      bookId: newContext.currentBookId,
+      chapterId: newContext.currentChapterId,
+      paragraphId: newContext.selectedParagraphId,
     });
   },
   { deep: true },

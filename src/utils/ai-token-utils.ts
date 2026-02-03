@@ -1,6 +1,6 @@
 import type { ChatMessage } from 'src/services/ai/types/ai-service';
 
-export const DEFAULT_TOKEN_ESTIMATION_MULTIPLIER = 2.5;
+export const DEFAULT_TOKEN_ESTIMATION_MULTIPLIER = 1.6;
 
 export const estimateMessagesTokenCount = (
   messages: ChatMessage[],

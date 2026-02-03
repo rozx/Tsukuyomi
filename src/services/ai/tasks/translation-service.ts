@@ -44,6 +44,7 @@ import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { buildTranslationSystemPrompt } from './prompts';
+import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 /**
  * 翻译服务选项
@@ -211,6 +212,7 @@ export class TranslationService {
         ...(typeof bookId === 'string' ? { bookId } : {}),
         ...(typeof chapterId === 'string' ? { chapterId } : {}),
         ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+        ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
       },
     );
 
@@ -251,6 +253,7 @@ export class TranslationService {
       // 使用翻译专用工具集，排除导航和列表工具，让AI专注于当前文本块
       const skipAskUser = await isSkipAskUserEnabled(bookId);
       const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
+      const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -304,7 +307,9 @@ export class TranslationService {
       });
 
       if (aiProcessingStore && taskId) {
-        void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
+        aiProcessingStore
+          .updateTask(taskId, { message: '正在建立连接...' })
+          .catch((error) => console.error('[TranslationService] Failed to update task:', error));
       }
 
       // 使用共享工具切分文本
@@ -388,15 +393,21 @@ export class TranslationService {
         const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            message: `正在翻译第 ${chunkIndex + 1}/${chunks.length} 部分...`,
-            status: 'processing',
-          });
+          aiProcessingStore
+            .updateTask(taskId, {
+              message: `正在翻译第 ${chunkIndex + 1}/${chunks.length} 部分...`,
+              status: 'processing',
+            })
+            .catch((error) => console.error('[TranslationService] Failed to update task:', error));
           // 添加块分隔符
-          void aiProcessingStore.appendThinkingMessage(
-            taskId,
-            `\n\n[=== 翻译块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
-          );
+          aiProcessingStore
+            .appendThinkingMessage(
+              taskId,
+              `\n\n[=== 翻译块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
+            )
+            .catch((error) =>
+              console.error('[TranslationService] Failed to append thinking message:', error),
+            );
         }
 
         if (onProgress) {
@@ -446,6 +457,27 @@ export class TranslationService {
           firstParagraphId,
         );
 
+        if (aiProcessingStore && taskId) {
+          const messagesForEstimate: ChatMessage[] = [
+            ...chunkHistory,
+            { role: 'user', content: chunkContent },
+          ];
+          if (toolSchemaContent) {
+            messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
+          }
+          const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
+          const contextWindow = model.contextWindow || 0;
+          const contextPercentage =
+            contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
+          aiProcessingStore
+            .updateTask(taskId, {
+              contextTokens: estimatedTokens,
+              ...(contextWindow > 0 ? { contextWindow } : {}),
+              ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+            })
+            .catch((error) => console.error('[TranslationService] Failed to update task:', error));
+        }
+
         // 重试循环
         let retryCount = 0;
         let chunkProcessed = false;
@@ -473,10 +505,14 @@ export class TranslationService {
               );
 
               if (aiProcessingStore && taskId) {
-                void aiProcessingStore.updateTask(taskId, {
-                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
-                  status: 'processing',
-                });
+                aiProcessingStore
+                  .updateTask(taskId, {
+                    message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+                    status: 'processing',
+                  })
+                  .catch((error) =>
+                    console.error('[TranslationService] Failed to update task:', error),
+                  );
               }
             }
 

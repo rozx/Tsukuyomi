@@ -27,6 +27,9 @@ export interface AIProcessingTask {
   message?: string;
   thinkingMessage?: string; // 实际的 AI 思考消息（从流式响应中累积）
   outputContent?: string; // AI 的实际输出内容（翻译/润色/校对结果）
+  contextTokens?: number; // 估算的上下文 token 使用量
+  contextWindow?: number; // 模型上下文窗口大小
+  contextPercentage?: number; // 上下文使用百分比（0-100）
   /**
    * 关联的书籍 ID（用于 UI 展示“当前工作章节”等信息）
    * 注意：该字段可选，兼容历史任务数据
@@ -115,6 +118,9 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       ...(task.message !== undefined && { message: task.message }),
       ...(task.thinkingMessage !== undefined && { thinkingMessage: task.thinkingMessage }),
       ...(task.outputContent !== undefined && { outputContent: task.outputContent }),
+      ...(task.contextTokens !== undefined && { contextTokens: task.contextTokens }),
+      ...(task.contextWindow !== undefined && { contextWindow: task.contextWindow }),
+      ...(task.contextPercentage !== undefined && { contextPercentage: task.contextPercentage }),
       ...(task.bookId !== undefined && { bookId: task.bookId }),
       ...(task.chapterId !== undefined && { chapterId: task.chapterId }),
       ...(task.chapterTitle !== undefined && { chapterTitle: task.chapterTitle }),

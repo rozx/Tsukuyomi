@@ -17,6 +17,7 @@ import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { throttle } from 'src/utils/throttle';
+import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 // 常量定义
 const UPDATE_THRESHOLD_MS = 2000; // 更新时间阈值（毫秒）
@@ -70,6 +71,21 @@ const recentAITasks = computed(() => {
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
 
+const stopTask = (task: AIProcessingTask) => {
+  void aiProcessingStore.stopTask(task.id);
+  if (task.type === 'translation' && props.isTranslating) {
+    emit('cancel');
+    return;
+  }
+  if (task.type === 'polish' && props.isPolishing) {
+    emit('cancel');
+    return;
+  }
+  if (task.type === 'proofreading' && props.isProofreading) {
+    emit('cancel');
+  }
+};
+
 /**
  * 获取任务“当前工作章节”的展示文本
  * - 优先使用 task.chapterTitle（如果任务创建时提供）
@@ -111,6 +127,50 @@ const currentWorkingChapter = computed(() => {
     (t) => t.status === 'thinking' || t.status === 'processing',
   );
   return active ? getWorkingChapterLabel(active) : null;
+});
+
+const currentActiveTask = computed(() => {
+  return (
+    recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing') || null
+  );
+});
+
+const estimateTaskTokens = (task: AIProcessingTask): number => {
+  const parts: string[] = [];
+  if (task.message) parts.push(task.message);
+  if (task.thinkingMessage) parts.push(task.thinkingMessage);
+  if (task.outputContent) parts.push(task.outputContent);
+  if (parts.length === 0) return 0;
+  return estimateMessagesTokenCount([
+    {
+      role: 'assistant',
+      content: parts.join('\n'),
+    },
+  ]);
+};
+
+const currentContextUsage = computed(() => {
+  const task = currentActiveTask.value;
+  if (!task) return null;
+  const contextWindow = task.contextWindow || 0;
+  if (contextWindow <= 0) return null;
+  const tokens = task.contextTokens ?? estimateTaskTokens(task);
+  if (tokens <= 0) return null;
+  const percentage = task.contextPercentage ?? Math.round((tokens / contextWindow) * 100);
+  return {
+    tokens,
+    contextWindow,
+    percentage,
+    isEstimated: task.contextTokens === undefined,
+  };
+});
+
+const displayProgressMessage = computed(() => {
+  const message = props.progress?.message?.trim();
+  if (!message) return '';
+  const chunkMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
+  if (chunkMessagePattern.test(message)) return '';
+  return message;
 });
 
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
@@ -1031,7 +1091,7 @@ watch(
                     v-if="task.status === 'thinking' || task.status === 'processing'"
                     icon="pi pi-stop"
                     class="p-button-text p-button-sm p-button-danger ai-task-stop"
-                    @click="void aiProcessingStore.stopTask(task.id)"
+                    @click="stopTask(task)"
                     title="停止任务"
                   />
                 </div>
@@ -1196,25 +1256,40 @@ watch(
     <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
-          <i
-            :class="[
-              'translation-progress-icon',
-              isProofreading
-                ? 'pi pi-check-circle'
-                : isPolishing
-                  ? 'pi pi-sparkles'
-                  : 'pi pi-language',
-            ]"
-          ></i>
-          <span class="translation-progress-title">{{
-            isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
-          }}</span>
+          <div class="translation-progress-header-main">
+            <i
+              :class="[
+                'translation-progress-icon',
+                isProofreading
+                  ? 'pi pi-check-circle'
+                  : isPolishing
+                    ? 'pi pi-sparkles'
+                    : 'pi pi-language',
+              ]"
+            ></i>
+            <span class="translation-progress-title">{{
+              isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
+            }}</span>
+          </div>
+          <Button
+            icon="pi pi-times"
+            label="取消"
+            class="p-button-text p-button-sm translation-progress-cancel"
+            @click="emit('cancel')"
+          />
         </div>
         <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
           当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
         </div>
-        <div class="translation-progress-message">
-          {{ progress.message || '正在处理...' }}
+        <div v-if="currentContextUsage" class="translation-progress-context">
+          <span class="translation-progress-context-label">上下文使用：</span>
+          <span class="translation-progress-context-value">
+            {{ currentContextUsage.percentage }}% ({{ currentContextUsage.tokens }} /
+            {{ currentContextUsage.contextWindow }})
+            <span v-if="currentContextUsage.isEstimated" class="translation-progress-context-note">
+              估算
+            </span>
+          </span>
         </div>
       </div>
       <div class="translation-progress-bar-wrapper">
@@ -1225,22 +1300,13 @@ watch(
         />
         <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
       </div>
-      <div class="translation-progress-actions">
-        <Button
-          icon="pi pi-times"
-          label="取消"
-          class="p-button-text p-button-sm translation-progress-cancel"
-          @click="emit('cancel')"
-        />
-      </div>
     </div>
     <div v-else class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
           <i class="translation-progress-icon pi pi-list"></i>
-          <span class="translation-progress-title">AI 任务历史</span>
+          <span class="translation-progress-title">AI 任务历史 </span>
         </div>
-        <div class="translation-progress-message">查看翻译、润色和校对任务的执行历史</div>
       </div>
       <div class="translation-progress-actions">
         <!-- 无操作按钮 -->
@@ -1289,6 +1355,13 @@ watch(
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.translation-progress-header-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .translation-progress-icon {
@@ -1306,6 +1379,27 @@ watch(
   font-size: 0.8125rem;
   color: var(--moon-opacity-70);
   line-height: 1.4;
+}
+
+.translation-progress-context {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-70);
+  line-height: 1.4;
+}
+
+.translation-progress-context-label {
+  color: var(--moon-opacity-60);
+}
+
+.translation-progress-context-value {
+  font-weight: 500;
+  color: var(--moon-opacity-85);
+}
+
+.translation-progress-context-note {
+  margin-left: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--moon-opacity-50);
 }
 
 .translation-progress-working-chapter {

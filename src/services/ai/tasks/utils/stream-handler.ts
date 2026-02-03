@@ -171,6 +171,9 @@ export async function initializeTask(
     bookId?: string;
     chapterId?: string;
     chapterTitle?: string;
+    contextTokens?: number;
+    contextWindow?: number;
+    contextPercentage?: number;
   },
 ): Promise<{ taskId: string | undefined; abortController: AbortController | undefined }> {
   if (!aiProcessingStore) {
@@ -188,6 +191,11 @@ export async function initializeTask(
       ...(context?.bookId ? { bookId: context.bookId } : {}),
       ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
       ...(context?.chapterTitle ? { chapterTitle: context.chapterTitle } : {}),
+      ...(context?.contextTokens !== undefined ? { contextTokens: context.contextTokens } : {}),
+      ...(context?.contextWindow !== undefined ? { contextWindow: context.contextWindow } : {}),
+      ...(context?.contextPercentage !== undefined
+        ? { contextPercentage: context.contextPercentage }
+        : {}),
     });
 
     // 获取任务的 abortController

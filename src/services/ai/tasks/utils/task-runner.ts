@@ -363,6 +363,7 @@ class TaskLoopSession {
     if (!result.toolCalls) return;
 
     let hasProductiveTool = false;
+    const pendingUserMessages: ChatMessage[] = [];
 
     for (const toolCall of result.toolCalls) {
       if (!this.shouldProcessToolCall(toolCall)) {
@@ -374,11 +375,23 @@ class TaskLoopSession {
 
       const toolResultContent = await this.executeToolCall(toolCall, toolName);
 
-      await this.handleToolCallResult(toolCall, toolName, toolResultContent, assistantText);
+      const userMessage = await this.handleToolCallResult(
+        toolCall,
+        toolName,
+        toolResultContent,
+        assistantText,
+      );
+      if (userMessage) {
+        pendingUserMessages.push(userMessage);
+      }
     }
 
     if (hasProductiveTool) {
       this.resetConsecutiveCounters();
+    }
+
+    if (pendingUserMessages.length > 0) {
+      this.config.history.push(...pendingUserMessages);
     }
   }
 
@@ -452,18 +465,18 @@ class TaskLoopSession {
     toolName: string,
     toolResultContent: string,
     assistantText: string,
-  ) {
+  ): Promise<ChatMessage | undefined> {
     const { history } = this.config;
 
     this.captureToolCallResult(toolName, toolResultContent);
 
-    this.applyPendingStatusUpdate(toolName, assistantText);
+    const userMessage = this.applyPendingStatusUpdate(toolName, assistantText);
 
     await this.handleBatchExtraction(toolName, toolCall, toolResultContent);
 
     const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
     if (alreadyHandled) {
-      return;
+      return userMessage;
     }
 
     history.push({
@@ -472,12 +485,17 @@ class TaskLoopSession {
       tool_call_id: toolCall.id,
       name: toolName,
     });
+
+    return userMessage;
   }
 
-  private applyPendingStatusUpdate(toolName: string, assistantText: string) {
-    const { history, aiProcessingStore, taskId } = this.config;
+  private applyPendingStatusUpdate(
+    toolName: string,
+    assistantText: string,
+  ): ChatMessage | undefined {
+    const { aiProcessingStore, taskId } = this.config;
     if (toolName !== 'update_task_status' || !this.pendingStatusUpdate) {
-      return;
+      return undefined;
     }
 
     const previousStatus = this.currentStatus;
@@ -486,7 +504,7 @@ class TaskLoopSession {
 
     if (!this.isValidTransition(previousStatus, newStatus)) {
       this.handleInvalidTransition(previousStatus, newStatus, assistantText);
-      return;
+      return undefined;
     }
 
     this.trackStatusDuration(previousStatus, newStatus);
@@ -500,7 +518,7 @@ class TaskLoopSession {
     }
 
     const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
-    history.push({ role: 'user', content: statusPrompt });
+    return { role: 'user', content: statusPrompt };
   }
 
   private async handleBatchExtraction(

@@ -819,10 +819,14 @@ export function useChapterTranslation(
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
 
+    const paragraphs = selectedChapterParagraphs.value;
+    const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para));
+    const targetParagraphIds = new Set(nonEmptyParagraphs.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化翻译...',
     };
 
@@ -832,6 +836,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     // 用于批量保存：收集最后一个更新后的章节对象
     let latestChapterForBatchSave: Chapter | undefined;
@@ -839,7 +844,7 @@ export function useChapterTranslation(
     let translationFailed = false;
 
     try {
-      const paragraphs = selectedChapterParagraphs.value;
+      const paragraphs = nonEmptyParagraphs;
 
       // 获取章节标题
       const chapterTitle =
@@ -869,8 +874,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
@@ -907,7 +912,16 @@ export function useChapterTranslation(
           // 记录已应用的翻译
           for (const pt of translations) {
             lastAppliedTranslations.set(pt.id, pt.translation);
+            if (targetParagraphIds.has(pt.id)) {
+              completedParagraphIds.add(pt.id);
+            }
           }
+
+          state.progress = {
+            current: completedParagraphIds.size,
+            total: targetParagraphIds.size,
+            message: state.progress.message,
+          };
 
           // 从正在翻译的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
@@ -1032,19 +1046,22 @@ export function useChapterTranslation(
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(untranslatedParagraphs.map((para) => para.id));
+
+    // 用于跟踪已更新的段落，避免重复更新
+    const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化翻译...',
     };
 
     // 创建 AbortController 用于取消翻译
     const abortController = new AbortController();
     state.abortController = abortController;
-
-    // 用于跟踪已更新的段落，避免重复更新
-    const lastAppliedTranslations = new Map<string, string>();
 
     try {
       // 获取章节标题
@@ -1075,8 +1092,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
@@ -1092,6 +1109,18 @@ export function useChapterTranslation(
             targetChapterId,
             lastAppliedTranslations,
           );
+
+          for (const pt of translations) {
+            if (targetParagraphIds.has(pt.id)) {
+              completedParagraphIds.add(pt.id);
+            }
+          }
+
+          state.progress = {
+            current: completedParagraphIds.size,
+            total: targetParagraphIds.size,
+            message: state.progress.message,
+          };
         },
         onTitleTranslation: async (translation) => {
           // 立即更新标题翻译（不等待整个翻译完成）
@@ -1179,10 +1208,12 @@ export function useChapterTranslation(
     state.isPolishing = true;
     state.polishingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化润色...',
     };
 
@@ -1192,6 +1223,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     try {
       // 获取书籍的 chunk size 设置
@@ -1215,8 +1247,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在润色的段落 ID
@@ -1239,6 +1271,19 @@ export function useChapterTranslation(
             targetChapterId,
             lastAppliedTranslations,
           );
+
+          for (const pt of translations) {
+            if (targetParagraphIds.has(pt.id)) {
+              completedParagraphIds.add(pt.id);
+            }
+          }
+
+          state.progress = {
+            current: completedParagraphIds.size,
+            total: targetParagraphIds.size,
+            message: state.progress.message,
+          };
+
           // 从正在润色的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
             state.polishingParagraphIds.delete(pt.id);
@@ -1405,10 +1450,12 @@ export function useChapterTranslation(
     state.isProofreading = true;
     state.proofreadingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化校对...',
     };
 
@@ -1418,6 +1465,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     try {
       // 获取书籍的 chunk size 设置
@@ -1441,8 +1489,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在校对的段落 ID
@@ -1465,6 +1513,19 @@ export function useChapterTranslation(
             targetChapterId,
             lastAppliedTranslations,
           );
+
+          for (const pt of translations) {
+            if (targetParagraphIds.has(pt.id)) {
+              completedParagraphIds.add(pt.id);
+            }
+          }
+
+          state.progress = {
+            current: completedParagraphIds.size,
+            total: targetParagraphIds.size,
+            message: state.progress.message,
+          };
+
           // 从正在校对的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
             state.proofreadingParagraphIds.delete(pt.id);

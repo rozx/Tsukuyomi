@@ -912,8 +912,10 @@ export class AssistantService {
       // 但任务对象（包含 abortController）在 store 的 activeTasks 中
     }
 
-    // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
-    const allTools = ToolRegistry.getAllTools(context.currentBookId || undefined);
+    // 获取可用的工具（助手聊天裁剪掉翻译管理类工具，降低上下文体积）
+    const allTools = ToolRegistry.getToolsExcludingTranslationManagement(
+      context.currentBookId || undefined,
+    );
     // 过滤掉翻译/润色/校对专用的工具（这些工具只在特定任务中可用，不在助手聊天中可用）
     const tools = allTools.filter((t) => t.function.name !== 'add_translation_batch');
 
@@ -926,12 +928,6 @@ export class AssistantService {
     if (options.sessionSummary) {
       systemPrompt += `\n\n## 之前的对话总结\n\n${options.sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
     }
-
-    // 将工具定义作为系统消息加入，确保 token 估算与实际发送一致
-    const toolSchemaMessage: ChatMessage = {
-      role: 'system',
-      content: tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '',
-    };
 
     if (aiProcessingStore && taskId) {
       // 由于 addTask 是异步的，我们需要等待一下或者直接从 store 中查找
@@ -976,18 +972,6 @@ export class AssistantService {
           role: 'system',
           content: systemPrompt,
         });
-      }
-
-      if (toolSchemaMessage.content) {
-        const toolSchemaIndex = messages.findIndex(
-          (msg) => msg.role === 'system' && msg.content?.startsWith('【工具定义】'),
-        );
-        if (toolSchemaIndex >= 0) {
-          messages[toolSchemaIndex] = toolSchemaMessage;
-        } else {
-          const insertIndex = Math.min(1, messages.length);
-          messages.splice(insertIndex, 0, toolSchemaMessage);
-        }
       }
 
       // 添加用户消息
@@ -1076,6 +1060,17 @@ export class AssistantService {
         shouldSummarizeBeforeRequest,
         messageCount: options.messageHistory?.length || 0,
       });
+
+      if (aiProcessingStore && taskId) {
+        const contextWindow = model.contextWindow || 0;
+        const contextPercentage =
+          contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
+        await aiProcessingStore.updateTask(taskId, {
+          contextTokens: estimatedTokens,
+          ...(contextWindow > 0 ? { contextWindow } : {}),
+          ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+        });
+      }
 
       if (
         shouldSummarizeBeforeRequest &&
@@ -1233,6 +1228,17 @@ export class AssistantService {
             finalMaxTokens = Math.floor(availableForCompletion * 0.9); // 留 10% 缓冲
           }
         }
+      }
+
+      if (aiProcessingStore && taskId) {
+        const contextWindow = model.contextWindow || 0;
+        const contextPercentage =
+          contextWindow > 0 ? Math.round((finalEstimatedTokens / contextWindow) * 100) : undefined;
+        await aiProcessingStore.updateTask(taskId, {
+          contextTokens: finalEstimatedTokens,
+          ...(contextWindow > 0 ? { contextWindow } : {}),
+          ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+        });
       }
 
       // 构建配置
