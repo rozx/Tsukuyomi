@@ -506,6 +506,8 @@ export class ProofreadingService {
                       }
                     }
                   : undefined,
+              // 是否还有下一个块
+              hasNextChunk: chunkIndex < chunks.length - 1,
             });
 
             // 检查状态

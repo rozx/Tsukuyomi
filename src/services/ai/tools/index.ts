@@ -105,6 +105,14 @@ export class ToolRegistry {
     return this.mapTools(askUserTools);
   }
 
+  static getTaskStatusTools(): AITool[] {
+    return this.mapTools(taskStatusTools);
+  }
+
+  static getTranslationToolsForAI(): AITool[] {
+    return this.mapTools(translationTools);
+  }
+
   static getAllTools(bookId?: string): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具始终可用（不需要 bookId）
@@ -113,6 +121,8 @@ export class ToolRegistry {
       ...this.getTodoListTools(),
       // ask_user 始终可用（不需要 bookId；会阻塞等待用户回答）
       ...this.getAskUserTools(),
+      // AI 任务状态工具始终可用
+      ...this.getTaskStatusTools(),
     ];
 
     // 其他工具需要 bookId
@@ -124,6 +134,8 @@ export class ToolRegistry {
         ...this.getBookTools(bookId),
         ...this.getMemoryTools(bookId),
         ...this.getNavigationTools(bookId),
+        // 翻译相关工具（add_translation_batch）- 用于 translation/polish/proofreading
+        ...this.getTranslationToolsForAI(),
       );
     }
 
@@ -214,6 +226,8 @@ export class ToolRegistry {
     taskId?: string,
     sessionId?: string,
     paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    aiProcessingStore?: any, // AI 处理 Store，用于任务状态工具
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -256,6 +270,7 @@ export class ToolRegistry {
       if (paragraphIds && paragraphIds.length > 0) {
         chunkBoundaries = {
           allowedParagraphIds: new Set(paragraphIds),
+          paragraphIds: paragraphIds, // 保留顺序数组用于索引映射
           firstParagraphId: paragraphIds[0]!,
           lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
         };
@@ -269,6 +284,7 @@ export class ToolRegistry {
         ...(onAction ? { onAction } : {}),
         ...(onToast ? { onToast } : {}),
         ...(chunkBoundaries ? { chunkBoundaries } : {}),
+        ...(aiProcessingStore ? { aiProcessingStore } : {}),
       });
 
       // 记录工具调用成功

@@ -1,4 +1,6 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
+export { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
+import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import type { TaskType, TaskStatus } from '../utils';
 import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
@@ -77,9 +79,9 @@ function getWorkingStateDescription(taskType: TaskType): string {
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
-- 发现新信息立即更新
+- 发现新信息立即更新数据表/记忆
 - **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}
-- ⚠️ **不要输出 JSON**，直接调用工具
+- ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
 
 完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
 }
@@ -95,16 +97,21 @@ function getReviewStateDescription(taskLabel: string): string {
 - 如看到对日后翻译有帮助的信息，可复用信息优先合并到已有记忆
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
 
-如需更新已输出的${taskLabel}结果，可将状态改回 "working" 并调用工具提交更新。
+如需更新已输出的${taskLabel}结果，请用 \`update_task_status({"status": "working"})\` 切回 working 并提交更新。
 完成后使用 \`update_task_status({"status": "end"})\`。`;
 }
 
 /**
  * 获取结束阶段描述
  */
-function getEndStateDescription(): string {
+function getEndStateDescription(hasNextChunk?: boolean): string {
+  const nextChunkNote = hasNextChunk
+    ? '当前块已完成，系统将自动提供下一个块。'
+    : '所有内容已处理完毕，这是最后一个块。';
+
   return `**当前状态：完成 (end)**
-当前块已完成，系统将自动提供下一个块。`;
+${nextChunkNote}
+⚠️ **注意**：任务已结束，你不应再调用任何工具或输出内容，请直接结束本次会话。`;
 }
 
 /**
@@ -112,11 +119,13 @@ function getEndStateDescription(): string {
  * @param taskType 任务类型
  * @param status 当前状态
  * @param isBriefPlanning 是否为简短规划阶段（用于后续 chunk，已继承前一个 chunk 的规划上下文）
+ * @param hasNextChunk 是否有下一个块可用
  */
 export function getCurrentStatusInfo(
   taskType: TaskType,
   status: TaskStatus,
   isBriefPlanning?: boolean,
+  hasNextChunk?: boolean,
 ): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
 
@@ -128,7 +137,7 @@ export function getCurrentStatusInfo(
     case 'review':
       return getReviewStateDescription(taskLabel);
     case 'end':
-      return getEndStateDescription();
+      return getEndStateDescription(hasNextChunk);
     default:
       return '';
   }
@@ -216,56 +225,38 @@ export function getOutputFormatRules(taskType: TaskType): string {
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const isTranslation = taskType === 'translation';
 
+  const reviewStep = isTranslation
+    ? '翻译完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
+    : `${taskLabel}完成后：update_task_status({"status": "end"})`;
+
   const titleToolSection = isTranslation
-    ? `
-3. \`update_chapter_title\` - 提交章节标题翻译
-   - 在 working 状态下调用
-   - 示例：调用工具 \`update_chapter_title\` 参数：{"chapter_id": "章节ID", "translated_title": "标题翻译"}
-`
+    ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "translated_title": "标题翻译"}'
     : '';
 
-  const workflowSteps = isTranslation
-    ? `1. planning 阶段：使用工具获取上下文信息
-2. working 阶段：翻译，使用 \`add_translation_batch\` 提交结果，使用 \`update_chapter_title\` 提交标题
-3. review 阶段：检查并完善
-4. end 阶段：使用 \`update_task_status\` 标记完成`
-    : `1. planning 阶段：使用工具获取上下文信息
-2. working 阶段：${taskLabel}，使用 \`add_translation_batch\` 提交结果
-3. end 阶段：使用 \`update_task_status\` 标记完成`;
-
   const toolRestriction = isTranslation
-    ? '⛔ **只能在 working 状态下调用 `add_translation_batch` 和 `update_chapter_title`**'
-    : '⛔ **只能在 working 状态下调用 `add_translation_batch`**';
+    ? `⛔ 仅 working 可调用 add_translation_batch / update_chapter_title
+   - planning 只能 update_task_status 切到 working
+   - review 需要修改先切回 working
+   - end 禁止再调用翻译工具`
+    : `⛔ 仅 working 可调用 add_translation_batch
+   - planning 只能 update_task_status 切到 working
+   - end 禁止再调用翻译工具`;
 
-  const statusDesc = isTranslation
-    ? `1. \`update_task_status\` - 更新任务状态
-   - 规划阶段完成后：调用 \`update_task_status\` 参数：{"status": "working"}
-   - 翻译完成后：调用 \`update_task_status\` 参数：{"status": "review"}
-   - 复核完成后：调用 \`update_task_status\` 参数：{"status": "end"}
-   - **特别说明**：在 review 阶段如需修正，可调用 \`update_task_status\` 将状态切回 "working"`
-    : `1. \`update_task_status\` - 更新任务状态
-   - 规划阶段完成后：调用 \`update_task_status\` 参数：{"status": "working"}
-   - ${taskLabel}完成后：调用 \`update_task_status\` 参数：{"status": "end"}`;
+  return `【输出格式】必须使用工具调用, 不输出其他内容。
 
-  return `【输出格式】⚠️ **不要输出 JSON，使用工具调用**
+**核心流程**
+1. planning 完成：update_task_status({"status": "working"})
+2. working 处理：用 add_translation_batch 提交段落结果
+3. ${reviewStep}
 
-⛔ **禁止**：直接输出 JSON 格式的翻译结果或状态变更
-✅ **正确**：使用 Function Calling 工具提交结果
-
-**必须使用的工具**：
-${statusDesc}
-
-2. \`add_translation_batch\` - 批量提交段落翻译
-   - 在 working 状态下调用
-   - 一次可提交多个段落
-   - 最多 100 个段落/批次
+**工具要点**
+1. update_task_status：只提交 {"status": "..."}
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."} 或 {"paragraph_id": "...", "translated_text": "..."}
 ${titleToolSection}
-**工作流程**：
-${workflowSteps}
 
 ${getStatusFieldDescription(taskType)}
-- 段落 ID 与原文1:1对应${onlyChanged}
-- ${isTranslation ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}
+- 段落 ID 与原文 1:1 对应${onlyChanged}
+- ${isTranslation ? '必须全覆盖' : '仅提交修改过的段落'}
 ${toolRestriction}
 `;
 }

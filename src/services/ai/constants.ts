@@ -1,0 +1,1 @@
+export const MAX_TRANSLATION_BATCH_SIZE = 500;

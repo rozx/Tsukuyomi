@@ -925,7 +925,9 @@ export class AssistantService {
     }
 
     // 获取可用的工具（包括网络搜索工具，即使没有 bookId 也可以使用）
-    const tools = ToolRegistry.getAllTools(context.currentBookId || undefined);
+    const allTools = ToolRegistry.getAllTools(context.currentBookId || undefined);
+    // 过滤掉翻译/润色/校对专用的工具（这些工具只在特定任务中可用，不在助手聊天中可用）
+    const tools = allTools.filter((t) => t.function.name !== 'add_translation_batch');
 
     // 构建系统提示词（只传递 ID）- 必须在创建任务之后
     let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId);

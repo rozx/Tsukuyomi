@@ -47,6 +47,7 @@ export async function executeToolCall(
     taskId,
     undefined, // sessionId 不需要
     paragraphIds,
+    aiProcessingStore, // 传入 AI 处理 Store
   );
 
   if (aiProcessingStore && taskId) {

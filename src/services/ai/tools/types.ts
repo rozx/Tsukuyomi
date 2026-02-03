@@ -118,6 +118,8 @@ export interface ActionInfo {
 export interface ChunkBoundaries {
   /** 当前块允许访问的段落 ID 集合（用于 O(1) 边界检查） */
   allowedParagraphIds: Set<string>;
+  /** 当前块的段落 ID 数组（按顺序，用于索引映射） */
+  paragraphIds: string[];
   /** 当前块的第一个段落 ID（用于错误提示） */
   firstParagraphId: string;
   /** 当前块的最后一个段落 ID（用于错误提示） */

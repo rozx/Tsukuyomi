@@ -16,7 +16,7 @@
 
 #### Scenario: Valid batch submission
 
-- **GIVEN** AI 提供包含 paragraph_id、original_text 和 translated_text 的对象数组
+- **GIVEN** AI 提供包含 index、translated_text 的对象数组
 - **WHEN** 调用 `add_translation_batch` 工具
 - **THEN** 所有段落翻译被保存
 - **AND THEN** 返回成功信息，包含处理的段落数量
@@ -28,11 +28,11 @@
 - **THEN** 返回错误信息："段落列表不能为空"
 - **AND THEN** 不保存任何数据
 
-#### Scenario: Missing paragraph_id
+#### Scenario: Missing index
 
-- **GIVEN** 批次中某个段落对象缺少 paragraph_id
+- **GIVEN** 批次中某个段落对象缺少 index
 - **WHEN** 调用 `add_translation_batch` 工具
-- **THEN** 返回错误信息："段落 ID 不能为空"
+- **THEN** 返回错误信息："必须提供 index"
 - **AND THEN** 不保存任何数据（原子性操作）
 
 ### Requirement: Paragraph existence validation
@@ -41,7 +41,7 @@
 
 #### Scenario: Paragraph not in assignment
 
-- **GIVEN** AI 提交了一个不在当前任务分配范围内的 paragraph_id
+- **GIVEN** AI 提交了一个不在当前任务分配范围内的 index
 - **WHEN** 调用 `add_translation_batch` 工具
 - **THEN** 返回错误信息："段落不在当前任务范围内"
 - **AND THEN** 不保存任何数据（原子性操作）
@@ -84,11 +84,11 @@
 
 ### Requirement: Duplicate paragraph handling
 
-`add_translation_batch` 工具 SHALL 检测批次中的重复段落 ID。
+`add_translation_batch` 工具 SHALL 检测批次中的重复段落 ID（由 index 映射）。
 
 #### Scenario: Duplicate paragraph IDs in batch
 
-- **GIVEN** 批次中包含重复的 paragraph_id
+- **GIVEN** 批次中包含重复的 index
 - **WHEN** 调用 `add_translation_batch` 工具
 - **THEN** 返回错误信息："批次中存在重复的段落 ID"
 - **AND THEN** 不保存任何数据

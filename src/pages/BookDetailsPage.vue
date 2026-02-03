@@ -773,10 +773,9 @@ watch(
         currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
         currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
 
-      if (!hasMetadataChanged) {
-        // 元数据没有变化，不需要更新
-        return;
-      }
+      // 判断是否需要同步内容更新（当内容已加载且用户未编辑时）
+      const hasContentUpdate =
+        Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
 
       // 判断是否应该更新元数据
       // 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
@@ -798,15 +797,24 @@ watch(
       // 2. 更新来自外部操作（如同步、在线获取更新），此时即使正在编辑也允许更新元数据
       const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
 
-      if (shouldUpdateMetadata) {
-        // 更新元数据，但保留现有的 content（如果已加载）
+      const shouldUpdateContent = hasContentUpdate && !isUserEditing;
+
+      if (!hasMetadataChanged && !shouldUpdateContent) {
+        // 元数据和内容都没有需要同步的变化
+        return;
+      }
+
+      if (shouldUpdateMetadata || shouldUpdateContent) {
         selectedChapterWithContent.value = {
           ...currentChapter,
-          ...updatedChapter,
-          // 保留现有的 content，因为 content 的更新由专门的函数处理
-          content: currentChapter.content ?? updatedChapter.content,
-          // 保留 contentLoaded 状态，因为如果当前已加载，应该保持已加载状态
-          contentLoaded: currentChapter.contentLoaded ?? updatedChapter.contentLoaded,
+          ...(shouldUpdateMetadata ? updatedChapter : {}),
+          content: shouldUpdateContent
+            ? updatedChapter.content
+            : (currentChapter.content ?? updatedChapter.content),
+          contentLoaded: shouldUpdateContent
+            ? true
+            : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
+          lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
         };
       }
       // 注意：如果用户正在编辑且不是外部更新，不更新元数据，避免覆盖本地编辑

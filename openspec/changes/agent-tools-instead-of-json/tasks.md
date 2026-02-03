@@ -20,7 +20,7 @@
 
 - [x] 3.1 创建 `src/services/ai/tools/translation-batch-tools.ts` 文件
 - [x] 3.2 定义 `add_translation_batch` 工具的 JSON schema
-- [x] 3.3 实现批次参数验证（空批次、缺少 paragraph_id）
+- [x] 3.3 实现批次参数验证（空批次、缺少 index）
 - [x] 3.4 实现段落 ID 重复检测
 - [x] 3.5 实现段落分配范围验证
 - [x] 3.6 实现批次大小限制（最大 100 个段落）

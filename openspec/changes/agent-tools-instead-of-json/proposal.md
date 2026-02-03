@@ -7,7 +7,7 @@
 3. **错误处理困难**: 格式错误的 JSON 或无效的状态值难以实时检测和纠正
 4. **扩展性差**: 新增字段或修改格式需要同时更新提示词和解析逻辑
 
-通过使用 Function Calling 工具（如 `update_task_status`、`add_translation`），AI 可以直接调用工具来操作状态和数据，实现更可靠、更直观的状态管理。
+通过使用 Function Calling 工具（如 `update_task_status`、`add_translation_batch`），AI 可以直接调用工具来操作状态和数据，实现更可靠、更直观的状态管理。
 
 ## What Changes
 

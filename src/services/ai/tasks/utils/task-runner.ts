@@ -1,16 +1,12 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import {
   getCurrentStatusInfo,
-  getStreamErrorPrompt,
-  getInvalidTransitionPrompt,
   getPlanningLoopPrompt,
   getWorkingLoopPrompt,
   getWorkingFinishedPrompt,
   getWorkingContinuePrompt,
   getMissingParagraphsPrompt,
   getReviewLoopPrompt,
-  getParseErrorPrompt,
-  getContentStateMismatchPrompt,
   getUnauthorizedToolPrompt,
   getToolLimitReachedPrompt,
   getBriefPlanningToolWarningPrompt,
@@ -50,12 +46,8 @@ import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
 
 // Constants
-import { AI_ERROR_MARKERS } from './error-constants';
-
 // 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
-// 最大连续内容状态不匹配次数（内容与状态不一致时的重试次数）
-const MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH = 3;
 
 /**
  * 处理工具调用循环
@@ -117,6 +109,10 @@ export interface ToolCallLoopConfig {
    * 当前 chunk 索引（用于错误日志）
    */
   chunkIndex?: number;
+  /**
+   * 是否还有下一个块可用
+   */
+  hasNextChunk?: boolean;
 }
 
 /**
@@ -171,7 +167,6 @@ class TaskLoopSession {
   private consecutivePlanningCount = 0;
   private consecutiveWorkingCount = 0;
   private consecutiveReviewCount = 0;
-  private consecutiveContentStateMismatchCount = 0;
   private toolCallCounts = new Map<string, number>();
 
   // Tool call results tracking (for new tool-based approach)
@@ -253,7 +248,6 @@ class TaskLoopSession {
       );
     } catch (error) {
       hasError = true;
-      return this.handleGenerationError(error, streamedText);
     } finally {
       cleanupAbort();
     }
@@ -357,37 +351,6 @@ class TaskLoopSession {
   }
 
   /**
-   * 处理生成过程中的错误（特别是流式状态检测抛出的错误）
-   */
-  private handleGenerationError(error: unknown, streamedText: string): { shouldContinue: boolean } {
-    const { logLabel } = this.config;
-    if (
-      error instanceof Error &&
-      (error.message.includes(AI_ERROR_MARKERS.INVALID_STATUS) ||
-        error.message.includes(AI_ERROR_MARKERS.INVALID_TRANSITION) ||
-        error.message.includes(AI_ERROR_MARKERS.CONTENT_STATE_MISMATCH))
-    ) {
-      console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
-      const partialResponse = streamedText || '';
-      const warningMessage = getStreamErrorPrompt(
-        error.message,
-        this.config.taskType,
-        this.currentStatus,
-      );
-
-      if (partialResponse.trim()) {
-        this.config.history.push({ role: 'assistant', content: partialResponse });
-      }
-      this.config.history.push({
-        role: 'user',
-        content: `${this.getCurrentStatusInfoMsg()}\n\n${warningMessage}`,
-      });
-      return { shouldContinue: true };
-    }
-    throw error;
-  }
-
-  /**
    * 处理工具调用逻辑
    */
   private async processToolCalls(
@@ -440,6 +403,7 @@ class TaskLoopSession {
         taskId,
         undefined, // sessionId
         this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
+        aiProcessingStore, // 传入 AI 处理 Store
       );
       this.metrics.toolCallTime += Date.now() - start;
       this.metrics.toolCallCount++;
@@ -455,6 +419,50 @@ class TaskLoopSession {
 
       // 4. 捕获新工具调用的结果
       this.captureToolCallResult(toolName, toolResultContent);
+
+      // 4.1 如果状态更新已发生，立即切换并推送对应状态提示
+      if (toolName === 'update_task_status' && this.pendingStatusUpdate) {
+        const previousStatus = this.currentStatus;
+        const newStatus = this.pendingStatusUpdate;
+        this.pendingStatusUpdate = undefined;
+
+        if (!this.isValidTransition(previousStatus, newStatus)) {
+          this.handleInvalidTransition(previousStatus, newStatus, assistantText);
+        } else {
+          this.trackStatusDuration(previousStatus, newStatus);
+          this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
+          this.currentStatus = newStatus;
+
+          if (aiProcessingStore && taskId) {
+            void aiProcessingStore.updateTask(taskId, {
+              workflowStatus: newStatus,
+            });
+          }
+
+          const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
+          history.push({ role: 'user', content: statusPrompt });
+        }
+      }
+
+      // 4.1 处理 add_translation_batch 的段落提取（工具模式）
+      if (toolName === 'add_translation_batch') {
+        const extracted = this.extractParagraphsFromBatchToolCall(toolCall, toolResultContent);
+        if (extracted.length > 0) {
+          for (const para of extracted) {
+            this.accumulatedParagraphs.set(para.id, para.translation);
+          }
+          if (this.config.onParagraphsExtracted) {
+            try {
+              await this.config.onParagraphsExtracted(extracted);
+            } catch (error) {
+              console.error(
+                `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
+                error,
+              );
+            }
+          }
+        }
+      }
 
       // 5. 收集规划阶段信息，返回是否已处理
       const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
@@ -475,6 +483,43 @@ class TaskLoopSession {
 
     if (hasProductiveTool) {
       this.resetConsecutiveCounters();
+    }
+  }
+
+  private extractParagraphsFromBatchToolCall(
+    toolCall: AIToolCall,
+    toolResultContent: string,
+  ): Array<{ id: string; translation: string }> {
+    try {
+      const result = JSON.parse(toolResultContent);
+      if (!result?.success) {
+        return [];
+      }
+      const args = JSON.parse(toolCall.function.arguments || '{}') as {
+        paragraphs?: Array<{ index?: number; paragraph_id?: string; translated_text?: string }>;
+      };
+      if (!args.paragraphs || args.paragraphs.length === 0) return [];
+
+      const paragraphIds = this.config.paragraphIds || [];
+      const extracted: Array<{ id: string; translation: string }> = [];
+
+      for (const item of args.paragraphs) {
+        if (!item || typeof item.translated_text !== 'string') continue;
+        if (item.paragraph_id && typeof item.paragraph_id === 'string') {
+          extracted.push({ id: item.paragraph_id, translation: item.translated_text });
+          continue;
+        }
+        if (typeof item.index === 'number') {
+          const id = paragraphIds[item.index];
+          if (id) {
+            extracted.push({ id, translation: item.translated_text });
+          }
+        }
+      }
+
+      return extracted;
+    } catch {
+      return [];
     }
   }
 
@@ -585,15 +630,6 @@ class TaskLoopSession {
     return false;
   }
 
-  private handleParseError(error: string, responseText: string) {
-    console.warn(`[${this.config.logLabel}] ⚠️ ${error}`);
-    this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: `${this.getCurrentStatusInfoMsg()}\n\n` + getParseErrorPrompt(error),
-    });
-  }
-
   private isValidTransition(prev: TaskStatus, next: TaskStatus): boolean {
     if (prev === next) return true;
     const validTransitions = getValidTransitionsForTaskType(this.config.taskType);
@@ -607,13 +643,7 @@ class TaskLoopSession {
       `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(prev, taskType)} → ${getStatusLabel(next, taskType)}`,
     );
 
-    const prompt = getInvalidTransitionPrompt(taskType, prev, next);
-
     this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: prompt,
-    });
   }
 
   private trackStatusDuration(prev: TaskStatus, next: TaskStatus) {
@@ -796,6 +826,7 @@ class TaskLoopSession {
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
+      this.config.hasNextChunk,
     );
   }
 
@@ -846,22 +877,5 @@ class TaskLoopSession {
       planningContextUpdate,
       metrics: this.metrics,
     };
-  }
-}
-
-/**
- * @deprecated 状态检查在 executeToolCallLoop 中处理
- * 检查是否达到最大回合数限制（已废弃）
- * 保留此函数以保持向后兼容性
- */
-export function checkMaxTurnsReached(
-  finalResponseText: string | null,
-  maxTurns: number,
-  taskType: TaskType,
-): asserts finalResponseText is string {
-  if (!finalResponseText || finalResponseText.trim().length === 0) {
-    throw new Error(
-      `AI在工具调用后未返回${TASK_TYPE_LABELS[taskType]}结果（已达到最大回合数 ${maxTurns}）。请重试。`,
-    );
   }
 }

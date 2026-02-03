@@ -895,6 +895,7 @@ describe('chunk boundary enforcement', () => {
   function createChunkBoundaries(paragraphIds: string[]) {
     return {
       allowedParagraphIds: new Set(paragraphIds),
+      paragraphIds: paragraphIds,
       firstParagraphId: paragraphIds[0] || '',
       lastParagraphId: paragraphIds[paragraphIds.length - 1] || '',
     };
