@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Popover from 'primevue/popover';
+import ProgressBar from 'primevue/progressbar';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useUiStore } from 'src/stores/ui';
@@ -21,6 +22,10 @@ import {
   MAX_MESSAGES_PER_SESSION,
 } from 'src/stores/chat-sessions';
 import { AssistantService } from 'src/services/ai/tasks';
+import {
+  buildAssistantMessageHistory,
+  estimateAssistantContextTokens,
+} from 'src/utils/ai-context-utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { ActionInfo } from 'src/services/ai/tools';
 import type { ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
@@ -95,30 +100,7 @@ function throttle<Args extends unknown[]>(
   };
 }
 
-const buildAIMessageHistory = (
-  session: SessionWithSummaryIndex | null,
-): AIChatMessage[] | undefined => {
-  if (!session || !session.messages.length) {
-    return undefined;
-  }
-  const startIndex = session.lastSummarizedMessageIndex ?? 0;
-  const sliced = session.messages
-    .slice(startIndex)
-    .filter(
-      (msg) =>
-        (msg.role === 'user' || msg.role === 'assistant') &&
-        !msg.isSummarization &&
-        !msg.isSummaryResponse,
-    )
-    // [兼容] 过滤空消息：部分 OpenAI 兼容服务（如 Moonshot/Kimi）会拒绝空 content
-    // 也可以避免把 UI 占位符 assistant 气泡（content=''）带入上下文
-    .filter((msg) => Boolean(msg.content && msg.content.trim()))
-    .map((msg) => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
-    }));
-  return sliced.length > 0 ? sliced : undefined;
-};
+const buildAIMessageHistory = buildAssistantMessageHistory;
 
 // 将工具操作记录压缩成“上下文摘要”，用于下一轮对话更好地复用工具结果。
 // 注意：不包含 thinking，也不包含工具原始返回体，只保留关键字段，避免上下文膨胀。
@@ -222,6 +204,96 @@ const buildContextSummaryContent = (actions: MessageAction[] | undefined): strin
   if (lines.length === 0) return null;
   const content = `${header}\n${lines.join('\n')}`;
   return content.length > maxChars ? truncateForContext(content, maxChars) : content;
+};
+
+const normalizeToolResultContent = (content: unknown): string => {
+  if (content === null || content === undefined) return '';
+  if (typeof content === 'string') {
+    return content.replace(/\s+/g, ' ').trim();
+  }
+  try {
+    return JSON.stringify(content).replace(/\s+/g, ' ').trim();
+  } catch {
+    // Handle values that can't be JSON stringified (circular refs, functions, etc.)
+    if (typeof content === 'object' && content !== null) {
+      return '[object Object]';
+    }
+    // For other primitive types (number, boolean, bigint, symbol, function)
+    if (
+      typeof content === 'number' ||
+      typeof content === 'boolean' ||
+      typeof content === 'bigint' ||
+      typeof content === 'symbol' ||
+      typeof content === 'function'
+    ) {
+      return String(content).replace(/\s+/g, ' ').trim();
+    }
+    return '';
+  }
+};
+
+const buildToolResultContextContent = (toolMessages: AIChatMessage[]): string | null => {
+  if (!toolMessages.length) return null;
+
+  const header = '【上下文：工具结果】';
+  const maxLines = 12;
+  const maxChars = 2500;
+  const lines: string[] = [];
+
+  for (const msg of toolMessages.slice(0, maxLines)) {
+    const toolName = msg.name || 'tool';
+    const rawResult = normalizeToolResultContent(msg.content);
+    if (!rawResult) continue;
+    const result = truncateForContext(rawResult, 500);
+    const callId = msg.tool_call_id ? `，ID=${msg.tool_call_id}` : '';
+    const line = `- 工具=${toolName}${callId}，结果=${result}`;
+    const candidate = `${header}\n${[...lines, line].join('\n')}`;
+    if (candidate.length > maxChars) {
+      break;
+    }
+    lines.push(line);
+  }
+
+  if (!lines.length) return null;
+  const content = `${header}\n${lines.join('\n')}`;
+  return content.length > maxChars ? truncateForContext(content, maxChars) : content;
+};
+
+const extractNewToolMessages = (
+  history: AIChatMessage[] | undefined,
+  previousHistory: AIChatMessage[] | undefined,
+): AIChatMessage[] => {
+  if (!history || history.length === 0) return [];
+  let offset = previousHistory?.length ?? 0;
+  const historyHasSystem = history[0]?.role === 'system';
+  const previousHasSystem = previousHistory?.[0]?.role === 'system';
+  if (historyHasSystem && !previousHasSystem) {
+    offset += 1;
+  }
+  const safeOffset = Math.min(Math.max(offset, 0), history.length);
+  return history.slice(safeOffset).filter((msg) => msg.role === 'tool');
+};
+
+const appendToolResultContextMessagesFromHistory = (
+  history: AIChatMessage[] | undefined,
+  previousHistory: AIChatMessage[] | undefined,
+): void => {
+  const toolMessages = extractNewToolMessages(history, previousHistory);
+  if (!toolMessages.length) return;
+  const content = buildToolResultContextContent(toolMessages);
+  if (!content) return;
+  const alreadyExists = messages.value.some(
+    (msg) => msg.isContextMessage && msg.content === content,
+  );
+  if (alreadyExists) return;
+  const contextMsg: ChatMessage = {
+    id: `tool-context-${Date.now()}`,
+    role: 'assistant',
+    content,
+    timestamp: Date.now(),
+    isContextMessage: true,
+  };
+  messages.value.push(contextMsg);
 };
 
 const ensureContextMessagesForLastUserTurn = (): void => {
@@ -606,11 +678,11 @@ watch(
 );
 
 // Popover refs for action details
-const actionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
+const actionPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
 
 // Popover refs for grouped action details
-const groupedActionPopoverRefs = ref<Map<string, InstanceType<typeof Popover> | null>>(new Map());
+const groupedActionPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const hoveredGroupedAction = ref<{
   actions: MessageAction[];
   message: ChatMessage;
@@ -849,13 +921,12 @@ const sessionStats = computed(() => {
   const currentCount = messagesToCount.length;
 
   // 估算 Token 数量
-  const msgsForCount = messages.value.map((m) => ({
-    role: m.role as 'user' | 'assistant',
-    content: m.content || '',
-  }));
-  // 使用 any 类型转换以兼容 AIChatMessage 类型
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tokens = AssistantService.estimateTokenCount(msgsForCount as any[]);
+  const tokens = estimateAssistantContextTokens({
+    context: contextStore.getContext,
+    session: currentSession,
+    currentMessages: messages.value,
+    includeToolSchemas: true,
+  });
 
   const maxTokens = assistantModel.value?.contextWindow || 0;
   let tokenPercentage = 0;
@@ -875,6 +946,9 @@ const sessionStats = computed(() => {
     limit: MESSAGE_LIMIT_THRESHOLD,
     tokens,
     maxTokens,
+    tokenPercentage,
+    msgPercentage,
+    maxPercentage,
     // 显示 "上下文使用: 45% (80/180 消息 | 4000 Tokens)"
     summary: `上下文使用: ${maxPercentage}% (${currentCount}/${MESSAGE_LIMIT_THRESHOLD} 消息 | ${tokens} Tokens)`,
   };
@@ -2506,6 +2580,10 @@ const sendMessage = async () => {
 
         // 生成隐藏的上下文摘要消息（用于下一轮对话复用工具结果）
         ensureContextMessagesForLastUserTurn();
+        appendToolResultContextMessagesFromHistory(
+          continueResult.messageHistory,
+          updatedMessageHistory,
+        );
 
         // 更新 store 中的消息历史
         if (continueResult.messageHistory && sessionId) {
@@ -2571,6 +2649,7 @@ const sendMessage = async () => {
 
     // 生成隐藏的上下文摘要消息（用于下一轮对话复用工具结果）
     ensureContextMessagesForLastUserTurn();
+    appendToolResultContextMessagesFromHistory(result.messageHistory, messageHistory);
 
     // 更新 store 中的消息历史（使用 UI 中的消息列表，它们已经包含了用户和助手消息）
     // 使用保存的会话 ID，确保即使会话切换，消息也会保存到原始会话
@@ -2911,26 +2990,19 @@ const toggleActionPopover = (
   event: Event,
   action: MessageAction,
   message: ChatMessage,
-  popoverKey: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _popoverKey: string,
 ) => {
-  const popoverRef = actionPopoverRefs.value.get(popoverKey);
-
-  if (popoverRef) {
+  if (actionPopoverRef.value) {
     hoveredAction.value = { action, message };
-    popoverRef.toggle(event);
+    actionPopoverRef.value.toggle(event);
   }
 };
 
 // 处理鼠标离开事件，关闭 Popover
-const handleActionMouseLeave = (
-  action: MessageAction,
-  message: ChatMessage,
-  popoverKey: string,
-) => {
-  const popoverRef = actionPopoverRefs.value.get(popoverKey);
-
-  if (popoverRef) {
-    popoverRef.hide();
+const handleActionMouseLeave = () => {
+  if (actionPopoverRef.value) {
+    actionPopoverRef.value.hide();
   }
 };
 
@@ -2946,26 +3018,16 @@ const toggleGroupedActionPopover = (
   message: ChatMessage,
   timestamp: number,
 ) => {
-  const actionKey = `grouped-${message.id}-${timestamp}`;
-  const popoverRef = groupedActionPopoverRefs.value.get(actionKey);
-
-  if (popoverRef) {
+  if (groupedActionPopoverRef.value) {
     hoveredGroupedAction.value = { actions, message, timestamp };
-    popoverRef.toggle(event);
+    groupedActionPopoverRef.value.toggle(event);
   }
 };
 
 // 处理鼠标离开事件，关闭分组操作 Popover
-const handleGroupedActionMouseLeave = (_timestamp: number) => {
-  // 注意：这里不能直接通过 timestamp 找到 ref，需要遍历或使用其他方式
-  // 为了简化，我们使用 hoveredGroupedAction 来找到对应的 ref
-  if (hoveredGroupedAction.value) {
-    const actionKey = `grouped-${hoveredGroupedAction.value.message.id}-${hoveredGroupedAction.value.timestamp}`;
-    const popoverRef = groupedActionPopoverRefs.value.get(actionKey);
-
-    if (popoverRef) {
-      popoverRef.hide();
-    }
+const handleGroupedActionMouseLeave = () => {
+  if (groupedActionPopoverRef.value) {
+    groupedActionPopoverRef.value.hide();
   }
 };
 
@@ -3415,58 +3477,12 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                             item.timestamp,
                           )
                       "
-                      @mouseleave="() => handleGroupedActionMouseLeave(item.timestamp)"
+                      @mouseleave="handleGroupedActionMouseLeave"
                     >
                       <i class="text-sm pi pi-list" />
                       <span> 创建 {{ item.groupedActions.length }} 个待办事项 </span>
                     </div>
-                    <!-- Grouped Action Details Popover -->
-                    <Popover
-                      :ref="
-                        (el) => {
-                          const actionKey = `grouped-${item.messageId}-${item.timestamp}`;
-                          if (el) {
-                            groupedActionPopoverRefs.set(
-                              actionKey,
-                              el as unknown as InstanceType<typeof Popover>,
-                            );
-                          }
-                        }
-                      "
-                      :target="`grouped-action-${item.messageId}-${item.timestamp}`"
-                      :dismissable="true"
-                      :show-close-icon="false"
-                      style="width: 18rem; max-width: 90vw"
-                      class="action-popover"
-                      @hide="handleGroupedActionPopoverHide"
-                    >
-                      <div
-                        v-if="
-                          hoveredGroupedAction &&
-                          hoveredGroupedAction.timestamp === item.timestamp &&
-                          hoveredGroupedAction.message.id === item.messageId
-                        "
-                        class="action-popover-content"
-                      >
-                        <div class="popover-header">
-                          <span class="popover-title"
-                            >创建 {{ item.groupedActions.length }} 个待办事项</span
-                          >
-                        </div>
-                        <div class="popover-details">
-                          <div
-                            v-for="(todoAction, todoIdx) in item.groupedActions"
-                            :key="todoIdx"
-                            class="popover-detail-item"
-                          >
-                            <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
-                            <span class="popover-detail-value">{{
-                              todoAction.name || '待办事项'
-                            }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </Popover>
+                    <!-- Shared Popover moved to outer scope -->
                   </div>
                 </div>
                 <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
@@ -3503,14 +3519,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                             `${item.messageId}-${item.action!.timestamp}-${itemIdx}`,
                           )
                       "
-                      @mouseleave="
-                        () =>
-                          handleActionMouseLeave(
-                            item.action!,
-                            message,
-                            `${item.messageId}-${item.action!.timestamp}-${itemIdx}`,
-                          )
-                      "
+                      @mouseleave="handleActionMouseLeave"
                     >
                       <i
                         class="text-sm"
@@ -3915,90 +3924,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
                         </span>
                       </span>
                     </div>
-                    <!-- Action Details Popover -->
-                    <Popover
-                      :ref="
-                        (el) => {
-                          const actionKey = `${item.messageId}-${item.action!.timestamp}-${itemIdx}`;
-                          if (el) {
-                            actionPopoverRefs.set(
-                              actionKey,
-                              el as unknown as InstanceType<typeof Popover>,
-                            );
-                          }
-                        }
-                      "
-                      :target="`action-${item.messageId}-${item.action!.timestamp}`"
-                      :dismissable="true"
-                      :show-close-icon="false"
-                      style="width: 18rem; max-width: 90vw"
-                      class="action-popover"
-                      @hide="handleActionPopoverHide"
-                    >
-                      <div
-                        v-if="
-                          hoveredAction &&
-                          hoveredAction.action.timestamp === item.action!.timestamp &&
-                          hoveredAction.message.id === item.messageId
-                        "
-                        class="action-popover-content"
-                      >
-                        <div class="popover-header">
-                          <span class="popover-title">
-                            {{
-                              item.action.type === 'create'
-                                ? '创建'
-                                : item.action.type === 'update'
-                                  ? '更新'
-                                  : item.action.type === 'delete'
-                                    ? '删除'
-                                    : item.action.type === 'web_search'
-                                      ? '网络搜索'
-                                      : item.action.type === 'search'
-                                        ? '搜索'
-                                        : item.action.type === 'web_fetch'
-                                          ? '网页获取'
-                                          : item.action.type === 'read'
-                                            ? '读取'
-                                            : item.action.type === 'navigate'
-                                              ? '导航'
-                                              : ''
-                            }}
-                            {{
-                              item.action.entity === 'term'
-                                ? '术语'
-                                : item.action.entity === 'character'
-                                  ? '角色'
-                                  : item.action.entity === 'web'
-                                    ? '网络'
-                                    : item.action.entity === 'translation'
-                                      ? '翻译'
-                                      : item.action.entity === 'chapter'
-                                        ? '章节'
-                                        : item.action.entity === 'paragraph'
-                                          ? '段落'
-                                          : item.action.entity === 'book'
-                                            ? '书籍'
-                                            : item.action.entity === 'memory'
-                                              ? '记忆'
-                                              : item.action.entity === 'todo'
-                                                ? '待办事项'
-                                                : ''
-                            }}
-                          </span>
-                        </div>
-                        <div class="popover-details">
-                          <div
-                            v-for="(detail, detailIdx) in getActionDetailsWithContext(item.action)"
-                            :key="detailIdx"
-                            class="popover-detail-item"
-                          >
-                            <span class="popover-detail-label">{{ detail.label }}：</span>
-                            <span class="popover-detail-value">{{ detail.value }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </Popover>
+                    <!-- Shared Popover moved to outer scope -->
                   </div>
                 </div>
                 <span
@@ -4022,6 +3948,14 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
     <!-- Input area -->
     <div class="shrink-0 px-4 py-3 border-t border-white/10 relative z-10 bg-night-950/50 min-w-0">
       <div class="flex flex-col gap-2 w-full min-w-0">
+        <div v-if="sessionStats" class="context-usage-bar" v-tooltip.top="sessionStats.summary">
+          <ProgressBar :value="sessionStats.maxPercentage" :show-value="false" />
+          <div class="context-usage-text">
+            {{ sessionStats.maxPercentage }}% · {{ sessionStats.tokens }}/{{
+              sessionStats.maxTokens || '∞'
+            }}
+          </div>
+        </div>
         <Textarea
           ref="inputRef"
           v-model="inputMessage"
@@ -4036,11 +3970,6 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
           <div class="flex items-center gap-2 text-xs text-moon-50">
             <span v-if="!assistantModel">未配置助手模型</span>
             <span v-else>{{ assistantModel.name || assistantModel.id }}</span>
-            <i
-              v-if="sessionStats"
-              class="pi pi-chart-pie hover:text-moon-100 cursor-help transition-colors"
-              v-tooltip.top="sessionStats.summary"
-            ></i>
           </div>
           <div class="flex items-center gap-2">
             <Button
@@ -4055,6 +3984,100 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
         </div>
       </div>
     </div>
+    <!-- Shared Grouped Action Popover -->
+    <Popover
+      ref="groupedActionPopoverRef"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 18rem; max-width: 90vw"
+      class="action-popover"
+      @hide="handleGroupedActionPopoverHide"
+    >
+      <div v-if="hoveredGroupedAction" class="action-popover-content">
+        <div class="popover-header">
+          <span class="popover-title"
+            >创建 {{ hoveredGroupedAction.actions.length }} 个待办事项</span
+          >
+        </div>
+        <div class="popover-details">
+          <div
+            v-for="(todoAction, todoIdx) in hoveredGroupedAction.actions"
+            :key="todoIdx"
+            class="popover-detail-item"
+          >
+            <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
+            <span class="popover-detail-value">{{ todoAction.name || '待办事项' }}</span>
+          </div>
+        </div>
+      </div>
+    </Popover>
+
+    <!-- Shared Action Details Popover -->
+    <Popover
+      ref="actionPopoverRef"
+      :dismissable="true"
+      :show-close-icon="false"
+      style="width: 18rem; max-width: 90vw"
+      class="action-popover"
+      @hide="handleActionPopoverHide"
+    >
+      <div v-if="hoveredAction" class="action-popover-content">
+        <div class="popover-header">
+          <span class="popover-title">
+            {{
+              hoveredAction.action.type === 'create'
+                ? '创建'
+                : hoveredAction.action.type === 'update'
+                  ? '更新'
+                  : hoveredAction.action.type === 'delete'
+                    ? '删除'
+                    : hoveredAction.action.type === 'web_search'
+                      ? '网络搜索'
+                      : hoveredAction.action.type === 'search'
+                        ? '搜索'
+                        : hoveredAction.action.type === 'web_fetch'
+                          ? '网页获取'
+                          : hoveredAction.action.type === 'read'
+                            ? '读取'
+                            : hoveredAction.action.type === 'navigate'
+                              ? '导航'
+                              : ''
+            }}
+            {{
+              hoveredAction.action.entity === 'term'
+                ? '术语'
+                : hoveredAction.action.entity === 'character'
+                  ? '角色'
+                  : hoveredAction.action.entity === 'web'
+                    ? '网络'
+                    : hoveredAction.action.entity === 'translation'
+                      ? '翻译'
+                      : hoveredAction.action.entity === 'chapter'
+                        ? '章节'
+                        : hoveredAction.action.entity === 'paragraph'
+                          ? '段落'
+                          : hoveredAction.action.entity === 'book'
+                            ? '书籍'
+                            : hoveredAction.action.entity === 'memory'
+                              ? '记忆'
+                              : hoveredAction.action.entity === 'todo'
+                                ? '待办事项'
+                                : ''
+            }}
+          </span>
+        </div>
+        <div class="popover-details">
+          <div
+            v-for="(detail, detailIdx) in getActionDetailsWithContext(hoveredAction.action)"
+            :key="detailIdx"
+            class="popover-detail-item"
+          >
+            <span class="popover-detail-label">{{ detail.label }}：</span>
+            <span class="popover-detail-value">{{ detail.value }}</span>
+          </div>
+        </div>
+      </div>
+    </Popover>
   </aside>
 </template>
 
@@ -4370,6 +4393,25 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   color: var(--moon-opacity-90);
   word-break: break-word;
   line-height: 1.5;
+}
+
+.context-usage-bar {
+  margin-top: 10px;
+}
+
+.context-usage-bar :deep(.p-progressbar) {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.context-usage-bar :deep(.p-progressbar-value) {
+  transition: width 0.2s ease;
+}
+
+.context-usage-text {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* 思考过程内容样式 - 确保 URL 正确截断 */

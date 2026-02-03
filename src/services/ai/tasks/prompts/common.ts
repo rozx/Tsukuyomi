@@ -174,10 +174,15 @@ export function getMemoryWorkflowRules(): string {
   return `【记忆管理】
 目标：**短、有效、可检索、可复用**（写少但写对）
 
+**⛔ 内容限制（重要）**：
+- **只保留翻译相关**：术语翻译、角色名称翻译、文风偏好、特定短语翻译选择、敬语处理方式等
+- **严禁存储**：故事设定、背景、世界观、剧情内容、情节发展等（这些属于冗余信息，不应占用记忆空间）
+- 记忆的核心目的是帮助未来翻译保持一致性和质量，而非记录故事情节
+
 - 使用顺序：\`get_recent_memories\` → \`search_memory_by_keywords\` → \`get_memory\`
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
-- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）；通用背景/世界观用 \`book\`。可同时附加多个实体。
+- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）。可同时附加多个实体。
 - **补齐附件**：发现记忆缺少或错误附件时，用 \`update_memory\` 纠正（替换 \`attached_to\`）。
 - **记忆顺序**：先建立相关术语/角色后，再建立/更新记忆。这样可以方便添加附件。
 
@@ -185,7 +190,6 @@ export function getMemoryWorkflowRules(): string {
 - 角色背景 → \`attached_to=[{type:"character", id:"..."}]\`
 - 术语定义 → \`attached_to=[{type:"term", id:"..."}]\`
 - 章节摘要 → \`attached_to=[{type:"chapter", id:"..."}]\`
-- 全书设定 → \`attached_to=[{type:"book", id:"..."}]\`
 
 **字段约束**：summary ≤40字 + 关键词 | content 1-3条要点（总 ≤300字）`;
 }

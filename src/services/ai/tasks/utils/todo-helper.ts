@@ -10,14 +10,16 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
  * @param taskId 任务 ID（必需）
  * @param sessionId 会话 ID（可选，用于助手聊天会话）
  */
-export function getTodosSystemPrompt(taskId: string, sessionId?: string): string {
-  if (!taskId) {
+export function getTodosSystemPrompt(taskId?: string, sessionId?: string): string {
+  if (!taskId && !sessionId) {
     return '';
   }
   // 对于助手聊天，优先使用 sessionId 获取待办事项；否则使用 taskId
   const activeTodos = sessionId
     ? TodoListService.getTodosBySessionId(sessionId).filter((todo) => !todo.completed)
-    : TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed);
+    : taskId
+      ? TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed)
+      : [];
 
   if (activeTodos.length === 0) {
     return '';
