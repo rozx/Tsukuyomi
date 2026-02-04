@@ -1,4 +1,4 @@
-# AI 模型配置指南
+# 🤖 AI 模型配置指南
 
 本指南将帮助您配置和管理 AI 模型，以实现最佳的翻译、润色和校对效果。
 
@@ -8,47 +8,47 @@
 
 在 **AI 模型管理** 页面，您可以：
 
-- **搜索模型**: 通过模型名称、提供商、模型类型或默认任务快速查找
-- **添加新模型**: 配置 API Key 并选择模型参数
-- **编辑现有模型**: 更新参数或切换默认任务设置
-- **复制模型**: 快速创建不同参数配置的变体（自动禁用）
-- **删除模型**: 移除不再需要的模型配置（支持撤销）
-- **启用/禁用**: 控制哪些模型在任务选择中可见
-- **查看详情**: 每个模型显示温度、最大 Token、API Key（已隐藏）、基础地址和默认任务
+- 🔍 **搜索模型**: 通过模型名称、提供商、模型类型或默认任务快速查找
+- ➕ **添加新模型**: 配置 API Key 并选择模型参数
+- ✏️ **编辑现有模型**: 更新参数或切换默认任务设置
+- 📋 **复制模型**: 快速创建不同参数配置的变体（自动禁用）
+- 🗑️ **删除模型**: 移除不再需要的模型配置（支持撤销）
+- ✅ **启用/禁用**: 控制哪些模型在任务选择中可见
+- 📊 **查看详情**: 每个模型显示温度、最大 Token、API Key（已隐藏）、基础地址和默认任务
 
-### 页面布局说明
+### 📐 页面布局说明
 
-- **顶部搜索栏**: 实时过滤模型列表，支持搜索名称、提供商、模型 ID 和默认任务
-- **模型卡片**: 以卡片形式展示每个模型的关键信息和状态
-- **操作按钮**:
+- 🔍 **顶部搜索栏**: 实时过滤模型列表，支持搜索名称、提供商、模型 ID 和默认任务
+- 📇 **模型卡片**: 以卡片形式展示每个模型的关键信息和状态
+- 🎮 **操作按钮**:
   - 🔵 **复制**: 创建模型副本用于测试不同参数
   - ✏️ **编辑**: 修改模型配置
   - 🗑️ **删除**: 移除模型（需确认）
-- **分页显示**: 支持每页显示 5/10/20/50 个模型
+- 📄 **分页显示**: 支持每页显示 5/10/20/50 个模型
 
 ---
 
 ## 🔧 配置新模型
 
-### 1. 获取 API Key
+### 1. 🔑 获取 API Key
 
 首先，您需要从 AI 服务商获取 API Key：
 
-- **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-- **Anthropic (Claude)**: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
-- **Google (Gemini)**: [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
-- **DeepSeek**: [platform.deepseek.com/api-keys](https://platform.deepseek.com)
-- **Moonshot (Kimi)**: [platform.moonshot.cn/console/api-keys](https://platform.moonshot.cn)
+- 🅾️ **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- 🔮 **Anthropic (Claude)**: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+- 🔷 **Google (Gemini)**: [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+- 🔵 **DeepSeek**: [platform.deepseek.com/api-keys](https://platform.deepseek.com)
+- 🌙 **Moonshot (Kimi)**: [platform.moonshot.cn/console/api-keys](https://platform.moonshot.cn)
 
-### 2. 添加模型配置
+### 2. ➕ 添加模型配置
 
-1. 点击右上角的 **添加 AI 模型** 按钮
+1. 点击右上角的 **添加 AI 模型** ➕ 按钮
 2. 填写以下信息：
-   - **名称**: 易于识别的模型名称（如 "GPT-5.1 翻译专用"）
-   - **提供商**: 选择 OpenAI, Gemini, 或其他
-   - **模型**: 输入准确的模型 ID（如 `gpt-5.1`, `claude-4-opus-20250514`）
-   - **API Key**: 粘贴您的密钥
-   - **基础 URL**: 通常保持默认，除非使用代理或自托管服务
+   - 📝 **名称**: 易于识别的模型名称（如 "GPT-5.1 翻译专用"）
+   - 🏢 **提供商**: 选择 OpenAI, Gemini, 或其他
+   - 🤖 **模型**: 输入准确的模型 ID（如 `gpt-5.1`, `claude-4-opus-20250514`）
+   - 🔑 **API Key**: 粘贴您的密钥
+   - 🌐 **基础 URL**: 通常保持默认，除非使用代理或自托管服务
 
 ### 3. 调整模型参数
 
