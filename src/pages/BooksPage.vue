@@ -15,6 +15,7 @@ import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { useContextStore } from 'src/stores/context';
@@ -28,6 +29,7 @@ import { cloneDeep } from 'lodash';
 const router = useRouter();
 const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
+const settingsStore = useSettingsStore();
 const contextStore = useContextStore();
 const toast = useToastWithHistory();
 
@@ -152,7 +154,13 @@ const sortOptions: SortOption[] = [
   },
 ];
 
-const selectedSort = ref(sortOptions[0]?.value || 'default');
+const selectedSort = computed({
+  get: () => settingsStore.booksSortOption || 'default',
+  set: (value: string) => {
+    // 触发保存
+    void settingsStore.setBooksSortOption(value);
+  },
+});
 
 // 分割按钮菜单项
 const addBookMenuItems = computed(() => [
