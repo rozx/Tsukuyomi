@@ -11,22 +11,24 @@ import * as TodoHelper from 'src/services/ai/tasks/utils/todo-helper';
 import * as BooksStore from 'src/stores/books';
 
 describe('TranslationService - workflowStatus 重置', () => {
-  const mockGenerateText = mock(async () => ({ text: '' }));
+  const mockGenerateText = mock(() => Promise.resolve({ text: '' }));
   const mockGetTranslationTools = mock(() => [] as any);
   const mockBuildTranslationSystemPrompt = mock(() => 'system');
-  const mockBuildBookContextSection = mock(async () => '');
+  const mockBuildBookContextSection = mock(() => Promise.resolve(''));
   const mockBuildChapterContextSection = mock(() => '');
   const mockBuildPreviousChapterSection = mock(() => '');
-  const mockBuildIndependentChunkPrompt = mock(async () => 'chunk');
+  const mockBuildIndependentChunkPrompt = mock(() => Promise.resolve('chunk'));
   const mockBuildMaintenanceReminder = mock(() => '');
-  const mockGetSpecialInstructions = mock(async () => undefined);
-  const mockGetChapterFirstNonEmptyParagraphId = mock(async () => undefined);
+  const mockGetSpecialInstructions = mock(() => Promise.resolve(undefined));
+  const mockGetChapterFirstNonEmptyParagraphId = mock(() => Promise.resolve(undefined));
   const mockGetHasPreviousParagraphs = mock(() => false);
-  const mockExecuteToolCallLoop = mock(async () => ({
-    responseText: '',
-    status: 'end' as const,
-    paragraphs: new Map(),
-  }));
+  const mockExecuteToolCallLoop = mock(() =>
+    Promise.resolve({
+      responseText: '',
+      status: 'end' as const,
+      paragraphs: new Map(),
+    }),
+  );
   const mockCompleteTask = mock(async () => {});
   const mockHandleTaskError = mock(async () => {});
   const mockCreateUnifiedAbortController = mock(() => ({
@@ -94,7 +96,7 @@ describe('TranslationService - workflowStatus 重置', () => {
     } as any);
 
     spyOn(ToolRegistry, 'getTranslationTools').mockImplementation(mockGetTranslationTools);
-    spyOn(ChapterSummaryService, 'generateSummary').mockImplementation(async () => '');
+    spyOn(ChapterSummaryService, 'generateSummary').mockReturnValue(Promise.resolve(''));
     spyOn(TodoHelper, 'getTodosSystemPrompt').mockReturnValue('');
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       getBookById: () => undefined,

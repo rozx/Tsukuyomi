@@ -109,7 +109,7 @@ A: 这通常是由于 API 网络波动或额度耗尽。请检查您的 API Key 
 A: 目前完美支持 `Shousetsuka ni Narou (成为小说家吧)`, `Kakuyomu`, `Hameln` 等主流日轻网站。
 
 **Q: 如何反馈 Bug 或建议？**
-A: 欢迎访问我们的 [GitHub 仓库](https://github.com/rozx/luna-ai-translator) 提交 Issue 或 Discussion。
+A: 欢迎访问我们的 [GitHub 仓库](https://github.com/rozx/Tsukuyomi) 提交 Issue 或 Discussion。
 
 ---
 

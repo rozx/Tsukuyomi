@@ -335,7 +335,7 @@ AI已经知道您正在翻译哪本书、当前章节是什么,以及已定义�
 
 在使用聊天助手过程中有任何想法?欢迎:
 
-- 在 GitHub 提交 [Issue](https://github.com/rozx/luna-ai-translator/issues)
+- 在 GitHub 提交 [Issue](https://github.com/rozx/Tsukuyomi/issues)
 - 加入我们的讨论社区分享心得
 - 在聊天中直接告诉AI您的建议(我们会查看日志并改进!)
 
