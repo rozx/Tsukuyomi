@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, computed, nextTick, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { marked, type Token } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -17,6 +18,9 @@ interface TocItem {
   text: string;
   level: number;
 }
+
+const route = useRoute();
+const router = useRouter();
 
 const documents = ref<HelpDocument[]>([]);
 const currentDoc = ref<HelpDocument | null>(null);
@@ -47,7 +51,7 @@ const groupedDocuments = computed(() => {
     if (!groups[doc.category]) {
       groups[doc.category] = [];
     }
-    groups[doc.category].push(doc);
+    groups[doc.category]!.push(doc);
   }
   return groups;
 });
@@ -89,14 +93,28 @@ async function loadDocumentIndex() {
     if (!response.ok) throw new Error('Failed to load document index');
     documents.value = (await response.json()) as HelpDocument[];
 
-    // Expand all categories by default
+    // Expand all categories by default except "更新日志"
     const categories = new Set(documents.value.map((doc) => doc.category));
+    categories.delete('更新日志'); // Collapse changelog by default
     expandedCategories.value = categories;
 
+    // Initial load handling
+    const docId = route.params.docId as string;
+    if (docId) {
+      const doc = documents.value.find((d) => d.id === docId);
+      if (doc) {
+        await loadDocumentContent(doc);
+        return;
+      }
+    }
+
+    // Default to first doc if no route param or not found
     if (documents.value.length > 0 && !currentDoc.value) {
       const firstDoc = documents.value[0];
       if (firstDoc) {
-        await loadDocument(firstDoc);
+        // Replace current route with the default doc ID so URL is consistent
+        await router.replace(`/help/${firstDoc.id}`);
+        // The watcher will handle loading, or we can load directly if watcher doesn't fire on replace (it usually does)
       }
     }
   } catch {
@@ -104,14 +122,55 @@ async function loadDocumentIndex() {
   }
 }
 
-async function loadDocument(doc: HelpDocument) {
-  if (currentDoc.value?.id === doc.id) return;
+// Navigate to document (updates route)
+function navigateToDocument(doc: HelpDocument) {
+  router.push(`/help/${doc.id}`);
+}
+
+// Create a watcher for the route parameter
+watch(
+  () => route.params.docId,
+  async (newId) => {
+    if (newId && typeof newId === 'string' && documents.value.length > 0) {
+      const doc = documents.value.find((d) => d.id === newId);
+      if (doc) {
+        await loadDocumentContent(doc);
+      }
+    }
+  },
+);
+
+// Watch for hash changes (e.g. browser back/forward buttons)
+watch(
+  () => route.hash,
+  (newHash) => {
+    if (newHash) {
+      scrollToHeading(newHash.substring(1), false);
+    }
+  },
+);
+
+async function loadDocumentContent(doc: HelpDocument) {
+  if (currentDoc.value?.id === doc.id) {
+    // If just hash changed (handled by watcher) or same doc, do nothing unless we need to scroll to hash from initial load logic overlap
+    if (route.hash) {
+      await nextTick();
+      scrollToHeading(route.hash.substring(1), false);
+    }
+    return;
+  }
 
   loading.value = true;
   error.value = '';
   currentDoc.value = doc;
   toc.value = [];
   activeHeading.value = '';
+
+  // Ensure category is expanded
+  if (!expandedCategories.value.has(doc.category)) {
+    expandedCategories.value.add(doc.category);
+    expandedCategories.value = new Set(expandedCategories.value);
+  }
 
   try {
     const response = await fetch(`/${doc.path}/${doc.file}`);
@@ -138,16 +197,22 @@ async function loadDocument(doc: HelpDocument) {
         });
       }
     });
-    toc.value = headings.filter((h) => h.level > 1 && h.level < 4);
+    toc.value = headings.filter((h) => h.level >= 1 && h.level <= 4);
 
     // Render markdown
     const html = await marked.parse(markdown, { renderer });
     content.value = DOMPurify.sanitize(html);
 
-    nextTick(() => {
-      const container = document.querySelector('.help-content-scroll');
-      if (container) container.scrollTop = 0;
-    });
+    await nextTick();
+    const container = document.querySelector('.help-content-scroll');
+    if (container) container.scrollTop = 0;
+
+    // Scroll to hash if present
+    if (route.hash) {
+      setTimeout(() => {
+        scrollToHeading(route.hash.substring(1), false);
+      }, 100);
+    }
   } catch {
     error.value = `无法加载文档: ${doc.title}`;
   } finally {
@@ -155,11 +220,16 @@ async function loadDocument(doc: HelpDocument) {
   }
 }
 
-function scrollToHeading(id: string) {
+function scrollToHeading(id: string, updateUrl = true) {
   const element = document.getElementById(id);
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     activeHeading.value = id;
+    if (updateUrl) {
+      // Use replace to avoid cluttering history, or push if navigation intention is strong
+      // Using replace to keep it lighter for TOC scrolling
+      router.replace({ ...route, hash: `#${id}` });
+    }
   }
 }
 
@@ -168,7 +238,7 @@ function scrollToHeading(id: string) {
   const docId = href.replace('./', '').replace('.md', '');
   const doc = documents.value.find((d) => d.id === docId || d.file === href.replace('./', ''));
   if (doc) {
-    void loadDocument(doc);
+    navigateToDocument(doc);
   }
 };
 
@@ -178,10 +248,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full flex">
+  <div class="w-full h-full flex overflow-hidden">
     <!-- Left Sidebar - Navigation -->
-    <aside class="w-64 flex-shrink-0 border-r border-white/10 flex flex-col bg-night-900/40">
-      <div class="p-4 border-b border-white/10">
+    <aside class="w-64 h-full flex-shrink-0 border-r border-white/10 flex flex-col bg-night-900/40">
+      <div class="p-4 border-b border-white/10 flex-shrink-0">
         <div class="flex items-center gap-3">
           <div
             class="w-9 h-9 rounded-lg bg-primary/20 text-primary flex items-center justify-center"
@@ -195,33 +265,33 @@ onMounted(() => {
         </div>
       </div>
 
-      <nav class="flex-1 overflow-y-auto p-3 space-y-2">
-        <div v-for="(docs, category) in groupedDocuments" :key="category" class="mb-2">
+      <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+        <div v-for="(docs, category) in groupedDocuments" :key="category" class="mb-3">
           <button
             @click="toggleCategory(category as string)"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group"
+            class="w-full flex items-center justify-between px-2 py-1.5 transition-colors group"
           >
             <h3
-              class="text-xs font-semibold text-moon/50 uppercase tracking-wider group-hover:text-moon/70 transition-colors"
+              class="text-[10px] font-bold text-moon/40 uppercase tracking-widest group-hover:text-moon/60 transition-colors"
             >
               {{ category }}
             </h3>
             <i
-              class="pi text-moon/40 text-xs transition-transform duration-200"
+              class="pi text-moon/30 text-[10px] transition-transform duration-200"
               :class="
                 expandedCategories.has(category as string) ? 'pi-chevron-down' : 'pi-chevron-right'
               "
             ></i>
           </button>
-          <ul v-show="expandedCategories.has(category as string)" class="space-y-0.5 mt-1">
+          <ul v-show="expandedCategories.has(category as string)" class="space-y-0.5 mt-1.5">
             <li v-for="doc in docs" :key="doc.id">
               <button
-                @click="loadDocument(doc)"
-                class="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors"
+                @click="navigateToDocument(doc)"
+                class="w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 border-l-2"
                 :class="
                   currentDoc?.id === doc.id
-                    ? 'bg-primary/20 text-primary font-medium'
-                    : 'text-moon/80 hover:bg-white/5 hover:text-moon-100'
+                    ? 'bg-primary/20 text-primary font-medium border-primary shadow-sm'
+                    : 'text-moon/80 hover:bg-white/5 hover:text-moon-100 border-transparent hover:border-moon/20'
                 "
               >
                 {{ doc.title }}
@@ -233,7 +303,7 @@ onMounted(() => {
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <main class="flex-1 h-full flex flex-col min-w-0">
       <!-- Loading State -->
       <div v-if="loading" class="flex-1 flex items-center justify-center">
         <div class="text-center">
@@ -257,10 +327,49 @@ onMounted(() => {
       </div>
 
       <!-- Document Content -->
-      <div v-else class="flex-1 flex overflow-hidden">
+      <div v-else class="flex-1 h-full flex overflow-hidden">
+        <!-- Left TOC Sidebar -->
+        <aside
+          v-if="toc.length > 0"
+          class="w-60 h-full flex-shrink-0 border-r border-white/10 bg-night-900/20 flex flex-col"
+        >
+          <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-2">
+              <i class="pi pi-list text-primary text-sm"></i>
+              <h3 class="text-xs font-bold text-moon/50 uppercase tracking-wider">目录</h3>
+            </div>
+          </div>
+          <nav class="flex-1 overflow-y-auto p-5 space-y-0.5">
+            <a
+              v-for="item in toc"
+              :key="item.id"
+              :href="`#${item.id}`"
+              @click.prevent="scrollToHeading(item.id)"
+              class="block py-2 px-3 rounded-lg transition-all duration-200 border-l-2 -ml-px"
+              :class="[
+                // Active state
+                activeHeading === item.id
+                  ? 'text-primary border-primary bg-primary/10 font-medium'
+                  : 'text-moon/60 border-transparent hover:text-moon-100 hover:bg-white/5 hover:border-moon/20',
+                // Level-specific styles
+                item.level === 1 ? 'text-base font-semibold' : '',
+                item.level === 2 ? 'text-sm font-medium ml-2' : '',
+                item.level === 3 ? 'text-xs ml-6 opacity-90' : '',
+                item.level === 4 ? 'text-xs ml-8 opacity-75' : '',
+              ]"
+            >
+              <span
+                v-if="item.level === 1"
+                class="inline-block w-1 h-1 rounded-full bg-primary mr-2"
+              ></span>
+              {{ item.text }}
+            </a>
+          </nav>
+        </aside>
+
         <!-- Content Area -->
-        <div class="flex-1 overflow-y-auto help-content-scroll">
-          <div class="max-w-3xl mx-auto px-8 py-10">
+        <div class="flex-1 h-full overflow-y-auto help-content-scroll">
+          <div class="max-w-4xl mx-auto px-8 py-10">
             <!-- Header -->
             <header class="mb-10">
               <div class="flex items-center gap-2 text-sm text-primary mb-3">
@@ -278,33 +387,6 @@ onMounted(() => {
             <article class="doc-content" v-html="content"></article>
           </div>
         </div>
-
-        <!-- Right Sidebar - TOC -->
-        <aside
-          v-if="toc.length > 0"
-          class="w-56 flex-shrink-0 border-l border-white/10 hidden xl:block"
-        >
-          <div class="sticky top-0 p-4">
-            <h3 class="text-xs font-semibold text-moon/50 uppercase tracking-wider mb-4">目录</h3>
-            <nav class="space-y-1">
-              <a
-                v-for="item in toc"
-                :key="item.id"
-                :href="`#${item.id}`"
-                @click.prevent="scrollToHeading(item.id)"
-                class="block text-sm py-1.5 transition-colors border-l-2 -ml-px"
-                :class="[
-                  activeHeading === item.id
-                    ? 'text-primary border-primary pl-3'
-                    : 'text-moon/60 border-transparent hover:text-moon/90 hover:border-moon/30 pl-3',
-                  item.level > 2 ? 'ml-3' : '',
-                ]"
-              >
-                {{ item.text }}
-              </a>
-            </nav>
-          </div>
-        </aside>
       </div>
     </main>
   </div>

@@ -1,11 +1,115 @@
 [
   {
     "id": "front-page",
-    "title": "使用指南",
+    "title": "快速开始",
     "file": "front-page.md",
     "path": "help",
     "category": "使用指南",
     "description": "Tsukuyomi 翻译器核心功能介绍和快速入门"
+  },
+  {
+    "id": "library-guide",
+    "title": "主页介绍",
+    "file": "library-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "主页功能介绍、书籍管理和快速操作指南"
+  },
+  {
+    "id": "books-page-guide",
+    "title": "书籍列表页",
+    "file": "books-page-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "书籍列表页功能详解、搜索排序、批量操作和管理技巧"
+  },
+  {
+    "id": "ai-models-guide",
+    "title": "AI 模型配置",
+    "file": "ai-models-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "AI 模型的配置、管理和最佳实践指南"
+  },
+  {
+    "id": "chat-assistant-guide",
+    "title": "聊天助手",
+    "file": "chat-assistant-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "聊天助手功能详解、使用技巧和最佳实践"
+  },
+  {
+    "id": "toolbar-guide",
+    "title": "顶部工具栏",
+    "file": "toolbar-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "顶部工具栏功能详解、按钮说明和使用技巧"
+  },
+  {
+    "id": "settings-guide",
+    "title": "设置说明",
+    "file": "settings-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "设置弹窗功能详解、配置选项和最佳实践"
+  },
+  {
+    "id": "book-details-overview",
+    "title": "书籍详情页概览",
+    "file": "book-details-overview.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "书籍详情页整体布局、主要功能模块和使用指南"
+  },
+  {
+    "id": "book-details-chapters",
+    "title": "章节管理",
+    "file": "book-details-chapters.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "卷和章节的创建、编辑、删除、排序和组织管理"
+  },
+  {
+    "id": "book-details-editing",
+    "title": "内容编辑",
+    "file": "book-details-editing.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "编辑模式、段落编辑、撤销重做、搜索替换等功能详解"
+  },
+  {
+    "id": "book-details-translation",
+    "title": "AI 翻译功能",
+    "file": "book-details-translation.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "AI 翻译、润色、校对功能的使用方法和最佳实践"
+  },
+  {
+    "id": "book-details-terminology",
+    "title": "术语管理",
+    "file": "book-details-terminology.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "术语库的创建、管理和使用,确保翻译一致性"
+  },
+  {
+    "id": "book-details-characters",
+    "title": "角色设定管理",
+    "file": "book-details-characters.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "角色信息的管理和使用,提升 AI 翻译准确性"
+  },
+  {
+    "id": "book-details-memory",
+    "title": "记忆管理",
+    "file": "book-details-memory.md",
+    "path": "help",
+    "category": "书籍详情页",
+    "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
     "id": "v0.8.4",
