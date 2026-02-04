@@ -223,6 +223,7 @@ async function processTranslationBatch(
   bookId: string,
   items: Array<{ paragraphId: string; translatedText: string }>,
   aiModelId: string,
+  taskType: 'translation' | 'polish' | 'proofreading',
 ): Promise<{ success: boolean; error?: string; processedCount: number }> {
   try {
     const book = await BookService.getBookById(bookId);
@@ -289,18 +290,48 @@ async function processTranslationBatch(
         continue;
       }
 
-      // 总是创建新的翻译版本并设为选中
-      const newTranslation: Translation = {
-        id: generateShortId(),
-        translation: item.translatedText,
-        aiModelId,
-      };
+      if (taskType === 'translation') {
+        // 翻译任务：总是创建新的翻译版本并设为选中
+        const newTranslation: Translation = {
+          id: generateShortId(),
+          translation: item.translatedText,
+          aiModelId,
+        };
 
-      if (!paragraph.translations) {
-        paragraph.translations = [];
+        if (!paragraph.translations) {
+          paragraph.translations = [];
+        }
+        paragraph.translations.push(newTranslation);
+        paragraph.selectedTranslationId = newTranslation.id;
+      } else {
+        // 润色/校对任务：更新当前选中的翻译，不新增版本
+        if (!paragraph.translations) {
+          paragraph.translations = [];
+        }
+
+        let targetTranslation = paragraph.translations.find(
+          (t) => t.id === paragraph.selectedTranslationId,
+        );
+
+        if (!targetTranslation && paragraph.translations.length > 0) {
+          targetTranslation = paragraph.translations[0];
+          paragraph.selectedTranslationId =
+            targetTranslation?.id || paragraph.selectedTranslationId;
+        }
+
+        if (!targetTranslation) {
+          targetTranslation = {
+            id: generateShortId(),
+            translation: item.translatedText,
+            aiModelId,
+          };
+          paragraph.translations.push(targetTranslation);
+          paragraph.selectedTranslationId = targetTranslation.id;
+        } else {
+          targetTranslation.translation = item.translatedText;
+          targetTranslation.aiModelId = aiModelId;
+        }
       }
-      paragraph.translations.push(newTranslation);
-      paragraph.selectedTranslationId = newTranslation.id;
 
       processedCount++;
     }
@@ -444,7 +475,12 @@ export const translationTools: ToolDefinition[] = [
           error: '未提供 AI 模型 ID，无法写入翻译来源',
         });
       }
-      const result = await processTranslationBatch(bookId, processItems, aiModelId);
+      const result = await processTranslationBatch(
+        bookId,
+        processItems,
+        aiModelId,
+        taskType as 'translation' | 'polish' | 'proofreading',
+      );
 
       if (!result.success) {
         return JSON.stringify({

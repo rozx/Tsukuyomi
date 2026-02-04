@@ -80,7 +80,7 @@ function getWorkingStateDescription(taskType: TaskType): string {
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
 - 发现新信息立即更新数据表/记忆
-- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}
+- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
 - ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
 
 完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
@@ -251,11 +251,12 @@ export function getOutputFormatRules(taskType: TaskType): string {
 **核心流程**
 1. planning 完成：update_task_status({"status": "working"})
 2. working 处理：用 add_translation_batch 提交段落结果
-3. ${reviewStep}
+3. 接着使用 update_chapter_title 更新标题
+4. ${reviewStep}
 
 **工具要点**
 1. update_task_status：只提交 {"status": "..."}
-2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."} 或 {"paragraph_id": "...", "translated_text": "..."}
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."}
 ${titleToolSection}
 
 ${getStatusFieldDescription(taskType)}
