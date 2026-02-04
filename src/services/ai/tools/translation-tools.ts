@@ -24,6 +24,8 @@ interface AddTranslationBatchArgs {
 // ============ Constants ============
 
 const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
+const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
+const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 
 // 错误消息常量
 const ERROR_MESSAGES = {
@@ -34,6 +36,8 @@ const ERROR_MESSAGES = {
   EMPTY_PARAGRAPH_LIST: '段落列表不能为空',
   BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
     `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
+  BATCH_SIZE_TOLERANCE_WARNING: (current: number, max: number, allowedMax: number) =>
+    `本次批次包含 ${current} 个段落，已超过限制 ${max} 个，但在容差范围内（最多 ${allowedMax} 个）。请尽量控制在限制内。`,
   EMPTY_PARAGRAPH_ITEM: (index: number) => `批次中第 ${index + 1} 个段落项为空`,
   INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
   MISSING_TRANSLATION: (index: number) =>
@@ -114,6 +118,7 @@ function validateBatchArgs(
   valid: boolean;
   error?: string;
   resolvedIds?: string[];
+  warning?: string;
 } {
   const { paragraphs } = args;
 
@@ -125,12 +130,20 @@ function validateBatchArgs(
     };
   }
 
-  // 检查批次大小
+  // 检查批次大小（允许 10% 容差并给出警告）
+  let warning: string | undefined;
   if (paragraphs.length > MAX_BATCH_SIZE) {
-    return {
-      valid: false,
-      error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, MAX_BATCH_SIZE),
-    };
+    if (paragraphs.length > MAX_BATCH_SIZE_WITH_TOLERANCE) {
+      return {
+        valid: false,
+        error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, MAX_BATCH_SIZE_WITH_TOLERANCE),
+      };
+    }
+    warning = ERROR_MESSAGES.BATCH_SIZE_TOLERANCE_WARNING(
+      paragraphs.length,
+      MAX_BATCH_SIZE,
+      MAX_BATCH_SIZE_WITH_TOLERANCE,
+    );
   }
 
   const resolvedIds: string[] = [];
@@ -164,7 +177,7 @@ function validateBatchArgs(
     }
   }
 
-  return { valid: true, resolvedIds };
+  return { valid: true, resolvedIds, ...(warning ? { warning } : {}) };
 }
 
 /**
@@ -413,6 +426,7 @@ export const translationTools: ToolDefinition[] = [
       }
 
       const resolvedIds = paramValidation.resolvedIds;
+      const warning = paramValidation.warning;
 
       // 检测重复段落 ID
       const duplicateCheck = detectDuplicateParagraphIds(resolvedIds);
@@ -420,6 +434,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates),
+          ...(warning ? { warning } : {}),
         });
       }
 
@@ -432,6 +447,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: rangeValidation.error,
+          ...(warning ? { warning } : {}),
         });
       }
 
@@ -439,6 +455,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: '未提供书籍 ID',
+          ...(warning ? { warning } : {}),
         });
       }
 
@@ -451,12 +468,14 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: `无法确定任务类型，请检查任务信息。taskId=${taskId || 'unknown'}`,
+          ...(warning ? { warning } : {}),
         });
       }
       if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
         return JSON.stringify({
           success: false,
           error: `任务类型不支持批量提交: ${taskType}`,
+          ...(warning ? { warning } : {}),
         });
       }
       // const isPolishOrProofreading = taskType === 'polish' || taskType === 'proofreading';
@@ -473,6 +492,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: '未提供 AI 模型 ID，无法写入翻译来源',
+          ...(warning ? { warning } : {}),
         });
       }
       const result = await processTranslationBatch(
@@ -486,6 +506,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: result.error,
+          ...(warning ? { warning } : {}),
         });
       }
 
@@ -508,6 +529,7 @@ export const translationTools: ToolDefinition[] = [
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
         task_type: taskType,
+        ...(warning ? { warning } : {}),
       });
     },
   },

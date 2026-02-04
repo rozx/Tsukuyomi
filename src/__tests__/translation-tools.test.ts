@@ -359,12 +359,13 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain('段落列表不能为空');
     });
 
-    test('当段落列表超过最大批次大小时应返回错误', async () => {
+    test('当段落列表超过容差范围时应返回错误', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
-      // 创建超过最大批次大小的段落列表
-      const paragraphs = Array(MAX_TRANSLATION_BATCH_SIZE + 1)
+      const maxAllowed = Math.ceil(MAX_TRANSLATION_BATCH_SIZE * 1.1);
+      // 创建超过容差范围的段落列表
+      const paragraphs = Array(maxAllowed + 1)
         .fill(null)
         .map((_, i) => ({
           paragraph_id: `para${i}`,
@@ -382,7 +383,35 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain(`单次批次最多支持 ${MAX_TRANSLATION_BATCH_SIZE} 个段落`);
+      expect(resultObj.error).toContain(`单次批次最多支持 ${maxAllowed} 个段落`);
+    });
+
+    test('当段落列表在容差范围内时应通过并返回警告', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const maxAllowed = Math.ceil(MAX_TRANSLATION_BATCH_SIZE * 1.1);
+      const paragraphs = Array(maxAllowed)
+        .fill(null)
+        .map((_, i) => ({
+          paragraph_id: `para${i}`,
+          translated_text: `翻译${i}`,
+        }));
+
+      const result = await tool.handler(
+        { paragraphs },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('未提供 AI 模型 ID');
+      expect(typeof resultObj.warning).toBe('string');
+      expect(resultObj.warning).toContain('容差范围');
     });
 
     test('当段落项缺少翻译文本时应返回错误', async () => {
