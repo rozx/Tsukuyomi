@@ -3,13 +3,13 @@
  * Bump version in package.json and src/constants/version.ts
  * Usage: bun scripts/bump-version.ts <major|minor|patch|build|version>
  * Examples:
- *   bun scripts/bump-version.ts major     - Bump major version (e.g., 0.8.4.5 -> 1.0.0.0)
- *   bun scripts/bump-version.ts minor     - Bump minor version (e.g., 0.8.4.5 -> 0.9.0.0)
- *   bun scripts/bump-version.ts patch     - Bump patch version (e.g., 0.8.4.5 -> 0.8.5.0)
- *   bun scripts/bump-version.ts build     - Bump build version (e.g., 0.8.4.5 -> 0.8.4.6)
+ *   bun scripts/bump-version.ts major     - Bump major version (e.g., 0.8.4.5 -> 1.0.0)
+ *   bun scripts/bump-version.ts minor     - Bump minor version (e.g., 0.8.4.5 -> 0.9.0)
+ *   bun scripts/bump-version.ts patch     - Bump patch version (e.g., 0.8.4.5 -> 0.8.5)
+ *   bun scripts/bump-version.ts build     - Bump build version (e.g., 0.8.4.5 -> 0.8.4.6) DOES NOT UPDATE package.json
  *   bun scripts/bump-version.ts 0.5.18    - Set version directly
  *
- * Note: When bumping major/minor/patch, build number is reset to 0
+ * Note: When bumping major/minor/patch, build number is reset to 0 and stripped from package.json
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -31,10 +31,12 @@ async function promptVersionType(): Promise<string> {
 
   return new Promise((resolve) => {
     console.log('\n请选择版本升级类型 (Please select version bump type):');
-    console.log('  1) major - 主版本号升级 (Major version bump)');
-    console.log('  2) minor - 次版本号升级 (Minor version bump)');
-    console.log('  3) patch - 补丁版本号升级 (Patch version bump)');
-    console.log('  4) build - 构建号升级 (Build version bump)');
+    console.log('  1) major - 主版本号升级 (Major version bump: x.0.0)');
+    console.log('  2) minor - 次版本号升级 (Minor version bump: x.y.0)');
+    console.log('  3) patch - 补丁版本号升级 (Patch version bump: x.y.z)');
+    console.log(
+      '  4) build - 构建号升级 (Build bump: x.y.z.w) - ONLY updates constants/version.ts',
+    );
     console.log('');
 
     rl.question('请输入选项 (1/2/3/4): ', (answer) => {
@@ -59,6 +61,11 @@ async function promptVersionType(): Promise<string> {
   });
 }
 
+function getVersionFromContent(content: string): string | null {
+  const match = content.match(/export const APP_VERSION = '([^']+)';/);
+  return match?.[1] ?? null;
+}
+
 // Main execution function
 async function main() {
   // If no argument provided, prompt user interactively
@@ -67,83 +74,87 @@ async function main() {
   }
 
   try {
-    // Read package.json
+    // Read files
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-    let version = packageJson.version;
+    const versionFileContent = readFileSync(versionFilePath, 'utf-8');
 
-    if (!version) {
-      throw new Error('Version not found in package.json');
+    // We use the version file as the source of truth for the FULL version (including build)
+    const currentFullVersion = getVersionFromContent(versionFileContent);
+    const pkgVersion = packageJson.version;
+
+    if (!currentFullVersion) {
+      throw new Error('Could not find APP_VERSION in src/constants/version.ts');
     }
 
-    // Validate version format before parsing
-    // Remove any pre-release or build metadata (e.g., "1.0.0-alpha" -> "1.0.0")
-    const cleanVersion = version.split('-')[0].split('+')[0];
-    // Support versions with 2 parts (x.y), 3 parts (x.y.z), or 4 parts (x.y.z.build)
-    const versionRegex = /^\d+\.\d+(\.\d+)?(\.\d+)?$/;
+    console.log(`Current Package Version: ${pkgVersion}`);
+    console.log(`Current App Version (const): ${currentFullVersion}`);
 
-    if (!versionRegex.test(cleanVersion)) {
-      throw new Error(
-        `Invalid version format in package.json: "${version}". ` +
-          `Expected format: x.y, x.y.z, or x.y.z.build (e.g., "0.5", "0.5.18", or "0.5.18.1"). ` +
-          `Current version must be a valid semver format before bumping.`,
-      );
-    }
+    // Parse current full version
+    const parts = currentFullVersion.split('.').map(Number);
+    // Ensure we have at least 3 parts
+    while (parts.length < 3) parts.push(0);
 
-    const parts = cleanVersion.split('.');
-    // Normalize 2-part versions to 3-part by appending patch version 0
-    if (parts.length === 2) {
-      parts.push('0');
-    }
-    const [major, minor, patch] = parts.map(Number);
-    const build = parts.length > 3 ? Number(parts[3]) : 0;
+    let [major = 0, minor = 0, patch = 0] = parts;
+    let build = parts[3] ?? 0;
 
-    // Validate parsed numbers are not NaN
-    if (isNaN(major) || isNaN(minor) || isNaN(patch) || isNaN(build)) {
-      throw new Error(
-        `Failed to parse version "${version}". ` +
-          `Parsed values: major=${major}, minor=${minor}, patch=${patch}, build=${build}. ` +
-          `Please ensure the version is in x.y, x.y.z, or x.y.z.build format.`,
-      );
-    }
+    let newVersionString = '';
+    let shouldUpdatePackageJson = true;
 
     if (bumpType === 'major') {
-      version = `${major + 1}.0.0.0`;
+      major++;
+      minor = 0;
+      patch = 0;
+      build = 0;
+      newVersionString = `${major}.${minor}.${patch}`;
     } else if (bumpType === 'minor') {
-      version = `${major}.${minor + 1}.0.0`;
+      minor++;
+      patch = 0;
+      build = 0;
+      newVersionString = `${major}.${minor}.${patch}`;
     } else if (bumpType === 'patch') {
-      version = `${major}.${minor}.${patch + 1}.0`;
+      patch++;
+      build = 0;
+      newVersionString = `${major}.${minor}.${patch}`;
     } else if (bumpType === 'build') {
-      version = `${major}.${minor}.${patch}.${build + 1}`;
+      build++;
+      newVersionString = `${major}.${minor}.${patch}.${build}`;
+      shouldUpdatePackageJson = false; // Don't update package.json for build bumps
     } else {
-      // Validate version string if it looks like a version (support x.y, x.y.z, or x.y.z.build)
+      // Direct set
       if (/^\d+\.\d+(\.\d+)?(\.\d+)?$/.test(bumpType)) {
-        version = bumpType;
-        // Normalize 2-part versions to 3-part format
-        const versionParts = version.split('.');
-        if (versionParts.length === 2) {
-          version = `${version}.0`;
+        newVersionString = bumpType;
+        // logic to decide if we update package.json?
+        // If it has 4 parts, we probably shouldn't set that to package.json to avoid errors
+        if (newVersionString.split('.').length > 3) {
+          console.warn(
+            '⚠️ New version has 4 components. Updating ONLY version.ts to avoid electron-builder errors.',
+          );
+          shouldUpdatePackageJson = false;
         }
       } else {
-        // Allow setting arbitrary version string if needed, but warn
         console.warn('Warning: Version does not look like x.y, x.y.z, or x.y.z.build');
-        version = bumpType;
+        newVersionString = bumpType;
       }
     }
 
-    // Update package.json
-    packageJson.version = version;
-    writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8');
-    console.log(`✅ Updated package.json to version: ${version}`);
+    // Update package.json if needed
+    if (shouldUpdatePackageJson) {
+      packageJson.version = newVersionString;
+      writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8');
+      console.log(`✅ Updated package.json to version: ${newVersionString}`);
+    } else {
+      console.log(`ℹ️ Skipping package.json update (keeping ${pkgVersion})`);
+    }
 
     // Update src/constants/version.ts
-    const versionFileContent = `// 应用版本号
+    const newVersionFileContent = `// 应用版本号
 // 此文件由 scripts/bump-version.ts 自动生成，请勿手动修改
 // 如需更新版本，请运行: bun scripts/bump-version.ts <major|minor|patch|build|version>
-export const APP_VERSION = '${version}';
+export const APP_VERSION = '${newVersionString}';
 `;
 
-    writeFileSync(versionFilePath, versionFileContent, 'utf-8');
-    console.log(`✅ Updated src/constants/version.ts to version: ${version}`);
+    writeFileSync(versionFilePath, newVersionFileContent, 'utf-8');
+    console.log(`✅ Updated src/constants/version.ts to version: ${newVersionString}`);
   } catch (error) {
     console.error('❌ Failed to bump version:', error);
     process.exit(1);

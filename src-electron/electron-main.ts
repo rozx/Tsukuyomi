@@ -11,7 +11,9 @@ import pie from 'puppeteer-in-electron';
 puppeteer.use(StealthPlugin());
 
 // Initialize puppeteer-in-electron
+console.log('[Electron] Initializing puppeteer-in-electron...');
 await pie.initialize(app);
+console.log('[Electron] puppeteer-in-electron initialized');
 app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
@@ -135,19 +137,22 @@ function createWindow() {
       join(process.resourcesPath || __dirname, 'index.html'), // 打包后的资源路径
       join(process.resourcesPath || __dirname, '../index.html'), // 打包后的备用路径
     ];
-    
+
     // 找到第一个存在的路径
     const foundPath = possiblePaths.find((path) => existsSync(path));
     const indexPath = foundPath || possiblePaths[0] || join(__dirname, 'index.html');
-    
+
     console.log(`[Electron] Loading production build`);
     console.log(`[Electron] __dirname: ${__dirname}`);
     console.log(`[Electron] process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
     console.log(`[Electron] indexPath: ${indexPath}`);
     console.log(`[Electron] File exists: ${existsSync(indexPath)}`);
-    
+
     // 列出所有尝试的路径
-    console.log(`[Electron] Tried paths:`, possiblePaths.map((p) => ({ path: p, exists: existsSync(p) })));
+    console.log(
+      `[Electron] Tried paths:`,
+      possiblePaths.map((p) => ({ path: p, exists: existsSync(p) })),
+    );
 
     // 列出目录内容以便调试
     if (isDebugMode) {
@@ -207,17 +212,33 @@ function createWindow() {
   // 监听页面加载完成事件
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('[Electron] Page loaded successfully');
+
     // 检查页面内容
-    if (mainWindow) {
+    if (mainWindow && isDebugMode) {
       void mainWindow.webContents.executeJavaScript(`
         console.log('[Page] Document ready state:', document.readyState);
         console.log('[Page] App element exists:', !!document.getElementById('q-app'));
         console.log('[Page] Scripts loaded:', Array.from(document.scripts).map(s => s.src));
         console.log('[Page] Stylesheets loaded:', Array.from(document.styleSheets).length);
       `);
+    }
+  });
+
+  // 使用 ready-to-show 事件来显示窗口，这是更推荐的做法
+  mainWindow.once('ready-to-show', () => {
+    console.log('[Electron] Requesting to show window (ready-to-show)');
+    if (mainWindow) {
       mainWindow.show();
     }
   });
+
+  // 添加一个安全超时，如果 ready-to-show 没有触发，强制显示窗口
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      console.warn('[Electron] Window did not show within 10s, forcing show');
+      mainWindow.show();
+    }
+  }, 10000);
 
   // 监听页面加载失败事件（主框架和子资源）
   mainWindow.webContents.on(
