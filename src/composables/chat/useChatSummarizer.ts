@@ -52,6 +52,17 @@ export function useChatSummarizer(
     willReachLimit: boolean,
     updateIsSending?: (val: boolean) => void,
   ): Promise<{ success: boolean }> {
+    // 防御性检查：如果没有足够的消息需要摘要，直接返回
+    const currentSessionForCheck = chatSessionsStore.currentSession;
+    if (currentSessionForCheck) {
+      const messagesToCheck = buildMessagesToSummarize(currentSessionForCheck, messages.value);
+      if (messagesToCheck.length <= 2) {
+        // 消息数量太少，无需摘要
+        if (updateIsSending) updateIsSending(false);
+        return { success: false };
+      }
+    }
+
     isSummarizing.value = true;
     if (updateIsSending) updateIsSending(true);
 

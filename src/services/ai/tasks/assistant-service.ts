@@ -121,6 +121,10 @@ export interface AssistantServiceOptions {
    */
   onSummarizingStart?: () => void;
   /**
+   * 摘要结束时的回调（用于在 UI 中恢复接收 chunk）
+   */
+  onSummarizingEnd?: () => void;
+  /**
    * 聊天会话 ID（可选），如果提供，待办事项将关联到此会话而不是任务
    */
   sessionId?: string;
@@ -1104,8 +1108,51 @@ export class AssistantService {
             ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
           });
 
-          if (summaryResult) {
-            return summaryResult;
+          if (summaryResult && summaryResult.summary) {
+            // 摘要成功，使用新摘要重建消息并继续聊天
+            console.log(
+              '[AssistantService] 摘要成功，使用新摘要继续聊天，摘要长度:',
+              summaryResult.summary.length,
+            );
+
+            // 通知 UI 摘要已完成，可以开始接收新的 chunk
+            options.onSummarizingEnd?.();
+
+            // 重建系统提示词，包含新摘要
+            const systemPromptWithSummary =
+              systemPrompt +
+              `\n\n## 之前的对话总结\n\n${summaryResult.summary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+
+            // 重建消息数组：只包含系统提示词和用户消息
+            const retryMessages: ChatMessage[] = [
+              {
+                role: 'system',
+                content: systemPromptWithSummary,
+              },
+              {
+                role: 'user',
+                content: userMessage,
+              },
+            ];
+
+            // 使用重建的消息继续聊天
+            const retryResult = await this.retryRequestAfterSummary(
+              model,
+              retryMessages,
+              tools,
+              context.currentBookId,
+              options,
+              taskId,
+              sessionId,
+              finalSignal,
+            );
+
+            // 返回结果，同时包含摘要信息供 UI 层更新会话状态
+            return {
+              ...retryResult,
+              needsReset: true,
+              summary: summaryResult.summary,
+            };
           }
 
           console.warn('[AssistantService] 自动总结失败，使用降级策略：只保留最近 5 条消息');

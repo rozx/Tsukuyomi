@@ -142,7 +142,7 @@ export function useChatSending(
       let isSummarizingInternally = false;
       let savedThinkingProcess: string | undefined = undefined;
 
-      await AssistantService.chat(assistantModel.value, message, {
+      const chatResult = await AssistantService.chat(assistantModel.value, message, {
         ...(sessionSummary ? { sessionSummary } : {}),
         ...(messageHistory ? { messageHistory: messageHistory as ChatMessage[] } : {}),
         ...(sessionId ? { sessionId } : {}),
@@ -180,6 +180,39 @@ export function useChatSending(
           if (currentSession) {
             chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
           }
+          scrollToBottom();
+        },
+        onSummarizingEnd: () => {
+          // 摘要完成，准备接收新的聊天内容
+          // 更新摘要消息的显示
+          if (internalSummarizationMessageId) {
+            const summarizationMsgIndex = messages.value.findIndex(
+              (m) => m.id === internalSummarizationMessageId,
+            );
+            if (summarizationMsgIndex >= 0) {
+              const existingMsg = messages.value[summarizationMsgIndex];
+              if (existingMsg) {
+                messages.value[summarizationMsgIndex] = {
+                  ...existingMsg,
+                  content: '📝 已完成对话总结',
+                };
+              }
+            }
+          }
+
+          // 创建新的助手消息用于接收继续的聊天内容
+          assistantMessageIdRef.value = (Date.now() + 2).toString();
+          const newAssistantMessage: ChatMessage = {
+            id: assistantMessageIdRef.value,
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            ...(savedThinkingProcess ? { thinkingProcess: savedThinkingProcess } : {}),
+          };
+          messages.value.push(newAssistantMessage);
+
+          // 重置标志，允许接收新的 chunk
+          isSummarizingInternally = false;
           scrollToBottom();
         },
         onChunk: (chunk) => {
@@ -227,16 +260,12 @@ export function useChatSending(
         },
       });
 
+      // 处理内部摘要后的会话状态更新
+      // 注意：摘要消息的显示更新已在 onSummarizingEnd 回调中完成
       const finalSession = chatSessionsStore.currentSession;
-      if (finalSession) {
-        if (internalSummarizationMessageId) {
-          // Logic for restored thinking process if needed
-          // If summarization happened, AssistantService handles the new generation.
-          // onChunk calls will update the NEW assistant message created after summary.
-          // But we need to make sure we found the new ID.
-          // Actually, internal logic in AssistantService handles history.
-          // But onAction updates local Ref logic?
-        }
+      if (finalSession && chatResult.needsReset && chatResult.summary) {
+        // 如果服务返回了摘要，更新会话的摘要状态
+        chatSessionsStore.summarizeAndReset(chatResult.summary);
       }
     } catch (error) {
       if (error instanceof Error && error.message === 'Task aborted') {
@@ -269,7 +298,12 @@ export function useChatSending(
       const sessionAfter = chatSessionsStore.currentSession;
       if (sessionAfter) {
         chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
-        void chatSummarizer.performUISummarization(true, (val) => (isSending.value = val));
+        // 只有当上次摘要后有超过 2 条消息时，才执行 UI 层摘要
+        // 防止新会话第一条消息就触发摘要
+        const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
+        if (msgsSinceSummary > 2) {
+          void chatSummarizer.performUISummarization(true, (val) => (isSending.value = val));
+        }
       }
     }
   };

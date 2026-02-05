@@ -90,7 +90,6 @@ export class ToolRegistry {
 
     // 如果没有配置 API Key，不返回网络搜索工具
     if (!apiKey) {
-      console.log('[ToolRegistry] ⚠️ Tavily API Key 未配置，网络搜索工具已禁用');
       return [];
     }
 
