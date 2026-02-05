@@ -481,10 +481,18 @@ export default defineConfig((ctx: any) => {
           target: ['dmg', 'zip'],
           // Required for Notarization
           hardenedRuntime: true,
-          gatekeeperAssessment: false,
+          gatekeeperAssess: false,
           entitlements: 'src-electron/entitlements.mac.plist',
           entitlementsInherit: 'src-electron/entitlements.mac.plist',
+          // Ignore the fake chrome.app bundle in puppeteer-extra-plugin-stealth
+          signIgnore: ['chrome.app'],
         },
+        // We generally recommend using asar for performance and security,
+        // but since previous config EXPLICITLY disabled it, we will keep it disabled to avoid breaking other things.
+        // However, if asar was meant to be used, we would do:
+        // asar: true,
+        // asarUnpack: ['**/node_modules/puppeteer-core/**'],
+
         win: {
           icon: 'src-electron/icons/icon.ico',
           // Generate NSIS installer and Portable executable
