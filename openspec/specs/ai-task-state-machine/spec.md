@@ -39,7 +39,6 @@ TBD - created by archiving change update-completed-state-to-review. Update Purpo
 - **THEN** 系统 MUST 拒绝该状态转换
 - **AND THEN** 系统 MUST 返回错误信息："润色/校对任务不支持 review 状态"
 
-### Requirement: 禁止旧状态值 `completed`
-**Reason**: 已从 JSON 解析模式改为工具调用模式，不再解析文本中的状态值。系统 MUST 拒绝任何非工具调用的状态尝试。
+
 
 
