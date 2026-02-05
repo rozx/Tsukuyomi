@@ -7,6 +7,7 @@
 export function throttle<Args extends unknown[]>(
   func: (...args: Args) => void,
   delay: number,
+  options?: { trailing?: boolean },
 ): {
   fn: (...args: Args) => void;
   cleanup: () => void;
@@ -21,7 +22,7 @@ export function throttle<Args extends unknown[]>(
     if (timeSinceLastCall >= delay) {
       lastCall = now;
       func(...args);
-    } else {
+    } else if (options?.trailing !== false) {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }

@@ -152,6 +152,8 @@ function loadSessionsFromStorage(): ChatSession[] {
     }
   } catch (error) {
     console.error('Failed to load chat sessions from storage:', error);
+    // 清理无效存储并返回空会话列表
+    localStorage.removeItem(STORAGE_KEY);
   }
   return [];
 }

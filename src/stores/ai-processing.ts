@@ -228,7 +228,7 @@ function throttledUpdateThinkingMessage(
   } else {
     // 距离上次更新不足 300ms，延迟更新
     if (throttleInfo.timer === null) {
-      const delay = 300 - (now - throttleInfo.lastUpdate);
+      const delay = Math.max(0, 300 - (now - throttleInfo.lastUpdate));
       throttleInfo.timer = window.setTimeout(() => {
         // 检查节流信息是否仍然存在（任务可能已被删除）
         const currentThrottleInfo = taskThrottleMap.get(task.id);
