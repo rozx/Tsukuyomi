@@ -17,7 +17,6 @@ import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { throttle } from 'src/utils/throttle';
-import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 // 常量定义
 const UPDATE_THRESHOLD_MS = 2000; // 更新时间阈值（毫秒）
@@ -56,6 +55,8 @@ const aiProcessingStore = useAIProcessingStore();
 const bookDetailsStore = useBookDetailsStore();
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
+const now = ref(Date.now());
+let nowTimer: number | null = null;
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
@@ -135,36 +136,6 @@ const currentActiveTask = computed(() => {
   );
 });
 
-const estimateTaskTokens = (task: AIProcessingTask): number => {
-  const parts: string[] = [];
-  if (task.message) parts.push(task.message);
-  if (task.thinkingMessage) parts.push(task.thinkingMessage);
-  if (task.outputContent) parts.push(task.outputContent);
-  if (parts.length === 0) return 0;
-  return estimateMessagesTokenCount([
-    {
-      role: 'assistant',
-      content: parts.join('\n'),
-    },
-  ]);
-};
-
-const currentContextUsage = computed(() => {
-  const task = currentActiveTask.value;
-  if (!task) return null;
-  const contextWindow = task.contextWindow || 0;
-  if (contextWindow <= 0) return null;
-  const tokens = task.contextTokens ?? estimateTaskTokens(task);
-  if (tokens <= 0) return null;
-  const percentage = task.contextPercentage ?? Math.round((tokens / contextWindow) * 100);
-  return {
-    tokens,
-    contextWindow,
-    percentage,
-    isEstimated: task.contextTokens === undefined,
-  };
-});
-
 const displayProgressMessage = computed(() => {
   const message = props.progress?.message?.trim();
   if (!message) return '';
@@ -211,11 +182,18 @@ onMounted(() => {
   loadTodos();
   // 监听 localStorage 变化（跨标签页同步）
   window.addEventListener('storage', handleStorageChange);
+  nowTimer = window.setInterval(() => {
+    now.value = Date.now();
+  }, 1000);
 });
 
 onUnmounted(() => {
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
+  if (nowTimer !== null) {
+    clearInterval(nowTimer);
+    nowTimer = null;
+  }
   // 清理所有节流函数的 timeout
   for (const cleanup of throttleCleanups) {
     cleanup();
@@ -578,7 +556,7 @@ const clearReviewedTasks = async () => {
 };
 
 const formatTaskDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || Date.now();
+  const end = endTime || now.value;
   const duration = Math.floor((end - startTime) / 1000);
   if (duration < 60) {
     return `${duration}秒`;
@@ -697,6 +675,7 @@ const updateFormattedThinkingCache = throttle((taskId: string) => {
 }, FORMAT_CACHE_THROTTLE_MS);
 // 注册清理函数
 throttleCleanups.push(updateFormattedThinkingCache.cleanup);
+
 
 // 获取格式化后的思考消息（从缓存中读取）
 const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
@@ -1281,16 +1260,6 @@ watch(
         <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
           当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
         </div>
-        <div v-if="currentContextUsage" class="translation-progress-context">
-          <span class="translation-progress-context-label">上下文使用：</span>
-          <span class="translation-progress-context-value">
-            {{ currentContextUsage.percentage }}% ({{ currentContextUsage.tokens }} /
-            {{ currentContextUsage.contextWindow }})
-            <span v-if="currentContextUsage.isEstimated" class="translation-progress-context-note">
-              估算
-            </span>
-          </span>
-        </div>
       </div>
       <div class="translation-progress-bar-wrapper">
         <ProgressBar
@@ -1381,26 +1350,6 @@ watch(
   line-height: 1.4;
 }
 
-.translation-progress-context {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-70);
-  line-height: 1.4;
-}
-
-.translation-progress-context-label {
-  color: var(--moon-opacity-60);
-}
-
-.translation-progress-context-value {
-  font-weight: 500;
-  color: var(--moon-opacity-85);
-}
-
-.translation-progress-context-note {
-  margin-left: 0.25rem;
-  font-size: 0.6875rem;
-  color: var(--moon-opacity-50);
-}
 
 .translation-progress-working-chapter {
   font-size: 0.8125rem;
