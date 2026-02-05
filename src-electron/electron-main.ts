@@ -403,30 +403,30 @@ function createMenu() {
     {
       label: '编辑',
       submenu: [
-        { role: 'undo', label: '撤销' },
-        { role: 'redo', label: '重做' },
-        { type: 'separator' },
-        { role: 'cut', label: '剪切' },
-        { role: 'copy', label: '复制' },
-        { role: 'paste', label: '粘贴' },
+        { role: 'undo' as const, label: '撤销' },
+        { role: 'redo' as const, label: '重做' },
+        { type: 'separator' as const },
+        { role: 'cut' as const, label: '剪切' },
+        { role: 'copy' as const, label: '复制' },
+        { role: 'paste' as const, label: '粘贴' },
         ...(isMac
           ? [
-              { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
-              { role: 'delete', label: '删除' },
-              { role: 'selectAll', label: '全选' },
-              { type: 'separator' },
+              { role: 'pasteAndMatchStyle' as const, label: '粘贴并匹配样式' },
+              { role: 'delete' as const, label: '删除' },
+              { role: 'selectAll' as const, label: '全选' },
+              { type: 'separator' as const },
               {
                 label: '语音',
                 submenu: [
-                  { role: 'startSpeaking', label: '开始朗读' },
-                  { role: 'stopSpeaking', label: '停止朗读' },
+                  { role: 'startSpeaking' as const, label: '开始朗读' },
+                  { role: 'stopSpeaking' as const, label: '停止朗读' },
                 ],
               },
             ]
           : [
-              { role: 'delete', label: '删除' },
-              { type: 'separator' },
-              { role: 'selectAll', label: '全选' },
+              { role: 'delete' as const, label: '删除' },
+              { type: 'separator' as const },
+              { role: 'selectAll' as const, label: '全选' },
             ]),
       ],
     },
