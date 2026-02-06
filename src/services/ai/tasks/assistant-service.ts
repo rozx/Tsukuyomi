@@ -917,7 +917,7 @@ export class AssistantService {
     }
 
     // 获取可用的工具（助手聊天裁剪掉翻译管理类工具，降低上下文体积）
-    const allTools = ToolRegistry.getToolsExcludingTranslationManagement(
+    const allTools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
       context.currentBookId || undefined,
     );
     // 过滤掉翻译/润色/校对专用的工具（这些工具只在特定任务中可用，不在助手聊天中可用）

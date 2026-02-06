@@ -12,6 +12,7 @@ import { todoListTools } from './todo-list-tools';
 import { askUserTools } from './ask-user-tools';
 import { taskStatusTools } from './task-status-tools';
 import { translationTools } from './translation-tools';
+import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 
 export type { ActionInfo };
@@ -108,6 +109,17 @@ export class ToolRegistry {
     return this.mapTools(taskStatusTools);
   }
 
+  static getHelpDocsTools(): AITool[] {
+    return this.mapTools(helpDocsTools);
+  }
+
+  /**
+   * 仅用于聊天助手的工具集合（包含帮助文档工具）
+   */
+  static getAssistantTools(bookId?: string): AITool[] {
+    return [...this.getAllTools(bookId), ...this.getHelpDocsTools()];
+  }
+
   static getTranslationToolsForAI(): AITool[] {
     return this.mapTools(translationTools);
   }
@@ -147,6 +159,14 @@ export class ToolRegistry {
    */
   static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAllTools(bookId);
+    return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
+  }
+
+  /**
+   * 聊天助手专用工具（排除翻译管理工具）
+   */
+  static getAssistantToolsExcludingTranslationManagement(bookId?: string): AITool[] {
+    const allTools = this.getAssistantTools(bookId);
     return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
   }
 
@@ -214,6 +234,7 @@ export class ToolRegistry {
       ...askUserTools,
       ...taskStatusTools,
       ...translationTools,
+      ...helpDocsTools,
     ];
   }
 

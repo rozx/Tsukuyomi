@@ -80,7 +80,7 @@ const buildAssistantSystemPromptForStats = (
   context: AssistantContextInfo,
   session: SessionWithSummaryIndex | null,
 ): { prompt: string; tools: AITool[] } => {
-  const tools = ToolRegistry.getAllTools(context.currentBookId || undefined).filter(
+  const tools = ToolRegistry.getAssistantTools(context.currentBookId || undefined).filter(
     (tool) => tool.function.name !== 'add_translation_batch',
   );
   const todosPrompt = getTodosSystemPrompt(undefined, session?.id);

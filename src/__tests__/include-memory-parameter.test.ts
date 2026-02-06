@@ -6,6 +6,8 @@ import { bookTools } from 'src/services/ai/tools/book-tools';
 import { paragraphTools } from 'src/services/ai/tools/paragraph-tools';
 import * as MemoryHelperModule from 'src/services/ai/tools/memory-helper';
 import { MemoryService } from 'src/services/memory-service';
+// 使用 spyOn 替代 mock.module，避免全局污染 BookService 模块缓存
+import { BookService } from 'src/services/book-service';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
@@ -51,15 +53,8 @@ await mock.module('src/stores/books', () => ({
   useBooksStore: () => mockBooksStore,
 }));
 
-// Mock BookService
-const mockBookService = {
-  getBookById: mock(
-    (_id: string, _loadContent?: boolean): Promise<Novel | undefined> => Promise.resolve(undefined),
-  ),
-};
-await mock.module('src/services/book-service', () => ({
-  BookService: mockBookService,
-}));
+// 使用 spyOn 替代 mock.module 来 mock BookService（避免全局污染模块缓存）
+let mockBookServiceGetBookById: ReturnType<typeof spyOn<typeof BookService, 'getBookById'>>;
 
 let searchRelatedMemoriesSpy: ReturnType<typeof spyOn>;
 
@@ -82,6 +77,11 @@ describe('include_memory 参数测试', () => {
       MemoryHelperModule,
       'searchRelatedMemoriesHybrid',
     ).mockImplementation(hybridMock);
+
+    // 使用 spyOn 拦截 BookService.getBookById（避免全局污染模块缓存）
+    mockBookServiceGetBookById = spyOn(BookService, 'getBookById').mockResolvedValue(
+      undefined as any,
+    );
   });
 
   afterEach(() => {
@@ -90,6 +90,7 @@ describe('include_memory 参数测试', () => {
     if (searchRelatedMemoriesSpy) {
       searchRelatedMemoriesSpy.mockRestore();
     }
+    mock.restore();
   });
 
   describe('terminology-tools', () => {
@@ -131,7 +132,7 @@ describe('include_memory 参数测试', () => {
       };
 
       mockBooksStore.getBookById.mockReturnValue(mockBook);
-      mockBookService.getBookById.mockResolvedValue(mockBook);
+      mockBookServiceGetBookById.mockResolvedValue(mockBook);
     });
 
     test('get_term: include_memory=true 时应该搜索相关记忆', async () => {
@@ -256,7 +257,7 @@ describe('include_memory 参数测试', () => {
       };
 
       mockBooksStore.getBookById.mockReturnValue(mockBook);
-      mockBookService.getBookById.mockResolvedValue(mockBook);
+      mockBookServiceGetBookById.mockResolvedValue(mockBook);
     });
 
     test('get_character: include_memory=true 时应该搜索相关记忆', async () => {
@@ -335,7 +336,7 @@ describe('include_memory 参数测试', () => {
       };
 
       mockBooksStore.getBookById.mockReturnValue(mockBook);
-      mockBookService.getBookById.mockResolvedValue(mockBook);
+      mockBookServiceGetBookById.mockResolvedValue(mockBook);
     });
 
     test('get_book_info: include_memory=true 时应该搜索相关记忆', async () => {
@@ -430,7 +431,7 @@ describe('include_memory 参数测试', () => {
       };
 
       mockBooksStore.getBookById.mockReturnValue(mockBook);
-      mockBookService.getBookById.mockResolvedValue(mockBook);
+      mockBookServiceGetBookById.mockResolvedValue(mockBook);
     });
 
     test('get_paragraph_info: include_memory=true 时应该搜索相关记忆', async () => {
@@ -513,7 +514,7 @@ describe('include_memory 参数测试', () => {
       };
 
       mockBooksStore.getBookById.mockReturnValue(mockBook);
-      mockBookService.getBookById.mockResolvedValue(mockBook);
+      mockBookServiceGetBookById.mockResolvedValue(mockBook);
     });
 
     test('当记忆搜索失败时应该静默处理，不影响主要功能', async () => {

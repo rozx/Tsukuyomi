@@ -1,30 +1,13 @@
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-// Remove static imports of modules that will be mocked or depend on mocks
-// import { translationTools } from '../services/ai/tools/translation-tools';
-// import { ChapterContentService } from '../services/chapter-content-service';
-// import * as BooksStore from '../stores/books';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 import type { AIProcessingStore } from '../services/ai/tasks/utils/task-types';
 import type { ChunkBoundaries } from '../services/ai/tools/types';
 import { MAX_TRANSLATION_BATCH_SIZE } from '../services/ai/constants';
-
-// Mock BookService
-const mockGetBookById = mock((_bookId: string) => Promise.resolve(undefined as Novel | undefined));
-const mockSaveBook = mock((_book: Novel) => Promise.resolve());
-
-await mock.module('src/services/book-service', () => ({
-  BookService: {
-    getBookById: mockGetBookById,
-    saveBook: mockSaveBook,
-  },
-}));
-
-// Import BookService after mocking
-const { BookService } = await import('../services/book-service');
-// Import ChapterContentService after mocking IndexedDB (implicit dependency)
-const { ChapterContentService } = await import('../services/chapter-content-service');
+// 使用 spyOn 替代 mock.module，避免全局污染 BookService 模块缓存
+import { BookService } from '../services/book-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 
 // 辅助函数：创建测试用小说
 function createTestNovel(volumes: Volume[] = []): Novel {
@@ -111,14 +94,18 @@ const mockBooksStore: {
   // Fix TS error since useBooksStore expects specific store interface, we cast later
 };
 
-// Mock useBooksStore
+// Mock useBooksStore（注意：useBooksStore 在运行时调用，不在模块加载时，所以 mock.module 可接受）
 const mockUseBooksStore = mock(() => mockBooksStore);
 await mock.module('src/stores/books', () => ({
   useBooksStore: mockUseBooksStore,
 }));
 
-// Import translationTools AFTER all mocks
+// Import translationTools AFTER useBooksStore mock
 const { translationTools } = await import('../services/ai/tools/translation-tools');
+
+// 使用 spyOn 替代 mock.module 来 mock BookService（避免全局污染模块缓存）
+let mockGetBookById: ReturnType<typeof spyOn<typeof BookService, 'getBookById'>>;
+let mockSaveBook: ReturnType<typeof spyOn<typeof BookService, 'saveBook'>>;
 
 describe('add_translation_batch', () => {
   const mockLoadChapterContentsBatch = mock((_chapterIds: string[]) =>
@@ -128,17 +115,20 @@ describe('add_translation_batch', () => {
   beforeEach(() => {
     mockLoadChapterContentsBatch.mockClear();
     mockUpdateBook.mockClear();
-    mockGetBookById.mockClear();
-    mockSaveBook.mockClear();
     mockUseBooksStore.mockClear();
+
+    // 使用 spyOn 拦截 BookService 静态方法（不污染模块缓存）
+    mockGetBookById = spyOn(BookService, 'getBookById').mockImplementation(
+      (_bookId: string) => Promise.resolve(undefined) as any,
+    );
+    mockSaveBook = spyOn(BookService, 'saveBook').mockImplementation(
+      (_book: Novel) => Promise.resolve() as any,
+    );
 
     spyOn(ChapterContentService, 'loadChapterContentsBatch').mockImplementation(
       mockLoadChapterContentsBatch,
     );
 
-    // Reset default implementations
-    mockGetBookById.mockImplementation((_bookId: string) => Promise.resolve(undefined));
-    mockSaveBook.mockImplementation((_book: Novel) => Promise.resolve());
     mockUseBooksStore.mockImplementation(() => mockBooksStore);
 
     // 重置 mock store
