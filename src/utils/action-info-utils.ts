@@ -34,6 +34,7 @@ export const ENTITY_LABELS: Record<MessageAction['entity'], string> = {
   memory: '记忆',
   todo: '待办事项',
   user: '用户',
+  help_doc: '帮助文档',
 };
 
 /**
@@ -128,6 +129,8 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(action.type === 'read' && 'tool_name' in action.data
       ? { tool_name: action.data.tool_name }
       : {}),
+    ...(action.type === 'read' && 'title' in action.data ? { title: action.data.title } : {}),
+    ...(action.type === 'read' && 'url' in action.data ? { url: action.data.url } : {}),
     ...(action.type === 'read' && 'book_id' in action.data ? { book_id: action.data.book_id } : {}),
     ...(action.type === 'read' && 'keywords' in action.data
       ? { keywords: action.data.keywords }
@@ -148,6 +151,7 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(action.type === 'search' && 'book_id' in action.data
       ? { book_id: action.data.book_id }
       : {}),
+    ...(action.type === 'search' && 'query' in action.data ? { query: action.data.query } : {}),
     // Memory 相关信息
     ...(action.entity === 'memory' && 'memory_id' in action.data
       ? { memory_id: action.data.memory_id }
@@ -525,6 +529,18 @@ export function getActionDetails(
         value: action.tool_name,
       });
     }
+    if (action.tool_name === 'get_help_doc' && action.title) {
+      details.push({
+        label: '文档标题',
+        value: action.title,
+      });
+    }
+    if (action.tool_name === 'list_help_docs') {
+      details.push({
+        label: '文档列表',
+        value: '已获取',
+      });
+    }
     // get_book_info 的特殊处理
     if (action.tool_name === 'get_book_info' && action.book_id) {
       const book = context.getBookById(action.book_id);
@@ -788,6 +804,20 @@ export function getActionDetails(
         details.push({
           label: '搜索关键词',
           value: action.keywords.join('、'),
+        });
+      }
+    }
+    if (action.tool_name === 'search_help_docs') {
+      if (action.query) {
+        details.push({
+          label: '搜索查询',
+          value: action.query,
+        });
+      }
+      if (action.name) {
+        details.push({
+          label: '命中文档',
+          value: action.name,
         });
       }
     }

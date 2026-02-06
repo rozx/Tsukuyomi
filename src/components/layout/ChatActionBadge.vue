@@ -135,7 +135,26 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
             getShortId(action.paragraph_id)
           }})
         </span>
+        <span
+          v-else-if="action.entity === 'help_doc' && action.type === 'search'"
+          class="font-semibold text-xs"
+        >
+          文档搜索
+          <span v-if="action.query" class="opacity-70 ml-1">"{{ action.query }}"</span>
+        </span>
         <span v-else-if="action.query" class="font-semibold">"{{ action.query }}"</span>
+        <span
+          v-else-if="action.type === 'read' && action.tool_name === 'get_help_doc' && action.title"
+          class="font-semibold text-xs"
+        >
+          帮助文档: "{{ action.title }}"
+        </span>
+        <span
+          v-else-if="action.type === 'read' && action.tool_name === 'list_help_docs'"
+          class="font-semibold text-xs"
+        >
+          帮助文档列表
+        </span>
         <span v-else-if="action.url" class="font-semibold text-xs">{{ action.url }}</span>
         <span
           v-else-if="

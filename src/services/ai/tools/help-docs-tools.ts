@@ -126,14 +126,17 @@ export const helpDocsTools: ToolDefinition[] = [
         },
       };
 
+      const matchedNames = matchedDocs.map((doc) => doc.title).filter(Boolean);
       // 报告操作
       if (onAction) {
         onAction({
           type: 'search',
-          entity: 'web',
+          entity: 'help_doc',
           data: {
             query,
+            tool_name: 'search_help_docs',
             results: matchedDocs,
+            name: matchedNames.length > 0 ? matchedNames.join('、') : undefined,
           },
         });
       }
@@ -217,10 +220,12 @@ export const helpDocsTools: ToolDefinition[] = [
       if (onAction) {
         onAction({
           type: 'read',
-          entity: 'web',
+          entity: 'help_doc',
           data: {
+            name: doc.title,
             title: doc.title,
             url: `/${doc.path}/${doc.file}`,
+            tool_name: 'get_help_doc',
             success: true,
           },
         });
@@ -296,9 +301,11 @@ export const helpDocsTools: ToolDefinition[] = [
       if (onAction) {
         onAction({
           type: 'read',
-          entity: 'web',
+          entity: 'help_doc',
           data: {
+            name: '帮助文档列表',
             title: '帮助文档列表',
+            tool_name: 'list_help_docs',
             success: true,
           },
         });

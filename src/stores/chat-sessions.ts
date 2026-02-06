@@ -31,12 +31,15 @@ export interface MessageAction {
     | 'book'
     | 'memory'
     | 'todo'
-    | 'user';
+    | 'user'
+    | 'help_doc';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
   query?: string; // 搜索查询（用于 web_search）
   url?: string; // 网页 URL（用于 web_fetch）
+  // 帮助文档相关信息
+  title?: string; // 文档标题（用于 help docs read/search）
   // 翻译相关信息
   paragraph_id?: string; // 段落 ID（用于 translation）
   translation_id?: string; // 翻译 ID（用于 translation）

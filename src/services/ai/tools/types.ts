@@ -26,13 +26,22 @@ export interface ActionInfo {
     | 'book'
     | 'memory'
     | 'todo'
-    | 'user';
+    | 'user'
+    | 'help_doc';
   data:
     | Terminology
     | CharacterSetting
     | TodoItem
     | { id: string; name?: string }
-    | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean }
+    | {
+        query?: string;
+        url?: string;
+        results?: unknown;
+        title?: string;
+        success?: boolean;
+        name?: string;
+        tool_name?: string;
+      }
     | {
         paragraph_id: string;
         translation_id: string;
