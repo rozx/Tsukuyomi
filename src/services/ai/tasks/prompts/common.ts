@@ -48,9 +48,9 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
   }
 
   return `**当前状态：规划阶段 (planning)**
-- 如需上下文，使用本次提供的工具获取
-- 检查数据问题（空翻译、重复项、误分类）并立即修复
-- 可检索记忆了解历史译法
+- 检查角色、术语表问题（空翻译、重复项、误分类、角色全名更新）并立即修复
+- 检查相关记忆，以应用到本次翻译中
+- 规划敬语翻译，以角色别名->记忆->历史翻译->检查关系的顺序，确保敬语翻译的准确性
 
 完成规划后，使用 \`update_task_status({"status": "working"})\` 并开始${taskLabel}。`;
 }
@@ -80,7 +80,7 @@ function getWorkingStateDescription(taskType: TaskType): string {
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
 - 发现新信息立即更新数据表/记忆
-- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
+- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（**【重要】单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
 - ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
 
 完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
@@ -93,8 +93,8 @@ function getReviewStateDescription(taskLabel: string): string {
   return `**当前状态：复核阶段 (review)**
 - 系统已自动验证完整性
 - 添加/更新术语
-- 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，使用角色全名，将姓/名添加到别名中。
-- 如看到对日后翻译有帮助的信息，可复用信息优先合并到已有记忆
+- 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，更新角色全名，将姓/名添加到别名中。
+- 如看到对日后翻译有帮助的信息（优先更新敬语翻译），可复用信息优先合并到已有记忆
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
 
 如需更新已输出的${taskLabel}结果，请用 \`update_task_status({"status": "working"})\` 切回 working 并提交更新。
@@ -238,11 +238,11 @@ export function getOutputFormatRules(taskType: TaskType): string {
     : '';
 
   const toolRestriction = isTranslation
-    ? `⛔ 仅 working 可调用 add_translation_batch / update_chapter_title
+    ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】） / update_chapter_title
    - planning 只能 update_task_status 切到 working
    - review 需要修改先切回 working
    - end 禁止再调用翻译工具`
-    : `⛔ 仅 working 可调用 add_translation_batch
+    : `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
    - planning 只能 update_task_status 切到 working
    - end 禁止再调用翻译工具`;
 

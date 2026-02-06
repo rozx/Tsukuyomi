@@ -1,1 +1,1 @@
-export const MAX_TRANSLATION_BATCH_SIZE = 50;
+export const MAX_TRANSLATION_BATCH_SIZE = 30;
