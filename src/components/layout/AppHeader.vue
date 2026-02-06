@@ -326,7 +326,7 @@ onUnmounted(() => {
             class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
             @click="toggleBatchSummaryPanel"
           >
-            <i class="pi pi-list text-lg" />
+            <i class="pi pi-bolt text-lg" />
             <span class="text-sm text-moon-70 hidden sm:inline">批量摘要</span>
           </Button>
 
