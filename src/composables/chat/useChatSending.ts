@@ -298,11 +298,11 @@ export function useChatSending(
       const sessionAfter = chatSessionsStore.currentSession;
       if (sessionAfter) {
         chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
-        // 只有当上次摘要后有超过 2 条消息时，才执行 UI 层摘要
-        // 防止新会话第一条消息就触发摘要
+        // 响应完成后，检查是否接近消息限制，主动执行摘要以便下次发送时不被阻塞
+        // 使用 MESSAGE_LIMIT_THRESHOLD 作为阈值，避免过早触发摘要
         const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
-        if (msgsSinceSummary > 2) {
-          void chatSummarizer.performUISummarization(true, (val) => (isSending.value = val));
+        if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD) {
+          void chatSummarizer.performUISummarization(false, (val) => (isSending.value = val));
         }
       }
     }
