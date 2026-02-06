@@ -460,10 +460,8 @@ export const translationTools: ToolDefinition[] = [
       }
 
       // 获取任务类型以确定处理方式
-      const task = aiProcessingStore?.activeTasks.find(
-        (t: { id: string; type?: string }) => t.id === taskId,
-      );
-      const taskType = typeof task?.type === 'string' ? task.type : undefined;
+      const task = aiProcessingStore?.activeTasks.find((t) => t.id === taskId);
+      const taskType = task?.type;
       if (!taskType) {
         return JSON.stringify({
           success: false,

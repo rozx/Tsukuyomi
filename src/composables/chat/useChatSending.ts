@@ -1,4 +1,4 @@
-import { ref, nextTick, type Ref } from 'vue';
+import { ref, type Ref } from 'vue';
 import type { Router } from 'vue-router';
 import {
   useChatSessionsStore,
@@ -12,8 +12,9 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { AssistantService } from 'src/services/ai/tasks';
 import { buildAssistantMessageHistory } from 'src/utils/ai-context-utils';
 import type { AIModel } from 'src/services/ai/types/ai-model';
-import { SUMMARIZING_MESSAGE_CONTENT } from 'src/composables/chat/constants';
+
 import { useChatActionHandler } from './useChatActionHandler';
+import { useInternalSummarization } from './useInternalSummarization';
 
 export function useChatSending(
   messages: Ref<ChatMessage[]>,
@@ -37,7 +38,15 @@ export function useChatSending(
     requestScrollThinkingToBottom: (id: string) => void;
   },
   router: Router,
-  toast: { add: (msg: any) => void },
+  toast: {
+    add: (msg: {
+      severity?: string | undefined;
+      summary?: string | undefined;
+      detail?: string | undefined;
+      life?: number | undefined;
+      group?: string | undefined;
+    }) => void;
+  },
   currentMessageActions: Ref<MessageAction[]>,
   loadTodos: () => void,
   currentTaskId: Ref<string | null>,
@@ -71,6 +80,13 @@ export function useChatSending(
     thinkingDisplay.setThinkingActive,
     chatSummarizer.getMessagesSinceSummaryCount,
   );
+
+  const {
+    isSummarizingInternally,
+    handleSummarizingStart,
+    handleSummarizingEnd,
+    reset: resetInternalSummarization,
+  } = useInternalSummarization(messages, scrollToBottom, chatSessionsStore);
 
   const sendMessage = async () => {
     const message = inputMessage.value.trim();
@@ -149,13 +165,7 @@ export function useChatSending(
 
     try {
       const messageHistory = buildAssistantMessageHistory(currentSession);
-      // Explicitly cast to ChatMessage[] if needed, but buildAssistantMessageHistory should return compatible types.
-      // If it returns specific type (AIChatMessage), and ChatMessage is compatible, it's fine.
-      // If not, we might need 'any' cast or fix the utils. Assuming compatible for now as inferred content logic matched.
-
-      let internalSummarizationMessageId: string | null = null;
-      let isSummarizingInternally = false;
-      let savedThinkingProcess: string | undefined = undefined;
+      resetInternalSummarization();
 
       const chatResult = await AssistantService.chat(assistantModel.value, message, {
         ...(sessionSummary ? { sessionSummary } : {}),
@@ -167,71 +177,13 @@ export function useChatSending(
           currentTaskId.value = id;
         },
         onSummarizingStart: () => {
-          isSummarizingInternally = true;
-
-          const assistantMsgIndex = messages.value.findIndex(
-            (m) => m.id === assistantMessageIdRef.value,
-          );
-          if (assistantMsgIndex >= 0) {
-            const assistantMsg = messages.value[assistantMsgIndex];
-            if (assistantMsg) {
-              if (assistantMsg.thinkingProcess) {
-                savedThinkingProcess = assistantMsg.thinkingProcess;
-              }
-              messages.value.splice(assistantMsgIndex, 1);
-            }
-          }
-
-          internalSummarizationMessageId = (Date.now() - 1).toString();
-          const summarizationMessage: ChatMessage = {
-            id: internalSummarizationMessageId,
-            role: 'assistant',
-            content: SUMMARIZING_MESSAGE_CONTENT,
-            timestamp: Date.now(),
-            isSummarization: true,
-          };
-          messages.value.push(summarizationMessage);
-
-          if (currentSession) {
-            chatSessionsStore.updateSessionMessages(currentSession.id, messages.value);
-          }
-          scrollToBottom();
+          handleSummarizingStart(assistantMessageIdRef, currentSession?.id);
         },
         onSummarizingEnd: () => {
-          // 摘要完成，准备接收新的聊天内容
-          // 更新摘要消息的显示
-          if (internalSummarizationMessageId) {
-            const summarizationMsgIndex = messages.value.findIndex(
-              (m) => m.id === internalSummarizationMessageId,
-            );
-            if (summarizationMsgIndex >= 0) {
-              const existingMsg = messages.value[summarizationMsgIndex];
-              if (existingMsg) {
-                messages.value[summarizationMsgIndex] = {
-                  ...existingMsg,
-                  content: '📝 已完成对话总结',
-                };
-              }
-            }
-          }
-
-          // 创建新的助手消息用于接收继续的聊天内容
-          assistantMessageIdRef.value = (Date.now() + 2).toString();
-          const newAssistantMessage: ChatMessage = {
-            id: assistantMessageIdRef.value,
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            ...(savedThinkingProcess ? { thinkingProcess: savedThinkingProcess } : {}),
-          };
-          messages.value.push(newAssistantMessage);
-
-          // 重置标志，允许接收新的 chunk
-          isSummarizingInternally = false;
-          scrollToBottom();
+          handleSummarizingEnd(assistantMessageIdRef);
         },
         onChunk: (chunk) => {
-          if (isSummarizingInternally) {
+          if (isSummarizingInternally.value) {
             return;
           }
           const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
@@ -243,7 +195,7 @@ export function useChatSending(
           }
         },
         onThinkingChunk: (text) => {
-          if (isSummarizingInternally) {
+          if (isSummarizingInternally.value) {
             return;
           }
           const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
@@ -318,6 +270,7 @@ export function useChatSending(
       if (thinkingDisplay.setThinkingActive) {
         thinkingDisplay.setThinkingActive(assistantMessageIdRef.value, false);
       }
+      resetInternalSummarization();
 
       const sessionAfter = chatSessionsStore.currentSession;
       if (sessionAfter) {

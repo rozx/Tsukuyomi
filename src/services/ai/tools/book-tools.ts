@@ -280,7 +280,18 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        const volumes: any[] = [];
+        const volumes: Array<{
+          id: string;
+          title_original: string;
+          title_translation: string;
+          chapters: Array<{
+            id: string;
+            title_original: string;
+            title_translation: string;
+            summary: string;
+          }>;
+          chapterCount: number;
+        }> = [];
 
         if (book.volumes) {
           for (const volume of book.volumes) {

@@ -274,8 +274,10 @@ describe('AI Tools Tests', () => {
     });
 
     it('should fail review if paragraphs not translated', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { chunkBoundaries, ...contextWithoutBoundaries } = mockContext;
       const reviewContext = {
-        ...mockContext,
+        ...contextWithoutBoundaries,
         bookId: mockBookId,
         aiProcessingStore: {
           ...mockContext.aiProcessingStore,
@@ -321,7 +323,7 @@ describe('AI Tools Tests', () => {
       const parsed = JSON.parse(result as string);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('仍有 1 个非空段落未翻译');
+      expect(parsed.error).toContain('全文章节内仍有 1 个非空段落未翻译');
     });
 
     it('should ignore untranslated paragraphs outside chunk boundaries', async () => {
@@ -429,7 +431,7 @@ describe('AI Tools Tests', () => {
       const parsed = JSON.parse(result as string);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('当前处理范围仍有 1 个非空段落未翻译');
+      expect(parsed.error).toContain('当前分块内仍有 1 个非空段落未翻译');
     });
 
     it('should pass review if all translated', async () => {

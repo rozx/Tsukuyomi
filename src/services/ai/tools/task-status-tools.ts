@@ -244,11 +244,13 @@ export const taskStatusTools: ToolDefinition[] = [
                   chapter.content || (await ChapterContentService.loadChapterContent(chapterId));
 
                 let contentToCheck = fullContent;
+                let isChunkCheck = false;
                 if (context.chunkBoundaries && fullContent) {
                   // 如果存在 chunkBoundaries，仅检查当前块内的段落
                   contentToCheck = fullContent.filter((p) =>
                     context.chunkBoundaries!.allowedParagraphIds.has(p.id),
                   );
+                  isChunkCheck = true;
                 }
 
                 if (contentToCheck && contentToCheck.length > 0) {
@@ -260,9 +262,21 @@ export const taskStatusTools: ToolDefinition[] = [
                   );
 
                   if (untranslatedParagraphs.length > 0) {
+                    const scopeMsg = isChunkCheck ? '当前分块' : '全文章节';
+                    // 列出未翻译的段落 ID (最多显示 10 个)
+                    const MAX_IDS_SHOW = 10;
+                    const idsToShow = untranslatedParagraphs
+                      .slice(0, MAX_IDS_SHOW)
+                      .map((p) => p.id);
+                    let missingIds = idsToShow.join(', ');
+
+                    if (untranslatedParagraphs.length > MAX_IDS_SHOW) {
+                      missingIds += `... (等共 ${untranslatedParagraphs.length} 个)`;
+                    }
+
                     return JSON.stringify({
                       success: false,
-                      error: `无法提交复核：当前处理范围仍有 ${untranslatedParagraphs.length} 个非空段落未翻译`,
+                      error: `无法提交复核：${scopeMsg}内仍有 ${untranslatedParagraphs.length} 个非空段落未翻译 (ID: ${missingIds})`,
                     });
                   }
                 }
