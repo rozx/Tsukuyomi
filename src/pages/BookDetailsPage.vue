@@ -5,6 +5,7 @@ import TieredMenu from 'primevue/tieredmenu';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import ProgressSpinner from 'primevue/progressspinner';
+import Popover from 'primevue/popover';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
@@ -48,6 +49,10 @@ import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
 import VolumesList from 'src/components/novel/VolumesList.vue';
 import TermPopover from 'src/components/novel/TermPopover.vue';
 import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
+import MemoryReferencePanel, {
+  type MemoryReference,
+} from 'src/components/novel/MemoryReferencePanel.vue';
+import MemoryDetailDialog from 'src/components/novel/MemoryDetailDialog.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
 import ChapterSettingsPopover from 'src/components/novel/ChapterSettingsPopover.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
@@ -66,6 +71,8 @@ import { useChapterTranslation } from 'src/composables/book-details/useChapterTr
 import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { MemoryService } from 'src/services/memory-service';
+import type { Memory, MemoryAttachmentType } from 'src/models/memory';
 
 const route = useRoute();
 const router = useRouter();
@@ -1224,6 +1231,177 @@ const usedCharacters = computed(() => {
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
 
+// 计算当前章节参考的记忆数量（去重）
+const usedMemoryCount = computed(() => {
+  if (!selectedChapterParagraphs.value.length) {
+    return 0;
+  }
+
+  const memoryIds = new Set<string>();
+  for (const paragraph of selectedChapterParagraphs.value) {
+    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
+      continue;
+    }
+
+    const selectedTranslation = paragraph.translations.find(
+      (translation) => translation.id === paragraph.selectedTranslationId,
+    );
+    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
+      if (memoryId) {
+        memoryIds.add(memoryId);
+      }
+    });
+  }
+
+  return memoryIds.size;
+});
+
+// 记忆引用弹出框状态
+const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
+const isMemoryPopoverOpen = ref(false);
+const usedMemoryReferences = ref<MemoryReference[]>([]);
+const isLoadingMemoryReferences = ref(false);
+const showMemoryDetailDialog = ref(false);
+const detailMemory = ref<Memory | null>(null);
+
+const referencedMemoryIds = computed(() => {
+  if (!selectedChapterParagraphs.value.length) {
+    return [];
+  }
+
+  const memoryIds = new Set<string>();
+  for (const paragraph of selectedChapterParagraphs.value) {
+    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
+      continue;
+    }
+
+    const selectedTranslation = paragraph.translations.find(
+      (translation) => translation.id === paragraph.selectedTranslationId,
+    );
+    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
+      if (memoryId) {
+        memoryIds.add(memoryId);
+      }
+    });
+  }
+
+  return Array.from(memoryIds);
+});
+
+const refreshReferencedMemories = async () => {
+  const ids = referencedMemoryIds.value;
+  if (!ids.length || !bookId.value) {
+    usedMemoryReferences.value = [];
+    return;
+  }
+
+  isLoadingMemoryReferences.value = true;
+  try {
+    const memoryPromises = ids.map((id) => MemoryService.getMemory(bookId.value, id));
+    const memories = await Promise.all(memoryPromises);
+    usedMemoryReferences.value = memories
+      .filter((m): m is Memory => !!m)
+      .map((m) => ({
+        memoryId: m.id,
+        summary: m.summary,
+        accessedAt: m.lastAccessedAt,
+        toolName: 'get_memory',
+      }));
+  } catch (error) {
+    console.warn('Failed to fetch referenced memories:', error);
+  } finally {
+    isLoadingMemoryReferences.value = false;
+  }
+};
+
+watch(
+  referencedMemoryIds,
+  () => {
+    if (isMemoryPopoverOpen.value) {
+      refreshReferencedMemories();
+    }
+  },
+  { immediate: true },
+);
+
+const handleToggleMemoryPopover = (event: Event) => {
+  memoryPopover.value?.toggle(event);
+};
+
+const handleMemoryPopoverShow = () => {
+  isMemoryPopoverOpen.value = true;
+  void refreshReferencedMemories();
+};
+
+const handleMemoryPopoverHide = () => {
+  isMemoryPopoverOpen.value = false;
+};
+
+const closeMemoryPopover = () => {
+  memoryPopover.value?.hide();
+};
+
+const handleViewMemory = async (memoryId: string) => {
+  if (!bookId.value) return;
+  try {
+    const memory = await MemoryService.getMemory(bookId.value, memoryId);
+    if (memory) {
+      detailMemory.value = memory;
+      showMemoryDetailDialog.value = true;
+    }
+  } catch (error) {
+    console.error('Failed to load memory detail:', error);
+  }
+};
+
+const handleMemorySave = async (memoryId: string, summary: string, content: string) => {
+  if (!bookId.value) return;
+  try {
+    await MemoryService.updateMemory(bookId.value, memoryId, content, summary);
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to save memory:', error);
+  }
+};
+
+const handleMemoryDelete = async (memory: Memory) => {
+  if (!bookId.value) return;
+  try {
+    await MemoryService.deleteMemory(bookId.value, memory.id);
+    showMemoryDetailDialog.value = false;
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to delete memory:', error);
+  }
+};
+
+const handleMemoryNavigate = (type: MemoryAttachmentType, id: string) => {
+  if (type === 'term') {
+    closeMemoryPopover();
+    navigateToTermsSetting();
+    return;
+  }
+  if (type === 'character') {
+    closeMemoryPopover();
+    navigateToCharactersSetting();
+    return;
+  }
+  if (type === 'chapter') {
+    const chapter = book.value?.volumes
+      ?.flatMap((volume) => volume.chapters || [])
+      .find((item) => item.id === id);
+    if (chapter) {
+      closeMemoryPopover();
+      navigateToChapterInternal(chapter);
+    }
+    return;
+  }
+  if (type === 'book') {
+    closeMemoryPopover();
+    navigateToMemorySetting();
+  }
+};
+
 const toggleCharacterPopover = (event: Event) => {
   characterPopover.value?.toggle(event);
 };
@@ -1980,6 +2158,25 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @create="openCreateCharacterDialog"
       />
 
+      <!-- 记忆引用 Popover -->
+      <Popover
+        ref="memoryPopover"
+        :dismissable="true"
+        :show-close-icon="false"
+        style="width: 24rem; max-width: 90vw"
+        class="memory-reference-popover"
+        @show="handleMemoryPopoverShow"
+        @hide="handleMemoryPopoverHide"
+      >
+        <MemoryReferencePanel
+          :references="usedMemoryReferences"
+          :book-id="bookId"
+          :loading="isLoadingMemoryReferences"
+          :always-expanded="true"
+          @view-memory="handleViewMemory"
+        />
+      </Popover>
+
       <!-- 键盘快捷键 Popover -->
       <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
 
@@ -1989,6 +2186,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :book="book || null"
         :chapter="selectedChapter || null"
         @save="handleSaveChapterSettings"
+      />
+
+      <!-- 记忆详情对话框 -->
+      <MemoryDetailDialog
+        v-if="bookId"
+        :visible="showMemoryDetailDialog"
+        :memory="detailMemory"
+        :book-id="bookId"
+        @update:visible="(val) => (showMemoryDetailDialog = val)"
+        @save="handleMemorySave"
+        @delete="handleMemoryDelete"
+        @navigate="handleMemoryNavigate"
       />
 
       <!-- 编辑术语对话框 -->
@@ -2040,6 +2249,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :selected-chapter-paragraphs="selectedChapterParagraphs"
           :used-term-count="usedTermCount"
           :used-character-count="usedCharacterCount"
+          :used-memory-count="usedMemoryCount"
           :translation-status="translationStatus"
           :translation-button-label="translationButtonLabel"
           :translation-button-menu-items="translationButtonMenuItems"
@@ -2060,6 +2270,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           @toggle-export="(event: Event) => toggleExportMenu(event)"
           @toggle-term-popover="(event: Event) => toggleTermPopover(event)"
           @toggle-character-popover="(event: Event) => toggleCharacterPopover(event)"
+          @toggle-memory-popover="(event: Event) => handleToggleMemoryPopover(event)"
           @translation-button-click="translationButtonClick"
           @toggle-search="toggleSearch"
           @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
