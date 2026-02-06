@@ -319,8 +319,8 @@ const handleDragLeave = () => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-left: 1rem;
-  padding-left: 0.75rem;
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
   border-left: 1px solid var(--white-opacity-10);
 }
 
@@ -328,8 +328,8 @@ const handleDragLeave = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.375rem;
+  padding: 0.5rem;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -375,7 +375,7 @@ const handleDragLeave = () => {
 .chapter-content {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
   flex: 1;
   cursor: pointer;
   min-width: 0;
@@ -403,11 +403,19 @@ const handleDragLeave = () => {
   gap: 0.125rem;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 0;
+  overflow: hidden;
+  margin-left: 0;
+  transition:
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.2s ease,
+    margin-left 0.2s ease;
 }
 
 .chapter-item:hover .chapter-actions {
   opacity: 1;
+  max-width: 4rem;
+  margin-left: 0.25rem;
 }
 
 .chapter-icon {
@@ -424,6 +432,9 @@ const handleDragLeave = () => {
 .chapter-content .chapter-title {
   flex: 1;
   font-size: inherit;
+  white-space: normal;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .summary-icon {
