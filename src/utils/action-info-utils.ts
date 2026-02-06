@@ -179,6 +179,18 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
     ...(action.type === 'navigate' && 'paragraph_id' in action.data
       ? { paragraph_id: action.data.paragraph_id }
       : {}),
+    // 帮助文档导航相关信息
+    ...(action.type === 'navigate' && action.entity === 'help_doc' && 'doc_id' in action.data
+      ? {
+          doc_id: action.data.doc_id,
+          ...('doc_title' in action.data && action.data.doc_title
+            ? { title: action.data.doc_title }
+            : {}),
+          ...('section_id' in action.data && action.data.section_id
+            ? { section_id: action.data.section_id }
+            : {}),
+        }
+      : {}),
     // ask_user / ask_user_batch 问答相关信息
     ...(action.type === 'ask' &&
     action.entity === 'user' &&
@@ -930,6 +942,27 @@ export function getActionDetails(
         label: '段落 ID',
         value: action.paragraph_id,
       });
+    }
+    // 帮助文档导航详情
+    if (action.entity === 'help_doc') {
+      if (action.doc_id) {
+        details.push({
+          label: '文档 ID',
+          value: action.doc_id,
+        });
+      }
+      if (action.title) {
+        details.push({
+          label: '文档标题',
+          value: action.title,
+        });
+      }
+      if (action.section_id) {
+        details.push({
+          label: '章节锚点',
+          value: action.section_id,
+        });
+      }
     }
   }
 

@@ -82,6 +82,12 @@ export interface ActionInfo {
         found_memory_ids?: string[];
       }
     | {
+        doc_id: string;
+        doc_title: string;
+        section_id?: string;
+        tool_name?: string;
+      }
+    | {
         tool_name: 'ask_user';
         question: string;
         suggested_answers?: string[];

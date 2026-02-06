@@ -235,6 +235,92 @@ export const helpDocsTools: ToolDefinition[] = [
     },
   },
 
+  // navigate_to_help_doc - 导航到指定的帮助文档页面
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'navigate_to_help_doc',
+        description:
+          '导航到指定的帮助文档页面。将用户界面跳转到帮助中心并打开指定的文档，可选定位到文档内的具体章节。当用户询问使用方法后需要查看完整文档，或需要引导用户前往相关帮助页面时使用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            doc_id: {
+              type: 'string',
+              description:
+                '帮助文档的唯一 ID（例如 "front-page"、"ai-models-guide"），可通过 search_help_docs 或 list_help_docs 获取',
+            },
+            section_id: {
+              type: 'string',
+              description:
+                '文档内的章节锚点 ID（可选）。用于定位到文档内的具体章节，例如 "openai-配置"。锚点 ID 通常是章节标题的小写形式，空格替换为连字符',
+            },
+          },
+          required: ['doc_id'],
+        },
+      },
+    },
+    handler: async (args, context: ToolContext) => {
+      const { doc_id, section_id } = args as {
+        doc_id: string;
+        section_id?: string;
+      };
+      const { onAction } = context;
+
+      if (!doc_id || typeof doc_id !== 'string') {
+        console.error('[HelpDocs] ❌ 无效的文档 ID', {
+          doc_id,
+          docIdType: typeof doc_id,
+        });
+        return JSON.stringify({
+          success: false,
+          error: '文档 ID 不能为空',
+        });
+      }
+
+      const indexResult = await fetchHelpIndex();
+      if (!indexResult.success || !indexResult.data) {
+        return JSON.stringify({
+          success: false,
+          error: indexResult.error || '无法获取帮助文档索引',
+        });
+      }
+
+      // 查找指定 ID 的文档
+      const doc = indexResult.data.find((d) => d.id === doc_id);
+      if (!doc) {
+        return JSON.stringify({
+          success: false,
+          error: `未找到 ID 为 "${doc_id}" 的帮助文档`,
+        });
+      }
+
+      // 触发导航操作
+      if (onAction) {
+        onAction({
+          type: 'navigate',
+          entity: 'help_doc',
+          data: {
+            doc_id,
+            doc_title: doc.title,
+            ...(section_id ? { section_id } : {}),
+            tool_name: 'navigate_to_help_doc',
+          },
+        });
+      }
+
+      const sectionInfo = section_id ? ` (章节: ${section_id})` : '';
+      return JSON.stringify({
+        success: true,
+        message: `已导航到帮助文档: ${doc.title}${sectionInfo}`,
+        doc_id,
+        doc_title: doc.title,
+        ...(section_id ? { section_id } : {}),
+      });
+    },
+  },
+
   // list_help_docs - 列出所有可用的帮助文档
   {
     definition: {

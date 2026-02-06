@@ -381,6 +381,13 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           "{{ (action as MessageActionWithAllProperties).new_title }}"
         </span>
         <span
+          v-else-if="action.type === 'navigate' && action.entity === 'help_doc' && action.title"
+          class="font-semibold text-xs"
+        >
+          "{{ action.title }}"
+          <span v-if="action.section_id" class="opacity-70 ml-1">#{{ action.section_id }}</span>
+        </span>
+        <span
           v-else-if="action.type === 'navigate' && action.chapter_title"
           class="font-semibold text-xs"
         >

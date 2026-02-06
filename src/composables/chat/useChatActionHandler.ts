@@ -317,6 +317,21 @@ export function useChatActionHandler(
       });
     }
 
+    // 处理帮助文档导航操作
+    if (action.type === 'navigate' && action.entity === 'help_doc' && 'doc_id' in action.data) {
+      const docId = action.data.doc_id as string;
+      const sectionId = 'section_id' in action.data ? (action.data.section_id as string) : null;
+
+      void co(function* () {
+        try {
+          const path = sectionId ? `/help/${docId}#${sectionId}` : `/help/${docId}`;
+          yield router.push(path);
+        } catch (error) {
+          console.error('[ChatActionHandler] 帮助文档导航失败:', error);
+        }
+      });
+    }
+
     // 立即将操作添加到临时数组（用于后续保存）
     currentMessageActions.value.push(messageAction);
 

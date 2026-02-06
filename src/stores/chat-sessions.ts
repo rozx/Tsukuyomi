@@ -62,6 +62,8 @@ export interface MessageAction {
   keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
+  doc_id?: string; // 文档 ID（用于 navigate help_doc 操作）
+  section_id?: string; // 章节锚点 ID（用于 navigate help_doc 操作）
   // 章节更新相关信息
   old_title?: string; // 旧标题（用于 update_chapter_title）
   new_title?: string; // 新标题（用于 update_chapter_title）
