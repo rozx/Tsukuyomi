@@ -96,7 +96,7 @@ function getReviewStateDescription(taskLabel: string): string {
 - 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，更新角色全名，将姓/名添加到别名中。
 - 如看到对日后翻译有帮助的信息（优先更新敬语翻译），可复用信息优先合并到已有记忆
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
-- 检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
+- 【⚠️ 重要】检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
 
 如需更新已输出的${taskLabel}结果，请用 \`update_task_status({"status": "working"})\` 切回 working 并提交更新。
 完成后使用 \`update_task_status({"status": "end"})\`。`;
