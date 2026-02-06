@@ -229,6 +229,259 @@ describe('AI Tools Tests', () => {
       });
     });
 
+    it('should fail review if chapter title not translated', async () => {
+      const reviewContext = {
+        ...mockContext,
+        bookId: mockBookId,
+        aiProcessingStore: {
+          ...mockContext.aiProcessingStore,
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'translation' as const,
+              workflowStatus: 'working' as any,
+              status: 'working' as any,
+              modelName: 'gpt-4',
+              startTime: 1234567890,
+              bookId: mockBookId,
+              chapterId: 'c1',
+            },
+          ],
+        },
+      };
+
+      const mockChapter = {
+        id: 'c1',
+        title: { original: 'Original Title', translation: null }, // No translation
+        content: [],
+      };
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+      });
+
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, reviewContext);
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('章节标题尚未翻译');
+    });
+
+    it('should fail review if paragraphs not translated', async () => {
+      const reviewContext = {
+        ...mockContext,
+        bookId: mockBookId,
+        aiProcessingStore: {
+          ...mockContext.aiProcessingStore,
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'translation' as const,
+              workflowStatus: 'working' as any,
+              status: 'working' as any,
+              modelName: 'gpt-4',
+              startTime: 1234567890,
+              bookId: mockBookId,
+              chapterId: 'c1',
+            },
+          ],
+        },
+      };
+
+      const mockChapter = {
+        id: 'c1',
+        title: { original: 'Orig', translation: { translation: 'Trans' } },
+        content: [
+          { id: 'p1', text: 'Text 1', translations: [] }, // Not translated
+          { id: 'p2', text: 'Text 2', translations: [{ translation: 'T2' }] },
+        ],
+      };
+
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+      });
+      // Mock loadChapterContent to return undefined or content depending on implementation
+      // My implementation checks chapter.content || loadChapterContent
+      // With chapter.content set, it uses it.
+
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, reviewContext);
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('仍有 1 个非空段落未翻译');
+    });
+
+    it('should ignore untranslated paragraphs outside chunk boundaries', async () => {
+      const reviewContext = {
+        ...mockContext,
+        bookId: mockBookId,
+        chunkBoundaries: {
+          allowedParagraphIds: new Set(['p1']),
+          paragraphIds: ['p1'],
+          firstParagraphId: 'p1',
+          lastParagraphId: 'p1',
+        },
+        aiProcessingStore: {
+          ...mockContext.aiProcessingStore,
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'translation' as const,
+              workflowStatus: 'working' as any,
+              status: 'working' as any,
+              modelName: 'gpt-4',
+              startTime: 1234567890,
+              bookId: mockBookId,
+              chapterId: 'c1',
+            },
+          ],
+        },
+      };
+
+      const mockChapter = {
+        id: 'c1',
+        title: { original: 'Orig', translation: { translation: 'Trans' } },
+        content: [
+          { id: 'p1', text: 'Text 1', translations: [{ translation: 'T1' }] }, // Translated (in chunk)
+          { id: 'p2', text: 'Text 2', translations: [] }, // Untranslated (OUTSIDE chunk)
+        ],
+      };
+
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+      });
+
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, reviewContext);
+      const parsed = JSON.parse(result as string);
+
+      // Should succeed because p2 is ignored
+      expect(parsed.success).toBe(true);
+    });
+
+    it('should fail review if untranslated paragraphs inside chunk boundaries', async () => {
+      const reviewContext = {
+        ...mockContext,
+        bookId: mockBookId,
+        chunkBoundaries: {
+          allowedParagraphIds: new Set(['p2']),
+          paragraphIds: ['p2'],
+          firstParagraphId: 'p2',
+          lastParagraphId: 'p2',
+        },
+        aiProcessingStore: {
+          ...mockContext.aiProcessingStore,
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'translation' as const,
+              workflowStatus: 'working' as any,
+              status: 'working' as any,
+              modelName: 'gpt-4',
+              startTime: 1234567890,
+              bookId: mockBookId,
+              chapterId: 'c1',
+            },
+          ],
+        },
+      };
+
+      const mockChapter = {
+        id: 'c1',
+        title: { original: 'Orig', translation: { translation: 'Trans' } },
+        content: [
+          { id: 'p1', text: 'Text 1', translations: [{ translation: 'T1' }] }, // Translated (OUTSIDE chunk)
+          { id: 'p2', text: 'Text 2', translations: [] }, // Untranslated (INSIDE chunk)
+        ],
+      };
+
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+      });
+
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, reviewContext);
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('当前处理范围仍有 1 个非空段落未翻译');
+    });
+
+    it('should pass review if all translated', async () => {
+      const reviewContext = {
+        ...mockContext,
+        bookId: mockBookId,
+        aiProcessingStore: {
+          ...mockContext.aiProcessingStore,
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'translation' as const,
+              workflowStatus: 'working' as any,
+              status: 'working' as any,
+              modelName: 'gpt-4',
+              startTime: 1234567890,
+              bookId: mockBookId,
+              chapterId: 'c1',
+            },
+          ],
+        },
+      };
+
+      const mockChapter = {
+        id: 'c1',
+        title: { original: 'Orig', translation: { translation: 'Trans' } },
+        content: [
+          { id: 'p1', text: 'Text 1', translations: [{ translation: 'T1' }] },
+          { id: 'p2', text: 'Text 2', translations: [{ translation: 'T2' }] },
+        ],
+      };
+
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+      });
+
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, reviewContext);
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(true);
+      expect(reviewContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
+        workflowStatus: 'review',
+      });
+    });
+
     it('should prevent invalid transition (working -> planning)', async () => {
       // Current status: working
       const handler = updateTaskStatusTool!.handler;

@@ -199,6 +199,85 @@ export const taskStatusTools: ToolDefinition[] = [
         });
       }
 
+      // 特殊检查：当翻译任务状态变更为 review 时，进行完整性检查
+      if (taskType === 'translation' && status === 'review') {
+        const chapterId = task.chapterId;
+        const bookId = task.bookId || context.bookId;
+
+        if (!chapterId || !bookId) {
+          // 如果没有关联章节，可能是全书任务或其他类型，跳过检查或报错
+          // 这里选择宽容处理，或者记录警告
+        } else {
+          try {
+            // 延迟导入以避免循环依赖
+            const { BookService } = await import('src/services/book-service');
+            const { ChapterService } = await import('src/services/chapter-service');
+            const { ChapterContentService } = await import('src/services/chapter-content-service');
+
+            const book = await BookService.getBookById(bookId);
+            if (book) {
+              const chapterInfo = ChapterService.findChapterById(book, chapterId);
+              if (chapterInfo) {
+                const { chapter } = chapterInfo;
+
+                // 检查 2: 章节标题是否已翻译
+                let hasTitleTranslation = false;
+                if (typeof chapter.title === 'string') {
+                  // 旧格式，无法区分，假设已翻译或是原文
+                  // 严格来说旧格式没有 translation 字段，所以视为未翻译？
+                  // 或者不检查旧格式
+                  hasTitleTranslation = true;
+                } else {
+                  hasTitleTranslation =
+                    !!chapter.title.translation && !!chapter.title.translation.translation;
+                }
+
+                if (!hasTitleTranslation) {
+                  return JSON.stringify({
+                    success: false,
+                    error: '无法提交复核：章节标题尚未翻译',
+                  });
+                }
+
+                // 检查 1: 所有非空段落是否有翻译
+                const fullContent =
+                  chapter.content || (await ChapterContentService.loadChapterContent(chapterId));
+
+                let contentToCheck = fullContent;
+                if (context.chunkBoundaries && fullContent) {
+                  // 如果存在 chunkBoundaries，仅检查当前块内的段落
+                  contentToCheck = fullContent.filter((p) =>
+                    context.chunkBoundaries!.allowedParagraphIds.has(p.id),
+                  );
+                }
+
+                if (contentToCheck && contentToCheck.length > 0) {
+                  const nonEmptyParagraphs = contentToCheck.filter(
+                    (p) => p.text && p.text.trim().length > 0,
+                  );
+                  const untranslatedParagraphs = nonEmptyParagraphs.filter(
+                    (p) => !p.translations || p.translations.length === 0,
+                  );
+
+                  if (untranslatedParagraphs.length > 0) {
+                    return JSON.stringify({
+                      success: false,
+                      error: `无法提交复核：当前处理范围仍有 ${untranslatedParagraphs.length} 个非空段落未翻译`,
+                    });
+                  }
+                }
+              }
+            }
+          } catch (checkError) {
+            console.error('Review check failed:', checkError);
+            return JSON.stringify({
+              success: false,
+              error: `完整性检查失败: ${checkError instanceof Error ? checkError.message : String(checkError)}`,
+            });
+          }
+        }
+      }
+
       try {
         // 执行状态更新
         await updateTaskStatus(aiProcessingStore, taskId, status);
