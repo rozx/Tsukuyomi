@@ -46,6 +46,21 @@ export function useChatSending(
   const aiProcessingStore = useAIProcessingStore();
   const isSending = ref(false);
 
+  const isCancelledError = (error: unknown): boolean => {
+    if (error instanceof Error) {
+      return (
+        error.message === '请求已取消' ||
+        error.message.includes('aborted') ||
+        error.name === 'AbortError' ||
+        error.name === 'CanceledError'
+      );
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      return (error as { message: unknown }).message === 'canceled';
+    }
+    return false;
+  };
+
   const { handleAction } = useChatActionHandler(
     router,
     toast,
@@ -267,10 +282,19 @@ export function useChatSending(
         // 如果服务返回了摘要，更新会话的摘要状态
         chatSessionsStore.summarizeAndReset(chatResult.summary);
       }
+
+      // 更新工具调用 token 开销，使 UI 进度条反映真实的上下文占用
+      if (finalSession && chatResult.toolCallTokenOverhead !== undefined) {
+        chatSessionsStore.updateToolCallTokenOverhead(
+          finalSession.id,
+          chatResult.toolCallTokenOverhead,
+        );
+      }
     } catch (error) {
+      const isCancelled = isCancelledError(error);
       if (error instanceof Error && error.message === 'Task aborted') {
         // Ignore
-      } else {
+      } else if (!isCancelled) {
         console.error('Failed to send message:', error);
         toast.add({
           severity: 'error',
@@ -278,13 +302,13 @@ export function useChatSending(
           detail: error instanceof Error ? error.message : 'Unknown error',
           life: 5000,
         });
+      }
 
-        const index = messages.value.findIndex((m) => m.id === assistantMessageIdRef.value);
-        if (index !== -1) {
-          const message = messages.value[index];
-          if (message && !message.content && !message.thinkingProcess) {
-            messages.value.splice(index, 1);
-          }
+      const index = messages.value.findIndex((m) => m.id === assistantMessageIdRef.value);
+      if (index !== -1) {
+        const message = messages.value[index];
+        if (message && !message.content && !message.thinkingProcess) {
+          messages.value.splice(index, 1);
         }
       }
     } finally {

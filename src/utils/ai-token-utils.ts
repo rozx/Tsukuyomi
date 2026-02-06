@@ -1,4 +1,4 @@
-import type { ChatMessage } from 'src/services/ai/types/ai-service';
+import type { ChatMessage, AITool } from 'src/services/ai/types/ai-service';
 import { countTokens as gptCountTokens } from 'gpt-tokenizer';
 
 /**
@@ -100,4 +100,24 @@ export const estimateMessagesTokenCount = (
   _multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
 ): number => {
   return countMessagesTokens(messages);
+};
+
+/**
+ * 估算 API tools 参数（工具 JSON schemas）的 token 数量。
+ *
+ * API 提供商会将 tools 参数中的完整 JSON schema 计入上下文窗口，
+ * 但 estimateMessagesTokenCount 仅统计消息内容，不包含 tools 参数。
+ * 此函数用于补充这部分 token 开销。
+ *
+ * @param tools 传递给 API 的工具定义数组
+ * @returns token 数量（tools 为空时返回 0）
+ */
+export const estimateToolSchemaTokens = (tools: AITool[]): number => {
+  if (!tools || tools.length === 0) return 0;
+  try {
+    const toolSchemaText = JSON.stringify(tools);
+    return gptCountTokens(toolSchemaText);
+  } catch {
+    return 0;
+  }
 };

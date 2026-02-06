@@ -116,5 +116,9 @@ export const buildAssistantStatsMessages = (params: AssistantStatsParams): AICha
 
 export const estimateAssistantContextTokens = (params: AssistantStatsParams): number => {
   const messages = buildAssistantStatsMessages(params);
-  return estimateMessagesTokenCount(messages);
+  const baseTokens = estimateMessagesTokenCount(messages);
+  // 加上工具调用产生的额外 token 开销（tool_calls、tool 结果消息、reasoning_content 等）
+  // 这些内容存在于实际 API 上下文中，但 UI 侧的消息列表不包含它们
+  const toolCallOverhead = params.session?.toolCallTokenOverhead ?? 0;
+  return baseTokens + toolCallOverhead;
 };

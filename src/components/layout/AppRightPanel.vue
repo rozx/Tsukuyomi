@@ -392,12 +392,6 @@ const stopGeneration = async () => {
     }
     isSending.value = false;
     currentTaskId.value = null;
-    toast.add({
-      severity: 'info',
-      summary: '操作',
-      detail: '已停止生成',
-      life: 3000,
-    });
   }
 };
 

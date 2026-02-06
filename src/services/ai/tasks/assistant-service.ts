@@ -19,6 +19,7 @@ import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import {
   DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
   estimateMessagesTokenCount,
+  estimateToolSchemaTokens,
 } from 'src/utils/ai-token-utils';
 import {
   getAssistantSystemPrompt,
@@ -158,6 +159,11 @@ export interface AssistantResult {
    * 会话总结（当需要重置时提供）
    */
   summary?: string;
+  /**
+   * 工具调用产生的额外 token 开销（实际 API 上下文 token 数减去 UI 可见消息 token 数）。
+   * 用于修正 UI 进度条的 token 估算，使其反映真实的上下文占用。
+   */
+  toolCallTokenOverhead?: number;
 }
 
 /**
@@ -195,6 +201,56 @@ export class AssistantService {
     multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
   ): number {
     return estimateMessagesTokenCount(messages, multiplier);
+  }
+
+  /**
+   * 更新任务的上下文 token 统计
+   */
+  private static async updateTaskContextUsage(params: {
+    messages: ChatMessage[];
+    model: AIModel;
+    toolSchemaTokens?: number;
+    aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
+    taskId?: string;
+  }): Promise<void> {
+    const { messages, model, toolSchemaTokens, aiProcessingStore, taskId } = params;
+    if (!aiProcessingStore || !taskId) return;
+
+    const messageTokens = estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER);
+    const contextTokens = messageTokens + (toolSchemaTokens ?? 0);
+    const contextWindow = model.contextWindow || 0;
+    const contextPercentage =
+      contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : undefined;
+
+    await aiProcessingStore.updateTask(taskId, {
+      contextTokens,
+      ...(contextWindow > 0 ? { contextWindow } : {}),
+      ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+    });
+  }
+
+  /**
+   * 计算工具调用产生的 token 开销。
+   * = 完整内部消息列表的 token 数 - 仅 user/assistant 纯文本消息的 token 数。
+   * UI 侧只统计 user/assistant 纯文本，因此此差值用于修正进度条。
+   */
+  private static calculateToolCallTokenOverhead(messages: ChatMessage[]): number {
+    const totalTokens = estimateMessagesTokenCount(messages);
+    // 模拟 UI 侧的过滤逻辑：只保留 user/assistant 且有内容的消息，且只取纯 content
+    const uiVisibleMessages: ChatMessage[] = messages
+      .filter(
+        (msg) =>
+          (msg.role === 'user' || msg.role === 'assistant') &&
+          msg.content &&
+          msg.content.trim() &&
+          msg.content !== '（调用工具）',
+      )
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content || '',
+      }));
+    const uiTokens = estimateMessagesTokenCount(uiVisibleMessages);
+    return Math.max(0, totalTokens - uiTokens);
   }
 
   /**
@@ -643,6 +699,9 @@ export class AssistantService {
   ): Promise<AssistantResult> {
     const { onChunk, onAction, onToast, onThinkingChunk, aiProcessingStore } = options;
 
+    // 计算工具 schema token 开销（tools 参数会被 API 提供商计入上下文窗口）
+    const toolSchemaTokens = estimateToolSchemaTokens(tools);
+
     // 获取 AI 服务
     const aiService = AIServiceFactory.getService(model.provider);
 
@@ -745,6 +804,14 @@ export class AssistantService {
       });
     }
 
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+      ...(taskId ? { taskId } : {}),
+    });
+
     // 工具调用循环
     while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
       currentTurnCount++;
@@ -773,6 +840,14 @@ export class AssistantService {
 
       // 将工具结果添加到历史
       messages.push(...toolResults);
+
+      await this.updateTaskContextUsage({
+        messages,
+        model,
+        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+        ...(aiProcessingStore ? { aiProcessingStore } : {}),
+        ...(taskId ? { taskId } : {}),
+      });
 
       // 再次调用 AI 获取回复
       const followUpRequest: TextGenerationRequest = {
@@ -852,6 +927,14 @@ export class AssistantService {
         });
       }
 
+      await this.updateTaskContextUsage({
+        messages,
+        model,
+        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+        ...(aiProcessingStore ? { aiProcessingStore } : {}),
+        ...(taskId ? { taskId } : {}),
+      });
+
       if (toolCalls.length === 0) {
         break;
       }
@@ -873,6 +956,7 @@ export class AssistantService {
       ...(taskId ? { taskId: taskId } : {}),
       actions: allActions,
       messageHistory: messages,
+      toolCallTokenOverhead: this.calculateToolCallTokenOverhead(messages),
     };
   }
 
@@ -1005,10 +1089,14 @@ export class AssistantService {
 
       // 检查 token 限制（在发送请求前）
       // 如果模型有 maxTokens 限制（不是 UNLIMITED_TOKENS），检查是否接近或超过限制
-      const estimatedTokens = estimateMessagesTokenCount(
+      const messageTokens = estimateMessagesTokenCount(
         messages,
         DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
       );
+      // API 提供商会将 tools 参数中的完整 JSON schema 计入上下文窗口，
+      // 需要将其纳入 token 估算以避免低估实际用量
+      const toolSchemaTokens = estimateToolSchemaTokens(tools);
+      const estimatedTokens = messageTokens + toolSchemaTokens;
       // const TOKEN_THRESHOLD_RATIO = 0.85; // 使用常量
 
       // 检查是否超过模型的最大上下文长度（contextWindow）
@@ -1022,7 +1110,7 @@ export class AssistantService {
           if (availableForCompletion <= 0) {
             // 消息已经占满了整个上下文窗口，必须触发总结
             console.warn(
-              `[AssistantService] 消息 token 数 (${estimatedTokens}) 已超过或等于模型上下文窗口 (${model.contextWindow})，必须触发总结`,
+              `[AssistantService] 消息 token 数 (${estimatedTokens}, 含工具 schema ${toolSchemaTokens}) 已超过或等于模型上下文窗口 (${model.contextWindow})，必须触发总结`,
             );
             effectiveMaxTokens = 0; // 标记需要总结
           } else {
@@ -1054,6 +1142,8 @@ export class AssistantService {
       // 调试日志：记录触发条件检查详情
       console.log('[AssistantService] Token 限制检查:', {
         estimatedTokens,
+        messageTokens,
+        toolSchemaTokens,
         maxTokens: model.maxTokens,
         contextWindow: model.contextWindow,
         thresholdBase,
@@ -1174,10 +1264,10 @@ export class AssistantService {
       const aiService = AIServiceFactory.getService(model.provider);
 
       // 重新计算 estimatedTokens（可能在总结后消息已改变）
-      let finalEstimatedTokens = estimateMessagesTokenCount(
-        messages,
-        DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-      );
+      // toolSchemaTokens 不变，但需要加入总估算中
+      let finalEstimatedTokens =
+        estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
+        toolSchemaTokens;
       // 再次检查并调整 maxTokens（如果消息在总结后仍然很大）
       let finalMaxTokens = effectiveMaxTokens;
       if (model.contextWindow && model.contextWindow > 0) {
@@ -1186,7 +1276,7 @@ export class AssistantService {
           if (availableForCompletion <= 0) {
             // 即使总结后仍然超过，使用降级策略：只保留最近的消息
             console.warn(
-              `[AssistantService] 总结后消息仍然太大 (${finalEstimatedTokens} tokens)，使用降级策略：只保留最近的消息`,
+              `[AssistantService] 总结后消息仍然太大 (${finalEstimatedTokens} tokens, 含工具 schema ${toolSchemaTokens})，使用降级策略：只保留最近的消息`,
             );
 
             // 计算需要保留多少 token 给完成（maxTokens）
@@ -1222,10 +1312,9 @@ export class AssistantService {
               const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
 
               reducedMessages = [systemMsg, ...recentMessages, userMsg];
-              finalEstimatedTokens = estimateMessagesTokenCount(
-                reducedMessages,
-                DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-              );
+              finalEstimatedTokens =
+                estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
+                toolSchemaTokens;
               attemptCount++;
             }
 
@@ -1244,10 +1333,9 @@ export class AssistantService {
               } else {
                 reducedMessages.push({ role: 'user', content: userMessage });
               }
-              finalEstimatedTokens = estimateMessagesTokenCount(
-                reducedMessages,
-                DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-              );
+              finalEstimatedTokens =
+                estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
+                toolSchemaTokens;
               console.warn(
                 `[AssistantService] 消息历史已减少到最小：只保留系统提示词和用户消息 (${finalEstimatedTokens} tokens)`,
               );
@@ -1259,10 +1347,9 @@ export class AssistantService {
 
             messages.length = 0;
             messages.push(...reducedMessages);
-            finalEstimatedTokens = estimateMessagesTokenCount(
-              messages,
-              DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-            );
+            finalEstimatedTokens =
+              estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
+              toolSchemaTokens;
 
             // 重新计算可用的 maxTokens
             const newAvailableForCompletion = model.contextWindow - finalEstimatedTokens;
@@ -1425,6 +1512,15 @@ export class AssistantService {
         // 将工具结果添加到历史
         messages.push(...toolResults);
 
+        // 更新任务面板的上下文 token 统计（工具结果加入后）
+        await this.updateTaskContextUsage({
+          messages,
+          model,
+          ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+          ...(aiProcessingStore ? { aiProcessingStore } : {}),
+          ...(taskId ? { taskId } : {}),
+        });
+
         // 再次调用 AI 获取回复
         const followUpRequest: TextGenerationRequest = {
           messages,
@@ -1516,6 +1612,15 @@ export class AssistantService {
           });
         }
 
+        // 更新任务面板的上下文 token 统计（助手回复加入后）
+        await this.updateTaskContextUsage({
+          messages,
+          model,
+          ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+          ...(aiProcessingStore ? { aiProcessingStore } : {}),
+          ...(taskId ? { taskId } : {}),
+        });
+
         // 如果没有工具调用，退出循环
         if (toolCalls.length === 0) {
           break;
@@ -1559,6 +1664,7 @@ export class AssistantService {
         ...(taskId ? { taskId: taskId } : {}),
         actions: allActions,
         messageHistory: messages,
+        toolCallTokenOverhead: this.calculateToolCallTokenOverhead(messages),
       };
     } catch (error) {
       console.error('[AssistantService] ❌ 发生错误', {

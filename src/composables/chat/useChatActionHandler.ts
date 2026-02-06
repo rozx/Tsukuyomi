@@ -343,7 +343,11 @@ export function useChatActionHandler(
       }
       // 检查是否已经添加过（避免重复）
       const existingAction = assistantMsg.actions.find(
-        (a) => a.timestamp === messageAction.timestamp && a.type === messageAction.type,
+        (a) =>
+          a.timestamp === messageAction.timestamp &&
+          a.type === messageAction.type &&
+          a.entity === messageAction.entity &&
+          a.name === messageAction.name,
       );
       if (!existingAction) {
         assistantMsg.actions.push(messageAction);

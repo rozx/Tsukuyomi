@@ -167,7 +167,7 @@ export class ToolRegistry {
    */
   static getAssistantToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAssistantTools(bookId);
-    return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
+    return this.filterTools(allTools, ['add_translation_batch']);
   }
 
   /**
