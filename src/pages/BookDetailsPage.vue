@@ -2227,9 +2227,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 /* 左侧边栏 */
 .book-sidebar {
-  width: 20rem;
-  min-width: 20rem;
-  max-width: 20rem;
+  width: 18rem;
+  min-width: 18rem;
+  max-width: 18rem;
   border-right: 1px solid var(--white-opacity-10);
   background: var(--white-opacity-3);
   overflow-y: auto;
@@ -2237,7 +2237,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .sidebar-content {
-  padding: 1rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -2245,18 +2245,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .book-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .book-header-content {
   display: flex;
-  gap: 0.75rem;
-  align-items: stretch;
-  margin-bottom: 0.75rem;
-  padding: 0.75rem;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
@@ -2271,8 +2271,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .book-edit-icon {
   position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
+  top: 0.35rem;
+  right: 0.35rem;
   font-size: 0.875rem;
   color: var(--moon-opacity-60);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2286,10 +2286,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .book-cover-wrapper {
   flex-shrink: 0;
-  width: 4rem;
+  width: 3.25rem;
   aspect-ratio: 2/3;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
 }
@@ -2305,38 +2305,44 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 0.25rem;
 }
 
 .book-title {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--moon-opacity-95);
-  line-height: 1.4;
+  line-height: 1.3;
   text-align: left;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   margin: 0;
 }
 
 .book-stats {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.375rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.2rem;
   color: var(--moon-opacity-80);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 
 /* 统一颜色主题 - 使用渐变色系 */
 .stat-item .stat-icon {
   color: #60a5fa; /* blue-400 */
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .stat-item .stat-value {
@@ -2346,12 +2352,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .stat-item .stat-label {
   color: #bfdbfe; /* blue-200 */
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .stat-separator {
   color: var(--moon-opacity-40);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   user-select: none;
 }
 
@@ -2359,18 +2365,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   width: 100%;
   height: 1px;
   background: linear-gradient(to right, transparent, var(--white-opacity-20), transparent);
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .sidebar-title-wrapper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .sidebar-title {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--moon-opacity-90);
   text-transform: uppercase;
@@ -2386,8 +2392,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 /* 设置菜单 */
 .settings-menu-wrapper {
-  margin-top: -1rem;
-  margin-bottom: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
 }
 
 .settings-menu-title {
@@ -2401,10 +2407,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .settings-menu-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .settings-menu-separator {
@@ -2416,12 +2422,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 .settings-menu-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
-  border-radius: 8px;
-  font-size: 0.875rem;
+  border-radius: 7px;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--moon-opacity-90);
   cursor: pointer;
@@ -2434,7 +2440,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   background: var(--primary-opacity-15);
   color: var(--moon-opacity-95);
   border-color: var(--primary-opacity-40);
-  transform: translateX(2px);
+  transform: translateY(-1px);
   box-shadow: 0 2px 6px var(--black-opacity-10);
 }
 
@@ -2450,7 +2456,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .settings-menu-icon {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--primary-opacity-70);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
@@ -2458,11 +2464,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .settings-menu-item:hover .settings-menu-icon {
   color: var(--primary-opacity-90);
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .settings-menu-label {
   flex: 1;
+  line-height: 1.1;
 }
 
 .back-link-wrapper {
