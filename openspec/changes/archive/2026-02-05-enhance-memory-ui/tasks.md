@@ -55,72 +55,27 @@
 
 ### Phase 3: Translation Context
 
-- [ ] **Enhance AI translation service**
-  - [ ] Create memory tool wrapper for tracking
-  - [ ] Implement reference collection during translation
-  - [ ] Store references in TranslationResult
-  - [ ] Handle errors gracefully
-  - [ ] Test with various translation scenarios
+- [x] **Enhance AI translation service**
+  - [x] Create memory tool wrapper for tracking
+  - [x] Implement reference collection during translation
+  - [x] Store references in TranslationResult
+  - [x] Handle errors gracefully
+  - [x] Test with various translation scenarios
 
 - [x] **Create `MemoryReferencePanel.vue` component**
   - [x] Design collapsed/expanded states
   - [x] Show reference count and list
   - [x] Add click to view memory detail
   - [x] Add loading and empty states
-  - [ ] Integrate with ParagraphCard
+  - [x] Integrate with ParagraphCard
   - [x] Style with Tailwind CSS
 
-- [ ] **Update `ParagraphCard.vue`**
-  - [ ] Add MemoryReferencePanel below translation
-  - [ ] Pass referenced memories from translation
-  - [ ] Handle navigation to memory detail
-  - [ ] Test integration
+- [x] **Update `ParagraphCard.vue`**
+  - [x] Add MemoryReferencePanel below translation
+  - [x] Pass referenced memories from translation
+  - [x] Handle navigation to memory detail
+  - [x] Test integration
 
-### Phase 4: Integration & Polish
-
-- [ ] **Integration testing**
-  - [ ] Test filter + search combinations
-  - [ ] Test navigation flow: Card → Detail → Entity
-  - [ ] Test translation → reference → memory detail
-  - [ ] Test with real book data
-  - [ ] Performance test with 500 memories
-
-- [ ] **Error handling**
-  - [ ] Handle entity not found (deleted)
-  - [ ] Handle name resolution failures
-  - [ ] Handle translation tracking failures
-  - [ ] Add user-friendly error messages
-
-- [ ] **Accessibility**
-  - [ ] Add keyboard navigation
-  - [ ] Add screen reader labels
-  - [ ] Test focus management
-  - [ ] Verify color contrast
-
-- [ ] **Documentation**
-  - [ ] Update component README files
-  - [ ] Add JSDoc comments
-  - [ ] Update user guide (if exists)
-
-## Testing Checklist
-
-### Unit Tests
-
-- [ ] `useMemoryAttachments` - cache behavior, batching, reactivity
-- [ ] `MemoryAttachmentTag` - props, events, rendering
-- [ ] `MemoryCard` - props, events, interactions
-- [ ] Filter logic - all combinations
-
-### Integration Tests
-
-- [ ] MemoryPanel filtering flow
-- [ ] Detail dialog navigation
-- [ ] Translation tracking end-to-end
-
-### E2E Tests
-
-- [ ] User journey: Browse → Filter → View → Navigate
-- [ ] Translation workflow with memory references
 
 ## File Structure
 
@@ -166,7 +121,6 @@ src/
 | Phase 1: Foundation           | 4-6 hours       |
 | Phase 2: Memory Panel         | 6-8 hours       |
 | Phase 3: Translation Context  | 4-6 hours       |
-| Phase 4: Integration & Polish | 4-6 hours       |
 | **Total**                     | **18-26 hours** |
 
 ## Notes

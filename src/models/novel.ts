@@ -202,6 +202,7 @@ export interface Translation {
   id: string;
   translation: string;
   aiModelId: string; // id of AIModel
+  referencedMemories?: string[]; // IDs of memories referenced during translation
 }
 
 export interface Note {

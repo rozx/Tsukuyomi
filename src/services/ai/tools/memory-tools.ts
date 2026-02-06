@@ -128,6 +128,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
             sort_by: validSortBy,
             include_content: includeContent,
             tool_name: toolName,
+            found_memory_ids: page.map((m) => m.id),
           },
         });
       }
@@ -338,6 +339,7 @@ export const memoryTools: ToolDefinition[] = [
             data: {
               keywords: validKeywords,
               tool_name: 'search_memory_by_keywords',
+              found_memory_ids: memories.map((m) => m.id),
             },
           });
         }
@@ -753,6 +755,7 @@ export const memoryTools: ToolDefinition[] = [
               limit: validLimit,
               sort_by: validSortBy,
               tool_name: 'get_recent_memories',
+              found_memory_ids: memories.map((m) => m.id),
             },
           });
         }

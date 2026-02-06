@@ -1,6 +1,10 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
-import { getChapterContentText, getChapterDisplayTitle, normalizeChapterTitle } from 'src/utils/novel-utils';
+import {
+  getChapterContentText,
+  getChapterDisplayTitle,
+  normalizeChapterTitle,
+} from 'src/utils/novel-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
 
@@ -673,6 +677,7 @@ export class ChapterService {
    * @returns 更新后的卷列表
    */
   static updateChapter(
+    this: void,
     novel: Novel,
     chapterId: string,
     data: Omit<Partial<Chapter>, 'title'> & { title?: string | Chapter['title'] },
@@ -2209,7 +2214,8 @@ export class ChapterService {
         chapterTitle = chapter.title.original || '';
       }
 
-      const normalizeEnabled = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+      const normalizeEnabled =
+        chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
       if (normalizeEnabled) {
         chapterTitle = normalizeChapterTitle(chapterTitle);
       }
@@ -2224,7 +2230,11 @@ export class ChapterService {
       const data = chapterWithContent.content.map((p) => {
         const translation = getParagraphTranslationText(p);
         // 应用显示/导出层格式化（不写回译文）
-        const formattedTranslation = formatTranslationForDisplay(translation, book, chapterWithContent);
+        const formattedTranslation = formatTranslationForDisplay(
+          translation,
+          book,
+          chapterWithContent,
+        );
         return {
           original: p.text,
           translation: formattedTranslation,
@@ -2316,7 +2326,7 @@ export class ChapterService {
         const lines = chapterWithContent.content!.map((p) => {
           const original = p.text;
           let translation = getParagraphTranslationText(p);
-          
+
           // 应用显示/导出层格式化（不写回译文）
           translation = formatTranslationForDisplay(translation, book, chapterWithContent);
 
@@ -2373,10 +2383,7 @@ export class ChapterService {
 
       const fileContent =
         format === 'txt' && isWindows
-          ? content
-              .replace(/\r\n/g, '\n')
-              .replace(/\r/g, '\n')
-              .replace(/\n/g, '\r\n')
+          ? content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
           : content;
 
       const blob = new Blob([fileContent], {

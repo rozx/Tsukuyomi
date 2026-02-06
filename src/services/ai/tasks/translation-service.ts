@@ -76,7 +76,7 @@ export interface TranslationServiceOptions {
    * @param translations 段落翻译数组，包含段落ID和翻译文本
    */
   onParagraphTranslation?: (
-    translations: { id: string; translation: string }[],
+    translations: { id: string; translation: string; referencedMemories?: string[] }[],
   ) => void | Promise<void>;
   /**
    * 标题翻译回调函数，用于接收标题翻译结果（在收到后立即调用，不等待翻译完成）
@@ -123,6 +123,7 @@ export interface TranslationResult {
   taskId?: string;
   paragraphTranslations?: { id: string; translation: string }[];
   titleTranslation?: string;
+  referencedMemories?: string[];
   actions?: ActionInfo[];
 }
 
@@ -519,6 +520,9 @@ export class TranslationService {
 
             chunkHistory.push({ role: 'user', content: chunkContent });
 
+            // 记录当前 chunk 开始时的 action 数量，用于提取本 chunk 引用的记忆
+            const actionStartIndex = actions.length;
+
             // 使用共享的工具调用循环（基于状态的流程）
             // 后续 chunk 使用简短规划模式（已有规划上下文）
             const loopResult = await executeToolCallLoop({
@@ -543,6 +547,31 @@ export class TranslationService {
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
               onParagraphsExtracted: onParagraphTranslation
                 ? async (paragraphs) => {
+                    // 提取本 chunk 引用的记忆 ID
+                    const chunkActions = actions.slice(actionStartIndex);
+                    const referencedMemoryIds = new Set<string>();
+                    for (const action of chunkActions) {
+                      if (action.entity === 'memory') {
+                        const data = action.data as {
+                          memory_id?: string;
+                          id?: string;
+                          found_memory_ids?: string[];
+                        };
+                        if (data.memory_id) referencedMemoryIds.add(data.memory_id);
+                        if (data.id) referencedMemoryIds.add(data.id);
+                        if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
+                          data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
+                        }
+                      }
+                    }
+                    const referencedMemories = Array.from(referencedMemoryIds);
+
+                    // 构建带引用的段落对象
+                    const enrichedParagraphs = paragraphs.map((p) => ({
+                      ...p,
+                      ...(referencedMemories.length > 0 ? { referencedMemories } : {}),
+                    }));
+
                     // 记录到累积列表
                     for (const para of paragraphs) {
                       paragraphTranslations.push(para);
@@ -551,7 +580,7 @@ export class TranslationService {
                     markProcessedParagraphs(paragraphs, processedParagraphIds);
                     // 立即调用外部回调
                     try {
-                      await onParagraphTranslation(paragraphs);
+                      await onParagraphTranslation(enrichedParagraphs);
                     } catch (error) {
                       console.error(
                         `[TranslationService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
@@ -688,10 +717,30 @@ export class TranslationService {
       // 使用共享工具完成任务
       void completeTask(taskId, aiProcessingStore as AIProcessingStore | undefined, 'translation');
 
+      // 收集引用的记忆 ID
+      const referencedMemoryIds = new Set<string>();
+      for (const action of actions) {
+        if (action.entity === 'memory') {
+          // 尝试提取 ID
+          const data = action.data as {
+            memory_id?: string;
+            id?: string;
+            found_memory_ids?: string[];
+          };
+
+          if (data.memory_id) referencedMemoryIds.add(data.memory_id);
+          if (data.id) referencedMemoryIds.add(data.id);
+          if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
+            data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
+          }
+        }
+      }
+
       return {
         text: translatedText,
         paragraphTranslations,
         ...(titleTranslation ? { titleTranslation } : {}),
+        referencedMemories: Array.from(referencedMemoryIds),
         actions,
         ...(taskId ? { taskId } : {}),
       };

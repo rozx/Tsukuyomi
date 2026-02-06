@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onUnmounted, nextTick } from 'vue';
+import { computed, ref, onUnmounted, nextTick, watch } from 'vue';
 import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -15,6 +15,10 @@ import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
 import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
 import { useContextMenuManager } from 'src/composables/useContextMenuManager';
+import { MemoryService } from 'src/services/memory-service';
+import type { Memory } from 'src/models/memory';
+import MemoryReferencePanel, { type MemoryReference } from './MemoryReferencePanel.vue';
+import MemoryDetailDialog from './MemoryDetailDialog.vue';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -796,6 +800,102 @@ onUnmounted(() => {
   }
 });
 
+// 记忆引用相关处理
+const fetchedMemories = ref<MemoryReference[]>([]);
+const isLoadingReferences = ref(false);
+const showMemoryDetailDialog = ref(false);
+const detailMemory = ref<Memory | null>(null);
+
+// 获取当前选中的翻译引用的记忆
+const referencedMemoryIds = computed(() => {
+  if (!props.paragraph.selectedTranslationId || !props.paragraph.translations) {
+    return [];
+  }
+  const selectedTranslation = props.paragraph.translations.find(
+    (t) => t.id === props.paragraph.selectedTranslationId,
+  );
+  return selectedTranslation?.referencedMemories || [];
+});
+
+// 刷新引用的记忆信息
+const refreshReferencedMemories = async () => {
+  const ids = referencedMemoryIds.value;
+  if (!ids || ids.length === 0 || !props.bookId) {
+    fetchedMemories.value = [];
+    return;
+  }
+
+  isLoadingReferences.value = true;
+  try {
+    const memoryPromises = ids.map((id) => MemoryService.getMemory(props.bookId!, id));
+    const memories = await Promise.all(memoryPromises);
+
+    fetchedMemories.value = memories
+      .filter((m): m is Memory => !!m)
+      .map((m) => ({
+        memoryId: m.id,
+        summary: m.summary,
+        accessedAt: m.lastAccessedAt,
+        toolName: 'get_memory', // 默认为 get_memory，因为后端尚未返回具体工具信息
+      }));
+  } catch (error) {
+    console.warn('Failed to fetch referenced memories:', error);
+  } finally {
+    isLoadingReferences.value = false;
+  }
+};
+
+// 监听引用 ID 变化
+watch(
+  referencedMemoryIds,
+  () => {
+    refreshReferencedMemories();
+  },
+  { immediate: true },
+);
+
+// 查看记忆详情
+const handleViewMemory = async (memoryId: string) => {
+  if (!props.bookId) return;
+
+  try {
+    const memory = await MemoryService.getMemory(props.bookId, memoryId);
+    if (memory) {
+      detailMemory.value = memory;
+      showMemoryDetailDialog.value = true;
+    }
+  } catch (error) {
+    console.error('Failed to load memory detail:', error);
+  }
+};
+
+// 处理记忆保存
+const handleMemorySave = async (memoryId: string, summary: string, content: string) => {
+  if (!props.bookId) return;
+
+  try {
+    await MemoryService.updateMemory(props.bookId, memoryId, content, summary);
+    // 刷新列表以显示更新后的摘要
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to save memory:', error);
+  }
+};
+
+// 处理记忆删除
+const handleMemoryDelete = async (memory: Memory) => {
+  if (!props.bookId) return;
+
+  try {
+    await MemoryService.deleteMemory(props.bookId, memory.id);
+    showMemoryDetailDialog.value = false;
+    // 刷新列表以移除已删除的记忆
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to delete memory:', error);
+  }
+};
+
 // 暴露方法供父组件调用
 defineExpose({
   startEditing: () => {
@@ -990,6 +1090,15 @@ defineExpose({
           </template>
         </Inplace>
       </div>
+
+      <!-- 记忆引用面板 -->
+      <MemoryReferencePanel
+        v-if="fetchedMemories.length > 0 && props.bookId"
+        :references="fetchedMemories"
+        :book-id="props.bookId"
+        :loading="isLoadingReferences"
+        @view-memory="handleViewMemory"
+      />
     </div>
 
     <!-- 术语提示框 - 使用 PrimeVue Popover -->
@@ -1163,6 +1272,17 @@ defineExpose({
       :paragraph="paragraph"
       @update:visible="(val) => (showTranslationHistoryDialog = val)"
       @select-translation="handleDialogSelectTranslation"
+    />
+
+    <!-- 记忆详情对话框 -->
+    <MemoryDetailDialog
+      v-if="props.bookId"
+      :visible="showMemoryDetailDialog"
+      :memory="detailMemory"
+      :book-id="props.bookId"
+      @update:visible="(val) => (showMemoryDetailDialog = val)"
+      @save="handleMemorySave"
+      @delete="handleMemoryDelete"
     />
   </div>
 </template>

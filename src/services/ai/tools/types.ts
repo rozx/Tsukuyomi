@@ -70,6 +70,7 @@ export interface ActionInfo {
         offset?: number;
         sort_by?: string;
         include_content?: boolean;
+        found_memory_ids?: string[];
       }
     | {
         tool_name: 'ask_user';

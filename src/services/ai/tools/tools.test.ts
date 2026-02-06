@@ -5,8 +5,6 @@ import { bookTools } from './book-tools';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import { useBooksStore } from 'src/stores/books';
-import { generateShortId } from 'src/utils/id-generator';
 
 // Mock dependencies
 mock.module('src/services/book-service', () => ({
@@ -65,15 +63,24 @@ describe('AI Tools Tests', () => {
       activeTasks: [
         {
           id: mockTaskId,
-          type: 'translation',
-          workflowStatus: 'working',
+          type: 'translation' as const,
+          workflowStatus: 'working' as any,
+          modelName: 'gpt-4',
+          status: 'working' as any,
+          startTime: 1234567890,
         },
       ],
       updateTask: jest.fn(),
+      addTask: jest.fn(),
+      appendThinkingMessage: jest.fn(),
+      appendOutputContent: jest.fn(),
+      removeTask: jest.fn(),
     },
     chunkBoundaries: {
       paragraphIds: ['p1', 'p2', 'p3'],
       allowedParagraphIds: new Set(['p1', 'p2', 'p3']),
+      firstParagraphId: 'p1',
+      lastParagraphId: 'p3',
     },
   };
 
@@ -81,7 +88,14 @@ describe('AI Tools Tests', () => {
     jest.clearAllMocks();
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
-      { id: mockTaskId, type: 'translation', workflowStatus: 'working' },
+      {
+        id: mockTaskId,
+        type: 'translation' as const,
+        workflowStatus: 'working',
+        modelName: 'gpt-4',
+        status: 'working' as const,
+        startTime: 1234567890,
+      },
     ];
   });
 
@@ -91,7 +105,7 @@ describe('AI Tools Tests', () => {
     );
 
     it('should validate inputs correctly', async () => {
-      const result = await addTranslationBatchTool?.handler(
+      const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [],
         },
@@ -107,10 +121,19 @@ describe('AI Tools Tests', () => {
         ...mockContext,
         aiProcessingStore: {
           ...mockContext.aiProcessingStore,
-          activeTasks: [{ id: mockTaskId, workflowStatus: 'planning', type: 'translation' }],
+          activeTasks: [
+            {
+              id: mockTaskId,
+              workflowStatus: 'planning' as any,
+              type: 'translation' as const,
+              modelName: 'gpt-4',
+              status: 'planning' as any,
+              startTime: 1234567890,
+            },
+          ],
         },
       };
-      const result = await addTranslationBatchTool?.handler(
+      const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [{ index: 0, translated_text: 'test' }],
         },
@@ -122,7 +145,7 @@ describe('AI Tools Tests', () => {
     });
 
     it('should validate parameters (index out of range)', async () => {
-      const result = await addTranslationBatchTool?.handler(
+      const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [{ index: 99, translated_text: 'test' }],
         },
@@ -134,7 +157,7 @@ describe('AI Tools Tests', () => {
     });
 
     it('should detect duplicate paragraph ids', async () => {
-      const result = await addTranslationBatchTool?.handler(
+      const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [
             { index: 0, translated_text: 'test1' },
@@ -168,7 +191,7 @@ describe('AI Tools Tests', () => {
         new Map([['c1', [{ id: 'p1', text: 'orig' }]]]),
       );
 
-      const result = await addTranslationBatchTool?.handler(
+      const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [{ index: 0, translated_text: 'translated' }],
         },
@@ -188,7 +211,8 @@ describe('AI Tools Tests', () => {
     );
 
     it('should validate status values', async () => {
-      const result = await updateTaskStatusTool?.handler({ status: 'invalid_status' }, mockContext);
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'invalid_status' }, mockContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无效的状态值');
@@ -196,7 +220,8 @@ describe('AI Tools Tests', () => {
 
     it('should allow valid transition (working -> review for translation)', async () => {
       // Current status: working
-      const result = await updateTaskStatusTool?.handler({ status: 'review' }, mockContext);
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, mockContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(true);
       expect(mockContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
@@ -206,7 +231,8 @@ describe('AI Tools Tests', () => {
 
     it('should prevent invalid transition (working -> planning)', async () => {
       // Current status: working
-      const result = await updateTaskStatusTool?.handler({ status: 'planning' }, mockContext);
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'planning' }, mockContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无效的状态转换');
@@ -216,11 +242,25 @@ describe('AI Tools Tests', () => {
       const polishContext = {
         ...mockContext,
         aiProcessingStore: {
-          activeTasks: [{ id: mockTaskId, type: 'polish', workflowStatus: 'working' }],
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'polish' as const,
+              workflowStatus: 'working' as any,
+              modelName: 'gpt-4',
+              status: 'working' as any,
+              startTime: 1234567890,
+            },
+          ],
           updateTask: jest.fn(),
+          addTask: jest.fn(),
+          appendThinkingMessage: jest.fn(),
+          appendOutputContent: jest.fn(),
+          removeTask: jest.fn(),
         },
       };
-      const result = await updateTaskStatusTool?.handler({ status: 'end' }, polishContext);
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'end' }, polishContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(true);
       expect(polishContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
@@ -232,11 +272,25 @@ describe('AI Tools Tests', () => {
       const polishContext = {
         ...mockContext,
         aiProcessingStore: {
-          activeTasks: [{ id: mockTaskId, type: 'polish', workflowStatus: 'working' }],
+          activeTasks: [
+            {
+              id: mockTaskId,
+              type: 'polish' as const,
+              workflowStatus: 'working' as any,
+              modelName: 'gpt-4',
+              status: 'working' as any,
+              startTime: 1234567890,
+            },
+          ],
           updateTask: jest.fn(),
+          addTask: jest.fn(),
+          appendThinkingMessage: jest.fn(),
+          appendOutputContent: jest.fn(),
+          removeTask: jest.fn(),
         },
       };
-      const result = await updateTaskStatusTool?.handler({ status: 'review' }, polishContext);
+      const handler = updateTaskStatusTool!.handler;
+      const result = await handler({ status: 'review' }, polishContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无效的状态转换');
@@ -249,7 +303,8 @@ describe('AI Tools Tests', () => {
     );
 
     it('should validate inputs', async () => {
-      const result = await updateChapterTitleTool?.handler({}, mockContext);
+      const handler = updateChapterTitleTool!.handler;
+      const result = await handler({}, mockContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('章节 ID 不能为空');
@@ -275,7 +330,8 @@ describe('AI Tools Tests', () => {
         volume: mockBook.volumes[0],
       });
 
-      const result = await updateChapterTitleTool?.handler(
+      const handler = updateChapterTitleTool!.handler;
+      const result = await handler(
         {
           chapter_id: 'c1',
           title_translation: 'New Title',
