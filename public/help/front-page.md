@@ -1,6 +1,6 @@
-# Tsukuyomi (月咏) 翻译器使用指南
+# Tsukuyomi (月詠) 翻译器使用指南
 
-欢迎使用 **Tsukuyomi (月咏) 翻译器**！这是一款专为日本轻小说翻译爱好者打造的现代化 AI 辅助翻译工具。
+欢迎使用 **Tsukuyomi (月詠) 翻译器**！这是一款专为日本轻小说翻译爱好者打造的现代化 AI 辅助翻译工具。
 
 无论您是想要快速阅读生肉的读者，还是追求信达雅的专业翻译，Tsukuyomi 都能通过强大的 AI 模型（如 **GPT-5.1**, **Claude 4**, **Gemini 3.0 Pro**）为您提供得力的支持。
 
@@ -31,7 +31,7 @@ Tsukuyomi 是一个 "Bring Your Own Key" (自带密钥) 的应用。您需要配
 2. 点击右上角的 **新建书籍** 按钮。
 3. 您有三种方式创建：
    - **手动创建**: 输入书名、作者、简介。
-   - **自动抓取**: 粘贴小说源站链接（如 `syosetu.com`, `kakuyomu.jp`），系统会自动抓取元数据。
+   - **自动抓取**: 粘贴小说源站链接（如 `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, `syosetu.org`），系统会自动抓取元数据。
    - **JSON 导入**: 导入之前导出的 JSON 文件。
 
 > 💡 **提示**: 详细操作指南请参阅 [书籍列表页](/help/books-page-guide) 和 [主页介绍](/help/library-guide)。
@@ -153,7 +153,7 @@ Tsukuyomi 提供了智能聊天助手功能，让您可以随时与 AI 进行深
 
 ### 💾 数据同步与安全
 
-- **本地优先**: 所有数据默认存储在您浏览器的 IndexedDB 中，并在本地加密，保护您的隐私。
+- **本地优先**: 所有数据默认存储在您浏览器的 IndexedDB 中，保护您的隐私。
 - **Github Gist 同步**:
   - 在设置中配置 Github Token。
   - 利用 Gist 实现多设备间的无缝同步（如从电脑同步到手机继续阅读）。
@@ -244,7 +244,7 @@ A: 这通常是由于 API 网络波动或额度耗尽。请检查您的 API Key 
 
 **Q: 自动抓取支持哪些网站？**
 
-A: 目前完美支持 `Shousetsuka ni Narou (成为小说家吧)`, `Kakuyomu`, `Hameln` 等主流日轻网站。详细列表请参阅 [书籍列表页](/help/books-page-guide)。
+A: 目前支持以下四个网站：`ncode.syosetu.com`（小説家になろう）、`novel18.syosetu.com`（小説家になろう R18）、`kakuyomu.jp`（カクヨム）、`syosetu.org`（ハーメルン）。详细列表请参阅 [书籍列表页](/help/books-page-guide)。
 
 **Q: 如何反馈 Bug 或建议？**
 

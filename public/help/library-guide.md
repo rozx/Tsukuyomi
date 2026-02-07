@@ -49,7 +49,8 @@
 
 **支持的网站**:
 
-- 📖 **小説家になろう (Shousetsuka ni Narou)** - `syosetu.com`
+- 📖 **小説家になろう (Shousetsuka ni Narou)** - `ncode.syosetu.com`
+- 📖 **小説家になろう R18** - `novel18.syosetu.com`
 - 📚 **カクヨム (Kakuyomu)** - `kakuyomu.jp`
 - 🌸 **ハーメルン (Hameln)** - `syosetu.org`
 
