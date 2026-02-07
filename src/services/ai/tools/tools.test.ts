@@ -243,7 +243,49 @@ describe('AI Tools Tests', () => {
       const parsed = JSON.parse(result as string);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('无法翻译空段落或仅包含符号的段落');
+      expect(parsed.error).toContain('无法翻译空段落');
+    });
+
+    it('should allow translation for symbol-only paragraph', async () => {
+      // Mock BookService behavior with a symbol-only paragraph
+      const mockBook = {
+        id: mockBookId,
+        volumes: [
+          {
+            chapters: [
+              {
+                id: 'c1',
+                content: [{ id: 'p_symbol', text: '...' }], // Symbol only paragraph
+              },
+            ],
+          },
+        ],
+      };
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValue(
+        new Map([['c1', [{ id: 'p_symbol', text: '...' }]]]),
+      );
+
+      const symbolContext = {
+        ...mockContext,
+        chunkBoundaries: {
+          paragraphIds: ['p_symbol'],
+          allowedParagraphIds: new Set(['p_symbol']),
+          firstParagraphId: 'p_symbol',
+          lastParagraphId: 'p_symbol',
+        },
+      };
+
+      const result = await addTranslationBatchTool!.handler(
+        {
+          paragraphs: [{ paragraph_id: 'p_symbol', translated_text: '...' }],
+        },
+        symbolContext,
+      );
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.processed_count).toBe(1);
     });
   });
 

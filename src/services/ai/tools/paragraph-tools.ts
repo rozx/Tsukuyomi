@@ -3,7 +3,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
-import { isEmptyOrSymbolOnly, CJK_CHAR_CLASS, hasCJK, isCJK } from 'src/utils/text-utils';
+import { isEmptyParagraph, CJK_CHAR_CLASS, hasCJK, isCJK } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo, ToolContext, ChunkBoundaries } from './types';
@@ -428,7 +428,7 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 过滤掉空段落或仅包含符号的段落
         const validPreviousResults = previousResults.filter(
-          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
+          (result) => !isEmptyParagraph(result.paragraph.text),
         );
         // 移除块边界过滤
         // validPreviousResults = filterResultsByChunkBoundary(validPreviousResults, chunkBoundaries);
@@ -454,7 +454,7 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 过滤掉空段落或仅包含符号的段落
         const validNextResults = nextResults.filter(
-          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
+          (result) => !isEmptyParagraph(result.paragraph.text),
         );
         // 移除块边界过滤
         // validNextResults = filterResultsByChunkBoundary(validNextResults, chunkBoundaries);
@@ -1628,10 +1628,10 @@ export const paragraphTools: ToolDefinition[] = [
       const { paragraph } = location;
 
       // 检查是否为空段落
-      if (isEmptyOrSymbolOnly(paragraph.text)) {
+      if (isEmptyParagraph(paragraph.text)) {
         return JSON.stringify({
           success: false,
-          error: '无法更新空段落或仅包含符号的段落的翻译',
+          error: '无法更新空段落的翻译',
         });
       }
 
@@ -1865,10 +1865,10 @@ export const paragraphTools: ToolDefinition[] = [
       const { paragraph } = location;
 
       // 检查是否为空段落
-      if (isEmptyOrSymbolOnly(paragraph.text)) {
+      if (isEmptyParagraph(paragraph.text)) {
         return JSON.stringify({
           success: false,
-          error: '无法为空段落或仅包含符号的段落添加翻译',
+          error: '无法为空段落添加翻译',
         });
       }
 
@@ -2339,7 +2339,7 @@ export const paragraphTools: ToolDefinition[] = [
                 }
 
                 // 过滤掉空段落
-                if (isEmptyOrSymbolOnly(paragraph.text)) {
+                if (isEmptyParagraph(paragraph.text)) {
                   continue;
                 }
 
@@ -2438,7 +2438,7 @@ export const paragraphTools: ToolDefinition[] = [
             const paragraph = result.paragraph;
 
             // 过滤掉空段落
-            if (isEmptyOrSymbolOnly(paragraph.text)) {
+            if (isEmptyParagraph(paragraph.text)) {
               continue;
             }
 
