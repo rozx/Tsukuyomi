@@ -267,7 +267,7 @@ jobs:
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          RELEASE_NOTES_FILE="docs/ReleaseNotes/RELEASE_NOTES_${VERSION}.md"
+          RELEASE_NOTES_FILE="public/releaseNotes/RELEASE_NOTES_${VERSION}.md"
 
           echo "Checking for release notes file: $RELEASE_NOTES_FILE"
 
