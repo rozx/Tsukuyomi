@@ -18,20 +18,13 @@
     "test": "bun test",
     "bump": "bun scripts/bump-version.ts",
     "setup:git-hooks": "node scripts/setup-git-hooks.js",
-    "dev": "quasar dev && bun --watch run server/app-server.ts",
-    "dev:vite": "quasar dev",
-    "dev:server": "bun --watch run server/app-server.ts",
+    "dev": "quasar dev",
     "dev:electron": "quasar dev -m electron",
     "build": "quasar build",
     "build:spa": "cross-env NODE_ENV=production quasar build -m spa",
     "build:electron": "cross-env NODE_ENV=production quasar build -m electron",
     "build:electron:debug": "ELECTRON_DEBUG=true quasar build -m electron",
-    "postinstall": "quasar prepare",
-    "start:proxy": "bun run server/proxy-server.ts",
-    "start:app": "bun run server/app-server.ts",
-    "start": "bun run start:app",
-    "build:deploy": "bash scripts/build.sh",
-    "start:deploy": "bash scripts/run.sh"
+    "postinstall": "quasar prepare"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
