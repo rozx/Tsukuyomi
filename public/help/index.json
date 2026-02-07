@@ -112,6 +112,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.9.0",
+    "title": "v0.9.0",
+    "file": "RELEASE_NOTES_v0.9.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "深度 AI 润色与校对、小说抓取与导入增强"
+  },
+  {
     "id": "v0.8.4",
     "title": "v0.8.4",
     "file": "RELEASE_NOTES_v0.8.4.md",
