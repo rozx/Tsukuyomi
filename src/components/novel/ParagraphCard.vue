@@ -579,12 +579,12 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
 const contextMenuButtonRef = ref<HTMLElement | null>(null);
 const contextMenuTargetRef = ref<HTMLElement | null>(null);
 
-const handleContextMenuClick = (event: Event) => {
+const handleContextMenuClick = (event: MouseEvent) => {
   // 检查是否有文本选择
   checkTextSelection();
 
   if (contextMenuButtonRef.value && contextMenuPopoverRef.value) {
-    contextMenuPopoverRef.value.toggle(event);
+    showContextMenu(contextMenuPopoverRef, event, contextMenuButtonRef.value);
   }
 };
 
@@ -617,12 +617,9 @@ const handleParagraphContextMenu = (event: MouseEvent) => {
 
   // 使用 composable 显示上下文菜单
   // 这会自动隐藏之前活动的菜单
-  setTimeout(() => {
-    if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
-      // 使用 composable 显示菜单，会自动处理隐藏之前的菜单
-      showContextMenu(contextMenuPopoverRef, event, target);
-    }
-  }, 0);
+  if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
+    showContextMenu(contextMenuPopoverRef, event, target);
+  }
 };
 
 // 当上下文菜单 Popover 显示时记录状态
@@ -1104,7 +1101,6 @@ defineExpose({
           icon="pi pi-question-circle"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="handleExplainSelection"
         />
         <div v-if="hasTextSelection" class="context-menu-divider" />
@@ -1113,7 +1109,6 @@ defineExpose({
           icon="pi pi-check-circle"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="handleProofread"
         />
         <Button
@@ -1121,7 +1116,6 @@ defineExpose({
           icon="pi pi-sparkles"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="handlePolish"
         />
         <Button
@@ -1129,7 +1123,6 @@ defineExpose({
           icon="pi pi-refresh"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="handleRetranslate"
         />
         <Button
@@ -1137,7 +1130,6 @@ defineExpose({
           icon="pi pi-copy"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="handleCopyToAssistant"
         />
 
@@ -1151,7 +1143,6 @@ defineExpose({
           icon="pi pi-history"
           class="context-menu-button"
           text
-          severity="secondary"
           @click="openTranslationHistory"
         />
       </div>
@@ -1621,40 +1612,12 @@ defineExpose({
   margin-bottom: 0.25rem;
 }
 
-/* 上下文菜单 Popover 样式 */
-:deep(.context-menu-popover .p-popover-content) {
-  padding: 0.5rem;
-}
+/* 上下文菜单 Popover 样式 - 注意: portaled 到 body 的内容样式在 unscoped style 块中 */
 
 .context-menu-content {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-
-.context-menu-button {
-  width: 100%;
-  justify-content: flex-start;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  color: var(--moon-opacity-100);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.context-menu-button:hover {
-  background-color: var(--white-opacity-10);
-  color: var(--primary-opacity-100);
-}
-
-.context-menu-button :deep(.p-button-label) {
-  font-weight: 500;
-}
-
-/* 上下文菜单分隔线 */
-.context-menu-divider {
-  height: 1px;
-  background: var(--white-opacity-20);
-  margin: 0.5rem 0;
 }
 
 /* 上下文菜单分隔线 */
@@ -1721,5 +1684,34 @@ defineExpose({
   color: var(--moon-opacity-90);
   line-height: 1.4;
   word-break: break-word;
+}
+</style>
+
+<!--
+  Unscoped 样式：用于 PrimeVue Popover portal 到 body 的上下文菜单内容。
+  因为 Popover 默认 appendTo="body"，scoped 样式无法覆盖 PrimeVue 的暗色主题。
+  使用 .context-menu-popover 前缀限定作用域，避免影响其他组件。
+-->
+<style>
+.context-menu-popover .p-popover-content {
+  padding: 0.5rem;
+}
+
+.context-menu-popover .context-menu-button.p-button.p-button-text {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-100);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.context-menu-popover .context-menu-button.p-button.p-button-text:hover {
+  background-color: var(--white-opacity-10);
+  color: var(--primary-opacity-100);
+}
+
+.context-menu-popover .context-menu-button .p-button-label {
+  font-weight: 500;
 }
 </style>
