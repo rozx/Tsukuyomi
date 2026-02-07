@@ -147,7 +147,7 @@ describe('TranslationService - workflowStatus 重置', () => {
       bookId: 'book-1',
       chapterId: 'chapter-1',
       chapterTitle: '标题',
-      chunkSize: 5, // 使用 5 个段落一组，确保有多个 chunk
+      chunkSize: 100, // 字符数限制，确保 10 个短段落分为 2 个 chunk
     });
 
     const planningCalls = (

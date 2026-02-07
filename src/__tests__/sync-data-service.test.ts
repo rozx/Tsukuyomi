@@ -1,12 +1,15 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import { SyncDataService } from '../services/sync-data-service';
 import { ChapterContentService } from '../services/chapter-content-service';
+import { aiModelService } from '../services/ai-model-service';
+
+// Mock aiModelService methods
+const mockSaveModel = mock((_model: unknown) => Promise.resolve());
+const mockDeleteModel = mock((_id: string) => Promise.resolve());
 
 // Mock Stores
 const mockAIModelsStore = {
   models: [] as unknown[],
-  clearModels: mock(() => Promise.resolve()),
-  addModel: mock((_model: unknown) => Promise.resolve()),
 };
 
 const mockBooksStore = {
@@ -82,8 +85,10 @@ describe('数据同步服务 (SyncDataService)', () => {
     spyOn(ChapterContentService, 'clearCache').mockImplementation(() => {});
 
     mockAIModelsStore.models = [];
-    mockAIModelsStore.clearModels.mockClear();
-    mockAIModelsStore.addModel.mockClear();
+    mockSaveModel.mockClear();
+    mockDeleteModel.mockClear();
+    spyOn(aiModelService, 'saveModel').mockImplementation(mockSaveModel as any);
+    spyOn(aiModelService, 'deleteModel').mockImplementation(mockDeleteModel as any);
 
     mockBooksStore.books = [];
     mockBooksStore.clearBooks.mockClear();
@@ -139,13 +144,15 @@ describe('数据同步服务 (SyncDataService)', () => {
       await SyncDataService.applyDownloadedData(remoteData);
 
       // Verify AI Models
-      expect(mockAIModelsStore.clearModels).toHaveBeenCalled();
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
+      expect(mockSaveModel).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'm1', name: 'Remote Model' }),
       );
+      // Verify store models updated
+      expect(mockAIModelsStore.models).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'm1', name: 'Remote Model' })]),
+      );
 
-      // Verify Novels
-      expect(mockBooksStore.clearBooks).toHaveBeenCalled();
+      // Verify Novels (uses put/upsert via bulkAddBooks, no clearBooks)
       expect(mockBooksStore.bulkAddBooks).toHaveBeenCalled();
       const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<
         Record<string, unknown>
@@ -173,8 +180,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData(remoteData);
 
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote Model' }),
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Remote Model' }));
+      expect(mockAIModelsStore.models).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'Remote Model' })]),
       );
     });
 
@@ -189,8 +197,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData(remoteData);
 
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Local Model' }),
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Local Model' }));
+      expect(mockAIModelsStore.models).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'Local Model' })]),
       );
     });
 
@@ -344,11 +353,15 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData(remoteData, lastSyncTime);
 
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
+      expect(mockSaveModel).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'New Local Model' }),
       );
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote Model' }),
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Remote Model' }));
+      expect(mockAIModelsStore.models).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'New Local Model' }),
+          expect.objectContaining({ name: 'Remote Model' }),
+        ]),
       );
     });
 
@@ -365,14 +378,14 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData(remoteData, lastSyncTime);
 
-      // Should NOT add the old model back (effectively deleting it)
-      expect(mockAIModelsStore.addModel).not.toHaveBeenCalledWith(
+      // Should NOT save the old model (effectively deleting it)
+      expect(mockSaveModel).not.toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Old Local Model' }),
       );
-      // Should add the remote model
-      expect(mockAIModelsStore.addModel).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote Model' }),
-      );
+      // Should save the remote model
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Remote Model' }));
+      // Old model should be deleted
+      expect(mockDeleteModel).toHaveBeenCalledWith('m1');
     });
 
     it('自动同步时不应返回可恢复的项目', async () => {
