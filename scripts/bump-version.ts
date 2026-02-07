@@ -91,6 +91,17 @@ async function main() {
 
     // Parse current full version
     const parts = currentFullVersion.split('.').map(Number);
+    
+    // Validate that all version segments are non-negative integers
+    const invalidPart = parts.find(
+      (n) => !Number.isFinite(n) || !Number.isInteger(n) || n < 0,
+    );
+    if (invalidPart !== undefined) {
+      throw new Error(
+        `Invalid APP_VERSION '${currentFullVersion}' in src/constants/version.ts. Expected only non-negative numeric segments separated by dots.`,
+      );
+    }
+    
     // Ensure we have at least 3 parts
     while (parts.length < 3) parts.push(0);
 
@@ -123,7 +134,15 @@ async function main() {
       // Direct set
       if (/^\d+\.\d+(\.\d+)?(\.\d+)?$/.test(bumpType)) {
         newVersionString = bumpType;
-        // logic to decide if we update package.json?
+        // Normalize to at least 3 parts when updating package.json (semver requirement)
+        const versionParts = newVersionString.split('.');
+        if (versionParts.length < 3 && shouldUpdatePackageJson) {
+          while (versionParts.length < 3) {
+            versionParts.push('0');
+          }
+          newVersionString = versionParts.join('.');
+          console.log(`ℹ️ Normalized version to ${newVersionString} for package.json (semver)`);
+        }
         // If it has 4 parts, we probably shouldn't set that to package.json to avoid errors
         if (newVersionString.split('.').length > 3) {
           console.warn(

@@ -16,7 +16,6 @@ describe('AIModelService', () => {
     const mockModel = { id: '1', name: 'Test Model' };
 
     await aiModelService.saveModel(mockModel as AIModel);
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const model = await aiModelService.getModel('1');
     expect(model).toEqual(mockModel as unknown as AIModel);
@@ -26,7 +25,6 @@ describe('AIModelService', () => {
     await aiModelService.clearModels();
     const model = { id: '1', name: 'Test Model' } as AIModel;
     await aiModelService.saveModel(model);
-    await new Promise((resolve) => setTimeout(resolve, 0));
     const saved = await aiModelService.getModel('1');
     expect(saved).toEqual(model);
   });
@@ -39,7 +37,6 @@ describe('AIModelService', () => {
     ] as AIModel[];
 
     await aiModelService.bulkSaveModels(models);
-    await new Promise((resolve) => setTimeout(resolve, 0));
     const saved = await aiModelService.getAllModels();
     expect(saved).toHaveLength(2);
   });

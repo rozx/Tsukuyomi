@@ -65,8 +65,16 @@ describe('TranslationService - workflowStatus 重置', () => {
   };
 
   const paragraphs: Paragraph[] = [
-    { id: 'p1', text: '第一段', translations: [], selectedTranslationId: '' },
-    { id: 'p2', text: '第二段', translations: [], selectedTranslationId: '' },
+    { id: 'p1', text: '第1段', translations: [], selectedTranslationId: '' },
+    { id: 'p2', text: '第2段', translations: [], selectedTranslationId: '' },
+    { id: 'p3', text: '第3段', translations: [], selectedTranslationId: '' },
+    { id: 'p4', text: '第4段', translations: [], selectedTranslationId: '' },
+    { id: 'p5', text: '第5段', translations: [], selectedTranslationId: '' },
+    { id: 'p6', text: '第6段', translations: [], selectedTranslationId: '' },
+    { id: 'p7', text: '第7段', translations: [], selectedTranslationId: '' },
+    { id: 'p8', text: '第8段', translations: [], selectedTranslationId: '' },
+    { id: 'p9', text: '第9段', translations: [], selectedTranslationId: '' },
+    { id: 'p10', text: '第10段', translations: [], selectedTranslationId: '' },
   ];
 
   beforeEach(() => {
@@ -139,7 +147,7 @@ describe('TranslationService - workflowStatus 重置', () => {
       bookId: 'book-1',
       chapterId: 'chapter-1',
       chapterTitle: '标题',
-      chunkSize: 8,
+      chunkSize: 5, // 使用 5 个段落一组，确保有多个 chunk
     });
 
     const planningCalls = (
