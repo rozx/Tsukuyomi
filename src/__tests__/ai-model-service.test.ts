@@ -4,7 +4,9 @@ import { aiModelService } from '../services/ai-model-service';
 import type { AIModel } from '../services/ai/types/ai-model';
 
 describe('AIModelService', () => {
-  beforeEach(() => {});
+  beforeEach(async () => {
+    await aiModelService.clearModels();
+  });
 
   it('should get all models', async () => {
     const models = await aiModelService.getAllModels();
