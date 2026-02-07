@@ -2403,11 +2403,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                           : translationProgress
                     "
                     @cancel="
-                      isProofreadingChapter
-                        ? cancelProofreading()
-                        : isPolishingChapter
-                          ? cancelPolish()
-                          : cancelTranslation()
+                      (taskType: string, chapterId?: string) => {
+                        if (taskType === 'proofreading') cancelProofreading(chapterId);
+                        else if (taskType === 'polish') cancelPolish(chapterId);
+                        else cancelTranslation(chapterId);
+                      }
                     "
                   />
                 </div>

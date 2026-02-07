@@ -1356,8 +1356,8 @@ export function useChapterTranslation(
   };
 
   // 取消翻译
-  const cancelTranslation = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelTranslation = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterTranslationStates.value.get(chapterId);
@@ -1393,8 +1393,8 @@ export function useChapterTranslation(
   };
 
   // 取消润色
-  const cancelPolish = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelPolish = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterPolishStates.value.get(chapterId);
@@ -1598,8 +1598,8 @@ export function useChapterTranslation(
   };
 
   // 取消校对
-  const cancelProofreading = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelProofreading = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterProofreadingStates.value.get(chapterId);

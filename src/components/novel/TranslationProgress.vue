@@ -48,7 +48,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'cancel'): void;
+  (e: 'cancel', taskType: string, chapterId?: string): void;
 }>();
 
 const aiProcessingStore = useAIProcessingStore();
@@ -74,17 +74,9 @@ const recentAITasks = computed(() => {
 
 const stopTask = (task: AIProcessingTask) => {
   void aiProcessingStore.stopTask(task.id);
-  if (task.type === 'translation' && props.isTranslating) {
-    emit('cancel');
-    return;
-  }
-  if (task.type === 'polish' && props.isPolishing) {
-    emit('cancel');
-    return;
-  }
-  if (task.type === 'proofreading' && props.isProofreading) {
-    emit('cancel');
-  }
+  // 始终发出 cancel 事件，携带任务类型和章节 ID，
+  // 让父组件能精确取消对应章节的对应任务类型
+  emit('cancel', task.type, task.chapterId);
 };
 
 /**
@@ -142,6 +134,11 @@ const displayProgressMessage = computed(() => {
   const chunkMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
   if (chunkMessagePattern.test(message)) return '';
   return message;
+});
+
+// 当前任务类型（用于取消按钮）
+const currentTaskType = computed(() => {
+  return props.isProofreading ? 'proofreading' : props.isPolishing ? 'polish' : 'translation';
 });
 
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
@@ -675,7 +672,6 @@ const updateFormattedThinkingCache = throttle((taskId: string) => {
 }, FORMAT_CACHE_THROTTLE_MS);
 // 注册清理函数
 throttleCleanups.push(updateFormattedThinkingCache.cleanup);
-
 
 // 获取格式化后的思考消息（从缓存中读取）
 const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
@@ -1254,7 +1250,7 @@ watch(
             icon="pi pi-times"
             label="取消"
             class="p-button-text p-button-sm translation-progress-cancel"
-            @click="emit('cancel')"
+            @click="emit('cancel', currentTaskType)"
           />
         </div>
         <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
@@ -1349,7 +1345,6 @@ watch(
   color: var(--moon-opacity-70);
   line-height: 1.4;
 }
-
 
 .translation-progress-working-chapter {
   font-size: 0.8125rem;
