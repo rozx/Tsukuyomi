@@ -218,7 +218,8 @@ if (releaseNotes.length > 0) {
   const latestReleaseLink = latestRelease.file.replace('.md', '');
   sidebarContent += `**[[${latestReleaseLink}|📋 更新日志]]**\n`;
 } else {
-  sidebarContent += `**[[Home#📋-更新日志|📋 更新日志]]**\n`;
+  // 如果没有发布说明，链接到首页（通常不会发生）
+  sidebarContent += `**[[Home|📋 更新日志]]**\n`;
 }
 
 writeFileSync(join(WIKI_DIR, '_Sidebar.md'), sidebarContent, 'utf-8');
