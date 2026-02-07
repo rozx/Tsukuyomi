@@ -90,6 +90,8 @@ bun run dev
 | **核心逻辑** | [术语管理](public/help/book-details-terminology.md) \| [角色设定](public/help/book-details-characters.md) \| [记忆系统](public/help/book-details-memory.md) |
 | **进阶工具** | [聊天助手实战](public/help/chat-assistant-guide.md) |
 
+> 📖 **在线文档**: 完整的帮助文档已同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)，提供更好的浏览体验。
+
 ## 🛠️ 开发与构建
 
 | 命令 | 用途 |
@@ -98,6 +100,8 @@ bun run dev
 | `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb) |
 | `bun run bump` | 手动/自动更新版本号 |
 | `bun run lint` | 代码规范性检测 |
+
+**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md)
 
 ---
 > *Tsukuyomi - 让每一次翻页都如月光般流畅。*
