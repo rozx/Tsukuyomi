@@ -3,7 +3,13 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
-import { isEmptyParagraph, CJK_CHAR_CLASS, hasCJK, isCJK } from 'src/utils/text-utils';
+import {
+  isEmptyParagraph,
+  CJK_CHAR_CLASS,
+  hasCJK,
+  isCJK,
+  isEmptyOrSymbolOnly,
+} from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation, Chapter } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo, ToolContext, ChunkBoundaries } from './types';
@@ -428,7 +434,7 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 过滤掉空段落或仅包含符号的段落
         const validPreviousResults = previousResults.filter(
-          (result) => !isEmptyParagraph(result.paragraph.text),
+          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
         );
         // 移除块边界过滤
         // validPreviousResults = filterResultsByChunkBoundary(validPreviousResults, chunkBoundaries);
@@ -454,7 +460,7 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 过滤掉空段落或仅包含符号的段落
         const validNextResults = nextResults.filter(
-          (result) => !isEmptyParagraph(result.paragraph.text),
+          (result) => !isEmptyOrSymbolOnly(result.paragraph.text),
         );
         // 移除块边界过滤
         // validNextResults = filterResultsByChunkBoundary(validNextResults, chunkBoundaries);

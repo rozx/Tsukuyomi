@@ -21,9 +21,19 @@ export function isEmptyParagraph(text: string | null | undefined): boolean {
 }
 
 /**
- * @deprecated Use isEmptyParagraph instead
+ * 检查段落是否为空或仅包含符号
+ * @param text 段落文本
+ * @returns 如果段落为空或仅符号（不包含字母、数字或CJK字符），返回 true
  */
-export const isEmptyOrSymbolOnly = isEmptyParagraph;
+export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
+  if (isEmptyParagraph(text)) {
+    return true;
+  }
+  // 如果不包含任何字母、数字或 CJK 字符，则视为仅包含符号
+  // 使用 CJK_CHAR_CLASS 常量
+  const hasContent = new RegExp(`[a-zA-Z0-9${CJK_CHAR_CLASS}]`).test(text!);
+  return !hasContent;
+}
 
 /**
  * 构建段落的原始翻译映射
