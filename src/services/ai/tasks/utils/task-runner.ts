@@ -445,6 +445,7 @@ class TaskLoopSession {
       this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
       aiProcessingStore, // 传入 AI 处理 Store
       this.config.aiModelId,
+      this.config.chunkIndex, // 传入块索引用于 review 检查
     );
     this.metrics.toolCallTime += Date.now() - start;
     this.metrics.toolCallCount++;
@@ -653,7 +654,7 @@ class TaskLoopSession {
         console.log(`[${this.config.logLabel}] ✅ 批量翻译提交成功: ${processedCount} 个段落`);
       } else if (toolName === 'update_chapter_title' && result.success) {
         // 捕获标题翻译
-        const translatedTitle = result.translated_title as string;
+        const translatedTitle = result.new_title_translation as string;
         if (translatedTitle) {
           this.pendingTitleTranslation = translatedTitle;
         }

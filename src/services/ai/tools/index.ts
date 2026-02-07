@@ -249,6 +249,7 @@ export class ToolRegistry {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aiProcessingStore?: any, // AI 处理 Store，用于任务状态工具
     aiModelId?: string,
+    chunkIndex?: number, // 当前块索引，用于 review 检查跳过非首块的标题验证
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -307,6 +308,7 @@ export class ToolRegistry {
         ...(onToast ? { onToast } : {}),
         ...(chunkBoundaries ? { chunkBoundaries } : {}),
         ...(aiProcessingStore ? { aiProcessingStore } : {}),
+        ...(chunkIndex !== undefined ? { chunkIndex } : {}),
       });
 
       // 记录工具调用成功

@@ -161,6 +161,12 @@ export interface ToolContext {
    * 用于任务状态工具访问和更新任务状态
    */
   aiProcessingStore?: AIProcessingStore;
+  /**
+   * 当前块索引（可选）
+   * 仅在分块任务中提供，用于判断是否为首块（chunkIndex === 0）
+   * 非首块的 review 检查会跳过章节标题验证
+   */
+  chunkIndex?: number;
 }
 
 export type ToolHandler = (

@@ -254,7 +254,12 @@ export class TranslationService {
       // 使用翻译专用工具集，排除导航和列表工具，让AI专注于当前文本块
       const skipAskUser = await isSkipAskUserEnabled(bookId);
       const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
-      const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
+      // 后续 chunk 不需要标题翻译工具，过滤掉 update_chapter_title
+      const toolsWithoutTitle = tools.filter((t) => t.function.name !== 'update_chapter_title');
+      const toolSchemaContentWithTitle =
+        tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
+      const toolSchemaContentWithoutTitle =
+        toolsWithoutTitle.length > 0 ? `【工具定义】\n${JSON.stringify(toolsWithoutTitle)}` : '';
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -266,7 +271,7 @@ export class TranslationService {
       // 使用共享工具获取特殊指令
       const specialInstructions = await getSpecialInstructions(bookId, chapterId, 'translation');
 
-      // 1. 系统提示词（使用共享提示词模块）- 每个 chunk 都会使用这个系统提示
+      // 1. 系统提示词（使用共享提示词模块）- 第一个 chunk 和后续 chunk 使用不同的提示词
       const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
       const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
@@ -297,7 +302,8 @@ export class TranslationService {
         }
       }
 
-      const systemPrompt = buildTranslationSystemPrompt({
+      // 第一个 chunk 的系统提示词（包含标题翻译指令）
+      const systemPromptWithTitle = buildTranslationSystemPrompt({
         todosPrompt,
         bookContextSection,
         chapterContextSection,
@@ -305,6 +311,19 @@ export class TranslationService {
         specialInstructionsSection,
         tools,
         skipAskUser,
+        includeChapterTitle: true,
+      });
+
+      // 后续 chunk 的系统提示词（不包含标题翻译指令，标题已在第一个 chunk 中翻译）
+      const systemPromptWithoutTitle = buildTranslationSystemPrompt({
+        todosPrompt,
+        bookContextSection,
+        chapterContextSection,
+        previousChapterSection,
+        specialInstructionsSection,
+        tools: toolsWithoutTitle,
+        skipAskUser,
+        includeChapterTitle: false,
       });
 
       if (aiProcessingStore && taskId) {
@@ -429,6 +448,10 @@ export class TranslationService {
 
         // 为每个 chunk 创建独立的 history，避免上下文共享
         // 每个 chunk 只包含 system prompt 和当前 chunk 的内容
+        // 第一个 chunk 使用含标题翻译指令的提示词，后续 chunk 使用不含标题的提示词
+        const isFirstChunk = chunkIndex === 0;
+        const systemPrompt = isFirstChunk ? systemPromptWithTitle : systemPromptWithoutTitle;
+        const chunkTools = isFirstChunk ? tools : toolsWithoutTitle;
         const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
         // 构建当前消息 - 使用独立的 chunk 提示（避免 max token 问题）
@@ -464,6 +487,9 @@ export class TranslationService {
             ...chunkHistory,
             { role: 'user', content: chunkContent },
           ];
+          const toolSchemaContent = isFirstChunk
+            ? toolSchemaContentWithTitle
+            : toolSchemaContentWithoutTitle;
           if (toolSchemaContent) {
             messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
           }
@@ -527,7 +553,7 @@ export class TranslationService {
             // 后续 chunk 使用简短规划模式（已有规划上下文）
             const loopResult = await executeToolCallLoop({
               history: chunkHistory,
-              tools,
+              tools: chunkTools,
               generateText: service.generateText.bind(service),
               aiServiceConfig: config,
               taskType: 'translation',

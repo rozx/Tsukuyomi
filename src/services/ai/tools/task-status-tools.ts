@@ -203,6 +203,8 @@ export const taskStatusTools: ToolDefinition[] = [
       if (taskType === 'translation' && status === 'review') {
         const chapterId = task.chapterId;
         const bookId = task.bookId || context.bookId;
+        // 非首块不需要检查标题翻译（标题仅在首块处理）
+        const isFirstChunk = context.chunkIndex === undefined || context.chunkIndex === 0;
 
         if (!chapterId || !bookId) {
           // 如果没有关联章节，可能是全书任务或其他类型，跳过检查或报错
@@ -220,23 +222,23 @@ export const taskStatusTools: ToolDefinition[] = [
               if (chapterInfo) {
                 const { chapter } = chapterInfo;
 
-                // 检查 2: 章节标题是否已翻译
-                let hasTitleTranslation = false;
-                if (typeof chapter.title === 'string') {
-                  // 旧格式，无法区分，假设已翻译或是原文
-                  // 严格来说旧格式没有 translation 字段，所以视为未翻译？
-                  // 或者不检查旧格式
-                  hasTitleTranslation = true;
-                } else {
-                  hasTitleTranslation =
-                    !!chapter.title.translation && !!chapter.title.translation.translation;
-                }
+                // 检查 2: 章节标题是否已翻译（仅首块需要检查）
+                if (isFirstChunk) {
+                  let hasTitleTranslation = false;
+                  if (typeof chapter.title === 'string') {
+                    // 旧格式，无法区分，假设已翻译或是原文
+                    hasTitleTranslation = true;
+                  } else {
+                    hasTitleTranslation =
+                      !!chapter.title.translation && !!chapter.title.translation.translation;
+                  }
 
-                if (!hasTitleTranslation) {
-                  return JSON.stringify({
-                    success: false,
-                    error: '无法提交复核：章节标题尚未翻译',
-                  });
+                  if (!hasTitleTranslation) {
+                    return JSON.stringify({
+                      success: false,
+                      error: '无法提交复核：章节标题尚未翻译',
+                    });
+                  }
                 }
 
                 // 检查 1: 所有非空段落是否有翻译

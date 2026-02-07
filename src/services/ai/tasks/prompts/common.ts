@@ -225,21 +225,30 @@ ${rules}
 /**
  * 获取工具化输出格式规则（新方式：使用工具调用替代 JSON）
  */
-export function getOutputFormatRules(taskType: TaskType): string {
+export function getOutputFormatRules(
+  taskType: TaskType,
+  options?: { includeChapterTitle?: boolean },
+): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const isTranslation = taskType === 'translation';
+  // 标题翻译指令仅在第一个 chunk 时包含（后续 chunk 标题已在第一个 chunk 中翻译）
+  const includeTitle = isTranslation && (options?.includeChapterTitle ?? true);
 
   const reviewStep = isTranslation
     ? '翻译完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
     : `${taskLabel}完成后：update_task_status({"status": "end"})`;
 
-  const titleToolSection = isTranslation
-    ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "translated_title": "标题翻译"}'
+  const titleToolSection = includeTitle
+    ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "title_translation": "标题翻译"}'
     : '';
 
+  const titleFlowStep = includeTitle ? '\n3. 接着使用 update_chapter_title 更新标题' : '';
+
+  const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
+
   const toolRestriction = isTranslation
-    ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】） / update_chapter_title
+    ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）${titleToolRestriction}
    - planning 只能 update_task_status 切到 working
    - review 需要修改先切回 working
    - end 禁止再调用翻译工具`
@@ -251,14 +260,12 @@ export function getOutputFormatRules(taskType: TaskType): string {
 
 **核心流程**
 1. planning 完成：update_task_status({"status": "working"})
-2. working 处理：用 add_translation_batch 提交段落结果
-3. 接着使用 update_chapter_title 更新标题
-4. ${reviewStep}
+2. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
+${includeTitle ? '4' : '3'}. ${reviewStep}
 
 **工具要点**
 1. update_task_status：只提交 {"status": "..."}
-2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."}
-${titleToolSection}
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."}${titleToolSection ? '\n' + titleToolSection : ''}
 
 ${getStatusFieldDescription(taskType)}
 - 段落 ID 与原文 1:1 对应${onlyChanged}
