@@ -4,6 +4,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { aiModelService } from 'src/services/ai-model-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
@@ -474,15 +475,42 @@ export class SyncDataService {
     console.warn('[SyncDataService] 正在从备份恢复数据...');
 
     try {
-      // 恢复 AI 模型
-      await aiModelsStore.clearModels();
+      // 恢复 AI 模型（使用 put/upsert 而非 clear+add）
       for (const model of backup.models) {
-        await aiModelsStore.addModel(model);
+        await aiModelService.saveModel(model);
       }
+      // 删除不在备份中的模型
+      const backupModelIds = new Set(backup.models.map((m: any) => m.id)); // eslint-disable-line @typescript-eslint/no-explicit-any
+      for (const existingModel of aiModelsStore.models) {
+        if (!backupModelIds.has(existingModel.id)) {
+          try {
+            await aiModelService.deleteModel(existingModel.id);
+          } catch {
+            /* 忽略 */
+          }
+        }
+      }
+      // 确保 lastEdited 是 Date 对象（backup 经过 JSON 序列化，Date 会变成字符串）
+      aiModelsStore.models = backup.models.map((m: any) => ({
+        // eslint-disable-line @typescript-eslint/no-explicit-any
+        ...m,
+        lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+      }));
 
-      // 恢复书籍
-      await booksStore.clearBooks();
+      // 恢复书籍（使用 bulkAddBooks 的 put/upsert，再清理旧书籍）
+      const backupBookIds = new Set(backup.books.map((b: Novel) => b.id));
+      const staleBookIdsForRestore = booksStore.books
+        .filter((b) => !backupBookIds.has(b.id))
+        .map((b) => b.id);
+
       await booksStore.bulkAddBooks(backup.books);
+      for (const staleId of staleBookIdsForRestore) {
+        try {
+          await booksStore.deleteBook(staleId);
+        } catch {
+          /* 忽略 */
+        }
+      }
 
       // 恢复封面历史
       await coverHistoryStore.clearHistory();
@@ -572,6 +600,9 @@ export class SyncDataService {
           deletedModelIds.map((record) => [record.id, record.deletedAt]),
         );
 
+        // 收集需要从删除记录中移除的模型 ID（循环结束后批量更新）
+        const modelIdsToUndelete = new Set<string>();
+
         // 收集所有远程模型（使用最新的 lastEdited 时间）
         for (const remoteModel of remoteData.aiModels) {
           const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
@@ -615,15 +646,9 @@ export class SyncDataService {
                 if (remoteModel.lastEdited) {
                   const remoteTime = new Date(remoteModel.lastEdited).getTime();
                   if (remoteTime > syncTime) {
-                    // 远程有更新，恢复（从删除记录中移除）
+                    // 远程有更新，恢复（标记从删除记录中移除）
                     finalModels.push(remoteModel);
-                    // 从删除记录中移除
-                    const updatedDeletedModelIds = deletedModelIds.filter(
-                      (record) => record.id !== remoteModel.id,
-                    );
-                    await settingsStore.updateGistSync({
-                      deletedModelIds: updatedDeletedModelIds,
-                    });
+                    modelIdsToUndelete.add(remoteModel.id);
                   }
                 }
               }
@@ -642,6 +667,16 @@ export class SyncDataService {
               }
             }
           }
+        }
+
+        // 批量从删除记录中移除已恢复的模型（一次 DB 写入而非 N 次）
+        if (modelIdsToUndelete.size > 0) {
+          const updatedDeletedModelIds = deletedModelIds.filter(
+            (record) => !modelIdsToUndelete.has(record.id),
+          );
+          await settingsStore.updateGistSync({
+            deletedModelIds: updatedDeletedModelIds,
+          });
         }
 
         // 添加本地独有的模型
@@ -664,9 +699,31 @@ export class SyncDataService {
           }
         }
 
-        await aiModelsStore.clearModels();
+        // 先写入所有最终模型（put/upsert），再删除不在最终列表中的旧模型。
+        // 这样即使删除步骤失败，新数据已安全写入，避免 clear+add 模式的数据丢失风险。
+        const finalModelIds = new Set(finalModels.map((m) => m.id));
+        const staleModelIds = aiModelsStore.models
+          .filter((m) => !finalModelIds.has(m.id))
+          .map((m) => m.id);
+
+        // 持久化所有最终模型到 DB（saveModel 使用 put/upsert，保留原始 lastEdited）
         for (const model of finalModels) {
-          await aiModelsStore.addModel(model);
+          await aiModelService.saveModel(model);
+        }
+
+        // 更新内存状态（确保 lastEdited 是 Date 对象）
+        aiModelsStore.models = finalModels.map((m) => ({
+          ...m,
+          lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+        }));
+
+        // 删除不再需要的旧模型
+        for (const staleId of staleModelIds) {
+          try {
+            await aiModelService.deleteModel(staleId);
+          } catch (e) {
+            console.warn('[SyncDataService] 删除旧模型失败:', staleId, e);
+          }
         }
       }
 
@@ -674,6 +731,13 @@ export class SyncDataService {
       // 即使远程书籍列表为空，也需要处理（可能远程删除了所有书籍）
       if (remoteData.novels && Array.isArray(remoteData.novels)) {
         const finalBooks: Novel[] = [];
+
+        const deletedNovelIds = gistSyncSnapshot?.deletedNovelIds || [];
+        const deletedNovelIdsMap = new Map<string, number>(
+          deletedNovelIds.map((record) => [record.id, record.deletedAt]),
+        );
+        // 收集需要从删除记录中移除的书籍 ID（循环结束后批量更新）
+        const novelIdsToUndelete = new Set<string>();
 
         // 收集所有远程书籍（使用最新的 lastEdited 时间）
         for (const remoteNovel of remoteData.novels) {
@@ -700,10 +764,6 @@ export class SyncDataService {
             }
           } else {
             // 本地不存在，检查是否在删除记录中
-            const deletedNovelIds = gistSyncSnapshot?.deletedNovelIds || [];
-            const deletedNovelIdsMap = new Map<string, number>(
-              deletedNovelIds.map((record) => [record.id, record.deletedAt]),
-            );
             const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
 
             if (deletionRecord !== undefined) {
@@ -727,15 +787,9 @@ export class SyncDataService {
                 // 删除时间早于或等于上次同步时间，可能是旧删除，检查远程是否有更新
                 const remoteTime = new Date(remoteNovel.lastEdited).getTime();
                 if (remoteTime > syncTime) {
-                  // 远程有更新，恢复（从删除记录中移除）
+                  // 远程有更新，恢复（标记从删除记录中移除）
                   finalBooks.push(remoteNovel as Novel);
-                  // 从删除记录中移除
-                  const updatedDeletedNovelIds = deletedNovelIds.filter(
-                    (record) => record.id !== remoteNovel.id,
-                  );
-                  await settingsStore.updateGistSync({
-                    deletedNovelIds: updatedDeletedNovelIds,
-                  });
+                  novelIdsToUndelete.add(remoteNovel.id);
                 }
               }
             } else {
@@ -754,6 +808,16 @@ export class SyncDataService {
               }
             }
           }
+        }
+
+        // 批量从删除记录中移除已恢复的书籍（一次 DB 写入而非 N 次）
+        if (novelIdsToUndelete.size > 0) {
+          const updatedDeletedNovelIds = deletedNovelIds.filter(
+            (record) => !novelIdsToUndelete.has(record.id),
+          );
+          await settingsStore.updateGistSync({
+            deletedNovelIds: updatedDeletedNovelIds,
+          });
         }
 
         // 添加本地独有的书籍
@@ -778,8 +842,22 @@ export class SyncDataService {
           }
         }
 
-        await booksStore.clearBooks();
+        // 先写入所有最终书籍（put/upsert），再删除不在最终列表中的旧书籍。
+        // 这样即使删除步骤失败，新数据已安全写入，避免 clear+add 模式的数据丢失风险。
+        const finalBookIds = new Set(finalBooks.map((b) => b.id));
+        const staleBookIds = booksStore.books
+          .filter((b) => !finalBookIds.has(b.id))
+          .map((b) => b.id);
+
         await booksStore.bulkAddBooks(finalBooks);
+
+        for (const staleId of staleBookIds) {
+          try {
+            await booksStore.deleteBook(staleId);
+          } catch (e) {
+            console.warn('[SyncDataService] 删除旧书籍失败:', staleId, e);
+          }
+        }
       }
 
       // 处理封面历史（确保 coverHistory 是数组）
@@ -794,6 +872,10 @@ export class SyncDataService {
         const deletedCoverUrlsMap = new Map<string, number>(
           deletedCoverUrls.map((record: any) => [normalizeCoverUrl(record.url), record.deletedAt]), // eslint-disable-line @typescript-eslint/no-explicit-any
         );
+
+        // 收集需要从删除记录中移除的封面 ID 和 URL（循环结束后批量更新）
+        const coverIdsToUndelete = new Set<string>();
+        const coverUrlsToUndelete = new Set<string>();
 
         for (const remoteCover of remoteData.coverHistory) {
           const remoteUrl = normalizeCoverUrl(remoteCover?.url);
@@ -838,21 +920,12 @@ export class SyncDataService {
                 // 删除时间早于或等于上次同步时间，可能是旧删除，检查远程是否有更新
                 const remoteTime = new Date(remoteCover.addedAt).getTime();
                 if (remoteTime > syncTime) {
-                  // 远程有更新，恢复（从删除记录中移除）
+                  // 远程有更新，恢复（标记从删除记录中移除）
                   finalCovers.push(remoteCover);
-                  // 从删除记录中移除（按 id / 按 url）
-                  const updatedDeletedCoverIds = deletedCoverIds.filter(
-                    (record) => record.id !== remoteCover.id,
-                  );
-                  const updatedDeletedCoverUrls = remoteUrl
-                    ? deletedCoverUrls.filter(
-                        (record: any) => normalizeCoverUrl(record.url) !== remoteUrl,
-                      ) // eslint-disable-line @typescript-eslint/no-explicit-any
-                    : deletedCoverUrls;
-                  await settingsStore.updateGistSync({
-                    deletedCoverIds: updatedDeletedCoverIds,
-                    deletedCoverUrls: updatedDeletedCoverUrls,
-                  });
+                  coverIdsToUndelete.add(remoteCover.id);
+                  if (remoteUrl) {
+                    coverUrlsToUndelete.add(remoteUrl);
+                  }
                 }
               }
             } else {
@@ -870,6 +943,20 @@ export class SyncDataService {
               }
             }
           }
+        }
+
+        // 批量从删除记录中移除已恢复的封面（一次 DB 写入而非 N 次）
+        if (coverIdsToUndelete.size > 0 || coverUrlsToUndelete.size > 0) {
+          const updatedDeletedCoverIds = deletedCoverIds.filter(
+            (record) => !coverIdsToUndelete.has(record.id),
+          );
+          const updatedDeletedCoverUrls = deletedCoverUrls.filter(
+            (record: any) => !coverUrlsToUndelete.has(normalizeCoverUrl(record.url)), // eslint-disable-line @typescript-eslint/no-explicit-any
+          );
+          await settingsStore.updateGistSync({
+            deletedCoverIds: updatedDeletedCoverIds,
+            deletedCoverUrls: updatedDeletedCoverUrls,
+          });
         }
 
         // 添加本地独有的封面
@@ -1251,7 +1338,8 @@ export class SyncDataService {
           }
         } else {
           // 本地独有的模型，检查是否是新增的
-          if (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, lastSyncTime)) {
+          // 如果 lastEdited 未设置，保守处理：视为新增（避免丢失数据）
+          if (!localModel.lastEdited || checkIsNewlyAdded(localModel.lastEdited, lastSyncTime)) {
             finalModels.push(localModel);
           }
         }
@@ -1302,7 +1390,8 @@ export class SyncDataService {
         }
       } else {
         // 本地独有的书籍，检查是否是新增的
-        if (checkIsNewlyAdded(localNovel.lastEdited, lastSyncTime)) {
+        // 如果 lastEdited 未设置，保守处理：视为新增（避免丢失数据）
+        if (!localNovel.lastEdited || checkIsNewlyAdded(localNovel.lastEdited, lastSyncTime)) {
           const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
           finalBooks.push(localNovelWithContent);
         }

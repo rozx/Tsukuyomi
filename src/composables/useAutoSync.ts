@@ -64,28 +64,26 @@ export function useAutoSync() {
       // 1. 先下载远程更改（避免覆盖）
       // 下载阶段：0-50%
       let downloadPhaseTotal: number | undefined = undefined;
-      const result = await gistSyncService.downloadFromGist(
-        config,
-        (progress) => {
-          // 记录下载阶段的总数（第一次更新时）
-          if (downloadPhaseTotal === undefined) {
-            downloadPhaseTotal = progress.total;
-          }
+      const result = await gistSyncService.downloadFromGist(config, (progress) => {
+        // 记录下载阶段的总数（第一次更新时）
+        if (downloadPhaseTotal === undefined) {
+          downloadPhaseTotal = progress.total;
+        }
 
-          // 将下载阶段的进度映射到整体进度（0 到 DOWNLOAD_PHASE_MAX）
-          // 防止除零错误
-          const mappedCurrent = progress.total > 0
+        // 将下载阶段的进度映射到整体进度（0 到 DOWNLOAD_PHASE_MAX）
+        // 防止除零错误
+        const mappedCurrent =
+          progress.total > 0
             ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
             : 0;
 
-          settingsStore.updateSyncProgress({
-            stage: 'downloading',
-            current: mappedCurrent,
-            total: OVERALL_TOTAL,
-            message: `[自动同步] ${progress.message}`,
-          });
-        },
-      );
+        settingsStore.updateSyncProgress({
+          stage: 'downloading',
+          current: mappedCurrent,
+          total: OVERALL_TOTAL,
+          message: `[自动同步] ${progress.message}`,
+        });
+      });
 
       if (result.success && result.data) {
         // 更新进度：进入应用阶段，50-60%
@@ -152,6 +150,10 @@ export function useAutoSync() {
         // 重置进度
         settingsStore.resetSyncProgress();
         return;
+      } else {
+        // result.success 为 true 但 result.data 为空（例如空 Gist）
+        // 继续上传，但跳过不必要的日志
+        console.info('[useAutoSync] 下载成功但无数据，继续尝试上传本地数据');
       }
 
       // 2. 然后上传本地更改（包含刚刚合并的远程更改）
@@ -177,9 +179,11 @@ export function useAutoSync() {
           // 上传阶段占整体进度的剩余部分（从 uploadPhaseStart 到 OVERALL_TOTAL）
           const uploadPhaseRange = OVERALL_TOTAL - uploadPhaseStart;
           // 防止除零错误
-          const mappedCurrent = progress.total > 0
-            ? uploadPhaseStart + Math.round((progress.current / progress.total) * uploadPhaseRange)
-            : uploadPhaseStart;
+          const mappedCurrent =
+            progress.total > 0
+              ? uploadPhaseStart +
+                Math.round((progress.current / progress.total) * uploadPhaseRange)
+              : uploadPhaseStart;
 
           settingsStore.updateSyncProgress({
             stage: 'uploading',
