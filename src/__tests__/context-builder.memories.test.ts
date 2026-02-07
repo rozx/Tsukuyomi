@@ -1,7 +1,9 @@
 import './setup';
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
+import { MemoryService } from 'src/services/memory-service';
+import * as TextMatcher from 'src/utils/text-matcher';
 
 const mockBooksStore = {
   getBookById: mock((_id: string): Novel | undefined => undefined),
@@ -17,17 +19,6 @@ const mockFindUniqueCharactersInText = mock<() => any[]>(() => []);
 
 await mock.module('src/stores/books', () => ({
   useBooksStore: () => mockBooksStore,
-}));
-
-await mock.module('src/services/memory-service', () => ({
-  MemoryService: {
-    getMemoriesByAttachments: mockGetMemoriesByAttachments,
-  },
-}));
-
-await mock.module('src/utils/text-matcher', () => ({
-  findUniqueTermsInText: mockFindUniqueTermsInText,
-  findUniqueCharactersInText: mockFindUniqueCharactersInText,
 }));
 
 import {
@@ -57,6 +48,20 @@ describe('getRelatedMemoriesForChunk', () => {
     mockFindUniqueTermsInText.mockReturnValue([]);
     mockFindUniqueCharactersInText.mockReset();
     mockFindUniqueCharactersInText.mockReturnValue([]);
+
+    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
+      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    );
+    spyOn(TextMatcher, 'findUniqueTermsInText').mockImplementation(
+      mockFindUniqueTermsInText as unknown as typeof TextMatcher.findUniqueTermsInText,
+    );
+    spyOn(TextMatcher, 'findUniqueCharactersInText').mockImplementation(
+      mockFindUniqueCharactersInText as unknown as typeof TextMatcher.findUniqueCharactersInText,
+    );
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   test('缺少 bookId 或 chunkText 时返回空字符串', async () => {
@@ -195,6 +200,17 @@ describe('buildIndependentChunkPrompt', () => {
     mockFindUniqueTermsInText.mockReset();
     mockFindUniqueCharactersInText.mockReset();
     mockGetMemoriesByAttachments.mockReset();
+    mockGetMemoriesByAttachments.mockResolvedValue([]);
+
+    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
+      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    );
+    spyOn(TextMatcher, 'findUniqueTermsInText').mockImplementation(
+      mockFindUniqueTermsInText as unknown as typeof TextMatcher.findUniqueTermsInText,
+    );
+    spyOn(TextMatcher, 'findUniqueCharactersInText').mockImplementation(
+      mockFindUniqueCharactersInText as unknown as typeof TextMatcher.findUniqueCharactersInText,
+    );
   });
 
   test('包含术语/角色时会插入相关记忆区块', async () => {

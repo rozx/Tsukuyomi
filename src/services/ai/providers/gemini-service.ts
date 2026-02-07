@@ -475,4 +475,28 @@ export class GeminiService extends BaseAIService {
       return [];
     }
   }
+
+  /**
+   * 使用 Gemini API 精确计算 token 数量
+   * @param config 服务配置（需要 apiKey 和 model）
+   * @param text 要计算的文本或消息内容
+   * @returns token 数量
+   */
+  async countTokens(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'model'>,
+    text: string,
+  ): Promise<number> {
+    try {
+      const client = this.createClient(config);
+      const modelName = this.normalizeModelName(config.model);
+      const model = client.getGenerativeModel({ model: modelName });
+
+      const result = await model.countTokens(text);
+      return result.totalTokens;
+    } catch (error) {
+      console.warn('Gemini countTokens 调用失败，回退到估算:', error);
+      // 回退到简单的字符估算（CJK 文本约 1.2 tokens/char）
+      return Math.ceil(text.length * 1.2);
+    }
+  }
 }

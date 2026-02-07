@@ -300,7 +300,9 @@ ai/
 │   ├── terminology-tools.ts    # 术语管理
 │   ├── memory-tools.ts         # 记忆管理
 │   ├── paragraph-tools.ts      # 段落操作
-│   └── web-search-tools.ts     # 网络搜索
+│   ├── web-search-tools.ts     # 网络搜索
+│   ├── task-status-tools.ts    # 任务状态管理
+│   └── translation-tools.ts    # 翻译批量提交
 └── types/                      # 类型定义
 ```
 

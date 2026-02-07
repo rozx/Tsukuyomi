@@ -3,6 +3,8 @@
  * 负责管理待办事项（使用 localStorage 存储）
  */
 
+import { v4 as uuidv4 } from 'uuid';
+
 export interface TodoItem {
   id: string;
   text: string;
@@ -81,30 +83,36 @@ export class TodoListService {
    * @param sessionId 关联的聊天会话 ID（可选，用于助手聊天会话）
    */
   static createTodo(text: string, taskId: string, sessionId?: string): TodoItem {
-    if (!text || !text.trim()) {
+    // 先 trim 后校验
+    const trimmedText = text.trim();
+    const trimmedTaskId = taskId.trim();
+    const trimmedSessionId = sessionId?.trim();
+
+    if (!trimmedText) {
       throw new Error('待办事项内容不能为空');
     }
-    if (!taskId || !taskId.trim()) {
+    if (!trimmedTaskId) {
       throw new Error('任务 ID 不能为空');
     }
 
     const todos = this.getAllTodos();
     const now = Date.now();
+    // 使用 uuid 生成唯一 ID
     const newTodo: TodoItem = {
-      id: `todo-${now}-${Math.random().toString(36).substr(2, 9)}`,
-      text: text.trim(),
+      id: uuidv4(),
+      text: trimmedText, // 保存 trimmed 值
       completed: false,
       createdAt: now,
       updatedAt: now,
-      taskId: taskId.trim(),
-      ...(sessionId ? { sessionId: sessionId.trim() } : {}),
+      taskId: trimmedTaskId, // 保存 trimmed 值
+      ...(trimmedSessionId ? { sessionId: trimmedSessionId } : {}),
     };
 
     todos.push(newTodo);
     saveTodosToStorage(todos);
 
     console.log(
-      `[TodoListService] 创建待办事项: ${newTodo.id} (任务: ${taskId}${sessionId ? `, 会话: ${sessionId}` : ''})`,
+      `[TodoListService] 创建待办事项: ${newTodo.id} (任务: ${trimmedTaskId}${trimmedSessionId ? `, 会话: ${trimmedSessionId}` : ''})`,
     );
     return newTodo;
   }

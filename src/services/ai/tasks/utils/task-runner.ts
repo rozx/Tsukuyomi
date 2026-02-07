@@ -1,16 +1,12 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import {
   getCurrentStatusInfo,
-  getStreamErrorPrompt,
-  getInvalidTransitionPrompt,
   getPlanningLoopPrompt,
   getWorkingLoopPrompt,
   getWorkingFinishedPrompt,
   getWorkingContinuePrompt,
   getMissingParagraphsPrompt,
   getReviewLoopPrompt,
-  getParseErrorPrompt,
-  getContentStateMismatchPrompt,
   getUnauthorizedToolPrompt,
   getToolLimitReachedPrompt,
   getBriefPlanningToolWarningPrompt,
@@ -39,12 +35,7 @@ import {
   createUnifiedAbortController,
   type StreamCallbackConfig,
 } from './stream-handler';
-import {
-  parseStatusResponse,
-  verifyParagraphCompleteness,
-  type VerificationResult,
-  type ParsedResponse,
-} from './response-parser';
+import { verifyParagraphCompleteness, type VerificationResult } from './response-parser';
 import {
   detectPlanningContextUpdate,
   PRODUCTIVE_TOOLS,
@@ -55,12 +46,8 @@ import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
 
 // Constants
-import { AI_ERROR_MARKERS } from './error-constants';
-
 // 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
-// 最大连续内容状态不匹配次数（内容与状态不一致时的重试次数）
-const MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH = 3;
 
 /**
  * 处理工具调用循环
@@ -86,6 +73,7 @@ export interface ToolCallLoopConfig {
   onToast: ToastCallback | undefined;
   taskId: string | undefined;
   aiProcessingStore: AIProcessingStore | undefined;
+  aiModelId?: string;
   logLabel: string;
   maxTurns?: number;
   /**
@@ -122,6 +110,10 @@ export interface ToolCallLoopConfig {
    * 当前 chunk 索引（用于错误日志）
    */
   chunkIndex?: number;
+  /**
+   * 是否还有下一个块可用
+   */
+  hasNextChunk?: boolean;
 }
 
 /**
@@ -176,8 +168,12 @@ class TaskLoopSession {
   private consecutivePlanningCount = 0;
   private consecutiveWorkingCount = 0;
   private consecutiveReviewCount = 0;
-  private consecutiveContentStateMismatchCount = 0;
   private toolCallCounts = new Map<string, number>();
+
+  // Tool call results tracking (for new tool-based approach)
+  private pendingStatusUpdate: TaskStatus | undefined;
+  private pendingParagraphTranslations: { id: string; translation: string }[] = [];
+  private pendingTitleTranslation: string | undefined;
 
   // Config & Helpers
   private allowedToolNames: Set<string>;
@@ -253,7 +249,6 @@ class TaskLoopSession {
       );
     } catch (error) {
       hasError = true;
-      return this.handleGenerationError(error, streamedText);
     } finally {
       cleanupAbort();
     }
@@ -274,7 +269,7 @@ class TaskLoopSession {
       return { shouldContinue: true };
     }
 
-    // Process text response
+    // Process text response (tool-based approach)
     const responseText = result.text || '';
     this.finalResponseText = responseText;
 
@@ -284,44 +279,49 @@ class TaskLoopSession {
       );
     }
 
-    const parsed = parseStatusResponse(responseText, this.config.paragraphIds);
-
-    if (parsed.error) {
-      this.handleParseError(parsed.error, responseText);
-      return { shouldContinue: true };
-    }
-
-    // Handle mismatch between status and content
-    if (this.hasStatusContentMismatch(parsed)) {
-      this.handleContentStateMismatch(parsed.status, responseText);
-      return { shouldContinue: true };
-    }
-    this.consecutiveContentStateMismatchCount = 0;
-
-    // Determine new status and potential transitions
-    const newStatus = this.determineNewStatus(parsed);
+    // 使用工具调用结果替代 JSON 解析
     const previousStatus = this.currentStatus;
+    let newStatus: TaskStatus | undefined;
 
-    // Validate transition
-    if (!this.isValidTransition(previousStatus, newStatus)) {
-      this.handleInvalidTransition(previousStatus, newStatus, responseText);
-      return { shouldContinue: true };
+    // 检查是否有来自工具调用的状态更新
+    if (this.pendingStatusUpdate) {
+      newStatus = this.pendingStatusUpdate;
+      this.pendingStatusUpdate = undefined; // 清除待处理状态
     }
 
-    this.trackStatusDuration(previousStatus, newStatus);
-    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
+    // 如果有状态更新，验证并应用
+    if (newStatus && newStatus !== previousStatus) {
+      // Validate transition
+      if (!this.isValidTransition(previousStatus, newStatus)) {
+        this.handleInvalidTransition(previousStatus, newStatus, responseText);
+        return { shouldContinue: true };
+      }
 
-    // Update status
-    this.currentStatus = newStatus;
+      this.trackStatusDuration(previousStatus, newStatus);
+      this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
 
-    if (aiProcessingStore && taskId && previousStatus !== newStatus) {
-      void aiProcessingStore.updateTask(taskId, {
-        workflowStatus: newStatus,
-      });
+      // Update status
+      this.currentStatus = newStatus;
+
+      if (aiProcessingStore && taskId) {
+        void aiProcessingStore.updateTask(taskId, {
+          workflowStatus: newStatus,
+        });
+      }
     }
 
-    // Extract content (Title / Paragraphs)
-    await this.extractContent(parsed);
+    // 处理标题翻译（来自工具调用）
+    if (this.pendingTitleTranslation) {
+      this.titleTranslation = this.pendingTitleTranslation;
+      if (this.config.onTitleExtracted) {
+        try {
+          await this.config.onTitleExtracted(this.titleTranslation);
+        } catch (error) {
+          console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
+        }
+      }
+      this.pendingTitleTranslation = undefined; // 清除待处理标题
+    }
 
     // Add assistant response to history
     history.push({ role: 'assistant', content: responseText });
@@ -339,25 +339,10 @@ class TaskLoopSession {
       aiProcessingStore: this.config.aiProcessingStore,
       originalText: this.config.chunkText,
       logLabel: this.config.logLabel,
-      currentStatus: this.currentStatus,
       taskType: this.config.taskType,
       abortController: abortController,
-      // 状态更新回调：stream-handler 可以更新共享状态
-      onStatusChange: async (newStatus: TaskStatus) => {
-        // 同步更新 TaskLoopSession 的状态
-        this.currentStatus = newStatus;
-        // 同步更新 store 的 workflowStatus，让 UI 实时显示
-        if (this.config.aiProcessingStore && this.config.taskId) {
-          try {
-            await this.config.aiProcessingStore.updateTask(this.config.taskId, {
-              workflowStatus: newStatus,
-            });
-          } catch (error) {
-            console.error(`[${this.config.logLabel}] ⚠️ 更新任务状态失败:`, error);
-          }
-        }
-      },
     };
+
     const baseCallback = createStreamCallback(streamCallbackConfig);
 
     return async (chunk) => {
@@ -367,121 +352,239 @@ class TaskLoopSession {
   }
 
   /**
-   * 处理生成过程中的错误（特别是流式状态检测抛出的错误）
-   */
-  private handleGenerationError(error: unknown, streamedText: string): { shouldContinue: boolean } {
-    const { logLabel } = this.config;
-    if (
-      error instanceof Error &&
-      (error.message.includes(AI_ERROR_MARKERS.INVALID_STATUS) ||
-        error.message.includes(AI_ERROR_MARKERS.INVALID_TRANSITION) ||
-        error.message.includes(AI_ERROR_MARKERS.CONTENT_STATE_MISMATCH))
-    ) {
-      console.warn(`[${logLabel}] ⚠️ 流式输出中检测到无效状态，已停止输出`);
-      const partialResponse = streamedText || '';
-      const warningMessage = getStreamErrorPrompt(
-        error.message,
-        this.config.taskType,
-        this.currentStatus,
-      );
-
-      if (partialResponse.trim()) {
-        this.config.history.push({ role: 'assistant', content: partialResponse });
-      }
-      this.config.history.push({
-        role: 'user',
-        content: `${this.getCurrentStatusInfoMsg()}\n\n${warningMessage}`,
-      });
-      return { shouldContinue: true };
-    }
-    throw error;
-  }
-
-  /**
    * 处理工具调用逻辑
    */
   private async processToolCalls(
     result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
     assistantText: string,
   ) {
-    const { history, aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
+    this.appendAssistantToolCallMessage(result, assistantText);
 
-    // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content
+    if (!result.toolCalls) return;
+
+    let hasProductiveTool = false;
+    const pendingUserMessages: ChatMessage[] = [];
+
+    for (const toolCall of result.toolCalls) {
+      if (!this.shouldProcessToolCall(toolCall)) {
+        continue;
+      }
+
+      const toolName = toolCall.function.name;
+      hasProductiveTool = this.prepareToolCall(toolName) || hasProductiveTool;
+
+      const toolResultContent = await this.executeToolCall(toolCall, toolName);
+
+      const userMessage = await this.handleToolCallResult(
+        toolCall,
+        toolName,
+        toolResultContent,
+        assistantText,
+      );
+      if (userMessage) {
+        pendingUserMessages.push(userMessage);
+      }
+    }
+
+    if (hasProductiveTool) {
+      this.resetConsecutiveCounters();
+    }
+
+    if (pendingUserMessages.length > 0) {
+      this.config.history.push(...pendingUserMessages);
+    }
+  }
+
+  private appendAssistantToolCallMessage(
+    result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
+    assistantText: string,
+  ) {
+    const { history } = this.config;
     history.push({
       role: 'assistant',
       content: assistantText && assistantText.trim() ? assistantText : '（调用工具）',
       ...(result.toolCalls ? { tool_calls: result.toolCalls } : {}),
       reasoning_content: result.reasoningContent || null,
     });
+  }
 
-    let hasProductiveTool = false;
+  private shouldProcessToolCall(toolCall: AIToolCall): boolean {
+    const toolName = toolCall.function.name;
+    if (!this.allowedToolNames.has(toolName)) {
+      this.handleUnauthorizedTool(toolCall);
+      return false;
+    }
 
-    if (!result.toolCalls) return;
+    if (this.isToolLimitReached(toolName)) {
+      this.handleToolLimitReached(toolCall);
+      return false;
+    }
 
-    for (const toolCall of result.toolCalls) {
-      const toolName = toolCall.function.name;
+    return true;
+  }
 
-      // 1. 验证工具是否允许
-      if (!this.allowedToolNames.has(toolName)) {
-        this.handleUnauthorizedTool(toolCall);
-        continue;
-      }
+  private prepareToolCall(toolName: string): boolean {
+    this.updateToolCounters(toolName);
+    return PRODUCTIVE_TOOLS.includes(toolName);
+  }
 
-      // 2. 检查调用限制
-      if (this.isToolLimitReached(toolName)) {
-        this.handleToolLimitReached(toolCall);
-        continue;
-      }
+  private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<string> {
+    const { aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
+    }
 
-      // 3. 执行工具
-      this.updateToolCounters(toolName);
-      if (PRODUCTIVE_TOOLS.includes(toolName)) hasProductiveTool = true;
+    const start = Date.now();
+    const toolResult = await ToolRegistry.handleToolCall(
+      toolCall,
+      bookId,
+      handleAction,
+      onToast,
+      taskId,
+      undefined, // sessionId
+      this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
+      aiProcessingStore, // 传入 AI 处理 Store
+      this.config.aiModelId,
+    );
+    this.metrics.toolCallTime += Date.now() - start;
+    this.metrics.toolCallCount++;
 
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
-      }
-
-      const start = Date.now();
-      const toolResult = await ToolRegistry.handleToolCall(
-        toolCall,
-        bookId,
-        handleAction,
-        onToast,
+    const toolResultContent = toolResult.content;
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.appendThinkingMessage(
         taskId,
-        undefined, // sessionId
-        this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
+        `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
       );
-      this.metrics.toolCallTime += Date.now() - start;
-      this.metrics.toolCallCount++;
+    }
 
-      const toolResultContent = toolResult.content;
+    return toolResultContent;
+  }
 
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.appendThinkingMessage(
-          taskId,
-          `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
-        );
-      }
+  private async handleToolCallResult(
+    toolCall: AIToolCall,
+    toolName: string,
+    toolResultContent: string,
+    assistantText: string,
+  ): Promise<ChatMessage | undefined> {
+    const { history } = this.config;
 
-      // 4. 收集规划阶段信息，返回是否已处理
-      const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
+    this.captureToolCallResult(toolName, toolResultContent);
 
-      // 如果 collectPlanningInfo 已处理（例如简短规划模式下的警告），则跳过后续推送
-      if (alreadyHandled) {
-        continue;
-      }
+    const userMessage = this.applyPendingStatusUpdate(toolName, assistantText);
 
-      // 正常记录工具结果
-      history.push({
-        role: 'tool',
-        content: toolResultContent,
-        tool_call_id: toolCall.id,
-        name: toolName,
+    await this.handleBatchExtraction(toolName, toolCall, toolResultContent);
+
+    const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
+    if (alreadyHandled) {
+      return userMessage;
+    }
+
+    history.push({
+      role: 'tool',
+      content: toolResultContent,
+      tool_call_id: toolCall.id,
+      name: toolName,
+    });
+
+    return userMessage;
+  }
+
+  private applyPendingStatusUpdate(
+    toolName: string,
+    assistantText: string,
+  ): ChatMessage | undefined {
+    const { aiProcessingStore, taskId } = this.config;
+    if (toolName !== 'update_task_status' || !this.pendingStatusUpdate) {
+      return undefined;
+    }
+
+    const previousStatus = this.currentStatus;
+    const newStatus = this.pendingStatusUpdate;
+    this.pendingStatusUpdate = undefined;
+
+    if (!this.isValidTransition(previousStatus, newStatus)) {
+      this.handleInvalidTransition(previousStatus, newStatus, assistantText);
+      return undefined;
+    }
+
+    this.trackStatusDuration(previousStatus, newStatus);
+    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
+    this.currentStatus = newStatus;
+
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.updateTask(taskId, {
+        workflowStatus: newStatus,
       });
     }
 
-    if (hasProductiveTool) {
-      this.resetConsecutiveCounters();
+    const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
+    return { role: 'user', content: statusPrompt };
+  }
+
+  private async handleBatchExtraction(
+    toolName: string,
+    toolCall: AIToolCall,
+    toolResultContent: string,
+  ) {
+    if (toolName !== 'add_translation_batch') {
+      return;
+    }
+
+    const extracted = this.extractParagraphsFromBatchToolCall(toolCall, toolResultContent);
+    if (extracted.length === 0) {
+      return;
+    }
+
+    for (const para of extracted) {
+      this.accumulatedParagraphs.set(para.id, para.translation);
+    }
+
+    if (this.config.onParagraphsExtracted) {
+      try {
+        await this.config.onParagraphsExtracted(extracted);
+      } catch (error) {
+        console.error(
+          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
+          error,
+        );
+      }
+    }
+  }
+
+  private extractParagraphsFromBatchToolCall(
+    toolCall: AIToolCall,
+    toolResultContent: string,
+  ): Array<{ id: string; translation: string }> {
+    try {
+      const result = JSON.parse(toolResultContent);
+      if (!result?.success) {
+        return [];
+      }
+      const args = JSON.parse(toolCall.function.arguments || '{}') as {
+        paragraphs?: Array<{ index?: number; paragraph_id?: string; translated_text?: string }>;
+      };
+      if (!args.paragraphs || args.paragraphs.length === 0) return [];
+
+      const paragraphIds = this.config.paragraphIds || [];
+      const extracted: Array<{ id: string; translation: string }> = [];
+
+      for (const item of args.paragraphs) {
+        if (!item || typeof item.translated_text !== 'string') continue;
+        if (item.paragraph_id && typeof item.paragraph_id === 'string') {
+          extracted.push({ id: item.paragraph_id, translation: item.translated_text });
+          continue;
+        }
+        if (typeof item.index === 'number') {
+          const id = paragraphIds[item.index];
+          if (id) {
+            extracted.push({ id, translation: item.translated_text });
+          }
+        }
+      }
+
+      return extracted;
+    } catch {
+      return [];
     }
   }
 
@@ -527,6 +630,39 @@ class TaskLoopSession {
     this.toolCallCounts.set(toolName, current + 1);
   }
 
+  /**
+   * 捕获新工具调用的结果
+   * 用于替代 JSON 解析的工具调用方式
+   */
+  private captureToolCallResult(toolName: string, content: string): void {
+    try {
+      const result = JSON.parse(content);
+
+      if (toolName === 'update_task_status' && result.success) {
+        // 捕获状态更新
+        const newStatus = result.new_status as TaskStatus;
+        if (newStatus) {
+          this.pendingStatusUpdate = newStatus;
+        }
+      } else if (toolName === 'add_translation_batch' && result.success) {
+        // 捕获段落翻译
+        // 注意：实际的翻译数据已经在工具内部保存到数据库
+        // 这里我们只记录成功信息，不需要额外处理
+        // 但为了保持兼容性，我们触发回调
+        const processedCount = result.processed_count || 0;
+        console.log(`[${this.config.logLabel}] ✅ 批量翻译提交成功: ${processedCount} 个段落`);
+      } else if (toolName === 'update_chapter_title' && result.success) {
+        // 捕获标题翻译
+        const translatedTitle = result.translated_title as string;
+        if (translatedTitle) {
+          this.pendingTitleTranslation = translatedTitle;
+        }
+      }
+    } catch {
+      // JSON 解析失败，忽略
+    }
+  }
+
   private collectPlanningInfo(toolName: string, content: string, toolCall: AIToolCall): boolean {
     if (this.currentStatus !== 'planning') return false;
 
@@ -559,52 +695,6 @@ class TaskLoopSession {
     return false;
   }
 
-  private handleParseError(error: string, responseText: string) {
-    console.warn(`[${this.config.logLabel}] ⚠️ ${error}`);
-    this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: `${this.getCurrentStatusInfoMsg()}\n\n` + getParseErrorPrompt(error),
-    });
-  }
-
-  private hasStatusContentMismatch(parsed: ParsedResponse): boolean {
-    const hasContent =
-      !!parsed.content?.titleTranslation ||
-      (Array.isArray(parsed.content?.paragraphs) && parsed.content.paragraphs.length > 0);
-    const { taskType } = this.config;
-    return (
-      (taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading') &&
-      hasContent &&
-      parsed.status !== 'working'
-    );
-  }
-
-  private handleContentStateMismatch(status: string, responseText: string) {
-    this.consecutiveContentStateMismatchCount++;
-    if (this.consecutiveContentStateMismatchCount > MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH) {
-      throw new Error(
-        `AI 多次返回状态与内容不匹配，已超过最大重试次数（${MAX_CONSECUTIVE_CONTENT_STATE_MISMATCH}）。`,
-      );
-    }
-    this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: `${this.getCurrentStatusInfoMsg()}\n\n` + getContentStateMismatchPrompt(status),
-    });
-  }
-
-  private determineNewStatus(parsed: ParsedResponse): TaskStatus {
-    const { taskType } = this.config;
-    const hasContent =
-      !!parsed.content?.titleTranslation ||
-      (Array.isArray(parsed.content?.paragraphs) && parsed.content.paragraphs.length > 0);
-
-    return taskType !== 'translation' && parsed.status === 'planning' && hasContent
-      ? 'working'
-      : parsed.status;
-  }
-
   private isValidTransition(prev: TaskStatus, next: TaskStatus): boolean {
     if (prev === next) return true;
     const validTransitions = getValidTransitionsForTaskType(this.config.taskType);
@@ -618,13 +708,7 @@ class TaskLoopSession {
       `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(prev, taskType)} → ${getStatusLabel(next, taskType)}`,
     );
 
-    const prompt = getInvalidTransitionPrompt(taskType, prev, next);
-
     this.config.history.push({ role: 'assistant', content: responseText });
-    this.config.history.push({
-      role: 'user',
-      content: prompt,
-    });
   }
 
   private trackStatusDuration(prev: TaskStatus, next: TaskStatus) {
@@ -667,45 +751,6 @@ class TaskLoopSession {
         console.log(
           `[${this.config.logLabel}] ✅ 已提取规划摘要（${this.planningSummary.length} 字符）`,
         );
-      }
-    }
-  }
-
-  private async extractContent(parsed: ParsedResponse) {
-    const { onTitleExtracted, onParagraphsExtracted, logLabel } = this.config;
-
-    // 1. Title
-    if (parsed.content?.titleTranslation) {
-      if (this.titleTranslation !== parsed.content.titleTranslation) {
-        this.titleTranslation = parsed.content.titleTranslation;
-        if (onTitleExtracted) {
-          try {
-            await onTitleExtracted(this.titleTranslation);
-          } catch (error) {
-            console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-          }
-        }
-      }
-    }
-
-    // 2. Paragraphs
-    if (parsed.content?.paragraphs) {
-      const newParagraphs: { id: string; translation: string }[] = [];
-      for (const para of parsed.content.paragraphs) {
-        if (para.id && para.translation && para.translation.trim().length > 0) {
-          const prev = this.accumulatedParagraphs.get(para.id);
-          if (prev !== para.translation) {
-            this.accumulatedParagraphs.set(para.id, para.translation);
-            newParagraphs.push({ id: para.id, translation: para.translation });
-          }
-        }
-      }
-      if (newParagraphs.length > 0 && onParagraphsExtracted) {
-        try {
-          await onParagraphsExtracted(newParagraphs);
-        } catch (error) {
-          console.error(`[${logLabel}] ⚠️ onParagraphsExtracted 回调失败:`, error);
-        }
       }
     }
   }
@@ -846,6 +891,7 @@ class TaskLoopSession {
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
+      this.config.hasNextChunk,
     );
   }
 
@@ -896,22 +942,5 @@ class TaskLoopSession {
       planningContextUpdate,
       metrics: this.metrics,
     };
-  }
-}
-
-/**
- * @deprecated 状态检查在 executeToolCallLoop 中处理
- * 检查是否达到最大回合数限制（已废弃）
- * 保留此函数以保持向后兼容性
- */
-export function checkMaxTurnsReached(
-  finalResponseText: string | null,
-  maxTurns: number,
-  taskType: TaskType,
-): asserts finalResponseText is string {
-  if (!finalResponseText || finalResponseText.trim().length === 0) {
-    throw new Error(
-      `AI在工具调用后未返回${TASK_TYPE_LABELS[taskType]}结果（已达到最大回合数 ${maxTurns}）。请重试。`,
-    );
   }
 }

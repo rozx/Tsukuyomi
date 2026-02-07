@@ -477,13 +477,26 @@ export default defineConfig((ctx: any) => {
         // Icons should be placed in src-electron/icons/
         mac: {
           icon: 'src-electron/icons/icon.icns',
-          // 生成单文件可执行程序（.app bundle），在 Finder 中显示为单个文件
-          target: ['dir'],
+          // Generate DMG and Zip for better distribution
+          target: ['dmg', 'zip'],
+          // Required for Notarization
+          hardenedRuntime: true,
+          gatekeeperAssess: false,
+          entitlements: 'src-electron/entitlements.mac.plist',
+          entitlementsInherit: 'src-electron/entitlements.mac.plist',
+          // Ignore the fake chrome.app bundle in puppeteer-extra-plugin-stealth
+          signIgnore: ['chrome.app'],
         },
+        // We generally recommend using asar for performance and security,
+        // but since previous config EXPLICITLY disabled it, we will keep it disabled to avoid breaking other things.
+        // However, if asar was meant to be used, we would do:
+        // asar: true,
+        // asarUnpack: ['**/node_modules/puppeteer-core/**'],
+
         win: {
           icon: 'src-electron/icons/icon.ico',
-          // 生成单文件便携版（portable），创建一个独立的 .exe 文件
-          target: ['portable'],
+          // Generate NSIS installer and Portable executable
+          target: ['nsis', 'portable'],
           // 禁用代码签名以避免 Windows 符号链接权限问题
           forceCodeSigning: false, // This disables the automatic signing attempt
         },

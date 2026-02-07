@@ -39,17 +39,17 @@ jobs:
         run: |
           # Try to get branch name from associated PR
           BRANCH_NAME=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[0].head.ref' 2>/dev/null || echo "")
-          
+
           # If no PR found, try to extract from current ref (in case of direct push)
           if [ -z "$BRANCH_NAME" ] || [ "$BRANCH_NAME" == "null" ]; then
             BRANCH_NAME="${{ github.ref_name }}"
           fi
-          
+
           echo "Source branch: $BRANCH_NAME"
-          
+
           # Extract version from branch name (support patterns like: release/0.5.15, v0.5.15, 0.5.15-release, etc.)
           VERSION=$(echo "$BRANCH_NAME" | grep -oE '[v]?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
-          
+
           if [ -z "$VERSION" ]; then
             echo "No version found in branch name: $BRANCH_NAME"
             echo "version_found=false" >> $GITHUB_OUTPUT
@@ -69,10 +69,10 @@ jobs:
         run: |
           CURRENT_VERSION=$(jq -r .version package.json)
           EXPECTED_VERSION="${{ steps.extract_version.outputs.expected_version }}"
-          
+
           echo "Current version in package.json: $CURRENT_VERSION"
           echo "Expected version from branch: $EXPECTED_VERSION"
-          
+
           # Normalize versions to ensure they have 3 parts (major.minor.patch)
           normalize_version() {
             local ver=$1
@@ -91,18 +91,18 @@ jobs:
             fi
             echo "$ver"
           }
-          
+
           CURRENT_VERSION_NORM=$(normalize_version "$CURRENT_VERSION")
           EXPECTED_VERSION_NORM=$(normalize_version "$EXPECTED_VERSION")
-          
+
           if [ -z "$CURRENT_VERSION_NORM" ] || [ -z "$EXPECTED_VERSION_NORM" ]; then
             echo "❌ Failed to normalize versions"
             exit 1
           fi
-          
+
           echo "Normalized current version: $CURRENT_VERSION_NORM"
           echo "Normalized expected version: $EXPECTED_VERSION_NORM"
-          
+
           # Function to compare semantic versions
           # Returns: 0 if v1 == v2, 1 if v1 > v2, 2 if v1 < v2
           compare_versions() {
@@ -144,11 +144,11 @@ jobs:
             
             return 0
           }
-          
+
           # Compare versions using normalized versions
           compare_versions "$CURRENT_VERSION_NORM" "$EXPECTED_VERSION_NORM"
           COMPARE_RESULT=$?
-          
+
           if [ $COMPARE_RESULT -eq 0 ]; then
             # Versions are equal
             echo "✅ Version matches: $CURRENT_VERSION"
@@ -199,7 +199,7 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-          
+
           git add package.json src/constants/version.ts
           git commit -m "chore: bump version to ${{ steps.check_version.outputs.final_version }}" || exit 0
           git push origin HEAD:${{ github.ref_name }} || echo "No changes to commit or already up to date"
@@ -261,9 +261,9 @@ jobs:
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
           RELEASE_NOTES_FILE="docs/ReleaseNotes/RELEASE_NOTES_${VERSION}.md"
-          
+
           echo "Checking for release notes file: $RELEASE_NOTES_FILE"
-          
+
           if [ -f "$RELEASE_NOTES_FILE" ]; then
             echo "✅ Release notes file found: $RELEASE_NOTES_FILE"
             echo "has_release_notes=true" >> $GITHUB_OUTPUT
@@ -347,11 +347,11 @@ jobs:
         env:
           NODE_ENV: production
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          # macOS 代码签名配置（如果已配置证书）
-          # CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # macOS Signing & Notarization
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest'
@@ -370,95 +370,89 @@ jobs:
           NODE_ENV: production
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Package Mac App Bundle
-        if: matrix.os == 'macos-latest'
-        run: |
-          # 查找 .app bundle（可能在 mac-arm64、mac-x64 或 Packaged/mac-* 目录中）
-          echo "Searching for .app bundle in dist/electron..."
-          APP_PATH=$(find dist/electron -name "*.app" -type d | head -1)
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: No .app bundle found in dist/electron"
-            echo "Listing dist/electron structure for debugging:"
-            find dist/electron -type d -maxdepth 3 | head -20
-            exit 1
-          fi
-          
-          echo "Found .app bundle at: $APP_PATH"
-          APP_DIR=$(dirname "$APP_PATH")
-          APP_NAME=$(basename "$APP_PATH")
-          cd "$APP_DIR"
-          ZIP_NAME="${APP_NAME%.app}-mac.zip"
-          echo "Creating zip: $ZIP_NAME"
-          zip -r "$ZIP_NAME" "$APP_NAME"
-          echo "Zip file created at: $(pwd)/$ZIP_NAME"
-
-      - name: Find and prepare Mac zip for upload
+      - name: Prepare Mac Release Assets
         if: matrix.os == 'macos-latest'
         id: macos_prepare
         run: |
-          # Extract version (remove 'v' prefix for filename)
           VERSION="${{ needs.create-release.outputs.version }}"
           VERSION_NO_PREFIX="${VERSION#v}"
-          
-          # 查找创建的 zip 文件并移动到固定位置
-          ZIP_PATH=$(find dist/electron -name "*-mac.zip" -type f | head -1)
-          if [ -z "$ZIP_PATH" ]; then
-            echo "Error: No zip file found"
-            exit 1
+
+          mkdir -p dist/electron/upload
+
+          # Check for DMG
+          DMG_PATH=$(find dist/electron -name "*.dmg" -type f | head -1)
+          if [ ! -z "$DMG_PATH" ]; then
+            echo "Found DMG at: $DMG_PATH"
+            cp "$DMG_PATH" "dist/electron/upload/Tsukuyomi-${VERSION_NO_PREFIX}.dmg"
+            echo "has_dmg=true" >> $GITHUB_OUTPUT
           fi
-          echo "Found zip at: $ZIP_PATH"
-          # 确保 dist/electron 目录存在，并将 zip 复制到带版本号的名称
-          mkdir -p dist/electron
-          VERSIONED_FILENAME="luna-ai-translator-${VERSION_NO_PREFIX}-mac.zip"
-          cp "$ZIP_PATH" "dist/electron/${VERSIONED_FILENAME}"
-          echo "Zip file prepared at: dist/electron/${VERSIONED_FILENAME}"
-          echo "versioned_filename=${VERSIONED_FILENAME}" >> $GITHUB_OUTPUT
+
+          # Check for builder-produced ZIP
+          ZIP_PATH=$(find dist/electron -name "*.zip" -type f | head -1)
+          if [ ! -z "$ZIP_PATH" ]; then
+             echo "Found ZIP at: $ZIP_PATH"
+             cp "$ZIP_PATH" "dist/electron/upload/Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip"
+             echo "has_zip=true" >> $GITHUB_OUTPUT
+          else
+             # Failback to manual zip if no zip found but .app exists
+             echo "No ZIP found, looking for .app to zip..."
+             APP_PATH=$(find dist/electron -name "*.app" -type d | head -1)
+             if [ ! -z "$APP_PATH" ]; then
+               APP_NAME=$(basename "$APP_PATH")
+               cd "$(dirname "$APP_PATH")"
+               zip -r "Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip" "$APP_NAME"
+               mv "Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip" "$GITHUB_WORKSPACE/dist/electron/upload/"
+               echo "Manual zip created."
+               echo "has_zip=true" >> $GITHUB_OUTPUT
+               cd -
+             fi
+          fi
+
+          echo "upload_path=dist/electron/upload/*" >> $GITHUB_OUTPUT
 
       - name: Upload Release Assets (MacOS)
         if: matrix.os == 'macos-latest'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          # Mac 生成 .app bundle（单文件可执行程序），压缩为 .zip 以便分发
-          files: dist/electron/${{ steps.macos_prepare.outputs.versioned_filename }}
+          files: ${{ steps.macos_prepare.outputs.upload_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Find and prepare Windows exe for upload
+      - name: Prepare Windows Release Assets
         if: matrix.os == 'windows-latest'
         shell: pwsh
         id: windows_prepare
         run: |
-          # Extract version (remove 'v' prefix for filename)
           $version = "${{ needs.create-release.outputs.version }}"
           $versionNoPrefix = $version -replace '^v', ''
-          
-          # 查找 .exe 文件（可能在 Packaged 或其他目录中）
-          Write-Host "Searching for .exe file in dist/electron..."
-          $exePath = Get-ChildItem -Path dist/electron -Filter "*.exe" -Recurse -File | Select-Object -First 1
-          
-          if (-not $exePath) {
-            Write-Host "Error: No .exe file found in dist/electron"
-            Write-Host "Listing dist/electron structure for debugging:"
-            Get-ChildItem -Path dist/electron -Recurse -Directory | Select-Object -First 20 | ForEach-Object { Write-Host $_.FullName }
-            exit 1
+
+          New-Item -ItemType Directory -Force -Path dist/electron/upload
+
+          # Find all EXEs
+          $exes = Get-ChildItem -Path dist/electron -Filter "*.exe" -Recurse -File
+
+          foreach ($exe in $exes) {
+            $name = $exe.Name
+            # rename to include version if not present, and distinguish Installer vs Portable
+            if ($name -match "Setup") {
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}-Setup.exe" -Force
+            } elseif ($name -match "Portable") {
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}-Portable.exe" -Force
+            } else {
+               # Fallback generic name
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}.exe" -Force
+            }
           }
-          
-          Write-Host "Found .exe at: $($exePath.FullName)"
-          # 将 exe 复制到带版本号的名称
-          $versionedFilename = "luna-ai-translator-${versionNoPrefix}-windows.exe"
-          Copy-Item -Path $exePath.FullName -Destination "dist/electron/$versionedFilename" -Force
-          Write-Host "Exe file prepared at: dist/electron/$versionedFilename"
-          echo "versioned_filename=$versionedFilename" >> $env:GITHUB_OUTPUT
+
+          echo "upload_path=dist/electron/upload/*" >> $env:GITHUB_OUTPUT
 
       - name: Upload Release Assets (Windows)
         if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
-          # Windows 生成 portable .exe（单文件可执行程序）
-          files: dist/electron/${{ steps.windows_prepare.outputs.versioned_filename }}
+          files: ${{ steps.windows_prepare.outputs.upload_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
@@ -469,21 +463,21 @@ jobs:
           # Extract version (remove 'v' prefix for filename)
           VERSION="${{ needs.create-release.outputs.version }}"
           VERSION_NO_PREFIX="${VERSION#v}"
-          
+
           # 查找 .AppImage 文件（可能在 Packaged 或其他目录中）
           echo "Searching for .AppImage file in dist/electron..."
           APPIMAGE_PATH=$(find dist/electron -name "*.AppImage" -type f | head -1)
-          
+
           if [ -z "$APPIMAGE_PATH" ]; then
             echo "Error: No .AppImage file found in dist/electron"
             echo "Listing dist/electron structure for debugging:"
             find dist/electron -type d -maxdepth 3 | head -20
             exit 1
           fi
-          
+
           echo "Found .AppImage at: $APPIMAGE_PATH"
           # 将 AppImage 复制到带版本号的名称
-          VERSIONED_FILENAME="luna-ai-translator-${VERSION_NO_PREFIX}-linux.AppImage"
+          VERSIONED_FILENAME="Tsukuyomi-${VERSION_NO_PREFIX}-linux.AppImage"
           cp "$APPIMAGE_PATH" "dist/electron/${VERSIONED_FILENAME}"
           echo "AppImage file prepared at: dist/electron/${VERSIONED_FILENAME}"
           echo "versioned_filename=${VERSIONED_FILENAME}" >> $GITHUB_OUTPUT

@@ -2,6 +2,7 @@ import type { Terminology, CharacterSetting, Translation } from 'src/models/nove
 import type { Memory } from 'src/models/memory';
 import type { TodoItem } from 'src/services/todo-list-service';
 import type { AITool } from 'src/services/ai/types/ai-service';
+import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import type { ToastCallback } from './toast-helper';
 
 export interface ActionInfo {
@@ -25,13 +26,22 @@ export interface ActionInfo {
     | 'book'
     | 'memory'
     | 'todo'
-    | 'user';
+    | 'user'
+    | 'help_doc';
   data:
     | Terminology
     | CharacterSetting
     | TodoItem
     | { id: string; name?: string }
-    | { query?: string; url?: string; results?: unknown; title?: string; success?: boolean }
+    | {
+        query?: string;
+        url?: string;
+        results?: unknown;
+        title?: string;
+        success?: boolean;
+        name?: string;
+        tool_name?: string;
+      }
     | {
         paragraph_id: string;
         translation_id: string;
@@ -69,6 +79,13 @@ export interface ActionInfo {
         offset?: number;
         sort_by?: string;
         include_content?: boolean;
+        found_memory_ids?: string[];
+      }
+    | {
+        doc_id: string;
+        doc_title: string;
+        section_id?: string;
+        tool_name?: string;
       }
     | {
         tool_name: 'ask_user';
@@ -118,6 +135,8 @@ export interface ActionInfo {
 export interface ChunkBoundaries {
   /** 当前块允许访问的段落 ID 集合（用于 O(1) 边界检查） */
   allowedParagraphIds: Set<string>;
+  /** 当前块的段落 ID 数组（按顺序，用于索引映射） */
+  paragraphIds: string[];
   /** 当前块的第一个段落 ID（用于错误提示） */
   firstParagraphId: string;
   /** 当前块的最后一个段落 ID（用于错误提示） */
@@ -128,6 +147,7 @@ export interface ToolContext {
   bookId?: string; // 某些工具（如网络搜索）不需要 bookId
   taskId?: string; // AI 任务 ID，由服务层自动提供，用于关联待办事项等
   sessionId?: string; // 聊天会话 ID，由服务层自动提供，用于关联助手聊天的待办事项
+  aiModelId?: string; // AI 模型 ID（用于写入翻译来源）
   onAction?: (action: ActionInfo) => void;
   onToast?: ToastCallback; // Toast 回调函数，用于在工具中直接显示 toast
   /**
@@ -136,12 +156,27 @@ export interface ToolContext {
    * 如果未提供，工具可以访问所有段落（如 AI 助手聊天场景）
    */
   chunkBoundaries?: ChunkBoundaries;
+  /**
+   * AI 处理 Store（可选）
+   * 用于任务状态工具访问和更新任务状态
+   */
+  aiProcessingStore?: AIProcessingStore;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ToolHandler = (args: any, context: ToolContext) => Promise<string> | string;
+export type ToolHandler = (
+  args: Record<string, unknown>,
+  context: ToolContext,
+) => Promise<string> | string;
 
 export interface ToolDefinition {
   definition: AITool;
   handler: ToolHandler;
+}
+
+/**
+ * 类型辅助函数：安全地将 Record<string, unknown> 转换为具体类型
+ * 用于工具 handler 中提取参数
+ */
+export function parseToolArgs<T>(args: Record<string, unknown>): T {
+  return args as unknown as T;
 }

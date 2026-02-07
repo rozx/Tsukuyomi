@@ -27,7 +27,7 @@ export function useChapterTranslation(
     },
   ) => void,
   countUniqueActions: (actions: ActionInfo[]) => { terms: number; characters: number },
-  saveState: (description?: string) => void,
+  _saveState: (description?: string) => void,
 ) {
   const toast = useToastWithHistory();
   const booksStore = useBooksStore();
@@ -39,11 +39,16 @@ export function useChapterTranslation(
    * 注意：翻译文本会原样保存，不进行任何处理（包括缩进处理）
    * 缩进过滤会在显示和导出时应用
    */
-  const createParagraphTranslation = (translation: string, aiModelId: string) => {
+  const createParagraphTranslation = (
+    translation: string,
+    aiModelId: string,
+    referencedMemories?: string[],
+  ) => {
     return {
       id: generateShortId(),
       translation: translation,
       aiModelId,
+      ...(referencedMemories ? { referencedMemories } : {}),
     };
   };
 
@@ -51,16 +56,22 @@ export function useChapterTranslation(
    * 更新段落翻译的通用辅助函数（立即更新 UI，然后保存）
    */
   const updateParagraphsFromResults = async (
-    paragraphResults: { id: string; translation: string }[],
+    paragraphResults: { id: string; translation: string; referencedMemories?: string[] }[],
     aiModelId: string,
     targetChapterId: string,
   ): Promise<void> => {
     if (!book.value || paragraphResults.length === 0) return;
 
-    const paragraphUpdates = new Map<string, string>();
+    const paragraphUpdates = new Map<
+      string,
+      { translation: string; referencedMemories?: string[] }
+    >();
     for (const pt of paragraphResults) {
       if (pt?.id && typeof pt.translation === 'string') {
-        paragraphUpdates.set(pt.id, pt.translation);
+        paragraphUpdates.set(pt.id, {
+          translation: pt.translation,
+          ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
+        });
       }
     }
 
@@ -78,7 +89,7 @@ export function useChapterTranslation(
    * @returns 如果 skipSave=true，返回需要保存的章节对象；否则返回 undefined
    */
   const updateParagraphsAndSave = async (
-    paragraphUpdates: Map<string, string>,
+    paragraphUpdates: Map<string, { translation: string; referencedMemories?: string[] }>,
     aiModelId: string,
     targetChapterId: string,
     options?: { updateSelected?: boolean; skipSave?: boolean },
@@ -120,10 +131,14 @@ export function useChapterTranslation(
       loadedChapter,
       (content) =>
         content.map((para) => {
-          const translation = paragraphUpdates.get(para.id);
-          if (!translation) return para;
+          const update = paragraphUpdates.get(para.id);
+          if (!update) return para;
 
-          const newTranslation = createParagraphTranslation(translation, aiModelId);
+          const newTranslation = createParagraphTranslation(
+            update.translation,
+            aiModelId,
+            update.referencedMemories,
+          );
           const updatedTranslations = ChapterService.addParagraphTranslation(
             para.translations || [],
             newTranslation,
@@ -311,7 +326,7 @@ export function useChapterTranslation(
    * @returns 更新后的段落数量
    */
   const updateParagraphsIncrementally = async (
-    paragraphTranslations: { id: string; translation: string }[],
+    paragraphTranslations: { id: string; translation: string; referencedMemories?: string[] }[],
     aiModelId: string,
     targetChapterId: string,
     lastAppliedTranslations: Map<string, string>,
@@ -320,16 +335,23 @@ export function useChapterTranslation(
 
     // 关键：不能仅用 “段落ID是否出现过” 去重，否则 AI 在 review → working 的纠错/改写会被过滤掉
     // 我们只跳过“完全相同的翻译文本”，允许 last-write-wins 的覆盖更新
+    // 注意：这里selectChangedParagraphTranslations可能需要更新类型定义，但如果只比较translation文本，暂时兼容
     const newTranslations = selectChangedParagraphTranslations(
-      paragraphTranslations,
+      paragraphTranslations as { id: string; translation: string }[],
       lastAppliedTranslations,
-    );
+    ) as { id: string; translation: string; referencedMemories?: string[] }[];
 
     if (newTranslations.length === 0) return 0;
 
-    const translationMap = new Map<string, string>();
+    const translationMap = new Map<
+      string,
+      { translation: string; referencedMemories?: string[] }
+    >();
     newTranslations.forEach((pt) => {
-      translationMap.set(pt.id, pt.translation);
+      translationMap.set(pt.id, {
+        translation: pt.translation,
+        ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
+      });
     });
 
     await updateParagraphsAndSave(translationMap, aiModelId, targetChapterId, {
@@ -415,9 +437,6 @@ export function useChapterTranslation(
   const translatingParagraphIds = computed<Set<string>>(
     () => currentChapterState.value?.translation.translatingParagraphIds ?? new Set<string>(),
   );
-  const translationAbortController = computed(
-    () => currentChapterState.value?.translation.abortController ?? null,
-  );
 
   const isPolishingChapter = computed(() => currentChapterState.value?.polish.isPolishing ?? false);
   const polishProgress = computed(
@@ -425,9 +444,6 @@ export function useChapterTranslation(
   );
   const polishingParagraphIds = computed<Set<string>>(
     () => currentChapterState.value?.polish.polishingParagraphIds ?? new Set<string>(),
-  );
-  const polishAbortController = computed(
-    () => currentChapterState.value?.polish.abortController ?? null,
   );
 
   const isProofreadingChapter = computed(
@@ -438,9 +454,6 @@ export function useChapterTranslation(
   );
   const proofreadingParagraphIds = computed<Set<string>>(
     () => currentChapterState.value?.proofreading.proofreadingParagraphIds ?? new Set<string>(),
-  );
-  const proofreadingAbortController = computed(
-    () => currentChapterState.value?.proofreading.abortController ?? null,
   );
 
   // 辅助函数：获取或创建章节状态
@@ -558,8 +571,8 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphPolish: async (paragraphPolishes) => {
-          await updateParagraphsFromResults(paragraphPolishes, selectedModel.id, targetChapterId);
+        onParagraphPolish: (paragraphPolishes) => {
+          void updateParagraphsFromResults(paragraphPolishes, selectedModel.id, targetChapterId);
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -660,8 +673,8 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphProofreading: async (paragraphProofreadings) => {
-          await updateParagraphsFromResults(
+        onParagraphProofreading: (paragraphProofreadings) => {
+          void updateParagraphsFromResults(
             paragraphProofreadings,
             selectedModel.id,
             targetChapterId,
@@ -754,20 +767,21 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onTitleTranslation: async (translation) => {
+        onTitleTranslation: (translation) => {
           // 立即更新标题翻译（不等待整个翻译完成）
-          await updateTitleTranslation(translation, selectedModel.id, targetChapterId);
+          void updateTitleTranslation(translation, selectedModel.id, targetChapterId);
         },
-        onParagraphTranslation: async (paragraphTranslations) => {
+        onParagraphTranslation: (paragraphTranslations) => {
           // 使用共享函数更新段落翻译
-          await updateParagraphsFromResults(
+          void updateParagraphsFromResults(
             paragraphTranslations,
             selectedModel.id,
             targetChapterId,
-          );
-          // 从正在翻译的集合中移除已完成的段落 ID
-          paragraphTranslations.forEach((pt) => {
-            state.translatingParagraphIds.delete(pt.id);
+          ).then(() => {
+            // 从正在翻译的集合中移除已完成的段落 ID
+            paragraphTranslations.forEach((pt) => {
+              state.translatingParagraphIds.delete(pt.id);
+            });
           });
         },
         onAction: (action) => {
@@ -819,10 +833,14 @@ export function useChapterTranslation(
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
 
+    const paragraphs = selectedChapterParagraphs.value;
+    const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para));
+    const targetParagraphIds = new Set(nonEmptyParagraphs.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化翻译...',
     };
 
@@ -832,6 +850,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     // 用于批量保存：收集最后一个更新后的章节对象
     let latestChapterForBatchSave: Chapter | undefined;
@@ -839,7 +858,7 @@ export function useChapterTranslation(
     let translationFailed = false;
 
     try {
-      const paragraphs = selectedChapterParagraphs.value;
+      const paragraphs = nonEmptyParagraphs;
 
       // 获取章节标题
       const chapterTitle =
@@ -869,8 +888,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
@@ -890,7 +909,15 @@ export function useChapterTranslation(
           // 性能优化：使用 skipSave 模式，只更新内存，不立即保存到 IndexedDB
           // 这样可以避免每个 chunk 都触发一次完整的保存流程
           const chapterToSave = await updateParagraphsAndSave(
-            new Map(translations.map((t) => [t.id, t.translation])),
+            new Map(
+              translations.map((t) => [
+                t.id,
+                {
+                  translation: t.translation,
+                  ...(t.referencedMemories ? { referencedMemories: t.referencedMemories } : {}),
+                },
+              ]),
+            ),
             selectedModel.id,
             targetChapterId,
             {
@@ -907,7 +934,16 @@ export function useChapterTranslation(
           // 记录已应用的翻译
           for (const pt of translations) {
             lastAppliedTranslations.set(pt.id, pt.translation);
+            if (targetParagraphIds.has(pt.id)) {
+              completedParagraphIds.add(pt.id);
+            }
           }
+
+          state.progress = {
+            current: completedParagraphIds.size,
+            total: targetParagraphIds.size,
+            message: state.progress.message,
+          };
 
           // 从正在翻译的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
@@ -1032,19 +1068,22 @@ export function useChapterTranslation(
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(untranslatedParagraphs.map((para) => para.id));
+
+    // 用于跟踪已更新的段落，避免重复更新
+    const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化翻译...',
     };
 
     // 创建 AbortController 用于取消翻译
     const abortController = new AbortController();
     state.abortController = abortController;
-
-    // 用于跟踪已更新的段落，避免重复更新
-    const lastAppliedTranslations = new Map<string, string>();
 
     try {
       // 获取章节标题
@@ -1056,7 +1095,7 @@ export function useChapterTranslation(
       const chunkSize = book.value?.translationChunkSize;
 
       // 调用翻译服务，只翻译未翻译的段落
-      const result = await TranslationService.translate(untranslatedParagraphs, selectedModel, {
+      await TranslationService.translate(untranslatedParagraphs, selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
         ...(chapterTitle ? { chapterTitle } : {}),
@@ -1075,8 +1114,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在翻译的段落 ID
@@ -1085,17 +1124,29 @@ export function useChapterTranslation(
           }
           console.debug('翻译进度:', progress);
         },
-        onParagraphTranslation: async (translations) => {
-          await updateParagraphsIncrementally(
+        onParagraphTranslation: (translations) => {
+          void updateParagraphsIncrementally(
             translations,
             selectedModel.id,
             targetChapterId,
             lastAppliedTranslations,
-          );
+          ).then(() => {
+            for (const pt of translations) {
+              if (targetParagraphIds.has(pt.id)) {
+                completedParagraphIds.add(pt.id);
+              }
+            }
+
+            state.progress = {
+              current: completedParagraphIds.size,
+              total: targetParagraphIds.size,
+              message: state.progress.message,
+            };
+          });
         },
-        onTitleTranslation: async (translation) => {
+        onTitleTranslation: (translation) => {
           // 立即更新标题翻译（不等待整个翻译完成）
-          await updateTitleTranslation(translation, selectedModel.id, targetChapterId);
+          void updateTitleTranslation(translation, selectedModel.id, targetChapterId);
         },
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
@@ -1179,10 +1230,12 @@ export function useChapterTranslation(
     state.isPolishing = true;
     state.polishingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化润色...',
     };
 
@@ -1192,6 +1245,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     try {
       // 获取书籍的 chunk size 设置
@@ -1215,8 +1269,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在润色的段落 ID
@@ -1231,17 +1285,30 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphPolish: async (translations) => {
+        onParagraphPolish: (translations) => {
           // 立即更新段落润色
-          await updateParagraphsIncrementally(
+          void updateParagraphsIncrementally(
             translations,
             selectedModel.id,
             targetChapterId,
             lastAppliedTranslations,
-          );
-          // 从正在润色的集合中移除已完成的段落 ID
-          translations.forEach((pt) => {
-            state.polishingParagraphIds.delete(pt.id);
+          ).then(() => {
+            for (const pt of translations) {
+              if (targetParagraphIds.has(pt.id)) {
+                completedParagraphIds.add(pt.id);
+              }
+            }
+
+            state.progress = {
+              current: completedParagraphIds.size,
+              total: targetParagraphIds.size,
+              message: state.progress.message,
+            };
+
+            // 从正在润色的集合中移除已完成的段落 ID
+            translations.forEach((pt) => {
+              state.polishingParagraphIds.delete(pt.id);
+            });
           });
         },
       });
@@ -1289,8 +1356,8 @@ export function useChapterTranslation(
   };
 
   // 取消翻译
-  const cancelTranslation = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelTranslation = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterTranslationStates.value.get(chapterId);
@@ -1326,8 +1393,8 @@ export function useChapterTranslation(
   };
 
   // 取消润色
-  const cancelPolish = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelPolish = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterPolishStates.value.get(chapterId);
@@ -1405,10 +1472,12 @@ export function useChapterTranslation(
     state.isProofreading = true;
     state.proofreadingParagraphIds.clear();
 
+    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
+
     // 初始化进度
     state.progress = {
       current: 0,
-      total: 0,
+      total: targetParagraphIds.size,
       message: '正在初始化校对...',
     };
 
@@ -1418,6 +1487,7 @@ export function useChapterTranslation(
 
     // 用于跟踪已更新的段落，避免重复更新
     const lastAppliedTranslations = new Map<string, string>();
+    const completedParagraphIds = new Set<string>();
 
     try {
       // 获取书籍的 chunk size 设置
@@ -1441,8 +1511,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: progress.current,
-            total: progress.total,
+            current: state.progress.current,
+            total: state.progress.total,
             message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在校对的段落 ID
@@ -1457,17 +1527,30 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphProofreading: async (translations) => {
+        onParagraphProofreading: (translations) => {
           // 立即更新段落校对
-          await updateParagraphsIncrementally(
+          void updateParagraphsIncrementally(
             translations,
             selectedModel.id,
             targetChapterId,
             lastAppliedTranslations,
-          );
-          // 从正在校对的集合中移除已完成的段落 ID
-          translations.forEach((pt) => {
-            state.proofreadingParagraphIds.delete(pt.id);
+          ).then(() => {
+            for (const pt of translations) {
+              if (targetParagraphIds.has(pt.id)) {
+                completedParagraphIds.add(pt.id);
+              }
+            }
+
+            state.progress = {
+              current: completedParagraphIds.size,
+              total: targetParagraphIds.size,
+              message: state.progress.message,
+            };
+
+            // 从正在校对的集合中移除已完成的段落 ID
+            translations.forEach((pt) => {
+              state.proofreadingParagraphIds.delete(pt.id);
+            });
           });
         },
       });
@@ -1515,8 +1598,8 @@ export function useChapterTranslation(
   };
 
   // 取消校对
-  const cancelProofreading = () => {
-    const chapterId = selectedChapter.value?.id;
+  const cancelProofreading = (targetChapterId?: string) => {
+    const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
     const state = chapterProofreadingStates.value.get(chapterId);

@@ -7,18 +7,10 @@
  * 使用 fake-indexeddb 提供完整的 IndexedDB 实现
  */
 
-// 导入 fake-indexeddb，它会自动在全局范围内提供 indexedDB
-// 这必须在 idb 库导入之前执行
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - fake-indexeddb/auto 的类型定义可能不完整，但运行时可用
-// import 'fake-indexeddb/auto';
-import { indexedDB, IDBKeyRange, IDBRequest } from 'fake-indexeddb';
-
-// 确保 indexedDB 在全局范围内可用（针对某些环境）
-if (typeof globalThis.indexedDB === 'undefined') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).indexedDB = indexedDB;
-}
+import { beforeEach } from 'bun:test';
+import 'fake-indexeddb/auto';
+import { IDBKeyRange, IDBRequest } from 'fake-indexeddb';
+import { resetDbForTests } from 'src/utils/indexed-db';
 
 if (typeof globalThis.IDBKeyRange === 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,6 +22,10 @@ if (typeof (globalThis as any).IDBRequest === 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).IDBRequest = IDBRequest;
 }
+
+beforeEach(async () => {
+  await resetDbForTests();
+});
 
 // Polyfill for localStorage
 if (typeof globalThis.localStorage === 'undefined') {

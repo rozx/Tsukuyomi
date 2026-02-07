@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyAutoAddMapping: true,
   proxyList: DEFAULT_PROXY_LIST,
   proxySiteMapping: DEFAULT_PROXY_SITE_MAPPING,
+  booksSortOption: 'default',
 };
 
 /**
@@ -193,6 +194,9 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
         ? { proxyList: cloneDeep(rawSettings.proxyList) }
         : {}),
       ...(rawSettings.tavilyApiKey !== undefined ? { tavilyApiKey: rawSettings.tavilyApiKey } : {}),
+      ...(rawSettings.booksSortOption !== undefined
+        ? { booksSortOption: rawSettings.booksSortOption }
+        : {}),
     };
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
@@ -421,6 +425,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 获取书籍排序选项
+     */
+    booksSortOption: (state): string => {
+      return state.settings.booksSortOption ?? 'default';
+    },
+
+    /**
      * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
      */
     gistSync: (state): SyncConfig => {
@@ -596,6 +607,13 @@ export const useSettingsStore = defineStore('settings', {
      */
     async setLastOpenedSettingsTab(tabIndex: number): Promise<void> {
       await this.updateSettings({ lastOpenedSettingsTab: tabIndex });
+    },
+
+    /**
+     * 设置书籍排序选项
+     */
+    async setBooksSortOption(sortOption: string): Promise<void> {
+      await this.updateSettings({ booksSortOption: sortOption });
     },
 
     /**

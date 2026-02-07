@@ -33,6 +33,7 @@ const props = defineProps<{
   selectedChapterParagraphs: Paragraph[];
   usedTermCount: number;
   usedCharacterCount: number;
+  usedMemoryCount: number;
   translationStatus: TranslationStatus;
   translationButtonLabel: string;
   translationButtonMenuItems: MenuItem[];
@@ -50,6 +51,7 @@ const emit = defineEmits<{
   (e: 'toggleExport', event: Event): void;
   (e: 'toggleTermPopover', event: Event): void;
   (e: 'toggleCharacterPopover', event: Event): void;
+  (e: 'toggleMemoryPopover', event: Event): void;
   (e: 'translationButtonClick'): void;
   (e: 'toggleSearch'): void;
   (e: 'toggleKeyboardShortcuts', event: Event): void;
@@ -67,6 +69,10 @@ const handleToggleTermPopover = (event: Event) => {
 
 const handleToggleCharacterPopover = (event: Event) => {
   emit('toggleCharacterPopover', event);
+};
+
+const handleToggleMemoryPopover = (event: Event) => {
+  emit('toggleMemoryPopover', event);
 };
 
 const handleToggleKeyboardShortcuts = (event: Event) => {
@@ -203,6 +209,25 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           <Badge
             v-if="usedCharacterCount > 0"
             :value="usedCharacterCount > 99 ? '99+' : usedCharacterCount"
+            severity="info"
+            class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
+          />
+        </div>
+
+        <!-- 记忆引用统计 -->
+        <div class="relative inline-flex">
+          <Button
+            icon="pi pi-lightbulb"
+            rounded
+            text
+            size="small"
+            class="!w-8 !h-8 text-moon/70 hover:text-moon"
+            :title="`本章共参考了 ${usedMemoryCount} 条记忆`"
+            @click="handleToggleMemoryPopover"
+          />
+          <Badge
+            v-if="usedMemoryCount > 0"
+            :value="usedMemoryCount > 99 ? '99+' : usedMemoryCount"
             severity="info"
             class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
           />

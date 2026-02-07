@@ -5,6 +5,7 @@ import TieredMenu from 'primevue/tieredmenu';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import ProgressSpinner from 'primevue/progressspinner';
+import Popover from 'primevue/popover';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
@@ -48,6 +49,10 @@ import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
 import VolumesList from 'src/components/novel/VolumesList.vue';
 import TermPopover from 'src/components/novel/TermPopover.vue';
 import CharacterPopover from 'src/components/novel/CharacterPopover.vue';
+import MemoryReferencePanel, {
+  type MemoryReference,
+} from 'src/components/novel/MemoryReferencePanel.vue';
+import MemoryDetailDialog from 'src/components/novel/MemoryDetailDialog.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
 import ChapterSettingsPopover from 'src/components/novel/ChapterSettingsPopover.vue';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
@@ -66,6 +71,8 @@ import { useChapterTranslation } from 'src/composables/book-details/useChapterTr
 import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { MemoryService } from 'src/services/memory-service';
+import type { Memory, MemoryAttachmentType } from 'src/models/memory';
 
 const route = useRoute();
 const router = useRouter();
@@ -773,10 +780,9 @@ watch(
         currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
         currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
 
-      if (!hasMetadataChanged) {
-        // 元数据没有变化，不需要更新
-        return;
-      }
+      // 判断是否需要同步内容更新（当内容已加载且用户未编辑时）
+      const hasContentUpdate =
+        Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
 
       // 判断是否应该更新元数据
       // 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
@@ -798,15 +804,24 @@ watch(
       // 2. 更新来自外部操作（如同步、在线获取更新），此时即使正在编辑也允许更新元数据
       const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
 
-      if (shouldUpdateMetadata) {
-        // 更新元数据，但保留现有的 content（如果已加载）
+      const shouldUpdateContent = hasContentUpdate && !isUserEditing;
+
+      if (!hasMetadataChanged && !shouldUpdateContent) {
+        // 元数据和内容都没有需要同步的变化
+        return;
+      }
+
+      if (shouldUpdateMetadata || shouldUpdateContent) {
         selectedChapterWithContent.value = {
           ...currentChapter,
-          ...updatedChapter,
-          // 保留现有的 content，因为 content 的更新由专门的函数处理
-          content: currentChapter.content ?? updatedChapter.content,
-          // 保留 contentLoaded 状态，因为如果当前已加载，应该保持已加载状态
-          contentLoaded: currentChapter.contentLoaded ?? updatedChapter.contentLoaded,
+          ...(shouldUpdateMetadata ? updatedChapter : {}),
+          content: shouldUpdateContent
+            ? updatedChapter.content
+            : (currentChapter.content ?? updatedChapter.content),
+          contentLoaded: shouldUpdateContent
+            ? true
+            : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
+          lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
         };
       }
       // 注意：如果用户正在编辑且不是外部更新，不更新元数据，避免覆盖本地编辑
@@ -1215,6 +1230,177 @@ const usedCharacters = computed(() => {
 });
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
+
+// 计算当前章节参考的记忆数量（去重）
+const usedMemoryCount = computed(() => {
+  if (!selectedChapterParagraphs.value.length) {
+    return 0;
+  }
+
+  const memoryIds = new Set<string>();
+  for (const paragraph of selectedChapterParagraphs.value) {
+    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
+      continue;
+    }
+
+    const selectedTranslation = paragraph.translations.find(
+      (translation) => translation.id === paragraph.selectedTranslationId,
+    );
+    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
+      if (memoryId) {
+        memoryIds.add(memoryId);
+      }
+    });
+  }
+
+  return memoryIds.size;
+});
+
+// 记忆引用弹出框状态
+const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
+const isMemoryPopoverOpen = ref(false);
+const usedMemoryReferences = ref<MemoryReference[]>([]);
+const isLoadingMemoryReferences = ref(false);
+const showMemoryDetailDialog = ref(false);
+const detailMemory = ref<Memory | null>(null);
+
+const referencedMemoryIds = computed(() => {
+  if (!selectedChapterParagraphs.value.length) {
+    return [];
+  }
+
+  const memoryIds = new Set<string>();
+  for (const paragraph of selectedChapterParagraphs.value) {
+    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
+      continue;
+    }
+
+    const selectedTranslation = paragraph.translations.find(
+      (translation) => translation.id === paragraph.selectedTranslationId,
+    );
+    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
+      if (memoryId) {
+        memoryIds.add(memoryId);
+      }
+    });
+  }
+
+  return Array.from(memoryIds);
+});
+
+const refreshReferencedMemories = async () => {
+  const ids = referencedMemoryIds.value;
+  if (!ids.length || !bookId.value) {
+    usedMemoryReferences.value = [];
+    return;
+  }
+
+  isLoadingMemoryReferences.value = true;
+  try {
+    const memoryPromises = ids.map((id) => MemoryService.getMemory(bookId.value, id));
+    const memories = await Promise.all(memoryPromises);
+    usedMemoryReferences.value = memories
+      .filter((m): m is Memory => !!m)
+      .map((m) => ({
+        memoryId: m.id,
+        summary: m.summary,
+        accessedAt: m.lastAccessedAt,
+        toolName: 'get_memory',
+      }));
+  } catch (error) {
+    console.warn('Failed to fetch referenced memories:', error);
+  } finally {
+    isLoadingMemoryReferences.value = false;
+  }
+};
+
+watch(
+  referencedMemoryIds,
+  () => {
+    if (isMemoryPopoverOpen.value) {
+      refreshReferencedMemories();
+    }
+  },
+  { immediate: true },
+);
+
+const handleToggleMemoryPopover = (event: Event) => {
+  memoryPopover.value?.toggle(event);
+};
+
+const handleMemoryPopoverShow = () => {
+  isMemoryPopoverOpen.value = true;
+  void refreshReferencedMemories();
+};
+
+const handleMemoryPopoverHide = () => {
+  isMemoryPopoverOpen.value = false;
+};
+
+const closeMemoryPopover = () => {
+  memoryPopover.value?.hide();
+};
+
+const handleViewMemory = async (memoryId: string) => {
+  if (!bookId.value) return;
+  try {
+    const memory = await MemoryService.getMemory(bookId.value, memoryId);
+    if (memory) {
+      detailMemory.value = memory;
+      showMemoryDetailDialog.value = true;
+    }
+  } catch (error) {
+    console.error('Failed to load memory detail:', error);
+  }
+};
+
+const handleMemorySave = async (memoryId: string, summary: string, content: string) => {
+  if (!bookId.value) return;
+  try {
+    await MemoryService.updateMemory(bookId.value, memoryId, content, summary);
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to save memory:', error);
+  }
+};
+
+const handleMemoryDelete = async (memory: Memory) => {
+  if (!bookId.value) return;
+  try {
+    await MemoryService.deleteMemory(bookId.value, memory.id);
+    showMemoryDetailDialog.value = false;
+    await refreshReferencedMemories();
+  } catch (error) {
+    console.error('Failed to delete memory:', error);
+  }
+};
+
+const handleMemoryNavigate = (type: MemoryAttachmentType, id: string) => {
+  if (type === 'term') {
+    closeMemoryPopover();
+    navigateToTermsSetting();
+    return;
+  }
+  if (type === 'character') {
+    closeMemoryPopover();
+    navigateToCharactersSetting();
+    return;
+  }
+  if (type === 'chapter') {
+    const chapter = book.value?.volumes
+      ?.flatMap((volume) => volume.chapters || [])
+      .find((item) => item.id === id);
+    if (chapter) {
+      closeMemoryPopover();
+      navigateToChapterInternal(chapter);
+    }
+    return;
+  }
+  if (type === 'book') {
+    closeMemoryPopover();
+    navigateToMemorySetting();
+  }
+};
 
 const toggleCharacterPopover = (event: Event) => {
   characterPopover.value?.toggle(event);
@@ -1972,6 +2158,25 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @create="openCreateCharacterDialog"
       />
 
+      <!-- 记忆引用 Popover -->
+      <Popover
+        ref="memoryPopover"
+        :dismissable="true"
+        :show-close-icon="false"
+        style="width: 24rem; max-width: 90vw"
+        class="memory-reference-popover"
+        @show="handleMemoryPopoverShow"
+        @hide="handleMemoryPopoverHide"
+      >
+        <MemoryReferencePanel
+          :references="usedMemoryReferences"
+          :book-id="bookId"
+          :loading="isLoadingMemoryReferences"
+          :always-expanded="true"
+          @view-memory="handleViewMemory"
+        />
+      </Popover>
+
       <!-- 键盘快捷键 Popover -->
       <KeyboardShortcutsPopover ref="keyboardShortcutsPopover" />
 
@@ -1981,6 +2186,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :book="book || null"
         :chapter="selectedChapter || null"
         @save="handleSaveChapterSettings"
+      />
+
+      <!-- 记忆详情对话框 -->
+      <MemoryDetailDialog
+        v-if="bookId"
+        :visible="showMemoryDetailDialog"
+        :memory="detailMemory"
+        :book-id="bookId"
+        @update:visible="(val) => (showMemoryDetailDialog = val)"
+        @save="handleMemorySave"
+        @delete="handleMemoryDelete"
+        @navigate="handleMemoryNavigate"
       />
 
       <!-- 编辑术语对话框 -->
@@ -2032,6 +2249,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :selected-chapter-paragraphs="selectedChapterParagraphs"
           :used-term-count="usedTermCount"
           :used-character-count="usedCharacterCount"
+          :used-memory-count="usedMemoryCount"
           :translation-status="translationStatus"
           :translation-button-label="translationButtonLabel"
           :translation-button-menu-items="translationButtonMenuItems"
@@ -2052,6 +2270,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           @toggle-export="(event: Event) => toggleExportMenu(event)"
           @toggle-term-popover="(event: Event) => toggleTermPopover(event)"
           @toggle-character-popover="(event: Event) => toggleCharacterPopover(event)"
+          @toggle-memory-popover="(event: Event) => handleToggleMemoryPopover(event)"
           @translation-button-click="translationButtonClick"
           @toggle-search="toggleSearch"
           @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
@@ -2184,11 +2403,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                           : translationProgress
                     "
                     @cancel="
-                      isProofreadingChapter
-                        ? cancelProofreading()
-                        : isPolishingChapter
-                          ? cancelPolish()
-                          : cancelTranslation()
+                      (taskType: string, chapterId?: string) => {
+                        if (taskType === 'proofreading') cancelProofreading(chapterId);
+                        else if (taskType === 'polish') cancelPolish(chapterId);
+                        else cancelTranslation(chapterId);
+                      }
                     "
                   />
                 </div>
@@ -2219,9 +2438,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 /* 左侧边栏 */
 .book-sidebar {
-  width: 20rem;
-  min-width: 20rem;
-  max-width: 20rem;
+  width: 18rem;
+  min-width: 18rem;
+  max-width: 18rem;
   border-right: 1px solid var(--white-opacity-10);
   background: var(--white-opacity-3);
   overflow-y: auto;
@@ -2229,7 +2448,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .sidebar-content {
-  padding: 1rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -2237,18 +2456,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .book-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .book-header-content {
   display: flex;
-  gap: 0.75rem;
-  align-items: stretch;
-  margin-bottom: 0.75rem;
-  padding: 0.75rem;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
@@ -2263,8 +2482,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .book-edit-icon {
   position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
+  top: 0.35rem;
+  right: 0.35rem;
   font-size: 0.875rem;
   color: var(--moon-opacity-60);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2278,10 +2497,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .book-cover-wrapper {
   flex-shrink: 0;
-  width: 4rem;
+  width: 3.25rem;
   aspect-ratio: 2/3;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
 }
@@ -2297,38 +2516,44 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 0.25rem;
 }
 
 .book-title {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--moon-opacity-95);
-  line-height: 1.4;
+  line-height: 1.3;
   text-align: left;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   margin: 0;
 }
 
 .book-stats {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.375rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.2rem;
   color: var(--moon-opacity-80);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 
 /* 统一颜色主题 - 使用渐变色系 */
 .stat-item .stat-icon {
   color: #60a5fa; /* blue-400 */
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .stat-item .stat-value {
@@ -2338,12 +2563,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .stat-item .stat-label {
   color: #bfdbfe; /* blue-200 */
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .stat-separator {
   color: var(--moon-opacity-40);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   user-select: none;
 }
 
@@ -2351,18 +2576,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   width: 100%;
   height: 1px;
   background: linear-gradient(to right, transparent, var(--white-opacity-20), transparent);
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .sidebar-title-wrapper {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .sidebar-title {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--moon-opacity-90);
   text-transform: uppercase;
@@ -2378,8 +2603,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 /* 设置菜单 */
 .settings-menu-wrapper {
-  margin-top: -1rem;
-  margin-bottom: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
 }
 
 .settings-menu-title {
@@ -2393,10 +2618,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .settings-menu-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .settings-menu-separator {
@@ -2408,12 +2633,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 .settings-menu-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
   background: var(--white-opacity-5);
   border: 1px solid var(--white-opacity-10);
-  border-radius: 8px;
-  font-size: 0.875rem;
+  border-radius: 7px;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--moon-opacity-90);
   cursor: pointer;
@@ -2426,7 +2651,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   background: var(--primary-opacity-15);
   color: var(--moon-opacity-95);
   border-color: var(--primary-opacity-40);
-  transform: translateX(2px);
+  transform: translateY(-1px);
   box-shadow: 0 2px 6px var(--black-opacity-10);
 }
 
@@ -2442,7 +2667,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .settings-menu-icon {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--primary-opacity-70);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
@@ -2450,11 +2675,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .settings-menu-item:hover .settings-menu-icon {
   color: var(--primary-opacity-90);
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .settings-menu-label {
   flex: 1;
+  line-height: 1.1;
 }
 
 .back-link-wrapper {

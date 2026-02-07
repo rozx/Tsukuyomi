@@ -1,4 +1,6 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
+export { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
+import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import type { TaskType, TaskStatus } from '../utils';
 import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
@@ -42,15 +44,15 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 已继承前一部分的规划上下文，术语/角色表已提供。
 - 如需补充信息可调用工具，无需重复获取已有信息
 
-**准备好后，将状态设置为 "working" 开始${taskLabel}。**`;
+**准备好后，使用 \`update_task_status({"status": "working"})\` 开始${taskLabel}。**`;
   }
 
   return `**当前状态：规划阶段 (planning)**
-- 如需上下文，使用本次提供的工具获取
-- 检查数据问题（空翻译、重复项、误分类）并立即修复
-- 可检索记忆了解历史译法
+- 检查角色、术语表问题（空翻译、重复项、误分类、角色全名更新）并立即修复
+- 检查相关记忆，以应用到本次翻译中
+- 规划敬语翻译，以角色别名->记忆->历史翻译->检查关系的顺序，确保敬语翻译的准确性
 
-完成规划后，将状态设置为 "working" 并开始${taskLabel}。`;
+完成规划后，使用 \`update_task_status({"status": "working"})\` 并开始${taskLabel}。`;
 }
 
 function getWorkingStateDescription(taskType: TaskType): string {
@@ -71,14 +73,17 @@ function getWorkingStateDescription(taskType: TaskType): string {
   }
 
   const onlyChangedNote = taskType === 'translation' ? '' : '（只返回有变化的段落）';
+  const nextStatus = taskType === 'translation' ? 'review' : 'end';
+  const nextStatusNote =
+    taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
-- 发现新信息立即更新
-- 输出格式：**单独**以JSON格式输出内容 ${onlyChangedNote}
-- ⚠️ 严禁将 status 与 paragraphs 放在同一个 JSON 对象中
+- 发现新信息立即更新数据表/记忆
+- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（**【重要】单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
+- ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
 
-完成后设置为 "${taskType === 'translation' ? 'review' : 'end'}"。`;
+完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
 }
 
 /**
@@ -88,20 +93,26 @@ function getReviewStateDescription(taskLabel: string): string {
   return `**当前状态：复核阶段 (review)**
 - 系统已自动验证完整性
 - 添加/更新术语
-- 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，使用角色全名，将姓/名添加到别名中。
-- 如看到对日后翻译有帮助的信息，可复用信息优先合并到已有记忆
+- 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，更新角色全名，将姓/名添加到别名中。
+- 如看到对日后翻译有帮助的信息（优先更新敬语翻译），可复用信息优先合并到已有记忆
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
+- 【⚠️ 重要】检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
 
-如需更新已输出的${taskLabel}结果，可将状态改回 "working" 并只返回需更新的段落。
-完成后设置为 "end"。`;
+如需更新已输出的${taskLabel}结果，请用 \`update_task_status({"status": "working"})\` 切回 working 并提交更新。
+完成后使用 \`update_task_status({"status": "end"})\`。`;
 }
 
 /**
  * 获取结束阶段描述
  */
-function getEndStateDescription(): string {
+function getEndStateDescription(hasNextChunk?: boolean): string {
+  const nextChunkNote = hasNextChunk
+    ? '当前块已完成，系统将自动提供下一个块。'
+    : '所有内容已处理完毕，这是最后一个块。';
+
   return `**当前状态：完成 (end)**
-当前块已完成，系统将自动提供下一个块。`;
+${nextChunkNote}
+⚠️ **注意**：任务已结束，你不应再调用任何工具或输出内容，请直接结束本次会话。`;
 }
 
 /**
@@ -109,11 +120,13 @@ function getEndStateDescription(): string {
  * @param taskType 任务类型
  * @param status 当前状态
  * @param isBriefPlanning 是否为简短规划阶段（用于后续 chunk，已继承前一个 chunk 的规划上下文）
+ * @param hasNextChunk 是否有下一个块可用
  */
 export function getCurrentStatusInfo(
   taskType: TaskType,
   status: TaskStatus,
   isBriefPlanning?: boolean,
+  hasNextChunk?: boolean,
 ): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
 
@@ -125,7 +138,7 @@ export function getCurrentStatusInfo(
     case 'review':
       return getReviewStateDescription(taskLabel);
     case 'end':
-      return getEndStateDescription();
+      return getEndStateDescription(hasNextChunk);
     default:
       return '';
   }
@@ -162,10 +175,15 @@ export function getMemoryWorkflowRules(): string {
   return `【记忆管理】
 目标：**短、有效、可检索、可复用**（写少但写对）
 
+**⛔ 内容限制（重要）**：
+- **只保留翻译相关**：术语翻译、角色名称翻译、文风偏好、特定短语翻译选择、敬语处理方式等
+- **严禁存储**：故事设定、背景、世界观、剧情内容、情节发展等（这些属于冗余信息，不应占用记忆空间）
+- 记忆的核心目的是帮助未来翻译保持一致性和质量，而非记录故事情节
+
 - 使用顺序：\`get_recent_memories\` → \`search_memory_by_keywords\` → \`get_memory\`
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
-- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）；通用背景/世界观用 \`book\`。可同时附加多个实体。
+- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）。可同时附加多个实体。
 - **补齐附件**：发现记忆缺少或错误附件时，用 \`update_memory\` 纠正（替换 \`attached_to\`）。
 - **记忆顺序**：先建立相关术语/角色后，再建立/更新记忆。这样可以方便添加附件。
 
@@ -173,7 +191,6 @@ export function getMemoryWorkflowRules(): string {
 - 角色背景 → \`attached_to=[{type:"character", id:"..."}]\`
 - 术语定义 → \`attached_to=[{type:"term", id:"..."}]\`
 - 章节摘要 → \`attached_to=[{type:"chapter", id:"..."}]\`
-- 全书设定 → \`attached_to=[{type:"book", id:"..."}]\`
 
 **字段约束**：summary ≤40字 + 关键词 | content 1-3条要点（总 ≤300字）`;
 }
@@ -205,36 +222,48 @@ ${rules}
 `;
 }
 
+/**
+ * 获取工具化输出格式规则（新方式：使用工具调用替代 JSON）
+ */
 export function getOutputFormatRules(taskType: TaskType): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
-  const hasTitle = taskType === 'translation';
+  const isTranslation = taskType === 'translation';
 
-  // 这里的示例只包含内容，不含 status
-  const jsonContent = `{"p": [{"i": 0, "t": "${taskLabel}结果"}]${hasTitle ? ', "tt": "标题翻译"' : ''}}`;
-  const individualContent = `{"i": 0, "t": "${taskLabel}结果"}`;
-  const titleNote = hasTitle ? '\n（标题翻译只返回一次）' : '';
+  const reviewStep = isTranslation
+    ? '翻译完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
+    : `${taskLabel}完成后：update_task_status({"status": "end"})`;
 
-  // 对于非翻译任务（polish/proofreading），支持返回单个段落对象
-  const individualNote =
-    taskType !== 'translation'
-      ? '\n- 支持两种格式：数组格式 `{"p": [...]}` 或单个段落 `{"i": 0, "t": "..."}`'
-      : '';
+  const titleToolSection = isTranslation
+    ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "translated_title": "标题翻译"}'
+    : '';
 
-  return `【输出格式】⚠️ 必须只返回 JSON（使用简化键名）
+  const toolRestriction = isTranslation
+    ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】） / update_chapter_title
+   - planning 只能 update_task_status 切到 working
+   - review 需要修改先切回 working
+   - end 禁止再调用翻译工具`
+    : `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
+   - planning 只能 update_task_status 切到 working
+   - end 禁止再调用翻译工具`;
 
-**JSON键名**：s=status, p=paragraphs, i=段落序号, t=translation${hasTitle ? ', tt=titleTranslation（标题翻译）' : ''}
-**默认 planning**，需上下文时先调用工具
+  return `【输出格式】必须使用工具调用, 不输出其他内容。
 
-⚠️ **状态切换独立性（核心）**:
-- 状态变更（s字段）必须单独输出一个JSON对象：\`{"s": "working"}\`
-- 翻译内容必须单独输出一个JSON对象：\`${jsonContent}\`${individualNote}${titleNote}
-- **严禁**将 s 与 p/tt 混在同一个 JSON 对象中！
+**核心流程**
+1. planning 完成：update_task_status({"status": "working"})
+2. working 处理：用 add_translation_batch 提交段落结果
+3. 接着使用 update_chapter_title 更新标题
+4. ${reviewStep}
+
+**工具要点**
+1. update_task_status：只提交 {"status": "..."}
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."}
+${titleToolSection}
 
 ${getStatusFieldDescription(taskType)}
-- 段落序号(i)与原文1:1对应${onlyChanged}
-- ${taskType === 'translation' ? '系统自动验证缺失段落（必须全覆盖）' : '仅需返回修改过的段落'}，所有阶段可用工具
-- ⛔ 除working状态时禁止输出翻译（p字段）
+- 段落 ID 与原文 1:1 对应${onlyChanged}
+- ${isTranslation ? '必须全覆盖' : '仅提交修改过的段落'}
+${toolRestriction}
 `;
 }
 
@@ -262,7 +291,7 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
   return `【执行流程】
 1. **planning**: 获取上下文信息，检查数据问题并修复
 2. **working**: ${focus}；发现新信息立即更新
-3. **end**: 完成当前块（润色/校对跳过并禁用 review）`;
+3. **end**: 完成当前块（润色/校对/摘要任务跳过并禁用 review）`;
 }
 
 /**

@@ -48,13 +48,15 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'cancel'): void;
+  (e: 'cancel', taskType: string, chapterId?: string): void;
 }>();
 
 const aiProcessingStore = useAIProcessingStore();
 const bookDetailsStore = useBookDetailsStore();
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
+const now = ref(Date.now());
+let nowTimer: number | null = null;
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
@@ -69,6 +71,13 @@ const recentAITasks = computed(() => {
   );
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
+
+const stopTask = (task: AIProcessingTask) => {
+  void aiProcessingStore.stopTask(task.id);
+  // 始终发出 cancel 事件，携带任务类型和章节 ID，
+  // 让父组件能精确取消对应章节的对应任务类型
+  emit('cancel', task.type, task.chapterId);
+};
 
 /**
  * 获取任务“当前工作章节”的展示文本
@@ -113,6 +122,25 @@ const currentWorkingChapter = computed(() => {
   return active ? getWorkingChapterLabel(active) : null;
 });
 
+const currentActiveTask = computed(() => {
+  return (
+    recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing') || null
+  );
+});
+
+const displayProgressMessage = computed(() => {
+  const message = props.progress?.message?.trim();
+  if (!message) return '';
+  const chunkMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
+  if (chunkMessagePattern.test(message)) return '';
+  return message;
+});
+
+// 当前任务类型（用于取消按钮）
+const currentTaskType = computed(() => {
+  return props.isProofreading ? 'proofreading' : props.isPolishing ? 'polish' : 'translation';
+});
+
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
 const loadTodos = () => {
   const allTodos = TodoListService.getAllTodos();
@@ -151,11 +179,18 @@ onMounted(() => {
   loadTodos();
   // 监听 localStorage 变化（跨标签页同步）
   window.addEventListener('storage', handleStorageChange);
+  nowTimer = window.setInterval(() => {
+    now.value = Date.now();
+  }, 1000);
 });
 
 onUnmounted(() => {
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
+  if (nowTimer !== null) {
+    clearInterval(nowTimer);
+    nowTimer = null;
+  }
   // 清理所有节流函数的 timeout
   for (const cleanup of throttleCleanups) {
     cleanup();
@@ -518,7 +553,7 @@ const clearReviewedTasks = async () => {
 };
 
 const formatTaskDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || Date.now();
+  const end = endTime || now.value;
   const duration = Math.floor((end - startTime) / 1000);
   if (duration < 60) {
     return `${duration}秒`;
@@ -1031,7 +1066,7 @@ watch(
                     v-if="task.status === 'thinking' || task.status === 'processing'"
                     icon="pi pi-stop"
                     class="p-button-text p-button-sm p-button-danger ai-task-stop"
-                    @click="void aiProcessingStore.stopTask(task.id)"
+                    @click="stopTask(task)"
                     title="停止任务"
                   />
                 </div>
@@ -1196,25 +1231,30 @@ watch(
     <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
-          <i
-            :class="[
-              'translation-progress-icon',
-              isProofreading
-                ? 'pi pi-check-circle'
-                : isPolishing
-                  ? 'pi pi-sparkles'
-                  : 'pi pi-language',
-            ]"
-          ></i>
-          <span class="translation-progress-title">{{
-            isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
-          }}</span>
+          <div class="translation-progress-header-main">
+            <i
+              :class="[
+                'translation-progress-icon',
+                isProofreading
+                  ? 'pi pi-check-circle'
+                  : isPolishing
+                    ? 'pi pi-sparkles'
+                    : 'pi pi-language',
+              ]"
+            ></i>
+            <span class="translation-progress-title">{{
+              isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
+            }}</span>
+          </div>
+          <Button
+            icon="pi pi-times"
+            label="取消"
+            class="p-button-text p-button-sm translation-progress-cancel"
+            @click="emit('cancel', currentTaskType)"
+          />
         </div>
         <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
           当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
-        </div>
-        <div class="translation-progress-message">
-          {{ progress.message || '正在处理...' }}
         </div>
       </div>
       <div class="translation-progress-bar-wrapper">
@@ -1225,22 +1265,13 @@ watch(
         />
         <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
       </div>
-      <div class="translation-progress-actions">
-        <Button
-          icon="pi pi-times"
-          label="取消"
-          class="p-button-text p-button-sm translation-progress-cancel"
-          @click="emit('cancel')"
-        />
-      </div>
     </div>
     <div v-else class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
           <i class="translation-progress-icon pi pi-list"></i>
-          <span class="translation-progress-title">AI 任务历史</span>
+          <span class="translation-progress-title">AI 任务历史 </span>
         </div>
-        <div class="translation-progress-message">查看翻译、润色和校对任务的执行历史</div>
       </div>
       <div class="translation-progress-actions">
         <!-- 无操作按钮 -->
@@ -1286,6 +1317,13 @@ watch(
 }
 
 .translation-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.translation-progress-header-main {
   display: flex;
   align-items: center;
   gap: 0.5rem;

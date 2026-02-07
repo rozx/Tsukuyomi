@@ -1,18 +1,92 @@
 import { MemoryService } from 'src/services/memory-service';
-import type { ToolDefinition } from './types';
-import type { ToolContext } from './types';
+import { useBooksStore } from 'src/stores/books';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
+
+/**
+ * 验证 attached_to 实体是否存在
+ * @param bookId 书籍 ID
+ * @param attachedTo 附件列表
+ * @returns 验证结果，包含是否有效和错误信息
+ */
+function validateAttachedToEntities(
+  bookId: string,
+  attachedTo?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>,
+): { valid: boolean; errors: string[] } {
+  if (!attachedTo || attachedTo.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  const errors: string[] = [];
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+
+  if (!book) {
+    return { valid: false, errors: ['书籍不存在'] };
+  }
+
+  for (const attachment of attachedTo) {
+    const { type, id } = attachment;
+
+    switch (type) {
+      case 'book':
+        // book 类型必须匹配当前书籍 ID
+        if (id !== bookId) {
+          errors.push(`书籍 ID "${id}" 不存在或不匹配当前书籍`);
+        }
+        break;
+
+      case 'character': {
+        const characterExists = book.characterSettings?.some((c) => c.id === id);
+        if (!characterExists) {
+          errors.push(`角色 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      case 'term': {
+        const termExists = book.terminologies?.some((t) => t.id === id);
+        if (!termExists) {
+          errors.push(`术语 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      case 'chapter': {
+        let chapterExists = false;
+        if (book.volumes) {
+          for (const volume of book.volumes) {
+            if (volume.chapters?.some((c) => c.id === id)) {
+              chapterExists = true;
+              break;
+            }
+          }
+        }
+        if (!chapterExists) {
+          errors.push(`章节 ID "${id}" 不存在`);
+        }
+        break;
+      }
+
+      default: {
+        const unknownType = type as string;
+        errors.push(`未知的附件类型: "${unknownType}"`);
+        break;
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
 
 function createListMemoriesHandler(toolName: 'list_memories') {
-  return async (
-    args: {
+  return async (args: Record<string, unknown>, context: ToolContext) => {
+    const { bookId, onAction } = context;
+    const parsedArgs = parseToolArgs<{
       offset?: number;
       limit?: number;
       sort_by?: string;
       include_content?: boolean;
-    },
-    context: ToolContext,
-  ) => {
-    const { bookId, onAction } = context;
+    }>(args);
     if (!bookId) {
       return JSON.stringify({
         success: false,
@@ -25,7 +99,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
       limit = 20,
       sort_by = 'lastAccessedAt',
       include_content = false,
-    } = args ?? {};
+    } = parsedArgs;
 
     const validOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const validLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 20)), 100);
@@ -54,6 +128,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
             sort_by: validSortBy,
             include_content: includeContent,
             tool_name: toolName,
+            found_memory_ids: page.map((m) => m.id),
           },
         });
       }
@@ -144,14 +219,16 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ memory_id: string }>(args);
       if (!bookId) {
         return JSON.stringify({
           success: false,
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id } = args;
+      const { memory_id } = parsedArgs;
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -230,7 +307,9 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { keywords } = args;
+      const { keywords } = args as {
+        keywords: string[];
+      };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         return JSON.stringify({
           success: false,
@@ -260,6 +339,7 @@ export const memoryTools: ToolDefinition[] = [
             data: {
               keywords: validKeywords,
               tool_name: 'search_memory_by_keywords',
+              found_memory_ids: memories.map((m) => m.id),
             },
           });
         }
@@ -338,7 +418,11 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { content, summary, attached_to } = args;
+      const { content, summary, attached_to } = args as {
+        content: string;
+        summary: string;
+        attached_to?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>;
+      };
       if (!content) {
         return JSON.stringify({
           success: false,
@@ -349,6 +433,15 @@ export const memoryTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: '摘要不能为空',
+        });
+      }
+
+      // 验证 attached_to 实体是否存在
+      const validation = validateAttachedToEntities(bookId, attached_to);
+      if (!validation.valid) {
+        return JSON.stringify({
+          success: false,
+          error: `附件验证失败：${validation.errors.join('; ')}，请检查附件类型和 ID 是否正确。如果角色/术语未创建，请先创建。`,
         });
       }
 
@@ -443,7 +536,12 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id, content, summary, attached_to } = args;
+      const { memory_id, content, summary, attached_to } = args as {
+        memory_id: string;
+        content: string;
+        summary: string;
+        attached_to?: Array<{ type: 'book' | 'character' | 'term' | 'chapter'; id: string }>;
+      };
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -461,6 +559,17 @@ export const memoryTools: ToolDefinition[] = [
           success: false,
           error: '摘要不能为空',
         });
+      }
+
+      // 如果提供了 attached_to，验证实体是否存在
+      if (attached_to !== undefined) {
+        const validation = validateAttachedToEntities(bookId, attached_to);
+        if (!validation.valid) {
+          return JSON.stringify({
+            success: false,
+            error: `附件验证失败：${validation.errors.join('; ')}，请检查附件类型和 ID 是否正确。如果角色/术语未创建，请先创建。`,
+          });
+        }
       }
 
       try {
@@ -538,7 +647,9 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id } = args;
+      const { memory_id } = args as {
+        memory_id: string;
+      };
       if (!memory_id) {
         return JSON.stringify({
           success: false,
@@ -609,7 +720,13 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        limit?: number;
+        sort_by?: string;
+      }>(args);
+
       if (!bookId) {
         return JSON.stringify({
           success: false,
@@ -617,7 +734,7 @@ export const memoryTools: ToolDefinition[] = [
         });
       }
 
-      const { limit = 10, sort_by = 'lastAccessedAt' } = args;
+      const { limit = 10, sort_by = 'lastAccessedAt' } = parsedArgs;
       const validLimit = Math.min(Math.max(1, Math.floor(limit || 10)), 50); // 限制在 1-50 之间
       const validSortBy = sort_by === 'createdAt' ? 'createdAt' : 'lastAccessedAt';
 
@@ -638,6 +755,7 @@ export const memoryTools: ToolDefinition[] = [
               limit: validLimit,
               sort_by: validSortBy,
               tool_name: 'get_recent_memories',
+              found_memory_ids: memories.map((m) => m.id),
             },
           });
         }

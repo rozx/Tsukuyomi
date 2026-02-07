@@ -1,9 +1,17 @@
 import './setup';
-import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-import { memoryTools } from 'src/services/ai/tools/memory-tools';
-import { MemoryService } from 'src/services/memory-service';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
+import { MemoryService } from 'src/services/memory-service';
+
+// Mock functions
+let mockCreateMemory: ReturnType<typeof mock>;
+let mockUpdateMemory: ReturnType<typeof mock>;
+let mockGetBookById: ReturnType<typeof mock>;
+
+// Dynamic imports
+let memoryTools: any;
+let memoryService: typeof MemoryService;
 
 describe('MemoryTools - attachments', () => {
   const bookId = 'book-1';
@@ -19,18 +27,49 @@ describe('MemoryTools - attachments', () => {
     lastAccessedAt: 2000,
   };
 
-  let createMemorySpy: ReturnType<typeof spyOn>;
-  let updateMemorySpy: ReturnType<typeof spyOn>;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let getMemorySpy: ReturnType<typeof spyOn>;
-
-  beforeEach(() => {
-    createMemorySpy = spyOn(MemoryService, 'createMemory').mockResolvedValue(baseMemory);
-    getMemorySpy = spyOn(MemoryService, 'getMemory').mockResolvedValue(baseMemory);
-    updateMemorySpy = spyOn(MemoryService, 'updateMemory').mockResolvedValue({
-      ...baseMemory,
-      attachedTo: [{ type: 'character', id: 'char-1' }],
+  beforeEach(async () => {
+    // Create mock functions
+    mockCreateMemory = mock(() => Promise.resolve(baseMemory));
+    mockUpdateMemory = mock(() =>
+      Promise.resolve({
+        ...baseMemory,
+        attachedTo: [{ type: 'character', id: 'char-1' }],
+      }),
+    );
+    mockGetBookById = mock((id: string) => {
+      if (id === bookId) {
+        return {
+          id: bookId,
+          title: 'Test Book',
+          characterSettings: [{ id: 'char-1', name: 'Test Character' }],
+          terminologies: [],
+          volumes: [],
+        };
+      }
+      return null;
     });
+
+    // Mock useBooksStore to avoid Pinia errors
+    await mock.module('src/stores/books', () => ({
+      useBooksStore: () => ({
+        getBookById: mockGetBookById,
+      }),
+    }));
+
+    // Import modules after mocking
+    const toolsModule = await import('src/services/ai/tools/memory-tools');
+    memoryTools = toolsModule.memoryTools;
+    memoryService = MemoryService;
+
+    spyOn(memoryService, 'createMemory').mockImplementation(
+      mockCreateMemory as typeof MemoryService.createMemory,
+    );
+    spyOn(memoryService, 'updateMemory').mockImplementation(
+      mockUpdateMemory as typeof MemoryService.updateMemory,
+    );
+    spyOn(memoryService, 'getMemory').mockImplementation(
+      mock(() => Promise.resolve(baseMemory)) as typeof MemoryService.getMemory,
+    );
   });
 
   afterEach(() => {
@@ -38,7 +77,7 @@ describe('MemoryTools - attachments', () => {
   });
 
   test('create_memory 支持 attached_to 参数', async () => {
-    const tool = memoryTools.find((t) => t.definition.function.name === 'create_memory');
+    const tool = memoryTools.find((t: any) => t.definition.function.name === 'create_memory');
     expect(tool).toBeDefined();
 
     const attachedTo = [{ type: 'character', id: 'char-1' }];
@@ -49,11 +88,11 @@ describe('MemoryTools - attachments', () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.success).toBe(true);
-    expect(createMemorySpy).toHaveBeenCalledWith(bookId, '内容', '摘要', attachedTo);
+    expect(mockCreateMemory).toHaveBeenCalledWith(bookId, '内容', '摘要', attachedTo);
   });
 
   test('update_memory 支持 attached_to 参数', async () => {
-    const tool = memoryTools.find((t) => t.definition.function.name === 'update_memory');
+    const tool = memoryTools.find((t: any) => t.definition.function.name === 'update_memory');
     expect(tool).toBeDefined();
 
     const attachedTo = [{ type: 'character', id: 'char-1' }];
@@ -64,6 +103,6 @@ describe('MemoryTools - attachments', () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.success).toBe(true);
-    expect(updateMemorySpy).toHaveBeenCalledWith(bookId, 'm1', '新内容', '新摘要', attachedTo);
+    expect(mockUpdateMemory).toHaveBeenCalledWith(bookId, 'm1', '新内容', '新摘要', attachedTo);
   });
 });

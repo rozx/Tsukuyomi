@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Dialog from 'primevue/dialog';
@@ -33,6 +33,9 @@ const searchQuery = ref('');
 const filterType = ref<'all' | MemoryAttachmentType>('all');
 const filterEntityId = ref<string | null>(null);
 
+// 标记是否正在通过标签设置筛选（防止 watcher 清除 entityId）
+const isSettingFilterFromTag = ref(false);
+
 // 筛选选项
 const typeOptions = [
   { label: '全部', value: 'all', icon: 'pi pi-th-large' },
@@ -55,7 +58,9 @@ const entityOptions = computed(() => {
           m.attachedTo?.some((a) => a.type === 'character' && a.id === char.id),
         ).length;
         if (count > 0) {
-          options.push({ label: char.name, value: char.id, count });
+          // 优先使用翻译，如果没有则使用原文
+          const label = char.translation?.translation || char.name;
+          options.push({ label, value: char.id, count });
         }
       });
       break;
@@ -65,7 +70,9 @@ const entityOptions = computed(() => {
           m.attachedTo?.some((a) => a.type === 'term' && a.id === term.id),
         ).length;
         if (count > 0) {
-          options.push({ label: term.name, value: term.id, count });
+          // 优先使用翻译，如果没有则使用原文
+          const label = term.translation?.translation || term.name;
+          options.push({ label, value: term.id, count });
         }
       });
       break;
@@ -76,8 +83,13 @@ const entityOptions = computed(() => {
             m.attachedTo?.some((a) => a.type === 'chapter' && a.id === chapter.id),
           ).length;
           if (count > 0) {
-            const chapterTitle =
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+            // 优先使用翻译，如果没有则使用原文
+            let chapterTitle: string;
+            if (typeof chapter.title === 'string') {
+              chapterTitle = chapter.title;
+            } else {
+              chapterTitle = chapter.title.translation?.translation || chapter.title.original;
+            }
             options.push({ label: chapterTitle, value: chapter.id, count });
           }
         });
@@ -85,8 +97,67 @@ const entityOptions = computed(() => {
       break;
   }
 
+  // 确保当前选中的实体也在选项列表中（即使计数为0）
+  if (filterEntityId.value && !options.some((o) => o.value === filterEntityId.value)) {
+    const selectedEntity = findEntityById(filterEntityId.value, filterType.value);
+    if (selectedEntity) {
+      options.push(selectedEntity);
+    }
+  }
+
   return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
 });
+
+// 根据ID查找实体信息
+function findEntityById(
+  id: string,
+  type: MemoryAttachmentType,
+): { label: string; value: string; count: number } | null {
+  if (!props.book) return null;
+
+  switch (type) {
+    case 'character': {
+      const char = props.book.characterSettings?.find((c) => c.id === id);
+      if (char) {
+        return {
+          label: char.translation?.translation || char.name,
+          value: char.id,
+          count: 0,
+        };
+      }
+      break;
+    }
+    case 'term': {
+      const term = props.book.terminologies?.find((t) => t.id === id);
+      if (term) {
+        return {
+          label: term.translation?.translation || term.name,
+          value: term.id,
+          count: 0,
+        };
+      }
+      break;
+    }
+    case 'chapter': {
+      for (const volume of props.book.volumes || []) {
+        const chapter = volume.chapters?.find((c) => c.id === id);
+        if (chapter) {
+          const chapterTitle =
+            typeof chapter.title === 'string'
+              ? chapter.title
+              : chapter.title.translation?.translation || chapter.title.original;
+          return {
+            label: chapterTitle,
+            value: chapter.id,
+            count: 0,
+          };
+        }
+      }
+      break;
+    }
+  }
+  return null;
+}
 
 // 类型筛选计数
 const typeCounts = computed(() => {
@@ -156,8 +227,11 @@ function clearFilters() {
 }
 
 // 当类型改变时，清除实体筛选
-watch(filterType, () => {
-  filterEntityId.value = null;
+watch(filterType, (newType, oldType) => {
+  // 只有当类型真正改变且不是通过标签设置时才清除实体筛选
+  if (newType !== oldType && !isSettingFilterFromTag.value) {
+    filterEntityId.value = null;
+  }
 });
 
 // 对话框状态
@@ -366,9 +440,13 @@ const handleDelete = (memory: Memory) => {
 };
 
 // 处理按附件筛选
-function handleFilterByAttachment(type: string, id: string) {
+async function handleFilterByAttachment(type: string, id: string) {
+  isSettingFilterFromTag.value = true;
   filterType.value = type as MemoryAttachmentType;
   filterEntityId.value = id;
+  // 等待下一个 tick 后重置标志
+  await nextTick();
+  isSettingFilterFromTag.value = false;
 }
 
 // 处理导航（从详情对话框）

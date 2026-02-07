@@ -94,6 +94,11 @@ export interface AppSettings {
    * 用于网络搜索功能 (https://tavily.com/)
    */
   tavilyApiKey?: string;
+  /**
+   * 书籍列表排序选项
+   * 默认值：'default'
+   */
+  booksSortOption?: string;
 }
 
 export interface Settings {

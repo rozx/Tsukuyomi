@@ -26,11 +26,13 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '术语的中文翻译。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
+              description:
+                '术语的中文翻译。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
             },
             description: {
               type: 'string',
-              description: '术语的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description:
+                '术语的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['name', 'translation'],
@@ -41,7 +43,11 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, translation, description } = args;
+      const { name, translation, description } = args as {
+        name: string;
+        translation: string;
+        description?: string;
+      };
       if (!name || !translation) {
         throw new Error('术语名称和翻译不能为空');
       }
@@ -49,7 +55,7 @@ export const terminologyTools: ToolDefinition[] = [
       const term = await TerminologyService.addTerminology(bookId, {
         name,
         translation: normalizeTranslationQuotes(translation),
-        description,
+        ...(description !== undefined ? { description } : {}),
       });
 
       // 通过 onAction 回调传递操作信息，统一由 handleActionInfoToast 处理 toast
@@ -101,7 +107,10 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, include_memory = true } = args;
+      const { name, include_memory = true } = args as {
+        name: string;
+        include_memory?: boolean;
+      };
       if (!name) {
         throw new Error('术语名称不能为空');
       }
@@ -157,7 +166,9 @@ export const terminologyTools: ToolDefinition[] = [
           translation: term.translation.translation,
           description: term.description,
         },
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -177,11 +188,13 @@ export const terminologyTools: ToolDefinition[] = [
             },
             translation: {
               type: 'string',
-              description: '新的翻译文本（可选）。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
+              description:
+                '新的翻译文本（可选）。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
             },
             description: {
               type: 'string',
-              description: '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
+              description:
+                '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
             },
           },
           required: ['term_id'],
@@ -192,7 +205,11 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { term_id, translation, description } = args;
+      const { term_id, translation, description } = args as {
+        term_id: string;
+        translation?: string;
+        description?: string;
+      };
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
       }
@@ -201,7 +218,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const previousTerm = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = previousTerm ? (cloneDeep(previousTerm)) : undefined;
+      const previousData = previousTerm ? cloneDeep(previousTerm) : undefined;
 
       const updates: {
         translation?: string;
@@ -260,7 +277,9 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { term_id } = args;
+      const { term_id } = args as {
+        term_id: string;
+      };
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
       }
@@ -269,7 +288,7 @@ export const terminologyTools: ToolDefinition[] = [
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       const term = book?.terminologies?.find((t) => t.id === term_id);
-      const previousData = term ? (cloneDeep(term)) : undefined;
+      const previousData = term ? cloneDeep(term) : undefined;
 
       await TerminologyService.deleteTerminology(bookId, term_id);
 
@@ -321,7 +340,15 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { chapter_id, all_chapters = false, limit } = args;
+      const {
+        chapter_id,
+        all_chapters = false,
+        limit,
+      } = args as {
+        chapter_id?: string;
+        all_chapters?: boolean;
+        limit?: number;
+      };
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
       if (!book) {
@@ -431,7 +458,15 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keywords, translation_only = false, include_memory = true } = args;
+      const {
+        keywords,
+        translation_only = false,
+        include_memory = true,
+      } = args as {
+        keywords: string[];
+        translation_only?: boolean;
+        include_memory?: boolean;
+      };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }
@@ -491,12 +526,7 @@ export const terminologyTools: ToolDefinition[] = [
           type: 'term' as const,
           id: term.id,
         }));
-        relatedMemories = await searchRelatedMemoriesHybrid(
-          bookId,
-          attachments,
-          validKeywords,
-          5,
-        );
+        relatedMemories = await searchRelatedMemoriesHybrid(bookId, attachments, validKeywords, 5);
       }
 
       return JSON.stringify({
@@ -508,7 +538,9 @@ export const terminologyTools: ToolDefinition[] = [
           description: term.description,
         })),
         count: filteredTerms.length,
-        ...(include_memory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
       });
     },
   },
@@ -538,7 +570,9 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { keywords } = args;
+      const { keywords } = args as {
+        keywords: string[];
+      };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new Error('关键词数组不能为空');
       }

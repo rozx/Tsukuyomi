@@ -196,6 +196,11 @@ const MAX_FILE_SIZE = 900 * 1024; // 900KB
 const CHUNK_SIZE = MAX_FILE_SIZE;
 
 /**
+ * 创建 Gist 时每批文件数量
+ */
+const CREATE_BATCH_SIZE = 10;
+
+/**
  * 重试配置
  */
 const RETRY_CONFIG = {
@@ -401,25 +406,42 @@ export class GistSyncService {
   }
 
   /**
-   * 将序列化的日期字符串转换回 Date 对象
+   * 需要从 ISO 字符串反序列化为 Date 对象的字段名白名单。
+   * 只有这些字段中的 ISO 日期字符串会被转换，避免误将小说内容中的日期字符串转换为 Date 对象。
    */
-  private deserializeDates<T>(obj: T): T {
+  private static readonly DATE_FIELD_NAMES = new Set([
+    'lastEdited',
+    'createdAt',
+    'addedAt',
+    'lastUpdated',
+  ]);
+
+  /**
+   * 将序列化的日期字符串转换回 Date 对象（仅限白名单字段）
+   */
+  private deserializeDates<T>(obj: T, parentKey?: string): T {
     if (obj === null || obj === undefined) {
       return obj;
     }
 
-    if (typeof obj === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(obj)) {
+    // 只在白名单字段中将 ISO 日期字符串转换为 Date 对象
+    if (
+      typeof obj === 'string' &&
+      parentKey &&
+      GistSyncService.DATE_FIELD_NAMES.has(parentKey) &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(obj)
+    ) {
       return new Date(obj) as unknown as T;
     }
 
     if (Array.isArray(obj)) {
-      return obj.map((item) => this.deserializeDates(item)) as unknown as T;
+      return obj.map((item) => this.deserializeDates(item, parentKey)) as unknown as T;
     }
 
     if (typeof obj === 'object') {
       const deserialized = {} as T;
       for (const [key, value] of Object.entries(obj)) {
-        (deserialized as Record<string, unknown>)[key] = this.deserializeDates(value);
+        (deserialized as Record<string, unknown>)[key] = this.deserializeDates(value, key);
       }
       return deserialized;
     }
@@ -566,7 +588,10 @@ export class GistSyncService {
           const bookMemories = await MemoryService.getAllMemories(novel.id);
           memoriesToUpload.push(...bookMemories);
         } catch (error) {
-          console.warn(`[GistSyncService] 加载书籍 ${novel.title} (${novel.id}) 的 Memory 失败:`, error);
+          console.warn(
+            `[GistSyncService] 加载书籍 ${novel.title} (${novel.id}) 的 Memory 失败:`,
+            error,
+          );
           // 继续处理其他书籍的 Memory
         }
       }
@@ -634,7 +659,7 @@ export class GistSyncService {
           message: '正在准备设置文件...',
         });
       }
-      
+
       // 处理设置文件完成后，更新进度
       processedItems = 1;
       if (onProgress) {
@@ -915,12 +940,12 @@ export class GistSyncService {
           // 优先处理删除操作，以释放配额（如果有配额限制的话）
           // 但为了原子性，混合处理可能更好，这里简单按顺序分批
           const totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
-          
+
           // 计算实际的上传阶段进度（基于准备阶段结束的位置）
           // 确保进度只会增加，不会回退
           const uploadPhaseStart = preparePhaseItems;
           const uploadPhaseItems = totalBatches;
-          
+
           // 如果实际批次数比估算多，更新 totalItems（只增不减）
           if (uploadPhaseItems > estimatedUploadItems) {
             totalItems = preparePhaseItems + uploadPhaseItems;
@@ -950,7 +975,21 @@ export class GistSyncService {
               });
             }
 
-            await updateBatchWithRetry(batchFiles, batchIndex);
+            try {
+              await updateBatchWithRetry(batchFiles, batchIndex);
+            } catch (batchError) {
+              // 部分批次已提交，Gist 可能处于不一致状态
+              console.error(
+                `[GistSyncService] 批次 ${batchIndex + 1}/${totalBatches} 上传失败，` +
+                  `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+                batchError,
+              );
+              throw new Error(
+                `Gist 批量上传在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
+                  `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
+                  (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
+              );
+            }
           }
 
           // 更新进度：上传完成
@@ -975,14 +1014,71 @@ export class GistSyncService {
 
         // 如果已经有了 gistUrl，说明 batch update 成功了（或者部分成功），不需要再创建
         if (!gistUrl) {
-          // 尝试创建新 Gist
-          // ... (这里实际上是把 files 用于 create)
-          // 但是 create 不能使用 null 值，需要过滤掉
+          // 尝试创建新 Gist（使用批量创建，避免单次请求过大）
           const filesForCreate: Record<string, { content: string }> = {};
           for (const [key, value] of Object.entries(files)) {
             if (value !== null) {
               filesForCreate[key] = value;
             }
+          }
+
+          const createEntries = Object.entries(filesForCreate);
+
+          // 第一批：创建 Gist
+          const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
+          const response = await this.octokit.rest.gists.create({
+            description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
+            public: false,
+            files: firstBatchFiles,
+          });
+          gistId = response.data.id;
+          gistUrl = response.data.html_url;
+          isRecreated = true;
+
+          // 后续批次：更新 Gist
+          const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
+          for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
+            const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
+            try {
+              const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
+              await this.octokit.rest.gists.update({
+                gist_id: gistId!,
+                files: batchFiles,
+              });
+            } catch (batchError) {
+              console.error(
+                `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
+                  `已完成 ${batchIndex}/${totalCreateBatches} 个批次。` +
+                  `Gist 可能处于不一致状态。`,
+                batchError,
+              );
+              throw new Error(
+                `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
+                  `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
+                  (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
+              );
+            }
+          }
+        }
+      } else {
+        // 创建新 Gist（使用批量创建，避免单次请求过大）
+        const filesForCreate: Record<string, { content: string }> = {};
+        for (const [key, value] of Object.entries(files)) {
+          if (value !== null) {
+            filesForCreate[key] = value;
+          }
+        }
+
+        const createEntries = Object.entries(filesForCreate);
+
+        if (createEntries.length <= CREATE_BATCH_SIZE) {
+          // 文件数量较少，单次创建
+          if (onProgress) {
+            onProgress({
+              current: totalItems,
+              total: totalItems,
+              message: '正在创建 Gist...',
+            });
           }
 
           const response = await this.octokit.rest.gists.create({
@@ -992,32 +1088,61 @@ export class GistSyncService {
           });
           gistId = response.data.id;
           gistUrl = response.data.html_url;
-          isRecreated = true;
-        }
-      } else {
-        // 创建新 Gist
-        // 更新进度：开始创建（准备阶段已完成，使用 totalItems）
-        if (onProgress) {
-          onProgress({
-            current: totalItems,
-            total: totalItems,
-            message: '正在创建 Gist...',
-          });
-        }
+        } else {
+          // 文件数量较多，分批创建：第一批用 create，后续用 update
+          const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
 
-        const filesForCreate: Record<string, { content: string }> = {};
-        for (const [key, value] of Object.entries(files)) {
-          if (value !== null) {
-            filesForCreate[key] = value;
+          if (onProgress) {
+            onProgress({
+              current: totalItems - totalCreateBatches,
+              total: totalItems,
+              message: `正在创建 Gist（批次 1/${totalCreateBatches}）...`,
+            });
+          }
+
+          // 第一批：创建 Gist
+          const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
+          const response = await this.octokit.rest.gists.create({
+            description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
+            public: false,
+            files: firstBatchFiles,
+          });
+          gistId = response.data.id;
+          gistUrl = response.data.html_url;
+
+          // 后续批次：更新 Gist
+          for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
+            const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
+            const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
+
+            if (onProgress) {
+              onProgress({
+                current: totalItems - totalCreateBatches + batchIndex + 1,
+                total: totalItems,
+                message: `正在创建 Gist（批次 ${batchIndex + 1}/${totalCreateBatches}）...`,
+              });
+            }
+
+            try {
+              await this.octokit.rest.gists.update({
+                gist_id: gistId!,
+                files: batchFiles,
+              });
+            } catch (batchError) {
+              console.error(
+                `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
+                  `已完成 ${batchIndex}/${totalCreateBatches} 个批次。` +
+                  `Gist 可能处于不一致状态。`,
+                batchError,
+              );
+              throw new Error(
+                `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
+                  `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
+                  (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
+              );
+            }
           }
         }
-        const response = await this.octokit.rest.gists.create({
-          description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
-          public: false,
-          files: filesForCreate,
-        });
-        gistId = response.data.id;
-        gistUrl = response.data.html_url;
 
         // 更新进度：创建完成
         if (onProgress) {
@@ -1108,29 +1233,26 @@ export class GistSyncService {
       if (settingsFile) {
         try {
           let settingsContent = settingsFile.content;
-          
+
           // 检查设置文件是否被截断（GitHub API 对大文件返回 truncated=true）
           const isSettingsTruncated = settingsFile.truncated === true || !settingsContent;
-          
+
           // 如果文件被截断，尝试从 raw_url 获取完整内容（带重试）
           if (isSettingsTruncated && settingsFile.raw_url) {
             const rawUrl = settingsFile.raw_url;
             try {
-              settingsContent = await withRetry(
-                async () => {
-                  const rawResponse = await fetch(rawUrl);
-                  if (!rawResponse.ok) {
-                    throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
-                  }
-                  return rawResponse.text();
-                },
-                '获取设置文件 raw_url',
-              );
+              settingsContent = await withRetry(async () => {
+                const rawResponse = await fetch(rawUrl);
+                if (!rawResponse.ok) {
+                  throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
+                }
+                return rawResponse.text();
+              }, '获取设置文件 raw_url');
             } catch (fetchError) {
               console.warn('[GistSyncService] 从 raw_url 获取设置文件失败（已重试）:', fetchError);
             }
           }
-          
+
           if (settingsContent) {
             const settingsData = (await this.parseGistContent(settingsContent)) as {
               aiModels?: AIModel[];
@@ -1218,7 +1340,25 @@ export class GistSyncService {
             contentLength: number;
           }> = [];
 
-          for (let i = 0; i < 100; i++) {
+          // 从 metadata 文件中获取预期的分块数量，作为搜索上限
+          // 如果没有 metadata 或解析失败，回退到默认上限
+          const MAX_CHUNK_SEARCH_LIMIT = 1000;
+          let expectedChunks = MAX_CHUNK_SEARCH_LIMIT;
+          if (metadataFile && metadataFile.content) {
+            try {
+              const metadata = JSON.parse(metadataFile.content) as {
+                chunks: number;
+                totalSize: number;
+              };
+              if (metadata.chunks && metadata.chunks > 0) {
+                expectedChunks = metadata.chunks;
+              }
+            } catch {
+              // 忽略元数据解析错误，使用默认上限
+            }
+          }
+
+          for (let i = 0; i < expectedChunks; i++) {
             // 优先尝试最新格式（使用 _ 分隔符）
             let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
             let chunkFile = gistFiles[chunkFileName];
@@ -1298,16 +1438,12 @@ export class GistSyncService {
               // 按索引排序
               chunkFiles.sort((a, b) => a.index - b.index);
 
-              // 如果有 metadata 文件，验证块数量
-              if (metadataFile && metadataFile.content) {
-                try {
-                  JSON.parse(metadataFile.content) as {
-                    chunks: number;
-                    totalSize: number;
-                  };
-                } catch {
-                  // 忽略元数据解析错误
-                }
+              // 如果有 metadata，验证找到的块数量与预期是否一致
+              if (expectedChunks < MAX_CHUNK_SEARCH_LIMIT && chunkFiles.length !== expectedChunks) {
+                console.warn(
+                  `[GistSyncService] 书籍 ${novelId} 分块数量不匹配:` +
+                    ` 期望 ${expectedChunks}，实际找到 ${chunkFiles.length}`,
+                );
               }
 
               // 组合所有块
@@ -1857,29 +1993,26 @@ export class GistSyncService {
       if (settingsFile) {
         try {
           let settingsContent = settingsFile.content;
-          
+
           // 检查设置文件是否被截断（GitHub API 对大文件返回 truncated=true）
           const isSettingsTruncated = settingsFile.truncated === true || !settingsContent;
-          
+
           // 如果文件被截断，尝试从 raw_url 获取完整内容（带重试）
           if (isSettingsTruncated && settingsFile.raw_url) {
             const rawUrl = settingsFile.raw_url;
             try {
-              settingsContent = await withRetry(
-                async () => {
-                  const rawResponse = await fetch(rawUrl);
-                  if (!rawResponse.ok) {
-                    throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
-                  }
-                  return rawResponse.text();
-                },
-                '获取设置文件 raw_url（历史版本）',
-              );
+              settingsContent = await withRetry(async () => {
+                const rawResponse = await fetch(rawUrl);
+                if (!rawResponse.ok) {
+                  throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
+                }
+                return rawResponse.text();
+              }, '获取设置文件 raw_url（历史版本）');
             } catch (fetchError) {
               console.warn('[GistSyncService] 从 raw_url 获取设置文件失败（已重试）:', fetchError);
             }
           }
-          
+
           if (settingsContent) {
             const settingsData = (await this.parseGistContent(settingsContent)) as {
               aiModels?: AIModel[];
@@ -1934,6 +2067,8 @@ export class GistSyncService {
       for (const novelId of novelIds) {
         try {
           const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
+          const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
+          const metadataFile = gistFiles[metadataFileName];
 
           const chunkFiles: Array<{
             index: number;
@@ -1942,7 +2077,24 @@ export class GistSyncService {
             size: number;
           }> = [];
 
-          for (let i = 0; i < 100; i++) {
+          // 从 metadata 获取预期分块数量
+          const MAX_CHUNK_SEARCH_LIMIT = 1000;
+          let expectedChunks = MAX_CHUNK_SEARCH_LIMIT;
+          if (metadataFile && metadataFile.content) {
+            try {
+              const metadata = JSON.parse(metadataFile.content) as {
+                chunks: number;
+                totalSize: number;
+              };
+              if (metadata.chunks && metadata.chunks > 0) {
+                expectedChunks = metadata.chunks;
+              }
+            } catch {
+              // 忽略元数据解析错误
+            }
+          }
+
+          for (let i = 0; i < expectedChunks; i++) {
             // 优先尝试最新格式（使用 _ 分隔符）
             let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
             let chunkFile = gistFiles[chunkFileName];

@@ -63,15 +63,14 @@ const typeConfig = computed(() => {
 // 显示文本
 const displayText = computed(() => {
   if (props.loading) return '...';
-  if (props.name === undefined) return '...';
   if (props.name === '[已删除]') return '[已删除]';
   // 如果是书籍类型，直接显示 "书籍" 而不是书名
   if (props.type === 'book') {
     return '书籍';
   }
-  // 截断过长的名称（增加长度限制）
-  if (props.name.length > 20) {
-    return props.name.slice(0, 20) + '...';
+  // 如果没有名称，显示 ID 的一部分
+  if (props.name === undefined || props.name === '') {
+    return props.id.slice(0, 8);
   }
   return props.name;
 });
@@ -84,6 +83,20 @@ function handleClick() {
   if (!props.clickable || isDeleted.value) return;
   emit('click', props.type, props.id);
 }
+
+// 获取提示文本
+function getTooltipText(): string {
+  if (props.loading) {
+    return `加载中: ${typeConfig.value.label}`;
+  }
+  if (isDeleted.value) {
+    return `${typeConfig.value.label} [${props.id}] (已删除)`;
+  }
+  if (props.name && props.name !== '') {
+    return `${typeConfig.value.label}: ${props.name}`;
+  }
+  return `${typeConfig.value.label} (${props.id})`;
+}
 </script>
 
 <template>
@@ -94,10 +107,10 @@ function handleClick() {
       clickable && !isDeleted ? 'cursor-pointer' : 'cursor-default opacity-70',
       isDeleted ? 'opacity-50 line-through' : '',
     ]"
-    :title="name ? `${typeConfig.label}: ${name}` : typeConfig.label"
-    @click="handleClick"
+    :title="getTooltipText()"
+    @click.stop="handleClick"
   >
     <i :class="[typeConfig.icon, typeConfig.iconClass]" class="text-sm"></i>
-    <span class="truncate max-w-[180px]">{{ displayText }}</span>
+    <span class="truncate max-w-[280px]">{{ displayText }}</span>
   </div>
 </template>

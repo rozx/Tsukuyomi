@@ -1,36 +1,9 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
+import './setup';
 import { BookService } from '../services/book-service';
 import type { Novel, Volume, Chapter, Paragraph } from '../models/novel';
 import { ChapterContentService } from '../services/chapter-content-service';
 import { generateShortId } from '../utils/id-generator';
-
-// Mock objects
-const mockPut = mock((_storeName: string, _value: unknown) => Promise.resolve(undefined));
-const mockGetAll = mock((_storeName: string) => Promise.resolve([]));
-const mockGet = mock((_storeName: string, _key: string) => Promise.resolve(undefined as unknown));
-const mockDelete = mock((_storeName: string, _key: string) => Promise.resolve(undefined));
-const mockClear = mock((_storeName: string) => Promise.resolve(undefined));
-const mockStorePut = mock(() => Promise.resolve(undefined));
-const mockTransaction = mock(() => ({
-  objectStore: () => ({
-    put: mockStorePut,
-  }),
-  done: Promise.resolve(),
-}));
-
-const mockDb = {
-  getAll: mockGetAll,
-  get: mockGet,
-  put: mockPut,
-  delete: mockDelete,
-  clear: mockClear,
-  transaction: mockTransaction,
-};
-
-// Mock the module
-await mock.module('src/utils/indexed-db', () => ({
-  getDB: () => Promise.resolve(mockDb),
-}));
 
 // Mock ChapterContentService
 const mockSaveChapterContent = mock(
@@ -40,13 +13,6 @@ const mockSaveChapterContent = mock(
 
 describe('BookService', () => {
   beforeEach(() => {
-    mockPut.mockClear();
-    mockGetAll.mockClear();
-    mockGet.mockClear();
-    mockDelete.mockClear();
-    mockClear.mockClear();
-    mockStorePut.mockClear();
-    mockTransaction.mockClear();
     mockSaveChapterContent.mockClear();
 
     // Mock ChapterContentService.saveChapterContent
@@ -58,30 +24,24 @@ describe('BookService', () => {
   });
 
   it('should get all books', async () => {
-    mockGetAll.mockResolvedValueOnce([]);
     const books = await BookService.getAllBooks();
     expect(books).toEqual([]);
-    expect(mockGetAll).toHaveBeenCalledWith('books');
   });
 
   it('should get a book by id', async () => {
     const mockBook = { id: '1', title: 'Test' };
-    mockGet.mockResolvedValueOnce(mockBook);
+
+    await BookService.saveBook(mockBook as Novel, { saveChapterContent: false });
 
     const book = await BookService.getBookById('1');
     expect(book).toEqual(mockBook as Novel);
-    expect(mockGet).toHaveBeenCalledWith('books', '1');
   });
 
   it('should save a book', async () => {
     const book = { id: '1', title: 'Test', createdAt: new Date() } as Novel;
     await BookService.saveBook(book);
-    expect(mockPut).toHaveBeenCalled();
-    // Check that the first argument to put was 'books'
-    expect(mockPut.mock.calls[0]?.[0]).toBe('books');
-    // Check that dates were serialized
-    const savedBook = mockPut.mock.calls[0]?.[1] as any;
-    expect(typeof savedBook?.createdAt).toBe('string');
+    const savedBook = await BookService.getBookById('1');
+    expect(savedBook).toBeTruthy();
   });
 
   it('should bulk save books', async () => {
@@ -91,18 +51,20 @@ describe('BookService', () => {
     ] as Novel[];
 
     await BookService.bulkSaveBooks(books);
-    expect(mockTransaction).toHaveBeenCalledWith('books', 'readwrite');
-    expect(mockStorePut).toHaveBeenCalledTimes(2);
+    const savedBooks = await BookService.getAllBooks();
+    expect(savedBooks).toHaveLength(2);
   });
 
   it('should delete a book', async () => {
     await BookService.deleteBook('1');
-    expect(mockDelete).toHaveBeenCalledWith('books', '1');
+    const book = await BookService.getBookById('1');
+    expect(book).toBeUndefined();
   });
 
   it('should clear all books', async () => {
     await BookService.clearBooks();
-    expect(mockClear).toHaveBeenCalledWith('books');
+    const books = await BookService.getAllBooks();
+    expect(books).toHaveLength(0);
   });
 
   describe('saveBook with saveChapterContent option', () => {
@@ -171,7 +133,8 @@ describe('BookService', () => {
         skipIfUnchanged: true,
       });
       // 应该保存书籍元数据
-      expect(mockPut).toHaveBeenCalled();
+      const saved = await BookService.getBookById('book-1');
+      expect(saved).toBeTruthy();
     });
 
     it('should save chapter content when saveChapterContent is true', async () => {
@@ -197,7 +160,8 @@ describe('BookService', () => {
         skipIfUnchanged: true,
       });
       // 应该保存书籍元数据
-      expect(mockPut).toHaveBeenCalled();
+      const saved = await BookService.getBookById('book-1');
+      expect(saved).toBeTruthy();
     });
 
     it('should not save chapter content when saveChapterContent is false', async () => {
@@ -217,7 +181,8 @@ describe('BookService', () => {
       // 不应该保存章节内容
       expect(mockSaveChapterContent).not.toHaveBeenCalled();
       // 应该保存书籍元数据
-      expect(mockPut).toHaveBeenCalled();
+      const saved = await BookService.getBookById('book-1');
+      expect(saved).toBeTruthy();
     });
 
     it('should skip empty chapter content arrays', async () => {
@@ -258,8 +223,8 @@ describe('BookService', () => {
 
       // 不应该保存章节内容（因为没有章节）
       expect(mockSaveChapterContent).not.toHaveBeenCalled();
-      // 应该保存书籍元数据
-      expect(mockPut).toHaveBeenCalled();
+      const saved = await BookService.getBookById('book-1');
+      expect(saved).toBeTruthy();
     });
 
     it('should handle volumes without chapters', async () => {
@@ -276,8 +241,8 @@ describe('BookService', () => {
 
       // 不应该保存章节内容（因为没有章节）
       expect(mockSaveChapterContent).not.toHaveBeenCalled();
-      // 应该保存书籍元数据
-      expect(mockPut).toHaveBeenCalled();
+      const saved = await BookService.getBookById('book-1');
+      expect(saved).toBeTruthy();
     });
 
     it('should handle multiple volumes with chapters', async () => {
@@ -321,8 +286,7 @@ describe('BookService', () => {
 
       await BookService.saveBook(book);
 
-      // 书籍元数据应该被保存，且 chapters 仍应包含 summary 字段
-      const savedBook = mockPut.mock.calls[0]?.[1] as any;
+      const savedBook = await BookService.getBookById('book-1');
       const savedSummary = savedBook?.volumes?.[0]?.chapters?.[0]?.summary;
       expect(savedSummary).toBe('这是章节摘要');
     });

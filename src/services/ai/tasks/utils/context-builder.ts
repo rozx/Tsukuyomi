@@ -266,10 +266,10 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
   // 翻译相关任务：在 review 阶段额外提醒可回到 working 更新既有译文
   const canGoBackToWorkingReminder =
     taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? '如果你想更新任何已输出的译文/润色/校对结果，请将状态改回 `{"status":"working"}` 并只返回需要更新的段落；'
+      ? '如果你想更新任何已输出的译文/润色/校对结果，请用 `update_task_status({"status":"working"})` 切回 working，并只提交需要更新的段落；'
       : '';
 
-  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则返回 \`{"status": "end"}\``;
+  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则使用 \`update_task_status({"status":"end"})\` 结束。`;
 }
 
 /**
@@ -481,7 +481,7 @@ export async function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后返回 \`{"status":"working", ...}\` 并开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
+    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后用 \`update_task_status({"status":"working"})\` 开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -493,7 +493,7 @@ export async function buildIndependentChunkPrompt(
     return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}${startContextHint}
 
 **[警告] 重要：简短规划阶段（已继承上文规划）**
-${briefPlanningNote}请直接将状态设置为 "working" 并开始${taskLabel}。
+ ${briefPlanningNote}请使用 \`update_task_status({"status":"working"})\` 切到 working 并开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }

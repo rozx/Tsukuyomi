@@ -39,6 +39,7 @@ import {
   isSkipAskUserEnabled,
 } from './utils';
 import { buildPolishSystemPrompt } from './prompts';
+import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 /**
  * 润色服务选项
@@ -189,6 +190,7 @@ export class PolishService {
         ...(typeof bookId === 'string' ? { bookId } : {}),
         ...(typeof chapterId === 'string' ? { chapterId } : {}),
         ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+        ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
       },
     );
 
@@ -204,6 +206,7 @@ export class PolishService {
       // 与翻译服务保持一致：排除翻译管理工具 + 导航/列表工具（让模型专注于当前文本块）
       const skipAskUser = await isSkipAskUserEnabled(bookId);
       const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
+      const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -236,7 +239,9 @@ export class PolishService {
       });
 
       if (aiProcessingStore && taskId) {
-        void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
+        aiProcessingStore
+          .updateTask(taskId, { message: '正在建立连接...' })
+          .catch((error) => console.error('[PolishService] Failed to update task:', error));
       }
 
       // 切分文本
@@ -407,15 +412,21 @@ export class PolishService {
         const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            message: `正在润色第 ${chunkIndex + 1}/${chunks.length} 部分...`,
-            status: 'processing',
-          });
+          aiProcessingStore
+            .updateTask(taskId, {
+              message: `正在润色第 ${chunkIndex + 1}/${chunks.length} 部分...`,
+              status: 'processing',
+            })
+            .catch((error) => console.error('[PolishService] Failed to update task:', error));
           // 添加块分隔符
-          void aiProcessingStore.appendThinkingMessage(
-            taskId,
-            `\n\n[=== 润色块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
-          );
+          aiProcessingStore
+            .appendThinkingMessage(
+              taskId,
+              `\n\n[=== 润色块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
+            )
+            .catch((error) =>
+              console.error('[PolishService] Failed to append thinking message:', error),
+            );
         }
 
         if (onProgress) {
@@ -464,6 +475,27 @@ export class PolishService {
           firstParagraphId,
         );
 
+        if (aiProcessingStore && taskId) {
+          const messagesForEstimate: ChatMessage[] = [
+            ...chunkHistory,
+            { role: 'user', content: chunkContent },
+          ];
+          if (toolSchemaContent) {
+            messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
+          }
+          const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
+          const contextWindow = model.contextWindow || 0;
+          const contextPercentage =
+            contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
+          aiProcessingStore
+            .updateTask(taskId, {
+              contextTokens: estimatedTokens,
+              ...(contextWindow > 0 ? { contextWindow } : {}),
+              ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+            })
+            .catch((error) => console.error('[PolishService] Failed to update task:', error));
+        }
+
         // 重试循环
         let retryCount = 0;
         let chunkProcessed = false;
@@ -491,10 +523,12 @@ export class PolishService {
               );
 
               if (aiProcessingStore && taskId) {
-                void aiProcessingStore.updateTask(taskId, {
-                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
-                  status: 'processing',
-                });
+                aiProcessingStore
+                  .updateTask(taskId, {
+                    message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+                    status: 'processing',
+                  })
+                  .catch((error) => console.error('[PolishService] Failed to update task:', error));
               }
             }
 
@@ -514,6 +548,7 @@ export class PolishService {
               onToast,
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+              aiModelId: model.id,
               logLabel: 'PolishService',
               // 对于 polish，只验证有变化的段落
               verifyCompleteness: (_expectedIds, _receivedTranslations) => {
@@ -567,6 +602,8 @@ export class PolishService {
                       }
                     }
                   : undefined,
+              // 是否还有下一个块
+              hasNextChunk: chunkIndex < chunks.length - 1,
             });
 
             // 检查状态

@@ -44,6 +44,7 @@ import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { buildTranslationSystemPrompt } from './prompts';
+import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 /**
  * 翻译服务选项
@@ -75,7 +76,7 @@ export interface TranslationServiceOptions {
    * @param translations 段落翻译数组，包含段落ID和翻译文本
    */
   onParagraphTranslation?: (
-    translations: { id: string; translation: string }[],
+    translations: { id: string; translation: string; referencedMemories?: string[] }[],
   ) => void | Promise<void>;
   /**
    * 标题翻译回调函数，用于接收标题翻译结果（在收到后立即调用，不等待翻译完成）
@@ -122,6 +123,7 @@ export interface TranslationResult {
   taskId?: string;
   paragraphTranslations?: { id: string; translation: string }[];
   titleTranslation?: string;
+  referencedMemories?: string[];
   actions?: ActionInfo[];
 }
 
@@ -211,6 +213,7 @@ export class TranslationService {
         ...(typeof bookId === 'string' ? { bookId } : {}),
         ...(typeof chapterId === 'string' ? { chapterId } : {}),
         ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
+        ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
       },
     );
 
@@ -251,6 +254,7 @@ export class TranslationService {
       // 使用翻译专用工具集，排除导航和列表工具，让AI专注于当前文本块
       const skipAskUser = await isSkipAskUserEnabled(bookId);
       const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
+      const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
       const config: AIServiceConfig = {
         apiKey: model.apiKey,
         baseUrl: model.baseUrl,
@@ -304,7 +308,9 @@ export class TranslationService {
       });
 
       if (aiProcessingStore && taskId) {
-        void aiProcessingStore.updateTask(taskId, { message: '正在建立连接...' });
+        aiProcessingStore
+          .updateTask(taskId, { message: '正在建立连接...' })
+          .catch((error) => console.error('[TranslationService] Failed to update task:', error));
       }
 
       // 使用共享工具切分文本
@@ -388,15 +394,22 @@ export class TranslationService {
         const chunkText = actualChunk.text;
 
         if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            message: `正在翻译第 ${chunkIndex + 1}/${chunks.length} 部分...`,
-            status: 'processing',
-          });
+          aiProcessingStore
+            .updateTask(taskId, {
+              message: `正在翻译第 ${chunkIndex + 1}/${chunks.length} 部分...`,
+              status: 'processing',
+              workflowStatus: 'planning',
+            })
+            .catch((error) => console.error('[TranslationService] Failed to update task:', error));
           // 添加块分隔符
-          void aiProcessingStore.appendThinkingMessage(
-            taskId,
-            `\n\n[=== 翻译块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
-          );
+          aiProcessingStore
+            .appendThinkingMessage(
+              taskId,
+              `\n\n[=== 翻译块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
+            )
+            .catch((error) =>
+              console.error('[TranslationService] Failed to append thinking message:', error),
+            );
         }
 
         if (onProgress) {
@@ -446,6 +459,27 @@ export class TranslationService {
           firstParagraphId,
         );
 
+        if (aiProcessingStore && taskId) {
+          const messagesForEstimate: ChatMessage[] = [
+            ...chunkHistory,
+            { role: 'user', content: chunkContent },
+          ];
+          if (toolSchemaContent) {
+            messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
+          }
+          const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
+          const contextWindow = model.contextWindow || 0;
+          const contextPercentage =
+            contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
+          aiProcessingStore
+            .updateTask(taskId, {
+              contextTokens: estimatedTokens,
+              ...(contextWindow > 0 ? { contextWindow } : {}),
+              ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+            })
+            .catch((error) => console.error('[TranslationService] Failed to update task:', error));
+        }
+
         // 重试循环
         let retryCount = 0;
         let chunkProcessed = false;
@@ -473,14 +507,21 @@ export class TranslationService {
               );
 
               if (aiProcessingStore && taskId) {
-                void aiProcessingStore.updateTask(taskId, {
-                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
-                  status: 'processing',
-                });
+                aiProcessingStore
+                  .updateTask(taskId, {
+                    message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
+                    status: 'processing',
+                  })
+                  .catch((error) =>
+                    console.error('[TranslationService] Failed to update task:', error),
+                  );
               }
             }
 
             chunkHistory.push({ role: 'user', content: chunkContent });
+
+            // 记录当前 chunk 开始时的 action 数量，用于提取本 chunk 引用的记忆
+            const actionStartIndex = actions.length;
 
             // 使用共享的工具调用循环（基于状态的流程）
             // 后续 chunk 使用简短规划模式（已有规划上下文）
@@ -497,6 +538,7 @@ export class TranslationService {
               onToast,
               taskId,
               aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+              aiModelId: model.id,
               logLabel: 'TranslationService',
               // 后续 chunk 使用简短规划模式（当前 chunk 的术语和角色已在提示中提供）
               isBriefPlanning: chunkIndex > 0,
@@ -505,6 +547,31 @@ export class TranslationService {
               // 立即回调：当段落翻译提取时立即通知（不等待循环完成）
               onParagraphsExtracted: onParagraphTranslation
                 ? async (paragraphs) => {
+                    // 提取本 chunk 引用的记忆 ID
+                    const chunkActions = actions.slice(actionStartIndex);
+                    const referencedMemoryIds = new Set<string>();
+                    for (const action of chunkActions) {
+                      if (action.entity === 'memory') {
+                        const data = action.data as {
+                          memory_id?: string;
+                          id?: string;
+                          found_memory_ids?: string[];
+                        };
+                        if (data.memory_id) referencedMemoryIds.add(data.memory_id);
+                        if (data.id) referencedMemoryIds.add(data.id);
+                        if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
+                          data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
+                        }
+                      }
+                    }
+                    const referencedMemories = Array.from(referencedMemoryIds);
+
+                    // 构建带引用的段落对象
+                    const enrichedParagraphs = paragraphs.map((p) => ({
+                      ...p,
+                      ...(referencedMemories.length > 0 ? { referencedMemories } : {}),
+                    }));
+
                     // 记录到累积列表
                     for (const para of paragraphs) {
                       paragraphTranslations.push(para);
@@ -513,7 +580,7 @@ export class TranslationService {
                     markProcessedParagraphs(paragraphs, processedParagraphIds);
                     // 立即调用外部回调
                     try {
-                      await onParagraphTranslation(paragraphs);
+                      await onParagraphTranslation(enrichedParagraphs);
                     } catch (error) {
                       console.error(
                         `[TranslationService] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
@@ -534,6 +601,8 @@ export class TranslationService {
                       }
                     }
                   : undefined,
+              // 是否还有下一个块
+              hasNextChunk: chunkIndex < chunks.length - 1,
             });
 
             // 检查状态
@@ -648,10 +717,30 @@ export class TranslationService {
       // 使用共享工具完成任务
       void completeTask(taskId, aiProcessingStore as AIProcessingStore | undefined, 'translation');
 
+      // 收集引用的记忆 ID
+      const referencedMemoryIds = new Set<string>();
+      for (const action of actions) {
+        if (action.entity === 'memory') {
+          // 尝试提取 ID
+          const data = action.data as {
+            memory_id?: string;
+            id?: string;
+            found_memory_ids?: string[];
+          };
+
+          if (data.memory_id) referencedMemoryIds.add(data.memory_id);
+          if (data.id) referencedMemoryIds.add(data.id);
+          if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
+            data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
+          }
+        }
+      }
+
       return {
         text: translatedText,
         paragraphTranslations,
         ...(titleTranslation ? { titleTranslation } : {}),
+        referencedMemories: Array.from(referencedMemoryIds),
         actions,
         ...(taskId ? { taskId } : {}),
       };

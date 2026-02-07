@@ -31,12 +31,15 @@ export interface MessageAction {
     | 'book'
     | 'memory'
     | 'todo'
-    | 'user';
+    | 'user'
+    | 'help_doc';
   name?: string;
   timestamp: number;
   // 网络搜索相关信息
   query?: string; // 搜索查询（用于 web_search）
   url?: string; // 网页 URL（用于 web_fetch）
+  // 帮助文档相关信息
+  title?: string; // 文档标题（用于 help docs read/search）
   // 翻译相关信息
   paragraph_id?: string; // 段落 ID（用于 translation）
   translation_id?: string; // 翻译 ID（用于 translation）
@@ -59,6 +62,8 @@ export interface MessageAction {
   keyword?: string; // 搜索关键词（用于 search_memory_by_keywords，已废弃，应使用 keywords 数组）
   // 导航相关信息
   book_id?: string; // 书籍 ID（用于 navigate 操作）
+  doc_id?: string; // 文档 ID（用于 navigate help_doc 操作）
+  section_id?: string; // 章节锚点 ID（用于 navigate help_doc 操作）
   // 章节更新相关信息
   old_title?: string; // 旧标题（用于 update_chapter_title）
   new_title?: string; // 新标题（用于 update_chapter_title）
@@ -117,7 +122,14 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   summary?: string; // 会话总结（当消息过多时自动生成）
-  lastSummarizedMessageIndex: number; // 上次总结时的消息数量，用于计算“重置”后的条数
+  lastSummarizedMessageIndex: number; // 上次总结时的消息数量，用于计算"重置"后的条数
+  /**
+   * 工具调用产生的额外 token 开销。
+   * UI 侧的 token 估算仅统计 user/assistant 消息内容，不包含 tool_calls 和 tool 结果消息。
+   * 此字段记录实际 API 上下文与 UI 估算之间的差值，用于修正进度条显示。
+   * 在 summarizeAndReset 时会被清零。
+   */
+  toolCallTokenOverhead?: number;
 }
 
 /**
@@ -152,6 +164,8 @@ function loadSessionsFromStorage(): ChatSession[] {
     }
   } catch (error) {
     console.error('Failed to load chat sessions from storage:', error);
+    // 清理无效存储并返回空会话列表
+    localStorage.removeItem(STORAGE_KEY);
   }
   return [];
 }
@@ -432,9 +446,21 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         // 保存总结，但不清除聊天历史
         session.summary = summary;
         session.lastSummarizedMessageIndex = session.messages.length;
+        session.toolCallTokenOverhead = 0; // 摘要后重置工具调用 token 开销
         // 不修改消息列表，保留所有消息
         // 摘要将在 AssistantService 中用于后续对话的上下文
         session.updatedAt = Date.now();
+        saveSessionsToStorage(this.sessions);
+      }
+    },
+
+    /**
+     * 更新会话的工具调用 token 开销
+     */
+    updateToolCallTokenOverhead(sessionId: string, overhead: number): void {
+      const session = this.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.toolCallTokenOverhead = overhead;
         saveSessionsToStorage(this.sessions);
       }
     },

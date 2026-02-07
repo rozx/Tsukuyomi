@@ -17,10 +17,12 @@ interface Props {
   references: MemoryReference[];
   bookId: string;
   loading?: boolean;
+  alwaysExpanded?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
+  alwaysExpanded: false,
 });
 
 const emit = defineEmits<{
@@ -30,6 +32,11 @@ const emit = defineEmits<{
 // 展开/折叠状态
 const isExpanded = ref(false);
 
+// 是否强制展开
+const isAlwaysExpanded = computed(() => props.alwaysExpanded);
+
+const isPanelExpanded = computed(() => (isAlwaysExpanded.value ? true : isExpanded.value));
+
 // 引用数量
 const referenceCount = computed(() => props.references?.length || 0);
 
@@ -38,6 +45,9 @@ const hasReferences = computed(() => referenceCount.value > 0);
 
 // 切换展开/折叠
 function toggleExpanded() {
+  if (isAlwaysExpanded.value) {
+    return;
+  }
   isExpanded.value = !isExpanded.value;
 }
 
@@ -94,6 +104,7 @@ function formatRelativeTime(timestamp: number): string {
         </div>
 
         <Button
+          v-if="!isAlwaysExpanded"
           :icon="isExpanded ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
           class="p-button-text p-button-sm !w-8 !h-8"
           :label="isExpanded ? '收起' : '展开'"
@@ -102,7 +113,7 @@ function formatRelativeTime(timestamp: number): string {
       </div>
 
       <!-- 展开的引用列表 -->
-      <div v-show="isExpanded" class="border-t border-white/10">
+      <div v-show="isPanelExpanded" class="border-t border-white/10">
         <div class="divide-y divide-white/5">
           <div
             v-for="reference in references"
