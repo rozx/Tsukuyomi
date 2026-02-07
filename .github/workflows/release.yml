@@ -471,7 +471,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/electron/upload
 
           # Find all EXEs
-          $exes = Get-ChildItem -Path dist/electron -Filter "*.exe" -Recurse -File
+          $exes = Get-ChildItem -Path dist/electron/Packaged -Filter "*.exe" -File
 
           foreach ($exe in $exes) {
             $name = $exe.Name
