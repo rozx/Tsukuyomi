@@ -7,6 +7,7 @@ description: Prepare the project for a new release
 
 2. Create a new release note file under `public/releaseNotes`.
    - File naming convention: `public/releaseNotes/RELEASE_NOTES_vx.xx.md` (replace `x.xx` with the actual version).
+   - The change log should based on all changes comparing last released version.
    - Use other files in `public/releaseNotes/` as a reference for the format.
    - Compare changes between current version (current branch) and last version (last release tag).
    - Update `public/help/index.json` to include the new release note.
@@ -21,4 +22,3 @@ description: Prepare the project for a new release
    - Run type checking: `bun run type-check` (or equivalent command for the project).
    - Run linting: `bun run lint` (or equivalent command for the project).
    - Fix any errors reported by these checks before proceeding.
-
