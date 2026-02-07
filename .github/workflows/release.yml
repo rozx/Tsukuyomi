@@ -68,7 +68,7 @@ jobs:
 
       - name: Check and update version
         id: check_version
-        if: steps.extract_version.outputs.version_found == 'true'
+        if: steps.extract_version.outputs.version_found == 'true' && github.event_name != 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
@@ -222,6 +222,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual trigger detected. Treating as release."
+            echo "has_release_label=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           # Get associated PRs for this commit
           LABELS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[].labels[].name' 2>/dev/null || echo "")
