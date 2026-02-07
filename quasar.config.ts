@@ -495,8 +495,8 @@ export default defineConfig((ctx: any) => {
 
         win: {
           icon: 'src-electron/icons/icon.ico',
-          // Generate NSIS installer and Portable executable
-          target: ['nsis', 'portable'],
+          // Generate Portable executable only
+          target: 'portable',
           // 禁用代码签名以避免 Windows 符号链接权限问题
           forceCodeSigning: false, // This disables the automatic signing attempt
         },
