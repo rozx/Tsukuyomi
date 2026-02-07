@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * 将 Tsukuyomi 仓库的帮助文档同步到 GitHub Wiki
- * 
+ *
  * 功能：
  * 1. 复制 public/help/*.md 文件到 wiki
  * 2. 复制 docs/*.md 文件到 wiki
@@ -39,22 +39,22 @@ const helpIndex: HelpArticle[] = JSON.parse(readFileSync(indexPath, 'utf-8'));
 // 2. 复制帮助文档文件到 wiki
 console.log('📝 Copying help documentation files...');
 const helpDir = join(REPO_ROOT, 'public/help');
-const helpFiles = readdirSync(helpDir).filter(file => file.endsWith('.md'));
+const helpFiles = readdirSync(helpDir).filter((file) => file.endsWith('.md'));
 
 for (const file of helpFiles) {
   const sourcePath = join(helpDir, file);
   let content = readFileSync(sourcePath, 'utf-8');
-  
+
   // 转换内部链接：/help/xxx -> [[xxx|文本]] (wiki 链接格式)
   content = content.replace(/\[([^\]]+)\]\(\/help\/([^)]+)\)/g, '[[$2|$1]]');
-  
+
   // 转换相对链接：help/xxx -> [[xxx|文本]]
   content = content.replace(/\[([^\]]+)\]\(help\/([^)]+)\)/g, '[[$2|$1]]');
-  
+
   // 保持原始文件名（不含 .md），wiki 会自动处理
   const wikiFileName = file;
   const destPath = join(WIKI_DIR, wikiFileName);
-  
+
   writeFileSync(destPath, content, 'utf-8');
   console.log(`  ✓ Copied ${file}`);
 }
@@ -64,13 +64,13 @@ console.log('📋 Copying release notes...');
 const releaseNotesDir = join(REPO_ROOT, 'public/releaseNotes');
 let releaseFiles: string[] = [];
 if (existsSync(releaseNotesDir)) {
-  releaseFiles = readdirSync(releaseNotesDir).filter(file => file.endsWith('.md'));
-  
+  releaseFiles = readdirSync(releaseNotesDir).filter((file) => file.endsWith('.md'));
+
   for (const file of releaseFiles) {
     const sourcePath = join(releaseNotesDir, file);
     const content = readFileSync(sourcePath, 'utf-8');
     const destPath = join(WIKI_DIR, file);
-    
+
     writeFileSync(destPath, content, 'utf-8');
     console.log(`  ✓ Copied ${file}`);
   }
@@ -81,13 +81,13 @@ console.log('🛠️  Copying developer documentation...');
 const docsDir = join(REPO_ROOT, 'docs');
 let docFiles: string[] = [];
 if (existsSync(docsDir)) {
-  docFiles = readdirSync(docsDir).filter(file => file.endsWith('.md'));
-  
+  docFiles = readdirSync(docsDir).filter((file) => file.endsWith('.md'));
+
   for (const file of docFiles) {
     const sourcePath = join(docsDir, file);
     const content = readFileSync(sourcePath, 'utf-8');
     const destPath = join(WIKI_DIR, file);
-    
+
     writeFileSync(destPath, content, 'utf-8');
     console.log(`  ✓ Copied ${file}`);
   }
@@ -123,9 +123,9 @@ for (const [category, articles] of categories) {
   if (category === '更新日志') {
     continue;
   }
-  
+
   homeContent += `\n### ${category}\n\n`;
-  
+
   for (const article of articles) {
     // 生成 wiki 链接（文件名不含 .md 后缀）
     const wikiLink = article.file.replace('.md', '');
@@ -134,18 +134,18 @@ for (const [category, articles] of categories) {
 }
 
 // 添加更新日志部分
-const releaseNotes = helpIndex.filter(article => article.category === '更新日志');
+const releaseNotes = helpIndex.filter((article) => article.category === '更新日志');
 if (releaseNotes.length > 0) {
   homeContent += `\n### 📋 更新日志\n\n`;
   homeContent += `查看最近的版本更新：\n\n`;
-  
+
   // 只显示最近 5 个版本
   const recentReleases = releaseNotes.slice(0, 5);
   for (const article of recentReleases) {
     const wikiLink = article.file.replace('.md', '');
     homeContent += `- **[[${wikiLink}|${article.title}]]** - ${article.description}\n`;
   }
-  
+
   if (releaseNotes.length > 5) {
     homeContent += `\n[查看所有更新日志](https://github.com/rozx/Tsukuyomi/releases)\n`;
   }
@@ -191,14 +191,14 @@ for (const [category, articles] of categories) {
   if (category === '更新日志') {
     continue;
   }
-  
+
   sidebarContent += `**${category}**\n`;
-  
+
   for (const article of articles) {
     const wikiLink = article.file.replace('.md', '');
     sidebarContent += `- [[${wikiLink}|${article.title}]]\n`;
   }
-  
+
   sidebarContent += '\n';
 }
 
@@ -213,8 +213,8 @@ sidebarContent += `**开发者文档**
 `;
 
 // 添加更新日志链接（使用最新版本）
-if (releaseNotes.length > 0) {
-  const latestRelease = releaseNotes[0];
+const latestRelease = releaseNotes[0];
+if (latestRelease) {
   const latestReleaseLink = latestRelease.file.replace('.md', '');
   sidebarContent += `**[[${latestReleaseLink}|📋 更新日志]]**\n`;
 } else {
