@@ -45,11 +45,11 @@ for (const file of helpFiles) {
   const sourcePath = join(helpDir, file);
   let content = readFileSync(sourcePath, 'utf-8');
   
-  // 转换内部链接：/help/xxx -> xxx (wiki 内部链接)
-  content = content.replace(/\[([^\]]+)\]\(\/help\/([^)]+)\)/g, '[[$1|$2]]');
+  // 转换内部链接：/help/xxx -> [[xxx|文本]] (wiki 链接格式)
+  content = content.replace(/\[([^\]]+)\]\(\/help\/([^)]+)\)/g, '[[$2|$1]]');
   
-  // 转换相对链接
-  content = content.replace(/\]\(help\/([^)]+)\)/g, '[[$1]]');
+  // 转换相对链接：help/xxx -> [[xxx|文本]]
+  content = content.replace(/\[([^\]]+)\]\(help\/([^)]+)\)/g, '[[$2|$1]]');
   
   // 保持原始文件名（不含 .md），wiki 会自动处理
   const wikiFileName = file;
@@ -210,8 +210,16 @@ sidebarContent += `**开发者文档**
 
 ---
 
-**[[📋 更新日志|RELEASE_NOTES_v0.9.0]]**
 `;
+
+// 添加更新日志链接（使用最新版本）
+if (releaseNotes.length > 0) {
+  const latestRelease = releaseNotes[0];
+  const latestReleaseLink = latestRelease.file.replace('.md', '');
+  sidebarContent += `**[[📋 更新日志|${latestReleaseLink}]]**\n`;
+} else {
+  sidebarContent += `**[[📋 更新日志|Home#📋-更新日志]]**\n`;
+}
 
 writeFileSync(join(WIKI_DIR, '_Sidebar.md'), sidebarContent, 'utf-8');
 console.log('  ✓ Generated _Sidebar.md');

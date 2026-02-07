@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'public/help/**'
+      - 'public/releaseNotes/**'
       - 'docs/**'
       - 'README.md'
       - '.github/workflows/sync-docs-to-wiki.yml'
