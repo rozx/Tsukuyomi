@@ -26,7 +26,8 @@
     "start:app": "bun run server/app-server.ts",
     "start": "bun run start:app",
     "build:deploy": "bash scripts/build.sh",
-    "start:deploy": "bash scripts/run.sh"
+    "start:deploy": "bash scripts/run.sh",
+    "sync:wiki": "bun run scripts/sync-docs-to-wiki.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
