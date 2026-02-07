@@ -47,8 +47,8 @@ jobs:
 
           echo "Source branch: $BRANCH_NAME"
 
-          # Extract version from branch name (support patterns like: release/0.5.15, v0.5.15, 0.5.15-release, etc.)
-          VERSION=$(echo "$BRANCH_NAME" | grep -oE '[v]?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+          # Extract version from branch name (support patterns like: release/0.5.15, v0.5.15, 0.5.15-release, 0.9.0.55 etc.)
+          VERSION=$(echo "$BRANCH_NAME" | grep -oE '[v]?[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || echo "")
 
           if [ -z "$VERSION" ]; then
             echo "No version found in branch name: $BRANCH_NAME"
@@ -67,7 +67,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          CURRENT_VERSION=$(jq -r .version package.json)
+          # Get current version from src/constants/version.ts (Source of Truth for 4-part versions)
+          CURRENT_VERSION=$(grep "export const APP_VERSION =" src/constants/version.ts | sed -E "s/.*'([^']+)'.*/\1/")
           EXPECTED_VERSION="${{ steps.extract_version.outputs.expected_version }}"
 
           echo "Current version in package.json: $CURRENT_VERSION"
@@ -113,11 +114,11 @@ jobs:
             IFS='.' read -r -a v1_parts <<< "$v1"
             IFS='.' read -r -a v2_parts <<< "$v2"
             
-            # Ensure both versions have 3 parts
-            while [ ${#v1_parts[@]} -lt 3 ]; do
+            # Ensure both versions have 4 parts (major.minor.patch.build)
+            while [ ${#v1_parts[@]} -lt 4 ]; do
               v1_parts+=("0")
             done
-            while [ ${#v2_parts[@]} -lt 3 ]; do
+            while [ ${#v2_parts[@]} -lt 4 ]; do
               v2_parts+=("0")
             done
             
@@ -139,6 +140,13 @@ jobs:
             if [ "${v1_parts[2]}" -gt "${v2_parts[2]}" ]; then
               return 1
             elif [ "${v1_parts[2]}" -lt "${v2_parts[2]}" ]; then
+              return 2
+            fi
+
+            # Compare build version
+            if [ "${v1_parts[3]}" -gt "${v2_parts[3]}" ]; then
+              return 1
+            elif [ "${v1_parts[3]}" -lt "${v2_parts[3]}" ]; then
               return 2
             fi
             
@@ -174,8 +182,8 @@ jobs:
               exit 1
             fi
             
-            # Verify the update
-            NEW_VERSION=$(jq -r .version package.json)
+            # Verify the update by checking version.ts
+            NEW_VERSION=$(grep "export const APP_VERSION =" src/constants/version.ts | sed -E "s/.*'([^']+)'.*/\1/")
             NEW_VERSION_NORM=$(normalize_version "$NEW_VERSION")
             EXPECTED_NORM=$(normalize_version "$EXPECTED_VERSION")
             
@@ -229,7 +237,12 @@ jobs:
             echo "Using version from version check step: $VERSION"
           else
             VERSION=$(jq -r .version package.json)
-            echo "Using version from package.json: $VERSION"
+            # Try to get from version.ts if package.json version is different (implies build number usage)
+            VERSION_TS=$(grep "export const APP_VERSION =" src/constants/version.ts | sed -E "s/.*'([^']+)'.*/\1/")
+            if [ "$VERSION" != "$VERSION_TS" ]; then
+               VERSION="$VERSION_TS"
+            fi
+            echo "Using version from files: $VERSION"
           fi
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
 
