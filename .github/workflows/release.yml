@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
@@ -209,7 +213,7 @@ jobs:
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
 
           git add package.json src/constants/version.ts
-          git commit -m "chore: bump version to ${{ steps.check_version.outputs.final_version }}" || exit 0
+          git commit -m "chore: bump version to ${{ steps.check_version.outputs.final_version }} [skip ci]" || exit 0
           git push origin HEAD:${{ github.ref_name }} || echo "No changes to commit or already up to date"
 
       - name: Check for release label
@@ -345,10 +349,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.create-release.outputs.version }}
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
