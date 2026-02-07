@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -210,11 +209,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Manual trigger detected, treating as release candidate."
-            echo "has_release_label=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
 
           # Get associated PRs for this commit
           LABELS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/pulls --jq '.[].labels[].name' 2>/dev/null || echo "")
