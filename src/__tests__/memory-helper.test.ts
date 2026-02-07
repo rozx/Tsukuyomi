@@ -137,17 +137,19 @@ describe('searchRelatedMemories', () => {
       warnCalls.push(args);
     };
 
-    mockSearchMemoriesByKeywords.mockImplementation(() =>
-      Promise.reject(new Error('Database error')),
-    );
+    try {
+      mockSearchMemoriesByKeywords.mockImplementation(() =>
+        Promise.reject(new Error('Database error')),
+      );
 
-    const result = await searchRelatedMemories('book-1', ['keyword']);
+      const result = await searchRelatedMemories('book-1', ['keyword']);
 
-    expect(result).toEqual([]);
-    expect(warnCalls.length).toBeGreaterThan(0);
-    expect(warnCalls[0]?.[0]).toBe('Failed to search related memories:');
-
-    console.warn = originalWarn;
+      expect(result).toEqual([]);
+      expect(warnCalls.length).toBeGreaterThan(0);
+      expect(warnCalls[0]?.[0]).toBe('Failed to search related memories:');
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   test('应该只返回 id 和 summary，不返回其他字段', async () => {

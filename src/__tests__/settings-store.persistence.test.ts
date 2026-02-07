@@ -30,6 +30,9 @@ describe('settings store persistence (taskDefaultModels)', () => {
       },
     });
 
+    // updateSettings 可能同时写入 localStorage，这里再次清空以模拟"localStorage 为空但 IndexedDB 已有数据"
+    localStorage.clear();
+
     await settingsStore.loadSettings();
 
     expect(settingsStore.settings.taskDefaultModels?.translation).toBe('model-translation-1');

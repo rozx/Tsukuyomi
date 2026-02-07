@@ -383,7 +383,7 @@ jobs:
           DMG_PATH=$(find dist/electron -name "*.dmg" -type f | head -1)
           if [ ! -z "$DMG_PATH" ]; then
             echo "Found DMG at: $DMG_PATH"
-            cp "$DMG_PATH" "dist/electron/upload/luna-ai-translator-${VERSION_NO_PREFIX}.dmg"
+            cp "$DMG_PATH" "dist/electron/upload/Tsukuyomi-${VERSION_NO_PREFIX}.dmg"
             echo "has_dmg=true" >> $GITHUB_OUTPUT
           fi
 
@@ -391,18 +391,17 @@ jobs:
           ZIP_PATH=$(find dist/electron -name "*.zip" -type f | head -1)
           if [ ! -z "$ZIP_PATH" ]; then
              echo "Found ZIP at: $ZIP_PATH"
-             cp "$ZIP_PATH" "dist/electron/upload/luna-ai-translator-${VERSION_NO_PREFIX}-mac.zip"
+             cp "$ZIP_PATH" "dist/electron/upload/Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip"
              echo "has_zip=true" >> $GITHUB_OUTPUT
           else
              # Failback to manual zip if no zip found but .app exists
              echo "No ZIP found, looking for .app to zip..."
              APP_PATH=$(find dist/electron -name "*.app" -type d | head -1)
              if [ ! -z "$APP_PATH" ]; then
-               APP_DIR=$(dirname "$APP_PATH")
                APP_NAME=$(basename "$APP_PATH")
-               cd "$APP_DIR"
-               zip -r "luna-ai-translator-${VERSION_NO_PREFIX}-mac.zip" "$APP_NAME"
-               mv "luna-ai-translator-${VERSION_NO_PREFIX}-mac.zip" ../upload/
+               cd "$(dirname "$APP_PATH")"
+               zip -r "Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip" "$APP_NAME"
+               mv "Tsukuyomi-${VERSION_NO_PREFIX}-mac.zip" "$GITHUB_WORKSPACE/dist/electron/upload/"
                echo "Manual zip created."
                echo "has_zip=true" >> $GITHUB_OUTPUT
                cd -
@@ -437,12 +436,12 @@ jobs:
             $name = $exe.Name
             # rename to include version if not present, and distinguish Installer vs Portable
             if ($name -match "Setup") {
-               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/luna-ai-translator-${versionNoPrefix}-Setup.exe" -Force
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}-Setup.exe" -Force
             } elseif ($name -match "Portable") {
-               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/luna-ai-translator-${versionNoPrefix}-Portable.exe" -Force
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}-Portable.exe" -Force
             } else {
                # Fallback generic name
-               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/luna-ai-translator-${versionNoPrefix}.exe" -Force
+               Copy-Item -Path $exe.FullName -Destination "dist/electron/upload/Tsukuyomi-${versionNoPrefix}.exe" -Force
             }
           }
 
@@ -478,7 +477,7 @@ jobs:
 
           echo "Found .AppImage at: $APPIMAGE_PATH"
           # 将 AppImage 复制到带版本号的名称
-          VERSIONED_FILENAME="luna-ai-translator-${VERSION_NO_PREFIX}-linux.AppImage"
+          VERSIONED_FILENAME="Tsukuyomi-${VERSION_NO_PREFIX}-linux.AppImage"
           cp "$APPIMAGE_PATH" "dist/electron/${VERSIONED_FILENAME}"
           echo "AppImage file prepared at: dist/electron/${VERSIONED_FILENAME}"
           echo "versioned_filename=${VERSIONED_FILENAME}" >> $GITHUB_OUTPUT

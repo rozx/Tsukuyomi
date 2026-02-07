@@ -227,18 +227,26 @@ function createWindow() {
   // 使用 ready-to-show 事件来显示窗口，这是更推荐的做法
   mainWindow.once('ready-to-show', () => {
     console.log('[Electron] Requesting to show window (ready-to-show)');
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
     }
   });
 
   // 添加一个安全超时，如果 ready-to-show 没有触发，强制显示窗口
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
+  let forceShowTimeout: NodeJS.Timeout | undefined = setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       console.warn('[Electron] Window did not show within 10s, forcing show');
       mainWindow.show();
     }
   }, 10000);
+
+  // 在窗口关闭时清理安全超时，避免在已销毁窗口上调用 show
+  mainWindow.on('closed', () => {
+    if (forceShowTimeout) {
+      clearTimeout(forceShowTimeout);
+      forceShowTimeout = undefined;
+    }
+  });
 
   // 监听页面加载失败事件（主框架和子资源）
   mainWindow.webContents.on(
