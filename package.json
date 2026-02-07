@@ -6,6 +6,7 @@
   "author": "rozx <rozx@heavyskymobile.com>",
   "type": "module",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
