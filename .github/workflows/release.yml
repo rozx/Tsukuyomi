@@ -248,6 +248,11 @@ jobs:
             fi
             echo "Using version from files: $VERSION"
           fi
+
+          # Strip build number (4th segment) for tag/release: 0.9.0.58 -> 0.9.0
+          VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?$/\1/')
+          echo "Release version (without build number): $VERSION"
+
           echo "version=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if tag exists
