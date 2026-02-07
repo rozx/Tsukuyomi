@@ -278,16 +278,25 @@ jobs:
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
+          # Strip build number to get 3-part version (v0.9.0.58 -> v0.9.0)
+          VERSION_3PART=$(echo "$VERSION" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?$/\1/')
+
           RELEASE_NOTES_FILE="public/releaseNotes/RELEASE_NOTES_${VERSION}.md"
+          RELEASE_NOTES_FILE_3PART="public/releaseNotes/RELEASE_NOTES_${VERSION_3PART}.md"
 
           echo "Checking for release notes file: $RELEASE_NOTES_FILE"
+          echo "Fallback 3-part version file: $RELEASE_NOTES_FILE_3PART"
 
           if [ -f "$RELEASE_NOTES_FILE" ]; then
-            echo "✅ Release notes file found: $RELEASE_NOTES_FILE"
+            echo "✅ Release notes file found (exact match): $RELEASE_NOTES_FILE"
             echo "has_release_notes=true" >> $GITHUB_OUTPUT
             echo "release_notes_path=$RELEASE_NOTES_FILE" >> $GITHUB_OUTPUT
+          elif [ "$RELEASE_NOTES_FILE" != "$RELEASE_NOTES_FILE_3PART" ] && [ -f "$RELEASE_NOTES_FILE_3PART" ]; then
+            echo "✅ Release notes file found (3-part version): $RELEASE_NOTES_FILE_3PART"
+            echo "has_release_notes=true" >> $GITHUB_OUTPUT
+            echo "release_notes_path=$RELEASE_NOTES_FILE_3PART" >> $GITHUB_OUTPUT
           else
-            echo "ℹ️ No release notes file found at $RELEASE_NOTES_FILE, will use auto-generated notes"
+            echo "ℹ️ No release notes file found, will use auto-generated notes"
             echo "has_release_notes=false" >> $GITHUB_OUTPUT
           fi
 
@@ -371,6 +380,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest'

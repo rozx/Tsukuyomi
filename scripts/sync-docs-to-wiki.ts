@@ -45,11 +45,11 @@ for (const file of helpFiles) {
   const sourcePath = join(helpDir, file);
   let content = readFileSync(sourcePath, 'utf-8');
 
-  // 转换内部链接：/help/xxx -> [[xxx|文本]] (wiki 链接格式)
-  content = content.replace(/\[([^\]]+)\]\(\/help\/([^)]+)\)/g, '[[$2|$1]]');
+  // 转换内部链接：/help/xxx -> [[文本|xxx]] (wiki 链接格式: [[Display Text|Page Name]])
+  content = content.replace(/\[([^\]]+)\]\(\/help\/([^)]+)\)/g, '[[$1|$2]]');
 
-  // 转换相对链接：help/xxx -> [[xxx|文本]]
-  content = content.replace(/\[([^\]]+)\]\(help\/([^)]+)\)/g, '[[$2|$1]]');
+  // 转换相对链接：help/xxx -> [[文本|xxx]]
+  content = content.replace(/\[([^\]]+)\]\(help\/([^)]+)\)/g, '[[$1|$2]]');
 
   // 保持原始文件名（不含 .md），wiki 会自动处理
   const wikiFileName = file;
@@ -129,7 +129,7 @@ for (const [category, articles] of categories) {
   for (const article of articles) {
     // 生成 wiki 链接（文件名不含 .md 后缀）
     const wikiLink = article.file.replace('.md', '');
-    homeContent += `- **[[${wikiLink}|${article.title}]]** - ${article.description}\n`;
+    homeContent += `- **[[${article.title}|${wikiLink}]]** - ${article.description}\n`;
   }
 }
 
@@ -143,7 +143,7 @@ if (releaseNotes.length > 0) {
   const recentReleases = releaseNotes.slice(0, 5);
   for (const article of recentReleases) {
     const wikiLink = article.file.replace('.md', '');
-    homeContent += `- **[[${wikiLink}|${article.title}]]** - ${article.description}\n`;
+    homeContent += `- **[[${article.title}|${wikiLink}]]** - ${article.description}\n`;
   }
 
   if (releaseNotes.length > 5) {
@@ -156,9 +156,9 @@ homeContent += `\n---
 
 ## 🛠️ 开发者文档
 
-- **[[BUILD_TROUBLESHOOTING|构建故障排查]]** - 构建问题诊断和解决方案
-- **[[THEME_GUIDE|主题指南]]** - 自定义主题开发指南
-- **[[TRANSLATION_GUIDE|翻译指南]]** - 为 Tsukuyomi 贡献翻译
+- **[[构建故障排查|BUILD_TROUBLESHOOTING]]** - 构建问题诊断和解决方案
+- **[[主题指南|THEME_GUIDE]]** - 自定义主题开发指南
+- **[[翻译指南|TRANSLATION_GUIDE]]** - 为 Tsukuyomi 贡献翻译
 
 ---
 
@@ -196,7 +196,7 @@ for (const [category, articles] of categories) {
 
   for (const article of articles) {
     const wikiLink = article.file.replace('.md', '');
-    sidebarContent += `- [[${wikiLink}|${article.title}]]\n`;
+    sidebarContent += `- [[${article.title}|${wikiLink}]]\n`;
   }
 
   sidebarContent += '\n';
@@ -204,9 +204,9 @@ for (const [category, articles] of categories) {
 
 // 添加开发者文档
 sidebarContent += `**开发者文档**
-- [[BUILD_TROUBLESHOOTING|构建故障排查]]
-- [[THEME_GUIDE|主题指南]]
-- [[TRANSLATION_GUIDE|翻译指南]]
+- [[构建故障排查|BUILD_TROUBLESHOOTING]]
+- [[主题指南|THEME_GUIDE]]
+- [[翻译指南|TRANSLATION_GUIDE]]
 
 ---
 
@@ -216,10 +216,10 @@ sidebarContent += `**开发者文档**
 const latestRelease = releaseNotes[0];
 if (latestRelease) {
   const latestReleaseLink = latestRelease.file.replace('.md', '');
-  sidebarContent += `**[[${latestReleaseLink}|📋 更新日志]]**\n`;
+  sidebarContent += `**[[📋 更新日志|${latestReleaseLink}]]**\n`;
 } else {
   // 如果没有发布说明，链接到首页（通常不会发生）
-  sidebarContent += `**[[Home|📋 更新日志]]**\n`;
+  sidebarContent += `**[[📋 更新日志|Home]]**\n`;
 }
 
 writeFileSync(join(WIKI_DIR, '_Sidebar.md'), sidebarContent, 'utf-8');
