@@ -6,12 +6,16 @@ import { APP_NAME } from 'src/constants/app';
 <template>
   <footer class="border-t border-white/10 py-3 text-xs text-moon/70 shrink-0">
     <div class="px-3 flex items-center justify-between">
-      <span>© 2025 {{ APP_NAME.en }} {{ APP_NAME.zh }} - {{ APP_NAME.description.en }} v{{ APP_VERSION }}</span>
+      <span
+        >© 2025 {{ APP_NAME.en }} {{ APP_NAME.zh }} - {{ APP_NAME.description.en }} v{{
+          APP_VERSION
+        }}</span
+      >
       <a
-        href="https://github.com/rozx"
+        href="https://github.com/rozx/Tsukuyomi"
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Visit Rozx on GitHub"
+        aria-label="Visit Tsukuyomi on GitHub"
         class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-600 text-white font-medium hover:bg-primary-700 transition-colors"
       >
         <i class="pi pi-github text-[0.9em]" />

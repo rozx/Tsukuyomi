@@ -7,6 +7,10 @@
   "type": "module",
   "private": true,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rozx/Tsukuyomi.git"
+  },
   "scripts": {
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
