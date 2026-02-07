@@ -129,7 +129,7 @@ for (const [category, articles] of categories) {
   for (const article of articles) {
     // 生成 wiki 链接（文件名不含 .md 后缀）
     const wikiLink = article.file.replace('.md', '');
-    homeContent += `- **[[${article.title}|${wikiLink}]]** - ${article.description}\n`;
+    homeContent += `- **[[${wikiLink}|${article.title}]]** - ${article.description}\n`;
   }
 }
 
@@ -143,7 +143,7 @@ if (releaseNotes.length > 0) {
   const recentReleases = releaseNotes.slice(0, 5);
   for (const article of recentReleases) {
     const wikiLink = article.file.replace('.md', '');
-    homeContent += `- **[[${article.title}|${wikiLink}]]** - ${article.description}\n`;
+    homeContent += `- **[[${wikiLink}|${article.title}]]** - ${article.description}\n`;
   }
   
   if (releaseNotes.length > 5) {
@@ -196,7 +196,7 @@ for (const [category, articles] of categories) {
   
   for (const article of articles) {
     const wikiLink = article.file.replace('.md', '');
-    sidebarContent += `- [[${article.title}|${wikiLink}]]\n`;
+    sidebarContent += `- [[${wikiLink}|${article.title}]]\n`;
   }
   
   sidebarContent += '\n';
