@@ -156,9 +156,9 @@ homeContent += `\n---
 
 ## 🛠️ 开发者文档
 
-- **[[构建故障排查|BUILD_TROUBLESHOOTING]]** - 构建问题诊断和解决方案
-- **[[主题指南|THEME_GUIDE]]** - 自定义主题开发指南
-- **[[翻译指南|TRANSLATION_GUIDE]]** - 为 Tsukuyomi 贡献翻译
+- **[[BUILD_TROUBLESHOOTING|构建故障排查]]** - 构建问题诊断和解决方案
+- **[[THEME_GUIDE|主题指南]]** - 自定义主题开发指南
+- **[[TRANSLATION_GUIDE|翻译指南]]** - 为 Tsukuyomi 贡献翻译
 
 ---
 
@@ -204,9 +204,9 @@ for (const [category, articles] of categories) {
 
 // 添加开发者文档
 sidebarContent += `**开发者文档**
-- [[构建故障排查|BUILD_TROUBLESHOOTING]]
-- [[主题指南|THEME_GUIDE]]
-- [[翻译指南|TRANSLATION_GUIDE]]
+- [[BUILD_TROUBLESHOOTING|构建故障排查]]
+- [[THEME_GUIDE|主题指南]]
+- [[TRANSLATION_GUIDE|翻译指南]]
 
 ---
 
@@ -216,9 +216,9 @@ sidebarContent += `**开发者文档**
 if (releaseNotes.length > 0) {
   const latestRelease = releaseNotes[0];
   const latestReleaseLink = latestRelease.file.replace('.md', '');
-  sidebarContent += `**[[📋 更新日志|${latestReleaseLink}]]**\n`;
+  sidebarContent += `**[[${latestReleaseLink}|📋 更新日志]]**\n`;
 } else {
-  sidebarContent += `**[[📋 更新日志|Home#📋-更新日志]]**\n`;
+  sidebarContent += `**[[Home#📋-更新日志|📋 更新日志]]**\n`;
 }
 
 writeFileSync(join(WIKI_DIR, '_Sidebar.md'), sidebarContent, 'utf-8');
