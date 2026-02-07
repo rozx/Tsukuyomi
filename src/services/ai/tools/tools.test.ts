@@ -203,6 +203,48 @@ describe('AI Tools Tests', () => {
       expect(parsed.processed_count).toBe(1);
       expect(BookService.saveBook).toHaveBeenCalled();
     });
+
+    it('should reject translation for blank paragraph', async () => {
+      // Mock BookService behavior with a blank paragraph
+      const mockBook = {
+        id: mockBookId,
+        volumes: [
+          {
+            chapters: [
+              {
+                id: 'c1',
+                content: [{ id: 'p_blank', text: '   ' }], // Blank paragraph
+              },
+            ],
+          },
+        ],
+      };
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValue(
+        new Map([['c1', [{ id: 'p_blank', text: '   ' }]]]),
+      );
+
+      const blankContext = {
+        ...mockContext,
+        chunkBoundaries: {
+          paragraphIds: ['p_blank'],
+          allowedParagraphIds: new Set(['p_blank']),
+          firstParagraphId: 'p_blank',
+          lastParagraphId: 'p_blank',
+        },
+      };
+
+      const result = await addTranslationBatchTool!.handler(
+        {
+          paragraphs: [{ paragraph_id: 'p_blank', translated_text: 'translated' }],
+        },
+        blankContext,
+      );
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('无法翻译空段落或仅包含符号的段落');
+    });
   });
 
   describe('Task Status Tools (update_task_status)', () => {

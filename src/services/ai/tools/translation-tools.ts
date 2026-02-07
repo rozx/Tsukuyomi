@@ -6,6 +6,7 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { useBooksStore } from 'src/stores/books';
+import { isEmptyOrSymbolOnly } from 'src/utils/text-utils';
 
 // ============ Types ============
 
@@ -282,11 +283,27 @@ async function processTranslationBatch(
       }
     }
 
-    const targetParagraphsMap = new Map(targetParagraphs.map((p) => [p.id, p]));
+    // 过滤掉空白段落
+    const validTargetParagraphs = targetParagraphs.filter((p) => !isEmptyOrSymbolOnly(p.text));
+
+    const targetParagraphsMap = new Map(validTargetParagraphs.map((p) => [p.id, p]));
     const missingParagraphIds = items
       .filter((item) => !targetParagraphsMap.has(item.paragraphId))
       .map((item) => item.paragraphId);
     if (missingParagraphIds.length > 0) {
+      // 检查缺失的段落是否是因为空白而被过滤
+      const blankParagraphIds = targetParagraphs
+        .filter((p) => missingParagraphIds.includes(p.id) && isEmptyOrSymbolOnly(p.text))
+        .map((p) => p.id);
+
+      if (blankParagraphIds.length > 0) {
+        return {
+          success: false,
+          error: `无法翻译空段落或仅包含符号的段落: ${blankParagraphIds.join(', ')}`,
+          processedCount: 0,
+        };
+      }
+
       return {
         success: false,
         error: `未找到以下段落: ${missingParagraphIds.join(', ')}`,

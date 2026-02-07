@@ -1625,7 +1625,15 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph, chapter } = location;
+      const { paragraph } = location;
+
+      // 检查是否为空段落
+      if (isEmptyOrSymbolOnly(paragraph.text)) {
+        return JSON.stringify({
+          success: false,
+          error: '无法更新空段落或仅包含符号的段落的翻译',
+        });
+      }
 
       // 查找要更新的翻译
       if (!paragraph.translations || paragraph.translations.length === 0) {
@@ -1854,7 +1862,15 @@ export const paragraphTools: ToolDefinition[] = [
         });
       }
 
-      const { paragraph, chapter } = location;
+      const { paragraph } = location;
+
+      // 检查是否为空段落
+      if (isEmptyOrSymbolOnly(paragraph.text)) {
+        return JSON.stringify({
+          success: false,
+          error: '无法为空段落或仅包含符号的段落添加翻译',
+        });
+      }
 
       // 确定使用的 AI 模型 ID
       let modelId = ai_model_id;
@@ -2322,6 +2338,11 @@ export const paragraphTools: ToolDefinition[] = [
                   continue;
                 }
 
+                // 过滤掉空段落
+                if (isEmptyOrSymbolOnly(paragraph.text)) {
+                  continue;
+                }
+
                 // 检查原文中是否包含关键词（如果提供了 original_keywords）
                 let matchesOriginalText = true;
                 if (validOriginalKeywords.length > 0) {
@@ -2415,6 +2436,11 @@ export const paragraphTools: ToolDefinition[] = [
             }
 
             const paragraph = result.paragraph;
+
+            // 过滤掉空段落
+            if (isEmptyOrSymbolOnly(paragraph.text)) {
+              continue;
+            }
 
             // 检查原文中是否包含关键词（如果提供了 original_keywords）
             let matchesOriginalText = true;
