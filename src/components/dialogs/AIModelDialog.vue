@@ -507,7 +507,7 @@ watch(
 
       <!-- 温度 -->
       <div class="space-y-2">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90"
             >温度 (0-2) *</label
           >
@@ -625,7 +625,7 @@ watch(
 
       <!-- AI 配置信息 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
-        <div class="flex items-center justify-between mb-2">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <label class="block text-sm font-medium text-moon/90">AI 配置信息</label>
           <Button
             label="获取配置"
@@ -641,7 +641,7 @@ watch(
             @click="testModel"
           />
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="space-y-1">
             <label class="text-xs text-moon/70">最大输入 Token</label>
             <InputNumber
@@ -868,18 +868,20 @@ watch(
       </div>
     </div>
     <template #footer>
-      <Button
-        label="取消"
-        icon="pi pi-times"
-        class="p-button-text icon-button-hover"
-        @click="requestCloseDialog"
-      />
-      <Button
-        label="保存"
-        icon="pi pi-check"
-        class="p-button-primary icon-button-hover"
-        @click="handleSave"
-      />
+      <div class="ai-model-dialog-footer flex w-full gap-2 sm:justify-end">
+        <Button
+          label="取消"
+          icon="pi pi-times"
+          class="p-button-text icon-button-hover flex-1 sm:flex-none"
+          @click="requestCloseDialog"
+        />
+        <Button
+          label="保存"
+          icon="pi pi-check"
+          class="p-button-primary icon-button-hover flex-1 sm:flex-none"
+          @click="handleSave"
+        />
+      </div>
     </template>
 
     <Dialog
@@ -913,3 +915,13 @@ watch(
     </Dialog>
   </Dialog>
 </template>
+
+<style scoped>
+:deep(.ai-model-dialog .p-dialog-content) {
+  overflow-x: hidden;
+}
+
+:deep(.ai-model-dialog .p-inputnumber) {
+  width: 100%;
+}
+</style>

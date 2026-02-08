@@ -549,7 +549,7 @@ watch(
     :class="['book-dialog', dialogClass]"
     @update:visible="handleDialogVisibleChange"
   >
-    <div class="flex gap-6 py-2">
+    <div class="book-dialog-layout flex flex-col gap-5 py-2 lg:flex-row lg:gap-6">
       <!-- 左侧表单区域 -->
       <div class="flex-1 space-y-5 min-w-0">
         <!-- 书籍标题 -->
@@ -620,7 +620,7 @@ watch(
 
         <!-- 标签 -->
         <div class="space-y-2">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
               >标签</label
             >
@@ -652,7 +652,7 @@ watch(
 
         <!-- 网络地址 -->
         <div class="space-y-2">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <label :for="`${idPrefix}-webUrl`" class="block text-sm font-medium text-moon/90"
               >网络地址</label
             >
@@ -881,8 +881,8 @@ watch(
       </div>
 
       <!-- 右侧封面管理区域 -->
-      <div class="w-64 flex-shrink-0">
-        <div class="space-y-2 sticky top-0">
+      <div class="w-full flex-shrink-0 lg:w-64">
+        <div class="space-y-2 lg:sticky lg:top-0">
           <label class="block text-sm font-medium text-moon/90">封面</label>
           <div class="space-y-2">
             <div
@@ -934,25 +934,27 @@ watch(
       </div>
     </div>
     <template #footer>
-      <div class="flex items-center justify-between w-full">
+      <div
+        class="book-dialog-footer flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+      >
         <Button
           icon="pi pi-download"
-          label="导出 JSON"
-          class="p-button-text icon-button-hover"
+          :label="isPhone ? '导出' : '导出 JSON'"
+          class="p-button-text icon-button-hover self-start sm:self-auto"
           @click="handleExportJson"
         />
-        <div class="flex gap-2">
+        <div class="flex w-full gap-2 sm:w-auto sm:justify-end">
           <Button
             label="取消"
             icon="pi pi-times"
-            class="p-button-text icon-button-hover"
+            class="p-button-text icon-button-hover flex-1 sm:flex-none"
             :disabled="loading"
             @click="requestCloseDialog"
           />
           <Button
             label="保存"
             icon="pi pi-check"
-            class="p-button-primary icon-button-hover"
+            class="p-button-primary icon-button-hover flex-1 sm:flex-none"
             :loading="loading"
             :disabled="loading"
             @click="handleSave"
@@ -1066,6 +1068,10 @@ watch(
 </template>
 
 <style scoped>
+:deep(.book-dialog .p-dialog-content) {
+  overflow-x: hidden;
+}
+
 /* 确保清除封面按钮与普通按钮高度一致，并匹配深色主题 */
 :deep(.clear-cover-button.p-button-icon-only) {
   height: auto !important;
@@ -1106,5 +1112,21 @@ watch(
 
 .special-instructions-tabs :deep(.p-tabpanels) {
   padding: 0;
+}
+
+.special-instructions-tabs :deep(.p-tablist-content) {
+  overflow-x: auto;
+}
+
+.special-instructions-tabs :deep(.p-tablist-tab-list) {
+  min-width: max-content;
+}
+
+@media (max-width: 640px) {
+  .special-instructions-tabs :deep(.p-tab) {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
 }
 </style>

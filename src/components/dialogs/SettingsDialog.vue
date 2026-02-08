@@ -248,4 +248,26 @@ const handleClose = () => {
   display: flex;
   flex-direction: column;
 }
+
+@media (max-width: 640px) {
+  .settings-dialog :deep(.p-dialog-header) {
+    padding: 0.875rem 1rem 0.5rem;
+  }
+
+  .settings-dialog :deep(.p-dialog-content) {
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  .settings-tabview :deep(.p-tabs-tablist-container) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .settings-tabview :deep(.p-tab) {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
 </style>
