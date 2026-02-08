@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { cloneDeep, isEqual } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -9,6 +10,7 @@ import Checkbox from 'primevue/checkbox';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
@@ -33,6 +35,20 @@ const emit = defineEmits<{
 
 const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
 const toast = useToastWithHistory();
+const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
+  desktopWidth: '750px',
+  tabletWidth: '94vw',
+  desktopHeight: '90vh',
+  tabletHeight: '94vh',
+});
+const unsavedConfirmDialogStyle = computed(() =>
+  isPhone.value
+    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
+    : { width: '420px' },
+);
+const unsavedConfirmDialogClass = computed(() =>
+  isPhone.value ? 'adaptive-dialog-fullscreen' : '',
+);
 
 // 测试相关状态
 const isTesting = ref(false);
@@ -76,6 +92,19 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
 
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
+const showUnsavedCloseConfirm = ref(false);
+const initialFormSnapshot = ref<(Partial<AIModel> & { isDefault: AIModel['isDefault'] }) | null>(
+  null,
+);
+
+const hasUnsavedChanges = computed(() => {
+  if (!props.visible || !initialFormSnapshot.value) {
+    return false;
+  }
+  return !isEqual(initialFormSnapshot.value, formData.value);
+});
+
+const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
 
 // 提供商选项
 const providerOptions = [
@@ -270,10 +299,38 @@ const handleSave = () => {
   emit('save', formData.value);
 };
 
-// 处理取消
-const handleCancel = () => {
+const captureSnapshot = () => {
+  initialFormSnapshot.value = cloneDeep(formData.value);
+};
+
+const closeDialogImmediately = () => {
   emit('cancel');
   emit('update:visible', false);
+};
+
+const requestCloseDialog = () => {
+  if (hasUnsavedChanges.value) {
+    showUnsavedCloseConfirm.value = true;
+    return;
+  }
+  closeDialogImmediately();
+};
+
+const confirmDiscardAndClose = () => {
+  showUnsavedCloseConfirm.value = false;
+  closeDialogImmediately();
+};
+
+const cancelDiscardAndKeepEditing = () => {
+  showUnsavedCloseConfirm.value = false;
+};
+
+const handleDialogVisibleChange = (nextVisible: boolean) => {
+  if (nextVisible) {
+    emit('update:visible', true);
+    return;
+  }
+  requestCloseDialog();
 };
 
 // 获取可用模型列表
@@ -398,9 +455,12 @@ watch(
         resetForm();
       }
       formErrors.value = {};
+      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();
+      showUnsavedCloseConfirm.value = false;
+      initialFormSnapshot.value = null;
     }
   },
   { immediate: true },
@@ -412,10 +472,12 @@ watch(
     :visible="visible"
     :header="mode === 'add' ? '添加 AI 模型' : '编辑 AI 模型'"
     :modal="true"
-    :style="{ width: '750px' }"
-    :closable="true"
-    class="ai-model-dialog"
-    @update:visible="$emit('update:visible', $event)"
+    :style="dialogStyle"
+    :closable="!hasChildDialogOpen"
+    :dismissableMask="!hasChildDialogOpen"
+    :closeOnEscape="!hasChildDialogOpen"
+    :class="['ai-model-dialog', dialogClass]"
+    @update:visible="handleDialogVisibleChange"
   >
     <div class="space-y-5 py-2">
       <!-- 启用状态 -->
@@ -810,7 +872,7 @@ watch(
         label="取消"
         icon="pi pi-times"
         class="p-button-text icon-button-hover"
-        @click="handleCancel"
+        @click="requestCloseDialog"
       />
       <Button
         label="保存"
@@ -819,5 +881,35 @@ watch(
         @click="handleSave"
       />
     </template>
+
+    <Dialog
+      v-model:visible="showUnsavedCloseConfirm"
+      header="放弃未保存修改？"
+      :modal="true"
+      :style="unsavedConfirmDialogStyle"
+      :class="unsavedConfirmDialogClass"
+      :dismissableMask="true"
+      :closeOnEscape="true"
+    >
+      <div class="space-y-3">
+        <p class="text-moon/90">当前模型配置有未保存修改，关闭后这些修改将丢失。</p>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <Button
+            label="继续编辑"
+            icon="pi pi-pencil"
+            class="p-button-text"
+            @click="cancelDiscardAndKeepEditing"
+          />
+          <Button
+            label="放弃修改并关闭"
+            icon="pi pi-times"
+            class="p-button-danger"
+            @click="confirmDiscardAndClose"
+          />
+        </div>
+      </template>
+    </Dialog>
   </Dialog>
 </template>

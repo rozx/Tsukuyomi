@@ -694,15 +694,15 @@ const handleSave = async (formData: Partial<Novel>) => {
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col p-6">
+  <div class="w-full h-full flex flex-col p-3 sm:p-4 lg:p-6">
     <!-- 头部 -->
-    <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
-      <div class="flex-shrink-0">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+      <div class="flex-shrink-0 min-w-0">
         <h1 class="text-2xl font-bold">书籍列表</h1>
         <p class="text-moon/70 mt-1">管理您的翻译书籍</p>
       </div>
-      <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
-        <InputGroup class="search-input-group min-w-0 flex-shrink">
+      <div class="flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap">
+        <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
           </InputGroupAddon>
@@ -724,7 +724,7 @@ const handleSave = async (formData: Partial<Novel>) => {
           :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
           icon="pi pi-sort-alt"
           iconPos="right"
-          class="p-button-outlined icon-button-hover flex-shrink-0"
+          class="p-button-outlined icon-button-hover flex-shrink-0 w-full sm:w-auto"
           @click="
             (e: Event) => {
               const menu = sortMenuRef;
@@ -738,7 +738,7 @@ const handleSave = async (formData: Partial<Novel>) => {
           label="添加书籍"
           icon="pi pi-plus"
           :model="addBookMenuItems"
-          class="p-button-primary icon-button-hover flex-shrink-0"
+          class="p-button-primary icon-button-hover flex-shrink-0 w-full sm:w-auto"
           @click="addBook"
         />
       </div>
@@ -791,7 +791,7 @@ const handleSave = async (formData: Partial<Novel>) => {
 
         <template #grid="slotProps">
           <div
-            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 items-stretch"
+            class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-stretch"
           >
             <div
               v-for="book in slotProps.items"

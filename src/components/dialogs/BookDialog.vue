@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { cloneDeep } from 'lodash';
+import { cloneDeep, isEqual } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -22,6 +22,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
@@ -60,6 +61,26 @@ const titleInputId = computed<string>(() => {
   return prefix ? `${prefix}-title` : 'title';
 });
 const toast = useToastWithHistory();
+const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
+  desktopWidth: '900px',
+  tabletWidth: '94vw',
+  desktopHeight: '90vh',
+  tabletHeight: '94vh',
+});
+const clearConfirmDialogStyle = computed(() =>
+  isPhone.value
+    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
+    : { width: '500px' },
+);
+const clearConfirmDialogClass = computed(() => (isPhone.value ? 'adaptive-dialog-fullscreen' : ''));
+const unsavedConfirmDialogStyle = computed(() =>
+  isPhone.value
+    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
+    : { width: '460px' },
+);
+const unsavedConfirmDialogClass = computed(() =>
+  isPhone.value ? 'adaptive-dialog-fullscreen' : '',
+);
 
 // 表单数据
 const formData = ref<Partial<Novel>>({
@@ -104,6 +125,23 @@ const expandedVolumes = ref<Set<string>>(new Set());
 // 清除确认对话框
 const showClearConfirm = ref(false);
 const clearConfirmInput = ref('');
+const showUnsavedCloseConfirm = ref(false);
+const initialFormSnapshot = ref<Partial<Novel> | null>(null);
+
+const hasUnsavedChanges = computed(() => {
+  if (!props.visible || !initialFormSnapshot.value) {
+    return false;
+  }
+  return !isEqual(initialFormSnapshot.value, formData.value);
+});
+
+const hasChildDialogOpen = computed(
+  () =>
+    showCoverManager.value ||
+    showScraper.value ||
+    showClearConfirm.value ||
+    showUnsavedCloseConfirm.value,
+);
 
 // 计算可用的卷和章节（从 formData 或 props.book 获取）
 const availableVolumes = computed(() => {
@@ -160,6 +198,10 @@ const handleSave = () => {
     return;
   }
   emit('save', formData.value);
+};
+
+const captureSnapshot = () => {
+  initialFormSnapshot.value = cloneDeep(formData.value);
 };
 
 // 导出 JSON
@@ -232,10 +274,39 @@ const handleExportJson = async () => {
   }
 };
 
-// 处理取消
-const handleCancel = () => {
+const closeDialogImmediately = () => {
   emit('cancel');
   emit('update:visible', false);
+};
+
+const requestCloseDialog = () => {
+  if (props.loading) {
+    return;
+  }
+
+  if (hasUnsavedChanges.value) {
+    showUnsavedCloseConfirm.value = true;
+    return;
+  }
+
+  closeDialogImmediately();
+};
+
+const confirmDiscardAndClose = () => {
+  showUnsavedCloseConfirm.value = false;
+  closeDialogImmediately();
+};
+
+const cancelDiscardAndKeepEditing = () => {
+  showUnsavedCloseConfirm.value = false;
+};
+
+const handleDialogVisibleChange = (nextVisible: boolean) => {
+  if (nextVisible) {
+    emit('update:visible', true);
+    return;
+  }
+  requestCloseDialog();
 };
 
 // 处理特殊指令标签页切换
@@ -451,12 +522,15 @@ watch(
       // 等待 DOM 更新后加载字符数
       await nextTick();
       await loadAllVisibleChapterCharCounts();
+      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();
       // 关闭清除确认对话框
       showClearConfirm.value = false;
       clearConfirmInput.value = '';
+      showUnsavedCloseConfirm.value = false;
+      initialFormSnapshot.value = null;
     }
   },
   { immediate: true },
@@ -468,10 +542,12 @@ watch(
     :visible="visible"
     :header="mode === 'add' ? '添加书籍' : '编辑书籍'"
     :modal="true"
-    :style="{ width: '900px' }"
-    :closable="true"
-    class="book-dialog"
-    @update:visible="$emit('update:visible', $event)"
+    :style="dialogStyle"
+    :closable="!props.loading && !hasChildDialogOpen"
+    :dismissableMask="!hasChildDialogOpen"
+    :closeOnEscape="!hasChildDialogOpen"
+    :class="['book-dialog', dialogClass]"
+    @update:visible="handleDialogVisibleChange"
   >
     <div class="flex gap-6 py-2">
       <!-- 左侧表单区域 -->
@@ -871,7 +947,7 @@ watch(
             icon="pi pi-times"
             class="p-button-text icon-button-hover"
             :disabled="loading"
-            @click="handleCancel"
+            @click="requestCloseDialog"
           />
           <Button
             label="保存"
@@ -908,12 +984,44 @@ watch(
       @apply="handleApplyScrapedData"
     />
 
+    <Dialog
+      v-model:visible="showUnsavedCloseConfirm"
+      header="放弃未保存修改？"
+      :modal="true"
+      :style="unsavedConfirmDialogStyle"
+      :class="unsavedConfirmDialogClass"
+      :dismissableMask="true"
+      :closeOnEscape="true"
+    >
+      <div class="space-y-3">
+        <p class="text-moon/90">当前表单有未保存修改，关闭后这些修改将丢失。</p>
+        <p class="text-moon/70 text-sm">建议先保存，或确认放弃修改后关闭。</p>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <Button
+            label="继续编辑"
+            icon="pi pi-pencil"
+            class="p-button-text"
+            @click="cancelDiscardAndKeepEditing"
+          />
+          <Button
+            label="放弃修改并关闭"
+            icon="pi pi-times"
+            class="p-button-danger"
+            @click="confirmDiscardAndClose"
+          />
+        </div>
+      </template>
+    </Dialog>
+
     <!-- 清除确认对话框 -->
     <Dialog
       v-model:visible="showClearConfirm"
       header="确认清除所有卷和章节"
       :modal="true"
-      :style="{ width: '500px' }"
+      :style="clearConfirmDialogStyle"
+      :class="clearConfirmDialogClass"
       :closable="true"
     >
       <div class="space-y-4">

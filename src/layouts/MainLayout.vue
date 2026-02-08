@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, ref } from 'vue';
+import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
@@ -14,6 +14,8 @@ import { useToastHistory } from 'src/composables/useToastHistory';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
+import { useResponsiveLayout } from 'src/composables/useResponsiveLayout';
+import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import {
@@ -30,6 +32,32 @@ const toast = useToastWithHistory();
 const aiProcessingStore = useAIProcessingStore();
 const askUserStore = useAskUserStore();
 const { quickStartGuideVisible, dismissQuickStartGuide } = useQuickStartGuide();
+const { isPhone, isTablet, isDesktop } = useResponsiveLayout();
+
+const showPersistentSidebar = computed(() => isDesktop.value || isTablet.value);
+const rightPanelOverlayStyle = computed(() => ({
+  width: isPhone.value ? '100vw' : `min(92vw, ${ui.rightPanelWidth}px)`,
+}));
+
+const closeSideMenu = () => {
+  ui.closeSideMenu();
+};
+
+const closeRightPanel = () => {
+  ui.closeRightPanel();
+};
+
+useOverlayCloseStack({
+  isOpen: computed(() => ui.sideMenuOpen),
+  enabled: computed(() => !isDesktop.value),
+  onClose: closeSideMenu,
+});
+
+useOverlayCloseStack({
+  isOpen: computed(() => ui.rightPanelOpen),
+  enabled: computed(() => !isDesktop.value),
+  onClose: closeRightPanel,
+});
 
 // 注册全局 toast 函数，供静态方法使用
 if (typeof window !== 'undefined') {
@@ -153,6 +181,18 @@ const handleToastClose = (event: any) => {
 // 自动同步
 const { setupAutoSync, stopAutoSync } = useAutoSync();
 
+watch(
+  () => ui.deviceType,
+  (newType, oldType) => {
+    if (newType === oldType) return;
+    // 进入手机端时默认收起抽屉，避免遮挡内容
+    if (newType === 'phone') {
+      ui.closeSideMenu();
+      ui.closeRightPanel();
+    }
+  },
+);
+
 onMounted(() => {
   setupAutoSync();
 });
@@ -166,8 +206,20 @@ onUnmounted(() => {
   <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
     <AppHeader />
 
-    <div class="flex flex-1 overflow-hidden min-h-0">
+    <div class="flex flex-1 overflow-hidden min-h-0 relative">
       <div
+        v-if="isPhone && ui.sideMenuOpen"
+        class="layout-overlay-mask z-40"
+        @click="closeSideMenu"
+      />
+      <div
+        v-if="!isDesktop && ui.rightPanelOpen"
+        class="layout-overlay-mask z-40"
+        @click="closeRightPanel"
+      />
+
+      <div
+        v-if="showPersistentSidebar"
         class="sidebar-wrapper flex-shrink-0 flex flex-col"
         :style="{ width: ui.sideMenuOpen ? '16rem' : '0' }"
         :inert="!ui.sideMenuOpen"
@@ -179,12 +231,24 @@ onUnmounted(() => {
           <AppSideMenu />
         </div>
       </div>
+
+      <div
+        v-if="isPhone"
+        class="phone-sidebar-wrapper z-50"
+        :class="{ 'phone-sidebar-open': ui.sideMenuOpen }"
+        :inert="!ui.sideMenuOpen"
+      >
+        <AppSideMenu />
+      </div>
+
       <main
         class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 backdrop-blur-xl"
       >
         <RouterView />
       </main>
+
       <div
+        v-if="isDesktop"
         class="right-panel-wrapper flex-shrink-0 flex flex-col"
         :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '0' }"
         :inert="!ui.rightPanelOpen"
@@ -196,6 +260,16 @@ onUnmounted(() => {
         >
           <AppRightPanel />
         </div>
+      </div>
+
+      <div
+        v-if="!isDesktop"
+        class="overlay-right-panel z-50"
+        :class="{ 'overlay-right-panel-open': ui.rightPanelOpen }"
+        :style="rightPanelOverlayStyle"
+        :inert="!ui.rightPanelOpen"
+      >
+        <AppRightPanel />
       </div>
     </div>
 
@@ -221,6 +295,41 @@ onUnmounted(() => {
   transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: width;
   height: 100%;
+}
+
+.layout-overlay-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(1px);
+}
+
+.phone-sidebar-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 16rem;
+  max-width: 86vw;
+  transform: translateX(-100%);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.phone-sidebar-open {
+  transform: translateX(0);
+}
+
+.overlay-right-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.overlay-right-panel-open {
+  transform: translateX(0);
 }
 
 main {

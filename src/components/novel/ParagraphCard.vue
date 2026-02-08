@@ -44,6 +44,10 @@ const emit = defineEmits<{
 const contextStore = useContextStore();
 const booksStore = useBooksStore();
 const uiStore = useUiStore();
+const isTouchLayout = computed(() => uiStore.deviceType !== 'desktop');
+const isParagraphActionBusy = computed(
+  () => !!props.isTranslating || !!props.isPolishing || !!props.isProofreading,
+);
 
 // 上下文菜单管理器
 const { showContextMenu } = useContextMenuManager();
@@ -848,7 +852,7 @@ defineExpose({
     :id="props.id"
     ref="paragraphCardRef"
     class="paragraph-card"
-    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected }"
+    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected, 'touch-layout': isTouchLayout }"
     tabindex="-1"
     @contextmenu="handleParagraphContextMenu"
     @mouseenter="handleParagraphMouseEnter"
@@ -986,6 +990,36 @@ defineExpose({
             </div>
           </template>
         </Inplace>
+      </div>
+
+      <div v-if="isTouchLayout && hasContent" class="touch-quick-actions">
+        <Button
+          label="校对"
+          icon="pi pi-check-circle"
+          class="p-button-text p-button-sm touch-quick-action-button"
+          :disabled="isParagraphActionBusy"
+          @click.stop="handleProofread"
+        />
+        <Button
+          label="润色"
+          icon="pi pi-sparkles"
+          class="p-button-text p-button-sm touch-quick-action-button"
+          :disabled="isParagraphActionBusy"
+          @click.stop="handlePolish"
+        />
+        <Button
+          label="重译"
+          icon="pi pi-refresh"
+          class="p-button-text p-button-sm touch-quick-action-button"
+          :disabled="isParagraphActionBusy"
+          @click.stop="handleRetranslate"
+        />
+        <Button
+          label="助手"
+          icon="pi pi-copy"
+          class="p-button-text p-button-sm touch-quick-action-button"
+          @click.stop="handleCopyToAssistant"
+        />
       </div>
     </div>
 
@@ -1277,9 +1311,52 @@ defineExpose({
   opacity: 1;
 }
 
+.paragraph-card.touch-layout .recent-translation-icon-button,
+.paragraph-card.touch-layout .edit-translation-icon-button,
+.paragraph-card.touch-layout .context-menu-icon-button {
+  opacity: 1;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-color: var(--white-opacity-35);
+  color: var(--moon-opacity-85);
+  border-radius: 0.5rem;
+}
+
+.paragraph-card.touch-layout .recent-translation-icon-button:active,
+.paragraph-card.touch-layout .edit-translation-icon-button:active,
+.paragraph-card.touch-layout .context-menu-icon-button:active {
+  background-color: var(--white-opacity-15);
+  transform: scale(0.96);
+}
+
 .paragraph-content {
   width: 100%;
   padding-right: 6rem; /* 为按钮留出空间：历史按钮右边距4rem + 宽度1.75rem ≈ 6rem */
+}
+
+.paragraph-card.touch-layout .paragraph-content {
+  padding-right: 7rem;
+}
+
+.touch-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.touch-quick-action-button.p-button.p-button-sm {
+  min-height: 2.25rem;
+  justify-content: center;
+  border: 1px solid var(--white-opacity-15);
+  border-radius: 0.5rem;
+  background: var(--white-opacity-5);
+  color: var(--moon-opacity-90);
+}
+
+.touch-quick-action-button.p-button.p-button-sm:enabled:active {
+  background: var(--white-opacity-15);
+  transform: scale(0.98);
 }
 
 .paragraph-text {

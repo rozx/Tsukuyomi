@@ -15,6 +15,7 @@ import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import {
   formatWordCount,
   UniqueIdGenerator,
@@ -54,6 +55,12 @@ const emit = defineEmits<{
 
 const toast = useToastWithHistory();
 const settingsStore = useSettingsStore();
+const { dialogStyle, dialogClass } = useAdaptiveDialog({
+  desktopWidth: '1200px',
+  tabletWidth: '96vw',
+  desktopHeight: '90vh',
+  tabletHeight: '96vh',
+});
 const urlInput = ref('');
 const loading = ref(false);
 const scrapedNovel = ref<Novel | null>(null);
@@ -738,9 +745,9 @@ watch(
     :visible="visible"
     header="从网站获取小说"
     :modal="true"
-    :style="{ width: '1200px', maxHeight: '90vh' }"
+    :style="dialogStyle"
     :closable="true"
-    class="novel-scraper-dialog"
+    :class="['novel-scraper-dialog', dialogClass]"
     @update:visible="$emit('update:visible', $event)"
   >
     <div class="flex flex-col h-full space-y-4 py-2">

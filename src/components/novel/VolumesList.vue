@@ -19,6 +19,7 @@ const _props = defineProps<{
   draggedChapter: DraggedChapter | null;
   dragOverVolumeId: string | null;
   dragOverIndex: number | null;
+  touchMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   (e: 'drag-over', event: DragEvent, volumeId: string, index?: number): void;
   (e: 'drop', event: DragEvent, volumeId: string, index?: number): void;
   (e: 'drag-leave'): void;
+  (e: 'move-chapter', payload: { chapter: Chapter; volumeId: string; index: number; direction: 'up' | 'down' }): void;
 }>();
 
 const handleToggleVolume = (volumeId: string) => {
@@ -78,6 +80,20 @@ const handleDrop = (event: DragEvent, volumeId: string, index?: number) => {
 const handleDragLeave = () => {
   emit('drag-leave');
 };
+
+const handleMoveChapter = (
+  chapter: Chapter,
+  volumeId: string,
+  index: number,
+  direction: 'up' | 'down',
+) => {
+  emit('move-chapter', {
+    chapter,
+    volumeId,
+    index,
+    direction,
+  });
+};
 </script>
 
 <template>
@@ -110,7 +126,7 @@ const handleDragLeave = () => {
                 ({{ volume.chapters.length }} 章)
               </span>
             </div>
-            <div class="volume-actions" @click.stop>
+            <div class="volume-actions" :class="{ 'volume-actions-visible': touchMode }" @click.stop>
               <Button
                 icon="pi pi-pencil"
                 class="p-button-text p-button-sm p-button-rounded action-button"
@@ -144,19 +160,20 @@ const handleDragLeave = () => {
                 :class="[
                   'chapter-item',
                   { 'chapter-item-selected': selectedChapterId === chapter.id },
+                  { 'chapter-item-touch': touchMode },
                   {
                     'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
                   },
                   { dragging: draggedChapter?.chapter.id === chapter.id },
                 ]"
-                draggable="true"
+                :draggable="!touchMode"
                 @dragstart="handleDragStart($event, chapter, volume.id, index)"
                 @dragend="handleDragEnd($event)"
                 @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
                 @drop.stop="handleDrop($event, volume.id, index)"
               >
                 <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
-                  <i class="pi pi-bars drag-handle"></i>
+                  <i v-if="!touchMode" class="pi pi-bars drag-handle"></i>
                   <i class="pi pi-file chapter-icon"></i>
                   <span class="chapter-title">{{
                     getChapterDisplayTitle(chapter, book || undefined)
@@ -177,7 +194,25 @@ const handleDragLeave = () => {
                     }"
                   ></i>
                 </div>
-                <div class="chapter-actions" @click.stop>
+                <div class="chapter-actions" :class="{ 'chapter-actions-visible': touchMode }" @click.stop>
+                  <Button
+                    v-if="touchMode"
+                    icon="pi pi-arrow-up"
+                    class="p-button-text p-button-sm p-button-rounded action-button"
+                    size="small"
+                    title="上移"
+                    :disabled="index === 0"
+                    @click="handleMoveChapter(chapter, volume.id, index, 'up')"
+                  />
+                  <Button
+                    v-if="touchMode"
+                    icon="pi pi-arrow-down"
+                    class="p-button-text p-button-sm p-button-rounded action-button"
+                    size="small"
+                    title="下移"
+                    :disabled="index === (volume.chapters?.length || 1) - 1"
+                    @click="handleMoveChapter(chapter, volume.id, index, 'down')"
+                  />
                   <Button
                     icon="pi pi-pencil"
                     class="p-button-text p-button-sm p-button-rounded action-button"
@@ -273,6 +308,10 @@ const handleDragLeave = () => {
 }
 
 .volume-header:hover .volume-actions {
+  opacity: 1;
+}
+
+.volume-actions-visible {
   opacity: 1;
 }
 
@@ -416,6 +455,34 @@ const handleDragLeave = () => {
   opacity: 1;
   max-width: 4rem;
   margin-left: 0.25rem;
+}
+
+.chapter-actions-visible {
+  opacity: 1;
+  max-width: 8rem;
+  margin-left: 0.25rem;
+}
+
+.volume-actions-visible .action-button,
+.chapter-actions-visible .action-button {
+  min-width: 1.875rem !important;
+  width: 1.875rem !important;
+  height: 1.875rem !important;
+}
+
+.chapter-item-touch {
+  padding: 0.625rem;
+}
+
+.chapter-item-touch:active,
+.volume-header-content:active {
+  transform: scale(0.99);
+}
+
+.chapter-item-touch .action-button:active,
+.volume-actions-visible .action-button:active {
+  background: var(--white-opacity-15) !important;
+  transform: scale(0.96);
 }
 
 .chapter-icon {

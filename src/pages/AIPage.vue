@@ -246,15 +246,15 @@ const formatApiKey = (apiKey: string): string => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col p-6">
+  <div class="h-full flex flex-col p-3 sm:p-4 lg:p-6">
     <!-- 固定头部 -->
-    <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
-      <div class="flex-shrink-0">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+      <div class="flex-shrink-0 min-w-0">
         <h1 class="text-2xl font-bold">AI 模型管理</h1>
         <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
       </div>
-      <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
-        <InputGroup class="search-input-group min-w-0 flex-shrink">
+      <div class="flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap">
+        <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
           </InputGroupAddon>
@@ -276,7 +276,7 @@ const formatApiKey = (apiKey: string): string => {
           label="添加 AI 模型"
           icon="pi pi-plus"
           @click="addModel"
-          class="p-button-primary icon-button-hover flex-shrink-0"
+          class="p-button-primary icon-button-hover flex-shrink-0 w-full sm:w-auto"
         />
       </div>
     </div>
@@ -330,20 +330,20 @@ const formatApiKey = (apiKey: string): string => {
             >
               <!-- 卡片头部 -->
               <div class="p-4 border-b border-white/10">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
                     <i
                       class="pi pi-sparkles text-xl icon-hover"
                       :class="model.enabled ? 'text-accent-400' : 'text-moon/50'"
                     />
-                    <div>
-                      <h3 class="text-lg font-semibold">{{ model.name }}</h3>
-                      <p class="text-sm text-moon/70">
+                    <div class="min-w-0">
+                      <h3 class="text-lg font-semibold truncate">{{ model.name }}</h3>
+                      <p class="text-sm text-moon/70 truncate">
                         {{ getProviderLabel(model.provider) }} · {{ model.model }}
                       </p>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2 flex-wrap">
                     <Tag
                       :value="model.enabled ? '已启用' : '已禁用'"
                       :severity="model.enabled ? 'success' : 'secondary'"
@@ -369,7 +369,7 @@ const formatApiKey = (apiKey: string): string => {
 
               <!-- 卡片内容 -->
               <div class="p-4 space-y-3">
-                <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-sm">
                   <div>
                     <span class="text-moon/70">温度:</span>
                     <span class="ml-2">{{ model.temperature }}</span>

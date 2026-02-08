@@ -9,6 +9,7 @@ import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import AIModelSettingsTab from '../settings/AIModelSettingsTab.vue';
 import ScraperSettingsTab from '../settings/ScraperSettingsTab.vue';
 import ProxySettingsTab from '../settings/ProxySettingsTab.vue';
@@ -26,6 +27,12 @@ const emit = defineEmits<{
 
 const settingsStore = useSettingsStore();
 const { isElectron } = useElectron();
+const { dialogStyle, dialogClass } = useAdaptiveDialog({
+  desktopWidth: '800px',
+  tabletWidth: '94vw',
+  desktopHeight: '700px',
+  tabletHeight: '94vh',
+});
 
 // 当前选中的标签页值（字符串类型）
 const activeTab = ref('0');
@@ -142,11 +149,11 @@ const handleClose = () => {
     :visible="visible"
     header="设置"
     :modal="true"
-    :style="{ width: '800px', height: '700px' }"
+    :style="dialogStyle"
     :closable="true"
     :draggable="false"
     :resizable="false"
-    class="settings-dialog"
+    :class="['settings-dialog', dialogClass]"
     @update:visible="$emit('update:visible', $event)"
     @hide="handleClose"
   >

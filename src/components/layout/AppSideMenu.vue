@@ -112,7 +112,7 @@ const bottomItems: MenuItem[] = [
 <template>
   <aside
     ref="menuContainerRef"
-    class="w-64 shrink-0 h-full border-r border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative"
+    class="w-full md:w-64 shrink-0 h-full border-r border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative"
   >
     <!-- Subtle gradient overlay -->
     <div

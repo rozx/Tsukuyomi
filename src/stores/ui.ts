@@ -1,4 +1,9 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import {
+  DEFAULT_BOOK_WORKSPACE_MODE,
+  type BookWorkspaceMode,
+  type DeviceType,
+} from 'src/constants/responsive';
 
 const STORAGE_KEY = 'tsukuyomi-ui-state';
 
@@ -9,6 +14,7 @@ function loadUiStateFromStorage(): {
   sideMenuOpen: boolean;
   rightPanelOpen: boolean;
   rightPanelWidth: number;
+  bookWorkspaceMode: BookWorkspaceMode;
 } {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -18,6 +24,7 @@ function loadUiStateFromStorage(): {
         sideMenuOpen: state.sideMenuOpen ?? true,
         rightPanelOpen: state.rightPanelOpen ?? false,
         rightPanelWidth: state.rightPanelWidth ?? 384, // 默认 384px (w-96)
+        bookWorkspaceMode: state.bookWorkspaceMode ?? DEFAULT_BOOK_WORKSPACE_MODE,
       };
     }
   } catch (error) {
@@ -27,6 +34,7 @@ function loadUiStateFromStorage(): {
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
+    bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
   };
 }
 
@@ -37,6 +45,7 @@ function saveUiStateToStorage(state: {
   sideMenuOpen: boolean;
   rightPanelOpen: boolean;
   rightPanelWidth: number;
+  bookWorkspaceMode: BookWorkspaceMode;
 }): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -50,6 +59,8 @@ export const useUiStore = defineStore('ui', {
     sideMenuOpen: boolean;
     rightPanelOpen: boolean;
     rightPanelWidth: number;
+    deviceType: DeviceType;
+    bookWorkspaceMode: BookWorkspaceMode;
     isLoaded: boolean;
     isInitialDataLoading: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
@@ -57,6 +68,8 @@ export const useUiStore = defineStore('ui', {
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
+    deviceType: 'desktop',
+    bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
     isLoaded: false,
     isInitialDataLoading: false,
     assistantInputMessage: null,
@@ -75,6 +88,7 @@ export const useUiStore = defineStore('ui', {
       this.sideMenuOpen = state.sideMenuOpen;
       this.rightPanelOpen = state.rightPanelOpen;
       this.rightPanelWidth = state.rightPanelWidth;
+      this.bookWorkspaceMode = state.bookWorkspaceMode;
       this.isLoaded = true;
     },
 
@@ -107,11 +121,19 @@ export const useUiStore = defineStore('ui', {
       this.rightPanelWidth = Math.max(256, Math.min(1024, width));
       this.saveState();
     },
+    setDeviceType(deviceType: DeviceType) {
+      this.deviceType = deviceType;
+    },
+    setBookWorkspaceMode(mode: BookWorkspaceMode) {
+      this.bookWorkspaceMode = mode;
+      this.saveState();
+    },
     saveState() {
       saveUiStateToStorage({
         sideMenuOpen: this.sideMenuOpen,
         rightPanelOpen: this.rightPanelOpen,
         rightPanelWidth: this.rightPanelWidth,
+        bookWorkspaceMode: this.bookWorkspaceMode,
       });
     },
     setInitialDataLoading(loading: boolean) {

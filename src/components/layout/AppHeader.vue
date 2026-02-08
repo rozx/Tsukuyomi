@@ -19,6 +19,7 @@ const ui = useUiStore();
 const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
+const isPhone = computed(() => ui.deviceType === 'phone');
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
@@ -83,6 +84,20 @@ const toggleBatchSummaryPanel = (event: Event) => {
 
 const toggleSyncPanel = (event: Event) => {
   syncPanelRef.value?.toggle(event);
+};
+
+const handleToggleSideMenu = () => {
+  if (isPhone.value && ui.rightPanelOpen) {
+    ui.closeRightPanel();
+  }
+  ui.toggleSideMenu();
+};
+
+const handleToggleRightPanel = () => {
+  if (isPhone.value && ui.sideMenuOpen) {
+    ui.closeSideMenu();
+  }
+  ui.toggleRightPanel();
 };
 
 // 同步相关（仅用于按钮状态显示）
@@ -265,19 +280,19 @@ onUnmounted(() => {
   >
     <Menubar
       :model="menuItems"
-      class="!rounded-none !border-0 bg-transparent px-4 py-3 text-moon-80 whitespace-nowrap"
+      class="!rounded-none !border-0 bg-transparent px-2 sm:px-4 py-2 sm:py-3 text-moon-80 whitespace-nowrap"
     >
       <template #start>
-        <div class="flex items-center gap-3 pr-4 whitespace-nowrap flex-shrink-0">
+        <div class="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 whitespace-nowrap flex-shrink-0">
           <Button
             aria-label="切换侧边栏"
             class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
             icon="pi pi-bars"
-            @click="ui.toggleSideMenu()"
+            @click="handleToggleSideMenu"
           />
           <img :src="logoPath" :alt="APP_NAME.full" class="w-8 h-8 flex-shrink-0" />
-          <div class="flex flex-col">
-            <span class="text-xs uppercase tracking-[0.3em] text-moon-50"
+          <div v-if="!isPhone" class="flex flex-col">
+            <span class="text-[10px] uppercase tracking-[0.2em] text-moon-50"
               >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
             >
             <span class="font-semibold text-moon-100 tracking-wide">{{
@@ -288,12 +303,12 @@ onUnmounted(() => {
       </template>
 
       <template #end>
-        <div class="flex items-center gap-3 whitespace-nowrap flex-shrink-0">
+        <div class="flex items-center gap-1 sm:gap-3 whitespace-nowrap flex-shrink-0">
           <!-- AI 思考过程按钮 -->
           <Button
             ref="thinkingButtonRef"
             aria-label="AI 思考过程"
-            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100 whitespace-nowrap h-auto min-h-[2.5rem]"
+            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100 whitespace-nowrap h-auto min-h-[2.25rem]"
             :class="{ 'thinking-active': aiProcessing.hasActiveTasks }"
             @click="toggleThinkingPanel"
           >
@@ -301,8 +316,10 @@ onUnmounted(() => {
               class="pi pi-sparkles text-accent-300 flex-shrink-0"
               :class="{ 'animate-spin': aiProcessing.hasActiveTasks }"
             />
-            <span class="text-sm text-moon-70">AI 思考过程</span>
-            <span v-if="aiTaskStatus" class="text-xs text-moon-50 ml-1">({{ aiTaskStatus }})</span>
+            <span v-if="!isPhone" class="text-sm text-moon-70">AI 思考过程</span>
+            <span v-if="aiTaskStatus && !isPhone" class="text-xs text-moon-50 ml-1"
+              >({{ aiTaskStatus }})</span
+            >
           </Button>
 
           <!-- 同步状态按钮 -->
@@ -314,9 +331,11 @@ onUnmounted(() => {
             @click="toggleSyncPanel"
           >
             <i :class="[syncStatus.icon, syncStatus.color]" class="text-lg" />
-            <span v-if="gistSync.enabled" class="text-sm uppercase tracking-wide text-moon-60">{{
-              formatNextSyncTime
-            }}</span>
+            <span
+              v-if="gistSync.enabled && !isPhone"
+              class="text-sm uppercase tracking-wide text-moon-60"
+              >{{ formatNextSyncTime }}</span
+            >
           </Button>
 
           <!-- AI 批量摘要按钮 -->
@@ -352,7 +371,7 @@ onUnmounted(() => {
             aria-label="切换右侧面板"
             class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
             :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-comments'"
-            @click="ui.toggleRightPanel()"
+            @click="handleToggleRightPanel"
           />
         </div>
       </template>

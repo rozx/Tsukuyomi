@@ -9,6 +9,7 @@ import Popover from 'primevue/popover';
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
+import { useUiStore } from 'src/stores/ui';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -73,14 +74,20 @@ import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-ser
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory, MemoryAttachmentType } from 'src/models/memory';
+import type { BookWorkspaceMode } from 'src/constants/responsive';
 
 const route = useRoute();
 const router = useRouter();
 const booksStore = useBooksStore();
 const bookDetailsStore = useBookDetailsStore();
 const contextStore = useContextStore();
+const uiStore = useUiStore();
 const aiProcessingStore = useAIProcessingStore();
 const toast = useToastWithHistory();
+
+const isPhone = computed(() => uiStore.deviceType === 'phone');
+const isTablet = computed(() => uiStore.deviceType === 'tablet');
+const isSmallScreen = computed(() => isPhone.value || isTablet.value);
 
 // 书籍编辑对话框状态
 const showBookDialog = ref(false);
@@ -368,6 +375,22 @@ const volumeOptions = computed(() => {
   }));
 });
 
+const workspaceMode = computed({
+  get: (): BookWorkspaceMode => uiStore.bookWorkspaceMode,
+  set: (value: BookWorkspaceMode) => uiStore.setBookWorkspaceMode(value),
+});
+
+const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
+  workspaceMode.value = mode;
+  if (mode === 'content') {
+    selectedSettingMenu.value = null;
+  } else if (mode === 'settings' && !selectedSettingMenu.value) {
+    selectedSettingMenu.value = 'terms';
+  } else if (mode === 'progress' && !showTranslationProgress.value) {
+    showTranslationProgress.value = true;
+  }
+};
+
 // 导航到章节详情页
 const navigateToChapterInternal = (chapter: Chapter) => {
   if (!bookId.value) return;
@@ -375,6 +398,9 @@ const navigateToChapterInternal = (chapter: Chapter) => {
   void bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
   // 清除设置菜单选中状态
   selectedSettingMenu.value = null;
+  if (isSmallScreen.value) {
+    workspaceMode.value = 'content';
+  }
   // 重置滚动位置到顶部（注意：真实滚动容器是章节内容面板）
   void scrollCurrentContentToTop();
 };
@@ -447,6 +473,35 @@ const onDragLeave = (...args: unknown[]) => {
   handleDragLeave();
 };
 
+const onMoveChapter = (...args: unknown[]) => {
+  const payload = args[0] as
+    | {
+        chapter: Chapter;
+        volumeId: string;
+        index: number;
+        direction: 'up' | 'down';
+      }
+    | undefined;
+
+  if (!payload || !book.value) return;
+
+  const { chapter, volumeId, index, direction } = payload;
+  const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  if (targetIndex < 0) return;
+
+  const targetVolume = book.value.volumes?.find((volume) => volume.id === volumeId);
+  if (!targetVolume?.chapters) return;
+  if (targetIndex >= targetVolume.chapters.length) return;
+
+  saveState?.('触控排序章节');
+
+  const updatedVolumes = ChapterService.moveChapter(book.value, chapter.id, volumeId, targetIndex);
+  void booksStore.updateBook(book.value.id, {
+    volumes: updatedVolumes,
+    lastEdited: new Date(),
+  });
+};
+
 // 打开书籍编辑对话框
 const openBookDialog = () => {
   showBookDialog.value = true;
@@ -464,6 +519,9 @@ const openBookDialog = () => {
 // 导航到术语设置
 const navigateToTermsSetting = () => {
   selectedSettingMenu.value = 'terms';
+  if (isSmallScreen.value) {
+    workspaceMode.value = 'settings';
+  }
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
@@ -482,6 +540,9 @@ const navigateToTermsSetting = () => {
 // 导航到角色设置
 const navigateToCharactersSetting = () => {
   selectedSettingMenu.value = 'characters';
+  if (isSmallScreen.value) {
+    workspaceMode.value = 'settings';
+  }
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
@@ -500,6 +561,9 @@ const navigateToCharactersSetting = () => {
 // 导航到 Memory 设置
 const navigateToMemorySetting = () => {
   selectedSettingMenu.value = 'memory';
+  if (isSmallScreen.value) {
+    workspaceMode.value = 'settings';
+  }
   // 清除章节选中状态
   if (bookId.value) {
     void bookDetailsStore.setSelectedChapter(bookId.value, null);
@@ -692,6 +756,10 @@ watch(
       resetParagraphNavigation();
       void scrollCurrentContentToTop();
       return;
+    }
+
+    if (isSmallScreen.value && !selectedSettingMenu.value && workspaceMode.value === 'catalog') {
+      workspaceMode.value = 'content';
     }
 
     // 如果内容已加载，直接使用
@@ -1121,6 +1189,9 @@ const showTranslationProgress = computed({
 const toggleTranslationProgress = (): void => {
   if (!bookId.value) return;
   bookDetailsStore.toggleShowTranslationProgress(bookId.value);
+  if (isSmallScreen.value && showTranslationProgress.value) {
+    workspaceMode.value = 'progress';
+  }
 };
 
 // 当翻译/润色/校对开始时，自动显示进度面板
@@ -1129,6 +1200,33 @@ watch(
   (isActive) => {
     if (isActive && bookId.value) {
       bookDetailsStore.setShowTranslationProgress(bookId.value, true);
+      if (isSmallScreen.value) {
+        workspaceMode.value = 'progress';
+      }
+    }
+  },
+);
+
+watch(
+  isSmallScreen,
+  (small) => {
+    if (!small) {
+      workspaceMode.value = 'content';
+      return;
+    }
+    if (selectedSettingMenu.value) {
+      workspaceMode.value = 'settings';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  selectedSettingMenu,
+  (menu) => {
+    if (!isSmallScreen.value) return;
+    if (menu) {
+      workspaceMode.value = 'settings';
     }
   },
 );
@@ -1922,8 +2020,50 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
     <!-- 书籍内容 -->
     <div v-else class="book-details-layout">
+      <div v-if="isSmallScreen" class="mobile-workspace-switcher">
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'catalog' }"
+          @click="switchWorkspaceMode('catalog')"
+        >
+          <i class="pi pi-list"></i>
+          <span>目录</span>
+        </button>
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'content' }"
+          @click="switchWorkspaceMode('content')"
+        >
+          <i class="pi pi-file"></i>
+          <span>内容</span>
+        </button>
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'settings' }"
+          @click="switchWorkspaceMode('settings')"
+        >
+          <i class="pi pi-cog"></i>
+          <span>设置</span>
+        </button>
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'progress' }"
+          :disabled="!selectedChapter || !showTranslationProgress"
+          @click="switchWorkspaceMode('progress')"
+        >
+          <i class="pi pi-chart-line"></i>
+          <span>进度</span>
+        </button>
+      </div>
+
       <!-- 左侧卷/章节面板 -->
-      <aside class="book-sidebar">
+      <aside
+        class="book-sidebar"
+        :class="{
+          'book-sidebar-mobile-hidden': isSmallScreen && workspaceMode !== 'catalog',
+          'book-sidebar-mobile-visible': isSmallScreen && workspaceMode === 'catalog',
+        }"
+      >
         <div class="sidebar-content">
           <!-- 书籍封面和标题 -->
           <div v-if="book" class="book-header">
@@ -2040,6 +2180,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :dragged-chapter="draggedChapter"
             :drag-over-volume-id="dragOverVolumeId"
             :drag-over-index="dragOverIndex"
+            :touch-mode="isSmallScreen"
             @toggle-volume="onToggleVolume"
             @navigate-to-chapter="onNavigateToChapter"
             @edit-volume="onEditVolume"
@@ -2051,6 +2192,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             @drag-over="onDragOver"
             @drop="onDrop"
             @drag-leave="onDragLeave"
+            @move-chapter="onMoveChapter"
           />
 
           <!-- 返回链接 -->
@@ -2234,10 +2376,16 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       />
 
       <!-- 主内容区域 -->
-      <div class="book-main-content" :class="{ 'overflow-hidden': !!selectedSettingMenu }">
+      <div
+        class="book-main-content"
+        :class="{
+          'overflow-hidden': !!selectedSettingMenu,
+          'book-main-content-mobile-hidden': isSmallScreen && workspaceMode === 'catalog',
+        }"
+      >
         <!-- 章节阅读工具栏 -->
         <ChapterToolbar
-          v-if="selectedChapter && !selectedSettingMenu"
+          v-if="selectedChapter && !selectedSettingMenu && (!isSmallScreen || workspaceMode === 'content')"
           :selected-chapter="selectedChapter"
           :book="book || null"
           :can-undo="canUndo"
@@ -2280,7 +2428,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
         <!-- 搜索工具栏 -->
         <SearchToolbar
-          v-if="selectedChapter && !selectedSettingMenu"
+          v-if="selectedChapter && !selectedSettingMenu && (!isSmallScreen || workspaceMode === 'content')"
           v-model:visible="isSearchVisible"
           v-model:search-query="searchQuery"
           v-model:replace-query="replaceQuery"
@@ -2296,7 +2444,13 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         <div
           ref="scrollableContentRef"
           class="scrollable-content"
-          :class="{ '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu }"
+          :class="{
+            '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu,
+            'scrollable-content-mobile-hidden':
+              isSmallScreen &&
+              ((workspaceMode === 'settings' && !selectedSettingMenu) ||
+                (workspaceMode === 'progress' && !showTranslationProgress)),
+          }"
         >
           <div
             class="page-container"
@@ -2308,21 +2462,23 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           >
             <!-- 术语设置面板 -->
             <TerminologyPanel
-              v-if="selectedSettingMenu === 'terms'"
+              v-if="selectedSettingMenu === 'terms' && (!isSmallScreen || workspaceMode === 'settings')"
               :book="book || null"
               class="flex-1 min-h-0"
             />
 
             <!-- 角色设置面板 -->
             <CharacterSettingPanel
-              v-else-if="selectedSettingMenu === 'characters'"
+              v-else-if="
+                selectedSettingMenu === 'characters' && (!isSmallScreen || workspaceMode === 'settings')
+              "
               :book="book || null"
               class="flex-1 min-h-0"
             />
 
             <!-- Memory 设置面板 -->
             <MemoryPanel
-              v-else-if="selectedSettingMenu === 'memory'"
+              v-else-if="selectedSettingMenu === 'memory' && (!isSmallScreen || workspaceMode === 'settings')"
               :book="book || null"
               class="flex-1 min-h-0"
             />
@@ -2337,7 +2493,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
               <div
                 ref="chapterContentPanelRef"
                 class="chapter-content-panel"
-                :class="{ 'panel-with-split': showTranslationProgress }"
+                :class="{
+                  'panel-with-split': showTranslationProgress,
+                  'mobile-panel-hidden': isSmallScreen && workspaceMode === 'progress',
+                }"
               >
                 <ChapterContentPanel
                   :selected-chapter="selectedChapter"
@@ -2386,10 +2545,16 @@ const handleBookSave = async (formData: Partial<Novel>) => {
               </div>
 
               <!-- 分割线 -->
-              <div v-show="showTranslationProgress" class="split-divider"></div>
+              <div
+                v-show="showTranslationProgress && (!isSmallScreen || workspaceMode === 'progress')"
+                class="split-divider"
+              ></div>
 
               <!-- 右侧：翻译进度 -->
-              <div v-show="showTranslationProgress" class="translation-progress-panel">
+              <div
+                v-show="showTranslationProgress && (!isSmallScreen || workspaceMode === 'progress')"
+                class="translation-progress-panel"
+              >
                 <div class="translation-progress-panel-inner">
                   <TranslationProgress
                     :is-translating="isTranslatingChapter"
@@ -2434,6 +2599,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+.mobile-workspace-switcher {
+  display: none;
 }
 
 /* 左侧边栏 */
@@ -2846,5 +3015,96 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .no-selection-hint {
   margin: 0;
+}
+
+@media (max-width: 1279px) {
+  .book-details-layout {
+    flex-direction: column;
+  }
+
+  .mobile-workspace-switcher {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--white-opacity-10);
+    background: var(--white-opacity-3);
+  }
+
+  .workspace-switch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border: 1px solid var(--white-opacity-15);
+    background: var(--white-opacity-5);
+    color: var(--moon-opacity-85);
+    border-radius: 0.5rem;
+    min-height: 2.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .workspace-switch-btn-active {
+    border-color: var(--primary-opacity-50);
+    background: var(--primary-opacity-15);
+    color: var(--moon-opacity-100);
+  }
+
+  .workspace-switch-btn:disabled {
+    opacity: 0.45;
+  }
+
+  .workspace-switch-btn:active,
+  .settings-menu-item:active,
+  .book-header-content:active,
+  .back-link:active {
+    transform: scale(0.98);
+  }
+
+  .settings-menu-item {
+    min-height: 2.5rem;
+  }
+
+  .book-sidebar {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    border-right: none;
+    border-bottom: 1px solid var(--white-opacity-10);
+  }
+
+  .book-sidebar-mobile-hidden {
+    display: none;
+  }
+
+  .book-sidebar-mobile-visible {
+    display: block;
+  }
+
+  .book-main-content-mobile-hidden {
+    display: none;
+  }
+
+  .scrollable-content-mobile-hidden {
+    display: none;
+  }
+
+  .mobile-panel-hidden {
+    display: none;
+  }
+
+  .translation-progress-panel {
+    margin: 0;
+  }
+
+  .split-divider {
+    display: none;
+  }
+
+  .chapter-content-split-layout {
+    margin: 0;
+    padding: 0.75rem 0.75rem 0 0.75rem;
+  }
 }
 </style>
