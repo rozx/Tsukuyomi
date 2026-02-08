@@ -1221,15 +1221,12 @@ watch(
   { immediate: true },
 );
 
-watch(
-  selectedSettingMenu,
-  (menu) => {
-    if (!isSmallScreen.value) return;
-    if (menu) {
-      workspaceMode.value = 'settings';
-    }
-  },
-);
+watch(selectedSettingMenu, (menu) => {
+  if (!isSmallScreen.value) return;
+  if (menu) {
+    workspaceMode.value = 'settings';
+  }
+});
 
 // 获取段落的选中翻译文本（应用缩进过滤器）
 const getParagraphTranslationText = (paragraph: Paragraph): string => {
@@ -2385,7 +2382,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
       >
         <!-- 章节阅读工具栏 -->
         <ChapterToolbar
-          v-if="selectedChapter && !selectedSettingMenu && (!isSmallScreen || workspaceMode === 'content')"
+          v-if="
+            selectedChapter &&
+            !selectedSettingMenu &&
+            (!isSmallScreen || workspaceMode === 'content')
+          "
           :selected-chapter="selectedChapter"
           :book="book || null"
           :can-undo="canUndo"
@@ -2428,7 +2429,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
         <!-- 搜索工具栏 -->
         <SearchToolbar
-          v-if="selectedChapter && !selectedSettingMenu && (!isSmallScreen || workspaceMode === 'content')"
+          v-if="
+            selectedChapter &&
+            !selectedSettingMenu &&
+            (!isSmallScreen || workspaceMode === 'content')
+          "
           v-model:visible="isSearchVisible"
           v-model:search-query="searchQuery"
           v-model:replace-query="replaceQuery"
@@ -2462,7 +2467,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           >
             <!-- 术语设置面板 -->
             <TerminologyPanel
-              v-if="selectedSettingMenu === 'terms' && (!isSmallScreen || workspaceMode === 'settings')"
+              v-if="
+                selectedSettingMenu === 'terms' && (!isSmallScreen || workspaceMode === 'settings')
+              "
               :book="book || null"
               class="flex-1 min-h-0"
             />
@@ -2470,7 +2477,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             <!-- 角色设置面板 -->
             <CharacterSettingPanel
               v-else-if="
-                selectedSettingMenu === 'characters' && (!isSmallScreen || workspaceMode === 'settings')
+                selectedSettingMenu === 'characters' &&
+                (!isSmallScreen || workspaceMode === 'settings')
               "
               :book="book || null"
               class="flex-1 min-h-0"
@@ -2478,7 +2486,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
             <!-- Memory 设置面板 -->
             <MemoryPanel
-              v-else-if="selectedSettingMenu === 'memory' && (!isSmallScreen || workspaceMode === 'settings')"
+              v-else-if="
+                selectedSettingMenu === 'memory' && (!isSmallScreen || workspaceMode === 'settings')
+              "
               :book="book || null"
               class="flex-1 min-h-0"
             />
@@ -2622,6 +2632,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .book-header {
@@ -2640,6 +2652,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .book-header-content:hover {
@@ -2687,6 +2701,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   flex-direction: column;
   justify-content: center;
   gap: 0.25rem;
+  overflow: hidden;
 }
 
 .book-title {
@@ -2700,6 +2715,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
   margin: 0;
 }
 
@@ -2709,6 +2725,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   gap: 0.375rem;
   flex-wrap: nowrap;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-item {
@@ -3020,6 +3038,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 @media (max-width: 1279px) {
   .book-details-layout {
     flex-direction: column;
+    max-width: 100%;
   }
 
   .mobile-workspace-switcher {
@@ -3029,6 +3048,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--white-opacity-10);
     background: var(--white-opacity-3);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    flex-shrink: 0;
   }
 
   .workspace-switch-btn {
@@ -3043,6 +3066,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     min-height: 2.5rem;
     font-size: 0.75rem;
     font-weight: 500;
+    overflow: hidden;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   .workspace-switch-btn-active {
@@ -3066,12 +3092,62 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     min-height: 2.5rem;
   }
 
+  .sidebar-title-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .sidebar-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    overflow: hidden;
+  }
+
+  .sidebar-actions :deep(.p-button) {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.125rem;
+    font-size: 0.75rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .sidebar-actions :deep(.p-button .p-button-icon) {
+    margin-right: 0.25rem;
+    font-size: 0.75rem;
+  }
+
+  .book-title {
+    font-size: 0.95rem;
+  }
+
+  .book-stats {
+    gap: 0.25rem;
+    font-size: 0.7rem;
+  }
+
+  .stat-item {
+    min-width: 0;
+  }
+
   .book-sidebar {
     width: 100%;
     min-width: 0;
-    max-width: none;
+    max-width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--white-opacity-10);
+  }
+
+  .sidebar-content {
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .book-sidebar-mobile-hidden {

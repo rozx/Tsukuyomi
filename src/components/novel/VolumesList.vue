@@ -34,7 +34,10 @@ const emit = defineEmits<{
   (e: 'drag-over', event: DragEvent, volumeId: string, index?: number): void;
   (e: 'drop', event: DragEvent, volumeId: string, index?: number): void;
   (e: 'drag-leave'): void;
-  (e: 'move-chapter', payload: { chapter: Chapter; volumeId: string; index: number; direction: 'up' | 'down' }): void;
+  (
+    e: 'move-chapter',
+    payload: { chapter: Chapter; volumeId: string; index: number; direction: 'up' | 'down' },
+  ): void;
 }>();
 
 const handleToggleVolume = (volumeId: string) => {
@@ -108,130 +111,135 @@ const handleMoveChapter = (
     <!-- 卷列表 -->
     <div v-else-if="volumes.length > 0" class="volumes-list">
       <div v-for="volume in volumes" :key="volume.id" class="volume-item">
-        <div class="volume-item">
-          <div class="volume-header">
-            <div class="volume-header-content" @click="handleToggleVolume(volume.id)">
-              <i
-                :class="[
-                  'pi volume-toggle-icon',
-                  isVolumeExpanded(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
-                ]"
-              ></i>
-              <i class="pi pi-book volume-icon"></i>
-              <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
-              <span
-                v-if="volume.chapters && volume.chapters.length > 0"
-                class="volume-chapter-count"
-              >
-                ({{ volume.chapters.length }} 章)
-              </span>
-            </div>
-            <div class="volume-actions" :class="{ 'volume-actions-visible': touchMode }" @click.stop>
-              <Button
-                icon="pi pi-pencil"
-                class="p-button-text p-button-sm p-button-rounded action-button"
-                size="small"
-                title="编辑"
-                @click="handleEditVolume(volume)"
-              />
-              <Button
-                icon="pi pi-trash"
-                class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
-                size="small"
-                title="删除"
-                @click="handleDeleteVolume(volume)"
-              />
-            </div>
+        <div class="volume-header">
+          <div class="volume-header-content" @click="handleToggleVolume(volume.id)">
+            <i
+              :class="[
+                'pi volume-toggle-icon',
+                isVolumeExpanded(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
+              ]"
+            ></i>
+            <i class="pi pi-book volume-icon"></i>
+            <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
+            <span v-if="volume.chapters && volume.chapters.length > 0" class="volume-chapter-count">
+              ({{ volume.chapters.length }} 章)
+            </span>
           </div>
-          <Transition name="slide-down">
+          <div
+            class="volume-actions"
+            :class="{ 'volume-actions-visible': touchMode && isVolumeExpanded(volume.id) }"
+            @click.stop
+          >
+            <Button
+              icon="pi pi-pencil"
+              class="p-button-text p-button-sm p-button-rounded action-button"
+              size="small"
+              title="编辑"
+              @click="handleEditVolume(volume)"
+            />
+            <Button
+              icon="pi pi-trash"
+              class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
+              size="small"
+              title="删除"
+              @click="handleDeleteVolume(volume)"
+            />
+          </div>
+        </div>
+        <Transition name="slide-down">
+          <div
+            v-if="volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)"
+            class="chapters-list"
+            @dragover.prevent="handleDragOver($event, volume.id)"
+            @drop="handleDrop($event, volume.id)"
+            @dragleave="handleDragLeave"
+            :class="{
+              'drag-over': dragOverVolumeId === volume.id && dragOverIndex === null,
+            }"
+          >
             <div
-              v-if="volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)"
-              class="chapters-list"
-              @dragover.prevent="handleDragOver($event, volume.id)"
-              @drop="handleDrop($event, volume.id)"
-              @dragleave="handleDragLeave"
-              :class="{
-                'drag-over': dragOverVolumeId === volume.id && dragOverIndex === null,
-              }"
+              v-for="(chapter, index) in volume.chapters"
+              :key="chapter.id"
+              :class="[
+                'chapter-item',
+                { 'chapter-item-selected': selectedChapterId === chapter.id },
+                { 'chapter-item-touch': touchMode },
+                {
+                  'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
+                },
+                { dragging: draggedChapter?.chapter.id === chapter.id },
+              ]"
+              :draggable="!touchMode"
+              @dragstart="handleDragStart($event, chapter, volume.id, index)"
+              @dragend="handleDragEnd($event)"
+              @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
+              @drop.stop="handleDrop($event, volume.id, index)"
             >
-              <div
-                v-for="(chapter, index) in volume.chapters"
-                :key="chapter.id"
-                :class="[
-                  'chapter-item',
-                  { 'chapter-item-selected': selectedChapterId === chapter.id },
-                  { 'chapter-item-touch': touchMode },
-                  {
-                    'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
-                  },
-                  { dragging: draggedChapter?.chapter.id === chapter.id },
-                ]"
-                :draggable="!touchMode"
-                @dragstart="handleDragStart($event, chapter, volume.id, index)"
-                @dragend="handleDragEnd($event)"
-                @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
-                @drop.stop="handleDrop($event, volume.id, index)"
-              >
-                <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
-                  <i v-if="!touchMode" class="pi pi-bars drag-handle"></i>
-                  <i class="pi pi-file chapter-icon"></i>
-                  <span class="chapter-title">{{
-                    getChapterDisplayTitle(chapter, book || undefined)
-                  }}</span>
-                  <i
-                    v-if="chapter.summary"
-                    class="pi pi-info-circle summary-icon"
-                    v-tooltip.bottom="{
-                      value: chapter.summary,
-                      pt: {
-                        text: {
-                          style: {
-                            maxWidth: '300px',
-                            whiteSpace: 'pre-wrap',
-                          },
+              <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
+                <i v-if="!touchMode" class="pi pi-bars drag-handle"></i>
+                <i class="pi pi-file chapter-icon"></i>
+                <span class="chapter-title">{{
+                  getChapterDisplayTitle(chapter, book || undefined)
+                }}</span>
+                <i
+                  v-if="chapter.summary"
+                  class="pi pi-info-circle summary-icon"
+                  v-tooltip.bottom="{
+                    value: chapter.summary,
+                    pt: {
+                      text: {
+                        style: {
+                          maxWidth: '300px',
+                          whiteSpace: 'pre-wrap',
                         },
                       },
-                    }"
-                  ></i>
-                </div>
-                <div class="chapter-actions" :class="{ 'chapter-actions-visible': touchMode }" @click.stop>
-                  <Button
-                    v-if="touchMode"
-                    icon="pi pi-arrow-up"
-                    class="p-button-text p-button-sm p-button-rounded action-button"
-                    size="small"
-                    title="上移"
-                    :disabled="index === 0"
-                    @click="handleMoveChapter(chapter, volume.id, index, 'up')"
-                  />
-                  <Button
-                    v-if="touchMode"
-                    icon="pi pi-arrow-down"
-                    class="p-button-text p-button-sm p-button-rounded action-button"
-                    size="small"
-                    title="下移"
-                    :disabled="index === (volume.chapters?.length || 1) - 1"
-                    @click="handleMoveChapter(chapter, volume.id, index, 'down')"
-                  />
-                  <Button
-                    icon="pi pi-pencil"
-                    class="p-button-text p-button-sm p-button-rounded action-button"
-                    size="small"
-                    title="编辑"
-                    @click="handleEditChapter(chapter)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
-                    size="small"
-                    title="删除"
-                    @click="handleDeleteChapter(chapter)"
-                  />
-                </div>
+                    },
+                  }"
+                ></i>
+              </div>
+              <div
+                class="chapter-actions"
+                :class="{
+                  'chapter-actions-visible': touchMode && selectedChapterId === chapter.id,
+                }"
+                @click.stop
+              >
+                <Button
+                  v-if="touchMode"
+                  icon="pi pi-arrow-up"
+                  class="p-button-text p-button-sm p-button-rounded action-button"
+                  size="small"
+                  title="上移"
+                  :disabled="index === 0"
+                  @click="handleMoveChapter(chapter, volume.id, index, 'up')"
+                />
+                <Button
+                  v-if="touchMode"
+                  icon="pi pi-arrow-down"
+                  class="p-button-text p-button-sm p-button-rounded action-button"
+                  size="small"
+                  title="下移"
+                  :disabled="index === (volume.chapters?.length || 1) - 1"
+                  @click="handleMoveChapter(chapter, volume.id, index, 'down')"
+                />
+                <Button
+                  icon="pi pi-pencil"
+                  class="p-button-text p-button-sm p-button-rounded action-button"
+                  size="small"
+                  title="编辑"
+                  @click="handleEditChapter(chapter)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
+                  size="small"
+                  title="删除"
+                  @click="handleDeleteChapter(chapter)"
+                />
               </div>
             </div>
-          </Transition>
-        </div>
+          </div>
+        </Transition>
       </div>
     </div>
     <div v-else-if="!isPageLoading" class="empty-state">
@@ -261,12 +269,15 @@ const handleMoveChapter = (
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .volume-item {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .volume-header {
@@ -282,6 +293,8 @@ const handleMoveChapter = (
   font-weight: 500;
   color: var(--moon-opacity-90);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .volume-header:hover {
@@ -304,15 +317,21 @@ const handleMoveChapter = (
   gap: 0.125rem;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 0;
+  overflow: hidden;
+  transition:
+    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    max-width 0.2s ease;
 }
 
 .volume-header:hover .volume-actions {
   opacity: 1;
+  max-width: 5rem;
 }
 
 .volume-actions-visible {
   opacity: 1;
+  max-width: 5rem;
 }
 
 .action-button {
@@ -352,15 +371,17 @@ const handleMoveChapter = (
   font-size: 0.75rem;
   color: var(--moon-opacity-70);
   font-weight: 400;
+  flex-shrink: 0;
 }
 
 .chapters-list {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-left: 0.5rem;
-  padding-left: 0.5rem;
+  margin-left: 0.25rem;
+  padding-left: 0.375rem;
   border-left: 1px solid var(--white-opacity-10);
+  min-width: 0;
 }
 
 .chapter-item {
@@ -376,6 +397,7 @@ const handleMoveChapter = (
   color: var(--moon-opacity-80);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  min-width: 0;
 }
 
 .chapter-item:hover {
@@ -418,6 +440,7 @@ const handleMoveChapter = (
   flex: 1;
   cursor: pointer;
   min-width: 0;
+  overflow: hidden;
 }
 
 .drag-handle {
@@ -471,7 +494,10 @@ const handleMoveChapter = (
 }
 
 .chapter-item-touch {
-  padding: 0.625rem;
+  padding: 0.625rem 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
 }
 
 .chapter-item-touch:active,
@@ -483,6 +509,39 @@ const handleMoveChapter = (
 .volume-actions-visible .action-button:active {
   background: var(--white-opacity-15) !important;
   transform: scale(0.96);
+}
+
+.chapter-item-touch .chapter-content {
+  width: 100%;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.chapter-item-touch .chapter-icon,
+.chapter-item-touch .summary-icon {
+  display: none;
+}
+
+.chapter-item-touch .chapter-content .chapter-title {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.chapter-item-touch .chapter-actions {
+  width: auto;
+  justify-content: flex-end;
+  align-self: flex-end;
+  margin-top: 0.125rem;
+  max-width: none;
+  margin-left: auto;
+}
+
+.chapter-item-touch .chapter-actions:not(.chapter-actions-visible) {
+  display: none;
 }
 
 .chapter-icon {
@@ -498,10 +557,12 @@ const handleMoveChapter = (
 
 .chapter-content .chapter-title {
   flex: 1;
+  min-width: 0;
   font-size: inherit;
   white-space: normal;
   line-height: 1.35;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .summary-icon {

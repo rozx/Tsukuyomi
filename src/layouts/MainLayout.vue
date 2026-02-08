@@ -206,7 +206,7 @@ onUnmounted(() => {
   <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
     <AppHeader />
 
-    <div class="flex flex-1 overflow-hidden min-h-0 relative">
+    <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
       <div
         v-if="isPhone && ui.sideMenuOpen"
         class="layout-overlay-mask z-40"
