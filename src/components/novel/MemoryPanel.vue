@@ -670,13 +670,14 @@ const handleFileSelect = async (event: Event) => {
 <template>
   <div class="memory-panel h-full flex flex-col">
     <!-- 标题区域 -->
-    <div class="p-6 border-b border-white/10">
-      <h1 class="text-2xl font-semibold text-moon-100 mb-2">记忆管理</h1>
-      <p class="text-sm text-moon/70 mb-3">
+    <div class="panel-header border-b border-white/10">
+      <h1 class="panel-title font-semibold text-moon-100">记忆管理</h1>
+      <p class="panel-desc text-sm text-moon/70">
         管理小说的背景设定和剧情记忆，这些内容会在翻译过程中提供给 AI 作为上下文参考
       </p>
       <AppMessage
         severity="info"
+        class="panel-message"
         message="记忆由 AI 自动管理，会在翻译过程中自动创建和更新。手动编辑的记忆可能会被覆盖，建议仅在必要时干预。"
         :closable="false"
       />
@@ -684,7 +685,7 @@ const handleFileSelect = async (event: Event) => {
 
     <!-- 操作栏 -->
     <div
-      class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+      class="panel-toolbar border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
       <div class="toolbar-row">
         <!-- 左侧：搜索和筛选 -->
@@ -942,6 +943,26 @@ const handleFileSelect = async (event: Event) => {
   height: 100%;
 }
 
+/* 标题区域 */
+.panel-header {
+  padding: 1.5rem;
+}
+
+.panel-title {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.panel-desc {
+  margin-bottom: 0.75rem;
+}
+
+/* 操作栏 */
+.panel-toolbar {
+  padding: 1rem 1.5rem;
+}
+
 /* 工具栏布局 */
 .toolbar-row {
   display: flex;
@@ -968,6 +989,41 @@ const handleFileSelect = async (event: Event) => {
 
 /* 移动端响应式：工具栏换行 */
 @media (max-width: 640px) {
+  .panel-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .panel-title {
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .panel-desc {
+    display: none;
+  }
+
+  .panel-message :deep(.p-4) {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .panel-message :deep(.text-sm) {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .panel-message :deep(.text-lg) {
+    font-size: 0.875rem;
+  }
+
+  .panel-message :deep(.gap-3) {
+    gap: 0.5rem;
+  }
+
+  .panel-toolbar {
+    padding: 0.5rem 1rem;
+  }
+
   .toolbar-row {
     flex-wrap: wrap;
   }
