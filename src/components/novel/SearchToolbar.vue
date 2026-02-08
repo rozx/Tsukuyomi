@@ -36,66 +36,74 @@ const handleReplaceInput = (event: Event) => {
 <template>
   <div
     v-if="visible"
-    class="search-toolbar border-b border-white/10 bg-white/5 backdrop-blur-md p-2 px-6 flex items-center gap-4 animate-fade-in"
+    class="search-toolbar border-b border-white/10 bg-white/5 backdrop-blur-md p-2 px-6 animate-fade-in"
   >
-    <!-- Search Input -->
-    <div class="flex items-center gap-2 flex-1 max-w-xl">
-      <div class="relative flex-1">
-        <i
-          class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
-        ></i>
-        <InputText
-          :value="searchQuery"
-          @input="handleSearchInput"
-          placeholder="查找翻译内容..."
-          class="!pl-9 !py-1.5 !text-sm w-full"
-          @keydown.enter="emit('next')"
-        />
-        <span
-          v-if="matchesCount > 0"
-          class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-moon/50"
-        >
-          {{ currentMatchIndex + 1 }}/{{ matchesCount }}
-        </span>
+    <!-- Search Row -->
+    <div class="search-toolbar-row">
+      <div class="search-input-group">
+        <div class="relative flex-1">
+          <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"></i>
+          <InputText
+            :value="searchQuery"
+            @input="handleSearchInput"
+            placeholder="查找翻译内容..."
+            class="!pl-9 !py-1.5 !text-sm w-full"
+            @keydown.enter="emit('next')"
+          />
+          <span
+            v-if="matchesCount > 0"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-moon/50"
+          >
+            {{ currentMatchIndex + 1 }}/{{ matchesCount }}
+          </span>
+        </div>
+
+        <div class="flex gap-1 flex-shrink-0">
+          <Button
+            icon="pi pi-angle-up"
+            text
+            rounded
+            size="small"
+            class="!w-8 !h-8"
+            :disabled="matchesCount === 0"
+            @click="emit('prev')"
+          />
+          <Button
+            icon="pi pi-angle-down"
+            text
+            rounded
+            size="small"
+            class="!w-8 !h-8"
+            :disabled="matchesCount === 0"
+            @click="emit('next')"
+          />
+        </div>
       </div>
 
-      <div class="flex gap-1">
+      <div class="search-toolbar-actions">
         <Button
-          icon="pi pi-angle-up"
+          :icon="showReplace ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+          :label="showReplace ? '隐藏替换' : '替换'"
+          text
+          size="small"
+          class="!text-xs !px-2"
+          @click="emit('update:showReplace', !showReplace)"
+        />
+        <Button
+          icon="pi pi-times"
           text
           rounded
           size="small"
-          class="!w-8 !h-8"
-          :disabled="matchesCount === 0"
-          @click="emit('prev')"
-        />
-        <Button
-          icon="pi pi-angle-down"
-          text
-          rounded
-          size="small"
-          class="!w-8 !h-8"
-          :disabled="matchesCount === 0"
-          @click="emit('next')"
+          class="!w-8 !h-8 text-moon/50 hover:text-moon"
+          @click="emit('update:visible', false)"
         />
       </div>
-
-      <Button
-        :icon="showReplace ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
-        :label="showReplace ? '隐藏替换' : '替换'"
-        text
-        size="small"
-        class="!text-xs !px-2"
-        @click="emit('update:showReplace', !showReplace)"
-      />
     </div>
 
-    <!-- Replace Input -->
-    <div v-if="showReplace" class="flex items-center gap-2 flex-1 max-w-xl animate-fade-in">
-      <div class="relative flex-1">
-        <i
-          class="pi pi-pencil absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"
-        ></i>
+    <!-- Replace Row -->
+    <div v-if="showReplace" class="replace-toolbar-row animate-fade-in">
+      <div class="relative flex-1 min-w-0">
+        <i class="pi pi-pencil absolute left-3 top-1/2 -translate-y-1/2 text-moon/50 text-sm"></i>
         <InputText
           :value="replaceQuery"
           @input="handleReplaceInput"
@@ -105,7 +113,7 @@ const handleReplaceInput = (event: Event) => {
         />
       </div>
 
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-shrink-0">
         <Button
           label="替换"
           size="small"
@@ -124,16 +132,71 @@ const handleReplaceInput = (event: Event) => {
         />
       </div>
     </div>
-
-    <!-- Close Button -->
-    <Button
-      icon="pi pi-times"
-      text
-      rounded
-      size="small"
-      class="!w-8 !h-8 ml-auto text-moon/50 hover:text-moon"
-      @click="emit('update:visible', false)"
-    />
   </div>
 </template>
 
+<style scoped>
+.search-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.search-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.replace-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .search-toolbar {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .search-toolbar-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .search-input-group {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .search-toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+
+  .replace-toolbar-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .replace-toolbar-row > .relative {
+    flex: 1 1 100%;
+  }
+
+  .replace-toolbar-row > .flex {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
+</style>

@@ -579,7 +579,7 @@ const handleFileSelect = async (event: Event) => {
     <div
       class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
-      <div class="flex items-center justify-between gap-3 flex-nowrap">
+      <div class="toolbar-row">
         <!-- 左侧：搜索栏 / 批量操作控制 -->
         <div v-if="bulkActionMode" class="flex items-center gap-2 flex-shrink-0">
           <Checkbox
@@ -612,7 +612,7 @@ const handleFileSelect = async (event: Event) => {
         </InputGroup>
 
         <!-- 右侧：操作按钮 -->
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="toolbar-actions">
           <!-- 批量模式下的按钮 -->
           <template v-if="bulkActionMode">
             <Button
@@ -784,6 +784,39 @@ const handleFileSelect = async (event: Event) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* 工具栏布局 */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* 移动端响应式：工具栏换行 */
+@media (max-width: 640px) {
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-row .search-input-group {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */

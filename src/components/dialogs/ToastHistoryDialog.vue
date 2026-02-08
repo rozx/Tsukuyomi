@@ -115,9 +115,11 @@ defineExpose({
     @show="handleShow"
   >
     <div class="flex flex-col h-full">
-      <div class="toast-history-header flex items-center justify-between mb-4 pb-3 border-b border-white/10">
-        <div class="toast-history-header-main flex items-center gap-3">
-          <h3 class="text-lg font-semibold text-moon/90">消息历史</h3>
+      <div
+        class="toast-history-header flex items-center justify-between mb-4 pb-3 border-b border-white/10 flex-wrap gap-2"
+      >
+        <div class="toast-history-header-main flex items-center gap-3 min-w-0">
+          <h3 class="text-lg font-semibold text-moon/90 whitespace-nowrap">消息历史</h3>
           <Select
             v-model="selectedSeverity"
             :options="severityOptions"
@@ -130,7 +132,7 @@ defineExpose({
         <Button
           v-if="historyItems.length > 0"
           icon="pi pi-trash"
-          class="toast-history-actions p-button-text p-button-danger p-button-sm"
+          class="toast-history-actions p-button-text p-button-danger p-button-sm flex-shrink-0"
           title="清空所有历史"
           @click="handleClear"
         />
@@ -180,7 +182,9 @@ defineExpose({
                   <div class="flex-1 min-w-0">
                     <div class="toast-history-item-head flex items-center justify-between mb-1">
                       <div class="toast-history-item-meta flex items-center gap-2">
-                        <h4 class="toast-history-item-title font-medium text-moon/90">{{ item.summary }}</h4>
+                        <h4 class="toast-history-item-title font-medium text-moon/90">
+                          {{ item.summary }}
+                        </h4>
                         <Tag
                           :value="
                             item.severity === 'success'
@@ -268,9 +272,9 @@ defineExpose({
   }
 
   .toast-history-header-main {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
   }
 
@@ -280,7 +284,7 @@ defineExpose({
   }
 
   .toast-history-actions {
-    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .toast-history-item {

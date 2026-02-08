@@ -686,11 +686,11 @@ const handleFileSelect = async (event: Event) => {
     <div
       class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
-      <div class="flex items-center justify-between gap-3">
+      <div class="toolbar-row">
         <!-- 左侧：搜索和筛选 -->
-        <div class="flex items-center gap-2 flex-1 min-w-0">
+        <div class="toolbar-filters">
           <!-- 搜索栏 -->
-          <InputGroup class="search-input-group flex-shrink-0" style="width: 240px">
+          <InputGroup class="search-input-group" style="width: 240px">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
@@ -757,7 +757,7 @@ const handleFileSelect = async (event: Event) => {
         </div>
 
         <!-- 右侧：操作按钮 -->
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="toolbar-actions">
           <Button
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
@@ -940,6 +940,53 @@ const handleFileSelect = async (event: Event) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* 工具栏布局 */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* 移动端响应式：工具栏换行 */
+@media (max-width: 640px) {
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-filters {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-filters .search-input-group {
+    flex: 1 1 100%;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  .toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */

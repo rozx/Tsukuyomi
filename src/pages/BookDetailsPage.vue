@@ -112,6 +112,13 @@ const scrollCurrentContentToTop = async () => {
 
 // 从路由参数获取书籍 ID
 const bookId = computed(() => route.params.id as string);
+const settingMenuFromRoute = computed(() => {
+  const setting = route.params.setting;
+  if (setting === 'terms' || setting === 'characters' || setting === 'memory') {
+    return setting;
+  }
+  return null;
+});
 
 // 切换卷的展开/折叠状态
 const toggleVolumeById = (volumeId: string) => {
@@ -383,9 +390,15 @@ const workspaceMode = computed({
 const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
   workspaceMode.value = mode;
   if (mode === 'content') {
+    if (bookId.value && selectedSettingMenu.value) {
+      void router.replace(`/books/${bookId.value}`);
+    }
     selectedSettingMenu.value = null;
   } else if (mode === 'settings' && !selectedSettingMenu.value) {
     selectedSettingMenu.value = 'terms';
+    if (bookId.value) {
+      void router.replace(`/books/${bookId.value}/settings/terms`);
+    }
   } else if (mode === 'progress' && !showTranslationProgress.value) {
     showTranslationProgress.value = true;
   }
@@ -397,6 +410,9 @@ const navigateToChapterInternal = (chapter: Chapter) => {
   // 设置选中的章节
   void bookDetailsStore.setSelectedChapter(bookId.value, chapter.id);
   // 清除设置菜单选中状态
+  if (selectedSettingMenu.value) {
+    void router.replace(`/books/${bookId.value}`);
+  }
   selectedSettingMenu.value = null;
   if (isSmallScreen.value) {
     workspaceMode.value = 'content';
@@ -518,6 +534,9 @@ const openBookDialog = () => {
 
 // 导航到术语设置
 const navigateToTermsSetting = () => {
+  if (bookId.value) {
+    void router.replace(`/books/${bookId.value}/settings/terms`);
+  }
   selectedSettingMenu.value = 'terms';
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
@@ -539,6 +558,9 @@ const navigateToTermsSetting = () => {
 
 // 导航到角色设置
 const navigateToCharactersSetting = () => {
+  if (bookId.value) {
+    void router.replace(`/books/${bookId.value}/settings/characters`);
+  }
   selectedSettingMenu.value = 'characters';
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
@@ -560,6 +582,9 @@ const navigateToCharactersSetting = () => {
 
 // 导航到 Memory 设置
 const navigateToMemorySetting = () => {
+  if (bookId.value) {
+    void router.replace(`/books/${bookId.value}/settings/memory`);
+  }
   selectedSettingMenu.value = 'memory';
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
@@ -949,14 +974,47 @@ watch(
   (newPath, oldPath) => {
     // 如果从书籍详情页（/books/:id）导航到其他页面，清除上下文
     // 注意：从一本书切换到另一本书时，bookId watch 会处理，这里不需要清除
-    const isBookDetailsPage = /^\/books\/[^/]+$/.test(newPath);
-    const wasBookDetailsPage = oldPath && /^\/books\/[^/]+$/.test(oldPath);
+    const isBookDetailsPage =
+      /^\/books\/[^/]+$/.test(newPath) ||
+      /^\/books\/[^/]+\/settings\/(terms|characters|memory)$/.test(newPath);
+    const wasBookDetailsPage =
+      !!oldPath &&
+      (/^\/books\/[^/]+$/.test(oldPath) ||
+        /^\/books\/[^/]+\/settings\/(terms|characters|memory)$/.test(oldPath));
 
     // 如果之前是书籍详情页，但现在不是了，清除上下文
     if (wasBookDetailsPage && !isBookDetailsPage) {
       contextStore.clearContext();
     }
   },
+);
+
+watch(
+  [bookId, settingMenuFromRoute],
+  ([currentBookId, menu]) => {
+    if (!currentBookId) {
+      selectedSettingMenu.value = null;
+      return;
+    }
+    if (menu) {
+      selectedSettingMenu.value = menu;
+      if (isSmallScreen.value) {
+        workspaceMode.value = 'settings';
+      }
+      void bookDetailsStore.setSelectedChapter(currentBookId, null);
+      contextStore.setContext({
+        currentBookId,
+        currentChapterId: null,
+        hoveredParagraphId: null,
+        selectedParagraphId: null,
+      });
+      return;
+    }
+    if (route.path === `/books/${currentBookId}`) {
+      selectedSettingMenu.value = null;
+    }
+  },
+  { immediate: true },
 );
 
 // 检测当前章节是否正在生成摘要（通过 AI 处理任务状态）
