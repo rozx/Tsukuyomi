@@ -327,6 +327,34 @@ function dedupeCoverHistoryByUrl(
 }
 
 /**
+ * 合并快速开始关闭状态（单调语义）
+ * 规则：任一端为 true，合并结果即为 true，避免“已关闭”回退为“未关闭”。
+ */
+function mergeQuickStartDismissedFlag(
+  localAppSettings: { quickStartDismissed?: unknown } | null | undefined,
+  remoteAppSettings: { quickStartDismissed?: unknown } | null | undefined,
+  phase: 'download' | 'upload',
+): boolean {
+  const localDismissed = localAppSettings?.quickStartDismissed === true;
+  const remoteHasFlag = typeof remoteAppSettings?.quickStartDismissed === 'boolean';
+  const remoteDismissed = remoteAppSettings?.quickStartDismissed === true;
+
+  if (localDismissed && !remoteHasFlag) {
+    console.info(
+      `[SyncDataService] (${phase}) 远程 appSettings 缺少 quickStartDismissed，保留本地已关闭状态`,
+    );
+  } else if (localDismissed && remoteHasFlag && !remoteDismissed) {
+    console.info(
+      `[SyncDataService] (${phase}) 检测到 quickStartDismissed 冲突（local=true, remote=false），按单调规则保留 true`,
+    );
+  } else if (!localDismissed && remoteDismissed) {
+    console.info(`[SyncDataService] (${phase}) 采用远程 quickStartDismissed=true`);
+  }
+
+  return localDismissed || remoteDismissed;
+}
+
+/**
  * 数据备份接口（用于回滚）
  */
 interface DataBackup {
@@ -1090,6 +1118,11 @@ export class SyncDataService {
       // 处理设置
       if (remoteData.appSettings) {
         const localSettings = GlobalConfig.getAllSettingsSnapshot() ?? ({} as any);
+        const mergedQuickStartDismissed = mergeQuickStartDismissedFlag(
+          localSettings,
+          remoteData.appSettings,
+          'download',
+        );
         // 手动检索时强制使用远程设置，否则比较 lastEdited
         const shouldApplyRemoteSettings =
           isManualRetrieval ||
@@ -1097,11 +1130,17 @@ export class SyncDataService {
         if (shouldApplyRemoteSettings) {
           // 保存本地的 Gist 同步配置（包括同步状态）
           const currentGistSync = GlobalConfig.getGistSyncSnapshot();
-          await settingsStore.importSettings(remoteData.appSettings);
+          await settingsStore.importSettings({
+            ...remoteData.appSettings,
+            quickStartDismissed: mergedQuickStartDismissed,
+          });
           // 恢复本地的 Gist 同步配置，确保本地同步状态不被覆盖
           if (currentGistSync) {
             await settingsStore.updateGistSync(currentGistSync);
           }
+        } else if (mergedQuickStartDismissed && localSettings.quickStartDismissed !== true) {
+          // 即便不整体采用远程设置，也要同步“已关闭”语义，避免状态回退
+          await settingsStore.importSettings({ quickStartDismissed: true });
         }
       }
 
@@ -1479,6 +1518,11 @@ export class SyncDataService {
     // 合并设置
     let finalSettings = localData.appSettings;
     if (remoteData.appSettings) {
+      const mergedQuickStartDismissed = mergeQuickStartDismissedFlag(
+        localData.appSettings,
+        remoteData.appSettings,
+        'upload',
+      );
       if (shouldUseRemote(localData.appSettings.lastEdited, remoteData.appSettings.lastEdited)) {
         // 使用远程设置，但保留本地的 Gist 同步配置
         // 这包括 lastSyncTime、lastSyncedModelIds、deletedNovelIds 等本地状态
@@ -1524,6 +1568,12 @@ export class SyncDataService {
         finalSettings = {
           ...remoteData.appSettings,
           syncs: mergedSyncs,
+          quickStartDismissed: mergedQuickStartDismissed,
+        };
+      } else {
+        finalSettings = {
+          ...localData.appSettings,
+          quickStartDismissed: mergedQuickStartDismissed,
         };
       }
     }

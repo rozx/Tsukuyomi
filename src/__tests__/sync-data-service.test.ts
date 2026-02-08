@@ -101,6 +101,8 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockSettingsStore.importSettings.mockClear();
     mockSettingsStore.updateGistSync.mockClear();
     mockSettingsStore.cleanupOldDeletionRecords.mockClear();
+    mockSettingsStore.getAllSettings.mockClear();
+    mockSettingsStore.getAllSettings.mockReturnValue({ lastEdited: new Date(0) });
     mockSettingsStore.gistSync = {
       lastSyncTime: 0,
       deletedNovelIds: [],
@@ -160,7 +162,12 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(addedBooks[0]).toMatchObject({ id: 'n1', title: 'Remote Novel' });
 
       // Verify Settings
-      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(remoteData.appSettings);
+      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          theme: 'dark',
+          quickStartDismissed: false,
+        }),
+      );
 
       // Verify Cover History
       expect(mockCoverHistoryStore.clearHistory).toHaveBeenCalled();
@@ -200,6 +207,56 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Local Model' }));
       expect(mockAIModelsStore.models).toEqual(
         expect.arrayContaining([expect.objectContaining({ name: 'Local Model' })]),
+      );
+    });
+
+    it('当本地 quickStartDismissed=true 且远程为 false 时，应保持 true', async () => {
+      const localLastEdited = new Date('2024-01-01');
+      const remoteLastEdited = new Date('2024-01-02').toISOString();
+
+      mockSettingsStore.getAllSettings.mockReturnValue({
+        lastEdited: localLastEdited,
+        quickStartDismissed: true,
+        syncs: [],
+      } as any);
+
+      await SyncDataService.applyDownloadedData({
+        appSettings: {
+          lastEdited: remoteLastEdited,
+          quickStartDismissed: false,
+          syncs: [],
+        },
+      });
+
+      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quickStartDismissed: true,
+        }),
+      );
+    });
+
+    it('当远程 quickStartDismissed=true 且本地未关闭时，即使远程设置较旧也应同步为 true', async () => {
+      const localLastEdited = new Date('2024-01-03');
+      const remoteLastEdited = new Date('2024-01-02').toISOString();
+
+      mockSettingsStore.getAllSettings.mockReturnValue({
+        lastEdited: localLastEdited,
+        quickStartDismissed: false,
+        syncs: [],
+      } as any);
+
+      await SyncDataService.applyDownloadedData({
+        appSettings: {
+          lastEdited: remoteLastEdited,
+          quickStartDismissed: true,
+          syncs: [],
+        },
+      });
+
+      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quickStartDismissed: true,
+        }),
       );
     });
 
@@ -689,6 +746,41 @@ describe('数据同步服务 (SyncDataService)', () => {
   });
 
   describe('mergeDataForUpload (上传前合并数据)', () => {
+    it('设置合并时 quickStartDismissed 任一端为 true，结果应保持 true', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: {
+          lastEdited: new Date('2024-01-03').toISOString(),
+          quickStartDismissed: false,
+          syncs: [],
+        },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const remoteData = {
+        novels: [],
+        aiModels: [],
+        appSettings: {
+          lastEdited: new Date('2024-01-01').toISOString(),
+          quickStartDismissed: true,
+          syncs: [],
+        },
+        coverHistory: [],
+        memories: [],
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+
+      expect(merged.appSettings.quickStartDismissed).toBe(true);
+    });
+
     it('当远程 aiModels 为空但本地存在旧模型时，应全量带上本地模型（避免远端一直为空）', async () => {
       const lastSyncTime = new Date('2024-01-02').getTime();
       const oldDate = new Date('2024-01-01').toISOString(); // 早于 lastSyncTime

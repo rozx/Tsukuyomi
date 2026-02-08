@@ -5,6 +5,7 @@ import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import AppRightPanel from '../components/layout/AppRightPanel.vue';
 import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
+import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.vue';
 import Toast from 'primevue/toast';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { RouterView } from 'vue-router';
@@ -12,6 +13,7 @@ import { useUiStore } from '../stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import {
@@ -27,6 +29,7 @@ const { markAsReadByMessage } = useToastHistory();
 const toast = useToastWithHistory();
 const aiProcessingStore = useAIProcessingStore();
 const askUserStore = useAskUserStore();
+const { quickStartGuideVisible, dismissQuickStartGuide } = useQuickStartGuide();
 
 // 注册全局 toast 函数，供静态方法使用
 if (typeof window !== 'undefined') {
@@ -205,6 +208,9 @@ onUnmounted(() => {
 
   <!-- ask_user 全屏问答对话框（全局挂载） -->
   <AskUserDialog />
+
+  <!-- 首次启动快速开始引导 -->
+  <QuickStartGuideDialog :visible="quickStartGuideVisible" @dismiss="dismissQuickStartGuide" />
 
   <!-- 冲突解决对话框 -->
 </template>

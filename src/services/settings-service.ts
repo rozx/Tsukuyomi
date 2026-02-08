@@ -347,6 +347,9 @@ export class SettingsService {
       if (appSettings.proxyList !== undefined) {
         validAppSettings.proxyList = appSettings.proxyList;
       }
+      if (typeof appSettings.quickStartDismissed === 'boolean') {
+        validAppSettings.quickStartDismissed = appSettings.quickStartDismissed;
+      }
     }
 
     if (
