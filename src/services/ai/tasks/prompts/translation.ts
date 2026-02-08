@@ -19,6 +19,11 @@ export interface TranslationSystemPromptParams {
   specialInstructionsSection?: string;
   tools?: AITool[];
   skipAskUser?: boolean;
+  /**
+   * 是否在提示词中包含章节标题翻译指令（默认 true）
+   * 仅第一个 chunk 需要翻译标题，后续 chunk 应设为 false
+   */
+  includeChapterTitle?: boolean;
 }
 
 /**
@@ -33,6 +38,7 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
     specialInstructionsSection = '',
     tools,
     skipAskUser,
+    includeChapterTitle = true,
   } = params;
 
   return `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${bookContextSection}${chapterContextSection}${previousChapterSection}${specialInstructionsSection}
@@ -54,6 +60,6 @@ ${getToolUsageInstructions('translation', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}
 
-${getOutputFormatRules('translation')}
+${getOutputFormatRules('translation', { includeChapterTitle })}
 `;
 }
