@@ -94,6 +94,25 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
       </span>
 
       <div class="chapter-toolbar-primary-actions">
+        <div class="toolbar-group toolbar-group-mode">
+          <Button
+            v-for="option in editModeOptions"
+            :key="option.value"
+            :icon="option.icon"
+            :title="option.title"
+            rounded
+            text
+            size="small"
+            :class="[
+              '!w-8 !h-8',
+              editMode === option.value
+                ? '!bg-primary/20 !text-primary'
+                : 'text-moon/70 hover:text-moon',
+            ]"
+            @click="handleEditModeChange(option.value)"
+          />
+        </div>
+
         <Button
           v-if="translationStatus.hasNone"
           :label="translationButtonLabel"
@@ -138,7 +157,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
       :class="{ 'chapter-toolbar-secondary--expanded': isToolbarExpanded }"
     >
       <div class="chapter-toolbar-actions">
-        <!-- 编辑组: 撤销/重做 + 编辑模式 -->
+        <!-- 编辑组: 撤销/重做 -->
         <div class="toolbar-group">
           <Button
             icon="pi pi-undo"
@@ -159,27 +178,6 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             :disabled="!canRedo"
             :title="redoDescription ? `重做: ${redoDescription}` : '重做 (Ctrl+Y)'"
             @click="emit('redo')"
-          />
-        </div>
-
-        <div class="toolbar-divider"></div>
-
-        <div class="toolbar-group toolbar-group-mode">
-          <Button
-            v-for="option in editModeOptions"
-            :key="option.value"
-            :icon="option.icon"
-            :title="option.title"
-            rounded
-            text
-            size="small"
-            :class="[
-              '!w-8 !h-8',
-              editMode === option.value
-                ? '!bg-primary/20 !text-primary'
-                : 'text-moon/70 hover:text-moon',
-            ]"
-            @click="handleEditModeChange(option.value)"
           />
         </div>
 
