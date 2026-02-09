@@ -187,7 +187,7 @@ export default defineConfig((ctx: any) => {
       // directives: [],
 
       // Quasar plugins
-      plugins: [],
+      plugins: ['LoadingBar'],
     },
 
     // animations: 'all', // --- includes all animations
