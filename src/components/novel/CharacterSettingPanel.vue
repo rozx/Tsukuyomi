@@ -440,13 +440,14 @@ const handleFileSelect = async (event: Event) => {
 <template>
   <div class="character-setting-panel h-full flex flex-col">
     <!-- 标题区域 -->
-    <div class="p-6 border-b border-white/10">
-      <h1 class="text-2xl font-semibold text-moon-100 mb-2">角色设置</h1>
-      <p class="text-sm text-moon-100/70 mb-3">
+    <div class="panel-header border-b border-white/10">
+      <h1 class="panel-title font-semibold text-moon-100">角色设置</h1>
+      <p class="panel-desc text-sm text-moon-100/70">
         管理小说中的角色及其翻译和别名，这些设定会在翻译过程中被优先使用
       </p>
       <AppMessage
         severity="info"
+        class="panel-message"
         message="翻译、别名和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除角色以优化翻译质量。"
         :closable="false"
       />
@@ -454,11 +455,11 @@ const handleFileSelect = async (event: Event) => {
 
     <!-- 操作栏 -->
     <div
-      class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+      class="panel-toolbar border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
-      <div class="flex items-center justify-between gap-3 flex-nowrap">
+      <div class="toolbar-row">
         <!-- 左侧：搜索栏 -->
-        <div class="flex-1 flex items-center gap-3">
+        <div class="toolbar-search">
           <InputGroup class="search-input-group min-w-0 flex-shrink">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
@@ -480,7 +481,7 @@ const handleFileSelect = async (event: Event) => {
         </div>
 
         <!-- 右侧：操作按钮 -->
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="toolbar-actions">
           <Button
             label="导出"
             icon="pi pi-download"
@@ -592,5 +593,105 @@ const handleFileSelect = async (event: Event) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* 标题区域 */
+.panel-header {
+  padding: 1.5rem;
+}
+
+.panel-title {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.panel-desc {
+  margin-bottom: 0.75rem;
+}
+
+/* 操作栏 */
+.panel-toolbar {
+  padding: 1rem 1.5rem;
+}
+
+/* 工具栏布局 */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.toolbar-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* 移动端响应式：工具栏换行 */
+@media (max-width: 640px) {
+  .panel-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .panel-title {
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .panel-desc {
+    display: none;
+  }
+
+  .panel-message :deep(.p-4) {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .panel-message :deep(.text-sm) {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .panel-message :deep(.text-lg) {
+    font-size: 0.875rem;
+  }
+
+  .panel-message :deep(.gap-3) {
+    gap: 0.5rem;
+  }
+
+  .panel-toolbar {
+    padding: 0.5rem 1rem;
+  }
+
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-search {
+    flex: 1 1 100%;
+  }
+
+  .toolbar-search .search-input-group {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

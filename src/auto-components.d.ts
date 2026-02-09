@@ -54,6 +54,7 @@ declare module 'vue' {
     NovelScraperDialog: typeof import('./components/dialogs/NovelScraperDialog.vue')['default']
     ParagraphCard: typeof import('./components/novel/ParagraphCard.vue')['default']
     ProxySettingsTab: typeof import('./components/settings/ProxySettingsTab.vue')['default']
+    QuickStartGuideDialog: typeof import('./components/dialogs/QuickStartGuideDialog.vue')['default']
     RestoreDeletedItemsDialog: typeof import('./components/dialogs/RestoreDeletedItemsDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

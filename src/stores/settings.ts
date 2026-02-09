@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyList: DEFAULT_PROXY_LIST,
   proxySiteMapping: DEFAULT_PROXY_SITE_MAPPING,
   booksSortOption: 'default',
+  quickStartDismissed: false,
 };
 
 /**
@@ -115,6 +116,10 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
     },
     lastEdited: existingLastEdited,
     proxySiteMapping: mergedMapping,
+    quickStartDismissed:
+      typeof (settings as any).quickStartDismissed === 'boolean'
+        ? ((settings as any).quickStartDismissed as boolean)
+        : false,
   };
 
   return loadedSettings;
@@ -196,6 +201,9 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
       ...(rawSettings.tavilyApiKey !== undefined ? { tavilyApiKey: rawSettings.tavilyApiKey } : {}),
       ...(rawSettings.booksSortOption !== undefined
         ? { booksSortOption: rawSettings.booksSortOption }
+        : {}),
+      ...(rawSettings.quickStartDismissed !== undefined
+        ? { quickStartDismissed: rawSettings.quickStartDismissed }
         : {}),
     };
 
@@ -432,6 +440,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 获取首次启动快速开始弹窗是否已关闭
+     */
+    quickStartDismissed: (state): boolean => {
+      return state.settings.quickStartDismissed ?? false;
+    },
+
+    /**
      * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
      */
     gistSync: (state): SyncConfig => {
@@ -614,6 +629,13 @@ export const useSettingsStore = defineStore('settings', {
      */
     async setBooksSortOption(sortOption: string): Promise<void> {
       await this.updateSettings({ booksSortOption: sortOption });
+    },
+
+    /**
+     * 设置首次启动快速开始弹窗关闭状态
+     */
+    async setQuickStartDismissed(dismissed: boolean): Promise<void> {
+      await this.updateSettings({ quickStartDismissed: dismissed });
     },
 
     /**

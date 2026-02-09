@@ -230,12 +230,12 @@ watch(
     }"
   >
     <template #header v-if="memory">
-      <div class="flex items-center gap-3">
-        <i class="pi pi-bookmark text-primary-400 text-xl"></i>
-        <h3 v-if="!isEditing" class="text-lg font-medium text-moon-100 m-0 truncate">
+      <div class="flex items-center gap-3 min-w-0 overflow-hidden">
+        <i class="pi pi-bookmark text-primary-400 text-xl shrink-0"></i>
+        <h3 v-if="!isEditing" class="text-lg font-medium text-moon-100 m-0 truncate min-w-0">
           {{ memory.summary }}
         </h3>
-        <span v-else class="text-lg font-medium text-moon-100/70">编辑记忆</span>
+        <span v-else class="text-lg font-medium text-moon-100/70 truncate">编辑记忆</span>
       </div>
     </template>
 

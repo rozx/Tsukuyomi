@@ -1075,35 +1075,35 @@ const deleteGist = () => {
           class="border border-white/10 rounded-lg overflow-hidden"
         >
           <div
-            class="flex items-center justify-between p-3 cursor-pointer hover:bg-white/5 transition-colors"
+            class="revision-row flex items-center justify-between p-3 cursor-pointer hover:bg-white/5 transition-colors"
             @click="toggleRevision(revision.version)"
           >
-            <div class="flex items-center gap-3 flex-1">
+            <div class="revision-info flex items-center gap-3 flex-1 min-w-0">
               <i
                 :class="[
                   expandedRevisions.has(revision.version)
                     ? 'pi pi-chevron-down'
                     : 'pi pi-chevron-right',
-                  'text-moon/60 text-sm',
+                  'text-moon/60 text-sm flex-shrink-0',
                 ]"
               />
-              <code class="text-xs bg-white/5 px-2 py-1 rounded">{{
+              <code class="text-xs bg-white/5 px-2 py-1 rounded flex-shrink-0">{{
                 revision.version.substring(0, 7)
               }}</code>
-              <div class="flex flex-col flex-1">
-                <span class="text-sm text-moon/90">{{
+              <div class="flex flex-col flex-1 min-w-0">
+                <span class="text-sm text-moon/90 truncate">{{
                   formatRelativeTime(new Date(revision.committedAt).getTime())
                 }}</span>
-                <span class="text-xs text-moon/60">
+                <span class="text-xs text-moon/60 truncate">
                   {{ new Date(revision.committedAt).toLocaleString('zh-CN') }}
                 </span>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="revision-stats flex items-center gap-2 flex-shrink-0">
                 <span class="text-green-500 text-sm">+{{ revision.changeStatus.additions }}</span>
                 <span class="text-red-500 text-sm">-{{ revision.changeStatus.deletions }}</span>
               </div>
             </div>
-            <div class="flex items-center gap-2 ml-4">
+            <div class="revision-actions flex items-center gap-2 ml-4 flex-shrink-0">
               <Button
                 label="恢复"
                 icon="pi pi-undo"
@@ -1251,5 +1251,29 @@ const deleteGist = () => {
 .revisions-table :deep(.p-paginator .p-paginator-pages .p-paginator-page:hover) {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 640px) {
+  .revision-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem !important;
+  }
+
+  .revision-info {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .revision-stats {
+    margin-left: auto;
+  }
+
+  .revision-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin-left: 0 !important;
+  }
 }
 </style>

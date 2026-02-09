@@ -6,8 +6,10 @@ import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
 import Select from 'primevue/select';
 import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToastHistory';
+import { useUiStore } from 'src/stores/ui';
 
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const uiStore = useUiStore();
 
 const {
   historyItems,
@@ -20,6 +22,7 @@ const {
 } = useToastHistory();
 
 const selectedSeverity = ref<'all' | ToastHistoryItem['severity']>('all');
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 const severityOptions = [
   { label: '全部', value: 'all' },
@@ -56,6 +59,29 @@ const severityTags: Record<ToastHistoryItem['severity'], 'success' | 'danger' | 
   warn: 'warn',
 };
 
+const popoverStyle = computed(() => {
+  return {
+    width: isPhone.value ? 'min(94vw, 26rem)' : 'min(500px, 94vw)',
+    maxHeight: isPhone.value ? '78dvh' : 'min(600px, 82dvh)',
+  };
+});
+
+const historyListStyle = computed(() => {
+  return {
+    maxHeight: isPhone.value ? '58dvh' : '500px',
+  };
+});
+
+const rowsPerPageOptions = computed(() => {
+  return isPhone.value ? [5, 10] : [5, 10, 20, 50];
+});
+
+const paginatorTemplate = computed(() => {
+  return isPhone.value
+    ? 'PrevPageLink CurrentPageReport NextPageLink'
+    : 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink';
+});
+
 const handleClear = () => {
   void clearHistory();
 };
@@ -84,41 +110,44 @@ defineExpose({
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    style="width: 500px; max-height: 600px"
+    :style="popoverStyle"
     class="toast-history-overlay"
     @show="handleShow"
   >
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
-        <div class="flex items-center gap-3">
-          <h3 class="text-lg font-semibold text-moon/90">消息历史</h3>
+      <div
+        class="toast-history-header flex items-center justify-between mb-4 pb-3 border-b border-white/10 flex-wrap gap-2"
+      >
+        <div class="toast-history-header-main flex items-center gap-3 min-w-0">
+          <h3 class="text-lg font-semibold text-moon/90 whitespace-nowrap">消息历史</h3>
           <Select
             v-model="selectedSeverity"
             :options="severityOptions"
             optionLabel="label"
             optionValue="value"
-            class="min-w-32 p-inputtext-sm"
+            class="toast-history-filter min-w-32 p-inputtext-sm"
             placeholder="筛选"
           />
         </div>
         <Button
           v-if="historyItems.length > 0"
           icon="pi pi-trash"
-          class="p-button-text p-button-danger p-button-sm"
+          class="toast-history-actions p-button-text p-button-danger p-button-sm flex-shrink-0"
           title="清空所有历史"
           @click="handleClear"
         />
       </div>
 
       <!-- 历史记录列表 -->
-      <div class="flex-1 overflow-auto min-h-0" style="max-height: 500px">
+      <div class="flex-1 overflow-auto min-h-0" :style="historyListStyle">
         <DataView
           :value="sortedHistoryItems"
           data-key="id"
           :paginator="sortedHistoryItems.length > 10"
           :rows="10"
-          :rows-per-page-options="[5, 10, 20, 50]"
-          paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+          :rows-per-page-options="rowsPerPageOptions"
+          :paginator-template="paginatorTemplate"
+          current-page-report-template="{currentPage} / {totalPages}"
         >
           <template #empty>
             <div class="text-center py-12">
@@ -132,7 +161,7 @@ defineExpose({
               <div
                 v-for="item in slotProps.items"
                 :key="item.id"
-                class="p-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+                class="toast-history-item p-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
               >
                 <div class="flex items-start gap-3">
                   <!-- 图标 -->
@@ -151,9 +180,11 @@ defineExpose({
 
                   <!-- 内容 -->
                   <div class="flex-1 min-w-0">
-                    <div class="flex items-center justify-between mb-1">
-                      <div class="flex items-center gap-2">
-                        <h4 class="font-medium text-moon/90">{{ item.summary }}</h4>
+                    <div class="toast-history-item-head flex items-center justify-between mb-1">
+                      <div class="toast-history-item-meta flex items-center gap-2">
+                        <h4 class="toast-history-item-title font-medium text-moon/90">
+                          {{ item.summary }}
+                        </h4>
                         <Tag
                           :value="
                             item.severity === 'success'
@@ -174,7 +205,7 @@ defineExpose({
                           class="text-xs opacity-70"
                         />
                       </div>
-                      <div class="flex items-center gap-1">
+                      <div class="toast-history-item-actions flex items-center gap-1">
                         <Button
                           v-if="canRevert(item.id)"
                           icon="pi pi-undo"
@@ -208,6 +239,10 @@ defineExpose({
   padding: 1rem;
 }
 
+.toast-history-item-title {
+  overflow-wrap: anywhere;
+}
+
 /* 确保 Select 下拉框文本不被截断 */
 :deep(.p-select) {
   min-width: 8rem;
@@ -224,5 +259,58 @@ defineExpose({
 :deep(.p-select .p-select-label) {
   white-space: nowrap;
   overflow: visible;
+}
+
+@media (max-width: 640px) {
+  .toast-history-overlay :deep(.p-popover-content) {
+    padding: 0.75rem;
+  }
+
+  .toast-history-header {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .toast-history-header-main {
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .toast-history-filter {
+    width: 7.5rem;
+    min-width: 7.5rem;
+  }
+
+  .toast-history-actions {
+    flex-shrink: 0;
+  }
+
+  .toast-history-item {
+    padding: 0.75rem;
+  }
+
+  .toast-history-item-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .toast-history-item-meta {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .toast-history-item-title {
+    font-size: 0.95rem;
+    line-height: 1.35;
+  }
+
+  .toast-history-item-actions {
+    align-self: flex-end;
+    margin-left: 0;
+  }
 }
 </style>

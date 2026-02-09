@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { useUiStore } from 'src/stores/ui';
 
 const aiProcessing = useAIProcessingStore();
+const uiStore = useUiStore();
 const confirm = useConfirm();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 // 加载思考过程
 onMounted(async () => {
@@ -258,6 +261,19 @@ watch(
 // Popover ref
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
+const popoverStyle = computed(() => {
+  return {
+    width: isPhone.value ? 'min(94vw, 28rem)' : 'min(32rem, 94vw)',
+    maxHeight: isPhone.value ? '78dvh' : 'min(600px, 82dvh)',
+  };
+});
+
+const listContainerStyle = computed(() => {
+  return {
+    maxHeight: isPhone.value ? '58dvh' : '500px',
+  };
+});
+
 // 暴露方法供父组件调用
 defineExpose({
   toggle: (event: Event) => {
@@ -307,13 +323,13 @@ onUnmounted(() => {
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    style="width: 32rem; max-height: 600px"
+    :style="popoverStyle"
     class="thinking-popover"
   >
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+      <div class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10">
         <h3 class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
-        <div class="flex items-center gap-2">
+        <div class="thinking-header-actions flex items-center gap-2">
           <Button
             v-if="aiProcessing.reviewedTasksList.length > 0"
             icon="pi pi-trash"
@@ -331,7 +347,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="flex-1 overflow-auto min-h-0 space-y-3" style="max-height: 500px">
+      <div class="thinking-list flex-1 overflow-auto min-h-0 space-y-3" :style="listContainerStyle">
         <div v-if="aiProcessing.allTasksList.length === 0" class="text-center py-8">
           <i class="pi pi-check-circle text-4xl text-moon/40 mb-4" />
           <p class="text-moon/60">当前没有思考过程记录</p>
@@ -342,10 +358,10 @@ onUnmounted(() => {
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
           v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length]"
-          class="p-4 rounded-lg border border-white/10 bg-white/5"
+          class="thinking-task-card p-4 rounded-lg border border-white/10 bg-white/5"
         >
-          <div class="flex items-start justify-between mb-2 gap-2">
-            <div class="flex items-center gap-2 flex-1 min-w-0">
+          <div class="thinking-task-head flex items-start justify-between mb-2 gap-2">
+            <div class="thinking-task-main flex items-center gap-2 flex-1 min-w-0">
               <i
                 class="pi flex-shrink-0"
                 :class="{
@@ -356,12 +372,12 @@ onUnmounted(() => {
                   'pi-ban text-orange-500': task.status === 'cancelled',
                 }"
               />
-              <span class="font-medium text-moon/90 truncate">{{ task.modelName }}</span>
+              <span class="thinking-model-name font-medium text-moon/90 truncate">{{ task.modelName }}</span>
               <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary flex-shrink-0">{{
                 TASK_TYPE_LABELS[task.type] || task.type
               }}</span>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="thinking-task-status flex items-center gap-2 flex-shrink-0">
               <span class="text-xs text-moon/60">{{
                 statusLabels[task.status] || task.status
               }}</span>
@@ -397,7 +413,7 @@ onUnmounted(() => {
             </p>
           </div>
 
-          <div class="flex items-center gap-2 mt-3 text-xs text-moon/50 break-words">
+          <div class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words">
             <span>运行时间: {{ formatDuration(task.startTime, task.endTime) }}</span>
             <span v-if="task.endTime" class="break-words">
               · 完成于 {{ new Date(task.endTime).toLocaleTimeString('zh-CN') }}
@@ -413,10 +429,10 @@ onUnmounted(() => {
               v-for="task in aiProcessing.reviewedTasksList.slice(0, 10)"
               :key="task.id"
               v-memo="[task.id, task.status, task.message]"
-              class="p-3 rounded-lg border border-white/5 bg-white/2"
+              class="thinking-reviewed-card p-3 rounded-lg border border-white/5 bg-white/2"
             >
-              <div class="flex items-start justify-between mb-2 gap-2">
-                <div class="flex items-center gap-2 flex-1 min-w-0">
+              <div class="thinking-reviewed-head flex items-start justify-between mb-2 gap-2">
+                <div class="thinking-reviewed-main flex items-center gap-2 flex-1 min-w-0">
                   <i
                     class="pi text-sm flex-shrink-0"
                     :class="{
@@ -431,7 +447,7 @@ onUnmounted(() => {
                     >{{ TASK_TYPE_LABELS[task.type] || task.type }}</span
                   >
                 </div>
-                <span class="text-xs text-moon/50 flex-shrink-0">{{
+                <span class="thinking-reviewed-duration text-xs text-moon/50 flex-shrink-0">{{
                   formatDuration(task.startTime, task.endTime)
                 }}</span>
               </div>
@@ -480,5 +496,75 @@ onUnmounted(() => {
   scroll-behavior: auto;
   /* 减少重绘 */
   transform: translateZ(0);
+}
+
+@media (max-width: 640px) {
+  .thinking-popover :deep(.p-popover-content) {
+    padding: 0.75rem;
+  }
+
+  .thinking-header {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.65rem;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .thinking-header-actions {
+    align-self: flex-end;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
+
+  .thinking-task-card {
+    padding: 0.75rem;
+  }
+
+  .thinking-task-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .thinking-task-main {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .thinking-model-name {
+    max-width: 100%;
+  }
+
+  .thinking-task-status {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .thinking-task-meta {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .thinking-reviewed-card {
+    padding: 0.65rem;
+  }
+
+  .thinking-reviewed-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .thinking-reviewed-main {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .thinking-reviewed-duration {
+    align-self: flex-end;
+  }
 }
 </style>

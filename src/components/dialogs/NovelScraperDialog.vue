@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
+import type { CSSProperties } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -15,6 +16,7 @@ import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import {
   formatWordCount,
   UniqueIdGenerator,
@@ -54,10 +56,17 @@ const emit = defineEmits<{
 
 const toast = useToastWithHistory();
 const settingsStore = useSettingsStore();
+const { dialogStyle, isPhone } = useAdaptiveDialog({
+  desktopWidth: '1200px',
+  tabletWidth: '96vw',
+  desktopHeight: '90vh',
+  tabletHeight: '96vh',
+});
 const urlInput = ref('');
 const loading = ref(false);
 const scrapedNovel = ref<Novel | null>(null);
 const selectedChapterId = ref<string | null>(null);
+const mobileShowPreview = ref(false);
 const chapterContents = ref<Map<string, string>>(new Map());
 const loadingChapters = ref<Set<string>>(new Set());
 const chapterErrors = ref<Map<string, string>>(new Map());
@@ -100,6 +109,163 @@ const supportedSites = computed(() => {
 // 支持的网站文本
 const supportedSitesText = computed(() => {
   return NovelScraperFactory.getSupportedSitesText();
+});
+
+const hasDetailContent = computed(() => {
+  return loading.value || !!scrapedNovel.value;
+});
+
+const scraperDialogStyle = computed(() => {
+  if (!isPhone.value) {
+    return dialogStyle.value;
+  }
+  return hasDetailContent.value
+    ? {
+        width: '96vw',
+        maxWidth: '96vw',
+        height: '92dvh',
+        maxHeight: '92dvh',
+      }
+    : {
+        width: '96vw',
+        maxWidth: '96vw',
+        maxHeight: '90dvh',
+      };
+});
+
+const splitterLayout = computed(() => {
+  return isPhone.value ? 'vertical' : 'horizontal';
+});
+
+const contentContainerComponent = computed(() => {
+  return isPhone.value ? 'div' : Splitter;
+});
+
+const contentPanelComponent = computed(() => {
+  return isPhone.value ? 'div' : SplitterPanel;
+});
+
+const contentContainerProps = computed(() => {
+  return isPhone.value
+    ? {}
+    : {
+        layout: splitterLayout.value,
+      };
+});
+
+const chapterPanelProps = computed(() => {
+  return isPhone.value
+    ? {}
+    : {
+        size: chapterPanelSize.value,
+        minSize: chapterPanelMinSize.value,
+      };
+});
+
+const previewPanelProps = computed(() => {
+  return isPhone.value
+    ? {}
+    : {
+        size: contentPanelSize.value,
+        minSize: contentPanelMinSize.value,
+      };
+});
+
+const contentContainerClass = computed(() => {
+  return isPhone.value ? 'h-full min-h-0 flex flex-col gap-3' : '';
+});
+
+const chapterPanelWrapperClass = computed(() => {
+  return isPhone.value ? 'min-h-0 flex-[6]' : '';
+});
+
+const previewPanelWrapperClass = computed(() => {
+  return isPhone.value ? 'min-h-0 flex-[4]' : '';
+});
+
+const contentContainerStyle = computed(() => {
+  return isPhone.value ? undefined : 'height: 100%';
+});
+
+const chapterPanelSize = computed(() => {
+  return isPhone.value ? 84 : 40;
+});
+
+const chapterPanelMinSize = computed(() => {
+  return isPhone.value ? 70 : 30;
+});
+
+const contentPanelSize = computed(() => {
+  return isPhone.value ? 16 : 60;
+});
+
+const contentPanelMinSize = computed(() => {
+  return isPhone.value ? 10 : 40;
+});
+
+const chapterScrollerStyle = computed(() => {
+  if (isPhone.value) {
+    return {
+      width: '100%',
+      height: '100%',
+      minHeight: '12rem',
+      maxHeight: '100%',
+    };
+  }
+  return {
+    height: 'calc(90vh - 300px)',
+    maxHeight: 'calc(90vh - 300px)',
+  };
+});
+
+const contentScrollStyle = computed(() => {
+  if (isPhone.value) {
+    return {
+      height: '100%',
+      maxHeight: '100%',
+    };
+  }
+  return {
+    maxHeight: '70vh',
+  };
+});
+
+const novelInfoClass = computed(() => {
+  return [
+    'card-base p-4 flex-shrink-0 overflow-y-auto w-full min-w-0',
+    isPhone.value ? 'max-h-[18dvh]' : 'max-h-[40vh]',
+  ];
+});
+
+const splitPanelContainerStyle = computed(() => {
+  if (!isPhone.value) {
+    return undefined;
+  }
+  const style: CSSProperties = {
+    width: '100%',
+    minWidth: '0',
+    display: 'flex',
+    flexDirection: 'column',
+  };
+  return style;
+});
+
+const compareContainerClass = computed(() => {
+  return isPhone.value ? 'flex flex-col gap-3 h-full' : 'flex gap-4 h-full';
+});
+
+const compareImportedClass = computed(() => {
+  return isPhone.value
+    ? 'flex-1 flex flex-col pb-3 border-b border-white/10'
+    : 'flex-1 flex flex-col border-r border-white/10 pr-4';
+});
+
+const compareFetchedClass = computed(() => {
+  return isPhone.value ? 'flex-1 flex flex-col' : 'flex-1 flex flex-col pl-4';
+});
+
+const chapterItemSize = computed(() => {
+  return isPhone.value ? 70 : 80;
 });
 
 // 过滤后的卷和章节
@@ -329,6 +495,9 @@ const loadChapterContent = async (chapter: Chapter, retry = false) => {
 // 选择章节
 const selectChapter = (chapter: Chapter) => {
   selectedChapterId.value = chapter.id;
+  if (isPhone.value) {
+    mobileShowPreview.value = true;
+  }
   // 如果是已导入的章节，也需要加载新内容以进行对比
   if (!chapterContents.value.has(chapter.id) && chapter.webUrl) {
     void co(function* () {
@@ -349,6 +518,10 @@ const selectChapter = (chapter: Chapter) => {
       }
     });
   }
+};
+
+const showMobileChapterList = () => {
+  mobileShowPreview.value = false;
 };
 
 // 当前选中的章节
@@ -703,6 +876,7 @@ watch(
       loadingChapters.value.clear();
       importedChapterContents.value.clear();
       chapterFilter.value = 'all';
+      mobileShowPreview.value = false;
     } else {
       // 设置初始过滤选项
       if (props.initialFilter) {
@@ -711,6 +885,7 @@ watch(
         // 默认显示所有章节
         chapterFilter.value = 'all';
       }
+      mobileShowPreview.value = false;
 
       // 只有当明确传入 initialUrl 时才自动填充并触发获取
       // 如果 initialUrl 为空字符串或未传入，则不自动填充（避免从 currentBook 自动填充）
@@ -738,16 +913,21 @@ watch(
     :visible="visible"
     header="从网站获取小说"
     :modal="true"
-    :style="{ width: '1200px', maxHeight: '90vh' }"
+    :style="scraperDialogStyle"
     :closable="true"
     class="novel-scraper-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
-    <div class="flex flex-col h-full space-y-4 py-2">
+    <div
+      :class="[
+        'novel-scraper-body flex flex-col space-y-4 py-2 min-w-0',
+        hasDetailContent ? 'h-full min-h-0' : '',
+      ]"
+    >
       <!-- URL 输入 -->
-      <div class="space-y-2 flex-shrink-0">
+      <div v-if="!isPhone || !mobileShowPreview" class="space-y-2 flex-shrink-0 w-full min-w-0">
         <label class="block text-sm font-medium text-moon/90">小说 URL</label>
-        <div class="flex gap-2">
+        <div class="scraper-url-row flex gap-2 min-w-0">
           <InputText
             v-model="urlInput"
             :placeholder="`输入 ${supportedSitesText} 的小说 URL`"
@@ -766,7 +946,7 @@ watch(
         <small v-if="urlInput && !isValidUrl" class="p-error block">
           请输入支持的小说网站 URL（当前支持：{{ supportedSitesText }}）
         </small>
-        <div class="flex items-center gap-2 flex-wrap">
+        <div v-if="!isPhone || !scrapedNovel" class="flex items-center gap-2 flex-wrap">
           <small class="text-moon/60">支持的网站：</small>
           <div class="flex gap-2 flex-wrap">
             <span v-for="site in supportedSites" :key="site" class="site-badge">
@@ -777,7 +957,7 @@ watch(
       </div>
 
       <!-- 加载中 - 使用骨架屏 -->
-      <div v-if="loading" class="flex-1 min-h-0">
+      <div v-if="loading" class="flex-1 min-h-0 min-w-0">
         <div class="space-y-4">
           <!-- 标题骨架 -->
           <div class="p-4 bg-white/5 rounded-lg border border-white/10">
@@ -786,8 +966,8 @@ watch(
           </div>
           <!-- 内容骨架 -->
           <div class="flex-1 min-h-0">
-            <Splitter style="height: 100%">
-              <SplitterPanel :size="40">
+            <Splitter :layout="splitterLayout" style="height: 100%">
+              <SplitterPanel :size="chapterPanelSize" :min-size="chapterPanelMinSize">
                 <div class="h-full flex flex-col p-4">
                   <Skeleton width="30%" height="1.5rem" class="mb-4" />
                   <div class="space-y-3 flex-1">
@@ -795,7 +975,7 @@ watch(
                   </div>
                 </div>
               </SplitterPanel>
-              <SplitterPanel :size="60">
+              <SplitterPanel :size="contentPanelSize" :min-size="contentPanelMinSize">
                 <div class="h-full flex flex-col p-4">
                   <Skeleton width="50%" height="1.5rem" class="mb-4" />
                   <div class="space-y-2 flex-1">
@@ -810,24 +990,30 @@ watch(
 
       <!-- 统计信息 -->
       <div
-        v-if="scrapedNovel && !loading && showNovelInfo"
-        class="card-base p-4 flex-shrink-0 max-h-[40vh] overflow-y-auto"
+        v-if="scrapedNovel && !loading && showNovelInfo && (!isPhone || !mobileShowPreview)"
+        :class="novelInfoClass"
       >
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="text-lg font-semibold text-moon/90 mb-1">{{ scrapedNovel.title }}</h3>
-            <div class="flex items-center gap-4 text-sm text-moon/70">
+            <h3 class="text-lg font-semibold text-moon/90 mb-1" :class="{ 'line-clamp-2': isPhone }">
+              {{ scrapedNovel.title }}
+            </h3>
+            <div class="flex items-center gap-4 text-sm text-moon/70" :class="{ 'text-xs': isPhone }">
               <span v-if="scrapedNovel.author">作者: {{ scrapedNovel.author }}</span>
               <span>卷数: {{ stats.volumes }}</span>
               <span>章节数: {{ stats.chapters }}</span>
             </div>
           </div>
         </div>
-        <div v-if="scrapedNovel.description" class="mt-3 text-sm text-moon/80 whitespace-pre-wrap">
+        <div
+          v-if="scrapedNovel.description && !isPhone"
+          class="mt-3 text-sm text-moon/80 whitespace-pre-wrap"
+          :class="{ 'line-clamp-2 text-xs': isPhone }"
+        >
           {{ scrapedNovel.description }}
         </div>
         <div
-          v-if="scrapedNovel.tags && scrapedNovel.tags.length > 0"
+          v-if="!isPhone && scrapedNovel.tags && scrapedNovel.tags.length > 0"
           class="mt-3 flex flex-wrap gap-2"
         >
           <span v-for="tag in scrapedNovel.tags" :key="tag" class="novel-tag">
@@ -837,18 +1023,32 @@ watch(
       </div>
 
       <!-- 左右分栏布局 -->
-      <div v-if="scrapedNovel && !loading" class="flex-1 min-h-0">
-        <Splitter style="height: 100%">
+      <div v-if="scrapedNovel && !loading" class="flex-1 min-h-0 min-w-0">
+        <component
+          :is="contentContainerComponent"
+          v-bind="contentContainerProps"
+          :class="contentContainerClass"
+          :style="contentContainerStyle"
+        >
           <!-- 左侧：章节列表 -->
-          <SplitterPanel :size="40" :min-size="30">
+          <component
+            :is="contentPanelComponent"
+            v-bind="chapterPanelProps"
+            :class="chapterPanelWrapperClass"
+            v-show="!isPhone || !mobileShowPreview"
+          >
             <div
               class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+              :style="splitPanelContainerStyle"
             >
-              <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2">
+              <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full">
                 <div class="flex items-center justify-between min-w-0 gap-2">
                   <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
-                  <div class="flex items-center gap-2 flex-1 justify-end">
-                    <div class="flex gap-1">
+                  <div class="flex items-center gap-2 flex-1 justify-end min-w-0">
+                    <div
+                      class="flex gap-1 min-w-0"
+                      :class="{ 'overflow-x-auto whitespace-nowrap pr-1': isPhone }"
+                    >
                       <Button
                         label="全部"
                         :class="chapterFilter === 'all' ? '' : 'p-button-outlined'"
@@ -875,20 +1075,21 @@ watch(
                       />
                     </div>
                     <Button
-                      :label="isAllSelected ? '取消' : '全选'"
-                      icon="pi pi-check-square"
+                      :label="isPhone ? '' : isAllSelected ? '取消' : '全选'"
+                      :icon="isAllSelected ? 'pi pi-times' : 'pi pi-check-square'"
                       class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
+                      :aria-label="isAllSelected ? '取消全选' : '全选章节'"
                       @click="toggleSelectAll"
                     />
                   </div>
                 </div>
               </div>
-              <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden">
+              <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
                 <VirtualScroller
                   :items="virtualList"
-                  :itemSize="80"
+                  :itemSize="chapterItemSize"
                   class="border-0"
-                  style="height: calc(90vh - 300px); max-height: calc(90vh - 300px)"
+                  :style="chapterScrollerStyle"
                 >
                   <template #item="{ item }">
                     <!-- 卷头 -->
@@ -966,7 +1167,7 @@ watch(
                               </span>
                               <span v-else class="text-moon/40"> 未加载 </span>
                               <span
-                                v-if="item.data.lastUpdated"
+                                v-if="item.data.lastUpdated && !isPhone"
                                 class="text-moon/50 flex items-center gap-1"
                               >
                                 <i class="pi pi-clock text-[10px]" />
@@ -974,7 +1175,7 @@ watch(
                               </span>
                             </div>
                             <div
-                              v-if="item.data.webUrl"
+                              v-if="item.data.webUrl && !isPhone"
                               class="mt-2 w-full max-w-full overflow-hidden"
                             >
                               <a
@@ -1002,17 +1203,31 @@ watch(
                 </div>
               </div>
             </div>
-          </SplitterPanel>
+          </component>
 
           <!-- 右侧：章节内容 -->
-          <SplitterPanel :size="60" :min-size="40">
+          <component
+            :is="contentPanelComponent"
+            v-bind="previewPanelProps"
+            :class="previewPanelWrapperClass"
+            v-show="!isPhone || mobileShowPreview"
+          >
             <div
               class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+              :style="splitPanelContainerStyle"
             >
               <div
                 v-if="selectedChapter"
                 class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5"
               >
+                <div v-if="isPhone" class="mb-2">
+                  <Button
+                    label="返回章节列表"
+                    icon="pi pi-arrow-left"
+                    class="p-button-text p-button-sm"
+                    @click="showMobileChapterList"
+                  />
+                </div>
                 <div class="flex items-start justify-between gap-2 mb-2">
                   <h4 class="text-lg font-semibold text-moon/90 flex-1">
                     {{ getChapterDisplayTitle(selectedChapter, currentBook || undefined) }}
@@ -1029,7 +1244,7 @@ watch(
                   class="flex items-center gap-2 flex-wrap"
                 >
                   <a
-                    v-if="selectedChapter.webUrl"
+                    v-if="selectedChapter.webUrl && !isPhone"
                     :href="selectedChapter.webUrl"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1050,9 +1265,16 @@ watch(
                 </div>
               </div>
               <div v-else class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
+                <Button
+                  v-if="isPhone"
+                  label="返回章节列表"
+                  icon="pi pi-arrow-left"
+                  class="p-button-text p-button-sm mb-2"
+                  @click="showMobileChapterList"
+                />
                 <h4 class="text-lg font-semibold text-moon/60">请从左侧选择章节</h4>
               </div>
-              <div class="flex-1 overflow-y-auto px-6 py-4 max-h-[70vh]">
+              <div class="flex-1 overflow-y-auto px-6 py-4" :style="contentScrollStyle">
                 <!-- 加载中 - 使用骨架屏 -->
                 <div v-if="loadingChapters.has(selectedChapterId || '')" class="py-4 space-y-2">
                   <Skeleton width="100%" height="1rem" v-for="i in 15" :key="i" />
@@ -1083,9 +1305,9 @@ watch(
                   "
                   class="h-full"
                 >
-                  <div class="flex gap-4 h-full">
+                  <div :class="compareContainerClass">
                     <!-- 左侧：已导入内容 -->
-                    <div class="flex-1 flex flex-col border-r border-white/10 pr-4">
+                    <div :class="compareImportedClass">
                       <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
                         <h5 class="text-sm font-semibold text-moon/90 mb-1">已导入内容</h5>
                         <span class="text-xs text-moon/60">
@@ -1101,7 +1323,7 @@ watch(
                       </div>
                     </div>
                     <!-- 右侧：新获取内容 -->
-                    <div class="flex-1 flex flex-col pl-4">
+                    <div :class="compareFetchedClass">
                       <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
                         <h5 class="text-sm font-semibold text-moon/90 mb-1">新获取内容</h5>
                         <span class="text-xs text-moon/60">
@@ -1127,9 +1349,9 @@ watch(
                   "
                   class="h-full"
                 >
-                  <div class="flex gap-4 h-full">
+                  <div :class="compareContainerClass">
                     <!-- 左侧：已导入内容 -->
-                    <div class="flex-1 flex flex-col border-r border-white/10 pr-4">
+                    <div :class="compareImportedClass">
                       <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
                         <h5 class="text-sm font-semibold text-moon/90 mb-1">已导入内容</h5>
                         <span class="text-xs text-moon/60">
@@ -1145,7 +1367,13 @@ watch(
                       </div>
                     </div>
                     <!-- 右侧：等待加载新内容 -->
-                    <div class="flex-1 flex flex-col items-center justify-center pl-4 text-moon/60">
+                    <div
+                      :class="[
+                        compareFetchedClass,
+                        'flex items-center justify-center text-moon/60',
+                        { 'pt-2': isPhone },
+                      ]"
+                    >
                       <i class="pi pi-spin pi-spinner text-4xl text-moon/40 mb-4 block" />
                       <p>正在加载新内容以进行对比...</p>
                     </div>
@@ -1169,8 +1397,8 @@ watch(
                 </div>
               </div>
             </div>
-          </SplitterPanel>
-        </Splitter>
+          </component>
+        </component>
       </div>
     </div>
 
@@ -1188,7 +1416,7 @@ watch(
           </div>
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="scraper-footer-actions flex gap-2">
         <Button
           label="取消"
           icon="pi pi-times"
@@ -1208,3 +1436,67 @@ watch(
     </template>
   </Dialog>
 </template>
+
+<style scoped>
+.novel-scraper-dialog :deep(.p-dialog-content) {
+  overflow: hidden;
+}
+
+.novel-scraper-body > * {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .novel-scraper-dialog :deep(.p-splitterpanel) {
+    overflow: hidden;
+  }
+
+  .novel-scraper-dialog :deep(.p-splitterpanel > div) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .novel-scraper-dialog :deep(.p-virtualscroller) {
+    width: 100%;
+  }
+
+  .novel-scraper-dialog :deep(.p-virtualscroller-content) {
+    min-width: 100%;
+  }
+
+  .novel-scraper-body {
+    gap: 0.75rem;
+    padding-top: 0.25rem;
+  }
+
+  .scraper-url-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .scraper-url-row :deep(.p-button) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .novel-scraper-dialog :deep(.p-dialog-footer) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .novel-scraper-dialog :deep(.p-dialog-footer > .flex-1) {
+    width: 100%;
+    flex: 1 0 100%;
+  }
+
+  .scraper-footer-actions {
+    width: 100%;
+  }
+
+  .scraper-footer-actions :deep(.p-button) {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+</style>

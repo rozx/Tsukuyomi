@@ -117,4 +117,27 @@
     margin: 0 !important;
     border-radius: 0 !important;
   }
+
+  .adaptive-dialog-fullscreen.p-dialog {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    max-height: 100dvh !important;
+    height: 100dvh !important;
+    width: 100vw !important;
+  }
+
+  .adaptive-dialog-fullscreen .p-dialog-header,
+  .adaptive-dialog-fullscreen .p-dialog-content,
+  .adaptive-dialog-fullscreen .p-dialog-footer {
+    padding-left: max(1rem, env(safe-area-inset-left)) !important;
+    padding-right: max(1rem, env(safe-area-inset-right)) !important;
+  }
+
+  .adaptive-dialog-fullscreen .p-dialog-header {
+    padding-top: max(1rem, env(safe-area-inset-top)) !important;
+  }
+
+  .adaptive-dialog-fullscreen .p-dialog-footer {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+  }
 }

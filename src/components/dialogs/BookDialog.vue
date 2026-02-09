@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { cloneDeep } from 'lodash';
+import { cloneDeep, isEqual } from 'lodash';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -22,6 +22,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
+import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
@@ -60,6 +61,26 @@ const titleInputId = computed<string>(() => {
   return prefix ? `${prefix}-title` : 'title';
 });
 const toast = useToastWithHistory();
+const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
+  desktopWidth: '900px',
+  tabletWidth: '94vw',
+  desktopHeight: '90vh',
+  tabletHeight: '94vh',
+});
+const clearConfirmDialogStyle = computed(() =>
+  isPhone.value
+    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
+    : { width: '500px' },
+);
+const clearConfirmDialogClass = computed(() => (isPhone.value ? 'adaptive-dialog-fullscreen' : ''));
+const unsavedConfirmDialogStyle = computed(() =>
+  isPhone.value
+    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
+    : { width: '460px' },
+);
+const unsavedConfirmDialogClass = computed(() =>
+  isPhone.value ? 'adaptive-dialog-fullscreen' : '',
+);
 
 // 表单数据
 const formData = ref<Partial<Novel>>({
@@ -104,6 +125,23 @@ const expandedVolumes = ref<Set<string>>(new Set());
 // 清除确认对话框
 const showClearConfirm = ref(false);
 const clearConfirmInput = ref('');
+const showUnsavedCloseConfirm = ref(false);
+const initialFormSnapshot = ref<Partial<Novel> | null>(null);
+
+const hasUnsavedChanges = computed(() => {
+  if (!props.visible || !initialFormSnapshot.value) {
+    return false;
+  }
+  return !isEqual(initialFormSnapshot.value, formData.value);
+});
+
+const hasChildDialogOpen = computed(
+  () =>
+    showCoverManager.value ||
+    showScraper.value ||
+    showClearConfirm.value ||
+    showUnsavedCloseConfirm.value,
+);
 
 // 计算可用的卷和章节（从 formData 或 props.book 获取）
 const availableVolumes = computed(() => {
@@ -160,6 +198,10 @@ const handleSave = () => {
     return;
   }
   emit('save', formData.value);
+};
+
+const captureSnapshot = () => {
+  initialFormSnapshot.value = cloneDeep(formData.value);
 };
 
 // 导出 JSON
@@ -232,10 +274,39 @@ const handleExportJson = async () => {
   }
 };
 
-// 处理取消
-const handleCancel = () => {
+const closeDialogImmediately = () => {
   emit('cancel');
   emit('update:visible', false);
+};
+
+const requestCloseDialog = () => {
+  if (props.loading) {
+    return;
+  }
+
+  if (hasUnsavedChanges.value) {
+    showUnsavedCloseConfirm.value = true;
+    return;
+  }
+
+  closeDialogImmediately();
+};
+
+const confirmDiscardAndClose = () => {
+  showUnsavedCloseConfirm.value = false;
+  closeDialogImmediately();
+};
+
+const cancelDiscardAndKeepEditing = () => {
+  showUnsavedCloseConfirm.value = false;
+};
+
+const handleDialogVisibleChange = (nextVisible: boolean) => {
+  if (nextVisible) {
+    emit('update:visible', true);
+    return;
+  }
+  requestCloseDialog();
 };
 
 // 处理特殊指令标签页切换
@@ -451,12 +522,15 @@ watch(
       // 等待 DOM 更新后加载字符数
       await nextTick();
       await loadAllVisibleChapterCharCounts();
+      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();
       // 关闭清除确认对话框
       showClearConfirm.value = false;
       clearConfirmInput.value = '';
+      showUnsavedCloseConfirm.value = false;
+      initialFormSnapshot.value = null;
     }
   },
   { immediate: true },
@@ -468,12 +542,14 @@ watch(
     :visible="visible"
     :header="mode === 'add' ? '添加书籍' : '编辑书籍'"
     :modal="true"
-    :style="{ width: '900px' }"
-    :closable="true"
-    class="book-dialog"
-    @update:visible="$emit('update:visible', $event)"
+    :style="dialogStyle"
+    :closable="!props.loading && !hasChildDialogOpen"
+    :dismissableMask="!hasChildDialogOpen"
+    :closeOnEscape="!hasChildDialogOpen"
+    :class="['book-dialog', dialogClass]"
+    @update:visible="handleDialogVisibleChange"
   >
-    <div class="flex gap-6 py-2">
+    <div class="book-dialog-layout flex flex-col gap-5 py-2 lg:flex-row lg:gap-6">
       <!-- 左侧表单区域 -->
       <div class="flex-1 space-y-5 min-w-0">
         <!-- 书籍标题 -->
@@ -544,7 +620,7 @@ watch(
 
         <!-- 标签 -->
         <div class="space-y-2">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
               >标签</label
             >
@@ -576,7 +652,7 @@ watch(
 
         <!-- 网络地址 -->
         <div class="space-y-2">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <label :for="`${idPrefix}-webUrl`" class="block text-sm font-medium text-moon/90"
               >网络地址</label
             >
@@ -805,8 +881,8 @@ watch(
       </div>
 
       <!-- 右侧封面管理区域 -->
-      <div class="w-64 flex-shrink-0">
-        <div class="space-y-2 sticky top-0">
+      <div class="w-full flex-shrink-0 lg:w-64">
+        <div class="space-y-2 lg:sticky lg:top-0">
           <label class="block text-sm font-medium text-moon/90">封面</label>
           <div class="space-y-2">
             <div
@@ -858,25 +934,27 @@ watch(
       </div>
     </div>
     <template #footer>
-      <div class="flex items-center justify-between w-full">
+      <div
+        class="book-dialog-footer flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+      >
         <Button
           icon="pi pi-download"
-          label="导出 JSON"
-          class="p-button-text icon-button-hover"
+          :label="isPhone ? '导出' : '导出 JSON'"
+          class="p-button-text icon-button-hover self-start sm:self-auto"
           @click="handleExportJson"
         />
-        <div class="flex gap-2">
+        <div class="flex w-full gap-2 sm:w-auto sm:justify-end">
           <Button
             label="取消"
             icon="pi pi-times"
-            class="p-button-text icon-button-hover"
+            class="p-button-text icon-button-hover flex-1 sm:flex-none"
             :disabled="loading"
-            @click="handleCancel"
+            @click="requestCloseDialog"
           />
           <Button
             label="保存"
             icon="pi pi-check"
-            class="p-button-primary icon-button-hover"
+            class="p-button-primary icon-button-hover flex-1 sm:flex-none"
             :loading="loading"
             :disabled="loading"
             @click="handleSave"
@@ -908,12 +986,44 @@ watch(
       @apply="handleApplyScrapedData"
     />
 
+    <Dialog
+      v-model:visible="showUnsavedCloseConfirm"
+      header="放弃未保存修改？"
+      :modal="true"
+      :style="unsavedConfirmDialogStyle"
+      :class="unsavedConfirmDialogClass"
+      :dismissableMask="true"
+      :closeOnEscape="true"
+    >
+      <div class="space-y-3">
+        <p class="text-moon/90">当前表单有未保存修改，关闭后这些修改将丢失。</p>
+        <p class="text-moon/70 text-sm">建议先保存，或确认放弃修改后关闭。</p>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <Button
+            label="继续编辑"
+            icon="pi pi-pencil"
+            class="p-button-text"
+            @click="cancelDiscardAndKeepEditing"
+          />
+          <Button
+            label="放弃修改并关闭"
+            icon="pi pi-times"
+            class="p-button-danger"
+            @click="confirmDiscardAndClose"
+          />
+        </div>
+      </template>
+    </Dialog>
+
     <!-- 清除确认对话框 -->
     <Dialog
       v-model:visible="showClearConfirm"
       header="确认清除所有卷和章节"
       :modal="true"
-      :style="{ width: '500px' }"
+      :style="clearConfirmDialogStyle"
+      :class="clearConfirmDialogClass"
       :closable="true"
     >
       <div class="space-y-4">
@@ -958,6 +1068,10 @@ watch(
 </template>
 
 <style scoped>
+:deep(.book-dialog .p-dialog-content) {
+  overflow-x: hidden;
+}
+
 /* 确保清除封面按钮与普通按钮高度一致，并匹配深色主题 */
 :deep(.clear-cover-button.p-button-icon-only) {
   height: auto !important;
@@ -998,5 +1112,21 @@ watch(
 
 .special-instructions-tabs :deep(.p-tabpanels) {
   padding: 0;
+}
+
+.special-instructions-tabs :deep(.p-tablist-content) {
+  overflow-x: auto;
+}
+
+.special-instructions-tabs :deep(.p-tablist-tab-list) {
+  min-width: max-content;
+}
+
+@media (max-width: 640px) {
+  .special-instructions-tabs :deep(.p-tab) {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
 }
 </style>

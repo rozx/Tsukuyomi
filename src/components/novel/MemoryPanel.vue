@@ -670,13 +670,14 @@ const handleFileSelect = async (event: Event) => {
 <template>
   <div class="memory-panel h-full flex flex-col">
     <!-- 标题区域 -->
-    <div class="p-6 border-b border-white/10">
-      <h1 class="text-2xl font-semibold text-moon-100 mb-2">记忆管理</h1>
-      <p class="text-sm text-moon/70 mb-3">
+    <div class="panel-header border-b border-white/10">
+      <h1 class="panel-title font-semibold text-moon-100">记忆管理</h1>
+      <p class="panel-desc text-sm text-moon/70">
         管理小说的背景设定和剧情记忆，这些内容会在翻译过程中提供给 AI 作为上下文参考
       </p>
       <AppMessage
         severity="info"
+        class="panel-message"
         message="记忆由 AI 自动管理，会在翻译过程中自动创建和更新。手动编辑的记忆可能会被覆盖，建议仅在必要时干预。"
         :closable="false"
       />
@@ -684,13 +685,13 @@ const handleFileSelect = async (event: Event) => {
 
     <!-- 操作栏 -->
     <div
-      class="px-6 py-4 border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+      class="panel-toolbar border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
     >
-      <div class="flex items-center justify-between gap-3">
+      <div class="toolbar-row">
         <!-- 左侧：搜索和筛选 -->
-        <div class="flex items-center gap-2 flex-1 min-w-0">
+        <div class="toolbar-filters">
           <!-- 搜索栏 -->
-          <InputGroup class="search-input-group flex-shrink-0" style="width: 240px">
+          <InputGroup class="search-input-group" style="width: 240px">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
@@ -757,7 +758,7 @@ const handleFileSelect = async (event: Event) => {
         </div>
 
         <!-- 右侧：操作按钮 -->
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="toolbar-actions">
           <Button
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
@@ -940,6 +941,108 @@ const handleFileSelect = async (event: Event) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* 标题区域 */
+.panel-header {
+  padding: 1.5rem;
+}
+
+.panel-title {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.panel-desc {
+  margin-bottom: 0.75rem;
+}
+
+/* 操作栏 */
+.panel-toolbar {
+  padding: 1rem 1.5rem;
+}
+
+/* 工具栏布局 */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* 移动端响应式：工具栏换行 */
+@media (max-width: 640px) {
+  .panel-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .panel-title {
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .panel-desc {
+    display: none;
+  }
+
+  .panel-message :deep(.p-4) {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .panel-message :deep(.text-sm) {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .panel-message :deep(.text-lg) {
+    font-size: 0.875rem;
+  }
+
+  .panel-message :deep(.gap-3) {
+    gap: 0.5rem;
+  }
+
+  .panel-toolbar {
+    padding: 0.5rem 1rem;
+  }
+
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-filters {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-filters .search-input-group {
+    flex: 1 1 100%;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  .toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
 }
 
 /* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */

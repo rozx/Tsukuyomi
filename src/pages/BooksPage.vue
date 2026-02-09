@@ -16,6 +16,7 @@ import Skeleton from 'primevue/skeleton';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
+import { useUiStore } from 'src/stores/ui';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { useContextStore } from 'src/stores/context';
@@ -30,8 +31,10 @@ const router = useRouter();
 const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
 const settingsStore = useSettingsStore();
+const uiStore = useUiStore();
 const contextStore = useContextStore();
 const toast = useToastWithHistory();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 // 对话框状态
 const showAddDialog = ref(false);
@@ -160,6 +163,20 @@ const selectedSort = computed({
     // 触发保存
     void settingsStore.setBooksSortOption(value);
   },
+});
+
+const pageRows = computed(() => {
+  return isPhone.value ? 10 : 20;
+});
+
+const rowsPerPageOptions = computed(() => {
+  return isPhone.value ? [10, 20, 50] : [10, 20, 50, 100];
+});
+
+const paginatorTemplate = computed(() => {
+  return isPhone.value
+    ? 'PrevPageLink CurrentPageReport NextPageLink'
+    : 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink';
 });
 
 // 分割按钮菜单项
@@ -694,15 +711,15 @@ const handleSave = async (formData: Partial<Novel>) => {
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col p-6">
+  <div class="w-full h-full flex flex-col p-3 sm:p-4 lg:p-6">
     <!-- 头部 -->
-    <div class="flex items-center justify-between mb-6 flex-shrink-0 gap-4">
-      <div class="flex-shrink-0">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+      <div class="flex-shrink-0 min-w-0">
         <h1 class="text-2xl font-bold">书籍列表</h1>
         <p class="text-moon/70 mt-1">管理您的翻译书籍</p>
       </div>
-      <div class="flex items-center gap-3 flex-nowrap flex-shrink-0">
-        <InputGroup class="search-input-group min-w-0 flex-shrink">
+      <div class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap">
+        <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
           </InputGroupAddon>
@@ -724,7 +741,7 @@ const handleSave = async (formData: Partial<Novel>) => {
           :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
           icon="pi pi-sort-alt"
           iconPos="right"
-          class="p-button-outlined icon-button-hover flex-shrink-0"
+          class="p-button-outlined icon-button-hover flex-shrink-0 w-full sm:w-auto"
           @click="
             (e: Event) => {
               const menu = sortMenuRef;
@@ -738,7 +755,7 @@ const handleSave = async (formData: Partial<Novel>) => {
           label="添加书籍"
           icon="pi pi-plus"
           :model="addBookMenuItems"
-          class="p-button-primary icon-button-hover flex-shrink-0"
+          class="books-add-split-button p-button-primary icon-button-hover flex-shrink-0 w-full sm:w-auto"
           @click="addBook"
         />
       </div>
@@ -766,10 +783,11 @@ const handleSave = async (formData: Partial<Novel>) => {
         v-else-if="booksStore.isLoaded"
         :value="filteredBooks"
         data-key="id"
-        :rows="20"
+        :rows="pageRows"
         :paginator="filteredBooks.length > 0"
-        :rows-per-page-options="[10, 20, 50, 100]"
-        paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+        :rows-per-page-options="rowsPerPageOptions"
+        :paginator-template="paginatorTemplate"
+        current-page-report-template="{currentPage} / {totalPages}"
         layout="grid"
         class="flex-1 flex flex-col min-h-0"
       >
@@ -791,7 +809,7 @@ const handleSave = async (formData: Partial<Novel>) => {
 
         <template #grid="slotProps">
           <div
-            class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 items-stretch"
+            class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-stretch"
           >
             <div
               v-for="book in slotProps.items"
@@ -800,7 +818,7 @@ const handleSave = async (formData: Partial<Novel>) => {
             >
               <!-- 封面 -->
               <div
-                class="relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
+                class="book-cover relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
                 @click="navigateToBookDetails(book)"
               >
                 <img
@@ -816,9 +834,9 @@ const handleSave = async (formData: Partial<Novel>) => {
                 />
               </div>
               <!-- 内容 -->
-              <div class="px-1 pb-2 space-y-1.5 flex flex-col flex-1">
+              <div class="book-card-content px-1 pb-2 space-y-1.5 flex flex-col flex-1">
                 <h3
-                  class="text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
+                  class="book-card-title text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
                   :title="book.title"
                   @click="navigateToBookDetails(book)"
                 >
@@ -830,7 +848,7 @@ const handleSave = async (formData: Partial<Novel>) => {
 
                 <!-- 统计信息 -->
                 <div
-                  class="text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
+                  class="book-card-stats text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
                 >
                   <div class="flex items-center justify-between">
                     <span>章节:</span>
@@ -856,7 +874,7 @@ const handleSave = async (formData: Partial<Novel>) => {
                 </div>
 
                 <!-- 操作按钮 -->
-                <div class="flex items-center gap-1 pt-1.5 border-t border-white/5">
+                <div class="book-card-actions flex items-center gap-1 pt-1.5 border-t border-white/5">
                   <Button
                     :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                     :class="[
@@ -1070,5 +1088,68 @@ const handleSave = async (formData: Partial<Novel>) => {
 
 .search-input-group :deep(.p-inputtext) {
   min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .search-input-group {
+    max-width: none;
+  }
+
+  .books-toolbar :deep(.p-splitbutton) {
+    width: 100%;
+  }
+
+  .books-toolbar :deep(.p-splitbutton .p-button) {
+    min-height: 2.5rem;
+  }
+
+  .books-toolbar :deep(.p-splitbutton .p-splitbutton-button) {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .book-card {
+    display: flex;
+    flex-direction: row;
+    gap: 0.625rem;
+    padding: 0.625rem;
+    border-radius: 10px;
+  }
+
+  .book-card:hover {
+    transform: none;
+  }
+
+  .book-cover {
+    flex: 0 0 5.4rem;
+    width: 5.4rem;
+    min-width: 5.4rem;
+    margin-bottom: 0;
+    border-radius: 8px;
+  }
+
+  .book-card-content {
+    padding: 0 0 0.125rem;
+    min-width: 0;
+  }
+
+  .book-card-title {
+    min-height: auto;
+    font-size: 0.92rem;
+    line-height: 1.35;
+    margin-bottom: 0.1rem;
+  }
+
+  .book-card-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.2rem 0.6rem;
+    padding-top: 0.45rem;
+  }
+
+  .book-card-actions {
+    padding-top: 0.5rem;
+    margin-top: 0.15rem;
+  }
 }
 </style>

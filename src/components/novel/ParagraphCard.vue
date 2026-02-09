@@ -44,6 +44,7 @@ const emit = defineEmits<{
 const contextStore = useContextStore();
 const booksStore = useBooksStore();
 const uiStore = useUiStore();
+const isTouchLayout = computed(() => uiStore.deviceType !== 'desktop');
 
 // 上下文菜单管理器
 const { showContextMenu } = useContextMenuManager();
@@ -848,16 +849,16 @@ defineExpose({
     :id="props.id"
     ref="paragraphCardRef"
     class="paragraph-card"
-    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected }"
+    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected, 'touch-layout': isTouchLayout }"
     tabindex="-1"
     @contextmenu="handleParagraphContextMenu"
     @mouseenter="handleParagraphMouseEnter"
     @click="emit('paragraph-click', props.paragraph.id)"
   >
     <span v-if="hasContent" class="paragraph-icon">¶</span>
-    <!-- 最近翻译按钮 -->
+    <!-- 桌面端：最近翻译按钮 -->
     <button
-      v-if="hasOtherTranslations"
+      v-if="!isTouchLayout && hasOtherTranslations"
       ref="recentTranslationButtonRef"
       class="recent-translation-icon-button"
       :style="{ right: `${recentTranslationButtonRight}rem` }"
@@ -867,17 +868,18 @@ defineExpose({
     >
       <i class="pi pi-history" />
     </button>
-    <!-- 编辑翻译按钮 -->
+    <!-- 桌面端：编辑翻译按钮 -->
     <button
-      v-if="isEditButtonVisible"
+      v-if="!isTouchLayout && isEditButtonVisible"
       class="edit-translation-icon-button"
       :style="{ right: `${editButtonRight}rem` }"
       @click.stop="handleEditTranslationClick"
     >
       <i class="pi pi-pencil" />
     </button>
+    <!-- 桌面端：上下文菜单按钮 -->
     <button
-      v-if="hasContent"
+      v-if="!isTouchLayout && hasContent"
       ref="contextMenuButtonRef"
       class="context-menu-icon-button"
       @click.stop="handleContextMenuClick"
@@ -987,6 +989,7 @@ defineExpose({
           </template>
         </Inplace>
       </div>
+
     </div>
 
     <!-- 术语提示框 - 使用 PrimeVue Popover -->
@@ -1282,6 +1285,10 @@ defineExpose({
   padding-right: 6rem; /* 为按钮留出空间：历史按钮右边距4rem + 宽度1.75rem ≈ 6rem */
 }
 
+.paragraph-card.touch-layout .paragraph-content {
+  padding-right: 0;
+}
+
 .paragraph-text {
   margin: 0;
   color: var(--moon-opacity-60);
@@ -1348,6 +1355,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
   min-width: 300px;
 }
 
@@ -1396,6 +1405,44 @@ defineExpose({
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+.translation-edit-buttons :deep(.p-button .p-button-label) {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .paragraph-translation-edit {
+    min-width: 0;
+  }
+
+  .translation-edit-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.375rem;
+  }
+
+  .translation-edit-buttons {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .translation-edit-buttons :deep(.p-button) {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .translation-edit-hints {
+    width: 100%;
+  }
+
+  .hint-text {
+    font-size: 0.6875rem;
+    line-height: 1.35;
+  }
 }
 
 /* 术语高亮 */

@@ -99,6 +99,11 @@ export interface AppSettings {
    * 默认值：'default'
    */
   booksSortOption?: string;
+  /**
+   * 是否已关闭首次启动快速开始弹窗
+   * 默认值：false（首次启动会自动展示）
+   */
+  quickStartDismissed?: boolean;
 }
 
 export interface Settings {

@@ -44,6 +44,10 @@ const booksStore = useBooksStore();
 const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
+const isDesktop = computed(() => ui.deviceType === 'desktop');
+const panelWidthStyle = computed(() => ({
+  width: isDesktop.value ? `${ui.rightPanelWidth}px` : '100%',
+}));
 
 // 面板与布局
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
@@ -563,10 +567,11 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
   <aside
     ref="panelContainerRef"
     class="shrink-0 h-full border-l border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative overflow-hidden"
-    :style="{ width: `${ui.rightPanelWidth}px` }"
+    :style="panelWidthStyle"
   >
     <!-- Resize handle -->
     <div
+      v-if="isDesktop"
       ref="resizeHandleRef"
       class="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize transition-colors z-30"
       :class="{
