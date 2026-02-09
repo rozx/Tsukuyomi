@@ -63,9 +63,11 @@ const groupedDocuments = computed(() => {
 });
 
 // 转义 HTML 属性值以防止注入
+// 注意：这里转义的是输入文本中的字面字符，不会导致双重转义
+// 例如：输入 'a&b"c' 会变成 'a&amp;b&quot;c'
 function escapeHtmlAttr(text: string): string {
   return text
-    .replace(/&/g, '&amp;')
+    .replace(/&/g, '&amp;') // 必须首先替换 & 符号
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
@@ -297,6 +299,9 @@ function handleContentClick(event: MouseEvent) {
   // 查找最近的 a 标签
   const link = target.closest('a.doc-link');
   if (!link) return;
+
+  // 类型守卫：确保是 HTMLElement 以便调用 getAttribute
+  if (!(link instanceof HTMLElement)) return;
 
   const href = link.getAttribute('data-href');
   if (!href) return; // 外部链接没有 data-href，由浏览器处理
