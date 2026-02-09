@@ -1540,6 +1540,12 @@ watch(
 .ai-task-type-badge {
   font-size: 0.75rem;
   padding: 0.125rem 0.5rem;
+  /* 覆盖主题中 .relative .p-badge 的绝对定位规则，确保 Badge 保持在行内 */
+  position: static !important;
+  transform: none !important;
+  z-index: auto !important;
+  pointer-events: auto !important;
+  flex-shrink: 0;
 }
 
 .ai-task-status {
