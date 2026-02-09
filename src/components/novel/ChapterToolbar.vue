@@ -355,6 +355,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 .chapter-toolbar-actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.375rem;
   overflow-x: auto;
   overflow-y: hidden;
@@ -430,6 +431,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
   /* Wrapped layout for secondary actions */
   .chapter-toolbar-actions {
     gap: 0.25rem;
+    justify-content: flex-start;
     flex-wrap: wrap;
     overflow-x: visible;
     overflow-y: visible;
