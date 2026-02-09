@@ -87,7 +87,9 @@ renderer.link = (token: Token) => {
   const text = linkToken.text;
 
   if (href.startsWith('./') || href.startsWith('../') || href.startsWith('#')) {
-    return `<a href="${href}" class="doc-link" onclick="event.preventDefault(); window.loadHelpDoc('${href}')">${text}</a>`;
+    // 内部链接：使用 data-href 属性存储链接，通过事件委托处理
+    // DOMPurify 会自动处理 HTML 实体编码，确保安全
+    return `<a href="${href}" class="doc-link" data-href="${href}">${text}</a>`;
   }
 
   return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="doc-link doc-link-external" title="${title}">${text}<i class="pi pi-external-link ml-1 text-xs opacity-70"></i></a>`;
@@ -223,7 +225,10 @@ async function loadDocumentContent(doc: HelpDocument) {
 
     // Render markdown
     const html = await marked.parse(markdown, { renderer });
-    content.value = DOMPurify.sanitize(html);
+    // 配置 DOMPurify 允许 data-href 属性
+    content.value = DOMPurify.sanitize(html, {
+      ADD_ATTR: ['data-href'],
+    });
 
     await nextTick();
     const container = document.querySelector('.help-content-scroll');
@@ -256,8 +261,8 @@ function scrollToHeading(id: string, updateUrl = true) {
   }
 }
 
-// Internal link handling
-(window as unknown as { loadHelpDoc: (href: string) => void }).loadHelpDoc = (href: string) => {
+// 处理内部链接导航
+function handleInternalLink(href: string) {
   const [pathPart, hashPart] = href.split('#', 2);
 
   if (!pathPart && hashPart) {
@@ -269,7 +274,27 @@ function scrollToHeading(id: string, updateUrl = true) {
   if (doc) {
     navigateToDocument(doc, hashPart ? `#${hashPart}` : '');
   }
-};
+}
+
+// 事件委托：处理文档内容中的链接点击
+function handleContentClick(event: MouseEvent) {
+  const target = event.target;
+  if (!target || !(target instanceof HTMLElement)) return;
+
+  // 查找最近的 a 标签
+  const link = target.closest('a.doc-link');
+  if (!link) return;
+
+  // 类型守卫：确保是 HTMLElement 以便调用 getAttribute
+  if (!(link instanceof HTMLElement)) return;
+
+  const href = link.getAttribute('data-href');
+  if (!href) return; // 外部链接没有 data-href，由浏览器处理
+
+  // 内部链接：阻止默认行为并使用路由处理
+  event.preventDefault();
+  handleInternalLink(href);
+}
 
 onMounted(() => {
   void loadDocumentIndex();
@@ -435,7 +460,7 @@ onMounted(() => {
             </header>
 
             <!-- Document Body -->
-            <article class="doc-content" v-html="content"></article>
+            <article class="doc-content" v-html="content" @click="handleContentClick"></article>
           </div>
         </div>
       </div>

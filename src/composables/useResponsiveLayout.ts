@@ -9,7 +9,13 @@ export function useResponsiveLayout() {
     uiStore.setDeviceType(getDeviceTypeByWidth(window.innerWidth));
   };
 
+  // 在初始化时同步检测设备类型，避免首次渲染闪烁
+  if (typeof window !== 'undefined') {
+    updateDeviceType();
+  }
+
   onMounted(() => {
+    // 挂载后再次更新，确保使用最新的窗口尺寸，并设置事件监听器
     updateDeviceType();
     window.addEventListener('resize', updateDeviceType);
     window.addEventListener('orientationchange', updateDeviceType);
