@@ -98,7 +98,13 @@ const ensureEscapeListener = () => {
 };
 
 const cleanupEscapeListener = () => {
-  if (!overlayEventTarget || !escapeListenerAttached || overlayEntries.length > 0) {
+  if (!overlayEventTarget || !escapeListenerAttached) {
+    return;
+  }
+
+  // 检查是否还有活动的 overlay
+  const hasActiveOverlay = overlayEntries.some((entry) => entry.isActive);
+  if (hasActiveOverlay) {
     return;
   }
 
@@ -141,6 +147,8 @@ export function useOverlayCloseStack(options: UseOverlayCloseStackOptions) {
     }
 
     entry.isActive = false;
+    // 当 overlay 变为非活动状态时，尝试清理全局监听器
+    cleanupEscapeListener();
   };
 
   watch(
