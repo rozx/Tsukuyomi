@@ -93,9 +93,10 @@ jobs:
             fi
             # Add patch version if missing
             if [ ${#parts[@]} -eq 2 ]; then
-              ver="${ver}.0"
+              parts+=("0")
             fi
-            echo "$ver"
+            # Ignore build number if present (keep only major.minor.patch)
+            echo "${parts[0]}.${parts[1]}.${parts[2]}"
           }
 
           CURRENT_VERSION_NORM=$(normalize_version "$CURRENT_VERSION")
