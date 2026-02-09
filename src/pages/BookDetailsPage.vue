@@ -387,6 +387,8 @@ const workspaceMode = computed({
   set: (value: BookWorkspaceMode) => uiStore.setBookWorkspaceMode(value),
 });
 
+const isMovingChapter = ref(false);
+
 const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
   workspaceMode.value = mode;
   if (mode === 'content') {
@@ -500,7 +502,7 @@ const onDragLeave = (...args: unknown[]) => {
   handleDragLeave();
 };
 
-const onMoveChapter = (...args: unknown[]) => {
+const onMoveChapter = async (...args: unknown[]) => {
   const payload = args[0] as
     | {
         chapter: Chapter;
@@ -510,7 +512,7 @@ const onMoveChapter = (...args: unknown[]) => {
       }
     | undefined;
 
-  if (!payload || !book.value) return;
+  if (!payload || !book.value || isMovingChapter.value) return;
 
   const { chapter, volumeId, index, direction } = payload;
   const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -520,13 +522,18 @@ const onMoveChapter = (...args: unknown[]) => {
   if (!targetVolume?.chapters) return;
   if (targetIndex >= targetVolume.chapters.length) return;
 
-  saveState?.('触控排序章节');
+  isMovingChapter.value = true;
+  try {
+    saveState?.('触控排序章节');
 
-  const updatedVolumes = ChapterService.moveChapter(book.value, chapter.id, volumeId, targetIndex);
-  void booksStore.updateBook(book.value.id, {
-    volumes: updatedVolumes,
-    lastEdited: new Date(),
-  });
+    const updatedVolumes = ChapterService.moveChapter(book.value, chapter.id, volumeId, targetIndex);
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+  } finally {
+    isMovingChapter.value = false;
+  }
 };
 
 // 打开书籍编辑对话框
@@ -2261,6 +2268,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :drag-over-volume-id="dragOverVolumeId"
             :drag-over-index="dragOverIndex"
             :touch-mode="isSmallScreen"
+            :is-moving-chapter="isMovingChapter"
             @toggle-volume="onToggleVolume"
             @navigate-to-chapter="onNavigateToChapter"
             @edit-volume="onEditVolume"

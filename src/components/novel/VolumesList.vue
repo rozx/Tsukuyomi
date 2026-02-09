@@ -20,6 +20,7 @@ const _props = defineProps<{
   dragOverVolumeId: string | null;
   dragOverIndex: number | null;
   touchMode?: boolean;
+  isMovingChapter?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -210,7 +211,7 @@ const handleMoveChapter = (
                   class="p-button-text p-button-sm p-button-rounded action-button"
                   size="small"
                   title="上移"
-                  :disabled="index === 0"
+                  :disabled="isMovingChapter || index === 0"
                   @click="handleMoveChapter(chapter, volume.id, index, 'up')"
                 />
                 <Button
@@ -219,7 +220,7 @@ const handleMoveChapter = (
                   class="p-button-text p-button-sm p-button-rounded action-button"
                   size="small"
                   title="下移"
-                  :disabled="index === (volume.chapters?.length || 1) - 1"
+                  :disabled="isMovingChapter || index === (volume.chapters?.length || 1) - 1"
                   @click="handleMoveChapter(chapter, volume.id, index, 'down')"
                 />
                 <Button

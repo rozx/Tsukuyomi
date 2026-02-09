@@ -86,7 +86,7 @@ renderer.link = (token: Token) => {
   const title = linkToken.title || '';
   const text = linkToken.text;
 
-  if (href.startsWith('./') || href.startsWith('../')) {
+  if (href.startsWith('./') || href.startsWith('../') || href.startsWith('#')) {
     return `<a href="${href}" class="doc-link" onclick="event.preventDefault(); window.loadHelpDoc('${href}')">${text}</a>`;
   }
 
@@ -129,8 +129,13 @@ async function loadDocumentIndex() {
 }
 
 // Navigate to document (updates route)
-function navigateToDocument(doc: HelpDocument) {
-  void router.push(`/help/${doc.id}`);
+function navigateToDocument(doc: HelpDocument, hash = '') {
+  const normalizedHash = hash
+    ? hash.startsWith('#')
+      ? hash
+      : `#${hash}`
+    : '';
+  void router.push(`/help/${doc.id}${normalizedHash}`);
   showDocumentNavDrawer.value = false;
 }
 
@@ -253,9 +258,16 @@ function scrollToHeading(id: string, updateUrl = true) {
 
 // Internal link handling
 (window as unknown as { loadHelpDoc: (href: string) => void }).loadHelpDoc = (href: string) => {
+  const [pathPart, hashPart] = href.split('#', 2);
+
+  if (!pathPart && hashPart) {
+    scrollToHeading(hashPart);
+    return;
+  }
+
   const doc = resolveHelpDocumentByHref(documents.value, href);
   if (doc) {
-    navigateToDocument(doc);
+    navigateToDocument(doc, hashPart ? `#${hashPart}` : '');
   }
 };
 
