@@ -1355,6 +1355,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
   min-width: 300px;
 }
 
@@ -1403,6 +1405,44 @@ defineExpose({
   display: flex;
   gap: 0.5rem;
   align-items: center;
+}
+
+.translation-edit-buttons :deep(.p-button .p-button-label) {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .paragraph-translation-edit {
+    min-width: 0;
+  }
+
+  .translation-edit-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.375rem;
+  }
+
+  .translation-edit-buttons {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .translation-edit-buttons :deep(.p-button) {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .translation-edit-hints {
+    width: 100%;
+  }
+
+  .hint-text {
+    font-size: 0.6875rem;
+    line-height: 1.35;
+  }
 }
 
 /* 术语高亮 */

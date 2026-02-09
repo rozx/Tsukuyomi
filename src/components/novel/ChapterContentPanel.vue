@@ -34,6 +34,9 @@ const props = defineProps<{
   isClickSelected: boolean;
   paragraphCardRefs: Map<string, InstanceType<typeof ParagraphCard>>;
   isSummarizing?: boolean;
+  isSmallScreen: boolean;
+  prevChapter: Chapter | null;
+  nextChapter: Chapter | null;
 }>();
 
 const emit = defineEmits<{
@@ -50,6 +53,8 @@ const emit = defineEmits<{
   (e: 'paragraph-edit-start', paragraphId: string): void;
   (e: 'paragraph-edit-stop', paragraphId: string): void;
   (e: 're-summarize-chapter', chapterId: string): void;
+  (e: 'navigate-to-chapter', chapter: Chapter): void;
+  (e: 'navigate-to-chapter-list'): void;
 }>();
 
 // 获取选中章节的统计信息
@@ -85,6 +90,16 @@ const getParagraphTranslationText = (paragraph: Paragraph): string => {
 const handleOriginalTextInput = (event: Event) => {
   const target = event.target as HTMLTextAreaElement;
   emit('update:originalTextEditValue', target.value);
+};
+
+const getPrevChapterButtonLabel = (chapter: Chapter | null): string => {
+  if (!chapter) return props.isSmallScreen ? '上一章' : '没有上一章';
+  return props.isSmallScreen ? '上一章' : getChapterDisplayTitle(chapter, props.book || undefined);
+};
+
+const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
+  if (!chapter) return props.isSmallScreen ? '下一章' : '没有下一章';
+  return props.isSmallScreen ? '下一章' : getChapterDisplayTitle(chapter, props.book || undefined);
 };
 </script>
 
@@ -163,6 +178,41 @@ const handleOriginalTextInput = (event: Event) => {
         <i class="pi pi-file empty-icon"></i>
         <p class="empty-text">该章节暂无内容</p>
         <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
+      </div>
+
+      <!-- 章节导航按钮（预览模式） -->
+      <div class="chapter-navigation">
+        <Button
+          :disabled="!prevChapter"
+          icon="pi pi-chevron-left"
+          :label="getPrevChapterButtonLabel(prevChapter)"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-prev"
+          :class="{ 'p-button-disabled': !prevChapter }"
+          @click="prevChapter && emit('navigate-to-chapter', prevChapter)"
+          v-tooltip.top="
+            prevChapter ? getChapterDisplayTitle(prevChapter, book || undefined) : '没有上一章'
+          "
+        />
+        <Button
+          v-if="isSmallScreen"
+          icon="pi pi-list"
+          label="章节列表"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-list"
+          @click="emit('navigate-to-chapter-list')"
+          v-tooltip.top="'返回章节列表'"
+        />
+        <Button
+          :disabled="!nextChapter"
+          icon="pi pi-chevron-right"
+          iconPos="right"
+          :label="getNextChapterButtonLabel(nextChapter)"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-next"
+          :class="{ 'p-button-disabled': !nextChapter }"
+          @click="nextChapter && emit('navigate-to-chapter', nextChapter)"
+          v-tooltip.top="
+            nextChapter ? getChapterDisplayTitle(nextChapter, book || undefined) : '没有下一章'
+          "
+        />
       </div>
     </div>
 
@@ -265,7 +315,7 @@ const handleOriginalTextInput = (event: Event) => {
           :key="paragraph.id"
           class="paragraph-with-line-number"
         >
-          <span class="line-number">{{ index + 1 }}</span>
+          <span v-if="!isSmallScreen" class="line-number">{{ index + 1 }}</span>
           <ParagraphCard
             :ref="
               (el) => {
@@ -315,6 +365,41 @@ const handleOriginalTextInput = (event: Event) => {
         <p class="empty-text">该章节暂无内容</p>
         <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
       </div>
+
+      <!-- 章节导航按钮 -->
+      <div class="chapter-navigation">
+        <Button
+          :disabled="!prevChapter"
+          icon="pi pi-chevron-left"
+          :label="getPrevChapterButtonLabel(prevChapter)"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-prev"
+          :class="{ 'p-button-disabled': !prevChapter }"
+          @click="prevChapter && emit('navigate-to-chapter', prevChapter)"
+          v-tooltip.top="
+            prevChapter ? getChapterDisplayTitle(prevChapter, book || undefined) : '没有上一章'
+          "
+        />
+        <Button
+          v-if="isSmallScreen"
+          icon="pi pi-list"
+          label="章节列表"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-list"
+          @click="emit('navigate-to-chapter-list')"
+          v-tooltip.top="'返回章节列表'"
+        />
+        <Button
+          :disabled="!nextChapter"
+          icon="pi pi-chevron-right"
+          iconPos="right"
+          :label="getNextChapterButtonLabel(nextChapter)"
+          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-next"
+          :class="{ 'p-button-disabled': !nextChapter }"
+          @click="nextChapter && emit('navigate-to-chapter', nextChapter)"
+          v-tooltip.top="
+            nextChapter ? getChapterDisplayTitle(nextChapter, book || undefined) : '没有下一章'
+          "
+        />
+      </div>
     </template>
   </div>
 </template>
@@ -322,8 +407,11 @@ const handleOriginalTextInput = (event: Event) => {
 <style scoped>
 /* 章节内容容器 */
 .chapter-content-container {
+  width: 100%;
+  min-width: 0;
   max-width: 56rem;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* 原始文本编辑模式：占满面板宽度/高度，方便编辑 */
@@ -547,8 +635,11 @@ const handleOriginalTextInput = (event: Event) => {
 
 /* 翻译预览容器 */
 .translation-preview-container {
+  width: 100%;
+  min-width: 0;
   max-width: 56rem;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .preview-chapter-header {
@@ -677,5 +768,113 @@ const handleOriginalTextInput = (event: Event) => {
   font-size: 1rem;
   color: var(--moon-opacity-70);
   margin: 0;
+}
+
+/* 章节导航按钮 */
+.chapter-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--white-opacity-10);
+}
+
+.chapter-navigation :deep(.p-button) {
+  width: 100%;
+  min-width: 0;
+}
+
+.chapter-nav-btn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  justify-content: center;
+}
+
+.chapter-nav-btn :deep(.p-button-label) {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-nav-btn :deep(.p-button-icon) {
+  flex: 0 0 auto;
+}
+
+.chapter-nav-prev {
+  overflow: hidden;
+}
+
+.chapter-nav-prev :deep(.p-button-label) {
+  text-align: center;
+}
+
+.chapter-nav-list {
+  flex: 0 0 auto;
+  max-width: none;
+  min-width: auto;
+}
+
+.chapter-nav-next {
+  overflow: hidden;
+}
+
+.chapter-nav-next :deep(.p-button-label) {
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .chapter-content-container,
+  .translation-preview-container {
+    /*
+     * 仅保留安全区补偿，避免右侧额外偏移导致导航与正文对齐线不一致。
+     */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .chapter-navigation {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    align-items: stretch;
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  .chapter-nav-btn {
+    width: 100%;
+    max-width: none;
+    position: relative;
+    padding-left: 1.75rem !important;
+    padding-right: 1.75rem !important;
+  }
+
+  .chapter-nav-btn :deep(.p-button-label) {
+    display: block;
+    width: 100%;
+    max-width: 100% !important;
+    text-align: center;
+  }
+
+  .chapter-nav-btn :deep(.p-button-icon) {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0 !important;
+  }
+
+  .chapter-nav-prev :deep(.p-button-icon-left),
+  .chapter-nav-list :deep(.p-button-icon-left) {
+    left: 0.625rem;
+  }
+
+  .chapter-nav-next :deep(.p-button-icon-right) {
+    right: 0.625rem;
+  }
 }
 </style>

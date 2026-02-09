@@ -427,6 +427,17 @@ const onNavigateToChapter = (...args: unknown[]) => {
   navigateToChapterInternal(chapter);
 };
 
+// 导航到章节列表（切换到目录视图）
+const onNavigateToChapterList = () => {
+  if (isSmallScreen.value) {
+    workspaceMode.value = 'catalog';
+  }
+  // 清除选中的章节
+  if (bookId.value) {
+    void bookDetailsStore.setSelectedChapter(bookId.value, null);
+  }
+};
+
 // VolumesList 的事件回调类型在 TS 下允许“0 参数调用”，这里用 wrapper 放宽参数避免类型报错
 const onEditVolume = (...args: unknown[]) => {
   const volume = args[0];
@@ -685,6 +696,20 @@ const selectedChapter = computed(() => {
     }
   }
   return null;
+});
+
+// 获取上一章
+const prevChapter = computed(() => {
+  if (!book.value || !selectedChapterId.value) return null;
+  const result = ChapterService.getPreviousChapter(book.value, selectedChapterId.value);
+  return result?.chapter || null;
+});
+
+// 获取下一章
+const nextChapter = computed(() => {
+  if (!book.value || !selectedChapterId.value) return null;
+  const result = ChapterService.getNextChapter(book.value, selectedChapterId.value);
+  return result?.chapter || null;
 });
 
 // 获取选中章节的段落列表
@@ -2576,6 +2601,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                   :translated-char-count="translatedCharCount"
                   :book="book || null"
                   :book-id="bookId"
+                  :is-small-screen="isSmallScreen"
                   :selected-chapter-id="selectedChapterId"
                   :translating-paragraph-ids="translatingParagraphIds"
                   :polishing-paragraph-ids="polishingParagraphIds"
@@ -2585,6 +2611,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                   :is-keyboard-selected="isKeyboardSelected"
                   :is-click-selected="isClickSelected"
                   :paragraph-card-refs="paragraphCardRefs"
+                  :is-summarizing="isSummarizing"
+                  :prev-chapter="prevChapter"
+                  :next-chapter="nextChapter"
                   @update:original-text-edit-value="
                     (value: string) => {
                       originalTextEditValue = value;
@@ -2608,7 +2637,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                   @paragraph-edit-start="handleParagraphEditStart"
                   @paragraph-edit-stop="handleParagraphEditStop"
                   @re-summarize-chapter="handleReSummarizeChapter"
-                  :is-summarizing="isSummarizing"
+                  @navigate-to-chapter="onNavigateToChapter"
+                  @navigate-to-chapter-list="onNavigateToChapterList"
                 />
               </div>
 
@@ -3023,6 +3053,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
   margin: -1.5rem;
   padding: 1.5rem;
   transition: padding-right 0.2s ease;
@@ -3237,8 +3268,25 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   }
 
   .chapter-content-split-layout {
-    margin: 0;
+    /*
+     * 移动端尽量吃满可用宽度：抵消 page-container 的 1.5rem 内边距后，
+     * 保留 0.75rem 的内容安全边距，兼顾可读性与横向利用率。
+     */
+    margin: -1.5rem -1.5rem 0 -1.5rem;
     padding: 0.75rem 0.75rem 0 0.75rem;
+  }
+
+  /*
+   * 移动端下父容器的内边距已缩小为 0.75rem，
+   * 这里同步移除桌面用的负 margin/额外 padding，避免内容向右偏移与轻微溢出。
+   */
+  .chapter-content-panel {
+    margin: 0;
+    padding: 0;
+  }
+
+  .chapter-content-panel.panel-with-split {
+    padding-right: 0;
   }
 }
 </style>
