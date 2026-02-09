@@ -15,6 +15,7 @@ export function useResponsiveLayout() {
   }
 
   onMounted(() => {
+    // 挂载后再次更新，确保使用最新的窗口尺寸，并设置事件监听器
     updateDeviceType();
     window.addEventListener('resize', updateDeviceType);
     window.addEventListener('orientationchange', updateDeviceType);

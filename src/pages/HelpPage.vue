@@ -62,6 +62,16 @@ const groupedDocuments = computed(() => {
   return groups;
 });
 
+// 转义 HTML 属性值以防止注入
+function escapeHtmlAttr(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Custom renderer for markdown
 const renderer = new marked.Renderer();
 renderer.heading = (token: Token) => {
@@ -88,11 +98,14 @@ renderer.link = (token: Token) => {
 
   if (href.startsWith('./') || href.startsWith('../') || href.startsWith('#')) {
     // 内部链接：使用 data-href 属性存储链接，通过事件委托处理
-    // DOMPurify 会自动转义属性值，确保安全
-    return `<a href="${href}" class="doc-link" data-href="${href}">${text}</a>`;
+    // 转义 href 值以防止属性注入，DOMPurify 还会进行二次清理
+    const escapedHref = escapeHtmlAttr(href);
+    return `<a href="${escapedHref}" class="doc-link" data-href="${escapedHref}">${text}</a>`;
   }
 
-  return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="doc-link doc-link-external" title="${title}">${text}<i class="pi pi-external-link ml-1 text-xs opacity-70"></i></a>`;
+  const escapedHref = escapeHtmlAttr(href);
+  const escapedTitle = escapeHtmlAttr(title);
+  return `<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="doc-link doc-link-external" title="${escapedTitle}">${text}<i class="pi pi-external-link ml-1 text-xs opacity-70"></i></a>`;
 };
 
 async function loadDocumentIndex() {
@@ -278,7 +291,9 @@ function handleInternalLink(href: string) {
 
 // 事件委托：处理文档内容中的链接点击
 function handleContentClick(event: MouseEvent) {
-  const target = event.target as HTMLElement;
+  const target = event.target;
+  if (!target || !(target instanceof HTMLElement)) return;
+
   // 查找最近的 a 标签
   const link = target.closest('a.doc-link');
   if (!link) return;
