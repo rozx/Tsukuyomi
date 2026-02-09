@@ -9,6 +9,11 @@ export function useResponsiveLayout() {
     uiStore.setDeviceType(getDeviceTypeByWidth(window.innerWidth));
   };
 
+  // 在初始化时同步检测设备类型，避免首次渲染闪烁
+  if (typeof window !== 'undefined') {
+    updateDeviceType();
+  }
+
   onMounted(() => {
     updateDeviceType();
     window.addEventListener('resize', updateDeviceType);
