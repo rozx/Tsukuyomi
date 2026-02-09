@@ -536,8 +536,20 @@ class TaskLoopSession {
       return;
     }
 
+    // 检测本次会话中重复提交的段落（可能是 AI 修正翻译错误，属于正常行为）
+    const duplicateIds: string[] = [];
     for (const para of extracted) {
+      if (this.accumulatedParagraphs.has(para.id)) {
+        duplicateIds.push(para.id);
+      }
       this.accumulatedParagraphs.set(para.id, para.translation);
+    }
+    if (duplicateIds.length > 0) {
+      console.log(
+        `[${this.config.logLabel}] ℹ️ ${duplicateIds.length} 个段落被重新提交翻译（已更新）:`,
+        duplicateIds.slice(0, 5).join(', ') +
+          (duplicateIds.length > 5 ? ` 等 ${duplicateIds.length} 个` : ''),
+      );
     }
 
     if (this.config.onParagraphsExtracted) {

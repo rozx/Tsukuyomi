@@ -22,6 +22,20 @@ interface AddTranslationBatchArgs {
   paragraphs: TranslationBatchItem[];
 }
 
+// ============ Helpers ============
+
+/**
+ * 构建当前 chunk 的索引-段落 ID 映射信息，用于在错误响应中提供给 AI 参考
+ */
+function buildIndexMappingHint(
+  chunkParagraphIds?: string[],
+): { index_mapping: { index: number; paragraph_id: string }[] } | undefined {
+  if (!chunkParagraphIds || chunkParagraphIds.length === 0) return undefined;
+  return {
+    index_mapping: chunkParagraphIds.map((id, idx) => ({ index: idx, paragraph_id: id })),
+  };
+}
+
 // ============ Constants ============
 
 const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
@@ -433,12 +447,17 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
+      // 预构建索引映射（用于在错误时提供给 AI 参考）
+      const indexMappingHint = buildIndexMappingHint(chunkBoundaries?.paragraphIds);
+
       // 验证参数（传入 chunk paragraphIds 用于解析索引）
       const paramValidation = validateBatchArgs({ paragraphs }, chunkBoundaries?.paragraphIds);
       if (!paramValidation.valid || !paramValidation.resolvedIds) {
         return JSON.stringify({
           success: false,
           error: paramValidation.error || '参数验证失败',
+          ...(indexMappingHint || {}),
+          note: '请核对上述 index_mapping，确保提交的 index 与段落正确对应。',
         });
       }
 
@@ -451,6 +470,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates),
+          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -464,6 +484,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: rangeValidation.error,
+          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -521,6 +542,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: result.error,
+          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -539,11 +561,35 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
+      // 构建已处理段落的索引映射（帮助 AI 确认哪些段落已完成）
+      const processedMapping = resolvedIds.map((id, i) => ({
+        index: paragraphs[i]?.index ?? i,
+        paragraph_id: id,
+      }));
+
+      // 构建剩余未处理段落的索引映射（帮助 AI 在下次批次中使用正确的索引）
+      const chunkParagraphIds = chunkBoundaries?.paragraphIds;
+      let remainingMapping: { index: number; paragraph_id: string }[] | undefined;
+      if (chunkParagraphIds && chunkParagraphIds.length > 0) {
+        const processedIdSet = new Set(resolvedIds);
+        remainingMapping = chunkParagraphIds
+          .map((id, idx) => ({ index: idx, paragraph_id: id }))
+          .filter((item) => !processedIdSet.has(item.paragraph_id));
+      }
+
       return JSON.stringify({
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
+        processed_paragraphs: processedMapping,
         task_type: taskType,
+        ...(remainingMapping && remainingMapping.length > 0
+          ? {
+              remaining_count: remainingMapping.length,
+              remaining_paragraphs: remainingMapping,
+              note: '请在下次批次中使用上述 index 或 paragraph_id，确保索引与段落正确对应。',
+            }
+          : { remaining_count: 0 }),
         ...(warning ? { warning } : {}),
       });
     },

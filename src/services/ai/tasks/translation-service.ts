@@ -509,28 +509,78 @@ export class TranslationService {
         // 重试循环
         let retryCount = 0;
         let chunkProcessed = false;
+        // 将 chunkText 和 chunkContent 声明为 let，以便在重试时重新构建
+        let retryChunkText = chunkText;
+        let retryChunkContent = chunkContent;
+        let retryActualChunk = actualChunk;
 
         while (retryCount <= MAX_RETRIES && !chunkProcessed) {
           try {
-            // 如果是重试，移除上次失败的消息
+            // 如果是重试，重新构建 chunk 以排除已处理的段落
             if (retryCount > 0) {
-              // 移除上次的用户消息和助手回复（如果有）
-              if (
-                chunkHistory.length > 1 &&
-                chunkHistory[chunkHistory.length - 1]?.role === 'user'
-              ) {
-                chunkHistory.pop();
-              }
-              if (
-                chunkHistory.length > 1 &&
-                chunkHistory[chunkHistory.length - 1]?.role === 'assistant'
-              ) {
-                chunkHistory.pop();
-              }
+              // 重置 chunkHistory，只保留系统提示词（避免上下文污染）
+              chunkHistory.length = 1; // 保留 chunkHistory[0]（system prompt）
 
               console.warn(
                 `[TranslationService] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
               );
+
+              // 重新构建 chunk，排除已在之前批次中成功处理的段落
+              if (processedParagraphIds.size > 0) {
+                const retryUnprocessedIds = retryActualChunk.paragraphIds.filter(
+                  (id) => !processedParagraphIds.has(id),
+                );
+                if (retryUnprocessedIds.length === 0) {
+                  // 所有段落都已处理，无需重试
+                  console.log(`[TranslationService] ✅ 重试前发现所有段落已处理，跳过重试`);
+                  chunkProcessed = true;
+                  chunkIndex++;
+                  break;
+                }
+                if (retryUnprocessedIds.length < retryActualChunk.paragraphIds.length) {
+                  console.log(
+                    `[TranslationService] 🔄 重试时过滤已处理段落: ${retryActualChunk.paragraphIds.length} → ${retryUnprocessedIds.length}`,
+                  );
+                  const retryContent = content.filter((p) => retryUnprocessedIds.includes(p.id));
+                  const retryChunks = buildChunks(
+                    retryContent,
+                    chunkSize,
+                    (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
+                    (p) => !!p.text?.trim(),
+                  );
+                  const firstRetryChunk = retryChunks[0];
+                  if (firstRetryChunk) {
+                    retryActualChunk = firstRetryChunk;
+                    retryChunkText = firstRetryChunk.text;
+                    // 重新构建 chunkContent
+                    const retryParagraphCount = firstRetryChunk.paragraphIds?.length || 0;
+                    const retryParagraphCountNote = `\n[警告] 注意：本部分包含 ${retryParagraphCount} 个段落（空段落已过滤）。`;
+                    const retryFirstParagraphId = firstRetryChunk.paragraphIds?.[0];
+                    const retryHasPreviousParagraphs = getHasPreviousParagraphs(
+                      chapterFirstNonEmptyParagraphId,
+                      retryFirstParagraphId,
+                    );
+                    retryChunkContent = await buildIndependentChunkPrompt(
+                      'translation',
+                      chunkIndex,
+                      chunks.length,
+                      retryChunkText,
+                      retryParagraphCountNote,
+                      maintenanceReminder,
+                      chapterId,
+                      chunkIndex === 0 ? chapterTitle : undefined,
+                      bookId,
+                      retryHasPreviousParagraphs,
+                      retryFirstParagraphId,
+                    );
+                  } else {
+                    // 没有未处理的段落
+                    chunkProcessed = true;
+                    chunkIndex++;
+                    break;
+                  }
+                }
+              }
 
               if (aiProcessingStore && taskId) {
                 aiProcessingStore
@@ -544,7 +594,7 @@ export class TranslationService {
               }
             }
 
-            chunkHistory.push({ role: 'user', content: chunkContent });
+            chunkHistory.push({ role: 'user', content: retryChunkContent });
 
             // 记录当前 chunk 开始时的 action 数量，用于提取本 chunk 引用的记忆
             const actionStartIndex = actions.length;
@@ -557,8 +607,8 @@ export class TranslationService {
               generateText: service.generateText.bind(service),
               aiServiceConfig: config,
               taskType: 'translation',
-              chunkText,
-              paragraphIds: actualChunk.paragraphIds,
+              chunkText: retryChunkText,
+              paragraphIds: retryActualChunk.paragraphIds,
               bookId: bookId || '',
               handleAction,
               onToast,
@@ -646,9 +696,9 @@ export class TranslationService {
             markProcessedParagraphsFromMap(extractedTranslations, processedParagraphIds);
 
             // 按顺序组织翻译文本（用于最终返回）
-            if (extractedTranslations.size > 0 && actualChunk.paragraphIds) {
+            if (extractedTranslations.size > 0 && retryActualChunk.paragraphIds) {
               const orderedTranslations: string[] = [];
-              for (const paraId of actualChunk.paragraphIds) {
+              for (const paraId of retryActualChunk.paragraphIds) {
                 const translation = extractedTranslations.get(paraId);
                 if (translation) {
                   orderedTranslations.push(translation);
