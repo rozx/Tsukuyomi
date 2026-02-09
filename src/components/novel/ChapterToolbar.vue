@@ -41,6 +41,7 @@ defineProps<{
   isSearchVisible: boolean;
   showTranslationProgress: boolean;
   canShowTranslationProgress: boolean;
+  isSmallScreen: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -287,7 +288,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
             :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
-            :disabled="!canShowTranslationProgress"
+            :disabled="isSmallScreen"
             @click="emit('toggleTranslationProgress')"
           />
 

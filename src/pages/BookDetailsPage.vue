@@ -1269,9 +1269,11 @@ const {
 );
 
 // 翻译进度面板显示状态 - 从 store 获取，按书籍保存
+// 移动端始终为 true
 const showTranslationProgress = computed({
   get: () => {
     if (!bookId.value) return false;
+    if (isSmallScreen.value) return true;
     return bookDetailsStore.getShowTranslationProgress(bookId.value);
   },
   set: (value: boolean) => {
@@ -2507,6 +2509,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :can-show-translation-progress="
             isTranslatingChapter || isPolishingChapter || isProofreadingChapter
           "
+          :is-small-screen="isSmallScreen"
           @undo="undo"
           @redo="redo"
           @update:edit-mode="
