@@ -62,18 +62,6 @@ const groupedDocuments = computed(() => {
   return groups;
 });
 
-// 转义 HTML 属性值以防止注入
-// 注意：这里转义的是输入文本中的字面字符，不会导致双重转义
-// 例如：输入 'a&b"c' 会变成 'a&amp;b&quot;c'
-function escapeHtmlAttr(text: string): string {
-  return text
-    .replace(/&/g, '&amp;') // 必须首先替换 & 符号
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 // Custom renderer for markdown
 const renderer = new marked.Renderer();
 renderer.heading = (token: Token) => {
@@ -100,14 +88,11 @@ renderer.link = (token: Token) => {
 
   if (href.startsWith('./') || href.startsWith('../') || href.startsWith('#')) {
     // 内部链接：使用 data-href 属性存储链接，通过事件委托处理
-    // 转义 href 值以防止属性注入，DOMPurify 还会进行二次清理
-    const escapedHref = escapeHtmlAttr(href);
-    return `<a href="${escapedHref}" class="doc-link" data-href="${escapedHref}">${text}</a>`;
+    // DOMPurify 会自动处理 HTML 实体编码，确保安全
+    return `<a href="${href}" class="doc-link" data-href="${href}">${text}</a>`;
   }
 
-  const escapedHref = escapeHtmlAttr(href);
-  const escapedTitle = escapeHtmlAttr(title);
-  return `<a href="${escapedHref}" target="_blank" rel="noopener noreferrer" class="doc-link doc-link-external" title="${escapedTitle}">${text}<i class="pi pi-external-link ml-1 text-xs opacity-70"></i></a>`;
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="doc-link doc-link-external" title="${title}">${text}<i class="pi pi-external-link ml-1 text-xs opacity-70"></i></a>`;
 };
 
 async function loadDocumentIndex() {
