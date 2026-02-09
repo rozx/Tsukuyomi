@@ -526,7 +526,12 @@ const onMoveChapter = async (...args: unknown[]) => {
   try {
     saveState?.('触控排序章节');
 
-    const updatedVolumes = ChapterService.moveChapter(book.value, chapter.id, volumeId, targetIndex);
+    const updatedVolumes = ChapterService.moveChapter(
+      book.value,
+      chapter.id,
+      volumeId,
+      targetIndex,
+    );
     await booksStore.updateBook(book.value.id, {
       volumes: updatedVolumes,
       lastEdited: new Date(),
@@ -1278,10 +1283,12 @@ const showTranslationProgress = computed({
 // 切换翻译进度面板显示
 const toggleTranslationProgress = (): void => {
   if (!bookId.value) return;
-  bookDetailsStore.toggleShowTranslationProgress(bookId.value);
-  if (isSmallScreen.value && showTranslationProgress.value) {
+  if (isSmallScreen.value) {
+    bookDetailsStore.setShowTranslationProgress(bookId.value, true);
     workspaceMode.value = 'progress';
+    return;
   }
+  bookDetailsStore.toggleShowTranslationProgress(bookId.value);
 };
 
 // 当翻译/润色/校对开始时，自动显示进度面板
