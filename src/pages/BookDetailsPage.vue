@@ -564,10 +564,6 @@ const navigateToTermsSetting = () => {
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
   }
-  // 清除章节选中状态
-  if (bookId.value) {
-    void bookDetailsStore.setSelectedChapter(bookId.value, null);
-  }
   // 更新上下文：清除章节和段落，保留书籍
   if (bookId.value) {
     contextStore.setContext({
@@ -588,10 +584,6 @@ const navigateToCharactersSetting = () => {
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
   }
-  // 清除章节选中状态
-  if (bookId.value) {
-    void bookDetailsStore.setSelectedChapter(bookId.value, null);
-  }
   // 更新上下文：清除章节和段落，保留书籍
   if (bookId.value) {
     contextStore.setContext({
@@ -611,10 +603,6 @@ const navigateToMemorySetting = () => {
   selectedSettingMenu.value = 'memory';
   if (isSmallScreen.value) {
     workspaceMode.value = 'settings';
-  }
-  // 清除章节选中状态
-  if (bookId.value) {
-    void bookDetailsStore.setSelectedChapter(bookId.value, null);
   }
   // 更新上下文：清除章节和段落，保留书籍
   if (bookId.value) {
@@ -1038,7 +1026,6 @@ watch(
       if (isSmallScreen.value) {
         workspaceMode.value = 'settings';
       }
-      void bookDetailsStore.setSelectedChapter(currentBookId, null);
       contextStore.setContext({
         currentBookId,
         currentChapterId: null,
