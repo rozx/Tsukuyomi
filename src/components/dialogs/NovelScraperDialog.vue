@@ -995,10 +995,16 @@ watch(
       >
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="text-lg font-semibold text-moon/90 mb-1" :class="{ 'line-clamp-2': isPhone }">
+            <h3
+              class="text-lg font-semibold text-moon/90 mb-1"
+              :class="{ 'line-clamp-2': isPhone }"
+            >
               {{ scrapedNovel.title }}
             </h3>
-            <div class="flex items-center gap-4 text-sm text-moon/70" :class="{ 'text-xs': isPhone }">
+            <div
+              class="flex items-center gap-4 text-sm text-moon/70"
+              :class="{ 'text-xs': isPhone }"
+            >
               <span v-if="scrapedNovel.author">作者: {{ scrapedNovel.author }}</span>
               <span>卷数: {{ stats.volumes }}</span>
               <span>章节数: {{ stats.chapters }}</span>
@@ -1041,7 +1047,9 @@ watch(
               class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
               :style="splitPanelContainerStyle"
             >
-              <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full">
+              <div
+                class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full"
+              >
                 <div class="flex items-center justify-between min-w-0 gap-2">
                   <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
                   <div class="flex items-center gap-2 flex-1 justify-end min-w-0">
@@ -1403,7 +1411,7 @@ watch(
     </div>
 
     <template #footer>
-      <div class="flex-1">
+      <div class="scraper-footer-wrapper w-full">
         <!-- 导入进度条 -->
         <div v-if="importing" class="mb-4 space-y-2">
           <div class="flex items-center justify-between text-sm text-moon/80">
@@ -1415,55 +1423,72 @@ watch(
             当前: {{ importCurrentChapter }}
           </div>
         </div>
-      </div>
-      <div class="scraper-footer-actions flex gap-2">
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text icon-button-hover"
-          :disabled="importing"
-          @click="handleCancel"
-        />
-        <Button
-          :label="`应用${selectedChapters.size > 0 ? ` (${selectedChapters.size})` : ''}`"
-          icon="pi pi-check"
-          class="p-button-primary icon-button-hover"
-          :disabled="!scrapedNovel || selectedChapters.size === 0 || importing"
-          :loading="importing"
-          @click="handleApply"
-        />
+        <div class="scraper-footer-actions flex gap-2 justify-end">
+          <Button
+            label="取消"
+            icon="pi pi-times"
+            class="p-button-text icon-button-hover"
+            :disabled="importing"
+            @click="handleCancel"
+          />
+          <Button
+            :label="`应用${selectedChapters.size > 0 ? ` (${selectedChapters.size})` : ''}`"
+            icon="pi pi-check"
+            class="p-button-primary icon-button-hover"
+            :disabled="!scrapedNovel || selectedChapters.size === 0 || importing"
+            :loading="importing"
+            @click="handleApply"
+          />
+        </div>
       </div>
     </template>
   </Dialog>
 </template>
 
-<style scoped>
-.novel-scraper-dialog :deep(.p-dialog-content) {
+<!-- Non-scoped styles for teleported Dialog (PrimeVue teleports dialogs to body,
+     so scoped :deep() cannot reach them since they lack data-v-xxx attributes) -->
+<style>
+.novel-scraper-dialog .p-dialog-content {
   overflow: hidden;
+  flex: 1 1 auto !important;
 }
 
+@media (max-width: 640px) {
+  .novel-scraper-dialog .p-splitterpanel {
+    overflow: hidden;
+  }
+
+  .novel-scraper-dialog .p-splitterpanel > div {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .novel-scraper-dialog .p-virtualscroller {
+    width: 100%;
+  }
+
+  .novel-scraper-dialog .p-virtualscroller-content {
+    min-width: 100%;
+  }
+
+  .novel-scraper-dialog .p-dialog-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .novel-scraper-dialog .p-dialog-footer > .scraper-footer-wrapper {
+    width: 100%;
+  }
+}
+</style>
+
+<style scoped>
 .novel-scraper-body > * {
   min-width: 0;
 }
 
 @media (max-width: 640px) {
-  .novel-scraper-dialog :deep(.p-splitterpanel) {
-    overflow: hidden;
-  }
-
-  .novel-scraper-dialog :deep(.p-splitterpanel > div) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .novel-scraper-dialog :deep(.p-virtualscroller) {
-    width: 100%;
-  }
-
-  .novel-scraper-dialog :deep(.p-virtualscroller-content) {
-    min-width: 100%;
-  }
-
   .novel-scraper-body {
     gap: 0.75rem;
     padding-top: 0.25rem;
@@ -1477,17 +1502,6 @@ watch(
   .scraper-url-row :deep(.p-button) {
     width: 100%;
     justify-content: center;
-  }
-
-  .novel-scraper-dialog :deep(.p-dialog-footer) {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .novel-scraper-dialog :deep(.p-dialog-footer > .flex-1) {
-    width: 100%;
-    flex: 1 0 100%;
   }
 
   .scraper-footer-actions {
