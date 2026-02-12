@@ -114,7 +114,7 @@ const getTaskStatusLabel = (task: AIProcessingTask) => {
   return taskStatusLabels[task.status] || task.status;
 };
 
-// 顶部“正在翻译/润色/校对章节”区域：展示当前正在处理的章节（取最新的进行中任务）
+// 顶部"正在翻译/润色/校对章节"区域：展示当前正在处理的章节（取最新的进行中任务）
 const currentWorkingChapter = computed(() => {
   const active = recentAITasks.value.find(
     (t) => t.status === 'thinking' || t.status === 'processing',
@@ -126,6 +126,30 @@ const currentActiveTask = computed(() => {
   return (
     recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing') || null
   );
+});
+
+// 基于 AI 任务状态判断是否有正在进行的任务（不依赖于 props）
+const hasActiveTask = computed(() => {
+  return recentAITasks.value.some(
+    (task) => task.status === 'thinking' || task.status === 'processing',
+  );
+});
+
+// 获取当前活跃任务的进度信息
+const activeTaskProgress = computed(() => {
+  const active = currentActiveTask.value;
+  if (!active) {
+    return { current: 0, total: 0, message: '' };
+  }
+  // 使用 props.progress 如果任务与当前章节相关，否则使用任务自身的进度
+  if (
+    (props.isTranslating || props.isPolishing || props.isProofreading) &&
+    props.progress.total > 0
+  ) {
+    return props.progress;
+  }
+  // 如果没有进度信息，返回默认值
+  return { current: 0, total: 0, message: '' };
 });
 
 const displayProgressMessage = computed(() => {
@@ -1259,11 +1283,37 @@ watch(
       </div>
       <div class="translation-progress-bar-wrapper">
         <ProgressBar
-          :value="progress.total > 0 ? (progress.current / progress.total) * 100 : 0"
+          :value="
+            activeTaskProgress.total > 0
+              ? (activeTaskProgress.current / activeTaskProgress.total) * 100
+              : 0
+          "
           :show-value="false"
           class="translation-progress-bar"
         />
-        <div class="translation-progress-text">{{ progress.current }} / {{ progress.total }}</div>
+        <div class="translation-progress-text">
+          {{ activeTaskProgress.current }} / {{ activeTaskProgress.total }}
+        </div>
+      </div>
+    </div>
+    <div v-else-if="hasActiveTask" class="translation-progress-content">
+      <!-- 有活跃任务但不在翻译/润色/校对当前章节时，显示任务信息 -->
+      <div class="translation-progress-info">
+        <div class="translation-progress-header">
+          <div class="translation-progress-header-main">
+            <i class="translation-progress-icon pi pi-cog pi-spin"></i>
+            <span class="translation-progress-title">正在处理 AI 任务</span>
+          </div>
+          <Button
+            icon="pi pi-times"
+            label="取消"
+            class="p-button-text p-button-sm translation-progress-cancel"
+            @click="emit('cancel', currentActiveTask?.type || 'translation', currentActiveTask?.chapterId)"
+          />
+        </div>
+        <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
+          当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
+        </div>
       </div>
     </div>
     <div v-else class="translation-progress-content">

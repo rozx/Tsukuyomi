@@ -58,9 +58,9 @@ const ERROR_MESSAGES = {
     current: number,
     max: number,
     allowedMax: number,
-    chunkTotal: number,
+    remainingCount: number,
   ) =>
-    `本次批次包含 ${current} 个段落，已超过常规限制 ${max} 个。由于当前 chunk 总段落数为 ${chunkTotal}（≤ ${allowedMax}），允许最多提交 ${allowedMax} 个段落。`,
+    `本次批次包含 ${current} 个段落，已超过常规限制 ${max} 个。由于当前 chunk 剩余 ${remainingCount} 个未提交段落（≤ ${allowedMax}），允许最多提交 ${allowedMax} 个段落。`,
   EMPTY_PARAGRAPH_ITEM: (index: number) => `批次中第 ${index + 1} 个段落项为空`,
   INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
   MISSING_TRANSLATION: (index: number) =>
@@ -137,6 +137,7 @@ function validateTaskStatus(
 function validateBatchArgs(
   args: AddTranslationBatchArgs,
   chunkParagraphIds?: string[],
+  submittedParagraphIds?: Set<string>,
 ): {
   valid: boolean;
   error?: string;
@@ -155,11 +156,15 @@ function validateBatchArgs(
 
   // 检查批次大小：
   // - 默认：最多 MAX_BATCH_SIZE，允许 10% 容差（MAX_BATCH_SIZE_WITH_TOLERANCE）并给出 warning
-  // - 特例：当“当前 chunk 总段落数” <= 2x MAX_BATCH_SIZE 时，允许单次提交最多 2x MAX_BATCH_SIZE
+  // - 特例：当"当前 chunk 剩余未提交段落数" <= 2x MAX_BATCH_SIZE 时，允许单次提交最多 2x MAX_BATCH_SIZE
   //   （用于处理极短段落导致 chunk 段落数略超出常规上限的情况）
   const chunkTotal = chunkParagraphIds?.length;
+  const submittedCount = submittedParagraphIds?.size ?? 0;
+  const remainingCount =
+    typeof chunkTotal === 'number' && chunkTotal > 0 ? chunkTotal - submittedCount : 0;
+
   const allowDoubleBatchSize =
-    typeof chunkTotal === 'number' && chunkTotal > 0 && chunkTotal <= MAX_BATCH_SIZE_DOUBLE;
+    remainingCount > 0 && remainingCount <= MAX_BATCH_SIZE_DOUBLE;
 
   const hardMax = allowDoubleBatchSize ? MAX_BATCH_SIZE_DOUBLE : MAX_BATCH_SIZE_WITH_TOLERANCE;
   let warning: string | undefined;
@@ -177,7 +182,7 @@ function validateBatchArgs(
         paragraphs.length,
         MAX_BATCH_SIZE,
         MAX_BATCH_SIZE_DOUBLE,
-        chunkTotal!,
+        remainingCount,
       );
     } else {
       warning = ERROR_MESSAGES.BATCH_SIZE_TOLERANCE_WARNING(
@@ -430,13 +435,13 @@ export const translationTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'add_translation_batch',
-        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！支持 index 或 paragraph_id。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 总段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
+        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！支持 index 或 paragraph_id。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
         parameters: {
           type: 'object',
           properties: {
             paragraphs: {
               type: 'array',
-              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 总段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。支持 index 或 paragraph_id。`,
+              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。支持 index 或 paragraph_id。`,
               items: {
                 type: 'object',
                 properties: {
@@ -462,7 +467,7 @@ export const translationTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, chunkBoundaries, taskId, aiProcessingStore } = context;
+      const { bookId, onAction, chunkBoundaries, taskId, aiProcessingStore, submittedParagraphIds } = context;
       const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
       // 验证任务状态 - 只能在 working 状态下调用
@@ -477,8 +482,8 @@ export const translationTools: ToolDefinition[] = [
       // 预构建索引映射（用于在错误时提供给 AI 参考）
       const indexMappingHint = buildIndexMappingHint(chunkBoundaries?.paragraphIds);
 
-      // 验证参数（传入 chunk paragraphIds 用于解析索引）
-      const paramValidation = validateBatchArgs({ paragraphs }, chunkBoundaries?.paragraphIds);
+      // 验证参数（传入 chunk paragraphIds 用于解析索引，传入 submittedParagraphIds 用于计算剩余大小）
+      const paramValidation = validateBatchArgs({ paragraphs }, chunkBoundaries?.paragraphIds, submittedParagraphIds);
       if (!paramValidation.valid || !paramValidation.resolvedIds) {
         return JSON.stringify({
           success: false,
@@ -572,6 +577,13 @@ export const translationTools: ToolDefinition[] = [
           ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
+      }
+
+      // 将已处理的段落 ID 添加到 submittedParagraphIds 集合中（用于下次批次计算剩余大小）
+      if (submittedParagraphIds) {
+        for (const id of resolvedIds) {
+          submittedParagraphIds.add(id);
+        }
       }
 
       // 报告操作

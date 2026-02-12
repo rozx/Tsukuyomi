@@ -167,6 +167,12 @@ export interface ToolContext {
    * 非首块的 review 检查会跳过章节标题验证
    */
   chunkIndex?: number;
+  /**
+   * 已提交的段落 ID 集合（可选）
+   * 用于在翻译/润色/校对任务中跟踪已提交的段落，以计算剩余 chunk 大小
+   * 这允许 2x 批次大小规则基于剩余段落数而非总 chunk 大小
+   */
+  submittedParagraphIds?: Set<string>;
 }
 
 export type ToolHandler = (

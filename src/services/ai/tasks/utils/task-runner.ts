@@ -164,6 +164,9 @@ class TaskLoopSession {
   private startTime: number;
   private statusStartTime: number;
 
+  // 已提交的段落 ID 集合（用于计算剩余 chunk 大小，控制 2x 批次大小规则）
+  private submittedParagraphIds = new Set<string>();
+
   // Counters
   private consecutivePlanningCount = 0;
   private consecutiveWorkingCount = 0;
@@ -458,6 +461,7 @@ class TaskLoopSession {
       aiProcessingStore, // 传入 AI 处理 Store
       this.config.aiModelId,
       this.config.chunkIndex, // 传入块索引用于 review 检查
+      this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
     );
     this.metrics.toolCallTime += Date.now() - start;
     this.metrics.toolCallCount++;
