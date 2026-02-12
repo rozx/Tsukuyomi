@@ -362,6 +362,7 @@ export class ProofreadingService {
             .updateTask(taskId, {
               message: `正在校对第 ${chunkIndex + 1}/${chunks.length} 部分...`,
               status: 'processing',
+              workflowStatus: 'planning',
             })
             .catch((error) => console.error('[ProofreadingService] Failed to update task:', error));
           // 添加块分隔符
