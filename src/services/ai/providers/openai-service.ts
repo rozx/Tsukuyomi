@@ -137,7 +137,7 @@ export class OpenAIService extends BaseAIService {
         model: config.model,
         messages: [{ role: 'user', content: this.getConfigPrompt() }],
         // 不设置 max_tokens，让 API 使用默认值（通常是无限制或模型的最大值）
-        temperature: DEFAULT_TEMPERATURE,
+        temperature: config.temperature ?? DEFAULT_TEMPERATURE,
         // 不使用 response_format，通过提示词要求返回 JSON
       });
 

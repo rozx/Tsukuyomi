@@ -42,7 +42,7 @@ export class GeminiService extends BaseAIService {
       const model = client.getGenerativeModel({
         model: modelName,
         generationConfig: {
-          temperature: DEFAULT_TEMPERATURE,
+          temperature: config.temperature ?? DEFAULT_TEMPERATURE,
           // 不设置 maxOutputTokens，让 API 使用默认值（无限制）
           responseMimeType: 'application/json',
         },
