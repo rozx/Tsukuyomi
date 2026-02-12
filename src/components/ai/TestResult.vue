@@ -38,7 +38,7 @@ const resultLimits = computed<MessageDetail[]>(() => {
     details.push({ label: '速率限制:', value: limits.rateLimit });
   }
   if (limits.maxInputTokens) {
-    details.push({ label: '最大输入 Token:', value: limits.maxInputTokens.toLocaleString() });
+    details.push({ label: '上下文窗口:', value: limits.maxInputTokens.toLocaleString() });
   }
   if (limits.maxOutputTokens) {
     details.push({ label: '最大输出 Token:', value: limits.maxOutputTokens.toLocaleString() });

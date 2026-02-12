@@ -167,7 +167,7 @@ const validateForm = (): boolean => {
 
   // maxInputTokens 为 0 表示无限制，不需要验证
   if (formData.value.maxInputTokens === undefined || formData.value.maxInputTokens < 0) {
-    formErrors.value.maxInputTokens = '最大输入 Token 数不能为负数';
+    formErrors.value.maxInputTokens = '上下文窗口不能为负数';
   }
 
   // maxOutputTokens 为 0 表示无限制，不需要验证
@@ -254,7 +254,7 @@ const testModel = async () => {
       // 构建详细信息
       const details: string[] = [];
       if (result.maxInputTokens && result.maxInputTokens > 0) {
-        details.push(`最大输入 Token: ${result.maxInputTokens.toLocaleString()}`);
+        details.push(`上下文窗口: ${result.maxInputTokens.toLocaleString()}`);
       }
       if (result.maxOutputTokens && result.maxOutputTokens > 0) {
         details.push(`最大输出 Token: ${result.maxOutputTokens.toLocaleString()}`);
@@ -642,7 +642,7 @@ watch(
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="space-y-1">
-            <label class="text-xs text-moon/70">最大输入 Token</label>
+            <label class="text-xs text-moon/70">上下文窗口</label>
             <InputNumber
               v-model="formData.maxInputTokens"
               :min="0"
@@ -664,7 +664,7 @@ watch(
               "
               class="text-xs text-moon/70 block mt-1"
             >
-              从 AI 获取: {{ aiConfig.maxInputTokens.toLocaleString() }}
+              从 AI 获取的上下文窗口: {{ aiConfig.maxInputTokens.toLocaleString() }}
             </small>
             <small
               v-else-if="(formData.maxInputTokens ?? 0) === 0"

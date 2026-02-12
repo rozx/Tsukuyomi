@@ -373,7 +373,7 @@ const formatApiKey = (apiKey: string): string => {
                     <span class="ml-2">{{ model.temperature }}</span>
                   </div>
                   <div>
-                    <span class="text-moon/70">最大输入 Token:</span>
+                    <span class="text-moon/70">上下文窗口:</span>
                     <span class="ml-2">{{ model.maxInputTokens }}</span>
                   </div>
                   <div>
