@@ -1269,8 +1269,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: state.progress.current,
-            total: state.progress.total,
+            current: progress.current,
+            total: progress.total,
             message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在润色的段落 ID
@@ -1299,11 +1299,8 @@ export function useChapterTranslation(
               }
             }
 
-            state.progress = {
-              current: completedParagraphIds.size,
-              total: targetParagraphIds.size,
-              message: state.progress.message,
-            };
+            // 润色进度保持基于 chunk（由 onProgress 更新），不使用段落数量
+            // 这样进度条显示的是"已处理的块数/总块数"而非"已处理的段落数/总段落数"
 
             // 从正在润色的集合中移除已完成的段落 ID
             translations.forEach((pt) => {
@@ -1511,8 +1508,8 @@ export function useChapterTranslation(
         },
         onProgress: (progress) => {
           state.progress = {
-            current: state.progress.current,
-            total: state.progress.total,
+            current: progress.current,
+            total: progress.total,
             message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
           };
           // 更新正在校对的段落 ID
@@ -1541,11 +1538,8 @@ export function useChapterTranslation(
               }
             }
 
-            state.progress = {
-              current: completedParagraphIds.size,
-              total: targetParagraphIds.size,
-              message: state.progress.message,
-            };
+            // 校对进度保持基于 chunk（由 onProgress 更新），不使用段落数量
+            // 这样进度条显示的是"已处理的块数/总块数"而非"已处理的段落数/总段落数"
 
             // 从正在校对的集合中移除已完成的段落 ID
             translations.forEach((pt) => {
