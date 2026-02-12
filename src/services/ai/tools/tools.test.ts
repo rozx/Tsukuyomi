@@ -68,6 +68,8 @@ describe('AI Tools Tests', () => {
           modelName: 'gpt-4',
           status: 'working' as any,
           startTime: 1234567890,
+          bookId: mockBookId,
+          chapterId: 'c1',
         },
       ],
       updateTask: jest.fn(),
@@ -95,6 +97,8 @@ describe('AI Tools Tests', () => {
         modelName: 'gpt-4',
         status: 'working' as const,
         startTime: 1234567890,
+        bookId: mockBookId,
+        chapterId: 'c1',
       },
     ];
   });
@@ -286,6 +290,78 @@ describe('AI Tools Tests', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(1);
+    });
+
+    it('should allow up to 2x max batch size when chunk total paragraphs <= 2x max', async () => {
+      // MAX_TRANSLATION_BATCH_SIZE = 10 in src/services/ai/constants.ts
+      const paragraphIds = Array.from({ length: 20 }, (_, i) => `p${i + 1}`);
+
+      const mockBook = {
+        id: mockBookId,
+        volumes: [
+          {
+            chapters: [
+              {
+                id: 'c1',
+                content: paragraphIds.map((id) => ({ id, text: `orig-${id}` })),
+              },
+            ],
+          },
+        ],
+      };
+      (BookService.getBookById as jest.Mock).mockResolvedValueOnce(mockBook);
+      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValueOnce(
+        new Map([['c1', paragraphIds.map((id) => ({ id, text: `orig-${id}` }))]]),
+      );
+
+      const doubleLimitContext = {
+        ...mockContext,
+        chunkBoundaries: {
+          paragraphIds,
+          allowedParagraphIds: new Set(paragraphIds),
+          firstParagraphId: paragraphIds[0]!,
+          lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
+        },
+      };
+
+      const result = await addTranslationBatchTool!.handler(
+        {
+          paragraphs: paragraphIds.map((_, i) => ({ index: i, translated_text: `t-${i}` })),
+        },
+        doubleLimitContext,
+      );
+      const parsed = JSON.parse(result as string);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.processed_count).toBe(20);
+      expect(BookService.saveBook).toHaveBeenCalled();
+    });
+
+    it('should still enforce original limit when chunk total paragraphs > 2x max', async () => {
+      const paragraphIds = Array.from({ length: 30 }, (_, i) => `p${i + 1}`);
+      const largeChunkContext = {
+        ...mockContext,
+        chunkBoundaries: {
+          paragraphIds,
+          allowedParagraphIds: new Set(paragraphIds),
+          firstParagraphId: paragraphIds[0]!,
+          lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
+        },
+      };
+
+      const result = await addTranslationBatchTool!.handler(
+        {
+          // 12 > 11 (10% tolerance of 10 is 11)
+          paragraphs: Array.from({ length: 12 }, (_, i) => ({
+            index: i,
+            translated_text: `t-${i}`,
+          })),
+        },
+        largeChunkContext,
+      );
+      const parsed = JSON.parse(result as string);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toContain('单次批次最多支持 11 个段落');
     });
   });
 

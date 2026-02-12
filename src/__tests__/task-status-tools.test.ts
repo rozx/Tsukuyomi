@@ -22,6 +22,7 @@ const createMockAIProcessingStore = (
     bookId: 'novel-1',
     targetId: 'chapter-1',
     targetType: 'chapter',
+    chapterId: 'chapter-1',
     status: t.workflowStatus || 'planning',
   })) as any,
   addTask: mock(() => Promise.resolve('task-id')),

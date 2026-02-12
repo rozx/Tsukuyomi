@@ -41,6 +41,7 @@ function buildIndexMappingHint(
 const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
 const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
+const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
 
 // 错误消息常量
 const ERROR_MESSAGES = {
@@ -53,6 +54,13 @@ const ERROR_MESSAGES = {
     `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
   BATCH_SIZE_TOLERANCE_WARNING: (current: number, max: number, allowedMax: number) =>
     `本次批次包含 ${current} 个段落，已超过限制 ${max} 个，但在容差范围内（最多 ${allowedMax} 个）。请尽量控制在限制内。`,
+  BATCH_SIZE_DOUBLE_WARNING: (
+    current: number,
+    max: number,
+    allowedMax: number,
+    chunkTotal: number,
+  ) =>
+    `本次批次包含 ${current} 个段落，已超过常规限制 ${max} 个。由于当前 chunk 总段落数为 ${chunkTotal}（≤ ${allowedMax}），允许最多提交 ${allowedMax} 个段落。`,
   EMPTY_PARAGRAPH_ITEM: (index: number) => `批次中第 ${index + 1} 个段落项为空`,
   INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
   MISSING_TRANSLATION: (index: number) =>
@@ -145,20 +153,39 @@ function validateBatchArgs(
     };
   }
 
-  // 检查批次大小（允许 10% 容差并给出警告）
+  // 检查批次大小：
+  // - 默认：最多 MAX_BATCH_SIZE，允许 10% 容差（MAX_BATCH_SIZE_WITH_TOLERANCE）并给出 warning
+  // - 特例：当“当前 chunk 总段落数” <= 2x MAX_BATCH_SIZE 时，允许单次提交最多 2x MAX_BATCH_SIZE
+  //   （用于处理极短段落导致 chunk 段落数略超出常规上限的情况）
+  const chunkTotal = chunkParagraphIds?.length;
+  const allowDoubleBatchSize =
+    typeof chunkTotal === 'number' && chunkTotal > 0 && chunkTotal <= MAX_BATCH_SIZE_DOUBLE;
+
+  const hardMax = allowDoubleBatchSize ? MAX_BATCH_SIZE_DOUBLE : MAX_BATCH_SIZE_WITH_TOLERANCE;
   let warning: string | undefined;
+
   if (paragraphs.length > MAX_BATCH_SIZE) {
-    if (paragraphs.length > MAX_BATCH_SIZE_WITH_TOLERANCE) {
+    if (paragraphs.length > hardMax) {
       return {
         valid: false,
-        error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, MAX_BATCH_SIZE_WITH_TOLERANCE),
+        error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, hardMax),
       };
     }
-    warning = ERROR_MESSAGES.BATCH_SIZE_TOLERANCE_WARNING(
-      paragraphs.length,
-      MAX_BATCH_SIZE,
-      MAX_BATCH_SIZE_WITH_TOLERANCE,
-    );
+
+    if (allowDoubleBatchSize) {
+      warning = ERROR_MESSAGES.BATCH_SIZE_DOUBLE_WARNING(
+        paragraphs.length,
+        MAX_BATCH_SIZE,
+        MAX_BATCH_SIZE_DOUBLE,
+        chunkTotal!,
+      );
+    } else {
+      warning = ERROR_MESSAGES.BATCH_SIZE_TOLERANCE_WARNING(
+        paragraphs.length,
+        MAX_BATCH_SIZE,
+        MAX_BATCH_SIZE_WITH_TOLERANCE,
+      );
+    }
   }
 
   const resolvedIds: string[] = [];
@@ -403,13 +430,13 @@ export const translationTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'add_translation_batch',
-        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！支持 index 或 paragraph_id。最多 ${MAX_BATCH_SIZE} 个段落。`,
+        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！支持 index 或 paragraph_id。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 总段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
         parameters: {
           type: 'object',
           properties: {
             paragraphs: {
               type: 'array',
-              description: `段落处理结果数组，最多 ${MAX_BATCH_SIZE} 个段落。支持 index 或 paragraph_id`,
+              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 总段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。支持 index 或 paragraph_id。`,
               items: {
                 type: 'object',
                 properties: {
