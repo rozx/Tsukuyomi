@@ -207,8 +207,11 @@ export const taskStatusTools: ToolDefinition[] = [
         const isFirstChunk = context.chunkIndex === undefined || context.chunkIndex === 0;
 
         if (!chapterId || !bookId) {
-          // 如果没有关联章节，可能是全书任务或其他类型，跳过检查或报错
-          // 这里选择宽容处理，或者记录警告
+          // 缺少章节或书籍关联信息，无法进行完整性检查，阻止进入 review
+          return JSON.stringify({
+            success: false,
+            error: `无法提交复核：任务缺少${!chapterId ? '章节' : '书籍'}关联信息，无法验证翻译完整性`,
+          });
         } else {
           try {
             // 延迟导入以避免循环依赖

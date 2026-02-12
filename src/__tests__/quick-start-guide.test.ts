@@ -1,11 +1,13 @@
 import './setup';
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { createPinia, setActivePinia } from 'pinia';
+import { resetDbForTests } from 'src/utils/indexed-db';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
 import { useSettingsStore } from 'src/stores/settings';
 
 describe('useQuickStartGuide', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await resetDbForTests();
     localStorage.clear();
     setActivePinia(createPinia());
   });

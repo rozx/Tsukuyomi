@@ -1,7 +1,10 @@
 import './setup';
-import { describe, expect, it } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import { effectScope, nextTick, ref } from 'vue';
-import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
+import {
+  useOverlayCloseStack,
+  resetOverlayCloseStackForTests,
+} from 'src/composables/useOverlayCloseStack';
 
 const dispatchEscape = () => {
   const event = new Event('keydown') as KeyboardEvent;
@@ -13,6 +16,9 @@ const dispatchEscape = () => {
 };
 
 describe('useOverlayCloseStack', () => {
+  beforeEach(() => {
+    resetOverlayCloseStackForTests();
+  });
   it('应按后进先出顺序响应 Escape 关闭叠层', async () => {
     const closed: string[] = [];
     const firstOpen = ref(false);

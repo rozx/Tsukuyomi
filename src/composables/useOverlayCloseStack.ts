@@ -17,38 +17,35 @@ const overlayEntries: OverlayEntry[] = [];
 let overlayOrder = 0;
 let escapeListenerAttached = false;
 
-const overlayEventTarget: (EventTarget & {
-  addEventListener: (type: string, listener: (event: KeyboardEvent) => void, options?: boolean) => void;
+type OverlayEventTargetType = EventTarget & {
+  addEventListener: (
+    type: string,
+    listener: (event: KeyboardEvent) => void,
+    options?: boolean,
+  ) => void;
   removeEventListener: (
     type: string,
     listener: (event: KeyboardEvent) => void,
     options?: boolean,
   ) => void;
-}) | null =
-  typeof window !== 'undefined'
-    ? (window as unknown as EventTarget & {
-        addEventListener: (type: string, listener: (event: KeyboardEvent) => void, options?: boolean) => void;
-        removeEventListener: (
-          type: string,
-          listener: (event: KeyboardEvent) => void,
-          options?: boolean,
-        ) => void;
-      })
-    : typeof globalThis.addEventListener === 'function' &&
-        typeof globalThis.removeEventListener === 'function'
-      ? (globalThis as unknown as EventTarget & {
-          addEventListener: (
-            type: string,
-            listener: (event: KeyboardEvent) => void,
-            options?: boolean,
-          ) => void;
-          removeEventListener: (
-            type: string,
-            listener: (event: KeyboardEvent) => void,
-            options?: boolean,
-          ) => void;
-        })
-      : null;
+};
+
+function getOverlayEventTarget(): OverlayEventTargetType | null {
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.addEventListener === 'function' &&
+    typeof window.removeEventListener === 'function'
+  ) {
+    return window as unknown as OverlayEventTargetType;
+  }
+  if (
+    typeof globalThis.addEventListener === 'function' &&
+    typeof globalThis.removeEventListener === 'function'
+  ) {
+    return globalThis as unknown as OverlayEventTargetType;
+  }
+  return null;
+}
 
 const removeEntryById = (id: symbol) => {
   const index = overlayEntries.findIndex((entry) => entry.id === id);
@@ -89,6 +86,7 @@ const handleEscapeKey = (event: KeyboardEvent) => {
 };
 
 const ensureEscapeListener = () => {
+  const overlayEventTarget = getOverlayEventTarget();
   if (!overlayEventTarget || escapeListenerAttached) {
     return;
   }
@@ -98,6 +96,7 @@ const ensureEscapeListener = () => {
 };
 
 const cleanupEscapeListener = () => {
+  const overlayEventTarget = getOverlayEventTarget();
   if (!overlayEventTarget || !escapeListenerAttached) {
     return;
   }
@@ -143,6 +142,7 @@ export function useOverlayCloseStack(options: UseOverlayCloseStackOptions) {
         entry.isActive = true;
         entry.order = ++overlayOrder;
       }
+      ensureEscapeListener();
       return;
     }
 
@@ -163,4 +163,19 @@ export function useOverlayCloseStack(options: UseOverlayCloseStackOptions) {
     removeEntryById(id);
     cleanupEscapeListener();
   });
+}
+
+/**
+ * 重置 overlay 栈的全局状态（仅用于测试）
+ */
+export function resetOverlayCloseStackForTests() {
+  overlayEntries.length = 0;
+  overlayOrder = 0;
+  if (escapeListenerAttached) {
+    const overlayEventTarget = getOverlayEventTarget();
+    if (overlayEventTarget) {
+      overlayEventTarget.removeEventListener('keydown', handleEscapeKey, true);
+    }
+  }
+  escapeListenerAttached = false;
 }

@@ -240,7 +240,6 @@ class TaskLoopSession {
     );
 
     let result;
-    let hasError = false;
     try {
       result = await this.config.generateText(
         { ...aiServiceConfig, signal: streamAbortController.signal },
@@ -248,14 +247,27 @@ class TaskLoopSession {
         wrappedStreamCallback,
       );
     } catch (error) {
-      hasError = true;
+      cleanupAbort();
+      // 取消请求不需要重试，直接抛出
+      if (
+        error instanceof Error &&
+        (error.message.includes('取消') || error.name === 'AbortError')
+      ) {
+        throw error;
+      }
+      // 其他错误（如 4xx/5xx HTTP 错误）必须向上抛出，
+      // 否则 run() 循环会因 shouldContinue=false 且 shouldBreak=undefined 而无限重试
+      console.error(
+        `[${logLabel}] ❌ AI 请求失败:`,
+        error instanceof Error ? error.message : error,
+      );
+      throw error;
     } finally {
       cleanupAbort();
     }
 
-    // 如果发生错误，不再继续处理
-    if (hasError || !result) {
-      return { shouldContinue: false };
+    if (!result) {
+      throw new Error('AI 返回结果为空');
     }
 
     // Save reasoning
