@@ -2259,6 +2259,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :book="book || null"
             :selected-chapter-id="selectedChapterId"
             :is-page-loading="isPageLoading"
+            :is-loading-chapter-content="isLoadingChapterContent"
             :is-volume-expanded="isVolumeExpanded"
             :dragged-chapter="draggedChapter"
             :drag-over-volume-id="dragOverVolumeId"

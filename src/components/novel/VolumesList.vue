@@ -3,6 +3,10 @@ import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import {
+  isSelectedChapterLoading as isSelectedChapterLoadingByState,
+  canNavigateToChapter,
+} from 'src/components/novel/volumes-list-utils';
 
 interface DraggedChapter {
   chapter: Chapter;
@@ -10,11 +14,12 @@ interface DraggedChapter {
   sourceIndex: number;
 }
 
-const _props = defineProps<{
+const props = defineProps<{
   volumes: Volume[];
   book: Novel | null;
   selectedChapterId: string | null;
   isPageLoading: boolean;
+  isLoadingChapterContent?: boolean;
   isVolumeExpanded: (volumeId: string) => boolean;
   draggedChapter: DraggedChapter | null;
   dragOverVolumeId: string | null;
@@ -46,6 +51,10 @@ const handleToggleVolume = (volumeId: string) => {
 };
 
 const handleNavigateToChapter = (chapter: Chapter) => {
+  if (!canNavigateToChapter(props, chapter.id)) {
+    return;
+  }
+
   emit('navigate-to-chapter', chapter);
 };
 
@@ -97,6 +106,10 @@ const handleMoveChapter = (
     index,
     direction,
   });
+};
+
+const isSelectedChapterLoading = (chapterId: string) => {
+  return isSelectedChapterLoadingByState(props, chapterId);
 };
 </script>
 
@@ -164,6 +177,9 @@ const handleMoveChapter = (
               :class="[
                 'chapter-item',
                 { 'chapter-item-selected': selectedChapterId === chapter.id },
+                {
+                  'chapter-item-loading': isSelectedChapterLoading(chapter.id),
+                },
                 { 'chapter-item-touch': touchMode },
                 {
                   'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
@@ -171,13 +187,25 @@ const handleMoveChapter = (
                 { dragging: draggedChapter?.chapter.id === chapter.id },
               ]"
               :draggable="!touchMode"
+              @click="handleNavigateToChapter(chapter)"
               @dragstart="handleDragStart($event, chapter, volume.id, index)"
               @dragend="handleDragEnd($event)"
               @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
               @drop.stop="handleDrop($event, volume.id, index)"
             >
-              <div class="chapter-content" @click="handleNavigateToChapter(chapter)">
-                <i v-if="!touchMode" class="pi pi-bars drag-handle"></i>
+              <div class="chapter-content">
+                <i
+                  v-if="isSelectedChapterLoading(chapter.id)"
+                  class="pi pi-spinner pi-spin loading-icon"
+                  role="status"
+                  aria-label="章节加载中"
+                ></i>
+                <i
+                  v-else-if="!touchMode"
+                  class="pi pi-bars drag-handle"
+                  aria-hidden="true"
+                  @click.stop
+                ></i>
                 <i class="pi pi-file chapter-icon"></i>
                 <span class="chapter-title">{{
                   getChapterDisplayTitle(chapter, book || undefined)
@@ -439,7 +467,6 @@ const handleMoveChapter = (
   align-items: center;
   gap: 0.375rem;
   flex: 1;
-  cursor: pointer;
   min-width: 0;
   overflow: hidden;
 }
@@ -583,7 +610,20 @@ const handleMoveChapter = (
 }
 
 .summary-icon:hover {
-  color: var(--primary-opacity-90);
+  opacity: 0.85;
+  cursor: progress;
+}
+
+/* 加载状态图标 */
+.loading-icon {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-80);
+  flex-shrink: 0;
+}
+
+.chapter-item-loading {
+  pointer-events: none;
+  opacity: 0.85;
 }
 
 /* 折叠/展开动画 */
