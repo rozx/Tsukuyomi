@@ -11,7 +11,7 @@ export interface ParsedResponse {
  */
 export interface ConfigJson {
   maxInputTokens?: number;
-  contextWindow?: number;
+  maxOutputTokens?: number;
 }
 
 /**
@@ -19,5 +19,5 @@ export interface ConfigJson {
  */
 export interface ConfigParseResult {
   maxInputTokens?: number;
-  contextWindow?: number;
+  maxOutputTokens?: number;
 }

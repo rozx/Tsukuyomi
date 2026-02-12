@@ -6,7 +6,8 @@ export interface AIServiceConfig {
   baseUrl?: string | undefined;
   model: string;
   temperature?: number | undefined;
-  maxTokens?: number | undefined;
+  maxInputTokens?: number | undefined; // 最大输入 token 数（上下文窗口）
+  maxOutputTokens?: number | undefined; // 最大输出 token 数
   signal?: AbortSignal | undefined; // 用于取消请求
 }
 
@@ -18,8 +19,8 @@ export interface ModelInfo {
   name?: string | undefined;
   displayName?: string | undefined;
   ownedBy?: string | undefined;
-  maxTokens?: number | undefined;
-  contextWindow?: number | undefined;
+  maxInputTokens?: number | undefined; // 最大输入 token 数
+  maxOutputTokens?: number | undefined; // 最大输出 token 数
 }
 
 /**
@@ -37,7 +38,8 @@ export interface AIConfigResult {
   message: string;
   modelInfo?: ModelInfo | undefined;
   rateLimit?: RateLimitInfo | undefined;
-  maxTokens?: number | undefined;
+  maxInputTokens?: number | undefined;
+  maxOutputTokens?: number | undefined;
 }
 
 /**
@@ -101,7 +103,7 @@ export interface TextGenerationRequest {
   messages?: ChatMessage[];
   tools?: AITool[];
   temperature?: number;
-  maxTokens?: number;
+  maxOutputTokens?: number; // 最大输出 token 数
 }
 
 /**

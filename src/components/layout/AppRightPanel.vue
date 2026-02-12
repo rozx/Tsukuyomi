@@ -360,11 +360,11 @@ const sessionStats = computed(() => {
     includeToolSchemas: true,
   });
 
-  const maxTokens = assistantModel.value?.contextWindow || 0;
+  const maxInputTokens = assistantModel.value?.maxInputTokens || 0;
   let tokenPercentage = 0;
 
-  if (maxTokens > 0) {
-    tokenPercentage = Math.round((tokens / maxTokens) * 100);
+  if (maxInputTokens > 0) {
+    tokenPercentage = Math.round((tokens / maxInputTokens) * 100);
   }
 
   // 计算消息数量进度百分比
@@ -377,7 +377,7 @@ const sessionStats = computed(() => {
     currentCount,
     limit: MESSAGE_LIMIT_THRESHOLD,
     tokens,
-    maxTokens,
+    maxInputTokens,
     tokenPercentage,
     msgPercentage,
     maxPercentage,
@@ -714,7 +714,7 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
           <ProgressBar :value="sessionStats.maxPercentage" :show-value="false" />
           <div class="context-usage-text">
             {{ sessionStats.maxPercentage }}% · {{ sessionStats.tokens }}/{{
-              sessionStats.maxTokens || '∞'
+              sessionStats.maxInputTokens || '∞'
             }}
           </div>
         </div>

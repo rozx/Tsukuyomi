@@ -19,21 +19,22 @@ export interface ConfigServiceOptions {
 export class ConfigService {
   /**
    * 获取配置信息的提示词
-   * 要求 AI 以 JSON 格式返回最大输入 token 数
+   * 要求 AI 以 JSON 格式返回最大输入 token 数和最大输出 token 数
    */
   static getConfigPrompt(): string {
-    return `请以 JSON 格式返回你的最大输入 token 数（maxInputTokens），这是我可以发送给你的最大 token 数量，用于限制上下文输入。
+    return `请以 JSON 格式返回你的 token 限制信息：
 
 请只返回 JSON 对象，格式如下：
 {
-  "maxInputTokens": 数字
+  "maxInputTokens": 数字,
+  "maxOutputTokens": 数字
 }
 
-如果你不知道确切的 maxInputTokens，但知道 contextWindow（总上下文窗口大小），可以返回：
-{
-  "maxInputTokens": 数字,
-  "contextWindow": 数字
-}`;
+其中：
+- maxInputTokens: 最大输入 token 数（上下文窗口大小）
+- maxOutputTokens: 最大输出 token 数（单次响应最大 token 数）
+
+如果你只知道其中一个，也可以只返回那个字段。`;
   }
 
   /**
@@ -78,7 +79,8 @@ export class ConfigService {
         baseUrl: model.provider === 'gemini' ? undefined : model.baseUrl,
         model: model.model,
         temperature: model.temperature,
-        maxTokens: model.maxTokens,
+        maxInputTokens: model.maxInputTokens,
+        maxOutputTokens: model.maxOutputTokens,
         signal: options?.signal,
       };
 

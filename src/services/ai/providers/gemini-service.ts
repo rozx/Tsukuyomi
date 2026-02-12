@@ -103,11 +103,11 @@ export class GeminiService extends BaseAIService {
         generationConfig.temperature = temperature;
       }
 
-      const maxTokens = request.maxTokens ?? config.maxTokens;
-      // 只有当 maxTokens 明确设置且大于 0 时才设置 maxOutputTokens
-      // 如果 maxTokens 是 0 或未定义，不设置 maxOutputTokens，让 API 使用默认值（无限制）
-      if (maxTokens !== undefined && maxTokens > 0) {
-        generationConfig.maxOutputTokens = maxTokens;
+      const maxOutputTokens = request.maxOutputTokens ?? config.maxOutputTokens;
+      // 只有当 maxOutputTokens 明确设置且大于 0 时才设置 maxOutputTokens
+      // 如果 maxOutputTokens 是 0 或未定义，不设置 maxOutputTokens，让 API 使用默认值（无限制）
+      if (maxOutputTokens !== undefined && maxOutputTokens > 0) {
+        generationConfig.maxOutputTokens = maxOutputTokens;
       }
 
       // 为 Gemini 3 Pro 等支持思考的模型启用思考内容

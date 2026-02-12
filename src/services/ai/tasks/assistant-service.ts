@@ -218,7 +218,7 @@ export class AssistantService {
 
     const messageTokens = estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER);
     const contextTokens = messageTokens + (toolSchemaTokens ?? 0);
-    const contextWindow = model.contextWindow || 0;
+    const contextWindow = model.maxInputTokens || 0;
     const contextPercentage =
       contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : undefined;
 
@@ -265,15 +265,15 @@ export class AssistantService {
     systemPrompt: string,
     summary: string,
     userMessage: string,
-    maxTokens: number,
+    maxInputTokens: number,
   ): string {
     // 处理无限制 token 的情况
-    if (maxTokens <= 0 || maxTokens === UNLIMITED_TOKENS) {
+    if (maxInputTokens <= 0 || maxInputTokens === UNLIMITED_TOKENS) {
       return summary;
     }
 
     // 保留 20% 用于响应生成，使用更保守的估算
-    const availableTokens = Math.floor(maxTokens * 0.8);
+    const availableTokens = Math.floor(maxInputTokens * 0.8);
 
     // 估算系统提示词和用户消息的 token 数（使用更保守的倍数）
     const systemTokens = estimateMessagesTokenCount(
@@ -425,12 +425,13 @@ export class AssistantService {
       baseUrl: model.baseUrl,
       model: model.model,
       temperature: SUMMARY_TEMPERATURE, // 使用较低温度以获得更准确的总结
-      maxTokens: model.maxTokens,
+      maxOutputTokens: model.maxOutputTokens,
       signal,
     };
 
     // 构建请求（使用较低的 maxTokens 来限制摘要长度）
-    const summaryMaxTokens = model.maxTokens > 0 ? Math.min(model.maxTokens, 1024) : 1024; // 摘要不需要太长
+    const summaryMaxTokens =
+      model.maxOutputTokens > 0 ? Math.min(model.maxOutputTokens, 1024) : 1024; // 摘要不需要太长
     const request: TextGenerationRequest = {
       messages: [
         {
@@ -443,7 +444,7 @@ export class AssistantService {
         },
       ],
       temperature: SUMMARY_TEMPERATURE,
-      maxTokens: summaryMaxTokens,
+      maxOutputTokens: summaryMaxTokens,
     };
 
     // 生成总结
@@ -643,7 +644,7 @@ export class AssistantService {
       systemPrompt,
       summary,
       userMessage,
-      model.maxTokens,
+      model.maxInputTokens,
     );
 
     if (context.currentBookId && summary) {
@@ -690,7 +691,7 @@ export class AssistantService {
   private static async retryRequestAfterSummary(
     model: AIModel,
     messages: ChatMessage[],
-    tools: any[],
+    tools: AITool[],
     bookId: string | null,
     options: AssistantServiceOptions,
     taskId: string | undefined,
@@ -711,7 +712,7 @@ export class AssistantService {
       baseUrl: model.baseUrl,
       model: model.model,
       temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxTokens: model.maxTokens,
+      maxOutputTokens: model.maxOutputTokens,
       signal,
     };
 
@@ -720,7 +721,7 @@ export class AssistantService {
       messages,
       ...(tools.length > 0 ? { tools } : {}),
       temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxTokens: model.maxTokens,
+      maxOutputTokens: model.maxOutputTokens,
     };
 
     // 流式生成响应
@@ -854,7 +855,7 @@ export class AssistantService {
         messages,
         ...(tools.length > 0 ? { tools } : {}),
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-        maxTokens: model.maxTokens,
+        maxOutputTokens: model.maxOutputTokens,
       };
 
       let followUpText = '';
@@ -1068,13 +1069,13 @@ export class AssistantService {
         content: userMessage,
       });
 
-      // 边界检查：检查用户消息长度
-      if (model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS) {
+      // 边界检查：检查用户消息长度（应基于输入上限，而不是输出上限）
+      if (model.maxInputTokens > 0 && model.maxInputTokens !== UNLIMITED_TOKENS) {
         const userMessageTokens = estimateMessagesTokenCount(
           [{ role: 'user', content: userMessage }],
           DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
         );
-        if (userMessageTokens >= model.maxTokens * 0.8) {
+        if (userMessageTokens >= model.maxInputTokens * 0.8) {
           // 用户消息本身就很大，直接返回错误
           const errorMessage = '用户消息过长，无法处理。请缩短消息长度后重试。';
           if (aiProcessingStore && taskId) {
@@ -1101,22 +1102,22 @@ export class AssistantService {
 
       // 检查是否超过模型的最大上下文长度（contextWindow）
       // 如果模型有 contextWindow，需要确保 estimatedTokens + maxTokens <= contextWindow
-      let effectiveMaxTokens = model.maxTokens;
-      if (model.contextWindow && model.contextWindow > 0) {
+      let effectiveMaxTokens = model.maxOutputTokens;
+      if (model.maxInputTokens && model.maxInputTokens > 0) {
         // 计算实际可用的 maxTokens（考虑消息占用的 token）
-        const availableForCompletion = model.contextWindow - estimatedTokens;
+        const availableForCompletion = model.maxInputTokens - estimatedTokens;
         // 如果可用空间小于请求的 maxTokens，需要调整
-        if (availableForCompletion < model.maxTokens) {
+        if (availableForCompletion < model.maxOutputTokens) {
           if (availableForCompletion <= 0) {
             // 消息已经占满了整个上下文窗口，必须触发总结
             console.warn(
-              `[AssistantService] 消息 token 数 (${estimatedTokens}, 含工具 schema ${toolSchemaTokens}) 已超过或等于模型上下文窗口 (${model.contextWindow})，必须触发总结`,
+              `[AssistantService] 消息 token 数 (${estimatedTokens}, 含工具 schema ${toolSchemaTokens}) 已超过或等于模型上下文窗口 (${model.maxInputTokens})，必须触发总结`,
             );
             effectiveMaxTokens = 0; // 标记需要总结
           } else {
             // 调整 maxTokens 以适应上下文窗口
             console.warn(
-              `[AssistantService] 调整 maxTokens 从 ${model.maxTokens} 到 ${availableForCompletion} 以适应上下文窗口`,
+              `[AssistantService] 调整 maxTokens 从 ${model.maxOutputTokens} 到 ${availableForCompletion} 以适应上下文窗口`,
             );
             effectiveMaxTokens = Math.floor(availableForCompletion * 0.9); // 留 10% 缓冲
           }
@@ -1126,7 +1127,7 @@ export class AssistantService {
       // 检查是否需要在请求前进行摘要
       // 如果 UI 层已经处理了摘要（skipTokenLimitSummarization = true），则跳过此检查
       const thresholdBase =
-        model.contextWindow && model.contextWindow > 0 ? model.contextWindow : model.maxTokens;
+        model.maxInputTokens && model.maxInputTokens > 0 ? model.maxInputTokens : 0;
       const tokenThreshold =
         thresholdBase > 0 && thresholdBase !== UNLIMITED_TOKENS
           ? thresholdBase * TOKEN_THRESHOLD_RATIO
@@ -1135,7 +1136,7 @@ export class AssistantService {
         thresholdBase > 0 &&
         thresholdBase !== UNLIMITED_TOKENS &&
         estimatedTokens >= tokenThreshold;
-      const isContextWindowFull = effectiveMaxTokens === 0;
+      const isContextWindowFull = thresholdBase > 0 && effectiveMaxTokens === 0;
       const shouldSummarizeBeforeRequest =
         !options.skipTokenLimitSummarization && (isTokenLimitReached || isContextWindowFull); // 如果消息占满了上下文窗口，必须总结
 
@@ -1144,8 +1145,8 @@ export class AssistantService {
         estimatedTokens,
         messageTokens,
         toolSchemaTokens,
-        maxTokens: model.maxTokens,
-        contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxOutputTokens,
+        contextWindow: model.maxInputTokens,
         thresholdBase,
         tokenThreshold: Math.round(tokenThreshold),
         isTokenLimitReached,
@@ -1156,7 +1157,7 @@ export class AssistantService {
       });
 
       if (aiProcessingStore && taskId) {
-        const contextWindow = model.contextWindow || 0;
+        const contextWindow = model.maxInputTokens || 0;
         const contextPercentage =
           contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
         await aiProcessingStore.updateTask(taskId, {
@@ -1270,8 +1271,8 @@ export class AssistantService {
         toolSchemaTokens;
       // 再次检查并调整 maxTokens（如果消息在总结后仍然很大）
       let finalMaxTokens = effectiveMaxTokens;
-      if (model.contextWindow && model.contextWindow > 0) {
-        const availableForCompletion = model.contextWindow - finalEstimatedTokens;
+      if (model.maxInputTokens && model.maxInputTokens > 0) {
+        const availableForCompletion = model.maxInputTokens - finalEstimatedTokens;
         if (availableForCompletion < effectiveMaxTokens) {
           if (availableForCompletion <= 0) {
             // 即使总结后仍然超过，使用降级策略：只保留最近的消息
@@ -1281,10 +1282,10 @@ export class AssistantService {
 
             // 计算需要保留多少 token 给完成（maxTokens）
             const requiredForCompletion = Math.min(
-              model.maxTokens || 0,
-              Math.floor(model.contextWindow * 0.5), // 最多保留 50% 给完成
+              model.maxOutputTokens || 0,
+              Math.floor(model.maxInputTokens * 0.5), // 最多保留 50% 给完成
             );
-            const maxAllowedForMessages = model.contextWindow - requiredForCompletion;
+            const maxAllowedForMessages = model.maxInputTokens - requiredForCompletion;
 
             // 逐步减少消息数量，直到符合限制
             let reducedMessages = [...messages];
@@ -1352,11 +1353,11 @@ export class AssistantService {
               toolSchemaTokens;
 
             // 重新计算可用的 maxTokens
-            const newAvailableForCompletion = model.contextWindow - finalEstimatedTokens;
+            const newAvailableForCompletion = model.maxInputTokens - finalEstimatedTokens;
             if (newAvailableForCompletion > 0) {
               finalMaxTokens = Math.floor(newAvailableForCompletion * 0.9); // 留 10% 缓冲
             } else {
-              finalMaxTokens = Math.floor(model.contextWindow * 0.1); // 至少保留 10% 给完成
+              finalMaxTokens = Math.floor(model.maxInputTokens * 0.1); // 至少保留 10% 给完成
             }
           } else {
             finalMaxTokens = Math.floor(availableForCompletion * 0.9); // 留 10% 缓冲
@@ -1365,7 +1366,7 @@ export class AssistantService {
       }
 
       if (aiProcessingStore && taskId) {
-        const contextWindow = model.contextWindow || 0;
+        const contextWindow = model.maxInputTokens || 0;
         const contextPercentage =
           contextWindow > 0 ? Math.round((finalEstimatedTokens / contextWindow) * 100) : undefined;
         await aiProcessingStore.updateTask(taskId, {
@@ -1381,7 +1382,7 @@ export class AssistantService {
         baseUrl: model.baseUrl,
         model: model.model, // 使用实际的模型名称，而不是内部 ID
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-        maxTokens: finalMaxTokens,
+        maxOutputTokens: finalMaxTokens,
         signal: finalSignal,
       };
 
@@ -1390,7 +1391,7 @@ export class AssistantService {
         messages,
         ...(tools.length > 0 ? { tools } : {}),
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-        maxTokens: finalMaxTokens,
+        maxOutputTokens: finalMaxTokens,
       };
 
       // 流式生成响应
@@ -1526,7 +1527,7 @@ export class AssistantService {
           messages,
           ...(tools.length > 0 ? { tools } : {}),
           temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-          maxTokens: model.maxTokens,
+          maxOutputTokens: model.maxOutputTokens,
         };
 
         let followUpText = '';
@@ -1679,9 +1680,10 @@ export class AssistantService {
 
       // 检查是否是 token 限制错误，如果是，尝试总结并重试
       // 注意：maxTokens=0 表示无限制（与 UNLIMITED_TOKENS=-1 类似），不应仅因 maxTokens=0 就触发摘要逻辑
-      const hasPositiveMaxTokensLimit = model.maxTokens > 0 && model.maxTokens !== UNLIMITED_TOKENS;
+      const hasPositiveMaxTokensLimit =
+        model.maxOutputTokens > 0 && model.maxOutputTokens !== UNLIMITED_TOKENS;
       const hasContextWindowLimit =
-        typeof model.contextWindow === 'number' && model.contextWindow > 0;
+        typeof model.maxInputTokens === 'number' && model.maxInputTokens > 0;
 
       if (
         this.isTokenLimitError(error) &&

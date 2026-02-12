@@ -30,8 +30,16 @@ export interface AIModel {
   provider: AIProvider;
   model: string;
   temperature: number;
-  maxTokens: number;
-  contextWindow?: number; // 上下文窗口大小（总 token 限制）
+  /**
+   * 最大输入 token 数（上下文窗口大小）
+   * 0 表示无限制
+   */
+  maxInputTokens: number;
+  /**
+   * 最大输出 token 数
+   * 0 表示无限制
+   */
+  maxOutputTokens: number;
   rateLimit?: number; // 速率限制（每分钟请求数）
   apiKey: string;
   baseUrl: string;

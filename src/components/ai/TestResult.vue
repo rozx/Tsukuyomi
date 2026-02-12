@@ -5,7 +5,8 @@ import AppMessage, { type MessageDetail } from '../common/AppMessage.vue';
 export interface TestResultLimits {
   rateLimit?: string;
   modelInfo?: string;
-  maxTokens?: number;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
 }
 
 export interface TestResult {
@@ -36,8 +37,11 @@ const resultLimits = computed<MessageDetail[]>(() => {
   if (limits.rateLimit) {
     details.push({ label: '速率限制:', value: limits.rateLimit });
   }
-  if (limits.maxTokens) {
-    details.push({ label: '最大 Token:', value: limits.maxTokens.toLocaleString() });
+  if (limits.maxInputTokens) {
+    details.push({ label: '最大输入 Token:', value: limits.maxInputTokens.toLocaleString() });
+  }
+  if (limits.maxOutputTokens) {
+    details.push({ label: '最大输出 Token:', value: limits.maxOutputTokens.toLocaleString() });
   }
 
   return details;

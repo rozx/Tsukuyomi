@@ -86,7 +86,9 @@ export class ChapterSummaryService {
         bookId,
         chapterId,
         ...(chapterTitle ? { chapterTitle } : {}),
-        ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+        ...(model.maxInputTokens
+          ? { maxInputTokens: model.maxInputTokens, contextWindow: model.maxInputTokens }
+          : {}),
       },
     );
 

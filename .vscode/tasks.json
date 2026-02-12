@@ -1,165 +1,162 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "Run Service Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Run Specific Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts src/__tests__/use-paragraph-navigation.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests Final",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Run Character Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/character-setting-service.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests Final 2",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests Final 3",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Run Conflict Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/character-setting-service.test.ts src/__tests__/use-edit-mode.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests Final 4",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Grep Failures",
-			"type": "shell",
-			"command": "bun test 2>&1 | grep \"✗\"",
-			"group": "test"
-		},
-		{
-			"label": "Run Sync Data Service Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/sync-data-service.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run Sync Data Service Tests 2",
-			"type": "shell",
-			"command": "bun test src/__tests__/sync-data-service.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run Character Tests Check",
-			"type": "shell",
-			"command": "bun test src/__tests__/character-setting-service.test.ts",
-			"group": "test"
-		},
-		{
-			"label": "Run All Tests Final Check",
-			"type": "shell",
-			"command": "bun test",
-			"group": "test"
-		},
-		{
-			"label": "Run Chapter Service Tests",
-			"type": "shell",
-			"command": "bun",
-			"args": [
-				"test",
-				"src/__tests__/chapter-service.test.ts"
-			],
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Lint",
-			"type": "shell",
-			"command": "bun run lint",
-			"isBackground": false,
-			"problemMatcher": [],
-			"group": "test"
-		},
-		{
-			"label": "Type Check",
-			"type": "shell",
-			"command": "bun run type-check",
-			"isBackground": false,
-			"problemMatcher": [],
-			"group": "test"
-		},
-		{
-			"label": "Run Failing Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts src/__tests__/memory-tools.list-memories.test.ts",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Run Memory Tools Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Run Memory Alias Test",
-			"type": "shell",
-			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts -t \"别名\"",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Run ExecuteToolCallLoop Polish Proofreading Test",
-			"type": "shell",
-			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts -t \"润色/校对任务\"",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Run Updated Failing Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Run ExecuteToolCallLoop Test Only",
-			"type": "shell",
-			"command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts -t \"润色/校对任务\"",
-			"isBackground": false,
-			"group": "test"
-		},
-		{
-			"label": "Re-run Previously Failing Tests",
-			"type": "shell",
-			"command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
-			"isBackground": false,
-			"group": "test"
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Service Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Run Specific Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/terminology-service.test.ts src/__tests__/character-setting-service.test.ts src/__tests__/use-paragraph-navigation.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests Final",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Run Character Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/character-setting-service.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests Final 2",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests Final 3",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Run Conflict Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/character-setting-service.test.ts src/__tests__/use-edit-mode.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests Final 4",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Grep Failures",
+      "type": "shell",
+      "command": "bun test 2>&1 | grep \"✗\"",
+      "group": "test"
+    },
+    {
+      "label": "Run Sync Data Service Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/sync-data-service.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run Sync Data Service Tests 2",
+      "type": "shell",
+      "command": "bun test src/__tests__/sync-data-service.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run Character Tests Check",
+      "type": "shell",
+      "command": "bun test src/__tests__/character-setting-service.test.ts",
+      "group": "test"
+    },
+    {
+      "label": "Run All Tests Final Check",
+      "type": "shell",
+      "command": "bun test",
+      "group": "test"
+    },
+    {
+      "label": "Run Chapter Service Tests",
+      "type": "shell",
+      "command": "bun",
+      "args": ["test", "src/__tests__/chapter-service.test.ts"],
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "bun run lint",
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Type Check",
+      "type": "shell",
+      "command": "bun run type-check",
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Run Failing Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts src/__tests__/memory-tools.list-memories.test.ts",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Run Memory Tools Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/memory-tools.list-memories.test.ts",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Run Memory Alias Test",
+      "type": "shell",
+      "command": "bun test src/__tests__/memory-tools.list-memories.test.ts -t \"别名\"",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Run ExecuteToolCallLoop Polish Proofreading Test",
+      "type": "shell",
+      "command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Run Updated Failing Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Run ExecuteToolCallLoop Test Only",
+      "type": "shell",
+      "command": "bun test src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+      "isBackground": false,
+      "group": "test"
+    },
+    {
+      "label": "Re-run Previously Failing Tests",
+      "type": "shell",
+      "command": "bun test src/__tests__/memory-tools.list-memories.test.ts src/__tests__/ai-task-helper.executeToolCallLoop.test.ts",
+      "isBackground": false,
+      "group": "test"
+    }
+  ]
 }

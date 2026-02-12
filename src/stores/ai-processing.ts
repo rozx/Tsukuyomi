@@ -53,6 +53,10 @@ export type AIProcessingTaskStatus = 'thinking' | 'processing' | 'end' | 'error'
 
 type LegacyAIProcessingTaskStatus = AIProcessingTaskStatus | 'completed' | 'review';
 
+type LegacySerializableTask = SerializableTask & {
+  maxInputTokens?: number;
+};
+
 /**
  * 兼容迁移：将历史任务状态值规范化到当前枚举集合
  * - 旧值 `completed` / `review` → 新值 `end`
@@ -86,11 +90,22 @@ async function loadThinkingProcessesFromDB(): Promise<SerializableTask[]> {
     const tasks = await db.getAll('thinking-processes');
     // 兼容迁移：历史数据中可能存在旧状态值 completed，需要映射为 review
     const normalizedTasks = tasks.map((t) => {
-      const legacyStatus = (t as { status?: unknown }).status as LegacyAIProcessingTaskStatus;
+      const legacyTask = t as LegacySerializableTask;
+      const legacyStatus = legacyTask.status as LegacyAIProcessingTaskStatus;
       const newStatus = normalizeAIProcessingTaskStatus(legacyStatus);
+      const normalizedContextWindow =
+        legacyTask.contextWindow !== undefined
+          ? legacyTask.contextWindow
+          : legacyTask.maxInputTokens;
+
+      const { maxInputTokens: _legacyMaxInputTokens, ...rest } = legacyTask;
+
       return {
-        ...t,
+        ...rest,
         status: newStatus,
+        ...(normalizedContextWindow !== undefined
+          ? { contextWindow: normalizedContextWindow }
+          : {}),
       } as SerializableTask;
     });
 

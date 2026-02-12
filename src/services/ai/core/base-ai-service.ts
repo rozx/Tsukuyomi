@@ -13,7 +13,7 @@ import type {
   ConfigJson,
   ConfigParseResult,
 } from 'src/services/ai/types/interfaces';
-import { DEFAULT_CONTEXT_WINDOW_RATIO, UNLIMITED_TOKENS } from 'src/constants/ai';
+import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import { ConfigService } from '../tasks/config-service';
 
 /**
@@ -44,25 +44,23 @@ export abstract class BaseAIService implements AIService {
       const modelInfo = this.buildModelInfo(config, parsedResponse);
 
       // 解析配置 JSON
-      const { maxInputTokens, contextWindow } = this.parseConfigJson(parsedResponse.content);
+      const { maxInputTokens, maxOutputTokens } = this.parseConfigJson(parsedResponse.content);
 
       // 更新模型信息
-      if (contextWindow) {
-        modelInfo.contextWindow = contextWindow;
+      if (maxInputTokens !== undefined) {
+        modelInfo.maxInputTokens = maxInputTokens;
       }
-
-      // 计算最终的最大 token 数
-      const finalMaxTokens = this.calculateMaxTokens(maxInputTokens, contextWindow);
+      if (maxOutputTokens !== undefined) {
+        modelInfo.maxOutputTokens = maxOutputTokens;
+      }
 
       // 构建结果
       const result: AIConfigResult = {
         success: true,
         message: `模型 "${config.model}" 配置已获取`,
-        modelInfo: {
-          ...modelInfo,
-          maxTokens: finalMaxTokens,
-        },
-        maxTokens: finalMaxTokens,
+        modelInfo,
+        maxInputTokens,
+        maxOutputTokens,
       };
 
       return result;
@@ -140,12 +138,12 @@ export abstract class BaseAIService implements AIService {
     }
 
     // 如果估算的 token 数超过限制，显示警告
-    // 只有当 maxTokens 是有效正数时才进行检查（UNLIMITED_TOKENS = -1 表示无限制）
-    const maxTokens = config.maxTokens ?? 300000;
+    // 只有当 maxInputTokens 是有效正数时才进行检查（UNLIMITED_TOKENS = -1 表示无限制）
+    const maxInputTokens = config.maxInputTokens ?? 300000;
 
-    if (maxTokens > 0 && estimatedTokens > maxTokens) {
+    if (maxInputTokens > 0 && estimatedTokens > maxInputTokens) {
       console.warn(
-        `[AI Service] 警告：提示词可能超过模型限制。估算 token 数: ${estimatedTokens}，字符数: ${promptLength}，模型限制: ${maxTokens}。文本将完整发送，但可能被模型截断。`,
+        `[AI Service] 警告：提示词可能超过模型限制。估算 token 数: ${estimatedTokens}，字符数: ${promptLength}，模型限制: ${maxInputTokens}。文本将完整发送，但可能被模型截断。`,
       );
     }
 
@@ -234,27 +232,31 @@ export abstract class BaseAIService implements AIService {
     }
 
     let maxInputTokens: number | undefined;
-    let contextWindow: number | undefined;
+    let maxOutputTokens: number | undefined;
 
     try {
       // 尝试解析 JSON
-      const configJson: ConfigJson = JSON.parse(content);
+      const configJson = JSON.parse(content) as ConfigJson & {
+        contextWindow?: number;
+        maxTokens?: number;
+      };
       if (typeof configJson.maxInputTokens === 'number') {
         maxInputTokens = configJson.maxInputTokens;
+      } else if (typeof configJson.contextWindow === 'number') {
+        // 兼容旧字段：contextWindow（总上下文窗口）
+        maxInputTokens = configJson.contextWindow;
       }
-      if (typeof configJson.contextWindow === 'number') {
-        contextWindow = configJson.contextWindow;
+      if (typeof configJson.maxOutputTokens === 'number') {
+        maxOutputTokens = configJson.maxOutputTokens;
+      } else if (typeof configJson.maxTokens === 'number') {
+        // 兼容旧字段：maxTokens（历史上用于输出上限）
+        maxOutputTokens = configJson.maxTokens;
       }
     } catch {
       // JSON 解析失败，尝试从文本中提取
       const extracted = this.extractConfigFromText(content);
       maxInputTokens = extracted.maxInputTokens;
-      contextWindow = extracted.contextWindow;
-    }
-
-    // 如果没有 maxInputTokens 但有 contextWindow，使用默认比例作为估算值
-    if (!maxInputTokens && contextWindow) {
-      maxInputTokens = Math.floor(contextWindow * DEFAULT_CONTEXT_WINDOW_RATIO);
+      maxOutputTokens = extracted.maxOutputTokens;
     }
 
     // 仅在值存在时包含属性，以符合 exactOptionalPropertyTypes
@@ -262,8 +264,8 @@ export abstract class BaseAIService implements AIService {
     if (maxInputTokens !== undefined) {
       result.maxInputTokens = maxInputTokens;
     }
-    if (contextWindow !== undefined) {
-      result.contextWindow = contextWindow;
+    if (maxOutputTokens !== undefined) {
+      result.maxOutputTokens = maxOutputTokens;
     }
     return result;
   }
@@ -273,21 +275,25 @@ export abstract class BaseAIService implements AIService {
    */
   protected extractConfigFromText(text: string): ConfigParseResult {
     const maxInputTokensMatch = text.match(/maxInputTokens["\s:]+(\d+)/i);
-    const contextMatch = text.match(/contextWindow["\s:]+(\d+)/i);
+    const contextWindowMatch = text.match(/contextWindow["\s:]+(\d+)/i);
+    const maxOutputTokensMatch = text.match(/maxOutputTokens["\s:]+(\d+)/i);
+    const maxTokensMatch = text.match(/maxTokens["\s:]+(\d+)/i);
 
     const result: ConfigParseResult = {};
 
-    if (maxInputTokensMatch && maxInputTokensMatch[1]) {
-      const value = parseInt(maxInputTokensMatch[1], 10);
+    const maxInputTokensRaw = maxInputTokensMatch?.[1] || contextWindowMatch?.[1];
+    if (maxInputTokensRaw) {
+      const value = parseInt(maxInputTokensRaw, 10);
       if (!isNaN(value) && value > 0) {
         result.maxInputTokens = value;
       }
     }
 
-    if (contextMatch && contextMatch[1]) {
-      const value = parseInt(contextMatch[1], 10);
+    const maxOutputTokensRaw = maxOutputTokensMatch?.[1] || maxTokensMatch?.[1];
+    if (maxOutputTokensRaw) {
+      const value = parseInt(maxOutputTokensRaw, 10);
       if (!isNaN(value) && value > 0) {
-        result.contextWindow = value;
+        result.maxOutputTokens = value;
       }
     }
 
@@ -295,9 +301,10 @@ export abstract class BaseAIService implements AIService {
   }
 
   /**
-   * 计算最终的最大 token 数
+   * 计算最终的最大 token 数（已弃用，保留用于兼容）
+   * @deprecated 使用 maxInputTokens 和 maxOutputTokens 代替
    */
-  protected calculateMaxTokens(maxInputTokens?: number, contextWindow?: number): number {
+  protected calculateMaxTokens(maxInputTokens?: number, _contextWindow?: number): number {
     // 如果提供了 maxInputTokens 且有效，直接使用
     if (
       maxInputTokens !== undefined &&
@@ -306,16 +313,6 @@ export abstract class BaseAIService implements AIService {
       maxInputTokens > 0
     ) {
       return maxInputTokens;
-    }
-
-    // 如果有 contextWindow，使用默认比例作为估算值
-    if (
-      contextWindow !== undefined &&
-      typeof contextWindow === 'number' &&
-      !isNaN(contextWindow) &&
-      contextWindow > 0
-    ) {
-      return Math.floor(contextWindow * DEFAULT_CONTEXT_WINDOW_RATIO);
     }
 
     // 默认返回 UNLIMITED_TOKENS 表示无限制

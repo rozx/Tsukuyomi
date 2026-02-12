@@ -55,8 +55,8 @@ const isTesting = ref(false);
 
 // 从 AI 获取的配置信息（只读）
 const aiConfig = ref<{
-  maxTokens?: number;
-  contextWindow?: number;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
 } | null>(null);
 
 // 可用模型列表
@@ -78,7 +78,8 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
   provider: 'openai',
   model: '',
   temperature: 0.7,
-  maxTokens: 0, // 0 表示无限制
+  maxInputTokens: 0, // 0 表示无限制
+  maxOutputTokens: 0, // 0 表示无限制
   apiKey: '',
   baseUrl: '',
   enabled: true,
@@ -119,7 +120,8 @@ const resetForm = () => {
     provider: 'openai',
     model: '',
     temperature: 0.7,
-    maxTokens: 0, // 0 表示无限制
+    maxInputTokens: 0, // 0 表示无限制
+    maxOutputTokens: 0, // 0 表示无限制
     apiKey: '',
     baseUrl: '',
     enabled: true,
@@ -163,18 +165,14 @@ const validateForm = (): boolean => {
     formErrors.value.temperature = '温度值必须在 0-2 之间';
   }
 
-  // maxTokens 为 0 表示无限制，不需要验证
-  if (formData.value.maxTokens === undefined || formData.value.maxTokens < 0) {
-    formErrors.value.maxTokens = '最大 Token 数不能为负数';
+  // maxInputTokens 为 0 表示无限制，不需要验证
+  if (formData.value.maxInputTokens === undefined || formData.value.maxInputTokens < 0) {
+    formErrors.value.maxInputTokens = '最大输入 Token 数不能为负数';
   }
 
-  // contextWindow 为可选字段，如果提供则必须大于 0
-  if (
-    formData.value.contextWindow !== undefined &&
-    formData.value.contextWindow !== null &&
-    formData.value.contextWindow <= 0
-  ) {
-    formErrors.value.contextWindow = '上下文窗口必须大于 0';
+  // maxOutputTokens 为 0 表示无限制，不需要验证
+  if (formData.value.maxOutputTokens === undefined || formData.value.maxOutputTokens < 0) {
+    formErrors.value.maxOutputTokens = '最大输出 Token 数不能为负数';
   }
 
   return Object.keys(formErrors.value).length === 0;
@@ -192,7 +190,8 @@ const testModel = async () => {
       provider: formData.value.provider as AIProvider,
       model: formData.value.model || '',
       temperature: formData.value.temperature ?? 0.7,
-      maxTokens: formData.value.maxTokens ?? 0,
+      maxInputTokens: formData.value.maxInputTokens ?? 0,
+      maxOutputTokens: formData.value.maxOutputTokens ?? 0,
       apiKey: formData.value.apiKey || '',
       baseUrl: formData.value.provider === 'gemini' ? '' : formData.value.baseUrl || '',
       enabled: true,
@@ -212,42 +211,39 @@ const testModel = async () => {
       // 保存从 AI 获取的配置信息
       const config: typeof aiConfig.value = {};
 
-      // 确保 maxTokens 是数字类型
-      if (result.maxTokens !== undefined && result.maxTokens !== null) {
-        const maxTokensValue =
-          typeof result.maxTokens === 'number'
-            ? result.maxTokens
-            : parseInt(String(result.maxTokens), 10);
-        if (!isNaN(maxTokensValue) && maxTokensValue >= 0) {
-          config.maxTokens = maxTokensValue;
+      // 确保 maxInputTokens 是数字类型
+      if (result.maxInputTokens !== undefined && result.maxInputTokens !== null) {
+        const maxInputTokensValue =
+          typeof result.maxInputTokens === 'number'
+            ? result.maxInputTokens
+            : parseInt(String(result.maxInputTokens), 10);
+        if (!isNaN(maxInputTokensValue) && maxInputTokensValue >= 0) {
+          config.maxInputTokens = maxInputTokensValue;
         }
       }
 
-      // 确保 contextWindow 是数字类型
-      if (
-        result.modelInfo?.contextWindow !== undefined &&
-        result.modelInfo.contextWindow !== null
-      ) {
-        const contextWindowValue =
-          typeof result.modelInfo.contextWindow === 'number'
-            ? result.modelInfo.contextWindow
-            : parseInt(String(result.modelInfo.contextWindow), 10);
-        if (!isNaN(contextWindowValue) && contextWindowValue > 0) {
-          config.contextWindow = contextWindowValue;
+      // 确保 maxOutputTokens 是数字类型
+      if (result.maxOutputTokens !== undefined && result.maxOutputTokens !== null) {
+        const maxOutputTokensValue =
+          typeof result.maxOutputTokens === 'number'
+            ? result.maxOutputTokens
+            : parseInt(String(result.maxOutputTokens), 10);
+        if (!isNaN(maxOutputTokensValue) && maxOutputTokensValue >= 0) {
+          config.maxOutputTokens = maxOutputTokensValue;
         }
       }
 
       aiConfig.value = Object.keys(config).length > 0 ? config : null;
 
-      // 如果获取到 maxTokens，自动更新表单字段（确保是数字）
-      // 注意：maxTokens 为 0 表示无限制，所以只更新大于 0 的值
-      if (config.maxTokens !== undefined && config.maxTokens > 0) {
-        formData.value.maxTokens = config.maxTokens;
+      // 如果获取到 maxInputTokens，自动更新表单字段（确保是数字）
+      // 注意：maxInputTokens 为 0 表示无限制，所以只更新大于 0 的值
+      if (config.maxInputTokens !== undefined && config.maxInputTokens > 0) {
+        formData.value.maxInputTokens = config.maxInputTokens;
       }
 
-      // 如果获取到 contextWindow，自动更新表单字段（确保是数字）
-      if (config.contextWindow !== undefined && config.contextWindow > 0) {
-        formData.value.contextWindow = config.contextWindow;
+      // 如果获取到 maxOutputTokens，自动更新表单字段（确保是数字）
+      if (config.maxOutputTokens !== undefined && config.maxOutputTokens > 0) {
+        formData.value.maxOutputTokens = config.maxOutputTokens;
       }
 
       // 如果模型信息有更新，更新模型字段
@@ -257,8 +253,11 @@ const testModel = async () => {
 
       // 构建详细信息
       const details: string[] = [];
-      if (result.maxTokens && result.maxTokens > 0) {
-        details.push(`最大 Token: ${result.maxTokens.toLocaleString()}`);
+      if (result.maxInputTokens && result.maxInputTokens > 0) {
+        details.push(`最大输入 Token: ${result.maxInputTokens.toLocaleString()}`);
+      }
+      if (result.maxOutputTokens && result.maxOutputTokens > 0) {
+        details.push(`最大输出 Token: ${result.maxOutputTokens.toLocaleString()}`);
       }
 
       const detailMessage =
@@ -442,11 +441,11 @@ watch(
 
         // 从已保存的模型数据中填充 aiConfig，以便显示
         const config: typeof aiConfig.value = {};
-        if (props.model.maxTokens !== undefined && props.model.maxTokens !== null) {
-          config.maxTokens = props.model.maxTokens;
+        if (props.model.maxInputTokens !== undefined && props.model.maxInputTokens !== null) {
+          config.maxInputTokens = props.model.maxInputTokens;
         }
-        if (props.model.contextWindow !== undefined && props.model.contextWindow !== null) {
-          config.contextWindow = props.model.contextWindow;
+        if (props.model.maxOutputTokens !== undefined && props.model.maxOutputTokens !== null) {
+          config.maxOutputTokens = props.model.maxOutputTokens;
         }
         // 即使只有部分字段，也要设置 aiConfig
         aiConfig.value = config;
@@ -645,62 +644,65 @@ watch(
           <div class="space-y-1">
             <label class="text-xs text-moon/70">最大输入 Token</label>
             <InputNumber
-              v-model="formData.maxTokens"
+              v-model="formData.maxInputTokens"
               :min="0"
               :max="10000000"
               :use-grouping="true"
               :show-buttons="false"
               placeholder="0 表示无限制"
               class="w-full"
-              :class="{ 'p-invalid': formErrors.maxTokens }"
+              :class="{ 'p-invalid': formErrors.maxInputTokens }"
             />
-            <small v-if="formErrors.maxTokens" class="p-error block mt-1">{{
-              formErrors.maxTokens
+            <small v-if="formErrors.maxInputTokens" class="p-error block mt-1">{{
+              formErrors.maxInputTokens
             }}</small>
             <small
               v-else-if="
-                aiConfig?.maxTokens &&
-                aiConfig.maxTokens > 0 &&
-                formData.maxTokens !== aiConfig.maxTokens
+                aiConfig?.maxInputTokens &&
+                aiConfig.maxInputTokens > 0 &&
+                formData.maxInputTokens !== aiConfig.maxInputTokens
               "
               class="text-xs text-moon/70 block mt-1"
             >
-              从 AI 获取: {{ aiConfig.maxTokens.toLocaleString() }}
+              从 AI 获取: {{ aiConfig.maxInputTokens.toLocaleString() }}
             </small>
             <small
-              v-else-if="(formData.maxTokens ?? 0) === 0"
+              v-else-if="(formData.maxInputTokens ?? 0) === 0"
               class="text-xs text-moon/70 block mt-1"
             >
               0 表示无限制
             </small>
           </div>
           <div class="space-y-1">
-            <label class="text-xs text-moon/70">上下文窗口</label>
+            <label class="text-xs text-moon/70">最大输出 Token</label>
             <InputNumber
-              v-model="formData.contextWindow"
-              :min="1"
+              v-model="formData.maxOutputTokens"
+              :min="0"
               :max="100000000"
               :use-grouping="true"
               :show-buttons="false"
-              placeholder="可选，总上下文窗口大小"
+              placeholder="0 表示无限制"
               class="w-full"
-              :class="{ 'p-invalid': formErrors.contextWindow }"
+              :class="{ 'p-invalid': formErrors.maxOutputTokens }"
             />
-            <small v-if="formErrors.contextWindow" class="p-error block mt-1">{{
-              formErrors.contextWindow
+            <small v-if="formErrors.maxOutputTokens" class="p-error block mt-1">{{
+              formErrors.maxOutputTokens
             }}</small>
             <small
               v-else-if="
-                aiConfig?.contextWindow &&
-                aiConfig.contextWindow > 0 &&
-                formData.contextWindow !== aiConfig.contextWindow
+                aiConfig?.maxOutputTokens &&
+                aiConfig.maxOutputTokens > 0 &&
+                formData.maxOutputTokens !== aiConfig.maxOutputTokens
               "
               class="text-xs text-moon/70 block mt-1"
             >
-              从 AI 获取: {{ aiConfig.contextWindow.toLocaleString() }}
+              从 AI 获取: {{ aiConfig.maxOutputTokens.toLocaleString() }}
             </small>
-            <small v-else-if="!formData.contextWindow" class="text-xs text-moon/70 block mt-1">
-              可选字段
+            <small
+              v-else-if="(formData.maxOutputTokens ?? 0) === 0"
+              class="text-xs text-moon/70 block mt-1"
+            >
+              0 表示无限制
             </small>
           </div>
         </div>

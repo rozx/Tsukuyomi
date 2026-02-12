@@ -261,7 +261,7 @@ export async function processTextTask(
       ...(typeof bookId === 'string' ? { bookId } : {}),
       ...(typeof chapterId === 'string' ? { chapterId } : {}),
       ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
-      ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+      ...(model.maxInputTokens ? { maxInputTokens: model.maxInputTokens } : {}),
     },
   );
 
@@ -523,7 +523,7 @@ export async function processTextTask(
           messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
         }
         const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
-        const contextWindow = model.contextWindow || 0;
+        const contextWindow = model.maxInputTokens || 0;
         const contextPercentage =
           contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
         aiProcessingStore

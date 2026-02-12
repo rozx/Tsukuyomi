@@ -122,10 +122,8 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       provider: formData.provider as AIProvider,
       model: formData.model!,
       temperature: formData.temperature!,
-      maxTokens: formData.maxTokens!,
-      ...(formData.contextWindow !== undefined && formData.contextWindow !== null
-        ? { contextWindow: formData.contextWindow }
-        : {}),
+      maxInputTokens: formData.maxInputTokens!,
+      maxOutputTokens: formData.maxOutputTokens!,
       ...(formData.rateLimit !== undefined && formData.rateLimit !== null
         ? { rateLimit: formData.rateLimit }
         : {}),
@@ -159,7 +157,8 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       provider: formData.provider as AIProvider,
       model: formData.model!,
       temperature: formData.temperature!,
-      maxTokens: formData.maxTokens!,
+      maxInputTokens: formData.maxInputTokens!,
+      maxOutputTokens: formData.maxOutputTokens!,
       apiKey: formData.apiKey!,
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
@@ -175,9 +174,6 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
     };
 
     // 只在有值时才添加可选字段
-    if (formData.contextWindow !== undefined && formData.contextWindow !== null) {
-      updates.contextWindow = formData.contextWindow;
-    }
     if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
       updates.rateLimit = formData.rateLimit;
     }
@@ -248,7 +244,9 @@ const formatApiKey = (apiKey: string): string => {
 <template>
   <div class="h-full flex flex-col p-3 sm:p-4 lg:p-6">
     <!-- 固定头部 -->
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+    <div
+      class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
+    >
       <div class="flex-shrink-0 min-w-0">
         <h1 class="text-2xl font-bold">AI 模型管理</h1>
         <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
@@ -375,8 +373,12 @@ const formatApiKey = (apiKey: string): string => {
                     <span class="ml-2">{{ model.temperature }}</span>
                   </div>
                   <div>
-                    <span class="text-moon/70">最大 Token:</span>
-                    <span class="ml-2">{{ model.maxTokens }}</span>
+                    <span class="text-moon/70">最大输入 Token:</span>
+                    <span class="ml-2">{{ model.maxInputTokens }}</span>
+                  </div>
+                  <div>
+                    <span class="text-moon/70">最大输出 Token:</span>
+                    <span class="ml-2">{{ model.maxOutputTokens }}</span>
                   </div>
                   <div>
                     <span class="text-moon/70">API Key:</span>

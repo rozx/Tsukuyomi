@@ -54,7 +54,8 @@ describe('TranslationService - workflowStatus 重置', () => {
     apiKey: 'test-key',
     baseUrl: 'http://test',
     temperature: 0.7,
-    maxTokens: 1000,
+    maxInputTokens: 128000,
+    maxOutputTokens: 1000,
     isDefault: {
       translation: { enabled: true, temperature: 0.7 },
       proofreading: { enabled: true, temperature: 0.7 },

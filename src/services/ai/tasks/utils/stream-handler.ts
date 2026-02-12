@@ -192,7 +192,7 @@ export async function initializeTask(
       ...(context?.chapterId ? { chapterId: context.chapterId } : {}),
       ...(context?.chapterTitle ? { chapterTitle: context.chapterTitle } : {}),
       ...(context?.contextTokens !== undefined ? { contextTokens: context.contextTokens } : {}),
-      ...(context?.contextWindow !== undefined ? { contextWindow: context.contextWindow } : {}),
+      ...(context?.contextWindow !== undefined ? { maxInputTokens: context.contextWindow } : {}),
       ...(context?.contextPercentage !== undefined
         ? { contextPercentage: context.contextPercentage }
         : {}),
