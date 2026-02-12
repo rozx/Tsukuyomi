@@ -14,6 +14,7 @@ import { taskStatusTools } from './task-status-tools';
 import { translationTools } from './translation-tools';
 import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { jsonrepair } from 'jsonrepair';
 
 export type { ActionInfo };
 
@@ -274,9 +275,22 @@ export class ToolRegistry {
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch (e) {
-        const errorMsg = `无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`;
-        console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
-        throw new Error(errorMsg);
+        // 尝试使用 jsonrepair 修复格式错误的 JSON
+        // 某些 AI 模型（如 Yi/Minimax）可能生成格式不正确的 JSON
+        try {
+          const repairedJson = jsonrepair(toolCall.function.arguments);
+          args = JSON.parse(repairedJson);
+          console.log(`[ToolRegistry] 🔧 使用 jsonrepair 修复了格式错误的 JSON [${functionName}]`);
+        } catch (repairError) {
+          const errorMsg = `无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`;
+          console.error(
+            `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
+            errorMsg,
+            '\n原始参数:',
+            toolCall.function.arguments,
+          );
+          throw new Error(errorMsg);
+        }
       }
 
       // 记录工具调用开始

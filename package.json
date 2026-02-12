@@ -40,6 +40,7 @@
     "gpt-tokenizer": "^3.4.0",
     "http-proxy-middleware": "^3.0.5",
     "idb": "^8.0.3",
+    "jsonrepair": "^3.13.2",
     "lodash": "^4.17.21",
     "marked": "^17.0.1",
     "openai": "^6.9.1",
