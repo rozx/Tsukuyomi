@@ -859,11 +859,14 @@ describe('add_translation_batch', () => {
       expect(newTranslation?.aiModelId).toBe('model-new');
     });
 
-    test('润色任务应更新当前选中的翻译', async () => {
+    test('润色任务应创建新的翻译版本并设为选中', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans1', translation: '原始翻译', aiModelId: 'model-old' },
       ]);
       para1.selectedTranslationId = 'trans1';
+
+      const originalTransCount = para1.translations?.length || 0;
+      const originalSelectedId = para1.selectedTranslationId;
 
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -890,12 +893,62 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
 
-      // 验证选中的翻译已更新
+      // 验证新翻译被设为选中
       const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
       expect(selectedTrans?.translation).toBe('润色后的翻译');
       expect(selectedTrans?.aiModelId).toBe('model-new');
-      // 验证没有添加新翻译
-      expect(para1.translations?.length).toBe(1);
+      expect(para1.selectedTranslationId).not.toBe(originalSelectedId);
+
+      // 验证新增了翻译版本，并保留原翻译
+      expect(para1.translations?.length).toBe(originalTransCount + 1);
+      const originalTrans = para1.translations?.find((t) => t.id === 'trans1');
+      expect(originalTrans?.translation).toBe('原始翻译');
+      expect(originalTrans?.aiModelId).toBe('model-old');
+    });
+
+    test('校对任务应创建新的翻译版本并设为选中', async () => {
+      const para1 = createTestParagraph('para1', '原文1', [
+        { id: 'trans1', translation: '原始翻译', aiModelId: 'model-old' },
+      ]);
+      para1.selectedTranslationId = 'trans1';
+
+      const originalTransCount = para1.translations?.length || 0;
+      const originalSelectedId = para1.selectedTranslationId;
+
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'proofreading');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '校对后的翻译' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-proofread',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+
+      const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
+      expect(selectedTrans?.translation).toBe('校对后的翻译');
+      expect(selectedTrans?.aiModelId).toBe('model-proofread');
+      expect(para1.selectedTranslationId).not.toBe(originalSelectedId);
+
+      expect(para1.translations?.length).toBe(originalTransCount + 1);
+      const originalTrans = para1.translations?.find((t) => t.id === 'trans1');
+      expect(originalTrans?.translation).toBe('原始翻译');
+      expect(originalTrans?.aiModelId).toBe('model-old');
     });
 
     test('当段落不存在时应返回错误', async () => {

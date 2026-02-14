@@ -163,8 +163,7 @@ function validateBatchArgs(
   const remainingCount =
     typeof chunkTotal === 'number' && chunkTotal > 0 ? chunkTotal - submittedCount : 0;
 
-  const allowDoubleBatchSize =
-    remainingCount > 0 && remainingCount <= MAX_BATCH_SIZE_DOUBLE;
+  const allowDoubleBatchSize = remainingCount > 0 && remainingCount <= MAX_BATCH_SIZE_DOUBLE;
 
   const hardMax = allowDoubleBatchSize ? MAX_BATCH_SIZE_DOUBLE : MAX_BATCH_SIZE_WITH_TOLERANCE;
   let warning: string | undefined;
@@ -358,6 +357,8 @@ async function processTranslationBatch(
     }
 
     // 处理每个段落
+    // 无论任务类型如何，都创建新的翻译版本以保留历史记录
+    // 这样可以防止 AI 产生糟糕结果时丢失用户之前的手动翻译
     let processedCount = 0;
 
     for (const item of items) {
@@ -366,48 +367,18 @@ async function processTranslationBatch(
         continue;
       }
 
-      if (taskType === 'translation') {
-        // 翻译任务：总是创建新的翻译版本并设为选中
-        const newTranslation: Translation = {
-          id: generateShortId(),
-          translation: item.translatedText,
-          aiModelId,
-        };
+      // 所有任务类型都创建新的翻译版本
+      const newTranslation: Translation = {
+        id: generateShortId(),
+        translation: item.translatedText,
+        aiModelId,
+      };
 
-        if (!paragraph.translations) {
-          paragraph.translations = [];
-        }
-        paragraph.translations.push(newTranslation);
-        paragraph.selectedTranslationId = newTranslation.id;
-      } else {
-        // 润色/校对任务：更新当前选中的翻译，不新增版本
-        if (!paragraph.translations) {
-          paragraph.translations = [];
-        }
-
-        let targetTranslation = paragraph.translations.find(
-          (t) => t.id === paragraph.selectedTranslationId,
-        );
-
-        if (!targetTranslation && paragraph.translations.length > 0) {
-          targetTranslation = paragraph.translations[0];
-          paragraph.selectedTranslationId =
-            targetTranslation?.id || paragraph.selectedTranslationId;
-        }
-
-        if (!targetTranslation) {
-          targetTranslation = {
-            id: generateShortId(),
-            translation: item.translatedText,
-            aiModelId,
-          };
-          paragraph.translations.push(targetTranslation);
-          paragraph.selectedTranslationId = targetTranslation.id;
-        } else {
-          targetTranslation.translation = item.translatedText;
-          targetTranslation.aiModelId = aiModelId;
-        }
+      if (!paragraph.translations) {
+        paragraph.translations = [];
       }
+      paragraph.translations.push(newTranslation);
+      paragraph.selectedTranslationId = newTranslation.id;
 
       processedCount++;
     }
@@ -467,7 +438,14 @@ export const translationTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, chunkBoundaries, taskId, aiProcessingStore, submittedParagraphIds } = context;
+      const {
+        bookId,
+        onAction,
+        chunkBoundaries,
+        taskId,
+        aiProcessingStore,
+        submittedParagraphIds,
+      } = context;
       const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
       // 验证任务状态 - 只能在 working 状态下调用
@@ -483,7 +461,11 @@ export const translationTools: ToolDefinition[] = [
       const indexMappingHint = buildIndexMappingHint(chunkBoundaries?.paragraphIds);
 
       // 验证参数（传入 chunk paragraphIds 用于解析索引，传入 submittedParagraphIds 用于计算剩余大小）
-      const paramValidation = validateBatchArgs({ paragraphs }, chunkBoundaries?.paragraphIds, submittedParagraphIds);
+      const paramValidation = validateBatchArgs(
+        { paragraphs },
+        chunkBoundaries?.paragraphIds,
+        submittedParagraphIds,
+      );
       if (!paramValidation.valid || !paramValidation.resolvedIds) {
         return JSON.stringify({
           success: false,
@@ -606,14 +588,17 @@ export const translationTools: ToolDefinition[] = [
         paragraph_id: id,
       }));
 
-      // 构建剩余未处理段落的索引映射（帮助 AI 在下次批次中使用正确的索引）
-      const chunkParagraphIds = chunkBoundaries?.paragraphIds;
+      // 只有翻译任务才需要返回剩余段落信息（润色/校对任务不需要）
+      const isTranslationTask = taskType === 'translation';
       let remainingMapping: { index: number; paragraph_id: string }[] | undefined;
-      if (chunkParagraphIds && chunkParagraphIds.length > 0) {
-        const processedIdSet = new Set(resolvedIds);
-        remainingMapping = chunkParagraphIds
-          .map((id, idx) => ({ index: idx, paragraph_id: id }))
-          .filter((item) => !processedIdSet.has(item.paragraph_id));
+      if (isTranslationTask) {
+        const chunkParagraphIds = chunkBoundaries?.paragraphIds;
+        if (chunkParagraphIds && chunkParagraphIds.length > 0) {
+          const processedIdSet = new Set(resolvedIds);
+          remainingMapping = chunkParagraphIds
+            .map((id, idx) => ({ index: idx, paragraph_id: id }))
+            .filter((item) => !processedIdSet.has(item.paragraph_id));
+        }
       }
 
       return JSON.stringify({
@@ -622,13 +607,15 @@ export const translationTools: ToolDefinition[] = [
         processed_count: result.processedCount,
         processed_paragraphs: processedMapping,
         task_type: taskType,
-        ...(remainingMapping && remainingMapping.length > 0
-          ? {
-              remaining_count: remainingMapping.length,
-              remaining_paragraphs: remainingMapping,
-              note: '请在下次批次中使用上述 index 或 paragraph_id，确保索引与段落正确对应。',
-            }
-          : { remaining_count: 0 }),
+        ...(isTranslationTask
+          ? remainingMapping && remainingMapping.length > 0
+            ? {
+                remaining_count: remainingMapping.length,
+                remaining_paragraphs: remainingMapping,
+                note: '请在下次批次中使用上述 index 或 paragraph_id，确保索引与段落正确对应。',
+              }
+            : { remaining_count: 0 }
+          : {}),
         ...(warning ? { warning } : {}),
       });
     },
