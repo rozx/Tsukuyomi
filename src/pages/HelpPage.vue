@@ -5,6 +5,7 @@ import { marked, type Token } from 'marked';
 import DOMPurify from 'dompurify';
 import { useUiStore } from 'src/stores/ui';
 import { resolveHelpDocumentByHref } from 'src/utils/help-navigation';
+import { getAssetUrl } from 'src/utils/assets';
 
 interface HelpDocument {
   id: string;
@@ -97,7 +98,7 @@ renderer.link = (token: Token) => {
 
 async function loadDocumentIndex() {
   try {
-    const response = await fetch('/help/index.json');
+    const response = await fetch(getAssetUrl('help/index.json'));
     if (!response.ok) throw new Error('Failed to load document index');
     documents.value = (await response.json()) as HelpDocument[];
 
@@ -132,11 +133,7 @@ async function loadDocumentIndex() {
 
 // Navigate to document (updates route)
 function navigateToDocument(doc: HelpDocument, hash = '') {
-  const normalizedHash = hash
-    ? hash.startsWith('#')
-      ? hash
-      : `#${hash}`
-    : '';
+  const normalizedHash = hash ? (hash.startsWith('#') ? hash : `#${hash}`) : '';
   void router.push(`/help/${doc.id}${normalizedHash}`);
   showDocumentNavDrawer.value = false;
 }
@@ -197,7 +194,7 @@ async function loadDocumentContent(doc: HelpDocument) {
   }
 
   try {
-    const response = await fetch(`/${doc.path}/${doc.file}`);
+    const response = await fetch(getAssetUrl(`${doc.path}/${doc.file}`));
     if (!response.ok) throw new Error(`Failed to load ${doc.file}`);
     const markdown = await response.text();
 

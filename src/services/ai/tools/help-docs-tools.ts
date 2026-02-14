@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { ToolDefinition, ToolContext } from './types';
+import { getAssetUrl } from 'src/utils/assets';
 
 interface HelpDocIndex {
   id: string;
@@ -16,7 +17,7 @@ async function fetchHelpIndex(): Promise<{
   error?: string;
 }> {
   try {
-    const response = await axios.get<HelpDocIndex[]>('/help/index.json', {
+    const response = await axios.get<HelpDocIndex[]>(getAssetUrl('help/index.json'), {
       timeout: 10000,
     });
     return { success: true, data: response.data };
@@ -43,7 +44,7 @@ async function fetchHelpDoc(
   error?: string;
 }> {
   try {
-    const response = await axios.get<string>(`/${docPath}/${file}`, {
+    const response = await axios.get<string>(getAssetUrl(`${docPath}/${file}`), {
       timeout: 10000,
       responseType: 'text',
     });
