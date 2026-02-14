@@ -108,7 +108,29 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
         {{ ACTION_LABELS[action.type] || '' }}
         {{ ENTITY_LABELS[action.entity] || '' }}
         <span
-          v-if="action.type === 'read' && action.tool_name === 'get_term' && action.name"
+          v-if="action.type === 'ask' && action.tool_name === 'ask_user' && action.question"
+          class="font-semibold text-xs"
+        >
+          "{{ getTextPreview(action.question, 30) }}"
+          <span v-if="action.answer" class="opacity-70 ml-1"
+            >→ {{ getTextPreview(action.answer, 20) }}</span
+          >
+          <span v-else-if="action.cancelled" class="opacity-70 ml-1 text-red-300">(已取消)</span>
+        </span>
+        <span
+          v-else-if="
+            action.type === 'ask' && action.tool_name === 'ask_user_batch' && action.batch_questions
+          "
+          class="font-semibold text-xs"
+        >
+          {{ action.batch_questions.length }} 个问题
+          <span v-if="action.batch_answers" class="opacity-70 ml-1"
+            >→ 已回答 {{ action.batch_answers.length }} 题</span
+          >
+          <span v-else-if="action.cancelled" class="opacity-70 ml-1 text-red-300">(已取消)</span>
+        </span>
+        <span
+          v-else-if="action.type === 'read' && action.tool_name === 'get_term' && action.name"
           class="font-semibold text-xs"
         >
           "{{ action.name }}"

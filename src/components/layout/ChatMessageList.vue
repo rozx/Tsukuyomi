@@ -54,7 +54,15 @@ const props = defineProps<Props>();
   </div>
   <div v-else class="flex flex-col gap-4 w-full">
     <template v-for="message in props.messages" :key="message.id">
-      <template v-if="!message.isSummaryResponse && !message.isContextMessage">
+      <template
+        v-if="
+          !message.isSummaryResponse &&
+          !message.isContextMessage &&
+          (message.content ||
+            message.thinkingProcess ||
+            (props.messageDisplayItemsById[message.id]?.length ?? 0) > 0)
+        "
+      >
         <div
           class="flex flex-col gap-2 w-full"
           :class="message.role === 'user' ? 'items-end' : 'items-start'"
