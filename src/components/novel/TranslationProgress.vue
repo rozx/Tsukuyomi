@@ -12,6 +12,7 @@ import TabPanel from 'primevue/tabpanel';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
+import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TASK_TYPE_LABELS, AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
@@ -54,6 +55,7 @@ const emit = defineEmits<{
 const aiProcessingStore = useAIProcessingStore();
 const bookDetailsStore = useBookDetailsStore();
 const booksStore = useBooksStore();
+const contextStore = useContextStore();
 const toast = useToastWithHistory();
 const now = ref(Date.now());
 let nowTimer: number | null = null;
@@ -61,14 +63,39 @@ let nowTimer: number | null = null;
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
 
+// Show Only Current Chapter State - 从 store 获取
+const showOnlyCurrentChapter = computed(
+  () => bookDetailsStore.translationProgress.showOnlyCurrentChapter,
+);
+
+// 获取当前选中的章节 ID（基于当前正在查看的书籍）
+const currentSelectedChapterId = computed(() => {
+  const currentBookId = contextStore.currentBookId;
+  if (!currentBookId) return null;
+  return bookDetailsStore.selectedChapter[currentBookId] || null;
+});
+
+// 切换是否只显示当前章节的进度
+const toggleShowOnlyCurrentChapter = () => {
+  bookDetailsStore.toggleTranslationProgressShowOnlyCurrentChapter();
+};
+
 // Recent AI Tasks - only show translation-related tasks
 // 为了代码逻辑清晰，将 recentAITasks 放在 loadTodos 之前，因为 loadTodos 会使用它（但这不是技术上的要求）
 const recentAITasks = computed(() => {
   const allTasks = aiProcessingStore.activeTasks;
   // Filter to only show translation, polish, and proofreading tasks
-  const translationTasks = allTasks.filter(
+  let translationTasks = allTasks.filter(
     (task) => task.type === 'translation' || task.type === 'polish' || task.type === 'proofreading',
   );
+
+  // 如果启用了"只显示当前章节"，则进一步过滤
+  if (showOnlyCurrentChapter.value && currentSelectedChapterId.value) {
+    translationTasks = translationTasks.filter(
+      (task) => task.chapterId === currentSelectedChapterId.value,
+    );
+  }
+
   return [...translationTasks].sort((a, b) => b.startTime - a.startTime).slice(0, 10);
 });
 
@@ -991,27 +1018,39 @@ watch(
     <div class="translation-progress-ai-history-wrapper">
       <div class="translation-progress-ai-history">
         <div class="ai-history-content">
-          <div v-if="recentAITasks.length === 0" class="ai-history-empty">
-            <i class="pi pi-info-circle"></i>
-            <span>暂无 AI 任务记录</span>
-          </div>
-          <div v-else class="ai-history-tasks">
-            <!-- 清除已完成/已取消任务按钮 -->
-            <div
+          <!-- 过滤和清除任务按钮 -始终显示在顶部 -->
+          <div class="ai-history-actions">
+            <Button
+              :icon="showOnlyCurrentChapter ? 'pi pi-filter' : 'pi pi-filter-slash'"
+              :label="showOnlyCurrentChapter ? '仅当前章节' : '全部章节'"
+              :class="[
+                'p-button-text p-button-sm ai-filter-chapter-toggle',
+                { 'filter-enabled': showOnlyCurrentChapter },
+              ]"
+              :title="
+                showOnlyCurrentChapter
+                  ? '当前仅显示选中章节的任务，点击显示全部'
+                  : '当前显示全部任务，点击仅显示选中章节'
+              "
+              @click="toggleShowOnlyCurrentChapter"
+            />
+            <Button
               v-if="
                 recentAITasks.some(
                   (t) => t.status === 'end' || t.status === 'error' || t.status === 'cancelled',
                 )
               "
-              class="ai-history-clear-actions"
-            >
-              <Button
-                icon="pi pi-trash"
-                label="清除已完成/错误/已取消的任务"
-                class="p-button-text p-button-sm ai-history-clear-button"
-                @click="clearReviewedTasks"
-              />
-            </div>
+              icon="pi pi-trash"
+              label="清除已完成/错误/已取消的任务"
+              class="p-button-text p-button-sm ai-history-clear-button"
+              @click="clearReviewedTasks"
+            />
+          </div>
+          <div v-if="recentAITasks.length === 0" class="ai-history-empty">
+            <i class="pi pi-info-circle"></i>
+            <span>暂无 AI 任务记录</span>
+          </div>
+          <div v-else class="ai-history-tasks">
             <div
               v-for="task in recentAITasks"
               :key="task.id"
@@ -1308,7 +1347,9 @@ watch(
             icon="pi pi-times"
             label="取消"
             class="p-button-text p-button-sm translation-progress-cancel"
-            @click="emit('cancel', currentActiveTask?.type || 'translation', currentActiveTask?.chapterId)"
+            @click="
+              emit('cancel', currentActiveTask?.type || 'translation', currentActiveTask?.chapterId)
+            "
           />
         </div>
         <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
@@ -1319,8 +1360,10 @@ watch(
     <div v-else class="translation-progress-content">
       <div class="translation-progress-info">
         <div class="translation-progress-header">
-          <i class="translation-progress-icon pi pi-list"></i>
-          <span class="translation-progress-title">AI 任务历史 </span>
+          <div class="translation-progress-header-main">
+            <i class="translation-progress-icon pi pi-list"></i>
+            <span class="translation-progress-title">AI 任务历史</span>
+          </div>
         </div>
       </div>
       <div class="translation-progress-actions">
@@ -1441,6 +1484,23 @@ watch(
   flex-shrink: 0;
 }
 
+/* 章节过滤切换按钮 */
+.ai-filter-chapter-toggle {
+  color: var(--moon-opacity-60);
+  font-size: 0.8125rem;
+  transition: all 0.2s;
+}
+
+.ai-filter-chapter-toggle:hover {
+  color: var(--primary-opacity-80);
+  background: var(--white-opacity-5);
+}
+
+.ai-filter-chapter-toggle.filter-enabled {
+  color: var(--primary-opacity-80);
+  background: var(--primary-opacity-10);
+}
+
 /* AI 任务历史 */
 .translation-progress-ai-history-wrapper {
   position: relative;
@@ -1485,9 +1545,11 @@ watch(
   gap: 1rem;
 }
 
-.ai-history-clear-actions {
+.ai-history-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
 

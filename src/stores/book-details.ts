@@ -10,6 +10,7 @@ const DEFAULT_TRANSLATION_PROGRESS_STATE = {
   autoTabSwitchingEnabled: {},
   taskFolded: {},
   activeTab: {},
+  showOnlyCurrentChapter: false,
 } as const;
 
 /**
@@ -32,6 +33,8 @@ interface BookDetailsUiState {
     taskFolded: Record<string, boolean>;
     // 每个任务的活动标签页
     activeTab: Record<string, string>;
+    // 是否只显示当前选中章节的进度
+    showOnlyCurrentChapter: boolean;
   };
 }
 
@@ -48,7 +51,9 @@ function loadStateFromStorage(): BookDetailsUiState {
         expandedVolumes: parsed.expandedVolumes || {},
         selectedChapter: parsed.selectedChapter || {},
         showTranslationProgress: parsed.showTranslationProgress || {},
-        translationProgress: parsed.translationProgress || { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
+        translationProgress: parsed.translationProgress || {
+          ...DEFAULT_TRANSLATION_PROGRESS_STATE,
+        },
       };
     }
   } catch (error) {
@@ -277,12 +282,26 @@ export const useBookDetailsStore = defineStore('book-details', {
     saveTranslationProgressState(): void {
       this.saveAllState();
     },
+
+    /**
+     * 设置是否只显示当前选中章节的进度
+     */
+    setTranslationProgressShowOnlyCurrentChapter(show: boolean): void {
+      this.translationProgress.showOnlyCurrentChapter = show;
+      this.saveTranslationProgressState();
+    },
+
+    /**
+     * 切换是否只显示当前选中章节的进度
+     */
+    toggleTranslationProgressShowOnlyCurrentChapter(): void {
+      this.translationProgress.showOnlyCurrentChapter =
+        !this.translationProgress.showOnlyCurrentChapter;
+      this.saveTranslationProgressState();
+    },
   },
 });
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useBookDetailsStore, import.meta.hot));
 }
-
-
-
