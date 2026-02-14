@@ -590,24 +590,16 @@ class TaskLoopSession {
         return [];
       }
       const args = JSON.parse(toolCall.function.arguments || '{}') as {
-        paragraphs?: Array<{ index?: number; paragraph_id?: string; translated_text?: string }>;
+        paragraphs?: Array<{ paragraph_id?: string; translated_text?: string }>;
       };
       if (!args.paragraphs || args.paragraphs.length === 0) return [];
 
-      const paragraphIds = this.config.paragraphIds || [];
       const extracted: Array<{ id: string; translation: string }> = [];
 
       for (const item of args.paragraphs) {
         if (!item || typeof item.translated_text !== 'string') continue;
         if (item.paragraph_id && typeof item.paragraph_id === 'string') {
           extracted.push({ id: item.paragraph_id, translation: item.translated_text });
-          continue;
-        }
-        if (typeof item.index === 'number') {
-          const id = paragraphIds[item.index];
-          if (id) {
-            extracted.push({ id, translation: item.translated_text });
-          }
         }
       }
 

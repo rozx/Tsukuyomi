@@ -51,6 +51,8 @@ const actionClass = computed(() => {
       return 'bg-yellow-500/25 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/35';
     case 'navigate':
       return 'bg-indigo-500/25 text-indigo-200 border border-indigo-500/40 hover:bg-indigo-500/35';
+    case 'ask':
+      return 'bg-teal-500/25 text-teal-200 border border-teal-500/40 hover:bg-teal-500/35';
     default:
       return '';
   }
@@ -74,6 +76,8 @@ const actionIconClass = computed(() => {
       return 'pi pi-eye';
     case 'navigate':
       return 'pi pi-arrow-right';
+    case 'ask':
+      return 'pi pi-question-circle';
     default:
       return '';
   }

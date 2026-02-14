@@ -102,6 +102,7 @@ await mock.module('src/stores/books', () => ({
 
 // Import translationTools AFTER useBooksStore mock
 const { translationTools } = await import('../services/ai/tools/translation-tools');
+const { calculateAllowedBatchSize } = await import('../services/ai/tools/translation-tools');
 
 // 使用 spyOn 替代 mock.module 来 mock BookService（避免全局污染模块缓存）
 let mockGetBookById: ReturnType<typeof spyOn<typeof BookService, 'getBookById'>>;
@@ -153,6 +154,7 @@ describe('add_translation_batch', () => {
     taskId: string,
     status: string,
     taskType: string,
+    chapterId?: string,
   ): AIProcessingStore => ({
     activeTasks: [
       {
@@ -162,6 +164,7 @@ describe('add_translation_batch', () => {
         bookId: 'novel-1',
         targetId: 'chapter-1',
         targetType: 'chapter',
+        chapterId,
         status: status as any,
       } as any,
     ],
@@ -444,7 +447,7 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain('缺少翻译文本');
     });
 
-    test('当段落项同时缺少 index 和 paragraph_id 时应返回错误', async () => {
+    test('当段落项缺少 paragraph_id 时应返回错误', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
@@ -461,12 +464,12 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('必须提供 index 或 paragraph_id');
+      expect(resultObj.error).toContain('必须提供 paragraph_id');
     });
   });
 
   describe('段落标识符解析', () => {
-    test('应优先使用 paragraph_id 而非 index', async () => {
+    test('应使用 paragraph_id 成功提交', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -478,6 +481,57 @@ describe('add_translation_batch', () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_paragraph_ids).toContain('para1');
+    });
+
+    test('当仅使用 index 提交时应被拒绝（BREAKING）', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ index: 0, translated_text: '翻译' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('已废弃的 index 字段');
+    });
+
+    test('当同时提供 index 和 paragraph_id 时，index 存在不影响 paragraph_id 的使用', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      // 当 paragraph_id 有效时，即使 index 也存在，应正常通过
       const result = await tool.handler(
         {
           paragraphs: [{ paragraph_id: 'para1', index: 999, translated_text: '翻译' }],
@@ -494,64 +548,13 @@ describe('add_translation_batch', () => {
       expect(resultObj.success).toBe(true);
     });
 
-    test('当使用 index 时应通过 chunkBoundaries.paragraphIds 解析', async () => {
-      const para1 = createTestParagraph('para1', '原文1');
-      const para2 = createTestParagraph('para2', '原文2');
-      const chapter = createTestChapter('chapter1', [para1, para2]);
-      const volume = createTestVolume('volume1', [chapter]);
-      const novel = createTestNovel([volume]);
-
-      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
-      mockBooksStore.books = [novel];
-
+    test('当 paragraph_id 为空字符串时应返回错误', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
       const result = await tool.handler(
         {
-          paragraphs: [{ index: 1, translated_text: '翻译' }],
-        },
-        {
-          bookId: 'novel-1',
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-          aiModelId: 'model-1',
-          chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
-        },
-      );
-
-      const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(true);
-    });
-
-    test('当 index 超出范围时应返回错误', async () => {
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
-
-      const result = await tool.handler(
-        {
-          paragraphs: [{ index: 5, translated_text: '翻译' }],
-        },
-        {
-          bookId: 'novel-1',
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-          chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
-        },
-      );
-
-      const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('索引 5 超出范围');
-    });
-
-    test('当使用 index 但没有 chunkBoundaries 时应返回错误', async () => {
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
-
-      const result = await tool.handler(
-        {
-          paragraphs: [{ index: 0, translated_text: '翻译' }],
+          paragraphs: [{ paragraph_id: '', translated_text: '翻译' }],
         },
         {
           bookId: 'novel-1',
@@ -562,28 +565,27 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('没有可用的 chunk 段落列表');
+      expect(resultObj.error).toContain('必须提供 paragraph_id');
     });
 
-    test('当使用负数的 index 时应返回错误', async () => {
+    test('当 paragraph_id 为空白字符串时应返回错误', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
       const result = await tool.handler(
         {
-          paragraphs: [{ index: -1, translated_text: '翻译' }],
+          paragraphs: [{ paragraph_id: '   ', translated_text: '翻译' }],
         },
         {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
-          chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
         },
       );
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('索引 -1 超出范围');
+      expect(resultObj.error).toContain('paragraph_id 必须是非空字符串');
     });
   });
 
@@ -1067,6 +1069,76 @@ describe('add_translation_batch', () => {
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('缺少章节数据');
     });
+
+    test('当任务包含 chapterId 时应仅加载指定章节（性能优化）', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const chapter1 = createTestChapter('chapter1', [para1]);
+      const paraOther = createTestParagraph('para-other', '其他章节内容');
+      const chapter2 = createTestChapter('chapter2', [paraOther]);
+      const volume = createTestVolume('volume1', [chapter1, chapter2]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      // 传入 chapterId，触发优化路径
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation', 'chapter1');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译文本' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+
+      // 验证只访问了 chapter1 的段落
+      const trans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
+      expect(trans?.translation).toBe('翻译文本');
+    });
+
+    test('当 chapterId 指向不存在的章节时应返回错误', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const chapter1 = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter1]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore(
+        'task-1',
+        'working',
+        'translation',
+        'non-existent-chapter',
+      );
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译文本' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('章节不存在');
+    });
   });
 
   describe('多段落索引边界情况', () => {
@@ -1099,11 +1171,58 @@ describe('add_translation_batch', () => {
     });
   });
 
-  describe('混合使用 index 和 paragraph_id', () => {
-    test('应支持混合使用 index 和 paragraph_id', async () => {
-      const para0 = createTestParagraph('para0', '原文0');
+  describe('拒绝旧 index 提交（BREAKING）', () => {
+    test('仅使用 index 提交应被明确拒绝', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ index: 0, translated_text: '翻译' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          chunkBoundaries: createChunkBoundaries(['para0', 'para1']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('已废弃的 index 字段');
+    });
+
+    test('批次中包含 index-only 条目时整批应失败', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            { paragraph_id: 'para0', translated_text: '翻译0' },
+            { index: 1, translated_text: '翻译1' },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          chunkBoundaries: createChunkBoundaries(['para0', 'para1']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('已废弃的 index 字段');
+    });
+  });
+
+  describe('响应格式验证（paragraph_id 语义）', () => {
+    test('成功响应应包含 processed_paragraph_ids 而非 processed_paragraphs', async () => {
       const para1 = createTestParagraph('para1', '原文1');
-      const chapter = createTestChapter('chapter1', [para0, para1]);
+      const para2 = createTestParagraph('para2', '原文2');
+      const chapter = createTestChapter('chapter1', [para1, para2]);
       const volume = createTestVolume('volume1', [chapter]);
       const novel = createTestNovel([volume]);
 
@@ -1116,8 +1235,8 @@ describe('add_translation_batch', () => {
       const result = await tool.handler(
         {
           paragraphs: [
-            { index: 0, translated_text: '翻译0' },
             { paragraph_id: 'para1', translated_text: '翻译1' },
+            { paragraph_id: 'para2', translated_text: '翻译2' },
           ],
         },
         {
@@ -1125,13 +1244,56 @@ describe('add_translation_batch', () => {
           taskId: 'task-1',
           aiProcessingStore: mockStore,
           aiModelId: 'model-1',
-          chunkBoundaries: createChunkBoundaries(['para0', 'para1']),
+          chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
         },
       );
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      expect(resultObj.processed_count).toBe(2);
+      // 新格式：processed_paragraph_ids（数组）
+      expect(Array.isArray(resultObj.processed_paragraph_ids)).toBe(true);
+      expect(resultObj.processed_paragraph_ids).toContain('para1');
+      expect(resultObj.processed_paragraph_ids).toContain('para2');
+      // 不再有旧格式的 processed_paragraphs（对象数组）
+      expect(resultObj.processed_paragraphs).toBeUndefined();
+    });
+
+    test('翻译任务应返回 remaining_paragraph_ids 而非 remaining_paragraphs', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const para2 = createTestParagraph('para2', '原文2');
+      const para3 = createTestParagraph('para3', '原文3');
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译1' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.remaining_count).toBe(2);
+      // 新格式：remaining_paragraph_ids（字符串数组）
+      expect(Array.isArray(resultObj.remaining_paragraph_ids)).toBe(true);
+      expect(resultObj.remaining_paragraph_ids).toContain('para2');
+      expect(resultObj.remaining_paragraph_ids).toContain('para3');
+      // 不再有旧格式
+      expect(resultObj.remaining_paragraphs).toBeUndefined();
     });
   });
 
@@ -1167,5 +1329,79 @@ describe('add_translation_batch', () => {
       expect(actionArg.type).toBe('update');
       expect(actionArg.entity).toBe('translation');
     });
+  });
+});
+
+describe('calculateAllowedBatchSize', () => {
+  const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
+  const MAX_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * 1.1);
+  const MAX_DOUBLE = MAX_BATCH_SIZE * 2;
+
+  test('没有 chunk 信息时应返回容差上限', () => {
+    const result = calculateAllowedBatchSize(undefined, undefined);
+    expect(result.hardMax).toBe(MAX_WITH_TOLERANCE);
+    expect(result.allowDoubleBatchSize).toBe(false);
+    expect(result.remainingCount).toBe(0);
+  });
+
+  test('chunkTotal 为 0 时应返回容差上限', () => {
+    const result = calculateAllowedBatchSize(0, 0);
+    expect(result.hardMax).toBe(MAX_WITH_TOLERANCE);
+    expect(result.allowDoubleBatchSize).toBe(false);
+    expect(result.remainingCount).toBe(0);
+  });
+
+  test('剩余段落数超过 2x MAX_BATCH_SIZE 时应返回容差上限', () => {
+    const chunkTotal = MAX_DOUBLE + 10;
+    const result = calculateAllowedBatchSize(chunkTotal, 0);
+    expect(result.hardMax).toBe(MAX_WITH_TOLERANCE);
+    expect(result.allowDoubleBatchSize).toBe(false);
+    expect(result.remainingCount).toBe(chunkTotal);
+  });
+
+  test('剩余段落数恰好等于 2x MAX_BATCH_SIZE 时应启用双倍模式', () => {
+    const result = calculateAllowedBatchSize(MAX_DOUBLE, 0);
+    expect(result.hardMax).toBe(MAX_DOUBLE);
+    expect(result.allowDoubleBatchSize).toBe(true);
+    expect(result.remainingCount).toBe(MAX_DOUBLE);
+  });
+
+  test('剩余段落数小于 2x MAX_BATCH_SIZE 时应启用双倍模式', () => {
+    const chunkTotal = MAX_DOUBLE - 5;
+    const result = calculateAllowedBatchSize(chunkTotal, 0);
+    expect(result.hardMax).toBe(MAX_DOUBLE);
+    expect(result.allowDoubleBatchSize).toBe(true);
+    expect(result.remainingCount).toBe(chunkTotal);
+  });
+
+  test('已提交部分段落后，剩余数进入双倍范围时应启用双倍模式', () => {
+    const chunkTotal = MAX_DOUBLE + 20;
+    const submitted = chunkTotal - MAX_DOUBLE; // 剩余恰好 MAX_DOUBLE
+    const result = calculateAllowedBatchSize(chunkTotal, submitted);
+    expect(result.hardMax).toBe(MAX_DOUBLE);
+    expect(result.allowDoubleBatchSize).toBe(true);
+    expect(result.remainingCount).toBe(MAX_DOUBLE);
+  });
+
+  test('已提交部分段落后，剩余数仍超出双倍范围时应返回容差上限', () => {
+    const chunkTotal = MAX_DOUBLE * 2;
+    const submitted = 5; // 剩余远超 MAX_DOUBLE
+    const result = calculateAllowedBatchSize(chunkTotal, submitted);
+    expect(result.hardMax).toBe(MAX_WITH_TOLERANCE);
+    expect(result.allowDoubleBatchSize).toBe(false);
+    expect(result.remainingCount).toBe(chunkTotal - submitted);
+  });
+
+  test('submittedCount 为 undefined 时应视为 0', () => {
+    const result = calculateAllowedBatchSize(MAX_BATCH_SIZE, undefined);
+    expect(result.remainingCount).toBe(MAX_BATCH_SIZE);
+    expect(result.allowDoubleBatchSize).toBe(true); // MAX_BATCH_SIZE <= MAX_DOUBLE
+  });
+
+  test('剩余数为 1 时应启用双倍模式', () => {
+    const result = calculateAllowedBatchSize(10, 9);
+    expect(result.hardMax).toBe(MAX_DOUBLE);
+    expect(result.allowDoubleBatchSize).toBe(true);
+    expect(result.remainingCount).toBe(1);
   });
 });

@@ -88,6 +88,8 @@ describe('AI Tools Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // 确保 findChapterById 默认返回 undefined（防止跨测试泄露）
+    (ChapterService.findChapterById as jest.Mock).mockReturnValue(undefined);
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
       {
@@ -139,7 +141,7 @@ describe('AI Tools Tests', () => {
       };
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ index: 0, translated_text: 'test' }],
+          paragraphs: [{ paragraph_id: 'p1', translated_text: 'test' }],
         },
         contextClone,
       );
@@ -148,7 +150,7 @@ describe('AI Tools Tests', () => {
       expect(parsed.error).toContain("只能在 'working' 状态下调用此工具");
     });
 
-    it('should validate parameters (index out of range)', async () => {
+    it('should reject legacy index-based submission', async () => {
       const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [{ index: 99, translated_text: 'test' }],
@@ -157,15 +159,15 @@ describe('AI Tools Tests', () => {
       );
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('超出范围');
+      expect(parsed.error).toContain('已废弃的 index 字段');
     });
 
     it('should detect duplicate paragraph ids', async () => {
       const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: [
-            { index: 0, translated_text: 'test1' },
-            { index: 0, translated_text: 'test2' },
+            { paragraph_id: 'p1', translated_text: 'test1' },
+            { paragraph_id: 'p1', translated_text: 'test2' },
           ],
         },
         mockContext,
@@ -177,27 +179,27 @@ describe('AI Tools Tests', () => {
 
     it('should process batch successfully', async () => {
       // Mock BookService behavior
+      const mockChapter = {
+        id: 'c1',
+        content: [{ id: 'p1', text: 'orig' }],
+      };
       const mockBook = {
         id: mockBookId,
         volumes: [
           {
-            chapters: [
-              {
-                id: 'c1',
-                content: [{ id: 'p1', text: 'orig' }],
-              },
-            ],
+            chapters: [mockChapter],
           },
         ],
       };
       (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValue(
-        new Map([['c1', [{ id: 'p1', text: 'orig' }]]]),
-      );
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+        volume: mockBook.volumes[0],
+      });
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ index: 0, translated_text: 'translated' }],
+          paragraphs: [{ paragraph_id: 'p1', translated_text: 'translated' }],
         },
         mockContext,
       );
@@ -210,23 +212,23 @@ describe('AI Tools Tests', () => {
 
     it('should reject translation for blank paragraph', async () => {
       // Mock BookService behavior with a blank paragraph
+      const mockChapter = {
+        id: 'c1',
+        content: [{ id: 'p_blank', text: '   ' }], // Blank paragraph
+      };
       const mockBook = {
         id: mockBookId,
         volumes: [
           {
-            chapters: [
-              {
-                id: 'c1',
-                content: [{ id: 'p_blank', text: '   ' }], // Blank paragraph
-              },
-            ],
+            chapters: [mockChapter],
           },
         ],
       };
       (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValue(
-        new Map([['c1', [{ id: 'p_blank', text: '   ' }]]]),
-      );
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+        volume: mockBook.volumes[0],
+      });
 
       const blankContext = {
         ...mockContext,
@@ -252,23 +254,23 @@ describe('AI Tools Tests', () => {
 
     it('should allow translation for symbol-only paragraph', async () => {
       // Mock BookService behavior with a symbol-only paragraph
+      const mockChapter = {
+        id: 'c1',
+        content: [{ id: 'p_symbol', text: '...' }], // Symbol only paragraph
+      };
       const mockBook = {
         id: mockBookId,
         volumes: [
           {
-            chapters: [
-              {
-                id: 'c1',
-                content: [{ id: 'p_symbol', text: '...' }], // Symbol only paragraph
-              },
-            ],
+            chapters: [mockChapter],
           },
         ],
       };
       (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValue(
-        new Map([['c1', [{ id: 'p_symbol', text: '...' }]]]),
-      );
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+        volume: mockBook.volumes[0],
+      });
 
       const symbolContext = {
         ...mockContext,
@@ -296,23 +298,23 @@ describe('AI Tools Tests', () => {
       // MAX_TRANSLATION_BATCH_SIZE = 10 in src/services/ai/constants.ts
       const paragraphIds = Array.from({ length: 20 }, (_, i) => `p${i + 1}`);
 
+      const mockChapter = {
+        id: 'c1',
+        content: paragraphIds.map((id) => ({ id, text: `orig-${id}` })),
+      };
       const mockBook = {
         id: mockBookId,
         volumes: [
           {
-            chapters: [
-              {
-                id: 'c1',
-                content: paragraphIds.map((id) => ({ id, text: `orig-${id}` })),
-              },
-            ],
+            chapters: [mockChapter],
           },
         ],
       };
       (BookService.getBookById as jest.Mock).mockResolvedValueOnce(mockBook);
-      (ChapterContentService.loadChapterContentsBatch as jest.Mock).mockResolvedValueOnce(
-        new Map([['c1', paragraphIds.map((id) => ({ id, text: `orig-${id}` }))]]),
-      );
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+        volume: mockBook.volumes[0],
+      });
 
       const doubleLimitContext = {
         ...mockContext,
@@ -326,7 +328,10 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: paragraphIds.map((_, i) => ({ index: i, translated_text: `t-${i}` })),
+          paragraphs: paragraphIds.map((id) => ({
+            paragraph_id: id,
+            translated_text: `t-${id}`,
+          })),
         },
         doubleLimitContext,
       );
@@ -353,7 +358,7 @@ describe('AI Tools Tests', () => {
         {
           // 12 > 11 (10% tolerance of 10 is 11)
           paragraphs: Array.from({ length: 12 }, (_, i) => ({
-            index: i,
+            paragraph_id: paragraphIds[i]!,
             translated_text: `t-${i}`,
           })),
         },

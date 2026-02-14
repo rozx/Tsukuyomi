@@ -265,7 +265,7 @@ ${includeTitle ? '4' : '3'}. ${reviewStep}
 
 **工具要点**
 1. update_task_status：只提交 {"status": "..."}
-2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，支持 {"index": 0, "translated_text": "..."}${titleToolSection ? '\n' + titleToolSection : ''}
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，必须使用 paragraph_id 标识段落：{"paragraph_id": "xxx", "translated_text": "..."}（从段落 [ID: xxx] 获取，禁止使用 index 提交）${titleToolSection ? '\n' + titleToolSection : ''}
 
 ${getStatusFieldDescription(taskType)}
 - 段落 ID 与原文 1:1 对应${onlyChanged}

@@ -2,6 +2,7 @@ import type { ToolDefinition, ToolContext } from './types';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { ChapterService } from 'src/services/chapter-service';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
@@ -11,29 +12,13 @@ import { isEmptyParagraph } from 'src/utils/text-utils';
 // ============ Types ============
 
 interface TranslationBatchItem {
-  /** 段落索引（在当前 chunk 中的位置，从 0 开始） */
-  index?: number;
-  /** 段落 ID（可直接提交） */
-  paragraph_id?: string;
+  /** 段落 ID（唯一提交标识） */
+  paragraph_id: string;
   translated_text: string;
 }
 
 interface AddTranslationBatchArgs {
   paragraphs: TranslationBatchItem[];
-}
-
-// ============ Helpers ============
-
-/**
- * 构建当前 chunk 的索引-段落 ID 映射信息，用于在错误响应中提供给 AI 参考
- */
-function buildIndexMappingHint(
-  chunkParagraphIds?: string[],
-): { index_mapping: { index: number; paragraph_id: string }[] } | undefined {
-  if (!chunkParagraphIds || chunkParagraphIds.length === 0) return undefined;
-  return {
-    index_mapping: chunkParagraphIds.map((id, idx) => ({ index: idx, paragraph_id: id })),
-  };
 }
 
 // ============ Constants ============
@@ -45,10 +30,10 @@ const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
 
 // 错误消息常量
 const ERROR_MESSAGES = {
-  MISSING_IDENTIFIER: '必须提供 index 或 paragraph_id',
-  MISSING_CHUNK_LIST: '提供了 index 但没有可用的 chunk 段落列表',
-  INDEX_OUT_OF_RANGE: (index: number, max: number) =>
-    `索引 ${index} 超出范围（有效范围: 0-${max}）`,
+  MISSING_PARAGRAPH_ID: '必须提供 paragraph_id（不支持 index）',
+  INVALID_PARAGRAPH_ID: 'paragraph_id 必须是非空字符串',
+  LEGACY_INDEX_REJECTED:
+    '检测到使用已废弃的 index 字段提交。请使用 paragraph_id 标识段落（从 chunk 中 [ID: xxx] 获取）',
   EMPTY_PARAGRAPH_LIST: '段落列表不能为空',
   BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
     `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
@@ -71,28 +56,20 @@ const ERROR_MESSAGES = {
 } as const;
 
 /**
- * 解析段落标识符（优先 paragraph_id，其次 index）
+ * 验证段落标识符（仅支持 paragraph_id）
  */
-function resolveParagraphId(
-  item: TranslationBatchItem,
-  chunkParagraphIds?: string[],
-): { id: string | null; error?: string } {
-  if (item.paragraph_id && typeof item.paragraph_id === 'string') {
-    return { id: item.paragraph_id };
+function resolveParagraphId(item: TranslationBatchItem): { id: string | null; error?: string } {
+  if (!item.paragraph_id || typeof item.paragraph_id !== 'string') {
+    // 检查是否存在旧的 index 字段（BREAKING：明确拒绝）
+    if ('index' in item && typeof (item as Record<string, unknown>).index === 'number') {
+      return { id: null, error: ERROR_MESSAGES.LEGACY_INDEX_REJECTED };
+    }
+    return { id: null, error: ERROR_MESSAGES.MISSING_PARAGRAPH_ID };
   }
-  if (typeof item.index !== 'number') {
-    return { id: null, error: ERROR_MESSAGES.MISSING_IDENTIFIER };
+  if (item.paragraph_id.trim().length === 0) {
+    return { id: null, error: ERROR_MESSAGES.INVALID_PARAGRAPH_ID };
   }
-  if (!chunkParagraphIds || chunkParagraphIds.length === 0) {
-    return { id: null, error: ERROR_MESSAGES.MISSING_CHUNK_LIST };
-  }
-  if (item.index < 0 || item.index >= chunkParagraphIds.length) {
-    return {
-      id: null,
-      error: ERROR_MESSAGES.INDEX_OUT_OF_RANGE(item.index, chunkParagraphIds.length - 1),
-    };
-  }
-  return { id: chunkParagraphIds[item.index]! };
+  return { id: item.paragraph_id };
 }
 
 // ============ Status Validation ============
@@ -132,6 +109,36 @@ function validateTaskStatus(
 // ============ Translation Batch Functions ============
 
 /**
+ * 计算允许的批次大小上限
+ *
+ * 规则：
+ * - 默认上限：MAX_BATCH_SIZE，允许 10% 容差（MAX_BATCH_SIZE_WITH_TOLERANCE）
+ * - 特例：当 chunk 剩余未提交段落数 <= 2x MAX_BATCH_SIZE 时，上限提升至 2x MAX_BATCH_SIZE
+ *
+ * @returns hardMax - 绝对上限，超过则拒绝
+ * @returns allowDoubleBatchSize - 是否处于"双倍批次大小"模式
+ * @returns remainingCount - 当前 chunk 剩余未提交段落数
+ */
+export function calculateAllowedBatchSize(
+  chunkTotal?: number,
+  submittedCount?: number,
+): {
+  hardMax: number;
+  allowDoubleBatchSize: boolean;
+  remainingCount: number;
+} {
+  const submitted = submittedCount ?? 0;
+  const remainingCount =
+    typeof chunkTotal === 'number' && chunkTotal > 0 ? chunkTotal - submitted : 0;
+
+  const allowDoubleBatchSize = remainingCount > 0 && remainingCount <= MAX_BATCH_SIZE_DOUBLE;
+
+  const hardMax = allowDoubleBatchSize ? MAX_BATCH_SIZE_DOUBLE : MAX_BATCH_SIZE_WITH_TOLERANCE;
+
+  return { hardMax, allowDoubleBatchSize, remainingCount };
+}
+
+/**
  * 验证批次参数
  */
 function validateBatchArgs(
@@ -154,18 +161,12 @@ function validateBatchArgs(
     };
   }
 
-  // 检查批次大小：
-  // - 默认：最多 MAX_BATCH_SIZE，允许 10% 容差（MAX_BATCH_SIZE_WITH_TOLERANCE）并给出 warning
-  // - 特例：当"当前 chunk 剩余未提交段落数" <= 2x MAX_BATCH_SIZE 时，允许单次提交最多 2x MAX_BATCH_SIZE
-  //   （用于处理极短段落导致 chunk 段落数略超出常规上限的情况）
-  const chunkTotal = chunkParagraphIds?.length;
-  const submittedCount = submittedParagraphIds?.size ?? 0;
-  const remainingCount =
-    typeof chunkTotal === 'number' && chunkTotal > 0 ? chunkTotal - submittedCount : 0;
+  // 计算批次大小限制
+  const { hardMax, allowDoubleBatchSize, remainingCount } = calculateAllowedBatchSize(
+    chunkParagraphIds?.length,
+    submittedParagraphIds?.size,
+  );
 
-  const allowDoubleBatchSize = remainingCount > 0 && remainingCount <= MAX_BATCH_SIZE_DOUBLE;
-
-  const hardMax = allowDoubleBatchSize ? MAX_BATCH_SIZE_DOUBLE : MAX_BATCH_SIZE_WITH_TOLERANCE;
   let warning: string | undefined;
 
   if (paragraphs.length > MAX_BATCH_SIZE) {
@@ -204,8 +205,8 @@ function validateBatchArgs(
       };
     }
 
-    // 解析段落标识符（优先 paragraph_id，其次 index）
-    const { id, error } = resolveParagraphId(item, chunkParagraphIds);
+    // 解析段落标识符（仅支持 paragraph_id）
+    const { id, error } = resolveParagraphId(item);
     if (error || !id) {
       return {
         valid: false,
@@ -277,12 +278,16 @@ function validateParagraphsInRange(
 
 /**
  * 处理批次（保存翻译）
+ *
+ * @param chapterId - 可选的章节 ID。提供时仅加载和搜索该章节（性能优化），
+ *                    未提供时回退到遍历所有章节的行为。
  */
 async function processTranslationBatch(
   bookId: string,
   items: Array<{ paragraphId: string; translatedText: string }>,
   aiModelId: string,
   taskType: 'translation' | 'polish' | 'proofreading',
+  chapterId?: string,
 ): Promise<{ success: boolean; error?: string; processedCount: number }> {
   try {
     const book = await BookService.getBookById(bookId);
@@ -294,36 +299,70 @@ async function processTranslationBatch(
       return { success: false, error: '书籍缺少章节数据', processedCount: 0 };
     }
 
-    const chaptersToLoad: string[] = [];
-    for (const volume of book.volumes) {
-      for (const chapter of volume.chapters || []) {
-        if (chapter && chapter.content === undefined) {
-          chaptersToLoad.push(chapter.id);
+    // 收集目标段落：优先使用 chapterId 限定范围（避免加载所有章节）
+    const targetParagraphs: Paragraph[] = [];
+
+    if (chapterId) {
+      // 优化路径：仅加载和搜索指定章节
+      const found = ChapterService.findChapterById(book, chapterId);
+      if (!found) {
+        return {
+          success: false,
+          error: `章节不存在: ${chapterId}`,
+          processedCount: 0,
+        };
+      }
+      const chapter = found.chapter;
+
+      // 按需加载章节内容
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapterId);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+
+      // 从该章节收集目标段落
+      if (chapter.content) {
+        const itemIdSet = new Set(items.map((item) => item.paragraphId));
+        for (const p of chapter.content) {
+          if (itemIdSet.has(p.id)) {
+            targetParagraphs.push(p);
+          }
         }
       }
-    }
-
-    if (chaptersToLoad.length > 0) {
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
+    } else {
+      // 回退路径：加载所有未加载的章节，遍历全部段落
+      const chaptersToLoad: string[] = [];
       for (const volume of book.volumes) {
         for (const chapter of volume.chapters || []) {
-          if (!chapter || chapter.content !== undefined) continue;
-          const content = contentsMap.get(chapter.id);
-          chapter.content = content || [];
-          chapter.contentLoaded = true;
+          if (chapter && chapter.content === undefined) {
+            chaptersToLoad.push(chapter.id);
+          }
         }
       }
-    }
 
-    // 收集所有目标段落
-    const targetParagraphs: Paragraph[] = [];
-    for (const volume of book.volumes) {
-      for (const chapter of volume.chapters || []) {
-        const foundParagraphs = chapter.content?.filter((p: Paragraph) =>
-          items.some((item) => item.paragraphId === p.id),
-        );
-        if (foundParagraphs && foundParagraphs.length > 0) {
-          targetParagraphs.push(...foundParagraphs);
+      if (chaptersToLoad.length > 0) {
+        const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
+        for (const volume of book.volumes) {
+          for (const chapter of volume.chapters || []) {
+            if (!chapter || chapter.content !== undefined) continue;
+            const content = contentsMap.get(chapter.id);
+            chapter.content = content || [];
+            chapter.contentLoaded = true;
+          }
+        }
+      }
+
+      // 收集所有目标段落（合并为单次遍历）
+      const itemIdSet = new Set(items.map((item) => item.paragraphId));
+      for (const volume of book.volumes) {
+        for (const chapter of volume.chapters || []) {
+          if (!chapter.content) continue;
+          for (const p of chapter.content) {
+            if (itemIdSet.has(p.id)) {
+              targetParagraphs.push(p);
+            }
+          }
         }
       }
     }
@@ -406,30 +445,26 @@ export const translationTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'add_translation_batch',
-        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！支持 index 或 paragraph_id。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
+        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！必须使用 paragraph_id 标识段落。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
         parameters: {
           type: 'object',
           properties: {
             paragraphs: {
               type: 'array',
-              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。支持 index 或 paragraph_id。`,
+              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。必须使用 paragraph_id 标识段落（不支持 index）。`,
               items: {
                 type: 'object',
                 properties: {
-                  index: {
-                    type: 'number',
-                    description: '段落索引（在当前 chunk 中的位置，从 0 开始）',
-                  },
                   paragraph_id: {
                     type: 'string',
-                    description: '段落 ID（可直接提交）',
+                    description: '段落 ID（唯一提交标识，从 chunk 中 [ID: xxx] 获取）',
                   },
                   translated_text: {
                     type: 'string',
                     description: '翻译/润色/校对后的文本',
                   },
                 },
-                required: ['translated_text'],
+                required: ['paragraph_id', 'translated_text'],
               },
             },
           },
@@ -457,10 +492,7 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
-      // 预构建索引映射（用于在错误时提供给 AI 参考）
-      const indexMappingHint = buildIndexMappingHint(chunkBoundaries?.paragraphIds);
-
-      // 验证参数（传入 chunk paragraphIds 用于解析索引，传入 submittedParagraphIds 用于计算剩余大小）
+      // 验证参数（传入 submittedParagraphIds 用于计算剩余大小）
       const paramValidation = validateBatchArgs(
         { paragraphs },
         chunkBoundaries?.paragraphIds,
@@ -470,8 +502,7 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: paramValidation.error || '参数验证失败',
-          ...(indexMappingHint || {}),
-          note: '请核对上述 index_mapping，确保提交的 index 与段落正确对应。',
+          note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
         });
       }
 
@@ -484,7 +515,6 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates),
-          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -498,7 +528,6 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: rangeValidation.error,
-          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -545,18 +574,20 @@ export const translationTools: ToolDefinition[] = [
           ...(warning ? { warning } : {}),
         });
       }
+      // 从任务中获取 chapterId，用于限定加载范围（性能优化）
+      const chapterId = task.chapterId;
       const result = await processTranslationBatch(
         bookId,
         processItems,
         aiModelId,
         taskType as 'translation' | 'polish' | 'proofreading',
+        chapterId,
       );
 
       if (!result.success) {
         return JSON.stringify({
           success: false,
           error: result.error,
-          ...(indexMappingHint || {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -582,22 +613,17 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
-      // 构建已处理段落的索引映射（帮助 AI 确认哪些段落已完成）
-      const processedMapping = resolvedIds.map((id, i) => ({
-        index: paragraphs[i]?.index ?? i,
-        paragraph_id: id,
-      }));
+      // 构建已处理段落列表（帮助 AI 确认哪些段落已完成）
+      const processedParagraphIds = resolvedIds;
 
       // 只有翻译任务才需要返回剩余段落信息（润色/校对任务不需要）
       const isTranslationTask = taskType === 'translation';
-      let remainingMapping: { index: number; paragraph_id: string }[] | undefined;
+      let remainingParagraphIds: string[] | undefined;
       if (isTranslationTask) {
         const chunkParagraphIds = chunkBoundaries?.paragraphIds;
         if (chunkParagraphIds && chunkParagraphIds.length > 0) {
           const processedIdSet = new Set(resolvedIds);
-          remainingMapping = chunkParagraphIds
-            .map((id, idx) => ({ index: idx, paragraph_id: id }))
-            .filter((item) => !processedIdSet.has(item.paragraph_id));
+          remainingParagraphIds = chunkParagraphIds.filter((id) => !processedIdSet.has(id));
         }
       }
 
@@ -605,14 +631,14 @@ export const translationTools: ToolDefinition[] = [
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
-        processed_paragraphs: processedMapping,
+        processed_paragraph_ids: processedParagraphIds,
         task_type: taskType,
         ...(isTranslationTask
-          ? remainingMapping && remainingMapping.length > 0
+          ? remainingParagraphIds && remainingParagraphIds.length > 0
             ? {
-                remaining_count: remainingMapping.length,
-                remaining_paragraphs: remainingMapping,
-                note: '请在下次批次中使用上述 index 或 paragraph_id，确保索引与段落正确对应。',
+                remaining_count: remainingParagraphIds.length,
+                remaining_paragraph_ids: remainingParagraphIds,
+                note: '请在下次批次中使用上述 paragraph_id 继续提交。',
               }
             : { remaining_count: 0 }
           : {}),

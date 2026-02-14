@@ -164,11 +164,14 @@ export class ToolRegistry {
   }
 
   /**
-   * 聊天助手专用工具（排除翻译管理工具）
+   * 聊天助手专用工具（排除翻译管理工具和任务状态工具）
+   * 排除的工具：
+   * - add_translation_batch: 翻译/润色/校对专用，不在助手聊天中可用
+   * - update_task_status: 任务状态管理专用，不在助手聊天中可用
    */
   static getAssistantToolsExcludingTranslationManagement(bookId?: string): AITool[] {
     const allTools = this.getAssistantTools(bookId);
-    return this.filterTools(allTools, ['add_translation_batch']);
+    return this.filterTools(allTools, ['add_translation_batch', 'update_task_status']);
   }
 
   /**
@@ -307,7 +310,7 @@ export class ToolRegistry {
       if (paragraphIds && paragraphIds.length > 0) {
         chunkBoundaries = {
           allowedParagraphIds: new Set(paragraphIds),
-          paragraphIds: paragraphIds, // 保留顺序数组用于索引映射
+          paragraphIds: paragraphIds, // 保留顺序数组用于计算剩余段落
           firstParagraphId: paragraphIds[0]!,
           lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
         };

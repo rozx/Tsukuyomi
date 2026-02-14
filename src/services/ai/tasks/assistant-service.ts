@@ -1001,12 +1001,11 @@ export class AssistantService {
       // 但任务对象（包含 abortController）在 store 的 activeTasks 中
     }
 
-    // 获取可用的工具（助手聊天裁剪掉翻译管理类工具，降低上下文体积）
-    const allTools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
+    // 获取可用的工具（助手聊天专用工具集）
+    // 已排除：add_translation_batch（翻译专用）、update_task_status（任务状态管理专用）
+    const tools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
       context.currentBookId || undefined,
     );
-    // 过滤掉翻译/润色/校对专用的工具（这些工具只在特定任务中可用，不在助手聊天中可用）
-    const tools = allTools.filter((t) => t.function.name !== 'add_translation_batch');
 
     // 构建系统提示词（只传递 ID）- 必须在创建任务之后
     let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId);
