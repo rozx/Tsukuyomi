@@ -73,6 +73,7 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
+import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
 import type { Memory, MemoryAttachmentType } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
 
@@ -1622,7 +1623,7 @@ const handleSaveChapterSettings = async (data: {
     const preserveIndents = data.preserveIndents ?? true;
     const normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay ?? false;
     const normalizeTitleOnDisplay = data.normalizeTitleOnDisplay ?? false;
-    const translationChunkSize = data.translationChunkSize ?? 8000;
+    const translationChunkSize = resolveTaskChunkSize(data.translationChunkSize);
     const skipAskUser = data.skipAskUser ?? false;
 
     // 章节设置（章节级别）

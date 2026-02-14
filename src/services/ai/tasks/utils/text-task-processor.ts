@@ -46,6 +46,7 @@ import {
   buildChunks,
   isOnlySymbols,
   buildPreviousChapterSection,
+  resolveRuntimeTaskChunkSize,
 } from './index';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 import { ChapterSummaryService } from '../chapter-summary-service';
@@ -372,7 +373,7 @@ export async function processTextTask(
     }
 
     // 切分文本
-    const CHUNK_SIZE = options.chunkSize ?? DEFAULT_TASK_CHUNK_SIZE;
+    const CHUNK_SIZE = resolveRuntimeTaskChunkSize(options.chunkSize ?? DEFAULT_TASK_CHUNK_SIZE);
     const chunks = requiresTranslation
       ? buildFormattedChunks(validParagraphs, CHUNK_SIZE)
       : buildChunks(

@@ -11,6 +11,12 @@ import TabPanel from 'primevue/tabpanel';
 import InputSwitch from 'primevue/inputswitch';
 import InputNumber from 'primevue/inputnumber';
 import type { Novel, Chapter } from 'src/models/novel';
+import {
+  DEFAULT_TASK_CHUNK_SIZE,
+  MIN_TASK_CHUNK_SIZE,
+  MAX_TASK_CHUNK_SIZE,
+  resolveTaskChunkSize,
+} from 'src/services/ai/tasks/utils/chunk-formatter';
 
 const props = defineProps<{
   book: Novel | null;
@@ -75,14 +81,14 @@ watch(
       filterIndentsEnabled.value = !preserveIndents;
       normalizeSymbolsOnDisplayEnabled.value = props.book.normalizeSymbolsOnDisplay ?? false;
       normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
-      translationChunkSize.value = props.book.translationChunkSize ?? 8000;
+      translationChunkSize.value = resolveTaskChunkSize(props.book.translationChunkSize);
       skipAskUserEnabled.value = props.book.skipAskUser ?? false;
     } else {
       // 默认保留缩进（不过滤）
       filterIndentsEnabled.value = false;
       normalizeSymbolsOnDisplayEnabled.value = false;
       normalizeTitleOnDisplayEnabled.value = false;
-      translationChunkSize.value = 8000;
+      translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
       skipAskUserEnabled.value = false;
     }
 
@@ -127,7 +133,7 @@ const handleSave = () => {
     preserveIndents: !filterIndentsEnabled.value,
     normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
     normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
-    translationChunkSize: translationChunkSize.value ?? 8000,
+    translationChunkSize: resolveTaskChunkSize(translationChunkSize.value ?? undefined),
     skipAskUser: skipAskUserEnabled.value,
     // 章节设置
     translationInstructions: translationInstructions.value.trim(),
@@ -253,8 +259,8 @@ defineExpose({
                       </label>
                       <InputNumber
                         v-model="translationChunkSize"
-                        :min="1000"
-                        :max="50000"
+                        :min="MIN_TASK_CHUNK_SIZE"
+                        :max="MAX_TASK_CHUNK_SIZE"
                         :step="500"
                         :show-buttons="true"
                         class="w-full"

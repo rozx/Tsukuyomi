@@ -5,6 +5,73 @@ import type { Paragraph } from 'src/models/novel';
  * [警告] 修改此值会影响 translation/polish/proofreading 三类任务的分块行为
  */
 export const DEFAULT_TASK_CHUNK_SIZE = 8000;
+export const MIN_TASK_CHUNK_SIZE = 1000;
+export const MAX_TASK_CHUNK_SIZE = 50000;
+
+/**
+ * 规范化任务分块大小（用于用户配置/持久化值）
+ * - 非数字/无效值：回退到默认值
+ * - 超出范围：钳制到允许区间 [MIN_TASK_CHUNK_SIZE, MAX_TASK_CHUNK_SIZE]
+ * - 小数：向下取整，避免意外放大
+ *
+ * 适用场景：书籍设置保存、UI 输入规范化
+ */
+export function resolveTaskChunkSize(chunkSize?: number): number {
+  if (chunkSize == null) {
+    return DEFAULT_TASK_CHUNK_SIZE;
+  }
+
+  const normalized = Number(chunkSize);
+
+  if (!Number.isFinite(normalized)) {
+    return DEFAULT_TASK_CHUNK_SIZE;
+  }
+
+  const integerValue = Math.floor(normalized);
+  if (integerValue < MIN_TASK_CHUNK_SIZE) {
+    return MIN_TASK_CHUNK_SIZE;
+  }
+  if (integerValue > MAX_TASK_CHUNK_SIZE) {
+    return MAX_TASK_CHUNK_SIZE;
+  }
+
+  return integerValue;
+}
+
+/**
+ * 解析运行时任务分块大小（兼容显式小分块参数，用于任务调用）
+ * - 非数字/无效值：回退到默认值
+ * - 小于 1：钳制到 1，避免异常输入
+ * - 大于最大值：钳制到最大值
+ * - 小数：向下取整
+ *
+ * 与 resolveTaskChunkSize 的区别：
+ * - resolveTaskChunkSize 用于持久化配置，最小值为 MIN_TASK_CHUNK_SIZE (1000)
+ * - resolveRuntimeTaskChunkSize 用于运行时参数，允许小于 1000 的值（最小 1）
+ *
+ * 适用场景：翻译/润色/校对任务调用时传入的临时 chunkSize 参数
+ */
+export function resolveRuntimeTaskChunkSize(chunkSize?: number): number {
+  if (chunkSize == null) {
+    return DEFAULT_TASK_CHUNK_SIZE;
+  }
+
+  const normalized = Number(chunkSize);
+
+  if (!Number.isFinite(normalized)) {
+    return DEFAULT_TASK_CHUNK_SIZE;
+  }
+
+  const integerValue = Math.floor(normalized);
+  if (integerValue < 1) {
+    return 1;
+  }
+  if (integerValue > MAX_TASK_CHUNK_SIZE) {
+    return MAX_TASK_CHUNK_SIZE;
+  }
+
+  return integerValue;
+}
 
 /**
  * 构建格式化的块数据（用于校对或润色）
