@@ -398,6 +398,164 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(summary).toBe('远程摘要');
     });
 
+    it('当远程书籍较新时，应应用远程段落的 selectedTranslationId', async () => {
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-02').toISOString();
+
+      mockBooksStore.books = [
+        {
+          id: 'n1',
+          title: 'Local Novel',
+          lastEdited: oldDate,
+          createdAt: oldDate,
+          volumes: [
+            {
+              id: 'v1',
+              chapters: [
+                {
+                  id: 'c1',
+                  lastEdited: oldDate,
+                  createdAt: oldDate,
+                  content: [
+                    {
+                      id: 'p1',
+                      text: '原文',
+                      selectedTranslationId: 't-local',
+                      translations: [
+                        { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
+                        { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ] as unknown[];
+
+      const remoteData = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: newDate,
+            createdAt: oldDate,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    lastEdited: newDate,
+                    createdAt: oldDate,
+                    content: [
+                      {
+                        id: 'p1',
+                        text: '原文',
+                        selectedTranslationId: 't-remote',
+                        translations: [
+                          { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
+                          { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      await SyncDataService.applyDownloadedData(remoteData);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const selectedId =
+        addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.content?.[0]?.selectedTranslationId;
+
+      expect(selectedId).toBe('t-remote');
+    });
+
+    it('当本地书籍较新时，应保留本地段落的 selectedTranslationId', async () => {
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-02').toISOString();
+
+      mockBooksStore.books = [
+        {
+          id: 'n1',
+          title: 'Local Novel',
+          lastEdited: newDate,
+          createdAt: oldDate,
+          volumes: [
+            {
+              id: 'v1',
+              chapters: [
+                {
+                  id: 'c1',
+                  lastEdited: newDate,
+                  createdAt: oldDate,
+                  content: [
+                    {
+                      id: 'p1',
+                      text: '原文',
+                      selectedTranslationId: 't-local',
+                      translations: [
+                        { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
+                        { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ] as unknown[];
+
+      const remoteData = {
+        novels: [
+          {
+            id: 'n1',
+            title: 'Remote Novel',
+            lastEdited: oldDate,
+            createdAt: oldDate,
+            volumes: [
+              {
+                id: 'v1',
+                chapters: [
+                  {
+                    id: 'c1',
+                    lastEdited: oldDate,
+                    createdAt: oldDate,
+                    content: [
+                      {
+                        id: 'p1',
+                        text: '原文',
+                        selectedTranslationId: 't-remote',
+                        translations: [
+                          { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
+                          { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      await SyncDataService.applyDownloadedData(remoteData);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const selectedId =
+        addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.content?.[0]?.selectedTranslationId;
+
+      expect(selectedId).toBe('t-local');
+    });
+
     it('应保留上次同步后新增的本地数据', async () => {
       const lastSyncTime = new Date('2024-01-01').getTime();
       const newDate = new Date('2024-01-02').toISOString();

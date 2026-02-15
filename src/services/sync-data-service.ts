@@ -84,6 +84,7 @@ function hasLocalChapterSummaryMissingInRemote(localNovel: any, remoteNovel: any
 function mergeParagraphTranslations(
   localParagraphs: Paragraph[],
   remoteParagraphs: Paragraph[] | undefined,
+  preferRemoteSelection = false,
 ): Paragraph[] {
   // 如果远程没有段落，直接返回本地段落
   if (!remoteParagraphs || remoteParagraphs.length === 0) {
@@ -123,20 +124,31 @@ function mergeParagraphTranslations(
     }
 
     // 确定 selectedTranslationId
-    // 优先使用远程的 selectedTranslationId（如果远程有翻译且本地没有选择的翻译）
     let selectedTranslationId = localPara.selectedTranslationId;
+    const localSelectedExists = mergedTranslations.some((t) => t.id === selectedTranslationId);
+    const remoteSelectedExists =
+      !!remotePara.selectedTranslationId &&
+      mergedTranslations.some((t) => t.id === remotePara.selectedTranslationId);
+
+    // 远程优先模式：用于“远程整体较新”的场景，优先采用远程选择
+    if (preferRemoteSelection) {
+      if (remoteSelectedExists) {
+        selectedTranslationId = remotePara.selectedTranslationId;
+      } else if (!localSelectedExists && mergedTranslations.length > 0 && mergedTranslations[0]) {
+        selectedTranslationId = mergedTranslations[0].id;
+      }
+
+      return {
+        ...localPara,
+        translations: mergedTranslations,
+        selectedTranslationId,
+      };
+    }
 
     // 如果本地没有选择翻译，或者选择的翻译不存在于合并后的翻译列表中
-    const selectedTranslationExists = mergedTranslations.some(
-      (t) => t.id === selectedTranslationId,
-    );
-
-    if (!selectedTranslationId || !selectedTranslationExists) {
+    if (!selectedTranslationId || !localSelectedExists) {
       // 使用远程的 selectedTranslationId（如果存在于合并后的翻译列表中）
-      if (
-        remotePara.selectedTranslationId &&
-        mergedTranslations.some((t) => t.id === remotePara.selectedTranslationId)
-      ) {
+      if (remoteSelectedExists) {
         selectedTranslationId = remotePara.selectedTranslationId;
       } else if (mergedTranslations.length > 0 && mergedTranslations[0]) {
         // 否则使用第一个翻译
@@ -1797,7 +1809,11 @@ export class SyncDataService {
                     const remoteContent = remoteChapter.content;
 
                     // 合并翻译：将远程翻译添加到本地段落中
-                    const mergedContent = mergeParagraphTranslations(localContent, remoteContent);
+                    const mergedContent = mergeParagraphTranslations(
+                      localContent,
+                      remoteContent,
+                      true,
+                    );
 
                     return {
                       ...remoteChapterWithMergedSummary,
