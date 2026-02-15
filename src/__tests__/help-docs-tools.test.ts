@@ -1,8 +1,14 @@
 import './setup';
-import { helpDocsTools } from 'src/services/ai/tools/help-docs-tools';
 import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import axios from 'axios';
+
+// Mock getAssetUrl before importing help-docs-tools
+mock.module('src/utils/assets', () => ({
+  getAssetUrl: (path: string) => `/${path}`,
+}));
+
+import { helpDocsTools } from 'src/services/ai/tools/help-docs-tools';
 
 // 模拟帮助文档索引数据
 const mockHelpIndex = [

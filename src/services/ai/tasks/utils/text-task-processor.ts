@@ -228,10 +228,23 @@ export async function processTextTask(
     throw new Error(`要${taskLabel}的内容不能为空`);
   }
 
-  // 过滤有效段落
-  const validParagraphs = requiresTranslation
-    ? content.filter((p) => p.text?.trim() && p.translations && p.translations.length > 0)
-    : content.filter((p) => p.text?.trim());
+  // 过滤有效段落，同时记录原始索引（章节位置，包含空段落计数）
+  const validParagraphs: Paragraph[] = [];
+  const originalIndices = new Map<string, number>();
+
+  for (let i = 0; i < content.length; i++) {
+    const paragraph = content[i];
+    if (!paragraph) continue;
+
+    const hasText = paragraph.text?.trim();
+    const hasTranslation = paragraph.translations && paragraph.translations.length > 0;
+    const isValid = requiresTranslation ? hasText && hasTranslation : hasText;
+
+    if (isValid) {
+      validParagraphs.push(paragraph);
+      originalIndices.set(paragraph.id, i);
+    }
+  }
 
   if (validParagraphs.length === 0) {
     throw new Error(
@@ -374,10 +387,12 @@ export async function processTextTask(
 
     // 切分文本
     const CHUNK_SIZE = resolveRuntimeTaskChunkSize(options.chunkSize ?? DEFAULT_TASK_CHUNK_SIZE);
+    // 注意：buildChunks 现在直接遍历原始 content，索引已是章节原始位置
+    // buildFormattedChunks 需要传入 originalIndices 映射
     const chunks = requiresTranslation
-      ? buildFormattedChunks(validParagraphs, CHUNK_SIZE)
+      ? buildFormattedChunks(validParagraphs, CHUNK_SIZE, originalIndices)
       : buildChunks(
-          validParagraphs,
+          content, // 传入原始 content，让 buildChunks 遍历时使用原始索引
           CHUNK_SIZE,
           (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
           (p) => !!p.text?.trim(),
@@ -431,16 +446,18 @@ export async function processTextTask(
       // 重建 chunk（如果需要）
       let actualChunk: TextChunk = chunk;
       if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
-        const unprocessedContent = validParagraphs.filter((p) =>
-          unprocessedParagraphIds.includes(p.id),
-        );
+        // 重建时仍使用原始 content，保持索引一致性
         const rebuiltChunks = requiresTranslation
-          ? buildFormattedChunks(unprocessedContent, CHUNK_SIZE)
+          ? buildFormattedChunks(
+              validParagraphs.filter((p) => unprocessedParagraphIds.includes(p.id)),
+              CHUNK_SIZE,
+              originalIndices,
+            )
           : buildChunks(
-              unprocessedContent,
+              content, // 使用原始 content 保持索引一致
               CHUNK_SIZE,
               (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
-              (p) => !!p.text?.trim(),
+              (p) => !!p.text?.trim() && unprocessedParagraphIds.includes(p.id),
             );
         const firstRebuiltChunk = rebuiltChunks[0];
         if (firstRebuiltChunk) {
@@ -492,7 +509,7 @@ export async function processTextTask(
       // 构建 chunk 内容
       const maintenanceReminder = buildMaintenanceReminder(taskType);
       const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-      const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。`;
+      const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
 
       const firstParagraphId = actualChunk.paragraphIds?.[0];
       const hasPreviousParagraphs = getHasPreviousParagraphs(

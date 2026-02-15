@@ -17,7 +17,7 @@ export function getPlanningLoopPrompt(
       `**现在必须**将状态更新为 "working" 并**立即输出${taskLabel}结果**。` +
       `不要再停留在 planning，直接开始${taskLabel}工作。` +
       `请使用工具调用：先 \`update_task_status({"status":"working"})\`，` +
-      `再用 \`add_translation_batch\` 提交结果（index 或 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
+      `再用 \`add_translation_batch\` 提交结果（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
     );
   }
 
@@ -45,7 +45,7 @@ export function getWorkingLoopPrompt(taskType: TaskType): string {
   return (
     `[警告] **立即输出${taskLabel}结果**！你已经在工作阶段停留过久但没有输出任何内容。` +
     `**现在必须**输出${taskLabel}结果。${noChangeHint}` +
-    `请使用工具调用：\`add_translation_batch\` 提交段落（index 或 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
+    `请使用工具调用：\`add_translation_batch\` 提交段落（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
   );
 }
 
@@ -102,7 +102,7 @@ export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: n
   return (
     `检测到以下段落（index）缺少${taskLabel}结果：${missingIndicesList}。` +
     `请先用 \`update_task_status({"status":"working"})\` 切回 working，` +
-    `再用 \`add_translation_batch\` 补全这些段落（需包含 index 或 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
+    `再用 \`add_translation_batch\` 补全这些段落（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
   );
 }
 

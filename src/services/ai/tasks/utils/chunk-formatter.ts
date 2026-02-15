@@ -75,28 +75,34 @@ export function resolveRuntimeTaskChunkSize(chunkSize?: number): number {
 
 /**
  * 构建格式化的块数据（用于校对或润色）
- * @param paragraphs 段落列表
+ * @param paragraphs 段落列表（已过滤空段落，但保留原始索引信息）
  * @param chunkSize 块大小限制
+ * @param originalIndices 可选的原始索引映射（paragraph.id -> 章节原始索引），如果不提供则使用数组索引
  * @returns 格式化后的块列表
  */
 export function buildFormattedChunks(
   paragraphs: Paragraph[],
   chunkSize: number,
+  originalIndices?: Map<string, number>,
 ): Array<{ text: string; paragraphIds: string[] }> {
   const chunks: Array<{ text: string; paragraphIds: string[] }> = [];
   let currentChunkText = '';
   let currentChunkParagraphIds: string[] = [];
 
-  for (const paragraph of paragraphs) {
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs[i];
+    if (!paragraph) continue;
+
     // 获取段落的当前翻译
     const currentTranslation =
       paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
       paragraph.translations?.[0]?.translation ||
       '';
 
-    // 格式化段落：[{index}] [ID: {id}] 原文: {原文}\n翻译: {当前翻译}
-    let index = currentChunkParagraphIds.length;
-    let paragraphText = `[${index}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+    // 使用原始索引（如果提供），否则使用数组索引
+    const originalIndex = originalIndices?.get(paragraph.id) ?? i;
+    // 格式化段落：[{originalIndex}] [ID: {id}] 原文: {原文}\n翻译: {当前翻译}
+    const paragraphText = `[${originalIndex}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
 
     // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
     if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
@@ -106,9 +112,6 @@ export function buildFormattedChunks(
       });
       currentChunkText = '';
       currentChunkParagraphIds = [];
-      // 这里的 index 重置为 0，并重新生成 paragraphText
-      index = 0;
-      paragraphText = `[${index}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
     }
     currentChunkText += paragraphText;
     currentChunkParagraphIds.push(paragraph.id);
@@ -126,11 +129,11 @@ export function buildFormattedChunks(
 }
 
 /**
- * 段落格式化函数类型（带 chunk 内索引）
+ * 段落格式化函数类型（带原始索引）
  * @param item 段落对象
- * @param indexInChunk 段落在当前 chunk 内的 0-based 索引
+ * @param originalIndex 段落在章节中的原始 0-based 索引（包含空段落计数）
  */
-export type ParagraphFormatter<T> = (item: T, indexInChunk: number) => string;
+export type ParagraphFormatter<T> = (item: T, originalIndex: number) => string;
 
 /**
  * 文本块结构
@@ -143,9 +146,9 @@ export interface TextChunk {
 /**
  * 构建文本块
  * 将段落列表按大小分割成多个文本块
- * @param content 段落列表
+ * @param content 段落列表（章节原始段落数组，可能包含空段落）
  * @param chunkSize 每个块的最大字符数
- * @param formatParagraph 段落格式化函数（第二个参数为 chunk 内的 0-based 索引）
+ * @param formatParagraph 段落格式化函数（第二个参数为章节原始索引，包含空段落计数）
  * @param filterParagraph 段落过滤函数（可选，默认过滤空段落）
  * @returns 文本块数组
  */
@@ -163,15 +166,18 @@ export function buildChunks<T extends { id: string; text?: string }>(
   let currentChunkText = '';
   let currentChunkParagraphIds: string[] = [];
 
-  for (const paragraph of content) {
-    // 应用过滤条件
+  //遍历原始段落列表，保留原始索引
+  for (let originalIndex = 0; originalIndex < content.length; originalIndex++) {
+    const paragraph = content[originalIndex];
+    if (!paragraph) continue;
+
+    // 应用过滤条件（空段落不进入 chunk，但索引仍按原始位置计数）
     if (!shouldInclude(paragraph)) {
       continue;
     }
 
-    // 格式化段落（传入 chunk 内索引）
-    const indexInChunk = currentChunkParagraphIds.length;
-    const paragraphText = formatParagraph(paragraph, indexInChunk);
+    // 格式化段落（传入章节原始索引）
+    const paragraphText = formatParagraph(paragraph, originalIndex);
 
     // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
     if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
@@ -181,13 +187,8 @@ export function buildChunks<T extends { id: string; text?: string }>(
       });
       currentChunkText = '';
       currentChunkParagraphIds = [];
-      // 重新格式化（新 chunk 的索引为 0）
-      const newIndexInChunk = 0;
-      const newParagraphText = formatParagraph(paragraph, newIndexInChunk);
-      currentChunkText += newParagraphText;
-    } else {
-      currentChunkText += paragraphText;
     }
+    currentChunkText += paragraphText;
     currentChunkParagraphIds.push(paragraph.id);
   }
 
