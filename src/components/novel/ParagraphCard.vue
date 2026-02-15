@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onUnmounted, nextTick } from 'vue';
+import { computed, ref, watch, onUnmounted, nextTick } from 'vue';
 import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -337,11 +337,21 @@ const handleParagraphMouseEnter = () => {
 
 // 翻译编辑状态
 const editingTranslationValue = ref('');
+const isEditingTranslation = ref(false);
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
 const translationDisplayRef = ref<HTMLElement | null>(null);
 // 存储点击位置对应的字符索引
 const clickedCharIndex = ref<number | null>(null);
+
+// 监听外部数据变化，同步到编辑中的值
+// 当 undo/redo、chat assistant edit、revert 等操作修改了段落数据时，
+// rawTranslationText 会更新，需要同步到 editingTranslationValue
+watch(rawTranslationText, (newVal) => {
+  if (isEditingTranslation.value && newVal !== editingTranslationValue.value) {
+    editingTranslationValue.value = newVal;
+  }
+});
 
 /**
  * 安全地从 Vue 组件实例中提取 $el 属性
@@ -491,6 +501,7 @@ const handleTranslationDisplayClick = (event: MouseEvent) => {
 const onTranslationOpen = () => {
   // 使用原始翻译文本初始化编辑器，避免格式化后的文本被保存到数据库
   editingTranslationValue.value = rawTranslationText.value;
+  isEditingTranslation.value = true;
   // 通知父组件开始编辑
   emit('paragraph-edit-start', props.paragraph.id);
   // 使用 nextTick 确保 DOM 更新后再聚焦
@@ -540,6 +551,7 @@ const onTranslationClose = () => {
   if (editingTranslationValue.value !== rawTranslationText.value) {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
+  isEditingTranslation.value = false;
   // 通知父组件停止编辑
   emit('paragraph-edit-stop', props.paragraph.id);
 };
@@ -554,6 +566,7 @@ const applyTranslation = (closeCallback: () => void) => {
 const cancelTranslation = (closeCallback: () => void) => {
   // 恢复为原始翻译文本，而不是格式化后的文本
   editingTranslationValue.value = rawTranslationText.value;
+  isEditingTranslation.value = false;
   closeCallback();
 };
 
@@ -849,7 +862,11 @@ defineExpose({
     :id="props.id"
     ref="paragraphCardRef"
     class="paragraph-card"
-    :class="{ 'has-content': hasContent, 'paragraph-selected': props.selected, 'touch-layout': isTouchLayout }"
+    :class="{
+      'has-content': hasContent,
+      'paragraph-selected': props.selected,
+      'touch-layout': isTouchLayout,
+    }"
     tabindex="-1"
     @contextmenu="handleParagraphContextMenu"
     @mouseenter="handleParagraphMouseEnter"
@@ -989,7 +1006,6 @@ defineExpose({
           </template>
         </Inplace>
       </div>
-
     </div>
 
     <!-- 术语提示框 - 使用 PrimeVue Popover -->

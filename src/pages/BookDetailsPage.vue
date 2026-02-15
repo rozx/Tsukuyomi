@@ -899,14 +899,17 @@ watch(
         currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
         currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
 
-      // 判断是否需要同步内容更新（当内容已加载且用户未编辑时）
+      // 判断是否需要同步内容更新（当内容已加载时）
+      // 注意：即使用户正在编辑段落，也允许内容更新传播。
+      // ParagraphCard 中的 watcher 会检测 rawTranslationText 变化并同步到 editingTranslationValue，
+      // 确保编辑中的段落也能接收到外部更新（如 undo/redo、chat assistant edit、revert 等）。
       const hasContentUpdate =
         Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
 
       // 判断是否应该更新元数据
-      // 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
-      const isUserEditing =
-        currentlyEditingParagraphId.value !== null || isEditingOriginalText.value;
+      // 如果用户正在编辑原文，不更新元数据（避免覆盖本地编辑）
+      // 注意：段落翻译编辑不再阻止元数据更新，因为段落编辑状态由 ParagraphCard 内部管理
+      const isUserEditing = isEditingOriginalText.value;
 
       // 判断更新是否来自外部操作（如同步、在线获取更新）
       // 通过检查元数据变化类型来判断：
