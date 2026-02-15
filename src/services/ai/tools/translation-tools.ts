@@ -470,8 +470,8 @@ async function processTranslationBatch(
     // 处理每个段落
     // 无论任务类型如何，都创建新的翻译版本以保留历史记录
     // 这样可以防止 AI 产生糟糕结果时丢失用户之前的手动翻译
-    let processedCount = 0;
 
+    // 阶段 1：验证所有段落（不修改任何数据，防止部分段落验证失败时已提交的段落被污染）
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
@@ -500,8 +500,17 @@ async function processTranslationBatch(
           processedCount: 0,
         };
       }
+    }
 
-      // 所有任务类型都创建新的翻译版本
+    // 阶段 2：所有验证通过后，批量写入翻译
+    let processedCount = 0;
+
+    for (const item of items) {
+      const paragraph = targetParagraphsMap.get(item.paragraphId);
+      if (!paragraph) {
+        continue;
+      }
+
       const newTranslation: Translation = {
         id: generateShortId(),
         translation: item.translatedText,
