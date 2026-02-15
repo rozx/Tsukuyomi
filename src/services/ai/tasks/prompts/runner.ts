@@ -79,28 +79,13 @@ export function getWorkingContinuePrompt(taskType: TaskType): string {
 /**
  * 获取复核阶段缺失段落提示
  */
-export function getMissingParagraphsPrompt(taskType: TaskType, missingIndices: number[]): string {
+export function getMissingParagraphsPrompt(taskType: TaskType, missingIds: string[]): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
 
-  // Helper to format indices as ranges (e.g. "1, 2, 3" -> "1-3")
-  const ranges: string[] = [];
-  const sorted = [...missingIndices].sort((a, b) => a - b);
-
-  for (let i = 0; i < sorted.length; i++) {
-    const start = sorted[i];
-    if (start === undefined) continue;
-    let end = start;
-    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) {
-      end = sorted[i + 1]!;
-      i++;
-    }
-    ranges.push(start === end ? `${start}` : `${start}-${end}`);
-  }
-
-  const missingIndicesList = ranges.join(', ');
+  const missingIdList = missingIds.map((id) => `"${id}"`).join(', ');
 
   return (
-    `检测到以下段落（index）缺少${taskLabel}结果：${missingIndicesList}。` +
+    `检测到以下段落缺少${taskLabel}结果（共 ${missingIds.length} 段，paragraph_id）：${missingIdList}。` +
     `请先用 \`update_task_status({"status":"working"})\` 切回 working，` +
     `再用 \`add_translation_batch\` 补全这些段落（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。`
   );

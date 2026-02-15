@@ -676,8 +676,11 @@ export const translationTools: ToolDefinition[] = [
       if (isTranslationTask) {
         const chunkParagraphIds = chunkBoundaries?.paragraphIds;
         if (chunkParagraphIds && chunkParagraphIds.length > 0) {
-          const processedIdSet = new Set(resolvedIds);
-          remainingParagraphIds = chunkParagraphIds.filter((id) => !processedIdSet.has(id));
+          // 使用 submittedParagraphIds（包含所有历史批次 + 当前批次）计算剩余段落
+          // 而非仅用当前批次的 resolvedIds，避免 remaining_count 不随批次递减
+          remainingParagraphIds = submittedParagraphIds
+            ? chunkParagraphIds.filter((id) => !submittedParagraphIds.has(id))
+            : chunkParagraphIds.filter((id) => !resolvedIds.includes(id));
         }
       }
 
