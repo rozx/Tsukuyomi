@@ -1,6 +1,7 @@
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory, MemoryAttachment } from 'src/models/memory';
+import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
 import { useBooksStore } from 'src/stores/books';
@@ -274,16 +275,21 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
 
 /**
  * 获取与 chunk 相关的记忆
- * 根据 chunk 中出现的术语和角色查询关联的记忆
+ * 按优先级顺序获取记忆：character → term → chapter → book → global
+ * 确保总记忆数量不超过限制
  * @param bookId 书籍 ID
  * @param chunkText chunk 文本内容
  * @param maxMemories 最大返回记忆数量（默认 10）
+ * @param chapterId 章节 ID（可选，用于获取章节级别记忆）
  * @returns 格式化的记忆上下文字符串
  */
 export async function getRelatedMemoriesForChunk(
   bookId: string,
   chunkText: string,
-  maxMemories: number = 10,
+  maxMemories: number = 15,
+  chapterId?: string,
+  existingTerms?: Terminology[],
+  existingCharacters?: CharacterSetting[],
 ): Promise<string> {
   if (!bookId || !chunkText) {
     return '';
@@ -296,41 +302,109 @@ export async function getRelatedMemoriesForChunk(
       return '';
     }
 
-    // 从 chunk 文本中提取出现的术语和角色
-    const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
-    const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+    // 从 chunk 文本中提取出现的术语和角色（如果未提供）
+    const terms = existingTerms || findUniqueTermsInText(chunkText, book.terminologies || []);
+    const characters =
+      existingCharacters || findUniqueCharactersInText(chunkText, book.characterSettings || []);
 
-    // 构建附件查询列表
-    const attachments: MemoryAttachment[] = [];
-
-    // 添加术语附件
-    for (const term of terms) {
-      if (term.id) {
-        attachments.push({ type: 'term', id: term.id });
-      }
-    }
-
-    // 添加角色附件
-    for (const character of characters) {
-      if (character.id) {
-        attachments.push({ type: 'character', id: character.id });
-      }
-    }
-
-    // 如果没有提取到任何实体，返回空字符串
-    if (attachments.length === 0) {
-      return '';
-    }
-
-    // 查询关联的记忆
-    const memories = await MemoryService.getMemoriesByAttachments(bookId, attachments);
-
-    // 去重（按 memory ID）
+    // 使用 Map 去重（按 memory ID），同时保持优先级顺序
     const uniqueMemories = new Map<string, Memory>();
-    for (const memory of memories) {
-      if (!uniqueMemories.has(memory.id)) {
+
+    // 内存填充策略：
+    // 不再使用严格的分类限制（如只能放3个角色），而是按优先级顺序填充
+    // 优先级：角色 > 术语 > 章节 > 书籍 > 全局
+    // 为防止单一实体（如主角）占用所有名额，设置每个实体的最大记忆数限制
+    const PER_ENTITY_LIMIT = Math.max(3, Math.floor(maxMemories * 0.4));
+
+    // 1. 获取角色相关记忆（最高优先级）
+    for (const character of characters) {
+      if (uniqueMemories.size >= maxMemories) break;
+      if (character.id) {
+        const characterMemories = await MemoryService.getMemoriesByAttachment(bookId, {
+          type: 'character',
+          id: character.id,
+        });
+        // 按 lastAccessedAt 排序并限制每个角色的记忆数量
+        const sortedMemories = characterMemories
+          .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+          .slice(0, PER_ENTITY_LIMIT);
+
+        for (const memory of sortedMemories) {
+          if (uniqueMemories.size >= maxMemories) break;
+          uniqueMemories.set(memory.id, memory);
+        }
+      }
+    }
+
+    // 2. 获取术语相关记忆
+    for (const term of terms) {
+      if (uniqueMemories.size >= maxMemories) break;
+      if (term.id) {
+        const termMemories = await MemoryService.getMemoriesByAttachment(bookId, {
+          type: 'term',
+          id: term.id,
+        });
+        const sortedMemories = termMemories
+          .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+          .slice(0, PER_ENTITY_LIMIT);
+
+        for (const memory of sortedMemories) {
+          if (uniqueMemories.size >= maxMemories) break;
+          uniqueMemories.set(memory.id, memory);
+        }
+      }
+    }
+
+    // 3. 获取章节相关记忆
+    if (chapterId && uniqueMemories.size < maxMemories) {
+      const chapterMemories = await MemoryService.getMemoriesByAttachment(bookId, {
+        type: 'chapter',
+        id: chapterId,
+      });
+      const sortedMemories = chapterMemories
+        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+        .slice(0, PER_ENTITY_LIMIT); // 章节也应用实体限制
+
+      for (const memory of sortedMemories) {
+        if (uniqueMemories.size >= maxMemories) break;
         uniqueMemories.set(memory.id, memory);
       }
+    }
+
+    // 4. 获取书籍级别记忆
+    if (uniqueMemories.size < maxMemories) {
+      const bookMemories = await MemoryService.getMemoriesByAttachment(bookId, {
+        type: 'book',
+        id: bookId,
+      });
+      const sortedMemories = bookMemories
+        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+        .slice(0, PER_ENTITY_LIMIT);
+
+      for (const memory of sortedMemories) {
+        if (uniqueMemories.size >= maxMemories) break;
+        uniqueMemories.set(memory.id, memory);
+      }
+    }
+
+    // 5. 获取全局记忆（最近访问的）
+    if (uniqueMemories.size < maxMemories) {
+      const remainingSlots = maxMemories - uniqueMemories.size;
+      const recentMemories = await MemoryService.getRecentMemories(
+        bookId,
+        remainingSlots,
+        'lastAccessedAt',
+        false, // 不更新访问时间
+      );
+      for (const memory of recentMemories) {
+        if (uniqueMemories.size >= maxMemories) break;
+        uniqueMemories.set(memory.id, memory);
+      }
+    }
+
+    // 格式化记忆上下文
+    if (uniqueMemories.size === 0) {
+      return '';
     }
 
     // 转换为数组并按 lastAccessedAt 排序（最新的在前）
@@ -338,25 +412,9 @@ export async function getRelatedMemoriesForChunk(
       (a, b) => b.lastAccessedAt - a.lastAccessedAt,
     );
 
-    // 限制数量
-    const limitedMemories = sortedMemories.slice(0, maxMemories);
-    const omittedCount = sortedMemories.length - limitedMemories.length;
+    const memoryLines = sortedMemories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
 
-    // 格式化记忆上下文
-    if (limitedMemories.length === 0) {
-      return '';
-    }
-
-    const memoryLines = limitedMemories.map((memory) => `  - ${memory.summary}`);
-
-    let memoryContext = `\n\n【相关记忆】\n${memoryLines.join('\n')}`;
-
-    // 添加省略提示
-    if (omittedCount > 0) {
-      memoryContext += `\n  ... 还有 ${omittedCount} 条记忆未显示`;
-    }
-
-    return memoryContext;
+    return `\n\n【相关记忆】\n${memoryLines.join('\n')}`;
   } catch (error) {
     console.warn('Failed to get related memories for chunk:', error);
     return '';
@@ -458,7 +516,15 @@ export async function buildIndependentChunkPrompt(
       }
 
       // 获取相关记忆
-      const memoryContext = await getRelatedMemoriesForChunk(bookId, chunkText, 10);
+      // 传入已提取的 terms 和 characters，避免重复计算
+      const memoryContext = await getRelatedMemoriesForChunk(
+        bookId,
+        chunkText,
+        10,
+        chapterId,
+        terms,
+        characters,
+      );
       if (memoryContext) {
         currentChunkContext += memoryContext;
       }

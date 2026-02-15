@@ -56,6 +56,13 @@ function extractKeywordsFromParagraph(text: string, maxLength: number = 20): str
 }
 
 /**
+ * 将段落索引转换为展示索引（从 1 开始）
+ */
+function toDisplayParagraphIndex(paragraphIndex: number): number {
+  return paragraphIndex + 1;
+}
+
+/**
  * 在文本中替换完整的关键词（作为独立词，不是其他词的一部分）
  * @param text 要替换的文本
  * @param keyword 要替换的关键词
@@ -393,6 +400,8 @@ export const paragraphTools: ToolDefinition[] = [
       // 计算章节中段落的总数
       const totalParagraphs = chapter.content?.length || 0;
 
+      const displayParagraphIndex = toDisplayParagraphIndex(paragraphIndex);
+
       // 构建响应
       const response: {
         success: true;
@@ -419,10 +428,10 @@ export const paragraphTools: ToolDefinition[] = [
         paragraph_id: paragraph.id,
         chapter_id: chapter.id,
         chapter_title: getChapterDisplayTitle(chapter),
-        paragraph_index: paragraphIndex,
+        paragraph_index: displayParagraphIndex,
         total_paragraphs: totalParagraphs,
         progress_percentage:
-          totalParagraphs > 0 ? Math.round(((paragraphIndex + 1) / totalParagraphs) * 100) : 0,
+          totalParagraphs > 0 ? Math.round((displayParagraphIndex / totalParagraphs) * 100) : 0,
       };
 
       // 可选：获取前 x 个段落（受块边界限制）
@@ -447,7 +456,7 @@ export const paragraphTools: ToolDefinition[] = [
             )?.translation ||
             result.paragraph.translations[0]?.translation ||
             '',
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
 
@@ -473,7 +482,7 @@ export const paragraphTools: ToolDefinition[] = [
             )?.translation ||
             result.paragraph.translations[0]?.translation ||
             '',
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
 
@@ -589,7 +598,7 @@ export const paragraphTools: ToolDefinition[] = [
                     : volume.title.translation?.translation || '',
               }
             : null,
-          paragraphIndex: location.paragraphIndex,
+          paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
           chapterIndex: location.chapterIndex,
           volumeIndex: location.volumeIndex,
         },
@@ -726,7 +735,7 @@ export const paragraphTools: ToolDefinition[] = [
                 ? ''
                 : result.volume.title.translation?.translation || '',
           },
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
@@ -864,7 +873,7 @@ export const paragraphTools: ToolDefinition[] = [
                 ? ''
                 : result.volume.title.translation?.translation || '',
           },
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
@@ -1318,7 +1327,7 @@ export const paragraphTools: ToolDefinition[] = [
                 ? ''
                 : result.volume.title.translation?.translation || '',
           },
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),
@@ -1467,7 +1476,7 @@ export const paragraphTools: ToolDefinition[] = [
                 ? ''
                 : result.volume.title.translation?.translation || '',
           },
-          paragraph_index: result.paragraphIndex,
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
           chapter_index: result.chapterIndex,
           volume_index: result.volumeIndex,
         })),

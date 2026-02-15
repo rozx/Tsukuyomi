@@ -424,7 +424,7 @@ export async function processTextTask(
       : buildChunks(
           translationSourceParagraphs,
           CHUNK_SIZE,
-          (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
+          (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
           (p) => !!p.text?.trim(),
         );
 
@@ -486,13 +486,19 @@ export async function processTextTask(
           : buildChunks(
               translationSourceParagraphs,
               CHUNK_SIZE,
-              (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
+              (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
               (p) => !!p.text?.trim() && unprocessedParagraphIds.includes(p.id),
             );
-        const firstRebuiltChunk = rebuiltChunks[0];
-        if (firstRebuiltChunk) {
-          actualChunk = firstRebuiltChunk;
+
+        if (rebuiltChunks.length > 0) {
+          // 如果重建产生了多个块，将它们插入到当前位置，替换原有的块
+          // 这样可以确保所有剩余内容都能被处理
+          chunks.splice(chunkIndex, 1, ...rebuiltChunks);
+          // 安全地赋值：我们知道 rebuiltChunks[0] 存在，且它现在就在 chunks[chunkIndex] 位置
+          // 但直接使用 chunks[chunkIndex] 会提示可能是 undefined，所以使用 rebuiltChunks[0]
+          actualChunk = rebuiltChunks[0];
         } else {
+          // 如果重建后没有块（理论上不应发生，因为 invalidParagraphs 有内容），跳过
           chunkIndex++;
           continue;
         }
@@ -539,7 +545,7 @@ export async function processTextTask(
       // 构建 chunk 内容
       const maintenanceReminder = buildMaintenanceReminder(taskType);
       const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-      const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
+      const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（从 1 开始，可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
 
       const firstParagraphId = actualChunk.paragraphIds?.[0];
       const hasPreviousParagraphs = getHasPreviousParagraphs(

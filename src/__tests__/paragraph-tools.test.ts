@@ -1076,9 +1076,12 @@ describe('chunk boundary enforcement', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraph_index).toBe(1);
       expect(resultObj.next_paragraphs?.length).toBe(2);
       expect(resultObj.next_paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.next_paragraphs[0]?.paragraph_index).toBe(2);
       expect(resultObj.next_paragraphs[1]?.id).toBe('para3');
+      expect(resultObj.next_paragraphs[1]?.paragraph_index).toBe(3);
     });
 
     test('include_previous 应该返回所有前序段落（忽略块边界）', async () => {
@@ -1105,9 +1108,12 @@ describe('chunk boundary enforcement', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(resultObj.paragraph_index).toBe(3);
       expect(resultObj.previous_paragraphs?.length).toBe(2);
       expect(resultObj.previous_paragraphs[0]?.id).toBe('para2');
+      expect(resultObj.previous_paragraphs[0]?.paragraph_index).toBe(2);
       expect(resultObj.previous_paragraphs[1]?.id).toBe('para1');
+      expect(resultObj.previous_paragraphs[1]?.paragraph_index).toBe(1);
     });
 
     test('段落不在块内时应该允许访问（忽略块边界）', async () => {

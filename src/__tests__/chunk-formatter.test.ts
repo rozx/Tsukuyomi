@@ -114,25 +114,25 @@ describe('buildChunks - 空段落索引语义', () => {
     const chunks = buildChunks(
       paragraphs,
       10000,
-      (para, originalIndex) => `[${originalIndex}] [ID: ${para.id}] ${para.text}`,
+      (para, originalIndex) => `[${originalIndex + 1}] [ID: ${para.id}] ${para.text}`,
     );
 
     // 只有一个 chunk
     expect(chunks.length).toBe(1);
     const chunkText = chunks[0]!.text;
 
-    // 验证索引：应该是 0, 2, 4（跳过了空段落1和3）
-    expect(chunkText).toContain('[0] [ID: para0]');
-    expect(chunkText).toContain('[2] [ID: para2]');
-    expect(chunkText).toContain('[4] [ID: para4]');
+    // 验证索引：应该是 1, 3, 5（跳过了空段落2和4）
+    expect(chunkText).toContain('[1] [ID: para0]');
+    expect(chunkText).toContain('[3] [ID: para2]');
+    expect(chunkText).toContain('[5] [ID: para4]');
 
     // 确保空段落没有出现在 chunk 中
     expect(chunkText).not.toContain('[ID: para1]');
     expect(chunkText).not.toContain('[ID: para3]');
 
-    // 确保没有连续索引（1, 3被跳过）
-    expect(chunkText).not.toContain('[1] [ID:');
-    expect(chunkText).not.toContain('[3] [ID:');
+    // 确保没有连续索引（2, 4 被跳过）
+    expect(chunkText).not.toContain('[2] [ID:');
+    expect(chunkText).not.toContain('[4] [ID:');
   });
 
   test('应只包含非空段落的 ID', () => {
@@ -166,22 +166,22 @@ describe('buildChunks - 空段落索引语义', () => {
     const chunks = buildChunks(
       paragraphs,
       50, // 小 chunk size 以产生多个 chunk
-      (para, originalIndex) => `[${originalIndex}] [ID: ${para.id}] ${para.text}`,
+      (para, originalIndex) => `[${originalIndex + 1}] [ID: ${para.id}] ${para.text}`,
     );
 
     // 验证所有 chunk 中的索引都是章节原始位置
     const allText = chunks.map((c) => c.text).join('\n');
 
-    // 应包含 0, 1, 2, 4, 5, 6
-    expect(allText).toContain('[0] [ID: para0]');
-    expect(allText).toContain('[1] [ID: para1]');
-    expect(allText).toContain('[2] [ID: para2]');
-    expect(allText).toContain('[4] [ID: para4]');
-    expect(allText).toContain('[5] [ID: para5]');
-    expect(allText).toContain('[6] [ID: para6]');
+    // 应包含 1, 2, 3, 5, 6, 7
+    expect(allText).toContain('[1] [ID: para0]');
+    expect(allText).toContain('[2] [ID: para1]');
+    expect(allText).toContain('[3] [ID: para2]');
+    expect(allText).toContain('[5] [ID: para4]');
+    expect(allText).toContain('[6] [ID: para5]');
+    expect(allText).toContain('[7] [ID: para6]');
 
-    // 不应包含 3（空段落）
-    expect(allText).not.toContain('[3] [ID:');
+    // 不应包含 4（空段落）
+    expect(allText).not.toContain('[4] [ID:');
   });
 });
 describe('buildFormattedChunks - 空段落索引语义', () => {
@@ -212,10 +212,10 @@ describe('buildFormattedChunks - 空段落索引语义', () => {
     expect(chunks.length).toBe(1);
     const chunkText = chunks[0]!.text;
 
-    // 验证索引使用原始位置
-    expect(chunkText).toContain('[0] [ID: para0]');
-    expect(chunkText).toContain('[2] [ID: para2]');
-    expect(chunkText).toContain('[4] [ID: para4]');
+    // 验证索引使用原始位置（从 1 开始）
+    expect(chunkText).toContain('[1] [ID: para0]');
+    expect(chunkText).toContain('[3] [ID: para2]');
+    expect(chunkText).toContain('[5] [ID: para4]');
   });
 
   test('无 originalIndices 时应回退到数组索引', () => {
@@ -224,12 +224,12 @@ describe('buildFormattedChunks - 空段落索引语义', () => {
       createTestParagraph('para2', '第二段', '译文2'),
     ];
 
-    // 不提供 originalIndices，应使用数组索引 0, 1
+    // 不提供 originalIndices，应使用数组索引 1, 2（从 1 开始展示）
     const chunks = buildFormattedChunks(paragraphs, 10000);
 
     const chunkText = chunks[0]!.text;
-    expect(chunkText).toContain('[0] [ID: para0]');
-    expect(chunkText).toContain('[1] [ID: para2]');
+    expect(chunkText).toContain('[1] [ID: para0]');
+    expect(chunkText).toContain('[2] [ID: para2]');
   });
 
   test('无 originalIndices 且多 chunk 时应保持连续数组索引', () => {
@@ -244,12 +244,12 @@ describe('buildFormattedChunks - 空段落索引语义', () => {
     expect(chunks.length).toBeGreaterThan(1);
 
     const allText = chunks.map((chunk) => chunk.text).join('\n');
-    expect(allText).toContain('[0] [ID: para0]');
-    expect(allText).toContain('[1] [ID: para2]');
-    expect(allText).toContain('[2] [ID: para4]');
+    expect(allText).toContain('[1] [ID: para0]');
+    expect(allText).toContain('[2] [ID: para2]');
+    expect(allText).toContain('[3] [ID: para4]');
 
     // 未提供 originalIndices，不应出现原始章节索引跳号
-    expect(allText).not.toContain('[4] [ID: para4]');
+    expect(allText).not.toContain('[5] [ID: para4]');
   });
 
   test('应只使用当前选中的翻译版本', () => {

@@ -9,9 +9,18 @@ const mockBooksStore = {
   getBookById: mock((_id: string): Novel | undefined => undefined),
 };
 
-const mockGetMemoriesByAttachments = mock(
-  (_bookId: string, _attachments: Array<{ type: string; id: string }>): Promise<Memory[]> =>
+const mockGetMemoriesByAttachment = mock(
+  (_bookId: string, _attachment: { type: string; id: string }): Promise<Memory[]> =>
     Promise.resolve([]),
+);
+
+const mockGetRecentMemories = mock(
+  (
+    _bookId: string,
+    _limit: number,
+    _sortBy: string,
+    _updateAccessTime: boolean,
+  ): Promise<Memory[]> => Promise.resolve([]),
 );
 
 const mockFindUniqueTermsInText = mock<() => any[]>(() => []);
@@ -42,15 +51,20 @@ describe('getRelatedMemoriesForChunk', () => {
   beforeEach(() => {
     mockBooksStore.getBookById.mockReset();
     mockBooksStore.getBookById.mockReturnValue(baseBook);
-    mockGetMemoriesByAttachments.mockReset();
-    mockGetMemoriesByAttachments.mockResolvedValue([]);
+    mockGetMemoriesByAttachment.mockReset();
+    mockGetMemoriesByAttachment.mockResolvedValue([]);
+    mockGetRecentMemories.mockReset();
+    mockGetRecentMemories.mockResolvedValue([]);
     mockFindUniqueTermsInText.mockReset();
     mockFindUniqueTermsInText.mockReturnValue([]);
     mockFindUniqueCharactersInText.mockReset();
     mockFindUniqueCharactersInText.mockReturnValue([]);
 
-    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
-      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    spyOn(MemoryService, 'getMemoriesByAttachment').mockImplementation(
+      mockGetMemoriesByAttachment as typeof MemoryService.getMemoriesByAttachment,
+    );
+    spyOn(MemoryService, 'getRecentMemories').mockImplementation(
+      mockGetRecentMemories as unknown as typeof MemoryService.getRecentMemories,
     );
     spyOn(TextMatcher, 'findUniqueTermsInText').mockImplementation(
       mockFindUniqueTermsInText as unknown as typeof TextMatcher.findUniqueTermsInText,
@@ -75,17 +89,18 @@ describe('getRelatedMemoriesForChunk', () => {
     const result = await getRelatedMemoriesForChunk(bookId, '内容');
 
     expect(result).toBe('');
-    expect(mockGetMemoriesByAttachments).not.toHaveBeenCalled();
+    expect(mockGetMemoriesByAttachment).not.toHaveBeenCalled();
   });
 
   test('未提取到实体时返回空字符串', async () => {
     const result = await getRelatedMemoriesForChunk(bookId, '内容');
 
+    // 没有术语和角色时，仍然会尝试获取书籍级别和全局记忆
+    // 但如果没有记忆，返回空字符串
     expect(result).toBe('');
-    expect(mockGetMemoriesByAttachments).not.toHaveBeenCalled();
   });
 
-  test('有记忆时输出格式正确并包含省略提示', async () => {
+  test('有记忆时输出格式正确（包含记忆ID）', async () => {
     mockFindUniqueTermsInText.mockReturnValue([
       {
         id: 'term-1',
@@ -105,7 +120,7 @@ describe('getRelatedMemoriesForChunk', () => {
       },
     ]);
 
-    const memories: Memory[] = [
+    const termMemories: Memory[] = [
       {
         id: 'm1',
         bookId,
@@ -115,6 +130,9 @@ describe('getRelatedMemoriesForChunk', () => {
         createdAt: 1000,
         lastAccessedAt: 3000,
       },
+    ];
+
+    const charMemories: Memory[] = [
       {
         id: 'm2',
         bookId,
@@ -124,25 +142,25 @@ describe('getRelatedMemoriesForChunk', () => {
         createdAt: 1001,
         lastAccessedAt: 2000,
       },
-      {
-        id: 'm3',
-        bookId,
-        content: '内容3',
-        summary: '摘要3',
-        attachedTo: [{ type: 'term', id: 'term-1' }],
-        createdAt: 1002,
-        lastAccessedAt: 1000,
-      },
     ];
 
-    mockGetMemoriesByAttachments.mockResolvedValue(memories);
+    // 根据附件类型返回不同的记忆
+    mockGetMemoriesByAttachment.mockImplementation(
+      (_bookId: string, attachment: { type: string; id: string }) => {
+        if (attachment.type === 'term') return Promise.resolve(termMemories);
+        if (attachment.type === 'character') return Promise.resolve(charMemories);
+        return Promise.resolve([]);
+      },
+    );
 
-    const result = await getRelatedMemoriesForChunk(bookId, '内容', 2);
+    const result = await getRelatedMemoriesForChunk(bookId, '内容', 10);
 
     expect(result).toContain('【相关记忆】');
-    expect(result).toContain('  - 摘要1');
-    expect(result).toContain('  - 摘要2');
-    expect(result).toContain('还有 1 条记忆未显示');
+    // 检查记忆 ID 是否包含在输出中
+    expect(result).toContain('[m1]');
+    expect(result).toContain('[m2]');
+    expect(result).toContain('摘要1');
+    expect(result).toContain('摘要2');
   });
 
   test('重复记忆只保留一条', async () => {
@@ -164,23 +182,97 @@ describe('getRelatedMemoriesForChunk', () => {
         createdAt: 1000,
         lastAccessedAt: 3000,
       },
-      {
-        id: 'm1',
-        bookId,
-        content: '内容1',
-        summary: '摘要1',
-        attachedTo: [{ type: 'term', id: 'term-1' }],
-        createdAt: 1000,
-        lastAccessedAt: 3000,
-      },
     ];
 
-    mockGetMemoriesByAttachments.mockResolvedValue(memories);
+    mockGetMemoriesByAttachment.mockResolvedValue(memories);
 
     const result = await getRelatedMemoriesForChunk(bookId, '内容', 10);
 
     const occurrences = result.split('摘要1').length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  test('记忆数量不超过限制', async () => {
+    mockFindUniqueTermsInText.mockReturnValue([
+      {
+        id: 'term-1',
+        name: '术语',
+        translation: { id: 't-1', translation: '术语译文', aiModelId: 'model-1' },
+      },
+    ]);
+
+    const memories: Memory[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `m${i}`,
+      bookId,
+      content: `内容${i}`,
+      summary: `摘要${i}`,
+      attachedTo: [{ type: 'term', id: 'term-1' }] as Array<{ type: 'term'; id: string }>,
+      createdAt: 1000 + i,
+      lastAccessedAt: 3000 - i,
+    }));
+
+    mockGetMemoriesByAttachment.mockResolvedValue(memories);
+
+    const result = await getRelatedMemoriesForChunk(bookId, '内容', 5);
+
+    // 检查结果中包含的记忆数量不超过 5
+    const memoryLines = result.split('\n').filter((line) => line.includes('  - ['));
+    expect(memoryLines.length).toBeLessThanOrEqual(5);
+  });
+
+  test('跨不同实体类型时去重', async () => {
+    // 同一个记忆同时关联到角色和术语
+    mockFindUniqueTermsInText.mockReturnValue([
+      {
+        id: 'term-1',
+        name: '术语',
+        translation: { id: 't-1', translation: '术语译文', aiModelId: 'model-1' },
+      },
+    ]);
+    mockFindUniqueCharactersInText.mockReturnValue([
+      {
+        id: 'char-1',
+        name: '角色',
+        sex: undefined,
+        description: '',
+        speakingStyle: '',
+        translation: { id: 'c-1', translation: '角色译文', aiModelId: 'model-1' },
+        aliases: [],
+      },
+    ]);
+
+    // 同一个记忆被角色和术语同时引用
+    const sharedMemory: Memory = {
+      id: 'shared-1',
+      bookId,
+      content: '共享内容',
+      summary: '共享摘要',
+      attachedTo: [
+        { type: 'character', id: 'char-1' },
+        { type: 'term', id: 'term-1' },
+      ],
+      createdAt: 1000,
+      lastAccessedAt: 3000,
+    };
+
+    mockGetMemoriesByAttachment.mockImplementation(
+      (_bookId: string, attachment: { type: string; id: string }) => {
+        // 角色和术语都返回同一个记忆
+        if (attachment.type === 'character' || attachment.type === 'term') {
+          return Promise.resolve([sharedMemory]);
+        }
+        return Promise.resolve([]);
+      },
+    );
+
+    const result = await getRelatedMemoriesForChunk(bookId, '内容', 10);
+
+    // 验证共享记忆只出现一次
+    const occurrences = result.split('共享摘要').length - 1;
+    expect(occurrences).toBe(1);
+    // 验证记忆 ID 只出现一次
+    const idOccurrences = result.split('[shared-1]').length - 1;
+    expect(idOccurrences).toBe(1);
   });
 });
 
@@ -199,11 +291,16 @@ describe('buildIndependentChunkPrompt', () => {
     } as Novel);
     mockFindUniqueTermsInText.mockReset();
     mockFindUniqueCharactersInText.mockReset();
-    mockGetMemoriesByAttachments.mockReset();
-    mockGetMemoriesByAttachments.mockResolvedValue([]);
+    mockGetMemoriesByAttachment.mockReset();
+    mockGetMemoriesByAttachment.mockResolvedValue([]);
+    mockGetRecentMemories.mockReset();
+    mockGetRecentMemories.mockResolvedValue([]);
 
-    spyOn(MemoryService, 'getMemoriesByAttachments').mockImplementation(
-      mockGetMemoriesByAttachments as typeof MemoryService.getMemoriesByAttachments,
+    spyOn(MemoryService, 'getMemoriesByAttachment').mockImplementation(
+      mockGetMemoriesByAttachment as typeof MemoryService.getMemoriesByAttachment,
+    );
+    spyOn(MemoryService, 'getRecentMemories').mockImplementation(
+      mockGetRecentMemories as unknown as typeof MemoryService.getRecentMemories,
     );
     spyOn(TextMatcher, 'findUniqueTermsInText').mockImplementation(
       mockFindUniqueTermsInText as unknown as typeof TextMatcher.findUniqueTermsInText,
@@ -223,7 +320,7 @@ describe('buildIndependentChunkPrompt', () => {
     ]);
     mockFindUniqueCharactersInText.mockReturnValue([]);
 
-    mockGetMemoriesByAttachments.mockResolvedValue([
+    mockGetMemoriesByAttachment.mockResolvedValue([
       {
         id: 'm1',
         bookId,
@@ -252,6 +349,8 @@ describe('buildIndependentChunkPrompt', () => {
 
     expect(termIndex).toBeGreaterThanOrEqual(0);
     expect(memoryIndex).toBeGreaterThan(termIndex);
-    expect(prompt).toContain('  - 摘要1');
+    // 检查记忆 ID 是否包含在输出中
+    expect(prompt).toContain('[m1]');
+    expect(prompt).toContain('摘要1');
   });
 });
