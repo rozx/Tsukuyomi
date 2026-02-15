@@ -456,13 +456,17 @@ export async function processTextTask(
     // 翻译路径使用 allChapterParagraphs（如果有），确保索引为章节原始位置
     const translationSourceParagraphs =
       allParagraphs && allParagraphs.length > 0 ? allParagraphs : content;
+    // 构建有效段落 ID 集合，用于在 buildChunks 中过滤
+    // 当 continueTranslation 只传入未翻译段落时，validParagraphIds 仅包含这些段落的 ID
+    // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
+    const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
     const chunks = requiresTranslation
       ? buildFormattedChunks(validParagraphs, CHUNK_SIZE, originalIndices)
       : buildChunks(
           translationSourceParagraphs,
           CHUNK_SIZE,
           (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
-          (p) => !!p.text?.trim(),
+          (p) => !!p.text?.trim() && validParagraphIds.has(p.id),
         );
 
     let resultText = '';
