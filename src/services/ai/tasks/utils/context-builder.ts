@@ -296,16 +296,23 @@ export async function getRelatedMemoriesForChunk(
   }
 
   try {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    if (!book) {
-      return '';
-    }
+    let terms: Terminology[];
+    let characters: CharacterSetting[];
 
-    // 从 chunk 文本中提取出现的术语和角色（如果未提供）
-    const terms = existingTerms || findUniqueTermsInText(chunkText, book.terminologies || []);
-    const characters =
-      existingCharacters || findUniqueCharactersInText(chunkText, book.characterSettings || []);
+    if (existingTerms && existingCharacters) {
+      terms = existingTerms;
+      characters = existingCharacters;
+    } else {
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        return '';
+      }
+
+      terms = existingTerms || findUniqueTermsInText(chunkText, book.terminologies || []);
+      characters =
+        existingCharacters || findUniqueCharactersInText(chunkText, book.characterSettings || []);
+    }
 
     // 使用 Map 去重（按 memory ID），同时保持优先级顺序
     const uniqueMemories = new Map<string, Memory>();
@@ -316,39 +323,63 @@ export async function getRelatedMemoriesForChunk(
     // 为防止单一实体（如主角）占用所有名额，设置每个实体的最大记忆数限制
     const PER_ENTITY_LIMIT = Math.max(3, Math.floor(maxMemories * 0.4));
 
-    // 1. 获取角色相关记忆（最高优先级）
-    for (const character of characters) {
-      if (uniqueMemories.size >= maxMemories) break;
-      if (character.id) {
-        const characterMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-          type: 'character',
-          id: character.id,
-        });
-        // 按 lastAccessedAt 排序并限制每个角色的记忆数量
-        const sortedMemories = characterMemories
-          .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-          .slice(0, PER_ENTITY_LIMIT);
+    const getUniqueEntityIds = (ids: Array<string | undefined>): string[] => {
+      const seen = new Set<string>();
+      const result: string[] = [];
 
-        for (const memory of sortedMemories) {
-          if (uniqueMemories.size >= maxMemories) break;
-          uniqueMemories.set(memory.id, memory);
-        }
+      for (const id of ids) {
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
+      }
+
+      return result;
+    };
+
+    const fetchEntityMemories = async (
+      type: 'character' | 'term',
+      entityIds: string[],
+    ): Promise<Memory[][]> => {
+      if (entityIds.length === 0) {
+        return [];
+      }
+
+      const memoryGroups = await Promise.all(
+        entityIds.map((id) =>
+          MemoryService.getMemoriesByAttachment(bookId, {
+            type,
+            id,
+          }),
+        ),
+      );
+
+      return memoryGroups.map((memories) =>
+        memories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt).slice(0, PER_ENTITY_LIMIT),
+      );
+    };
+
+    const characterIds = getUniqueEntityIds(characters.map((character) => character.id));
+    const termIds = getUniqueEntityIds(terms.map((term) => term.id));
+
+    const [characterMemoryGroups, termMemoryGroups] = await Promise.all([
+      fetchEntityMemories('character', characterIds),
+      fetchEntityMemories('term', termIds),
+    ]);
+
+    // 1. 获取角色相关记忆（最高优先级）
+    for (const characterMemories of characterMemoryGroups) {
+      if (uniqueMemories.size >= maxMemories) break;
+      for (const memory of characterMemories) {
+        if (uniqueMemories.size >= maxMemories) break;
+        uniqueMemories.set(memory.id, memory);
       }
     }
 
     // 2. 获取术语相关记忆
-    for (const term of terms) {
-      if (uniqueMemories.size >= maxMemories) break;
-      if (term.id) {
-        const termMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-          type: 'term',
-          id: term.id,
-        });
-        const sortedMemories = termMemories
-          .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-          .slice(0, PER_ENTITY_LIMIT);
-
-        for (const memory of sortedMemories) {
+    if (uniqueMemories.size < maxMemories) {
+      for (const termMemories of termMemoryGroups) {
+        if (uniqueMemories.size >= maxMemories) break;
+        for (const memory of termMemories) {
           if (uniqueMemories.size >= maxMemories) break;
           uniqueMemories.set(memory.id, memory);
         }

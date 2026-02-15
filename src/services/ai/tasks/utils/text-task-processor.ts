@@ -10,7 +10,6 @@ import type {
   ChatMessage,
   AITool,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -56,6 +55,16 @@ import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
 /**
+ * 检查是否为 AI 降级错误
+ */
+function isAIDegradationError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes('AI降级检测') || error.message.includes('重复字符');
+  }
+  return false;
+}
+
+/**
  * 任务类型标签（用于日志）
  */
 const TASK_LABELS: Record<TaskType, string> = {
@@ -96,16 +105,7 @@ export interface TextTaskOptions {
   allChapterParagraphs?: Paragraph[] | undefined;
 
   // AI 处理 Store
-  aiProcessingStore?:
-    | {
-        addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-        updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-        appendThinkingMessage: (id: string, text: string) => Promise<void>;
-        appendOutputContent: (id: string, text: string) => Promise<void>;
-        removeTask: (id: string) => Promise<void>;
-        activeTasks: AIProcessingTask[];
-      }
-    | undefined;
+  aiProcessingStore?: AIProcessingStore | undefined;
 }
 
 /**
@@ -186,6 +186,44 @@ export interface TextTaskResult {
   actions?: ActionInfo[];
   titleTranslation?: string;
   referencedMemories?: string[];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function getReferencedMemoryIdsFromAction(action: ActionInfo): string[] {
+  if (action.entity !== 'memory') {
+    return [];
+  }
+
+  const data = asRecord(action.data);
+  if (!data) {
+    return [];
+  }
+
+  const referencedIds = new Set<string>();
+
+  const memoryId = data['memory_id'];
+  if (typeof memoryId === 'string' && memoryId.length > 0) {
+    referencedIds.add(memoryId);
+  }
+
+  const id = data['id'];
+  if (typeof id === 'string' && id.length > 0) {
+    referencedIds.add(id);
+  }
+
+  const foundMemoryIds = data['found_memory_ids'];
+  if (Array.isArray(foundMemoryIds)) {
+    for (const foundId of foundMemoryIds) {
+      if (typeof foundId === 'string' && foundId.length > 0) {
+        referencedIds.add(foundId);
+      }
+    }
+  }
+
+  return Array.from(referencedIds);
 }
 
 /**
@@ -285,17 +323,17 @@ export async function processTextTask(
     throw new Error('所选模型未启用');
   }
 
-  console.log(`[${logLabel}] 🚀 开始${taskLabel}任务`, {
-    段落数量: content?.length || 0,
-    有效段落数: validParagraphs.length,
-    AI模型: model.name,
-    AI提供商: model.provider,
-    书籍ID: bookId || '无',
-  });
+  // console.log(`[${logLabel}] 🚀 开始${taskLabel}任务`, {
+  //   段落数量: content?.length || 0,
+  //   有效段落数: validParagraphs.length,
+  //   AI模型: model.name,
+  //   AI提供商: model.provider,
+  //   书籍ID: bookId || '无',
+  // });
 
   // 初始化任务
   const { taskId, abortController } = await initializeTask(
-    aiProcessingStore as AIProcessingStore | undefined,
+    aiProcessingStore,
     taskType,
     model.name,
     {
@@ -317,8 +355,7 @@ export async function processTextTask(
       void ChapterSummaryService.generateSummary(chapterId, fullSourceText, {
         bookId,
         ...(chapterTitle ? { chapterTitle } : {}),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        aiProcessingStore: aiProcessingStore as any,
+        ...(aiProcessingStore ? { aiProcessingStore } : {}),
         onSuccess: (summary: string) =>
           console.log(`[${logLabel}] 自动生成章节摘要成功: ${summary.slice(0, 30)}...`),
         onError: (error: unknown) => console.error(`[${logLabel}] 自动生成章节摘要失败:`, error),
@@ -496,7 +533,7 @@ export async function processTextTask(
           chunks.splice(chunkIndex, 1, ...rebuiltChunks);
           // 安全地赋值：我们知道 rebuiltChunks[0] 存在，且它现在就在 chunks[chunkIndex] 位置
           // 但直接使用 chunks[chunkIndex] 会提示可能是 undefined，所以使用 rebuiltChunks[0]
-          actualChunk = rebuiltChunks[0];
+          actualChunk = rebuiltChunks[0]!;
         } else {
           // 如果重建后没有块（理论上不应发生，因为 invalidParagraphs 有内容），跳过
           chunkIndex++;
@@ -642,7 +679,7 @@ export async function processTextTask(
             handleAction,
             onToast: options.onToast,
             taskId,
-            aiProcessingStore: aiProcessingStore as AIProcessingStore | undefined,
+            aiProcessingStore,
             aiModelId: model.id,
             logLabel,
             isBriefPlanning: enableBriefPlanning && chunkIndex > 0,
@@ -763,9 +800,7 @@ export async function processTextTask(
           chunkProcessed = true;
           chunkIndex++;
         } catch (error) {
-          const isDegradedError =
-            error instanceof Error &&
-            (error.message.includes('AI降级检测') || error.message.includes('重复字符'));
+          const isDegradedError = isAIDegradationError(error);
 
           if (isDegradedError) {
             retryCount++;
@@ -817,22 +852,13 @@ export async function processTextTask(
     }
 
     // 完成任务
-    void completeTask(taskId, aiProcessingStore as AIProcessingStore | undefined, taskType);
+    void completeTask(taskId, aiProcessingStore, taskType);
 
     // 收集引用的记忆 ID
     const referencedMemoryIds = new Set<string>();
     for (const action of actions) {
-      if (action.entity === 'memory') {
-        const data = action.data as {
-          memory_id?: string;
-          id?: string;
-          found_memory_ids?: string[];
-        };
-        if (data.memory_id) referencedMemoryIds.add(data.memory_id);
-        if (data.id) referencedMemoryIds.add(data.id);
-        if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
-          data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
-        }
+      for (const memoryId of getReferencedMemoryIdsFromAction(action)) {
+        referencedMemoryIds.add(memoryId);
       }
     }
 
@@ -845,12 +871,7 @@ export async function processTextTask(
       ...(taskId ? { taskId } : {}),
     };
   } catch (error) {
-    void handleTaskError(
-      error,
-      taskId,
-      aiProcessingStore as AIProcessingStore | undefined,
-      taskType,
-    );
+    void handleTaskError(error, taskId, aiProcessingStore, taskType);
     throw error;
   } finally {
     cleanupAbort();

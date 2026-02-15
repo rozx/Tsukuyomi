@@ -878,11 +878,14 @@ class TaskLoopSession {
           .map((id) => paragraphIds.indexOf(id))
           .filter((idx) => idx !== -1);
 
+        // 对外提示中的 index 与 chunk 展示一致，使用从 1 开始的语义
+        const displayMissingIndices = missingIndices.map((idx) => idx + 1);
+
         this.config.history.push({
           role: 'user',
           content:
             `${this.getCurrentStatusInfoMsg()}\n\n` +
-            getMissingParagraphsPrompt(taskType, missingIndices),
+            getMissingParagraphsPrompt(taskType, displayMissingIndices),
         });
         this.currentStatus = 'working';
         this.consecutiveReviewCount = 0;
