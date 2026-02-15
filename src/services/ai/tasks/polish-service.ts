@@ -70,6 +70,10 @@ export interface PolishServiceOptions {
     removeTask: (id: string) => Promise<void>;
     activeTasks: AIProcessingTask[];
   };
+  /**
+   * 章节全量段落（包含空段落），用于构建正确的原始索引映射
+   */
+  allChapterParagraphs?: Paragraph[];
 }
 
 /**
@@ -138,6 +142,7 @@ export class PolishService {
         chapterId: options?.chapterId,
         chapterTitle: options?.chapterTitle,
         chunkSize: options?.chunkSize,
+        allChapterParagraphs: options?.allChapterParagraphs,
         aiProcessingStore: options?.aiProcessingStore,
       },
       {

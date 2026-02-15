@@ -91,6 +91,10 @@ export interface TextTaskOptions {
   chapterTitle?: string | undefined;
   chunkSize?: number | undefined;
 
+  // 章节全量段落（包含空段落），用于构建正确的原始索引映射
+  // 如果不提供，则使用 content 参数的数组索引（可能不正确，因为 content 可能是预过滤后的数组）
+  allChapterParagraphs?: Paragraph[] | undefined;
+
   // AI 处理 Store
   aiProcessingStore?:
     | {
@@ -229,9 +233,32 @@ export async function processTextTask(
     throw new Error(`要${taskLabel}的内容不能为空`);
   }
 
-  // 过滤有效段落，同时记录原始索引（章节位置，包含空段落计数）
-  const validParagraphs: Paragraph[] = [];
+  // 构建原始索引映射（章节位置，包含空段落计数）
+  // 如果提供了 allChapterParagraphs，使用它来构建正确的章节原始位置映射
+  // 否则退化为使用 content 的数组索引（调用方传入预过滤数组时索引会不正确）
   const originalIndices = new Map<string, number>();
+  const allParagraphs = options.allChapterParagraphs;
+
+  if (allParagraphs && allParagraphs.length > 0) {
+    // 使用章节全量段落构建索引映射
+    for (let i = 0; i < allParagraphs.length; i++) {
+      const paragraph = allParagraphs[i];
+      if (paragraph) {
+        originalIndices.set(paragraph.id, i);
+      }
+    }
+  } else {
+    // 退化：使用 content 数组索引（调用方未传 allChapterParagraphs 时）
+    for (let i = 0; i < content.length; i++) {
+      const paragraph = content[i];
+      if (paragraph) {
+        originalIndices.set(paragraph.id, i);
+      }
+    }
+  }
+
+  // 过滤有效段落
+  const validParagraphs: Paragraph[] = [];
 
   for (let i = 0; i < content.length; i++) {
     const paragraph = content[i];
@@ -243,7 +270,6 @@ export async function processTextTask(
 
     if (isValid) {
       validParagraphs.push(paragraph);
-      originalIndices.set(paragraph.id, i);
     }
   }
 
@@ -388,12 +414,15 @@ export async function processTextTask(
 
     // 切分文本
     const CHUNK_SIZE = resolveRuntimeTaskChunkSize(options.chunkSize ?? DEFAULT_TASK_CHUNK_SIZE);
-    // 注意：buildChunks 现在直接遍历原始 content，索引已是章节原始位置
-    // buildFormattedChunks 需要传入 originalIndices 映射
+    // buildFormattedChunks 使用 originalIndices 映射获取章节原始位置
+    // buildChunks 遍历全量段落数组，直接使用数组索引作为章节原始位置
+    // 翻译路径使用 allChapterParagraphs（如果有），确保索引为章节原始位置
+    const translationSourceParagraphs =
+      allParagraphs && allParagraphs.length > 0 ? allParagraphs : content;
     const chunks = requiresTranslation
       ? buildFormattedChunks(validParagraphs, CHUNK_SIZE, originalIndices)
       : buildChunks(
-          content, // 传入原始 content，让 buildChunks 遍历时使用原始索引
+          translationSourceParagraphs,
           CHUNK_SIZE,
           (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
           (p) => !!p.text?.trim(),
@@ -447,7 +476,7 @@ export async function processTextTask(
       // 重建 chunk（如果需要）
       let actualChunk: TextChunk = chunk;
       if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
-        // 重建时仍使用原始 content，保持索引一致性
+        // 重建时使用全量段落数组，保持章节原始索引一致性
         const rebuiltChunks = requiresTranslation
           ? buildFormattedChunks(
               validParagraphs.filter((p) => unprocessedParagraphIds.includes(p.id)),
@@ -455,7 +484,7 @@ export async function processTextTask(
               originalIndices,
             )
           : buildChunks(
-              content, // 使用原始 content 保持索引一致
+              translationSourceParagraphs,
               CHUNK_SIZE,
               (p, idx) => `[${idx}] [ID: ${p.id}] ${p.text}\n\n`,
               (p) => !!p.text?.trim() && unprocessedParagraphIds.includes(p.id),
@@ -625,7 +654,7 @@ export async function processTextTask(
                     void Promise.resolve(
                       onParagraphsExtracted({
                         paragraphs,
-                        paragraphIds: actualChunk.paragraphIds!,
+                        paragraphIds: actualChunk.paragraphIds,
                         originalTranslations,
                         processedParagraphIds,
                         chunkIndex,

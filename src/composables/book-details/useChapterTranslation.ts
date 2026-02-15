@@ -559,6 +559,7 @@ export function useChapterTranslation(
         chapterId: targetChapterId,
         currentParagraphId: paragraphId,
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -661,6 +662,7 @@ export function useChapterTranslation(
         chapterId: targetChapterId,
         currentParagraphId: paragraphId,
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -755,6 +757,7 @@ export function useChapterTranslation(
         bookId: book.value.id,
         chapterId: targetChapterId,
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -877,6 +880,7 @@ export function useChapterTranslation(
           ? { customInstructions: customInstructions.translationInstructions }
           : {}),
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1103,6 +1107,7 @@ export function useChapterTranslation(
           ? { customInstructions: customInstructions.translationInstructions }
           : {}),
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1258,6 +1263,7 @@ export function useChapterTranslation(
           ? { customInstructions: customInstructions.polishInstructions }
           : {}),
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
@@ -1497,6 +1503,7 @@ export function useChapterTranslation(
           ? { customInstructions: customInstructions.proofreadingInstructions }
           : {}),
         ...(chunkSize !== undefined ? { chunkSize } : {}),
+        allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
           addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
