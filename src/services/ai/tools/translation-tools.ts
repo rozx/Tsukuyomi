@@ -27,6 +27,8 @@ const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
 const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
+const OPENING_QUOTE_SYMBOLS = ['「', '『', '“', "'"] as const;
+const CLOSING_QUOTE_SYMBOLS = ['」', '』', '”', "'"] as const;
 
 // 错误消息常量
 const ERROR_MESSAGES = {
@@ -277,6 +279,38 @@ function validateParagraphsInRange(
 }
 
 /**
+ * 统计文本中指定符号列表出现次数
+ */
+function countSymbols(text: string, symbols: readonly string[]): number {
+  let count = 0;
+  for (const symbol of symbols) {
+    count += text.split(symbol).length - 1;
+  }
+  return count;
+}
+
+/**
+ * 检查译文是否遗漏原文中的引号（允许「」/『』与“”互相转换）
+ */
+function detectMissingQuoteSymbols(originalText: string, translatedText: string): string[] {
+  const missingTypes: string[] = [];
+
+  const originalOpeningCount = countSymbols(originalText, OPENING_QUOTE_SYMBOLS);
+  const translatedOpeningCount = countSymbols(translatedText, OPENING_QUOTE_SYMBOLS);
+  if (translatedOpeningCount < originalOpeningCount) {
+    missingTypes.push('开引号（「『“）');
+  }
+
+  const originalClosingCount = countSymbols(originalText, CLOSING_QUOTE_SYMBOLS);
+  const translatedClosingCount = countSymbols(translatedText, CLOSING_QUOTE_SYMBOLS);
+  if (translatedClosingCount < originalClosingCount) {
+    missingTypes.push('闭引号（」』”）');
+  }
+
+  return missingTypes;
+}
+
+/**
  * 处理批次（保存翻译）
  *
  * @param chapterId - 可选的章节 ID。提供时仅加载和搜索该章节（性能优化），
@@ -332,6 +366,17 @@ async function processTranslationBatch(
       }
     } else {
       // 回退路径：加载所有未加载的章节，遍历全部段落
+      const totalChapterCount = book.volumes.reduce(
+        (count, volume) => count + (volume.chapters?.length || 0),
+        0,
+      );
+      console.warn('[translation-tools] ⚠️ 未提供 chapterId，触发全书回退扫描，可能影响性能', {
+        bookId,
+        taskType,
+        batchSize: items.length,
+        totalChapterCount,
+      });
+
       const chaptersToLoad: string[] = [];
       for (const volume of book.volumes) {
         for (const chapter of volume.chapters || []) {
@@ -404,6 +449,15 @@ async function processTranslationBatch(
       const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
         continue;
+      }
+
+      const missingQuoteSymbols = detectMissingQuoteSymbols(paragraph.text, item.translatedText);
+      if (missingQuoteSymbols.length > 0) {
+        return {
+          success: false,
+          error: `段落 ${item.paragraphId} 的译文缺少原文引号符号: ${missingQuoteSymbols.join(' ')}`,
+          processedCount: 0,
+        };
       }
 
       // 所有任务类型都创建新的翻译版本

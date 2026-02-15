@@ -953,6 +953,70 @@ describe('add_translation_batch', () => {
       expect(originalTrans?.aiModelId).toBe('model-old');
     });
 
+    test('当译文遗漏原文引号时应返回错误', async () => {
+      const para1 = createTestParagraph('para1', '他说：「今天会下雨吗？」');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+      const originalTransCount = para1.translations?.length || 0;
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '他说今天会下雨吗？' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('缺少原文引号符号');
+      expect(resultObj.error).toContain('开引号');
+      expect(resultObj.error).toContain('闭引号');
+      expect(para1.translations?.length).toBe(originalTransCount);
+    });
+
+    test('当「」转换为“”时应允许保存', async () => {
+      const para1 = createTestParagraph('para1', '她说：「欢迎回来。」');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '她说：“欢迎回来。”' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+
+      const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
+      expect(selectedTrans?.translation).toBe('她说：“欢迎回来。”');
+    });
+
     test('当段落不存在时应返回错误', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const chapter = createTestChapter('chapter1', [para1]);
@@ -1138,6 +1202,57 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('章节不存在');
+    });
+
+    test('当缺少 chapterId 时应记录性能风险警告并走回退路径', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const chapter1 = createTestChapter('chapter1');
+      const chapter2 = createTestChapter('chapter2');
+      const volume = createTestVolume('volume1', [chapter1, chapter2]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+      mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
+        expect(chapterIds).toEqual(['chapter1', 'chapter2']);
+        return Promise.resolve(
+          new Map<string, Paragraph[]>([
+            ['chapter1', [para1]],
+            ['chapter2', []],
+          ]),
+        );
+      });
+
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+
+      const tool = getTool();
+      // 不传 chapterId，触发回退路径
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译文本' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(mockLoadChapterContentsBatch).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[translation-tools] ⚠️ 未提供 chapterId，触发全书回退扫描，可能影响性能',
+        expect.objectContaining({
+          bookId: 'novel-1',
+          taskType: 'translation',
+          batchSize: 1,
+          totalChapterCount: 2,
+        }),
+      );
     });
   });
 

@@ -1,4 +1,5 @@
 import type { Paragraph } from 'src/models/novel';
+import { getSelectedTranslation } from 'src/utils';
 
 /**
  * 默认分块大小（与翻译任务保持一致）
@@ -94,10 +95,7 @@ export function buildFormattedChunks(
     if (!paragraph) continue;
 
     // 获取段落的当前翻译
-    const currentTranslation =
-      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
-      paragraph.translations?.[0]?.translation ||
-      '';
+    const currentTranslation = getSelectedTranslation(paragraph);
 
     // 使用原始索引（如果提供），否则使用数组索引
     const originalIndex = originalIndices?.get(paragraph.id) ?? i;

@@ -251,4 +251,41 @@ describe('buildFormattedChunks - 空段落索引语义', () => {
     // 未提供 originalIndices，不应出现原始章节索引跳号
     expect(allText).not.toContain('[4] [ID: para4]');
   });
+
+  test('应只使用当前选中的翻译版本', () => {
+    const paragraphs: Paragraph[] = [
+      {
+        id: 'para0',
+        text: '第一段',
+        selectedTranslationId: 't2',
+        translations: [
+          { id: 't1', translation: '旧译文', aiModelId: 'model1' },
+          { id: 't2', translation: '当前译文', aiModelId: 'model1' },
+        ],
+      },
+    ];
+
+    const chunks = buildFormattedChunks(paragraphs, 10000);
+    const chunkText = chunks[0]!.text;
+
+    expect(chunkText).toContain('翻译: 当前译文');
+    expect(chunkText).not.toContain('翻译: 旧译文');
+  });
+
+  test('selectedTranslationId 无效时不应回退到首个翻译', () => {
+    const paragraphs: Paragraph[] = [
+      {
+        id: 'para0',
+        text: '第一段',
+        selectedTranslationId: 'not-exists',
+        translations: [{ id: 't1', translation: '旧译文', aiModelId: 'model1' }],
+      },
+    ];
+
+    const chunks = buildFormattedChunks(paragraphs, 10000);
+    const chunkText = chunks[0]!.text;
+
+    expect(chunkText).toContain('翻译: ');
+    expect(chunkText).not.toContain('翻译: 旧译文');
+  });
 });

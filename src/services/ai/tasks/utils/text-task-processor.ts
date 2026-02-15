@@ -20,6 +20,7 @@ import { AIServiceFactory } from '../../index';
 import { ToolRegistry } from '../../tools/index';
 import {
   buildOriginalTranslationsMap,
+  getSelectedTranslation,
   filterChangedParagraphs,
   reconstructChunkText,
 } from 'src/utils';
@@ -237,8 +238,8 @@ export async function processTextTask(
     if (!paragraph) continue;
 
     const hasText = paragraph.text?.trim();
-    const hasTranslation = paragraph.translations && paragraph.translations.length > 0;
-    const isValid = requiresTranslation ? hasText && hasTranslation : hasText;
+    const hasSelectedTranslation = getSelectedTranslation(paragraph).trim().length > 0;
+    const isValid = requiresTranslation ? hasText && hasSelectedTranslation : hasText;
 
     if (isValid) {
       validParagraphs.push(paragraph);
@@ -249,7 +250,7 @@ export async function processTextTask(
   if (validParagraphs.length === 0) {
     throw new Error(
       requiresTranslation
-        ? `要${taskLabel}的段落必须包含至少一个翻译版本`
+        ? `要${taskLabel}的段落必须包含当前选中的翻译`
         : `要${taskLabel}的内容不能为空`,
     );
   }

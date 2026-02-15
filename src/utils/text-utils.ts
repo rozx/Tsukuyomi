@@ -36,6 +36,23 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
 }
 
 /**
+ * 获取段落当前选中的翻译文本
+ * @param paragraph 段落对象
+ * @returns 当前选中的翻译文本，不存在则返回空字符串
+ */
+export function getSelectedTranslation(paragraph: Paragraph): string {
+  if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
+    return '';
+  }
+
+  const selectedTranslation = paragraph.translations.find(
+    (translation) => translation.id === paragraph.selectedTranslationId,
+  );
+
+  return selectedTranslation?.translation || '';
+}
+
+/**
  * 构建段落的原始翻译映射
  * @param paragraphs 段落数组
  * @returns 段落ID到原始翻译文本的映射
@@ -43,10 +60,7 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
 export function buildOriginalTranslationsMap(paragraphs: Paragraph[]): Map<string, string> {
   const originalTranslations = new Map<string, string>();
   for (const paragraph of paragraphs) {
-    const currentTranslation =
-      paragraph.translations?.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
-      paragraph.translations?.[0]?.translation ||
-      '';
+    const currentTranslation = getSelectedTranslation(paragraph);
     if (currentTranslation) {
       originalTranslations.set(paragraph.id, currentTranslation.trim());
     }
