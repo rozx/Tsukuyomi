@@ -32,10 +32,12 @@ const CLOSING_QUOTE_SYMBOLS = ['」', '』', '”', "'"] as const;
 
 // 错误消息常量
 const ERROR_MESSAGES = {
+  //段落标识相关
   MISSING_PARAGRAPH_ID: '必须提供 paragraph_id（不支持 index）',
   INVALID_PARAGRAPH_ID: 'paragraph_id 必须是非空字符串',
   LEGACY_INDEX_REJECTED:
     '检测到使用已废弃的 index 字段提交。请使用 paragraph_id 标识段落（从 chunk 中 [ID: xxx] 获取）',
+  // 批次验证相关
   EMPTY_PARAGRAPH_LIST: '段落列表不能为空',
   BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
     `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
@@ -55,6 +57,31 @@ const ERROR_MESSAGES = {
   DUPLICATE_PARAGRAPHS: (ids: string[]) => `批次中存在重复的段落 ID: ${ids.join(', ')}`,
   OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
+  // 翻译内容验证相关
+  TRANSLATION_UNCHANGED: (paragraphId: string) =>
+    `段落 ${paragraphId} 的翻译与当前版本完全相同，无需重复提交。请提供不同的翻译或跳过此段落。`,
+  MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
+    `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
+  // 任务状态相关
+  AI_STORE_NOT_INITIALIZED: 'AI 处理 Store 未初始化',
+  TASK_ID_MISSING: '未提供任务 ID',
+  TASK_NOT_FOUND: (taskId: string) => `任务不存在: ${taskId}`,
+  TASK_STATUS_INVALID: (currentStatus: string | undefined) =>
+    `只能在 'working' 状态下调用此工具，当前状态为: ${currentStatus || '未设置'}`,
+  TASK_TYPE_MISSING: (taskId: string) => `无法确定任务类型，请检查任务信息。taskId=${taskId}`,
+  TASK_TYPE_UNSUPPORTED: (taskType: string) => `任务类型不支持批量提交: ${taskType}`,
+  // 书籍/章节数据相关
+  BOOK_NOT_FOUND: (bookId: string) => `书籍不存在: ${bookId}`,
+  BOOK_NO_VOLUMES: '书籍缺少章节数据',
+  CHAPTER_NOT_FOUND: (chapterId: string) => `章节不存在: ${chapterId}`,
+  PARAGRAPH_NOT_FOUND: (ids: string[]) => `未找到以下段落: ${ids.join(', ')}`,
+  EMPTY_PARAGRAPH_CANNOT_TRANSLATE: (ids: string[]) => `无法翻译空段落: ${ids.join(', ')}`,
+  //上下文相关
+  BOOK_ID_MISSING: '未提供书籍 ID',
+  AI_MODEL_ID_MISSING: '未提供 AI 模型 ID，无法写入翻译来源',
+  PARAM_VALIDATION_FAILED: '参数验证失败',
+  // 处理错误
+  BATCH_PROCESS_ERROR: (errorMsg: string) => `处理批次时出错: ${errorMsg}`,
 } as const;
 
 /**
@@ -84,23 +111,23 @@ function validateTaskStatus(
   taskId: string | undefined,
 ): { valid: boolean; error?: string; currentStatus?: string | undefined } {
   if (!aiProcessingStore) {
-    return { valid: false, error: 'AI 处理 Store 未初始化' };
+    return { valid: false, error: ERROR_MESSAGES.AI_STORE_NOT_INITIALIZED };
   }
 
   if (!taskId) {
-    return { valid: false, error: '未提供任务 ID' };
+    return { valid: false, error: ERROR_MESSAGES.TASK_ID_MISSING };
   }
 
   const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
   if (!task) {
-    return { valid: false, error: `任务不存在: ${taskId}` };
+    return { valid: false, error: ERROR_MESSAGES.TASK_NOT_FOUND(taskId) };
   }
 
   const currentStatus = task.workflowStatus;
   if (currentStatus !== 'working') {
     return {
       valid: false,
-      error: `只能在 'working' 状态下调用此工具，当前状态为: ${currentStatus || '未设置'}`,
+      error: ERROR_MESSAGES.TASK_STATUS_INVALID(currentStatus),
       currentStatus,
     };
   }
@@ -326,11 +353,11 @@ async function processTranslationBatch(
   try {
     const book = await BookService.getBookById(bookId);
     if (!book) {
-      return { success: false, error: `书籍不存在: ${bookId}`, processedCount: 0 };
+      return { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 };
     }
 
     if (!book.volumes) {
-      return { success: false, error: '书籍缺少章节数据', processedCount: 0 };
+      return { success: false, error: ERROR_MESSAGES.BOOK_NO_VOLUMES, processedCount: 0 };
     }
 
     // 收集目标段落：优先使用 chapterId 限定范围（避免加载所有章节）
@@ -342,7 +369,7 @@ async function processTranslationBatch(
       if (!found) {
         return {
           success: false,
-          error: `章节不存在: ${chapterId}`,
+          error: ERROR_MESSAGES.CHAPTER_NOT_FOUND(chapterId),
           processedCount: 0,
         };
       }
@@ -428,14 +455,14 @@ async function processTranslationBatch(
       if (blankParagraphIds.length > 0) {
         return {
           success: false,
-          error: `无法翻译空段落: ${blankParagraphIds.join(', ')}`,
+          error: ERROR_MESSAGES.EMPTY_PARAGRAPH_CANNOT_TRANSLATE(blankParagraphIds),
           processedCount: 0,
         };
       }
 
       return {
         success: false,
-        error: `未找到以下段落: ${missingParagraphIds.join(', ')}`,
+        error: ERROR_MESSAGES.PARAGRAPH_NOT_FOUND(missingParagraphIds),
         processedCount: 0,
       };
     }
@@ -451,11 +478,25 @@ async function processTranslationBatch(
         continue;
       }
 
+      // 检查提交的翻译是否与当前选中的翻译完全相同
+      if (paragraph.selectedTranslationId && paragraph.translations) {
+        const currentTranslation = paragraph.translations.find(
+          (t) => t.id === paragraph.selectedTranslationId,
+        );
+        if (currentTranslation && currentTranslation.translation === item.translatedText) {
+          return {
+            success: false,
+            error: ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId),
+            processedCount: 0,
+          };
+        }
+      }
+
       const missingQuoteSymbols = detectMissingQuoteSymbols(paragraph.text, item.translatedText);
       if (missingQuoteSymbols.length > 0) {
         return {
           success: false,
-          error: `段落 ${item.paragraphId} 的译文缺少原文引号符号: ${missingQuoteSymbols.join(' ')}`,
+          error: ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
           processedCount: 0,
         };
       }
@@ -487,7 +528,11 @@ async function processTranslationBatch(
     return { success: true, processedCount };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '未知错误';
-    return { success: false, error: `处理批次时出错: ${errorMsg}`, processedCount: 0 };
+    return {
+      success: false,
+      error: ERROR_MESSAGES.BATCH_PROCESS_ERROR(errorMsg),
+      processedCount: 0,
+    };
   }
 }
 
@@ -555,7 +600,7 @@ export const translationTools: ToolDefinition[] = [
       if (!paramValidation.valid || !paramValidation.resolvedIds) {
         return JSON.stringify({
           success: false,
-          error: paramValidation.error || '参数验证失败',
+          error: paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED,
           note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
         });
       }
@@ -589,7 +634,7 @@ export const translationTools: ToolDefinition[] = [
       if (!bookId) {
         return JSON.stringify({
           success: false,
-          error: '未提供书籍 ID',
+          error: ERROR_MESSAGES.BOOK_ID_MISSING,
           ...(warning ? { warning } : {}),
         });
       }
@@ -600,14 +645,14 @@ export const translationTools: ToolDefinition[] = [
       if (!taskType) {
         return JSON.stringify({
           success: false,
-          error: `无法确定任务类型，请检查任务信息。taskId=${taskId || 'unknown'}`,
+          error: ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown'),
           ...(warning ? { warning } : {}),
         });
       }
       if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
         return JSON.stringify({
           success: false,
-          error: `任务类型不支持批量提交: ${taskType}`,
+          error: ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType),
           ...(warning ? { warning } : {}),
         });
       }
@@ -624,7 +669,7 @@ export const translationTools: ToolDefinition[] = [
       if (!aiModelId) {
         return JSON.stringify({
           success: false,
-          error: '未提供 AI 模型 ID，无法写入翻译来源',
+          error: ERROR_MESSAGES.AI_MODEL_ID_MISSING,
           ...(warning ? { warning } : {}),
         });
       }
