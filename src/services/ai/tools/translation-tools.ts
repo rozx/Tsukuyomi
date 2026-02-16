@@ -27,8 +27,31 @@ const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
 const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
-const OPENING_QUOTE_SYMBOLS = ['「', '『', '“', "'"] as const;
-const CLOSING_QUOTE_SYMBOLS = ['」', '』', '”', "'"] as const;
+/**
+ * 引号对匹配规则：
+ * - 「」 原文 → 译文可用 「」 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
+ * - 『』 原文 → 译文可用 『』 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
+ * 注意：不接受 ASCII 直引号 ' 和 "，因为它们在英文文本中过于常见，容易导致误判
+ */
+const QUOTE_PAIR_RULES: Array<{
+  originalOpen: string;
+  originalClose: string;
+  acceptedOpens: string[];
+  acceptedCloses: string[];
+}> = [
+  {
+    originalOpen: '「',
+    originalClose: '」',
+    acceptedOpens: ['「', '\u201c', '\u2018'],
+    acceptedCloses: ['」', '\u201d', '\u2019'],
+  },
+  {
+    originalOpen: '『',
+    originalClose: '』',
+    acceptedOpens: ['『', '\u201c', '\u2018'],
+    acceptedCloses: ['』', '\u201d', '\u2019'],
+  },
+];
 
 // 错误消息常量
 const ERROR_MESSAGES = {
@@ -62,6 +85,14 @@ const ERROR_MESSAGES = {
     `段落 ${paragraphId} 的翻译与当前版本完全相同，无需重复提交。请提供不同的翻译或跳过此段落。`,
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
+  TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
+    `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
+  TRANSLATION_DUPLICATE_HISTORY: (paragraphId: string) =>
+    `段落 ${paragraphId} 的译文与已有的历史翻译版本完全相同，请提供不同的翻译。`,
+  TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
+    `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
+  TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
+    `段落 ${paragraphId} 的译文长度为原文的 ${percentage}%，可能过长。`,
   // 任务状态相关
   AI_STORE_NOT_INITIALIZED: 'AI 处理 Store 未初始化',
   TASK_ID_MISSING: '未提供任务 ID',
@@ -306,32 +337,58 @@ function validateParagraphsInRange(
 }
 
 /**
- * 统计文本中指定符号列表出现次数
+ * 统计文本中指定符号出现次数
  */
-function countSymbols(text: string, symbols: readonly string[]): number {
+function countSymbol(text: string, symbol: string): number {
   let count = 0;
-  for (const symbol of symbols) {
-    count += text.split(symbol).length - 1;
+  let pos = 0;
+  while ((pos = text.indexOf(symbol, pos)) !== -1) {
+    count++;
+    pos += symbol.length;
   }
   return count;
 }
 
 /**
- * 检查译文是否遗漏原文中的引号（允许「」/『』与“”互相转换）
+ * 统计文本中多个符号出现次数之和
+ */
+function countSymbols(text: string, symbols: string[]): number {
+  let count = 0;
+  for (const symbol of symbols) {
+    count += countSymbol(text, symbol);
+  }
+  return count;
+}
+
+/**
+ * 检查译文是否遗漏原文中的引号。
+ *
+ * 按引号对规则逐一检测：
+ * - 「」 → 译文可用 「」、""、'' 或 ""
+ * - 『』 → 译文可用 『』、'' 或 ""
  */
 function detectMissingQuoteSymbols(originalText: string, translatedText: string): string[] {
   const missingTypes: string[] = [];
 
-  const originalOpeningCount = countSymbols(originalText, OPENING_QUOTE_SYMBOLS);
-  const translatedOpeningCount = countSymbols(translatedText, OPENING_QUOTE_SYMBOLS);
-  if (translatedOpeningCount < originalOpeningCount) {
-    missingTypes.push('开引号（「『“）');
-  }
+  for (const rule of QUOTE_PAIR_RULES) {
+    const originalOpenCount = countSymbol(originalText, rule.originalOpen);
+    const originalCloseCount = countSymbol(originalText, rule.originalClose);
 
-  const originalClosingCount = countSymbols(originalText, CLOSING_QUOTE_SYMBOLS);
-  const translatedClosingCount = countSymbols(translatedText, CLOSING_QUOTE_SYMBOLS);
-  if (translatedClosingCount < originalClosingCount) {
-    missingTypes.push('闭引号（」』”）');
+    if (originalOpenCount === 0 && originalCloseCount === 0) continue;
+
+    if (originalOpenCount > 0) {
+      const translatedOpenCount = countSymbols(translatedText, rule.acceptedOpens);
+      if (translatedOpenCount < originalOpenCount) {
+        missingTypes.push(`开引号 ${rule.originalOpen}（可用: ${rule.acceptedOpens.join(' ')}）`);
+      }
+    }
+
+    if (originalCloseCount > 0) {
+      const translatedCloseCount = countSymbols(translatedText, rule.acceptedCloses);
+      if (translatedCloseCount < originalCloseCount) {
+        missingTypes.push(`闭引号 ${rule.originalClose}（可用: ${rule.acceptedCloses.join(' ')}）`);
+      }
+    }
   }
 
   return missingTypes;
@@ -349,7 +406,13 @@ async function processTranslationBatch(
   aiModelId: string,
   taskType: 'translation' | 'polish' | 'proofreading',
   chapterId?: string,
-): Promise<{ success: boolean; error?: string; processedCount: number }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  errors?: string[];
+  warnings?: string[];
+  processedCount: number;
+}> {
   try {
     const book = await BookService.getBookById(bookId);
     if (!book) {
@@ -448,8 +511,9 @@ async function processTranslationBatch(
       .map((item) => item.paragraphId);
     if (missingParagraphIds.length > 0) {
       // 检查缺失的段落是否是因为空白而被过滤
+      const missingIdSet = new Set(missingParagraphIds);
       const blankParagraphIds = targetParagraphs
-        .filter((p) => missingParagraphIds.includes(p.id) && isEmptyParagraph(p.text))
+        .filter((p) => missingIdSet.has(p.id) && isEmptyParagraph(p.text))
         .map((p) => p.id);
 
       if (blankParagraphIds.length > 0) {
@@ -472,34 +536,71 @@ async function processTranslationBatch(
     // 这样可以防止 AI 产生糟糕结果时丢失用户之前的手动翻译
 
     // 阶段 1：验证所有段落（不修改任何数据，防止部分段落验证失败时已提交的段落被污染）
+    // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
+    const validationErrors: string[] = [];
+    const validationWarnings: string[] = [];
+
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
         continue;
       }
 
-      // 检查提交的翻译是否与当前选中的翻译完全相同
-      if (paragraph.selectedTranslationId && paragraph.translations) {
-        const currentTranslation = paragraph.translations.find(
-          (t) => t.id === paragraph.selectedTranslationId,
+      // 检查翻译是否为原文的直接复制
+      if (item.translatedText.trim() === paragraph.text.trim()) {
+        validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
+        continue;
+      }
+
+      // 检查提交的翻译是否与任何已有翻译版本完全相同（不仅限当前选中版本）
+      if (paragraph.translations && paragraph.translations.length > 0) {
+        const duplicateTranslation = paragraph.translations.find(
+          (t) => t.translation === item.translatedText,
         );
-        if (currentTranslation && currentTranslation.translation === item.translatedText) {
-          return {
-            success: false,
-            error: ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId),
-            processedCount: 0,
-          };
+        if (duplicateTranslation) {
+          const isSelected = duplicateTranslation.id === paragraph.selectedTranslationId;
+          validationErrors.push(
+            isSelected
+              ? ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId)
+              : ERROR_MESSAGES.TRANSLATION_DUPLICATE_HISTORY(item.paragraphId),
+          );
+          continue;
+        }
+      }
+
+      // 检查翻译长度异常（仅警告，不阻止提交）
+      if (paragraph.text.length > 0) {
+        const lengthRatio = item.translatedText.length / paragraph.text.length;
+        if (lengthRatio < 0.1) {
+          validationWarnings.push(
+            ERROR_MESSAGES.TRANSLATION_LENGTH_SHORT(
+              item.paragraphId,
+              Math.round(lengthRatio * 100),
+            ),
+          );
+        } else if (lengthRatio > 10) {
+          validationWarnings.push(
+            ERROR_MESSAGES.TRANSLATION_LENGTH_LONG(item.paragraphId, Math.round(lengthRatio * 100)),
+          );
         }
       }
 
       const missingQuoteSymbols = detectMissingQuoteSymbols(paragraph.text, item.translatedText);
       if (missingQuoteSymbols.length > 0) {
-        return {
-          success: false,
-          error: ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
-          processedCount: 0,
-        };
+        validationErrors.push(
+          ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
+        );
       }
+    }
+
+    if (validationErrors.length > 0) {
+      return {
+        success: false,
+        error: validationErrors.join('\n'),
+        errors: validationErrors,
+        ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
+        processedCount: 0,
+      };
     }
 
     // 阶段 2：所有验证通过后，批量写入翻译
@@ -534,7 +635,11 @@ async function processTranslationBatch(
     }
     await BookService.saveBook(book);
 
-    return { success: true, processedCount };
+    return {
+      success: true,
+      processedCount,
+      ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
+    };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '未知错误';
     return {
@@ -665,7 +770,6 @@ export const translationTools: ToolDefinition[] = [
           ...(warning ? { warning } : {}),
         });
       }
-      // const isPolishOrProofreading = taskType === 'polish' || taskType === 'proofreading';
 
       // 构建处理项（将 resolvedIds 与 translated_text 配对）
       const processItems = paragraphs.map((p, i) => ({
@@ -696,6 +800,8 @@ export const translationTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error: result.error,
+          ...(result.errors ? { errors: result.errors } : {}),
+          ...(result.warnings ? { warnings: result.warnings } : {}),
           ...(warning ? { warning } : {}),
         });
       }
@@ -714,9 +820,9 @@ export const translationTools: ToolDefinition[] = [
           entity: 'translation',
           data: {
             paragraph_id: resolvedIds[0] || '',
-            translation_id: `batch_${Date.now()}`,
+            translation_id: `batch_${result.processedCount}_${Date.now()}`,
             old_translation: '',
-            new_translation: `批量处理 ${result.processedCount} 个段落`,
+            new_translation: `批量处理 ${result.processedCount} 个段落 (${resolvedIds.slice(0, 3).join(', ')}${resolvedIds.length > 3 ? '...' : ''})`,
           },
         });
       }
@@ -753,6 +859,7 @@ export const translationTools: ToolDefinition[] = [
               }
             : { remaining_count: 0 }
           : {}),
+        ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),
       });
     },

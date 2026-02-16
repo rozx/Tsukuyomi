@@ -284,7 +284,7 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ paragraph_id: 'p_symbol', translated_text: '...' }],
+          paragraphs: [{ paragraph_id: 'p_symbol', translated_text: '……' }],
         },
         symbolContext,
       );
