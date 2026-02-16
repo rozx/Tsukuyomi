@@ -212,10 +212,7 @@ const chapterScrollerStyle = computed(() => {
       maxHeight: '100%',
     };
   }
-  return {
-    height: 'calc(90vh - 300px)',
-    maxHeight: 'calc(90vh - 300px)',
-  };
+  return {};
 });
 
 const contentScrollStyle = computed(() => {
@@ -233,7 +230,7 @@ const contentScrollStyle = computed(() => {
 const novelInfoClass = computed(() => {
   return [
     'card-base p-4 flex-shrink-0 overflow-y-auto w-full min-w-0',
-    isPhone.value ? 'max-h-[18dvh]' : 'max-h-[40vh]',
+    isPhone.value ? 'max-h-[18dvh]' : 'max-h-[20vh]',
   ];
 });
 
@@ -1142,7 +1139,7 @@ watch(
                 <VirtualScroller
                   :items="virtualList"
                   :itemSize="chapterItemSize"
-                  class="border-0"
+                  class="border-0 h-full"
                   :style="chapterScrollerStyle"
                 >
                   <template #item="{ item }">
@@ -1499,6 +1496,14 @@ watch(
   flex: 1 1 auto !important;
 }
 
+.novel-scraper-dialog .p-virtualscroller {
+  height: 100%;
+}
+
+.novel-scraper-dialog .p-virtualscroller-content {
+  min-width: 100%;
+}
+
 @media (max-width: 640px) {
   .novel-scraper-dialog .p-splitterpanel {
     overflow: hidden;
@@ -1511,10 +1516,6 @@ watch(
 
   .novel-scraper-dialog .p-virtualscroller {
     width: 100%;
-  }
-
-  .novel-scraper-dialog .p-virtualscroller-content {
-    min-width: 100%;
   }
 
   .novel-scraper-dialog .p-dialog-footer {
