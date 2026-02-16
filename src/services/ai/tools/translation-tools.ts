@@ -51,6 +51,12 @@ const QUOTE_PAIR_RULES: Array<{
     acceptedOpens: ['『', '\u201c', '\u2018'],
     acceptedCloses: ['』', '\u201d', '\u2019'],
   },
+  {
+    originalOpen: '“',
+    originalClose: '”',
+    acceptedOpens: ['“', '"'],
+    acceptedCloses: ['”', '"'],
+  },
 ];
 
 // 错误消息常量
@@ -110,6 +116,7 @@ const ERROR_MESSAGES = {
   //上下文相关
   BOOK_ID_MISSING: '未提供书籍 ID',
   AI_MODEL_ID_MISSING: '未提供 AI 模型 ID，无法写入翻译来源',
+  CHAPTER_ID_MISSING: '任务缺少 chapterId，将触发惰性章节扫描，可能影响性能',
   PARAM_VALIDATION_FAILED: '参数验证失败',
   // 处理错误
   BATCH_PROCESS_ERROR: (errorMsg: string) => `处理批次时出错: ${errorMsg}`,
@@ -455,47 +462,44 @@ async function processTranslationBatch(
         }
       }
     } else {
-      // 回退路径：加载所有未加载的章节，遍历全部段落
+      // 回退路径：逐个加载章节直到找到所有目标段落（惰性加载优化）
       const totalChapterCount = book.volumes.reduce(
         (count, volume) => count + (volume.chapters?.length || 0),
         0,
       );
-      console.warn('[translation-tools] ⚠️ 未提供 chapterId，触发全书回退扫描，可能影响性能', {
-        bookId,
-        taskType,
-        batchSize: items.length,
-        totalChapterCount,
-      });
+      console.warn(
+        '[translation-tools] ⚠️ 未提供 chapterId，触发惰性章节扫描。建议确保任务对象包含 chapterId 以提升性能',
+        {
+          bookId,
+          taskType,
+          batchSize: items.length,
+          totalChapterCount,
+        },
+      );
 
-      const chaptersToLoad: string[] = [];
+      const itemIdSet = new Set(items.map((item) => item.paragraphId));
+      const foundIds = new Set<string>();
+
       for (const volume of book.volumes) {
-        for (const chapter of volume.chapters || []) {
-          if (chapter && chapter.content === undefined) {
-            chaptersToLoad.push(chapter.id);
-          }
-        }
-      }
+        if (foundIds.size === itemIdSet.size) break;
 
-      if (chaptersToLoad.length > 0) {
-        const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
-        for (const volume of book.volumes) {
-          for (const chapter of volume.chapters || []) {
-            if (!chapter || chapter.content !== undefined) continue;
-            const content = contentsMap.get(chapter.id);
+        for (const chapter of volume.chapters || []) {
+          if (!chapter || foundIds.size === itemIdSet.size) continue;
+
+          // 按需加载章节内容
+          if (chapter.content === undefined) {
+            const content = await ChapterContentService.loadChapterContent(chapter.id);
             chapter.content = content || [];
             chapter.contentLoaded = true;
           }
-        }
-      }
 
-      // 收集所有目标段落（合并为单次遍历）
-      const itemIdSet = new Set(items.map((item) => item.paragraphId));
-      for (const volume of book.volumes) {
-        for (const chapter of volume.chapters || []) {
-          if (!chapter.content) continue;
-          for (const p of chapter.content) {
-            if (itemIdSet.has(p.id)) {
-              targetParagraphs.push(p);
+          // 从该章节收集目标段落
+          if (chapter.content) {
+            for (const p of chapter.content) {
+              if (itemIdSet.has(p.id)) {
+                targetParagraphs.push(p);
+                foundIds.add(p.id);
+              }
             }
           }
         }
@@ -571,14 +575,14 @@ async function processTranslationBatch(
       // 检查翻译长度异常（仅警告，不阻止提交）
       if (paragraph.text.length > 0) {
         const lengthRatio = item.translatedText.length / paragraph.text.length;
-        if (lengthRatio < 0.1) {
+        if (lengthRatio < 0.3) {
           validationWarnings.push(
             ERROR_MESSAGES.TRANSLATION_LENGTH_SHORT(
               item.paragraphId,
               Math.round(lengthRatio * 100),
             ),
           );
-        } else if (lengthRatio > 10) {
+        } else if (lengthRatio > 3) {
           validationWarnings.push(
             ERROR_MESSAGES.TRANSLATION_LENGTH_LONG(item.paragraphId, Math.round(lengthRatio * 100)),
           );
@@ -705,6 +709,10 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
+      // 复用验证过的任务对象
+      const task = aiProcessingStore!.activeTasks.find((t) => t.id === taskId)!;
+      const taskType = task.type;
+
       // 验证参数（传入 submittedParagraphIds 用于计算剩余大小）
       const paramValidation = validateBatchArgs(
         { paragraphs },
@@ -753,9 +761,6 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
-      // 获取任务类型以确定处理方式
-      const task = aiProcessingStore?.activeTasks.find((t) => t.id === taskId);
-      const taskType = task?.type;
       if (!taskType) {
         return JSON.stringify({
           success: false,
@@ -788,6 +793,13 @@ export const translationTools: ToolDefinition[] = [
       }
       // 从任务中获取 chapterId，用于限定加载范围（性能优化）
       const chapterId = task.chapterId;
+      if (!chapterId) {
+        console.warn('[translation-tools] 任务缺少 chapterId，将触发惰性章节扫描', {
+          taskId,
+          taskType,
+          bookId,
+        });
+      }
       const result = await processTranslationBatch(
         bookId,
         processItems,
