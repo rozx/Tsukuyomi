@@ -91,7 +91,7 @@ const ERROR_MESSAGES = {
   TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
   TRANSLATION_DUPLICATE: (count: number) =>
-    `${count} 个段落译文与历史版本相同（已自动复用）。后续请避免重复提交。`,
+    `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
     `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
   TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
