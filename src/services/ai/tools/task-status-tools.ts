@@ -356,17 +356,19 @@ export const taskStatusTools: ToolDefinition[] = [
           });
         }
 
-        // 当状态变更为 review 时，获取并提醒未完成的待办事项
+        // 当状态变更为 review 时，获取并提醒未完成的待办事项（仅当有待办时返回，减少 token 消耗）
         let todoReminder:
           | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
           | undefined;
         if (status === 'review') {
           const todos = TodoListService.getTodosByTaskId(taskId);
           const incompleteTodos = todos.filter((t) => !t.completed);
-          todoReminder = {
-            incomplete_count: incompleteTodos.length,
-            todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
-          };
+          if (incompleteTodos.length > 0) {
+            todoReminder = {
+              incomplete_count: incompleteTodos.length,
+              todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
+            };
+          }
         }
 
         const result: Record<string, unknown> = {
