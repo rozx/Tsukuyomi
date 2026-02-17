@@ -86,14 +86,12 @@ const ERROR_MESSAGES = {
   OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
   // 翻译内容验证相关
-  TRANSLATION_UNCHANGED: (paragraphId: string) =>
-    `段落 ${paragraphId} 的翻译与当前选中版本完全相同，提交成功后将自动选中该版本。请后续尽量避免重复提交相同内容。`,
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
   TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
-  TRANSLATION_DUPLICATE_HISTORY: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与已有的历史翻译版本完全相同，提交成功后将自动选中该版本。请后续尽量避免重复提交相同内容。`,
+  TRANSLATION_DUPLICATE: (count: number) =>
+    `${count} 个段落译文与历史版本相同（已自动复用）。后续请避免重复提交。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
     `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
   TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
@@ -542,8 +540,7 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     const validationErrors: string[] = [];
     const validationWarnings: string[] = [];
-    // 记录需要选中已有翻译的段落（而非添加新翻译）
-    const selectExistingTranslationMap = new Map<string, string>(); // paragraphId -> existingTranslationId
+    let duplicateCount = 0;
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
@@ -580,14 +577,7 @@ async function processTranslationBatch(
         }
 
         if (duplicateTranslation) {
-          // 不再拒绝，而是接受并发出警告，同时标记需要选中已有翻译
-          selectExistingTranslationMap.set(item.paragraphId, duplicateTranslation.id);
-          const isSelected = duplicateTranslation.id === paragraph.selectedTranslationId;
-          validationWarnings.push(
-            isSelected
-              ? ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId)
-              : ERROR_MESSAGES.TRANSLATION_DUPLICATE_HISTORY(item.paragraphId),
-          );
+          duplicateCount++;
           continue;
         }
       }
@@ -615,6 +605,10 @@ async function processTranslationBatch(
           ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
         );
       }
+    }
+
+    if (duplicateCount > 0) {
+      validationWarnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
     }
 
     if (validationErrors.length > 0) {
@@ -840,29 +834,6 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
-      // 构建已处理段落列表（帮助 AI 确认哪些段落已完成）
-      const processedParagraphIds = resolvedIds;
-
-      // 只有翻译任务才需要返回剩余段落信息（润色/校对任务不需要）
-      const isTranslationTask = taskType === 'translation';
-      let remainingParagraphIds: string[] | undefined;
-      let displayRemainingIds: string[] | undefined;
-      if (isTranslationTask) {
-        const chunkParagraphIds = chunkBoundaries?.paragraphIds;
-        if (chunkParagraphIds && chunkParagraphIds.length > 0) {
-          // 使用 submittedParagraphIds（包含所有历史批次 + 当前批次）计算剩余段落
-          remainingParagraphIds = submittedParagraphIds
-            ? chunkParagraphIds.filter((id) => !submittedParagraphIds.has(id))
-            : chunkParagraphIds.filter((id) => !resolvedIds.includes(id));
-          // 只显示下一批次的最大数量（减少 token 消耗）
-          const { hardMax } = calculateAllowedBatchSize(
-            chunkParagraphIds.length,
-            submittedParagraphIds?.size,
-          );
-          displayRemainingIds = remainingParagraphIds.slice(0, hardMax);
-        }
-      }
-
       // 获取当前任务的未完成待办事项（仅当有待办时返回，减少 token 消耗）
       let todoReminder:
         | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
@@ -883,17 +854,7 @@ export const translationTools: ToolDefinition[] = [
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
-        processed_paragraph_ids: processedParagraphIds,
         task_type: taskType,
-        ...(isTranslationTask
-          ? remainingParagraphIds && remainingParagraphIds.length > 0
-            ? {
-                remaining_count: remainingParagraphIds.length,
-                remaining_paragraph_ids: displayRemainingIds,
-                note: `仅显示下 ${displayRemainingIds?.length || 0} 个待处理段落 ID，请在下次批次中使用。`,
-              }
-            : { remaining_count: 0 }
-          : {}),
         ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),
         ...(todoReminder ? { todo_reminder: todoReminder } : {}),
