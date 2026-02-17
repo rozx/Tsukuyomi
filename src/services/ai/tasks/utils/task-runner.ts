@@ -492,7 +492,7 @@ class TaskLoopSession {
     );
     this.config.history.push({
       role: 'tool',
-      content: getStatusRestrictedToolPrompt(toolName, currentStatus),
+      content: getStatusRestrictedToolPrompt(toolName, currentStatus, this.config.taskType),
       tool_call_id: toolCall.id,
       name: toolName,
     });

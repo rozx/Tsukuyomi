@@ -12,6 +12,15 @@ export function getPlanningLoopPrompt(
   const taskLabel = TASK_TYPE_LABELS[taskType];
 
   if (isLoopDetected) {
+    // chapter_summary 没有 preparing 阶段，直接进入 working
+    if (taskType === 'chapter_summary') {
+      return (
+        `[警告] **立即进入${taskLabel}阶段**！你已经在规划阶段停留过久。` +
+        `**现在必须**将状态更新为 "working"，开始${taskLabel}。` +
+        `不要再停留在 planning。` +
+        `请使用工具调用：\`update_task_status({"status":"working"})\`。`
+      );
+    }
     return (
       `[警告] **立即进入准备阶段**！你已经在规划阶段停留过久。` +
       `**现在必须**将状态更新为 "preparing"，并在准备阶段完成必要的数据维护。` +
@@ -20,13 +29,16 @@ export function getPlanningLoopPrompt(
     );
   }
 
+  // chapter_summary 没有 preparing 阶段，直接进入 working
+  const nextStatus = taskType === 'chapter_summary' ? 'working' : 'preparing';
+
   return isBriefPlanning
     ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
-        `如需补充信息，优先使用**本次会话提供的工具**，并遵循“最小必要”原则。` +
+        `如需补充信息，优先使用**本次会话提供的工具**，并遵循"最小必要"原则。` +
         `只有在需要获取当前段落的前后文上下文时，才建议使用 \`get_previous_paragraphs\`、\`get_next_paragraphs\` 等段落上下文工具。` +
-        `仍然注意敬语翻译流程，确保翻译结果准确。完成规划后进入 preparing。`
+        `仍然注意敬语翻译流程，确保翻译结果准确。完成规划后进入 ${nextStatus}。`
     : `收到。如果你已获取必要信息，` +
-        `**现在**用 \`update_task_status({"status":"preparing"})\` 切到 preparing。` +
+        `**现在**用 \`update_task_status({"status":"${nextStatus}"})\` 切到 ${nextStatus}。` +
         `如果还需要使用工具获取信息，请调用工具后再更新状态。`;
 }
 
@@ -127,8 +139,16 @@ export function getReviewLoopPrompt(taskType: TaskType): string {
 export function getStatusRestrictedToolPrompt(
   toolName: string,
   currentStatus: 'planning' | 'working' | 'end',
+  taskType?: TaskType,
 ): string {
   if (currentStatus === 'planning') {
+    // chapter_summary 无 preparing 阶段，planning 后直接进入 working
+    if (taskType === 'chapter_summary') {
+      return (
+        `[限制] 当前状态为 planning，不能调用 ${toolName} 进行数据写入。` +
+        `章节摘要任务不支持数据写入操作。`
+      );
+    }
     return (
       `[限制] 当前状态为 planning，不能调用 ${toolName} 进行数据写入。` +
       `请先用 \`update_task_status({"status":"preparing"})\` 进入 preparing 后再更新术语/角色/记忆。`
@@ -136,9 +156,10 @@ export function getStatusRestrictedToolPrompt(
   }
 
   if (currentStatus === 'working') {
+    const allowedStages = taskType === 'translation' ? 'preparing 或 review' : 'preparing';
     return (
       `[限制] 当前状态为 working，禁止调用 ${toolName} 进行数据写入。` +
-      `请在 preparing 或 review 阶段进行术语/角色/记忆更新。`
+      `请在 ${allowedStages} 阶段进行术语/角色/记忆更新。`
     );
   }
 

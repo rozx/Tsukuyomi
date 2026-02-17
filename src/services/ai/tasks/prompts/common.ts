@@ -89,10 +89,15 @@ function getWorkingStateDescription(taskType: TaskType): string {
   const nextStatus = taskType === 'translation' ? 'review' : 'end';
   const nextStatusNote =
     taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
-  const dataWriteRestrictionLine =
-    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? '- ⛔ 禁止创建/更新术语、角色、记忆（请切换到 preparing 或 review）\n'
-      : '';
+  const dataWriteRestrictionNote =
+    taskType === 'translation'
+      ? '（请切换到 preparing 或 review）'
+      : taskType === 'polish' || taskType === 'proofreading'
+        ? '（请切换到 preparing）'
+        : '';
+  const dataWriteRestrictionLine = dataWriteRestrictionNote
+    ? `- ⛔ 禁止创建/更新术语、角色、记忆${dataWriteRestrictionNote}\n`
+    : '';
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
@@ -171,6 +176,11 @@ export function getDataManagementRules(): string {
   return `【数据管理规则】
 ⛔ **核心禁止**: 严禁将敬语（如"田中さん"）添加为角色别名
 
+**状态约束**:
+- preparing：可创建/更新术语、角色、记忆
+- working：仅执行翻译/润色/校对输出，禁止数据写入
+- review：仅翻译任务可用，且可创建/更新术语、角色、记忆
+
 **敬语处理**: 查别名翻译→检查关系→搜索记忆→检查之前的翻译→按关系决定（亲密可省略/正式保留）
 
 **术语/角色分离**:
@@ -182,8 +192,8 @@ export function getDataManagementRules(): string {
 
 ⚠️ **保持数据最新**:
 - 发现全名 → 更新主名称，原名移入别名
-- 发现新信息 → 立即 \`update_term\`/\`update_character\`
-- 空翻译/重复/误分类 → 立即修复
+- 发现新信息 → 在可写阶段尽快 \`update_term\`/\`update_character\`
+- 空翻译/重复/误分类 → 在可写阶段尽快修复
 - 新术语/角色 → 先检查是否存在，不存在则创建`;
 }
 
@@ -200,6 +210,7 @@ export function getMemoryWorkflowRules(): string {
 - 记忆的核心目的是帮助未来翻译保持一致性和质量，而非记录故事情节
 
 - 使用顺序：\`get_recent_memories\` → \`search_memory_by_keywords\` → \`get_memory\`
+- 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（preparing；翻译任务还可在 review）
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
 - **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）。可同时附加多个实体。
