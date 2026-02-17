@@ -204,27 +204,6 @@ export function buildChunks<T extends { id: string; text?: string }>(
 }
 
 /**
- * 检查文本是否只包含符号（不是真正的文本内容）
- * @param text 要检查的文本
- * @returns 如果只包含符号，返回 true
- */
-export function isOnlySymbols(text: string): boolean {
-  if (!text || text.trim().length === 0) {
-    return true;
-  }
-
-  // 移除所有空白字符
-  const trimmed = text.trim();
-
-  // 检查是否只包含标点符号、数字、特殊符号等
-  // 允许的字符：日文假名、汉字、英文字母
-  const hasContent =
-    /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF\u20000-\u2A6DFa-zA-Z]/.test(trimmed);
-
-  return !hasContent;
-}
-
-/**
  * 通用的 chunk 接口（所有 chunk 类型都必须有 text 和 paragraphIds）
  */
 export interface BaseChunk {

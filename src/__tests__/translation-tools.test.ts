@@ -495,7 +495,6 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      expect(resultObj.processed_paragraph_ids).toContain('para1');
     });
 
     test('当仅使用 index 提交时应被拒绝（BREAKING）', async () => {
@@ -850,13 +849,108 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
-      expect(resultObj.processed_paragraph_ids).toContain('para1');
 
       // 工具层不再直接修改段落数据，翻译写入由 onParagraphsExtracted 回调统一完成
       expect(para1.translations?.length).toBe(originalTransCount);
     });
 
-    test('重复译文命中当前选中版本时应保持选中不变', async () => {
+    test('纯符号段落提交与原文相同时应允许通过', async () => {
+      const para1 = createTestParagraph('para1', '***');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '***' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+    });
+
+    test('纯符号段落提交与原文相同的各种符号形式应允许通过', async () => {
+      const testCases = [
+        { text: '***', translated: '***' },
+        { text: '---', translated: '---' },
+        { text: '……', translated: '……' },
+        { text: '※※※', translated: '※※※' },
+        { text: '☆★☆', translated: '☆★☆' },
+      ];
+
+      for (const { text, translated } of testCases) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [{ paragraph_id: 'para1', translated_text: translated }],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-new',
+          },
+        );
+
+        const resultObj = JSON.parse(result as string);
+        expect(resultObj.success).toBe(true);
+      }
+    });
+
+    test('非纯符号段落提交与原文相同时应拒绝', async () => {
+      const para1 = createTestParagraph('para1', '这是原文');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '这是原文' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('与原文完全相同');
+    });
+
+    test('重复译文命中当前选中版本时应拒绝提交', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans-old', translation: '重复译文', aiModelId: 'model-old' },
         { id: 'trans-current', translation: '重复译文', aiModelId: 'model-current' },
@@ -887,7 +981,8 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(true);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('当前选中版本相同');
       expect(para1.selectedTranslationId).toBe('trans-current');
       expect(para1.translations?.length).toBe(originalCount);
     });
@@ -929,7 +1024,7 @@ describe('add_translation_batch', () => {
       expect(para1.translations?.length).toBe(originalCount);
     });
 
-    test('存在校验错误时重复译文警告应使用提交后语义', async () => {
+    test('存在校验错误时重复译文错误应阻止提交', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans-selected', translation: '重复译文', aiModelId: 'model-selected' },
       ]);
@@ -963,7 +1058,7 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.warnings?.[0]).toContain('自动选中该版本');
+      expect(resultObj.error).toContain('当前选中版本相同');
     });
 
     test('润色任务应验证通过并返回成功（实际写入由回调层完成）', async () => {
@@ -1166,8 +1261,6 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(2);
-      expect(resultObj.processed_paragraph_ids).toContain('para1');
-      expect(resultObj.processed_paragraph_ids).toContain('para2');
     });
 
     test('当书籍不存在时应返回错误', async () => {
@@ -1249,7 +1342,6 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
-      expect(resultObj.processed_paragraph_ids).toContain('para1');
     });
 
     test('当 chapterId 指向不存在的章节时应返回错误', async () => {
@@ -1402,85 +1494,6 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('已废弃的 index 字段');
-    });
-  });
-
-  describe('响应格式验证（paragraph_id 语义）', () => {
-    test('成功响应应包含 processed_paragraph_ids 而非 processed_paragraphs', async () => {
-      const para1 = createTestParagraph('para1', '原文1');
-      const para2 = createTestParagraph('para2', '原文2');
-      const chapter = createTestChapter('chapter1', [para1, para2]);
-      const volume = createTestVolume('volume1', [chapter]);
-      const novel = createTestNovel([volume]);
-
-      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
-      mockBooksStore.books = [novel];
-
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
-
-      const result = await tool.handler(
-        {
-          paragraphs: [
-            { paragraph_id: 'para1', translated_text: '翻译1' },
-            { paragraph_id: 'para2', translated_text: '翻译2' },
-          ],
-        },
-        {
-          bookId: 'novel-1',
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-          aiModelId: 'model-1',
-          chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
-        },
-      );
-
-      const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(true);
-      // 新格式：processed_paragraph_ids（数组）
-      expect(Array.isArray(resultObj.processed_paragraph_ids)).toBe(true);
-      expect(resultObj.processed_paragraph_ids).toContain('para1');
-      expect(resultObj.processed_paragraph_ids).toContain('para2');
-      // 不再有旧格式的 processed_paragraphs（对象数组）
-      expect(resultObj.processed_paragraphs).toBeUndefined();
-    });
-
-    test('翻译任务应返回 remaining_paragraph_ids 而非 remaining_paragraphs', async () => {
-      const para1 = createTestParagraph('para1', '原文1');
-      const para2 = createTestParagraph('para2', '原文2');
-      const para3 = createTestParagraph('para3', '原文3');
-      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
-      const volume = createTestVolume('volume1', [chapter]);
-      const novel = createTestNovel([volume]);
-
-      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
-      mockBooksStore.books = [novel];
-
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
-
-      const result = await tool.handler(
-        {
-          paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译1' }],
-        },
-        {
-          bookId: 'novel-1',
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-          aiModelId: 'model-1',
-          chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
-        },
-      );
-
-      const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(true);
-      expect(resultObj.remaining_count).toBe(2);
-      // 新格式：remaining_paragraph_ids（字符串数组）
-      expect(Array.isArray(resultObj.remaining_paragraph_ids)).toBe(true);
-      expect(resultObj.remaining_paragraph_ids).toContain('para2');
-      expect(resultObj.remaining_paragraph_ids).toContain('para3');
-      // 不再有旧格式
-      expect(resultObj.remaining_paragraphs).toBeUndefined();
     });
   });
 

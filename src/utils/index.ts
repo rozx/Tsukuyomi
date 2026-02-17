@@ -35,6 +35,7 @@ export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export {
   isEmptyOrSymbolOnly,
+  isSymbolOnly,
   getSelectedTranslation,
   buildOriginalTranslationsMap,
   hasTranslationChanged,

@@ -5,7 +5,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
-import { isEmptyParagraph } from 'src/utils/text-utils';
+import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
 
 // ============ Types ============
@@ -90,6 +90,8 @@ const ERROR_MESSAGES = {
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
   TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
+  TRANSLATION_SAME_AS_SELECTED: (paragraphId: string) =>
+    `段落 ${paragraphId} 的译文与当前选中版本相同，请不要提交相同内容。`,
   TRANSLATION_DUPLICATE: (count: number) =>
     `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
@@ -548,36 +550,37 @@ async function processTranslationBatch(
         continue;
       }
 
-      // 检查翻译是否为原文的直接复制
+      // 检查翻译是否为原文的直接复制（纯符号段落除外）
       if (item.translatedText.trim() === paragraph.text.trim()) {
-        validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
-        continue;
+        if (!isSymbolOnly(paragraph.text)) {
+          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
+          continue;
+        }
       }
 
-      // 检查提交的翻译是否与任何已有翻译版本完全相同（不仅限当前选中版本）
+      // 检查提交的翻译是否与任何已有翻译版本完全相同
       if (paragraph.translations && paragraph.translations.length > 0) {
         const selectedTranslation = paragraph.translations.find(
           (t) => t.id === paragraph.selectedTranslationId,
         );
 
-        let duplicateTranslation: Translation | undefined;
-
-        // 优先复用当前已选版本，避免在存在多个同文案版本时发生非预期回退
+        // 如果与当前选中版本相同，阻止提交
         if (selectedTranslation && selectedTranslation.translation === item.translatedText) {
-          duplicateTranslation = selectedTranslation;
-        } else {
-          // 否则优先选择最近创建的同文案版本（数组末尾）
-          for (let i = paragraph.translations.length - 1; i >= 0; i--) {
-            const candidate = paragraph.translations[i];
-            if (candidate && candidate.translation === item.translatedText) {
-              duplicateTranslation = candidate;
-              break;
-            }
-          }
+          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId));
+          continue;
         }
 
-        if (duplicateTranslation) {
-          duplicateCount++;
+        // 检查是否与历史版本相同（非当前选中）
+        let foundInHistory = false;
+        for (let i = paragraph.translations.length - 1; i >= 0; i--) {
+          const candidate = paragraph.translations[i];
+          if (candidate && candidate.translation === item.translatedText) {
+            duplicateCount++;
+            foundInHistory = true;
+            break;
+          }
+        }
+        if (foundInHistory) {
           continue;
         }
       }

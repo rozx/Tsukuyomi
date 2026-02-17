@@ -44,11 +44,11 @@ import {
   isSkipAskUserEnabled,
   buildFormattedChunks,
   buildChunks,
-  isOnlySymbols,
   buildPreviousChapterSection,
   resolveRuntimeTaskChunkSize,
 } from './index';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
+import { isSymbolOnly } from 'src/utils/text-utils';
 import { ChapterSummaryService } from '../chapter-summary-service';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
@@ -838,7 +838,7 @@ export async function processTextTask(
     if (taskType === 'translation') {
       const paragraphsWithText = content.filter((p) => {
         if (!p.text || p.text.trim().length === 0) return false;
-        return !isOnlySymbols(p.text);
+        return !isSymbolOnly(p.text);
       });
       const allParagraphIds = new Set(paragraphsWithText.map((p) => p.id));
       const processedIds = new Set(paragraphResults.map((pt) => pt.id));

@@ -1,12 +1,10 @@
 import type { Paragraph } from 'src/models/novel';
 
 /**
- * 检查段落是否为空或仅包含符号
- * 空段落：没有文本或只有空白字符
- * 仅符号段落：只包含标点符号、特殊字符，但没有实际内容（字母、数字、CJK字符等）
- * @param text 段落文本
- * @returns 如果段落为空或仅符号，返回 true
+ * CJK 字符类正则表达式字符串（中文、日文、韩文）
  */
+export const CJK_CHAR_CLASS = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
+
 /**
  * 检查段落是否为空
  * 空段落：没有文本或只有空白字符
@@ -21,6 +19,16 @@ export function isEmptyParagraph(text: string | null | undefined): boolean {
 }
 
 /**
+ * 检查文本是否仅包含符号（不包含字母、数字或CJK字符）
+ * @param text 文本
+ * @returns 如果仅包含符号，返回 true
+ */
+export function isSymbolOnly(text: string): boolean {
+  const hasContent = new RegExp(`[a-zA-Z0-9${CJK_CHAR_CLASS}]`).test(text);
+  return !hasContent;
+}
+
+/**
  * 检查段落是否为空或仅包含符号
  * @param text 段落文本
  * @returns 如果段落为空或仅符号（不包含字母、数字或CJK字符），返回 true
@@ -29,10 +37,7 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
   if (isEmptyParagraph(text)) {
     return true;
   }
-  // 如果不包含任何字母、数字或 CJK 字符，则视为仅包含符号
-  // 使用 CJK_CHAR_CLASS 常量
-  const hasContent = new RegExp(`[a-zA-Z0-9${CJK_CHAR_CLASS}]`).test(text!);
-  return !hasContent;
+  return isSymbolOnly(text!);
 }
 
 /**
@@ -104,11 +109,6 @@ export function filterChangedParagraphs(
   }
   return changedParagraphs;
 }
-
-/**
- * CJK 字符类正则表达式字符串（中文、日文、韩文）
- */
-export const CJK_CHAR_CLASS = '\\u4E00-\\u9FFF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF';
 
 /**
  * 检查文本是否包含 CJK 字符
