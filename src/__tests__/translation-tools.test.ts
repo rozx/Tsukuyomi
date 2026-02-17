@@ -208,6 +208,7 @@ describe('add_translation_batch', () => {
         {
           bookId: 'novel-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -226,6 +227,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'non-existent-task',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -244,6 +246,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -262,6 +265,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -280,6 +284,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -326,6 +331,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -344,6 +350,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -371,6 +378,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -397,12 +405,13 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('未提供 AI 模型 ID');
+      expect(resultObj.error).toContain('书籍不存在');
       expect(typeof resultObj.warning).toBe('string');
       expect(resultObj.warning).toContain('容差范围');
     });
@@ -419,6 +428,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -439,6 +449,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -459,6 +470,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -515,6 +527,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
         },
       );
@@ -565,6 +578,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -585,6 +599,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -610,6 +625,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -636,6 +652,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -660,6 +677,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
         },
       );
@@ -714,6 +732,7 @@ describe('add_translation_batch', () => {
         {
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -736,6 +755,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
         },
       );
 
@@ -935,7 +955,7 @@ describe('add_translation_batch', () => {
       }
     });
 
-    test('非纯符号段落提交与原文相同时应拒绝', async () => {
+    test('非纯符号段落提交与原文相同时应允许（不再阻止）', async () => {
       const para1 = createTestParagraph('para1', '这是原文');
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -960,8 +980,40 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+    });
+
+    test('与原文相同且命中当前选中版本时仍应拒绝', async () => {
+      const para1 = createTestParagraph('para1', '这是原文', [
+        { id: 'trans-selected', translation: '这是原文', aiModelId: 'model-old' },
+      ]);
+      para1.selectedTranslationId = 'trans-selected';
+
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '这是原文' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('与原文完全相同');
+      expect(resultObj.error).toContain('当前选中版本相同');
     });
 
     test('重复译文命中当前选中版本时应拒绝提交', async () => {
@@ -1215,6 +1267,82 @@ describe('add_translation_batch', () => {
       expect(resultObj.processed_count).toBe(1);
     });
 
+    test('当原文引号不平衡时应按最小可用数量校验并允许提交', async () => {
+      const para1 = createTestParagraph(
+        'para1',
+        '「え？　えっと、応援してくれると嬉しいです。具体的には最下部↓の「え？　えっと、応援してくれると嬉しいです。具体的には最下部↓の【☆☆☆☆☆】を【★★★★★】に、まだの方はブックマーク登録……なにこれ、理央ちゃん」',
+      );
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              translated_text:
+                '“诶？呃，如果你愿意支持我就太好了。具体是在页面最下方把【☆☆☆☆☆】点成【★★★★★】，还没做的话请收藏……这什么啊，理央酱。”',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+    });
+
+    test('当原文引号不平衡且译文完全缺失引号时仍应拒绝', async () => {
+      const para1 = createTestParagraph(
+        'para1',
+        '「え？　えっと、応援してくれると嬉しいです。具体的には最下部↓の「え？　えっと、応援してくれると嬉しいです。具体的には最下部↓の【☆☆☆☆☆】を【★★★★★】に、まだの方はブックマーク登録……なにこれ、理央ちゃん」',
+      );
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              translated_text:
+                '诶？呃，如果你愿意支持我就太好了。具体是在页面最下方把【☆☆☆☆☆】点成【★★★★★】，还没做的话请收藏……这什么啊，理央酱。',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('缺少原文引号符号');
+    });
+
     test('当段落不存在时应返回错误', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const chapter = createTestChapter('chapter1', [para1]);
@@ -1453,6 +1581,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(paragraphs.map((p) => p.paragraph_id)),
         },
       );
@@ -1477,6 +1606,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para0', 'para1']),
         },
       );
@@ -1501,6 +1631,7 @@ describe('add_translation_batch', () => {
           bookId: 'novel-1',
           taskId: 'task-1',
           aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para0', 'para1']),
         },
       );

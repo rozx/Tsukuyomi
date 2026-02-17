@@ -5,7 +5,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import type { Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
-import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
+import { isEmptyParagraph } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
 
 // ============ Types ============
@@ -106,8 +106,6 @@ const ERROR_MESSAGES = {
   // 翻译内容验证相关
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
-  TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
   TRANSLATION_SAME_AS_SELECTED: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与当前选中版本相同，请不要提交相同内容。`,
   TRANSLATION_DUPLICATE: (count: number) =>
@@ -169,13 +167,13 @@ function mapParagraphIdErrorToCode(error: string): BatchErrorCode {
 function buildErrorResponse(
   error: string,
   options?: {
-    errorCode?: string;
-    invalidItems?: InvalidBatchItem[];
-    invalidParagraphIds?: string[];
-    warning?: string;
-    note?: string;
-    errors?: string[];
-    warnings?: string[];
+    errorCode?: string | undefined;
+    invalidItems?: InvalidBatchItem[] | undefined;
+    invalidParagraphIds?: string[] | undefined;
+    warning?: string | undefined;
+    note?: string | undefined;
+    errors?: string[] | undefined;
+    warnings?: string[] | undefined;
   },
 ): string {
   const payload: Record<string, unknown> = {
@@ -459,8 +457,8 @@ function countSymbols(text: string, symbols: string[]): number {
  * 检查译文是否遗漏原文中的引号。
  *
  * 按引号对规则逐一检测：
- * - 「」 → 译文可用 「」、""、'' 或 ""
- * - 『』 → 译文可用 『』、'' 或 ""
+ * - 原文引号平衡时：按成对数量严格校验
+ * - 原文引号不平衡时：降级为最小可用校验，避免因原文脏数据导致无法提交
  */
 function detectMissingQuoteSymbols(originalText: string, translatedText: string): string[] {
   const missingTypes: string[] = [];
@@ -471,16 +469,30 @@ function detectMissingQuoteSymbols(originalText: string, translatedText: string)
 
     if (originalOpenCount === 0 && originalCloseCount === 0) continue;
 
-    if (originalOpenCount > 0) {
+    let requiredOpenCount = 0;
+    let requiredCloseCount = 0;
+
+    // 原文引号计数可能不平衡（例如 OCR/抓取噪声或原文标点错误）
+    // 平衡时保持严格；不平衡时仅要求最小可用数量，避免“无论怎么译都过不了”
+    if (originalOpenCount > 0 && originalCloseCount > 0) {
+      const requiredPairCount = Math.min(originalOpenCount, originalCloseCount);
+      requiredOpenCount = requiredPairCount;
+      requiredCloseCount = requiredPairCount;
+    } else {
+      requiredOpenCount = originalOpenCount > 0 ? 1 : 0;
+      requiredCloseCount = originalCloseCount > 0 ? 1 : 0;
+    }
+
+    if (requiredOpenCount > 0) {
       const translatedOpenCount = countSymbols(translatedText, rule.acceptedOpens);
-      if (translatedOpenCount < originalOpenCount) {
+      if (translatedOpenCount < requiredOpenCount) {
         missingTypes.push(`开引号 ${rule.originalOpen}（可用: ${rule.acceptedOpens.join(' ')}）`);
       }
     }
 
-    if (originalCloseCount > 0) {
+    if (requiredCloseCount > 0) {
       const translatedCloseCount = countSymbols(translatedText, rule.acceptedCloses);
-      if (translatedCloseCount < originalCloseCount) {
+      if (translatedCloseCount < requiredCloseCount) {
         missingTypes.push(`闭引号 ${rule.originalClose}（可用: ${rule.acceptedCloses.join(' ')}）`);
       }
     }
@@ -629,11 +641,15 @@ async function processTranslationBatch(
     // 无论任务类型如何，都创建新的翻译版本以保留历史记录
     // 这样可以防止 AI 产生糟糕结果时丢失用户之前的手动翻译
 
-    // 阶段 1：验证所有段落（不修改任何数据，防止部分段落验证失败时已提交的段落被污染）
+    // 验证所有段落并收集接受的段落 ID（合并为单次遍历，确保验证逻辑与接受逻辑一致）
+    // 不修改任何数据，防止部分段落验证失败时已提交的段落被污染
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
+    // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
+    // 工具层只负责验证，不直接修改段落数据，避免双重写入
     const validationErrors: string[] = [];
     const validationWarnings: string[] = [];
     let duplicateCount = 0;
+    const acceptedIds: string[] = [];
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
@@ -641,13 +657,8 @@ async function processTranslationBatch(
         continue;
       }
 
-      // 检查翻译是否为原文的直接复制（纯符号段落除外）
-      if (item.translatedText.trim() === paragraph.text.trim()) {
-        if (!isSymbolOnly(paragraph.text)) {
-          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
-          continue;
-        }
-      }
+      // 允许译文与原文相同：不再在工具层阻止该提交。
+      // 若命中“当前选中版本重复”规则，仍会在后续校验中被拒绝。
 
       // 检查提交的翻译是否与任何已有翻译版本完全相同
       if (paragraph.translations && paragraph.translations.length > 0) {
@@ -655,7 +666,7 @@ async function processTranslationBatch(
           (t) => t.id === paragraph.selectedTranslationId,
         );
 
-        // 如果与当前选中版本相同，阻止提交
+        // 如果与当前选中版本相同，阻止提交（不加入 acceptedIds）
         if (selectedTranslation && selectedTranslation.translation === item.translatedText) {
           validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId));
           continue;
@@ -673,6 +684,8 @@ async function processTranslationBatch(
           }
         }
         if (foundInHistory) {
+          // 历史重复段落仍视为已处理以推进进度，但不会创建新翻译版本
+          acceptedIds.push(item.paragraphId);
           continue;
         }
       }
@@ -699,7 +712,11 @@ async function processTranslationBatch(
         validationErrors.push(
           ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
         );
+        continue;
       }
+
+      // 通过所有验证，加入接受列表
+      acceptedIds.push(item.paragraphId);
     }
 
     if (duplicateCount > 0) {
@@ -714,19 +731,6 @@ async function processTranslationBatch(
         ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
         processedCount: 0,
       };
-    }
-
-    // 阶段 2：所有验证通过，收集实际被接受的段落 ID
-    // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
-    // 工具层只负责验证，不直接修改段落数据，避免双重写入
-    const acceptedIds: string[] = [];
-
-    for (const item of items) {
-      const paragraph = targetParagraphsMap.get(item.paragraphId);
-      if (!paragraph) {
-        continue;
-      }
-      acceptedIds.push(item.paragraphId);
     }
 
     return {
@@ -800,6 +804,29 @@ export const translationTools: ToolDefinition[] = [
       // 复用验证过的任务对象
       const task = aiProcessingStore!.activeTasks.find((t) => t.id === taskId)!;
       const taskType = task.type;
+      const chapterId = task.chapterId;
+      const aiModelId = context.aiModelId;
+
+      // 前置条件检查（在批次验证前完成，避免无效验证开销）
+      if (!bookId) {
+        return buildErrorResponse(ERROR_MESSAGES.BOOK_ID_MISSING);
+      }
+      if (!taskType) {
+        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown'));
+      }
+      if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
+        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType));
+      }
+      if (!aiModelId) {
+        return buildErrorResponse(ERROR_MESSAGES.AI_MODEL_ID_MISSING);
+      }
+      if (!chapterId) {
+        console.warn('[translation-tools] 任务缺少 chapterId，将触发惰性章节扫描', {
+          taskId,
+          taskType,
+          bookId,
+        });
+      }
 
       // 验证参数（传入 submittedParagraphIds 用于计算剩余大小）
       const paramValidation = validateBatchArgs(
@@ -824,7 +851,7 @@ export const translationTools: ToolDefinition[] = [
         return buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates), {
           errorCode: 'DUPLICATE_PARAGRAPHS',
           invalidParagraphIds: duplicateCheck.duplicates,
-          ...(warning ? { warning } : {}),
+          warning,
         });
       }
 
@@ -839,24 +866,7 @@ export const translationTools: ToolDefinition[] = [
           ...(rangeValidation.invalidIds
             ? { invalidParagraphIds: rangeValidation.invalidIds }
             : {}),
-          ...(warning ? { warning } : {}),
-        });
-      }
-
-      if (!bookId) {
-        return buildErrorResponse(ERROR_MESSAGES.BOOK_ID_MISSING, {
-          ...(warning ? { warning } : {}),
-        });
-      }
-
-      if (!taskType) {
-        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown'), {
-          ...(warning ? { warning } : {}),
-        });
-      }
-      if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
-        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType), {
-          ...(warning ? { warning } : {}),
+          warning,
         });
       }
 
@@ -867,21 +877,6 @@ export const translationTools: ToolDefinition[] = [
       }));
 
       // 处理批次
-      const aiModelId = context.aiModelId;
-      if (!aiModelId) {
-        return buildErrorResponse(ERROR_MESSAGES.AI_MODEL_ID_MISSING, {
-          ...(warning ? { warning } : {}),
-        });
-      }
-      // 从任务中获取 chapterId，用于限定加载范围（性能优化）
-      const chapterId = task.chapterId;
-      if (!chapterId) {
-        console.warn('[translation-tools] 任务缺少 chapterId，将触发惰性章节扫描', {
-          taskId,
-          taskType,
-          bookId,
-        });
-      }
       const result = await processTranslationBatch(
         bookId,
         processItems,
@@ -892,9 +887,9 @@ export const translationTools: ToolDefinition[] = [
 
       if (!result.success) {
         return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
-          ...(result.errors ? { errors: result.errors } : {}),
-          ...(result.warnings ? { warnings: result.warnings } : {}),
-          ...(warning ? { warning } : {}),
+          errors: result.errors,
+          warnings: result.warnings,
+          warning,
         });
       }
 
