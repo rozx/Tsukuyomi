@@ -1,5 +1,5 @@
 import './setup';
-import { describe, test, expect, spyOn } from 'bun:test';
+import { describe, test, expect, spyOn, mock } from 'bun:test';
 import type {
   ChatMessage,
   TextGenerationRequest,
@@ -110,6 +110,297 @@ describe('executeToolCallLoop', () => {
         );
       });
       expect(refused).toBe(true);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
+  test('working 阶段应拒绝术语写入并累计拒绝计数', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'update_task_status') {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { status?: string };
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, new_status: args.status }),
+          } as any);
+        }
+        return Promise.resolve({
+          content: JSON.stringify({ success: true }),
+        } as any);
+      },
+    );
+
+    try {
+      const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"preparing"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-2',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"working"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-3',
+              type: 'function',
+              function: {
+                name: 'create_term',
+                arguments: '{"term":"勇者","translation":"勇者"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-4',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"end"}',
+              },
+            },
+          ],
+        },
+      ];
+
+      let idx = 0;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        const r = responses[idx] ?? responses[responses.length - 1]!;
+        idx++;
+        return Promise.resolve({
+          text: r.text,
+          ...(r.toolCalls ? { toolCalls: r.toolCalls } : {}),
+        });
+      };
+
+      const history: ChatMessage[] = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'start' },
+      ];
+
+      const tools: AITool[] = [
+        {
+          type: 'function',
+          function: {
+            name: 'update_task_status',
+            description: 'update status',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'create_term',
+            description: 'create term',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ];
+
+      const result = await executeToolCallLoop({
+        history,
+        tools,
+        generateText,
+        aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+        taskType: 'polish',
+        chunkText: 'chunk',
+        paragraphIds: [],
+        bookId: 'book1',
+        handleAction: () => {},
+        onToast: undefined,
+        taskId: undefined,
+        aiProcessingStore: undefined,
+        logLabel: 'Test',
+        maxTurns: 10,
+      });
+
+      expect(result.status).toBe('end');
+      expect(result.metrics?.workingRejectedWriteCount).toBe(1);
+
+      const createTermCalls = (handleToolCallSpy as any).mock.calls.filter(
+        (call: any[]) => call?.[0]?.function?.name === 'create_term',
+      );
+      expect(createTermCalls.length).toBe(0);
+
+      const hasStatusRestrictionPrompt = history.some((m) => {
+        const mm = m as unknown as { role: string; name?: string; content?: string };
+        return (
+          mm.role === 'tool' &&
+          mm.name === 'create_term' &&
+          mm.content?.includes('当前状态为 working')
+        );
+      });
+      expect(hasStatusRestrictionPrompt).toBe(true);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
+  test('preparing 阶段应允许术语写入', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'update_task_status') {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { status?: string };
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, new_status: args.status }),
+          } as any);
+        }
+        if (toolCall.function.name === 'create_term') {
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, term_id: 'term-1' }),
+          } as any);
+        }
+        return Promise.resolve({
+          content: JSON.stringify({ success: true }),
+        } as any);
+      },
+    );
+
+    try {
+      const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"preparing"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-2',
+              type: 'function',
+              function: {
+                name: 'create_term',
+                arguments: '{"term":"勇者","translation":"勇者"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-3',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"working"}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-4',
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                arguments: '{"status":"end"}',
+              },
+            },
+          ],
+        },
+      ];
+
+      let idx = 0;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        const r = responses[idx] ?? responses[responses.length - 1]!;
+        idx++;
+        return Promise.resolve({
+          text: r.text,
+          ...(r.toolCalls ? { toolCalls: r.toolCalls } : {}),
+        });
+      };
+
+      const history: ChatMessage[] = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'start' },
+      ];
+
+      const tools: AITool[] = [
+        {
+          type: 'function',
+          function: {
+            name: 'update_task_status',
+            description: 'update status',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'create_term',
+            description: 'create term',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ];
+
+      const result = await executeToolCallLoop({
+        history,
+        tools,
+        generateText,
+        aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+        taskType: 'polish',
+        chunkText: 'chunk',
+        paragraphIds: [],
+        bookId: 'book1',
+        handleAction: () => {},
+        onToast: undefined,
+        taskId: undefined,
+        aiProcessingStore: undefined,
+        logLabel: 'Test',
+        maxTurns: 10,
+      });
+
+      expect(result.status).toBe('end');
+      expect(result.metrics?.workingRejectedWriteCount).toBe(0);
+
+      const createTermCalls = (handleToolCallSpy as any).mock.calls.filter(
+        (call: any[]) => call?.[0]?.function?.name === 'create_term',
+      );
+      expect(createTermCalls.length).toBe(1);
     } finally {
       handleToolCallSpy.mockRestore();
     }

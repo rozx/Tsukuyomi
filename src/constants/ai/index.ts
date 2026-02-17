@@ -63,10 +63,11 @@ export const TASK_TYPE_LABELS: Record<
 /**
  * AI 工作流状态
  */
-export type AIWorkflowStatus = 'planning' | 'working' | 'review' | 'end';
+export type AIWorkflowStatus = 'planning' | 'preparing' | 'working' | 'review' | 'end';
 
 export const AI_WORKFLOW_STATUS_LABELS: Record<AIWorkflowStatus, string> = {
   planning: '规划阶段',
+  preparing: '准备阶段',
   working: '工作阶段',
   review: '复核阶段',
   end: '已结束',

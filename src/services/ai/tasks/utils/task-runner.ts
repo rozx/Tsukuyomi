@@ -2,12 +2,14 @@ import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 import {
   getCurrentStatusInfo,
   getPlanningLoopPrompt,
+  getPreparingLoopPrompt,
   getWorkingLoopPrompt,
   getWorkingFinishedPrompt,
   getWorkingContinuePrompt,
   getMissingParagraphsPrompt,
   getReviewLoopPrompt,
   getUnauthorizedToolPrompt,
+  getStatusRestrictedToolPrompt,
   getToolLimitReachedPrompt,
   getBriefPlanningToolWarningPrompt,
 } from '../prompts';
@@ -48,6 +50,15 @@ import { buildPostOutputPrompt } from './context-builder';
 // Constants
 // 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
+
+const DATA_WRITE_TOOL_NAMES = new Set([
+  'create_term',
+  'update_term',
+  'create_character',
+  'update_character',
+  'create_memory',
+  'update_memory',
+]);
 
 /**
  * 处理工具调用循环
@@ -169,6 +180,7 @@ class TaskLoopSession {
 
   // Counters
   private consecutivePlanningCount = 0;
+  private consecutivePreparingCount = 0;
   private consecutiveWorkingCount = 0;
   private consecutiveReviewCount = 0;
   private toolCallCounts = new Map<string, number>();
@@ -191,11 +203,13 @@ class TaskLoopSession {
     this.metrics = {
       totalTime: 0,
       planningTime: 0,
+      preparingTime: 0,
       workingTime: 0,
       reviewTime: 0,
       toolCallTime: 0,
       toolCallCount: 0,
       averageToolCallTime: 0,
+      workingRejectedWriteCount: 0,
       chunkProcessingTime: [],
     };
   }
@@ -430,12 +444,58 @@ class TaskLoopSession {
       return false;
     }
 
+    if (!this.isToolAllowedForCurrentStatus(toolCall)) {
+      return false;
+    }
+
     if (this.isToolLimitReached(toolName)) {
       this.handleToolLimitReached(toolCall);
       return false;
     }
 
     return true;
+  }
+
+  private isToolAllowedForCurrentStatus(toolCall: AIToolCall): boolean {
+    const toolName = toolCall.function.name;
+
+    if (!this.isTranslationRelatedTask(this.config.taskType)) {
+      return true;
+    }
+
+    if (!DATA_WRITE_TOOL_NAMES.has(toolName)) {
+      return true;
+    }
+
+    if (this.currentStatus === 'preparing' || this.currentStatus === 'review') {
+      return true;
+    }
+
+    this.handleStatusRestrictedTool(toolCall, toolName, this.currentStatus);
+    if (this.currentStatus === 'working') {
+      this.metrics.workingRejectedWriteCount++;
+    }
+    return false;
+  }
+
+  private isTranslationRelatedTask(taskType: TaskType): boolean {
+    return taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading';
+  }
+
+  private handleStatusRestrictedTool(
+    toolCall: AIToolCall,
+    toolName: string,
+    currentStatus: 'planning' | 'working' | 'end',
+  ) {
+    console.warn(
+      `[${this.config.logLabel}] ⚠️ 状态限制：${currentStatus} 阶段禁止调用 ${toolName} 写入术语/角色/记忆`,
+    );
+    this.config.history.push({
+      role: 'tool',
+      content: getStatusRestrictedToolPrompt(toolName, currentStatus),
+      tool_call_id: toolCall.id,
+      name: toolName,
+    });
   }
 
   private prepareToolCall(toolName: string): boolean {
@@ -739,6 +799,9 @@ class TaskLoopSession {
       case 'planning':
         this.metrics.planningTime += duration;
         break;
+      case 'preparing':
+        this.metrics.preparingTime += duration;
+        break;
       case 'working':
         this.metrics.workingTime += duration;
         break;
@@ -750,7 +813,7 @@ class TaskLoopSession {
   }
 
   private extractPlanningSummaryIfNeeded(prev: TaskStatus, next: TaskStatus, responseText: string) {
-    if (prev === 'planning' && next === 'working' && !this.planningSummary) {
+    if (prev === 'planning' && next !== 'planning' && !this.planningSummary) {
       const parts: string[] = [];
       if (this.planningResponses.length > 0) {
         parts.push('【AI规划决策】');
@@ -782,6 +845,7 @@ class TaskLoopSession {
     // Planning
     if (this.currentStatus === 'planning') {
       this.consecutivePlanningCount++;
+      this.consecutivePreparingCount = 0;
       this.consecutiveWorkingCount = 0;
       this.consecutiveReviewCount = 0;
 
@@ -801,10 +865,21 @@ class TaskLoopSession {
       return { shouldContinue: true };
     }
 
+    // Preparing
+    if (this.currentStatus === 'preparing') {
+      this.consecutivePreparingCount++;
+      this.consecutivePlanningCount = 0;
+      this.consecutiveWorkingCount = 0;
+      this.consecutiveReviewCount = 0;
+
+      return this.handlePreparingState();
+    }
+
     // Working
     if (this.currentStatus === 'working') {
       this.consecutiveWorkingCount++;
       this.consecutivePlanningCount = 0;
+      this.consecutivePreparingCount = 0;
       this.consecutiveReviewCount = 0;
 
       return this.handleWorkingState();
@@ -814,6 +889,7 @@ class TaskLoopSession {
     if (this.currentStatus === 'review') {
       this.consecutiveReviewCount++;
       this.consecutivePlanningCount = 0;
+      this.consecutivePreparingCount = 0;
       this.consecutiveWorkingCount = 0;
 
       return this.handleReviewState();
@@ -862,6 +938,17 @@ class TaskLoopSession {
         content: `${this.getCurrentStatusInfoMsg()}\n\n` + getWorkingContinuePrompt(taskType),
       });
     }
+    return { shouldContinue: true };
+  }
+
+  private handlePreparingState(): { shouldContinue: boolean } {
+    const isLoopDetected = this.consecutivePreparingCount >= MAX_CONSECUTIVE_STATUS;
+    this.config.history.push({
+      role: 'user',
+      content:
+        `${this.getCurrentStatusInfoMsg()}\n\n` +
+        getPreparingLoopPrompt(this.config.taskType, isLoopDetected),
+    });
     return { shouldContinue: true };
   }
 
@@ -914,6 +1001,7 @@ class TaskLoopSession {
 
   private resetConsecutiveCounters() {
     this.consecutivePlanningCount = 0;
+    this.consecutivePreparingCount = 0;
     this.consecutiveWorkingCount = 0;
     this.consecutiveReviewCount = 0;
   }
@@ -941,9 +1029,11 @@ class TaskLoopSession {
       console.log(`[${this.config.logLabel}] 📊 性能指标:`, {
         总耗时: `${this.metrics.totalTime}ms`,
         规划阶段: `${this.metrics.planningTime}ms`,
+        准备阶段: `${this.metrics.preparingTime}ms`,
         工作阶段: `${this.metrics.workingTime}ms`,
         复核阶段: `${this.metrics.reviewTime}ms`,
         工具调用: `${this.metrics.toolCallCount} 次，平均 ${this.metrics.averageToolCallTime.toFixed(2)}ms`,
+        工作阶段被拒绝写入: `${this.metrics.workingRejectedWriteCount} 次`,
       });
     }
   }

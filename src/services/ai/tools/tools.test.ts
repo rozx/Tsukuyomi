@@ -713,7 +713,7 @@ describe('AI Tools Tests', () => {
       const result = await handler({ status: 'review' }, polishContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('无效的状态转换');
+      expect(parsed.error).toContain('润色任务不支持 review 状态');
     });
   });
 

@@ -1206,22 +1206,13 @@ describe('add_translation_batch', () => {
 
     test('当缺少 chapterId 时应记录性能风险警告并走回退路径', async () => {
       const para1 = createTestParagraph('para1', '原文1');
-      const chapter1 = createTestChapter('chapter1');
-      const chapter2 = createTestChapter('chapter2');
+      const chapter1 = createTestChapter('chapter1', [para1]);
+      const chapter2 = createTestChapter('chapter2', []);
       const volume = createTestVolume('volume1', [chapter1, chapter2]);
       const novel = createTestNovel([volume]);
 
       mockGetBookById.mockImplementation(() => Promise.resolve(novel));
       mockBooksStore.books = [novel];
-      mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
-        expect(chapterIds).toEqual(['chapter1', 'chapter2']);
-        return Promise.resolve(
-          new Map<string, Paragraph[]>([
-            ['chapter1', [para1]],
-            ['chapter2', []],
-          ]),
-        );
-      });
 
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -1243,9 +1234,8 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      expect(mockLoadChapterContentsBatch).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
-        '[translation-tools] ⚠️ 未提供 chapterId，触发全书回退扫描，可能影响性能',
+        '[translation-tools] ⚠️ 未提供 chapterId，触发惰性章节扫描。建议确保任务对象包含 chapterId 以提升性能',
         expect.objectContaining({
           bookId: 'novel-1',
           taskType: 'translation',

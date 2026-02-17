@@ -45,15 +45,27 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
 已继承前一部分的规划上下文，术语/角色表已提供。
 - 如需补充信息可调用工具，无需重复获取已有信息
 
-**准备好后，使用 \`update_task_status({"status": "working"})\` 开始${taskLabel}。**`;
+**准备好后，使用 \`update_task_status({"status": "preparing"})\` 进入准备阶段。**`;
   }
 
   return `**当前状态：规划阶段 (planning)**
-- 检查角色、术语表问题（空翻译、重复项、误分类、角色全名更新）并立即修复
-- 检查相关记忆，以应用到本次翻译中
-- 规划敬语翻译，以角色别名->记忆->历史翻译->检查关系的顺序，确保敬语翻译的准确性
+- 收集并分析当前块所需信息（术语、角色、记忆、上下文）
+- 制定数据维护计划（哪些内容需要在 preparing 阶段创建/更新）
+- 规划敬语翻译顺序：角色别名 -> 记忆 -> 历史翻译 -> 关系判断
 
-完成规划后，使用 \`update_task_status({"status": "working"})\` 并开始${taskLabel}。`;
+完成规划后，使用 \`update_task_status({"status": "preparing"})\` 进入准备阶段。`;
+}
+
+/**
+ * 获取准备阶段描述
+ */
+function getPreparingStateDescription(taskLabel: string): string {
+  return `**当前状态：准备阶段 (preparing)**
+- 可创建/更新术语、角色、记忆，集中完成翻译前的数据维护
+- 如发现数据已完善，可不做更新，直接进入 working
+- ⚠️ 当前阶段禁止提交${taskLabel}结果
+
+完成准备后，使用 \`update_task_status({"status": "working"})\` 开始${taskLabel}。`;
 }
 
 function getWorkingStateDescription(taskType: TaskType): string {
@@ -77,10 +89,14 @@ function getWorkingStateDescription(taskType: TaskType): string {
   const nextStatus = taskType === 'translation' ? 'review' : 'end';
   const nextStatusNote =
     taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
+  const dataWriteRestrictionLine =
+    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
+      ? '- ⛔ 禁止创建/更新术语、角色、记忆（请切换到 preparing 或 review）\n'
+      : '';
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
-- 发现新信息立即更新数据表/记忆
+${dataWriteRestrictionLine}
 - **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（**【重要】单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
 - ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
 
@@ -95,7 +111,7 @@ function getReviewStateDescription(taskLabel: string): string {
 - 系统已自动验证完整性
 - 添加/更新术语
 - 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，更新角色全名，将姓/名添加到别名中。
-- 如看到对日后翻译有帮助的信息（优先更新敬语翻译），可复用信息优先合并到已有记忆
+- 可创建/更新记忆：优先合并到已有记忆，沉淀可复用翻译经验
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
 - 【⚠️ 重要】检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
 
@@ -134,6 +150,8 @@ export function getCurrentStatusInfo(
   switch (status) {
     case 'planning':
       return getPlanningStateDescription(taskLabel, isBriefPlanning);
+    case 'preparing':
+      return getPreparingStateDescription(taskLabel);
     case 'working':
       return getWorkingStateDescription(taskType);
     case 'review':
@@ -217,7 +235,14 @@ export function getStatusFieldDescription(taskType: TaskType): string {
 - ${getTaskStateWorkflowText(taskType)}`;
   const reviewState = taskType === 'translation' ? '→review' : '';
 
-  return `**状态**: planning→working(${taskLabel}中)${reviewState}→end
+  let flowText = `planning→working(${taskLabel}中)${reviewState}→end`;
+  if (taskType === 'translation') {
+    flowText = `planning→preparing→working(${taskLabel}中)→review→end`;
+  } else if (taskType === 'polish' || taskType === 'proofreading') {
+    flowText = `planning→preparing→working(${taskLabel}中)→end`;
+  }
+
+  return `**状态**: ${flowText}
 
 ${rules}
 `;
@@ -233,36 +258,53 @@ export function getOutputFormatRules(
   const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const isTranslation = taskType === 'translation';
+  const usesPreparing =
+    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading';
   // 标题翻译指令仅在第一个 chunk 时包含（后续 chunk 标题已在第一个 chunk 中翻译）
   const includeTitle = isTranslation && (options?.includeChapterTitle ?? true);
 
   const reviewStep = isTranslation
-    ? '翻译完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
+    ? 'working 完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
     : `${taskLabel}完成后：update_task_status({"status": "end"})`;
 
   const titleToolSection = includeTitle
     ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "title_translation": "标题翻译"}'
     : '';
 
-  const titleFlowStep = includeTitle ? '\n3. 接着使用 update_chapter_title 更新标题' : '';
+  const titleFlowStep = includeTitle ? '\n4. 接着使用 update_chapter_title 更新标题' : '';
 
   const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
 
   const toolRestriction = isTranslation
     ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）${titleToolRestriction}
-   - planning 只能 update_task_status 切到 working
-   - review 需要修改先切回 working
+   - planning 只能 update_task_status 切到 preparing
+   - preparing 可维护术语/角色/记忆，完成后切到 working
+   - working 禁止创建/更新术语、角色、记忆
+   - review 需要修改先切回 working；review 可创建/更新术语、角色、记忆
    - end 禁止再调用翻译工具`
-    : `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
+    : usesPreparing
+      ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
+   - planning 只能 update_task_status 切到 preparing
+   - preparing 可维护术语/角色/记忆，完成后切到 working
+   - working 禁止创建/更新术语、角色、记忆
+   - end 禁止再调用翻译工具`
+      : `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
    - planning 只能 update_task_status 切到 working
    - end 禁止再调用翻译工具`;
+
+  const flowLines = usesPreparing
+    ? `1. planning 完成：update_task_status({"status": "preparing"})
+2. preparing 完成：update_task_status({"status": "working"})
+3. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
+${includeTitle ? '5' : '4'}. ${reviewStep}`
+    : `1. planning 完成：update_task_status({"status": "working"})
+2. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
+${includeTitle ? '4' : '3'}. ${reviewStep}`;
 
   return `【输出格式】必须使用工具调用, 不输出其他内容。
 
 **核心流程**
-1. planning 完成：update_task_status({"status": "working"})
-2. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
-${includeTitle ? '4' : '3'}. ${reviewStep}
+${flowLines}
 
 **工具要点**
 1. update_task_status：只提交 {"status": "..."}
@@ -280,7 +322,7 @@ ${toolRestriction}
  */
 export function getExecutionWorkflowRules(taskType: TaskType): string {
   const workingFocus: Record<string, string> = {
-    translation: '1:1翻译，敬语按流程处理，新术语/角色确认后创建',
+    translation: '1:1翻译，敬语按流程处理',
     polish: '语气词优化、摆脱翻译腔、节奏调整、角色语言区分',
     proofreading: '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查',
     chapter_summary: '生成章节摘要：概括主要情节、关键人物和事件，控制在200字以内',
@@ -290,16 +332,25 @@ export function getExecutionWorkflowRules(taskType: TaskType): string {
 
   if (taskType === 'translation') {
     return `【执行流程】
-1. **planning**: 获取上下文信息，检查数据问题并修复
-2. **working**: ${focus}；发现新信息立即更新
-3. **review**: 系统复核完整性，更新数据，创建记忆
-4. **end**: 完成当前块`;
+1. **planning**: 获取上下文信息并完成策略规划（不做数据写入）
+2. **preparing**: 维护术语/角色/记忆（可无更新直接进入下一阶段）
+3. **working**: ${focus}；禁止创建/更新术语、角色、记忆
+4. **review**: 系统复核完整性并允许更新术语/角色/记忆
+5. **end**: 完成当前块`;
+  }
+
+  if (taskType === 'polish' || taskType === 'proofreading') {
+    return `【执行流程】
+1. **planning**: 获取上下文信息并完成策略规划（不做数据写入）
+2. **preparing**: 维护术语/角色/记忆（可无更新直接进入下一阶段）
+3. **working**: ${focus}；禁止创建/更新术语、角色、记忆
+4. **end**: 完成当前块（润色/校对任务跳过并禁用 review）`;
   }
 
   return `【执行流程】
-1. **planning**: 获取上下文信息，检查数据问题并修复
-2. **working**: ${focus}；发现新信息立即更新
-3. **end**: 完成当前块（润色/校对/摘要任务跳过并禁用 review）`;
+1. **planning**: 获取上下文信息并开始任务
+2. **working**: ${focus}
+3. **end**: 完成当前块`;
 }
 
 /**
