@@ -55,9 +55,6 @@ export async function executeToolCall(
   );
 
   if (aiProcessingStore && taskId) {
-    void aiProcessingStore.appendThinkingMessage(
-      taskId,
-      `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-    );
+    void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResult.content}]\n`);
   }
 }

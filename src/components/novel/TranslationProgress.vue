@@ -4,6 +4,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import ProgressBar from 'primevue/progressbar';
+import Popover from 'primevue/popover';
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
@@ -59,6 +60,9 @@ const contextStore = useContextStore();
 const toast = useToastWithHistory();
 const now = ref(Date.now());
 let nowTimer: number | null = null;
+const toolResultPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const activeToolResultPopupContent = ref('');
+const activeToolResultPopupKey = ref('');
 
 // 待办事项列表
 const todos = ref<TodoItem[]>([]);
@@ -238,6 +242,7 @@ onMounted(() => {
 onUnmounted(() => {
   // 清理 storage 事件监听
   window.removeEventListener('storage', handleStorageChange);
+  toolResultPopoverRef.value?.hide();
   if (nowTimer !== null) {
     clearInterval(nowTimer);
     nowTimer = null;
@@ -619,15 +624,218 @@ interface FormattedMessagePart {
   type: 'chunk-separator' | 'tool-call' | 'tool-result' | 'content';
   text: string;
   toolName?: string;
+  toolResult?: string;
+  toolResultTone?: ToolResultTone;
+  toolCallTone?: ToolCallTone;
   chunkInfo?: string;
 }
+
+type ToolResultTone = 'success' | 'warning' | 'error';
+type ToolCallTone = 'running' | 'success' | 'warning' | 'error' | 'cancelled';
 
 // 提取正则表达式为模块级常量，避免重复创建
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
 const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
-const TOOL_RESULT_PATTERN = /\[工具结果: ([^\]]+)\]/g;
+const TOOL_RESULT_ERROR_PATTERN =
+  /error|failed?|exception|forbidden|denied|invalid|timeout|not found|失败|错误|异常|拒绝|超时|无效|未找到/i;
+const TOOL_RESULT_WARNING_PATTERN = /warning|warn|警告|注意|deprecated|fallback|重试/i;
 
-const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+interface ToolResultMarkerMatch {
+  index: number;
+  fullText: string;
+  content: string;
+}
+
+function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[] {
+  const matches: ToolResultMarkerMatch[] = [];
+  const prefix = '[工具结果: ';
+  let searchStart = 0;
+
+  while (searchStart < message.length) {
+    const startIndex = message.indexOf(prefix, searchStart);
+    if (startIndex === -1) break;
+
+    const contentStart = startIndex + prefix.length;
+    let i = contentStart;
+    let inString = false;
+    let quoteChar = '';
+    let escaped = false;
+    let bracketDepth = 0;
+    let closeIndex = -1;
+
+    for (; i < message.length; i++) {
+      const char = message[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (inString) {
+        if (char === quoteChar) {
+          inString = false;
+          quoteChar = '';
+        }
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        inString = true;
+        quoteChar = char;
+        continue;
+      }
+
+      if (char === '[') {
+        bracketDepth++;
+        continue;
+      }
+
+      if (char === ']') {
+        if (bracketDepth === 0) {
+          closeIndex = i;
+          break;
+        }
+        bracketDepth--;
+      }
+    }
+
+    if (closeIndex === -1) {
+      break;
+    }
+
+    const fullText = message.slice(startIndex, closeIndex + 1);
+    const content = message.slice(contentStart, closeIndex);
+    matches.push({
+      index: startIndex,
+      fullText,
+      content,
+    });
+    searchStart = closeIndex + 1;
+  }
+
+  return matches;
+}
+
+function formatToolResultPreview(toolResult: string): string {
+  const compact = toolResult.replace(/\s+/g, ' ').trim();
+  if (compact.length <= 100) return compact;
+  return `${compact.slice(0, 100)}...`;
+}
+
+function formatToolResultTooltip(toolResult: string): string {
+  const trimmed = toolResult.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return toolResult;
+  }
+}
+
+function detectToolResultTone(toolResult: string): ToolResultTone {
+  const trimmed = toolResult.trim();
+  if (!trimmed) return 'warning';
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isObjectRecord(parsed)) {
+      if (parsed.success === false) return 'error';
+      if (typeof parsed.error === 'string' && parsed.error.trim()) return 'error';
+      if (typeof parsed.warning === 'string' && parsed.warning.trim()) return 'warning';
+      if (Array.isArray(parsed.warnings) && parsed.warnings.length > 0) return 'warning';
+      if (parsed.success === true) return 'success';
+    }
+  } catch {
+    // 非 JSON 内容回退到关键词判断
+  }
+
+  if (TOOL_RESULT_ERROR_PATTERN.test(trimmed)) return 'error';
+  if (TOOL_RESULT_WARNING_PATTERN.test(trimmed)) return 'warning';
+  return 'success';
+}
+
+function getToolResultLabel(tone?: ToolResultTone): string {
+  if (tone === 'error') return '工具结果（失败）';
+  if (tone === 'warning') return '工具结果（警告）';
+  return '工具结果（成功）';
+}
+
+function getToolResultHint(tone?: ToolResultTone): string {
+  if (tone === 'error') return '请检查错误详情';
+  if (tone === 'warning') return '请留意提示信息';
+  return '点击查看完整内容';
+}
+
+function toggleToolResultPopup(event: Event, part: FormattedMessagePart): void {
+  const content = part.toolResult?.trim();
+  if (!content) return;
+
+  const popupKey = `${part.text}-${part.toolResultTone || 'success'}`;
+  const isSameTarget = activeToolResultPopupKey.value === popupKey;
+
+  activeToolResultPopupContent.value = content;
+  activeToolResultPopupKey.value = popupKey;
+
+  if (!toolResultPopoverRef.value) return;
+
+  if (!isSameTarget) {
+    toolResultPopoverRef.value.hide();
+    nextTick(() => {
+      toolResultPopoverRef.value?.toggle(event);
+    });
+    return;
+  }
+
+  toolResultPopoverRef.value.toggle(event);
+}
+
+function mapToolResultToneToToolCallTone(tone: ToolResultTone): ToolCallTone {
+  if (tone === 'error') return 'error';
+  if (tone === 'warning') return 'warning';
+  return 'success';
+}
+
+function getToolCallTone(task: AIProcessingTask, part: FormattedMessagePart): ToolCallTone {
+  if (part.toolCallTone) return part.toolCallTone;
+  if (task.status === 'cancelled') return 'cancelled';
+  if (task.status === 'error') return 'error';
+  if (task.status === 'end') return 'success';
+  return 'running';
+}
+
+function getToolCallHint(task: AIProcessingTask, part: FormattedMessagePart): string {
+  const tone = getToolCallTone(task, part);
+  if (tone === 'cancelled') return '已取消';
+  if (tone === 'error') return '已失败';
+  if (tone === 'warning') return '有警告';
+  if (tone === 'success') return '已完成';
+  return '调用中';
+}
+
+function getToolCallIconClass(task: AIProcessingTask, part: FormattedMessagePart): string {
+  const tone = getToolCallTone(task, part);
+  if (tone === 'cancelled') return 'pi pi-ban';
+  if (tone === 'error') return 'pi pi-times-circle';
+  if (tone === 'warning') return 'pi pi-exclamation-triangle';
+  if (tone === 'success') return 'pi pi-check-circle';
+  return 'pi pi-cog pi-spin';
+}
+
+const formatThinkingMessage = (
+  message: string,
+  taskStatus?: AIProcessingTask['status'],
+): FormattedMessagePart[] => {
   if (!message) return [];
 
   const parts: FormattedMessagePart[] = [];
@@ -651,13 +859,18 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
   }
   TOOL_CALL_PATTERN.lastIndex = 0;
 
-  while ((match = TOOL_RESULT_PATTERN.exec(message)) !== null) {
-    matches.push({ index: match.index, type: 'tool-result', match });
+  for (const markerMatch of extractToolResultMarkerMatches(message)) {
+    const syntheticMatch = [
+      markerMatch.fullText,
+      markerMatch.content,
+    ] as unknown as RegExpMatchArray;
+    matches.push({ index: markerMatch.index, type: 'tool-result', match: syntheticMatch });
   }
-  TOOL_RESULT_PATTERN.lastIndex = 0;
 
   // 按位置排序
   matches.sort((a, b) => a.index - b.index);
+
+  const pendingToolCallPartIndexes: number[] = [];
 
   // 处理每个匹配项
   for (const { index, type, match } of matches) {
@@ -682,14 +895,27 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
           type: 'tool-call',
           text: match[0],
           toolName: match[1],
+          toolCallTone: 'running',
         });
+        pendingToolCallPartIndexes.push(parts.length - 1);
       }
     } else if (type === 'tool-result') {
       if (match[1]) {
+        const tone = detectToolResultTone(match[1]);
+        const toolCallTone = mapToolResultToneToToolCallTone(tone);
+        const matchedToolCallIndex = pendingToolCallPartIndexes.shift();
+        if (matchedToolCallIndex !== undefined) {
+          const matchedToolCallPart = parts[matchedToolCallIndex];
+          if (matchedToolCallPart?.type === 'tool-call') {
+            matchedToolCallPart.toolCallTone = toolCallTone;
+          }
+        }
         parts.push({
           type: 'tool-result',
           text: match[0],
-          toolName: match[1],
+          toolName: formatToolResultPreview(match[1]),
+          toolResult: formatToolResultTooltip(match[1]),
+          toolResultTone: tone,
         });
       }
     }
@@ -710,6 +936,23 @@ const formatThinkingMessage = (message: string): FormattedMessagePart[] => {
     parts.push({ type: 'content', text: message });
   }
 
+  if (pendingToolCallPartIndexes.length > 0) {
+    const fallbackTone: ToolCallTone =
+      taskStatus === 'cancelled'
+        ? 'cancelled'
+        : taskStatus === 'error'
+          ? 'error'
+          : taskStatus === 'end'
+            ? 'success'
+            : 'running';
+    for (const toolCallPartIndex of pendingToolCallPartIndexes) {
+      const toolCallPart = parts[toolCallPartIndex];
+      if (toolCallPart?.type === 'tool-call') {
+        toolCallPart.toolCallTone = fallbackTone;
+      }
+    }
+  }
+
   return parts;
 };
 
@@ -719,7 +962,7 @@ const formattedThinkingCache = ref<Record<string, FormattedMessagePart[]>>({});
 const updateFormattedThinkingCache = throttle((taskId: string) => {
   const task = recentAITasks.value.find((t) => t.id === taskId);
   const msg = task?.thinkingMessage ?? '';
-  formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg) : [];
+  formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg, task?.status) : [];
 }, FORMAT_CACHE_THROTTLE_MS);
 // 注册清理函数
 throttleCleanups.push(updateFormattedThinkingCache.cleanup);
@@ -783,7 +1026,9 @@ watch(
       if (task.length < oldLength) {
         const currentTask = currentTaskMap.get(task.id);
         const message = currentTask?.thinkingMessage ?? '';
-        formattedThinkingCache.value[task.id] = message ? formatThinkingMessage(message) : [];
+        formattedThinkingCache.value[task.id] = message
+          ? formatThinkingMessage(message, currentTask?.status)
+          : [];
         lastThinkingUpdate.value[task.id] = Date.now();
         continue;
       }
@@ -1210,18 +1455,63 @@ watch(
                                 <span>{{ part.chunkInfo }}</span>
                                 <i class="pi pi-minus"></i>
                               </div>
-                              <div v-else-if="part.type === 'tool-call'" class="thinking-tool-call">
-                                <i class="pi pi-cog"></i>
-                                <span class="thinking-tool-label">调用工具：</span>
-                                <span class="thinking-tool-name">{{ part.toolName }}</span>
+                              <div
+                                v-else-if="part.type === 'tool-call'"
+                                class="thinking-tool-event thinking-tool-call"
+                              >
+                                <div class="thinking-tool-call-icon">
+                                  <i :class="getToolCallIconClass(task, part)"></i>
+                                </div>
+                                <div class="thinking-tool-call-body">
+                                  <div class="thinking-tool-call-title">
+                                    <span class="thinking-tool-call-label">工具调用</span>
+                                    <span class="thinking-tool-call-hint">{{
+                                      getToolCallHint(task, part)
+                                    }}</span>
+                                  </div>
+                                  <span class="thinking-tool-name">{{ part.toolName }}</span>
+                                </div>
                               </div>
                               <div
                                 v-else-if="part.type === 'tool-result'"
-                                class="thinking-tool-result"
+                                :class="[
+                                  'thinking-tool-event',
+                                  'thinking-tool-result',
+                                  `thinking-tool-result-${part.toolResultTone || 'success'}`,
+                                ]"
+                                role="button"
+                                tabindex="0"
+                                title="点击查看完整工具结果"
+                                @click="(event) => toggleToolResultPopup(event, part)"
+                                @keydown.enter.prevent="
+                                  (event) => toggleToolResultPopup(event, part)
+                                "
+                                @keydown.space.prevent="
+                                  (event) => toggleToolResultPopup(event, part)
+                                "
                               >
-                                <i class="pi pi-check-circle"></i>
-                                <span class="thinking-tool-label">工具结果：</span>
-                                <span class="thinking-tool-content">{{ part.toolName }}</span>
+                                <div class="thinking-tool-result-icon">
+                                  <i
+                                    :class="
+                                      part.toolResultTone === 'error'
+                                        ? 'pi pi-times-circle'
+                                        : part.toolResultTone === 'warning'
+                                          ? 'pi pi-exclamation-triangle'
+                                          : 'pi pi-check-circle'
+                                    "
+                                  ></i>
+                                </div>
+                                <div class="thinking-tool-result-body">
+                                  <div class="thinking-tool-result-title">
+                                    <span class="thinking-tool-label">{{
+                                      getToolResultLabel(part.toolResultTone)
+                                    }}</span>
+                                    <span class="thinking-tool-result-hint">{{
+                                      getToolResultHint(part.toolResultTone)
+                                    }}</span>
+                                  </div>
+                                  <span class="thinking-tool-content">{{ part.toolName }}</span>
+                                </div>
                               </div>
                               <div v-else class="thinking-content">{{ part.text }}</div>
                             </template>
@@ -1370,6 +1660,12 @@ watch(
         <!-- 无操作按钮 -->
       </div>
     </div>
+
+    <Popover ref="toolResultPopoverRef" class="thinking-tool-result-popover" :dismissable="true">
+      <div class="thinking-tool-result-popover-content">
+        <pre class="thinking-tool-result-popover-pre">{{ activeToolResultPopupContent }}</pre>
+      </div>
+    </Popover>
   </div>
 </template>
 
@@ -1880,60 +2176,462 @@ watch(
   font-size: 0.75rem;
 }
 
+.thinking-tool-event {
+  animation: thinking-tool-pop-in 0.2s ease-out;
+}
+
+@keyframes thinking-tool-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .thinking-tool-call {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.5rem 0;
-  padding: 0.5rem;
-  background: var(--blue-500-opacity-10);
-  border-left: 3px solid var(--blue-500);
-  border-radius: 2px;
-  color: var(--blue-500);
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin: 0.625rem 0;
+  padding: 0.625rem 0.75rem;
+  background: linear-gradient(
+    135deg,
+    var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12)),
+    var(--blue-500-opacity-5, rgba(59, 130, 246, 0.05))
+  );
+  border: 1px solid var(--blue-500-opacity-30, rgba(59, 130, 246, 0.3));
+  border-left: 4px solid var(--blue-500);
+  border-radius: 6px;
   font-size: 0.8125rem;
+  box-shadow: 0 2px 10px var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12));
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.thinking-tool-call:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+}
+
+.thinking-tool-call-running {
+  background: linear-gradient(
+    135deg,
+    var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12)),
+    var(--blue-500-opacity-5, rgba(59, 130, 246, 0.05))
+  );
+  border: 1px solid var(--blue-500-opacity-30, rgba(59, 130, 246, 0.3));
+  border-left: 4px solid var(--blue-500);
+  box-shadow: 0 2px 10px var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12));
+}
+
+.thinking-tool-call-running:hover {
+  box-shadow: 0 4px 14px var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+}
+
+.thinking-tool-call-success {
+  background: linear-gradient(
+    135deg,
+    var(--green-500-opacity-10, rgba(34, 197, 94, 0.12)),
+    var(--green-500-opacity-5, rgba(34, 197, 94, 0.05))
+  );
+  border: 1px solid var(--green-500-opacity-30, rgba(34, 197, 94, 0.3));
+  border-left: 4px solid var(--green-500);
+  box-shadow: 0 2px 10px var(--green-500-opacity-10, rgba(34, 197, 94, 0.12));
+}
+
+.thinking-tool-call-success:hover {
+  box-shadow: 0 4px 14px var(--green-500-opacity-20, rgba(34, 197, 94, 0.2));
+}
+
+.thinking-tool-call-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.12);
+}
+
+.thinking-tool-call-warning:hover {
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
+}
+
+.thinking-tool-call-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.06));
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-left: 4px solid #ef4444;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.14);
+}
+
+.thinking-tool-call-error:hover {
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.22);
+}
+
+.thinking-tool-call-cancelled {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.08));
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-left: 4px solid #94a3b8;
+  box-shadow: 0 2px 10px rgba(148, 163, 184, 0.12);
+}
+
+.thinking-tool-call-cancelled:hover {
+  box-shadow: 0 4px 14px rgba(148, 163, 184, 0.2);
+}
+
+.thinking-tool-call-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+  border: 1px solid var(--blue-500-opacity-40, rgba(59, 130, 246, 0.4));
+  flex-shrink: 0;
 }
 
 .thinking-tool-call i {
+  font-size: 0.75rem;
   color: var(--blue-500);
-  font-size: 0.875rem;
 }
 
-.thinking-tool-label {
-  font-weight: 500;
-  color: var(--blue-500-opacity-80);
+.thinking-tool-call-running .thinking-tool-call-icon {
+  background: var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+  border: 1px solid var(--blue-500-opacity-40, rgba(59, 130, 246, 0.4));
+}
+
+.thinking-tool-call-running .thinking-tool-call-icon i {
+  color: var(--blue-500);
+}
+
+.thinking-tool-call-success .thinking-tool-call-icon {
+  background: var(--green-500-opacity-20, rgba(34, 197, 94, 0.2));
+  border: 1px solid var(--green-500-opacity-40, rgba(34, 197, 94, 0.4));
+}
+
+.thinking-tool-call-success .thinking-tool-call-icon i {
+  color: var(--green-500);
+}
+
+.thinking-tool-call-warning .thinking-tool-call-icon {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.thinking-tool-call-warning .thinking-tool-call-icon i {
+  color: #f59e0b;
+}
+
+.thinking-tool-call-error .thinking-tool-call-icon {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.thinking-tool-call-error .thinking-tool-call-icon i {
+  color: #ef4444;
+}
+
+.thinking-tool-call-cancelled .thinking-tool-call-icon {
+  background: rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.thinking-tool-call-cancelled .thinking-tool-call-icon i {
+  color: #94a3b8;
+}
+
+.thinking-tool-call-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.thinking-tool-call-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.thinking-tool-call-label {
+  font-weight: 600;
+  color: var(--blue-500-opacity-90, rgba(59, 130, 246, 0.92));
+}
+
+.thinking-tool-call-hint {
+  font-size: 0.6875rem;
+  color: var(--blue-500-opacity-70, rgba(59, 130, 246, 0.75));
+  background: var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12));
+  border: 1px solid var(--blue-500-opacity-20, rgba(59, 130, 246, 0.24));
+  border-radius: 999px;
+  padding: 0.0625rem 0.375rem;
 }
 
 .thinking-tool-name {
-  color: var(--blue-500);
+  display: block;
+  color: var(--blue-500-opacity-90, rgba(59, 130, 246, 0.92));
   font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.thinking-tool-call-running .thinking-tool-call-label {
+  color: var(--blue-500-opacity-90, rgba(59, 130, 246, 0.92));
+}
+
+.thinking-tool-call-running .thinking-tool-call-hint {
+  color: var(--blue-500-opacity-70, rgba(59, 130, 246, 0.75));
+  background: var(--blue-500-opacity-10, rgba(59, 130, 246, 0.12));
+  border: 1px solid var(--blue-500-opacity-20, rgba(59, 130, 246, 0.24));
+}
+
+.thinking-tool-call-running .thinking-tool-name {
+  color: var(--blue-500-opacity-90, rgba(59, 130, 246, 0.92));
+}
+
+.thinking-tool-call-success .thinking-tool-call-label {
+  color: var(--green-500-opacity-90, rgba(34, 197, 94, 0.92));
+}
+
+.thinking-tool-call-success .thinking-tool-call-hint {
+  color: var(--green-500-opacity-70, rgba(34, 197, 94, 0.75));
+  background: var(--green-500-opacity-10, rgba(34, 197, 94, 0.12));
+  border: 1px solid var(--green-500-opacity-20, rgba(34, 197, 94, 0.24));
+}
+
+.thinking-tool-call-success .thinking-tool-name {
+  color: var(--green-500-opacity-90, rgba(34, 197, 94, 0.92));
+}
+
+.thinking-tool-call-warning .thinking-tool-call-label {
+  color: rgba(245, 158, 11, 0.95);
+}
+
+.thinking-tool-call-warning .thinking-tool-call-hint {
+  color: rgba(245, 158, 11, 0.85);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.thinking-tool-call-warning .thinking-tool-name {
+  color: rgba(245, 158, 11, 0.95);
+}
+
+.thinking-tool-call-error .thinking-tool-call-label {
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.thinking-tool-call-error .thinking-tool-call-hint {
+  color: rgba(239, 68, 68, 0.85);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.thinking-tool-call-error .thinking-tool-name {
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.thinking-tool-call-cancelled .thinking-tool-call-label {
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.thinking-tool-call-cancelled .thinking-tool-call-hint {
+  color: rgba(148, 163, 184, 0.85);
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.thinking-tool-call-cancelled .thinking-tool-name {
+  color: rgba(148, 163, 184, 0.95);
 }
 
 .thinking-tool-result {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.5rem 0;
-  padding: 0.5rem;
-  background: var(--green-500-opacity-10);
-  border-left: 3px solid var(--green-500);
-  border-radius: 2px;
-  color: var(--green-500);
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin: 0.625rem 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: 6px;
   font-size: 0.8125rem;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.thinking-tool-result i {
+.thinking-tool-result:hover {
+  transform: translateY(-1px);
+}
+
+.thinking-tool-result-success {
+  background: linear-gradient(
+    135deg,
+    var(--green-500-opacity-10, rgba(34, 197, 94, 0.12)),
+    var(--green-500-opacity-5, rgba(34, 197, 94, 0.05))
+  );
+  border: 1px solid var(--green-500-opacity-30, rgba(34, 197, 94, 0.3));
+  border-left: 4px solid var(--green-500);
+  box-shadow: 0 2px 10px var(--green-500-opacity-10, rgba(34, 197, 94, 0.12));
+}
+
+.thinking-tool-result-success:hover {
+  box-shadow: 0 4px 14px var(--green-500-opacity-20, rgba(34, 197, 94, 0.2));
+}
+
+.thinking-tool-result-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.12);
+}
+
+.thinking-tool-result-warning:hover {
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
+}
+
+.thinking-tool-result-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.06));
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-left: 4px solid #ef4444;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.14);
+}
+
+.thinking-tool-result-error:hover {
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.22);
+}
+
+.thinking-tool-result-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.thinking-tool-result-icon i {
+  font-size: 0.75rem;
+}
+
+.thinking-tool-result-success .thinking-tool-result-icon {
+  background: var(--green-500-opacity-20, rgba(34, 197, 94, 0.2));
+  border: 1px solid var(--green-500-opacity-40, rgba(34, 197, 94, 0.4));
+}
+
+.thinking-tool-result-success .thinking-tool-result-icon i {
   color: var(--green-500);
-  font-size: 0.875rem;
+}
+
+.thinking-tool-result-warning .thinking-tool-result-icon {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.thinking-tool-result-warning .thinking-tool-result-icon i {
+  color: #f59e0b;
+}
+
+.thinking-tool-result-error .thinking-tool-result-icon {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.thinking-tool-result-error .thinking-tool-result-icon i {
+  color: #ef4444;
+}
+
+.thinking-tool-result-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.thinking-tool-result-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .thinking-tool-result .thinking-tool-label {
-  font-weight: 500;
-  color: var(--green-500-opacity-80);
+  font-weight: 600;
+}
+
+.thinking-tool-result-hint {
+  font-size: 0.6875rem;
+  border-radius: 999px;
+  padding: 0.0625rem 0.375rem;
+}
+
+.thinking-tool-result-success .thinking-tool-label {
+  color: var(--green-500-opacity-90, rgba(34, 197, 94, 0.92));
+}
+
+.thinking-tool-result-success .thinking-tool-result-hint {
+  color: var(--green-500-opacity-70, rgba(34, 197, 94, 0.75));
+  background: var(--green-500-opacity-10, rgba(34, 197, 94, 0.12));
+  border: 1px solid var(--green-500-opacity-20, rgba(34, 197, 94, 0.24));
+}
+
+.thinking-tool-result-warning .thinking-tool-label {
+  color: rgba(245, 158, 11, 0.95);
+}
+
+.thinking-tool-result-warning .thinking-tool-result-hint {
+  color: rgba(245, 158, 11, 0.85);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+
+.thinking-tool-result-error .thinking-tool-label {
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.thinking-tool-result-error .thinking-tool-result-hint {
+  color: rgba(239, 68, 68, 0.85);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .thinking-tool-content {
-  color: var(--green-500);
+  display: block;
   word-break: break-word;
+  line-height: 1.45;
+}
+
+:deep(.thinking-tool-result-popover .p-popover-content) {
+  padding: 0;
+}
+
+.thinking-tool-result-popover-content {
+  max-width: min(70vw, 560px);
+  max-height: min(65vh, 420px);
+  overflow: auto;
+  padding: 0.75rem;
+  background: var(--white-opacity-95);
+}
+
+.thinking-tool-result-popover-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--moon-opacity-80);
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.thinking-tool-result-success .thinking-tool-content {
+  color: var(--green-500-opacity-90, rgba(34, 197, 94, 0.92));
+}
+
+.thinking-tool-result-warning .thinking-tool-content {
+  color: rgba(245, 158, 11, 0.95);
+}
+
+.thinking-tool-result-error .thinking-tool-content {
+  color: rgba(239, 68, 68, 0.95);
 }
 
 .thinking-content {

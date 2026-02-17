@@ -528,10 +528,7 @@ class TaskLoopSession {
 
     const toolResultContent = toolResult.content;
     if (aiProcessingStore && taskId) {
-      void aiProcessingStore.appendThinkingMessage(
-        taskId,
-        `[工具结果: ${toolResultContent.slice(0, 100)}...]\n`,
-      );
+      void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResultContent}]\n`);
     }
 
     return toolResultContent;
