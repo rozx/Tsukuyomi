@@ -356,7 +356,7 @@ class TaskLoopSession {
     history.push({ role: 'assistant', content: responseText });
 
     // Handle specific state logic (prompts/loops)
-    return this.handleStateLogic();
+    return await this.handleStateLogic();
   }
 
   private createWrappedStreamCallback(
@@ -642,10 +642,33 @@ class TaskLoopSession {
     toolResultContent: string,
   ): Array<{ id: string; translation: string }> {
     try {
-      const result = JSON.parse(toolResultContent);
+      const result = JSON.parse(toolResultContent) as {
+        success?: boolean;
+        accepted_paragraphs?: Array<{ paragraph_id?: string; translated_text?: string }>;
+      };
       if (!result?.success) {
         return [];
       }
+
+      const hasCanonicalAcceptedParagraphs =
+        result && Object.prototype.hasOwnProperty.call(result, 'accepted_paragraphs');
+
+      if (Array.isArray(result.accepted_paragraphs)) {
+        const canonicalExtracted: Array<{ id: string; translation: string }> = [];
+        for (const item of result.accepted_paragraphs) {
+          if (!item || typeof item.translated_text !== 'string') continue;
+          if (item.paragraph_id && typeof item.paragraph_id === 'string') {
+            canonicalExtracted.push({ id: item.paragraph_id, translation: item.translated_text });
+          }
+        }
+        return canonicalExtracted;
+      }
+
+      if (hasCanonicalAcceptedParagraphs) {
+        // accepted_paragraphs 字段已返回但格式异常，不再回退到原参数，避免错配扩散
+        return [];
+      }
+
       const args = JSON.parse(toolCall.function.arguments || '{}') as {
         paragraphs?: Array<{ paragraph_id?: string; translated_text?: string }>;
       };
@@ -836,7 +859,7 @@ class TaskLoopSession {
     }
   }
 
-  private handleStateLogic(): { shouldContinue: boolean; shouldBreak?: boolean } {
+  private async handleStateLogic(): Promise<{ shouldContinue: boolean; shouldBreak?: boolean }> {
     const { history } = this.config;
 
     // Planning
@@ -889,7 +912,7 @@ class TaskLoopSession {
       this.consecutivePreparingCount = 0;
       this.consecutiveWorkingCount = 0;
 
-      return this.handleReviewState();
+      return await this.handleReviewState();
     }
 
     // End
@@ -949,7 +972,7 @@ class TaskLoopSession {
     return { shouldContinue: true };
   }
 
-  private handleReviewState(): { shouldContinue: boolean } {
+  private async handleReviewState(): Promise<{ shouldContinue: boolean }> {
     const { paragraphIds, verifyCompleteness, taskType } = this.config;
 
     if (paragraphIds && paragraphIds.length > 0) {
@@ -958,15 +981,28 @@ class TaskLoopSession {
         : verifyParagraphCompleteness(paragraphIds, this.accumulatedParagraphs);
 
       if (!verification.allComplete && verification.missingIds.length > 0) {
-        this.config.history.push({
-          role: 'user',
-          content:
-            `${this.getCurrentStatusInfoMsg()}\n\n` +
-            getMissingParagraphsPrompt(taskType, verification.missingIds),
-        });
-        this.currentStatus = 'working';
-        this.consecutiveReviewCount = 0;
-        return { shouldContinue: true };
+        // 内存中检测到缺失段落，但可能是误报（例如 AI 重新提交相同翻译被去重拒绝）。
+        // 先查询数据库确认这些段落是否真的缺少翻译，避免无限循环。
+        const dbConfirmedMissing = await this.crossCheckMissingWithDB(verification.missingIds);
+
+        if (dbConfirmedMissing.length > 0) {
+          // 数据库也确认缺失，真正需要补翻
+          this.config.history.push({
+            role: 'user',
+            content:
+              `${this.getCurrentStatusInfoMsg()}\n\n` +
+              getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
+          });
+          this.currentStatus = 'working';
+          this.consecutiveReviewCount = 0;
+          return { shouldContinue: true };
+        } else {
+          // 数据库已有翻译，同步内存中的 accumulatedParagraphs，避免后续误报
+          console.log(
+            `[${this.config.logLabel}] ℹ️ 内存中检测到 ${verification.missingIds.length} 个段落缺失，` +
+              `但数据库确认均已翻译，已同步内存状态`,
+          );
+        }
       }
     }
 
@@ -975,7 +1011,7 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + getReviewLoopPrompt(this.taskLabel as TaskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` + getReviewLoopPrompt(this.config.taskType),
       });
     } else {
       const postOutputPrompt = buildPostOutputPrompt(taskType, this.config.taskId);
@@ -985,6 +1021,73 @@ class TaskLoopSession {
       });
     }
     return { shouldContinue: true };
+  }
+
+  /**
+   * 交叉检查：对于内存中检测到"缺失"的段落 ID，查询数据库确认是否真的缺少翻译。
+   * 如果数据库中已有翻译，将其同步到 accumulatedParagraphs，避免误报导致无限循环。
+   *
+   * 典型场景：AI 在 review 被打回 working 后重新提交相同翻译，
+   * add_translation_batch 因重复检测拒绝提交（success: false），
+   * 导致 accumulatedParagraphs 未更新，但数据库中实际已有翻译。
+   */
+  private async crossCheckMissingWithDB(missingIds: string[]): Promise<string[]> {
+    const { aiProcessingStore, taskId, bookId } = this.config;
+
+    // 获取 chapterId
+    let chapterId: string | undefined;
+    if (aiProcessingStore && taskId) {
+      const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
+      chapterId = task?.chapterId;
+    }
+
+    if (!bookId || !chapterId) {
+      // 无法查询数据库，保守返回所有 missingIds
+      return missingIds;
+    }
+
+    try {
+      const { BookService } = await import('src/services/book-service');
+      const { ChapterService } = await import('src/services/chapter-service');
+      const { ChapterContentService } = await import('src/services/chapter-content-service');
+
+      const book = await BookService.getBookById(bookId);
+      if (!book) return missingIds;
+
+      const chapterInfo = ChapterService.findChapterById(book, chapterId);
+      if (!chapterInfo) return missingIds;
+
+      const { chapter } = chapterInfo;
+      const content =
+        chapter.content || (await ChapterContentService.loadChapterContent(chapterId));
+      if (!content) return missingIds;
+
+      const contentMap = new Map(content.map((p) => [p.id, p]));
+      const stillMissing: string[] = [];
+
+      for (const id of missingIds) {
+        const paragraph = contentMap.get(id);
+        if (paragraph?.translations && paragraph.translations.length > 0) {
+          // 数据库已有翻译，同步到内存
+          const selectedTranslation = paragraph.translations.find(
+            (t) => t.id === paragraph.selectedTranslationId,
+          );
+          const translationText =
+            selectedTranslation?.translation || paragraph.translations[0]?.translation;
+          if (translationText) {
+            this.accumulatedParagraphs.set(id, translationText);
+          }
+        } else {
+          stillMissing.push(id);
+        }
+      }
+
+      return stillMissing;
+    } catch (error) {
+      console.error(`[${this.config.logLabel}] ⚠️ 数据库交叉检查失败:`, error);
+      // 查询失败时保守返回所有 missingIds
+      return missingIds;
+    }
   }
 
   private getCurrentStatusInfoMsg() {

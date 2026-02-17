@@ -3,7 +3,7 @@ import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import type { Paragraph, Translation } from 'src/models/novel';
+import type { Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
@@ -18,6 +18,24 @@ interface TranslationBatchItem {
 
 interface AddTranslationBatchArgs {
   paragraphs: TranslationBatchItem[];
+}
+
+type BatchErrorCode =
+  | 'EMPTY_PARAGRAPH_LIST'
+  | 'BATCH_SIZE_EXCEEDED'
+  | 'EMPTY_PARAGRAPH_ITEM'
+  | 'MISSING_PARAGRAPH_ID'
+  | 'INVALID_PARAGRAPH_ID'
+  | 'LEGACY_INDEX_REJECTED'
+  | 'MISSING_TRANSLATION'
+  | 'DUPLICATE_PARAGRAPHS'
+  | 'OUT_OF_RANGE_PARAGRAPHS'
+  | 'PARAM_VALIDATION_FAILED';
+
+interface InvalidBatchItem {
+  index: number;
+  reason: BatchErrorCode;
+  paragraph_id?: string;
 }
 
 // ============ Constants ============
@@ -138,6 +156,58 @@ function resolveParagraphId(item: TranslationBatchItem): { id: string | null; er
   return { id: item.paragraph_id };
 }
 
+function mapParagraphIdErrorToCode(error: string): BatchErrorCode {
+  if (error === ERROR_MESSAGES.LEGACY_INDEX_REJECTED) {
+    return 'LEGACY_INDEX_REJECTED';
+  }
+  if (error === ERROR_MESSAGES.INVALID_PARAGRAPH_ID) {
+    return 'INVALID_PARAGRAPH_ID';
+  }
+  return 'MISSING_PARAGRAPH_ID';
+}
+
+function buildErrorResponse(
+  error: string,
+  options?: {
+    errorCode?: string;
+    invalidItems?: InvalidBatchItem[];
+    invalidParagraphIds?: string[];
+    warning?: string;
+    note?: string;
+    errors?: string[];
+    warnings?: string[];
+  },
+): string {
+  const payload: Record<string, unknown> = {
+    success: false,
+    error,
+  };
+
+  if (options?.errorCode) {
+    payload.error_code = options.errorCode;
+  }
+  if (options?.invalidItems && options.invalidItems.length > 0) {
+    payload.invalid_items = options.invalidItems;
+  }
+  if (options?.invalidParagraphIds && options.invalidParagraphIds.length > 0) {
+    payload.invalid_paragraph_ids = options.invalidParagraphIds;
+  }
+  if (options?.warning) {
+    payload.warning = options.warning;
+  }
+  if (options?.note) {
+    payload.note = options.note;
+  }
+  if (options?.errors && options.errors.length > 0) {
+    payload.errors = options.errors;
+  }
+  if (options?.warnings && options.warnings.length > 0) {
+    payload.warnings = options.warnings;
+  }
+
+  return JSON.stringify(payload);
+}
+
 // ============ Status Validation ============
 
 /**
@@ -214,6 +284,8 @@ function validateBatchArgs(
 ): {
   valid: boolean;
   error?: string;
+  errorCode?: BatchErrorCode;
+  invalidItems?: InvalidBatchItem[];
   resolvedIds?: string[];
   warning?: string;
 } {
@@ -224,6 +296,7 @@ function validateBatchArgs(
     return {
       valid: false,
       error: ERROR_MESSAGES.EMPTY_PARAGRAPH_LIST,
+      errorCode: 'EMPTY_PARAGRAPH_LIST',
     };
   }
 
@@ -240,6 +313,7 @@ function validateBatchArgs(
       return {
         valid: false,
         error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, hardMax),
+        errorCode: 'BATCH_SIZE_EXCEEDED',
       };
     }
 
@@ -268,15 +342,26 @@ function validateBatchArgs(
       return {
         valid: false,
         error: ERROR_MESSAGES.EMPTY_PARAGRAPH_ITEM(i),
+        errorCode: 'EMPTY_PARAGRAPH_ITEM',
+        invalidItems: [{ index: i, reason: 'EMPTY_PARAGRAPH_ITEM' }],
       };
     }
 
     // 解析段落标识符（仅支持 paragraph_id）
     const { id, error } = resolveParagraphId(item);
     if (error || !id) {
+      const reason = mapParagraphIdErrorToCode(error || ERROR_MESSAGES.MISSING_PARAGRAPH_ID);
       return {
         valid: false,
         error: ERROR_MESSAGES.INVALID_PARAGRAPH(i, error || '无效的段落标识'),
+        errorCode: reason,
+        invalidItems: [
+          {
+            index: i,
+            reason,
+            ...(typeof item.paragraph_id === 'string' ? { paragraph_id: item.paragraph_id } : {}),
+          },
+        ],
       };
     }
 
@@ -286,6 +371,8 @@ function validateBatchArgs(
       return {
         valid: false,
         error: ERROR_MESSAGES.MISSING_TRANSLATION(i),
+        errorCode: 'MISSING_TRANSLATION',
+        invalidItems: [{ index: i, reason: 'MISSING_TRANSLATION', paragraph_id: id }],
       };
     }
   }
@@ -325,7 +412,7 @@ function detectDuplicateParagraphIds(paragraphIds: string[]): {
 function validateParagraphsInRange(
   paragraphIds: string[],
   allowedParagraphIds: Set<string> | undefined,
-): { valid: boolean; error?: string } {
+): { valid: boolean; error?: string; errorCode?: BatchErrorCode; invalidIds?: string[] } {
   if (!allowedParagraphIds || allowedParagraphIds.size === 0) {
     // 如果没有提供边界限制，允许所有段落
     return { valid: true };
@@ -336,6 +423,8 @@ function validateParagraphsInRange(
     return {
       valid: false,
       error: ERROR_MESSAGES.OUT_OF_RANGE_PARAGRAPHS(invalidIds, invalidIds.length),
+      errorCode: 'OUT_OF_RANGE_PARAGRAPHS',
+      invalidIds,
     };
   }
 
@@ -418,6 +507,8 @@ async function processTranslationBatch(
   errors?: string[];
   warnings?: string[];
   processedCount: number;
+  /** 实际通过验证的段落 ID 列表（包含历史重复段落，它们也被视为已处理以推进进度） */
+  acceptedIds?: string[];
 }> {
   try {
     const book = await BookService.getBookById(bookId);
@@ -571,6 +662,7 @@ async function processTranslationBatch(
         }
 
         // 检查是否与历史版本相同（非当前选中）
+        // 倒序遍历：重复更可能出现在最近的翻译中，倒序可以更快命中
         let foundInHistory = false;
         for (let i = paragraph.translations.length - 1; i >= 0; i--) {
           const candidate = paragraph.translations[i];
@@ -624,22 +716,23 @@ async function processTranslationBatch(
       };
     }
 
-    // 阶段 2：所有验证通过，计算已处理段落数
+    // 阶段 2：所有验证通过，收集实际被接受的段落 ID
     // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
     // 工具层只负责验证，不直接修改段落数据，避免双重写入
-    let processedCount = 0;
+    const acceptedIds: string[] = [];
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
         continue;
       }
-      processedCount++;
+      acceptedIds.push(item.paragraphId);
     }
 
     return {
       success: true,
-      processedCount,
+      processedCount: acceptedIds.length,
+      acceptedIds,
       ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
     };
   } catch (error) {
@@ -701,10 +794,7 @@ export const translationTools: ToolDefinition[] = [
       // 验证任务状态 - 只能在 working 状态下调用
       const statusValidation = validateTaskStatus(aiProcessingStore, taskId);
       if (!statusValidation.valid) {
-        return JSON.stringify({
-          success: false,
-          error: statusValidation.error,
-        });
+        return buildErrorResponse(statusValidation.error || ERROR_MESSAGES.TASK_ID_MISSING);
       }
 
       // 复用验证过的任务对象
@@ -718,9 +808,9 @@ export const translationTools: ToolDefinition[] = [
         submittedParagraphIds,
       );
       if (!paramValidation.valid || !paramValidation.resolvedIds) {
-        return JSON.stringify({
-          success: false,
-          error: paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED,
+        return buildErrorResponse(paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+          errorCode: paramValidation.errorCode || 'PARAM_VALIDATION_FAILED',
+          ...(paramValidation.invalidItems ? { invalidItems: paramValidation.invalidItems } : {}),
           note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
         });
       }
@@ -731,9 +821,9 @@ export const translationTools: ToolDefinition[] = [
       // 检测重复段落 ID
       const duplicateCheck = detectDuplicateParagraphIds(resolvedIds);
       if (duplicateCheck.hasDuplicates) {
-        return JSON.stringify({
-          success: false,
-          error: ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates),
+        return buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates), {
+          errorCode: 'DUPLICATE_PARAGRAPHS',
+          invalidParagraphIds: duplicateCheck.duplicates,
           ...(warning ? { warning } : {}),
         });
       }
@@ -744,32 +834,28 @@ export const translationTools: ToolDefinition[] = [
         chunkBoundaries?.allowedParagraphIds,
       );
       if (!rangeValidation.valid) {
-        return JSON.stringify({
-          success: false,
-          error: rangeValidation.error,
+        return buildErrorResponse(rangeValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+          errorCode: rangeValidation.errorCode || 'OUT_OF_RANGE_PARAGRAPHS',
+          ...(rangeValidation.invalidIds
+            ? { invalidParagraphIds: rangeValidation.invalidIds }
+            : {}),
           ...(warning ? { warning } : {}),
         });
       }
 
       if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: ERROR_MESSAGES.BOOK_ID_MISSING,
+        return buildErrorResponse(ERROR_MESSAGES.BOOK_ID_MISSING, {
           ...(warning ? { warning } : {}),
         });
       }
 
       if (!taskType) {
-        return JSON.stringify({
-          success: false,
-          error: ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown'),
+        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown'), {
           ...(warning ? { warning } : {}),
         });
       }
       if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
-        return JSON.stringify({
-          success: false,
-          error: ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType),
+        return buildErrorResponse(ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType), {
           ...(warning ? { warning } : {}),
         });
       }
@@ -783,9 +869,7 @@ export const translationTools: ToolDefinition[] = [
       // 处理批次
       const aiModelId = context.aiModelId;
       if (!aiModelId) {
-        return JSON.stringify({
-          success: false,
-          error: ERROR_MESSAGES.AI_MODEL_ID_MISSING,
+        return buildErrorResponse(ERROR_MESSAGES.AI_MODEL_ID_MISSING, {
           ...(warning ? { warning } : {}),
         });
       }
@@ -807,19 +891,27 @@ export const translationTools: ToolDefinition[] = [
       );
 
       if (!result.success) {
-        return JSON.stringify({
-          success: false,
-          error: result.error,
+        return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
           ...(result.errors ? { errors: result.errors } : {}),
           ...(result.warnings ? { warnings: result.warnings } : {}),
           ...(warning ? { warning } : {}),
         });
       }
 
+      // 从规范化的 acceptedIds 构建 accepted_paragraphs（仅包含实际通过验证的段落）
+      const processItemsMap = new Map(processItems.map((item) => [item.paragraphId, item]));
+      const acceptedParagraphs = (result.acceptedIds ?? resolvedIds).map((id) => {
+        const item = processItemsMap.get(id);
+        return {
+          paragraph_id: id,
+          translated_text: item?.translatedText ?? '',
+        };
+      });
+
       // 将已处理的段落 ID 添加到 submittedParagraphIds 集合中（用于下次批次计算剩余大小）
       if (submittedParagraphIds) {
-        for (const id of resolvedIds) {
-          submittedParagraphIds.add(id);
+        for (const item of acceptedParagraphs) {
+          submittedParagraphIds.add(item.paragraph_id);
         }
       }
 
@@ -832,7 +924,10 @@ export const translationTools: ToolDefinition[] = [
             paragraph_id: resolvedIds[0] || '',
             translation_id: `batch_${result.processedCount}_${Date.now()}`,
             old_translation: '',
-            new_translation: `批量处理 ${result.processedCount} 个段落 (${resolvedIds.slice(0, 3).join(', ')}${resolvedIds.length > 3 ? '...' : ''})`,
+            new_translation: `批量处理 ${result.processedCount} 个段落 (${acceptedParagraphs
+              .map((item) => item.paragraph_id)
+              .slice(0, 3)
+              .join(', ')}${acceptedParagraphs.length > 3 ? '...' : ''})`,
           },
         });
       }
@@ -857,6 +952,7 @@ export const translationTools: ToolDefinition[] = [
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
+        accepted_paragraphs: acceptedParagraphs,
         task_type: taskType,
         ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),

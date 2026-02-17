@@ -33,6 +33,8 @@ export async function executeToolCall(
   aiProcessingStore: AIProcessingStore | undefined,
   aiModelId: string | undefined,
   paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
+  chunkIndex?: number, // 当前 chunk 索引，用于 review 检查
+  submittedParagraphIds?: Set<string>, // 已提交段落 ID 集合，用于计算剩余 chunk 大小
 ): Promise<void> {
   if (aiProcessingStore && taskId) {
     void aiProcessingStore.appendThinkingMessage(
@@ -52,6 +54,8 @@ export async function executeToolCall(
     paragraphIds,
     aiProcessingStore, // 传入 AI 处理 Store
     aiModelId,
+    chunkIndex,
+    submittedParagraphIds,
   );
 
   if (aiProcessingStore && taskId) {

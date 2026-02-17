@@ -465,6 +465,12 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须提供 paragraph_id');
+      expect(resultObj.error_code).toBe('MISSING_PARAGRAPH_ID');
+      expect(Array.isArray(resultObj.invalid_items)).toBe(true);
+      expect(resultObj.invalid_items[0]).toMatchObject({
+        index: 0,
+        reason: 'MISSING_PARAGRAPH_ID',
+      });
     });
   });
 
@@ -662,6 +668,8 @@ describe('add_translation_batch', () => {
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('不在当前任务范围内');
       expect(resultObj.error).toContain('para-outside');
+      expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
+      expect(resultObj.invalid_paragraph_ids).toEqual(['para-outside']);
     });
 
     test('当没有 chunkBoundaries 时应允许所有段落', async () => {
@@ -849,6 +857,12 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
+      expect(resultObj.accepted_paragraphs).toEqual([
+        {
+          paragraph_id: 'para1',
+          translated_text: '新翻译文本',
+        },
+      ]);
 
       // 工具层不再直接修改段落数据，翻译写入由 onParagraphsExtracted 回调统一完成
       expect(para1.translations?.length).toBe(originalTransCount);
