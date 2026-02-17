@@ -207,7 +207,6 @@ describe('AI Tools Tests', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(1);
-      expect(BookService.saveBook).toHaveBeenCalled();
     });
 
     it('should reject translation for blank paragraph', async () => {
@@ -339,7 +338,6 @@ describe('AI Tools Tests', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(20);
-      expect(BookService.saveBook).toHaveBeenCalled();
     });
 
     it('should still enforce original limit when chunk total paragraphs > 2x max', async () => {

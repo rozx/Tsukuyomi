@@ -3,10 +3,8 @@ import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import { generateShortId } from 'src/utils/id-generator';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
-import { useBooksStore } from 'src/stores/books';
 import { isEmptyParagraph } from 'src/utils/text-utils';
 
 // ============ Types ============
@@ -628,7 +626,9 @@ async function processTranslationBatch(
       };
     }
 
-    // 阶段 2：所有验证通过后，批量写入翻译
+    // 阶段 2：所有验证通过，计算已处理段落数
+    // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
+    // 工具层只负责验证，不直接修改段落数据，避免双重写入
     let processedCount = 0;
 
     for (const item of items) {
@@ -636,39 +636,8 @@ async function processTranslationBatch(
       if (!paragraph) {
         continue;
       }
-
-      // 检查是否需要选中已有翻译（重复翻译的情况）
-      const existingTranslationId = selectExistingTranslationMap.get(item.paragraphId);
-      if (existingTranslationId) {
-        // 选中已有翻译，不添加新翻译
-        paragraph.selectedTranslationId = existingTranslationId;
-        processedCount++;
-        continue;
-      }
-
-      // 添加新的翻译版本
-      const newTranslation: Translation = {
-        id: generateShortId(),
-        translation: item.translatedText,
-        aiModelId,
-      };
-
-      if (!paragraph.translations) {
-        paragraph.translations = [];
-      }
-      paragraph.translations.push(newTranslation);
-      paragraph.selectedTranslationId = newTranslation.id;
-
       processedCount++;
     }
-
-    // 保存书籍并同步 store（优先更新 store，确保 UI 立即可见）
-    const booksStore = useBooksStore();
-    const existingBook = booksStore.getBookById(bookId);
-    if (existingBook) {
-      await booksStore.updateBook(bookId, { volumes: book.volumes }, { persist: false });
-    }
-    await BookService.saveBook(book);
 
     return {
       success: true,

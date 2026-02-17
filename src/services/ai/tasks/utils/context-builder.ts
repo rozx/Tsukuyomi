@@ -244,15 +244,15 @@ export function buildExecutionSection(taskType: TaskType, chapterId?: string): s
   const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
 
   if (taskType === 'translation') {
-    return `\n【执行】planning→获取上下文${chapterNote} | working→1:1翻译 | review→复核 | end`;
+    return `\n【执行】planning→获取上下文${chapterNote} | preparing→准备 | working→1:1翻译 | review→复核 | end`;
   }
 
   if (taskType === 'proofreading') {
-    return `\n【执行】只返回有变化段落，忽略空段落`;
+    return `\n【执行】planning→preparing→working→只返回有变化段落，忽略空段落 | end`;
   }
 
   if (taskType === 'polish') {
-    return `\n【执行】只返回有变化段落${chapterNote}，参考历史翻译`;
+    return `\n【执行】planning→preparing→working→只返回有变化段落${chapterNote}，参考历史翻译 | end`;
   }
 
   return '';
@@ -578,7 +578,7 @@ export async function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后用 \`update_task_status({"status":"working"})\` 开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
+    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后用 \`update_task_status({"status":"preparing"})\` 进入准备阶段，再 \`update_task_status({"status":"working"})\` 开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -589,8 +589,8 @@ export async function buildIndependentChunkPrompt(
 
     return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}${startContextHint}
 
-**[警告] 重要：简短规划阶段（已继承上文规划）**
- ${briefPlanningNote}请使用 \`update_task_status({"status":"working"})\` 切到 working 并开始${taskLabel}。
+ **[警告] 重要：简短规划阶段（已继承上文规划）**
+ ${briefPlanningNote}请使用 \`update_task_status({"status":"preparing"})\` 进入准备阶段，再 \`update_task_status({"status":"working"})\` 开始${taskLabel}。
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }

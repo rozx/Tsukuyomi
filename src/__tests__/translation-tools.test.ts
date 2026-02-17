@@ -820,7 +820,7 @@ describe('add_translation_batch', () => {
   });
 
   describe('翻译保存逻辑', () => {
-    test('翻译任务应创建新的翻译版本并设为选中', async () => {
+    test('翻译任务应验证通过并返回成功（实际写入由回调层完成）', async () => {
       const para1 = createTestParagraph('para1', '原文1');
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -834,7 +834,6 @@ describe('add_translation_batch', () => {
 
       // 获取原始翻译数量
       const originalTransCount = para1.translations?.length || 0;
-      const originalSelectedId = para1.selectedTranslationId;
 
       const result = await tool.handler(
         {
@@ -850,15 +849,11 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+      expect(resultObj.processed_paragraph_ids).toContain('para1');
 
-      // 验证新翻译已添加
-      expect(para1.translations?.length).toBe(originalTransCount + 1);
-      // 验证新翻译被设为选中
-      expect(para1.selectedTranslationId).not.toBe(originalSelectedId);
-      // 验证新翻译内容正确
-      const newTranslation = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      expect(newTranslation?.translation).toBe('新翻译文本');
-      expect(newTranslation?.aiModelId).toBe('model-new');
+      // 工具层不再直接修改段落数据，翻译写入由 onParagraphsExtracted 回调统一完成
+      expect(para1.translations?.length).toBe(originalTransCount);
     });
 
     test('重复译文命中当前选中版本时应保持选中不变', async () => {
@@ -897,7 +892,7 @@ describe('add_translation_batch', () => {
       expect(para1.translations?.length).toBe(originalCount);
     });
 
-    test('重复译文未命中当前选中版本时应选中最近历史版本', async () => {
+    test('重复译文未命中当前选中版本时应跳过并返回成功', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans-old', translation: '重复译文', aiModelId: 'model-old' },
         { id: 'trans-selected', translation: '其他译文', aiModelId: 'model-selected' },
@@ -930,7 +925,7 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-      expect(para1.selectedTranslationId).toBe('trans-latest');
+      // 工具层不再修改段落数据，选中状态由回调层管理
       expect(para1.translations?.length).toBe(originalCount);
     });
 
@@ -968,17 +963,16 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.warnings?.[0]).toContain('提交成功后将自动选中该版本');
+      expect(resultObj.warnings?.[0]).toContain('自动选中该版本');
     });
 
-    test('润色任务应创建新的翻译版本并设为选中', async () => {
+    test('润色任务应验证通过并返回成功（实际写入由回调层完成）', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans1', translation: '原始翻译', aiModelId: 'model-old' },
       ]);
       para1.selectedTranslationId = 'trans1';
 
       const originalTransCount = para1.translations?.length || 0;
-      const originalSelectedId = para1.selectedTranslationId;
 
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -1004,28 +998,20 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(resultObj.task_type).toBe('polish');
+      expect(resultObj.processed_count).toBe(1);
 
-      // 验证新翻译被设为选中
-      const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      expect(selectedTrans?.translation).toBe('润色后的翻译');
-      expect(selectedTrans?.aiModelId).toBe('model-new');
-      expect(para1.selectedTranslationId).not.toBe(originalSelectedId);
-
-      // 验证新增了翻译版本，并保留原翻译
-      expect(para1.translations?.length).toBe(originalTransCount + 1);
-      const originalTrans = para1.translations?.find((t) => t.id === 'trans1');
-      expect(originalTrans?.translation).toBe('原始翻译');
-      expect(originalTrans?.aiModelId).toBe('model-old');
+      // 工具层不再直接修改段落数据，翻译写入由 onParagraphsExtracted 回调统一完成
+      expect(para1.translations?.length).toBe(originalTransCount);
     });
 
-    test('校对任务应创建新的翻译版本并设为选中', async () => {
+    test('校对任务应验证通过并返回成功（实际写入由回调层完成）', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans1', translation: '原始翻译', aiModelId: 'model-old' },
       ]);
       para1.selectedTranslationId = 'trans1';
 
       const originalTransCount = para1.translations?.length || 0;
-      const originalSelectedId = para1.selectedTranslationId;
 
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -1051,16 +1037,11 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(resultObj.task_type).toBe('proofreading');
+      expect(resultObj.processed_count).toBe(1);
 
-      const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      expect(selectedTrans?.translation).toBe('校对后的翻译');
-      expect(selectedTrans?.aiModelId).toBe('model-proofread');
-      expect(para1.selectedTranslationId).not.toBe(originalSelectedId);
-
-      expect(para1.translations?.length).toBe(originalTransCount + 1);
-      const originalTrans = para1.translations?.find((t) => t.id === 'trans1');
-      expect(originalTrans?.translation).toBe('原始翻译');
-      expect(originalTrans?.aiModelId).toBe('model-old');
+      // 工具层不再直接修改段落数据，翻译写入由 onParagraphsExtracted 回调统一完成
+      expect(para1.translations?.length).toBe(originalTransCount);
     });
 
     test('当译文遗漏原文引号时应返回错误', async () => {
@@ -1122,9 +1103,7 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
-
-      const selectedTrans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      expect(selectedTrans?.translation).toBe('她说：“欢迎回来。”');
+      expect(resultObj.processed_count).toBe(1);
     });
 
     test('当段落不存在时应返回错误', async () => {
@@ -1187,12 +1166,8 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(2);
-
-      // 验证两个段落的翻译都已保存
-      const trans1 = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      const trans2 = para2.translations?.find((t) => t.id === para2.selectedTranslationId);
-      expect(trans1?.translation).toBe('翻译1');
-      expect(trans2?.translation).toBe('翻译2');
+      expect(resultObj.processed_paragraph_ids).toContain('para1');
+      expect(resultObj.processed_paragraph_ids).toContain('para2');
     });
 
     test('当书籍不存在时应返回错误', async () => {
@@ -1274,10 +1249,7 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
-
-      // 验证只访问了 chapter1 的段落
-      const trans = para1.translations?.find((t) => t.id === para1.selectedTranslationId);
-      expect(trans?.translation).toBe('翻译文本');
+      expect(resultObj.processed_paragraph_ids).toContain('para1');
     });
 
     test('当 chapterId 指向不存在的章节时应返回错误', async () => {
