@@ -846,14 +846,20 @@ export const translationTools: ToolDefinition[] = [
       // 只有翻译任务才需要返回剩余段落信息（润色/校对任务不需要）
       const isTranslationTask = taskType === 'translation';
       let remainingParagraphIds: string[] | undefined;
+      let displayRemainingIds: string[] | undefined;
       if (isTranslationTask) {
         const chunkParagraphIds = chunkBoundaries?.paragraphIds;
         if (chunkParagraphIds && chunkParagraphIds.length > 0) {
           // 使用 submittedParagraphIds（包含所有历史批次 + 当前批次）计算剩余段落
-          // 而非仅用当前批次的 resolvedIds，避免 remaining_count 不随批次递减
           remainingParagraphIds = submittedParagraphIds
             ? chunkParagraphIds.filter((id) => !submittedParagraphIds.has(id))
             : chunkParagraphIds.filter((id) => !resolvedIds.includes(id));
+          // 只显示下一批次的最大数量（减少 token 消耗）
+          const { hardMax } = calculateAllowedBatchSize(
+            chunkParagraphIds.length,
+            submittedParagraphIds?.size,
+          );
+          displayRemainingIds = remainingParagraphIds.slice(0, hardMax);
         }
       }
 
@@ -883,8 +889,8 @@ export const translationTools: ToolDefinition[] = [
           ? remainingParagraphIds && remainingParagraphIds.length > 0
             ? {
                 remaining_count: remainingParagraphIds.length,
-                remaining_paragraph_ids: remainingParagraphIds,
-                note: '请在下次批次中使用上述 paragraph_id 继续提交。',
+                remaining_paragraph_ids: displayRemainingIds,
+                note: `仅显示下 ${displayRemainingIds?.length || 0} 个待处理段落 ID，请在下次批次中使用。`,
               }
             : { remaining_count: 0 }
           : {}),
