@@ -207,7 +207,6 @@ describe('AI Tools Tests', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(1);
-      expect(BookService.saveBook).toHaveBeenCalled();
     });
 
     it('should reject translation for blank paragraph', async () => {
@@ -339,7 +338,6 @@ describe('AI Tools Tests', () => {
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(20);
-      expect(BookService.saveBook).toHaveBeenCalled();
     });
 
     it('should still enforce original limit when chunk total paragraphs > 2x max', async () => {
@@ -713,7 +711,7 @@ describe('AI Tools Tests', () => {
       const result = await handler({ status: 'review' }, polishContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('无效的状态转换');
+      expect(parsed.error).toContain('润色任务不支持 review 状态');
     });
   });
 

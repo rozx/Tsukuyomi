@@ -4,8 +4,9 @@ import type {
   TaskStatus,
   AIProcessingStore,
 } from 'src/services/ai/tasks/utils/task-types';
+import { TodoListService } from 'src/services/todo-list-service';
 
-const VALID_STATUSES: TaskStatus[] = ['planning', 'working', 'review', 'end'];
+const VALID_STATUSES: TaskStatus[] = ['planning', 'preparing', 'working', 'review', 'end'];
 
 interface StateTransitionRules {
   [key: string]: TaskStatus[];
@@ -13,18 +14,21 @@ interface StateTransitionRules {
 
 const TRANSITION_RULES: Record<TaskType, StateTransitionRules> = {
   translation: {
-    planning: ['working'],
+    planning: ['preparing'],
+    preparing: ['working'],
     working: ['review'],
     review: ['working', 'end'],
     end: [],
   },
   polish: {
-    planning: ['working'],
+    planning: ['preparing'],
+    preparing: ['working'],
     working: ['end'],
     end: [],
   },
   proofreading: {
-    planning: ['working'],
+    planning: ['preparing'],
+    preparing: ['working'],
     working: ['end'],
     end: [],
   },
@@ -34,6 +38,45 @@ const TRANSITION_RULES: Record<TaskType, StateTransitionRules> = {
     end: [],
   },
 };
+
+/**
+ * 获取更友好的状态转换错误信息
+ */
+function getTransitionErrorMessage(
+  taskType: TaskType,
+  currentStatus: TaskStatus,
+  newStatus: TaskStatus,
+): string {
+  if (taskType === 'translation' && currentStatus === 'planning' && newStatus === 'working') {
+    return '翻译任务必须先进入 preparing 状态';
+  }
+
+  if (
+    (taskType === 'polish' || taskType === 'proofreading') &&
+    currentStatus === 'planning' &&
+    newStatus === 'working'
+  ) {
+    return '润色/校对任务必须先进入 preparing 状态';
+  }
+
+  if (taskType === 'translation' && currentStatus === 'working' && newStatus === 'end') {
+    return '翻译任务必须先进入 review 状态';
+  }
+
+  if (newStatus === 'review') {
+    if (taskType === 'polish') {
+      return '润色任务不支持 review 状态';
+    }
+    if (taskType === 'proofreading') {
+      return '校对任务不支持 review 状态';
+    }
+    if (taskType === 'chapter_summary') {
+      return '章节摘要任务不支持 review 状态';
+    }
+  }
+
+  return `无效的状态转换: ${currentStatus} → ${newStatus}`;
+}
 
 /**
  * 验证状态值是否有效
@@ -73,7 +116,7 @@ function isValidTransition(
   if (!allowedTransitions || !allowedTransitions.includes(newStatus)) {
     return {
       valid: false,
-      error: `无效的状态转换: ${currentStatus} → ${newStatus}`,
+      error: getTransitionErrorMessage(taskType, currentStatus, newStatus),
     };
   }
 
@@ -128,15 +171,15 @@ export const taskStatusTools: ToolDefinition[] = [
       function: {
         name: 'update_task_status',
         description:
-          '更新当前 AI 任务的状态。使用此工具来报告任务进展：planning(规划中) → working(执行中) → review(复核中) → end(完成)。注意：翻译任务支持 review → working 返回修改，润色/校对任务不支持 review 状态。',
+          '更新当前 AI 任务的状态。翻译任务：planning(规划中) → preparing(准备中) → working(执行中) → review(复核中) → end(完成)；润色/校对任务：planning → preparing → working → end。注意：翻译任务支持 review → working 返回修改。',
         parameters: {
           type: 'object',
           properties: {
             status: {
               type: 'string',
-              enum: ['planning', 'working', 'review', 'end'],
+              enum: ['planning', 'preparing', 'working', 'review', 'end'],
               description:
-                '新的任务状态。planning: 正在规划；working: 正在执行翻译/润色/校对；review: 正在复核（仅翻译任务可用）；end: 任务完成',
+                '新的任务状态。planning: 正在规划；preparing: 正在准备数据（术语/角色/记忆）；working: 正在执行翻译/润色/校对；review: 正在复核（仅翻译任务可用）；end: 任务完成',
             },
             reason: {
               type: 'string',
@@ -313,12 +356,32 @@ export const taskStatusTools: ToolDefinition[] = [
           });
         }
 
-        return JSON.stringify({
+        // 当状态变更为 review 时，获取并提醒未完成的待办事项（仅当有待办时返回，减少 token 消耗）
+        let todoReminder:
+          | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
+          | undefined;
+        if (status === 'review') {
+          const todos = TodoListService.getTodosByTaskId(taskId);
+          const incompleteTodos = todos.filter((t) => !t.completed);
+          if (incompleteTodos.length > 0) {
+            todoReminder = {
+              incomplete_count: incompleteTodos.length,
+              todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
+            };
+          }
+        }
+
+        const result: Record<string, unknown> = {
           success: true,
           message: `任务状态已更新: ${currentStatus || '初始'} → ${status}`,
           task_id: taskId,
           new_status: status,
-        });
+        };
+        if (todoReminder) {
+          result.todo_reminder = todoReminder;
+        }
+
+        return JSON.stringify(result);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : '未知错误';
         return JSON.stringify({

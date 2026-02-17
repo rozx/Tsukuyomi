@@ -14,30 +14,14 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
   if (!taskId && !sessionId) {
     return '';
   }
-  // 对于助手聊天，优先使用 sessionId 获取待办事项；否则使用 taskId
-  const activeTodos = sessionId
-    ? TodoListService.getTodosBySessionId(sessionId).filter((todo) => !todo.completed)
-    : taskId
-      ? TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed)
-      : [];
 
-  if (activeTodos.length === 0) {
-    return '';
-  }
-
-  let prompt = '\n【待办事项】\n';
-
-  activeTodos.forEach((todo, index) => {
-    prompt += `${index + 1}. [${todo.id}] ${todo.text}\n`;
-  });
-
-  prompt +=
-    '\n**可用工具**：create_todo | list_todos | update_todos | mark_todo_done | delete_todo\n';
+  let prompt =
+    '\n**待办工具**：create_todo | list_todos | update_todos | mark_todo_done | delete_todo\n';
   prompt += '\n**使用指南**：\n';
-  prompt += '- 优先完成现有待办事项\n';
-  prompt += '- 仅在任务复杂需分步跟踪时创建新待办\n';
+  prompt += '- 仅在任务复杂需分步跟踪时创建待办，简单任务直接处理\n';
   prompt += '- 待办描述应具体可执行（如："翻译第1-5段，检查术语一致性"）\n';
   prompt += '- 完成后使用 mark_todo_done 标记\n';
+  prompt += '- 可用 list_todos 查看待办列表\n';
 
   return prompt;
 }

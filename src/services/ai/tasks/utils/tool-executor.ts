@@ -4,11 +4,13 @@
 export interface PerformanceMetrics {
   totalTime: number;
   planningTime: number;
+  preparingTime: number;
   workingTime: number;
   reviewTime: number;
   toolCallTime: number;
   toolCallCount: number;
   averageToolCallTime: number;
+  workingRejectedWriteCount: number;
   chunkProcessingTime: number[];
 }
 
@@ -53,9 +55,6 @@ export async function executeToolCall(
   );
 
   if (aiProcessingStore && taskId) {
-    void aiProcessingStore.appendThinkingMessage(
-      taskId,
-      `[工具结果: ${toolResult.content.slice(0, 100)}...]\n`,
-    );
+    void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResult.content}]\n`);
   }
 }

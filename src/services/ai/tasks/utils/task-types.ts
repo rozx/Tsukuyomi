@@ -11,7 +11,13 @@ export type TaskType = 'translation' | 'polish' | 'proofreading' | 'chapter_summ
  */
 export type TaskStatus = AIWorkflowStatus;
 
-export const VALID_TASK_STATUSES: TaskStatus[] = ['planning', 'working', 'review', 'end'];
+export const VALID_TASK_STATUSES: TaskStatus[] = [
+  'planning',
+  'preparing',
+  'working',
+  'review',
+  'end',
+];
 
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {
   translation: '翻译',
@@ -28,6 +34,7 @@ export function getStatusLabel(status: TaskStatus, taskType: TaskType): string {
   }
   const labels: Record<Exclude<TaskStatus, 'working'>, string> = {
     planning: '规划阶段 (planning)',
+    preparing: '准备阶段 (preparing)',
     review: '复核阶段 (review)',
     end: '完成 (end)',
   };
@@ -37,30 +44,50 @@ export function getStatusLabel(status: TaskStatus, taskType: TaskType): string {
 export function getValidTransitionsForTaskType(
   taskType: TaskType,
 ): Record<TaskStatus, TaskStatus[]> {
-  // 翻译任务：严格四阶段
-  if (taskType === 'translation') {
-    return {
-      planning: ['working'],
-      working: ['review'],
-      review: ['end', 'working'],
-      end: [],
-    };
-  }
+  switch (taskType) {
+    // 翻译任务：planning → preparing → working → review → end（review 可回退 working）
+    case 'translation':
+      return {
+        planning: ['preparing'],
+        preparing: ['working'],
+        working: ['review'],
+        review: ['end', 'working'],
+        end: [],
+      };
 
-  // 润色/校对/章节摘要：跳过并禁用 review，固定为 planning → working → end
-  return {
-    planning: ['working'],
-    working: ['end'],
-    // 理论上不会进入 review（已禁用）。保底：若发生，允许直接结束，避免卡死。
-    review: ['end'],
-    end: [],
-  };
+    // 润色/校对：planning → preparing → working → end（禁用 review）
+    case 'polish':
+    case 'proofreading':
+      return {
+        planning: ['preparing'],
+        preparing: ['working'],
+        working: ['end'],
+        review: [],
+        end: [],
+      };
+
+    // 章节摘要：保持既有流程 planning → working → end
+    case 'chapter_summary':
+      return {
+        planning: ['working'],
+        preparing: [],
+        working: ['end'],
+        review: [],
+        end: [],
+      };
+  }
 }
 
 export function getTaskStateWorkflowText(taskType: TaskType): string {
-  return taskType === 'translation'
-    ? 'planning → working → review → end'
-    : 'planning → working → end（润色/校对/摘要任务禁止使用 review）';
+  switch (taskType) {
+    case 'translation':
+      return 'planning → preparing → working → review → end';
+    case 'polish':
+    case 'proofreading':
+      return 'planning → preparing → working → end（润色/校对任务禁止使用 review）';
+    case 'chapter_summary':
+      return 'planning → working → end（章节摘要任务不使用 preparing/review）';
+  }
 }
 
 /**

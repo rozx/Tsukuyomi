@@ -3,11 +3,10 @@ import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import { generateShortId } from 'src/utils/id-generator';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
-import { useBooksStore } from 'src/stores/books';
-import { isEmptyParagraph } from 'src/utils/text-utils';
+import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
+import { TodoListService } from 'src/services/todo-list-service';
 
 // ============ Types ============
 
@@ -87,14 +86,14 @@ const ERROR_MESSAGES = {
   OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
   // 翻译内容验证相关
-  TRANSLATION_UNCHANGED: (paragraphId: string) =>
-    `段落 ${paragraphId} 的翻译与当前版本完全相同，无需重复提交。请提供不同的翻译或跳过此段落。`,
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
   TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
-  TRANSLATION_DUPLICATE_HISTORY: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与已有的历史翻译版本完全相同，请提供不同的翻译。`,
+  TRANSLATION_SAME_AS_SELECTED: (paragraphId: string) =>
+    `段落 ${paragraphId} 的译文与当前选中版本相同，请不要提交相同内容。`,
+  TRANSLATION_DUPLICATE: (count: number) =>
+    `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
     `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
   TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
@@ -543,6 +542,7 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     const validationErrors: string[] = [];
     const validationWarnings: string[] = [];
+    let duplicateCount = 0;
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
@@ -550,24 +550,37 @@ async function processTranslationBatch(
         continue;
       }
 
-      // 检查翻译是否为原文的直接复制
+      // 检查翻译是否为原文的直接复制（纯符号段落除外）
       if (item.translatedText.trim() === paragraph.text.trim()) {
-        validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
-        continue;
+        if (!isSymbolOnly(paragraph.text)) {
+          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL(item.paragraphId));
+          continue;
+        }
       }
 
-      // 检查提交的翻译是否与任何已有翻译版本完全相同（不仅限当前选中版本）
+      // 检查提交的翻译是否与任何已有翻译版本完全相同
       if (paragraph.translations && paragraph.translations.length > 0) {
-        const duplicateTranslation = paragraph.translations.find(
-          (t) => t.translation === item.translatedText,
+        const selectedTranslation = paragraph.translations.find(
+          (t) => t.id === paragraph.selectedTranslationId,
         );
-        if (duplicateTranslation) {
-          const isSelected = duplicateTranslation.id === paragraph.selectedTranslationId;
-          validationErrors.push(
-            isSelected
-              ? ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId)
-              : ERROR_MESSAGES.TRANSLATION_DUPLICATE_HISTORY(item.paragraphId),
-          );
+
+        // 如果与当前选中版本相同，阻止提交
+        if (selectedTranslation && selectedTranslation.translation === item.translatedText) {
+          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId));
+          continue;
+        }
+
+        // 检查是否与历史版本相同（非当前选中）
+        let foundInHistory = false;
+        for (let i = paragraph.translations.length - 1; i >= 0; i--) {
+          const candidate = paragraph.translations[i];
+          if (candidate && candidate.translation === item.translatedText) {
+            duplicateCount++;
+            foundInHistory = true;
+            break;
+          }
+        }
+        if (foundInHistory) {
           continue;
         }
       }
@@ -597,6 +610,10 @@ async function processTranslationBatch(
       }
     }
 
+    if (duplicateCount > 0) {
+      validationWarnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
+    }
+
     if (validationErrors.length > 0) {
       return {
         success: false,
@@ -607,7 +624,9 @@ async function processTranslationBatch(
       };
     }
 
-    // 阶段 2：所有验证通过后，批量写入翻译
+    // 阶段 2：所有验证通过，计算已处理段落数
+    // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
+    // 工具层只负责验证，不直接修改段落数据，避免双重写入
     let processedCount = 0;
 
     for (const item of items) {
@@ -615,29 +634,8 @@ async function processTranslationBatch(
       if (!paragraph) {
         continue;
       }
-
-      const newTranslation: Translation = {
-        id: generateShortId(),
-        translation: item.translatedText,
-        aiModelId,
-      };
-
-      if (!paragraph.translations) {
-        paragraph.translations = [];
-      }
-      paragraph.translations.push(newTranslation);
-      paragraph.selectedTranslationId = newTranslation.id;
-
       processedCount++;
     }
-
-    // 保存书籍并同步 store（优先更新 store，确保 UI 立即可见）
-    const booksStore = useBooksStore();
-    const existingBook = booksStore.getBookById(bookId);
-    if (existingBook) {
-      await booksStore.updateBook(bookId, { volumes: book.volumes }, { persist: false });
-    }
-    await BookService.saveBook(book);
 
     return {
       success: true,
@@ -839,41 +837,33 @@ export const translationTools: ToolDefinition[] = [
         });
       }
 
-      // 构建已处理段落列表（帮助 AI 确认哪些段落已完成）
-      const processedParagraphIds = resolvedIds;
-
-      // 只有翻译任务才需要返回剩余段落信息（润色/校对任务不需要）
-      const isTranslationTask = taskType === 'translation';
-      let remainingParagraphIds: string[] | undefined;
-      if (isTranslationTask) {
-        const chunkParagraphIds = chunkBoundaries?.paragraphIds;
-        if (chunkParagraphIds && chunkParagraphIds.length > 0) {
-          // 使用 submittedParagraphIds（包含所有历史批次 + 当前批次）计算剩余段落
-          // 而非仅用当前批次的 resolvedIds，避免 remaining_count 不随批次递减
-          remainingParagraphIds = submittedParagraphIds
-            ? chunkParagraphIds.filter((id) => !submittedParagraphIds.has(id))
-            : chunkParagraphIds.filter((id) => !resolvedIds.includes(id));
+      // 获取当前任务的未完成待办事项（仅当有待办时返回，减少 token 消耗）
+      let todoReminder:
+        | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
+        | undefined;
+      if (taskId) {
+        const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter(
+          (t) => !t.completed,
+        );
+        if (incompleteTodos.length > 0) {
+          todoReminder = {
+            incomplete_count: incompleteTodos.length,
+            todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
+          };
         }
       }
 
-      return JSON.stringify({
+      const responseResult: Record<string, unknown> = {
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
-        processed_paragraph_ids: processedParagraphIds,
         task_type: taskType,
-        ...(isTranslationTask
-          ? remainingParagraphIds && remainingParagraphIds.length > 0
-            ? {
-                remaining_count: remainingParagraphIds.length,
-                remaining_paragraph_ids: remainingParagraphIds,
-                note: '请在下次批次中使用上述 paragraph_id 继续提交。',
-              }
-            : { remaining_count: 0 }
-          : {}),
         ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),
-      });
+        ...(todoReminder ? { todo_reminder: todoReminder } : {}),
+      };
+
+      return JSON.stringify(responseResult);
     },
   },
 ];
