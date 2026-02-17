@@ -861,6 +861,116 @@ describe('add_translation_batch', () => {
       expect(newTranslation?.aiModelId).toBe('model-new');
     });
 
+    test('重复译文命中当前选中版本时应保持选中不变', async () => {
+      const para1 = createTestParagraph('para1', '原文1', [
+        { id: 'trans-old', translation: '重复译文', aiModelId: 'model-old' },
+        { id: 'trans-current', translation: '重复译文', aiModelId: 'model-current' },
+      ]);
+      para1.selectedTranslationId = 'trans-current';
+      const originalCount = para1.translations?.length || 0;
+
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '重复译文' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(para1.selectedTranslationId).toBe('trans-current');
+      expect(para1.translations?.length).toBe(originalCount);
+    });
+
+    test('重复译文未命中当前选中版本时应选中最近历史版本', async () => {
+      const para1 = createTestParagraph('para1', '原文1', [
+        { id: 'trans-old', translation: '重复译文', aiModelId: 'model-old' },
+        { id: 'trans-selected', translation: '其他译文', aiModelId: 'model-selected' },
+        { id: 'trans-latest', translation: '重复译文', aiModelId: 'model-latest' },
+      ]);
+      para1.selectedTranslationId = 'trans-selected';
+      const originalCount = para1.translations?.length || 0;
+
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [{ paragraph_id: 'para1', translated_text: '重复译文' }],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(para1.selectedTranslationId).toBe('trans-latest');
+      expect(para1.translations?.length).toBe(originalCount);
+    });
+
+    test('存在校验错误时重复译文警告应使用提交后语义', async () => {
+      const para1 = createTestParagraph('para1', '原文1', [
+        { id: 'trans-selected', translation: '重复译文', aiModelId: 'model-selected' },
+      ]);
+      para1.selectedTranslationId = 'trans-selected';
+      const para2 = createTestParagraph('para2', '原文2');
+
+      const chapter = createTestChapter('chapter1', [para1, para2]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            { paragraph_id: 'para1', translated_text: '重复译文' },
+            { paragraph_id: 'para2', translated_text: '原文2' },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.warnings?.[0]).toContain('提交成功后将自动选中该版本');
+    });
+
     test('润色任务应创建新的翻译版本并设为选中', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans1', translation: '原始翻译', aiModelId: 'model-old' },

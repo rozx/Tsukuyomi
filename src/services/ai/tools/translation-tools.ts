@@ -88,13 +88,13 @@ const ERROR_MESSAGES = {
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
   // 翻译内容验证相关
   TRANSLATION_UNCHANGED: (paragraphId: string) =>
-    `段落 ${paragraphId} 的翻译与当前版本完全相同，无需重复提交。请提供不同的翻译或跳过此段落。`,
+    `段落 ${paragraphId} 的翻译与当前选中版本完全相同，提交成功后将自动选中该版本。请后续尽量避免重复提交相同内容。`,
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
   TRANSLATION_SAME_AS_ORIGINAL: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与原文完全相同，请提供翻译而非复制原文。`,
   TRANSLATION_DUPLICATE_HISTORY: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与已有的历史翻译版本完全相同，请提供不同的翻译。`,
+    `段落 ${paragraphId} 的译文与已有的历史翻译版本完全相同，提交成功后将自动选中该版本。请后续尽量避免重复提交相同内容。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
     `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
   TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
@@ -543,6 +543,8 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     const validationErrors: string[] = [];
     const validationWarnings: string[] = [];
+    // 记录需要选中已有翻译的段落（而非添加新翻译）
+    const selectExistingTranslationMap = new Map<string, string>(); // paragraphId -> existingTranslationId
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
@@ -558,12 +560,31 @@ async function processTranslationBatch(
 
       // 检查提交的翻译是否与任何已有翻译版本完全相同（不仅限当前选中版本）
       if (paragraph.translations && paragraph.translations.length > 0) {
-        const duplicateTranslation = paragraph.translations.find(
-          (t) => t.translation === item.translatedText,
+        const selectedTranslation = paragraph.translations.find(
+          (t) => t.id === paragraph.selectedTranslationId,
         );
+
+        let duplicateTranslation: Translation | undefined;
+
+        // 优先复用当前已选版本，避免在存在多个同文案版本时发生非预期回退
+        if (selectedTranslation && selectedTranslation.translation === item.translatedText) {
+          duplicateTranslation = selectedTranslation;
+        } else {
+          // 否则优先选择最近创建的同文案版本（数组末尾）
+          for (let i = paragraph.translations.length - 1; i >= 0; i--) {
+            const candidate = paragraph.translations[i];
+            if (candidate && candidate.translation === item.translatedText) {
+              duplicateTranslation = candidate;
+              break;
+            }
+          }
+        }
+
         if (duplicateTranslation) {
+          // 不再拒绝，而是接受并发出警告，同时标记需要选中已有翻译
+          selectExistingTranslationMap.set(item.paragraphId, duplicateTranslation.id);
           const isSelected = duplicateTranslation.id === paragraph.selectedTranslationId;
-          validationErrors.push(
+          validationWarnings.push(
             isSelected
               ? ERROR_MESSAGES.TRANSLATION_UNCHANGED(item.paragraphId)
               : ERROR_MESSAGES.TRANSLATION_DUPLICATE_HISTORY(item.paragraphId),
@@ -616,6 +637,16 @@ async function processTranslationBatch(
         continue;
       }
 
+      // 检查是否需要选中已有翻译（重复翻译的情况）
+      const existingTranslationId = selectExistingTranslationMap.get(item.paragraphId);
+      if (existingTranslationId) {
+        // 选中已有翻译，不添加新翻译
+        paragraph.selectedTranslationId = existingTranslationId;
+        processedCount++;
+        continue;
+      }
+
+      // 添加新的翻译版本
       const newTranslation: Translation = {
         id: generateShortId(),
         translation: item.translatedText,
