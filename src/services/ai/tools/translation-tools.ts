@@ -6,6 +6,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import type { Paragraph, Translation } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { isEmptyParagraph } from 'src/utils/text-utils';
+import { TodoListService } from 'src/services/todo-list-service';
 
 // ============ Types ============
 
@@ -856,7 +857,23 @@ export const translationTools: ToolDefinition[] = [
         }
       }
 
-      return JSON.stringify({
+      // 获取当前任务的未完成待办事项（仅当有待办时返回，减少 token 消耗）
+      let todoReminder:
+        | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
+        | undefined;
+      if (taskId) {
+        const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter(
+          (t) => !t.completed,
+        );
+        if (incompleteTodos.length > 0) {
+          todoReminder = {
+            incomplete_count: incompleteTodos.length,
+            todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
+          };
+        }
+      }
+
+      const responseResult: Record<string, unknown> = {
         success: true,
         message: `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
@@ -873,7 +890,10 @@ export const translationTools: ToolDefinition[] = [
           : {}),
         ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),
-      });
+        ...(todoReminder ? { todo_reminder: todoReminder } : {}),
+      };
+
+      return JSON.stringify(responseResult);
     },
   },
 ];

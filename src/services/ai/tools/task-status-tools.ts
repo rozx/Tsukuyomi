@@ -4,6 +4,7 @@ import type {
   TaskStatus,
   AIProcessingStore,
 } from 'src/services/ai/tasks/utils/task-types';
+import { TodoListService } from 'src/services/todo-list-service';
 
 const VALID_STATUSES: TaskStatus[] = ['planning', 'preparing', 'working', 'review', 'end'];
 
@@ -355,12 +356,30 @@ export const taskStatusTools: ToolDefinition[] = [
           });
         }
 
-        return JSON.stringify({
+        // 当状态变更为 review 时，获取并提醒未完成的待办事项
+        let todoReminder:
+          | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
+          | undefined;
+        if (status === 'review') {
+          const todos = TodoListService.getTodosByTaskId(taskId);
+          const incompleteTodos = todos.filter((t) => !t.completed);
+          todoReminder = {
+            incomplete_count: incompleteTodos.length,
+            todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
+          };
+        }
+
+        const result: Record<string, unknown> = {
           success: true,
           message: `任务状态已更新: ${currentStatus || '初始'} → ${status}`,
           task_id: taskId,
           new_status: status,
-        });
+        };
+        if (todoReminder) {
+          result.todo_reminder = todoReminder;
+        }
+
+        return JSON.stringify(result);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : '未知错误';
         return JSON.stringify({
