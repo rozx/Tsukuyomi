@@ -112,6 +112,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.9.2",
+    "title": "v0.9.2",
+    "file": "RELEASE_NOTES_v0.9.2.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "AI 翻译引擎重构、进度面板工具调用可视化、待办提醒、章节过滤"
+  },
+  {
     "id": "v0.9.1",
     "title": "v0.9.1",
     "file": "RELEASE_NOTES_v0.9.1.md",
