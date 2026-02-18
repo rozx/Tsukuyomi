@@ -1,4 +1,5 @@
 ---
+name: code-review
 description: Perform a comprehensive code review on active or specified files.
 ---
 

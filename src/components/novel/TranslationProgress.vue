@@ -24,7 +24,6 @@ import { throttle } from 'src/utils/throttle';
 const UPDATE_THRESHOLD_MS = 2000; // 更新时间阈值（毫秒）
 const THROTTLE_DELAY_MS = 100; // 节流延迟（毫秒）
 const FORMAT_CACHE_THROTTLE_MS = 200; // 格式化缓存节流延迟（毫秒）
-const MAX_TASK_CONTENT_HEIGHT = 2000; // 任务内容最大高度（像素）
 
 // 任务状态标签
 const taskStatusLabels: Record<string, string> = {
@@ -145,56 +144,59 @@ const getTaskStatusLabel = (task: AIProcessingTask) => {
   return taskStatusLabels[task.status] || task.status;
 };
 
-// 顶部"正在翻译/润色/校对章节"区域：展示当前正在处理的章节（取最新的进行中任务）
-const currentWorkingChapter = computed(() => {
-  const active = recentAITasks.value.find(
-    (t) => t.status === 'thinking' || t.status === 'processing',
-  );
-  return active ? getWorkingChapterLabel(active) : null;
-});
-
 const currentActiveTask = computed(() => {
   return (
     recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing') || null
   );
 });
 
-// 基于 AI 任务状态判断是否有正在进行的任务（不依赖于 props）
-const hasActiveTask = computed(() => {
-  return recentAITasks.value.some(
-    (task) => task.status === 'thinking' || task.status === 'processing',
-  );
+const progressTaskId = computed(() => {
+  const isWorking = props.isTranslating || props.isPolishing || props.isProofreading;
+  if (!isWorking || props.progress.total <= 0) {
+    return null;
+  }
+  return currentActiveTask.value?.id || null;
 });
 
-// 获取当前活跃任务的进度信息
-const activeTaskProgress = computed(() => {
-  const active = currentActiveTask.value;
-  if (!active) {
-    return { current: 0, total: 0, message: '' };
+const shouldShowTaskProgress = (task: AIProcessingTask): boolean => {
+  return progressTaskId.value === task.id;
+};
+
+const getTaskProgressPercent = (task: AIProcessingTask): number => {
+  if (!shouldShowTaskProgress(task) || props.progress.total <= 0) {
+    return 0;
   }
-  // 使用 props.progress 如果任务与当前章节相关，否则使用任务自身的进度
-  if (
-    (props.isTranslating || props.isPolishing || props.isProofreading) &&
-    props.progress.total > 0
-  ) {
-    return props.progress;
-  }
-  // 如果没有进度信息，返回默认值
-  return { current: 0, total: 0, message: '' };
+  const value = (props.progress.current / props.progress.total) * 100;
+  return Math.max(0, Math.min(100, value));
+};
+
+const progressMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
+
+const progressMessage = computed(() => {
+  return props.progress?.message?.trim() || '';
 });
 
-const displayProgressMessage = computed(() => {
-  const message = props.progress?.message?.trim();
-  if (!message) return '';
-  const chunkMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
-  if (chunkMessagePattern.test(message)) return '';
+const chunkProgressMessage = computed(() => {
+  const message = progressMessage.value;
+  if (!message || !progressMessagePattern.test(message)) {
+    return '';
+  }
   return message;
 });
 
-// 当前任务类型（用于取消按钮）
-const currentTaskType = computed(() => {
-  return props.isProofreading ? 'proofreading' : props.isPolishing ? 'polish' : 'translation';
-});
+const getDisplayTaskMessage = (task: AIProcessingTask): string => {
+  const message = task.message?.trim() || '';
+  if (!message) return '';
+  if (progressMessagePattern.test(message)) return '';
+  if (
+    shouldShowTaskProgress(task) &&
+    chunkProgressMessage.value &&
+    message === chunkProgressMessage.value
+  ) {
+    return '';
+  }
+  return message;
+};
 
 // 加载待办事项列表（仅显示当前翻译/润色/校对任务的待办事项）
 const loadTodos = () => {
@@ -1332,7 +1334,6 @@ watch(
                     severity="info"
                     class="ai-task-type-badge"
                   />
-                  <span class="ai-task-status">{{ getTaskStatusLabel(task) }}</span>
                 </div>
                 <div class="ai-task-meta">
                   <span class="ai-task-duration">{{
@@ -1385,9 +1386,29 @@ watch(
                   getWorkingChapterLabel(task)
                 }}</span>
               </div>
+              <div v-if="shouldShowTaskProgress(task)" class="ai-task-progress">
+                <div class="ai-task-progress-stage-row">
+                  <span class="ai-task-progress-stage">{{ getTaskStatusLabel(task) }}</span>
+                  <span v-if="chunkProgressMessage" class="ai-task-progress-stage-message">
+                    {{ chunkProgressMessage }}
+                  </span>
+                </div>
+                <div class="ai-task-progress-header">
+                  <span class="ai-task-progress-text"
+                    >{{ props.progress.current }} / {{ props.progress.total }}</span
+                  >
+                </div>
+                <ProgressBar
+                  :value="getTaskProgressPercent(task)"
+                  :show-value="false"
+                  class="ai-task-progress-bar"
+                />
+              </div>
               <Transition name="task-content">
                 <div v-if="!taskFolded[task.id]" class="ai-task-content">
-                  <div v-if="task.message" class="ai-task-message">{{ task.message }}</div>
+                  <div v-if="getDisplayTaskMessage(task)" class="ai-task-message">
+                    {{ getDisplayTaskMessage(task) }}
+                  </div>
                   <Tabs
                     :value="getActiveTab(task.id)"
                     @update:value="(value) => setActiveTab(task.id, String(value))"
@@ -1581,86 +1602,6 @@ watch(
         </div>
       </div>
     </div>
-    <div v-if="isTranslating || isPolishing || isProofreading" class="translation-progress-content">
-      <div class="translation-progress-info">
-        <div class="translation-progress-header">
-          <div class="translation-progress-header-main">
-            <i
-              :class="[
-                'translation-progress-icon',
-                isProofreading
-                  ? 'pi pi-check-circle'
-                  : isPolishing
-                    ? 'pi pi-sparkles'
-                    : 'pi pi-language',
-              ]"
-            ></i>
-            <span class="translation-progress-title">{{
-              isProofreading ? '正在校对章节' : isPolishing ? '正在润色章节' : '正在翻译章节'
-            }}</span>
-          </div>
-          <Button
-            icon="pi pi-times"
-            label="取消"
-            class="p-button-text p-button-sm translation-progress-cancel"
-            @click="emit('cancel', currentTaskType)"
-          />
-        </div>
-        <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
-          当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
-        </div>
-      </div>
-      <div class="translation-progress-bar-wrapper">
-        <ProgressBar
-          :value="
-            activeTaskProgress.total > 0
-              ? (activeTaskProgress.current / activeTaskProgress.total) * 100
-              : 0
-          "
-          :show-value="false"
-          class="translation-progress-bar"
-        />
-        <div class="translation-progress-text">
-          {{ activeTaskProgress.current }} / {{ activeTaskProgress.total }}
-        </div>
-      </div>
-    </div>
-    <div v-else-if="hasActiveTask" class="translation-progress-content">
-      <!-- 有活跃任务但不在翻译/润色/校对当前章节时，显示任务信息 -->
-      <div class="translation-progress-info">
-        <div class="translation-progress-header">
-          <div class="translation-progress-header-main">
-            <i class="translation-progress-icon pi pi-cog pi-spin"></i>
-            <span class="translation-progress-title">正在处理 AI 任务</span>
-          </div>
-          <Button
-            icon="pi pi-times"
-            label="取消"
-            class="p-button-text p-button-sm translation-progress-cancel"
-            @click="
-              emit('cancel', currentActiveTask?.type || 'translation', currentActiveTask?.chapterId)
-            "
-          />
-        </div>
-        <div v-if="currentWorkingChapter" class="translation-progress-working-chapter">
-          当前工作章节：<span class="working-chapter-title">{{ currentWorkingChapter }}</span>
-        </div>
-      </div>
-    </div>
-    <div v-else class="translation-progress-content">
-      <div class="translation-progress-info">
-        <div class="translation-progress-header">
-          <div class="translation-progress-header-main">
-            <i class="translation-progress-icon pi pi-list"></i>
-            <span class="translation-progress-title">AI 任务历史</span>
-          </div>
-        </div>
-      </div>
-      <div class="translation-progress-actions">
-        <!-- 无操作按钮 -->
-      </div>
-    </div>
-
     <Popover ref="toolResultPopoverRef" class="thinking-tool-result-popover" :dismissable="true">
       <div class="thinking-tool-result-popover-content">
         <pre class="thinking-tool-result-popover-pre">{{ activeToolResultPopupContent }}</pre>
@@ -1680,104 +1621,6 @@ watch(
   padding: 0;
   background: transparent;
   overflow: hidden;
-}
-
-.translation-progress-content {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 1rem;
-  flex-shrink: 0;
-  background: var(--white-opacity-95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--white-opacity-20);
-  box-shadow: 0 2px 8px var(--black-opacity-10);
-}
-
-.translation-progress-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  width: 100%;
-}
-
-.translation-progress-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  justify-content: space-between;
-}
-
-.translation-progress-header-main {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.translation-progress-icon {
-  font-size: 1.125rem;
-  color: var(--primary-opacity-80);
-}
-
-.translation-progress-title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.translation-progress-message {
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-70);
-  line-height: 1.4;
-}
-
-.translation-progress-working-chapter {
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-80);
-  line-height: 1.4;
-}
-
-.working-chapter-title {
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.translation-progress-bar-wrapper {
-  flex: 1;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.translation-progress-bar {
-  flex: 1;
-  height: 0.5rem;
-}
-
-.translation-progress-text {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--moon-opacity-80);
-  white-space: nowrap;
-  min-width: 3rem;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.translation-progress-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  justify-content: flex-end;
-}
-
-.translation-progress-cancel {
-  flex-shrink: 0;
 }
 
 /* 章节过滤切换按钮 */
@@ -1956,12 +1799,6 @@ watch(
   flex-shrink: 0;
 }
 
-.ai-task-status {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-  white-space: nowrap;
-}
-
 .ai-task-meta {
   display: flex;
   align-items: center;
@@ -2013,6 +1850,56 @@ watch(
   color: var(--moon-opacity-90);
   font-weight: 600;
   word-break: break-word;
+}
+
+.ai-task-progress {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 4px;
+  background: var(--primary-opacity-10);
+  border: 1px solid var(--primary-opacity-20);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.ai-task-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ai-task-progress-stage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ai-task-progress-stage {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-opacity-90);
+  line-height: 1.3;
+}
+
+.ai-task-progress-stage-message {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-75);
+  line-height: 1.3;
+}
+
+.ai-task-progress-text {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-90);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ai-task-progress-bar {
+  height: 0.5rem;
 }
 
 .ai-task-tabs {

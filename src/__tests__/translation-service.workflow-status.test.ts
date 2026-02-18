@@ -19,7 +19,7 @@ describe('TranslationService - workflowStatus 重置', () => {
   const mockBuildPreviousChapterSection = mock(() => '');
   const mockBuildIndependentChunkPrompt = mock(() => Promise.resolve('chunk'));
   const mockBuildMaintenanceReminder = mock(() => '');
-  const mockGetSpecialInstructions = mock(() => Promise.resolve(undefined));
+  const mockGetSpecialInstructions = mock(() => undefined as string | undefined);
   const mockGetChapterFirstNonEmptyParagraphId = mock(() => Promise.resolve(undefined));
   const mockGetHasPreviousParagraphs = mock(() => false);
   const mockExecuteToolCallLoop = mock(() =>

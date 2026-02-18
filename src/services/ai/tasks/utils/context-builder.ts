@@ -1,6 +1,6 @@
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
-import type { Memory, MemoryAttachment } from 'src/models/memory';
+import type { Memory } from 'src/models/memory';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
@@ -54,15 +54,6 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
     chapter_summary: '',
   };
   return reminders[taskType];
-}
-
-/**
- * 构建初始用户提示的基础部分 - 精简版
- */
-export function buildInitialUserPromptBase(taskType: TaskType): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-  // getChunkingInstructions is removed
-  return `开始${taskLabel}。`;
 }
 
 /**
@@ -186,76 +177,6 @@ export async function isSkipAskUserEnabled(bookId?: string): Promise<boolean> {
     );
     return false;
   }
-}
-
-/**
- * 添加章节上下文到初始提示
- * 注意：工具使用说明已在系统提示词中提供，这里只保留章节ID和简要提醒
- */
-export function addChapterContext(
-  prompt: string,
-  chapterId: string,
-  _taskType: TaskType,
-  chapterTitle?: string,
-): string {
-  const titleLine = chapterTitle ? `**当前章节标题**: ${chapterTitle}\n` : '';
-  return (
-    `${prompt}\n\n**当前章节 ID**: \`${chapterId}\`\n${titleLine}` +
-    `[警告] **重要提醒**: 工具**仅用于获取上下文信息**，你只需要处理**当前任务中直接提供给你的段落**。`
-  );
-}
-
-/**
- * 添加段落上下文到初始提示
- */
-export function addParagraphContext(
-  prompt: string,
-  paragraphId: string,
-  taskType: TaskType,
-): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-
-  const tools =
-    taskType === 'proofreading'
-      ? 'find_paragraph_by_keywords、get_chapter_info、get_previous_paragraphs、get_next_paragraphs'
-      : 'find_paragraph_by_keywords、get_chapter_info';
-
-  return (
-    `${prompt}\n\n**当前段落 ID**: ${paragraphId}\n` +
-    `你可以使用工具（如 ${tools} 等）获取该段落的前后上下文，` +
-    `以确保${taskLabel}的一致性和连贯性。\n\n` +
-    `[警告] **重要提醒**: 这些工具**仅用于获取上下文信息**，` +
-    `不要用来获取待${taskLabel}的段落！你只需要处理**当前任务中直接提供给你的段落**，` +
-    `不要尝试翻译工具返回的段落内容。`
-  );
-}
-
-/**
- * 添加任务规划建议到初始提示 - 精简版
- */
-export function addTaskPlanningSuggestions(prompt: string, _taskType: TaskType): string {
-  return `${prompt}\n\n可用 \`create_todo\` 规划复杂任务`;
-}
-
-/**
- * 构建执行要点/清单（任务特定）- 精简版
- */
-export function buildExecutionSection(taskType: TaskType, chapterId?: string): string {
-  const chapterNote = chapterId ? `（传chapter_id: ${chapterId}）` : '';
-
-  if (taskType === 'translation') {
-    return `\n【执行】planning→获取上下文${chapterNote} | preparing→准备 | working→1:1翻译 | review→复核 | end`;
-  }
-
-  if (taskType === 'proofreading') {
-    return `\n【执行】planning→preparing→working→只返回有变化段落，忽略空段落 | end`;
-  }
-
-  if (taskType === 'polish') {
-    return `\n【执行】planning→preparing→working→只返回有变化段落${chapterNote}，参考历史翻译 | end`;
-  }
-
-  return '';
 }
 
 /**
@@ -614,18 +535,17 @@ export function buildSpecialInstructionsSection(specialInstructions?: string): s
  * @param taskType 任务类型
  * @returns 特殊指令字符串（如果存在）
  */
-export async function getSpecialInstructions(
+export function getSpecialInstructions(
   bookId: string | undefined,
   chapterId: string | undefined,
   taskType: TaskType,
-): Promise<string | undefined> {
+): string | undefined {
   if (!bookId) {
     return undefined;
   }
 
   try {
     // 动态导入 store 以避免循环依赖
-    await Promise.resolve(); // 保持 async 签名兼容性
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
 

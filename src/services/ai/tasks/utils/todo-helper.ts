@@ -5,6 +5,15 @@
 
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
+/** 任务类型标签（用于待办事项标记） */
+const TODO_TASK_LABELS: Record<string, string> = {
+  translation: '翻译',
+  polish: '润色',
+  proofreading: '校对',
+  assistant: '助手',
+  chapter_summary: '章节摘要',
+};
+
 /**
  * 获取待办事项的系统提示词片段
  * @param taskId 任务 ID（必需）
@@ -41,14 +50,7 @@ export function createTaskTodo(
     if (!taskId) {
       throw new Error('任务 ID 不能为空');
     }
-    const taskTypeLabels = {
-      translation: '翻译',
-      polish: '润色',
-      proofreading: '校对',
-      assistant: '助手',
-    };
-
-    const todoText = `[${taskTypeLabels[taskType]}] ${taskDescription}`;
+    const todoText = `[${TODO_TASK_LABELS[taskType]}] ${taskDescription}`;
     return TodoListService.createTodo(todoText, taskId);
   } catch (error) {
     console.error('[TodoHelper] 创建待办事项失败:', error);
@@ -64,14 +66,7 @@ export function markRelatedTodosDone(
   taskDescription?: string,
 ): void {
   try {
-    const taskTypeLabels = {
-      translation: '翻译',
-      polish: '润色',
-      proofreading: '校对',
-      assistant: '助手',
-    };
-
-    const label = taskTypeLabels[taskType];
+    const label = TODO_TASK_LABELS[taskType] ?? taskType;
     const activeTodos = TodoListService.getActiveTodos();
 
     // 查找包含任务类型的待办事项

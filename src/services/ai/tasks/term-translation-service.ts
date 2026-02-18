@@ -178,7 +178,7 @@ export class TermTranslationService {
       // 如果有 bookId 和 chapterId，添加上下文信息（禁止工具调用）
       if (bookId) {
         // 获取特殊指令
-        const specialInstructions = await getSpecialInstructions(bookId, chapterId, 'translation');
+        const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
         const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
         const bookContextSection = await buildBookContextSection(bookId);
         const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);

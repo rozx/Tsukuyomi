@@ -500,7 +500,7 @@ class TaskLoopSession {
 
   private prepareToolCall(toolName: string): boolean {
     this.updateToolCounters(toolName);
-    return PRODUCTIVE_TOOLS.includes(toolName);
+    return PRODUCTIVE_TOOLS.has(toolName);
   }
 
   private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<string> {
@@ -767,16 +767,16 @@ class TaskLoopSession {
   private collectPlanningInfo(toolName: string, content: string, toolCall: AIToolCall): boolean {
     if (this.currentStatus !== 'planning') return false;
 
-    const keyTools = [
+    const keyTools = new Set([
       'list_terms',
       'list_characters',
       'search_memory_by_keywords',
       'get_chapter_info',
       'get_book_info',
       'list_chapters',
-    ];
+    ]);
 
-    if (keyTools.includes(toolName)) {
+    if (keyTools.has(toolName)) {
       if (this.config.isBriefPlanning) {
         console.warn(`[${this.config.logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}`);
         const warning = getBriefPlanningToolWarningPrompt();
@@ -865,9 +865,7 @@ class TaskLoopSession {
     // Planning
     if (this.currentStatus === 'planning') {
       this.consecutivePlanningCount++;
-      this.consecutivePreparingCount = 0;
-      this.consecutiveWorkingCount = 0;
-      this.consecutiveReviewCount = 0;
+      this.resetOtherCounters('planning');
 
       if (this.finalResponseText?.trim()) {
         this.planningResponses.push(this.finalResponseText);
@@ -888,9 +886,7 @@ class TaskLoopSession {
     // Preparing
     if (this.currentStatus === 'preparing') {
       this.consecutivePreparingCount++;
-      this.consecutivePlanningCount = 0;
-      this.consecutiveWorkingCount = 0;
-      this.consecutiveReviewCount = 0;
+      this.resetOtherCounters('preparing');
 
       return this.handlePreparingState();
     }
@@ -898,9 +894,7 @@ class TaskLoopSession {
     // Working
     if (this.currentStatus === 'working') {
       this.consecutiveWorkingCount++;
-      this.consecutivePlanningCount = 0;
-      this.consecutivePreparingCount = 0;
-      this.consecutiveReviewCount = 0;
+      this.resetOtherCounters('working');
 
       return this.handleWorkingState();
     }
@@ -908,9 +902,7 @@ class TaskLoopSession {
     // Review
     if (this.currentStatus === 'review') {
       this.consecutiveReviewCount++;
-      this.consecutivePlanningCount = 0;
-      this.consecutivePreparingCount = 0;
-      this.consecutiveWorkingCount = 0;
+      this.resetOtherCounters('review');
 
       return await this.handleReviewState();
     }
@@ -1104,6 +1096,13 @@ class TaskLoopSession {
     this.consecutivePreparingCount = 0;
     this.consecutiveWorkingCount = 0;
     this.consecutiveReviewCount = 0;
+  }
+
+  private resetOtherCounters(except: TaskStatus) {
+    if (except !== 'planning') this.consecutivePlanningCount = 0;
+    if (except !== 'preparing') this.consecutivePreparingCount = 0;
+    if (except !== 'working') this.consecutiveWorkingCount = 0;
+    if (except !== 'review') this.consecutiveReviewCount = 0;
   }
 
   private checkMaxTurns() {

@@ -13,7 +13,7 @@ import type {
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import type { TaskType, AIProcessingStore } from './task-types';
+import { TASK_TYPE_LABELS, type TaskType, type AIProcessingStore } from './task-types';
 import type { TextChunk } from './chunk-formatter';
 import { AIServiceFactory } from '../../index';
 import { ToolRegistry } from '../../tools/index';
@@ -47,6 +47,7 @@ import {
   buildPreviousChapterSection,
   resolveRuntimeTaskChunkSize,
 } from './index';
+import { getTodosSystemPrompt } from './todo-helper';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 import { isSymbolOnly } from 'src/utils/text-utils';
 import { ChapterSummaryService } from '../chapter-summary-service';
@@ -63,16 +64,6 @@ function isAIDegradationError(error: unknown): boolean {
   }
   return false;
 }
-
-/**
- * 任务类型标签（用于日志）
- */
-const TASK_LABELS: Record<TaskType, string> = {
-  translation: '翻译',
-  polish: '润色',
-  proofreading: '校对',
-  chapter_summary: '章节摘要',
-};
 
 /**
  * 进度回调类型
@@ -255,7 +246,7 @@ export async function processTextTask(
     options;
 
   const actions: ActionInfo[] = [...collectedActions];
-  const taskLabel = TASK_LABELS[taskType];
+  const taskLabel = TASK_TYPE_LABELS[taskType];
   let titleTranslation: string | undefined;
 
   // 内部 action 处理函数
@@ -393,10 +384,9 @@ export async function processTextTask(
     };
 
     // 获取特殊指令
-    const specialInstructions = await getSpecialInstructions(bookId, chapterId, taskType);
+    const specialInstructions = getSpecialInstructions(bookId, chapterId, taskType);
 
     // 构建系统提示词
-    const { getTodosSystemPrompt } = await import('../utils/todo-helper');
     const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
     const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
     const bookContextSection = await buildBookContextSection(bookId);

@@ -1,10 +1,10 @@
 import type { ActionInfo } from 'src/services/ai/tools/types';
 
 /**
- * 生产性工具列表（用于状态循环检测）
+ * 生产性工具集合（用于状态循环检测）
  * 这些工具调用表示 AI 正在积极获取上下文信息
  */
-export const PRODUCTIVE_TOOLS = [
+export const PRODUCTIVE_TOOLS = new Set([
   'list_terms',
   'list_characters',
   'list_memories',
@@ -15,7 +15,7 @@ export const PRODUCTIVE_TOOLS = [
   'get_character',
   'get_memory',
   'get_recent_memories',
-];
+]);
 
 /**
  * 工具调用限制配置（基于工具类型）
