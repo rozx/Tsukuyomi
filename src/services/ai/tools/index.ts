@@ -255,6 +255,7 @@ export class ToolRegistry {
     aiModelId?: string,
     chunkIndex?: number, // 当前块索引，用于 review 检查跳过非首块的标题验证
     submittedParagraphIds?: Set<string>, // 已提交的段落 ID 集合，用于计算剩余 chunk 大小
+    accumulatedParagraphs?: Map<string, string>, // 当前 session 已积累的翻译内存，用于 review 完整性检查
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -328,6 +329,7 @@ export class ToolRegistry {
         ...(aiProcessingStore ? { aiProcessingStore } : {}),
         ...(chunkIndex !== undefined ? { chunkIndex } : {}),
         ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
+        ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
       });
 
       // 记录工具调用成功

@@ -158,12 +158,18 @@ const progressTaskId = computed(() => {
   return currentActiveTask.value?.id || null;
 });
 
-const shouldShowTaskProgress = (task: AIProcessingTask): boolean => {
+// 判断是否为具有确定进度数据的活跃任务
+const isActiveProgressTask = (task: AIProcessingTask): boolean => {
   return progressTaskId.value === task.id;
 };
 
+// 所有处于工作状态（thinking/processing）的任务都显示进度条
+const shouldShowTaskProgress = (task: AIProcessingTask): boolean => {
+  return task.status === 'thinking' || task.status === 'processing';
+};
+
 const getTaskProgressPercent = (task: AIProcessingTask): number => {
-  if (!shouldShowTaskProgress(task) || props.progress.total <= 0) {
+  if (!isActiveProgressTask(task) || props.progress.total <= 0) {
     return 0;
   }
   const value = (props.progress.current / props.progress.total) * 100;
@@ -1389,17 +1395,27 @@ watch(
               <div v-if="shouldShowTaskProgress(task)" class="ai-task-progress">
                 <div class="ai-task-progress-stage-row">
                   <span class="ai-task-progress-stage">{{ getTaskStatusLabel(task) }}</span>
-                  <span v-if="chunkProgressMessage" class="ai-task-progress-stage-message">
+                  <span
+                    v-if="isActiveProgressTask(task) && chunkProgressMessage"
+                    class="ai-task-progress-stage-message"
+                  >
                     {{ chunkProgressMessage }}
                   </span>
                 </div>
-                <div class="ai-task-progress-header">
+                <div v-if="isActiveProgressTask(task)" class="ai-task-progress-header">
                   <span class="ai-task-progress-text"
                     >{{ props.progress.current }} / {{ props.progress.total }}</span
                   >
                 </div>
                 <ProgressBar
+                  v-if="isActiveProgressTask(task)"
                   :value="getTaskProgressPercent(task)"
+                  :show-value="false"
+                  class="ai-task-progress-bar"
+                />
+                <ProgressBar
+                  v-else
+                  mode="indeterminate"
                   :show-value="false"
                   class="ai-task-progress-bar"
                 />

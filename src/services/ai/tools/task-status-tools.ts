@@ -260,7 +260,6 @@ export const taskStatusTools: ToolDefinition[] = [
             // 延迟导入以避免循环依赖
             const { BookService } = await import('src/services/book-service');
             const { ChapterService } = await import('src/services/chapter-service');
-            const { ChapterContentService } = await import('src/services/chapter-content-service');
 
             const book = await BookService.getBookById(bookId);
             if (book) {
@@ -268,7 +267,7 @@ export const taskStatusTools: ToolDefinition[] = [
               if (chapterInfo) {
                 const { chapter } = chapterInfo;
 
-                // 检查 2: 章节标题是否已翻译（仅首块需要检查）
+                // 检查: 章节标题是否已翻译（仅首块需要检查）
                 if (isFirstChunk) {
                   let hasTitleTranslation = false;
                   if (typeof chapter.title === 'string') {
@@ -287,45 +286,134 @@ export const taskStatusTools: ToolDefinition[] = [
                   }
                 }
 
-                // 检查 1: 所有非空段落是否有翻译
-                const fullContent =
-                  chapter.content || (await ChapterContentService.loadChapterContent(chapterId));
+                // 检查: 所有非空段落是否有翻译
+                //
+                // ⚠️ 重要：不要依赖 BookService.getBookById() 返回的 chapter.content 或
+                // ChapterContentService.loadChapterContent() 的数据。
+                //
+                // 根本原因：translateAllParagraphs 使用 skipSave:true 优化，翻译实时写入
+                // 内存的 book.value.volumes（Vue 响应式对象），但直到整个翻译完成才批量落盘
+                // 到 IndexedDB。BookService.getBookById() 读取的是 IndexedDB 快照，不包含
+                // 这部分尚未落盘的翻译，导致误报"段落未翻译"。
+                //
+                // 修复策略：优先使用 accumulatedParagraphs（task-runner.ts 在内存中实时维护
+                // 的、本次 session 已成功翻译的段落 ID → 翻译文本映射）。若存在该数据，直接
+                // 以此为准；否则回退到数据库检查（保持向后兼容）。
+                const accumulatedParagraphs = context.accumulatedParagraphs;
 
-                let contentToCheck = fullContent;
-                let isChunkCheck = false;
-                if (context.chunkBoundaries && fullContent) {
-                  // 如果存在 chunkBoundaries，仅检查当前块内的段落
-                  contentToCheck = fullContent.filter((p) =>
-                    context.chunkBoundaries!.allowedParagraphIds.has(p.id),
-                  );
-                  isChunkCheck = true;
+                if (accumulatedParagraphs && accumulatedParagraphs.size > 0) {
+                  // 路径一：使用内存数据（最准确，避免 skipSave 竞态）
+                  // 获取需要检查的段落 ID 列表
+                  const paragraphIdsToCheck: string[] = context.chunkBoundaries
+                    ? context.chunkBoundaries.paragraphIds // 分块场景：只检查当前块
+                    : []; // 全章场景：没有 accumulated 也无法完整判断，退到路径二
+
+                  if (paragraphIdsToCheck.length > 0) {
+                    // 分块场景：检查本块所有段落是否都在 accumulatedParagraphs 中
+                    // 注意：这里我们只检查 chunkBoundaries 中的段落 ID，
+                    // 空段落不需要翻译（它们不会出现在 accumulatedParagraphs 中，但也不是遗漏）。
+                    // 为了区分「空段落（正常跳过）」和「非空段落（需要翻译）」，
+                    // 仍需要段落文本数据，退到路径二来获取 content 但用 accumulatedParagraphs 判断。
+                    const { ChapterContentService } =
+                      await import('src/services/chapter-content-service');
+                    const fullContent = await ChapterContentService.loadChapterContent(chapterId);
+
+                    if (fullContent) {
+                      // 构建段落 ID → 段落文本的映射，以判断哪些是非空段落
+                      const paragraphTextMap = new Map(fullContent.map((p) => [p.id, p.text]));
+
+                      const missingIds: string[] = [];
+                      for (const pId of paragraphIdsToCheck) {
+                        const text = paragraphTextMap.get(pId);
+                        const isNonEmpty = text && text.trim().length > 0;
+                        if (isNonEmpty && !accumulatedParagraphs.has(pId)) {
+                          missingIds.push(pId);
+                        }
+                      }
+
+                      if (missingIds.length > 0) {
+                        const MAX_IDS_SHOW = 10;
+                        const idsToShow = missingIds.slice(0, MAX_IDS_SHOW);
+                        let missingIdsStr = idsToShow.join(', ');
+                        if (missingIds.length > MAX_IDS_SHOW) {
+                          missingIdsStr += `... (等共 ${missingIds.length} 个)`;
+                        }
+                        return JSON.stringify({
+                          success: false,
+                          error: `无法提交复核：当前分块内仍有 ${missingIds.length} 个非空段落未翻译 (ID: ${missingIdsStr})`,
+                        });
+                      }
+                      // fullContent 有数据且所有非空段落均已翻译，允许 review
+                    } else {
+                      // fullContent 为 null：IndexedDB 中暂无该章节的内容记录（可能是新章节首次翻译）。
+                      // ⚠️ 不能 fail-open——无段落文本时无法区分「空段落」和「非空段落」。
+                      // 保守策略：比较 paragraphIdsToCheck.length 与 accumulatedParagraphs.size。
+                      // 若有段落 ID 尚未提交翻译，拒绝 review；若已提交数 >= 块内总段落数，放行。
+                      console.warn(
+                        `[task-status-tools] ⚠️ review 检查：章节 ${chapterId} 在 IndexedDB 中无内容记录，` +
+                          `无法通过段落文本判断空段落，改用段落数量保守估算`,
+                      );
+                      const notSubmitted = paragraphIdsToCheck.filter(
+                        (id) => !accumulatedParagraphs.has(id),
+                      );
+                      if (notSubmitted.length > 0) {
+                        const MAX_IDS_SHOW = 10;
+                        const missingIdsStr =
+                          notSubmitted.slice(0, MAX_IDS_SHOW).join(', ') +
+                          (notSubmitted.length > MAX_IDS_SHOW
+                            ? `... (等共 ${notSubmitted.length} 个)`
+                            : '');
+                        return JSON.stringify({
+                          success: false,
+                          error:
+                            `无法提交复核：章节内容未在本地存储中初始化，` +
+                            `且当前分块内有 ${notSubmitted.length} 个段落尚未提交翻译` +
+                            `（可能包含空段落，若确认均为空段落请手动继续）(ID: ${missingIdsStr})`,
+                        });
+                      }
+                      // notSubmitted.length === 0：块内所有段落均已提交，允许 review
+                    }
+                  }
+                  // accumulatedParagraphs 存在但无 chunkBoundaries（全章场景）
+                  // 无法以 accumulatedParagraphs 完整校验（不知道全章需要哪些段落），退到路径二
                 }
 
-                if (contentToCheck && contentToCheck.length > 0) {
-                  const nonEmptyParagraphs = contentToCheck.filter(
-                    (p) => p.text && p.text.trim().length > 0,
-                  );
-                  const untranslatedParagraphs = nonEmptyParagraphs.filter(
-                    (p) => !p.translations || p.translations.length === 0,
-                  );
+                if (!accumulatedParagraphs || !context.chunkBoundaries) {
+                  // === 路径二：回退到数据库检查（向后兼容） ===
+                  // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
+                  const { ChapterContentService } =
+                    await import('src/services/chapter-content-service');
+                  const dbContent = await ChapterContentService.loadChapterContent(chapterId);
+                  const contentToCheck =
+                    dbContent && context.chunkBoundaries
+                      ? dbContent.filter((p) =>
+                          context.chunkBoundaries!.allowedParagraphIds.has(p.id),
+                        )
+                      : dbContent;
 
-                  if (untranslatedParagraphs.length > 0) {
-                    const scopeMsg = isChunkCheck ? '当前分块' : '全文章节';
-                    // 列出未翻译的段落 ID (最多显示 10 个)
-                    const MAX_IDS_SHOW = 10;
-                    const idsToShow = untranslatedParagraphs
-                      .slice(0, MAX_IDS_SHOW)
-                      .map((p) => p.id);
-                    let missingIds = idsToShow.join(', ');
-
-                    if (untranslatedParagraphs.length > MAX_IDS_SHOW) {
-                      missingIds += `... (等共 ${untranslatedParagraphs.length} 个)`;
+                  if (contentToCheck && contentToCheck.length > 0) {
+                    const nonEmptyParagraphs = contentToCheck.filter(
+                      (p) => p.text && p.text.trim().length > 0,
+                    );
+                    const untranslated = nonEmptyParagraphs.filter(
+                      (p) => !p.translations || p.translations.length === 0,
+                    );
+                    if (untranslated.length > 0) {
+                      const scopeMsg = context.chunkBoundaries ? '当前分块' : '全文章节';
+                      const MAX_IDS_SHOW = 10;
+                      const ids = untranslated
+                        .slice(0, MAX_IDS_SHOW)
+                        .map((p) => p.id)
+                        .join(', ');
+                      const suffix =
+                        untranslated.length > MAX_IDS_SHOW
+                          ? `... (等共 ${untranslated.length} 个)`
+                          : '';
+                      return JSON.stringify({
+                        success: false,
+                        error: `无法提交复核：${scopeMsg}内仍有 ${untranslated.length} 个非空段落未翻译 (ID: ${ids}${suffix})`,
+                      });
                     }
-
-                    return JSON.stringify({
-                      success: false,
-                      error: `无法提交复核：${scopeMsg}内仍有 ${untranslatedParagraphs.length} 个非空段落未翻译 (ID: ${missingIds})`,
-                    });
                   }
                 }
               }

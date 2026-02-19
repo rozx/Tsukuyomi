@@ -173,6 +173,14 @@ export interface ToolContext {
    * 这允许 2x 批次大小规则基于剩余段落数而非总 chunk 大小
    */
   submittedParagraphIds?: Set<string>;
+  /**
+   * 当前 session 已积累的段落翻译映射（可选）
+   * 由 task-runner.ts 的 TaskLoopSession.accumulatedParagraphs 传入。
+   * 键为段落 ID，值为翻译文本。
+   * 用于 review 状态检查：避免依赖可能因 skipSave 优化而未同步的 IndexedDB 数据，
+   * 直接以内存中最新的翻译状态为准。
+   */
+  accumulatedParagraphs?: Map<string, string>;
 }
 
 export type ToolHandler = (
