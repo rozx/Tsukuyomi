@@ -381,6 +381,7 @@ export async function processTextTask(
       model: model.model,
       temperature: modelTemperature,
       signal: finalSignal,
+      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 
     // 获取特殊指令

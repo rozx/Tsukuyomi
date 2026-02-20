@@ -89,6 +89,7 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
     termsTranslation: { enabled: false, temperature: 0.7 },
     assistant: { enabled: false, temperature: 0.7 },
   },
+  customHeaders: {},
 });
 
 // 表单验证错误
@@ -131,6 +132,7 @@ const resetForm = () => {
       termsTranslation: { enabled: false, temperature: 0.7 },
       assistant: { enabled: false, temperature: 0.7 },
     },
+    customHeaders: {},
   } as typeof formData.value;
   formErrors.value = {};
   aiConfig.value = null;
@@ -201,6 +203,7 @@ const testModel = async () => {
         termsTranslation: { enabled: false, temperature: 0.7 },
         assistant: { enabled: false, temperature: 0.7 },
       },
+      customHeaders: cloneDeep(formData.value.customHeaders || {}),
       lastEdited: new Date(),
     };
 
@@ -350,12 +353,17 @@ const fetchAvailableModels = async () => {
   try {
     const baseUrl = formData.value.provider === 'gemini' ? undefined : formData.value.baseUrl;
 
+    const config: Parameters<typeof AIServiceFactory.getAvailableModels>[1] = {
+      apiKey: formData.value.apiKey,
+      baseUrl: baseUrl,
+    };
+    if (formData.value.customHeaders && Object.keys(formData.value.customHeaders).length > 0) {
+      config.customHeaders = formData.value.customHeaders;
+    }
+
     const result = await AIServiceFactory.getAvailableModels(
       formData.value.provider as AIProvider,
-      {
-        apiKey: formData.value.apiKey,
-        baseUrl: baseUrl,
-      },
+      config,
     );
 
     if (result.success && result.models) {
@@ -437,6 +445,7 @@ watch(
               temperature: props.model.isDefault.assistant?.temperature ?? 0.7,
             },
           },
+          customHeaders: cloneDeep(props.model.customHeaders || {}),
         } as typeof formData.value;
 
         // 从已保存的模型数据中填充 aiConfig，以便显示
@@ -455,6 +464,7 @@ watch(
       }
       formErrors.value = {};
       captureSnapshot();
+      syncHeadersToList();
     } else {
       // 关闭时重置
       resetForm();
@@ -464,6 +474,41 @@ watch(
   },
   { immediate: true },
 );
+
+// 自定义 Header 逻辑
+const customHeadersList = ref<{ key: string; value: string }[]>([]);
+
+const syncHeadersToList = () => {
+  if (formData.value.customHeaders) {
+    customHeadersList.value = Object.entries(formData.value.customHeaders).map(([key, value]) => ({
+      key,
+      value,
+    }));
+  } else {
+    customHeadersList.value = [];
+  }
+};
+
+const addCustomHeader = () => {
+  customHeadersList.value.push({ key: '', value: '' });
+  updateCustomHeaders();
+};
+
+const removeCustomHeader = (index: number) => {
+  customHeadersList.value.splice(index, 1);
+  updateCustomHeaders();
+};
+
+const updateCustomHeaders = () => {
+  const headers: Record<string, string> = {};
+  for (const { key, value } of customHeadersList.value) {
+    const k = key.trim();
+    if (k) {
+      headers[k] = value.trim();
+    }
+  }
+  formData.value.customHeaders = headers;
+};
 </script>
 
 <template>
@@ -704,6 +749,53 @@ watch(
             >
               0 表示无限制
             </small>
+          </div>
+        </div>
+      </div>
+
+      <!-- 高级选项 (自定义 Headers) -->
+      <div class="space-y-4 pt-3 border-t border-white/10">
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-sm font-medium text-moon/90">高级选项 (自定义请求头)</label>
+          <Button
+            label="添加 Header"
+            icon="pi pi-plus"
+            class="p-button-text p-button-sm icon-button-hover"
+            @click="addCustomHeader"
+          />
+        </div>
+        <div class="space-y-2">
+          <div
+            v-for="(header, index) in customHeadersList"
+            :key="index"
+            class="flex items-center gap-2"
+          >
+            <InputText
+              v-model="header.key"
+              placeholder="Header Key (例如: User-Agent)"
+              class="flex-1"
+              @input="updateCustomHeaders"
+            />
+            <InputText
+              v-model="header.value"
+              placeholder="Value"
+              class="flex-1"
+              @input="updateCustomHeaders"
+            />
+            <Button
+              icon="pi pi-trash"
+              class="p-button-danger p-button-text p-button-sm p-2"
+              @click="removeCustomHeader(index)"
+            />
+          </div>
+          <div
+            v-if="customHeadersList.length === 0"
+            class="text-xs text-moon/60 italic text-center py-2 bg-white/5 rounded"
+          >
+            未配置自定义请求头
+          </div>
+          <div class="text-xs text-amber-500/80 mt-1">
+            * 注意：某些 Header 可能会被浏览器安全策略阻止，或覆盖默认的 API Key 认证机制。
           </div>
         </div>
       </div>

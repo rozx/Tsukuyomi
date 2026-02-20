@@ -9,6 +9,7 @@ export interface AIServiceConfig {
   maxInputTokens?: number | undefined; // 最大输入 token 数（上下文窗口）
   maxOutputTokens?: number | undefined; // 最大输出 token 数
   signal?: AbortSignal | undefined; // 用于取消请求
+  customHeaders?: Record<string, string>; // 自定义请求头部
 }
 
 /**
@@ -171,6 +172,6 @@ export interface AIService {
    * @returns 可用模型列表
    */
   getAvailableModels(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
   ): Promise<AvailableModelsResult>;
 }

@@ -21,8 +21,23 @@ export class GeminiService extends BaseAIService {
    * 注意：GoogleGenerativeAI 构造函数只接受 apiKey
    * 如果需要自定义 baseUrl，需要通过环境变量或其他方式配置
    */
-  private createClient(config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>): GoogleGenerativeAI {
+  private createClient(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+  ): GoogleGenerativeAI {
     return new GoogleGenerativeAI(config.apiKey);
+  }
+
+  /**
+   * 提取 requestOptions
+   */
+  private getRequestOptions(
+    config: Pick<AIServiceConfig, 'customHeaders'>,
+  ): Record<string, unknown> {
+    const requestOptions: Record<string, unknown> = {};
+    if (config.customHeaders && Object.keys(config.customHeaders).length > 0) {
+      requestOptions.customHeaders = config.customHeaders;
+    }
+    return requestOptions;
   }
 
   /**
@@ -39,14 +54,17 @@ export class GeminiService extends BaseAIService {
     try {
       const client = this.createClient(config);
       const modelName = this.normalizeModelName(config.model);
-      const model = client.getGenerativeModel({
-        model: modelName,
-        generationConfig: {
-          temperature: config.temperature ?? DEFAULT_TEMPERATURE,
-          // 不设置 maxOutputTokens，让 API 使用默认值（无限制）
-          responseMimeType: 'application/json',
+      const model = client.getGenerativeModel(
+        {
+          model: modelName,
+          generationConfig: {
+            temperature: config.temperature ?? DEFAULT_TEMPERATURE,
+            // 不设置 maxOutputTokens，让 API 使用默认值（无限制）
+            responseMimeType: 'application/json',
+          },
         },
-      });
+        this.getRequestOptions(config),
+      );
 
       const result = await model.generateContent(
         {
@@ -241,12 +259,15 @@ export class GeminiService extends BaseAIService {
         ];
       }
 
-      const model = client.getGenerativeModel({
-        model: modelName,
-        ...(systemInstruction && { systemInstruction }),
-        ...(tools && { tools }),
-        ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
-      });
+      const model = client.getGenerativeModel(
+        {
+          model: modelName,
+          ...(systemInstruction && { systemInstruction }),
+          ...(tools && { tools }),
+          ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
+        },
+        this.getRequestOptions(config),
+      );
 
       // 使用流式 API
       const result = await model.generateContentStream(
@@ -408,7 +429,7 @@ export class GeminiService extends BaseAIService {
    * 使用 Google Generative AI API 的 REST 端点获取模型列表
    */
   protected async makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
   ): Promise<ModelInfo[]> {
     try {
       if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim() === '') {
@@ -427,6 +448,7 @@ export class GeminiService extends BaseAIService {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...(config.customHeaders || {}),
         },
       });
 
@@ -483,13 +505,13 @@ export class GeminiService extends BaseAIService {
    * @returns token 数量
    */
   async countTokens(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'model'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'model' | 'customHeaders'>,
     text: string,
   ): Promise<number> {
     try {
       const client = this.createClient(config);
       const modelName = this.normalizeModelName(config.model);
-      const model = client.getGenerativeModel({ model: modelName });
+      const model = client.getGenerativeModel({ model: modelName }, this.getRequestOptions(config));
 
       const result = await model.countTokens(text);
       return result.totalTokens;

@@ -170,6 +170,7 @@ export class TermTranslationService {
         model: model.model,
         temperature,
         signal: finalSignal,
+        ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 
       // 构建系统提示词

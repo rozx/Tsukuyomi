@@ -82,6 +82,7 @@ export class ConfigService {
         maxInputTokens: model.maxInputTokens,
         maxOutputTokens: model.maxOutputTokens,
         signal: options?.signal,
+        ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 
       return await AIServiceFactory.getConfig(model.provider, config);

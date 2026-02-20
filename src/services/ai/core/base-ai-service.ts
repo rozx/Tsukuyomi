@@ -165,7 +165,7 @@ export abstract class BaseAIService implements AIService {
    * 子类需要实现 makeAvailableModelsRequest 方法
    */
   async getAvailableModels(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
   ): Promise<AvailableModelsResult> {
     try {
       // 验证配置
@@ -192,7 +192,7 @@ export abstract class BaseAIService implements AIService {
    * @returns 模型信息列表
    */
   protected abstract makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
   ): Promise<ModelInfo[]>;
 
   /**

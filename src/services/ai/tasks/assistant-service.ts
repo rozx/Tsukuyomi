@@ -427,6 +427,7 @@ export class AssistantService {
       temperature: SUMMARY_TEMPERATURE, // 使用较低温度以获得更准确的总结
       maxOutputTokens: model.maxOutputTokens,
       signal,
+      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 
     // 构建请求（使用较低的 maxTokens 来限制摘要长度）
@@ -714,6 +715,7 @@ export class AssistantService {
       temperature: model.temperature ?? DEFAULT_TEMPERATURE,
       maxOutputTokens: model.maxOutputTokens,
       signal,
+      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 
     // 构建请求
@@ -1383,6 +1385,7 @@ export class AssistantService {
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
         maxOutputTokens: finalMaxTokens,
         signal: finalSignal,
+        ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 
       // 构建请求

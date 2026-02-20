@@ -44,6 +44,7 @@ export interface AIModel {
   apiKey: string;
   baseUrl: string;
   isDefault: AIModelDefaultTasks;
+  customHeaders?: Record<string, string>;
   enabled: boolean;
   /**
    * 最后编辑时间

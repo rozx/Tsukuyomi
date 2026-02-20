@@ -110,7 +110,9 @@ export class OpenAIService extends BaseAIService {
    * 确保所有通信都使用 JSON 格式
    * 注意：在浏览器环境中需要设置 dangerouslyAllowBrowser: true
    */
-  private createClient(config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>): OpenAI {
+  private createClient(
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+  ): OpenAI {
     const proxiedBaseUrl = this.getProxiedBaseUrl(config.baseUrl);
     const customFetch = this.createProxiedFetch();
 
@@ -122,6 +124,7 @@ export class OpenAIService extends BaseAIService {
       defaultHeaders: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...(config.customHeaders || {}),
       },
     });
   }
@@ -475,7 +478,7 @@ export class OpenAIService extends BaseAIService {
    * 使用 OpenAI API 的 models.list() 方法
    */
   protected async makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
   ): Promise<ModelInfo[]> {
     try {
       const client = this.createClient(config);
