@@ -75,6 +75,11 @@ export function getValidTransitionsForTaskType(
         review: [],
         end: [],
       };
+
+    default: {
+      const _exhaustive: never = taskType;
+      throw new Error('Unknown task type: ' + String(_exhaustive));
+    }
   }
 }
 
@@ -87,6 +92,11 @@ export function getTaskStateWorkflowText(taskType: TaskType): string {
       return 'planning → preparing → working → end（润色/校对任务禁止使用 review）';
     case 'chapter_summary':
       return 'planning → working → end（章节摘要任务不使用 preparing/review）';
+
+    default: {
+      const _exhaustive: never = taskType;
+      throw new Error('Unknown task type: ' + String(_exhaustive));
+    }
   }
 }
 
@@ -100,4 +110,13 @@ export interface AIProcessingStore {
   appendOutputContent: (id: string, text: string) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
   activeTasks: AIProcessingTask[];
+}
+
+/**
+ * 是否为翻译相关任务类型（翻译、润色、校对）。
+ * 这些任务共享相同的段落处理流程和工具集，因此统称"翻译相关"。
+ * 章节摘要（chapter_summary）不在此列，因为它使用不同的工具和工作流。
+ */
+export function isTranslationRelatedTask(taskType: TaskType): boolean {
+  return taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading';
 }

@@ -1,4 +1,4 @@
-import { TASK_TYPE_LABELS, type TaskType } from '../utils/task-types';
+import { TASK_TYPE_LABELS, type TaskStatus, type TaskType } from '../utils/task-types';
 import { MAX_TRANSLATION_BATCH_SIZE } from './common';
 
 /**
@@ -135,11 +135,13 @@ export function getReviewLoopPrompt(taskType: TaskType): string {
 }
 
 /**
- * 获取状态限制下的工具调用提示
+ * 获取状态限制下的工具调用提示。
+ * 接受所有 TaskStatus 值；preparing/review 正常情况下不会触发此函数
+ * （因为 isToolAllowedByStatus 已放行），但提供兜底消息以防未来逻辑变更。
  */
 export function getStatusRestrictedToolPrompt(
   toolName: string,
-  currentStatus: 'planning' | 'working' | 'end',
+  currentStatus: TaskStatus,
   taskType?: TaskType,
 ): string {
   if (currentStatus === 'planning') {
@@ -162,6 +164,11 @@ export function getStatusRestrictedToolPrompt(
       `[限制] 当前状态为 working，禁止调用 ${toolName} 进行数据写入。` +
       `请在 ${allowedStages} 阶段进行术语/角色/记忆更新。`
     );
+  }
+
+  // preparing/review: 防御性兜底（通常不会到达，isToolAllowedByStatus 已放行）
+  if (currentStatus === 'preparing' || currentStatus === 'review') {
+    return `[限制] 当前状态为 ${currentStatus}，不能调用 ${toolName} 进行数据写入。`;
   }
 
   return `[限制] 当前状态为 end，任务已结束，不能调用 ${toolName} 进行数据写入。`;

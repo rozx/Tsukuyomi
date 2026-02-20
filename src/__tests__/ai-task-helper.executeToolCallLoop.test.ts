@@ -23,6 +23,98 @@ import { ToolRegistry } from 'src/services/ai/tools';
  * 3. 纯文本响应不会自动解析为状态更新
  */
 describe('executeToolCallLoop', () => {
+  test('简短规划模式下重复规划工具应注入警告提示（brief planning intake）', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'list_terms') {
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, terms: [] }),
+          } as any);
+        }
+        return Promise.resolve({ content: JSON.stringify({ success: true }) } as any);
+      },
+    );
+
+    try {
+      const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-brief-1',
+              type: 'function',
+              function: { name: 'list_terms', arguments: '{}' },
+            },
+          ],
+        },
+      ];
+
+      let idx = 0;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        const r = responses[idx] ?? responses[responses.length - 1]!;
+        idx++;
+        return Promise.resolve({
+          text: r.text,
+          ...(r.toolCalls ? { toolCalls: r.toolCalls } : {}),
+        });
+      };
+
+      const history: ChatMessage[] = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'start' },
+      ];
+
+      try {
+        await executeToolCallLoop({
+          history,
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'list_terms',
+                description: 'list terms',
+                parameters: { type: 'object', properties: {}, required: [] },
+              },
+            },
+          ],
+          generateText,
+          aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+          taskType: 'polish',
+          chunkText: 'chunk',
+          paragraphIds: [],
+          bookId: 'book1',
+          handleAction: () => {},
+          onToast: undefined,
+          taskId: undefined,
+          aiProcessingStore: undefined,
+          isBriefPlanning: true,
+          logLabel: 'Test',
+          maxTurns: 1,
+        });
+      } catch {
+        // 预期 maxTurns 到达后抛错，这里只验证 brief planning 的工具结果注入逻辑
+      }
+
+      const warnedToolMessage = history.find(
+        (m) =>
+          m.role === 'tool' &&
+          m.tool_call_id === 'call-brief-1' &&
+          m.name === 'list_terms' &&
+          typeof m.content === 'string' &&
+          m.content.includes('后续 chunk 无需重复调用此工具'),
+      );
+
+      expect(warnedToolMessage).toBeDefined();
+      expect(handleToolCallSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
   test('只能执行本次会话提供的 tools：未提供的工具调用应被拒绝执行', async () => {
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall');
 
@@ -920,6 +1012,146 @@ describe('executeToolCallLoop', () => {
       expect(result.status).toBe('end');
       expect(result.paragraphs.size).toBe(0);
       expect(result.paragraphs.has('p3')).toBe(false);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
+  test('多工具调用应保持 assistant -> tool... -> user 的顺序（Golden Transcript）', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'update_task_status') {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { status?: string };
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, new_status: args.status }),
+          } as any);
+        }
+
+        if (toolCall.function.name === 'add_translation_batch') {
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, processed_count: 1 }),
+          } as any);
+        }
+
+        return Promise.resolve({ content: JSON.stringify({ success: true }) } as any);
+      },
+    );
+
+    try {
+      const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            },
+            {
+              id: 'call-2',
+              type: 'function',
+              function: {
+                name: 'add_translation_batch',
+                arguments: '{"paragraphs":[{"paragraph_id":"p1","translated_text":"译文1"}]}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-3',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-4',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"end"}' },
+            },
+          ],
+        },
+      ];
+
+      let idx = 0;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        const r = responses[idx] ?? responses[responses.length - 1]!;
+        idx++;
+        return Promise.resolve({
+          text: r.text,
+          ...(r.toolCalls ? { toolCalls: r.toolCalls } : {}),
+        });
+      };
+
+      const history: ChatMessage[] = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'start' },
+      ];
+
+      const result = await executeToolCallLoop({
+        history,
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'update_task_status',
+              description: 'update status',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'add_translation_batch',
+              description: 'add translation batch',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+        ],
+        generateText,
+        aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+        taskType: 'polish',
+        chunkText: 'chunk',
+        paragraphIds: ['p1'],
+        bookId: 'book1',
+        handleAction: () => {},
+        onToast: undefined,
+        taskId: undefined,
+        aiProcessingStore: undefined,
+        logLabel: 'Test',
+        maxTurns: 10,
+      });
+
+      expect(result.status).toBe('end');
+
+      const assistantToolIndex = history.findIndex(
+        (m) => m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length === 2,
+      );
+      expect(assistantToolIndex).toBeGreaterThanOrEqual(0);
+
+      const firstToolIndex = history.findIndex(
+        (m) => m.role === 'tool' && m.tool_call_id === 'call-1',
+      );
+      const secondToolIndex = history.findIndex(
+        (m) => m.role === 'tool' && m.tool_call_id === 'call-2',
+      );
+      const userIndex = history.findIndex(
+        (m, i) => i > assistantToolIndex && m.role === 'user' && typeof m.content === 'string',
+      );
+
+      expect(firstToolIndex).toBeGreaterThan(assistantToolIndex);
+      expect(secondToolIndex).toBeGreaterThan(firstToolIndex);
+      expect(userIndex).toBeGreaterThan(secondToolIndex);
     } finally {
       handleToolCallSpy.mockRestore();
     }

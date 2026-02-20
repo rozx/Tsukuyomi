@@ -61,7 +61,7 @@ const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
 const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
-const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
+const MAX_ORIGINAL_TEXT_PREFIX_LENGTH_RATIO = 0.8;
 /**
  * 引号对匹配规则：
  * - 「」 原文 → 译文可用 「」 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
@@ -731,13 +731,17 @@ async function processTranslationBatch(
         continue;
       }
 
-      if (trimmedPrefix.length > MAX_ORIGINAL_TEXT_PREFIX_LENGTH) {
+      const maxOriginalTextPrefixLength = Math.max(
+        MIN_ORIGINAL_TEXT_PREFIX_LENGTH,
+        Math.floor(trimmedOriginalText.length * MAX_ORIGINAL_TEXT_PREFIX_LENGTH_RATIO),
+      );
+      if (trimmedPrefix.length > maxOriginalTextPrefixLength) {
         pushFailedItem(
           item.paragraphId,
           'ORIGINAL_TEXT_PREFIX_TOO_LONG',
           ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(
             item.paragraphId,
-            MAX_ORIGINAL_TEXT_PREFIX_LENGTH,
+            maxOriginalTextPrefixLength,
           ),
         );
         continue;

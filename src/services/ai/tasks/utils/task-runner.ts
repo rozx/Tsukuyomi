@@ -1,24 +1,9 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
-import {
-  getCurrentStatusInfo,
-  getPlanningLoopPrompt,
-  getPreparingLoopPrompt,
-  getWorkingLoopPrompt,
-  getWorkingFinishedPrompt,
-  getWorkingContinuePrompt,
-  getMissingParagraphsPrompt,
-  getReviewLoopPrompt,
-  getUnauthorizedToolPrompt,
-  getStatusRestrictedToolPrompt,
-  getToolLimitReachedPrompt,
-  getBriefPlanningToolWarningPrompt,
-} from '../prompts';
 import { ToolRegistry } from 'src/services/ai/tools/index';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import {
   getStatusLabel,
-  getValidTransitionsForTaskType,
   TASK_TYPE_LABELS,
   type TaskStatus,
   type TaskType,
@@ -31,34 +16,30 @@ import type {
   ChatMessage,
   AIServiceConfig,
   AIToolCall,
+  AIToolCallResult,
 } from 'src/services/ai/types/ai-service';
 import {
-  createStreamCallback,
-  createUnifiedAbortController,
-  type StreamCallbackConfig,
-} from './stream-handler';
+  createInitialMetrics,
+  finalizeMetrics as finalizeInstrumentationMetrics,
+  recordToolCall,
+  trackStatusDuration as trackInstrumentationStatusDuration,
+} from './instrumentation';
 import { verifyParagraphCompleteness, type VerificationResult } from './response-parser';
 import {
   detectPlanningContextUpdate,
   PRODUCTIVE_TOOLS,
-  TOOL_CALL_LIMITS,
   type PlanningContextUpdate,
 } from './productivity-monitor';
 import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
+import { PromptPolicy } from './prompt-policy';
+import { StateMachineEngine } from './state-machine-engine';
+import { ToolDispatcher } from './tool-dispatcher';
+import { runLLMRequest } from './llm-stream-adapter';
 
 // Constants
 // 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
-
-const DATA_WRITE_TOOL_NAMES = new Set([
-  'create_term',
-  'update_term',
-  'create_character',
-  'update_character',
-  'create_memory',
-  'update_memory',
-]);
 
 /**
  * 处理工具调用循环
@@ -187,31 +168,51 @@ class TaskLoopSession {
 
   // Tool call results tracking (for new tool-based approach)
   private pendingStatusUpdate: TaskStatus | undefined;
-  private pendingParagraphTranslations: { id: string; translation: string }[] = [];
   private pendingTitleTranslation: string | undefined;
 
   // Config & Helpers
   private allowedToolNames: Set<string>;
   private taskLabel: string;
   private metrics: PerformanceMetrics;
+  private stateMachine: StateMachineEngine;
+  private toolDispatcher: ToolDispatcher;
 
   constructor(private config: ToolCallLoopConfig) {
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
     this.taskLabel = TASK_TYPE_LABELS[config.taskType];
+    this.stateMachine = new StateMachineEngine(config.taskType, this.currentStatus);
+    this.metrics = createInitialMetrics();
+    this.toolDispatcher = new ToolDispatcher({
+      context: {
+        config: this.config,
+        metrics: this.metrics,
+        getCurrentStatus: () => this.currentStatus,
+        setCurrentStatus: (status) => this.setCurrentStatus(status),
+        isValidTransition: (prev, next) => this.isValidTransition(prev, next),
+        trackStatusDuration: (prev, next) => this.trackStatusDuration(prev, next),
+        extractPlanningSummaryIfNeeded: (prev, next, responseText) =>
+          this.extractPlanningSummaryIfNeeded(prev, next, responseText),
+        captureToolCallResult: (toolName, content) => this.captureToolCallResult(toolName, content),
+        applyPendingStatusUpdate: (toolName, assistantText) =>
+          this.applyPendingStatusUpdate(toolName, assistantText),
+        handleBatchExtraction: (toolName, toolCall, toolResultContent) =>
+          this.handleBatchExtraction(toolName, toolCall, toolResultContent),
+        collectPlanningInfo: (toolName, content, toolCall) =>
+          this.collectPlanningInfo(toolName, content, toolCall),
+        executeToolCall: (toolCall, toolName) => this.executeToolCall(toolCall, toolName),
+        incrementWorkingRejectedWriteCount: () => {
+          this.metrics.workingRejectedWriteCount++;
+        },
+        logLabel: this.config.logLabel,
+        promptPolicy: PromptPolicy,
+        taskType: this.config.taskType,
+      },
+      allowedToolNames: this.allowedToolNames,
+      toolCallCounts: this.toolCallCounts,
+      productiveTools: PRODUCTIVE_TOOLS,
+    });
     this.startTime = Date.now();
     this.statusStartTime = Date.now();
-    this.metrics = {
-      totalTime: 0,
-      planningTime: 0,
-      preparingTime: 0,
-      workingTime: 0,
-      reviewTime: 0,
-      toolCallTime: 0,
-      toolCallCount: 0,
-      averageToolCallTime: 0,
-      workingRejectedWriteCount: 0,
-      chunkProcessingTime: [],
-    };
   }
 
   public async run(): Promise<ToolCallLoopResult> {
@@ -246,46 +247,16 @@ class TaskLoopSession {
       ...(tools.length > 0 ? { tools } : {}),
     };
 
-    let streamedText = '';
-    const { controller: streamAbortController, cleanup: cleanupAbort } =
-      createUnifiedAbortController(aiServiceConfig.signal);
-
-    // Create stream callback
-    const wrappedStreamCallback = this.createWrappedStreamCallback(
-      streamAbortController,
-      (text) => (streamedText += text),
-    );
-
-    let result;
-    try {
-      result = await this.config.generateText(
-        { ...aiServiceConfig, signal: streamAbortController.signal },
-        request,
-        wrappedStreamCallback,
-      );
-    } catch (error) {
-      cleanupAbort();
-      // 取消请求不需要重试，直接抛出
-      if (
-        error instanceof Error &&
-        (error.message.includes('取消') || error.name === 'AbortError')
-      ) {
-        throw error;
-      }
-      // 其他错误（如 4xx/5xx HTTP 错误）必须向上抛出，
-      // 否则 run() 循环会因 shouldContinue=false 且 shouldBreak=undefined 而无限重试
-      console.error(
-        `[${logLabel}] ❌ AI 请求失败:`,
-        error instanceof Error ? error.message : error,
-      );
-      throw error;
-    } finally {
-      cleanupAbort();
-    }
-
-    if (!result) {
-      throw new Error('AI 返回结果为空');
-    }
+    const { result } = await runLLMRequest({
+      aiServiceConfig,
+      request,
+      generateText: this.config.generateText,
+      taskId,
+      aiProcessingStore,
+      chunkText,
+      logLabel,
+      taskType: this.config.taskType,
+    });
 
     // Save reasoning
     if (aiProcessingStore && taskId && result.reasoningContent) {
@@ -298,8 +269,17 @@ class TaskLoopSession {
       return { shouldContinue: true };
     }
 
-    // Process text response (tool-based approach)
-    const responseText = result.text || '';
+    return this.handleTextResponse(result.text || '', history, chunkText, logLabel);
+  }
+
+  private async handleTextResponse(
+    responseText: string,
+    history: ChatMessage[],
+    chunkText: string,
+    logLabel: string,
+  ): Promise<{ shouldContinue: boolean; shouldBreak?: boolean }> {
+    const { aiProcessingStore, taskId } = this.config;
+
     this.finalResponseText = responseText;
 
     if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
@@ -308,19 +288,11 @@ class TaskLoopSession {
       );
     }
 
-    // 使用工具调用结果替代 JSON 解析
     const previousStatus = this.currentStatus;
-    let newStatus: TaskStatus | undefined;
+    const newStatus = this.pendingStatusUpdate;
+    this.pendingStatusUpdate = undefined;
 
-    // 检查是否有来自工具调用的状态更新
-    if (this.pendingStatusUpdate) {
-      newStatus = this.pendingStatusUpdate;
-      this.pendingStatusUpdate = undefined; // 清除待处理状态
-    }
-
-    // 如果有状态更新，验证并应用
     if (newStatus && newStatus !== previousStatus) {
-      // Validate transition
       if (!this.isValidTransition(previousStatus, newStatus)) {
         this.handleInvalidTransition(previousStatus, newStatus, responseText);
         return { shouldContinue: true };
@@ -328,9 +300,7 @@ class TaskLoopSession {
 
       this.trackStatusDuration(previousStatus, newStatus);
       this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
-
-      // Update status
-      this.currentStatus = newStatus;
+      this.setCurrentStatus(newStatus);
 
       if (aiProcessingStore && taskId) {
         void aiProcessingStore.updateTask(taskId, {
@@ -339,7 +309,6 @@ class TaskLoopSession {
       }
     }
 
-    // 处理标题翻译（来自工具调用）
     if (this.pendingTitleTranslation) {
       this.titleTranslation = this.pendingTitleTranslation;
       if (this.config.onTitleExtracted) {
@@ -349,35 +318,11 @@ class TaskLoopSession {
           console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
         }
       }
-      this.pendingTitleTranslation = undefined; // 清除待处理标题
+      this.pendingTitleTranslation = undefined;
     }
 
-    // Add assistant response to history
     history.push({ role: 'assistant', content: responseText });
-
-    // Handle specific state logic (prompts/loops)
-    return await this.handleStateLogic();
-  }
-
-  private createWrappedStreamCallback(
-    abortController: AbortController,
-    onText: (text: string) => void,
-  ): TextGenerationStreamCallback {
-    const streamCallbackConfig: StreamCallbackConfig = {
-      taskId: this.config.taskId,
-      aiProcessingStore: this.config.aiProcessingStore,
-      originalText: this.config.chunkText,
-      logLabel: this.config.logLabel,
-      taskType: this.config.taskType,
-      abortController: abortController,
-    };
-
-    const baseCallback = createStreamCallback(streamCallbackConfig);
-
-    return async (chunk) => {
-      if (chunk.text) onText(chunk.text);
-      return baseCallback(chunk);
-    };
+    return this.handleStateLogic();
   }
 
   /**
@@ -391,28 +336,11 @@ class TaskLoopSession {
 
     if (!result.toolCalls) return;
 
-    let hasProductiveTool = false;
-    const pendingUserMessages: ChatMessage[] = [];
+    const { toolMessages, pendingUserMessages, hasProductiveTool } =
+      await this.toolDispatcher.dispatchToolCalls(result.toolCalls, assistantText);
 
-    for (const toolCall of result.toolCalls) {
-      if (!this.shouldProcessToolCall(toolCall)) {
-        continue;
-      }
-
-      const toolName = toolCall.function.name;
-      hasProductiveTool = this.prepareToolCall(toolName) || hasProductiveTool;
-
-      const toolResultContent = await this.executeToolCall(toolCall, toolName);
-
-      const userMessage = await this.handleToolCallResult(
-        toolCall,
-        toolName,
-        toolResultContent,
-        assistantText,
-      );
-      if (userMessage) {
-        pendingUserMessages.push(userMessage);
-      }
+    if (toolMessages.length > 0) {
+      this.config.history.push(...toolMessages);
     }
 
     if (hasProductiveTool) {
@@ -437,73 +365,7 @@ class TaskLoopSession {
     });
   }
 
-  private shouldProcessToolCall(toolCall: AIToolCall): boolean {
-    const toolName = toolCall.function.name;
-    if (!this.allowedToolNames.has(toolName)) {
-      this.handleUnauthorizedTool(toolCall);
-      return false;
-    }
-
-    if (!this.isToolAllowedForCurrentStatus(toolCall)) {
-      return false;
-    }
-
-    if (this.isToolLimitReached(toolName)) {
-      this.handleToolLimitReached(toolCall);
-      return false;
-    }
-
-    return true;
-  }
-
-  private isToolAllowedForCurrentStatus(toolCall: AIToolCall): boolean {
-    const toolName = toolCall.function.name;
-
-    if (!this.isTranslationRelatedTask(this.config.taskType)) {
-      return true;
-    }
-
-    if (!DATA_WRITE_TOOL_NAMES.has(toolName)) {
-      return true;
-    }
-
-    if (this.currentStatus === 'preparing' || this.currentStatus === 'review') {
-      return true;
-    }
-
-    this.handleStatusRestrictedTool(toolCall, toolName, this.currentStatus);
-    if (this.currentStatus === 'working') {
-      this.metrics.workingRejectedWriteCount++;
-    }
-    return false;
-  }
-
-  private isTranslationRelatedTask(taskType: TaskType): boolean {
-    return taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading';
-  }
-
-  private handleStatusRestrictedTool(
-    toolCall: AIToolCall,
-    toolName: string,
-    currentStatus: 'planning' | 'working' | 'end',
-  ) {
-    console.warn(
-      `[${this.config.logLabel}] ⚠️ 状态限制：${currentStatus} 阶段禁止调用 ${toolName} 写入术语/角色/记忆`,
-    );
-    this.config.history.push({
-      role: 'tool',
-      content: getStatusRestrictedToolPrompt(toolName, currentStatus, this.config.taskType),
-      tool_call_id: toolCall.id,
-      name: toolName,
-    });
-  }
-
-  private prepareToolCall(toolName: string): boolean {
-    this.updateToolCounters(toolName);
-    return PRODUCTIVE_TOOLS.has(toolName);
-  }
-
-  private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<string> {
+  private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<AIToolCallResult> {
     const { aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
     if (aiProcessingStore && taskId) {
       void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
@@ -524,44 +386,13 @@ class TaskLoopSession {
       this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
       this.accumulatedParagraphs, // 传入已积累的翻译内存，用于 review 完整性检查（避免依赖过时的 DB 数据）
     );
-    this.metrics.toolCallTime += Date.now() - start;
-    this.metrics.toolCallCount++;
+    recordToolCall(this.metrics, Date.now() - start);
 
-    const toolResultContent = toolResult.content;
     if (aiProcessingStore && taskId) {
-      void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResultContent}]\n`);
+      void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResult.content}]\n`);
     }
 
-    return toolResultContent;
-  }
-
-  private async handleToolCallResult(
-    toolCall: AIToolCall,
-    toolName: string,
-    toolResultContent: string,
-    assistantText: string,
-  ): Promise<ChatMessage | undefined> {
-    const { history } = this.config;
-
-    this.captureToolCallResult(toolName, toolResultContent);
-
-    const userMessage = this.applyPendingStatusUpdate(toolName, assistantText);
-
-    await this.handleBatchExtraction(toolName, toolCall, toolResultContent);
-
-    const alreadyHandled = this.collectPlanningInfo(toolName, toolResultContent, toolCall);
-    if (alreadyHandled) {
-      return userMessage;
-    }
-
-    history.push({
-      role: 'tool',
-      content: toolResultContent,
-      tool_call_id: toolCall.id,
-      name: toolName,
-    });
-
-    return userMessage;
+    return toolResult;
   }
 
   private applyPendingStatusUpdate(
@@ -584,7 +415,7 @@ class TaskLoopSession {
 
     this.trackStatusDuration(previousStatus, newStatus);
     this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
-    this.currentStatus = newStatus;
+    this.setCurrentStatus(newStatus);
 
     if (aiProcessingStore && taskId) {
       void aiProcessingStore.updateTask(taskId, {
@@ -690,48 +521,6 @@ class TaskLoopSession {
     }
   }
 
-  private handleUnauthorizedTool(toolCall: AIToolCall) {
-    const toolName = toolCall.function.name;
-    console.warn(
-      `[${this.config.logLabel}] ⚠️ 工具 ${toolName} 未在本次会话提供的 tools 列表中，已拒绝执行`,
-    );
-    const prompt = getUnauthorizedToolPrompt(this.config.taskType, toolName);
-    this.config.history.push({
-      role: 'tool',
-      content: prompt,
-      tool_call_id: toolCall.id,
-      name: toolName,
-    });
-  }
-
-  private isToolLimitReached(toolName: string): boolean {
-    const currentCount = this.toolCallCounts.get(toolName) || 0;
-    const limit = TOOL_CALL_LIMITS[toolName] ?? TOOL_CALL_LIMITS.default;
-    return typeof limit === 'number' && limit !== Infinity && currentCount >= limit;
-  }
-
-  private handleToolLimitReached(toolCall: AIToolCall) {
-    const toolName = toolCall.function.name;
-    const limit = TOOL_CALL_LIMITS[toolName] ?? TOOL_CALL_LIMITS.default;
-    // ensure limit is a number for prompt function
-    const limitNum = typeof limit === 'number' ? limit : 0;
-
-    console.warn(
-      `[${this.config.logLabel}] ⚠️ 工具 ${toolName} 调用次数已达上限（${limitNum}），跳过此次调用`,
-    );
-    this.config.history.push({
-      role: 'tool',
-      content: getToolLimitReachedPrompt(toolName, limitNum),
-      tool_call_id: toolCall.id,
-      name: toolName,
-    });
-  }
-
-  private updateToolCounters(toolName: string) {
-    const current = this.toolCallCounts.get(toolName) || 0;
-    this.toolCallCounts.set(toolName, current + 1);
-  }
-
   /**
    * 捕获新工具调用的结果
    * 用于替代 JSON 解析的工具调用方式
@@ -800,7 +589,7 @@ class TaskLoopSession {
     if (keyTools.has(toolName)) {
       if (this.config.isBriefPlanning) {
         console.warn(`[${this.config.logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}`);
-        const warning = getBriefPlanningToolWarningPrompt();
+        const warning = PromptPolicy.getBriefPlanningToolWarningPrompt();
         // 验证 content 不为空
         const toolResultContent = content || '';
         this.config.history.push({
@@ -818,10 +607,8 @@ class TaskLoopSession {
   }
 
   private isValidTransition(prev: TaskStatus, next: TaskStatus): boolean {
-    if (prev === next) return true;
-    const validTransitions = getValidTransitionsForTaskType(this.config.taskType);
-    const allowed = validTransitions[prev];
-    return !!allowed && allowed.includes(next);
+    this.stateMachine.setCurrentStatus(prev);
+    return this.stateMachine.isValidTransition(next);
   }
 
   private handleInvalidTransition(prev: TaskStatus, next: TaskStatus, responseText: string) {
@@ -834,23 +621,12 @@ class TaskLoopSession {
   }
 
   private trackStatusDuration(prev: TaskStatus, next: TaskStatus) {
-    if (prev === next) return;
-    const duration = Date.now() - this.statusStartTime;
-    switch (prev) {
-      case 'planning':
-        this.metrics.planningTime += duration;
-        break;
-      case 'preparing':
-        this.metrics.preparingTime += duration;
-        break;
-      case 'working':
-        this.metrics.workingTime += duration;
-        break;
-      case 'review':
-        this.metrics.reviewTime += duration;
-        break;
-    }
-    this.statusStartTime = Date.now();
+    this.statusStartTime = trackInstrumentationStatusDuration(
+      this.metrics,
+      prev,
+      next,
+      this.statusStartTime,
+    );
   }
 
   private extractPlanningSummaryIfNeeded(prev: TaskStatus, next: TaskStatus, responseText: string) {
@@ -892,7 +668,7 @@ class TaskLoopSession {
         this.planningResponses.push(this.finalResponseText);
       }
 
-      const prompt = getPlanningLoopPrompt(
+      const prompt = PromptPolicy.getPlanningLoopPrompt(
         this.config.taskType,
         !!this.config.isBriefPlanning,
         this.consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS,
@@ -946,7 +722,8 @@ class TaskLoopSession {
     ) {
       this.config.history.push({
         role: 'user',
-        content: `${this.getCurrentStatusInfoMsg()}\n\n` + getWorkingLoopPrompt(taskType),
+        content:
+          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingLoopPrompt(taskType),
       });
       return { shouldContinue: true };
     }
@@ -963,12 +740,14 @@ class TaskLoopSession {
     if (allParagraphsReturned) {
       this.config.history.push({
         role: 'user',
-        content: `${this.getCurrentStatusInfoMsg()}\n\n` + getWorkingFinishedPrompt(taskType),
+        content:
+          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingFinishedPrompt(taskType),
       });
     } else {
       this.config.history.push({
         role: 'user',
-        content: `${this.getCurrentStatusInfoMsg()}\n\n` + getWorkingContinuePrompt(taskType),
+        content:
+          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingContinuePrompt(taskType),
       });
     }
     return { shouldContinue: true };
@@ -980,7 +759,7 @@ class TaskLoopSession {
       role: 'user',
       content:
         `${this.getCurrentStatusInfoMsg()}\n\n` +
-        getPreparingLoopPrompt(this.config.taskType, isLoopDetected),
+        PromptPolicy.getPreparingLoopPrompt(this.config.taskType, isLoopDetected),
     });
     return { shouldContinue: true };
   }
@@ -1004,9 +783,9 @@ class TaskLoopSession {
             role: 'user',
             content:
               `${this.getCurrentStatusInfoMsg()}\n\n` +
-              getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
+              PromptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
           });
-          this.currentStatus = 'working';
+          this.setCurrentStatus('working');
           this.consecutiveReviewCount = 0;
           return { shouldContinue: true };
         } else {
@@ -1024,7 +803,8 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + getReviewLoopPrompt(this.config.taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          PromptPolicy.getReviewLoopPrompt(this.config.taskType),
       });
     } else {
       const postOutputPrompt = buildPostOutputPrompt(taskType, this.config.taskId);
@@ -1104,12 +884,17 @@ class TaskLoopSession {
   }
 
   private getCurrentStatusInfoMsg() {
-    return getCurrentStatusInfo(
+    return PromptPolicy.getCurrentStatusInfo(
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
       this.config.hasNextChunk,
     );
+  }
+
+  private setCurrentStatus(status: TaskStatus) {
+    this.currentStatus = status;
+    this.stateMachine.setCurrentStatus(status);
   }
 
   private resetConsecutiveCounters() {
@@ -1140,9 +925,7 @@ class TaskLoopSession {
   }
 
   private finalizeMetrics() {
-    this.metrics.totalTime = Date.now() - this.startTime;
-    this.metrics.averageToolCallTime =
-      this.metrics.toolCallCount > 0 ? this.metrics.toolCallTime / this.metrics.toolCallCount : 0;
+    finalizeInstrumentationMetrics(this.metrics, this.startTime);
 
     // Log metrics
     if (this.config.aiProcessingStore && this.config.taskId) {
