@@ -220,12 +220,13 @@ export function useChapterTranslation(
     if (!book.value || !book.value.volumes) return;
 
     try {
-      // 仅需通过 booksStore.updateBook 触发持久化：
-      // - 内部会调用 BookService.saveBook
-      // - 章节内容保存启用 skipIfUnchanged（避免重复写入，并能正确处理“同引用就地修改”）
-      // 直接调用 ChapterService.saveChapterContent 会绕过该优化，导致重复保存。
+      // 先直接落盘当前章节内容，避免把整本 volumes 快照传入 updateBook
+      // 导致并发翻译章节在 await 间隙被旧快照覆盖。
+      await ChapterService.saveChapterContent(chapterToSave);
+
+      // 仅更新书籍元数据时间戳（不传 volumes），让 booksStore.updateBook
+      // 自动走 metadata-only 分支，避免触发章节内容重建/合并流程。
       await booksStore.updateBook(book.value.id, {
-        volumes: book.value.volumes,
         lastEdited: new Date(),
       });
 
