@@ -319,8 +319,8 @@ ${flowLines}
 
 **工具要点**
 1. update_task_status：只提交 {"status": "..."}
-2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，必须使用 paragraph_id 标识段落：{"paragraph_id": "xxx", "translated_text": "..."}（从段落 [ID: xxx] 获取，禁止使用 index 提交）${titleToolSection ? '\n' + titleToolSection : ''}
-3. 若 add_translation_batch 返回结构化错误（如 error_code / invalid_items / invalid_paragraph_ids），必须仅修复报错条目后重试，禁止重排段落、猜测或替换 paragraph_id
+2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，必须使用 paragraph_id + original_text_prefix 标识并锚定段落：{"paragraph_id": "xxx", "original_text_prefix": "原文前3-10字", "translated_text": "..."}（从段落 [ID: xxx] 与原文开头提取，禁止使用 index 提交；原文不足3字时填完整原文）${titleToolSection ? '\n' + titleToolSection : ''}
+3. 若 add_translation_batch 返回结构化错误（如 error_code / invalid_items / invalid_paragraph_ids / failed_paragraphs），必须仅修复报错条目后重试，禁止重排段落、猜测或替换 paragraph_id
 
 ${getStatusFieldDescription(taskType)}
 - 段落 ID 与原文 1:1 对应${onlyChanged}

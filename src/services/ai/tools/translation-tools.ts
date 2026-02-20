@@ -13,6 +13,8 @@ import { TodoListService } from 'src/services/todo-list-service';
 interface TranslationBatchItem {
   /** 段落 ID（唯一提交标识） */
   paragraph_id: string;
+  /** 原文前缀锚点（用于防止 paragraph_id 错位） */
+  original_text_prefix: string;
   translated_text: string;
 }
 
@@ -30,12 +32,26 @@ type BatchErrorCode =
   | 'MISSING_TRANSLATION'
   | 'DUPLICATE_PARAGRAPHS'
   | 'OUT_OF_RANGE_PARAGRAPHS'
+  | 'MISSING_ORIGINAL_TEXT_PREFIX'
+  | 'ORIGINAL_TEXT_PREFIX_TOO_SHORT'
+  | 'ORIGINAL_TEXT_PREFIX_TOO_LONG'
+  | 'ORIGINAL_TEXT_PREFIX_MISMATCH'
+  | 'ALL_PARAGRAPHS_FAILED'
   | 'PARAM_VALIDATION_FAILED';
+
+/** 批次整体结果码（非错误，用于表示处理结果状态） */
+type BatchResultCode = 'PARTIAL_SUCCESS';
 
 interface InvalidBatchItem {
   index: number;
   reason: BatchErrorCode;
   paragraph_id?: string;
+}
+
+interface FailedParagraphItem {
+  paragraph_id: string;
+  error_code: BatchErrorCode;
+  error: string;
 }
 
 // ============ Constants ============
@@ -44,6 +60,8 @@ const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
 const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
+const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
+const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
 /**
  * 引号对匹配规则：
  * - 「」 原文 → 译文可用 「」 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
@@ -100,6 +118,14 @@ const ERROR_MESSAGES = {
   INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
   MISSING_TRANSLATION: (index: number) =>
     `批次中第 ${index + 1} 个段落缺少翻译文本 (translated_text)`,
+  MISSING_ORIGINAL_TEXT_PREFIX: (paragraphId: string) =>
+    `段落 ${paragraphId} 缺少 original_text_prefix（用于防错位校验）`,
+  ORIGINAL_TEXT_PREFIX_TOO_SHORT: (paragraphId: string, minLength: number) =>
+    `段落 ${paragraphId} 的 original_text_prefix 长度不足（最少 ${minLength} 个字符）`,
+  ORIGINAL_TEXT_PREFIX_TOO_LONG: (paragraphId: string, maxLength: number) =>
+    `段落 ${paragraphId} 的 original_text_prefix 过长（最多 ${maxLength} 个字符）`,
+  ORIGINAL_TEXT_PREFIX_MISMATCH: (paragraphId: string, prefix: string) =>
+    `段落 ${paragraphId} 的原文前缀不匹配："${prefix}"`,
   DUPLICATE_PARAGRAPHS: (ids: string[]) => `批次中存在重复的段落 ID: ${ids.join(', ')}`,
   OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
@@ -133,6 +159,10 @@ const ERROR_MESSAGES = {
   AI_MODEL_ID_MISSING: '未提供 AI 模型 ID，无法写入翻译来源',
   CHAPTER_ID_MISSING: '任务缺少 chapterId，将触发惰性章节扫描，可能影响性能',
   PARAM_VALIDATION_FAILED: '参数验证失败',
+  PARTIAL_SUCCESS_SUMMARY: (acceptedCount: number, failedCount: number) =>
+    `部分成功：已处理 ${acceptedCount} 个段落，${failedCount} 个段落校验失败，请仅修复失败段落后重试。`,
+  ALL_PARAGRAPHS_FAILED:
+    '本次批次所有段落均验证失败，未保存任何结果。请根据 failed_paragraphs 逐条修复后重试。',
   // 处理错误
   BATCH_PROCESS_ERROR: (errorMsg: string) => `处理批次时出错: ${errorMsg}`,
 } as const;
@@ -174,6 +204,7 @@ function buildErrorResponse(
     note?: string | undefined;
     errors?: string[] | undefined;
     warnings?: string[] | undefined;
+    failedParagraphs?: FailedParagraphItem[] | undefined;
   },
 ): string {
   const payload: Record<string, unknown> = {
@@ -201,6 +232,9 @@ function buildErrorResponse(
   }
   if (options?.warnings && options.warnings.length > 0) {
     payload.warnings = options.warnings;
+  }
+  if (options?.failedParagraphs && options.failedParagraphs.length > 0) {
+    payload.failed_paragraphs = options.failedParagraphs;
   }
 
   return JSON.stringify(payload);
@@ -509,7 +543,7 @@ function detectMissingQuoteSymbols(originalText: string, translatedText: string)
  */
 async function processTranslationBatch(
   bookId: string,
-  items: Array<{ paragraphId: string; translatedText: string }>,
+  items: Array<{ paragraphId: string; originalTextPrefix: string; translatedText: string }>,
   aiModelId: string,
   taskType: 'translation' | 'polish' | 'proofreading',
   chapterId?: string,
@@ -519,8 +553,9 @@ async function processTranslationBatch(
   errors?: string[];
   warnings?: string[];
   processedCount: number;
-  /** 实际通过验证的段落 ID 列表（包含历史重复段落，它们也被视为已处理以推进进度） */
-  acceptedIds?: string[];
+  /** 实际通过验证的段落列表（包含历史重复段落，它们也被视为已处理以推进进度） */
+  acceptedItems?: Array<{ paragraphId: string; translatedText: string }>;
+  failedItems?: FailedParagraphItem[];
 }> {
   try {
     const book = await BookService.getBookById(bookId);
@@ -646,14 +681,74 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
     // 工具层只负责验证，不直接修改段落数据，避免双重写入
-    const validationErrors: string[] = [];
     const validationWarnings: string[] = [];
     let duplicateCount = 0;
-    const acceptedIds: string[] = [];
+    const acceptedItems: Array<{ paragraphId: string; translatedText: string }> = [];
+    const failedItems: FailedParagraphItem[] = [];
+
+    const pushFailedItem = (
+      paragraphId: string,
+      errorCode: BatchErrorCode,
+      error: string,
+    ): void => {
+      failedItems.push({
+        paragraph_id: paragraphId,
+        error_code: errorCode,
+        error,
+      });
+    };
 
     for (const item of items) {
       const paragraph = targetParagraphsMap.get(item.paragraphId);
       if (!paragraph) {
+        continue;
+      }
+
+      const trimmedPrefix = item.originalTextPrefix.trim();
+      const trimmedOriginalText = paragraph.text.trim();
+
+      if (!trimmedPrefix) {
+        pushFailedItem(
+          item.paragraphId,
+          'MISSING_ORIGINAL_TEXT_PREFIX',
+          ERROR_MESSAGES.MISSING_ORIGINAL_TEXT_PREFIX(item.paragraphId),
+        );
+        continue;
+      }
+
+      // 当原文本身短于 MIN_ORIGINAL_TEXT_PREFIX_LENGTH 时，允许前缀等于完整原文（即原文有多短，前缀就可以多短）。
+      // 例如 '♪' 这类单字符场景分隔符，前缀只能是 '♪' 本身，不应被最小长度规则拒绝。
+      const effectiveMinLength = Math.min(
+        MIN_ORIGINAL_TEXT_PREFIX_LENGTH,
+        trimmedOriginalText.length,
+      );
+      if (trimmedPrefix.length < effectiveMinLength) {
+        pushFailedItem(
+          item.paragraphId,
+          'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
+          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, effectiveMinLength),
+        );
+        continue;
+      }
+
+      if (trimmedPrefix.length > MAX_ORIGINAL_TEXT_PREFIX_LENGTH) {
+        pushFailedItem(
+          item.paragraphId,
+          'ORIGINAL_TEXT_PREFIX_TOO_LONG',
+          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(
+            item.paragraphId,
+            MAX_ORIGINAL_TEXT_PREFIX_LENGTH,
+          ),
+        );
+        continue;
+      }
+
+      if (!trimmedOriginalText.startsWith(trimmedPrefix)) {
+        pushFailedItem(
+          item.paragraphId,
+          'ORIGINAL_TEXT_PREFIX_MISMATCH',
+          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_MISMATCH(item.paragraphId, trimmedPrefix),
+        );
         continue;
       }
 
@@ -668,7 +763,11 @@ async function processTranslationBatch(
 
         // 如果与当前选中版本相同，阻止提交（不加入 acceptedIds）
         if (selectedTranslation && selectedTranslation.translation === item.translatedText) {
-          validationErrors.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId));
+          pushFailedItem(
+            item.paragraphId,
+            'PARAM_VALIDATION_FAILED',
+            ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId),
+          );
           continue;
         }
 
@@ -685,7 +784,10 @@ async function processTranslationBatch(
         }
         if (foundInHistory) {
           // 历史重复段落仍视为已处理以推进进度，但不会创建新翻译版本
-          acceptedIds.push(item.paragraphId);
+          acceptedItems.push({
+            paragraphId: item.paragraphId,
+            translatedText: item.translatedText,
+          });
           continue;
         }
       }
@@ -709,34 +811,51 @@ async function processTranslationBatch(
 
       const missingQuoteSymbols = detectMissingQuoteSymbols(paragraph.text, item.translatedText);
       if (missingQuoteSymbols.length > 0) {
-        validationErrors.push(
+        pushFailedItem(
+          item.paragraphId,
+          'PARAM_VALIDATION_FAILED',
           ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
         );
         continue;
       }
 
       // 通过所有验证，加入接受列表
-      acceptedIds.push(item.paragraphId);
+      acceptedItems.push({
+        paragraphId: item.paragraphId,
+        translatedText: item.translatedText,
+      });
     }
 
     if (duplicateCount > 0) {
       validationWarnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
     }
 
-    if (validationErrors.length > 0) {
+    if (failedItems.length > 0 && acceptedItems.length === 0) {
+      const failureErrors = failedItems.map((item) => item.error);
       return {
         success: false,
-        error: validationErrors.join('\n'),
-        errors: validationErrors,
+        error: ERROR_MESSAGES.ALL_PARAGRAPHS_FAILED,
+        errors: failureErrors,
+        failedItems,
         ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
         processedCount: 0,
       };
     }
 
+    if (failedItems.length > 0) {
+      return {
+        success: true,
+        processedCount: acceptedItems.length,
+        acceptedItems,
+        failedItems,
+        ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
+      };
+    }
+
     return {
       success: true,
-      processedCount: acceptedIds.length,
-      acceptedIds,
+      processedCount: acceptedItems.length,
+      acceptedItems,
       ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
     };
   } catch (error) {
@@ -771,12 +890,17 @@ export const translationTools: ToolDefinition[] = [
                     type: 'string',
                     description: '段落 ID（唯一提交标识，从 chunk 中 [ID: xxx] 获取）',
                   },
+                  original_text_prefix: {
+                    type: 'string',
+                    description:
+                      '原文前缀锚点（建议取原文前 5-10 个字符，trim 后最少 3 个字符、最多 20 个字符），用于校验 paragraph_id 与原文是否对齐',
+                  },
                   translated_text: {
                     type: 'string',
                     description: '翻译/润色/校对后的文本',
                   },
                 },
-                required: ['paragraph_id', 'translated_text'],
+                required: ['paragraph_id', 'original_text_prefix', 'translated_text'],
               },
             },
           },
@@ -873,6 +997,8 @@ export const translationTools: ToolDefinition[] = [
       // 构建处理项（将 resolvedIds 与 translated_text 配对）
       const processItems = paragraphs.map((p, i) => ({
         paragraphId: resolvedIds[i]!,
+        originalTextPrefix:
+          typeof p.original_text_prefix === 'string' ? p.original_text_prefix : '',
         translatedText: p.translated_text,
       }));
 
@@ -887,21 +1013,22 @@ export const translationTools: ToolDefinition[] = [
 
       if (!result.success) {
         return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+          errorCode: result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : undefined,
           errors: result.errors,
           warnings: result.warnings,
+          failedParagraphs: result.failedItems,
           warning,
         });
       }
 
-      // 从规范化的 acceptedIds 构建 accepted_paragraphs（仅包含实际通过验证的段落）
-      const processItemsMap = new Map(processItems.map((item) => [item.paragraphId, item]));
-      const acceptedParagraphs = (result.acceptedIds ?? resolvedIds).map((id) => {
-        const item = processItemsMap.get(id);
+      // 从规范化的 acceptedItems 构建 accepted_paragraphs（仅包含实际通过验证的段落）
+      const acceptedParagraphs = (result.acceptedItems ?? processItems).map((item) => {
         return {
-          paragraph_id: id,
-          translated_text: item?.translatedText ?? '',
+          paragraph_id: item.paragraphId,
+          translated_text: item.translatedText,
         };
       });
+      const failedParagraphs = result.failedItems ?? [];
 
       // 将已处理的段落 ID 添加到 submittedParagraphIds 集合中（用于下次批次计算剩余大小）
       if (submittedParagraphIds) {
@@ -945,9 +1072,18 @@ export const translationTools: ToolDefinition[] = [
 
       const responseResult: Record<string, unknown> = {
         success: true,
-        message: `成功处理 ${result.processedCount} 个段落`,
+        message:
+          failedParagraphs.length > 0
+            ? ERROR_MESSAGES.PARTIAL_SUCCESS_SUMMARY(result.processedCount, failedParagraphs.length)
+            : `成功处理 ${result.processedCount} 个段落`,
         processed_count: result.processedCount,
         accepted_paragraphs: acceptedParagraphs,
+        ...(failedParagraphs.length > 0
+          ? {
+              failed_paragraphs: failedParagraphs,
+              result_code: 'PARTIAL_SUCCESS' as BatchResultCode,
+            }
+          : {}),
         task_type: taskType,
         ...(result.warnings ? { quality_warnings: result.warnings } : {}),
         ...(warning ? { warning } : {}),

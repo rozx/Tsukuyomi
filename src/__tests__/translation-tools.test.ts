@@ -146,7 +146,64 @@ describe('add_translation_batch', () => {
       (t) => t.definition.function?.name === 'add_translation_batch',
     );
     if (!tool?.handler) throw new Error('工具未找到');
-    return tool;
+
+    return {
+      ...tool,
+      handler: async (args: Record<string, unknown>, context: Record<string, unknown>) => {
+        const normalizedArgs = { ...args };
+        const paragraphs = normalizedArgs.paragraphs;
+        if (Array.isArray(paragraphs)) {
+          const prefixByParagraphId = new Map<string, string>();
+          const contextBookId = typeof context.bookId === 'string' ? context.bookId : undefined;
+
+          if (contextBookId) {
+            const book = await BookService.getBookById(contextBookId);
+            if (book?.volumes) {
+              for (const volume of book.volumes) {
+                for (const chapter of volume.chapters || []) {
+                  for (const paragraph of chapter.content || []) {
+                    if (paragraph?.id && typeof paragraph.text === 'string') {
+                      const trimmed = paragraph.text.trim();
+                      if (trimmed.length > 0) {
+                        prefixByParagraphId.set(paragraph.id, trimmed.slice(0, 5));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          normalizedArgs.paragraphs = paragraphs.map((item) => {
+            if (
+              !item ||
+              typeof item !== 'object' ||
+              !('paragraph_id' in item) ||
+              typeof (item as { paragraph_id?: unknown }).paragraph_id !== 'string'
+            ) {
+              return item;
+            }
+
+            // 兼容既有测试：未显式提供 original_text_prefix 时，默认注入可通过前缀校验的占位值。
+            // 新增前缀相关行为的专用用例会显式传入该字段，不受此兼容层影响。
+            if (!Object.prototype.hasOwnProperty.call(item, 'original_text_prefix')) {
+              const paragraphId = (item as { paragraph_id: string }).paragraph_id;
+              const autoPrefix = prefixByParagraphId.get(paragraphId);
+              // 注意：fallback 值须满足 MIN_ORIGINAL_TEXT_PREFIX_LENGTH（≥3 字符），
+              // 避免在段落 ID 找不到对应原文时触发 ORIGINAL_TEXT_PREFIX_TOO_SHORT 错误。
+              return {
+                ...item,
+                original_text_prefix: autoPrefix || '原文前',
+              };
+            }
+
+            return item;
+          });
+        }
+
+        return tool.handler(normalizedArgs, context as any);
+      },
+    };
   };
 
   // 辅助函数：创建 AI Processing Store
@@ -921,6 +978,8 @@ describe('add_translation_batch', () => {
       const testCases = [
         { text: '***', translated: '***' },
         { text: '---', translated: '---' },
+        // '……' 共 2 个 Unicode 码点，属于短原文，兼容层会自动注入 '……' 作为前缀，
+        // 因为原文长度 < MIN_ORIGINAL_TEXT_PREFIX_LENGTH，有效最小长度会降至原文长度。
         { text: '……', translated: '……' },
         { text: '※※※', translated: '※※※' },
         { text: '☆★☆', translated: '☆★☆' },
@@ -1013,7 +1072,8 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('当前选中版本相同');
+      expect(Array.isArray(resultObj.errors)).toBe(true);
+      expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
     });
 
     test('重复译文命中当前选中版本时应拒绝提交', async () => {
@@ -1048,7 +1108,8 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('当前选中版本相同');
+      expect(Array.isArray(resultObj.errors)).toBe(true);
+      expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
       expect(para1.selectedTranslationId).toBe('trans-current');
       expect(para1.translations?.length).toBe(originalCount);
     });
@@ -1123,8 +1184,17 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('当前选中版本相同');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.result_code).toBe('PARTIAL_SUCCESS');
+      expect(resultObj.processed_count).toBe(1);
+      expect(Array.isArray(resultObj.failed_paragraphs)).toBe(true);
+      expect(resultObj.failed_paragraphs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paragraph_id: 'para1',
+          }),
+        ]),
+      );
     });
 
     test('润色任务应验证通过并返回成功（实际写入由回调层完成）', async () => {
@@ -1232,9 +1302,10 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('缺少原文引号符号');
-      expect(resultObj.error).toContain('开引号');
-      expect(resultObj.error).toContain('闭引号');
+      expect(Array.isArray(resultObj.errors)).toBe(true);
+      expect(resultObj.errors.join('\n')).toContain('缺少原文引号符号');
+      expect(resultObj.errors.join('\n')).toContain('开引号');
+      expect(resultObj.errors.join('\n')).toContain('闭引号');
       expect(para1.translations?.length).toBe(originalTransCount);
     });
 
@@ -1340,7 +1411,8 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('缺少原文引号符号');
+      expect(Array.isArray(resultObj.errors)).toBe(true);
+      expect(resultObj.errors.join('\n')).toContain('缺少原文引号符号');
     });
 
     test('当段落不存在时应返回错误', async () => {
@@ -1388,8 +1460,8 @@ describe('add_translation_batch', () => {
       const result = await tool.handler(
         {
           paragraphs: [
-            { paragraph_id: 'para1', translated_text: '翻译1' },
-            { paragraph_id: 'para2', translated_text: '翻译2' },
+            { paragraph_id: 'para1', original_text_prefix: '原文1', translated_text: '翻译1' },
+            { paragraph_id: 'para2', original_text_prefix: '原文2', translated_text: '翻译2' },
           ],
         },
         {
@@ -1403,6 +1475,222 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(2);
+    });
+
+    test('当批次同时包含有效段落与前缀失败段落时应返回部分成功', async () => {
+      const para1 = createTestParagraph('para1', '前缀校验原文一');
+      const para2 = createTestParagraph('para2', '前缀校验原文二');
+      const para3 = createTestParagraph('para3', '前缀校验原文三');
+      const chapter = createTestChapter('chapter1', [para1, para2, para3]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              original_text_prefix: '前缀校验',
+              translated_text: '有效译文1',
+            },
+            {
+              paragraph_id: 'para2',
+              original_text_prefix: '',
+              translated_text: '应失败译文2',
+            },
+            {
+              paragraph_id: 'para3',
+              original_text_prefix: '错误前缀',
+              translated_text: '应失败译文3',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+      expect(resultObj.result_code).toBe('PARTIAL_SUCCESS');
+      expect(resultObj.accepted_paragraphs).toEqual([
+        {
+          paragraph_id: 'para1',
+          translated_text: '有效译文1',
+        },
+      ]);
+      expect(Array.isArray(resultObj.failed_paragraphs)).toBe(true);
+      expect(resultObj.failed_paragraphs.length).toBe(2);
+      expect(resultObj.failed_paragraphs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paragraph_id: 'para2',
+            error_code: 'MISSING_ORIGINAL_TEXT_PREFIX',
+          }),
+          expect.objectContaining({
+            paragraph_id: 'para3',
+            error_code: 'ORIGINAL_TEXT_PREFIX_MISMATCH',
+          }),
+        ]),
+      );
+    });
+
+    test('当批次全部段落前缀校验失败时应返回整体失败并包含 failed_paragraphs', async () => {
+      const para1 = createTestParagraph('para1', '全部失败原文一');
+      const para2 = createTestParagraph('para2', '全部失败原文二');
+      const chapter = createTestChapter('chapter1', [para1, para2]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              original_text_prefix: '短',
+              translated_text: '失败译文1',
+            },
+            {
+              paragraph_id: 'para2',
+              original_text_prefix: '错位前缀',
+              translated_text: '失败译文2',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error_code).toBe('ALL_PARAGRAPHS_FAILED');
+      expect(Array.isArray(resultObj.failed_paragraphs)).toBe(true);
+      expect(resultObj.failed_paragraphs.length).toBe(2);
+      expect(resultObj.failed_paragraphs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            paragraph_id: 'para1',
+            error_code: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
+          }),
+          expect.objectContaining({
+            paragraph_id: 'para2',
+            error_code: 'ORIGINAL_TEXT_PREFIX_MISMATCH',
+          }),
+        ]),
+      );
+    });
+
+    test('原文为单字符时应接受等于原文长度的前缀', async () => {
+      // 场景：'♪' 这类单字符场景分隔符，合法前缀只能是 '♪' 本身（1字符），
+      // 不应因 MIN_ORIGINAL_TEXT_PREFIX_LENGTH=3 被拒绝。
+      const testCases = [
+        { text: '♪', prefix: '♪' },
+        { text: '…', prefix: '…' },
+        { text: '—', prefix: '—' },
+      ];
+
+      for (const { text, prefix } of testCases) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [
+              { paragraph_id: 'para1', original_text_prefix: prefix, translated_text: '♫' },
+            ],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-1',
+            chunkBoundaries: createChunkBoundaries(['para1']),
+          },
+        );
+
+        const resultObj = JSON.parse(result as string);
+        expect(resultObj.success).toBe(true);
+      }
+    });
+
+    test('原文为两字符时前缀须至少等于原文长度', async () => {
+      const para1 = createTestParagraph('para1', '……');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      // 只提供 1 字符前缀（原文为 2 字符，有效最小长度为 2）→ 应失败
+      const failResult = await tool.handler(
+        {
+          paragraphs: [
+            { paragraph_id: 'para1', original_text_prefix: '…', translated_text: '...' },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1']),
+        },
+      );
+      const failObj = JSON.parse(failResult as string);
+      expect(failObj.success).toBe(false);
+      expect(JSON.stringify(failObj)).toContain('ORIGINAL_TEXT_PREFIX_TOO_SHORT');
+
+      // 提供完整原文 '……' 作为前缀 → 应通过
+      const passResult = await tool.handler(
+        {
+          paragraphs: [
+            { paragraph_id: 'para1', original_text_prefix: '……', translated_text: '...' },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1']),
+        },
+      );
+      const passObj = JSON.parse(passResult as string);
+      expect(passObj.success).toBe(true);
     });
 
     test('当书籍不存在时应返回错误', async () => {

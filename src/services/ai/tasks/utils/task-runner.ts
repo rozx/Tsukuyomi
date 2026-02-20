@@ -738,24 +738,44 @@ class TaskLoopSession {
    */
   private captureToolCallResult(toolName: string, content: string): void {
     try {
-      const result = JSON.parse(content);
+      const result = JSON.parse(content) as {
+        success?: boolean;
+        new_status?: TaskStatus;
+        processed_count?: number;
+        failed_paragraphs?: Array<{ paragraph_id?: string; error?: string; error_code?: string }>;
+        new_title_translation?: string;
+      };
 
       if (toolName === 'update_task_status' && result.success) {
         // 捕获状态更新
-        const newStatus = result.new_status as TaskStatus;
+        const newStatus = result.new_status;
         if (newStatus) {
           this.pendingStatusUpdate = newStatus;
         }
       } else if (toolName === 'add_translation_batch' && result.success) {
-        // 捕获段落翻译
-        // 注意：实际的翻译数据已经在工具内部保存到数据库
-        // 这里我们只记录成功信息，不需要额外处理
-        // 但为了保持兼容性，我们触发回调
         const processedCount = result.processed_count || 0;
         console.log(`[${this.config.logLabel}] ✅ 批量翻译提交成功: ${processedCount} 个段落`);
+
+        const failedParagraphs = Array.isArray(result.failed_paragraphs)
+          ? result.failed_paragraphs
+          : [];
+        if (failedParagraphs.length > 0) {
+          const failedPreview = failedParagraphs
+            .slice(0, 5)
+            .map((item) => {
+              const id = item.paragraph_id || 'unknown';
+              const code = item.error_code || 'UNKNOWN_ERROR';
+              const reason = item.error || 'unknown error';
+              return `${id}(${code}): ${reason}`;
+            })
+            .join(' | ');
+          console.warn(
+            `[${this.config.logLabel}] ⚠️ 批量翻译存在部分失败: ${failedParagraphs.length} 个段落未通过校验。${failedPreview}`,
+          );
+        }
       } else if (toolName === 'update_chapter_title' && result.success) {
         // 捕获标题翻译
-        const translatedTitle = result.new_title_translation as string;
+        const translatedTitle = result.new_title_translation;
         if (translatedTitle) {
           this.pendingTitleTranslation = translatedTitle;
         }

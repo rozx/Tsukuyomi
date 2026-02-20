@@ -110,6 +110,31 @@ describe('AI Tools Tests', () => {
       (t) => t.definition.function.name === 'add_translation_batch',
     );
 
+    const withPrefix = (
+      paragraphs: Array<Record<string, unknown>>,
+    ): Array<Record<string, unknown>> => {
+      return paragraphs.map((item) => {
+        if (
+          item &&
+          typeof item === 'object' &&
+          'paragraph_id' in item &&
+          typeof (item as { paragraph_id?: unknown }).paragraph_id === 'string' &&
+          !Object.prototype.hasOwnProperty.call(item, 'original_text_prefix')
+        ) {
+          return {
+            ...item,
+            // 注意：此处硬编码 'orig-' 是因为该文件所有使用 withPrefix 的测试
+            // 中段落文本均以 'orig-' 开头（如 `orig-p1`、`orig-p2`）。
+            // 若新增测试的段落文本不以 'orig-' 开头，请显式传入 original_text_prefix
+            // 字段，而非依赖此辅助函数。
+            original_text_prefix: 'orig-',
+          };
+        }
+
+        return item;
+      });
+    };
+
     it('should validate inputs correctly', async () => {
       const result = await addTranslationBatchTool!.handler(
         {
@@ -141,7 +166,7 @@ describe('AI Tools Tests', () => {
       };
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ paragraph_id: 'p1', translated_text: 'test' }],
+          paragraphs: withPrefix([{ paragraph_id: 'p1', translated_text: 'test' }]),
         },
         contextClone,
       );
@@ -165,10 +190,10 @@ describe('AI Tools Tests', () => {
     it('should detect duplicate paragraph ids', async () => {
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [
+          paragraphs: withPrefix([
             { paragraph_id: 'p1', translated_text: 'test1' },
             { paragraph_id: 'p1', translated_text: 'test2' },
-          ],
+          ]),
         },
         mockContext,
       );
@@ -199,7 +224,9 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ paragraph_id: 'p1', translated_text: 'translated' }],
+          paragraphs: [
+            { paragraph_id: 'p1', original_text_prefix: 'orig', translated_text: 'translated' },
+          ],
         },
         mockContext,
       );
@@ -241,7 +268,9 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ paragraph_id: 'p_blank', translated_text: 'translated' }],
+          paragraphs: [
+            { paragraph_id: 'p_blank', original_text_prefix: '', translated_text: 'translated' },
+          ],
         },
         blankContext,
       );
@@ -283,7 +312,9 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: [{ paragraph_id: 'p_symbol', translated_text: '……' }],
+          paragraphs: [
+            { paragraph_id: 'p_symbol', original_text_prefix: '...', translated_text: '……' },
+          ],
         },
         symbolContext,
       );
@@ -327,10 +358,12 @@ describe('AI Tools Tests', () => {
 
       const result = await addTranslationBatchTool!.handler(
         {
-          paragraphs: paragraphIds.map((id) => ({
-            paragraph_id: id,
-            translated_text: `t-${id}`,
-          })),
+          paragraphs: withPrefix(
+            paragraphIds.map((id) => ({
+              paragraph_id: id,
+              translated_text: `t-${id}`,
+            })),
+          ),
         },
         doubleLimitContext,
       );
@@ -355,10 +388,12 @@ describe('AI Tools Tests', () => {
       const result = await addTranslationBatchTool!.handler(
         {
           // 12 > 11 (10% tolerance of 10 is 11)
-          paragraphs: Array.from({ length: 12 }, (_, i) => ({
-            paragraph_id: paragraphIds[i]!,
-            translated_text: `t-${i}`,
-          })),
+          paragraphs: withPrefix(
+            Array.from({ length: 12 }, (_, i) => ({
+              paragraph_id: paragraphIds[i]!,
+              translated_text: `t-${i}`,
+            })),
+          ),
         },
         largeChunkContext,
       );

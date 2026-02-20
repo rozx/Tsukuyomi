@@ -535,6 +535,143 @@ describe('executeToolCallLoop', () => {
     }
   });
 
+  test('add_translation_batch 部分成功时应提取 accepted_paragraphs 且忽略 failed_paragraphs', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'update_task_status') {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { status?: string };
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, new_status: args.status }),
+          } as any);
+        }
+        if (toolCall.function.name === 'add_translation_batch') {
+          return Promise.resolve({
+            content: JSON.stringify({
+              success: true,
+              processed_count: 1,
+              accepted_paragraphs: [{ paragraph_id: 'p-ok', translated_text: '可接受译文' }],
+              failed_paragraphs: [
+                {
+                  paragraph_id: 'p-bad',
+                  error_code: 'ORIGINAL_TEXT_PREFIX_MISMATCH',
+                  error: '原文前缀不匹配',
+                },
+              ],
+            }),
+          } as any);
+        }
+        return Promise.resolve({ content: JSON.stringify({ success: true }) } as any);
+      },
+    );
+
+    try {
+      const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-2',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-3',
+              type: 'function',
+              function: {
+                name: 'add_translation_batch',
+                arguments:
+                  '{"paragraphs":[{"paragraph_id":"p-wrong","original_text_prefix":"错","translated_text":"错误映射"}]}',
+              },
+            },
+          ],
+        },
+        {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-4',
+              type: 'function',
+              function: { name: 'update_task_status', arguments: '{"status":"end"}' },
+            },
+          ],
+        },
+      ];
+
+      let idx = 0;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        const r = responses[idx] ?? responses[responses.length - 1]!;
+        idx++;
+        return Promise.resolve({
+          text: r.text,
+          ...(r.toolCalls ? { toolCalls: r.toolCalls } : {}),
+        });
+      };
+
+      const result = await executeToolCallLoop({
+        history: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'start' },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'update_task_status',
+              description: 'update status',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'add_translation_batch',
+              description: 'add translation batch',
+              parameters: { type: 'object', properties: {}, required: [] },
+            },
+          },
+        ],
+        generateText,
+        aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+        taskType: 'polish',
+        chunkText: 'chunk',
+        paragraphIds: ['p-ok'],
+        bookId: 'book1',
+        handleAction: () => {},
+        onToast: undefined,
+        taskId: undefined,
+        aiProcessingStore: undefined,
+        logLabel: 'Test',
+        maxTurns: 10,
+      });
+
+      expect(result.status).toBe('end');
+      expect(result.paragraphs.get('p-ok')).toBe('可接受译文');
+      expect(result.paragraphs.has('p-bad')).toBe(false);
+      expect(result.paragraphs.has('p-wrong')).toBe(false);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
   test('add_translation_batch 成功但缺少 accepted_paragraphs 时应兼容回退旧参数提取', async () => {
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
