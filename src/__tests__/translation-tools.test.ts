@@ -1015,7 +1015,7 @@ describe('add_translation_batch', () => {
     });
 
     test('非纯符号段落提交与原文相同时应允许（不再阻止）', async () => {
-      const para1 = createTestParagraph('para1', '这是原文');
+      const para1 = createTestParagraph('para1', '这是原文文本');
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
       const novel = createTestNovel([volume]);
@@ -1028,7 +1028,13 @@ describe('add_translation_batch', () => {
 
       const result = await tool.handler(
         {
-          paragraphs: [{ paragraph_id: 'para1', translated_text: '这是原文' }],
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              translated_text: '这是原文文本',
+              original_text_prefix: '这是原文',
+            },
+          ],
         },
         {
           bookId: 'novel-1',
@@ -1043,8 +1049,8 @@ describe('add_translation_batch', () => {
     });
 
     test('与原文相同且命中当前选中版本时仍应拒绝', async () => {
-      const para1 = createTestParagraph('para1', '这是原文', [
-        { id: 'trans-selected', translation: '这是原文', aiModelId: 'model-old' },
+      const para1 = createTestParagraph('para1', '这是原文文本', [
+        { id: 'trans-selected', translation: '这是原文文本', aiModelId: 'model-old' },
       ]);
       para1.selectedTranslationId = 'trans-selected';
 
@@ -1060,7 +1066,13 @@ describe('add_translation_batch', () => {
 
       const result = await tool.handler(
         {
-          paragraphs: [{ paragraph_id: 'para1', translated_text: '这是原文' }],
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              translated_text: '这是原文文本',
+              original_text_prefix: '这是原文',
+            },
+          ],
         },
         {
           bookId: 'novel-1',
@@ -1643,7 +1655,7 @@ describe('add_translation_batch', () => {
       }
     });
 
-    test('原文为两字符时前缀须至少等于原文长度', async () => {
+    test('纯符号原文为两字符时短前缀也应通过（跳过长度校验）', async () => {
       const para1 = createTestParagraph('para1', '……');
       const chapter = createTestChapter('chapter1', [para1]);
       const volume = createTestVolume('volume1', [chapter]);
@@ -1655,8 +1667,9 @@ describe('add_translation_batch', () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
-      // 只提供 1 字符前缀（原文为 2 字符，有效最小长度为 2）→ 应失败
-      const failResult = await tool.handler(
+      // '……' 是纯符号段落，跳过长度校验，仅检查 startsWith
+      // '…' 是 '……' 的前缀 → 应通过
+      const result = await tool.handler(
         {
           paragraphs: [
             { paragraph_id: 'para1', original_text_prefix: '…', translated_text: '...' },
@@ -1670,11 +1683,10 @@ describe('add_translation_batch', () => {
           chunkBoundaries: createChunkBoundaries(['para1']),
         },
       );
-      const failObj = JSON.parse(failResult as string);
-      expect(failObj.success).toBe(false);
-      expect(JSON.stringify(failObj)).toContain('ORIGINAL_TEXT_PREFIX_TOO_SHORT');
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
 
-      // 提供完整原文 '……' 作为前缀 → 应通过
+      // 提供完整原文 '……' 作为前缀 → 也应通过
       const passResult = await tool.handler(
         {
           paragraphs: [
@@ -1691,6 +1703,229 @@ describe('add_translation_batch', () => {
       );
       const passObj = JSON.parse(passResult as string);
       expect(passObj.success).toBe(true);
+    });
+
+    test('短文本提交完整原文作为前缀时不应触发 TOO_LONG', async () => {
+      // 短文本（如「ゆず」4字符），AI 提交完整原文作为前缀是最自然的行为
+      // maxPrefixLength = min(20, 4) = 4，完整原文=4 ≤ 4 → 仅触发警告，不阻止提交
+      const testCases = [
+        { text: '「ゆず」', prefix: '「ゆず」', translation: '「柚子」' }, // 完整原文
+        { text: '「ゆず」', prefix: '「ゆず', translation: '「柚子」' }, // 3 字符前缀也应通过
+        { text: '「はい」', prefix: '「はい」', translation: '「是的」' },
+        { text: 'abcde', prefix: 'abcde', translation: '翻译' }, // 5 字符文本，完整原文作为前缀
+      ];
+
+      for (const { text, prefix, translation } of testCases) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [
+              {
+                paragraph_id: 'para1',
+                original_text_prefix: prefix,
+                translated_text: translation,
+              },
+            ],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-1',
+            chunkBoundaries: createChunkBoundaries(['para1']),
+          },
+        );
+
+        const resultObj = JSON.parse(result as string);
+        expect(resultObj.success).toBe(true);
+      }
+    });
+
+    test('前缀超出固定上限时应仅警告（不阻止提交）', async () => {
+      // 固定上限 = 20 字符，提交 25 字符前缀 → 应成功但包含警告
+      const longText = '这是一段比较长的日本小说翻译的原文内容部分，需要更多字符来超出上限';
+      const para1 = createTestParagraph('para1', longText);
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      // 提交超出固定上限的前缀（25 字符 > 20）
+      const tooLongPrefix = longText.slice(0, 25);
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              original_text_prefix: tooLongPrefix,
+              translated_text: '翻译文本',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      // ORIGINAL_TEXT_PREFIX_TOO_LONG 改为仅警告，不阻止提交
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+      // 警告应包含在 quality_warnings 中
+      expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
+      expect(resultObj.quality_warnings.join('\n')).toContain('original_text_prefix 过长');
+    });
+
+    test('短文本完整原文不超过上限时应被接受', async () => {
+      // 7 字符文本：max = min(20, 7) = 7，完整原文作为前缀 → 应通过
+      const text7 = 'abcdefg';
+      const para1 = createTestParagraph('para1', text7);
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              original_text_prefix: text7, // 完整原文 7 字符 <= min(20, 7) = 7
+              translated_text: '翻译文本',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+    });
+
+    test('纯符号段落应跳过前缀长度校验，仅检查 startsWith 匹配', async () => {
+      // 纯符号段落（如装饰性分隔线、括号填充等）不应受 TOO_SHORT / TOO_LONG 限制
+      const fullwidthSpace = '\u3000';
+      const testCases = [
+        // 含全角空格的装饰性文本：完整原文作为前缀
+        {
+          text: `【${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}】`,
+          prefix: `【${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}】`,
+        },
+        // 含全角空格的装饰性文本：部分前缀
+        {
+          text: `【${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}${fullwidthSpace}】`,
+          prefix: `【${fullwidthSpace}`,
+        },
+        // 长符号分隔线：完整原文（超过 0.8 比例限制也应通过）
+        { text: '◇◇◇◇◇◇◇◇', prefix: '◇◇◇◇◇◇◇◇' },
+        // 长符号分隔线：单字符前缀（短于 MIN_ORIGINAL_TEXT_PREFIX_LENGTH 也应通过）
+        { text: '◇◇◇◇◇◇◇◇', prefix: '◇' },
+        // 短符号
+        { text: '***', prefix: '**' },
+        // 混合符号
+        { text: '―――――――――', prefix: '―――' },
+      ];
+
+      for (const { text, prefix } of testCases) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [
+              {
+                paragraph_id: 'para1',
+                original_text_prefix: prefix,
+                translated_text: '翻译',
+              },
+            ],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-1',
+            chunkBoundaries: createChunkBoundaries(['para1']),
+          },
+        );
+
+        const resultObj = JSON.parse(result as string);
+        expect(resultObj.success).toBe(true);
+      }
+    });
+
+    test('纯符号段落前缀不匹配原文开头时仍应失败', async () => {
+      const para1 = createTestParagraph('para1', '◇◇◇◇◇');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              original_text_prefix: '★★',
+              translated_text: '翻译',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['para1']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
     });
 
     test('当书籍不存在时应返回错误', async () => {

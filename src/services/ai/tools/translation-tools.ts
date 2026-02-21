@@ -5,7 +5,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import type { Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
-import { isEmptyParagraph } from 'src/utils/text-utils';
+import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
 
 // ============ Types ============
@@ -61,7 +61,39 @@ const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
 const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
-const MAX_ORIGINAL_TEXT_PREFIX_LENGTH_RATIO = 0.8;
+const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
+
+type PrefixLengthResult =
+  | { valid: true }
+  | {
+      valid: false;
+      errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT' | 'ORIGINAL_TEXT_PREFIX_TOO_LONG';
+      limit: number;
+    };
+
+/**
+ * 校验前缀长度是否在合法范围内（不含 startsWith 匹配和纯符号跳过逻辑）。
+ *
+ * - 最小长度：min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
+ * - 最大长度：min(MAX_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
+ *   即固定上限 20 与原文长度取较小值，与 tool description 一致。
+ */
+function validatePrefixLength(prefix: string, originalText: string): PrefixLengthResult {
+  const effectiveMinLength = Math.min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length);
+
+  if (prefix.length < effectiveMinLength) {
+    return { valid: false, errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT', limit: effectiveMinLength };
+  }
+
+  const maxPrefixLength = Math.min(MAX_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length);
+
+  if (prefix.length > maxPrefixLength) {
+    return { valid: false, errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_LONG', limit: maxPrefixLength };
+  }
+
+  return { valid: true };
+}
+
 /**
  * 引号对匹配规则：
  * - 「」 原文 → 译文可用 「」 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
@@ -716,35 +748,27 @@ async function processTranslationBatch(
         continue;
       }
 
-      // 当原文本身短于 MIN_ORIGINAL_TEXT_PREFIX_LENGTH 时，允许前缀等于完整原文（即原文有多短，前缀就可以多短）。
-      // 例如 '♪' 这类单字符场景分隔符，前缀只能是 '♪' 本身，不应被最小长度规则拒绝。
-      const effectiveMinLength = Math.min(
-        MIN_ORIGINAL_TEXT_PREFIX_LENGTH,
-        trimmedOriginalText.length,
-      );
-      if (trimmedPrefix.length < effectiveMinLength) {
-        pushFailedItem(
-          item.paragraphId,
-          'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
-          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, effectiveMinLength),
-        );
-        continue;
-      }
+      // 纯符号/装饰性段落（如 ◇◇◇、全角括号+空格、破折号线、星号等）跳过前缀长度校验，
+      // 仅保留 startsWith 匹配校验。这类段落的前缀长度难以满足常规限制。
+      const symbolOnly = isSymbolOnly(trimmedOriginalText);
 
-      const maxOriginalTextPrefixLength = Math.max(
-        MIN_ORIGINAL_TEXT_PREFIX_LENGTH,
-        Math.floor(trimmedOriginalText.length * MAX_ORIGINAL_TEXT_PREFIX_LENGTH_RATIO),
-      );
-      if (trimmedPrefix.length > maxOriginalTextPrefixLength) {
-        pushFailedItem(
-          item.paragraphId,
-          'ORIGINAL_TEXT_PREFIX_TOO_LONG',
-          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(
-            item.paragraphId,
-            maxOriginalTextPrefixLength,
-          ),
-        );
-        continue;
+      if (!symbolOnly) {
+        const prefixCheck = validatePrefixLength(trimmedPrefix, trimmedOriginalText);
+        if (!prefixCheck.valid) {
+          if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_SHORT') {
+            pushFailedItem(
+              item.paragraphId,
+              'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
+              ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, prefixCheck.limit),
+            );
+            continue;
+          } else if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_LONG') {
+            // TOO_LONG 改为仅警告，不阻止提交。
+            validationWarnings.push(
+              ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(item.paragraphId, prefixCheck.limit),
+            );
+          }
+        }
       }
 
       if (!trimmedOriginalText.startsWith(trimmedPrefix)) {

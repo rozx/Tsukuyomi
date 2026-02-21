@@ -945,7 +945,8 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
+        const booksStore = useBooksStore();
+        const book = booksStore.getBookById(bookId);
         if (!book) {
           return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
         }
@@ -1054,11 +1055,10 @@ export const bookTools: ToolDefinition[] = [
         });
 
         // 保存更改
-        const booksStore = useBooksStore();
         await booksStore.updateBook(bookId, { volumes: updatedVolumes });
 
         // 获取更新后的章节信息
-        const updatedBook = await BookService.getBookById(bookId);
+        const updatedBook = booksStore.getBookById(bookId);
         const updatedChapterInfo = updatedBook
           ? ChapterService.findChapterById(updatedBook, chapter_id)
           : null;

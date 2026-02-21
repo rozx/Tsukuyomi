@@ -249,7 +249,12 @@ export function useChapterTranslation(
     aiModelId: string,
     targetChapterId: string,
   ): Promise<void> => {
-    if (!book.value || !book.value.volumes) {
+    const bookId = book.value?.id;
+    if (!bookId) return;
+
+    // 获取最新的书籍状态（不要使用 book.value，以防并发更新覆盖其他数据）
+    const latestBook = booksStore.getBookById(bookId);
+    if (!latestBook || !latestBook.volumes) {
       return;
     }
 
@@ -274,12 +279,11 @@ export function useChapterTranslation(
       };
     }
 
-    const updatedVolumes = book.value.volumes?.map((volume) => {
+    // 我们需要保留原有的 title.original，避免由 ChapterService.updateChapter 中传递对象导致原有数据被覆盖
+    const finalVolumes = latestBook.volumes.map((volume) => {
       if (!volume.chapters) return volume;
-
       const updatedChapters = volume.chapters.map((chapter) => {
         if (chapter.id !== targetChapterId) return chapter;
-
         return {
           ...chapter,
           title: {
@@ -289,33 +293,25 @@ export function useChapterTranslation(
           lastEdited: new Date(),
         };
       });
-
-      return {
-        ...volume,
-        chapters: updatedChapters,
-      };
+      return { ...volume, chapters: updatedChapters };
     });
 
     // 保存书籍（必须等待完成，否则切换章节时翻译可能丢失）
-    const bookId = book.value?.id;
-    if (bookId && updatedVolumes) {
-      try {
-        await booksStore.updateBook(bookId, {
-          volumes: updatedVolumes,
-          lastEdited: new Date(),
-        });
-        // 注意：不再调用 updateSelectedChapterWithContent
-        // 因为直接更新 selectedChapterWithContent.value（上面第 253-260 行）已经更新了 UI
-        // 调用 updateSelectedChapterWithContent 可能会覆盖数据
-        console.log('[useChapterTranslation] ✅ 标题翻译已保存');
-      } catch (error) {
-        console.error('[useChapterTranslation] ❌ 更新标题翻译失败:', error);
-      }
-    } else {
-      const missingParts: string[] = [];
-      if (!bookId) missingParts.push('bookId 缺失');
-      if (!updatedVolumes) missingParts.push('updatedVolumes 缺失');
-      console.warn(`[useChapterTranslation] ⚠️ 无法保存标题翻译：${missingParts.join('，')}`);
+    if (!bookId) {
+      console.warn('[useChapterTranslation] ⚠️ 无法保存标题翻译：bookId 缺失');
+      return;
+    }
+    try {
+      await booksStore.updateBook(bookId, {
+        volumes: finalVolumes,
+        lastEdited: new Date(),
+      });
+      // 注意：不再调用 updateSelectedChapterWithContent
+      // 因为直接更新 selectedChapterWithContent.value（上面第 253-260 行）已经更新了 UI
+      // 调用 updateSelectedChapterWithContent 可能会覆盖数据
+      console.log('[useChapterTranslation] ✅ 标题翻译已保存');
+    } catch (error) {
+      console.error('[useChapterTranslation] ❌ 更新标题翻译失败:', error);
     }
   };
 
