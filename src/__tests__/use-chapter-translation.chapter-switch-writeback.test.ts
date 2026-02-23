@@ -35,6 +35,7 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
   const toastAdd = mock(() => {});
   const updateBook = mock(async () => {});
   const saveChapterContent = mock(() => Promise.resolve());
+  const getBookByIdMock = mock((id?: string): Novel | null => null);
 
   const getDefaultModelForTask = mock(() => ({
     id: 'model-1',
@@ -62,11 +63,13 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
     updateBook.mockClear();
     saveChapterContent.mockClear();
     getDefaultModelForTask.mockClear();
+    getBookByIdMock.mockClear();
+    getBookByIdMock.mockImplementation(() => null);
 
     spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: toastAdd } as any);
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       updateBook,
-      getBookById: mock(() => null),
+      getBookById: getBookByIdMock,
     } as any);
     spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({ getDefaultModelForTask } as any);
     spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue(aiProcessing as any);
@@ -98,6 +101,8 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
       createdAt: new Date(),
       lastEdited: new Date(),
     });
+
+    getBookByIdMock.mockImplementation(() => book.value || null);
 
     const selectedChapter = ref<Chapter | null>(chapterA);
     const selectedChapterWithContent = ref<Chapter | null>(chapterA);
@@ -197,6 +202,8 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
       createdAt: new Date(),
       lastEdited: new Date(),
     });
+
+    getBookByIdMock.mockImplementation(() => book.value || null);
 
     const selectedChapterA = ref<Chapter | null>(chapterA);
     const selectedChapterWithContentA = ref<Chapter | null>(chapterA);
