@@ -719,6 +719,44 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain('para1');
       expect(resultObj.error).toContain('para2');
     });
+
+    test('当纠错后命中同一段落 ID 时应按重复规则拒绝', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'abc12x4y',
+              original_text_prefix: '原文',
+              translated_text: '翻译1',
+            },
+            {
+              paragraph_id: 'abc12345',
+              original_text_prefix: '原文',
+              translated_text: '翻译2',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['abc12345', 'def67890']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error_code).toBe('DUPLICATE_PARAGRAPHS');
+      expect(resultObj.invalid_paragraph_ids).toEqual(['abc12345']);
+      expect(Array.isArray(resultObj.warnings)).toBe(true);
+      expect(resultObj.warnings.join('\n')).toContain('自动纠正');
+      expect(resultObj.warnings.join('\n')).toContain('abc12x4y');
+      expect(resultObj.warnings.join('\n')).toContain('abc12345');
+    });
   });
 
   describe('段落范围验证', () => {
@@ -745,6 +783,114 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain('para-outside');
       expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
       expect(resultObj.invalid_paragraph_ids).toEqual(['para-outside']);
+    });
+
+    test('当 paragraph_id 仅有 2 字符拼写偏差且唯一匹配时应自动纠正并成功', async () => {
+      const realParagraphId = 'abc12345';
+      const typoParagraphId = 'abc12x4y';
+      const para1 = createTestParagraph(realParagraphId, '原文段落内容');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: typoParagraphId,
+              original_text_prefix: '原文段',
+              translated_text: '纠错后翻译文本',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries([realParagraphId]),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.accepted_paragraphs).toEqual([
+        {
+          paragraph_id: realParagraphId,
+          translated_text: '纠错后翻译文本',
+        },
+      ]);
+      expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
+      expect(resultObj.quality_warnings.join('\n')).toContain('自动纠正');
+      expect(resultObj.quality_warnings.join('\n')).toContain(typoParagraphId);
+      expect(resultObj.quality_warnings.join('\n')).toContain(realParagraphId);
+    });
+
+    test('当 paragraph_id 存在多个并列最优候选时应拒绝并提示无法唯一匹配', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'abcf1111',
+              original_text_prefix: '原文段',
+              translated_text: '翻译',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['abcd1111', 'abce1111']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
+      expect(resultObj.invalid_paragraph_ids).toEqual(['abcf1111']);
+      expect(resultObj.note).toContain('无法唯一匹配');
+      expect(resultObj.note).toContain('abcf1111');
+    });
+
+    test('当 paragraph_id 偏差超过阈值时应按越界处理且不自动纠正', async () => {
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'zzzz9999',
+              original_text_prefix: '原文段',
+              translated_text: '翻译',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries(['abc12345']),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
+      expect(resultObj.invalid_paragraph_ids).toEqual(['zzzz9999']);
+      expect(resultObj.note).toBeUndefined();
     });
 
     test('当没有 chunkBoundaries 时应允许所有段落', async () => {

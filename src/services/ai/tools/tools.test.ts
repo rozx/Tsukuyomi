@@ -5,6 +5,7 @@ import { bookTools } from './book-tools';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { useBooksStore } from 'src/stores/books';
 
 // Mock dependencies
 mock.module('src/services/book-service', () => ({
@@ -90,6 +91,8 @@ describe('AI Tools Tests', () => {
     jest.clearAllMocks();
     // 确保 findChapterById 默认返回 undefined（防止跨测试泄露）
     (ChapterService.findChapterById as jest.Mock).mockReturnValue(undefined);
+    // 默认不返回章节内容，避免上一个测试的 mock 实现泄露到下一个测试
+    (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(null);
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
       {
@@ -462,6 +465,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as jest.Mock).mockReturnValue({
         chapter: mockChapter,
       });
+      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+        mockChapter.content,
+      );
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -512,9 +518,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as jest.Mock).mockReturnValue({
         chapter: mockChapter,
       });
-      // Mock loadChapterContent to return undefined or content depending on implementation
-      // My implementation checks chapter.content || loadChapterContent
-      // With chapter.content set, it uses it.
+      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+        mockChapter.content,
+      );
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -569,6 +575,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as jest.Mock).mockReturnValue({
         chapter: mockChapter,
       });
+      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+        mockChapter.content,
+      );
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -623,6 +632,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as jest.Mock).mockReturnValue({
         chapter: mockChapter,
       });
+      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+        mockChapter.content,
+      );
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -776,7 +788,11 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      const mockStore = {
+        getBookById: jest.fn().mockReturnValue(mockBook),
+        updateBook: jest.fn().mockResolvedValue(undefined),
+      };
+      (useBooksStore as unknown as jest.Mock).mockReturnValue(mockStore);
       (ChapterService.updateChapter as jest.Mock).mockReturnValue([]); // mock return updated volumes
       (ChapterService.findChapterById as jest.Mock).mockReturnValue({
         chapter: mockChapter,

@@ -62,6 +62,7 @@ const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE
 const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
 const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
 const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
+const MAX_PARAGRAPH_ID_EDIT_DISTANCE = 2;
 
 type PrefixLengthResult =
   | { valid: true }
@@ -70,6 +71,23 @@ type PrefixLengthResult =
       errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT' | 'ORIGINAL_TEXT_PREFIX_TOO_LONG';
       limit: number;
     };
+
+type ParagraphIdMatchResult =
+  | { type: 'no_match' }
+  | { type: 'matched'; matchedId: string; distance: number }
+  | { type: 'ambiguous'; distance: number; candidateIds: string[] };
+
+interface ParagraphIdAmbiguousMatch {
+  originalId: string;
+  distance: number;
+  candidateIds: string[];
+}
+
+interface ParagraphIdNormalizationResult {
+  normalizedIds: string[];
+  correctionWarnings: string[];
+  ambiguousMatches: ParagraphIdAmbiguousMatch[];
+}
 
 /**
  * 校验前缀长度是否在合法范围内（不含 startsWith 匹配和纯符号跳过逻辑）。
@@ -161,6 +179,14 @@ const ERROR_MESSAGES = {
   DUPLICATE_PARAGRAPHS: (ids: string[]) => `批次中存在重复的段落 ID: ${ids.join(', ')}`,
   OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
     `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
+  PARAGRAPH_ID_AUTO_CORRECTED: (originalId: string, correctedId: string, distance: number) =>
+    `段落 ID 自动纠正：${originalId} -> ${correctedId}（编辑距离 ${distance}）`,
+  PARAGRAPH_ID_AMBIGUOUS_CANDIDATES: (
+    originalId: string,
+    distance: number,
+    candidateIds: string[],
+  ) =>
+    `段落 ID 无法唯一匹配：${originalId}（最小编辑距离 ${distance}），候选: ${candidateIds.join(', ')}`,
   // 翻译内容验证相关
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
@@ -493,6 +519,169 @@ function validateParagraphsInRange(
   }
 
   return { valid: true };
+}
+
+/**
+ * 计算两个字符串的 Levenshtein 编辑距离（带阈值剪枝）
+ */
+function calculateLevenshteinDistance(source: string, target: string, maxDistance: number): number {
+  if (source === target) {
+    return 0;
+  }
+
+  const sourceLength = source.length;
+  const targetLength = target.length;
+
+  if (Math.abs(sourceLength - targetLength) > maxDistance) {
+    return maxDistance + 1;
+  }
+
+  const previousRow = new Array<number>(targetLength + 1);
+  for (let j = 0; j <= targetLength; j++) {
+    previousRow[j] = j;
+  }
+
+  for (let i = 1; i <= sourceLength; i++) {
+    const currentRow = new Array<number>(targetLength + 1);
+    currentRow[0] = i;
+    let rowMin = currentRow[0];
+
+    for (let j = 1; j <= targetLength; j++) {
+      const substitutionCost = source[i - 1] === target[j - 1] ? 0 : 1;
+      const deletion = previousRow[j]! + 1;
+      const insertion = currentRow[j - 1]! + 1;
+      const substitution = previousRow[j - 1]! + substitutionCost;
+
+      const value = Math.min(deletion, insertion, substitution);
+      currentRow[j] = value;
+
+      if (value < rowMin) {
+        rowMin = value;
+      }
+    }
+
+    if (rowMin > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    for (let j = 0; j <= targetLength; j++) {
+      previousRow[j] = currentRow[j]!;
+    }
+  }
+
+  return previousRow[targetLength] ?? maxDistance + 1;
+}
+
+/**
+ * 在允许范围中为 paragraph_id 查找最接近的候选。
+ */
+function findBestParagraphIdMatch(
+  paragraphId: string,
+  allowedParagraphIds: Set<string>,
+  maxDistance: number,
+): ParagraphIdMatchResult {
+  let bestDistance = maxDistance + 1;
+  let bestCandidates: string[] = [];
+
+  for (const candidateId of allowedParagraphIds) {
+    const distance = calculateLevenshteinDistance(paragraphId, candidateId, maxDistance);
+    if (distance > maxDistance) {
+      continue;
+    }
+
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestCandidates = [candidateId];
+      continue;
+    }
+
+    if (distance === bestDistance) {
+      bestCandidates.push(candidateId);
+    }
+  }
+
+  if (bestCandidates.length === 0) {
+    return { type: 'no_match' };
+  }
+
+  if (bestCandidates.length === 1) {
+    return {
+      type: 'matched',
+      matchedId: bestCandidates[0]!,
+      distance: bestDistance,
+    };
+  }
+
+  return {
+    type: 'ambiguous',
+    distance: bestDistance,
+    candidateIds: bestCandidates,
+  };
+}
+
+/**
+ * 基于当前任务范围对段落 ID 进行轻微拼写纠错（编辑距离 <= 2）。
+ *
+ * 仅在可唯一判定候选时自动纠正；歧义候选保持原值，交由后续范围校验拒绝。
+ */
+function normalizeParagraphIds(
+  paragraphIds: string[],
+  allowedParagraphIds: Set<string> | undefined,
+): ParagraphIdNormalizationResult {
+  if (!allowedParagraphIds || allowedParagraphIds.size === 0) {
+    return {
+      normalizedIds: paragraphIds,
+      correctionWarnings: [],
+      ambiguousMatches: [],
+    };
+  }
+
+  const normalizedIds: string[] = [];
+  const correctionWarnings: string[] = [];
+  const ambiguousMatches: ParagraphIdAmbiguousMatch[] = [];
+
+  for (const paragraphId of paragraphIds) {
+    if (allowedParagraphIds.has(paragraphId)) {
+      normalizedIds.push(paragraphId);
+      continue;
+    }
+
+    const matchResult = findBestParagraphIdMatch(
+      paragraphId,
+      allowedParagraphIds,
+      MAX_PARAGRAPH_ID_EDIT_DISTANCE,
+    );
+
+    if (matchResult.type === 'matched') {
+      normalizedIds.push(matchResult.matchedId);
+      correctionWarnings.push(
+        ERROR_MESSAGES.PARAGRAPH_ID_AUTO_CORRECTED(
+          paragraphId,
+          matchResult.matchedId,
+          matchResult.distance,
+        ),
+      );
+      continue;
+    }
+
+    if (matchResult.type === 'ambiguous') {
+      normalizedIds.push(paragraphId);
+      ambiguousMatches.push({
+        originalId: paragraphId,
+        distance: matchResult.distance,
+        candidateIds: matchResult.candidateIds,
+      });
+      continue;
+    }
+
+    normalizedIds.push(paragraphId);
+  }
+
+  return {
+    normalizedIds,
+    correctionWarnings,
+    ambiguousMatches,
+  };
 }
 
 /**
@@ -997,34 +1186,58 @@ export const translationTools: ToolDefinition[] = [
       const resolvedIds = paramValidation.resolvedIds;
       const warning = paramValidation.warning;
 
+      const normalizedIdsResult = normalizeParagraphIds(
+        resolvedIds,
+        chunkBoundaries?.allowedParagraphIds,
+      );
+      const normalizedIds = normalizedIdsResult.normalizedIds;
+      const correctionWarnings = normalizedIdsResult.correctionWarnings;
+
       // 检测重复段落 ID
-      const duplicateCheck = detectDuplicateParagraphIds(resolvedIds);
+      const duplicateCheck = detectDuplicateParagraphIds(normalizedIds);
       if (duplicateCheck.hasDuplicates) {
         return buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates), {
           errorCode: 'DUPLICATE_PARAGRAPHS',
           invalidParagraphIds: duplicateCheck.duplicates,
           warning,
+          ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
         });
       }
 
       // 验证段落范围
       const rangeValidation = validateParagraphsInRange(
-        resolvedIds,
+        normalizedIds,
         chunkBoundaries?.allowedParagraphIds,
       );
       if (!rangeValidation.valid) {
+        const ambiguousMessages = normalizedIdsResult.ambiguousMatches
+          .filter((item) => rangeValidation.invalidIds?.includes(item.originalId))
+          .map((item) =>
+            ERROR_MESSAGES.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES(
+              item.originalId,
+              item.distance,
+              item.candidateIds,
+            ),
+          );
+
         return buildErrorResponse(rangeValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
           errorCode: rangeValidation.errorCode || 'OUT_OF_RANGE_PARAGRAPHS',
           ...(rangeValidation.invalidIds
             ? { invalidParagraphIds: rangeValidation.invalidIds }
             : {}),
           warning,
+          ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
+          ...(ambiguousMessages.length > 0
+            ? {
+                note: `${ambiguousMessages.slice(0, 3).join('；')}${ambiguousMessages.length > 3 ? '；…' : ''}`,
+              }
+            : {}),
         });
       }
 
       // 构建处理项（将 resolvedIds 与 translated_text 配对）
       const processItems = paragraphs.map((p, i) => ({
-        paragraphId: resolvedIds[i]!,
+        paragraphId: normalizedIds[i]!,
         originalTextPrefix:
           typeof p.original_text_prefix === 'string' ? p.original_text_prefix : '',
         translatedText: p.translated_text,
@@ -1039,11 +1252,13 @@ export const translationTools: ToolDefinition[] = [
         chapterId,
       );
 
+      const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
+
       if (!result.success) {
         return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
           errorCode: result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : undefined,
           errors: result.errors,
-          warnings: result.warnings,
+          warnings: combinedWarnings.length > 0 ? combinedWarnings : undefined,
           failedParagraphs: result.failedItems,
           warning,
         });
@@ -1057,6 +1272,7 @@ export const translationTools: ToolDefinition[] = [
         };
       });
       const failedParagraphs = result.failedItems ?? [];
+      const qualityWarnings = combinedWarnings;
 
       // 将已处理的段落 ID 添加到 submittedParagraphIds 集合中（用于下次批次计算剩余大小）
       if (submittedParagraphIds) {
@@ -1071,7 +1287,7 @@ export const translationTools: ToolDefinition[] = [
           type: 'update',
           entity: 'translation',
           data: {
-            paragraph_id: resolvedIds[0] || '',
+            paragraph_id: normalizedIds[0] || '',
             translation_id: `batch_${result.processedCount}_${Date.now()}`,
             old_translation: '',
             new_translation: `批量处理 ${result.processedCount} 个段落 (${acceptedParagraphs
@@ -1113,7 +1329,7 @@ export const translationTools: ToolDefinition[] = [
             }
           : {}),
         task_type: taskType,
-        ...(result.warnings ? { quality_warnings: result.warnings } : {}),
+        ...(qualityWarnings.length > 0 ? { quality_warnings: qualityWarnings } : {}),
         ...(warning ? { warning } : {}),
         ...(todoReminder ? { todo_reminder: todoReminder } : {}),
       };
