@@ -721,6 +721,15 @@ describe('add_translation_batch', () => {
     });
 
     test('当纠错后命中同一段落 ID 时应按重复规则拒绝', async () => {
+      const para1 = createTestParagraph('abc12345', '原文段落一');
+      const para2 = createTestParagraph('def67890', '原文段落二');
+      const chapter = createTestChapter('chapter1', [para1, para2]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
@@ -761,6 +770,10 @@ describe('add_translation_batch', () => {
 
   describe('段落范围验证', () => {
     test('当段落不在允许的范围内时应返回错误', async () => {
+      // 预加载需要有效的 book（chunkBoundaries 触发 getBookById 调用）
+      const novel = createTestNovel();
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
@@ -832,7 +845,101 @@ describe('add_translation_batch', () => {
       expect(resultObj.quality_warnings.join('\n')).toContain(realParagraphId);
     });
 
+    test('当提供 chapterId 时应通过 findChapterById 路径自动纠正拼写偏差', async () => {
+      const realParagraphId = 'abc12345';
+      const typoParagraphId = 'abc12x4y';
+      const para1 = createTestParagraph(realParagraphId, '原文段落内容');
+      const chId = 'chapter1';
+      const chapter = createTestChapter(chId, [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation', chId);
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: typoParagraphId,
+              original_text_prefix: '原文段',
+              translated_text: '通过 chapterId 路径纠错的翻译文本',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries([realParagraphId]),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.accepted_paragraphs).toEqual([
+        {
+          paragraph_id: realParagraphId,
+          translated_text: '通过 chapterId 路径纠错的翻译文本',
+        },
+      ]);
+      expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
+      expect(resultObj.quality_warnings.join('\n')).toContain('自动纠正');
+      expect(resultObj.quality_warnings.join('\n')).toContain(typoParagraphId);
+      expect(resultObj.quality_warnings.join('\n')).toContain(realParagraphId);
+    });
+
+    test('当存在唯一候选但 original_text_prefix 不匹配时不应自动纠正', async () => {
+      const realParagraphId = 'abc12345';
+      const typoParagraphId = 'abc12x4y';
+      const para1 = createTestParagraph(realParagraphId, '正确前缀原文内容');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: typoParagraphId,
+              original_text_prefix: '错误前缀',
+              translated_text: '不应被纠错的翻译文本',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-1',
+          chunkBoundaries: createChunkBoundaries([realParagraphId]),
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
+      expect(resultObj.invalid_paragraph_ids).toEqual([typoParagraphId]);
+      expect(resultObj.note).toBeUndefined();
+      expect(resultObj.warnings).toBeUndefined();
+      expect(resultObj.quality_warnings).toBeUndefined();
+    });
+
     test('当 paragraph_id 存在多个并列最优候选时应拒绝并提示无法唯一匹配', async () => {
+      // 预加载需要有效的 book（chunkBoundaries 触发 getBookById 调用）
+      const novel = createTestNovel();
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 
@@ -864,6 +971,10 @@ describe('add_translation_batch', () => {
     });
 
     test('当 paragraph_id 偏差超过阈值时应按越界处理且不自动纠正', async () => {
+      // 预加载需要有效的 book（chunkBoundaries 触发 getBookById 调用）
+      const novel = createTestNovel();
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
 

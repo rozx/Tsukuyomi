@@ -3,7 +3,7 @@ import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import type { Paragraph } from 'src/models/novel';
+import type { Novel, Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
@@ -87,6 +87,13 @@ interface ParagraphIdNormalizationResult {
   normalizedIds: string[];
   correctionWarnings: string[];
   ambiguousMatches: ParagraphIdAmbiguousMatch[];
+}
+
+interface ParagraphIdCorrectionCandidate {
+  index: number;
+  originalId: string;
+  candidateId: string;
+  distance: number;
 }
 
 /**
@@ -620,14 +627,81 @@ function findBestParagraphIdMatch(
 }
 
 /**
+ * 加载指定段落 ID 对应的原文文本（用于纠错时做 original_text_prefix 二次确认）。
+ */
+async function loadParagraphTextMapByIds(
+  book: Novel,
+  paragraphIds: Set<string>,
+  chapterId?: string,
+): Promise<Map<string, string>> {
+  const paragraphTextMap = new Map<string, string>();
+  if (paragraphIds.size === 0) {
+    return paragraphTextMap;
+  }
+
+  if (!book.volumes) {
+    return paragraphTextMap;
+  }
+
+  if (chapterId) {
+    const found = ChapterService.findChapterById(book, chapterId);
+    if (!found) {
+      return paragraphTextMap;
+    }
+
+    const chapter = found.chapter;
+    if (chapter.content === undefined) {
+      const content = await ChapterContentService.loadChapterContent(chapterId);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+
+    for (const paragraph of chapter.content || []) {
+      if (paragraphIds.has(paragraph.id)) {
+        paragraphTextMap.set(paragraph.id, paragraph.text);
+      }
+    }
+
+    return paragraphTextMap;
+  }
+
+  for (const volume of book.volumes) {
+    for (const chapter of volume.chapters || []) {
+      if (!chapter) continue;
+
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+
+      for (const paragraph of chapter.content || []) {
+        if (paragraphIds.has(paragraph.id)) {
+          paragraphTextMap.set(paragraph.id, paragraph.text);
+          if (paragraphTextMap.size === paragraphIds.size) {
+            return paragraphTextMap;
+          }
+        }
+      }
+    }
+  }
+
+  return paragraphTextMap;
+}
+
+/**
  * 基于当前任务范围对段落 ID 进行轻微拼写纠错（编辑距离 <= 2）。
  *
- * 仅在可唯一判定候选时自动纠正；歧义候选保持原值，交由后续范围校验拒绝。
+ * 仅在可唯一判定候选且 original_text_prefix 与候选段落原文匹配时自动纠正；
+ * 歧义候选或原文前缀不匹配时保持原值，交由后续范围校验拒绝。
  */
-function normalizeParagraphIds(
+async function normalizeParagraphIds(
+  paragraphs: TranslationBatchItem[],
   paragraphIds: string[],
   allowedParagraphIds: Set<string> | undefined,
-): ParagraphIdNormalizationResult {
+  book?: Novel,
+  chapterId?: string,
+): Promise<ParagraphIdNormalizationResult> {
   if (!allowedParagraphIds || allowedParagraphIds.size === 0) {
     return {
       normalizedIds: paragraphIds,
@@ -639,8 +713,11 @@ function normalizeParagraphIds(
   const normalizedIds: string[] = [];
   const correctionWarnings: string[] = [];
   const ambiguousMatches: ParagraphIdAmbiguousMatch[] = [];
+  const correctionCandidates: ParagraphIdCorrectionCandidate[] = [];
 
-  for (const paragraphId of paragraphIds) {
+  for (let i = 0; i < paragraphIds.length; i++) {
+    const paragraphId = paragraphIds[i]!;
+
     if (allowedParagraphIds.has(paragraphId)) {
       normalizedIds.push(paragraphId);
       continue;
@@ -653,14 +730,13 @@ function normalizeParagraphIds(
     );
 
     if (matchResult.type === 'matched') {
-      normalizedIds.push(matchResult.matchedId);
-      correctionWarnings.push(
-        ERROR_MESSAGES.PARAGRAPH_ID_AUTO_CORRECTED(
-          paragraphId,
-          matchResult.matchedId,
-          matchResult.distance,
-        ),
-      );
+      normalizedIds.push(paragraphId);
+      correctionCandidates.push({
+        index: i,
+        originalId: paragraphId,
+        candidateId: matchResult.matchedId,
+        distance: matchResult.distance,
+      });
       continue;
     }
 
@@ -675,6 +751,53 @@ function normalizeParagraphIds(
     }
 
     normalizedIds.push(paragraphId);
+  }
+
+  if (correctionCandidates.length === 0 || !book) {
+    return {
+      normalizedIds,
+      correctionWarnings,
+      ambiguousMatches,
+    };
+  }
+
+  const candidateIdSet = new Set(correctionCandidates.map((item) => item.candidateId));
+  const candidateParagraphTextMap = await loadParagraphTextMapByIds(
+    book,
+    candidateIdSet,
+    chapterId,
+  );
+
+  for (const correction of correctionCandidates) {
+    const paragraph = paragraphs[correction.index];
+    if (!paragraph) {
+      continue;
+    }
+
+    const prefix =
+      typeof paragraph.original_text_prefix === 'string'
+        ? paragraph.original_text_prefix.trim()
+        : '';
+    if (!prefix) {
+      correctionWarnings.push(
+        `段落 ${correction.originalId} 存在拼写纠错候选 ${correction.candidateId}（编辑距离 ${correction.distance}），但 original_text_prefix 为空，无法验证纠错。请提供 original_text_prefix 以启用自动纠正。`,
+      );
+      continue;
+    }
+
+    const candidateText = candidateParagraphTextMap.get(correction.candidateId)?.trim();
+    if (!candidateText || !candidateText.startsWith(prefix)) {
+      continue;
+    }
+
+    normalizedIds[correction.index] = correction.candidateId;
+    correctionWarnings.push(
+      ERROR_MESSAGES.PARAGRAPH_ID_AUTO_CORRECTED(
+        correction.originalId,
+        correction.candidateId,
+        correction.distance,
+      ),
+    );
   }
 
   return {
@@ -761,6 +884,7 @@ function detectMissingQuoteSymbols(originalText: string, translatedText: string)
  *
  * @param chapterId - 可选的章节 ID。提供时仅加载和搜索该章节（性能优化），
  *                    未提供时回退到遍历所有章节的行为。
+ * @param preloadedBook - 可选的预加载书籍对象。提供时跳过 BookService.getBookById 查询。
  */
 async function processTranslationBatch(
   bookId: string,
@@ -768,6 +892,7 @@ async function processTranslationBatch(
   aiModelId: string,
   taskType: 'translation' | 'polish' | 'proofreading',
   chapterId?: string,
+  preloadedBook?: Novel,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -779,7 +904,7 @@ async function processTranslationBatch(
   failedItems?: FailedParagraphItem[];
 }> {
   try {
-    const book = await BookService.getBookById(bookId);
+    const book = preloadedBook ?? (await BookService.getBookById(bookId));
     if (!book) {
       return { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 };
     }
@@ -1186,9 +1311,21 @@ export const translationTools: ToolDefinition[] = [
       const resolvedIds = paramValidation.resolvedIds;
       const warning = paramValidation.warning;
 
-      const normalizedIdsResult = normalizeParagraphIds(
+      // 预加载书籍对象（仅在纠错逻辑需要时提前加载，供 normalizeParagraphIds 和 processTranslationBatch 复用）
+      let preloadedBook: Novel | undefined;
+      if (chunkBoundaries?.allowedParagraphIds && chunkBoundaries.allowedParagraphIds.size > 0) {
+        preloadedBook = (await BookService.getBookById(bookId)) ?? undefined;
+        if (!preloadedBook) {
+          return buildErrorResponse(ERROR_MESSAGES.BOOK_NOT_FOUND(bookId));
+        }
+      }
+
+      const normalizedIdsResult = await normalizeParagraphIds(
+        paragraphs,
         resolvedIds,
         chunkBoundaries?.allowedParagraphIds,
+        preloadedBook,
+        chapterId,
       );
       const normalizedIds = normalizedIdsResult.normalizedIds;
       const correctionWarnings = normalizedIdsResult.correctionWarnings;
@@ -1250,6 +1387,7 @@ export const translationTools: ToolDefinition[] = [
         aiModelId,
         taskType as 'translation' | 'polish' | 'proofreading',
         chapterId,
+        preloadedBook,
       );
 
       const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
