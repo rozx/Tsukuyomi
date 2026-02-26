@@ -195,11 +195,7 @@ const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
 
 // 同步相关 - 使用 composable
-const {
-  uploadToGist: uploadToGistComposable,
-  downloadFromGist: downloadFromGistComposable,
-  restoreDeletedItems: restoreDeletedItemsComposable,
-} = useGistSync();
+const { sync: syncComposable, restoreDeletedItems: restoreDeletedItemsComposable } = useGistSync();
 
 // 恢复对话框状态
 const showRestoreDialog = ref(false);
@@ -691,8 +687,8 @@ const validateGistToken = async () => {
   }
 };
 
-// 上传到 Gist
-const uploadToGist = async () => {
+// 同步到 Gist（统一的双向同步操作）
+const syncToGist = async () => {
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -715,87 +711,24 @@ const uploadToGist = async () => {
     secret: gistToken.value,
   };
 
-  // 使用 composable 处理上传
-  await uploadToGistComposable(
-    config,
-    (value) => {
-      gistSyncing.value = value;
-    },
-    (result) => {
-      // 更新 Gist ID（无论是更新还是重新创建，都需要更新为新 ID）
-      if (result.gistId) {
-        gistId.value = result.gistId;
-        // 如果重新创建了 Gist，显示提示信息
-        if (result.isRecreated) {
-          toast.add({
-            severity: 'warn',
-            summary: 'Gist 已重新创建',
-            detail: `原 Gist 不存在，已创建新的 Gist (ID: ${result.gistId})`,
-            life: 5000,
-          });
-        }
-      }
-      gistLastSyncTime.value = Date.now();
-      saveGistConfig();
-      // 重置自动同步定时器
-      setupAutoSync();
-      toast.add({
-        severity: 'success',
-        summary: '同步成功',
-        detail: result.message || '数据已成功同步到 Gist',
-        life: 3000,
-      });
-    },
-  );
-};
+  // 使用 composable 处理同步
+  const items = await syncComposable(config);
 
-// 从 Gist 下载
-const downloadFromGist = async () => {
-  if (!gistId.value.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '下载失败',
-      detail: '请先配置 Gist ID',
-      life: 3000,
-    });
-    return;
+  // 同步完成后更新本地状态
+  // 从 store 中获取最新的 gistId（可能在首次同步时被设置）
+  const updatedGistId = settingsStore.gistSync.syncParams.gistId;
+  if (updatedGistId) {
+    gistId.value = updatedGistId;
   }
-
-  if (!gistUsername.value.trim() || !gistToken.value.trim()) {
-    toast.add({
-      severity: 'warn',
-      summary: '下载失败',
-      detail: '请先配置 GitHub 用户名和 token',
-      life: 3000,
-    });
-    return;
-  }
-
-  const baseConfig = settingsStore.gistSync;
-  const config: SyncConfig = {
-    ...baseConfig,
-    enabled: true,
-    syncParams: {
-      ...baseConfig.syncParams,
-      username: gistUsername.value,
-      gistId: gistId.value,
-    },
-    secret: gistToken.value,
-  };
-
-  // 使用 composable 处理下载
-  const items = await downloadFromGistComposable(config, (value) => {
-    gistSyncing.value = value;
-  });
+  gistLastSyncTime.value = Date.now();
+  saveGistConfig();
+  // 重置自动同步定时器
+  setupAutoSync();
 
   // 如果有可恢复的项目，显示恢复对话框
   if (items && items.length > 0) {
     restorableItems.value = items;
     showRestoreDialog.value = true;
-  } else {
-    gistLastSyncTime.value = Date.now();
-    // 重置自动同步定时器
-    setupAutoSync();
   }
 };
 
@@ -1035,24 +968,14 @@ const deleteGist = () => {
         :loading="gistValidating"
         @click="validateGistToken"
       />
-      <div class="grid grid-cols-2 gap-2">
-        <Button
-          label="上传到 Gist"
-          icon="pi pi-upload"
-          class="p-button-primary"
-          :disabled="!gistEnabled || gistSyncing"
-          :loading="gistSyncing"
-          @click="uploadToGist"
-        />
-        <Button
-          label="从 Gist 下载"
-          icon="pi pi-download"
-          class="p-button-outlined"
-          :disabled="!gistEnabled || gistSyncing || !gistId"
-          :loading="gistSyncing"
-          @click="downloadFromGist"
-        />
-      </div>
+      <Button
+        label="同步"
+        icon="pi pi-sync"
+        class="p-button-primary w-full"
+        :disabled="!gistEnabled || gistSyncing"
+        :loading="gistSyncing"
+        @click="syncToGist"
+      />
     </div>
 
     <!-- 修订历史 -->
