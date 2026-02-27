@@ -1,4 +1,4 @@
-﻿import { CharacterSettingService } from 'src/services/character-setting-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
@@ -8,6 +8,9 @@ import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/nov
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
 import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+
+/** 回退搜索最大返回条目数，避免 token 膨胀 */
+const MAX_FALLBACK_RESULTS = 10;
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -143,7 +146,7 @@ export const characterTools: ToolDefinition[] = [
       function: {
         name: 'get_character',
         description:
-          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对角色的原名、翻译文本记录以及全部已收录的别名进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -166,7 +169,9 @@ export const characterTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, include_memory = true } = parsedArgs;
+      const { include_memory = true } = parsedArgs;
+      // 类型守卫：确保 name 为有效字符串
+      const name = typeof parsedArgs.name === 'string' ? parsedArgs.name.trim() : '';
       if (!name) {
         throw new Error('角色名称不能为空');
       }
@@ -180,9 +185,65 @@ export const characterTools: ToolDefinition[] = [
       const character = book.characterSettings?.find((c) => c.name === name);
 
       if (!character) {
+        // Fallback search
+        const keywordLower = name.toLowerCase();
+        const allCharacters = book.characterSettings || [];
+        const fallbackMatches = allCharacters.filter((char) => {
+          if (char.name.toLowerCase().includes(keywordLower)) return true;
+          if (char.translation?.translation?.toLowerCase().includes(keywordLower)) return true;
+          if (
+            char.aliases?.some(
+              (alias) =>
+                alias.name.toLowerCase().includes(keywordLower) ||
+                alias.translation?.translation?.toLowerCase().includes(keywordLower),
+            )
+          ) {
+            return true;
+          }
+          return false;
+        });
+
+        if (fallbackMatches.length > 0) {
+          if (onAction) {
+            onAction({
+              type: 'read',
+              entity: 'character',
+              data: {
+                character_name: name,
+                tool_name: 'get_character (fallback search)',
+              },
+            });
+          }
+
+          // 限制返回条目数，避免 token 膨胀
+          const limitedMatches = fallbackMatches.slice(0, MAX_FALLBACK_RESULTS);
+          const truncated = fallbackMatches.length > MAX_FALLBACK_RESULTS;
+
+          return JSON.stringify({
+            success: true,
+            message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
+              truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
+            }。`,
+            characters: limitedMatches.map((char) => ({
+              id: char.id,
+              name: char.name,
+              translation: char.translation.translation,
+              sex: char.sex,
+              description: char.description,
+              speaking_style: char.speakingStyle,
+              aliases: char.aliases?.map((alias) => ({
+                name: alias.name,
+                translation: alias.translation.translation,
+              })),
+            })),
+            total_matches: fallbackMatches.length,
+            truncated,
+          });
+        }
+
         return JSON.stringify({
           success: false,
-          message: `角色 "${name}" 不存在`,
+          message: `角色 "${name}" 不存在，且没有找到相关匹配项。`,
         });
       }
 

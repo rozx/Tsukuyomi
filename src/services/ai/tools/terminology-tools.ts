@@ -1,4 +1,4 @@
-﻿import { TerminologyService } from 'src/services/terminology-service';
+import { TerminologyService } from 'src/services/terminology-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { Terminology } from 'src/models/novel';
@@ -8,6 +8,9 @@ import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/nov
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
 import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+
+/** 回退搜索最大返回条目数，避免 token 膨胀 */
+const MAX_FALLBACK_RESULTS = 10;
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -39,7 +42,7 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, onToast }) => {
+    handler: async (args, { bookId, onAction }) => {
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -86,7 +89,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_term',
         description:
-          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对术语的原名、翻译文本记录进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -107,10 +110,10 @@ export const terminologyTools: ToolDefinition[] = [
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
-      const { name, include_memory = true } = args as {
-        name: string;
-        include_memory?: boolean;
-      };
+      const rawArgs = args as { name: string; include_memory?: boolean };
+      const { include_memory = true } = rawArgs;
+      // 类型守卫：确保 name 为有效字符串
+      const name = typeof rawArgs.name === 'string' ? rawArgs.name.trim() : '';
       if (!name) {
         throw new Error('术语名称不能为空');
       }
@@ -124,9 +127,50 @@ export const terminologyTools: ToolDefinition[] = [
       const term = book.terminologies?.find((t) => t.name === name);
 
       if (!term) {
+        // Fallback search
+        const keywordLower = name.toLowerCase();
+        const allTerms = book.terminologies || [];
+        const fallbackMatches = allTerms.filter((t) => {
+          if (t.name.toLowerCase().includes(keywordLower)) return true;
+          if (t.translation?.translation?.toLowerCase().includes(keywordLower)) return true;
+          return false;
+        });
+
+        if (fallbackMatches.length > 0) {
+          if (onAction) {
+            onAction({
+              type: 'read',
+              entity: 'term',
+              data: {
+                name,
+                tool_name: 'get_term (fallback search)',
+              },
+            });
+          }
+
+          // 限制返回条目数，避免 token 膨胀
+          const limitedMatches = fallbackMatches.slice(0, MAX_FALLBACK_RESULTS);
+          const truncated = fallbackMatches.length > MAX_FALLBACK_RESULTS;
+
+          return JSON.stringify({
+            success: true,
+            message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
+              truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
+            }。`,
+            terms: limitedMatches.map((t) => ({
+              id: t.id,
+              name: t.name,
+              translation: t.translation.translation,
+              description: t.description,
+            })),
+            total_matches: fallbackMatches.length,
+            truncated,
+          });
+        }
+
         return JSON.stringify({
           success: false,
-          message: `术语 "${name}" 不存在`,
+          message: `术语 "${name}" 不存在，且没有找到相关匹配项。`,
         });
       }
 
