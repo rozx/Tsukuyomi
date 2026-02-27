@@ -1693,7 +1693,7 @@ export class SyncDataService {
         const omitted = omit(settings, 'lastEdited');
         if (omitted.syncs && Array.isArray(omitted.syncs)) {
           omitted.syncs = omitted.syncs.map((sync: any) =>
-            omit(sync, 'lastSyncTime', 'lastSyncedModelIds'),
+            omit(sync, 'lastSyncTime', 'lastSyncedModelIds', 'lastRemoteUpdatedAt'),
           );
         }
         return omitted;
@@ -1738,6 +1738,96 @@ export class SyncDataService {
       if (
         localMemory.content !== remoteMemory.content ||
         localMemory.summary !== remoteMemory.summary
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 检查自上次同步以来本地数据是否有变更（不需要远程数据做比较）
+   * 用于 downloadSkipped 场景：远程无变更，只需判断本地是否有新修改
+   *
+   * 检查逻辑：
+   * 1. 书籍：任何书籍的 lastEdited > lastSyncTime
+   * 2. AI 模型：任何模型的 lastEdited > lastSyncTime
+   * 3. 设置：settings 的 lastEdited > lastSyncTime
+   * 4. 封面历史：任何封面的 addedAt > lastSyncTime
+   * 5. Memory：任何记忆的 lastAccessedAt > lastSyncTime
+   *
+   * @param localData 当前本地数据
+   * @param lastSyncTime 上次同步时间（毫秒时间戳），0 表示首次同步（视为有变更）
+   * @returns 如果本地有变更返回 true
+   */
+  static hasLocalChangesSinceLastSync(
+    localData: {
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    },
+    lastSyncTime: number,
+  ): boolean {
+    // 首次同步（lastSyncTime === 0）：视为有变更，需要上传
+    if (lastSyncTime <= 0) return true;
+
+    // 1. 检查书籍
+    for (const novel of localData.novels) {
+      if (novel.lastEdited && checkIsNewlyAdded(novel.lastEdited, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 2. 检查 AI 模型
+    for (const model of localData.aiModels) {
+      if (model.lastEdited && checkIsNewlyAdded(model.lastEdited, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 3. 检查设置
+    if (
+      localData.appSettings?.lastEdited &&
+      checkIsNewlyAdded(localData.appSettings.lastEdited, lastSyncTime)
+    ) {
+      return true;
+    }
+
+    // 4. 检查封面历史
+    for (const cover of localData.coverHistory) {
+      if (cover.addedAt && checkIsNewlyAdded(cover.addedAt, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 5. 检查 Memory
+    for (const memory of localData.memories) {
+      if (memory.lastAccessedAt && checkIsNewlyAdded(memory.lastAccessedAt, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 6. 检查删除记录（用户删除了书籍/模型/封面，删除项不在上面的列表中，必须单独检测）
+    const syncs = localData.appSettings?.syncs || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gistSync = syncs.find((s: any) => s.syncType === 'gist');
+    if (gistSync) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hasNewDeletion = (records: any[] | undefined): boolean => {
+        if (!records || records.length === 0) return false;
+        return records.some(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (record: any) => record.deletedAt && record.deletedAt > lastSyncTime,
+        );
+      };
+      if (
+        hasNewDeletion(gistSync.deletedNovelIds) ||
+        hasNewDeletion(gistSync.deletedModelIds) ||
+        hasNewDeletion(gistSync.deletedCoverIds) ||
+        hasNewDeletion(gistSync.deletedCoverUrls)
       ) {
         return true;
       }

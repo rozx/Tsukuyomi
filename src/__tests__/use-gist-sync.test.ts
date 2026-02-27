@@ -37,9 +37,11 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     gistSync: createSyncConfig(),
     setSyncing: mock(() => {}),
     updateSyncProgress: mock(() => {}),
+    resetSyncProgress: mock(() => {}),
     setGistId: mock(() => Promise.resolve()),
     updateLastSyncTime: mock(() => Promise.resolve()),
     updateLastSyncedModelIds: mock(() => Promise.resolve()),
+    updateLastRemoteUpdatedAt: mock(() => Promise.resolve()),
     cleanupOldDeletionRecords: mock(() => Promise.resolve()),
     getAllSettings: mock(() => ({ theme: 'dark' })),
     updateGistSync: mock(() => Promise.resolve()),
@@ -424,8 +426,12 @@ describe('useGistSync', () => {
       const { sync } = useGistSync();
       await sync(customConfig);
 
-      // 应使用自定义配置调用下载
-      expect(downloadSpy).toHaveBeenCalledWith(customConfig, expect.any(Function));
+      // 应使用自定义配置调用下载（第三个参数是 lastRemoteUpdatedAt）
+      expect(downloadSpy).toHaveBeenCalledWith(
+        customConfig,
+        expect.any(Function),
+        customConfig.lastRemoteUpdatedAt,
+      );
     });
 
     it('上传成功后更新 gistId 和同步时间', async () => {

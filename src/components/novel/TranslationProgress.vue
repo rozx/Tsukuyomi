@@ -259,6 +259,11 @@ onUnmounted(() => {
   for (const cleanup of throttleCleanups) {
     cleanup();
   }
+  // 清理动态创建的按 taskId 节流器（避免内存泄漏）
+  formattedThinkingThrottles.forEach((t) => t.cleanup());
+  formattedThinkingThrottles.clear();
+  displayedOutputThrottles.forEach((t) => t.cleanup());
+  displayedOutputThrottles.clear();
   // 清理缓存和状态，显式设置为 null 以帮助垃圾回收
   formattedThinkingCache.value = {};
   displayedOutputContent.value = {};
@@ -594,10 +599,12 @@ const clearReviewedTasks = async () => {
         (task.status === 'end' || task.status === 'error' || task.status === 'cancelled'),
     );
 
-    // Remove each translation-related reviewed task
-    for (const task of translationTasks) {
-      await aiProcessingStore.removeTask(task.id);
-    }
+    // Remove each translation-related reviewed task concurrently
+    await Promise.all(translationTasks.map((task) => aiProcessingStore.removeTask(task.id)));
+    // Cleanup UI state memory leak
+    translationTasks.forEach((task) => {
+      bookDetailsStore.clearTaskTranslationProgress(task.id);
+    });
 
     toast.add({
       severity: 'success',
@@ -967,13 +974,21 @@ const formatThinkingMessage = (
 // 缓存格式化后的思考消息：用“按 taskId 更新 + 节流”的方式，避免每个 token 都触发全量解析
 const formattedThinkingCache = ref<Record<string, FormattedMessagePart[]>>({});
 
-const updateFormattedThinkingCache = throttle((taskId: string) => {
-  const task = recentAITasks.value.find((t) => t.id === taskId);
-  const msg = task?.thinkingMessage ?? '';
-  formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg, task?.status) : [];
-}, FORMAT_CACHE_THROTTLE_MS);
-// 注册清理函数
-throttleCleanups.push(updateFormattedThinkingCache.cleanup);
+const formattedThinkingThrottles = new Map<
+  string,
+  { fn: (id: string) => void; cleanup: () => void }
+>();
+const getFormattedThinkingThrottle = (taskId: string) => {
+  if (!formattedThinkingThrottles.has(taskId)) {
+    const throttler = throttle((id: string) => {
+      const task = recentAITasks.value.find((t) => t.id === id);
+      const msg = task?.thinkingMessage ?? '';
+      formattedThinkingCache.value[id] = msg ? formatThinkingMessage(msg, task?.status) : [];
+    }, FORMAT_CACHE_THROTTLE_MS);
+    formattedThinkingThrottles.set(taskId, throttler);
+  }
+  return formattedThinkingThrottles.get(taskId)!;
+};
 
 // 获取格式化后的思考消息（从缓存中读取）
 const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
@@ -1021,6 +1036,11 @@ watch(
       if (thinkingContainers.value[taskId]) {
         thinkingContainers.value[taskId] = null;
       }
+      const thinkingThrottle = formattedThinkingThrottles.get(taskId);
+      if (thinkingThrottle) {
+        thinkingThrottle.cleanup();
+        formattedThinkingThrottles.delete(taskId);
+      }
     };
 
     for (const taskId of Object.keys(lastThinkingUpdate.value)) {
@@ -1043,7 +1063,7 @@ watch(
       if (task.length > oldLength) {
         lastThinkingUpdate.value[task.id] = Date.now();
         // 思考文本变化时，节流更新格式化缓存
-        updateFormattedThinkingCache.fn(task.id);
+        getFormattedThinkingThrottle(task.id).fn(task.id);
         const currentTask = currentTaskMap.get(task.id);
         const outputLength = currentTask?.outputContent?.length ?? 0;
         if (outputLength > 0) {
@@ -1098,13 +1118,21 @@ const buildDisplayedOutputContent = (taskId: string, content: string): string =>
   return insertOutputBreaks(content, breaks);
 };
 
-const updateDisplayedOutputContent = throttle((taskId: string) => {
-  const task = recentAITasks.value.find((t) => t.id === taskId);
-  const content = task?.outputContent ?? '';
-  displayedOutputContent.value[taskId] = buildDisplayedOutputContent(taskId, content);
-}, THROTTLE_DELAY_MS);
-// 注册清理函数
-throttleCleanups.push(updateDisplayedOutputContent.cleanup);
+const displayedOutputThrottles = new Map<
+  string,
+  { fn: (id: string) => void; cleanup: () => void }
+>();
+const getDisplayedOutputThrottle = (taskId: string) => {
+  if (!displayedOutputThrottles.has(taskId)) {
+    const throttler = throttle((id: string) => {
+      const task = recentAITasks.value.find((t) => t.id === id);
+      const content = task?.outputContent ?? '';
+      displayedOutputContent.value[id] = buildDisplayedOutputContent(id, content);
+    }, THROTTLE_DELAY_MS);
+    displayedOutputThrottles.set(taskId, throttler);
+  }
+  return displayedOutputThrottles.get(taskId)!;
+};
 
 // 节流后的输出内容滚动处理函数
 const handleOutputScroll = throttle(() => {
@@ -1149,6 +1177,11 @@ watch(
       if (outputContainers.value[taskId]) {
         outputContainers.value[taskId] = null;
       }
+      const outputThrottle = displayedOutputThrottles.get(taskId);
+      if (outputThrottle) {
+        outputThrottle.cleanup();
+        displayedOutputThrottles.delete(taskId);
+      }
     };
 
     for (const taskId of Object.keys(lastOutputUpdate.value)) {
@@ -1183,7 +1216,7 @@ watch(
         }
         lastOutputUpdate.value[task.id] = Date.now();
         // 输出变化时，节流刷新显示文本
-        updateDisplayedOutputContent.fn(task.id);
+        getDisplayedOutputThrottle(task.id).fn(task.id);
       }
     }
 
