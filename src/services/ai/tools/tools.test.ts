@@ -191,6 +191,21 @@ describe('AI Tools Tests', () => {
     });
 
     it('should detect duplicate paragraph ids', async () => {
+      // Mock BookService so the handler reaches the duplicate check
+      const mockChapter = {
+        id: 'c1',
+        content: [{ id: 'p1', text: 'orig-p1' }],
+      };
+      const mockBook = {
+        id: mockBookId,
+        volumes: [{ chapters: [mockChapter] }],
+      };
+      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+        chapter: mockChapter,
+        volume: mockBook.volumes[0],
+      });
+
       const result = await addTranslationBatchTool!.handler(
         {
           paragraphs: withPrefix([

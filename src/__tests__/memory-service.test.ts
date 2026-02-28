@@ -991,6 +991,54 @@ describe('MemoryService', () => {
       // 应该被规范化为默认的书籍附件
       expect(updatedMemory.attachedTo).toEqual([{ type: 'book', id: bookId }]);
     });
+
+    it('应该在提供 preserveLastAccessedAt 时保留指定的时间戳', async () => {
+      const bookId = 'book-1';
+      const memoryId = 'memory-1';
+      const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要', 1000, 1500);
+
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+        { createdAt: oldMemory.createdAt, lastAccessedAt: oldMemory.lastAccessedAt },
+      );
+
+      const remoteTimestamp = 2000;
+      const updatedMemory = await MemoryService.updateMemory(
+        bookId,
+        memoryId,
+        '新内容',
+        '新摘要',
+        undefined,
+        remoteTimestamp,
+      );
+
+      expect(updatedMemory.lastAccessedAt).toBe(remoteTimestamp);
+    });
+
+    it('应该在未提供 preserveLastAccessedAt 时使用当前时间', async () => {
+      const bookId = 'book-1';
+      const memoryId = 'memory-1';
+      const oldMemory = createTestMemory(memoryId, bookId, '旧内容', '旧摘要', 1000, 1500);
+
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memoryId,
+        oldMemory.content,
+        oldMemory.summary,
+        { createdAt: oldMemory.createdAt, lastAccessedAt: oldMemory.lastAccessedAt },
+      );
+
+      const beforeUpdate = Date.now();
+      const updatedMemory = await MemoryService.updateMemory(bookId, memoryId, '新内容', '新摘要');
+      const afterUpdate = Date.now();
+
+      // 不提供 preserveLastAccessedAt 时，应使用 Date.now()
+      expect(updatedMemory.lastAccessedAt).toBeGreaterThanOrEqual(beforeUpdate);
+      expect(updatedMemory.lastAccessedAt).toBeLessThanOrEqual(afterUpdate);
+    });
   });
 
   describe('getRecentMemories', () => {

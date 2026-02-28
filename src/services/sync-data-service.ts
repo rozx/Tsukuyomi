@@ -1084,6 +1084,7 @@ export class SyncDataService {
                     remoteMemory.content,
                     remoteMemory.summary,
                     remoteMemory.attachedTo,
+                    remoteMemory.lastAccessedAt,
                   );
                 } catch (error) {
                   console.warn(`[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`, error);
