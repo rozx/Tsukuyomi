@@ -149,23 +149,32 @@ export class ProxyService {
     }
   }
 
-
   /**
    * 获取 AI 调用的 CORS 代理 URL（仅在浏览器模式下）
-   * 在浏览器模式下，使用默认的 CORS 代理来绕过 CORS 限制
+   * 在浏览器模式下，使用用户设置中的 CORS 代理来绕过 CORS 限制
    * @param originalUrl 原始 URL
+   * @param useCorsProxy 是否使用 CORS 代理，undefined 或 true 表示启用，false 表示跳过
    * @returns 代理后的 URL 或原始 URL
    */
-  static getProxiedUrlForAI(originalUrl: string): string {
+  static getProxiedUrlForAI(originalUrl: string, useCorsProxy?: boolean): string {
+    // 如果模型级别显式禁用 CORS 代理，直接返回原始 URL
+    if (useCorsProxy === false) {
+      return originalUrl;
+    }
+
+    // 如果全局代理被禁用，直接返回原始 URL
+    if (!GlobalConfig.getProxyEnabled()) {
+      return originalUrl;
+    }
+
     // 检测是否为 Electron 环境
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
 
     // 仅在浏览器模式下使用 CORS 代理
     if (!isElectron) {
-      const proxiedUrl = DEFAULT_CORS_PROXY_FOR_AI.replace(
-        '{url}',
-        encodeURIComponent(originalUrl),
-      );
+      // 使用用户设置中的代理 URL，回退到默认常量
+      const proxyUrlTemplate = GlobalConfig.getProxyUrl() || DEFAULT_CORS_PROXY_FOR_AI;
+      const proxiedUrl = proxyUrlTemplate.replace('{url}', encodeURIComponent(originalUrl));
       return proxiedUrl;
     }
 

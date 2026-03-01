@@ -381,6 +381,7 @@ export async function processTextTask(
       model: model.model,
       temperature: modelTemperature,
       signal: finalSignal,
+      useCorsProxy: model.useCorsProxy,
       ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 

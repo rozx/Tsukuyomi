@@ -67,7 +67,7 @@ export class AIServiceFactory {
    */
   static async getAvailableModels(
     provider: AIProvider,
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<AvailableModelsResult> {
     const service = this.getService(provider);
     return service.getAvailableModels(config);

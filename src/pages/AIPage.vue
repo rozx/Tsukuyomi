@@ -130,6 +130,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       apiKey: formData.apiKey!,
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
+      useCorsProxy: formData.useCorsProxy,
       isDefault: {
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
@@ -162,6 +163,7 @@ const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault
       apiKey: formData.apiKey!,
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
+      useCorsProxy: formData.useCorsProxy,
       isDefault: {
         translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
         proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },

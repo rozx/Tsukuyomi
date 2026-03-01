@@ -44,7 +44,12 @@ export interface AIModel {
   apiKey: string;
   baseUrl: string;
   isDefault: AIModelDefaultTasks;
-  customHeaders?: Record<string, string>;
+  customHeaders?: Record<string, string> | undefined;
+  /**
+   * 是否使用 CORS 代理发送 API 请求（仅 SPA 模式有效）
+   * undefined 或 true 表示启用（默认行为），false 表示跳过 CORS 代理
+   */
+  useCorsProxy?: boolean | undefined;
   enabled: boolean;
   /**
    * 最后编辑时间

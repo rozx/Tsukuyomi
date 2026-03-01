@@ -1694,7 +1694,18 @@ export class SyncDataService {
         const omitted = omit(settings, 'lastEdited');
         if (omitted.syncs && Array.isArray(omitted.syncs)) {
           omitted.syncs = omitted.syncs.map((sync: any) =>
-            omit(sync, 'lastSyncTime', 'lastSyncedModelIds', 'lastRemoteUpdatedAt'),
+            omit(
+              sync,
+              'lastSyncTime',
+              'lastSyncedModelIds',
+              'lastRemoteUpdatedAt',
+              // 删除记录在 applyDownloadedData 中会被合并/清理，
+              // 导致本地与远程出现差异，不应作为"需要上传"的判断依据
+              'deletedNovelIds',
+              'deletedModelIds',
+              'deletedCoverIds',
+              'deletedCoverUrls',
+            ),
           );
         }
         return omitted;

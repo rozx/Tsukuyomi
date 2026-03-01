@@ -170,6 +170,7 @@ export class TermTranslationService {
         model: model.model,
         temperature,
         signal: finalSignal,
+        useCorsProxy: model.useCorsProxy,
         ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 

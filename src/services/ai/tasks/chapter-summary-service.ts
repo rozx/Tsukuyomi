@@ -184,6 +184,7 @@ export class ChapterSummaryService {
           model: model.model,
           temperature: 0.3,
           signal: finalController.signal,
+          useCorsProxy: model.useCorsProxy,
           ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
         },
         {

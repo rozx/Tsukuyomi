@@ -11,6 +11,7 @@ import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
+import { useElectron } from 'src/composables/useElectron';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 
 const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
 const toast = useToastWithHistory();
+const { isBrowser } = useElectron();
 const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
   desktopWidth: '750px',
   tabletWidth: '94vw',
@@ -83,6 +85,7 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
   apiKey: '',
   baseUrl: '',
   enabled: true,
+  useCorsProxy: true,
   isDefault: {
     translation: { enabled: false, temperature: 0.7 },
     proofreading: { enabled: false, temperature: 0.7 },
@@ -126,6 +129,7 @@ const resetForm = () => {
     apiKey: '',
     baseUrl: '',
     enabled: true,
+    useCorsProxy: true,
     isDefault: {
       translation: { enabled: false, temperature: 0.7 },
       proofreading: { enabled: false, temperature: 0.7 },
@@ -204,6 +208,7 @@ const testModel = async () => {
         assistant: { enabled: false, temperature: 0.7 },
       },
       customHeaders: cloneDeep(formData.value.customHeaders || {}),
+      useCorsProxy: formData.value.useCorsProxy,
       lastEdited: new Date(),
     };
 
@@ -356,6 +361,7 @@ const fetchAvailableModels = async () => {
     const config: Parameters<typeof AIServiceFactory.getAvailableModels>[1] = {
       apiKey: formData.value.apiKey,
       baseUrl: baseUrl,
+      useCorsProxy: formData.value.useCorsProxy,
     };
     if (formData.value.customHeaders && Object.keys(formData.value.customHeaders).length > 0) {
       config.customHeaders = formData.value.customHeaders;
@@ -424,6 +430,7 @@ watch(
         // 合并现有数据，确保新字段有默认值
         formData.value = {
           ...props.model,
+          useCorsProxy: props.model.useCorsProxy ?? true,
           isDefault: {
             ...defaultTasks,
             ...props.model.isDefault,
@@ -532,6 +539,20 @@ const updateCustomHeaders = () => {
           >启用模型</label
         >
         <ToggleSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
+      </div>
+
+      <!-- CORS 代理（仅浏览器模式显示） -->
+      <div
+        v-if="isBrowser"
+        class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10"
+      >
+        <div>
+          <label :for="`${idPrefix}-useCorsProxy`" class="block text-sm font-medium text-moon/90"
+            >使用 CORS 代理</label
+          >
+          <small class="text-xs text-moon/60">关闭后 API 请求将直连，不经过 CORS 代理服务器</small>
+        </div>
+        <ToggleSwitch :id="`${idPrefix}-useCorsProxy`" v-model="formData.useCorsProxy" />
       </div>
 
       <!-- 模型名称 -->
