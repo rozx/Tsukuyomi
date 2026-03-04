@@ -1674,11 +1674,37 @@ export function useChapterTranslation(
     state.proofreadingParagraphIds = new Set();
   };
 
+  // 取消所有活跃的翻译/润色/校对任务（遍历所有章节状态 Map）
+  // 用于：1. 切换书籍时清理旧书的所有任务  2. 组件卸载时清理
+  const cancelAllActiveTasks = () => {
+    // 取消所有翻译任务
+    for (const [chapterId, state] of chapterTranslationStates.value) {
+      if (state.isTranslating || state.abortController) {
+        cancelTranslation(chapterId);
+      }
+    }
+    chapterTranslationStates.value.clear();
+
+    // 取消所有润色任务
+    for (const [chapterId, state] of chapterPolishStates.value) {
+      if (state.isPolishing || state.abortController) {
+        cancelPolish(chapterId);
+      }
+    }
+    chapterPolishStates.value.clear();
+
+    // 取消所有校对任务
+    for (const [chapterId, state] of chapterProofreadingStates.value) {
+      if (state.isProofreading || state.abortController) {
+        cancelProofreading(chapterId);
+      }
+    }
+    chapterProofreadingStates.value.clear();
+  };
+
   // 组件卸载时取消所有任务
   onUnmounted(() => {
-    cancelTranslation();
-    cancelPolish();
-    cancelProofreading();
+    cancelAllActiveTasks();
   });
 
   // 翻译状态计算属性
@@ -1778,6 +1804,7 @@ export function useChapterTranslation(
     cancelTranslation,
     cancelPolish,
     cancelProofreading,
+    cancelAllActiveTasks,
     // 计算属性
     translationStatus,
     translationButtonLabel,
