@@ -368,7 +368,11 @@ class TaskLoopSession {
   private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<AIToolCallResult> {
     const { aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
     if (aiProcessingStore && taskId) {
-      void aiProcessingStore.appendThinkingMessage(taskId, `\n[调用工具: ${toolName}]\n`);
+      const argsStr = toolCall.function.arguments || '';
+      void aiProcessingStore.appendThinkingMessage(
+        taskId,
+        `\n[调用工具: ${toolName}][调用参数: ${argsStr}]\n`,
+      );
     }
 
     const start = Date.now();

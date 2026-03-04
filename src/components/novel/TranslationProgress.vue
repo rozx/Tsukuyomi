@@ -642,6 +642,8 @@ interface FormattedMessagePart {
   toolResult?: string;
   toolResultTone?: ToolResultTone;
   toolCallTone?: ToolCallTone;
+  /** 工具调用的参数（AI 提交的数据） */
+  toolCallArgs?: string;
   chunkInfo?: string;
 }
 
@@ -651,6 +653,7 @@ type ToolCallTone = 'running' | 'success' | 'warning' | 'error' | 'cancelled';
 // 提取正则表达式为模块级常量，避免重复创建
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
 const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
+const TOOL_CALL_ARGS_PREFIX = '[调用参数: ';
 const TOOL_RESULT_ERROR_PATTERN =
   /error|failed?|exception|forbidden|denied|invalid|timeout|not found|失败|错误|异常|拒绝|超时|无效|未找到/i;
 const TOOL_RESULT_WARNING_PATTERN = /warning|warn|警告|注意|deprecated|fallback|重试/i;
@@ -665,9 +668,15 @@ interface ToolResultMarkerMatch {
   content: string;
 }
 
-function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[] {
+/**
+ * 通用括号平衡标记提取器。
+ * 从 message 中查找所有 `[prefix ...] ` 形式的标记，支持嵌套方括号和字符串转义。
+ */
+function extractBracketBalancedMarkerMatches(
+  message: string,
+  prefix: string,
+): ToolResultMarkerMatch[] {
   const matches: ToolResultMarkerMatch[] = [];
-  const prefix = '[工具结果: ';
   let searchStart = 0;
 
   while (searchStart < message.length) {
@@ -738,6 +747,14 @@ function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[
   }
 
   return matches;
+}
+
+function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[] {
+  return extractBracketBalancedMarkerMatches(message, '[工具结果: ');
+}
+
+function extractToolCallArgsMarkerMatches(message: string): ToolResultMarkerMatch[] {
+  return extractBracketBalancedMarkerMatches(message, TOOL_CALL_ARGS_PREFIX);
 }
 
 function formatToolResultPreview(toolResult: string): string {
@@ -815,6 +832,29 @@ function toggleToolResultPopup(event: Event, part: FormattedMessagePart): void {
   toolResultPopoverRef.value.toggle(event);
 }
 
+function toggleToolCallPopup(event: Event, part: FormattedMessagePart): void {
+  const content = part.toolCallArgs?.trim();
+  if (!content) return;
+
+  const popupKey = `toolcall-${part.toolName}-${part.toolCallArgs?.slice(0, 80) || ''}-${part.toolCallTone || 'running'}`;
+  const isSameTarget = activeToolResultPopupKey.value === popupKey;
+
+  activeToolResultPopupContent.value = content;
+  activeToolResultPopupKey.value = popupKey;
+
+  if (!toolResultPopoverRef.value) return;
+
+  if (!isSameTarget) {
+    toolResultPopoverRef.value.hide();
+    nextTick(() => {
+      toolResultPopoverRef.value?.toggle(event);
+    });
+    return;
+  }
+
+  toolResultPopoverRef.value.toggle(event);
+}
+
 function mapToolResultToneToToolCallTone(tone: ToolResultTone): ToolCallTone {
   if (tone === 'error') return 'error';
   if (tone === 'warning') return 'warning';
@@ -859,7 +899,7 @@ const formatThinkingMessage = (
   // 收集所有匹配项及其位置
   const matches: Array<{
     index: number;
-    type: 'chunk-separator' | 'tool-call' | 'tool-result';
+    type: 'chunk-separator' | 'tool-call' | 'tool-call-args' | 'tool-result';
     match: RegExpMatchArray;
   }> = [];
 
@@ -873,6 +913,14 @@ const formatThinkingMessage = (
     matches.push({ index: match.index, type: 'tool-call', match });
   }
   TOOL_CALL_PATTERN.lastIndex = 0;
+
+  for (const markerMatch of extractToolCallArgsMarkerMatches(message)) {
+    const syntheticMatch = [
+      markerMatch.fullText,
+      markerMatch.content,
+    ] as unknown as RegExpMatchArray;
+    matches.push({ index: markerMatch.index, type: 'tool-call-args', match: syntheticMatch });
+  }
 
   for (const markerMatch of extractToolResultMarkerMatches(message)) {
     const syntheticMatch = [
@@ -913,6 +961,17 @@ const formatThinkingMessage = (
           toolCallTone: 'running',
         });
         pendingToolCallPartIndexes.push(parts.length - 1);
+      }
+    } else if (type === 'tool-call-args') {
+      // 将调用参数关联到最近的（最后一个）pending tool-call part
+      if (match[1] !== undefined) {
+        const lastPendingIndex = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
+        if (lastPendingIndex !== undefined) {
+          const toolCallPart = parts[lastPendingIndex];
+          if (toolCallPart?.type === 'tool-call') {
+            toolCallPart.toolCallArgs = formatToolResultTooltip(match[1]);
+          }
+        }
       }
     } else if (type === 'tool-result') {
       if (match[1]) {
@@ -1527,7 +1586,21 @@ watch(
                               </div>
                               <div
                                 v-else-if="part.type === 'tool-call'"
-                                class="thinking-tool-event thinking-tool-call"
+                                :class="[
+                                  'thinking-tool-event',
+                                  'thinking-tool-call',
+                                  { 'thinking-tool-call-clickable': !!part.toolCallArgs },
+                                ]"
+                                :role="part.toolCallArgs ? 'button' : undefined"
+                                :tabindex="part.toolCallArgs ? 0 : undefined"
+                                :title="
+                                  part.toolCallArgs
+                                    ? '点击查看工具调用参数'
+                                    : getToolCallHint(task, part)
+                                "
+                                @click="toggleToolCallPopup($event, part)"
+                                @keydown.enter.prevent="toggleToolCallPopup($event, part)"
+                                @keydown.space.prevent="toggleToolCallPopup($event, part)"
                               >
                                 <div class="thinking-tool-call-icon">
                                   <i :class="getToolCallIconClass(task, part)"></i>
@@ -2151,6 +2224,10 @@ watch(
 .thinking-tool-call:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 14px var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+}
+
+.thinking-tool-call-clickable {
+  cursor: pointer;
 }
 
 .thinking-tool-call-running {
