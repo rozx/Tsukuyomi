@@ -1243,7 +1243,6 @@ const {
   cancelTranslation,
   cancelPolish,
   cancelProofreading,
-  cancelAllActiveTasks,
   // 计算属性
   translationStatus,
   translationButtonLabel,
@@ -1259,15 +1258,6 @@ const {
   countUniqueActions,
   saveState,
 );
-
-// 切换书籍时，取消旧书的所有活跃翻译/润色/校对任务
-// Vue Router 在 /books/:id 路由间导航时会复用同一组件实例（onUnmounted 不会触发），
-// 因此需要通过 watch bookId 来主动清理旧书的任务，避免切书后旧任务读到错误的 book.value 数据
-watch(bookId, (_newId, oldId) => {
-  if (oldId) {
-    cancelAllActiveTasks();
-  }
-});
 
 // 翻译进度面板显示状态 - 从 store 获取，按书籍保存
 // 移动端始终为 true

@@ -690,7 +690,10 @@ export async function processTextTask(
               onParagraphsExtracted && actualChunk.paragraphIds
                 ? (paragraphs) => {
                     markProcessedParagraphs(paragraphs, processedParagraphIds);
-                    void Promise.resolve(
+                    // 必须返回 Promise，以便 task-runner 中的 await 能正确等待回调完成。
+                    // 之前使用 void 导致 fire-and-forget，翻译数据写入内存/存储的操作可能
+                    // 在 batchSaveChapter 之后才完成，造成切换页面时丢失最后批次翻译的 bug。
+                    return Promise.resolve(
                       onParagraphsExtracted({
                         paragraphs,
                         paragraphIds: actualChunk.paragraphIds,
@@ -713,7 +716,7 @@ export async function processTextTask(
               isFirstChunk && chapterTitle && onTitleExtracted
                 ? (title) => {
                     titleTranslation = title;
-                    void Promise.resolve(onTitleExtracted({ title })).catch((error) => {
+                    return Promise.resolve(onTitleExtracted({ title })).catch((error) => {
                       console.error(`[${logLabel}] ⚠️ 标题回调失败`, error);
                     });
                   }

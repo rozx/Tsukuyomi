@@ -395,13 +395,9 @@ export const taskStatusTools: ToolDefinition[] = [
                     const nonEmptyParagraphs = contentToCheck.filter(
                       (p) => p.text && p.text.trim().length > 0,
                     );
-                    const untranslated = nonEmptyParagraphs.filter((p) => {
-                      const hasDbTranslation = p.translations && p.translations.length > 0;
-                      // 交叉引用 accumulatedParagraphs：即使 DB 中无翻译（skipSave 竞态），
-                      // 若内存中已有该段落的翻译记录，也应视为已翻译
-                      const hasMemoryTranslation = accumulatedParagraphs?.has(p.id) ?? false;
-                      return !hasDbTranslation && !hasMemoryTranslation;
-                    });
+                    const untranslated = nonEmptyParagraphs.filter(
+                      (p) => !p.translations || p.translations.length === 0,
+                    );
                     if (untranslated.length > 0) {
                       const scopeMsg = context.chunkBoundaries ? '当前分块' : '全文章节';
                       const MAX_IDS_SHOW = 10;
