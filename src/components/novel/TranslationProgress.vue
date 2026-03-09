@@ -155,7 +155,27 @@ const progressTaskId = computed(() => {
   if (!isWorking || props.progress.total <= 0) {
     return null;
   }
-  return currentActiveTask.value?.id || null;
+
+  // 确定当前 props 传入的进度数据对应的任务类型
+  // 优先级：proofreading > polish > translation（与 BookDetailsPage 中 progress 选择逻辑一致）
+  const expectedType: string = props.isProofreading
+    ? 'proofreading'
+    : props.isPolishing
+      ? 'polish'
+      : 'translation';
+
+  const chapterId = currentSelectedChapterId.value;
+
+  // 在活跃任务中查找与当前进度数据匹配的任务（类型 + 章节）
+  const matchedTask = recentAITasks.value.find(
+    (t) =>
+      (t.status === 'thinking' || t.status === 'processing') &&
+      t.type === expectedType &&
+      (!chapterId || t.chapterId === chapterId),
+  );
+
+  // 如果精确匹配找到了，使用它；否则退回到第一个活跃任务（兼容旧的行为）
+  return matchedTask?.id || currentActiveTask.value?.id || null;
 });
 
 // 判断是否为具有确定进度数据的活跃任务
