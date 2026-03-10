@@ -341,8 +341,8 @@ const isRecentlyUpdated = (
   threshold = UPDATE_THRESHOLD_MS,
 ): boolean => {
   const updateTime = updateMap.value[taskId] || 0;
-  const now = Date.now();
-  return updateTime > 0 && now - updateTime < threshold;
+  const currentTime = Date.now();
+  return updateTime > 0 && currentTime - updateTime < threshold;
 };
 
 const setActiveTab = (taskId: string, value: string) => {

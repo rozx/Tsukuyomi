@@ -27,7 +27,14 @@ import {
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { cloneDeep } from 'lodash';
-import type { Chapter, Novel, Terminology, CharacterSetting, Paragraph } from 'src/models/novel';
+import type {
+  Chapter,
+  Novel,
+  Volume,
+  Terminology,
+  CharacterSetting,
+  Paragraph,
+} from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
@@ -262,6 +269,10 @@ const {
   editingChapterTranslationInstructions,
   editingChapterPolishInstructions,
   editingChapterProofreadingInstructions,
+  editingChapterWebUrl,
+  editingChapterLastUpdated,
+  editingChapterLastEdited,
+  editingChapterCreatedAt,
   openEditVolumeDialog,
   openEditChapterDialog,
   handleEditVolume: originalHandleEditVolume,
@@ -304,6 +315,7 @@ const handleEditChapter = (data: {
   title: string;
   translation: string;
   targetVolumeId: string;
+  webUrl?: string | undefined;
   translationInstructions?: string;
   polishInstructions?: string;
   proofreadingInstructions?: string;
@@ -311,6 +323,7 @@ const handleEditChapter = (data: {
   editingChapterTitle.value = data.title;
   editingChapterTranslation.value = data.translation;
   editingChapterTargetVolumeId.value = data.targetVolumeId;
+  editingChapterWebUrl.value = data.webUrl || '';
   editingChapterTranslationInstructions.value = data.translationInstructions || '';
   editingChapterPolishInstructions.value = data.polishInstructions || '';
   editingChapterProofreadingInstructions.value = data.proofreadingInstructions || '';
@@ -445,25 +458,25 @@ const onNavigateToChapterList = () => {
 const onEditVolume = (...args: unknown[]) => {
   const volume = args[0];
   if (!volume) return;
-  openEditVolumeDialog(volume as any);
+  openEditVolumeDialog(volume as Volume);
 };
 
 const onDeleteVolume = (...args: unknown[]) => {
   const volume = args[0];
   if (!volume) return;
-  openDeleteVolumeConfirm(volume as any);
+  openDeleteVolumeConfirm(volume as Volume);
 };
 
 const onEditChapter = (...args: unknown[]) => {
   const chapter = args[0];
   if (!chapter) return;
-  openEditChapterDialog(chapter as any);
+  openEditChapterDialog(chapter as Chapter);
 };
 
 const onDeleteChapter = (...args: unknown[]) => {
   const chapter = args[0];
   if (!chapter) return;
-  openDeleteChapterConfirm(chapter as any);
+  openDeleteChapterConfirm(chapter as Chapter);
 };
 
 const onDragStart = (...args: unknown[]) => {
@@ -2326,6 +2339,10 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         :target-volume-id="editingChapterTargetVolumeId || null"
         :volume-options="volumeOptions"
         :loading="isEditingChapter"
+        :web-url="editingChapterWebUrl || ''"
+        :last-updated="editingChapterLastUpdated"
+        :last-edited="editingChapterLastEdited"
+        :created-at="editingChapterCreatedAt"
         :translation-instructions="editingChapterTranslationInstructions || ''"
         :polish-instructions="editingChapterPolishInstructions || ''"
         :proofreading-instructions="editingChapterProofreadingInstructions || ''"
