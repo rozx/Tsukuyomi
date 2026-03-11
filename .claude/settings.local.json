@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun bump 0.9.3)",
+      "Bash(bun run type-check)",
+      "Bash(bun run lint)"
+    ]
+  }
+}
