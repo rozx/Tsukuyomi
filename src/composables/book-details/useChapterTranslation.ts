@@ -568,14 +568,10 @@ export function useChapterTranslation(
     state.abortController = abortController;
 
     try {
-      // 获取书籍的 chunk size 设置
-      const chunkSize = book.value?.translationChunkSize;
-      // 调用润色服务
-      await PolishService.polish([paragraph], selectedModel, {
+      // 调用单段落润色服务（简化模式，无状态机）
+      await PolishService.polishSingle(paragraph, selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
-        currentParagraphId: paragraphId,
-        ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -589,9 +585,9 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphPolish: (paragraphPolishes) => {
+        onParagraphResult: (paragraphResults) => {
           void updateParagraphsFromResults(
-            paragraphPolishes,
+            paragraphResults,
             selectedModel.id,
             targetChapterId,
             targetBookId,
@@ -677,14 +673,10 @@ export function useChapterTranslation(
     state.abortController = abortController;
 
     try {
-      // 获取书籍的 chunk size 设置
-      const chunkSize = book.value?.translationChunkSize;
-      // 调用校对服务
-      await ProofreadingService.proofread([paragraph], selectedModel, {
+      // 调用单段落校对服务（简化模式，无状态机）
+      await ProofreadingService.proofreadSingle(paragraph, selectedModel, {
         bookId: book.value.id,
         chapterId: targetChapterId,
-        currentParagraphId: paragraphId,
-        ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: {
@@ -698,9 +690,9 @@ export function useChapterTranslation(
         onToast: (message) => {
           toast.add(message);
         },
-        onParagraphProofreading: (paragraphProofreadings) => {
+        onParagraphResult: (paragraphResults) => {
           void updateParagraphsFromResults(
-            paragraphProofreadings,
+            paragraphResults,
             selectedModel.id,
             targetChapterId,
             targetBookId,

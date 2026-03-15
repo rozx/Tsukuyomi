@@ -3,7 +3,10 @@
     "allow": [
       "Bash(bun bump 0.9.3)",
       "Bash(bun run type-check)",
-      "Bash(bun run lint)"
+      "Bash(bun run lint)",
+      "Bash(openspec new change \"single-para-polish-simplified\")",
+      "Bash(openspec status --change \"single-para-polish-simplified\")",
+      "Bash(openspec instructions proposal --change \"single-para-polish-simplified\")"
     ]
   }
 }

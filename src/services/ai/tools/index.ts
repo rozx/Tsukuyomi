@@ -175,6 +175,59 @@ export class ToolRegistry {
   }
 
   /**
+   * 获取单段落润色/校对模式的工具集
+   * 包含只读上下文工具 + add_translation_batch
+   * 排除数据修改工具、update_task_status、ask_user、待办事项和导航工具
+   */
+  static getSingleParagraphPolishTools(bookId?: string): AITool[] {
+    if (!bookId) return [];
+
+    const allowedToolNames = [
+      // 段落工具（只读）
+      'get_previous_paragraphs',
+      'get_next_paragraphs',
+      'get_paragraph_info',
+      'get_paragraph_position',
+      'find_paragraph_by_keywords',
+      'search_paragraphs_by_regex',
+      'get_translation_history',
+      // 术语工具（只读）
+      'get_term',
+      'search_terms_by_keywords',
+      'list_terms',
+      // 角色工具（只读）
+      'get_character',
+      'search_characters_by_keywords',
+      'list_characters',
+      // 记忆工具（只读）
+      'search_memory_by_keywords',
+      'get_memory',
+      'list_memories',
+      // 书籍工具（只读）
+      'get_book_info',
+      'get_chapter_info',
+      'search_chapter_summaries',
+      // 网络搜索
+      'search_web',
+      'fetch_webpage',
+      // 翻译提交
+      'add_translation_batch',
+    ];
+
+    const allTools = [
+      ...this.getParagraphTools(bookId),
+      ...this.getTerminologyTools(bookId),
+      ...this.getCharacterSettingTools(bookId),
+      ...this.getMemoryTools(bookId),
+      ...this.getBookTools(bookId),
+      ...this.getWebSearchTools(),
+      ...this.getTranslationToolsForAI(),
+    ];
+
+    return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
+  }
+
+  /**
    * 获取术语翻译服务允许的工具
    * 只包含只读工具：get_book_info, get/list/search terms, get/list/search characters, get/list/search memory, search paragraphs
    *

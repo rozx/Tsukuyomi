@@ -1,7 +1,8 @@
+import type { Paragraph, CharacterSetting, Terminology } from 'src/models/novel';
+import { getSelectedTranslation } from 'src/utils/text-utils';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
-import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
 import { useBooksStore } from 'src/stores/books';
@@ -583,4 +584,164 @@ export function getSpecialInstructions(
     );
     return undefined;
   }
+}
+
+/**
+ * 构建前后段落上下文（用于单段落润色/校对）
+ * @param currentParagraphId 当前段落 ID
+ * @param allParagraphs 全章段落数组
+ * @param count 前后各取多少段（默认 3）
+ */
+export function buildSurroundingParagraphsContext(
+  currentParagraphId: string,
+  allParagraphs: Paragraph[],
+  count: number = 3,
+): string {
+  const currentIndex = allParagraphs.findIndex((p) => p.id === currentParagraphId);
+  if (currentIndex === -1) return '';
+
+  const formatParagraph = (p: Paragraph): string => {
+    const translation = getSelectedTranslation(p);
+    const translationPart = translation ? `\n  翻译: ${translation}` : '';
+    return `[ID: ${p.id}] 原文: ${p.text}${translationPart}`;
+  };
+
+  const parts: string[] = [];
+
+  // 前面的段落
+  const prevStart = Math.max(0, currentIndex - count);
+  const prevParagraphs = allParagraphs.slice(prevStart, currentIndex).filter((p) => p.text?.trim());
+  if (prevParagraphs.length > 0) {
+    parts.push('【前文段落】');
+    parts.push(...prevParagraphs.map(formatParagraph));
+  }
+
+  // 后面的段落
+  const nextParagraphs = allParagraphs
+    .slice(currentIndex + 1, currentIndex + 1 + count)
+    .filter((p) => p.text?.trim());
+  if (nextParagraphs.length > 0) {
+    parts.push('【后文段落】');
+    parts.push(...nextParagraphs.map(formatParagraph));
+  }
+
+  return parts.length > 0 ? '\n\n' + parts.join('\n') + '\n' : '';
+}
+
+/**
+ * 构建章节角色上下文（用于单段落润色/校对）
+ * @param characters 本章出场的角色列表
+ */
+export function buildChapterCharactersContext(characters: CharacterSetting[]): string {
+  if (!characters || characters.length === 0) return '';
+
+  const sexLabels: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他',
+  };
+
+  const characterDetails = characters.map((c) => {
+    const parts: string[] = [];
+    parts.push(`${c.name} → ${c.translation.translation}`);
+    if (c.sex) {
+      parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
+    }
+    if (c.description) {
+      parts.push(`描述：${c.description}`);
+    }
+    if (c.speakingStyle) {
+      parts.push(`说话风格：${c.speakingStyle}`);
+    }
+    if (c.aliases && c.aliases.length > 0) {
+      const aliasList = c.aliases
+        .map((a) => `${a.name} → ${a.translation.translation}`)
+        .join('、');
+      parts.push(`别名：${aliasList}`);
+    }
+    return `  - ${parts.join(' | ')}`;
+  });
+
+  return `\n\n【本章出场角色】\n${characterDetails.join('\n')}\n`;
+}
+
+/**
+ * 构建单段落润色/校对的完整默认上下文
+ */
+export async function buildSingleParagraphDefaultContext(options: {
+  currentParagraphId: string;
+  allChapterParagraphs: Paragraph[];
+  bookId?: string;
+  chapterId?: string;
+  chapterTitle?: string;
+}): Promise<string> {
+  const { currentParagraphId, allChapterParagraphs, bookId, chapterId, chapterTitle } = options;
+
+  const parts: string[] = [];
+
+  // 1. 书籍信息
+  if (bookId) {
+    const bookContext = await buildBookContextSection(bookId);
+    if (bookContext) parts.push(bookContext);
+  }
+
+  // 2. 章节信息
+  const chapterContext = buildChapterContextSection(chapterId, chapterTitle);
+  if (chapterContext) parts.push(chapterContext);
+
+  // 3. 章节摘要
+  if (bookId && chapterId) {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+    if (book) {
+      for (const volume of book.volumes || []) {
+        const chapter = volume.chapters?.find((c) => c.id === chapterId);
+        if (chapter?.summary) {
+          parts.push(`\n\n【当前章节摘要】\n${chapter.summary}\n`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. 本章角色
+  if (bookId) {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+    if (book) {
+      // 用全章段落文本匹配角色
+      const allText = allChapterParagraphs.map((p) => p.text).join('\n');
+      const characters = findUniqueCharactersInText(allText, book.characterSettings || []);
+      const charactersContext = buildChapterCharactersContext(characters);
+      if (charactersContext) parts.push(charactersContext);
+    }
+  }
+
+  // 5. 相关术语（基于当前段落文本匹配）
+  if (bookId) {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+    const currentParagraph = allChapterParagraphs.find((p) => p.id === currentParagraphId);
+    if (book && currentParagraph?.text) {
+      const terms = findUniqueTermsInText(currentParagraph.text, book.terminologies || []);
+      if (terms.length > 0) {
+        const termList = terms
+          .map(
+            (t) =>
+              `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+          )
+          .join('\n');
+        parts.push(`\n\n【相关术语】\n${termList}\n`);
+      }
+    }
+  }
+
+  // 6. 前后段落上下文
+  const surroundingContext = buildSurroundingParagraphsContext(
+    currentParagraphId,
+    allChapterParagraphs,
+  );
+  if (surroundingContext) parts.push(surroundingContext);
+
+  return parts.join('');
 }

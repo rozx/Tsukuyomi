@@ -10,6 +10,15 @@ import {
   type ParagraphExtractCallbackParams,
 } from './utils/text-task-processor';
 import { buildPolishSystemPrompt } from './prompts';
+import {
+  buildSingleParagraphPolishSystemPrompt,
+  buildSingleParagraphPolishUserPrompt,
+} from './prompts';
+import {
+  processSingleParagraph,
+  type SingleParagraphOptions,
+  type SingleParagraphResult,
+} from './utils/single-paragraph-processor';
 
 /**
  * 润色服务选项
@@ -163,5 +172,31 @@ export class PolishService {
         onParagraphsExtracted,
       },
     );
+  }
+
+  /**
+   * 单段落润色（简化模式，无状态机）
+   * @param paragraph 要润色的段落
+   * @param model AI 模型配置
+   * @param options 润色选项
+   */
+  static async polishSingle(
+    paragraph: Paragraph,
+    model: AIModel,
+    options?: SingleParagraphOptions,
+  ): Promise<SingleParagraphResult> {
+    return processSingleParagraph(paragraph, model, options || {}, {
+      taskType: 'polish',
+      logLabel: 'PolishService',
+      temperature: model.isDefault.proofreading?.temperature ?? 0.7,
+      buildSystemPrompt: (params) =>
+        buildSingleParagraphPolishSystemPrompt({
+          bookContextSection: params.bookContextSection,
+          chapterContextSection: params.chapterContextSection,
+          specialInstructionsSection: params.specialInstructionsSection,
+          tools: params.tools,
+        }),
+      buildUserPrompt: (params) => buildSingleParagraphPolishUserPrompt(params),
+    });
   }
 }

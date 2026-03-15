@@ -15,3 +15,5 @@ export * from './term-translation';
 export * from './explain';
 export * from './assistant';
 export * from './runner';
+export * from './single-paragraph-polish';
+export * from './single-paragraph-proofreading';

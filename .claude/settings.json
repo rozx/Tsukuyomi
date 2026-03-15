@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"polish\\\\|proofread\")",
+      "Bash(openspec status --change \"single-para-polish-simplified\" --json)",
+      "Bash(openspec instructions design --change \"single-para-polish-simplified\" --json)",
+      "Bash(openspec instructions specs --change \"single-para-polish-simplified\" --json)",
+      "Bash(openspec instructions tasks --change \"single-para-polish-simplified\" --json)",
+      "Bash(openspec instructions apply --change \"single-para-polish-simplified\" --json)",
+      "Bash(npx vue-tsc --noEmit)"
+    ]
+  }
+}
