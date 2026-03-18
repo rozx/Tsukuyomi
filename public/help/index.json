@@ -112,6 +112,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.9.3",
+    "title": "v0.9.3",
+    "file": "RELEASE_NOTES_v0.9.3.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "书籍详情页升级、Gist 数据同步、AI 引擎架构重构、模型 CORS 代理与自定义 HTTP 头"
+  },
+  {
     "id": "v0.9.2",
     "title": "v0.9.2",
     "file": "RELEASE_NOTES_v0.9.2.md",

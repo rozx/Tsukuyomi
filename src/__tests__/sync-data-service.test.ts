@@ -42,8 +42,15 @@ const mockSettingsStore = {
 
 const mockMemoryService = {
   getAllMemories: mock((_bookId: string) => Promise.resolve([] as any[])), // eslint-disable-line @typescript-eslint/no-explicit-any
-  updateMemory: mock((_bookId: string, _memoryId: string, _content: string, _summary: string) =>
-    Promise.resolve(),
+  updateMemory: mock(
+    (
+      _bookId: string,
+      _memoryId: string,
+      _content: string,
+      _summary: string,
+      _attachedTo?: unknown,
+      _preserveLastAccessedAt?: number,
+    ) => Promise.resolve(),
   ),
   createMemory: mock((_bookId: string, _content: string, _summary: string) => Promise.resolve()),
   createMemoryWithId: mock(
@@ -900,6 +907,50 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
       expect(mockMemoryService.createMemory).not.toHaveBeenCalled();
+    });
+
+    it('同步更新 Memory 时应保留远程 lastAccessedAt 时间戳（避免触发不必要的上传）', async () => {
+      const remoteTimestamp = 3000;
+      const localTimestamp = 2000;
+
+      // 本地已有书籍和 Memory
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      const localMemory = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '旧内容',
+        summary: '旧摘要',
+        createdAt: 1000,
+        lastAccessedAt: localTimestamp,
+        attachedTo: [{ type: 'book', id: 'b1' }],
+      };
+
+      const remoteMemory = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '新内容',
+        summary: '新摘要',
+        createdAt: 1000,
+        lastAccessedAt: remoteTimestamp,
+        attachedTo: [{ type: 'book', id: 'b1' }],
+      };
+
+      // 本地有该 Memory，远程 lastAccessedAt 更大，应触发 updateMemory
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledTimes(1);
+      // 关键断言：第 6 个参数应该是远程的 lastAccessedAt，而非 undefined
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+        'b1',
+        'mem-1',
+        '新内容',
+        '新摘要',
+        remoteMemory.attachedTo,
+        remoteTimestamp,
+      );
     });
   });
 

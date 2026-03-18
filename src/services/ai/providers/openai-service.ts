@@ -74,9 +74,9 @@ export class OpenAIService extends BaseAIService {
   /**
    * 创建自定义 fetch 函数，用于在浏览器模式下代理请求
    */
-  private createProxiedFetch():
-    | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>)
-    | undefined {
+  private createProxiedFetch(
+    useCorsProxy?: boolean,
+  ): ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined {
     // 检测是否为 Electron 环境
     const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
 
@@ -93,8 +93,8 @@ export class OpenAIService extends BaseAIService {
           url = input.url;
         }
 
-        // 使用 CORS 代理包装 URL
-        const proxiedUrl = ProxyService.getProxiedUrlForAI(url);
+        // 使用 CORS 代理包装 URL（尊重模型级别的 useCorsProxy 配置）
+        const proxiedUrl = ProxyService.getProxiedUrlForAI(url, useCorsProxy);
 
         // 使用代理后的 URL 进行请求
         return fetch(proxiedUrl, init);
@@ -111,10 +111,10 @@ export class OpenAIService extends BaseAIService {
    * 注意：在浏览器环境中需要设置 dangerouslyAllowBrowser: true
    */
   private createClient(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): OpenAI {
     const proxiedBaseUrl = this.getProxiedBaseUrl(config.baseUrl);
-    const customFetch = this.createProxiedFetch();
+    const customFetch = this.createProxiedFetch(config.useCorsProxy);
 
     return new OpenAI({
       apiKey: config.apiKey,
@@ -478,7 +478,7 @@ export class OpenAIService extends BaseAIService {
    * 使用 OpenAI API 的 models.list() 方法
    */
   protected async makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<ModelInfo[]> {
     try {
       const client = this.createClient(config);

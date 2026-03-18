@@ -6,6 +6,15 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { processTextTask, type ParagraphExtractCallbackParams } from './utils/text-task-processor';
 import { buildProofreadingSystemPrompt } from './prompts';
+import {
+  buildSingleParagraphProofreadingSystemPrompt,
+  buildSingleParagraphProofreadingUserPrompt,
+} from './prompts';
+import {
+  processSingleParagraph,
+  type SingleParagraphOptions,
+  type SingleParagraphResult,
+} from './utils/single-paragraph-processor';
 
 /**
  * 校对服务选项
@@ -159,5 +168,31 @@ export class ProofreadingService {
         onParagraphsExtracted,
       },
     );
+  }
+
+  /**
+   * 单段落校对（简化模式，无状态机）
+   * @param paragraph 要校对的段落
+   * @param model AI 模型配置
+   * @param options 校对选项
+   */
+  static async proofreadSingle(
+    paragraph: Paragraph,
+    model: AIModel,
+    options?: SingleParagraphOptions,
+  ): Promise<SingleParagraphResult> {
+    return processSingleParagraph(paragraph, model, options || {}, {
+      taskType: 'proofreading',
+      logLabel: 'ProofreadingService',
+      temperature: model.isDefault.proofreading?.temperature ?? 0.3,
+      buildSystemPrompt: (params) =>
+        buildSingleParagraphProofreadingSystemPrompt({
+          bookContextSection: params.bookContextSection,
+          chapterContextSection: params.chapterContextSection,
+          specialInstructionsSection: params.specialInstructionsSection,
+          tools: params.tools,
+        }),
+      buildUserPrompt: (params) => buildSingleParagraphProofreadingUserPrompt(params),
+    });
   }
 }

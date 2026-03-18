@@ -73,6 +73,8 @@ const chapterErrors = ref<Map<string, string>>(new Map());
 const selectedChapters = ref<Set<string>>(new Set());
 // 本地（已导入）章节内容缓存：key 使用爬取章节的 id，value 为拼接后的文本
 const importedChapterContents = ref<Map<string, string>>(new Map());
+// 跟踪哪些已导入章节检测到远程内容变化
+const contentChangedChapters = ref<Set<string>>(new Set());
 
 // 章节过滤和折叠
 const chapterFilter = ref<'all' | 'imported' | 'unimported' | 'updated'>('all');
@@ -346,6 +348,7 @@ const handleFetch = async () => {
   selectedChapters.value.clear();
   selectedChapterId.value = null;
   collapsedVolumes.value.clear();
+  contentChangedChapters.value.clear();
 
   try {
     const scraper = NovelScraperFactory.getScraper(urlInput.value);
@@ -466,8 +469,15 @@ const loadChapterContent = async (chapter: Chapter, retry = false) => {
     if (!isChapterImported(chapter)) {
       selectedChapters.value.add(chapter.id);
     } else if (shouldAutoSelectChapter(chapter)) {
-      // 已导入但远程更新，自动选中
+      // 已导入但远程更新（日期对比），自动选中
       selectedChapters.value.add(chapter.id);
+    } else {
+      // 内容加载后：检测远程内容是否与本地不同
+      const importedChapter = ChapterService.findChapterByUrl(props.currentBook, chapter.webUrl);
+      if (importedChapter && ChapterService.hasContentChanged(importedChapter, content)) {
+        contentChangedChapters.value.add(chapter.id);
+        selectedChapters.value.add(chapter.id);
+      }
     }
 
     // 如果还没有选中任何章节，自动选中所有未导入的章节和已导入但远程更新的章节
@@ -559,9 +569,21 @@ const isSelectedChapterImported = computed(() => {
   return isChapterImported(selectedChapter.value);
 });
 
-// 获取章节的导入状态标签信息（使用 ChapterService）
+// 获取章节的导入状态标签信息（使用 ChapterService + 内容变化检测）
 const getChapterImportStatus = (chapter: Chapter): { text: string; class: string } | null => {
-  return ChapterService.getChapterImportStatus(props.currentBook, chapter);
+  const baseStatus = ChapterService.getChapterImportStatus(props.currentBook, chapter);
+  // 如果基于日期已经标记为有更新，直接返回
+  if (baseStatus && baseStatus.text === '已导入（有更新）') {
+    return baseStatus;
+  }
+  // 如果内容变化检测发现有变化，覆盖标记
+  if (contentChangedChapters.value.has(chapter.id)) {
+    return {
+      text: '已导入（有更新）',
+      class: 'px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded flex-shrink-0',
+    };
+  }
+  return baseStatus;
 };
 
 // 当前选中章节的导入状态

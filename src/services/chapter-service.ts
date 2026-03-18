@@ -255,8 +255,34 @@ export class ChapterService {
       return false;
     }
 
-    // 比较远程和本地的 lastUpdated
-    return ChapterService.isRemoteNewer(chapter.lastUpdated, importedChapter.lastUpdated);
+    // 宽松策略：远程无 lastUpdated 时无法判断，不标记更新
+    if (!chapter.lastUpdated) {
+      return false;
+    }
+
+    // 优先比较远程和本地的 lastUpdated
+    if (importedChapter.lastUpdated) {
+      return ChapterService.isRemoteNewer(chapter.lastUpdated, importedChapter.lastUpdated);
+    }
+
+    // 回退：本地无 lastUpdated 时，对比远程 lastUpdated 与本地 createdAt（导入日期）
+    return ChapterService.isRemoteNewer(chapter.lastUpdated, importedChapter.createdAt);
+  }
+
+  /**
+   * 检查远程章节内容是否与本地已导入的章节内容不同
+   * @param importedChapter 本地已导入的章节
+   * @param remoteContent 远程加载的内容文本
+   * @returns 内容是否有变化。如果本地无 originalContent，保守返回 true
+   */
+  static hasContentChanged(importedChapter: Chapter, remoteContent: string): boolean {
+    if (!importedChapter.originalContent) {
+      // 本地没有 originalContent 记录（如手动创建或早期导入），无法对比
+      // 保守处理：认为有变化
+      return true;
+    }
+    // trim 后直接字符串对比
+    return importedChapter.originalContent.trim() !== remoteContent.trim();
   }
 
   /**

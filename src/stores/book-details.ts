@@ -277,6 +277,17 @@ export const useBookDetailsStore = defineStore('book-details', {
     },
 
     /**
+     * 清除单个任务的 TranslationProgress 状态
+     */
+    clearTaskTranslationProgress(taskId: string): void {
+      delete this.translationProgress.autoScrollEnabled[taskId];
+      delete this.translationProgress.autoTabSwitchingEnabled[taskId];
+      delete this.translationProgress.taskFolded[taskId];
+      delete this.translationProgress.activeTab[taskId];
+      this.saveTranslationProgressState();
+    },
+
+    /**
      * 保存 TranslationProgress 状态（内部使用 saveAllState）
      */
     saveTranslationProgressState(): void {

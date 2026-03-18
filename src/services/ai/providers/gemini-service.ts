@@ -429,7 +429,7 @@ export class GeminiService extends BaseAIService {
    * 使用 Google Generative AI API 的 REST 端点获取模型列表
    */
   protected async makeAvailableModelsRequest(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<ModelInfo[]> {
     try {
       if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim() === '') {
@@ -442,7 +442,7 @@ export class GeminiService extends BaseAIService {
       const apiUrl = `${baseUrl}/v1beta/models?key=${encodeURIComponent(config.apiKey)}`;
 
       // 在浏览器模式下，使用 CORS 代理
-      const proxiedUrl = ProxyService.getProxiedUrlForAI(apiUrl);
+      const proxiedUrl = ProxyService.getProxiedUrlForAI(apiUrl, config.useCorsProxy);
 
       const response = await fetch(proxiedUrl, {
         method: 'GET',

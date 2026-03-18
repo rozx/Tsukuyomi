@@ -9,7 +9,8 @@ export interface AIServiceConfig {
   maxInputTokens?: number | undefined; // 最大输入 token 数（上下文窗口）
   maxOutputTokens?: number | undefined; // 最大输出 token 数
   signal?: AbortSignal | undefined; // 用于取消请求
-  customHeaders?: Record<string, string>; // 自定义请求头部
+  customHeaders?: Record<string, string> | undefined; // 自定义请求头部
+  useCorsProxy?: boolean | undefined; // 是否使用 CORS 代理（仅 SPA 模式有效）
 }
 
 /**
@@ -172,6 +173,6 @@ export interface AIService {
    * @returns 可用模型列表
    */
   getAvailableModels(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders'>,
+    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<AvailableModelsResult>;
 }

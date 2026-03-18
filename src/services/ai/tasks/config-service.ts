@@ -82,6 +82,7 @@ export class ConfigService {
         maxInputTokens: model.maxInputTokens,
         maxOutputTokens: model.maxOutputTokens,
         signal: options?.signal,
+        useCorsProxy: model.useCorsProxy,
         ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 

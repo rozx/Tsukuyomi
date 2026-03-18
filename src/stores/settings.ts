@@ -323,6 +323,9 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.deletedCoverUrls !== undefined
           ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) }
           : {}),
+        ...(sync.lastRemoteUpdatedAt !== undefined
+          ? { lastRemoteUpdatedAt: String(sync.lastRemoteUpdatedAt) }
+          : {}),
       };
 
       await store.put({ id, ...clean });
@@ -840,6 +843,9 @@ export const useSettingsStore = defineStore('settings', {
         existingConfig?.deletedCoverUrls ??
         defaultConfig.deletedCoverUrls;
 
+      const lastRemoteUpdatedAt =
+        updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -863,6 +869,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(deletedModelIds !== undefined ? { deletedModelIds } : {}),
         ...(deletedCoverIds !== undefined ? { deletedCoverIds } : {}),
         ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
+        ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
       };
 
       if (index >= 0) {
@@ -988,6 +995,13 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateLastSyncedModelIds(modelIds: string[]): Promise<void> {
       await this.updateGistSync({ lastSyncedModelIds: modelIds });
+    },
+
+    /**
+     * 更新上次同步时远程 Gist 的 updated_at 时间戳
+     */
+    async updateLastRemoteUpdatedAt(timestamp: string): Promise<void> {
+      await this.updateGistSync({ lastRemoteUpdatedAt: timestamp });
     },
 
     /**

@@ -7,10 +7,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { generateShortId } from 'src/utils/id-generator';
-import {
-  getVolumeDisplayTitle,
-  getChapterDisplayTitle,
-} from 'src/utils';
+import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 import { cloneDeep } from 'lodash';
 
 export function useChapterManagement(
@@ -41,6 +38,10 @@ export function useChapterManagement(
   const editingChapterTranslationInstructions = ref('');
   const editingChapterPolishInstructions = ref('');
   const editingChapterProofreadingInstructions = ref('');
+  const editingChapterWebUrl = ref('');
+  const editingChapterLastUpdated = ref<Date | undefined>(undefined);
+  const editingChapterLastEdited = ref<Date | undefined>(undefined);
+  const editingChapterCreatedAt = ref<Date | undefined>(undefined);
 
   // Delete Confirm Dialog State
   const showDeleteVolumeConfirm = ref(false);
@@ -178,6 +179,10 @@ export function useChapterManagement(
     editingChapterTranslationInstructions.value = chapter.translationInstructions || '';
     editingChapterPolishInstructions.value = chapter.polishInstructions || '';
     editingChapterProofreadingInstructions.value = chapter.proofreadingInstructions || '';
+    editingChapterWebUrl.value = chapter.webUrl || '';
+    editingChapterLastUpdated.value = chapter.lastUpdated;
+    editingChapterLastEdited.value = chapter.lastEdited;
+    editingChapterCreatedAt.value = chapter.createdAt;
     showEditChapterDialog.value = true;
   };
 
@@ -307,6 +312,7 @@ export function useChapterManagement(
           polishInstructions: editingChapterPolishInstructions.value.trim() || undefined,
           proofreadingInstructions:
             editingChapterProofreadingInstructions.value.trim() || undefined,
+          webUrl: editingChapterWebUrl.value.trim() || undefined,
         },
         editingChapterTargetVolumeId.value,
       );
@@ -346,6 +352,10 @@ export function useChapterManagement(
       editingChapterTranslationInstructions.value = '';
       editingChapterPolishInstructions.value = '';
       editingChapterProofreadingInstructions.value = '';
+      editingChapterWebUrl.value = '';
+      editingChapterLastUpdated.value = undefined;
+      editingChapterLastEdited.value = undefined;
+      editingChapterCreatedAt.value = undefined;
     } finally {
       isEditingChapter.value = false;
     }
@@ -449,6 +459,10 @@ export function useChapterManagement(
     editingChapterTranslationInstructions,
     editingChapterPolishInstructions,
     editingChapterProofreadingInstructions,
+    editingChapterWebUrl,
+    editingChapterLastUpdated,
+    editingChapterLastEdited,
+    editingChapterCreatedAt,
     openEditVolumeDialog,
     openEditChapterDialog,
     handleEditVolume,

@@ -292,6 +292,8 @@ export interface SyncResult {
   gistId?: string;
   gistUrl?: string;
   isRecreated?: boolean; // 是否重新创建了 Gist
+  remoteUpdatedAt?: string; // 远程 Gist 的 updated_at 时间戳（ISO 8601）
+  skipped?: boolean; // 是否因远程无变更而跳过了下载解析
 }
 
 /**
@@ -469,7 +471,7 @@ export class GistSyncService {
       chunked: boolean;
       chunkCount?: number;
     }>,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     if (!this.octokit) {
       throw new Error('Octokit 客户端未初始化，无法验证上传');
     }
@@ -477,6 +479,9 @@ export class GistSyncService {
     const response = await this.octokit.rest.gists.get({
       gist_id: gistId,
     });
+
+    // 捕获验证时 Gist 的 updated_at 时间戳，作为最新的远程时间戳
+    const remoteUpdatedAt = response.data.updated_at ?? undefined;
 
     const uploadedFiles = response.data.files;
     if (!uploadedFiles) {
@@ -549,6 +554,8 @@ export class GistSyncService {
     if (errors.length > 0) {
       throw new Error(`文件验证失败:\n${errors.join('\n')}`);
     }
+
+    return remoteUpdatedAt;
   }
 
   /**
@@ -1156,6 +1163,8 @@ export class GistSyncService {
 
       // 验证上传的文件（必须在返回成功之前验证）
       // 只验证实际要上传的文件（排除 null 值，即要删除的文件）
+      // 同时获取验证后 Gist 的 updated_at 时间戳
+      let remoteUpdatedAt: string | undefined;
       if (gistId) {
         const filesToVerify: Record<string, { content: string }> = {};
         for (const [filename, file] of Object.entries(files)) {
@@ -1163,7 +1172,7 @@ export class GistSyncService {
             filesToVerify[filename] = file;
           }
         }
-        await this.verifyUploadedFiles(gistId, filesToVerify, uploadStats);
+        remoteUpdatedAt = await this.verifyUploadedFiles(gistId, filesToVerify, uploadStats);
       }
 
       const message = gistId ? '数据已成功同步到 Gist' : 'Gist 已创建';
@@ -1174,6 +1183,7 @@ export class GistSyncService {
         ...(gistId ? { gistId } : {}),
         ...(gistUrl ? { gistUrl } : {}),
         ...(isRecreated ? { isRecreated: true } : {}),
+        ...(remoteUpdatedAt ? { remoteUpdatedAt } : {}),
       };
     } catch (error) {
       return {
@@ -1187,10 +1197,12 @@ export class GistSyncService {
    * 从 Gist 下载数据
    * @param config 同步配置
    * @param onProgress 进度回调（可选）
+   * @param lastRemoteUpdatedAt 上次同步时远程 Gist 的 updated_at 时间戳（可选），用于远程变更检测
    */
   async downloadFromGist(
     config: SyncConfig,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
+    lastRemoteUpdatedAt?: string,
   ): Promise<SyncResult & { data?: GistSyncData }> {
     try {
       this.validateConfig(config);
@@ -1208,6 +1220,18 @@ export class GistSyncService {
         () => octokit.rest.gists.get({ gist_id: gistId }),
         '下载 Gist',
       );
+
+      // 远程变更检测：比对 Gist 的 updated_at 与本地存储的时间戳
+      const remoteUpdatedAt = response.data.updated_at ?? undefined;
+      if (lastRemoteUpdatedAt && remoteUpdatedAt && lastRemoteUpdatedAt === remoteUpdatedAt) {
+        // 远程无变更，跳过文件解析
+        return {
+          success: true,
+          skipped: true,
+          remoteUpdatedAt,
+          message: '远程数据未发生变更，跳过下载',
+        };
+      }
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
@@ -1579,6 +1603,7 @@ export class GistSyncService {
         success: true,
         message,
         data: result,
+        ...(remoteUpdatedAt ? { remoteUpdatedAt } : {}),
         ...(params.gistId ? { gistId: params.gistId } : {}),
         ...(response.data.html_url ? { gistUrl: response.data.html_url } : {}),
       };

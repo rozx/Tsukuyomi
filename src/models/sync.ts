@@ -27,6 +27,8 @@ export interface SyncConfig {
   deletedCoverIds?: DeletionRecord[];
   // 封面删除记录（按 URL），用于跨设备场景：同一 URL 不同 id 时也能阻止“复活”
   deletedCoverUrls?: UrlDeletionRecord[];
+  // 上次同步时远程 Gist 的 updated_at 时间戳（ISO 8601 字符串），用于远程变更检测
+  lastRemoteUpdatedAt?: string;
 }
 
 export enum SyncType {

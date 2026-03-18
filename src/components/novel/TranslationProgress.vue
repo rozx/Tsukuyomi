@@ -155,7 +155,27 @@ const progressTaskId = computed(() => {
   if (!isWorking || props.progress.total <= 0) {
     return null;
   }
-  return currentActiveTask.value?.id || null;
+
+  // 确定当前 props 传入的进度数据对应的任务类型
+  // 优先级：proofreading > polish > translation（与 BookDetailsPage 中 progress 选择逻辑一致）
+  const expectedType: string = props.isProofreading
+    ? 'proofreading'
+    : props.isPolishing
+      ? 'polish'
+      : 'translation';
+
+  const chapterId = currentSelectedChapterId.value;
+
+  // 在活跃任务中查找与当前进度数据匹配的任务（类型 + 章节）
+  const matchedTask = recentAITasks.value.find(
+    (t) =>
+      (t.status === 'thinking' || t.status === 'processing') &&
+      t.type === expectedType &&
+      (!chapterId || t.chapterId === chapterId),
+  );
+
+  // 如果精确匹配找到了，使用它；否则退回到第一个活跃任务（兼容旧的行为）
+  return matchedTask?.id || currentActiveTask.value?.id || null;
 });
 
 // 判断是否为具有确定进度数据的活跃任务
@@ -259,6 +279,11 @@ onUnmounted(() => {
   for (const cleanup of throttleCleanups) {
     cleanup();
   }
+  // 清理动态创建的按 taskId 节流器（避免内存泄漏）
+  formattedThinkingThrottles.forEach((t) => t.cleanup());
+  formattedThinkingThrottles.clear();
+  displayedOutputThrottles.forEach((t) => t.cleanup());
+  displayedOutputThrottles.clear();
   // 清理缓存和状态，显式设置为 null 以帮助垃圾回收
   formattedThinkingCache.value = {};
   displayedOutputContent.value = {};
@@ -316,8 +341,8 @@ const isRecentlyUpdated = (
   threshold = UPDATE_THRESHOLD_MS,
 ): boolean => {
   const updateTime = updateMap.value[taskId] || 0;
-  const now = Date.now();
-  return updateTime > 0 && now - updateTime < threshold;
+  const currentTime = Date.now();
+  return updateTime > 0 && currentTime - updateTime < threshold;
 };
 
 const setActiveTab = (taskId: string, value: string) => {
@@ -594,10 +619,12 @@ const clearReviewedTasks = async () => {
         (task.status === 'end' || task.status === 'error' || task.status === 'cancelled'),
     );
 
-    // Remove each translation-related reviewed task
-    for (const task of translationTasks) {
-      await aiProcessingStore.removeTask(task.id);
-    }
+    // Remove each translation-related reviewed task concurrently
+    await Promise.all(translationTasks.map((task) => aiProcessingStore.removeTask(task.id)));
+    // Cleanup UI state memory leak
+    translationTasks.forEach((task) => {
+      bookDetailsStore.clearTaskTranslationProgress(task.id);
+    });
 
     toast.add({
       severity: 'success',
@@ -635,6 +662,8 @@ interface FormattedMessagePart {
   toolResult?: string;
   toolResultTone?: ToolResultTone;
   toolCallTone?: ToolCallTone;
+  /** 工具调用的参数（AI 提交的数据） */
+  toolCallArgs?: string;
   chunkInfo?: string;
 }
 
@@ -644,6 +673,7 @@ type ToolCallTone = 'running' | 'success' | 'warning' | 'error' | 'cancelled';
 // 提取正则表达式为模块级常量，避免重复创建
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
 const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
+const TOOL_CALL_ARGS_PREFIX = '[调用参数: ';
 const TOOL_RESULT_ERROR_PATTERN =
   /error|failed?|exception|forbidden|denied|invalid|timeout|not found|失败|错误|异常|拒绝|超时|无效|未找到/i;
 const TOOL_RESULT_WARNING_PATTERN = /warning|warn|警告|注意|deprecated|fallback|重试/i;
@@ -658,9 +688,15 @@ interface ToolResultMarkerMatch {
   content: string;
 }
 
-function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[] {
+/**
+ * 通用括号平衡标记提取器。
+ * 从 message 中查找所有 `[prefix ...] ` 形式的标记，支持嵌套方括号和字符串转义。
+ */
+function extractBracketBalancedMarkerMatches(
+  message: string,
+  prefix: string,
+): ToolResultMarkerMatch[] {
   const matches: ToolResultMarkerMatch[] = [];
-  const prefix = '[工具结果: ';
   let searchStart = 0;
 
   while (searchStart < message.length) {
@@ -731,6 +767,14 @@ function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[
   }
 
   return matches;
+}
+
+function extractToolResultMarkerMatches(message: string): ToolResultMarkerMatch[] {
+  return extractBracketBalancedMarkerMatches(message, '[工具结果: ');
+}
+
+function extractToolCallArgsMarkerMatches(message: string): ToolResultMarkerMatch[] {
+  return extractBracketBalancedMarkerMatches(message, TOOL_CALL_ARGS_PREFIX);
 }
 
 function formatToolResultPreview(toolResult: string): string {
@@ -808,6 +852,29 @@ function toggleToolResultPopup(event: Event, part: FormattedMessagePart): void {
   toolResultPopoverRef.value.toggle(event);
 }
 
+function toggleToolCallPopup(event: Event, part: FormattedMessagePart): void {
+  const content = part.toolCallArgs?.trim();
+  if (!content) return;
+
+  const popupKey = `toolcall-${part.toolName}-${part.toolCallArgs?.slice(0, 80) || ''}-${part.toolCallTone || 'running'}`;
+  const isSameTarget = activeToolResultPopupKey.value === popupKey;
+
+  activeToolResultPopupContent.value = content;
+  activeToolResultPopupKey.value = popupKey;
+
+  if (!toolResultPopoverRef.value) return;
+
+  if (!isSameTarget) {
+    toolResultPopoverRef.value.hide();
+    nextTick(() => {
+      toolResultPopoverRef.value?.toggle(event);
+    });
+    return;
+  }
+
+  toolResultPopoverRef.value.toggle(event);
+}
+
 function mapToolResultToneToToolCallTone(tone: ToolResultTone): ToolCallTone {
   if (tone === 'error') return 'error';
   if (tone === 'warning') return 'warning';
@@ -852,7 +919,7 @@ const formatThinkingMessage = (
   // 收集所有匹配项及其位置
   const matches: Array<{
     index: number;
-    type: 'chunk-separator' | 'tool-call' | 'tool-result';
+    type: 'chunk-separator' | 'tool-call' | 'tool-call-args' | 'tool-result';
     match: RegExpMatchArray;
   }> = [];
 
@@ -866,6 +933,14 @@ const formatThinkingMessage = (
     matches.push({ index: match.index, type: 'tool-call', match });
   }
   TOOL_CALL_PATTERN.lastIndex = 0;
+
+  for (const markerMatch of extractToolCallArgsMarkerMatches(message)) {
+    const syntheticMatch = [
+      markerMatch.fullText,
+      markerMatch.content,
+    ] as unknown as RegExpMatchArray;
+    matches.push({ index: markerMatch.index, type: 'tool-call-args', match: syntheticMatch });
+  }
 
   for (const markerMatch of extractToolResultMarkerMatches(message)) {
     const syntheticMatch = [
@@ -906,6 +981,17 @@ const formatThinkingMessage = (
           toolCallTone: 'running',
         });
         pendingToolCallPartIndexes.push(parts.length - 1);
+      }
+    } else if (type === 'tool-call-args') {
+      // 将调用参数关联到最近的（最后一个）pending tool-call part
+      if (match[1] !== undefined) {
+        const lastPendingIndex = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
+        if (lastPendingIndex !== undefined) {
+          const toolCallPart = parts[lastPendingIndex];
+          if (toolCallPart?.type === 'tool-call') {
+            toolCallPart.toolCallArgs = formatToolResultTooltip(match[1]);
+          }
+        }
       }
     } else if (type === 'tool-result') {
       if (match[1]) {
@@ -967,13 +1053,21 @@ const formatThinkingMessage = (
 // 缓存格式化后的思考消息：用“按 taskId 更新 + 节流”的方式，避免每个 token 都触发全量解析
 const formattedThinkingCache = ref<Record<string, FormattedMessagePart[]>>({});
 
-const updateFormattedThinkingCache = throttle((taskId: string) => {
-  const task = recentAITasks.value.find((t) => t.id === taskId);
-  const msg = task?.thinkingMessage ?? '';
-  formattedThinkingCache.value[taskId] = msg ? formatThinkingMessage(msg, task?.status) : [];
-}, FORMAT_CACHE_THROTTLE_MS);
-// 注册清理函数
-throttleCleanups.push(updateFormattedThinkingCache.cleanup);
+const formattedThinkingThrottles = new Map<
+  string,
+  { fn: (id: string) => void; cleanup: () => void }
+>();
+const getFormattedThinkingThrottle = (taskId: string) => {
+  if (!formattedThinkingThrottles.has(taskId)) {
+    const throttler = throttle((id: string) => {
+      const task = recentAITasks.value.find((t) => t.id === id);
+      const msg = task?.thinkingMessage ?? '';
+      formattedThinkingCache.value[id] = msg ? formatThinkingMessage(msg, task?.status) : [];
+    }, FORMAT_CACHE_THROTTLE_MS);
+    formattedThinkingThrottles.set(taskId, throttler);
+  }
+  return formattedThinkingThrottles.get(taskId)!;
+};
 
 // 获取格式化后的思考消息（从缓存中读取）
 const getFormattedThinkingMessage = (taskId: string): FormattedMessagePart[] => {
@@ -1021,6 +1115,11 @@ watch(
       if (thinkingContainers.value[taskId]) {
         thinkingContainers.value[taskId] = null;
       }
+      const thinkingThrottle = formattedThinkingThrottles.get(taskId);
+      if (thinkingThrottle) {
+        thinkingThrottle.cleanup();
+        formattedThinkingThrottles.delete(taskId);
+      }
     };
 
     for (const taskId of Object.keys(lastThinkingUpdate.value)) {
@@ -1043,7 +1142,7 @@ watch(
       if (task.length > oldLength) {
         lastThinkingUpdate.value[task.id] = Date.now();
         // 思考文本变化时，节流更新格式化缓存
-        updateFormattedThinkingCache.fn(task.id);
+        getFormattedThinkingThrottle(task.id).fn(task.id);
         const currentTask = currentTaskMap.get(task.id);
         const outputLength = currentTask?.outputContent?.length ?? 0;
         if (outputLength > 0) {
@@ -1098,13 +1197,21 @@ const buildDisplayedOutputContent = (taskId: string, content: string): string =>
   return insertOutputBreaks(content, breaks);
 };
 
-const updateDisplayedOutputContent = throttle((taskId: string) => {
-  const task = recentAITasks.value.find((t) => t.id === taskId);
-  const content = task?.outputContent ?? '';
-  displayedOutputContent.value[taskId] = buildDisplayedOutputContent(taskId, content);
-}, THROTTLE_DELAY_MS);
-// 注册清理函数
-throttleCleanups.push(updateDisplayedOutputContent.cleanup);
+const displayedOutputThrottles = new Map<
+  string,
+  { fn: (id: string) => void; cleanup: () => void }
+>();
+const getDisplayedOutputThrottle = (taskId: string) => {
+  if (!displayedOutputThrottles.has(taskId)) {
+    const throttler = throttle((id: string) => {
+      const task = recentAITasks.value.find((t) => t.id === id);
+      const content = task?.outputContent ?? '';
+      displayedOutputContent.value[id] = buildDisplayedOutputContent(id, content);
+    }, THROTTLE_DELAY_MS);
+    displayedOutputThrottles.set(taskId, throttler);
+  }
+  return displayedOutputThrottles.get(taskId)!;
+};
 
 // 节流后的输出内容滚动处理函数
 const handleOutputScroll = throttle(() => {
@@ -1149,6 +1256,11 @@ watch(
       if (outputContainers.value[taskId]) {
         outputContainers.value[taskId] = null;
       }
+      const outputThrottle = displayedOutputThrottles.get(taskId);
+      if (outputThrottle) {
+        outputThrottle.cleanup();
+        displayedOutputThrottles.delete(taskId);
+      }
     };
 
     for (const taskId of Object.keys(lastOutputUpdate.value)) {
@@ -1183,7 +1295,7 @@ watch(
         }
         lastOutputUpdate.value[task.id] = Date.now();
         // 输出变化时，节流刷新显示文本
-        updateDisplayedOutputContent.fn(task.id);
+        getDisplayedOutputThrottle(task.id).fn(task.id);
       }
     }
 
@@ -1494,7 +1606,21 @@ watch(
                               </div>
                               <div
                                 v-else-if="part.type === 'tool-call'"
-                                class="thinking-tool-event thinking-tool-call"
+                                :class="[
+                                  'thinking-tool-event',
+                                  'thinking-tool-call',
+                                  { 'thinking-tool-call-clickable': !!part.toolCallArgs },
+                                ]"
+                                :role="part.toolCallArgs ? 'button' : undefined"
+                                :tabindex="part.toolCallArgs ? 0 : undefined"
+                                :title="
+                                  part.toolCallArgs
+                                    ? '点击查看工具调用参数'
+                                    : getToolCallHint(task, part)
+                                "
+                                @click="toggleToolCallPopup($event, part)"
+                                @keydown.enter.prevent="toggleToolCallPopup($event, part)"
+                                @keydown.space.prevent="toggleToolCallPopup($event, part)"
                               >
                                 <div class="thinking-tool-call-icon">
                                   <i :class="getToolCallIconClass(task, part)"></i>
@@ -2118,6 +2244,10 @@ watch(
 .thinking-tool-call:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 14px var(--blue-500-opacity-20, rgba(59, 130, 246, 0.2));
+}
+
+.thinking-tool-call-clickable {
+  cursor: pointer;
 }
 
 .thinking-tool-call-running {

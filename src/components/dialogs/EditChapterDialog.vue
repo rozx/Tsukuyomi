@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch } from 'vue';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -24,6 +24,10 @@ const props = defineProps<{
   targetVolumeId: string | null;
   volumeOptions: VolumeOption[];
   loading?: boolean;
+  webUrl?: string;
+  lastUpdated?: Date | undefined;
+  lastEdited?: Date | undefined;
+  createdAt?: Date | undefined;
   translationInstructions?: string;
   polishInstructions?: string;
   proofreadingInstructions?: string;
@@ -37,6 +41,7 @@ const emit = defineEmits<{
       title: string;
       translation: string;
       targetVolumeId: string;
+      webUrl?: string | undefined;
       translationInstructions?: string;
       polishInstructions?: string;
       proofreadingInstructions?: string;
@@ -47,17 +52,13 @@ const emit = defineEmits<{
 const chapterTitle = ref('');
 const chapterTranslation = ref('');
 const selectedVolumeId = ref<string | null>(null);
+const chapterWebUrl = ref('');
 const chapterTranslationInstructions = ref('');
 const chapterPolishInstructions = ref('');
 const chapterProofreadingInstructions = ref('');
 
 // 特殊指令活动标签页
 const specialInstructionsActiveTab = ref<string>('translation');
-
-// 确保始终有默认值
-const currentSpecialInstructionsActiveTab = computed(
-  () => specialInstructionsActiveTab.value || 'translation',
-);
 
 watch(
   () => props.visible,
@@ -66,6 +67,7 @@ watch(
       chapterTitle.value = props.title;
       chapterTranslation.value = props.translation;
       selectedVolumeId.value = props.targetVolumeId;
+      chapterWebUrl.value = props.webUrl || '';
       chapterTranslationInstructions.value = props.translationInstructions || '';
       chapterPolishInstructions.value = props.polishInstructions || '';
       chapterProofreadingInstructions.value = props.proofreadingInstructions || '';
@@ -76,28 +78,12 @@ watch(
 );
 
 watch(
-  () => props.title,
-  (newVal) => {
+  () => [props.title, props.translation, props.targetVolumeId] as const,
+  ([newTitle, newTranslation, newVolumeId]) => {
     if (props.visible) {
-      chapterTitle.value = newVal;
-    }
-  },
-);
-
-watch(
-  () => props.translation,
-  (newVal) => {
-    if (props.visible) {
-      chapterTranslation.value = newVal;
-    }
-  },
-);
-
-watch(
-  () => props.targetVolumeId,
-  (newVal) => {
-    if (props.visible) {
-      selectedVolumeId.value = newVal;
+      chapterTitle.value = newTitle;
+      chapterTranslation.value = newTranslation;
+      selectedVolumeId.value = newVolumeId;
     }
   },
 );
@@ -109,6 +95,7 @@ const handleSave = () => {
       title: string;
       translation: string;
       targetVolumeId: string;
+      webUrl?: string | undefined;
       translationInstructions?: string;
       polishInstructions?: string;
       proofreadingInstructions?: string;
@@ -116,6 +103,7 @@ const handleSave = () => {
       title: chapterTitle.value.trim(),
       translation: chapterTranslation.value.trim(),
       targetVolumeId: selectedVolumeId.value,
+      webUrl: chapterWebUrl.value.trim() || undefined,
       translationInstructions: chapterTranslationInstructions.value.trim(),
       polishInstructions: chapterPolishInstructions.value.trim(),
       proofreadingInstructions: chapterProofreadingInstructions.value.trim(),
@@ -189,6 +177,57 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
           class="w-full"
         />
       </div>
+      <div class="space-y-2">
+        <label for="edit-chapter-weburl" class="block text-sm font-medium text-moon/90"
+          >网络来源地址</label
+        >
+        <InputText
+          id="edit-chapter-weburl"
+          v-model="chapterWebUrl"
+          placeholder="输入章节的网络 URL（可选）"
+          class="w-full"
+          @keyup.enter="handleSave"
+        />
+        <small class="text-moon/60 text-xs block"
+          >用于关联网络来源，设置后可通过在线获取检测更新。清空则解除关联。</small
+        >
+      </div>
+
+      <!-- 日期统计信息 -->
+      <div
+        v-if="lastEdited || createdAt || lastUpdated"
+        class="p-3 bg-white/5 rounded-lg border border-white/10 mt-2"
+      >
+        <div class="flex flex-wrap gap-x-6 gap-y-3">
+          <div v-if="lastUpdated" class="flex flex-col gap-1">
+            <span
+              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
+              ><i class="pi pi-globe text-[10px]"></i> 远程更新</span
+            >
+            <span class="text-xs text-moon/90 font-mono">{{
+              new Date(lastUpdated).toLocaleString('zh-CN')
+            }}</span>
+          </div>
+          <div v-if="lastEdited" class="flex flex-col gap-1">
+            <span
+              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
+              ><i class="pi pi-pencil text-[10px]"></i> 本地编辑</span
+            >
+            <span class="text-xs text-moon/90 font-mono">{{
+              new Date(lastEdited).toLocaleString('zh-CN')
+            }}</span>
+          </div>
+          <div v-if="createdAt" class="flex flex-col gap-1">
+            <span
+              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
+              ><i class="pi pi-calendar-plus text-[10px]"></i> 创建时间</span
+            >
+            <span class="text-xs text-moon/90 font-mono">{{
+              new Date(createdAt).toLocaleString('zh-CN')
+            }}</span>
+          </div>
+        </div>
+      </div>
 
       <!-- 特殊指令 -->
       <div class="space-y-2 pt-2 border-t border-white/10">
@@ -199,7 +238,7 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
           >
         </div>
         <Tabs
-          :value="currentSpecialInstructionsActiveTab"
+          :value="specialInstructionsActiveTab"
           @update:value="handleSpecialInstructionsTabChange"
           class="special-instructions-tabs"
         >

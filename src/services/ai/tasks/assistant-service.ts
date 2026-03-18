@@ -427,6 +427,7 @@ export class AssistantService {
       temperature: SUMMARY_TEMPERATURE, // 使用较低温度以获得更准确的总结
       maxOutputTokens: model.maxOutputTokens,
       signal,
+      useCorsProxy: model.useCorsProxy,
       ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 
@@ -715,6 +716,7 @@ export class AssistantService {
       temperature: model.temperature ?? DEFAULT_TEMPERATURE,
       maxOutputTokens: model.maxOutputTokens,
       signal,
+      useCorsProxy: model.useCorsProxy,
       ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
 
@@ -1385,6 +1387,7 @@ export class AssistantService {
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
         maxOutputTokens: finalMaxTokens,
         signal: finalSignal,
+        useCorsProxy: model.useCorsProxy,
         ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 

@@ -800,6 +800,8 @@ export class MemoryService {
     content: string,
     summary: string,
     attachedTo?: MemoryAttachment[],
+    /** 保留指定的 lastAccessedAt（用于同步场景，避免覆盖远程时间戳） */
+    preserveLastAccessedAt?: number,
   ): Promise<Memory> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
@@ -839,7 +841,7 @@ export class MemoryService {
         attachedTo: finalAttachedTo,
         content,
         summary,
-        lastAccessedAt: now,
+        lastAccessedAt: preserveLastAccessedAt ?? now,
       };
 
       await db.put('memories', updatedMemory);

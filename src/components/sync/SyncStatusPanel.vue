@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
@@ -90,57 +90,15 @@ const remoteStats = ref<{
 } | null>(null);
 
 // 同步相关 - 使用 composable
-const {
-  uploadToGist,
-  downloadFromGist,
-  restoreDeletedItems,
-  confirmUploadWithLocalData,
-  cancelPendingUpload,
-  pendingUploadData,
-} = useGistSync();
+const { sync, restoreDeletedItems } = useGistSync();
 
-// 冲突解决对话框状态
+// 恢复已删除项目对话框状态
 const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
 const selectedRestoreItems = ref<string[]>([]);
 
-// 上传确认对话框状态
-const showUploadConfirmDialog = ref(false);
-
-// 监听待处理上传状态
-watch(pendingUploadData, (newValue) => {
-  if (newValue) {
-    showUploadConfirmDialog.value = true;
-  }
-});
-
-// 确认使用本地数据上传
-const confirmLocalUpload = async () => {
-  showUploadConfirmDialog.value = false;
-  await confirmUploadWithLocalData();
-  
-  // 更新统计
-  remoteStats.value = {
-    booksCount: booksStore.books.length,
-    aiModelsCount: aiModelsStore.models.length,
-  };
-  
-  toast.add({
-    severity: 'success',
-    summary: '同步成功',
-    detail: '已使用本地数据上传到 Gist',
-    life: 3000,
-  });
-};
-
-// 取消待处理上传
-const cancelUpload = () => {
-  showUploadConfirmDialog.value = false;
-  cancelPendingUpload();
-};
-
-// 上传配置
-const uploadConfig = async () => {
+// 同步操作
+const syncData = async () => {
   const config = gistSync.value;
   if (!config.enabled || !config.syncParams.username || !config.secret) {
     toast.add({
@@ -152,50 +110,7 @@ const uploadConfig = async () => {
     return;
   }
 
-  // 使用 composable 处理上传
-  await uploadToGist(
-    config,
-    (value) => {
-      isSyncing.value = value;
-    },
-    (result) => {
-      // 更新远程统计数据（上传的数据）
-      remoteStats.value = {
-        booksCount: booksStore.books.length,
-        aiModelsCount: aiModelsStore.models.length,
-      };
-      toast.add({
-        severity: 'success',
-        summary: '同步成功',
-        detail: result.message || '数据已成功同步到 Gist',
-        life: 3000,
-      });
-    },
-  );
-};
-
-// 下载配置
-const downloadConfig = async () => {
-  const config = gistSync.value;
-  if (
-    !config.enabled ||
-    !config.syncParams.gistId ||
-    !config.syncParams.username ||
-    !config.secret
-  ) {
-    toast.add({
-      severity: 'warn',
-      summary: '下载失败',
-      detail: '请先在设置中配置 Gist 同步',
-      life: 3000,
-    });
-    return;
-  }
-
-  // 使用 composable 处理下载
-  const items = await downloadFromGist(config, (value) => {
-    isSyncing.value = value;
-  });
+  const items = await sync();
 
   // 如果有可恢复的项目，显示恢复对话框
   if (items.length > 0) {
@@ -219,7 +134,7 @@ const confirmRestore = async () => {
 
   if (itemsToRestore.length > 0) {
     await restoreDeletedItems(itemsToRestore);
-    
+
     // 更新统计
     remoteStats.value = {
       booksCount: booksStore.books.length,
@@ -237,7 +152,7 @@ const skipRestore = () => {
   showRestoreDialog.value = false;
   restorableItems.value = [];
   selectedRestoreItems.value = [];
-  
+
   toast.add({
     severity: 'info',
     summary: '跳过恢复',
@@ -346,7 +261,7 @@ defineExpose({
             style="height: 6px"
             class="sync-progress-bar"
           />
-          <p class="text-xs text-moon/50 mt-2 truncate" style="max-width: 274px;">
+          <p class="text-xs text-moon/50 mt-2 truncate" style="max-width: 274px">
             {{ syncProgress.message }}
           </p>
         </div>
@@ -369,20 +284,12 @@ defineExpose({
 
       <div class="flex flex-col gap-2 pt-2 border-t border-white/10">
         <Button
-          label="上传配置"
-          icon="pi pi-upload"
+          label="同步"
+          icon="pi pi-sync"
           class="p-button-primary w-full"
           :disabled="!gistSync.enabled || isSyncing"
           :loading="isSyncing"
-          @click="uploadConfig"
-        />
-        <Button
-          label="下载配置"
-          icon="pi pi-download"
-          class="p-button-outlined w-full"
-          :disabled="!gistSync.enabled || isSyncing || !gistSync.syncParams.gistId"
-          :loading="isSyncing"
-          @click="downloadConfig"
+          @click="syncData"
         />
       </div>
     </div>
@@ -398,34 +305,29 @@ defineExpose({
     @hide="skipRestore"
   >
     <div class="space-y-4">
-      <p class="text-moon/80">
-        远程存在以下您之前删除的项目，您可以选择恢复它们：
-      </p>
-      
+      <p class="text-moon/80">远程存在以下您之前删除的项目，您可以选择恢复它们：</p>
+
       <div class="max-h-60 overflow-y-auto space-y-2">
         <div
           v-for="item in restorableItems"
           :key="item.id"
           class="flex items-center gap-3 p-3 bg-white/5 rounded-lg"
         >
-          <Checkbox
-            v-model="selectedRestoreItems"
-            :input-id="item.id"
-            :value="item.id"
-          />
+          <Checkbox v-model="selectedRestoreItems" :input-id="item.id" :value="item.id" />
           <label :for="item.id" class="flex-1 cursor-pointer">
             <div class="flex items-center gap-2">
               <i
                 :class="[
-                  item.type === 'novel' ? 'pi pi-book' :
-                  item.type === 'model' ? 'pi pi-cog' : 'pi pi-image',
-                  'text-moon/70'
+                  item.type === 'novel'
+                    ? 'pi pi-book'
+                    : item.type === 'model'
+                      ? 'pi pi-cog'
+                      : 'pi pi-image',
+                  'text-moon/70',
                 ]"
               />
               <span class="text-moon/90">{{ item.title }}</span>
-              <span class="text-xs text-moon/50">
-                ({{ getItemTypeLabel(item.type) }})
-              </span>
+              <span class="text-xs text-moon/50"> ({{ getItemTypeLabel(item.type) }}) </span>
             </div>
             <div class="text-xs text-moon/50 mt-1">
               删除于: {{ formatDeletedTime(item.deletedAt) }}
@@ -437,56 +339,12 @@ defineExpose({
 
     <template #footer>
       <div class="flex gap-2 justify-end">
-        <Button
-          label="跳过"
-          class="p-button-text"
-          @click="skipRestore"
-        />
+        <Button label="跳过" class="p-button-text" @click="skipRestore" />
         <Button
           label="恢复选中项目"
           class="p-button-primary"
           :disabled="selectedRestoreItems.length === 0"
           @click="confirmRestore"
-        />
-      </div>
-    </template>
-  </Dialog>
-
-  <!-- 上传确认对话框（下载失败时） -->
-  <Dialog
-    v-model:visible="showUploadConfirmDialog"
-    modal
-    header="下载远程数据失败"
-    :style="{ width: '400px' }"
-    :closable="true"
-    @hide="cancelUpload"
-  >
-    <div class="space-y-4">
-      <div class="flex items-start gap-3">
-        <i class="pi pi-exclamation-triangle text-2xl text-yellow-500" />
-        <div>
-          <p class="text-moon/90 font-medium">
-            无法获取远程数据进行合并
-          </p>
-          <p class="text-moon/70 text-sm mt-2">
-            继续上传可能会覆盖远程的更新数据。建议稍后重试，或确认您本地的数据是最新的。
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <template #footer>
-      <div class="flex gap-2 justify-end">
-        <Button
-          label="取消上传"
-          class="p-button-text"
-          @click="cancelUpload"
-        />
-        <Button
-          label="仍然上传"
-          class="p-button-warning"
-          icon="pi pi-exclamation-triangle"
-          @click="confirmLocalUpload"
         />
       </div>
     </template>
