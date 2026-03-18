@@ -1303,6 +1303,43 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(true);
+      expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
+      expect(resultObj.quality_warnings.join('\n')).toContain('检查翻译完整性');
+    });
+
+    test('纯符号段落提交与原文相同时不应触发完整性警告', async () => {
+      const para1 = createTestParagraph('para1', '***');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
+      const tool = getTool();
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+      const result = await tool.handler(
+        {
+          paragraphs: [
+            {
+              paragraph_id: 'para1',
+              translated_text: '***',
+              original_text_prefix: '***',
+            },
+          ],
+        },
+        {
+          bookId: 'novel-1',
+          taskId: 'task-1',
+          aiProcessingStore: mockStore,
+          aiModelId: 'model-new',
+        },
+      );
+
+      const resultObj = JSON.parse(result as string);
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.quality_warnings).toBeUndefined();
     });
 
     test('与原文相同且命中当前选中版本时仍应拒绝', async () => {

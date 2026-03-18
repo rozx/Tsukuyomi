@@ -97,7 +97,7 @@ interface ParagraphIdCorrectionCandidate {
 }
 
 /**
- * 校验前缀长度是否在合法范围内（不含 startsWith 匹配和纯符号跳过逻辑）。
+ * 校验前缀长度是否在合法范围内（不含 includes 匹配和纯符号跳过逻辑）。
  *
  * - 最小长度：min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
  * - 最大长度：min(MAX_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
@@ -199,6 +199,8 @@ const ERROR_MESSAGES = {
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
   TRANSLATION_SAME_AS_SELECTED: (paragraphId: string) =>
     `段落 ${paragraphId} 的译文与当前选中版本相同，请不要提交相同内容。`,
+  TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS: (paragraphId: string) =>
+    `段落 ${paragraphId} 的译文与原文相同，请检查翻译完整性，确认不存在遗漏的未翻译内容。`,
   TRANSLATION_DUPLICATE: (count: number) =>
     `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
@@ -786,7 +788,7 @@ async function normalizeParagraphIds(
     }
 
     const candidateText = candidateParagraphTextMap.get(correction.candidateId)?.trim();
-    if (!candidateText || !candidateText.startsWith(prefix)) {
+    if (!candidateText || !candidateText.includes(prefix)) {
       continue;
     }
 
@@ -1063,7 +1065,7 @@ async function processTranslationBatch(
       }
 
       // 纯符号/装饰性段落（如 ◇◇◇、全角括号+空格、破折号线、星号等）跳过前缀长度校验，
-      // 仅保留 startsWith 匹配校验。这类段落的前缀长度难以满足常规限制。
+      // 仅保留 includes 匹配校验。这类段落的前缀长度难以满足常规限制。
       const symbolOnly = isSymbolOnly(trimmedOriginalText);
 
       if (!symbolOnly) {
@@ -1085,7 +1087,7 @@ async function processTranslationBatch(
         }
       }
 
-      if (!trimmedOriginalText.startsWith(trimmedPrefix)) {
+      if (!trimmedOriginalText.includes(trimmedPrefix)) {
         pushFailedItem(
           item.paragraphId,
           'ORIGINAL_TEXT_PREFIX_MISMATCH',
@@ -1096,6 +1098,12 @@ async function processTranslationBatch(
 
       // 允许译文与原文相同：不再在工具层阻止该提交。
       // 若命中“当前选中版本重复”规则，仍会在后续校验中被拒绝。
+      const trimmedTranslatedText = item.translatedText.trim();
+      if (!symbolOnly && trimmedTranslatedText === trimmedOriginalText) {
+        validationWarnings.push(
+          ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS(item.paragraphId),
+        );
+      }
 
       // 检查提交的翻译是否与任何已有翻译版本完全相同
       if (paragraph.translations && paragraph.translations.length > 0) {
