@@ -70,6 +70,7 @@ export function useSyncExecutor() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let remoteData: any = undefined;
     let downloadSkipped = false;
+    let pendingRemoteUpdatedAt: string | undefined; // 延迟到 apply 成功后再更新
 
     if (config.syncParams.gistId) {
       settingsStore.updateSyncProgress({
@@ -138,14 +139,10 @@ export function useSyncExecutor() {
         // 有新数据，继续处理
         remoteData = downloadResult.data;
 
-        // 更新 remoteUpdatedAt
-        if (downloadResult.remoteUpdatedAt) {
-          try {
-            await settingsStore.updateLastRemoteUpdatedAt(downloadResult.remoteUpdatedAt);
-          } catch (error) {
-            console.error('[useSyncExecutor] 更新 lastRemoteUpdatedAt 失败:', error);
-          }
-        }
+        // 注意：remoteUpdatedAt 不在此处更新，而是在 Phase 2 apply 成功后更新。
+        // 这样可以防止 apply 失败时 lastRemoteUpdatedAt 超前，导致下次同步跳过下载，
+        // 使本地残留的已删除书籍在后续上传时被重新添加到远程。
+        pendingRemoteUpdatedAt = downloadResult.remoteUpdatedAt;
       } else if (!downloadResult.success) {
         // 下载失败，终止同步
         const errorMsg = downloadResult.error || '从 Gist 下载数据时发生未知错误';
@@ -180,6 +177,15 @@ export function useSyncExecutor() {
         current: UPLOAD_PHASE_START,
         total: OVERALL_TOTAL,
       });
+
+      // Apply 成功后，更新 remoteUpdatedAt（在 Phase 1 中延迟到此处）
+      if (pendingRemoteUpdatedAt) {
+        try {
+          await settingsStore.updateLastRemoteUpdatedAt(pendingRemoteUpdatedAt);
+        } catch (error) {
+          console.error('[useSyncExecutor] 更新 lastRemoteUpdatedAt 失败:', error);
+        }
+      }
 
       // 更新模型同步状态（用于上传变更检测，需要在 Phase 3 之前更新）
       // 注意：lastSyncTime 不在此处更新，而是在同步完全成功后更新（Phase 4 完成或无需上传时）

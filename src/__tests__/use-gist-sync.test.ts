@@ -533,6 +533,66 @@ describe('useGistSync', () => {
       expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
     });
 
+    it('下载成功后 apply 成功：在 apply 之后更新 lastRemoteUpdatedAt', async () => {
+      const remoteData = createMockRemoteData({ novels: [{ id: 'remote-book' }] });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue({
+        success: true,
+        data: remoteData,
+        remoteUpdatedAt: '2025-01-15T10:00:00Z',
+      } as any);
+      spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(false);
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(mockSettingsStore.updateLastRemoteUpdatedAt).toHaveBeenCalledWith(
+        '2025-01-15T10:00:00Z',
+      );
+    });
+
+    it('下载成功但 apply 失败：不更新 lastRemoteUpdatedAt（防止下次跳过下载导致已删除书籍复活）', async () => {
+      const remoteData = createMockRemoteData({ novels: [{ id: 'remote-book' }] });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue({
+        success: true,
+        data: remoteData,
+        remoteUpdatedAt: '2025-01-15T10:00:00Z',
+      } as any);
+      spyOn(SyncDataService, 'applyDownloadedData').mockRejectedValue(
+        new Error('应用数据失败'),
+      );
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(mockSettingsStore.updateLastRemoteUpdatedAt).not.toHaveBeenCalled();
+    });
+
+    it('apply 失败时同时不更新 lastSyncTime（双重保护：防止删除记录失效 + 防止跳过下载）', async () => {
+      const remoteData = createMockRemoteData({ novels: [{ id: 'remote-book' }] });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue({
+        success: true,
+        data: remoteData,
+        remoteUpdatedAt: '2025-01-15T10:00:00Z',
+      } as any);
+      spyOn(SyncDataService, 'applyDownloadedData').mockRejectedValue(
+        new Error('应用数据失败'),
+      );
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(mockSettingsStore.updateLastRemoteUpdatedAt).not.toHaveBeenCalled();
+      expect(mockSettingsStore.updateLastSyncTime).not.toHaveBeenCalled();
+      expect(mockSettingsStore.cleanupOldDeletionRecords).not.toHaveBeenCalled();
+    });
+
     it('进度更新：下载阶段设置 downloading stage', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
