@@ -181,11 +181,11 @@ export function useSyncExecutor() {
         total: OVERALL_TOTAL,
       });
 
-      // 更新同步状态
+      // 更新模型同步状态（用于上传变更检测，需要在 Phase 3 之前更新）
+      // 注意：lastSyncTime 不在此处更新，而是在同步完全成功后更新（Phase 4 完成或无需上传时）
+      // 这样可以防止上传失败时 lastSyncTime 超前于 deletedAt，导致删除记录变为"陈旧"
       try {
-        await settingsStore.updateLastSyncTime();
         await settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
-        await settingsStore.cleanupOldDeletionRecords();
       } catch (error) {
         console.error('[useSyncExecutor] 更新同步状态失败:', error);
       }
@@ -235,6 +235,14 @@ export function useSyncExecutor() {
         current: OVERALL_TOTAL,
         total: OVERALL_TOTAL,
       });
+
+      // 同步完成（无需上传），更新 lastSyncTime
+      try {
+        await settingsStore.updateLastSyncTime();
+        await settingsStore.cleanupOldDeletionRecords();
+      } catch (error) {
+        console.error('[useSyncExecutor] 更新同步状态失败:', error);
+      }
 
       if (onSuccess) {
         onSuccess('同步完成', '数据已是最新，无需上传');

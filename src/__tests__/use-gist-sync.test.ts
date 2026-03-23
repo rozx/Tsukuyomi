@@ -279,6 +279,69 @@ describe('useGistSync', () => {
       expect(result).toEqual(restorableItems);
     });
 
+    it('上传失败时不更新 lastSyncTime（防止删除记录变为陈旧）', async () => {
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
+      spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+      spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
+        success: false,
+        error: '上传被拒绝',
+      } as any);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      // 上传失败时不应更新 lastSyncTime，否则删除记录的 deletedAt 会小于 lastSyncTime，
+      // 导致后续同步将删除记录视为"陈旧"而跳过上传，书籍无法从远端删除
+      expect(mockSettingsStore.updateLastSyncTime).not.toHaveBeenCalled();
+      expect(mockSettingsStore.cleanupOldDeletionRecords).not.toHaveBeenCalled();
+    });
+
+    it('上传抛异常时不更新 lastSyncTime（防止删除记录变为陈旧）', async () => {
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
+      spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+      spyOn(GistSyncService.prototype, 'uploadToGist').mockRejectedValue(new Error('网络中断'));
+
+      const { sync } = useGistSync();
+      await sync();
+
+      // 上传异常时也不应更新 lastSyncTime
+      expect(mockSettingsStore.updateLastSyncTime).not.toHaveBeenCalled();
+      expect(mockSettingsStore.cleanupOldDeletionRecords).not.toHaveBeenCalled();
+    });
+
+    it('上传成功时更新 lastSyncTime', async () => {
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
+      spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+      spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue(mockUploadSuccess());
+
+      const { sync } = useGistSync();
+      await sync();
+
+      // 上传成功后应更新 lastSyncTime
+      expect(mockSettingsStore.updateLastSyncTime).toHaveBeenCalled();
+      expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
+    });
+
+    it('无需上传时更新 lastSyncTime（同步完成）', async () => {
+      spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
+      spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(false);
+      spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      // 无需上传也意味着同步完成，应更新 lastSyncTime
+      expect(mockSettingsStore.updateLastSyncTime).toHaveBeenCalled();
+      expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
+    });
+
     it('上传抛异常：显示错误 toast，返回 restorable items', async () => {
       const restorableItems = [
         { id: 'model-1', type: 'model' as const, title: '测试模型', deletedAt: 2000, data: {} },
@@ -454,7 +517,7 @@ describe('useGistSync', () => {
       expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
     });
 
-    it('下载成功后更新同步状态（lastSyncTime、lastSyncedModelIds）', async () => {
+    it('同步完成后更新同步状态（lastSyncTime 在同步结束时更新，lastSyncedModelIds 在 apply 后更新）', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
       spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(false);
@@ -463,8 +526,9 @@ describe('useGistSync', () => {
       const { sync } = useGistSync();
       await sync();
 
-      // 应更新同步状态（在 apply 完成后）
+      // lastSyncTime 在同步完全完成后更新（此处无需上传，因此同步已完成）
       expect(mockSettingsStore.updateLastSyncTime).toHaveBeenCalled();
+      // lastSyncedModelIds 在 apply 后立即更新（用于 Phase 3 变更检测）
       expect(mockSettingsStore.updateLastSyncedModelIds).toHaveBeenCalledWith(['model-1']);
       expect(mockSettingsStore.cleanupOldDeletionRecords).toHaveBeenCalled();
     });
