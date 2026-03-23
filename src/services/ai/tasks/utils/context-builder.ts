@@ -181,6 +181,27 @@ export async function isSkipAskUserEnabled(bookId?: string): Promise<boolean> {
 }
 
 /**
+ * 获取书籍级配置：是否启用原文校验（original_text_prefix 校验）
+ * - true: 启用校验
+ * - false/undefined: 禁用校验（默认）
+ */
+export function isOriginalTextValidationEnabled(bookId?: string): boolean {
+  if (!bookId) return false;
+
+  try {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+    return book?.enableOriginalTextValidation === true;
+  } catch (e) {
+    console.warn(
+      `[isOriginalTextValidationEnabled] ⚠️ 获取书籍设置失败（书籍ID: ${bookId}）`,
+      e instanceof Error ? e.message : e,
+    );
+    return false;
+  }
+}
+
+/**
  * 构建输出内容后的后续操作提示 - 精简版
  */
 export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {

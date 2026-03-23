@@ -72,6 +72,14 @@ export interface Novel {
    * - 此设置应用于整个书籍的所有章节
    */
   skipAskUser?: boolean | undefined;
+
+  /**
+   * 是否启用原文校验（original_text_prefix 校验）
+   * - true: 启用原文前缀校验（AI 提交翻译时必须提供 original_text_prefix 且通过校验）
+   * - false/undefined: 禁用校验（默认），AI 无需提供 original_text_prefix，减少 token 消耗
+   * - 此设置应用于整个书籍的所有章节
+   */
+  enableOriginalTextValidation?: boolean | undefined;
 }
 
 export interface CoverImage {

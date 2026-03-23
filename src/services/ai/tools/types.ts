@@ -181,6 +181,13 @@ export interface ToolContext {
    * 直接以内存中最新的翻译状态为准。
    */
   accumulatedParagraphs?: Map<string, string>;
+  /**
+   * 是否启用原文校验（original_text_prefix 校验）
+   * 由书籍设置传入，控制 add_translation_batch 是否校验 original_text_prefix
+   * - true: 启用校验
+   * - false/undefined: 禁用校验（默认）
+   */
+  enableOriginalTextValidation?: boolean;
 }
 
 export type ToolHandler = (

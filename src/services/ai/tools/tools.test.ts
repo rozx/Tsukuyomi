@@ -1,5 +1,5 @@
 import { describe, expect, it, jest, mock, beforeEach } from 'bun:test';
-import { translationTools } from './translation-tools';
+import { createTranslationTools } from './translation-tools';
 import { taskStatusTools } from './task-status-tools';
 import { bookTools } from './book-tools';
 import { BookService } from 'src/services/book-service';
@@ -109,8 +109,9 @@ describe('AI Tools Tests', () => {
   });
 
   describe('Translation Batch Tools (add_translation_batch)', () => {
-    const addTranslationBatchTool = translationTools.find(
-      (t) => t.definition.function.name === 'add_translation_batch',
+    const addTranslationBatchTool = createTranslationTools().find(
+      (t: { definition: { function: { name: string } } }) =>
+        t.definition.function.name === 'add_translation_batch',
     );
 
     const withPrefix = (

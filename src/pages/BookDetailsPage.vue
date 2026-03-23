@@ -1626,6 +1626,7 @@ const handleSaveChapterSettings = async (data: {
   normalizeTitleOnDisplay?: boolean;
   translationChunkSize?: number;
   skipAskUser?: boolean;
+  enableOriginalTextValidation?: boolean;
   // 章节设置（章节级别）
   translationInstructions?: string;
   polishInstructions?: string;
@@ -1641,6 +1642,7 @@ const handleSaveChapterSettings = async (data: {
     const normalizeTitleOnDisplay = data.normalizeTitleOnDisplay ?? false;
     const translationChunkSize = resolveTaskChunkSize(data.translationChunkSize);
     const skipAskUser = data.skipAskUser ?? false;
+    const enableOriginalTextValidation = data.enableOriginalTextValidation ?? false;
 
     // 章节设置（章节级别）
     const translationInstructions = data.translationInstructions ?? '';
@@ -1654,6 +1656,7 @@ const handleSaveChapterSettings = async (data: {
       normalizeTitleOnDisplay,
       translationChunkSize,
       skipAskUser,
+      enableOriginalTextValidation,
       lastEdited: new Date(),
     };
 

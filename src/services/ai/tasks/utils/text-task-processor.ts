@@ -42,6 +42,7 @@ import {
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
+  isOriginalTextValidationEnabled,
   buildFormattedChunks,
   buildChunks,
   buildPreviousChapterSection,
@@ -366,7 +367,11 @@ export async function processTextTask(
   try {
     const service = AIServiceFactory.getService(model.provider);
     const skipAskUser = await isSkipAskUserEnabled(bookId);
-    const tools = ToolRegistry.getTranslationTools(bookId, { excludeAskUser: skipAskUser });
+    const enableOriginalTextValidation = isOriginalTextValidationEnabled(bookId);
+    const tools = ToolRegistry.getTranslationTools(bookId, {
+      excludeAskUser: skipAskUser,
+      enableOriginalTextValidation,
+    });
     const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
 
     // 获取温度配置
@@ -722,6 +727,7 @@ export async function processTextTask(
                   }
                 : undefined,
             hasNextChunk: chunkIndex < chunks.length - 1,
+            enableOriginalTextValidation,
           });
 
           // 检查状态

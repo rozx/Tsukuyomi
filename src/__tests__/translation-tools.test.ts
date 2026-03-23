@@ -101,7 +101,8 @@ await mock.module('src/stores/books', () => ({
 }));
 
 // Import translationTools AFTER useBooksStore mock
-const { translationTools } = await import('../services/ai/tools/translation-tools');
+const { createTranslationTools } = await import('../services/ai/tools/translation-tools');
+const translationTools = createTranslationTools();
 const { calculateAllowedBatchSize } = await import('../services/ai/tools/translation-tools');
 
 // 使用 spyOn 替代 mock.module 来 mock BookService（避免全局污染模块缓存）
@@ -143,7 +144,8 @@ describe('add_translation_batch', () => {
   // 辅助函数：获取工具
   const getTool = () => {
     const tool = translationTools.find(
-      (t) => t.definition.function?.name === 'add_translation_batch',
+      (t: { definition: { function?: { name: string } } }) =>
+        t.definition.function?.name === 'add_translation_batch',
     );
     if (!tool?.handler) throw new Error('工具未找到');
 
@@ -1823,6 +1825,7 @@ describe('add_translation_batch', () => {
           aiProcessingStore: mockStore,
           aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']),
+          enableOriginalTextValidation: true,
         },
       );
 
@@ -1886,6 +1889,7 @@ describe('add_translation_batch', () => {
           aiProcessingStore: mockStore,
           aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1', 'para2']),
+          enableOriginalTextValidation: true,
         },
       );
 
@@ -2077,6 +2081,7 @@ describe('add_translation_batch', () => {
           aiProcessingStore: mockStore,
           aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1']),
+          enableOriginalTextValidation: true,
         },
       );
 
@@ -2214,6 +2219,7 @@ describe('add_translation_batch', () => {
           aiProcessingStore: mockStore,
           aiModelId: 'model-1',
           chunkBoundaries: createChunkBoundaries(['para1']),
+          enableOriginalTextValidation: true,
         },
       );
 

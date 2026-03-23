@@ -11,7 +11,10 @@ import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
 import { askUserTools } from './ask-user-tools';
 import { taskStatusTools } from './task-status-tools';
-import { translationTools } from './translation-tools';
+import {
+  createTranslationTools,
+  type CreateTranslationToolsOptions,
+} from './translation-tools';
 import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { jsonrepair } from 'jsonrepair';
@@ -121,11 +124,16 @@ export class ToolRegistry {
     return [...this.getAllTools(bookId), ...this.getHelpDocsTools()];
   }
 
-  static getTranslationToolsForAI(): AITool[] {
-    return this.mapTools(translationTools);
+  static getTranslationToolsForAI(
+    options?: CreateTranslationToolsOptions,
+  ): AITool[] {
+    return this.mapTools(createTranslationTools(options));
   }
 
-  static getAllTools(bookId?: string): AITool[] {
+  static getAllTools(
+    bookId?: string,
+    toolOptions?: CreateTranslationToolsOptions,
+  ): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具始终可用（不需要 bookId）
       ...this.getWebSearchTools(),
@@ -147,7 +155,7 @@ export class ToolRegistry {
         ...this.getMemoryTools(bookId),
         ...this.getNavigationTools(bookId),
         // 翻译相关工具（add_translation_batch）- 用于 translation/polish/proofreading
-        ...this.getTranslationToolsForAI(),
+        ...this.getTranslationToolsForAI(toolOptions),
       );
     }
 
@@ -158,8 +166,11 @@ export class ToolRegistry {
    * 获取工具列表，排除翻译管理工具（add_translation, update_translation, remove_translation, select_translation, batch_replace_translations）
    * 用于需要避免 AI 直接修改翻译历史的服务（例如：润色/校对等只返回 JSON 的服务）
    */
-  static getToolsExcludingTranslationManagement(bookId?: string): AITool[] {
-    const allTools = this.getAllTools(bookId);
+  static getToolsExcludingTranslationManagement(
+    bookId?: string,
+    toolOptions?: CreateTranslationToolsOptions,
+  ): AITool[] {
+    const allTools = this.getAllTools(bookId, toolOptions);
     return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
   }
 
@@ -263,8 +274,15 @@ export class ToolRegistry {
    * 获取翻译服务允许的工具
    * 排除翻译管理工具和导航/列表工具，让AI专注于当前文本块
    */
-  static getTranslationTools(bookId?: string, options?: { excludeAskUser?: boolean }): AITool[] {
-    const allTools = this.getToolsExcludingTranslationManagement(bookId);
+  static getTranslationTools(
+    bookId?: string,
+    options?: { excludeAskUser?: boolean; enableOriginalTextValidation?: boolean },
+  ): AITool[] {
+    const toolOptions: CreateTranslationToolsOptions | undefined =
+      options?.enableOriginalTextValidation !== undefined
+        ? { enableOriginalTextValidation: options.enableOriginalTextValidation }
+        : undefined;
+    const allTools = this.getToolsExcludingTranslationManagement(bookId, toolOptions);
     let tools = this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
 
     // 书籍级配置：在翻译相关任务中跳过 ask_user（不向模型提供该工具）
@@ -290,7 +308,7 @@ export class ToolRegistry {
       ...todoListTools,
       ...askUserTools,
       ...taskStatusTools,
-      ...translationTools,
+      ...createTranslationTools(),
       ...helpDocsTools,
     ];
   }
@@ -309,6 +327,7 @@ export class ToolRegistry {
     chunkIndex?: number, // 当前块索引，用于 review 检查跳过非首块的标题验证
     submittedParagraphIds?: Set<string>, // 已提交的段落 ID 集合，用于计算剩余 chunk 大小
     accumulatedParagraphs?: Map<string, string>, // 当前 session 已积累的翻译内存，用于 review 完整性检查
+    enableOriginalTextValidation?: boolean, // 是否启用原文校验
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const allTools = this.getAllToolDefinitions();
@@ -383,6 +402,9 @@ export class ToolRegistry {
         ...(chunkIndex !== undefined ? { chunkIndex } : {}),
         ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
         ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
+        ...(enableOriginalTextValidation !== undefined
+          ? { enableOriginalTextValidation }
+          : {}),
       });
 
       // 记录工具调用成功

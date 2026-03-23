@@ -895,6 +895,7 @@ async function processTranslationBatch(
   taskType: 'translation' | 'polish' | 'proofreading',
   chapterId?: string,
   preloadedBook?: Novel,
+  enableOriginalTextValidation?: boolean,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -1055,51 +1056,54 @@ async function processTranslationBatch(
       const trimmedPrefix = item.originalTextPrefix.trim();
       const trimmedOriginalText = paragraph.text.trim();
 
-      if (!trimmedPrefix) {
-        pushFailedItem(
-          item.paragraphId,
-          'MISSING_ORIGINAL_TEXT_PREFIX',
-          ERROR_MESSAGES.MISSING_ORIGINAL_TEXT_PREFIX(item.paragraphId),
-        );
-        continue;
-      }
+      // 原文校验（enableOriginalTextValidation === true 时启用）
+      if (enableOriginalTextValidation === true) {
+        if (!trimmedPrefix) {
+          pushFailedItem(
+            item.paragraphId,
+            'MISSING_ORIGINAL_TEXT_PREFIX',
+            ERROR_MESSAGES.MISSING_ORIGINAL_TEXT_PREFIX(item.paragraphId),
+          );
+          continue;
+        }
 
-      // 纯符号/装饰性段落（如 ◇◇◇、全角括号+空格、破折号线、星号等）跳过前缀长度校验，
-      // 仅保留 includes 匹配校验。这类段落的前缀长度难以满足常规限制。
-      const symbolOnly = isSymbolOnly(trimmedOriginalText);
+        // 纯符号/装饰性段落（如 ◇◇◇、全角括号+空格、破折号线、星号等）跳过前缀长度校验，
+        // 仅保留 includes 匹配校验。这类段落的前缀长度难以满足常规限制。
+        const symbolOnly = isSymbolOnly(trimmedOriginalText);
 
-      if (!symbolOnly) {
-        const prefixCheck = validatePrefixLength(trimmedPrefix, trimmedOriginalText);
-        if (!prefixCheck.valid) {
-          if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_SHORT') {
-            pushFailedItem(
-              item.paragraphId,
-              'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
-              ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, prefixCheck.limit),
-            );
-            continue;
-          } else if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_LONG') {
-            // TOO_LONG 改为仅警告，不阻止提交。
-            validationWarnings.push(
-              ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(item.paragraphId, prefixCheck.limit),
-            );
+        if (!symbolOnly) {
+          const prefixCheck = validatePrefixLength(trimmedPrefix, trimmedOriginalText);
+          if (!prefixCheck.valid) {
+            if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_SHORT') {
+              pushFailedItem(
+                item.paragraphId,
+                'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
+                ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, prefixCheck.limit),
+              );
+              continue;
+            } else if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_LONG') {
+              // TOO_LONG 改为仅警告，不阻止提交。
+              validationWarnings.push(
+                ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(item.paragraphId, prefixCheck.limit),
+              );
+            }
           }
         }
-      }
 
-      if (!trimmedOriginalText.includes(trimmedPrefix)) {
-        pushFailedItem(
-          item.paragraphId,
-          'ORIGINAL_TEXT_PREFIX_MISMATCH',
-          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_MISMATCH(item.paragraphId, trimmedPrefix),
-        );
-        continue;
+        if (!trimmedOriginalText.includes(trimmedPrefix)) {
+          pushFailedItem(
+            item.paragraphId,
+            'ORIGINAL_TEXT_PREFIX_MISMATCH',
+            ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_MISMATCH(item.paragraphId, trimmedPrefix),
+          );
+          continue;
+        }
       }
 
       // 允许译文与原文相同：不再在工具层阻止该提交。
       // 若命中“当前选中版本重复”规则，仍会在后续校验中被拒绝。
       const trimmedTranslatedText = item.translatedText.trim();
-      if (!symbolOnly && trimmedTranslatedText === trimmedOriginalText) {
+      if (!isSymbolOnly(trimmedOriginalText) && trimmedTranslatedText === trimmedOriginalText) {
         validationWarnings.push(
           ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS(item.paragraphId),
         );
@@ -1220,7 +1224,22 @@ async function processTranslationBatch(
 
 // ============ Tool Definitions ============
 
-export const translationTools: ToolDefinition[] = [
+export interface CreateTranslationToolsOptions {
+  enableOriginalTextValidation?: boolean;
+}
+
+export function createTranslationTools(
+  options?: CreateTranslationToolsOptions,
+): ToolDefinition[] {
+  const validate = options?.enableOriginalTextValidation === true;
+  const prefixDescription = validate
+    ? '原文前缀锚点（建议取原文前 5-10 个字符，trim 后最少 3 个字符、最多 20 个字符），用于校验 paragraph_id 与原文是否对齐'
+    : '原文前缀锚点（可选，当前已禁用校验）';
+  const itemRequired = validate
+    ? ['paragraph_id', 'original_text_prefix', 'translated_text']
+    : ['paragraph_id', 'translated_text'];
+
+  return [
   {
     definition: {
       type: 'function',
@@ -1242,15 +1261,14 @@ export const translationTools: ToolDefinition[] = [
                   },
                   original_text_prefix: {
                     type: 'string',
-                    description:
-                      '原文前缀锚点（建议取原文前 5-10 个字符，trim 后最少 3 个字符、最多 20 个字符），用于校验 paragraph_id 与原文是否对齐',
+                    description: prefixDescription,
                   },
                   translated_text: {
                     type: 'string',
                     description: '翻译/润色/校对后的文本',
                   },
                 },
-                required: ['paragraph_id', 'original_text_prefix', 'translated_text'],
+                required: itemRequired,
               },
             },
           },
@@ -1396,6 +1414,7 @@ export const translationTools: ToolDefinition[] = [
         taskType as 'translation' | 'polish' | 'proofreading',
         chapterId,
         preloadedBook,
+        context.enableOriginalTextValidation,
       );
 
       const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
@@ -1484,3 +1503,4 @@ export const translationTools: ToolDefinition[] = [
     },
   },
 ];
+}

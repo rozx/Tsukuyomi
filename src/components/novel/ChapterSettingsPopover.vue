@@ -33,6 +33,7 @@ const emit = defineEmits<{
       normalizeTitleOnDisplay?: boolean;
       translationChunkSize?: number;
       skipAskUser?: boolean;
+      enableOriginalTextValidation?: boolean;
       // 章节设置（章节级别）
       translationInstructions?: string;
       polishInstructions?: string;
@@ -65,6 +66,8 @@ const normalizeTitleOnDisplayEnabled = ref(false);
 const translationChunkSize = ref<number | null>(null);
 // 是否跳过 AI 追问（ask_user）
 const skipAskUserEnabled = ref(false);
+// 是否启用原文校验（original_text_prefix 校验）
+const enableOriginalTextValidation = ref(false);
 
 // 章节设置数据（章节级别）
 const translationInstructions = ref('');
@@ -83,6 +86,7 @@ watch(
       normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
       translationChunkSize.value = resolveTaskChunkSize(props.book.translationChunkSize);
       skipAskUserEnabled.value = props.book.skipAskUser ?? false;
+      enableOriginalTextValidation.value = props.book.enableOriginalTextValidation ?? false;
     } else {
       // 默认保留缩进（不过滤）
       filterIndentsEnabled.value = false;
@@ -90,6 +94,7 @@ watch(
       normalizeTitleOnDisplayEnabled.value = false;
       translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
       skipAskUserEnabled.value = false;
+      enableOriginalTextValidation.value = false;
     }
 
     // 章节设置（章节级别）
@@ -127,6 +132,7 @@ const handleSave = () => {
     proofreadingInstructions?: string;
     translationChunkSize?: number;
     skipAskUser?: boolean;
+    enableOriginalTextValidation?: boolean;
   } = {
     // 全局设置
     // preserveIndents: true 表示保留缩进；过滤开关开启时应保存为 false
@@ -135,6 +141,7 @@ const handleSave = () => {
     normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
     translationChunkSize: resolveTaskChunkSize(translationChunkSize.value ?? undefined),
     skipAskUser: skipAskUserEnabled.value,
+    enableOriginalTextValidation: enableOriginalTextValidation.value,
     // 章节设置
     translationInstructions: translationInstructions.value.trim(),
     polishInstructions: polishInstructions.value.trim(),
@@ -243,6 +250,18 @@ defineExpose({
                           </small>
                         </div>
                         <InputSwitch v-model="skipAskUserEnabled" />
+                      </div>
+
+                      <div class="flex items-start justify-between gap-3 p-3">
+                        <div class="flex-1">
+                          <label class="text-sm font-medium text-moon-100 block mb-1">
+                            原文校验（防错位检测）
+                          </label>
+                          <small class="text-moon/60 text-xs block">
+                            启用时，AI 提交翻译时必须提供原文前缀锚点（original_text_prefix），系统会校验其与原文是否匹配，防止翻译错位。禁用时可减少 AI token 消耗。
+                          </small>
+                        </div>
+                        <InputSwitch v-model="enableOriginalTextValidation" />
                       </div>
                     </div>
                   </div>

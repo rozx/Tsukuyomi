@@ -106,6 +106,10 @@ export interface ToolCallLoopConfig {
    * 是否还有下一个块可用
    */
   hasNextChunk?: boolean;
+  /**
+   * 是否启用原文校验（original_text_prefix 校验）
+   */
+  enableOriginalTextValidation?: boolean;
 }
 
 /**
@@ -389,6 +393,7 @@ class TaskLoopSession {
       this.config.chunkIndex, // 传入块索引用于 review 检查
       this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
       this.accumulatedParagraphs, // 传入已积累的翻译内存，用于 review 完整性检查（避免依赖过时的 DB 数据）
+      this.config.enableOriginalTextValidation, // 传入原文校验设置
     );
     recordToolCall(this.metrics, Date.now() - start);
 
