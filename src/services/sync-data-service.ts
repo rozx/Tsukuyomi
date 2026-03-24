@@ -1070,6 +1070,16 @@ export class SyncDataService {
             }
           }
 
+          // 构建本地 Memory 的内容映射（用于内容级别去重）
+          // key: content, value: { id, lastAccessedAt }
+          const localContentMap = new Map<string, { id: string; lastAccessedAt: number }>();
+          for (const localMemory of localMemories) {
+            localContentMap.set(localMemory.content, {
+              id: localMemory.id,
+              lastAccessedAt: localMemory.lastAccessedAt,
+            });
+          }
+
           // 合并 Memory：保留最新的 lastAccessedAt 时间
           for (const localMemory of localMemories) {
             const remoteMemory = remoteMemoryMap.get(localMemory.id);
@@ -1086,6 +1096,14 @@ export class SyncDataService {
                     remoteMemory.attachedTo,
                     remoteMemory.lastAccessedAt,
                   );
+                  // 更新内容映射（旧内容可能已被替换）
+                  if (localMemory.content !== remoteMemory.content) {
+                    localContentMap.delete(localMemory.content);
+                    localContentMap.set(remoteMemory.content, {
+                      id: localMemory.id,
+                      lastAccessedAt: remoteMemory.lastAccessedAt,
+                    });
+                  }
                 } catch (error) {
                   console.warn(`[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`, error);
                 }
@@ -1096,8 +1114,36 @@ export class SyncDataService {
             // 如果本地没有对应的远程 Memory，保持不变（本地独有的 Memory）
           }
 
-          // 添加远程独有的 Memory
+          // 添加远程独有的 Memory（带内容级别去重）
           for (const remoteMemory of remoteMemoryMap.values()) {
+            // 内容去重：如果本地已有相同内容的 Memory（不同 ID），跳过创建
+            const existingByContent = localContentMap.get(remoteMemory.content);
+            if (existingByContent) {
+              // 本地已有相同内容，如果远程版本更新则更新本地的时间戳
+              if (remoteMemory.lastAccessedAt > existingByContent.lastAccessedAt) {
+                try {
+                  await MemoryService.updateMemory(
+                    localBook.id,
+                    existingByContent.id,
+                    remoteMemory.content,
+                    remoteMemory.summary,
+                    remoteMemory.attachedTo,
+                    remoteMemory.lastAccessedAt,
+                  );
+                  localContentMap.set(remoteMemory.content, {
+                    id: existingByContent.id,
+                    lastAccessedAt: remoteMemory.lastAccessedAt,
+                  });
+                } catch (error) {
+                  console.warn(
+                    `[SyncDataService] 更新内容重复的 Memory ${existingByContent.id} 失败:`,
+                    error,
+                  );
+                }
+              }
+              continue;
+            }
+
             try {
               const timestamps = {
                 createdAt: remoteMemory.createdAt,
@@ -1121,6 +1167,11 @@ export class SyncDataService {
                   timestamps,
                 );
               }
+              // 将新创建的 Memory 加入内容映射（防止后续远程 Memory 再次重复）
+              localContentMap.set(remoteMemory.content, {
+                id: remoteMemory.id,
+                lastAccessedAt: remoteMemory.lastAccessedAt,
+              });
             } catch (error) {
               console.warn(`[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`, error);
             }
@@ -1593,31 +1644,64 @@ export class SyncDataService {
 
     // 合并 Memory
     // Memory 的合并逻辑：对于每个 Memory，保留最新的 lastAccessedAt 时间
+    // 同时进行内容级别去重：不同 ID 但相同内容的 Memory 只保留一条
     const finalMemories: Memory[] = [];
     const remoteMemories = remoteData.memories || [];
     const remoteMemoryMap = new Map(remoteMemories.map((m: Memory) => [m.id, m]));
     const localMemories = localData.memories || [];
 
+    // 内容映射：用于内容级别去重（content → Memory）
+    const contentMap = new Map<string, Memory>();
+
     // 处理本地和远程都有的 Memory
     for (const localMemory of localMemories) {
       const remoteMemory = remoteMemoryMap.get(localMemory.id);
+      let winner: Memory;
       if (remoteMemory) {
         // 比较 lastAccessedAt 时间，使用最新的
-        if (remoteMemory.lastAccessedAt > localMemory.lastAccessedAt) {
-          finalMemories.push(remoteMemory);
-        } else {
-          finalMemories.push(localMemory);
-        }
+        winner = remoteMemory.lastAccessedAt > localMemory.lastAccessedAt
+          ? remoteMemory
+          : localMemory;
         remoteMemoryMap.delete(localMemory.id);
       } else {
-        // 本地独有的 Memory，直接添加
-        finalMemories.push(localMemory);
+        // 本地独有的 Memory
+        winner = localMemory;
+      }
+
+      // 内容去重：如果已有相同内容的 Memory，保留 lastAccessedAt 更新的
+      const existingByContent = contentMap.get(winner.content);
+      if (existingByContent) {
+        if (winner.lastAccessedAt > existingByContent.lastAccessedAt) {
+          // 替换掉旧的
+          const idx = finalMemories.indexOf(existingByContent);
+          if (idx >= 0) {
+            finalMemories[idx] = winner;
+          }
+          contentMap.set(winner.content, winner);
+        }
+        // 否则跳过（保留已有的更新版本）
+      } else {
+        finalMemories.push(winner);
+        contentMap.set(winner.content, winner);
       }
     }
 
-    // 添加远程独有的 Memory
+    // 添加远程独有的 Memory（带内容去重）
     for (const remoteMemory of remoteMemoryMap.values()) {
-      finalMemories.push(remoteMemory as Memory);
+      const existingByContent = contentMap.get(remoteMemory.content);
+      if (existingByContent) {
+        // 内容重复，保留 lastAccessedAt 更新的
+        if (remoteMemory.lastAccessedAt > existingByContent.lastAccessedAt) {
+          const idx = finalMemories.indexOf(existingByContent);
+          if (idx >= 0) {
+            finalMemories[idx] = remoteMemory as Memory;
+          }
+          contentMap.set(remoteMemory.content, remoteMemory as Memory);
+        }
+      } else {
+        finalMemories.push(remoteMemory as Memory);
+        contentMap.set(remoteMemory.content, remoteMemory as Memory);
+      }
     }
 
     return {

@@ -909,6 +909,80 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockMemoryService.createMemory).not.toHaveBeenCalled();
     });
 
+    it('同步 Memory 时应按内容去重（不同 ID、相同内容只保留一条）', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      // 本地已有 Memory (id: local-1, content: '角色A总是使用敬语')
+      const localMemory = {
+        id: 'local-1',
+        bookId: 'b1',
+        content: '角色A总是使用敬语',
+        summary: '角色A的语言风格',
+        createdAt: 1000,
+        lastAccessedAt: 2000,
+      };
+
+      // 远程有相同内容但不同 ID 的 Memory
+      const remoteMemory = {
+        id: 'remote-1',
+        bookId: 'b1',
+        content: '角色A总是使用敬语',
+        summary: '角色A的用词',
+        createdAt: 1500,
+        lastAccessedAt: 1800,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      // 不应创建新 Memory（内容重复）
+      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
+      // 不应更新（本地版本更新）
+      expect(mockMemoryService.updateMemory).not.toHaveBeenCalled();
+    });
+
+    it('同步 Memory 内容去重时应保留 lastAccessedAt 更新的版本', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      const localMemory = {
+        id: 'local-1',
+        bookId: 'b1',
+        content: '角色A总是使用敬语',
+        summary: '旧摘要',
+        createdAt: 1000,
+        lastAccessedAt: 1500,
+      };
+
+      // 远程有相同内容但更新的 lastAccessedAt
+      const remoteMemory = {
+        id: 'remote-1',
+        bookId: 'b1',
+        content: '角色A总是使用敬语',
+        summary: '新摘要',
+        createdAt: 1200,
+        lastAccessedAt: 3000,
+        attachedTo: [{ type: 'book', id: 'b1' }],
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      // 不应创建新 Memory
+      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
+      // 应更新本地 Memory 的时间戳（远程更新）
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+        'b1',
+        'local-1', // 保留本地 ID
+        '角色A总是使用敬语',
+        '新摘要',
+        remoteMemory.attachedTo,
+        3000,
+      );
+    });
+
     it('同步更新 Memory 时应保留远程 lastAccessedAt 时间戳（避免触发不必要的上传）', async () => {
       const remoteTimestamp = 3000;
       const localTimestamp = 2000;
@@ -1067,6 +1141,90 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(merged.coverHistory).toHaveLength(1);
       // 应该保留 addedAt 更新的那条（远程）
       expect(merged.coverHistory[0]).toMatchObject({ id: 'c-remote', url: 'same.jpg' });
+    });
+
+    it('当本地与远程存在相同内容但不同 ID 的 Memory 时，应按内容去重只保留一条', async () => {
+      const lastSyncTime = 0;
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [],
+        memories: [
+          {
+            id: 'mem-local',
+            bookId: 'b1',
+            content: '角色A总是使用敬语',
+            summary: '角色A语言风格',
+            createdAt: 1000,
+            lastAccessedAt: 2000,
+          },
+        ],
+      };
+      const remoteData = {
+        memories: [
+          {
+            id: 'mem-remote',
+            bookId: 'b1',
+            content: '角色A总是使用敬语',
+            summary: '角色A用词',
+            createdAt: 1500,
+            lastAccessedAt: 1800,
+          },
+        ],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+      expect(merged.memories).toHaveLength(1);
+      // 应保留 lastAccessedAt 更新的（本地）
+      expect(merged.memories[0]).toMatchObject({ id: 'mem-local', content: '角色A总是使用敬语' });
+    });
+
+    it('内容去重时应保留 lastAccessedAt 更新的 Memory', async () => {
+      const lastSyncTime = 0;
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [],
+        memories: [
+          {
+            id: 'mem-local',
+            bookId: 'b1',
+            content: '角色A总是使用敬语',
+            summary: '旧摘要',
+            createdAt: 1000,
+            lastAccessedAt: 1500,
+          },
+        ],
+      };
+      const remoteData = {
+        memories: [
+          {
+            id: 'mem-remote',
+            bookId: 'b1',
+            content: '角色A总是使用敬语',
+            summary: '新摘要',
+            createdAt: 1200,
+            lastAccessedAt: 3000,
+          },
+        ],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+      expect(merged.memories).toHaveLength(1);
+      // 应保留 lastAccessedAt 更新的（远程）
+      expect(merged.memories[0]).toMatchObject({ id: 'mem-remote', lastAccessedAt: 3000 });
     });
   });
 
