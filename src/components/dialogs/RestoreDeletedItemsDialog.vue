@@ -8,13 +8,14 @@ import Checkbox from 'primevue/checkbox';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { CoverHistoryItem } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 
 export interface DeletableItem {
   id: string;
-  type: 'novel' | 'model' | 'cover';
+  type: 'novel' | 'model' | 'cover' | 'memory';
   title: string;
   deletedAt: number;
-  data: Novel | AIModel | CoverHistoryItem;
+  data: Novel | AIModel | CoverHistoryItem | Memory;
 }
 
 const props = withDefaults(

@@ -300,7 +300,7 @@ async function mergeRemoteTranslationsIntoLocalNovel(
  */
 export interface RestorableItem {
   id: string;
-  type: 'novel' | 'model' | 'cover';
+  type: 'novel' | 'model' | 'cover' | 'memory';
   title: string;
   deletedAt: number;
   data: any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1133,7 +1133,8 @@ export class SyncDataService {
                   restorableItems.push({
                     type: 'memory',
                     id: remoteMemory.id,
-                    name: remoteMemory.summary || remoteMemory.content.substring(0, 50),
+                    title: remoteMemory.summary || remoteMemory.content.substring(0, 50),
+                    deletedAt: deletionRecord,
                     data: remoteMemory,
                   });
                 }
