@@ -233,7 +233,18 @@ export async function processSingleParagraph(
         }
       };
 
-      const result = await service.generateText(aiConfig, request, wrappedOnChunk);
+      let result;
+      try {
+        result = await service.generateText(aiConfig, request, wrappedOnChunk);
+      } catch (error) {
+        // 提示词要求 AI 不输出文本（直接调用工具或无需改动时直接结束），
+        // 所以空响应是预期行为，不应视为错误
+        if (error instanceof Error && error.message === 'AI 返回的文本为空') {
+          console.log(`[${logLabel}] AI 返回空响应（预期行为：无文本输出）`);
+          break;
+        }
+        throw error;
+      }
 
       if (result.reasoningContent && aiProcessingStore && taskId) {
         void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
