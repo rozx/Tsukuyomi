@@ -1,5 +1,5 @@
 {
   "permissions": {
-    "allow": ["Bash(openspec:*)"]
+    "allow": ["Bash(openspec:*)", "Bash(bunx vue-tsc:*)", "Bash(bun test:*)", "Bash(bunx eslint:*)"]
   }
 }
