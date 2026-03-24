@@ -244,8 +244,26 @@ export function getChapterContentText(chapter: Chapter): string {
 }
 
 /**
+ * 判断字符的 Unicode 脚本类型
+ */
+type ScriptType = 'kanji' | 'hiragana' | 'katakana' | 'other';
+
+function getScriptType(char: string): ScriptType {
+  const code = char.charCodeAt(0);
+  if (code >= 0x3040 && code <= 0x309f) return 'hiragana';
+  if (code >= 0x30a0 && code <= 0x30ff) return 'katakana';
+  if (
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0xf900 && code <= 0xfaff)
+  )
+    return 'kanji';
+  return 'other';
+}
+
+/**
  * 获取角色名称的所有变体（用于匹配）
- * 包括：原文、去空格版本、去除括号内注音版本、分割后的部分
+ * 包括：原文、去空格版本、去除括号内注音版本、分割后的部分、文字种别境界分割
  * @param name 角色名称
  * @returns 名称变体数组
  */
@@ -287,6 +305,41 @@ export function getCharacterNameVariants(name: string): string[] {
         variants.add(part.trim());
       }
     });
+  }
+
+  // 5. 按文字种别境界分割（漢字↔仮名）
+  // 日语名称通常由「姓（漢字）＋名（仮名）」或「姓（漢字）＋名（漢字）」组成
+  // 对于没有明确分隔符的名称（如「郷津ありす」），在漢字和仮名的切换处进行分割
+  // 使用去注音后的名称进行分析（避免注音干扰）
+  const nameForScriptSplit = noFuriganaName || trimmedName;
+  if (nameForScriptSplit.length >= 4) {
+    const scriptBoundaries: number[] = [];
+    for (let i = 1; i < nameForScriptSplit.length; i++) {
+      const prevChar = nameForScriptSplit[i - 1];
+      const currChar = nameForScriptSplit[i];
+      if (!prevChar || !currChar) continue;
+      const prevScript = getScriptType(prevChar);
+      const currScript = getScriptType(currChar);
+      if (
+        prevScript !== 'other' &&
+        currScript !== 'other' &&
+        prevScript !== currScript &&
+        // 只在漢字↔仮名之间分割（不在平假名↔片假名之间分割）
+        (prevScript === 'kanji' || currScript === 'kanji')
+      ) {
+        scriptBoundaries.push(i);
+      }
+    }
+    // 仅在恰好有一个边界时分割，两个部分都必须 ≥ 2 个字符
+    if (scriptBoundaries.length === 1 && scriptBoundaries[0] !== undefined) {
+      const boundaryIndex = scriptBoundaries[0];
+      const part1 = nameForScriptSplit.substring(0, boundaryIndex);
+      const part2 = nameForScriptSplit.substring(boundaryIndex);
+      if (part1.length >= 2 && part2.length >= 2) {
+        variants.add(part1);
+        variants.add(part2);
+      }
+    }
   }
 
   return Array.from(variants);
