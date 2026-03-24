@@ -1039,6 +1039,14 @@ export class SyncDataService {
       // 处理 Memory（确保 memories 是数组）
       // 即使远程 Memory 列表为空，也需要处理（可能远程删除了所有 Memory）
       if (remoteData.memories && Array.isArray(remoteData.memories)) {
+        // 构建 Memory 删除记录映射
+        const deletedMemoryIds = gistSyncSnapshot?.deletedMemoryIds || [];
+        const deletedMemoryIdsMap = new Map<string, number>(
+          deletedMemoryIds.map((record) => [record.id, record.deletedAt]),
+        );
+        // 收集需要从删除记录中移除的 Memory ID（循环结束后批量更新）
+        const memoryIdsToUndelete = new Set<string>();
+
         // 将远程 Memory 按 bookId 分组
         const remoteMemoriesByBook = new Map<string, Memory[]>();
         for (const remoteMemory of remoteData.memories) {
@@ -1114,8 +1122,34 @@ export class SyncDataService {
             // 如果本地没有对应的远程 Memory，保持不变（本地独有的 Memory）
           }
 
-          // 添加远程独有的 Memory（带内容级别去重）
+          // 添加远程独有的 Memory（带内容级别去重和删除记录检查）
           for (const remoteMemory of remoteMemoryMap.values()) {
+            // 检查是否在删除记录中
+            const deletionRecord = deletedMemoryIdsMap.get(remoteMemory.id);
+            if (deletionRecord !== undefined) {
+              if (deletionRecord > syncTime) {
+                // 删除时间晚于上次同步 → 本地删除的，不恢复
+                if (isManualRetrieval) {
+                  restorableItems.push({
+                    type: 'memory',
+                    id: remoteMemory.id,
+                    name: remoteMemory.summary || remoteMemory.content.substring(0, 50),
+                    data: remoteMemory,
+                  });
+                }
+                continue;
+              } else {
+                // 删除时间早于同步 + 远程有更新 → 自动恢复
+                if (remoteMemory.lastAccessedAt > syncTime) {
+                  memoryIdsToUndelete.add(remoteMemory.id);
+                  // 继续执行后续的创建逻辑
+                } else {
+                  // 旧删除记录，远程也没更新，跳过
+                  continue;
+                }
+              }
+            }
+
             // 内容去重：如果本地已有相同内容的 Memory（不同 ID），跳过创建
             const existingByContent = localContentMap.get(remoteMemory.content);
             if (existingByContent) {
@@ -1176,6 +1210,16 @@ export class SyncDataService {
               console.warn(`[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`, error);
             }
           }
+        }
+
+        // 批量更新删除记录：移除已恢复的 Memory ID
+        if (memoryIdsToUndelete.size > 0) {
+          const updatedDeletedMemoryIds = (gistSyncSnapshot?.deletedMemoryIds || []).filter(
+            (record) => !memoryIdsToUndelete.has(record.id),
+          );
+          await settingsStore.updateGistSync({
+            deletedMemoryIds: updatedDeletedMemoryIds,
+          });
         }
       }
 
@@ -1279,6 +1323,10 @@ export class SyncDataService {
             (localGistSync as any).deletedCoverUrls, // eslint-disable-line @typescript-eslint/no-explicit-any
             (gistSync as any).deletedCoverUrls, // eslint-disable-line @typescript-eslint/no-explicit-any
           );
+          const mergedDeletedMemoryIds = mergeDeletionRecords(
+            localGistSync.deletedMemoryIds,
+            gistSync.deletedMemoryIds,
+          );
 
           // 更新删除记录
           await settingsStore.updateGistSync({
@@ -1286,6 +1334,7 @@ export class SyncDataService {
             deletedModelIds: mergedDeletedModelIds,
             deletedCoverIds: mergedDeletedCoverIds,
             deletedCoverUrls: mergedDeletedCoverUrls,
+            deletedMemoryIds: mergedDeletedMemoryIds,
           });
         }
       }
@@ -1615,6 +1664,8 @@ export class SyncDataService {
                 localGistSync.deletedModelIds ?? remoteGistSync?.deletedModelIds ?? [],
               deletedCoverIds:
                 localGistSync.deletedCoverIds ?? remoteGistSync?.deletedCoverIds ?? [],
+              deletedMemoryIds:
+                localGistSync.deletedMemoryIds ?? remoteGistSync?.deletedMemoryIds ?? [],
             }
           : remoteGistSync;
 
@@ -1649,6 +1700,10 @@ export class SyncDataService {
     const remoteMemories = remoteData.memories || [];
     const remoteMemoryMap = new Map(remoteMemories.map((m: Memory) => [m.id, m]));
     const localMemories = localData.memories || [];
+    const deletedMemoryIds = gistSync?.deletedMemoryIds || [];
+    const deletedMemoryIdsMap = new Map<string, number>(
+      deletedMemoryIds.map((record) => [record.id, record.deletedAt]),
+    );
 
     // 内容映射：用于内容级别去重（content → Memory）
     const contentMap = new Map<string, Memory>();
@@ -1686,8 +1741,15 @@ export class SyncDataService {
       }
     }
 
-    // 添加远程独有的 Memory（带内容去重）
+    // 添加远程独有的 Memory（带内容去重和删除记录检查）
     for (const remoteMemory of remoteMemoryMap.values()) {
+      // 检查是否在本地删除记录中
+      const deletionRecord = deletedMemoryIdsMap.get(remoteMemory.id);
+      if (deletionRecord !== undefined && deletionRecord > lastSyncTime) {
+        // 本地删除时间晚于上次同步，说明是用户本地删除的，不添加
+        continue;
+      }
+
       const existingByContent = contentMap.get(remoteMemory.content);
       if (existingByContent) {
         // 内容重复，保留 lastAccessedAt 更新的
@@ -1789,6 +1851,7 @@ export class SyncDataService {
               'deletedModelIds',
               'deletedCoverIds',
               'deletedCoverUrls',
+              'deletedMemoryIds',
             ),
           );
         }

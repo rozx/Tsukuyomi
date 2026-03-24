@@ -1,6 +1,7 @@
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Memory, MemoryAttachment } from 'src/models/memory';
+import { useSettingsStore } from 'src/stores/settings';
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
@@ -901,6 +902,26 @@ export class MemoryService {
       }
 
       await db.delete('memories', memoryId);
+
+      // 记录到删除列表（防止远程同步恢复已删除的 Memory）
+      try {
+        const settingsStore = useSettingsStore();
+        const gistSync = settingsStore.gistSync;
+        const deletedMemoryIds = gistSync.deletedMemoryIds || [];
+
+        if (!deletedMemoryIds.find((record) => record.id === memoryId)) {
+          deletedMemoryIds.push({
+            id: memoryId,
+            deletedAt: Date.now(),
+          });
+          await settingsStore.updateGistSync({
+            deletedMemoryIds,
+          });
+        }
+      } catch {
+        // 记录删除记录失败不应阻止删除操作本身
+        console.warn(`[MemoryService] 记录 Memory ${memoryId} 的删除记录失败`);
+      }
 
       // 清除缓存
       const cacheKey = this.getCacheKey(bookId, memoryId);

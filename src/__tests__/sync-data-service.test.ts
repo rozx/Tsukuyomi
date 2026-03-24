@@ -33,6 +33,7 @@ const mockSettingsStore = {
     deletedModelIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedCoverIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedCoverUrls: [] as Array<{ url: string; deletedAt: number }>,
+    deletedMemoryIds: [] as Array<{ id: string; deletedAt: number }>,
   },
   importSettings: mock((_settings: unknown) => Promise.resolve()),
   updateGistSync: mock((_config: unknown) => Promise.resolve()),
@@ -116,6 +117,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedModelIds: [],
       deletedCoverIds: [],
       deletedCoverUrls: [],
+      deletedMemoryIds: [],
     };
 
     mockMemoryService.getAllMemories.mockClear();
@@ -1026,6 +1028,115 @@ describe('数据同步服务 (SyncDataService)', () => {
         remoteTimestamp,
       );
     });
+
+    it('本地删除的 Memory 不应被远程同步恢复', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      // 模拟 Memory 已在本地删除（删除时间 5000，晚于同步时间 1000）
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 1000,
+        deletedMemoryIds: [{ id: 'mem-deleted', deletedAt: 5000 }],
+      };
+
+      const remoteMemory = {
+        id: 'mem-deleted',
+        bookId: 'b1',
+        content: '已删除的记忆',
+        summary: '摘要',
+        createdAt: 800,
+        lastAccessedAt: 900,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      // 不应创建已删除的 Memory
+      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
+      expect(mockMemoryService.createMemory).not.toHaveBeenCalled();
+    });
+
+    it('删除时间早于同步时间且远程有更新时，Memory 应被自动恢复', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      // 删除时间 500 早于同步时间 1000
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 1000,
+        deletedMemoryIds: [{ id: 'mem-old-delete', deletedAt: 500 }],
+      };
+
+      // 远程 Memory 在同步后有更新（lastAccessedAt: 2000 > syncTime: 1000）
+      const remoteMemory = {
+        id: 'mem-old-delete',
+        bookId: 'b1',
+        content: '远程更新的记忆',
+        summary: '摘要',
+        createdAt: 800,
+        lastAccessedAt: 2000,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      // 应恢复该 Memory
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'mem-old-delete',
+        '远程更新的记忆',
+        '摘要',
+        expect.objectContaining({ createdAt: 800, lastAccessedAt: 2000 }),
+      );
+
+      // 应从删除记录中移除
+      expect(mockSettingsStore.updateGistSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deletedMemoryIds: [],
+        }),
+      );
+    });
+
+    it('手动检索时已删除的 Memory 应出现在可恢复列表中', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 1000,
+        deletedMemoryIds: [{ id: 'mem-deleted', deletedAt: 5000 }],
+      };
+
+      const remoteMemory = {
+        id: 'mem-deleted',
+        bookId: 'b1',
+        content: '已删除的记忆',
+        summary: '摘要',
+        createdAt: 800,
+        lastAccessedAt: 900,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      const restorableItems = await SyncDataService.applyDownloadedData(
+        { memories: [remoteMemory] },
+        undefined,
+        true, // isManualRetrieval
+      );
+
+      // 不应创建
+      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
+      // 应出现在可恢复列表中
+      expect(restorableItems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'memory',
+            id: 'mem-deleted',
+          }),
+        ]),
+      );
+    });
   });
 
   describe('mergeDataForUpload (上传前合并数据)', () => {
@@ -1225,6 +1336,47 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(merged.memories).toHaveLength(1);
       // 应保留 lastAccessedAt 更新的（远程）
       expect(merged.memories[0]).toMatchObject({ id: 'mem-remote', lastAccessedAt: 3000 });
+    });
+
+    it('上传合并时本地已删除的远程独有 Memory 不应被包含', async () => {
+      const lastSyncTime = 1000;
+
+      // 模拟 Memory 已在本地删除（删除时间 5000，晚于同步时间 1000）
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime,
+        deletedMemoryIds: [{ id: 'mem-deleted', deletedAt: 5000 }],
+      };
+
+      const localData = {
+        novels: [],
+        aiModels: [],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+        coverHistory: [],
+        memories: [],
+      };
+      const remoteData = {
+        memories: [
+          {
+            id: 'mem-deleted',
+            bookId: 'b1',
+            content: '已删除的记忆',
+            summary: '摘要',
+            createdAt: 800,
+            lastAccessedAt: 900,
+          },
+        ],
+        appSettings: { lastEdited: new Date('2024-01-02').toISOString(), syncs: [] },
+      };
+
+      const merged = await SyncDataService.mergeDataForUpload(
+        localData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[0],
+        remoteData as unknown as Parameters<typeof SyncDataService.mergeDataForUpload>[1],
+        lastSyncTime,
+      );
+
+      // 已删除的 Memory 不应出现在合并结果中
+      expect(merged.memories).toHaveLength(0);
     });
   });
 

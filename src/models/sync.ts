@@ -25,8 +25,10 @@ export interface SyncConfig {
   deletedNovelIds?: DeletionRecord[];
   deletedModelIds?: DeletionRecord[];
   deletedCoverIds?: DeletionRecord[];
-  // 封面删除记录（按 URL），用于跨设备场景：同一 URL 不同 id 时也能阻止“复活”
+  // 封面删除记录（按 URL），用于跨设备场景：同一 URL 不同 id 时也能阻止”复活”
   deletedCoverUrls?: UrlDeletionRecord[];
+  // Memory 删除记录（用于防止远程同步恢复已删除的 Memory）
+  deletedMemoryIds?: DeletionRecord[];
   // 上次同步时远程 Gist 的 updated_at 时间戳（ISO 8601 字符串），用于远程变更检测
   lastRemoteUpdatedAt?: string;
 }

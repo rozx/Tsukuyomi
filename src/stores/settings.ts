@@ -54,6 +54,7 @@ function createDefaultGistSyncConfig(): SyncConfig {
     deletedModelIds: [],
     deletedCoverIds: [],
     deletedCoverUrls: [],
+    deletedMemoryIds: [],
   };
 }
 
@@ -842,6 +843,10 @@ export const useSettingsStore = defineStore('settings', {
         updates.deletedCoverUrls ??
         existingConfig?.deletedCoverUrls ??
         defaultConfig.deletedCoverUrls;
+      const deletedMemoryIds =
+        updates.deletedMemoryIds ??
+        existingConfig?.deletedMemoryIds ??
+        defaultConfig.deletedMemoryIds;
 
       const lastRemoteUpdatedAt =
         updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
@@ -869,6 +874,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(deletedModelIds !== undefined ? { deletedModelIds } : {}),
         ...(deletedCoverIds !== undefined ? { deletedCoverIds } : {}),
         ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
+        ...(deletedMemoryIds !== undefined ? { deletedMemoryIds } : {}),
         ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
       };
 
@@ -943,6 +949,15 @@ export const useSettingsStore = defineStore('settings', {
         const filtered = config.deletedCoverUrls.filter((record) => record.deletedAt > cutoffTime);
         if (filtered.length !== config.deletedCoverUrls.length) {
           config.deletedCoverUrls = filtered;
+          hasChanges = true;
+        }
+      }
+
+      // 清理 Memory 删除记录
+      if (config.deletedMemoryIds && config.deletedMemoryIds.length > 0) {
+        const filtered = config.deletedMemoryIds.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length !== config.deletedMemoryIds.length) {
+          config.deletedMemoryIds = filtered;
           hasChanges = true;
         }
       }
