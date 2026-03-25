@@ -240,6 +240,46 @@ describe('Alias matching', () => {
     expect(matches.length).toBe(1);
     expect(matches[0]?.matchedName).toBe('郷津ありす');
   });
+
+  test('alias with kanji+kana name should NOT be split into parts', () => {
+    // 别名不应进行姓名拆分：alias="郷津ありす" 不应生成 "郷津" 或 "ありす" 变体
+    const char = createChar('1', 'アリス', ['郷津ありす']);
+    const text = '郷津さんが来た。'; // 只含别名的姓（拆分部分）
+    const matches = matchCharactersInText(text, [char]);
+    expect(matches.length).toBe(0);
+  });
+
+  test('primary name splits into parts but same-pattern alias does not', () => {
+    // 主名称 "郷津ありす" 仍会拆分，别名 "佐藤エリカ" 不会拆分
+    const char = createChar('1', '郷津ありす', ['佐藤エリカ']);
+
+    // 主名称拆分 → "郷津" 应能匹配
+    const matches1 = matchCharactersInText('郷津さんが来た。', [char]);
+    expect(matches1.length).toBe(1);
+    expect(matches1[0]?.matchedName).toBe('郷津');
+
+    // 别名 "佐藤エリカ" 不拆分 → "佐藤" 不应匹配
+    const matches2 = matchCharactersInText('佐藤さんが来た。', [char]);
+    expect(matches2.length).toBe(0);
+  });
+
+  test('alias with furigana should match furigana-stripped text', () => {
+    // 别名含注音 → 去注音后的版本应参与匹配
+    const char = createChar('1', 'アリス', ['東京（とうきょう）']);
+    const text = '東京に行った。'; // 文本无注音
+    const matches = matchCharactersInText(text, [char]);
+    expect(matches.length).toBe(1);
+    expect(matches[0]?.matchedName).toBe('東京');
+  });
+
+  test('alias exact match should work when text also contains furigana', () => {
+    // 别名 "東京" + 文本含注音 → 应匹配（通过去注音流程）
+    const char = createChar('1', 'アリス', ['東京']);
+    const text = '東京（とうきょう）に行った。';
+    const matches = matchCharactersInText(text, [char]);
+    expect(matches.length).toBe(1);
+    expect(matches[0]?.matchedName).toBe('東京');
+  });
 });
 
 describe('Multiple characters and terms in one paragraph', () => {

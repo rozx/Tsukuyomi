@@ -212,10 +212,14 @@ function scanCharacterMatches(
   const validNames = new Set<string>();
 
   for (const char of characters) {
-    const allNames = new Set([
-      ...getCharacterNameVariants(char.name),
-      ...(char.aliases?.flatMap((a) => getCharacterNameVariants(a.name)) || []),
-    ]);
+    // 主名称使用完整变体生成（含姓名拆分）；别名只做精确匹配和去注音，不做拆分
+    const aliasNames: string[] = (char.aliases || []).flatMap((a) => {
+      const trimmed = a.name?.trim();
+      if (!trimmed) return [];
+      const noFurigana = removeFurigana(trimmed);
+      return noFurigana !== trimmed ? [trimmed, noFurigana] : [trimmed];
+    });
+    const allNames = new Set([...getCharacterNameVariants(char.name), ...aliasNames]);
 
     for (const name of allNames) {
       if (name && name.trim()) {
