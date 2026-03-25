@@ -861,6 +861,9 @@ export class AssistantService {
 
       messages.push(...toolResults);
 
+      // 工具结果累积后检查 context 使用量，超出时主动压缩早期工具消息
+      this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
+
       await this.updateTaskContextUsage({
         messages,
         model,
@@ -990,6 +993,64 @@ export class AssistantService {
       messageHistory: messages,
       toolCallTokenOverhead: this.calculateToolCallTokenOverhead(messages),
     };
+  }
+
+  /**
+   * 工具调用循环中的 context 溢出保护。
+   * 当消息累积接近上下文窗口限制时，截断较早的 tool 结果内容，
+   * 避免 follow-up 请求因超出 context 而触发不必要的整会话摘要。
+   */
+  private static trimToolMessagesIfNeeded(
+    messages: ChatMessage[],
+    model: AIModel,
+    toolSchemaTokens: number,
+  ): void {
+    if (!model.maxInputTokens || model.maxInputTokens <= 0 || model.maxInputTokens === UNLIMITED_TOKENS) {
+      return;
+    }
+
+    const currentTokens =
+      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
+    // 为输出留出空间：至少保留 20% 给 completion
+    const maxAllowed = Math.floor(model.maxInputTokens * 0.8);
+
+    if (currentTokens <= maxAllowed) {
+      return;
+    }
+
+    console.warn(
+      `[AssistantService] 工具调用累积 context 过大 (${currentTokens} tokens, 限制 ${maxAllowed})，压缩早期工具结果`,
+    );
+
+    // 策略：从前往后找 tool 结果消息，将较早的大结果截断为摘要
+    // 保留最近的工具结果完整（AI 需要参考最新的结果）
+    const TRUNCATED_MARKER = '[内容已压缩，仅保留摘要]';
+    const MAX_TRUNCATED_LENGTH = 200; // 截断后保留的最大字符数
+
+    // 找出所有 tool 消息的索引（跳过最后 6 条消息，保护最近的交互）
+    const toolIndices: number[] = [];
+    const protectedTail = Math.max(0, messages.length - 6);
+    for (let i = 0; i < protectedTail; i++) {
+      if (messages[i]?.role === 'tool' && messages[i]?.content && messages[i]!.content!.length > MAX_TRUNCATED_LENGTH * 2) {
+        toolIndices.push(i);
+      }
+    }
+
+    // 从最早的开始截断，直到 token 数降到限制以内
+    for (const idx of toolIndices) {
+      const msg = messages[idx];
+      if (!msg?.content) continue;
+
+      const original = msg.content;
+      msg.content = original.slice(0, MAX_TRUNCATED_LENGTH) + `\n\n${TRUNCATED_MARKER}`;
+
+      const newTokens =
+        estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
+      if (newTokens <= maxAllowed) {
+        console.log(`[AssistantService] 压缩了 ${toolIndices.indexOf(idx) + 1} 条工具结果，当前 ${newTokens} tokens`);
+        return;
+      }
+    }
   }
 
   /**

@@ -26,6 +26,20 @@ export const buildAssistantMessageHistory = (
   if (!session || !session.messages.length) {
     return undefined;
   }
+
+  // 优先使用完整的 API 消息历史（包含工具调用和结果），确保上下文连续性
+  if (session.apiMessageHistory && session.apiMessageHistory.length > 0) {
+    return session.apiMessageHistory.map((msg) => ({
+      role: msg.role,
+      content: msg.content ?? '',
+      ...(msg.name ? { name: msg.name } : {}),
+      ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+      ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+      ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+    }));
+  }
+
+  // 回退：从 UI 消息重建（不含工具上下文，兼容旧会话）
   const startIndex = session.lastSummarizedMessageIndex ?? 0;
   const sliced = session.messages
     .slice(startIndex)

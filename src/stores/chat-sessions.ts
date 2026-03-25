@@ -112,6 +112,23 @@ export interface SessionContext {
 }
 
 /**
+ * API 层消息（存储完整的工具交互历史）
+ * 与 AI 服务的 ChatMessage 保持一致，但仅用于持久化存储
+ */
+export interface ApiMessage {
+  role: 'user' | 'assistant' | 'tool';
+  content: string | null;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  reasoning_content?: string | null;
+}
+
+/**
  * 聊天会话接口
  */
 export interface ChatSession {
@@ -130,6 +147,13 @@ export interface ChatSession {
    * 在 summarizeAndReset 时会被清零。
    */
   toolCallTokenOverhead?: number;
+  /**
+   * 完整的 API 消息历史（包含工具调用和结果）。
+   * 不含 system 消息（每次请求时动态生成）。
+   * 用于在下一轮对话中传递给 AI 服务，确保上下文连续性。
+   * 在 summarizeAndReset 时会被清空。
+   */
+  apiMessageHistory?: ApiMessage[];
 }
 
 /**
@@ -406,6 +430,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.messages = [];
         session.title = '新会话';
         delete session.summary;
+        delete session.apiMessageHistory;
         session.lastSummarizedMessageIndex = 0;
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
@@ -447,6 +472,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.summary = summary;
         session.lastSummarizedMessageIndex = session.messages.length;
         session.toolCallTokenOverhead = 0; // 摘要后重置工具调用 token 开销
+        delete session.apiMessageHistory; // 摘要后清空 API 消息历史，下次对话将基于摘要重建
         // 不修改消息列表，保留所有消息
         // 摘要将在 AssistantService 中用于后续对话的上下文
         session.updatedAt = Date.now();
@@ -461,6 +487,17 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       const session = this.sessions.find((s) => s.id === sessionId);
       if (session) {
         session.toolCallTokenOverhead = overhead;
+        saveSessionsToStorage(this.sessions);
+      }
+    },
+
+    /**
+     * 更新会话的 API 消息历史（包含工具调用的完整上下文）
+     */
+    updateApiMessageHistory(sessionId: string, apiMessages: ApiMessage[]): void {
+      const session = this.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        session.apiMessageHistory = apiMessages;
         saveSessionsToStorage(this.sessions);
       }
     },

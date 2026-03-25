@@ -154,6 +154,8 @@ export function useChatSummarizer(
       return { success: false };
     } finally {
       isSummarizing.value = false;
+      // 确保 isSending 状态被重置，避免因摘要异常导致用户无法继续发送消息
+      if (updateIsSending) updateIsSending(false);
     }
   }
 

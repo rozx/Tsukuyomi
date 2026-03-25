@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   type ChatSession,
   type MessageAction,
+  type ApiMessage,
   MESSAGE_LIMIT_THRESHOLD,
   MAX_MESSAGES_PER_SESSION,
 } from 'src/stores/chat-sessions';
@@ -25,7 +26,7 @@ export function useChatSending(
   chatSummarizer: {
     performUISummarization: (
       force: boolean,
-      stateSetter: (val: boolean) => void,
+      stateSetter?: (val: boolean) => void,
     ) => Promise<{ success: boolean }>;
     getMessagesSinceSummaryCount: (session: ChatSession | null) => number;
   },
@@ -242,6 +243,30 @@ export function useChatSending(
           chatResult.toolCallTokenOverhead,
         );
       }
+
+      // 保存完整的 API 消息历史（包含工具调用和结果），确保下轮对话上下文连续
+      if (finalSession && chatResult.messageHistory && !chatResult.needsReset) {
+        const apiMessages: ApiMessage[] = chatResult.messageHistory
+          .filter((msg) => msg.role !== 'system')
+          .map((msg) => ({
+            role: msg.role as 'user' | 'assistant' | 'tool',
+            content: msg.content ?? null,
+            ...(msg.name ? { name: msg.name } : {}),
+            ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+            ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+            ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+          }));
+        // 防止 localStorage 溢出：API 消息（含工具结果）可能很大，限制在 500KB 以内
+        const serialized = JSON.stringify(apiMessages);
+        if (serialized.length <= 512_000) {
+          chatSessionsStore.updateApiMessageHistory(finalSession.id, apiMessages);
+        } else {
+          // 超出限制时不保存，下轮将回退到基于 UI 消息的历史重建
+          console.warn(
+            `[ChatSending] API 消息历史过大 (${Math.round(serialized.length / 1024)}KB)，跳过保存`,
+          );
+        }
+      }
     } catch (error) {
       const isCancelled = isCancelledError(error);
       if (error instanceof Error && error.message === 'Task aborted') {
@@ -279,7 +304,8 @@ export function useChatSending(
         // 使用 MESSAGE_LIMIT_THRESHOLD 作为阈值，避免过早触发摘要
         const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
         if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD) {
-          void chatSummarizer.performUISummarization(false, (val) => (isSending.value = val));
+          // 不传递 updateIsSending：这是 fire-and-forget 摘要，不应影响发送状态
+          void chatSummarizer.performUISummarization(false);
         }
       }
     }
