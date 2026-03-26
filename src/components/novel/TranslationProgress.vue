@@ -2758,4 +2758,39 @@ watch(
   flex: 1;
   word-break: break-word;
 }
+
+/* 窄屏（手机端）修复 */
+@media (max-width: 640px) {
+  /* 减少任务卡片内边距 */
+  .ai-history-task-item {
+    padding: 0.75rem;
+  }
+
+  /* 压缩任务头部间距 */
+  .ai-task-header {
+    gap: 0.375rem;
+  }
+
+  /* 模型名截断，防止溢出 */
+  .ai-task-model {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 5.5rem;
+  }
+
+  /* 压缩 meta 区域间距 */
+  .ai-task-meta {
+    gap: 0.25rem;
+  }
+
+  /* 操作按钮行允许换行 */
+  .ai-history-actions {
+    flex-wrap: wrap;
+  }
+
+  /* 清除按钮在窄屏下隐藏文字，只显示图标 */
+  .ai-history-clear-button :deep(.p-button-label) {
+    display: none;
+  }
+}
 </style>

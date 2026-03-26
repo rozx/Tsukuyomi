@@ -41,6 +41,9 @@ const deletingCharacter = ref<{
 // 搜索关键词
 const searchQuery = ref('');
 
+// 工具栏展开状态（移动端）
+const isToolbarExpanded = ref(false);
+
 // 角色设定列表数据
 const allCharacterSettings = computed(() => {
   if (!props.book?.characterSettings) return [];
@@ -445,19 +448,26 @@ const handleFileSelect = async (event: Event) => {
       <p class="panel-desc text-sm text-moon-100/70">
         管理小说中的角色及其翻译和别名，这些设定会在翻译过程中被优先使用
       </p>
-      <AppMessage
-        severity="info"
-        class="panel-message"
-        message="翻译、别名和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除角色以优化翻译质量。"
-        :closable="false"
-      />
     </div>
 
     <!-- 操作栏 -->
     <div
       class="panel-toolbar border-b border-white/10 flex-none bg-surface-900/95 backdrop-blur support-backdrop-blur:bg-surface-900/50 sticky top-0 z-10"
+      :class="{ 'toolbar-expanded': isToolbarExpanded }"
     >
-      <div class="toolbar-row">
+      <!-- 移动端紧凑操作栏 -->
+      <div class="toolbar-mobile-compact">
+        <span class="text-sm text-moon/60">{{ characterSettings.length }} 位角色</span>
+        <Button
+          :icon="isToolbarExpanded ? 'pi pi-chevron-up' : 'pi pi-sliders-h'"
+          size="small"
+          class="p-button-text"
+          @click="isToolbarExpanded = !isToolbarExpanded"
+          :title="isToolbarExpanded ? '收起' : '搜索与筛选'"
+        />
+      </div>
+      <!-- 可折叠内容（搜索 + 操作） -->
+      <div class="toolbar-row toolbar-expandable">
         <!-- 左侧：搜索栏 -->
         <div class="toolbar-search">
           <InputGroup class="search-input-group min-w-0 flex-shrink">
@@ -485,6 +495,7 @@ const handleFileSelect = async (event: Event) => {
           <Button
             label="导出"
             icon="pi pi-download"
+            size="small"
             class="p-button-outlined"
             :disabled="!props.book?.characterSettings || props.book.characterSettings.length === 0"
             @click="handleExport"
@@ -492,17 +503,25 @@ const handleFileSelect = async (event: Event) => {
           <Button
             label="导入"
             icon="pi pi-upload"
+            size="small"
             class="p-button-outlined"
             @click="handleImport"
           />
           <Button
             label="添加角色"
             icon="pi pi-plus"
+            size="small"
             class="p-button-primary"
             @click="openAddDialog"
           />
         </div>
       </div>
+      <AppMessage
+        severity="info"
+        class="panel-message toolbar-expandable"
+        message="翻译、别名和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除角色以优化翻译质量。"
+        :closable="false"
+      />
     </div>
 
     <!-- 内容区域 -->
@@ -639,20 +658,35 @@ const handleFileSelect = async (event: Event) => {
   flex-shrink: 0;
 }
 
-/* 移动端响应式：工具栏换行 */
+/* 移动端紧凑操作栏（桌面端隐藏） */
+.toolbar-mobile-compact {
+  display: none;
+}
+
+/* 移动端响应式 */
 @media (max-width: 640px) {
   .panel-header {
-    padding: 0.75rem 1rem;
-  }
-
-  .panel-title {
-    font-size: 1.125rem;
-    line-height: 1.5rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .panel-desc {
     display: none;
+  }
+
+  .panel-toolbar {
+    padding: 0.5rem 1rem;
+  }
+
+  .toolbar-mobile-compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-toolbar:not(.toolbar-expanded) .toolbar-expandable {
+    display: none;
+  }
+
+  .toolbar-expanded .toolbar-expandable {
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--white-opacity-10);
+    margin-top: 0.375rem;
   }
 
   .panel-message :deep(.p-4) {
@@ -672,10 +706,6 @@ const handleFileSelect = async (event: Event) => {
     gap: 0.5rem;
   }
 
-  .panel-toolbar {
-    padding: 0.5rem 1rem;
-  }
-
   .toolbar-row {
     flex-wrap: wrap;
   }
@@ -692,6 +722,12 @@ const handleFileSelect = async (event: Event) => {
   .toolbar-actions {
     flex: 1 1 100%;
     justify-content: flex-end;
+    gap: 0.25rem;
+  }
+
+  /* 次要按钮只显示图标 */
+  .toolbar-actions :deep(.p-button-outlined .p-button-label) {
+    display: none;
   }
 }
 </style>

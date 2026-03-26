@@ -2090,47 +2090,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
     <!-- 书籍内容 -->
     <div v-else class="book-details-layout">
-      <div v-if="isSmallScreen" class="mobile-workspace-switcher">
-        <button
-          class="workspace-switch-btn"
-          :class="{ 'workspace-switch-btn-active': workspaceMode === 'catalog' }"
-          @click="switchWorkspaceMode('catalog')"
-        >
-          <i class="pi pi-list"></i>
-          <span>目录</span>
-        </button>
-        <button
-          class="workspace-switch-btn"
-          :class="{ 'workspace-switch-btn-active': workspaceMode === 'content' }"
-          @click="switchWorkspaceMode('content')"
-        >
-          <i class="pi pi-file"></i>
-          <span>内容</span>
-        </button>
-        <button
-          class="workspace-switch-btn"
-          :class="{ 'workspace-switch-btn-active': workspaceMode === 'settings' }"
-          @click="switchWorkspaceMode('settings')"
-        >
-          <i class="pi pi-cog"></i>
-          <span>设置</span>
-        </button>
-        <button
-          class="workspace-switch-btn relative"
-          :class="{ 'workspace-switch-btn-active': uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress' }"
-          @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"
-        >
-          <i class="pi pi-objects-column"></i>
-          <span>进度</span>
-          <span
-            v-if="activeTranslationTaskCount > 0"
-            class="absolute top-0.5 right-0.5 min-w-3.5 h-3.5 px-0.5 text-[9px] font-bold rounded-full bg-primary-500 text-white flex items-center justify-center"
-          >
-            {{ activeTranslationTaskCount }}
-          </span>
-        </button>
-      </div>
-
       <!-- 左侧卷/章节面板 -->
       <aside
         class="book-sidebar"
@@ -2526,6 +2485,44 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           @replace-all="replaceAll"
         />
 
+        <!-- 移动端设置子导航（术语/角色/记忆切换） -->
+        <div
+          v-if="isSmallScreen && workspaceMode === 'settings'"
+          class="mobile-settings-subnav"
+        >
+          <button
+            class="settings-subnav-btn"
+            :class="{ 'settings-subnav-btn-active': selectedSettingMenu === 'terms' }"
+            @click="navigateToTermsSetting"
+          >
+            <i class="pi pi-bookmark"></i>
+            <span>术语</span>
+          </button>
+          <button
+            class="settings-subnav-btn"
+            :class="{ 'settings-subnav-btn-active': selectedSettingMenu === 'characters' }"
+            @click="navigateToCharactersSetting"
+          >
+            <i class="pi pi-users"></i>
+            <span>角色</span>
+          </button>
+          <button
+            class="settings-subnav-btn"
+            :class="{ 'settings-subnav-btn-active': selectedSettingMenu === 'memory' }"
+            @click="navigateToMemorySetting"
+          >
+            <i class="pi pi-database"></i>
+            <span>记忆</span>
+          </button>
+          <button
+            class="settings-subnav-btn"
+            @click="openScraperDialog"
+          >
+            <i class="pi pi-download"></i>
+            <span>更新</span>
+          </button>
+        </div>
+
         <div
           ref="scrollableContentRef"
           class="scrollable-content"
@@ -2635,6 +2632,48 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- 底部工作区切换导航（移动端） -->
+      <div v-if="isSmallScreen" class="mobile-workspace-switcher">
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'catalog' }"
+          @click="switchWorkspaceMode('catalog')"
+        >
+          <i class="pi pi-list"></i>
+          <span>目录</span>
+        </button>
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'content' }"
+          @click="switchWorkspaceMode('content')"
+        >
+          <i class="pi pi-file"></i>
+          <span>内容</span>
+        </button>
+        <button
+          class="workspace-switch-btn"
+          :class="{ 'workspace-switch-btn-active': workspaceMode === 'settings' }"
+          @click="switchWorkspaceMode('settings')"
+        >
+          <i class="pi pi-cog"></i>
+          <span>设置</span>
+        </button>
+        <button
+          class="workspace-switch-btn relative"
+          :class="{ 'workspace-switch-btn-active': uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress' }"
+          @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"
+        >
+          <i class="pi pi-objects-column"></i>
+          <span>进度</span>
+          <span
+            v-if="activeTranslationTaskCount > 0"
+            class="absolute top-0.5 right-0.5 min-w-3.5 h-3.5 px-0.5 text-[9px] font-bold rounded-full bg-primary-500 text-white flex items-center justify-center"
+          >
+            {{ activeTranslationTaskCount }}
+          </span>
+        </button>
       </div>
     </div>
   </div>
@@ -3019,7 +3058,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--white-opacity-10);
+    border-top: 1px solid var(--white-opacity-10);
     background: var(--white-opacity-3);
     max-width: 100%;
     box-sizing: border-box;
@@ -3129,6 +3168,50 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
   .book-sidebar-mobile-visible {
     display: block;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .book-main-content {
+    min-height: 0;
+  }
+
+  /* 设置子导航（术语/角色/记忆/更新） */
+  .mobile-settings-subnav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--white-opacity-10);
+    background: var(--white-opacity-3);
+    flex-shrink: 0;
+  }
+
+  .settings-subnav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    border: 1px solid var(--white-opacity-10);
+    background: transparent;
+    color: var(--moon-opacity-70);
+    border-radius: 0.375rem;
+    min-height: 2rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+    min-width: 0;
+    transition: all 0.15s;
+  }
+
+  .settings-subnav-btn-active {
+    border-color: var(--primary-opacity-50);
+    background: var(--primary-opacity-15);
+    color: var(--moon-opacity-100);
+  }
+
+  .settings-subnav-btn:active {
+    transform: scale(0.97);
   }
 
   .book-main-content-mobile-hidden {

@@ -273,7 +273,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <AppFooter />
+    <AppFooter v-if="!isPhone" />
   </div>
 
   <!-- Toast 组件 -->
