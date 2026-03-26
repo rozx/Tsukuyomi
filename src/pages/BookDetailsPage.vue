@@ -2143,11 +2143,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                 </div>
               </div>
             </div>
-            <div class="book-separator"></div>
+            <div v-if="!isSmallScreen" class="book-separator"></div>
           </div>
 
-          <!-- 设置菜单 -->
-          <div class="settings-menu-wrapper">
+          <!-- 设置菜单 - 移动端隐藏（设置页已有二级导航） -->
+          <div v-if="!isSmallScreen" class="settings-menu-wrapper">
             <div class="settings-menu-items">
               <button
                 class="settings-menu-item"
@@ -2183,7 +2183,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
           <!-- 目录标题和操作按钮 -->
           <div class="sidebar-title-wrapper">
-            <h2 class="sidebar-title">目录</h2>
+            <h2 v-if="!isSmallScreen" class="sidebar-title">目录</h2>
             <div class="sidebar-actions">
               <Button
                 icon="pi pi-plus"
