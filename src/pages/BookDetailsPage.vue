@@ -51,7 +51,6 @@ import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
-import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -403,6 +402,14 @@ const workspaceMode = computed({
 
 const isMovingChapter = ref(false);
 
+const activeTranslationTaskCount = computed(() =>
+  aiProcessingStore.activeTasks.filter(
+    (t) =>
+      (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+      (t.status === 'thinking' || t.status === 'processing'),
+  ).length,
+);
+
 const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
   workspaceMode.value = mode;
   if (mode === 'content') {
@@ -415,8 +422,6 @@ const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
     if (bookId.value) {
       void router.replace(`/books/${bookId.value}/settings/terms`);
     }
-  } else if (mode === 'progress' && !showTranslationProgress.value) {
-    showTranslationProgress.value = true;
   }
 };
 
@@ -1272,44 +1277,6 @@ const {
   saveState,
 );
 
-// 翻译进度面板显示状态 - 从 store 获取，按书籍保存
-// 移动端始终为 true
-const showTranslationProgress = computed({
-  get: () => {
-    if (!bookId.value) return false;
-    if (isSmallScreen.value) return true;
-    return bookDetailsStore.getShowTranslationProgress(bookId.value);
-  },
-  set: (value: boolean) => {
-    if (!bookId.value) return;
-    bookDetailsStore.setShowTranslationProgress(bookId.value, value);
-  },
-});
-
-// 切换翻译进度面板显示
-const toggleTranslationProgress = (): void => {
-  if (!bookId.value) return;
-  if (isSmallScreen.value) {
-    bookDetailsStore.setShowTranslationProgress(bookId.value, true);
-    workspaceMode.value = 'progress';
-    return;
-  }
-  bookDetailsStore.toggleShowTranslationProgress(bookId.value);
-};
-
-// 当翻译/润色/校对开始时，自动显示进度面板
-watch(
-  () => isTranslatingChapter || isPolishingChapter || isProofreadingChapter,
-  (isActive) => {
-    if (isActive && bookId.value) {
-      bookDetailsStore.setShowTranslationProgress(bookId.value, true);
-      if (isSmallScreen.value) {
-        workspaceMode.value = 'progress';
-      }
-    }
-  },
-);
-
 watch(
   isSmallScreen,
   (small) => {
@@ -2149,13 +2116,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           <span>设置</span>
         </button>
         <button
-          class="workspace-switch-btn"
-          :class="{ 'workspace-switch-btn-active': workspaceMode === 'progress' }"
-          :disabled="!selectedChapter || !showTranslationProgress"
-          @click="switchWorkspaceMode('progress')"
+          class="workspace-switch-btn relative"
+          :class="{ 'workspace-switch-btn-active': uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress' }"
+          @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"
         >
-          <i class="pi pi-chart-line"></i>
+          <i class="pi pi-objects-column"></i>
           <span>进度</span>
+          <span
+            v-if="activeTranslationTaskCount > 0"
+            class="absolute top-0.5 right-0.5 min-w-3.5 h-3.5 px-0.5 text-[9px] font-bold rounded-full bg-primary-500 text-white flex items-center justify-center"
+          >
+            {{ activeTranslationTaskCount }}
+          </span>
         </button>
       </div>
 
@@ -2517,10 +2489,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :is-translating-chapter="isTranslatingChapter"
           :is-polishing-chapter="isPolishingChapter"
           :is-search-visible="isSearchVisible"
-          :show-translation-progress="showTranslationProgress"
-          :can-show-translation-progress="
-            isTranslatingChapter || isPolishingChapter || isProofreadingChapter
-          "
           :is-small-screen="isSmallScreen"
           @undo="undo"
           @redo="redo"
@@ -2537,7 +2505,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           @toggle-search="toggleSearch"
           @toggle-keyboard-shortcuts="toggleKeyboardShortcutsPopover"
           @toggle-special-instructions="toggleChapterSettingsPopover"
-          @toggle-translation-progress="toggleTranslationProgress"
         />
 
         <!-- 搜索工具栏 -->
@@ -2563,11 +2530,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           ref="scrollableContentRef"
           class="scrollable-content"
           :class="{
-            '!overflow-hidden': showTranslationProgress || !!selectedSettingMenu,
+            '!overflow-hidden': !!selectedSettingMenu,
             'scrollable-content-mobile-hidden':
-              isSmallScreen &&
-              ((workspaceMode === 'settings' && !selectedSettingMenu) ||
-                (workspaceMode === 'progress' && !showTranslationProgress)),
+              isSmallScreen && workspaceMode === 'settings' && !selectedSettingMenu,
           }"
         >
           <div
@@ -2575,7 +2540,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             :class="{
               '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': !!selectedSettingMenu,
               '!h-full !overflow-hidden !min-h-0': selectedChapter,
-              'page-container-split-active': selectedChapter && showTranslationProgress,
             }"
           >
             <!-- 术语设置面板 -->
@@ -2606,105 +2570,61 @@ const handleBookSave = async (formData: Partial<Novel>) => {
               class="flex-1 min-h-0"
             />
 
-            <!-- 章节内容和翻译进度分割布局 -->
+            <!-- 章节内容（全宽，翻译进度已移至右侧面板 Tab） -->
             <div
               v-else-if="selectedChapter"
-              class="chapter-content-split-layout split-layout-container"
-              :class="{ 'split-layout-active': showTranslationProgress }"
+              ref="chapterContentPanelRef"
+              class="h-full overflow-y-auto overflow-x-hidden"
             >
-              <!-- 左侧：章节内容 -->
-              <div
-                ref="chapterContentPanelRef"
-                class="chapter-content-panel"
-                :class="{
-                  'panel-with-split': showTranslationProgress,
-                  'mobile-panel-hidden': isSmallScreen && workspaceMode === 'progress',
-                }"
-              >
-                <ChapterContentPanel
-                  :selected-chapter="selectedChapter"
-                  :selected-chapter-with-content="selectedChapterWithContent"
-                  :selected-chapter-paragraphs="selectedChapterParagraphs"
-                  :is-loading-chapter-content="isLoadingChapterContent"
-                  :edit-mode="editMode"
-                  :original-text-edit-value="originalTextEditValue"
-                  :translated-char-count="translatedCharCount"
-                  :book="book || null"
-                  :book-id="bookId"
-                  :is-small-screen="isSmallScreen"
-                  :selected-chapter-id="selectedChapterId"
-                  :translating-paragraph-ids="translatingParagraphIds"
-                  :polishing-paragraph-ids="polishingParagraphIds"
-                  :proofreading-paragraph-ids="proofreadingParagraphIds"
-                  :search-query="searchQuery"
-                  :selected-paragraph-index="selectedParagraphIndex"
-                  :is-keyboard-selected="isKeyboardSelected"
-                  :is-click-selected="isClickSelected"
-                  :paragraph-card-refs="paragraphCardRefs"
-                  :is-summarizing="isSummarizing"
-                  :prev-chapter="prevChapter"
-                  :next-chapter="nextChapter"
-                  @update:original-text-edit-value="
-                    (value: string) => {
-                      originalTextEditValue = value;
-                    }
-                  "
-                  @open-edit-chapter-dialog="openEditChapterDialog"
-                  @cancel-original-text-edit="cancelOriginalTextEdit"
-                  @save-original-text-edit="saveOriginalTextEdit"
-                  @update-translation="
-                    (paragraphId: string, newTranslation: string) =>
-                      updateParagraphTranslation(paragraphId, newTranslation)
-                  "
-                  @retranslate-paragraph="retranslateParagraph"
-                  @polish-paragraph="polishParagraph"
-                  @proofread-paragraph="proofreadParagraph"
-                  @select-translation="
-                    (paragraphId: string, translationId: string) =>
-                      selectParagraphTranslation(paragraphId, translationId)
-                  "
-                  @paragraph-click="handleParagraphClick"
-                  @paragraph-edit-start="handleParagraphEditStart"
-                  @paragraph-edit-stop="handleParagraphEditStop"
-                  @re-summarize-chapter="handleReSummarizeChapter"
-                  @navigate-to-chapter="onNavigateToChapter"
-                  @navigate-to-chapter-list="onNavigateToChapterList"
-                />
-              </div>
-
-              <!-- 分割线 -->
-              <div
-                v-show="showTranslationProgress && (!isSmallScreen || workspaceMode === 'progress')"
-                class="split-divider"
-              ></div>
-
-              <!-- 右侧：翻译进度 -->
-              <div
-                v-show="showTranslationProgress && (!isSmallScreen || workspaceMode === 'progress')"
-                class="translation-progress-panel"
-              >
-                <div class="translation-progress-panel-inner">
-                  <TranslationProgress
-                    :is-translating="isTranslatingChapter"
-                    :is-polishing="isPolishingChapter"
-                    :is-proofreading="isProofreadingChapter"
-                    :progress="
-                      isProofreadingChapter
-                        ? proofreadingProgress
-                        : isPolishingChapter
-                          ? polishProgress
-                          : translationProgress
-                    "
-                    @cancel="
-                      (taskType: string, chapterId?: string) => {
-                        if (taskType === 'proofreading') cancelProofreading(chapterId);
-                        else if (taskType === 'polish') cancelPolish(chapterId);
-                        else cancelTranslation(chapterId);
-                      }
-                    "
-                  />
-                </div>
-              </div>
+              <ChapterContentPanel
+                :selected-chapter="selectedChapter"
+                :selected-chapter-with-content="selectedChapterWithContent"
+                :selected-chapter-paragraphs="selectedChapterParagraphs"
+                :is-loading-chapter-content="isLoadingChapterContent"
+                :edit-mode="editMode"
+                :original-text-edit-value="originalTextEditValue"
+                :translated-char-count="translatedCharCount"
+                :book="book || null"
+                :book-id="bookId"
+                :is-small-screen="isSmallScreen"
+                :selected-chapter-id="selectedChapterId"
+                :translating-paragraph-ids="translatingParagraphIds"
+                :polishing-paragraph-ids="polishingParagraphIds"
+                :proofreading-paragraph-ids="proofreadingParagraphIds"
+                :search-query="searchQuery"
+                :selected-paragraph-index="selectedParagraphIndex"
+                :is-keyboard-selected="isKeyboardSelected"
+                :is-click-selected="isClickSelected"
+                :paragraph-card-refs="paragraphCardRefs"
+                :is-summarizing="isSummarizing"
+                :prev-chapter="prevChapter"
+                :next-chapter="nextChapter"
+                @update:original-text-edit-value="
+                  (value: string) => {
+                    originalTextEditValue = value;
+                  }
+                "
+                @open-edit-chapter-dialog="openEditChapterDialog"
+                @cancel-original-text-edit="cancelOriginalTextEdit"
+                @save-original-text-edit="saveOriginalTextEdit"
+                @update-translation="
+                  (paragraphId: string, newTranslation: string) =>
+                    updateParagraphTranslation(paragraphId, newTranslation)
+                "
+                @retranslate-paragraph="retranslateParagraph"
+                @polish-paragraph="polishParagraph"
+                @proofread-paragraph="proofreadParagraph"
+                @select-translation="
+                  (paragraphId: string, translationId: string) =>
+                    selectParagraphTranslation(paragraphId, translationId)
+                "
+                @paragraph-click="handleParagraphClick"
+                @paragraph-edit-start="handleParagraphEditStart"
+                @paragraph-edit-stop="handleParagraphEditStop"
+                @re-summarize-chapter="handleReSummarizeChapter"
+                @navigate-to-chapter="onNavigateToChapter"
+                @navigate-to-chapter-list="onNavigateToChapterList"
+              />
             </div>
 
             <!-- 未选择章节时的提示（仅当没有选择设置菜单和章节时显示） -->
@@ -3059,72 +2979,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-height: 100%;
 }
 
-.page-container.page-container-split-active {
-  padding-bottom: 0;
-}
-
-/* 章节内容和翻译进度分割布局 */
-.chapter-content-split-layout {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  gap: 0;
-  margin: -1.5rem -1.5rem 0 -1.5rem;
-  padding: 1.5rem 1.5rem 0 1.5rem;
-  flex-direction: row;
-  align-items: stretch;
-}
-
-.chapter-content-panel {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-  margin: -1.5rem;
-  padding: 1.5rem;
-  transition: padding-right 0.2s ease;
-}
-
-.chapter-content-panel.panel-with-split {
-  padding-right: 2.25rem;
-}
-
-.split-divider {
-  width: 1px;
-  background: var(--white-opacity-20);
-  flex-shrink: 0;
-  margin: 0 1.5rem;
-  transition: opacity 0.2s ease;
-}
-
-.translation-progress-panel {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: opacity 0.2s ease;
-  align-self: stretch;
-  margin: -1.5rem;
-  padding: 0;
-}
-
-.translation-progress-panel-inner {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--white-opacity-3);
-  border-left: 1px solid var(--white-opacity-20);
-  padding: 0;
-  justify-content: flex-start;
-  align-items: center;
-}
 
 /* 未选择章节状态 */
 .no-chapter-selected {
@@ -3287,36 +3141,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
   .mobile-panel-hidden {
     display: none;
-  }
-
-  .translation-progress-panel {
-    margin: 0;
-  }
-
-  .split-divider {
-    display: none;
-  }
-
-  .chapter-content-split-layout {
-    /*
-     * 移动端尽量吃满可用宽度：抵消 page-container 的 1.5rem 内边距后，
-     * 保留 0.75rem 的内容安全边距，兼顾可读性与横向利用率。
-     */
-    margin: -1.5rem -1.5rem 0 -1.5rem;
-    padding: 0.75rem 0.75rem 0 0.75rem;
-  }
-
-  /*
-   * 移动端下父容器的内边距已缩小为 0.75rem，
-   * 这里同步移除桌面用的负 margin/额外 padding，避免内容向右偏移与轻微溢出。
-   */
-  .chapter-content-panel {
-    margin: 0;
-    padding: 0;
-  }
-
-  .chapter-content-panel.panel-with-split {
-    padding-right: 0;
   }
 }
 </style>

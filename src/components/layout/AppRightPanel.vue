@@ -8,6 +8,7 @@ import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPop
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
+import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import ProgressBar from 'primevue/progressbar';
 import { useUiStore } from 'src/stores/ui';
 import { useContextStore } from 'src/stores/context';
@@ -45,6 +46,19 @@ const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
 const isDesktop = computed(() => ui.deviceType === 'desktop');
+
+// 当前激活的 Tab
+const activeRightTab = computed(() => ui.activeRightTab);
+
+// 活跃的翻译类任务数量（用于角标）
+const activeTranslationTaskCount = computed(
+  () =>
+    aiProcessingStore.activeTasks.filter(
+      (t) =>
+        (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+        (t.status === 'thinking' || t.status === 'processing'),
+    ).length,
+);
 const panelWidthStyle = computed(() => ({
   width: isDesktop.value ? `${ui.rightPanelWidth}px` : '100%',
 }));
@@ -585,36 +599,68 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
       class="absolute inset-0 bg-gradient-to-b from-tsukuyomi-500/5 via-transparent to-transparent pointer-events-none"
     />
 
-    <!-- Header with new chat button -->
-    <div
-      class="shrink-0 px-4 pt-6 pb-4 relative z-10 flex items-center justify-between border-b border-white/10"
-    >
-      <h2 class="text-sm font-semibold text-moon-100 uppercase tracking-wide">AI 助手</h2>
-      <div class="flex items-center gap-2">
-        <Button
-          v-if="messages.length > 0"
-          aria-label="清空聊天"
-          class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-          icon="pi pi-trash"
-          size="small"
-          @click="clearChat"
-        />
-        <Button
-          v-if="chatSessionsStore.allSessions.length > 1"
-          id="session-list-button"
-          aria-label="会话列表"
-          class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-          icon="pi pi-history"
-          size="small"
-          @click="toggleSessionListPopover"
-        />
-        <Button
-          aria-label="新聊天"
-          class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-          icon="pi pi-comments"
-          size="small"
-          @click="createNewSession"
-        />
+    <!-- Header with Tab switcher -->
+    <div class="shrink-0 px-4 pt-4 pb-0 relative z-10 border-b border-white/10">
+      <div class="flex items-center justify-between mb-1">
+        <!-- Tab buttons -->
+        <div class="flex gap-0.5">
+          <button
+            class="px-3 py-1.5 text-xs font-medium rounded-t transition-colors"
+            :class="
+              activeRightTab === 'chat'
+                ? 'text-moon-100 border-b-2 border-primary-400 bg-white/5'
+                : 'text-moon-50 hover:text-moon-80 hover:bg-white/5'
+            "
+            @click="ui.setActiveRightTab('chat')"
+          >
+            AI 助手
+          </button>
+          <button
+            class="px-3 py-1.5 text-xs font-medium rounded-t transition-colors flex items-center gap-1.5"
+            :class="
+              activeRightTab === 'progress'
+                ? 'text-moon-100 border-b-2 border-primary-400 bg-white/5'
+                : 'text-moon-50 hover:text-moon-80 hover:bg-white/5'
+            "
+            @click="ui.setActiveRightTab('progress')"
+          >
+            翻译进度
+            <span
+              v-if="activeTranslationTaskCount > 0"
+              class="inline-flex items-center justify-center min-w-4 h-4 px-1 text-xs font-bold rounded-full bg-primary-500/80 text-white"
+            >
+              {{ activeTranslationTaskCount }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Chat-specific action buttons (only in chat tab) -->
+        <div v-if="activeRightTab === 'chat'" class="flex items-center gap-1 pb-1">
+          <Button
+            v-if="messages.length > 0"
+            aria-label="清空聊天"
+            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+            icon="pi pi-trash"
+            size="small"
+            @click="clearChat"
+          />
+          <Button
+            v-if="chatSessionsStore.allSessions.length > 1"
+            id="session-list-button"
+            aria-label="会话列表"
+            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+            icon="pi pi-history"
+            size="small"
+            @click="toggleSessionListPopover"
+          />
+          <Button
+            aria-label="新聊天"
+            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+            icon="pi pi-comments"
+            size="small"
+            @click="createNewSession"
+          />
+        </div>
       </div>
     </div>
 
@@ -627,6 +673,14 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
       @hide="hideSessionListPopover"
       @select="switchToSession"
     />
+
+    <!-- 翻译进度 Tab -->
+    <div v-if="activeRightTab === 'progress'" class="flex-1 min-h-0 overflow-hidden">
+      <TranslationProgress />
+    </div>
+
+    <!-- AI 助手 Tab 内容 -->
+    <template v-if="activeRightTab === 'chat'">
 
     <!-- Context info -->
     <div
@@ -746,6 +800,8 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
         </div>
       </div>
     </div>
+    </template><!-- end AI 助手 Tab -->
+
     <!-- Shared Grouped Action Popover -->
     <ChatGroupedActionPopover
       v-model:popover-ref="groupedActionPopoverRef"

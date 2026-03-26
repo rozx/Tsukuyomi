@@ -44,6 +44,10 @@ export interface AIProcessingTask {
    * 关联的章节标题（可选，若缺失可通过 bookId + chapterId 再查询）
    */
   chapterTitle?: string;
+  /**
+   * 翻译/润色/校对任务的段落进度（可选，仅翻译类任务有效）
+   */
+  progress?: { current: number; total: number; message: string };
   startTime: number;
   endTime?: number;
   abortController?: AbortController; // 用于取消请求（不持久化）
@@ -139,6 +143,7 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       ...(task.bookId !== undefined && { bookId: task.bookId }),
       ...(task.chapterId !== undefined && { chapterId: task.chapterId }),
       ...(task.chapterTitle !== undefined && { chapterTitle: task.chapterTitle }),
+      ...(task.progress !== undefined && { progress: task.progress }),
       startTime: task.startTime,
       ...(task.endTime !== undefined && { endTime: task.endTime }),
     };

@@ -37,20 +37,6 @@ const taskStatusLabels: Record<string, string> = {
 // 存储所有节流函数的清理函数
 const throttleCleanups: Array<() => void> = [];
 
-const props = defineProps<{
-  isTranslating?: boolean;
-  isPolishing?: boolean;
-  isProofreading?: boolean;
-  progress: {
-    current: number;
-    total: number;
-    message: string;
-  };
-}>();
-
-const emit = defineEmits<{
-  (e: 'cancel', taskType: string, chapterId?: string): void;
-}>();
 
 const aiProcessingStore = useAIProcessingStore();
 const bookDetailsStore = useBookDetailsStore();
@@ -104,9 +90,7 @@ const recentAITasks = computed(() => {
 
 const stopTask = (task: AIProcessingTask) => {
   void aiProcessingStore.stopTask(task.id);
-  // 始终发出 cancel 事件，携带任务类型和章节 ID，
-  // 让父组件能精确取消对应章节的对应任务类型
-  emit('cancel', task.type, task.chapterId);
+  // BookDetailsPage 通过 watch(aiProcessingStore.activeTasks) 监听到 cancelled 状态，自动更新局部 UI
 };
 
 /**
@@ -144,39 +128,48 @@ const getTaskStatusLabel = (task: AIProcessingTask) => {
   return taskStatusLabels[task.status] || task.status;
 };
 
+// 从 store 派生翻译/润色/校对的活跃状态
+const hasActiveType = (type: string) =>
+  recentAITasks.value.some(
+    (t) => t.type === type && (t.status === 'thinking' || t.status === 'processing'),
+  );
+
+const isTranslating = computed(() => hasActiveType('translation'));
+const isPolishing = computed(() => hasActiveType('polish'));
+const isProofreading = computed(() => hasActiveType('proofreading'));
+
 const currentActiveTask = computed(() => {
   return (
     recentAITasks.value.find((t) => t.status === 'thinking' || t.status === 'processing') || null
   );
 });
 
-const progressTaskId = computed(() => {
-  const isWorking = props.isTranslating || props.isPolishing || props.isProofreading;
-  if (!isWorking || props.progress.total <= 0) {
-    return null;
-  }
+const currentProgressTask = computed(() => {
+  const isWorking = isTranslating.value || isPolishing.value || isProofreading.value;
+  if (!isWorking) return null;
 
-  // 确定当前 props 传入的进度数据对应的任务类型
-  // 优先级：proofreading > polish > translation（与 BookDetailsPage 中 progress 选择逻辑一致）
-  const expectedType: string = props.isProofreading
+  // 优先级：proofreading > polish > translation
+  const expectedType: string = isProofreading.value
     ? 'proofreading'
-    : props.isPolishing
+    : isPolishing.value
       ? 'polish'
       : 'translation';
 
   const chapterId = currentSelectedChapterId.value;
 
-  // 在活跃任务中查找与当前进度数据匹配的任务（类型 + 章节）
-  const matchedTask = recentAITasks.value.find(
-    (t) =>
-      (t.status === 'thinking' || t.status === 'processing') &&
-      t.type === expectedType &&
-      (!chapterId || t.chapterId === chapterId),
+  return (
+    recentAITasks.value.find(
+      (t) =>
+        (t.status === 'thinking' || t.status === 'processing') &&
+        t.type === expectedType &&
+        (!chapterId || t.chapterId === chapterId) &&
+        (t.progress?.total ?? 0) > 0,
+    ) ||
+    currentActiveTask.value
   );
-
-  // 如果精确匹配找到了，使用它；否则退回到第一个活跃任务（兼容旧的行为）
-  return matchedTask?.id || currentActiveTask.value?.id || null;
 });
+
+const progressTaskId = computed(() => currentProgressTask.value?.id || null);
 
 // 判断是否为具有确定进度数据的活跃任务
 const isActiveProgressTask = (task: AIProcessingTask): boolean => {
@@ -189,18 +182,16 @@ const shouldShowTaskProgress = (task: AIProcessingTask): boolean => {
 };
 
 const getTaskProgressPercent = (task: AIProcessingTask): number => {
-  if (!isActiveProgressTask(task) || props.progress.total <= 0) {
-    return 0;
-  }
-  const value = (props.progress.current / props.progress.total) * 100;
+  if (!isActiveProgressTask(task)) return 0;
+  const taskProgress = task.progress;
+  if (!taskProgress || taskProgress.total <= 0) return 0;
+  const value = (taskProgress.current / taskProgress.total) * 100;
   return Math.max(0, Math.min(100, value));
 };
 
 const progressMessagePattern = /^正在(翻译|润色|校对)第\s*\d+\/\d+\s*部分\.?\.?\.?$/;
 
-const progressMessage = computed(() => {
-  return props.progress?.message?.trim() || '';
-});
+const progressMessage = computed(() => currentProgressTask.value?.progress?.message?.trim() || '');
 
 const chunkProgressMessage = computed(() => {
   const message = progressMessage.value;
@@ -1516,7 +1507,7 @@ watch(
                 </div>
                 <div v-if="isActiveProgressTask(task)" class="ai-task-progress-header">
                   <span class="ai-task-progress-text"
-                    >{{ props.progress.current }} / {{ props.progress.total }}</span
+                    >{{ task.progress?.current ?? 0 }} / {{ task.progress?.total ?? 0 }}</span
                   >
                 </div>
                 <ProgressBar

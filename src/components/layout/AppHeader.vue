@@ -21,6 +21,14 @@ const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
 
+const activeTranslationTaskCount = computed(() =>
+  aiProcessing.activeTasks.filter(
+    (t) =>
+      (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+      (t.status === 'thinking' || t.status === 'processing'),
+  ).length,
+);
+
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 // 获取 AI 任务状态（只显示状态，不显示思考消息内容）
@@ -367,12 +375,19 @@ onUnmounted(() => {
           </div>
 
           <!-- 右侧面板切换按钮 -->
-          <Button
-            aria-label="切换右侧面板"
-            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-            :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-comments'"
-            @click="handleToggleRightPanel"
-          />
+          <div class="relative inline-flex items-center justify-center">
+            <Button
+              aria-label="切换右侧面板"
+              class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
+              :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-objects-column'"
+              @click="handleToggleRightPanel"
+            />
+            <Badge
+              v-if="activeTranslationTaskCount > 0"
+              :value="activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount"
+              severity="info"
+            />
+          </div>
         </div>
       </template>
     </Menubar>

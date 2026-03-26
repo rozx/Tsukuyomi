@@ -1,8 +1,9 @@
-import { ref, computed, onUnmounted, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, watch, onUnmounted, type Ref, type ComputedRef } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useUiStore } from 'src/stores/ui';
 import { TranslationService, PolishService, ProofreadingService } from 'src/services/ai';
 import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
@@ -33,6 +34,24 @@ export function useChapterTranslation(
   const booksStore = useBooksStore();
   const aiModelsStore = useAIModelsStore();
   const aiProcessingStore = useAIProcessingStore();
+  const uiStore = useUiStore();
+
+  // 将进度同步到 aiProcessingStore 对应任务，使 AppRightPanel 的翻译进度 Tab 可读取
+  const syncProgressToStore = (
+    type: 'translation' | 'polish' | 'proofreading',
+    chapterId: string,
+    progress: { current: number; total: number; message: string },
+  ) => {
+    const task = aiProcessingStore.activeTasks.find(
+      (t) =>
+        t.type === type &&
+        t.chapterId === chapterId &&
+        (t.status === 'thinking' || t.status === 'processing'),
+    );
+    if (task) {
+      void aiProcessingStore.updateTask(task.id, { progress });
+    }
+  };
 
   /**
    * 创建新的段落翻译对象
@@ -854,6 +873,7 @@ export function useChapterTranslation(
 
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
+    uiStore.setActiveRightTab('progress');
 
     const paragraphs = selectedChapterParagraphs.value;
     const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para));
@@ -910,11 +930,13 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          state.progress = {
+          const newProgress = {
             current: state.progress.current,
             total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
+          state.progress = newProgress;
+          syncProgressToStore('translation', targetChapterId, newProgress);
           // 更新正在翻译的段落 ID
           if (progress.currentParagraphs) {
             state.translatingParagraphIds = new Set(progress.currentParagraphs);
@@ -963,11 +985,13 @@ export function useChapterTranslation(
             }
           }
 
-          state.progress = {
+          const updatedProgress = {
             current: completedParagraphIds.size,
             total: targetParagraphIds.size,
             message: state.progress.message,
           };
+          state.progress = updatedProgress;
+          syncProgressToStore('translation', targetChapterId, updatedProgress);
 
           // 从正在翻译的集合中移除已完成的段落 ID
           translations.forEach((pt) => {
@@ -1262,6 +1286,7 @@ export function useChapterTranslation(
 
     state.isPolishing = true;
     state.polishingParagraphIds.clear();
+    uiStore.setActiveRightTab('progress');
 
     const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
 
@@ -1302,11 +1327,13 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          state.progress = {
+          const newProgress = {
             current: progress.current,
             total: progress.total,
             message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
           };
+          state.progress = newProgress;
+          syncProgressToStore('polish', targetChapterId, newProgress);
           // 更新正在润色的段落 ID
           if (progress.currentParagraphs) {
             state.polishingParagraphIds = new Set(progress.currentParagraphs);
@@ -1504,6 +1531,7 @@ export function useChapterTranslation(
 
     state.isProofreading = true;
     state.proofreadingParagraphIds.clear();
+    uiStore.setActiveRightTab('progress');
 
     const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
 
@@ -1544,11 +1572,13 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          state.progress = {
+          const newProgress = {
             current: progress.current,
             total: progress.total,
             message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
           };
+          state.progress = newProgress;
+          syncProgressToStore('proofreading', targetChapterId, newProgress);
           // 更新正在校对的段落 ID
           if (progress.currentParagraphs) {
             state.proofreadingParagraphIds = new Set(progress.currentParagraphs);
@@ -1665,6 +1695,71 @@ export function useChapterTranslation(
     };
     state.proofreadingParagraphIds = new Set();
   };
+
+  // 监听 aiProcessingStore 任务取消事件，同步更新局部 UI 状态
+  // 当用户从右侧面板翻译进度 Tab 取消任务时，此 watch 负责中止本地 AbortController 并重置 UI
+  // 使用字符串 join 作为 watch 源，确保只在任务 id/status 真正变化时才触发回调
+  watch(
+    () =>
+      aiProcessingStore.activeTasks
+        .filter(
+          (t) =>
+            t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading',
+        )
+        .map((t) => `${t.id}:${t.status}:${t.type}:${t.chapterId ?? ''}`)
+        .join(','),
+    (newKey, oldKey) => {
+      if (!oldKey) return;
+      const parse = (key: string) =>
+        key
+          ? key.split(',').map((s) => {
+              const [id, status, type, chapterId] = s.split(':');
+              return { id: id!, status: status!, type: type!, chapterId: chapterId || undefined };
+            })
+          : [];
+      const newTasks = parse(newKey);
+      const oldTasks = parse(oldKey);
+      for (const newTask of newTasks) {
+        const oldTask = oldTasks.find((t) => t.id === newTask.id);
+        if (
+          oldTask &&
+          oldTask.status !== 'cancelled' &&
+          newTask.status === 'cancelled' &&
+          newTask.chapterId
+        ) {
+          const chapterId = newTask.chapterId;
+          if (newTask.type === 'translation') {
+            const state = chapterTranslationStates.value.get(chapterId);
+            if (state?.isTranslating) {
+              state.abortController?.abort();
+              state.abortController = null;
+              state.isTranslating = false;
+              state.progress = { current: 0, total: 0, message: '' };
+              state.translatingParagraphIds = new Set();
+            }
+          } else if (newTask.type === 'polish') {
+            const state = chapterPolishStates.value.get(chapterId);
+            if (state?.isPolishing) {
+              state.abortController?.abort();
+              state.abortController = null;
+              state.isPolishing = false;
+              state.progress = { current: 0, total: 0, message: '' };
+              state.polishingParagraphIds = new Set();
+            }
+          } else if (newTask.type === 'proofreading') {
+            const state = chapterProofreadingStates.value.get(chapterId);
+            if (state?.isProofreading) {
+              state.abortController?.abort();
+              state.abortController = null;
+              state.isProofreading = false;
+              state.progress = { current: 0, total: 0, message: '' };
+              state.proofreadingParagraphIds = new Set();
+            }
+          }
+        }
+      }
+    },
+  );
 
   // 组件卸载时取消所有任务
   onUnmounted(() => {

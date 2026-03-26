@@ -6,6 +6,7 @@ import Badge from 'primevue/badge';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 import { getChapterDisplayTitle } from 'src/utils';
+import { useUiStore } from 'src/stores/ui';
 
 interface EditModeOption {
   value: EditMode;
@@ -39,8 +40,6 @@ defineProps<{
   isTranslatingChapter: boolean;
   isPolishingChapter: boolean;
   isSearchVisible: boolean;
-  showTranslationProgress: boolean;
-  canShowTranslationProgress: boolean;
   isSmallScreen: boolean;
 }>();
 
@@ -56,9 +55,9 @@ const emit = defineEmits<{
   (e: 'toggleSearch'): void;
   (e: 'toggleKeyboardShortcuts', event: Event): void;
   (e: 'toggleSpecialInstructions', event: Event): void;
-  (e: 'toggleTranslationProgress'): void;
 }>();
 
+const uiStore = useUiStore();
 const isToolbarExpanded = ref(false);
 
 const handleEditModeChange = (value: EditMode) => {
@@ -281,15 +280,15 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           />
 
           <Button
-            icon="pi pi-list"
+            icon="pi pi-objects-column"
             rounded
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            :class="{ '!bg-primary/20 !text-primary': showTranslationProgress }"
-            :title="showTranslationProgress ? '隐藏翻译进度' : '显示翻译进度'"
+            :class="{ '!bg-primary/20 !text-primary': uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress' }"
+            title="翻译进度"
             :disabled="isSmallScreen"
-            @click="emit('toggleTranslationProgress')"
+            @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"
           />
 
           <Button

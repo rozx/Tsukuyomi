@@ -64,6 +64,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: boolean;
     isInitialDataLoading: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
+    activeRightTab: 'chat' | 'progress'; // 右侧面板当前激活的 Tab
   } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
@@ -73,6 +74,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: false,
     isInitialDataLoading: false,
     assistantInputMessage: null,
+    activeRightTab: 'chat',
   }),
 
   actions: {
@@ -145,6 +147,9 @@ export const useUiStore = defineStore('ui', {
      */
     setAssistantInputMessage(message: string | null) {
       this.assistantInputMessage = message;
+    },
+    setActiveRightTab(tab: 'chat' | 'progress') {
+      this.activeRightTab = tab;
     },
   },
 });
