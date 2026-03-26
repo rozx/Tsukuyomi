@@ -36,6 +36,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { getAssetUrl } from 'src/utils/assets';
 
 const props = defineProps<{
   visible: boolean;
@@ -58,7 +59,7 @@ const loadGuideContent = async (): Promise<void> => {
   loading.value = true;
   error.value = '';
   try {
-    const response = await fetch('/help/front-page.md');
+    const response = await fetch(getAssetUrl('help/front-page.md'));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
