@@ -1121,6 +1121,7 @@ export function useChapterTranslation(
 
     state.isTranslating = true;
     state.translatingParagraphIds.clear();
+    uiStore.setActiveRightTab('progress');
 
     const targetParagraphIds = new Set(untranslatedParagraphs.map((para) => para.id));
 
@@ -1168,11 +1169,13 @@ export function useChapterTranslation(
           activeTasks: aiProcessingStore.activeTasks,
         },
         onProgress: (progress) => {
-          state.progress = {
+          const newProgress = {
             current: state.progress.current,
             total: state.progress.total,
             message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
           };
+          state.progress = newProgress;
+          syncProgressToStore('translation', targetChapterId, newProgress);
           // 更新正在翻译的段落 ID
           if (progress.currentParagraphs) {
             state.translatingParagraphIds = new Set(progress.currentParagraphs);
@@ -1193,11 +1196,13 @@ export function useChapterTranslation(
               }
             }
 
-            state.progress = {
+            const updatedProgress = {
               current: completedParagraphIds.size,
               total: targetParagraphIds.size,
               message: state.progress.message,
             };
+            state.progress = updatedProgress;
+            syncProgressToStore('translation', targetChapterId, updatedProgress);
           });
         },
         onTitleTranslation: (translation) => {
