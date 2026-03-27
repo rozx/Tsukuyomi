@@ -24,6 +24,7 @@ export interface TranslationSystemPromptParams {
    * 仅第一个 chunk 需要翻译标题，后续 chunk 应设为 false
    */
   includeChapterTitle?: boolean;
+  enableOriginalTextValidation?: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
     tools,
     skipAskUser,
     includeChapterTitle = true,
+    enableOriginalTextValidation,
   } = params;
 
   return `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${bookContextSection}${chapterContextSection}${previousChapterSection}${specialInstructionsSection}
@@ -61,6 +63,6 @@ ${getToolUsageInstructions('translation', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}
 
-${getOutputFormatRules('translation', { includeChapterTitle })}
+${getOutputFormatRules('translation', { includeChapterTitle, ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}) })}
 `;
 }

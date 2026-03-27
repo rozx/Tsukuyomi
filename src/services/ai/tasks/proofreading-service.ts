@@ -164,6 +164,7 @@ export class ProofreadingService {
             specialInstructionsSection: params.specialInstructionsSection,
             tools: params.tools,
             skipAskUser: params.skipAskUser,
+            enableOriginalTextValidation: params.enableOriginalTextValidation,
           }),
         onParagraphsExtracted,
       },

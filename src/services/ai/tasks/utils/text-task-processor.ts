@@ -157,6 +157,7 @@ export interface TaskSpecificConfig {
     tools: AITool[];
     skipAskUser: boolean;
     isFirstChunk: boolean;
+    enableOriginalTextValidation: boolean;
   }) => string;
   // 是否启用章节摘要生成（可选，仅翻译服务使用）
   enableChapterSummary?: boolean | undefined;
@@ -427,6 +428,7 @@ export async function processTextTask(
       tools,
       skipAskUser,
       isFirstChunk: true,
+      enableOriginalTextValidation,
     });
 
     // 构建系统提示词（后续 chunk）
@@ -438,6 +440,7 @@ export async function processTextTask(
       tools,
       skipAskUser,
       isFirstChunk: false,
+      enableOriginalTextValidation,
     });
 
     if (aiProcessingStore && taskId) {

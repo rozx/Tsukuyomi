@@ -180,6 +180,7 @@ export class TranslationService {
       tools: AITool[];
       skipAskUser: boolean;
       isFirstChunk: boolean;
+      enableOriginalTextValidation: boolean;
     }) => {
       return buildTranslationSystemPrompt({
         todosPrompt: params.todosPrompt,
@@ -190,6 +191,7 @@ export class TranslationService {
         tools: params.tools,
         skipAskUser: params.skipAskUser,
         includeChapterTitle: params.isFirstChunk,
+        enableOriginalTextValidation: params.enableOriginalTextValidation,
       });
     };
 

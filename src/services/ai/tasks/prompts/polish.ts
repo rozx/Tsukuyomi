@@ -18,6 +18,7 @@ export interface PolishSystemPromptParams {
   specialInstructionsSection?: string;
   tools?: AITool[];
   skipAskUser?: boolean;
+  enableOriginalTextValidation?: boolean;
 }
 
 /**
@@ -31,6 +32,7 @@ export function buildPolishSystemPrompt(params: PolishSystemPromptParams): strin
     specialInstructionsSection = '',
     tools,
     skipAskUser,
+    enableOriginalTextValidation,
   } = params;
 
   return `你是专业的日轻小说润色助手。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
@@ -52,6 +54,6 @@ ${getToolUsageInstructions('polish', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}
 
-${getOutputFormatRules('polish')}
+${getOutputFormatRules('polish', { ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}) })}
 `;
 }

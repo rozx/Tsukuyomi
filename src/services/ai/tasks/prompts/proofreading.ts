@@ -18,6 +18,7 @@ export interface ProofreadingSystemPromptParams {
   specialInstructionsSection?: string;
   tools?: AITool[];
   skipAskUser?: boolean;
+  enableOriginalTextValidation?: boolean;
 }
 
 /**
@@ -31,6 +32,7 @@ export function buildProofreadingSystemPrompt(params: ProofreadingSystemPromptPa
     specialInstructionsSection = '',
     tools,
     skipAskUser,
+    enableOriginalTextValidation,
   } = params;
 
   return `你是专业的小说校对助手，检查并修正翻译文本错误。${todosPrompt}${bookContextSection}${chapterContextSection}${specialInstructionsSection}
@@ -57,6 +59,6 @@ ${getToolUsageInstructions('proofreading', tools, skipAskUser)}
 
 ${getMemoryWorkflowRules()}
 
-${getOutputFormatRules('proofreading')}
+${getOutputFormatRules('proofreading', { ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}) })}
 `;
 }
