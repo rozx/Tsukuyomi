@@ -330,9 +330,19 @@ export class OpenAIService extends BaseAIService {
               legacyFunctionCall.arguments += deltaFunctionCall.arguments;
           }
 
-          // 获取思考内容（reasoning_content）- 用于保存到思考过程
-          // 优先处理标准字段
+          // 获取思考内容 - 用于保存到思考过程
+          // 支持多种格式: reasoning_content (DeepSeek), reasoning/reasoning_details (Kimi K2.5 等)
           let chunkReasoningContent = (delta as any).reasoning_content || '';
+          if (!chunkReasoningContent) {
+            const reasoningDetails = (delta as any).reasoning_details as
+              | { text?: string }[]
+              | undefined;
+            if (reasoningDetails?.length) {
+              chunkReasoningContent = reasoningDetails.map((d) => d.text || '').join('');
+            } else if ((delta as any).reasoning) {
+              chunkReasoningContent = (delta as any).reasoning;
+            }
+          }
 
           // 获取原始内容（content）
           const rawContent = delta.content || '';
