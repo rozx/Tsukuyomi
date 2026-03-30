@@ -61,8 +61,10 @@ const mockMemoryService = {
       _content: string,
       _summary: string,
       _timestamps?: { createdAt?: number; lastAccessedAt?: number },
+      _attachedTo?: unknown,
     ) => Promise.resolve(),
   ),
+  deleteMemory: mock((_bookId: string, _memoryId: string) => Promise.resolve()),
 };
 
 // Mock Modules
@@ -124,6 +126,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockMemoryService.updateMemory.mockClear();
     mockMemoryService.createMemory.mockClear();
     mockMemoryService.createMemoryWithId.mockClear();
+    mockMemoryService.deleteMemory.mockClear();
 
     spyOn(MemoryService, 'getAllMemories').mockImplementation(
       mockMemoryService.getAllMemories as typeof MemoryService.getAllMemories,
@@ -136,6 +139,9 @@ describe('数据同步服务 (SyncDataService)', () => {
     );
     spyOn(MemoryService, 'createMemoryWithId').mockImplementation(
       mockMemoryService.createMemoryWithId as unknown as typeof MemoryService.createMemoryWithId,
+    );
+    spyOn(MemoryService, 'deleteMemory').mockImplementation(
+      mockMemoryService.deleteMemory as unknown as typeof MemoryService.deleteMemory,
     );
   });
 
@@ -886,11 +892,11 @@ describe('数据同步服务 (SyncDataService)', () => {
       };
 
       // 第一次：本地没有该 Memory，应该创建（并且使用远程 id）
-      // 第二次：本地已经有该 Memory（同 id），不应该再创建
+      // 第二次：本地已经有该 Memory（同 id），应通过 upsert 更新而非生成新 ID
       mockMemoryService.getAllMemories.mockResolvedValueOnce([]).mockResolvedValueOnce([
         {
           ...remoteMemory,
-          // 确保不会触发 updateMemory（远程 lastAccessedAt 不更大）
+          // 本地 lastAccessedAt 更大，合并后以本地为准
           lastAccessedAt: 2000,
         },
       ]);
@@ -898,13 +904,25 @@ describe('数据同步服务 (SyncDataService)', () => {
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
 
-      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      // 重建最终列表模式：每次同步都通过 createMemoryWithId（upsert）写入最终列表
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(2);
+      // 第一次：写入远程 Memory
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
         'b1',
         'abcd1234',
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 1500 }),
+        undefined,
+      );
+      // 第二次：本地更新，保留同一 ID（upsert）
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'abcd1234',
+        'c',
+        's',
+        expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        undefined,
       );
 
       // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
@@ -938,10 +956,17 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
 
-      // 不应创建新 Memory（内容重复）
-      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
-      // 不应更新（本地版本更新）
-      expect(mockMemoryService.updateMemory).not.toHaveBeenCalled();
+      // 重建最终列表模式：内容去重后只保留 lastAccessedAt 更大的本地版本
+      // 通过 createMemoryWithId（upsert）写入最终列表
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'local-1', // 保留本地 ID（lastAccessedAt 更大）
+        '角色A总是使用敬语',
+        '角色A的语言风格',
+        expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        undefined,
+      );
     });
 
     it('同步 Memory 内容去重时应保留 lastAccessedAt 更新的版本', async () => {
@@ -971,18 +996,19 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
 
-      // 不应创建新 Memory
-      expect(mockMemoryService.createMemoryWithId).not.toHaveBeenCalled();
-      // 应更新本地 Memory 的时间戳（远程更新）
-      expect(mockMemoryService.updateMemory).toHaveBeenCalledTimes(1);
-      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+      // 重建最终列表模式：内容去重后保留 lastAccessedAt 更大的远程版本
+      // 通过 createMemoryWithId（upsert）写入最终列表
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
         'b1',
-        'local-1', // 保留本地 ID
+        'remote-1', // 远程版本 lastAccessedAt 更大，使用远程 ID
         '角色A总是使用敬语',
         '新摘要',
+        expect.objectContaining({ createdAt: 1200, lastAccessedAt: 3000 }),
         remoteMemory.attachedTo,
-        3000,
       );
+      // 旧的本地 Memory 应被删除（不在最终列表中）
+      expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith('b1', 'local-1');
     });
 
     it('同步更新 Memory 时应保留远程 lastAccessedAt 时间戳（避免触发不必要的上传）', async () => {
@@ -1012,20 +1038,21 @@ describe('数据同步服务 (SyncDataService)', () => {
         attachedTo: [{ type: 'book', id: 'b1' }],
       };
 
-      // 本地有该 Memory，远程 lastAccessedAt 更大，应触发 updateMemory
+      // 本地有该 Memory，远程 lastAccessedAt 更大，应使用远程版本
       mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
 
       await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
 
-      expect(mockMemoryService.updateMemory).toHaveBeenCalledTimes(1);
-      // 关键断言：第 6 个参数应该是远程的 lastAccessedAt，而非 undefined
-      expect(mockMemoryService.updateMemory).toHaveBeenCalledWith(
+      // 重建最终列表模式：通过 createMemoryWithId（upsert）写入远程版本
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      // 关键断言：时间戳应该是远程的 lastAccessedAt
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
         'b1',
         'mem-1',
         '新内容',
         '新摘要',
+        expect.objectContaining({ createdAt: 1000, lastAccessedAt: remoteTimestamp }),
         remoteMemory.attachedTo,
-        remoteTimestamp,
       );
     });
 
@@ -1089,6 +1116,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '远程更新的记忆',
         '摘要',
         expect.objectContaining({ createdAt: 800, lastAccessedAt: 2000 }),
+        undefined,
       );
 
       // 应从删除记录中移除
@@ -1136,6 +1164,251 @@ describe('数据同步服务 (SyncDataService)', () => {
           }),
         ]),
       );
+    });
+
+    // ── 远程删除同步测试（重建最终列表模式） ──
+
+    it('远程已删除的 Memory 在本地也应被删除（lastAccessedAt <= syncTime 且不在远程）', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Book' }] as unknown[];
+
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 5000,
+      };
+
+      // 本地有两条 Memory：一条在远程也有，一条远程已删除
+      const localMemory1 = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '保留的记忆',
+        summary: '摘要1',
+        createdAt: 1000,
+        lastAccessedAt: 3000, // <= syncTime(5000)，但远程有
+      };
+      const localMemory2 = {
+        id: 'mem-2',
+        bookId: 'b1',
+        content: '被删除的记忆',
+        summary: '摘要2',
+        createdAt: 1000,
+        lastAccessedAt: 3000, // <= syncTime(5000)，远程没有 → 应删除
+      };
+
+      // 远程只有 mem-1
+      const remoteMemory1 = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '保留的记忆',
+        summary: '摘要1',
+        createdAt: 1000,
+        lastAccessedAt: 3000,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory1, localMemory2]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory1] });
+
+      // mem-1 应被写入（upsert）
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'mem-1',
+        expect.any(String),
+        expect.any(String),
+        expect.any(Object),
+        undefined,
+      );
+
+      // mem-2 不在远程且 lastAccessedAt <= syncTime → 应被删除
+      expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith('b1', 'mem-2');
+    });
+
+    it('本地新增的 Memory（lastAccessedAt > syncTime）不应被删除，即使远程没有', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Book' }] as unknown[];
+
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 5000,
+      };
+
+      // 本地新增的 Memory（lastAccessedAt > syncTime）
+      const localNewMemory = {
+        id: 'mem-new',
+        bookId: 'b1',
+        content: '新增的记忆',
+        summary: '新摘要',
+        createdAt: 6000,
+        lastAccessedAt: 6000, // > syncTime(5000)
+      };
+
+      // 远程有另一条新增 Memory（lastAccessedAt > syncTime → 远程新增）
+      const remoteMemory = {
+        id: 'mem-remote',
+        bookId: 'b1',
+        content: '远程记忆',
+        summary: '远程摘要',
+        createdAt: 5500,
+        lastAccessedAt: 5500,
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localNewMemory]);
+
+      await SyncDataService.applyDownloadedData({ memories: [remoteMemory] });
+
+      // 本地新增的 Memory 不应被删除
+      expect(mockMemoryService.deleteMemory).not.toHaveBeenCalled();
+      // 两条 Memory 都应被写入
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(2);
+    });
+
+    it('远程 Memory 列表为空时，应保留所有本地 Memory（安全守卫）', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Book' }] as unknown[];
+
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 5000,
+      };
+
+      const localMemory = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '本地记忆',
+        summary: '摘要',
+        createdAt: 1000,
+        lastAccessedAt: 2000, // <= syncTime，但远程列表为空 → 应保留
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
+
+      // 远程 memories 为空数组
+      await SyncDataService.applyDownloadedData({ memories: [] });
+
+      // 不应删除任何 Memory
+      expect(mockMemoryService.deleteMemory).not.toHaveBeenCalled();
+      // 本地 Memory 应被保留（写入最终列表）
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledTimes(1);
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'mem-1',
+        '本地记忆',
+        '摘要',
+        expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        undefined,
+      );
+    });
+
+    it('某本书的所有 Memory 在远程被删除时，本地旧 Memory 也应被删除', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Book' }] as unknown[];
+
+      mockSettingsStore.gistSync = {
+        ...mockSettingsStore.gistSync,
+        lastSyncTime: 5000,
+      };
+
+      const localMemory = {
+        id: 'mem-1',
+        bookId: 'b1',
+        content: '旧记忆',
+        summary: '摘要',
+        createdAt: 1000,
+        lastAccessedAt: 2000, // <= syncTime
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
+
+      // 远程有其他书的 Memory（非空），但 b1 没有任何 Memory
+      const otherBookMemory = {
+        id: 'mem-other',
+        bookId: 'b2',
+        content: '其他书的记忆',
+        summary: '摘要',
+        createdAt: 1000,
+        lastAccessedAt: 4000,
+      };
+
+      await SyncDataService.applyDownloadedData({ memories: [otherBookMemory] });
+
+      // b1 的旧 Memory 应被删除（远程列表非空，但 b1 没有远程 Memory）
+      expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith('b1', 'mem-1');
+    });
+  });
+
+  // ── 翻译段落合并测试 ──
+
+  describe('mergeParagraphTranslations (段落翻译合并)', () => {
+    // mergeParagraphTranslations 是模块内部函数，通过 mergeDataForUpload 间接测试
+    // 这里通过 applyDownloadedData 中的合并路径来验证文本回退匹配
+
+    it('段落 ID 不同但文本相同时，应通过文本回退匹配合并翻译', async () => {
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: new Date(2000),
+          volumes: [
+            {
+              id: 'v1',
+              chapters: [
+                {
+                  id: 'ch1',
+                  lastEdited: new Date(1000),
+                  content: [
+                    {
+                      id: 'para-local-1',
+                      text: '同じテキスト',
+                      selectedTranslationId: '',
+                      translations: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ] as unknown[];
+
+      const remoteNovel = {
+        id: 'b1',
+        title: 'Book',
+        lastEdited: new Date(3000).toISOString(), // 远程更新
+        volumes: [
+          {
+            id: 'v1',
+            chapters: [
+              {
+                id: 'ch1',
+                lastEdited: new Date(3000).toISOString(),
+                content: [
+                  {
+                    id: 'para-remote-1', // 不同 ID
+                    text: '同じテキスト', // 相同文本
+                    selectedTranslationId: 'tr-1',
+                    translations: [
+                      {
+                        id: 'tr-1',
+                        translation: '相同的文本',
+                        aiModelId: 'model-1',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({ novels: [remoteNovel] });
+
+      // 验证 bulkAddBooks 被调用且章节内容包含远程翻译
+      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalledTimes(1);
+      const savedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]![0] as any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const chapter = savedBooks[0].volumes[0].chapters[0];
+
+      // 本地段落应通过文本匹配获得远程翻译
+      expect(chapter.content[0].translations).toHaveLength(1);
+      expect(chapter.content[0].translations[0].translation).toBe('相同的文本');
     });
   });
 

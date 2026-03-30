@@ -155,8 +155,30 @@ export function useSyncExecutor() {
       }
     }
 
-    // ── 阶段 2：应用远程数据 ──
+    // ── 阶段 2：检测本地变更 + 应用远程数据 ──
+    // 重要：必须在 applyDownloadedData 之前检测本地变更！
+    // apply 会将远程数据合并进本地状态，合并后再比较会产生误判（内容去重、时间戳合并等导致的"假差异"）
+    // 在 apply 之前检测，能准确判断用户是否真的做过本地修改
+    let shouldUpload = false;
+    const lastSyncTime = config.lastSyncTime ?? 0;
+
     if (remoteData) {
+      // 在 apply 之前，基于原始本地数据检测变更
+      const bookIds = booksStore.books.map((book) => book.id);
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+      const localDataBeforeApply = {
+        novels: booksStore.books,
+        aiModels: aiModelsStore.models,
+        appSettings: settingsStore.getAllSettings(),
+        coverHistory: coverHistoryStore.covers,
+        memories,
+      };
+      shouldUpload = SyncDataService.hasLocalChangesSinceLastSync(
+        localDataBeforeApply,
+        lastSyncTime,
+      );
+
+      // 应用远程数据
       settingsStore.updateSyncProgress({
         stage: 'applying',
         message: prefixMsg('正在应用下载的数据...'),
@@ -164,7 +186,6 @@ export function useSyncExecutor() {
         total: OVERALL_TOTAL,
       });
 
-      // 手动同步时返回可恢复项
       restorableItems = await SyncDataService.applyDownloadedData(
         remoteData,
         undefined,
@@ -187,44 +208,35 @@ export function useSyncExecutor() {
         }
       }
 
-      // 更新模型同步状态（用于上传变更检测，需要在 Phase 3 之前更新）
-      // 注意：lastSyncTime 不在此处更新，而是在同步完全成功后更新（Phase 4 完成或无需上传时）
-      // 这样可以防止上传失败时 lastSyncTime 超前于 deletedAt，导致删除记录变为"陈旧"
+      // 更新模型同步状态
       try {
         await settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
       } catch (error) {
         console.error('[useSyncExecutor] 更新同步状态失败:', error);
       }
-    }
-
-    // ── 阶段 3：检测本地变更并决定是否上传 ──
-    const bookIds = booksStore.books.map((book) => book.id);
-    const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
-
-    const localData = {
-      novels: booksStore.books,
-      aiModels: aiModelsStore.models,
-      appSettings: settingsStore.getAllSettings(),
-      coverHistory: coverHistoryStore.covers,
-      memories,
-    };
-
-    // 当下载被跳过时（远程无变更），仍然需要判断本地是否有变更需要上传
-    // 此时没有 remoteData，与空数据比较即可检测到本地有内容
-    // 但更准确的做法是：如果下载被跳过且上次同步后本地没有修改，则也跳过上传
-    // hasChangesToUpload 实际上比较的是 local vs remote data 的差异
-    // 当 downloadSkipped 时，说明远程没变，需要判断本地相对上次同步是否有变化
-    let shouldUpload: boolean;
-
-    if (downloadSkipped) {
-      // 远程无变更且下载被跳过：没有 remoteData 来做 local vs remote 差异比较
-      // 改为检查自上次同步以来本地是否有任何数据变更（基于 lastSyncTime）
-      const lastSyncTime = config.lastSyncTime ?? 0;
+    } else if (downloadSkipped) {
+      // 远程无变更且下载被跳过：检查自上次同步以来本地是否有变更
+      const bookIds = booksStore.books.map((book) => book.id);
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+      const localData = {
+        novels: booksStore.books,
+        aiModels: aiModelsStore.models,
+        appSettings: settingsStore.getAllSettings(),
+        coverHistory: coverHistoryStore.covers,
+        memories,
+      };
       shouldUpload = SyncDataService.hasLocalChangesSinceLastSync(localData, lastSyncTime);
-    } else if (remoteData) {
-      shouldUpload = SyncDataService.hasChangesToUpload(localData, remoteData);
     } else {
       // 没有远程数据（首次同步或空 Gist），与空数据比较
+      const bookIds = booksStore.books.map((book) => book.id);
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+      const localData = {
+        novels: booksStore.books,
+        aiModels: aiModelsStore.models,
+        appSettings: settingsStore.getAllSettings(),
+        coverHistory: coverHistoryStore.covers,
+        memories,
+      };
       shouldUpload = SyncDataService.hasChangesToUpload(localData, {
         novels: [],
         aiModels: [],
@@ -260,7 +272,7 @@ export function useSyncExecutor() {
     // ── 阶段 4：上传本地数据 ──
     settingsStore.updateSyncProgress({
       stage: 'uploading',
-      message: prefixMsg(`正在上传数据 (${localData.novels.length} 本书籍)...`),
+      message: prefixMsg(`正在上传数据 (${booksStore.books.length} 本书籍)...`),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });

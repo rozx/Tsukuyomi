@@ -97,9 +97,30 @@ function mergeParagraphTranslations(
     remoteParagraphMap.set(remotePara.id, remotePara);
   }
 
+  // 创建远程段落的文本映射（用于 ID 不匹配时按内容回退匹配）
+  // 场景：同一章节在不同设备从网页重新抓取，段落文本相同但 ID 不同
+  const remoteParagraphByTextMap = new Map<string, Paragraph>();
+  for (const remotePara of remoteParagraphs) {
+    if (
+      remotePara.translations &&
+      remotePara.translations.length > 0 &&
+      !remoteParagraphByTextMap.has(remotePara.text)
+    ) {
+      remoteParagraphByTextMap.set(remotePara.text, remotePara);
+    }
+  }
+
   // 合并翻译到本地段落
   const mergedParagraphs: Paragraph[] = localParagraphs.map((localPara) => {
-    const remotePara = remoteParagraphMap.get(localPara.id);
+    // 优先按 ID 匹配，回退到按文本内容匹配
+    let remotePara = remoteParagraphMap.get(localPara.id);
+    if (!remotePara) {
+      remotePara = remoteParagraphByTextMap.get(localPara.text);
+      if (remotePara) {
+        // 已使用此文本匹配，从映射中移除防止重复匹配
+        remoteParagraphByTextMap.delete(localPara.text);
+      }
+    }
 
     // 如果远程没有对应段落，保持本地段落不变
     if (!remotePara) {
@@ -1038,6 +1059,7 @@ export class SyncDataService {
 
       // 处理 Memory（确保 memories 是数组）
       // 即使远程 Memory 列表为空，也需要处理（可能远程删除了所有 Memory）
+      // 使用与 Books/Models/Covers 一致的"重建最终列表"模式
       if (remoteData.memories && Array.isArray(remoteData.memories)) {
         // 构建 Memory 删除记录映射
         const deletedMemoryIds = gistSyncSnapshot?.deletedMemoryIds || [];
@@ -1060,155 +1082,134 @@ export class SyncDataService {
         // 遍历所有本地书籍，合并 Memory
         for (const localBook of booksStore.books) {
           const remoteMemories = remoteMemoriesByBook.get(localBook.id);
-          if (!remoteMemories || remoteMemories.length === 0) {
-            // 远程没有该书籍的 Memory，保留本地 Memory
-            continue;
-          }
-
-          // 获取本地 Memory
           const localMemories = await MemoryService.getAllMemories(localBook.id);
 
-          // 创建远程 Memory 的映射（按 ID）
+          const finalMemories: Memory[] = [];
+          // 内容映射：用于内容级别去重（content → Memory）
+          const contentMap = new Map<string, Memory>();
+
+          // 辅助函数：将 Memory 加入最终列表（带内容去重）
+          const addToFinal = (memory: Memory) => {
+            const existingByContent = contentMap.get(memory.content);
+            if (existingByContent) {
+              if (memory.lastAccessedAt > existingByContent.lastAccessedAt) {
+                const idx = finalMemories.indexOf(existingByContent);
+                if (idx >= 0) finalMemories[idx] = memory;
+                contentMap.set(memory.content, memory);
+              }
+            } else {
+              finalMemories.push(memory);
+              contentMap.set(memory.content, memory);
+            }
+          };
+
+          // 创建远程 Memory 的映射（按 ID，去重保留最新）
           const remoteMemoryMap = new Map<string, Memory>();
-          for (const remoteMemory of remoteMemories) {
-            // 远程可能存在重复 id（历史数据问题），保留 lastAccessedAt 更大的那条
-            const existing = remoteMemoryMap.get(remoteMemory.id);
-            if (!existing || remoteMemory.lastAccessedAt > existing.lastAccessedAt) {
-              remoteMemoryMap.set(remoteMemory.id, remoteMemory);
+          if (remoteMemories) {
+            for (const remoteMemory of remoteMemories) {
+              // 远程可能存在重复 id（历史数据问题），保留 lastAccessedAt 更大的那条
+              const existing = remoteMemoryMap.get(remoteMemory.id);
+              if (!existing || remoteMemory.lastAccessedAt > existing.lastAccessedAt) {
+                remoteMemoryMap.set(remoteMemory.id, remoteMemory);
+              }
             }
           }
 
-          // 构建本地 Memory 的内容映射（用于内容级别去重）
-          // key: content, value: { id, lastAccessedAt }
-          const localContentMap = new Map<string, { id: string; lastAccessedAt: number }>();
+          // 创建本地 Memory 的映射（按 ID，用于 O(1) 查找）
+          const localMemoryMap = new Map<string, Memory>();
           for (const localMemory of localMemories) {
-            localContentMap.set(localMemory.content, {
-              id: localMemory.id,
-              lastAccessedAt: localMemory.lastAccessedAt,
-            });
+            localMemoryMap.set(localMemory.id, localMemory);
           }
 
-          // 合并 Memory：保留最新的 lastAccessedAt 时间
-          for (const localMemory of localMemories) {
-            const remoteMemory = remoteMemoryMap.get(localMemory.id);
-            if (remoteMemory) {
-              // 比较最后访问时间，使用最新的
-              if (remoteMemory.lastAccessedAt > localMemory.lastAccessedAt) {
-                // 远程更新，更新本地 Memory
-                try {
-                  await MemoryService.updateMemory(
-                    localBook.id,
-                    remoteMemory.id,
-                    remoteMemory.content,
-                    remoteMemory.summary,
-                    remoteMemory.attachedTo,
-                    remoteMemory.lastAccessedAt,
-                  );
-                  // 更新内容映射（旧内容可能已被替换）
-                  if (localMemory.content !== remoteMemory.content) {
-                    localContentMap.delete(localMemory.content);
-                    localContentMap.set(remoteMemory.content, {
-                      id: localMemory.id,
-                      lastAccessedAt: remoteMemory.lastAccessedAt,
+          // 1. 处理远程 Memory（与 Books/Models 一致的远程优先遍历）
+          for (const remoteMemory of remoteMemoryMap.values()) {
+            const localMemory = localMemoryMap.get(remoteMemory.id);
+
+            if (localMemory) {
+              // 两边都有：使用较新的 lastAccessedAt
+              const winner =
+                remoteMemory.lastAccessedAt > localMemory.lastAccessedAt
+                  ? remoteMemory
+                  : localMemory;
+              addToFinal(winner);
+            } else {
+              // 远程独有：检查删除记录
+              const deletionRecord = deletedMemoryIdsMap.get(remoteMemory.id);
+              if (deletionRecord !== undefined) {
+                if (deletionRecord > syncTime) {
+                  // 删除时间晚于上次同步 → 本地删除的，不恢复
+                  if (isManualRetrieval) {
+                    restorableItems.push({
+                      type: 'memory',
+                      id: remoteMemory.id,
+                      title: remoteMemory.summary || remoteMemory.content.substring(0, 50),
+                      deletedAt: deletionRecord,
+                      data: remoteMemory,
                     });
                   }
-                } catch (error) {
-                  console.warn(`[SyncDataService] 更新 Memory ${remoteMemory.id} 失败:`, error);
-                }
-              }
-              // 从远程列表中移除已处理的 Memory
-              remoteMemoryMap.delete(localMemory.id);
-            }
-            // 如果本地没有对应的远程 Memory，保持不变（本地独有的 Memory）
-          }
-
-          // 添加远程独有的 Memory（带内容级别去重和删除记录检查）
-          for (const remoteMemory of remoteMemoryMap.values()) {
-            // 检查是否在删除记录中
-            const deletionRecord = deletedMemoryIdsMap.get(remoteMemory.id);
-            if (deletionRecord !== undefined) {
-              if (deletionRecord > syncTime) {
-                // 删除时间晚于上次同步 → 本地删除的，不恢复
-                if (isManualRetrieval) {
-                  restorableItems.push({
-                    type: 'memory',
-                    id: remoteMemory.id,
-                    title: remoteMemory.summary || remoteMemory.content.substring(0, 50),
-                    deletedAt: deletionRecord,
-                    data: remoteMemory,
-                  });
-                }
-                continue;
-              } else {
-                // 删除时间早于同步 + 远程有更新 → 自动恢复
-                if (remoteMemory.lastAccessedAt > syncTime) {
+                  continue;
+                } else if (remoteMemory.lastAccessedAt > syncTime) {
+                  // 删除时间早于同步 + 远程有更新 → 自动恢复
                   memoryIdsToUndelete.add(remoteMemory.id);
-                  // 继续执行后续的创建逻辑
                 } else {
                   // 旧删除记录，远程也没更新，跳过
                   continue;
                 }
               }
-            }
 
-            // 内容去重：如果本地已有相同内容的 Memory（不同 ID），跳过创建
-            const existingByContent = localContentMap.get(remoteMemory.content);
-            if (existingByContent) {
-              // 本地已有相同内容，如果远程版本更新则更新本地的时间戳
-              if (remoteMemory.lastAccessedAt > existingByContent.lastAccessedAt) {
-                try {
-                  await MemoryService.updateMemory(
-                    localBook.id,
-                    existingByContent.id,
-                    remoteMemory.content,
-                    remoteMemory.summary,
-                    remoteMemory.attachedTo,
-                    remoteMemory.lastAccessedAt,
-                  );
-                  localContentMap.set(remoteMemory.content, {
-                    id: existingByContent.id,
-                    lastAccessedAt: remoteMemory.lastAccessedAt,
-                  });
-                } catch (error) {
-                  console.warn(
-                    `[SyncDataService] 更新内容重复的 Memory ${existingByContent.id} 失败:`,
-                    error,
-                  );
-                }
+              // 不在删除记录中，或已标记恢复 → 添加到最终列表
+              if (
+                syncTime === 0 ||
+                isManualRetrieval ||
+                checkIsNewlyAdded(remoteMemory.lastAccessedAt, syncTime)
+              ) {
+                addToFinal(remoteMemory);
               }
-              continue;
             }
+          }
 
+          // 2. 添加本地独有的 Memory
+          // 只保留在上次同步后新增/修改的本地 Memory（lastAccessedAt > syncTime）
+          // 陈旧的本地 Memory（lastAccessedAt <= syncTime）不添加（远程已删除）
+          // 但如果远程 Memory 列表为空，保留所有本地 Memory（避免误删除）
+          for (const localMemory of localMemories) {
+            if (remoteMemoryMap.has(localMemory.id)) continue; // 已在步骤 1 处理
+            if (
+              remoteData.memories.length === 0 ||
+              checkIsNewlyAdded(localMemory.lastAccessedAt, syncTime)
+            ) {
+              addToFinal(localMemory);
+            }
+            // 否则：陈旧的本地 Memory，不添加（自动删除）
+          }
+
+          // 3. 先写入所有最终 Memory（upsert），再删除不在最终列表中的旧 Memory
+          const finalMemoryIds = new Set(finalMemories.map((m) => m.id));
+
+          for (const memory of finalMemories) {
             try {
-              const timestamps = {
-                createdAt: remoteMemory.createdAt,
-                lastAccessedAt: remoteMemory.lastAccessedAt,
-              };
-              if (remoteMemory.attachedTo && remoteMemory.attachedTo.length > 0) {
-                await MemoryService.createMemoryWithId(
-                  remoteMemory.bookId,
-                  remoteMemory.id,
-                  remoteMemory.content,
-                  remoteMemory.summary,
-                  timestamps,
-                  remoteMemory.attachedTo,
-                );
-              } else {
-                await MemoryService.createMemoryWithId(
-                  remoteMemory.bookId,
-                  remoteMemory.id,
-                  remoteMemory.content,
-                  remoteMemory.summary,
-                  timestamps,
-                );
-              }
-              // 将新创建的 Memory 加入内容映射（防止后续远程 Memory 再次重复）
-              localContentMap.set(remoteMemory.content, {
-                id: remoteMemory.id,
-                lastAccessedAt: remoteMemory.lastAccessedAt,
-              });
+              await MemoryService.createMemoryWithId(
+                localBook.id,
+                memory.id,
+                memory.content,
+                memory.summary,
+                { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
+                memory.attachedTo,
+              );
             } catch (error) {
-              console.warn(`[SyncDataService] 创建 Memory ${remoteMemory.id} 失败:`, error);
+              console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+            }
+          }
+
+          // 删除不在最终列表中的旧 Memory
+          const staleMemoryIds = localMemories
+            .filter((m) => !finalMemoryIds.has(m.id))
+            .map((m) => m.id);
+          for (const staleId of staleMemoryIds) {
+            try {
+              await MemoryService.deleteMemory(localBook.id, staleId);
+            } catch (error) {
+              console.warn(`[SyncDataService] 删除旧 Memory ${staleId} 失败:`, error);
             }
           }
         }
