@@ -5,7 +5,8 @@
       "Bash(bunx vue-tsc:*)",
       "Bash(bun test:*)",
       "Bash(bunx eslint:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(bun run:*)"
     ]
   }
 }

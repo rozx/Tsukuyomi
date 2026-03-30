@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
+import { toRaw } from 'vue';
 import { getDB } from 'src/utils/indexed-db';
 import { TASK_TYPE_LABELS, type AIWorkflowStatus } from 'src/constants/ai';
 import { TodoListService } from 'src/services/todo-list-service';
@@ -127,25 +128,29 @@ async function loadThinkingProcessesFromDB(): Promise<SerializableTask[]> {
 async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
   try {
     const db = await getDB();
+    // 使用 toRaw() 解除 Pinia reactive proxy，避免 IndexedDB structured clone 失败
+    const raw = toRaw(task);
     // 创建可序列化的副本，排除 abortController
     const serializableTask: SerializableTask = {
-      id: task.id,
-      type: task.type,
-      modelName: task.modelName,
-      status: task.status,
-      ...(task.workflowStatus !== undefined && { workflowStatus: task.workflowStatus }),
-      ...(task.message !== undefined && { message: task.message }),
-      ...(task.thinkingMessage !== undefined && { thinkingMessage: task.thinkingMessage }),
-      ...(task.outputContent !== undefined && { outputContent: task.outputContent }),
-      ...(task.contextTokens !== undefined && { contextTokens: task.contextTokens }),
-      ...(task.contextWindow !== undefined && { contextWindow: task.contextWindow }),
-      ...(task.contextPercentage !== undefined && { contextPercentage: task.contextPercentage }),
-      ...(task.bookId !== undefined && { bookId: task.bookId }),
-      ...(task.chapterId !== undefined && { chapterId: task.chapterId }),
-      ...(task.chapterTitle !== undefined && { chapterTitle: task.chapterTitle }),
-      ...(task.progress !== undefined && { progress: task.progress }),
-      startTime: task.startTime,
-      ...(task.endTime !== undefined && { endTime: task.endTime }),
+      id: raw.id,
+      type: raw.type,
+      modelName: raw.modelName,
+      status: raw.status,
+      ...(raw.workflowStatus !== undefined && { workflowStatus: raw.workflowStatus }),
+      ...(raw.message !== undefined && { message: raw.message }),
+      ...(raw.thinkingMessage !== undefined && { thinkingMessage: raw.thinkingMessage }),
+      ...(raw.outputContent !== undefined && { outputContent: raw.outputContent }),
+      ...(raw.contextTokens !== undefined && { contextTokens: raw.contextTokens }),
+      ...(raw.contextWindow !== undefined && { contextWindow: raw.contextWindow }),
+      ...(raw.contextPercentage !== undefined && { contextPercentage: raw.contextPercentage }),
+      ...(raw.bookId !== undefined && { bookId: raw.bookId }),
+      ...(raw.chapterId !== undefined && { chapterId: raw.chapterId }),
+      ...(raw.chapterTitle !== undefined && { chapterTitle: raw.chapterTitle }),
+      ...(raw.progress !== undefined && {
+        progress: { current: raw.progress.current, total: raw.progress.total, message: raw.progress.message },
+      }),
+      startTime: raw.startTime,
+      ...(raw.endTime !== undefined && { endTime: raw.endTime }),
     };
     await db.put('thinking-processes', serializableTask);
   } catch (error) {
