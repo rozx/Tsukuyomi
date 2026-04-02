@@ -109,11 +109,13 @@ const scrollableContentRef = ref<HTMLElement | null>(null);
 const chapterContentPanelRef = ref<HTMLElement | null>(null);
 
 // 将当前内容滚动到顶部（优先使用章节内容面板，其次使用外层容器兜底）
+// 同时聚焦滚动容器，确保键盘滚动（PageUp/PageDown/Space/箭头等）可用
 const scrollCurrentContentToTop = async () => {
   await nextTick();
   const container = chapterContentPanelRef.value ?? scrollableContentRef.value;
   if (container) {
     container.scrollTop = 0;
+    container.focus({ preventScroll: true });
   }
 };
 
@@ -2571,7 +2573,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             <div
               v-else-if="selectedChapter"
               ref="chapterContentPanelRef"
-              class="h-full overflow-y-auto overflow-x-hidden"
+              class="chapter-content-panel h-full overflow-y-auto overflow-x-hidden"
+              tabindex="-1"
             >
               <ChapterContentPanel
                 :selected-chapter="selectedChapter"
@@ -3007,6 +3010,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 章节内容滚动容器：聚焦时不显示 outline */
+.chapter-content-panel:focus {
+  outline: none;
 }
 
 /* 页面容器 - 确保有足够的空间 */
