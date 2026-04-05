@@ -27,6 +27,9 @@ const emit = defineEmits<{
   leave: [];
 }>();
 
+// 将 action 断言为带扩展属性的类型,避免模板中大量重复的强制类型转换
+const extAction = computed(() => props.action as MessageActionWithAllProperties);
+
 const actionId = computed(() => `action-${props.messageId}-${props.timestamp}`);
 
 const actionClass = computed(() => {
@@ -95,16 +98,16 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-1.5">
+  <div class="flex flex-wrap gap-1.5 max-w-full min-w-0">
     <div
       :id="actionId"
-      class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help"
+      class="inline-flex items-start gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help max-w-full min-w-0 action-badge"
       :class="actionClass"
       @mouseenter="(event) => emit('hover', event)"
       @mouseleave="emit('leave')"
     >
-      <i class="text-sm" :class="actionIconClass" />
-      <span>
+      <i class="text-sm shrink-0 mt-0.5" :class="actionIconClass" />
+      <span class="min-w-0 break-words">
         {{ ACTION_LABELS[action.type] || '' }}
         {{ ENTITY_LABELS[action.entity] || '' }}
         <span
@@ -189,17 +192,17 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           class="font-semibold text-xs"
         >
           批量替换
-          {{ (action as MessageActionWithAllProperties).replaced_paragraph_count ?? 0 }}
+          {{ extAction.replaced_paragraph_count ?? 0 }}
           个段落（共
-          {{ (action as MessageActionWithAllProperties).replaced_translation_count ?? 0 }}
+          {{ extAction.replaced_translation_count ?? 0 }}
           个翻译版本）
         </span>
         <span
           v-else-if="
             action.entity === 'translation' &&
             action.paragraph_id &&
-            (action as MessageActionWithAllProperties).old_translation &&
-            (action as MessageActionWithAllProperties).new_translation
+            extAction.old_translation &&
+            extAction.new_translation
           "
           class="font-semibold text-xs"
         >
@@ -209,9 +212,9 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           >
           <span class="opacity-70 ml-1">
             |
-            {{ getTextPreview((action as MessageActionWithAllProperties).old_translation) }}
+            {{ getTextPreview(extAction.old_translation) }}
             →
-            {{ getTextPreview((action as MessageActionWithAllProperties).new_translation) }}
+            {{ getTextPreview(extAction.new_translation) }}
           </span>
         </span>
         <span
@@ -262,13 +265,12 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           </span>
           <span
             v-if="
-              (action as MessageActionWithAllProperties).translation_keywords &&
-              ((action as MessageActionWithAllProperties).translation_keywords?.length ?? 0) > 0
+              extAction.translation_keywords && (extAction.translation_keywords?.length ?? 0) > 0
             "
             class="opacity-70 ml-1"
           >
             翻译:
-            {{ (action as MessageActionWithAllProperties).translation_keywords?.join('、') ?? '' }}
+            {{ extAction.translation_keywords?.join('、') ?? '' }}
           </span>
           <span v-if="action.chapter_id" class="opacity-70 ml-1">
             | 章节:
@@ -293,11 +295,7 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           class="font-semibold text-xs"
         >
           正则:
-          {{
-            action.regex_pattern.length > 30
-              ? action.regex_pattern.substring(0, 30) + '...'
-              : action.regex_pattern
-          }}
+          {{ getTextPreview(action.regex_pattern, 30) }}
         </span>
         <span
           v-else-if="
@@ -361,11 +359,7 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           class="font-semibold text-xs"
         >
           正则:
-          {{
-            action.regex_pattern.length > 30
-              ? action.regex_pattern.substring(0, 30) + '...'
-              : action.regex_pattern
-          }}
+          {{ getTextPreview(action.regex_pattern, 30) }}
         </span>
         <span v-else-if="action.type === 'read' && action.tool_name" class="font-semibold text-xs">
           {{ action.tool_name }}
@@ -387,24 +381,20 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
             action.type === 'update' &&
             action.entity === 'chapter' &&
             action.tool_name === 'update_chapter_title' &&
-            (action as MessageActionWithAllProperties).old_title &&
-            (action as MessageActionWithAllProperties).new_title
+            extAction.old_title &&
+            extAction.new_title
           "
           class="font-semibold text-xs"
         >
-          "{{ (action as MessageActionWithAllProperties).old_title }}" → "{{
-            (action as MessageActionWithAllProperties).new_title
-          }}"
+          "{{ extAction.old_title }}" → "{{ extAction.new_title }}"
         </span>
         <span
           v-else-if="
-            action.type === 'update' &&
-            action.entity === 'chapter' &&
-            (action as MessageActionWithAllProperties).new_title
+            action.type === 'update' && action.entity === 'chapter' && extAction.new_title
           "
           class="font-semibold text-xs"
         >
-          "{{ (action as MessageActionWithAllProperties).new_title }}"
+          "{{ extAction.new_title }}"
         </span>
         <span
           v-else-if="action.type === 'navigate' && action.entity === 'help_doc' && action.title"
@@ -430,3 +420,12 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 确保长 URL、关键词等无空格文本能在徽章内任意位置换行,避免撑破布局 */
+.action-badge,
+.action-badge :deep(span) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+</style>

@@ -282,24 +282,26 @@ export async function processSingleParagraph(
           // add_translation_batch 工具只负责验证，不直接写入翻译。
           // 需要从工具结果中提取已接受的段落，通过 onParagraphResult 回调完成实际写入。
           if (toolCall.function.name === 'add_translation_batch' && onParagraphResult) {
+            let parsed;
             try {
-              const parsed = JSON.parse(toolResult.content);
-              if (parsed.success && parsed.accepted_paragraphs) {
-                const translations = (
-                  parsed.accepted_paragraphs as Array<{
-                    paragraph_id: string;
-                    translated_text: string;
-                  }>
-                ).map((p) => ({
-                  id: p.paragraph_id,
-                  translation: p.translated_text,
-                }));
-                if (translations.length > 0) {
-                  await onParagraphResult(translations);
-                }
-              }
+              parsed = JSON.parse(toolResult.content);
             } catch {
-              console.warn(`[${logLabel}] 解析 add_translation_batch 结果失败`);
+              console.warn(`[${logLabel}] 解析 add_translation_batch 结果失败:`, toolResult.content);
+            }
+
+            if (parsed && parsed.success && parsed.accepted_paragraphs) {
+              const translations = (
+                parsed.accepted_paragraphs as Array<{
+                  paragraph_id: string;
+                  translated_text: string;
+                }>
+              ).map((p) => ({
+                id: p.paragraph_id,
+                translation: p.translated_text,
+              }));
+              if (translations.length > 0) {
+                await onParagraphResult(translations);
+              }
             }
           }
 

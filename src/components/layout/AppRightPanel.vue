@@ -601,9 +601,9 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
 
     <!-- Header with Tab switcher -->
     <div class="shrink-0 px-4 pt-4 pb-0 relative z-10 border-b border-white/10">
-      <div class="flex items-center justify-between mb-1">
+      <div class="flex items-center justify-between flex-wrap gap-y-1 mb-1">
         <!-- Tab buttons -->
-        <div class="flex gap-0.5">
+        <div class="flex gap-0.5 min-w-0">
           <button
             class="px-3 py-1.5 text-xs font-medium rounded-t transition-colors"
             :class="
@@ -635,7 +635,7 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
         </div>
 
         <!-- Chat-specific action buttons (only in chat tab) -->
-        <div v-if="activeRightTab === 'chat'" class="flex items-center gap-1 pb-1">
+        <div v-if="activeRightTab === 'chat'" class="flex items-center gap-1 pb-1 shrink-0 ml-auto">
           <Button
             v-if="messages.length > 0"
             aria-label="清空聊天"
