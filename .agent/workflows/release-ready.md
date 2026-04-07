@@ -7,9 +7,10 @@ description: Prepare the project for a new release
 
 2. Create a new release note file under `public/releaseNotes`.
    - File naming convention: `public/releaseNotes/RELEASE_NOTES_vx.xx.md` (replace `x.xx` with the actual version).
-   - The change log should based on all changes comparing last released version.
+   - Compare changes between the current version (current branch) and the last version (last release tag).
+   - **Crucial**: Do NOT just summarize Git commit messages. You must analyze the actual code diffs/updates (e.g., using `git diff <last_tag>..HEAD --stat` and checking the specific logic changes in modified files) to write a detailed, technically accurate release note.
+   - The change log should be based on these actual code changes.
    - Use other files in `public/releaseNotes/` as a reference for the format.
-   - Compare changes between current version (current branch) and last version (last release tag).
    - Update `public/help/index.json` to include the new release note.
 
    - **Important**: The content of the release note MUST be in **Chinese**.
