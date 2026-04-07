@@ -7,7 +7,7 @@ import type {
   ModelInfo,
 } from 'src/services/ai/types/ai-service';
 import type { ParsedResponse } from 'src/services/ai/types/interfaces';
-import { BaseAIService } from '../core';
+import { BaseAIService, AIEmptyResponseError } from '../core';
 import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
 import { ProxyService } from 'src/services/proxy-service';
 
@@ -385,7 +385,7 @@ export class GeminiService extends BaseAIService {
       const text = fullText.trim();
       // 允许空文本，如果有工具调用
       if (!text && toolCalls.length === 0) {
-        throw new Error('AI 返回的文本为空');
+        throw new AIEmptyResponseError();
       }
 
       // 转换工具调用格式

@@ -17,6 +17,7 @@ import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore, TaskType } from './task-types';
 import { TASK_TYPE_LABELS } from './task-types';
 import { AIServiceFactory } from '../../index';
+import { AIEmptyResponseError } from '../../core';
 import { ToolRegistry } from '../../tools/index';
 import { createUnifiedAbortController, handleTaskError } from './stream-handler';
 import { getSelectedTranslation } from 'src/utils/text-utils';
@@ -239,7 +240,7 @@ export async function processSingleParagraph(
       } catch (error) {
         // 提示词要求 AI 不输出文本（直接调用工具或无需改动时直接结束），
         // 所以空响应是预期行为，不应视为错误
-        if (error instanceof Error && error.message === 'AI 返回的文本为空') {
+        if (error instanceof AIEmptyResponseError) {
           console.log(`[${logLabel}] AI 返回空响应（预期行为：无文本输出）`);
           break;
         }

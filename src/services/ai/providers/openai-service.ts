@@ -8,7 +8,7 @@ import type {
   ModelInfo,
 } from 'src/services/ai/types/ai-service';
 import type { ParsedResponse } from 'src/services/ai/types/interfaces';
-import { BaseAIService } from '../core';
+import { BaseAIService, AIEmptyResponseError } from '../core';
 import { DEFAULT_TEMPERATURE, OPENAI_MAX_TOKENS_LIMIT } from 'src/constants/ai';
 import { ProxyService } from 'src/services/proxy-service';
 
@@ -456,7 +456,7 @@ export class OpenAIService extends BaseAIService {
       const text = fullText.trim();
       // 如果没有文本也没有工具调用，且不是空响应（虽然通常不应该发生），则报错
       if (!text && finalToolCallsNormalized.length === 0) {
-        throw new Error('AI 返回的文本为空');
+        throw new AIEmptyResponseError();
       }
 
       // 发送完成回调

@@ -17,14 +17,16 @@ interface ApolloState {
 
 interface KakuyomuWorkData {
   title: string;
-  introduction: string;
-  catchphrase?: string; // catchphrase 可能也在 workData 中
-  tagLabels: string[];
-  genre: string;
-  tableOfContents: Array<{ __ref: string }>;
+  introduction?: string;
+  catchphrase?: string;
+  tagLabels?: string[];
+  genre?: string;
+  tableOfContents?: Array<{ __ref: string }>;
+  tableOfContentsV2?: Array<{ __ref: string }>;
   ogImageUrl?: string;
   lastEpisodePublishedAt?: string;
   alternateTitle?: string;
+  author?: { __ref: string };
 }
 
 interface KakuyomuTocItem {
@@ -169,48 +171,8 @@ export class KakuyomuScraper extends BaseScraper {
       }
     });
 
-    // 递归提取段落文本，保留内部格式（如 <br> 换行）
-    const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
-      let text = '';
-
-      element.contents().each((_, node: any) => {
-        const nodeType = String(node.type);
-        if (nodeType === 'text') {
-          // 文本节点，直接添加（保留原始文本，包括空格）
-          const nodeText = $(node).text();
-          text += nodeText;
-        } else if (nodeType === 'tag') {
-          const $node = $(node);
-          const tagName = node.tagName?.toLowerCase() || '';
-
-          if (tagName === 'br') {
-            // <br> 标签转换为换行
-            text += '\n';
-          } else if (tagName === 'p') {
-            // 嵌套的 <p> 标签，递归提取但不自动添加换行
-            // 只有 class="blank" 的 <p> 才会被处理为段落分隔
-            const innerText = extractParagraphText($node);
-            if (innerText.trim()) {
-              text += innerText;
-            }
-          } else if (tagName === 'div') {
-            // <div> 标签，递归提取内容
-            const innerText = extractParagraphText($node);
-            if (innerText.trim()) {
-              text += innerText;
-            }
-          } else {
-            // 其他标签，递归提取内容（保留内部结构）
-            const innerText = extractParagraphText($node);
-            if (innerText) {
-              text += innerText;
-            }
-          }
-        }
-      });
-
-      return text;
-    };
+    const extractText = (el: cheerio.Cheerio<any>) =>
+      this.extractTextFromElement($, el);
 
     // 提取所有段落 <p> 标签
     // 每个普通 <p> 标签作为新的一行（单换行）
@@ -220,7 +182,7 @@ export class KakuyomuScraper extends BaseScraper {
     contentElement.find('p').each((_, el) => {
       const $p = $(el);
       const hasBlankClass = $p.hasClass('blank');
-      const extractedText = extractParagraphText($p);
+      const extractedText = extractText($p);
       const cleanedText = extractedText.trim();
 
       // 检查是否为导航文本
@@ -253,7 +215,7 @@ export class KakuyomuScraper extends BaseScraper {
 
     // 如果没有找到 <p> 标签，尝试直接提取所有文本内容
     if (paragraphs.length === 0) {
-      const allText = extractParagraphText(contentElement);
+      const allText = extractText(contentElement);
       const cleanedText = allText.trim();
       if (cleanedText && !/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
         paragraphs.push(cleanedText);
@@ -364,12 +326,9 @@ export class KakuyomuScraper extends BaseScraper {
       throw new Error('无法找到作品数据');
     }
 
-    // 解析卷和章节结构
-    const { volumes, chapters } = this.parseTableOfContents(
-      workData.tableOfContents,
-      apolloState,
-      novelId,
-    );
+    // 解析卷和章节结构（v2 优先，兼容旧版 tableOfContents）
+    const toc = workData.tableOfContentsV2 ?? workData.tableOfContents ?? [];
+    const { volumes, chapters } = this.parseTableOfContents(toc, apolloState, novelId);
 
     // 优先从 workData 获取完整描述（避免被截断）
     // workData.introduction 应该包含完整的描述，不会被"続きを読む"截断
@@ -393,14 +352,27 @@ export class KakuyomuScraper extends BaseScraper {
 
     return {
       title: workData.title || '未知标题',
-      author: this.extractAuthor($),
+      author: this.extractAuthorFromApollo(workData, apolloState) || this.extractAuthor($),
       description,
-      tags: [...(workData.tagLabels || []), workData.genre].filter(Boolean),
+      tags: [...(workData.tagLabels || []), workData.genre].filter((t): t is string => !!t),
       cover: workData.ogImageUrl?.replace(/\?.+$/, ''),
       chapters,
       volumes,
       webUrl: baseUrl,
     };
+  }
+
+  /**
+   * 从 Apollo State 中提取作者名
+   */
+  private extractAuthorFromApollo(
+    workData: KakuyomuWorkData,
+    apolloState: ApolloState,
+  ): string | undefined {
+    const authorRef = workData.author?.__ref;
+    if (!authorRef) return undefined;
+    const authorData = apolloState[authorRef];
+    return authorData?.activityName || authorData?.name || undefined;
   }
 
   /**
@@ -449,44 +421,7 @@ export class KakuyomuScraper extends BaseScraper {
     // 提取 introduction 文本，保留换行符
     let introduction = '';
     if (introductionEl.length > 0) {
-      // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
-      const extractIntroductionText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            // 文本节点，直接添加
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-            if (tagName === 'br') {
-              // <br> 标签转换为换行
-              text += '\n';
-            } else if (tagName === 'p') {
-              // 段落标签，递归提取并添加换行
-              const innerText = extractIntroductionText($node);
-              if (innerText.trim()) {
-                text += innerText.trim() + '\n';
-              } else {
-                // 空段落也添加换行
-                text += '\n';
-              }
-            } else {
-              // 其他标签（如链接等），递归提取内容
-              const innerText = extractIntroductionText($node);
-              if (innerText) {
-                text += innerText;
-              }
-            }
-          }
-        });
-        return text;
-      };
-      
-      introduction = extractIntroductionText(introductionEl).trim();
-
+      introduction = this.extractTextFromElement($, introductionEl).trim();
       // 清理多余的换行符（将多个连续换行符合并为双换行）
       introduction = introduction.replace(/\n{3,}/g, '\n\n');
     }
@@ -505,6 +440,56 @@ export class KakuyomuScraper extends BaseScraper {
   }
 
   /**
+   * 从 DOM 元素中递归提取纯文本，保留 <br> 换行，将 <ruby> 注音转为 漢字(かんじ) 格式
+   */
+  private extractTextFromElement(
+    $: cheerio.CheerioAPI,
+    element: cheerio.Cheerio<any>,
+  ): string {
+    let text = '';
+
+    element.contents().each((_, node: any) => {
+      const nodeType = String(node.type);
+      if (nodeType === 'text') {
+        text += $(node).text();
+      } else if (nodeType === 'tag') {
+        const tagName = (node.tagName?.toLowerCase() || '') as string;
+
+        // 跳过 <rp> 括号标签（由下方 ruby 处理统一添加）
+        if (tagName === 'rp') return;
+
+        if (tagName === 'br') {
+          text += '\n';
+        } else if (tagName === 'ruby') {
+          // <ruby>漢字<rt>かんじ</rt></ruby> → 漢字(かんじ)
+          const $ruby = $(node);
+          const rt = $ruby.find('rt').first().text().trim();
+          // 提取 ruby 内非 rt/rp 的文本作为原文
+          const base = $ruby
+            .contents()
+            .filter((_, child: any) => {
+              const tag = child.tagName?.toLowerCase();
+              return tag !== 'rt' && tag !== 'rp';
+            })
+            .text()
+            .trim();
+          text += rt ? `${base}(${rt})` : base;
+        } else if (tagName === 'rt') {
+          // rt 在非 ruby 上下文中被单独遍历时跳过（正常情况由 ruby 分支处理）
+          return;
+        } else {
+          const innerText = this.extractTextFromElement($, $(node));
+          if (innerText) {
+            text += innerText;
+          }
+        }
+      }
+    });
+
+    return text;
+  }
+
+  /**
    * 解析目录结构（tableOfContents）
    */
   private parseTableOfContents(
@@ -516,6 +501,10 @@ export class KakuyomuScraper extends BaseScraper {
     const volumes: ParsedVolumeInfo[] = [];
     let currentVolumeStartIndex = 0;
     let currentVolumeTitle: string | null = null;
+
+    if (!tableOfContents || tableOfContents.length === 0) {
+      return { chapters };
+    }
 
     tableOfContents.forEach((ref) => {
       const toc: KakuyomuTocItem = apolloState[ref.__ref];
