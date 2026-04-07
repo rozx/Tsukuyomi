@@ -14,10 +14,11 @@ description: Prepare the project for a new release
    - Update `public/help/index.json` to include the new release note.
 
    - **Important**: The content of the release note MUST be in **Chinese**.
-3. Base on the changes, update help docs under `public/help`.
-   - Add/update doc if required.
-   - Make sure to dpdate `public/help/index.json` to include the newly created help doc.
-   - **Important**: The content of the release note MUST be in **Chinese**.
+3. Base on the analyzed changes, cross-check and update the existing help documents under `public/help/`.
+   - Actively review the code updates you found in the previous step and identify which user guides or help chapters (like settings-guide.md, book-details-translation.md, etc.) need to be expanded.
+   - Add or update the markdown docs to proactively document these new features, changed behaviors, or removed functionality.
+   - If creating a brand new help document, make sure to update `public/help/index.json` to register it.
+   - **Important**: All updates to help documents MUST be in **Chinese**.
 
 4. Perform a final quality check to ensure deployment readiness.
    - Run type checking: `bun run type-check` (or equivalent command for the project).
