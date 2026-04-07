@@ -112,6 +112,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.9.4",
+    "title": "v0.9.4",
+    "file": "RELEASE_NOTES_v0.9.4.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "AI 助手面板整合、单段落处理优化、多模型推理支持、同步合并策略优化与快速入门指南"
+  },
+  {
     "id": "v0.9.3",
     "title": "v0.9.3",
     "file": "RELEASE_NOTES_v0.9.3.md",
