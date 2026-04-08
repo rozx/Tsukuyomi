@@ -40,21 +40,15 @@ export function getSymbolFormatRules(): string {
  * 获取规划阶段描述
  */
 function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolean): string {
-  // 简短规划阶段的描述（用于后续 chunk）
   if (isBriefPlanning) {
     return `**当前状态：简短规划阶段 (planning)**
-已继承前一部分的规划上下文，术语/角色表已提供。
-- 如需补充信息可调用工具，无需重复获取已有信息
-
-**准备好后，使用 \`update_task_status({"status": "preparing"})\` 进入准备阶段。**`;
+已继承前一部分的规划上下文。如需补充信息可调用工具。
+按待办清单逐项确认，完成后 \`update_task_status({"status": "preparing"})\`。`;
   }
 
   return `**当前状态：规划阶段 (planning)**
-- 收集并分析当前块所需信息（术语、角色、记忆、上下文）
-- 制定数据维护计划（哪些内容需要在 preparing 阶段创建/更新）
-- 规划敬语翻译顺序：角色别名 -> 记忆 -> 历史翻译 -> 关系判断
-
-完成规划后，使用 \`update_task_status({"status": "preparing"})\` 进入准备阶段。`;
+上下文中提供的术语/角色/记忆已为最新，无需重新获取。按待办清单逐项确认，缺失时再调用工具补充。
+⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "preparing"})\``;
 }
 
 /**
@@ -62,11 +56,9 @@ function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolea
  */
 function getPreparingStateDescription(taskLabel: string): string {
   return `**当前状态：准备阶段 (preparing)**
-- 可创建/更新术语、角色、记忆，集中完成翻译前的数据维护
-- 如发现数据已完善，可不做更新，直接进入 working
+上下文中提供的术语/角色/记忆已为最新。按待办清单检查是否需要创建/更新，无需操作的项目直接标记 done。
 - ⚠️ 当前阶段禁止提交${taskLabel}结果
-
-完成准备后，使用 \`update_task_status({"status": "working"})\` 开始${taskLabel}。`;
+⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "working"})\``;
 }
 
 function getWorkingStateDescription(taskType: TaskType): string {
@@ -102,11 +94,9 @@ function getWorkingStateDescription(taskType: TaskType): string {
 
   return `**当前状态：${taskLabel}中 (working)**
 - 专注于${taskLabel}：${focusDesc}
-${dataWriteRestrictionLine}
-- **提交方式**：使用 \`add_translation_batch\` 工具提交结果 ${onlyChangedNote}（**【重要】单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
-- ⚠️ **状态约束**：必须在此状态下才能提交${taskLabel}结果
-
-完成后使用 \`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}。`;
+${dataWriteRestrictionLine}- 使用 \`add_translation_batch\` 提交结果 ${onlyChangedNote}（**单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
+按待办清单逐批完成，每批完成后标记 done。
+⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}`;
 }
 
 /**
@@ -114,15 +104,9 @@ ${dataWriteRestrictionLine}
  */
 function getReviewStateDescription(taskLabel: string): string {
   return `**当前状态：复核阶段 (review)**
-- 系统已自动验证完整性
-- 添加/更新术语
-- 添加/更新角色描述、说话口吻、别名（如有新发现）, 如检测到角色全名，更新角色全名，将姓/名添加到别名中。
-- 可创建/更新记忆：优先合并到已有记忆，沉淀可复用翻译经验
-- 检查遗漏或需修正的地方，特别是人称代词和语气词。
-- 【⚠️ 重要】检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
-- 可直接使用 \`add_translation_batch\` 修正${taskLabel}结果（无需切回 working）
-
-完成后使用 \`update_task_status({"status": "end"})\`。`;
+按待办清单逐项检查，发现问题可直接用 \`add_translation_batch\` 修正。
+可创建/更新术语、角色、记忆。
+⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "end"})\``;
 }
 
 /**
@@ -229,35 +213,15 @@ export function getMemoryWorkflowRules(): string {
 /**
  * 获取待办事项工具描述（精简版）
  */
-export function getTodoToolsDescription(taskType: TaskType): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-  return `**待办管理**:
-  - 复杂任务用 \`create_todo\` 创建详细任务（如"${taskLabel}第1-5段"）
-  - 简单任务直接处理，无需创建待办
-  - 任务完成时用 \`mark_todo_done\` 标记完成， 无需删除
-  `;
+export function getTodoToolsDescription(_taskType: TaskType): string {
+  return `**待办管理**: 系统自动生成待办清单，用 \`mark_todo_working\` 开始、\`mark_todo_done\` 完成。所有待办完成后方可切换阶段。`;
 }
 
 /**
  * 获取状态字段说明（精简版）
  */
 export function getStatusFieldDescription(taskType: TaskType): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-  const rules = `⚠️ **状态转换规则**:
-- ${getTaskStateWorkflowText(taskType)}`;
-  const reviewState = taskType === 'translation' ? '→review' : '';
-
-  let flowText = `planning→working(${taskLabel}中)${reviewState}→end`;
-  if (taskType === 'translation') {
-    flowText = `planning→preparing→working(${taskLabel}中)→review→end`;
-  } else if (taskType === 'polish' || taskType === 'proofreading') {
-    flowText = `planning→preparing→working(${taskLabel}中)→end`;
-  }
-
-  return `**状态**: ${flowText}
-
-${rules}
-`;
+  return `**状态流程**: ${getTaskStateWorkflowText(taskType)}`;
 }
 
 /**
@@ -289,38 +253,17 @@ export function getOutputFormatRules(
   const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
 
   const toolRestriction = isTranslation
-    ? `⛔ working 和 review 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）${titleToolRestriction}
-   - planning 只能 update_task_status 切到 preparing
-   - preparing 可维护术语/角色/记忆，完成后切到 working
+    ? `⛔ add_translation_batch${titleToolRestriction}：仅 working/review 可调用（单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
    - working 禁止创建/更新术语、角色、记忆
-   - review 可直接使用 add_translation_batch 修正翻译；review 可创建/更新术语、角色、记忆
-   - end 禁止再调用翻译工具`
-    : usesPreparing
-      ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
-   - planning 只能 update_task_status 切到 preparing
-   - preparing 可维护术语/角色/记忆，完成后切到 working
+   - end 禁止再调用工具`
+    : `⛔ add_translation_batch：仅 working 可调用（单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
    - working 禁止创建/更新术语、角色、记忆
-   - end 禁止再调用翻译工具`
-      : `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）
-   - planning 只能 update_task_status 切到 working
-   - end 禁止再调用翻译工具`;
+   - end 禁止再调用工具`;
 
-  const flowLines = usesPreparing
-    ? `1. planning 完成：update_task_status({"status": "preparing"})
-2. preparing 完成：update_task_status({"status": "working"})
-3. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
-${includeTitle ? '5' : '4'}. ${reviewStep}`
-    : `1. planning 完成：update_task_status({"status": "working"})
-2. working 处理：用 add_translation_batch 提交段落结果${titleFlowStep}
-${includeTitle ? '4' : '3'}. ${reviewStep}`;
-
-  return `【输出格式】必须使用工具调用, 不输出其他内容。
-
-**核心流程**
-${flowLines}
+  return `【输出格式】必须使用工具调用, 不输出其他内容。按待办清单顺序执行。
 
 **工具要点**
-1. update_task_status：只提交 {"status": "..."}
+1. update_task_status：完成当前阶段所有待办后切换 {"status": "..."}
 2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，${validateOriginal ? '必须使用 paragraph_id + original_text_prefix 标识并锚定段落：{"paragraph_id": "xxx", "original_text_prefix": "原文前3-10字", "translated_text": "..."}（从段落 [ID: xxx] 与原文开头提取，禁止使用 index 提交；原文不足3字时填完整原文）' : '必须使用 paragraph_id 标识段落：{"paragraph_id": "xxx", "translated_text": "..."}（从段落 [ID: xxx] 获取，禁止使用 index 提交）'}${titleToolSection ? '\n' + titleToolSection : ''}
 3. 若 add_translation_batch 返回结构化错误（如 error_code / invalid_items / invalid_paragraph_ids / failed_paragraphs），必须仅修复报错条目后重试，禁止重排段落、猜测或替换 paragraph_id
 
@@ -331,41 +274,6 @@ ${toolRestriction}
 `;
 }
 
-/**
- * 获取执行工作流说明（精简版）
- */
-export function getExecutionWorkflowRules(taskType: TaskType): string {
-  const workingFocus: Record<string, string> = {
-    translation: '1:1翻译，敬语按流程处理',
-    polish: '语气词优化、摆脱翻译腔、节奏调整、角色语言区分',
-    proofreading: '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查',
-    chapter_summary: '生成章节摘要：概括主要情节、关键人物和事件，控制在200字以内',
-  };
-
-  const focus = workingFocus[taskType] || '按要求执行任务';
-
-  if (taskType === 'translation') {
-    return `【执行流程】
-1. **planning**: 获取上下文信息并完成策略规划（不做数据写入）
-2. **preparing**: 维护术语/角色/记忆（可无更新直接进入下一阶段）
-3. **working**: ${focus}；禁止创建/更新术语、角色、记忆
-4. **review**: 系统复核完整性并允许更新术语/角色/记忆
-5. **end**: 完成当前块`;
-  }
-
-  if (taskType === 'polish' || taskType === 'proofreading') {
-    return `【执行流程】
-1. **planning**: 获取上下文信息并完成策略规划（不做数据写入）
-2. **preparing**: 维护术语/角色/记忆（可无更新直接进入下一阶段）
-3. **working**: ${focus}；禁止创建/更新术语、角色、记忆
-4. **end**: 完成当前块（润色/校对任务跳过并禁用 review）`;
-  }
-
-  return `【执行流程】
-1. **planning**: 获取上下文信息并开始任务
-2. **working**: ${focus}
-3. **end**: 完成当前块`;
-}
 
 /**
  * 获取工具使用说明（精简版）

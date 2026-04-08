@@ -235,6 +235,17 @@ class TaskLoopSession {
   public async run(): Promise<ToolCallLoopResult> {
     const { maxTurns = Infinity } = this.config;
 
+    // 在初始历史的最后一条 user 消息中注入 planning 待办清单
+    if (this.todoWorkflow) {
+      const todoBlock = this.todoWorkflow.buildTodoContextBlock('planning');
+      if (todoBlock) {
+        const lastUserIdx = this.config.history.findLastIndex((m) => m.role === 'user');
+        if (lastUserIdx >= 0) {
+          this.config.history[lastUserIdx]!.content = todoBlock + '\n' + this.config.history[lastUserIdx]!.content;
+        }
+      }
+    }
+
     while (maxTurns === Infinity || this.currentTurnCount < maxTurns) {
       if (this.currentStatus === 'end') break;
 
@@ -283,6 +294,8 @@ class TaskLoopSession {
     // Handle tool calls
     if (result.toolCalls && result.toolCalls.length > 0) {
       await this.processToolCalls(result, result.text);
+      // 每次工具调用后注入最新待办清单（确保 agent 始终看到最新状态）
+      this.injectTodoContextIfNeeded();
       return { shouldContinue: true };
     }
 
@@ -315,6 +328,25 @@ class TaskLoopSession {
         return { shouldContinue: true };
       }
 
+      // Gate 检查：当前状态的预定义待办是否全部完成
+      if (this.todoWorkflow) {
+        const gate = this.todoWorkflow.checkGate(previousStatus);
+        if (!gate.allowed) {
+          const todoList = gate.incompleteItems
+            .map((t) => `- ${t.text.split('\n')[0]}`)
+            .join('\n');
+          console.warn(
+            `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
+          );
+          this.config.history.push({ role: 'assistant', content: responseText });
+          this.config.history.push({
+            role: 'user',
+            content: `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`,
+          });
+          return { shouldContinue: true };
+        }
+      }
+
       this.trackStatusDuration(previousStatus, newStatus);
       this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
       this.setCurrentStatus(newStatus);
@@ -323,6 +355,25 @@ class TaskLoopSession {
         void aiProcessingStore.updateTask(taskId, {
           workflowStatus: newStatus,
         });
+      }
+
+      if (this.todoWorkflow) {
+        // 清除上一状态的预定义待办
+        this.todoWorkflow.clearStateTodos(previousStatus);
+
+        // 为新状态生成预定义待办（仅首次进入时）
+        if (newStatus !== 'end') {
+          if (newStatus === 'working') {
+            this.todoWorkflow.generateForState(newStatus, {
+              paragraphIds: this.config.paragraphIds || [],
+              chunkText: this.config.chunkText,
+              chunkIndex: this.config.chunkIndex ?? 0,
+              chapterTitle: this.config.chapterTitle,
+            });
+          } else {
+            this.todoWorkflow.generateForState(newStatus);
+          }
+        }
       }
     }
 
@@ -463,17 +514,22 @@ class TaskLoopSession {
       });
     }
 
-    // 为新状态生成预定义待办（仅首次进入时）
-    if (this.todoWorkflow && newStatus !== 'end') {
-      if (newStatus === 'working') {
-        this.todoWorkflow.generateForState(newStatus, {
-          paragraphIds: this.config.paragraphIds || [],
-          chunkText: this.config.chunkText,
-          chunkIndex: this.config.chunkIndex ?? 0,
-          chapterTitle: this.config.chapterTitle,
-        });
-      } else {
-        this.todoWorkflow.generateForState(newStatus);
+    if (this.todoWorkflow) {
+      // 清除上一状态的预定义待办
+      this.todoWorkflow.clearStateTodos(previousStatus);
+
+      // 为新状态生成预定义待办（仅首次进入时）
+      if (newStatus !== 'end') {
+        if (newStatus === 'working') {
+          this.todoWorkflow.generateForState(newStatus, {
+            paragraphIds: this.config.paragraphIds || [],
+            chunkText: this.config.chunkText,
+            chunkIndex: this.config.chunkIndex ?? 0,
+            chapterTitle: this.config.chapterTitle,
+          });
+        } else {
+          this.todoWorkflow.generateForState(newStatus);
+        }
       }
     }
 
@@ -934,6 +990,28 @@ class TaskLoopSession {
       // 查询失败时保守返回所有 missingIds
       return missingIds;
     }
+  }
+
+  /**
+   * 工具调用后注入最新待办清单到历史末尾。
+   * 仅当最后一条消息不是已包含待办清单的 user 消息时才注入，避免重复。
+   */
+  private injectTodoContextIfNeeded() {
+    if (!this.todoWorkflow) return;
+
+    const todoBlock = this.todoWorkflow.buildTodoContextBlock(this.currentStatus);
+    if (!todoBlock) return;
+
+    // 检查历史末尾是否已有 pendingUserMessage（来自状态转换），避免重复注入
+    const lastMsg = this.config.history[this.config.history.length - 1];
+    if (lastMsg?.role === 'user' && lastMsg.content?.includes('【待办清单】')) {
+      return;
+    }
+
+    this.config.history.push({
+      role: 'user',
+      content: todoBlock,
+    });
   }
 
   private getCurrentStatusInfoMsg() {

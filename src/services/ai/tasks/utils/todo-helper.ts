@@ -24,16 +24,10 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
     return '';
   }
 
-  let prompt =
-    '\n**待办工具**：create_todo | list_todos | update_todos | mark_todo_working | mark_todo_done | delete_todo\n';
-  prompt += '\n**三态模型**：每个待办事项有三种状态：\n';
-  prompt += '- `pending`（待处理）→ `working`（进行中）→ `done`（已完成）\n';
-  prompt += '\n**使用指南**：\n';
-  prompt += '- 系统会为每个阶段自动生成预定义待办，按顺序完成即可\n';
-  prompt += '- 开始处理某项待办前，先调用 mark_todo_working 标记为进行中\n';
-  prompt += '- 完成后调用 mark_todo_done 标记为完成\n';
-  prompt += '- 所有预定义待办完成后才能进入下一阶段\n';
-  prompt += '- 可用 create_todo 创建额外的自定义待办（不影响阶段切换）\n';
+  let prompt = '\n**待办系统**：\n';
+  prompt += '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n';
+  prompt += '- 开始处理前：`mark_todo_working`；完成后：`mark_todo_done`\n';
+  prompt += '- 所有预定义待办标记 done 后才能切换到下一阶段\n';
 
   return prompt;
 }
