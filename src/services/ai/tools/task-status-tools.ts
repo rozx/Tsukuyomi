@@ -450,7 +450,7 @@ export const taskStatusTools: ToolDefinition[] = [
           | undefined;
         if (status === 'review') {
           const todos = TodoListService.getTodosByTaskId(taskId);
-          const incompleteTodos = todos.filter((t) => !t.completed);
+          const incompleteTodos = todos.filter((t) => t.status !== 'done');
           if (incompleteTodos.length > 0) {
             todoReminder = {
               incomplete_count: incompleteTodos.length,

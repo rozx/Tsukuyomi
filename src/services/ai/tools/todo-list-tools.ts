@@ -1,4 +1,4 @@
-import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
+import { TodoListService, type TodoItem, type TodoStatus } from 'src/services/todo-list-service';
 import type { ToolDefinition } from './types';
 
 export const todoListTools: ToolDefinition[] = [
@@ -82,7 +82,7 @@ export const todoListTools: ToolDefinition[] = [
           todos: createdTodos.map((todo) => ({
             id: todo.id,
             text: todo.text,
-            completed: todo.completed,
+            status: todo.status,
           })),
           count: createdTodos.length,
           ...(errors.length > 0 ? { errors } : {}),
@@ -112,7 +112,7 @@ export const todoListTools: ToolDefinition[] = [
           todo: {
             id: todo.id,
             text: todo.text,
-            completed: todo.completed,
+            status: todo.status,
           },
         });
       } else {
@@ -126,7 +126,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'update_todos',
         description:
-          '更新待办事项的内容或状态。可以更新单个待办事项（使用 id 参数）或多个待办事项（使用 items 参数）。可以更新文本内容或标记完成状态。',
+          '更新待办事项的内容或状态。可以更新单个待办事项（使用 id 参数）或多个待办事项（使用 items 参数）。可以更新文本内容或状态。',
         parameters: {
           type: 'object',
           properties: {
@@ -138,9 +138,10 @@ export const todoListTools: ToolDefinition[] = [
               type: 'string',
               description: '新的待办事项内容（可选，仅当使用 id 参数时有效）',
             },
-            completed: {
-              type: 'boolean',
-              description: '是否标记为完成（可选，仅当使用 id 参数时有效）',
+            status: {
+              type: 'string',
+              enum: ['pending', 'working', 'done'],
+              description: '新的待办事项状态（可选，仅当使用 id 参数时有效）',
             },
             items: {
               type: 'array',
@@ -155,9 +156,10 @@ export const todoListTools: ToolDefinition[] = [
                     type: 'string',
                     description: '新的待办事项内容（可选）',
                   },
-                  completed: {
-                    type: 'boolean',
-                    description: '是否标记为完成（可选）',
+                  status: {
+                    type: 'string',
+                    enum: ['pending', 'working', 'done'],
+                    description: '新的待办事项状态（可选）',
                   },
                 },
                 required: ['id'],
@@ -169,17 +171,14 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id, text, completed, items } = args as {
+      const { id, text, status, items } = args as {
         id?: string;
         text?: string;
-        completed?: boolean;
-        items?: Array<{ id: string; text?: string; completed?: boolean }>;
+        status?: TodoStatus;
+        items?: Array<{ id: string; text?: string; status?: TodoStatus }>;
       };
 
-      // 支持两种模式：单个更新（id）或批量更新（items）
-      // 优先检查 items 参数（如果提供了有效的数组）
       if (items && Array.isArray(items) && items.length > 0) {
-        // 批量更新模式
         const updatedTodos: TodoItem[] = [];
         const errors: string[] = [];
 
@@ -190,15 +189,22 @@ export const todoListTools: ToolDefinition[] = [
           }
 
           try {
-            const updates: { text?: string; completed?: boolean } = {};
+            const VALID_STATUSES: readonly string[] = ['pending', 'working', 'done'];
+            if (item.status !== undefined && !VALID_STATUSES.includes(item.status)) {
+              errors.push(
+                `待办事项 "${item.id}" 状态无效: "${item.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
+              );
+              continue;
+            }
+
+            const updates: { text?: string; status?: TodoStatus } = {};
             if (item.text !== undefined) updates.text = item.text;
-            if (item.completed !== undefined) updates.completed = item.completed;
+            if (item.status !== undefined) updates.status = item.status;
 
             const previousTodo = TodoListService.getTodoById(item.id);
             const updatedTodo = TodoListService.updateTodo(item.id, updates);
             updatedTodos.push(updatedTodo);
 
-            // 通过 onAction 回调传递操作信息（不需要 toast）
             if (onAction) {
               onAction({
                 type: 'update',
@@ -224,22 +230,19 @@ export const todoListTools: ToolDefinition[] = [
           todos: updatedTodos.map((todo) => ({
             id: todo.id,
             text: todo.text,
-            completed: todo.completed,
+            status: todo.status,
           })),
           count: updatedTodos.length,
           ...(errors.length > 0 ? { errors } : {}),
         });
       } else if (id) {
-        // 单个更新模式（向后兼容）
-
-        const updates: { text?: string; completed?: boolean } = {};
+        const updates: { text?: string; status?: TodoStatus } = {};
         if (text !== undefined) updates.text = text;
-        if (completed !== undefined) updates.completed = completed;
+        if (status !== undefined) updates.status = status;
 
         const previousTodo = TodoListService.getTodoById(id);
         const updatedTodo = TodoListService.updateTodo(id, updates);
 
-        // 通过 onAction 回调传递操作信息（不需要 toast）
         if (onAction) {
           onAction({
             type: 'update',
@@ -255,7 +258,7 @@ export const todoListTools: ToolDefinition[] = [
           todo: {
             id: updatedTodo.id,
             text: updatedTodo.text,
-            completed: updatedTodo.completed,
+            status: updatedTodo.status,
           },
         });
       } else {
@@ -308,7 +311,56 @@ export const todoListTools: ToolDefinition[] = [
         todo: {
           id: updatedTodo.id,
           text: updatedTodo.text,
-          completed: updatedTodo.completed,
+          status: updatedTodo.status,
+        },
+      });
+    },
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'mark_todo_working',
+        description: '将待办事项标记为进行中。在开始处理某个待办事项之前调用此工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: '待办事项的 ID',
+            },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    handler: (args, { onAction }) => {
+      const { id } = args as {
+        id: string;
+      };
+      if (!id) {
+        throw new Error('待办事项 ID 不能为空');
+      }
+
+      const previousTodo = TodoListService.getTodoById(id);
+      const updatedTodo = TodoListService.markTodoAsWorking(id);
+
+      if (onAction) {
+        onAction({
+          type: 'update',
+          entity: 'todo',
+          data: updatedTodo,
+          ...(previousTodo ? { previousData: previousTodo } : {}),
+        });
+      }
+
+      return JSON.stringify({
+        success: true,
+        message: '待办事项已标记为进行中',
+        todo: {
+          id: updatedTodo.id,
+          text: updatedTodo.text,
+          status: updatedTodo.status,
         },
       });
     },
@@ -402,22 +454,21 @@ export const todoListTools: ToolDefinition[] = [
         : TodoListService.getTodosByTaskId(taskId);
       switch (filter) {
         case 'active':
-          todos = taskTodos.filter((todo) => !todo.completed);
+          todos = taskTodos.filter((todo) => todo.status !== 'done');
           break;
         case 'completed':
-          todos = taskTodos.filter((todo) => todo.completed);
+          todos = taskTodos.filter((todo) => todo.status === 'done');
           break;
         default:
           todos = taskTodos;
       }
 
-      // 返回待办事项列表
       return JSON.stringify({
         success: true,
         todos: todos.map((todo) => ({
           id: todo.id,
           text: todo.text,
-          completed: todo.completed,
+          status: todo.status,
           createdAt: todo.createdAt,
           updatedAt: todo.updatedAt,
         })),

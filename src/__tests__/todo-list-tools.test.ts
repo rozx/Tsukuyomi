@@ -25,9 +25,8 @@ describe('TodoListTools', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.todo).toBeDefined();
       expect(parsed.todo.text).toBe('Test todo item');
-      expect(parsed.todo.completed).toBe(false);
+      expect(parsed.todo.status).toBe('pending');
 
-      // 验证 todo 已创建并关联到 taskId
       const todos = TodoListService.getTodosByTaskId(taskId);
       expect(todos).toHaveLength(1);
       expect(todos[0]?.text).toBe('Test todo item');
@@ -40,7 +39,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({ text: '' }, context);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('待办事项内容不能为空');
       }
@@ -54,7 +53,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({ text: 'Test todo' }, contextWithoutTaskId);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('任务 ID 未提供');
       }
@@ -100,13 +99,12 @@ describe('TodoListTools', () => {
       expect(parsed.count).toBe(3);
       expect(parsed.message).toContain('成功创建 3 个待办事项');
 
-      // 验证所有 todos 都已创建并关联到 taskId
       const todos = TodoListService.getTodosByTaskId(taskId);
       expect(todos).toHaveLength(3);
       expect(todos.map((t) => t.text)).toEqual(expect.arrayContaining(items));
       todos.forEach((todo) => {
         expect(todo.taskId).toBe(taskId);
-        expect(todo.completed).toBe(false);
+        expect(todo.status).toBe('pending');
       });
     });
 
@@ -114,23 +112,17 @@ describe('TodoListTools', () => {
       const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
       expect(tool).toBeDefined();
 
-      const items = [
-        '翻译第1-5段',
-        '', // 空字符串
-        '   ', // 只有空白字符
-        '翻译第6-10段',
-      ];
+      const items = ['翻译第1-5段', '', '   ', '翻译第6-10段'];
 
       const result = await tool!.handler({ items }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todos).toHaveLength(2); // 只创建了2个有效的待办事项
+      expect(parsed.todos).toHaveLength(2);
       expect(parsed.count).toBe(2);
       expect(parsed.errors).toBeDefined();
       expect(parsed.errors.length).toBeGreaterThan(0);
 
-      // 验证只有有效的 todos 被创建
       const todos = TodoListService.getTodosByTaskId(taskId);
       expect(todos).toHaveLength(2);
       expect(todos.map((t) => t.text)).toEqual(
@@ -146,12 +138,11 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({ items }, context);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('批量创建待办事项失败');
       }
 
-      // 验证没有创建任何待办事项
       const todos = TodoListService.getTodosByTaskId(taskId);
       expect(todos).toHaveLength(0);
     });
@@ -162,7 +153,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({}, context);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('必须提供 text 或 items 参数之一');
       }
@@ -192,10 +183,9 @@ describe('TodoListTools', () => {
 
   describe('list_todos', () => {
     test('应该能够列出上下文中任务的所有待办事项', async () => {
-      // 创建一些 todos
       TodoListService.createTodo('Todo 1', taskId);
       TodoListService.createTodo('Todo 2', taskId);
-      TodoListService.createTodo('Todo 3', 'other-task'); // 不同任务的 todo
+      TodoListService.createTodo('Todo 3', 'other-task');
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'list_todos');
       expect(tool).toBeDefined();
@@ -204,7 +194,7 @@ describe('TodoListTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todos).toHaveLength(2); // 只返回当前任务的 todos
+      expect(parsed.todos).toHaveLength(2);
       expect(parsed.count).toBe(2);
       expect(
         parsed.todos.every((t: { text: string }) => ['Todo 1', 'Todo 2'].includes(t.text)),
@@ -222,7 +212,7 @@ describe('TodoListTools', () => {
 
       expect(parsed.todos).toHaveLength(1);
       expect(parsed.todos[0]?.text).toBe('Todo 2');
-      expect(parsed.todos[0]?.completed).toBe(false);
+      expect(parsed.todos[0]?.status).toBe('pending');
     });
 
     test('应该能够过滤出已完成的待办事项', async () => {
@@ -236,7 +226,7 @@ describe('TodoListTools', () => {
 
       expect(parsed.todos).toHaveLength(1);
       expect(parsed.todos[0]?.text).toBe('Todo 1');
-      expect(parsed.todos[0]?.completed).toBe(true);
+      expect(parsed.todos[0]?.status).toBe('done');
     });
 
     test('list_todos: 当上下文中缺少 taskId 时应该抛出错误', async () => {
@@ -245,7 +235,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({ filter: 'all' }, contextWithoutTaskId);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('任务 ID 未提供');
       }
@@ -267,18 +257,18 @@ describe('TodoListTools', () => {
       expect(updated?.text).toBe('Updated text');
     });
 
-    test('应该能够更新待办事项的完成状态（单个更新）', async () => {
+    test('应该能够更新待办事项的状态（单个更新）', async () => {
       const todo = TodoListService.createTodo('Test todo', taskId);
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'update_todos');
-      const result = await tool!.handler({ id: todo.id, completed: true }, context);
+      const result = await tool!.handler({ id: todo.id, status: 'done' }, context);
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todo.completed).toBe(true);
+      expect(parsed.todo.status).toBe('done');
 
       const updated = TodoListService.getTodoById(todo.id);
-      expect(updated?.completed).toBe(true);
+      expect(updated?.status).toBe('done');
     });
 
     test('应该能够批量更新多个待办事项', async () => {
@@ -291,8 +281,8 @@ describe('TodoListTools', () => {
         {
           items: [
             { id: todo1.id, text: 'Updated Todo 1' },
-            { id: todo2.id, completed: true },
-            { id: todo3.id, text: 'Updated Todo 3', completed: true },
+            { id: todo2.id, status: 'done' },
+            { id: todo3.id, text: 'Updated Todo 3', status: 'done' },
           ],
         },
         context,
@@ -305,18 +295,17 @@ describe('TodoListTools', () => {
       expect(parsed.count).toBe(3);
       expect(parsed.message).toContain('成功更新 3 个待办事项');
 
-      // 验证更新结果
       const updated1 = TodoListService.getTodoById(todo1.id);
       expect(updated1?.text).toBe('Updated Todo 1');
-      expect(updated1?.completed).toBe(false);
+      expect(updated1?.status).toBe('pending');
 
       const updated2 = TodoListService.getTodoById(todo2.id);
       expect(updated2?.text).toBe('Todo 2');
-      expect(updated2?.completed).toBe(true);
+      expect(updated2?.status).toBe('done');
 
       const updated3 = TodoListService.getTodoById(todo3.id);
       expect(updated3?.text).toBe('Updated Todo 3');
-      expect(updated3?.completed).toBe(true);
+      expect(updated3?.status).toBe('done');
     });
 
     test('批量更新时应该为每个待办事项调用 onAction 回调', async () => {
@@ -337,7 +326,7 @@ describe('TodoListTools', () => {
         {
           items: [
             { id: todo1.id, text: 'Updated Todo 1' },
-            { id: todo2.id, completed: true },
+            { id: todo2.id, status: 'done' },
           ],
         },
         contextWithAction,
@@ -360,7 +349,7 @@ describe('TodoListTools', () => {
           items: [
             { id: todo1.id, text: 'Updated Todo 1' },
             { id: 'non-existent-id', text: 'Should fail' },
-            { id: todo2.id, completed: true },
+            { id: todo2.id, status: 'done' },
           ],
         },
         context,
@@ -368,7 +357,7 @@ describe('TodoListTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todos).toHaveLength(2); // 只更新了2个有效的待办事项
+      expect(parsed.todos).toHaveLength(2);
       expect(parsed.count).toBe(2);
       expect(parsed.errors).toBeDefined();
       expect(parsed.errors.length).toBeGreaterThan(0);
@@ -382,12 +371,12 @@ describe('TodoListTools', () => {
           {
             items: [
               { id: 'non-existent-id-1', text: 'Should fail' },
-              { id: 'non-existent-id-2', completed: true },
+              { id: 'non-existent-id-2', status: 'done' },
             ],
           },
           context,
         );
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('批量更新待办事项失败');
       }
@@ -398,7 +387,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({}, context);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('必须提供 id 或 items 参数之一');
       }
@@ -414,10 +403,10 @@ describe('TodoListTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todo.completed).toBe(true);
+      expect(parsed.todo.status).toBe('done');
 
       const updated = TodoListService.getTodoById(todo.id);
-      expect(updated?.completed).toBe(true);
+      expect(updated?.status).toBe('done');
     });
   });
 
@@ -440,7 +429,7 @@ describe('TodoListTools', () => {
 
       try {
         await tool!.handler({ id: 'non-existent-id' }, context);
-        expect(true).toBe(false); // Should not reach here
+        expect(true).toBe(false);
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('待办事项不存在');
       }

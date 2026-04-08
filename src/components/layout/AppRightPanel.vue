@@ -165,7 +165,7 @@ const chatSummarizer = useChatSummarizer(messages, assistantModel, reloadMessage
 // 待办事项与会话列表
 const todos = ref<TodoItem[]>([]);
 const showTodoList = ref(false);
-const incompleteTodoCount = computed(() => todos.value.filter((todo) => !todo.completed).length);
+const incompleteTodoCount = computed(() => todos.value.filter((todo) => todo.status !== 'done').length);
 
 // 会话列表 Popover
 const sessionListPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
@@ -720,15 +720,26 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
             v-for="todo in todos"
             :key="todo.id"
             class="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-white/5 transition-colors"
-            :class="{ 'opacity-60': todo.completed }"
+            :class="{
+              'opacity-60': todo.status === 'done',
+              'border-l-2 border-primary pl-1': todo.status === 'working',
+            }"
           >
             <i
               class="pi mt-0.5 text-xs flex-shrink-0"
-              :class="todo.completed ? 'pi-check-circle text-green-400' : 'pi-circle text-moon-50'"
+              :class="{
+                'pi-check-circle text-green-400': todo.status === 'done',
+                'pi-arrow-right text-primary': todo.status === 'working',
+                'pi-circle text-moon-50': todo.status === 'pending',
+              }"
             ></i>
             <span
-              class="text-xs text-moon-80 flex-1 break-words"
-              :class="{ 'line-through': todo.completed }"
+              class="text-xs flex-1 break-words"
+              :class="{
+                'line-through text-moon-60': todo.status === 'done',
+                'text-primary font-medium': todo.status === 'working',
+                'text-moon-80': todo.status === 'pending',
+              }"
             >
               {{ todo.text }}
             </span>

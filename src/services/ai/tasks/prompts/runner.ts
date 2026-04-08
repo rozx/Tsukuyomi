@@ -116,8 +116,7 @@ export function getMissingParagraphsPrompt(taskType: TaskType, missingIds: strin
 
   return (
     `检测到以下段落缺少${taskLabel}结果（共 ${missingIds.length} 段，paragraph_id）：${missingIdList}。` +
-    `请先用 \`update_task_status({"status":"working"})\` 切回 working，` +
-    `再用 \`add_translation_batch\` 补全这些段落（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。` +
+    `请直接使用 \`add_translation_batch\` 补全这些段落（必须使用 paragraph_id，单次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段）。` +
     `补提时只修复缺失项，禁止重排段落或猜测 paragraph_id。`
   );
 }
@@ -129,7 +128,7 @@ export function getReviewLoopPrompt(taskType: TaskType): string {
   const taskLabel = TASK_TYPE_LABELS[taskType];
   return (
     `[警告] 你已经在复核阶段停留过久。` +
-    `如果你还想更新任何已输出的${taskLabel}结果，请用 \`update_task_status({"status":"working"})\` 切回 working 并提交需要更新的段落；` +
+    `如果你还想修正${taskLabel}结果，可直接使用 \`add_translation_batch\` 提交修正；` +
     `如果不需要后续操作，请**立即**用 \`update_task_status({"status":"end"})\` 结束。`
   );
 }

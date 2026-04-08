@@ -4,41 +4,65 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import type { TaskStatus } from 'src/services/ai/tasks/utils/task-types';
+
+export type TodoStatus = 'pending' | 'working' | 'done';
 
 export interface TodoItem {
   id: string;
   text: string;
-  completed: boolean;
+  status: TodoStatus;
   createdAt: number;
   updatedAt: number;
   taskId: string; // 关联的 AI 任务 ID（必需，用于翻译、润色、校对等任务）
   sessionId?: string; // 关联的聊天会话 ID（可选，用于助手聊天会话）
+  predefined?: boolean; // 是否为系统预定义的待办事项（用于 gate 检查）
+  taskState?: TaskStatus; // 该待办所属的任务阶段
+  chunkIndex?: number; // 该待办所属的 chunk 索引
 }
 
 const STORAGE_KEY = 'tsukuyomi-todo-list';
 
+/** 内存缓存，避免每次操作都解析 localStorage */
+let cachedTodos: TodoItem[] | null = null;
+
 /**
- * 从 localStorage 加载所有待办事项
+ * 从 localStorage 加载所有待办事项（带内存缓存）
  */
 function loadTodosFromStorage(): TodoItem[] {
+  if (cachedTodos) return cachedTodos;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return JSON.parse(stored);
+      const todos = JSON.parse(stored) as Array<Record<string, unknown>>;
+      cachedTodos = todos.map((todo) => {
+        if ('completed' in todo && !('status' in todo)) {
+          const { completed, ...rest } = todo;
+          return {
+            ...rest,
+            status: completed ? 'done' : 'pending',
+          } as TodoItem;
+        }
+        return todo as unknown as TodoItem;
+      });
+      return cachedTodos;
     }
   } catch (error) {
     console.error('[TodoListService] 加载待办事项失败:', error);
   }
-  return [];
+  cachedTodos = [];
+  return cachedTodos;
 }
 
 /**
- * 保存所有待办事项到 localStorage
+ * 保存所有待办事项到 localStorage（同时更新内存缓存）
  */
 function saveTodosToStorage(todos: TodoItem[]): void {
   try {
+    cachedTodos = todos;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   } catch (error) {
+    cachedTodos = null;
     console.error('[TodoListService] 保存待办事项失败:', error);
     throw new Error('保存待办事项失败');
   }
@@ -59,14 +83,14 @@ export class TodoListService {
    * 获取未完成的待办事项
    */
   static getActiveTodos(): TodoItem[] {
-    return this.getAllTodos().filter((todo) => !todo.completed);
+    return this.getAllTodos().filter((todo) => todo.status !== 'done');
   }
 
   /**
    * 获取已完成的待办事项
    */
   static getCompletedTodos(): TodoItem[] {
-    return this.getAllTodos().filter((todo) => todo.completed);
+    return this.getAllTodos().filter((todo) => todo.status === 'done');
   }
 
   /**
@@ -82,8 +106,12 @@ export class TodoListService {
    * @param taskId 关联的 AI 任务 ID（必需）
    * @param sessionId 关联的聊天会话 ID（可选，用于助手聊天会话）
    */
-  static createTodo(text: string, taskId: string, sessionId?: string): TodoItem {
-    // 先 trim 后校验
+  static createTodo(
+    text: string,
+    taskId: string,
+    sessionId?: string,
+    options?: { predefined?: boolean; taskState?: TaskStatus; chunkIndex?: number },
+  ): TodoItem {
     const trimmedText = text.trim();
     const trimmedTaskId = taskId.trim();
     const trimmedSessionId = sessionId?.trim();
@@ -97,15 +125,17 @@ export class TodoListService {
 
     const todos = this.getAllTodos();
     const now = Date.now();
-    // 使用 uuid 生成唯一 ID
     const newTodo: TodoItem = {
       id: uuidv4(),
-      text: trimmedText, // 保存 trimmed 值
-      completed: false,
+      text: trimmedText,
+      status: 'pending',
       createdAt: now,
       updatedAt: now,
-      taskId: trimmedTaskId, // 保存 trimmed 值
+      taskId: trimmedTaskId,
       ...(trimmedSessionId ? { sessionId: trimmedSessionId } : {}),
+      ...(options?.predefined ? { predefined: true } : {}),
+      ...(options?.taskState ? { taskState: options.taskState } : {}),
+      ...(options?.chunkIndex !== undefined ? { chunkIndex: options.chunkIndex } : {}),
     };
 
     todos.push(newTodo);
@@ -120,7 +150,7 @@ export class TodoListService {
   /**
    * 更新待办事项
    */
-  static updateTodo(id: string, updates: { text?: string; completed?: boolean }): TodoItem {
+  static updateTodo(id: string, updates: { text?: string; status?: TodoStatus }): TodoItem {
     const todos = this.getAllTodos();
     const todoIndex = todos.findIndex((todo) => todo.id === id);
 
@@ -133,14 +163,24 @@ export class TodoListService {
       throw new Error(`待办事项不存在: ${id}`);
     }
 
+    const VALID_STATUSES: TodoStatus[] = ['pending', 'working', 'done'];
+    if (updates.status !== undefined && !VALID_STATUSES.includes(updates.status)) {
+      throw new Error(
+        `无效的待办事项状态: "${updates.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
+      );
+    }
+
     const updatedTodo: TodoItem = {
       id: todo.id,
       text: updates.text !== undefined ? updates.text.trim() : todo.text,
-      completed: updates.completed !== undefined ? updates.completed : todo.completed,
+      status: updates.status !== undefined ? updates.status : todo.status,
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
-      taskId: todo.taskId, // 保持 taskId 不变
-      ...(todo.sessionId ? { sessionId: todo.sessionId } : {}), // 保持 sessionId 不变（如果存在）
+      taskId: todo.taskId,
+      ...(todo.sessionId ? { sessionId: todo.sessionId } : {}),
+      ...(todo.predefined ? { predefined: true } : {}),
+      ...(todo.taskState ? { taskState: todo.taskState } : {}),
+      ...(todo.chunkIndex !== undefined ? { chunkIndex: todo.chunkIndex } : {}),
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
@@ -158,14 +198,18 @@ export class TodoListService {
    * 标记待办事项为完成
    */
   static markTodoAsDone(id: string): TodoItem {
-    return this.updateTodo(id, { completed: true });
+    return this.updateTodo(id, { status: 'done' });
   }
 
   /**
-   * 标记待办事项为未完成
+   * 标记待办事项为进行中
    */
-  static markTodoAsUndone(id: string): TodoItem {
-    return this.updateTodo(id, { completed: false });
+  static markTodoAsWorking(id: string): TodoItem {
+    const todo = this.getTodoById(id);
+    if (todo && todo.status === 'done') {
+      throw new Error('该待办已完成，无法重新标记为进行中');
+    }
+    return this.updateTodo(id, { status: 'working' });
   }
 
   /**
@@ -190,8 +234,8 @@ export class TodoListService {
    */
   static deleteCompletedTodos(): number {
     const todos = this.getAllTodos();
-    const completedCount = todos.filter((todo) => todo.completed).length;
-    const activeTodos = todos.filter((todo) => !todo.completed);
+    const completedCount = todos.filter((todo) => todo.status === 'done').length;
+    const activeTodos = todos.filter((todo) => todo.status !== 'done');
 
     saveTodosToStorage(activeTodos);
 

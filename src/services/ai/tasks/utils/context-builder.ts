@@ -5,6 +5,7 @@ import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
+import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 
@@ -521,7 +522,11 @@ export async function buildIndependentChunkPrompt(
 【章节标题】${chapterTitle}`
         : '';
 
-    return `开始${taskLabel}任务。如需上下文可先调用工具；准备好后用 \`update_task_status({"status":"preparing"})\` 进入准备阶段，再 \`update_task_status({"status":"working"})\` 开始${taskLabel}。${titleInstruction}${currentChunkContext}${startContextHint}
+    const planningStatus = getCurrentStatusInfo(taskType, 'planning', false);
+
+    return `开始${taskLabel}任务。当前处于 **planning 阶段**，请按待办清单逐项完成。
+
+${planningStatus}${titleInstruction}${currentChunkContext}${startContextHint}
 
 以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
   } else {
@@ -530,10 +535,12 @@ export async function buildIndependentChunkPrompt(
       ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
       : '';
 
-    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。${currentChunkContext}${startContextHint}
+    const briefPlanningStatus = getCurrentStatusInfo(taskType, 'planning', true);
 
- **[警告] 重要：简短规划阶段（已继承上文规划）**
- ${briefPlanningNote}请使用 \`update_task_status({"status":"preparing"})\` 进入准备阶段，再 \`update_task_status({"status":"working"})\` 开始${taskLabel}。
+    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。当前处于 **planning 阶段**。${currentChunkContext}${startContextHint}
+
+${briefPlanningStatus}
+${briefPlanningNote}
 
 以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
   }

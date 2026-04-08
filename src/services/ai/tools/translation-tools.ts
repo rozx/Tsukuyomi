@@ -212,7 +212,7 @@ const ERROR_MESSAGES = {
   TASK_ID_MISSING: '未提供任务 ID',
   TASK_NOT_FOUND: (taskId: string) => `任务不存在: ${taskId}`,
   TASK_STATUS_INVALID: (currentStatus: string | undefined) =>
-    `只能在 'working' 状态下调用此工具，当前状态为: ${currentStatus || '未设置'}`,
+    `只能在 'working' 或 'review' 状态下调用此工具，当前状态为: ${currentStatus || '未设置'}`,
   TASK_TYPE_MISSING: (taskId: string) => `无法确定任务类型，请检查任务信息。taskId=${taskId}`,
   TASK_TYPE_UNSUPPORTED: (taskType: string) => `任务类型不支持批量提交: ${taskType}`,
   // 书籍/章节数据相关
@@ -330,7 +330,7 @@ function validateTaskStatus(
   }
 
   const currentStatus = task.workflowStatus;
-  if (currentStatus !== 'working') {
+  if (currentStatus !== 'working' && currentStatus !== 'review') {
     return {
       valid: false,
       error: ERROR_MESSAGES.TASK_STATUS_INVALID(currentStatus),
@@ -1469,7 +1469,7 @@ export function createTranslationTools(
         | undefined;
       if (taskId) {
         const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter(
-          (t) => !t.completed,
+          (t) => t.status !== 'done',
         );
         if (incompleteTodos.length > 0) {
           todoReminder = {

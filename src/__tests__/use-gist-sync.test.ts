@@ -117,7 +117,9 @@ describe('useGistSync', () => {
         mockDownloadSuccess(remoteData),
       );
       const applySpy = spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
-      const hasChangesSpy = spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      const hasChangesSpy = spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(
+        true,
+      );
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       const uploadSpy = spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue(
         mockUploadSuccess(),
@@ -260,7 +262,7 @@ describe('useGistSync', () => {
 
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue(restorableItems);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
         success: false,
@@ -282,7 +284,7 @@ describe('useGistSync', () => {
     it('上传失败时不更新 lastSyncTime（防止删除记录变为陈旧）', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
         success: false,
@@ -301,7 +303,7 @@ describe('useGistSync', () => {
     it('上传抛异常时不更新 lastSyncTime（防止删除记录变为陈旧）', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockRejectedValue(new Error('网络中断'));
 
@@ -316,7 +318,7 @@ describe('useGistSync', () => {
     it('上传成功时更新 lastSyncTime', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue(mockUploadSuccess());
 
@@ -349,7 +351,7 @@ describe('useGistSync', () => {
 
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue(restorableItems);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockRejectedValue(new Error('网络中断'));
 
@@ -500,7 +502,7 @@ describe('useGistSync', () => {
     it('上传成功后更新 gistId 和同步时间', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue(mockDownloadSuccess());
       spyOn(SyncDataService, 'applyDownloadedData').mockResolvedValue([]);
-      spyOn(SyncDataService, 'hasChangesToUpload').mockReturnValue(true);
+      spyOn(SyncDataService, 'hasLocalChangesSinceLastSync').mockReturnValue(true);
       spyOn(MemoryService, 'getAllMemoriesForBooksFlat').mockResolvedValue([]);
       spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue(
         mockUploadSuccess('new-gist-id-123'),

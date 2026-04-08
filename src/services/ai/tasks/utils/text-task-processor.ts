@@ -731,6 +731,7 @@ export async function processTextTask(
                 : undefined,
             hasNextChunk: chunkIndex < chunks.length - 1,
             enableOriginalTextValidation,
+            chapterTitle: isFirstChunk ? chapterTitle : undefined,
           });
 
           // 检查状态
