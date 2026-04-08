@@ -339,7 +339,7 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result as string);
       // review 状态现在允许 add_translation_batch，应进入正常处理路径
       expect(resultObj.success).toBe(true);
-      expect(resultObj.error).toBeUndefined();
+      expect(resultObj).not.toHaveProperty('error');
     });
 
     test('当任务状态为 end 时应返回错误', async () => {

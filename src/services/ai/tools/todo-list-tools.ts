@@ -189,8 +189,8 @@ export const todoListTools: ToolDefinition[] = [
           }
 
           try {
-            const VALID_STATUSES: TodoStatus[] = ['pending', 'working', 'done'];
-            if (item.status !== undefined && !VALID_STATUSES.includes(item.status as TodoStatus)) {
+            const VALID_STATUSES: readonly string[] = ['pending', 'working', 'done'];
+            if (item.status !== undefined && !VALID_STATUSES.includes(item.status)) {
               errors.push(
                 `待办事项 "${item.id}" 状态无效: "${item.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
               );
@@ -199,7 +199,7 @@ export const todoListTools: ToolDefinition[] = [
 
             const updates: { text?: string; status?: TodoStatus } = {};
             if (item.text !== undefined) updates.text = item.text;
-            if (item.status !== undefined) updates.status = item.status as TodoStatus;
+            if (item.status !== undefined) updates.status = item.status;
 
             const previousTodo = TodoListService.getTodoById(item.id);
             const updatedTodo = TodoListService.updateTodo(item.id, updates);
