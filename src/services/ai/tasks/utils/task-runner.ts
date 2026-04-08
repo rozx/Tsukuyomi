@@ -226,7 +226,7 @@ class TaskLoopSession {
 
     // 初始化 TodoWorkflow（需要 taskId）
     if (config.taskId) {
-      this.todoWorkflow = new TodoWorkflow(config.taskType, config.taskId);
+      this.todoWorkflow = new TodoWorkflow(config.taskType, config.taskId, config.chunkIndex ?? 0);
       // 生成 planning 阶段的初始待办
       this.todoWorkflow.generateForState('planning');
     }

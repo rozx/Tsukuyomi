@@ -173,11 +173,13 @@ function buildWorkingTodoTexts(config: WorkingTodoConfig): string[] {
 export class TodoWorkflow {
   private taskType: TaskType;
   private taskId: string;
+  private chunkIndex: number;
   private initializedStates: Set<TaskStatus> = new Set();
 
-  constructor(taskType: TaskType, taskId: string) {
+  constructor(taskType: TaskType, taskId: string, chunkIndex: number = 0) {
     this.taskType = taskType;
     this.taskId = taskId;
+    this.chunkIndex = chunkIndex;
   }
 
   /**
@@ -188,13 +190,36 @@ export class TodoWorkflow {
     if (state === 'end') return [];
     if (this.initializedStates.has(state)) return [];
 
+    const existingTodos = TodoListService.getTodosByTaskId(this.taskId);
+    const hasGenerated = existingTodos.some((t) => 
+      t.predefined && 
+      t.taskState === state && 
+      t.chunkIndex === this.chunkIndex
+    );
+
+    if (hasGenerated) {
+      this.initializedStates.add(state);
+      return [];
+    }
+
     this.initializedStates.add(state);
+
+    const isChunkZero = this.chunkIndex === 0;
 
     // 静态模板
     const templates = getTemplates(this.taskType, state);
     if (templates) {
+      // 如果不是第一个 chunk，跳过 planning 和 preparing 的预定义规则（此时按系统设定通常是长驱直入）
+      if (!isChunkZero && (state === 'planning' || state === 'preparing')) {
+        return [];
+      }
+
       return templates.map((text) =>
-        TodoListService.createTodo(text, this.taskId, undefined, { predefined: true }),
+        TodoListService.createTodo(text, this.taskId, undefined, { 
+          predefined: true, 
+          taskState: state,
+          chunkIndex: this.chunkIndex
+        }),
       );
     }
 
@@ -202,7 +227,11 @@ export class TodoWorkflow {
     if (state === 'working' && config) {
       const texts = buildWorkingTodoTexts(config);
       return texts.map((text) =>
-        TodoListService.createTodo(text, this.taskId, undefined, { predefined: true }),
+        TodoListService.createTodo(text, this.taskId, undefined, { 
+          predefined: true, 
+          taskState: state,
+          chunkIndex: this.chunkIndex
+        }),
       );
     }
 
@@ -215,7 +244,7 @@ export class TodoWorkflow {
    */
   checkGate(currentState: TaskStatus): GateResult {
     const todos = TodoListService.getTodosByTaskId(this.taskId);
-    const predefinedTodos = todos.filter((t) => t.predefined);
+    const predefinedTodos = todos.filter((t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex);
 
     // 如果该状态没有初始化过待办，则不阻塞
     if (!this.initializedStates.has(currentState)) {
@@ -236,8 +265,8 @@ export class TodoWorkflow {
     const todos = TodoListService.getTodosByTaskId(this.taskId);
     if (todos.length === 0) return '';
 
-    // 仅展示 predefined 待办（ad-hoc 待办不在此展示）
-    const predefinedTodos = todos.filter((t) => t.predefined);
+    // 仅展示当前阶段/区块的 predefined 待办（ad-hoc 待办在 helper 里展示）
+    const predefinedTodos = todos.filter((t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex);
     if (predefinedTodos.length === 0) return '';
 
     const allDone = predefinedTodos.every((t) => t.status === 'done');

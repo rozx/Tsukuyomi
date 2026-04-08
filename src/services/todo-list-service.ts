@@ -4,6 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import type { TaskStatus } from 'src/services/ai/tasks/utils/task-types';
 
 export type TodoStatus = 'pending' | 'working' | 'done';
 
@@ -16,6 +17,8 @@ export interface TodoItem {
   taskId: string; // 关联的 AI 任务 ID（必需，用于翻译、润色、校对等任务）
   sessionId?: string; // 关联的聊天会话 ID（可选，用于助手聊天会话）
   predefined?: boolean; // 是否为系统预定义的待办事项（用于 gate 检查）
+  taskState?: TaskStatus; // 该待办所属的任务阶段
+  chunkIndex?: number; // 该待办所属的 chunk 索引
 }
 
 const STORAGE_KEY = 'tsukuyomi-todo-list';
@@ -99,7 +102,7 @@ export class TodoListService {
     text: string,
     taskId: string,
     sessionId?: string,
-    options?: { predefined?: boolean },
+    options?: { predefined?: boolean; taskState?: TaskStatus; chunkIndex?: number },
   ): TodoItem {
     const trimmedText = text.trim();
     const trimmedTaskId = taskId.trim();
@@ -123,6 +126,8 @@ export class TodoListService {
       taskId: trimmedTaskId,
       ...(trimmedSessionId ? { sessionId: trimmedSessionId } : {}),
       ...(options?.predefined ? { predefined: true } : {}),
+      ...(options?.taskState ? { taskState: options.taskState } : {}),
+      ...(options?.chunkIndex !== undefined ? { chunkIndex: options.chunkIndex } : {}),
     };
 
     todos.push(newTodo);
@@ -159,6 +164,8 @@ export class TodoListService {
       taskId: todo.taskId,
       ...(todo.sessionId ? { sessionId: todo.sessionId } : {}),
       ...(todo.predefined ? { predefined: true } : {}),
+      ...(todo.taskState ? { taskState: todo.taskState } : {}),
+      ...(todo.chunkIndex !== undefined ? { chunkIndex: todo.chunkIndex } : {}),
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
