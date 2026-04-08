@@ -35,6 +35,7 @@ import { buildPostOutputPrompt } from './context-builder';
 import { PromptPolicy } from './prompt-policy';
 import { StateMachineEngine } from './state-machine-engine';
 import { ToolDispatcher } from './tool-dispatcher';
+import { TodoWorkflow } from './todo-workflow';
 import { runLLMRequest } from './llm-stream-adapter';
 
 // Constants
@@ -110,6 +111,10 @@ export interface ToolCallLoopConfig {
    * 是否启用原文校验（original_text_prefix 校验）
    */
   enableOriginalTextValidation?: boolean;
+  /**
+   * 章节标题（用于 working 阶段生成标题翻译待办）
+   */
+  chapterTitle?: string | undefined;
 }
 
 /**
@@ -180,6 +185,7 @@ class TaskLoopSession {
   private metrics: PerformanceMetrics;
   private stateMachine: StateMachineEngine;
   private toolDispatcher: ToolDispatcher;
+  private todoWorkflow: TodoWorkflow | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
@@ -217,6 +223,13 @@ class TaskLoopSession {
     });
     this.startTime = Date.now();
     this.statusStartTime = Date.now();
+
+    // 初始化 TodoWorkflow（需要 taskId）
+    if (config.taskId) {
+      this.todoWorkflow = new TodoWorkflow(config.taskType, config.taskId);
+      // 生成 planning 阶段的初始待办
+      this.todoWorkflow.generateForState('planning');
+    }
   }
 
   public async run(): Promise<ToolCallLoopResult> {
@@ -422,6 +435,24 @@ class TaskLoopSession {
       return undefined;
     }
 
+    // Gate 检查：当前状态的预定义待办是否全部完成
+    if (this.todoWorkflow) {
+      const gate = this.todoWorkflow.checkGate(previousStatus);
+      if (!gate.allowed) {
+        const todoList = gate.incompleteItems
+          .map((t) => `- ${t.text.split('\n')[0]}`)
+          .join('\n');
+        console.warn(
+          `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
+        );
+        this.config.history.push({ role: 'assistant', content: assistantText });
+        return {
+          role: 'user',
+          content: `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`,
+        };
+      }
+    }
+
     this.trackStatusDuration(previousStatus, newStatus);
     this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
     this.setCurrentStatus(newStatus);
@@ -430,6 +461,20 @@ class TaskLoopSession {
       void aiProcessingStore.updateTask(taskId, {
         workflowStatus: newStatus,
       });
+    }
+
+    // 为新状态生成预定义待办（仅首次进入时）
+    if (this.todoWorkflow && newStatus !== 'end') {
+      if (newStatus === 'working') {
+        this.todoWorkflow.generateForState(newStatus, {
+          paragraphIds: this.config.paragraphIds || [],
+          chunkText: this.config.chunkText,
+          chunkIndex: this.config.chunkIndex ?? 0,
+          chapterTitle: this.config.chapterTitle,
+        });
+      } else {
+        this.todoWorkflow.generateForState(newStatus);
+      }
     }
 
     const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
@@ -787,14 +832,13 @@ class TaskLoopSession {
         const dbConfirmedMissing = await this.crossCheckMissingWithDB(verification.missingIds);
 
         if (dbConfirmedMissing.length > 0) {
-          // 数据库也确认缺失，真正需要补翻
+          // 数据库也确认缺失，直接在 review 状态补翻（无需切回 working）
           this.config.history.push({
             role: 'user',
             content:
               `${this.getCurrentStatusInfoMsg()}\n\n` +
               PromptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
           });
-          this.setCurrentStatus('working');
           this.consecutiveReviewCount = 0;
           return { shouldContinue: true };
         } else {
@@ -893,12 +937,20 @@ class TaskLoopSession {
   }
 
   private getCurrentStatusInfoMsg() {
-    return PromptPolicy.getCurrentStatusInfo(
+    const statusInfo = PromptPolicy.getCurrentStatusInfo(
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
       this.config.hasNextChunk,
     );
+    // 在状态信息前注入待办清单上下文块
+    if (this.todoWorkflow) {
+      const todoBlock = this.todoWorkflow.buildTodoContextBlock(this.currentStatus);
+      if (todoBlock) {
+        return todoBlock + '\n' + statusInfo;
+      }
+    }
+    return statusInfo;
   }
 
   private setCurrentStatus(status: TaskStatus) {

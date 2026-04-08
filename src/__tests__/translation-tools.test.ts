@@ -314,7 +314,7 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain("只能在 'working' 状态下调用此工具");
     });
 
-    test('当任务状态为 review 时应返回错误', async () => {
+    test('当任务状态为 review 时应允许调用（翻译任务）', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'review', 'translation');
 
@@ -329,8 +329,8 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain("只能在 'working' 状态下调用此工具");
+      // review 状态现在允许 add_translation_batch
+      expect(resultObj.error).not.toContain("只能在 'working' 状态下调用此工具");
     });
 
     test('当任务状态为 end 时应返回错误', async () => {

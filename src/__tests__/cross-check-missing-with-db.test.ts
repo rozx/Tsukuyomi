@@ -10,6 +10,7 @@ import type {
 import { executeToolCallLoop } from 'src/services/ai/tasks/utils';
 import { ToolRegistry } from 'src/services/ai/tools';
 import { BookService } from 'src/services/book-service';
+import { TodoListService } from 'src/services/todo-list-service';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import type { Novel, Paragraph, Volume, Chapter } from 'src/models/novel';
 
@@ -143,12 +144,23 @@ function createGenerateText(responses: Array<{ toolCalls?: AIToolCall[]; text: s
 describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () => {
   afterEach(() => {
     mock.restore();
+    TodoListService.clearAllTodos();
   });
 
   test('内存缺失但数据库已有翻译时，应同步内存并正常进入 review（不强制回退 working）', async () => {
     const taskId = 'task-1';
     const chapterId = 'ch-1';
     const paragraphIds = ['p1', 'p2', 'p3'];
+
+    // 自动完成预定义待办（此测试关注 crossCheckMissingWithDB 逻辑，不关注 todo gate）
+    const origCreateTodo = TodoListService.createTodo.bind(TodoListService);
+    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
+      const todo = origCreateTodo(...args);
+      if (todo.predefined) {
+        TodoListService.markTodoAsDone(todo.id);
+      }
+      return todo;
+    });
 
     // 模拟数据库中 p3 已有翻译
     const novel = createMockNovel(chapterId, [
@@ -298,10 +310,20 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     mockGetBookById.mockRestore();
   });
 
-  test('内存缺失且数据库也确认缺失时，应强制回退到 working 状态要求补翻', async () => {
+  test('内存缺失且数据库也确认缺失时，应在 review 状态直接补翻', async () => {
     const taskId = 'task-2';
     const chapterId = 'ch-2';
     const paragraphIds = ['p1', 'p2', 'p3'];
+
+    // 自动完成预定义待办（此测试关注 crossCheckMissingWithDB 逻辑，不关注 todo gate）
+    const origCreateTodo = TodoListService.createTodo.bind(TodoListService);
+    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
+      const todo = origCreateTodo(...args);
+      if (todo.predefined) {
+        TodoListService.markTodoAsDone(todo.id);
+      }
+      return todo;
+    });
 
     // 模拟数据库中 p3 没有翻译
     const novel = createMockNovel(chapterId, [
@@ -310,7 +332,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       createParagraphWithoutTranslation('p3'), // 数据库也没有翻译
     ]);
 
-    // 第二次 review 时 p3 已有翻译（因为在 working 阶段补提交了）
+    // 第二次检查时 p3 已有翻译（因为在 review 阶段直接补提交了）
     const novelWithP3 = createMockNovel(chapterId, [
       createParagraphWithTranslation('p1', '翻译1'),
       createParagraphWithTranslation('p2', '翻译2'),
@@ -320,8 +342,6 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     let dbCallCount = 0;
     const mockGetBookById = spyOn(BookService, 'getBookById').mockImplementation(() => {
       dbCallCount++;
-      // 第一次 review：p3 在 DB 中没翻译
-      // 第二次 review：p3 在 DB 中已有翻译（因为 working 补提交了）
       return Promise.resolve(dbCallCount >= 2 ? novelWithP3 : novel);
     });
 
@@ -344,16 +364,15 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       },
     );
 
-    // 流程：
+    // 流程（review 状态可直接调用 add_translation_batch）：
     // 1. tool: preparing
     // 2. tool: working
     // 3. tool: add_translation_batch(p1, p2)
     // 4. tool: review
-    // 5. text: 触发 handleReviewState → p3 缺失 → DB 确认缺失 → 回退到 working
-    // 6. tool: add_translation_batch(p3) — 补提交
-    // 7. tool: review
-    // 8. text: 触发 handleReviewState → 所有段落已翻译（p3 在内存中有了）
-    // 9. tool: end
+    // 5. text: 触发 handleReviewState → p3 缺失 → DB 确认缺失 → 保持 review 要求补翻
+    // 6. tool: add_translation_batch(p3) — 在 review 中直接补提交
+    // 7. text: 触发 handleReviewState → 所有段落已翻译
+    // 8. tool: end
     const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
       {
         text: '',
@@ -403,9 +422,9 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           },
         ],
       },
-      // 纯文本：触发第一次 handleReviewState → p3 DB 确认缺失 → 回退 working
+      // 纯文本：触发第一次 handleReviewState → p3 DB 确认缺失 → 保持 review
       { text: '检查翻译完整性' },
-      // 被回退到 working 后，补提交 p3
+      // 在 review 状态直接补提交 p3
       {
         text: '',
         toolCalls: [
@@ -418,17 +437,6 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
                 paragraphs: [{ paragraph_id: 'p3', translated_text: '翻译3' }],
               }),
             },
-          },
-        ],
-      },
-      // 再次 review
-      {
-        text: '',
-        toolCalls: [
-          {
-            id: 'call-6',
-            type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"review"}' },
           },
         ],
       },
@@ -487,6 +495,15 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
   test('无 bookId 或 chapterId 时，应保守回退到 working（跳过数据库检查）', async () => {
     const paragraphIds = ['p1', 'p2'];
 
+    const origCreateTodo2 = TodoListService.createTodo.bind(TodoListService);
+    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
+      const todo = origCreateTodo2(...args);
+      if (todo.predefined) {
+        TodoListService.markTodoAsDone(todo.id);
+      }
+      return todo;
+    });
+
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
         if (toolCall.function.name === 'update_task_status') {
@@ -508,16 +525,15 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
 
     const mockGetBookById = spyOn(BookService, 'getBookById');
 
-    // 流程：
+    // 流程（review 状态可直接调用 add_translation_batch）：
     // 1. tool: preparing
     // 2. tool: working
     // 3. tool: add_translation_batch(p1) — 只提交 p1
     // 4. tool: review
-    // 5. text: handleReviewState → p2 缺失 → 无 store/taskId → 无法查 DB → 保守回退 working
-    // 6. tool: add_translation_batch(p2) — 补提交
-    // 7. tool: review
-    // 8. text: handleReviewState → 全部完成
-    // 9. tool: end
+    // 5. text: handleReviewState → p2 缺失 → 无法查 DB → 保持 review 要求补翻
+    // 6. tool: add_translation_batch(p2) — 在 review 中直接补提交
+    // 7. text: handleReviewState → 全部完成
+    // 8. tool: end
     const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
       {
         text: '',
@@ -564,9 +580,9 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           },
         ],
       },
-      // 纯文本：触发 handleReviewState → p2 缺失 → 无法查 DB → 保守回退 working
+      // 纯文本：触发 handleReviewState → p2 缺失 → 无法查 DB → 保持 review 要求补翻
       { text: '检查翻译完整性' },
-      // 被回退后补提交 p2
+      // 在 review 中直接补提交 p2
       {
         text: '',
         toolCalls: [
@@ -579,16 +595,6 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
                 paragraphs: [{ paragraph_id: 'p2', translated_text: '翻译2' }],
               }),
             },
-          },
-        ],
-      },
-      {
-        text: '',
-        toolCalls: [
-          {
-            id: 'call-6',
-            type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"review"}' },
           },
         ],
       },
@@ -640,6 +646,15 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
   });
 
   test('无 paragraphIds 时应跳过完整性检查直接进入 review', async () => {
+    const origCreateTodo3 = TodoListService.createTodo.bind(TodoListService);
+    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
+      const todo = origCreateTodo3(...args);
+      if (todo.predefined) {
+        TodoListService.markTodoAsDone(todo.id);
+      }
+      return todo;
+    });
+
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
         if (toolCall.function.name === 'update_task_status') {

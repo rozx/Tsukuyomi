@@ -330,7 +330,7 @@ function validateTaskStatus(
   }
 
   const currentStatus = task.workflowStatus;
-  if (currentStatus !== 'working') {
+  if (currentStatus !== 'working' && currentStatus !== 'review') {
     return {
       valid: false,
       error: ERROR_MESSAGES.TASK_STATUS_INVALID(currentStatus),
@@ -1469,7 +1469,7 @@ export function createTranslationTools(
         | undefined;
       if (taskId) {
         const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter(
-          (t) => !t.completed,
+          (t) => t.status !== 'done',
         );
         if (incompleteTodos.length > 0) {
           todoReminder = {

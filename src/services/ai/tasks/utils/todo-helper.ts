@@ -25,12 +25,15 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
   }
 
   let prompt =
-    '\n**待办工具**：create_todo | list_todos | update_todos | mark_todo_done | delete_todo\n';
+    '\n**待办工具**：create_todo | list_todos | update_todos | mark_todo_working | mark_todo_done | delete_todo\n';
+  prompt += '\n**三态模型**：每个待办事项有三种状态：\n';
+  prompt += '- `pending`（待处理）→ `working`（进行中）→ `done`（已完成）\n';
   prompt += '\n**使用指南**：\n';
-  prompt += '- 仅在任务复杂需分步跟踪时创建待办，简单任务直接处理\n';
-  prompt += '- 待办描述应具体可执行（如："翻译第1-5段，检查术语一致性"）\n';
-  prompt += '- 完成后使用 mark_todo_done 标记\n';
-  prompt += '- 可用 list_todos 查看待办列表\n';
+  prompt += '- 系统会为每个阶段自动生成预定义待办，按顺序完成即可\n';
+  prompt += '- 开始处理某项待办前，先调用 mark_todo_working 标记为进行中\n';
+  prompt += '- 完成后调用 mark_todo_done 标记为完成\n';
+  prompt += '- 所有预定义待办完成后才能进入下一阶段\n';
+  prompt += '- 可用 create_todo 创建额外的自定义待办（不影响阶段切换）\n';
 
   return prompt;
 }
@@ -109,30 +112,25 @@ export function getPostToolCallReminder(
   const todos =
     currentTodos ||
     (sessionId
-      ? TodoListService.getTodosBySessionId(sessionId).filter((todo) => !todo.completed)
-      : TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed));
+      ? TodoListService.getTodosBySessionId(sessionId).filter((todo) => todo.status !== 'done')
+      : TodoListService.getTodosByTaskId(taskId).filter((todo) => todo.status !== 'done'));
 
   if (todos.length === 0) {
     return '';
   }
 
-  let reminder = '\n**[待办] 待办事项提醒**：\n';
-  reminder += '工具调用已完成。请继续完成任务，并注意以下待办事项：\n\n';
+  const workingTodo = todos.find((t) => t.status === 'working');
+  const pendingTodos = todos.filter((t) => t.status === 'pending');
 
-  todos.slice(0, 5).forEach((todo, index) => {
-    reminder += `${index + 1}. ${todo.text}\n`;
-  });
-
-  if (todos.length > 5) {
-    reminder += `... 还有 ${todos.length - 5} 个待办事项\n`;
+  let reminder = '\n**[待办提醒]**\n';
+  if (workingTodo) {
+    const firstLine = workingTodo.text.split('\n')[0]!;
+    reminder += `→ 当前进行中：${firstLine}\n`;
+    reminder += '  完成后请调用 mark_todo_done 标记\n';
+  } else if (pendingTodos.length > 0) {
+    reminder += `还有 ${pendingTodos.length} 个待办事项待处理\n`;
+    reminder += '开始处理前请调用 mark_todo_working 标记\n';
   }
-
-  reminder += '\n**下一步操作**：\n';
-  reminder += '1. 继续完成当前任务\n';
-  reminder +=
-    '2. **评估你的进度**：如果你已经完成了某个待办事项，请使用 `mark_todo_done` 工具将其标记为完成\n';
-  reminder += '3. 使用 `list_todos` 工具查看完整待办列表（如有需要）\n';
-  reminder += '4. **重要**：只有当你真正完成了待办事项的任务时才标记为完成，不要过早标记\n';
 
   return reminder;
 }
@@ -145,7 +143,7 @@ export function getTodosSummary(taskId: string): string {
   if (!taskId) {
     return '当前无待办事项。';
   }
-  const activeTodos = TodoListService.getTodosByTaskId(taskId).filter((todo) => !todo.completed);
+  const activeTodos = TodoListService.getTodosByTaskId(taskId).filter((todo) => todo.status !== 'done');
 
   if (activeTodos.length === 0) {
     return '当前无待办事项。';

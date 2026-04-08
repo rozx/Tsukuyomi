@@ -120,8 +120,8 @@ function getReviewStateDescription(taskLabel: string): string {
 - 可创建/更新记忆：优先合并到已有记忆，沉淀可复用翻译经验
 - 检查遗漏或需修正的地方，特别是人称代词和语气词。
 - 【⚠️ 重要】检查所有翻译的段落，看原文的段落是否和翻译的段落一致。
+- 可直接使用 \`add_translation_batch\` 修正${taskLabel}结果（无需切回 working）
 
-如需更新已输出的${taskLabel}结果，请用 \`update_task_status({"status": "working"})\` 切回 working 并提交更新。
 完成后使用 \`update_task_status({"status": "end"})\`。`;
 }
 
@@ -289,11 +289,11 @@ export function getOutputFormatRules(
   const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
 
   const toolRestriction = isTranslation
-    ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）${titleToolRestriction}
+    ? `⛔ working 和 review 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）${titleToolRestriction}
    - planning 只能 update_task_status 切到 preparing
    - preparing 可维护术语/角色/记忆，完成后切到 working
    - working 禁止创建/更新术语、角色、记忆
-   - review 需要修改先切回 working；review 可创建/更新术语、角色、记忆
+   - review 可直接使用 add_translation_batch 修正翻译；review 可创建/更新术语、角色、记忆
    - end 禁止再调用翻译工具`
     : usesPreparing
       ? `⛔ 仅 working 可调用 add_translation_batch（【单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段】）

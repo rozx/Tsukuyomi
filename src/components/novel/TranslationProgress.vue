@@ -1563,8 +1563,8 @@ watch(
                       <Tab value="todos" :disabled="getTodosForTask(task.id).length === 0">
                         待办事项
                         <Badge
-                          v-if="getTodosForTask(task.id).filter((t) => !t.completed).length > 0"
-                          :value="getTodosForTask(task.id).filter((t) => !t.completed).length"
+                          v-if="getTodosForTask(task.id).filter((t) => t.status !== 'done').length > 0"
+                          :value="getTodosForTask(task.id).filter((t) => t.status !== 'done').length"
                           severity="info"
                           class="ml-1"
                         />
@@ -1706,19 +1706,25 @@ watch(
                               v-for="todo in getTodosForTask(task.id)"
                               :key="todo.id"
                               class="ai-task-todo-item"
-                              :class="{ 'todo-completed': todo.completed }"
+                              :class="{
+                                'todo-completed': todo.status === 'done',
+                                'border-l-2 border-primary pl-1': todo.status === 'working',
+                              }"
                             >
                               <i
                                 class="pi ai-task-todo-check-icon"
-                                :class="
-                                  todo.completed
-                                    ? 'pi-check-circle text-green-400'
-                                    : 'pi-circle text-moon-50'
-                                "
+                                :class="{
+                                  'pi-check-circle text-green-400': todo.status === 'done',
+                                  'pi-arrow-right text-primary': todo.status === 'working',
+                                  'pi-circle text-moon-50': todo.status === 'pending',
+                                }"
                               ></i>
                               <span
                                 class="ai-task-todo-text"
-                                :class="{ 'line-through': todo.completed }"
+                                :class="{
+                                  'line-through': todo.status === 'done',
+                                  'text-primary font-medium': todo.status === 'working',
+                                }"
                               >
                                 {{ todo.text }}
                               </span>

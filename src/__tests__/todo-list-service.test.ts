@@ -4,7 +4,6 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 
 describe('TodoListService', () => {
   beforeEach(() => {
-    // 清空所有待办事项，确保测试之间相互独立
     TodoListService.clearAllTodos();
   });
 
@@ -15,7 +14,7 @@ describe('TodoListService', () => {
 
       expect(todo).toBeDefined();
       expect(todo.text).toBe('Test todo');
-      expect(todo.completed).toBe(false);
+      expect(todo.status).toBe('pending');
       expect(todo.taskId).toBe(taskId);
       expect(todo.id).toBeDefined();
       expect(todo.createdAt).toBeGreaterThan(0);
@@ -85,15 +84,12 @@ describe('TodoListService', () => {
       const deletedCount = TodoListService.deleteTodosByTaskId(taskId1);
       expect(deletedCount).toBe(2);
 
-      // 验证 taskId1 的 todos 已被删除
       expect(TodoListService.getTodosByTaskId(taskId1)).toHaveLength(0);
 
-      // 验证 taskId2 的 todos 仍然存在
       const todos2 = TodoListService.getTodosByTaskId(taskId2);
       expect(todos2).toHaveLength(1);
       expect(todos2[0]?.id).toBe(todo3.id);
 
-      // 验证 todo1 和 todo2 不再存在于所有 todos 中
       const allTodos = TodoListService.getAllTodos();
       expect(allTodos.find((t) => t.id === todo1.id)).toBeUndefined();
       expect(allTodos.find((t) => t.id === todo2.id)).toBeUndefined();
@@ -160,17 +156,17 @@ describe('TodoListService', () => {
       const updated = TodoListService.updateTodo(todo.id, { text: 'Updated text' });
 
       expect(updated.text).toBe('Updated text');
-      expect(updated.taskId).toBe(taskId); // taskId should remain unchanged
-      expect(updated.completed).toBe(false);
+      expect(updated.taskId).toBe(taskId);
+      expect(updated.status).toBe('pending');
       expect(updated.updatedAt).toBeGreaterThanOrEqual(todo.updatedAt);
     });
 
-    test('应该能够更新待办事项的完成状态', () => {
+    test('应该能够更新待办事项的状态', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
-      const updated = TodoListService.updateTodo(todo.id, { completed: true });
+      const updated = TodoListService.updateTodo(todo.id, { status: 'done' });
 
-      expect(updated.completed).toBe(true);
+      expect(updated.status).toBe('done');
       expect(updated.text).toBe('Test todo');
       expect(updated.taskId).toBe(taskId);
     });
@@ -178,30 +174,39 @@ describe('TodoListService', () => {
     test('更新时不应该改变 taskId', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
-      const updated = TodoListService.updateTodo(todo.id, { text: 'New text', completed: true });
+      const updated = TodoListService.updateTodo(todo.id, { text: 'New text', status: 'done' });
 
       expect(updated.taskId).toBe(taskId);
     });
   });
 
-  describe('markTodoAsDone and markTodoAsUndone', () => {
+  describe('markTodoAsDone and markTodoAsWorking', () => {
     test('应该能够将待办事项标记为完成', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
       const done = TodoListService.markTodoAsDone(todo.id);
 
-      expect(done.completed).toBe(true);
+      expect(done.status).toBe('done');
       expect(done.taskId).toBe(taskId);
     });
 
-    test('应该能够将待办事项标记为未完成', () => {
+    test('应该能够将待办事项标记为进行中', () => {
+      const taskId = 'task-1';
+      const todo = TodoListService.createTodo('Test todo', taskId);
+      const working = TodoListService.markTodoAsWorking(todo.id);
+
+      expect(working.status).toBe('working');
+      expect(working.taskId).toBe(taskId);
+    });
+
+    test('已完成的待办事项不能标记为进行中', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
       TodoListService.markTodoAsDone(todo.id);
-      const undone = TodoListService.markTodoAsUndone(todo.id);
 
-      expect(undone.completed).toBe(false);
-      expect(undone.taskId).toBe(taskId);
+      expect(() => {
+        TodoListService.markTodoAsWorking(todo.id);
+      }).toThrow('该待办已完成，无法重新标记为进行中');
     });
   });
 
