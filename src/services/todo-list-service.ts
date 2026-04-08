@@ -23,15 +23,19 @@ export interface TodoItem {
 
 const STORAGE_KEY = 'tsukuyomi-todo-list';
 
+/** 内存缓存，避免每次操作都解析 localStorage */
+let cachedTodos: TodoItem[] | null = null;
+
 /**
- * 从 localStorage 加载所有待办事项
+ * 从 localStorage 加载所有待办事项（带内存缓存）
  */
 function loadTodosFromStorage(): TodoItem[] {
+  if (cachedTodos) return cachedTodos;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const todos = JSON.parse(stored) as Array<Record<string, unknown>>;
-      return todos.map((todo) => {
+      cachedTodos = todos.map((todo) => {
         if ('completed' in todo && !('status' in todo)) {
           const { completed, ...rest } = todo;
           return {
@@ -41,20 +45,24 @@ function loadTodosFromStorage(): TodoItem[] {
         }
         return todo as unknown as TodoItem;
       });
+      return cachedTodos;
     }
   } catch (error) {
     console.error('[TodoListService] 加载待办事项失败:', error);
   }
-  return [];
+  cachedTodos = [];
+  return cachedTodos;
 }
 
 /**
- * 保存所有待办事项到 localStorage
+ * 保存所有待办事项到 localStorage（同时更新内存缓存）
  */
 function saveTodosToStorage(todos: TodoItem[]): void {
   try {
+    cachedTodos = todos;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   } catch (error) {
+    cachedTodos = null;
     console.error('[TodoListService] 保存待办事项失败:', error);
     throw new Error('保存待办事项失败');
   }

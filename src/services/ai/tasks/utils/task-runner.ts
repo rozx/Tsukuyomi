@@ -241,7 +241,8 @@ class TaskLoopSession {
       if (todoBlock) {
         const lastUserIdx = this.config.history.findLastIndex((m) => m.role === 'user');
         if (lastUserIdx >= 0) {
-          this.config.history[lastUserIdx]!.content = todoBlock + '\n' + this.config.history[lastUserIdx]!.content;
+          const original = this.config.history[lastUserIdx]!;
+          this.config.history[lastUserIdx] = { ...original, content: todoBlock + '\n' + original.content };
         }
       }
     }
@@ -308,8 +309,6 @@ class TaskLoopSession {
     chunkText: string,
     logLabel: string,
   ): Promise<{ shouldContinue: boolean; shouldBreak?: boolean }> {
-    const { aiProcessingStore, taskId } = this.config;
-
     this.finalResponseText = responseText;
 
     if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
@@ -328,53 +327,14 @@ class TaskLoopSession {
         return { shouldContinue: true };
       }
 
-      // Gate 检查：当前状态的预定义待办是否全部完成
-      if (this.todoWorkflow) {
-        const gate = this.todoWorkflow.checkGate(previousStatus);
-        if (!gate.allowed) {
-          const todoList = gate.incompleteItems
-            .map((t) => `- ${t.text.split('\n')[0]}`)
-            .join('\n');
-          console.warn(
-            `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
-          );
-          this.config.history.push({ role: 'assistant', content: responseText });
-          this.config.history.push({
-            role: 'user',
-            content: `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`,
-          });
-          return { shouldContinue: true };
-        }
+      const gateMsg = this.buildGateRejectionMessage(previousStatus, newStatus);
+      if (gateMsg) {
+        this.config.history.push({ role: 'assistant', content: responseText });
+        this.config.history.push({ role: 'user', content: gateMsg });
+        return { shouldContinue: true };
       }
 
-      this.trackStatusDuration(previousStatus, newStatus);
-      this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
-      this.setCurrentStatus(newStatus);
-
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.updateTask(taskId, {
-          workflowStatus: newStatus,
-        });
-      }
-
-      if (this.todoWorkflow) {
-        // 清除上一状态的预定义待办
-        this.todoWorkflow.clearStateTodos(previousStatus);
-
-        // 为新状态生成预定义待办（仅首次进入时）
-        if (newStatus !== 'end') {
-          if (newStatus === 'working') {
-            this.todoWorkflow.generateForState(newStatus, {
-              paragraphIds: this.config.paragraphIds || [],
-              chunkText: this.config.chunkText,
-              chunkIndex: this.config.chunkIndex ?? 0,
-              chapterTitle: this.config.chapterTitle,
-            });
-          } else {
-            this.todoWorkflow.generateForState(newStatus);
-          }
-        }
-      }
+      this.executeStatusTransition(previousStatus, newStatus, responseText);
     }
 
     if (this.pendingTitleTranslation) {
@@ -468,44 +428,37 @@ class TaskLoopSession {
     return toolResult;
   }
 
-  private applyPendingStatusUpdate(
-    toolName: string,
-    assistantText: string,
-  ): ChatMessage | undefined {
+  /**
+   * Gate 检查：当前状态的预定义待办是否全部完成。
+   * 返回拒绝消息文本（阻塞时）或 null（通过时）。
+   */
+  private buildGateRejectionMessage(
+    previousStatus: TaskStatus,
+    newStatus: TaskStatus,
+  ): string | null {
+    if (!this.todoWorkflow) return null;
+    const gate = this.todoWorkflow.checkGate(previousStatus);
+    if (gate.allowed) return null;
+    const todoList = gate.incompleteItems
+      .map((t) => `- ${t.text.split('\n')[0]}`)
+      .join('\n');
+    console.warn(
+      `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
+    );
+    return `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`;
+  }
+
+  /**
+   * 执行状态转换的共享逻辑：记录耗时、更新状态、清理/生成待办。
+   */
+  private executeStatusTransition(
+    previousStatus: TaskStatus,
+    newStatus: TaskStatus,
+    responseText: string,
+  ): void {
     const { aiProcessingStore, taskId } = this.config;
-    if (toolName !== 'update_task_status' || !this.pendingStatusUpdate) {
-      return undefined;
-    }
-
-    const previousStatus = this.currentStatus;
-    const newStatus = this.pendingStatusUpdate;
-    this.pendingStatusUpdate = undefined;
-
-    if (!this.isValidTransition(previousStatus, newStatus)) {
-      this.handleInvalidTransition(previousStatus, newStatus, assistantText);
-      return undefined;
-    }
-
-    // Gate 检查：当前状态的预定义待办是否全部完成
-    if (this.todoWorkflow) {
-      const gate = this.todoWorkflow.checkGate(previousStatus);
-      if (!gate.allowed) {
-        const todoList = gate.incompleteItems
-          .map((t) => `- ${t.text.split('\n')[0]}`)
-          .join('\n');
-        console.warn(
-          `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
-        );
-        this.config.history.push({ role: 'assistant', content: assistantText });
-        return {
-          role: 'user',
-          content: `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`,
-        };
-      }
-    }
-
     this.trackStatusDuration(previousStatus, newStatus);
-    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, assistantText);
+    this.extractPlanningSummaryIfNeeded(previousStatus, newStatus, responseText);
     this.setCurrentStatus(newStatus);
 
     if (aiProcessingStore && taskId) {
@@ -515,10 +468,7 @@ class TaskLoopSession {
     }
 
     if (this.todoWorkflow) {
-      // 清除上一状态的预定义待办
       this.todoWorkflow.clearStateTodos(previousStatus);
-
-      // 为新状态生成预定义待办（仅首次进入时）
       if (newStatus !== 'end') {
         if (newStatus === 'working') {
           this.todoWorkflow.generateForState(newStatus, {
@@ -532,6 +482,32 @@ class TaskLoopSession {
         }
       }
     }
+  }
+
+  private applyPendingStatusUpdate(
+    toolName: string,
+    assistantText: string,
+  ): ChatMessage | undefined {
+    if (toolName !== 'update_task_status' || !this.pendingStatusUpdate) {
+      return undefined;
+    }
+
+    const previousStatus = this.currentStatus;
+    const newStatus = this.pendingStatusUpdate;
+    this.pendingStatusUpdate = undefined;
+
+    if (!this.isValidTransition(previousStatus, newStatus)) {
+      this.handleInvalidTransition(previousStatus, newStatus, assistantText);
+      return undefined;
+    }
+
+    const gateMsg = this.buildGateRejectionMessage(previousStatus, newStatus);
+    if (gateMsg) {
+      this.config.history.push({ role: 'assistant', content: assistantText });
+      return { role: 'user', content: gateMsg };
+    }
+
+    this.executeStatusTransition(previousStatus, newStatus, assistantText);
 
     const statusPrompt = `${this.getCurrentStatusInfoMsg()}`;
     return { role: 'user', content: statusPrompt };
