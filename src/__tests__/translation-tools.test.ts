@@ -295,7 +295,7 @@ describe('add_translation_batch', () => {
       expect(resultObj.error).toContain('任务不存在');
     });
 
-    test('当任务状态不是 working 时应返回错误', async () => {
+    test('当任务状态不是 working 或 review 时应返回错误', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'planning', 'translation');
 
@@ -311,15 +311,23 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain("只能在 'working' 状态下调用此工具");
+      expect(resultObj.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
 
     test('当任务状态为 review 时应允许调用（翻译任务）', async () => {
+      const para1 = createTestParagraph('para1', '原文1');
+      const chapter = createTestChapter('chapter1', [para1]);
+      const volume = createTestVolume('volume1', [chapter]);
+      const novel = createTestNovel([volume]);
+
+      mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+      mockBooksStore.books = [novel];
+
       const tool = getTool();
       const mockStore = createMockAIProcessingStore('task-1', 'review', 'translation');
 
       const result = await tool.handler(
-        { paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译' }] },
+        { paragraphs: [{ paragraph_id: 'para1', translated_text: '翻译文本' }] },
         {
           bookId: 'novel-1',
           taskId: 'task-1',
@@ -329,8 +337,9 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result as string);
-      // review 状态现在允许 add_translation_batch
-      expect(resultObj.error).not.toContain("只能在 'working' 状态下调用此工具");
+      // review 状态现在允许 add_translation_batch，应进入正常处理路径
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.error).toBeUndefined();
     });
 
     test('当任务状态为 end 时应返回错误', async () => {
@@ -349,7 +358,7 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result as string);
       expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain("只能在 'working' 状态下调用此工具");
+      expect(resultObj.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
 
     test('当任务状态为 working 时应通过验证', async () => {

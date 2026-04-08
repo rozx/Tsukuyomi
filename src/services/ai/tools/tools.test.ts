@@ -176,7 +176,7 @@ describe('AI Tools Tests', () => {
       );
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain("只能在 'working' 状态下调用此工具");
+      expect(parsed.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
 
     it('should reject legacy index-based submission', async () => {

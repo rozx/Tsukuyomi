@@ -468,7 +468,6 @@ class TaskLoopSession {
     }
 
     if (this.todoWorkflow) {
-      this.todoWorkflow.clearStateTodos(previousStatus);
       if (newStatus !== 'end') {
         if (newStatus === 'working') {
           this.todoWorkflow.generateForState(newStatus, {

@@ -163,6 +163,13 @@ export class TodoListService {
       throw new Error(`待办事项不存在: ${id}`);
     }
 
+    const VALID_STATUSES: TodoStatus[] = ['pending', 'working', 'done'];
+    if (updates.status !== undefined && !VALID_STATUSES.includes(updates.status)) {
+      throw new Error(
+        `无效的待办事项状态: "${updates.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
+      );
+    }
+
     const updatedTodo: TodoItem = {
       id: todo.id,
       text: updates.text !== undefined ? updates.text.trim() : todo.text,

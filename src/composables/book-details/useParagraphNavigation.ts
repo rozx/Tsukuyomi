@@ -504,8 +504,8 @@ export function useParagraphNavigation(
 
       const cardRef = paragraphCardRefs.value.get(paragraph.id);
       if (cardRef) {
-        currentlyEditingParagraphId.value = paragraph.id;
         if (typeof (cardRef as { startEditing?: () => void }).startEditing === 'function') {
+          currentlyEditingParagraphId.value = paragraph.id;
           (cardRef as { startEditing: () => void }).startEditing();
         }
       }
