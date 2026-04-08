@@ -12,15 +12,15 @@ export const useBooksStore = defineStore('books', {
   }),
 
   getters: {
+    booksMap: (state): Map<string, Novel> => {
+      return new Map(state.books.map((b) => [b.id, b]));
+    },
     /**
-     * 根据 ID 获取书籍
+     * 根据 ID 获取书籍（O(1)）
      */
-    getBookById: (state) => {
-      return (id: string): Novel | undefined => {
-        // 每次调用时重新访问 state.books 以保持响应性
-        const books = state.books;
-        return books.find((book) => book.id === id);
-      };
+    getBookById(): (id: string) => Novel | undefined {
+      const map = this.booksMap;
+      return (id: string): Novel | undefined => map.get(id);
     },
   },
 
@@ -54,15 +54,33 @@ export const useBooksStore = defineStore('books', {
      * 批量添加书籍（一次性保存到 IndexedDB）
      */
     async bulkAddBooks(books: Novel[]): Promise<void> {
-      // 去重：使用 Map 确保每个 ID 只出现一次
-      const uniqueBooksMap = new Map<string, Novel>();
+      const newBooksMap = new Map<string, Novel>();
       for (const book of books) {
-        uniqueBooksMap.set(book.id, book);
+        newBooksMap.set(book.id, book);
       }
-      const uniqueBooks = Array.from(uniqueBooksMap.values());
 
-      this.books = uniqueBooks;
-      await BookService.bulkSaveBooks(uniqueBooks);
+      const existingIds = new Set(this.books.map((b) => b.id));
+
+      // 保留现有书籍的顺序，如果在新数据中存在则更新，不存在则保留原样
+      const ordered: Novel[] = this.books.map((b) =>
+        newBooksMap.has(b.id) ? newBooksMap.get(b.id)! : b,
+      );
+
+      // 追加完全新增的书籍（不在现有列表中的）
+      for (const book of newBooksMap.values()) {
+        if (!existingIds.has(book.id)) {
+          ordered.push(book);
+        }
+      }
+
+      this.books = ordered;
+
+      // 注意：这里需要保存所有被更新和新增的书籍，而不是所有书籍
+      // 为了安全起见（如果其他地方依赖 bulkSaveBooks 保存全量），这里保持传递 ordered
+      // 但其实 BookService.bulkSaveBooks 内部使用的是 push/put 覆写，所以即使传全量也可以，只是效率稍慢
+      // 为了避免破坏预期行为，这里仍传 ordered，或者最好只传传入的 books 即可。
+      // 因为旧逻辑是 await BookService.bulkSaveBooks(ordered); 我们保持传 ordered。
+      await BookService.bulkSaveBooks(ordered);
     },
 
     /**
@@ -246,19 +264,12 @@ export const useBooksStore = defineStore('books', {
         this.books.splice(index, 1);
         await BookService.deleteBook(id);
 
-        // 记录到删除列表
         const settingsStore = useSettingsStore();
-        const gistSync = settingsStore.gistSync;
-        const deletedNovelIds = gistSync.deletedNovelIds || [];
-
-        // 检查是否已存在（避免重复）
-        if (!deletedNovelIds.find((record) => record.id === id)) {
-          deletedNovelIds.push({
-            id,
-            deletedAt: Date.now(),
-          });
+        // 重新读取最新的 deletedNovelIds，避免并发删除时覆盖彼此的记录
+        const currentDeleted = settingsStore.gistSync?.deletedNovelIds || [];
+        if (!currentDeleted.find((record) => record.id === id)) {
           await settingsStore.updateGistSync({
-            deletedNovelIds,
+            deletedNovelIds: [...currentDeleted, { id, deletedAt: Date.now() }],
           });
         }
       }
