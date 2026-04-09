@@ -258,7 +258,9 @@ defineExpose({
                             原文校验（防错位检测）
                           </label>
                           <small class="text-moon/60 text-xs block">
-                            启用时，AI 提交翻译时必须提供原文前缀锚点（original_text_prefix），系统会校验其与原文是否匹配，防止翻译错位。禁用时可减少 AI token 消耗。
+                            启用时，AI
+                            提交翻译时必须提供原文前缀锚点（original_text_prefix），系统会校验其与原文是否匹配，防止翻译错位。禁用时可减少
+                            AI token 消耗。
                           </small>
                         </div>
                         <InputSwitch v-model="enableOriginalTextValidation" />
@@ -286,7 +288,9 @@ defineExpose({
                         input-class="w-full"
                       />
                       <small class="text-moon/60 text-xs block mt-1">
-                        用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：2000。此设置应用于整个书籍的所有章节。
+                        用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：{{
+                          DEFAULT_TASK_CHUNK_SIZE
+                        }}。此设置应用于整个书籍的所有章节。
                       </small>
                     </div>
                   </div>

@@ -5,7 +5,7 @@ import { getSelectedTranslation } from 'src/utils';
  * 默认分块大小（与翻译任务保持一致）
  * [警告] 修改此值会影响 translation/polish/proofreading 三类任务的分块行为
  */
-export const DEFAULT_TASK_CHUNK_SIZE = 2000;
+export const DEFAULT_TASK_CHUNK_SIZE = 6000;
 export const MIN_TASK_CHUNK_SIZE = 1000;
 export const MAX_TASK_CHUNK_SIZE = 50000;
 
