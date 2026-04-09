@@ -75,12 +75,10 @@ export const useBooksStore = defineStore('books', {
 
       this.books = ordered;
 
-      // 注意：这里需要保存所有被更新和新增的书籍，而不是所有书籍
-      // 为了安全起见（如果其他地方依赖 bulkSaveBooks 保存全量），这里保持传递 ordered
-      // 但其实 BookService.bulkSaveBooks 内部使用的是 push/put 覆写，所以即使传全量也可以，只是效率稍慢
-      // 为了避免破坏预期行为，这里仍传 ordered，或者最好只传传入的 books 即可。
-      // 因为旧逻辑是 await BookService.bulkSaveBooks(ordered); 我们保持传 ordered。
-      await BookService.bulkSaveBooks(ordered);
+      // 优化：BookService.bulkSaveBooks 内部使用的是 put，具有 UPSERT 语义
+      // 因此只需保存本次批量更新和新增的书籍（增量保存），大幅提升效率
+      const booksToSave = Array.from(newBooksMap.values());
+      await BookService.bulkSaveBooks(booksToSave);
     },
 
     /**

@@ -13,9 +13,15 @@ const uiStore = useUiStore();
 const confirm = useConfirm();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
+const now = ref(Date.now());
+let nowTimer: number | null = null;
+
 // 加载思考过程
 onMounted(async () => {
   await aiProcessing.loadThinkingProcesses();
+  nowTimer = window.setInterval(() => {
+    now.value = Date.now();
+  }, 1000);
 });
 
 const statusLabels: Record<string, string> = {
@@ -27,7 +33,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const formatDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || Date.now();
+  const end = endTime || now.value;
   const duration = Math.floor((end - startTime) / 1000);
   if (duration < 60) {
     return `${duration}秒`;
@@ -180,17 +186,18 @@ let watchDebounceTimer: number | null = null;
 // 优化：直接监听 activeTasks，确保能检测到 thinkingMessage 的变化
 // 使用防抖机制，减少 watch 回调的执行频率
 watch(
-  () => aiProcessing.activeTasks.map((task) => ({
-    id: task.id,
-    thinkingMessageLength: task.thinkingMessage?.length || 0,
-    status: task.status,
-  })),
+  () =>
+    aiProcessing.activeTasks.map((task) => ({
+      id: task.id,
+      thinkingMessageLength: task.thinkingMessage?.length || 0,
+      status: task.status,
+    })),
   (newTasks, oldTasks) => {
     // 清除之前的定时器
     if (watchDebounceTimer !== null) {
       clearTimeout(watchDebounceTimer);
     }
-    
+
     // 使用防抖，100ms 批量处理一次
     // store 层面已经有 300ms 节流，这里使用较短的防抖时间确保及时响应
     watchDebounceTimer = window.setTimeout(() => {
@@ -198,7 +205,7 @@ watch(
       const scheduleUpdate = () => {
         // 获取当前活动的任务列表（基于最新状态，不依赖过时的 oldTasks）
         const activeTasks = aiProcessing.activeTasksList;
-        
+
         // 获取当前所有任务的状态映射（用于清理逻辑）
         const currentTaskStatusMap = new Map<
           string,
@@ -207,7 +214,7 @@ watch(
         aiProcessing.activeTasks.forEach((task) => {
           currentTaskStatusMap.set(task.id, task.status);
         });
-        
+
         // 当任何任务的思考消息更新时，滚动对应的容器到底部
         activeTasks.forEach((task) => {
           if (
@@ -217,7 +224,7 @@ watch(
             // 检查消息是否真的变化了（长度增加表示有新内容）
             const oldLength = thinkingMessageLengths.value.get(task.id) || 0;
             const newLength = task.thinkingMessage.length;
-            
+
             if (newLength > oldLength) {
               // 更新长度记录
               thinkingMessageLengths.value.set(task.id, newLength);
@@ -226,7 +233,7 @@ watch(
             }
           }
         });
-        
+
         // 清理已完成任务的长度记录
         // 基于当前状态进行清理，而不是依赖过时的 oldTasks
         // 遍历所有已记录的任务 ID，检查它们是否仍然处于活动状态
@@ -238,20 +245,20 @@ watch(
             taskIdsToCleanup.push(taskId);
           }
         });
-        
+
         // 执行清理
         taskIdsToCleanup.forEach((taskId) => {
           thinkingMessageLengths.value.delete(taskId);
         });
       };
-      
+
       // 使用 requestIdleCallback 延迟执行，如果浏览器不支持则使用 setTimeout
       if (typeof requestIdleCallback !== 'undefined') {
         requestIdleCallback(scheduleUpdate, { timeout: 50 });
       } else {
         setTimeout(scheduleUpdate, 0);
       }
-      
+
       watchDebounceTimer = null;
     }, 100);
   },
@@ -283,12 +290,18 @@ defineExpose({
 
 // 组件卸载时清理资源
 onUnmounted(() => {
+  // 清理 now 定时器
+  if (nowTimer !== null) {
+    clearInterval(nowTimer);
+    nowTimer = null;
+  }
+
   // 清理定时器
   if (scrollDebounceTimer !== null) {
     clearTimeout(scrollDebounceTimer);
     scrollDebounceTimer = null;
   }
-  
+
   // 清理 watch 防抖定时器
   if (watchDebounceTimer !== null) {
     clearTimeout(watchDebounceTimer);
@@ -327,7 +340,9 @@ onUnmounted(() => {
     class="thinking-popover"
   >
     <div class="flex flex-col h-full">
-      <div class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+      <div
+        class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10"
+      >
         <h3 class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
         <div class="thinking-header-actions flex items-center gap-2">
           <Button
@@ -357,7 +372,7 @@ onUnmounted(() => {
         <div
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
-          v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length]"
+          v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length, (task.status === 'thinking' || task.status === 'processing') ? Math.floor(now / 1000) : 0]"
           class="thinking-task-card p-4 rounded-lg border border-white/10 bg-white/5"
         >
           <div class="thinking-task-head flex items-start justify-between mb-2 gap-2">
@@ -372,7 +387,9 @@ onUnmounted(() => {
                   'pi-ban text-orange-500': task.status === 'cancelled',
                 }"
               />
-              <span class="thinking-model-name font-medium text-moon/90 truncate">{{ task.modelName }}</span>
+              <span class="thinking-model-name font-medium text-moon/90 truncate">{{
+                task.modelName
+              }}</span>
               <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary flex-shrink-0">{{
                 TASK_TYPE_LABELS[task.type] || task.type
               }}</span>
@@ -413,7 +430,9 @@ onUnmounted(() => {
             </p>
           </div>
 
-          <div class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words">
+          <div
+            class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words"
+          >
             <span>运行时间: {{ formatDuration(task.startTime, task.endTime) }}</span>
             <span v-if="task.endTime" class="break-words">
               · 完成于 {{ new Date(task.endTime).toLocaleTimeString('zh-CN') }}
