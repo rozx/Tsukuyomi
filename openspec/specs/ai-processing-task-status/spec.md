@@ -3,9 +3,7 @@
 ## Purpose
 
 定义 AI 处理任务在 UI 层的状态展示与工作流提示规范。
-
 ## Requirements
-
 ### Requirement: UI 任务状态值从 `completed` 重命名为 `review`
 
 系统 MUST 将 UI 层 AI 处理任务状态（`AIProcessingTask.status`）中的 `completed` 重命名为 `review`。
@@ -64,12 +62,19 @@
 - **WHEN** UI 展示任务流程说明
 - **THEN** UI MUST 显示 `planning → preparing → working → review → end`
 
-#### Scenario: polish/proofreading 流程提示包含 preparing 且不包含 review
+#### Scenario: 批量 polish/proofreading 流程提示包含 preparing 且不包含 review
 
-- **GIVEN** 当前任务类型为 "polish" 或 "proofreading"
+- **GIVEN** 当前任务类型为 "polish" 或 "proofreading"，且为批量（多段落/章节级）处理
 - **WHEN** UI 展示任务流程说明
 - **THEN** UI MUST 显示 `planning → preparing → working → end`
 - **AND THEN** UI MUST 不显示 `review` 作为该任务流程阶段
+
+#### Scenario: 单段落 polish/proofreading 不展示流程阶段
+
+- **GIVEN** 当前任务类型为 "polish" 或 "proofreading"，且为单段落处理
+- **WHEN** UI 展示任务状态
+- **THEN** UI MUST 不显示流程阶段提示（无 planning/preparing/working 等阶段展示）
+- **AND THEN** UI MUST 仅显示 loading 状态直至任务完成
 
 ### Requirement: 工作流展示不保留旧流程兼容映射
 
@@ -81,3 +86,4 @@
 - **WHEN** 系统读取流程定义
 - **THEN** UI MUST 不展示 `planning → working` 作为合法顺序
 - **AND THEN** UI MUST 以包含 `preparing` 的新流程作为唯一展示来源
+
