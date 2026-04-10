@@ -100,7 +100,7 @@ onUnmounted(() => {
     <div class="stream-header">
       <span class="stream-title">实时日志</span>
       <button class="auto-scroll-btn" :class="{ enabled: autoScroll }" @click="emit('toggleAutoScroll')">
-        <i class="pi pi-arrow-down" style="font-size: 0.625rem" />
+        <i class="pi pi-arrow-down text-[0.625rem]" />
         自动滚动
       </button>
     </div>
@@ -153,7 +153,7 @@ onUnmounted(() => {
         <span>输出内容</span>
         <i v-if="isOutputActive" class="pi pi-spin pi-spinner output-spinner" />
       </div>
-      <div ref="outputRef" class="output-content">
+      <div ref="outputRef" class="output-content max-h-[400px] overflow-y-auto">
         <pre class="output-text">{{ task.outputContent }}</pre>
         <span v-if="isOutputActive" class="stream-cursor output-cursor" />
       </div>

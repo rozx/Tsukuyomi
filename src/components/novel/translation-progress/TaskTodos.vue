@@ -34,7 +34,7 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
         <span class="todo-text">{{ todo.text }}</span>
       </div>
     </div>
-    <div v-if="!collapsed" class="todos-list" style="max-height:200px;overflow-y:auto">
+    <div v-if="!collapsed" class="todos-list max-h-[200px] overflow-y-auto">
       <div
         v-for="todo in todos"
         :key="todo.id"
