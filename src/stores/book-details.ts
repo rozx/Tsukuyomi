@@ -6,12 +6,12 @@ const STORAGE_KEY = 'tsukuyomi-book-details-ui';
  * TranslationProgress 组件的默认状态
  */
 const DEFAULT_TRANSLATION_PROGRESS_STATE = {
-  autoScrollEnabled: {},
-  autoTabSwitchingEnabled: {},
-  taskFolded: {},
-  activeTab: {},
+  autoScrollEnabled: {} as Record<string, boolean>,
   showOnlyCurrentChapter: false,
-} as const;
+  selectedTaskId: null as string | null,
+  todoCollapsed: false,
+  unseenActivity: {} as Record<string, boolean>,
+};
 
 /**
  * 书籍详情页面 UI 状态
@@ -23,18 +23,18 @@ interface BookDetailsUiState {
   selectedChapter: Record<string, string | null>;
   // 每个书籍的翻译进度面板显示状态
   showTranslationProgress: Record<string, boolean>;
-  // TranslationProgress 组件的 toggle 状态
+  // TranslationProgress 组件的 UI 状态
   translationProgress: {
     // 每个任务的自动滚动状态
     autoScrollEnabled: Record<string, boolean>;
-    // 每个任务的自动标签页切换状态
-    autoTabSwitchingEnabled: Record<string, boolean>;
-    // 每个任务的折叠状态
-    taskFolded: Record<string, boolean>;
-    // 每个任务的活动标签页
-    activeTab: Record<string, string>;
     // 是否只显示当前选中章节的进度
     showOnlyCurrentChapter: boolean;
+    // 当前选中查看的任务 ID
+    selectedTaskId: string | null;
+    // 待办区域折叠状态
+    todoCollapsed: boolean;
+    // 非当前任务的未读活动标记
+    unseenActivity: Record<string, boolean>;
   };
 }
 
@@ -47,12 +47,17 @@ function loadStateFromStorage(): BookDetailsUiState {
     if (stored) {
       const parsed = JSON.parse(stored);
       // 确保向后兼容性：如果旧数据没有某些字段，提供默认值
+      const tp = parsed.translationProgress || {};
       return {
         expandedVolumes: parsed.expandedVolumes || {},
         selectedChapter: parsed.selectedChapter || {},
         showTranslationProgress: parsed.showTranslationProgress || {},
-        translationProgress: parsed.translationProgress || {
-          ...DEFAULT_TRANSLATION_PROGRESS_STATE,
+        translationProgress: {
+          autoScrollEnabled: tp.autoScrollEnabled || {},
+          showOnlyCurrentChapter: tp.showOnlyCurrentChapter || false,
+          selectedTaskId: tp.selectedTaskId || null,
+          todoCollapsed: tp.todoCollapsed || false,
+          unseenActivity: tp.unseenActivity || {},
         },
       };
     }
@@ -245,34 +250,37 @@ export const useBookDetailsStore = defineStore('book-details', {
     },
 
     /**
-     * 设置任务的自动标签页切换状态
+     * 选中要查看的任务
      */
-    setTranslationProgressAutoTabSwitching(taskId: string, enabled: boolean): void {
-      this.translationProgress.autoTabSwitchingEnabled[taskId] = enabled;
+    selectTask(taskId: string | null): void {
+      this.translationProgress.selectedTaskId = taskId;
+      if (taskId) {
+        this.markActivitySeen(taskId);
+      }
       this.saveTranslationProgressState();
     },
 
     /**
-     * 设置任务的折叠状态
+     * 标记任务的未读活动为已读
      */
-    setTranslationProgressTaskFolded(taskId: string, folded: boolean): void {
-      this.translationProgress.taskFolded[taskId] = folded;
+    markActivitySeen(taskId: string): void {
+      delete this.translationProgress.unseenActivity[taskId];
       this.saveTranslationProgressState();
     },
 
     /**
-     * 设置任务的活动标签页
+     * 设置任务有未读活动
      */
-    setTranslationProgressActiveTab(taskId: string, tab: string): void {
-      this.translationProgress.activeTab[taskId] = tab;
+    setUnseenActivity(taskId: string): void {
+      this.translationProgress.unseenActivity[taskId] = true;
       this.saveTranslationProgressState();
     },
 
     /**
-     * 清除任务的活动标签页
+     * 切换待办区域折叠状态
      */
-    clearTranslationProgressActiveTab(taskId: string): void {
-      delete this.translationProgress.activeTab[taskId];
+    toggleTodoCollapsed(): void {
+      this.translationProgress.todoCollapsed = !this.translationProgress.todoCollapsed;
       this.saveTranslationProgressState();
     },
 
@@ -281,9 +289,10 @@ export const useBookDetailsStore = defineStore('book-details', {
      */
     clearTaskTranslationProgress(taskId: string): void {
       delete this.translationProgress.autoScrollEnabled[taskId];
-      delete this.translationProgress.autoTabSwitchingEnabled[taskId];
-      delete this.translationProgress.taskFolded[taskId];
-      delete this.translationProgress.activeTab[taskId];
+      delete this.translationProgress.unseenActivity[taskId];
+      if (this.translationProgress.selectedTaskId === taskId) {
+        this.translationProgress.selectedTaskId = null;
+      }
       this.saveTranslationProgressState();
     },
 
@@ -309,6 +318,28 @@ export const useBookDetailsStore = defineStore('book-details', {
       this.translationProgress.showOnlyCurrentChapter =
         !this.translationProgress.showOnlyCurrentChapter;
       this.saveTranslationProgressState();
+    },
+
+    /**
+     * 清理废弃的 taskId 状态，需传入当前有效的 taskId 集合
+     */
+    cleanupStaleTaskState(activeTaskIds?: Set<string>): void {
+      if (!activeTaskIds) return;
+      const tp = this.translationProgress;
+      let changed = false;
+
+      for (const taskId of Object.keys(tp.autoScrollEnabled)) {
+        if (!activeTaskIds.has(taskId)) { delete tp.autoScrollEnabled[taskId]; changed = true; }
+      }
+      for (const taskId of Object.keys(tp.unseenActivity)) {
+        if (!activeTaskIds.has(taskId)) { delete tp.unseenActivity[taskId]; changed = true; }
+      }
+      if (tp.selectedTaskId && !activeTaskIds.has(tp.selectedTaskId)) {
+        tp.selectedTaskId = null;
+        changed = true;
+      }
+
+      if (changed) this.saveAllState();
     },
   },
 });

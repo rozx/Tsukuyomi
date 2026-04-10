@@ -675,7 +675,7 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
     />
 
     <!-- 翻译进度 Tab -->
-    <div v-if="activeRightTab === 'progress'" class="flex-1 min-h-0 overflow-hidden">
+    <div v-if="activeRightTab === 'progress'" class="flex-1 min-h-0 overflow-hidden w-full">
       <TranslationProgress />
     </div>
 

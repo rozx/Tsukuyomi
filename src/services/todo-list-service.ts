@@ -61,6 +61,9 @@ function saveTodosToStorage(todos: TodoItem[]): void {
   try {
     cachedTodos = todos;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('tsukuyomi-todos-updated'));
+    }
   } catch (error) {
     cachedTodos = null;
     console.error('[TodoListService] 保存待办事项失败:', error);
