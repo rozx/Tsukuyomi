@@ -20,8 +20,8 @@ const thinkingRef = ref<HTMLElement | null>(null);
 const outputRef = ref<HTMLElement | null>(null);
 const thinkingExpanded = ref(true);
 
-const isActive = computed(() =>
-  props.task.status === 'thinking' || props.task.status === 'processing',
+const isActive = computed(
+  () => props.task.status === 'thinking' || props.task.status === 'processing',
 );
 
 const isComplete = computed(() => props.task.status === 'end');
@@ -43,7 +43,10 @@ const isOutputActive = computed(() => {
  * 将连续的 tool-call + tool-result 合并为一对
  */
 const mergedParts = computed(() => {
-  const result: Array<{ part: FormattedMessagePart; resultPart: FormattedMessagePart | undefined }> = [];
+  const result: Array<{
+    part: FormattedMessagePart;
+    resultPart: FormattedMessagePart | undefined;
+  }> = [];
   const src = props.parts;
   for (let i = 0; i < src.length; i++) {
     const current = src[i]!;
@@ -70,22 +73,32 @@ const thinkingScrollHandler = throttle(() => {
   }
 }, 100);
 
-// 输出区域自动滚动
+// 输出区域自动滚动（双重 nextTick：第一次等 v-if 渲染，第二次等内容更新）
 const outputScrollHandler = throttle(() => {
-  if (props.autoScroll && outputRef.value) {
-    outputRef.value.scrollTop = outputRef.value.scrollHeight;
+  if (props.autoScroll) {
+    nextTick(() => {
+      nextTick(() => {
+        if (outputRef.value) {
+          outputRef.value.scrollTop = outputRef.value.scrollHeight;
+        }
+      });
+    });
   }
 }, 100);
 
 watch(
   () => [props.parts, props.task.thinkingMessage?.length ?? 0] as const,
-  () => { nextTick(() => thinkingScrollHandler.fn()); },
+  () => {
+    nextTick(() => thinkingScrollHandler.fn());
+  },
   { flush: 'post' },
 );
 
 watch(
   () => props.task.outputContent?.length ?? 0,
-  () => { nextTick(() => outputScrollHandler.fn()); },
+  () => {
+    outputScrollHandler.fn();
+  },
   { flush: 'post' },
 );
 
@@ -99,7 +112,11 @@ onUnmounted(() => {
   <div class="stream-section">
     <div class="stream-header">
       <span class="stream-title">实时日志</span>
-      <button class="auto-scroll-btn" :class="{ enabled: autoScroll }" @click="emit('toggleAutoScroll')">
+      <button
+        class="auto-scroll-btn"
+        :class="{ enabled: autoScroll }"
+        @click="emit('toggleAutoScroll')"
+      >
         <i class="pi pi-arrow-down text-[0.625rem]" />
         自动滚动
       </button>
@@ -109,9 +126,7 @@ onUnmounted(() => {
     <div v-if="isComplete" class="completed-banner">
       <span class="completed-icon">&#x2713;</span>
       任务已完成
-      <template v-if="task.progress">
-         · 共处理 {{ task.progress.total }} 个翻译块
-      </template>
+      <template v-if="task.progress"> · 共处理 {{ task.progress.total }} 个翻译块 </template>
     </div>
 
     <!-- 思考过程（可折叠，类似聊天助手的思考区域） -->
@@ -153,7 +168,7 @@ onUnmounted(() => {
         <span>输出内容</span>
         <i v-if="isOutputActive" class="pi pi-spin pi-spinner output-spinner" />
       </div>
-      <div ref="outputRef" class="output-content max-h-[400px] overflow-y-auto">
+      <div ref="outputRef" class="output-content">
         <pre class="output-text">{{ task.outputContent }}</pre>
         <span v-if="isOutputActive" class="stream-cursor output-cursor" />
       </div>
@@ -172,9 +187,16 @@ onUnmounted(() => {
   padding: 0 16px 16px;
 }
 
-.stream-section::-webkit-scrollbar { width: 4px; }
-.stream-section::-webkit-scrollbar-track { background: transparent; }
-.stream-section::-webkit-scrollbar-thumb { background: var(--white-opacity-10); border-radius: 2px; }
+.stream-section::-webkit-scrollbar {
+  width: 4px;
+}
+.stream-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+.stream-section::-webkit-scrollbar-thumb {
+  background: var(--white-opacity-10);
+  border-radius: 2px;
+}
 
 .stream-header {
   display: flex;
@@ -182,10 +204,6 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 10px 0;
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  background: inherit;
-  z-index: 1;
 }
 
 .stream-title {
@@ -302,9 +320,16 @@ onUnmounted(() => {
   scroll-behavior: smooth;
 }
 
-.thinking-content::-webkit-scrollbar { width: 3px; }
-.thinking-content::-webkit-scrollbar-track { background: transparent; }
-.thinking-content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+.thinking-content::-webkit-scrollbar {
+  width: 3px;
+}
+.thinking-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thinking-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+}
 
 .thinking-text {
   font-size: 0.75rem;
@@ -364,15 +389,22 @@ onUnmounted(() => {
 }
 
 .output-content {
-  max-height: 400px;
+  max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
 }
 
-.output-content::-webkit-scrollbar { width: 3px; }
-.output-content::-webkit-scrollbar-track { background: transparent; }
-.output-content::-webkit-scrollbar-thumb { background: rgba(74, 222, 128, 0.15); border-radius: 2px; }
+.output-content::-webkit-scrollbar {
+  width: 3px;
+}
+.output-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.output-content::-webkit-scrollbar-thumb {
+  background: rgba(74, 222, 128, 0.15);
+  border-radius: 2px;
+}
 
 .output-text {
   font-size: 0.78rem;
@@ -401,7 +433,12 @@ onUnmounted(() => {
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 </style>
