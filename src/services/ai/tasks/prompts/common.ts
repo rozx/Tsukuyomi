@@ -260,7 +260,7 @@ export function getOutputFormatRules(
    - working 禁止创建/更新术语、角色、记忆
    - end 禁止再调用工具`;
 
-  return `【输出格式】必须使用工具调用, 不输出其他内容。按待办清单顺序执行。
+  return `【输出格式】必须使用工具调用。按待办清单顺序执行。
 
 **工具要点**
 1. update_task_status：完成当前阶段所有待办后切换 {"status": "..."}
@@ -273,7 +273,6 @@ ${getStatusFieldDescription(taskType)}
 ${toolRestriction}
 `;
 }
-
 
 /**
  * 获取工具使用说明（精简版）
