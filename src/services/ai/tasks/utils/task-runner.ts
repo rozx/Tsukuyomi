@@ -396,13 +396,7 @@ class TaskLoopSession {
 
   private async executeToolCall(toolCall: AIToolCall, toolName: string): Promise<AIToolCallResult> {
     const { aiProcessingStore, taskId, bookId, handleAction, onToast } = this.config;
-    if (aiProcessingStore && taskId) {
-      const argsStr = toolCall.function.arguments || '';
-      void aiProcessingStore.appendThinkingMessage(
-        taskId,
-        `\n[调用工具: ${toolName}][调用参数: ${argsStr}]\n`,
-      );
-    }
+    const argsStr = toolCall.function.arguments || '';
 
     const start = Date.now();
     const toolResult = await ToolRegistry.handleToolCall(
@@ -422,8 +416,14 @@ class TaskLoopSession {
     );
     recordToolCall(this.metrics, Date.now() - start);
 
+    // 原子写入 [调用工具] + [工具结果]：避免两次 append 之间发生终态切换（completeTask /
+    // handleTaskError / stopTask），使节流缓冲区只保留前半截而丢掉后半截，UI 上留下
+    // 永久处于 running 的 tool-call 指示器。
     if (aiProcessingStore && taskId) {
-      void aiProcessingStore.appendThinkingMessage(taskId, `[工具结果: ${toolResult.content}]\n`);
+      void aiProcessingStore.appendThinkingMessage(
+        taskId,
+        `\n[调用工具: ${toolName}][调用参数: ${argsStr}]\n[工具结果: ${toolResult.content}]\n`,
+      );
     }
 
     return toolResult;

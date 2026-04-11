@@ -282,11 +282,17 @@ function throttledUpdateThinkingMessage(
 }
 
 /**
- * 清理任务的节流信息
+ * 清理任务的节流信息。若提供 task，会先把缓冲区里的 pendingText 写回 task.thinkingMessage，
+ * 避免任务在节流窗口内切到终态时丢失尾部的 `[工具结果: ...]` 等标记，导致 UI 上的
+ * tool-call 指示器永远停在 running 状态（参见 task-runner.ts 的 executeToolCall）。
  */
-function clearTaskThrottle(taskId: string): void {
+function clearTaskThrottle(taskId: string, task?: AIProcessingTask): void {
   const throttleInfo = taskThrottleMap.get(taskId);
   if (throttleInfo) {
+    if (task && throttleInfo.pendingText) {
+      if (!task.thinkingMessage) task.thinkingMessage = '';
+      task.thinkingMessage += throttleInfo.pendingText;
+    }
     if (throttleInfo.timer !== null) {
       clearTimeout(throttleInfo.timer);
     }
@@ -602,8 +608,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           updates.status === 'cancelled'
         ) {
           task.endTime = Date.now();
-          // 清理节流信息
-          clearTaskThrottle(id);
+          // 清理节流信息（flush 尾部 pendingText 避免丢失最后的工具结果标记）
+          clearTaskThrottle(id, task);
           // 删除关联的待办事项
           try {
             const deletedCount = TodoListService.deleteTodosByTaskId(id);
@@ -645,8 +651,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         if (task.status === 'end' || task.status === 'cancelled') {
           return;
         }
-        // 清理节流信息
-        clearTaskThrottle(id);
+        // 清理节流信息（flush 尾部 pendingText 避免丢失最后的工具结果标记）
+        clearTaskThrottle(id, task);
         // 更新任务状态（确保响应式更新）
         task.status = 'cancelled';
         task.message = '已取消';
