@@ -292,6 +292,45 @@ function clearTaskThrottle(taskId: string): void {
     }
     taskThrottleMap.delete(taskId);
   }
+  // 同时清理持久化节流，避免任务已被删除后仍有定时器持有引用
+  clearTaskPersistTimer(taskId);
+}
+
+/**
+ * 持久化节流：限制同一任务写入 IndexedDB 的频率。
+ *
+ * 背景：流式响应每秒会触发几十次 `appendThinkingMessage`/`appendOutputContent`，
+ * 先前实现中每次调用都会调度一次独立的 `saveThinkingProcessToDB`，
+ * 导致主线程在结构化克隆和 IDB 事务上被反复阻塞，造成全局卡顿。
+ *
+ * 现在的策略：每个任务至多每 `PERSIST_THROTTLE_MS` 写入一次。
+ * 若已有挂起的定时器，则直接丢弃当前调用——定时器触发时会用
+ * `getLatestTask()` 读取最新状态，保证写入的永远是调用瞬间的最新数据。
+ */
+const PERSIST_THROTTLE_MS = 1000;
+const taskPersistMap = new Map<string, number>();
+
+function schedulePersistTask(
+  taskId: string,
+  getLatestTask: () => AIProcessingTask | undefined,
+): void {
+  if (taskPersistMap.has(taskId)) return;
+  const timer = window.setTimeout(() => {
+    taskPersistMap.delete(taskId);
+    const latest = getLatestTask();
+    if (latest) {
+      void saveThinkingProcessToDB(latest);
+    }
+  }, PERSIST_THROTTLE_MS);
+  taskPersistMap.set(taskId, timer);
+}
+
+function clearTaskPersistTimer(taskId: string): void {
+  const timer = taskPersistMap.get(taskId);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    taskPersistMap.delete(taskId);
+  }
 }
 
 export const useAIProcessingStore = defineStore('aiProcessing', {
@@ -638,7 +677,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加思考消息（用于流式响应）
-     * 优化：使用节流机制，每 300ms 最多更新一次，大幅减少响应式更新频率
+     * 优化：内存更新走 300ms 节流，持久化走 1s 节流，两者彼此独立。
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendThinkingMessage(id: string, text: string): Promise<void> {
@@ -663,31 +702,16 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           // computed/watch 在每次节流更新时全部失效，造成严重卡顿。
         });
 
-        // 保存到 IndexedDB（异步，不阻塞 UI，使用节流后的最终值）
-        // 注意：这里保存的是累积的文本，可能不是最新的，但为了性能考虑这是可以接受的
-        // 在生成器函数外部捕获 activeTasks 的引用，避免 ESLint 的 no-this-alias 规则
-        const activeTasksRef = this.activeTasks;
-        void co(function* () {
-          try {
-            // 延迟保存，确保节流更新已完成
-            yield new Promise((resolve) => setTimeout(resolve, 350));
-            // 再次检查任务是否仍然存在
-            const currentTask = activeTasksRef.find((t: AIProcessingTask) => t.id === id);
-            if (currentTask) {
-              yield saveThinkingProcessToDB(currentTask);
-            }
-          } catch (error) {
-            console.error('Failed to save thinking message to IndexedDB:', error);
-          }
-        });
+        // 持久化节流：每秒最多写一次，通过箭头函数捕获 this 以便定时器触发时读取最新状态
+        schedulePersistTask(id, () =>
+          this.activeTasks.find((t: AIProcessingTask) => t.id === id),
+        );
       }
     },
 
     /**
      * 追加输出内容（用于流式输出）
-     * 优化：直接修改属性，让 Pinia 的响应式系统自然工作
-     * 注意：在 Pinia 中，直接修改对象属性会自动触发响应式更新
-     * 不需要每次都创建新数组，这样可以减少不必要的数组复制开销
+     * 优化：直接修改属性让 Pinia 响应式自然工作，持久化走 1s 节流避免 IDB 写风暴。
      */
     // eslint-disable-next-line @typescript-eslint/require-await
     async appendOutputContent(id: string, text: string): Promise<void> {
@@ -697,16 +721,10 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.outputContent = '';
         }
         task.outputContent += text;
-        // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
-        // 不需要创建新数组，减少不必要的开销
-        // 保存到 IndexedDB（异步，不阻塞 UI）
-        void co(function* () {
-          try {
-            yield saveThinkingProcessToDB(task);
-          } catch (error) {
-            console.error('Failed to save output content to IndexedDB:', error);
-          }
-        });
+        // 持久化节流：每秒最多写一次，读取最新状态
+        schedulePersistTask(id, () =>
+          this.activeTasks.find((t: AIProcessingTask) => t.id === id),
+        );
       }
     },
 
