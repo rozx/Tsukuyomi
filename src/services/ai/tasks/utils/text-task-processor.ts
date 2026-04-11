@@ -686,6 +686,7 @@ export async function processTextTask(
             aiProcessingStore,
             aiModelId: model.id,
             logLabel,
+            chunkIndex,
             isBriefPlanning: enableBriefPlanning && chunkIndex > 0,
             collectedActions: actions,
             verifyCompleteness:

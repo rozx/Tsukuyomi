@@ -35,12 +35,12 @@ describe('TodoWorkflow', () => {
       expect(todos[3]!.text).toContain('敬语');
     });
 
-    test('polish preparing 应生成 3 个预定义待办（无敬语）', () => {
+    test('polish preparing 应生成 4 个预定义待办（含敬语一致性检查）', () => {
       const workflow = new TodoWorkflow('polish', taskId);
       const todos = workflow.generateForState('preparing');
 
-      expect(todos).toHaveLength(3);
-      expect(todos.every((t) => !t.text.includes('敬语'))).toBe(true);
+      expect(todos).toHaveLength(4);
+      expect(todos[3]!.text).toContain('敬语');
     });
 
     test('translation review 应生成 4 个预定义待办', () => {
@@ -232,6 +232,124 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const block = workflow.buildTodoContextBlock('planning');
 
+      expect(block).toBe('');
+    });
+  });
+
+  describe('chunk 隔离（多 chunk 回归）', () => {
+    // 回归测试：text-task-processor 漏传 chunkIndex 导致 TodoWorkflow 对所有 chunk 都用 0，
+    // 结果 chunk 2 继承 chunk 1 的 done 待办，整个状态机被旁路，141/285 段落未被翻译。
+    // 这组测试直接验证 TodoWorkflow 在 chunkIndex 正确传入后的隔离行为。
+
+    const chunkText0 = '[1] [ID: p1] 原文: 第一段\n翻译: \n\n[2] [ID: p2] 原文: 第二段\n翻译: \n\n';
+    const chunkText1 = '[3] [ID: p3] 原文: 第三段\n翻译: \n\n[4] [ID: p4] 原文: 第四段\n翻译: \n\n';
+
+    test('chunk-1 应为 working/review 生成自己的待办，而非继承 chunk-0', () => {
+      // chunk-0 完成所有状态的待办
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      const p0 = workflow0.generateForState('planning');
+      const pr0 = workflow0.generateForState('preparing');
+      const w0 = workflow0.generateForState('working', {
+        paragraphIds: ['p1', 'p2'],
+        chunkText: chunkText0,
+        chunkIndex: 0,
+      });
+      const r0 = workflow0.generateForState('review');
+      [...p0, ...pr0, ...w0, ...r0].forEach((t) => TodoListService.markTodoAsDone(t.id));
+
+      // chunk-1 启动
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      const p1 = workflow1.generateForState('planning');
+      const pr1 = workflow1.generateForState('preparing');
+      const w1 = workflow1.generateForState('working', {
+        paragraphIds: ['p3', 'p4'],
+        chunkText: chunkText1,
+        chunkIndex: 1,
+      });
+      const r1 = workflow1.generateForState('review');
+
+      // 非零 chunk 的 planning/preparing 按设计跳过预定义生成
+      expect(p1).toHaveLength(0);
+      expect(pr1).toHaveLength(0);
+      // working/review 必须正确创建（不被 chunk-0 的 hasGenerated 检查误判）
+      expect(w1).toHaveLength(1);
+      expect(w1[0]!.text).toContain('p3');
+      expect(w1[0]!.text).toContain('p4');
+      expect(w1[0]!.chunkIndex).toBe(1);
+      expect(r1).toHaveLength(4);
+      r1.forEach((t) => expect(t.chunkIndex).toBe(1));
+    });
+
+    test('chunk-1 的 checkGate 不应被 chunk-0 已完成的 working 待办误判为通过', () => {
+      // chunk-0 working 全部完成
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      const w0 = workflow0.generateForState('working', {
+        paragraphIds: ['p1'],
+        chunkText: '[1] [ID: p1] 原文: 测试\n翻译: \n\n',
+        chunkIndex: 0,
+      });
+      w0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+
+      // chunk-1 创建自己的 working 待办，尚未完成
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      workflow1.generateForState('working', {
+        paragraphIds: ['p2'],
+        chunkText: '[2] [ID: p2] 原文: 第二段\n翻译: \n\n',
+        chunkIndex: 1,
+      });
+
+      const gate = workflow1.checkGate('working');
+      expect(gate.allowed).toBe(false);
+      expect(gate.incompleteItems).toHaveLength(1);
+      expect(gate.incompleteItems[0]!.chunkIndex).toBe(1);
+    });
+
+    test('chunk-1 的 buildTodoContextBlock 不应包含 chunk-0 的待办', () => {
+      // chunk-0 创建并完成 working 待办
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      const w0 = workflow0.generateForState('working', {
+        paragraphIds: ['p1'],
+        chunkText: '[1] [ID: p1] 原文: 测试\n翻译: \n\n',
+        chunkIndex: 0,
+      });
+      w0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      const chunk0TodoId = w0[0]!.id;
+
+      // chunk-1 创建自己的 working 待办
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      const w1 = workflow1.generateForState('working', {
+        paragraphIds: ['p2'],
+        chunkText: '[2] [ID: p2] 原文: 第二段\n翻译: \n\n',
+        chunkIndex: 1,
+      });
+
+      const block = workflow1.buildTodoContextBlock('working');
+      expect(block).toContain(w1[0]!.id);
+      expect(block).not.toContain(chunk0TodoId);
+      expect(block).toContain('p2');
+      expect(block).not.toContain('p1');
+      // 不能出现"全部完成"误导 AI 提前结束
+      expect(block).not.toContain('所有待办已完成');
+    });
+
+    test('chunk-1 的 planning 在非零 chunk 下 checkGate 默认放行', () => {
+      // chunk-0 完成 planning 待办
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      const p0 = workflow0.generateForState('planning');
+      p0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+
+      // chunk-1 调用 planning（应跳过生成，但标记 initialized）
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      const p1 = workflow1.generateForState('planning');
+      expect(p1).toHaveLength(0);
+
+      // chunk-1 的 planning 没有自己的 predefined 待办，gate 应放行
+      const gate = workflow1.checkGate('planning');
+      expect(gate.allowed).toBe(true);
+      expect(gate.incompleteItems).toHaveLength(0);
+
+      // buildTodoContextBlock 不应泄露 chunk-0 的 planning 待办
+      const block = workflow1.buildTodoContextBlock('planning');
       expect(block).toBe('');
     });
   });
