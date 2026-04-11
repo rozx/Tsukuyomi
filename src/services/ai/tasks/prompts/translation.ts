@@ -5,6 +5,7 @@
 import {
   getSymbolFormatRules,
   getDataManagementRules,
+  getHonorificRules,
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
@@ -58,6 +59,8 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
 10. ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
+
+${getHonorificRules()}
 
 ${getToolUsageInstructions('translation', tools, skipAskUser)}
 

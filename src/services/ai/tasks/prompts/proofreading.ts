@@ -5,6 +5,7 @@
 import {
   getSymbolFormatRules,
   getDataManagementRules,
+  getHonorificRules,
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
@@ -54,6 +55,8 @@ export function buildProofreadingSystemPrompt(params: ProofreadingSystemPromptPa
 - ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
+
+${getHonorificRules()}
 
 ${getToolUsageInstructions('proofreading', tools, skipAskUser)}
 

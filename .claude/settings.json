@@ -6,7 +6,8 @@
       "Bash(bun test:*)",
       "Bash(bunx eslint:*)",
       "Bash(grep:*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

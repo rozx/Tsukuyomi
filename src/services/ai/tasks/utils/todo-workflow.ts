@@ -27,10 +27,7 @@ export interface GateResult {
 /**
  * 获取预定义模板
  */
-function getTemplates(
-  taskType: TaskType,
-  state: TaskStatus,
-): TodoTemplate | null {
+function getTemplates(taskType: TaskType, state: TaskStatus): TodoTemplate | null {
   if (state === 'end') return null;
 
   switch (taskType) {
@@ -49,13 +46,13 @@ function getTemplates(
             '创建/更新术语（确认完成或无需操作）',
             '创建/更新角色（确认完成或无需操作）',
             '创建/更新记忆（确认完成或无需操作）',
-            '确认敬语翻译策略（搜索记忆/段落/角色关系，确定各角色间的敬语处理方式）',
+            '确认敬语翻译策略（搜索记忆/段落/角色关系，确定各角色间的敬语处理方式，检查当前或之前的翻译章节，确保敬语翻译的一致性）',
           ];
         case 'working':
           return null; // dynamic
         case 'review':
           return [
-            '检查翻译与原文一致性',
+            '检查翻译与原文一致性，特别是敬语翻译',
             '检查人称代词和语气词',
             '修正问题段落（可直接使用 add_translation_batch）',
             '更新术语/角色/记忆（如有新发现）',
@@ -80,6 +77,7 @@ function getTemplates(
             '创建/更新术语（确认完成或无需操作）',
             '创建/更新角色（确认完成或无需操作）',
             '创建/更新记忆（确认完成或无需操作）',
+            '确认敬语翻译策略（搜索记忆/段落/角色关系，确定各角色间的敬语处理方式，检查当前或之前的翻译章节，确保敬语翻译的一致性）',
           ];
         case 'working':
           return null; // dynamic
@@ -90,10 +88,7 @@ function getTemplates(
     case 'chapter_summary':
       switch (state) {
         case 'planning':
-          return [
-            '确认章节内容与前文摘要',
-            '制定摘要策略',
-          ];
+          return ['确认章节内容与前文摘要', '制定摘要策略'];
         case 'working':
           return ['生成章节摘要'];
         default:
@@ -191,10 +186,8 @@ export class TodoWorkflow {
     if (this.initializedStates.has(state)) return [];
 
     const existingTodos = TodoListService.getTodosByTaskId(this.taskId);
-    const hasGenerated = existingTodos.some((t) => 
-      t.predefined && 
-      t.taskState === state && 
-      t.chunkIndex === this.chunkIndex
+    const hasGenerated = existingTodos.some(
+      (t) => t.predefined && t.taskState === state && t.chunkIndex === this.chunkIndex,
     );
 
     if (hasGenerated) {
@@ -215,10 +208,10 @@ export class TodoWorkflow {
       }
 
       return templates.map((text) =>
-        TodoListService.createTodo(text, this.taskId, undefined, { 
-          predefined: true, 
+        TodoListService.createTodo(text, this.taskId, undefined, {
+          predefined: true,
           taskState: state,
-          chunkIndex: this.chunkIndex
+          chunkIndex: this.chunkIndex,
         }),
       );
     }
@@ -227,10 +220,10 @@ export class TodoWorkflow {
     if (state === 'working' && config) {
       const texts = buildWorkingTodoTexts(config);
       return texts.map((text) =>
-        TodoListService.createTodo(text, this.taskId, undefined, { 
-          predefined: true, 
+        TodoListService.createTodo(text, this.taskId, undefined, {
+          predefined: true,
           taskState: state,
-          chunkIndex: this.chunkIndex
+          chunkIndex: this.chunkIndex,
         }),
       );
     }
@@ -257,7 +250,9 @@ export class TodoWorkflow {
    */
   checkGate(currentState: TaskStatus): GateResult {
     const todos = TodoListService.getTodosByTaskId(this.taskId);
-    const predefinedTodos = todos.filter((t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex);
+    const predefinedTodos = todos.filter(
+      (t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex,
+    );
 
     // 如果该状态没有初始化过待办，则不阻塞
     if (!this.initializedStates.has(currentState)) {
@@ -279,7 +274,9 @@ export class TodoWorkflow {
     if (todos.length === 0) return '';
 
     // 仅展示当前阶段/区块的 predefined 待办（ad-hoc 待办在 helper 里展示）
-    const predefinedTodos = todos.filter((t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex);
+    const predefinedTodos = todos.filter(
+      (t) => t.predefined && t.taskState === currentState && t.chunkIndex === this.chunkIndex,
+    );
     if (predefinedTodos.length === 0) return '';
 
     const allDone = predefinedTodos.every((t) => t.status === 'done');

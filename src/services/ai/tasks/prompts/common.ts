@@ -154,19 +154,50 @@ export function getCurrentStatusInfo(
 }
 
 /**
- * 获取数据管理规则（合并敬语/术语/角色工作流）
+ * 获取敬语处理规则（独立模块）
  * [警告] 核心规则：严禁将敬语添加为别名
+ */
+export function getHonorificRules(): string {
+  return `【敬语处理规则】
+⛔ **核心禁止**: 严禁自动将敬语（如"田中さん"）添加为角色别名（别名爆炸会破坏一致性，别名由用户手动维护）
+
+**常见敬语对照**（仅为参考，最终按角色关系与历史翻译决定）:
+- さん: 通用敬语 → "先生/小姐/同学"，或省略（如"田中さん" → "田中先生" / "田中"）
+- くん: 男性非正式 → "君"，或省略
+- ちゃん: 亲近/年幼 → "~酱"，或亲昵称呼
+- 様: 正式敬语 → "大人/阁下"
+- 殿: 古风敬语 → "殿/阁下"
+- 先輩/後輩: → "前辈/学长学姐" / "后辈/学弟学妹"
+
+**处理流程**（严格按顺序执行）:
+1. **别名优先**: 若【相关角色参考】的 \`aliases\` 中存在完全匹配的带敬语别名且有译文，**必须直接使用**，不得重新翻译
+2. **检查角色关系**: 查看角色描述中的关系字段，判断亲密度与场合
+3. **搜索历史翻译**: 使用 \`find_paragraph_by_keywords\` 查找该角色+敬语组合的既有译法，必须保持一致
+4. **搜索记忆**: 若有相关敬语处理方式的记忆，遵循记忆约定
+5. **按关系决定**: 上述均无结果时，根据关系与上下文判断
+
+**关系与策略对应**:
+- 亲密关系（妹妹/好友/青梅竹马/恋人）: 可省略敬语或使用亲密称呼
+- 正式关系（上司/老师/长辈/客户）: 必须保留并翻译为对应中文敬语
+- 同辈关系（同学/同事）: 根据场景与语气判断
+- 初次见面/陌生人: 保留正式敬语
+- 关系不明: 优先保留敬语，结合上下文判断，并与历史翻译保持一致
+
+⚠️ **一致性铁律**:
+- **章节内必须一致**: 同一章内同一角色的同一称呼**必须**翻译完全相同，禁止出现混用（例如同章内既翻成"田中先生"又翻成"田中"）
+- **跨章节保持一致**: 同一角色同一称呼在全文中应始终翻译一致，若发现不一致应以最早出现或用户已确认的译法为准
+- **提交前自检**: 在 \`add_translation_batch\` 前，先扫描本批次内同一角色的所有敬语译法是否统一；必要时使用 \`find_paragraph_by_keywords\` 在当前章节内校验`;
+}
+
+/**
+ * 获取数据管理规则（术语/角色/记忆工作流）
  */
 export function getDataManagementRules(): string {
   return `【数据管理规则】
-⛔ **核心禁止**: 严禁将敬语（如"田中さん"）添加为角色别名
-
 **状态约束**:
 - preparing：可创建/更新术语、角色、记忆
 - working：仅执行翻译/润色/校对输出，禁止数据写入
 - review：仅翻译任务可用，且可创建/更新术语、角色、记忆
-
-**敬语处理**: 查别名翻译→检查关系→搜索记忆→检查之前的翻译→按关系决定（亲密可省略/正式保留）
 
 **术语/角色分离**:
 - 术语表：专有名词、概念、技能、地名、物品（⛔ 禁止放人名）
@@ -231,24 +262,15 @@ export function getOutputFormatRules(
   taskType: TaskType,
   options?: { includeChapterTitle?: boolean; enableOriginalTextValidation?: boolean },
 ): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
   const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
   const isTranslation = taskType === 'translation';
-  const usesPreparing =
-    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading';
   // 标题翻译指令仅在第一个 chunk 时包含（后续 chunk 标题已在第一个 chunk 中翻译）
   const includeTitle = isTranslation && (options?.includeChapterTitle ?? true);
   const validateOriginal = options?.enableOriginalTextValidation === true;
 
-  const reviewStep = isTranslation
-    ? 'working 完成后：update_task_status({"status": "review"})；复核完成：update_task_status({"status": "end"})'
-    : `${taskLabel}完成后：update_task_status({"status": "end"})`;
-
   const titleToolSection = includeTitle
     ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "title_translation": "标题翻译"}'
     : '';
-
-  const titleFlowStep = includeTitle ? '\n4. 接着使用 update_chapter_title 更新标题' : '';
 
   const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
 

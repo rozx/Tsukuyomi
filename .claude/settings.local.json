@@ -6,7 +6,9 @@
       "Bash(bun run lint)",
       "Bash(openspec new change \"single-para-polish-simplified\")",
       "Bash(openspec status --change \"single-para-polish-simplified\")",
-      "Bash(openspec instructions proposal --change \"single-para-polish-simplified\")"
+      "Bash(openspec instructions proposal --change \"single-para-polish-simplified\")",
+      "WebSearch",
+      "WebFetch(domain:help.router-for.me)"
     ]
   }
 }

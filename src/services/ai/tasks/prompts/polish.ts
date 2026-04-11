@@ -5,6 +5,7 @@
 import {
   getSymbolFormatRules,
   getDataManagementRules,
+  getHonorificRules,
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
@@ -49,6 +50,8 @@ export function buildPolishSystemPrompt(params: PolishSystemPromptParams): strin
 9. ${getSymbolFormatRules()}
 
 ${getDataManagementRules()}
+
+${getHonorificRules()}
 
 ${getToolUsageInstructions('polish', tools, skipAskUser)}
 
