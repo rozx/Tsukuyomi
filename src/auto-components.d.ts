@@ -63,6 +63,7 @@ declare module 'vue' {
     SettingCard: typeof import('./components/novel/SettingCard.vue')['default']
     SettingsDialog: typeof import('./components/dialogs/SettingsDialog.vue')['default']
     StreamChunkSeparator: typeof import('./components/novel/translation-progress/StreamChunkSeparator.vue')['default']
+    StreamStateTransition: typeof import('./components/novel/translation-progress/StreamStateTransition.vue')['default']
     StreamToolCall: typeof import('./components/novel/translation-progress/StreamToolCall.vue')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']

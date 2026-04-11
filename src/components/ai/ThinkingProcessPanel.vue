@@ -272,12 +272,8 @@ const popoverStyle = computed(() => {
   return {
     width: isPhone.value ? 'min(94vw, 28rem)' : 'min(32rem, 94vw)',
     maxHeight: isPhone.value ? '78dvh' : 'min(600px, 82dvh)',
-  };
-});
-
-const listContainerStyle = computed(() => {
-  return {
-    maxHeight: isPhone.value ? '58dvh' : '500px',
+    display: 'flex',
+    flexDirection: 'column',
   };
 });
 
@@ -362,7 +358,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="thinking-list flex-1 overflow-auto min-h-0 space-y-3" :style="listContainerStyle">
+      <div class="thinking-list flex-1 overflow-auto min-h-0 space-y-3">
         <div v-if="aiProcessing.allTasksList.length === 0" class="text-center py-8">
           <i class="pi pi-check-circle text-4xl text-moon/40 mb-4" />
           <p class="text-moon/60">当前没有思考过程记录</p>
@@ -372,7 +368,13 @@ onUnmounted(() => {
         <div
           v-for="task in aiProcessing.activeTasksList"
           :key="task.id"
-          v-memo="[task.id, task.status, task.message, task.thinkingMessage?.length, (task.status === 'thinking' || task.status === 'processing') ? Math.floor(now / 1000) : 0]"
+          v-memo="[
+            task.id,
+            task.status,
+            task.message,
+            task.thinkingMessage?.length,
+            task.status === 'thinking' || task.status === 'processing' ? Math.floor(now / 1000) : 0,
+          ]"
           class="thinking-task-card p-4 rounded-lg border border-white/10 bg-white/5"
         >
           <div class="thinking-task-head flex items-start justify-between mb-2 gap-2">
@@ -503,6 +505,10 @@ onUnmounted(() => {
 <style scoped>
 .thinking-popover :deep(.p-popover-content) {
   padding: 1rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* 优化滚动容器的性能 */

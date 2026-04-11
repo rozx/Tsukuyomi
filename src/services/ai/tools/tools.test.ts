@@ -744,9 +744,10 @@ describe('AI Tools Tests', () => {
       const result = await handler({ status: 'end' }, polishContext);
       const parsed = JSON.parse(result as string);
       expect(parsed.success).toBe(true);
+      // 只更新 workflowStatus，不要设置 store 级 status='end'：那会写入 endTime
+      // 并在后续 chunk 开始时造成计时器卡住。任务真正结束由 completeTask() 负责。
       expect(polishContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
         workflowStatus: 'end',
-        status: 'end',
       });
     });
     it('should prevent working -> review for polish', async () => {

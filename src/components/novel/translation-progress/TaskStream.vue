@@ -4,6 +4,7 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
 import StreamToolCall from './StreamToolCall.vue';
 import StreamChunkSeparator from './StreamChunkSeparator.vue';
+import StreamStateTransition from './StreamStateTransition.vue';
 import { throttle } from 'src/utils/throttle';
 
 const props = defineProps<{
@@ -130,7 +131,11 @@ onUnmounted(() => {
     </div>
 
     <!-- 思考过程（可折叠，类似聊天助手的思考区域） -->
-    <div v-if="hasThinking || isActive" class="thinking-block">
+    <div
+      v-if="hasThinking || isActive"
+      class="thinking-block"
+      :class="{ 'is-expanded': thinkingExpanded }"
+    >
       <button class="thinking-toggle" @click="thinkingExpanded = !thinkingExpanded">
         <i class="pi" :class="thinkingExpanded ? 'pi-chevron-down' : 'pi-chevron-right'" />
         <span class="thinking-toggle-label">思考过程</span>
@@ -143,6 +148,11 @@ onUnmounted(() => {
           <StreamChunkSeparator
             v-if="item.part.type === 'chunk-separator'"
             :chunk-info="item.part.chunkInfo || ''"
+          />
+          <StreamStateTransition
+            v-else-if="item.part.type === 'state-transition'"
+            :from-status="item.part.fromStatus || ''"
+            :to-status="item.part.toStatus || ''"
           />
           <StreamToolCall
             v-else-if="item.part.type === 'tool-call'"
@@ -178,24 +188,12 @@ onUnmounted(() => {
 
 <style scoped>
 .stream-section {
-  flex: 1;
+  flex: 4 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   padding: 0 16px 16px;
-}
-
-.stream-section::-webkit-scrollbar {
-  width: 4px;
-}
-.stream-section::-webkit-scrollbar-track {
-  background: transparent;
-}
-.stream-section::-webkit-scrollbar-thumb {
-  background: var(--white-opacity-10);
-  border-radius: 2px;
 }
 
 .stream-header {
@@ -275,10 +273,19 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 8px 10px;
   margin-bottom: 10px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.thinking-block.is-expanded {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .thinking-toggle {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -314,7 +321,8 @@ onUnmounted(() => {
 
 .thinking-content {
   margin-top: 8px;
-  max-height: 300px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
@@ -363,7 +371,10 @@ onUnmounted(() => {
   border-left: 3px solid rgba(74, 222, 128, 0.35);
   border-radius: 8px;
   padding: 10px 12px;
-  flex-shrink: 0;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .output-label {
@@ -376,6 +387,7 @@ onUnmounted(() => {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .output-label i:first-child {
@@ -389,7 +401,8 @@ onUnmounted(() => {
 }
 
 .output-content {
-  max-height: 200px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;

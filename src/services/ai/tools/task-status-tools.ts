@@ -158,9 +158,12 @@ async function updateTaskStatus(
     throw new Error('AI 处理 Store 未初始化');
   }
 
+  // 只更新 workflowStatus，不要设置 store 级 status。
+  // store 级 status='end' 代表"整个任务结束"，会写入 endTime 并触发清理；
+  // 而此处的 newStatus='end' 只表示某个 chunk 的工作流已到达 end 状态，
+  // 后续可能还有更多 chunk 要处理。任务真正结束由 completeTask() 统一负责。
   await aiProcessingStore.updateTask(taskId, {
     workflowStatus: newStatus,
-    ...(newStatus === 'end' ? { status: 'end' } : {}),
   });
 }
 

@@ -17,7 +17,11 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 </script>
 
 <template>
-  <div v-if="todos.length > 0" class="todos-section">
+  <div
+    v-if="todos.length > 0"
+    class="todos-section"
+    :class="{ 'is-expanded': !collapsed }"
+  >
     <button class="todos-header" @click="emit('toggleCollapsed')">
       <div class="todos-header-left">
         <span class="todos-title">待办事项</span>
@@ -34,7 +38,7 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
         <span class="todo-text">{{ todo.text }}</span>
       </div>
     </div>
-    <div v-if="!collapsed" class="todos-list max-h-[200px] overflow-y-auto">
+    <div v-if="!collapsed" class="todos-list">
       <div
         v-for="todo in todos"
         :key="todo.id"
@@ -52,10 +56,19 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 .todos-section {
   padding: 0 16px;
   border-bottom: 1px solid var(--white-opacity-5);
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.todos-section.is-expanded {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .todos-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -117,7 +130,8 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 200px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }

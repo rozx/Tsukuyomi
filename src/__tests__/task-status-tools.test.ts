@@ -728,7 +728,10 @@ describe('update_task_status', () => {
       expect(updateArg.workflowStatus).toBe('preparing');
     });
 
-    test('当状态更新为 end 时也应更新 status 字段', async () => {
+    test('当状态更新为 end 时不应修改 store 级 status 字段', async () => {
+      // update_task_status 只代表 workflowStatus 的转换（例如某个 chunk 的工作流走到 end），
+      // 不应该把 store 级 status 置为 'end'。store 级 status='end' 表示整个任务结束，
+      // 会写入 endTime 并触发清理，由 completeTask() 统一负责。
       const tool = getTool();
       const mockUpdateTask = mock(() => Promise.resolve());
       // 对于 translation 类型，必须从 review 转换到 end（不能从 working 直接到 end）
@@ -750,7 +753,7 @@ describe('update_task_status', () => {
       expect(calls.length).toBeGreaterThan(0);
       const updateArg = calls[0][1] as any;
       expect(updateArg.workflowStatus).toBe('end');
-      expect(updateArg.status).toBe('end');
+      expect(updateArg.status).toBeUndefined();
     });
 
     test('当状态更新不为 end 时不应更新 status 字段', async () => {

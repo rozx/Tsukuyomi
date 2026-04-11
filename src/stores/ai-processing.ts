@@ -49,12 +49,22 @@ export interface AIProcessingTask {
    * 翻译/润色/校对任务的段落进度（可选，仅翻译类任务有效）
    */
   progress?: { current: number; total: number; message: string };
+  /**
+   * 是否为单段润色/校对任务
+   * Why: 单段任务由段落行内按钮触发，生命周期短，不应出现在翻译进度面板中，
+   * 避免与章节级批量任务混淆、刷屏。
+   * How to apply: 在 TranslationProgress 面板及相关列表过滤时跳过该类任务。
+   */
+  isSingleParagraph?: boolean;
   startTime: number;
   endTime?: number;
   abortController?: AbortController; // 用于取消请求（不持久化）
 }
 
 export type AIProcessingTaskStatus = 'thinking' | 'processing' | 'end' | 'error' | 'cancelled';
+
+// 非终态任务状态集合：处于这些状态时，计时器应持续走动
+const RUNNING_TASK_STATUSES = new Set<AIProcessingTaskStatus>(['thinking', 'processing']);
 
 type LegacyAIProcessingTaskStatus = AIProcessingTaskStatus | 'completed' | 'review';
 
@@ -149,6 +159,7 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       ...(raw.progress !== undefined && {
         progress: { current: raw.progress.current, total: raw.progress.total, message: raw.progress.message },
       }),
+      ...(raw.isSingleParagraph !== undefined && { isSingleParagraph: raw.isSingleParagraph }),
       startTime: raw.startTime,
       ...(raw.endTime !== undefined && { endTime: raw.endTime }),
     };
@@ -542,6 +553,10 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
         Object.assign(task, updates);
+        // 当任务状态从终态恢复为运行态时，清理 endTime，避免计时器被"卡住"显示旧的结束时间
+        if (updates.status && RUNNING_TASK_STATUSES.has(updates.status) && task.endTime !== undefined) {
+          delete task.endTime;
+        }
         if (
           updates.status === 'end' ||
           updates.status === 'error' ||

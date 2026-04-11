@@ -37,6 +37,7 @@ import { StateMachineEngine } from './state-machine-engine';
 import { ToolDispatcher } from './tool-dispatcher';
 import { TodoWorkflow } from './todo-workflow';
 import { runLLMRequest } from './llm-stream-adapter';
+import { buildStateTransitionMarker } from 'src/composables/useThinkingFormatter';
 
 // Constants
 // 最大连续相同状态次数（用于检测循环）
@@ -465,6 +466,11 @@ class TaskLoopSession {
       void aiProcessingStore.updateTask(taskId, {
         workflowStatus: newStatus,
       });
+      // 在思考流中注入状态切换标记，供 UI 展示为特殊分隔条
+      void aiProcessingStore.appendThinkingMessage(
+        taskId,
+        buildStateTransitionMarker(previousStatus, newStatus),
+      );
     }
 
     if (this.todoWorkflow) {

@@ -11,7 +11,7 @@ export type ToolResultTone = 'success' | 'warning' | 'error';
 export type ToolCallTone = 'running' | 'success' | 'warning' | 'error' | 'cancelled';
 
 export interface FormattedMessagePart {
-  type: 'chunk-separator' | 'tool-call' | 'tool-result' | 'content';
+  type: 'chunk-separator' | 'state-transition' | 'tool-call' | 'tool-result' | 'content';
   text: string;
   toolName?: string;
   toolResult?: string;
@@ -19,9 +19,24 @@ export interface FormattedMessagePart {
   toolCallTone?: ToolCallTone;
   toolCallArgs?: string;
   chunkInfo?: string;
+  fromStatus?: string;
+  toStatus?: string;
 }
 
 // ─── 正则与检测工具 ───
+
+/**
+ * 状态切换标记：由 task-runner 在思考流中注入，UI 解析后渲染为特殊分隔条
+ * 格式与 {@link buildStateTransitionMarker} 一一对应，修改时必须同步调整
+ */
+export const STATE_TRANSITION_PATTERN = /\[状态切换: (\w+) → (\w+)\]/g;
+
+/**
+ * 构造状态切换标记。使用此函数而非手写字符串以避免与解析正则漂移
+ */
+export function buildStateTransitionMarker(fromStatus: string, toStatus: string): string {
+  return `\n\n[状态切换: ${fromStatus} → ${toStatus}]\n\n`;
+}
 
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
 const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
@@ -155,7 +170,7 @@ export function formatThinkingMessage(
 
   const allMatches: Array<{
     index: number;
-    type: 'chunk-separator' | 'tool-call' | 'tool-call-args' | 'tool-result';
+    type: 'chunk-separator' | 'state-transition' | 'tool-call' | 'tool-call-args' | 'tool-result';
     match: RegExpMatchArray;
   }> = [];
 
@@ -164,6 +179,11 @@ export function formatThinkingMessage(
     allMatches.push({ index: match.index, type: 'chunk-separator', match });
   }
   CHUNK_SEPARATOR_PATTERN.lastIndex = 0;
+
+  while ((match = STATE_TRANSITION_PATTERN.exec(message)) !== null) {
+    allMatches.push({ index: match.index, type: 'state-transition', match });
+  }
+  STATE_TRANSITION_PATTERN.lastIndex = 0;
 
   while ((match = TOOL_CALL_PATTERN.exec(message)) !== null) {
     allMatches.push({ index: match.index, type: 'tool-call', match });
@@ -196,6 +216,15 @@ export function formatThinkingMessage(
         text: m[0],
         chunkInfo: `${m[1]}块 ${m[2]}`,
       });
+    } else if (type === 'state-transition') {
+      if (m[1] && m[2]) {
+        parts.push({
+          type: 'state-transition',
+          text: m[0],
+          fromStatus: m[1],
+          toStatus: m[2],
+        });
+      }
     } else if (type === 'tool-call') {
       if (m[1]) {
         parts.push({ type: 'tool-call', text: m[0], toolName: m[1], toolCallTone: 'running' });

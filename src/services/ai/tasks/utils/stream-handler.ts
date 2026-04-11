@@ -22,6 +22,60 @@ const MIN_SCAN_LENGTH = 200;
 const MAX_ACCUMULATED_TEXT = 50000;
 
 /**
+ * 需要从流式输出中过滤掉的占位符（当模型没有正文只调用工具时，
+ * provider 层会把这些文字写入请求/历史以兼容某些 OpenAI 兼容服务，
+ * 少数模型会把它们当成文本回显，污染用户可见的输出框）
+ */
+const OUTPUT_PLACEHOLDERS = ['（调用工具）', '(调用工具)'] as const;
+
+/**
+ * 创建带缓冲的占位符过滤器：保证跨 chunk 的占位符也能被整体移除，
+ * 同时只在确认不是占位符前缀时才把字符向下游发射，避免闪烁。
+ */
+function createPlaceholderFilter(placeholders: readonly string[]) {
+  let pending = '';
+  const maxPlaceholderLen = placeholders.reduce((m, p) => Math.max(m, p.length), 0);
+
+  return (chunk: string): string => {
+    pending += chunk;
+    let output = '';
+    let cursor = 0;
+
+    // 反复寻找完整占位符并跳过
+    while (cursor < pending.length) {
+      let nextMatchIdx = -1;
+      let nextMatchLen = 0;
+      for (const placeholder of placeholders) {
+        const idx = pending.indexOf(placeholder, cursor);
+        if (idx !== -1 && (nextMatchIdx === -1 || idx < nextMatchIdx)) {
+          nextMatchIdx = idx;
+          nextMatchLen = placeholder.length;
+        }
+      }
+      if (nextMatchIdx === -1) break;
+      output += pending.slice(cursor, nextMatchIdx);
+      cursor = nextMatchIdx + nextMatchLen;
+    }
+
+    // 尾部可能是某个占位符的前缀，必须保留到下一次 chunk 再判断
+    const tail = pending.slice(cursor);
+    let keepLen = 0;
+    const maxCheck = Math.min(maxPlaceholderLen - 1, tail.length);
+    for (let len = maxCheck; len > 0; len--) {
+      const suffix = tail.slice(tail.length - len);
+      if (placeholders.some((p) => p.startsWith(suffix))) {
+        keepLen = len;
+        break;
+      }
+    }
+
+    output += tail.slice(0, tail.length - keepLen);
+    pending = tail.slice(tail.length - keepLen);
+    return output;
+  };
+}
+
+/**
  * 流式处理回调配置
  */
 export interface StreamCallbackConfig {
@@ -47,6 +101,7 @@ export interface StreamCallbackConfig {
 export function createStreamCallback(config: StreamCallbackConfig): TextGenerationStreamCallback {
   const { taskId, aiProcessingStore, originalText, logLabel, taskType, abortController } = config;
   let accumulatedText = '';
+  const filterOutputText = createPlaceholderFilter(OUTPUT_PLACEHOLDERS);
 
   return (c) => {
     // 处理思考内容（独立于文本内容，可能在无文本时单独返回）
@@ -66,10 +121,11 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
       }
       accumulatedText += c.text;
 
-      // 追加输出内容到任务
-      if (aiProcessingStore && taskId) {
+      // 追加输出内容到任务（先剥离占位符，避免污染用户可见的输出框）
+      const sanitized = filterOutputText(c.text);
+      if (sanitized && aiProcessingStore && taskId) {
         aiProcessingStore
-          .appendOutputContent(taskId, c.text)
+          .appendOutputContent(taskId, sanitized)
           .catch((err) => console.error(`[${logLabel}] Failed to append output content:`, err));
       }
 

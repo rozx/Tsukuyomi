@@ -49,7 +49,7 @@ ${getToolScopeRules(tools)}
 - ⛔ **禁止**创建/修改/删除术语或角色设定，本次任务只做润色
 - **最小必要**：拿到信息后立刻提交结果
 
-⚠️ **不要输出任何文本**，直接调用 \`add_translation_batch\` 提交润色结果。如果段落无需改动则直接结束，不要输出任何内容。
+⚠️ 直接调用 \`add_translation_batch\` 提交润色结果。如果段落无需改动则直接结束。
 `;
 }
 
@@ -64,7 +64,7 @@ export function buildSingleParagraphPolishUserPrompt(params: {
 }): string {
   const { paragraphId, originalText, currentTranslation, defaultContext } = params;
 
-  return `润色以下段落。不要输出文本，直接调用工具提交。
+  return `润色以下段落。直接调用工具提交。
 ${defaultContext}
 
 【待润色段落】

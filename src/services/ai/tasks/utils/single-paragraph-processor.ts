@@ -108,6 +108,7 @@ export async function processSingleParagraph(
       workflowStatus: 'working',
       message: `正在${taskLabel}段落...`,
       thinkingMessage: '',
+      isSingleParagraph: true,
       ...(bookId ? { bookId } : {}),
       ...(chapterId ? { chapterId } : {}),
       ...(chapterTitle ? { chapterTitle } : {}),

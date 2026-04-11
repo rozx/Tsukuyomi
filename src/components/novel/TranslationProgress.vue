@@ -41,7 +41,9 @@ const currentSelectedChapterId = computed(() => {
 
 const recentAITasks = computed(() => {
   let tasks = aiProcessingStore.activeTasks.filter(
-    (t) => t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading',
+    (t) =>
+      (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+      !t.isSingleParagraph,
   );
   if (showOnlyCurrentChapter.value && currentSelectedChapterId.value) {
     tasks = tasks.filter((t) => t.chapterId === currentSelectedChapterId.value);
@@ -190,6 +192,7 @@ const clearCompletedTasks = async () => {
   const translationTasks = aiProcessingStore.activeTasks.filter(
     (t) =>
       (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+      !t.isSingleParagraph &&
       (t.status === 'end' || t.status === 'error' || t.status === 'cancelled'),
   );
   await Promise.all(translationTasks.map((t) => aiProcessingStore.removeTask(t.id)));

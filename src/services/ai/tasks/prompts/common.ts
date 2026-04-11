@@ -260,7 +260,7 @@ export function getOutputFormatRules(
    - working 禁止创建/更新术语、角色、记忆
    - end 禁止再调用工具`;
 
-  return `【输出格式】必须使用工具调用。按待办清单顺序执行。
+  return `【输出格式】添加翻译结果必须使用工具调用。按待办清单顺序执行。
 
 **工具要点**
 1. update_task_status：完成当前阶段所有待办后切换 {"status": "..."}
@@ -271,6 +271,11 @@ ${getStatusFieldDescription(taskType)}
 - 段落 ID 与原文 1:1 对应${onlyChanged}
 - ${isTranslation ? '必须全覆盖' : '仅提交修改过的段落'}
 ${toolRestriction}
+
+【用户回报】
+- 及时向用户回报当前专注的任务以及翻译进度
+- 输出要精简，不要一次性输出太多内容。
+
 `;
 }
 
