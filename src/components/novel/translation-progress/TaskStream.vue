@@ -143,8 +143,27 @@ onUnmounted(() => {
       </button>
 
       <!-- 展开：完整内容 -->
+      <!-- v-memo 必须和 v-for 在同一元素上，因此用一个 display:contents 包裹层做 memo 容器，
+           避免历史片段在流式追加时反复 diff，仅最后一个 content 片段会因 text 变化而刷新 -->
       <div v-if="thinkingExpanded" ref="thinkingRef" class="thinking-content">
-        <template v-for="(item, idx) in mergedParts" :key="idx">
+        <div
+          v-for="(item, idx) in mergedParts"
+          :key="idx"
+          v-memo="[
+            item.part.type,
+            item.part.text,
+            item.part.chunkInfo,
+            item.part.fromStatus,
+            item.part.toStatus,
+            item.part.toolName,
+            item.part.toolCallTone,
+            item.part.toolCallArgs,
+            item.resultPart?.text,
+            item.resultPart?.toolResultTone,
+            task.status,
+          ]"
+          class="stream-part-wrapper"
+        >
           <StreamChunkSeparator
             v-if="item.part.type === 'chunk-separator'"
             :chunk-info="item.part.chunkInfo || ''"
@@ -161,7 +180,7 @@ onUnmounted(() => {
             :result-part="item.resultPart"
           />
           <p v-else class="thinking-text">{{ item.part.text }}</p>
-        </template>
+        </div>
         <span v-if="isThinkingActive" class="stream-cursor" />
       </div>
 
@@ -337,6 +356,11 @@ onUnmounted(() => {
 .thinking-content::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 2px;
+}
+
+/* v-memo 包裹层仅用于片段级记忆化，不参与布局 */
+.stream-part-wrapper {
+  display: contents;
 }
 
 .thinking-text {

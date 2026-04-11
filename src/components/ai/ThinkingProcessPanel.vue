@@ -177,6 +177,16 @@ const thinkingMessageLengths = ref<Map<string, number>>(new Map());
 // 防抖定时器，用于批量处理 watch 回调
 let watchDebounceTimer: number | null = null;
 
+// Popover 可见性：只有在面板展开时才执行滚动计算与 DOM 操作，
+// 闭合时直接短路，避免流式思考期间的无意义 CPU 开销
+const popoverVisible = ref(false);
+const handlePopoverShow = () => {
+  popoverVisible.value = true;
+};
+const handlePopoverHide = () => {
+  popoverVisible.value = false;
+};
+
 // 监听所有任务的思考消息变化，自动滚动到底部
 // 优化：直接监听 activeTasks，确保能检测到 thinkingMessage 的变化
 // 使用防抖机制，减少 watch 回调的执行频率
@@ -188,6 +198,9 @@ watch(
       status: task.status,
     })),
   (newTasks, oldTasks) => {
+    // Popover 未展开时不执行任何滚动相关工作
+    if (!popoverVisible.value) return;
+
     // 清除之前的定时器
     if (watchDebounceTimer !== null) {
       clearTimeout(watchDebounceTimer);
@@ -346,6 +359,8 @@ onUnmounted(() => {
     :show-close-icon="false"
     :style="popoverStyle"
     class="thinking-popover"
+    @show="handlePopoverShow"
+    @hide="handlePopoverHide"
   >
     <div class="flex flex-col">
       <div

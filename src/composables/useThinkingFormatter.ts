@@ -288,12 +288,53 @@ export function formatThinkingMessage(
   return parts;
 }
 
-// ─── Composable: 带缓存和节流的格式化 ───
+// ─── 增量解析快速路径（纯函数，可独立测试）───
+
+/**
+ * 尝试对追加式更新应用增量解析，避免重新扫描整条消息。
+ *
+ * 命中条件（全部满足时才能走快速路径）：
+ *  1. `newMessage` 长度不短于 `prevLen`（即不是清空/重置）
+ *  2. 新追加的尾部不包含 `[`（不会引入新标记）
+ *  3. 旧消息末尾不存在未闭合的 `[`（即使尾部没有 `[`，老消息的半成品标记也可能被新尾部补完）
+ *
+ * 命中时返回新的 parts 数组（结构与 `formatThinkingMessage` 相同）；未命中返回 `null`，调用方回退到完整解析。
+ * 空尾部会直接返回原始 `prevParts`（引用相等，便于上层跳过重新渲染）。
+ */
+export function tryIncrementalFormat(
+  prevParts: FormattedMessagePart[],
+  prevLen: number,
+  newMessage: string,
+): FormattedMessagePart[] | null {
+  if (newMessage.length < prevLen) return null;
+
+  const tail = newMessage.slice(prevLen);
+  if (!tail) return prevParts;
+  if (tail.includes('[')) return null;
+
+  const oldMsg = newMessage.slice(0, prevLen);
+  const lastOpen = oldMsg.lastIndexOf('[');
+  const lastClose = oldMsg.lastIndexOf(']');
+  if (lastOpen > lastClose) return null;
+
+  const lastPart = prevParts[prevParts.length - 1];
+  const newParts = prevParts.slice();
+  if (lastPart?.type === 'content') {
+    newParts[newParts.length - 1] = { ...lastPart, text: lastPart.text + tail };
+  } else {
+    newParts.push({ type: 'content', text: tail });
+  }
+  return newParts;
+}
+
+// ─── Composable: 带缓存、节流与增量更新的格式化 ───
 
 export function useThinkingFormatter(
   tasks: Ref<AIProcessingTask[]>,
 ) {
   const cache = ref<Record<string, FormattedMessagePart[]>>({});
+  // 记录每个任务已解析到的消息长度，用于判断是否可以走增量快速路径
+  const parsedLengths = new Map<string, number>();
   const throttles = new Map<string, { fn: (id: string) => void; cleanup: () => void }>();
 
   const buildParts = (task: AIProcessingTask): FormattedMessagePart[] => {
@@ -301,27 +342,65 @@ export function useThinkingFormatter(
     return msg ? formatThinkingMessage(msg, task.status) : [];
   };
 
-  const getThrottle = (taskId: string) => {
-    if (!throttles.has(taskId)) {
-      const t = throttle((id: string) => {
-        const task = tasks.value.find((t) => t.id === id);
-        cache.value[id] = task ? buildParts(task) : [];
-      }, FORMAT_CACHE_THROTTLE_MS);
-      throttles.set(taskId, t);
+  /**
+   * 完整重新解析：O(消息长度) 的慢路径。
+   * 仅在消息缩短、状态切换或尾部检测到新标记时执行。
+   */
+  const fullReparse = (taskId: string, task: AIProcessingTask | undefined) => {
+    if (!task) {
+      delete cache.value[taskId];
+      parsedLengths.delete(taskId);
+      return;
     }
-    return throttles.get(taskId)!;
+    cache.value[taskId] = buildParts(task);
+    parsedLengths.set(taskId, (task.thinkingMessage ?? '').length);
+  };
+
+  /**
+   * 应用增量更新结果到缓存；命中返回 true，未命中返回 false（由调用方回退到 fullReparse）。
+   */
+  const tryIncrementalUpdate = (taskId: string, task: AIProcessingTask): boolean => {
+    const prevParts = cache.value[taskId];
+    const prevLen = parsedLengths.get(taskId);
+    if (!prevParts || prevLen === undefined) return false;
+
+    const msg = task.thinkingMessage ?? '';
+    const result = tryIncrementalFormat(prevParts, prevLen, msg);
+    if (result === null) return false;
+
+    cache.value[taskId] = result;
+    parsedLengths.set(taskId, msg.length);
+    return true;
+  };
+
+  const scheduleUpdate = (taskId: string) => {
+    let entry = throttles.get(taskId);
+    if (!entry) {
+      entry = throttle((id: string) => {
+        const task = tasks.value.find((t) => t.id === id);
+        if (!task) {
+          delete cache.value[id];
+          parsedLengths.delete(id);
+          return;
+        }
+        if (tryIncrementalUpdate(id, task)) return;
+        fullReparse(id, task);
+      }, FORMAT_CACHE_THROTTLE_MS);
+      throttles.set(taskId, entry);
+    }
+    entry.fn(taskId);
   };
 
   const getFormatted = (taskId: string): FormattedMessagePart[] => {
     return cache.value[taskId] || [];
   };
 
-  // 监听思考消息和输出内容长度变化，节流更新缓存
+  // 监听思考消息长度与任务状态变化
   watch(
     () => tasks.value.map((t) => ({
       id: t.id,
       thinkLen: t.thinkingMessage?.length || 0,
-      outLen: t.outputContent?.length || 0,
+      status: t.status,
     })),
     (newTasks, oldTasks) => {
       const oldMap = new Map((oldTasks || []).map((t) => [t.id, t]));
@@ -331,6 +410,7 @@ export function useThinkingFormatter(
       for (const taskId of Object.keys(cache.value)) {
         if (!currentIds.has(taskId)) {
           delete cache.value[taskId];
+          parsedLengths.delete(taskId);
           const t = throttles.get(taskId);
           if (t) { t.cleanup(); throttles.delete(taskId); }
         }
@@ -338,13 +418,18 @@ export function useThinkingFormatter(
 
       for (const task of newTasks) {
         const old = oldMap.get(task.id);
-        const oldThinkLen = old?.thinkLen || 0;
-        const oldOutLen = old?.outLen || 0;
-        if (task.thinkLen < oldThinkLen || task.outLen < oldOutLen) {
-          const t = tasks.value.find((t) => t.id === task.id);
-          cache.value[task.id] = t ? buildParts(t) : [];
-        } else if (task.thinkLen > oldThinkLen || task.outLen > oldOutLen) {
-          getThrottle(task.id).fn(task.id);
+        const oldThinkLen = old?.thinkLen ?? 0;
+        const statusChanged = !!old && old.status !== task.status;
+
+        // 状态切换或消息缩短 → 立即完整重解析（状态影响 tool-call 的 tone 回填）
+        if (statusChanged || task.thinkLen < oldThinkLen) {
+          const fullTask = tasks.value.find((t) => t.id === task.id);
+          fullReparse(task.id, fullTask);
+          continue;
+        }
+        // 消息增长 → 节流路径（优先尝试增量快速路径）
+        if (task.thinkLen > oldThinkLen) {
+          scheduleUpdate(task.id);
         }
       }
     },
@@ -354,6 +439,7 @@ export function useThinkingFormatter(
   onUnmounted(() => {
     throttles.forEach((t) => t.cleanup());
     throttles.clear();
+    parsedLengths.clear();
   });
 
   return { getFormatted, cache };

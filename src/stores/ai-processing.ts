@@ -658,11 +658,9 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
             currentTask.thinkingMessage = '';
           }
           currentTask.thinkingMessage += accumulatedText;
-          // 在 Pinia 中，直接修改对象属性会自动触发响应式更新
-          // 但由于使用了节流，更新频率大幅降低
-          // 为了确保 watch 能检测到变化，需要触发数组引用更新
-          // 但为了性能，只在节流更新时触发一次
-          this.activeTasks = [...this.activeTasks];
+          // Pinia 的深层响应式系统会自动追踪 thinkingMessage 属性变化，
+          // 无需重新赋值 activeTasks 数组——那样会让所有依赖 activeTasks 引用的
+          // computed/watch 在每次节流更新时全部失效，造成严重卡顿。
         });
 
         // 保存到 IndexedDB（异步，不阻塞 UI，使用节流后的最终值）
