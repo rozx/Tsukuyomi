@@ -5,12 +5,23 @@ import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
 import { useBooksStore } from 'src/stores/books';
 
 describe('ask_user tool (no UI fallback)', () => {
+  const hadWindow = 'window' in globalThis;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const originalWindow = (globalThis as any).window;
+
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
   afterEach(() => {
     mock.restore();
+    if (hadWindow) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).window = originalWindow;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (globalThis as any).window;
+    }
   });
 
   it('当 window.__lunaAskUser 不存在时应返回明确错误', async () => {
