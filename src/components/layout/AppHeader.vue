@@ -283,8 +283,14 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!--
+    性能：之前这里是 backdrop-blur-2xl（40px 高斯模糊）+ bg-night-950/50 半透明。
+    header 虽然 sticky（不随滚动移动），但滚动时其下方内容在变化，浏览器仍会在每帧重做模糊合成。
+    blur 半径的开销约为 O(radius²)：40px → 12px 约便宜 11 倍。
+    同时把底色从 /50 提升到 /85，即便没有模糊也能有清晰的层次分离。
+  -->
   <header
-    class="sticky top-0 z-20 shrink-0 border-b border-white/5 bg-night-950/50 backdrop-blur-2xl shadow-[0_10px_40px_rgba(5,6,15,0.45)]"
+    class="sticky top-0 z-20 shrink-0 border-b border-white/5 bg-night-950/85 backdrop-blur-md shadow-[0_10px_40px_rgba(5,6,15,0.45)]"
   >
     <Menubar
       :model="menuItems"

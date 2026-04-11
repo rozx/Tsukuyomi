@@ -10,7 +10,12 @@ export function useParagraphNavigation(
 ) {
   // 段落导航状态
   const selectedParagraphIndex = ref<number | null>(null);
-  const paragraphCardRefs = ref<Map<string, InstanceType<typeof ParagraphCard>>>(new Map());
+  // 性能关键：使用普通 Map 而不是 ref<Map>。
+  // 之前用 ref<Map> 会让 Vue 将 Map 变成响应式对象，每次 :ref 回调里调用 .set()/.delete()
+  // 都会触发整个响应式系统的通知链路。渲染一个 2000 段落的章节时，每次挂载都会触发 2000
+  // 次响应式写操作，造成严重卡顿。这个 Map 仅用于命令式查找（启动编辑、滚动到段落等），
+  // 从不被模板/计算属性读取，因此不需要响应式。
+  const paragraphCardRefs = new Map<string, InstanceType<typeof ParagraphCard>>();
   // 是否通过键盘导航选中（用于控制是否显示选中效果）
   const isKeyboardSelected = ref(false);
   // 是否通过点击选中（用于控制是否显示选中效果）
@@ -118,10 +123,24 @@ export function useParagraphNavigation(
   };
 
   // 获取非空段落的索引列表
+  // 性能优化：按 paragraphs 数组引用缓存结果。键盘快速导航（连续按方向键）时
+  // 此函数会被 useKeyboardShortcuts 每次按键调用 2-3 次，大章节下线性扫描成本可观。
+  // 只要章节内容未变（引用相同），就复用上一次的结果。
+  let nonEmptyIndicesCache: { paragraphs: Paragraph[]; indices: number[] } | null = null;
   const getNonEmptyParagraphIndices = (): number[] => {
-    return selectedChapterParagraphs.value
-      .map((p, index) => (!isEmptyParagraph(p) ? index : -1))
-      .filter((index) => index !== -1);
+    const paragraphs = selectedChapterParagraphs.value;
+    if (nonEmptyIndicesCache && nonEmptyIndicesCache.paragraphs === paragraphs) {
+      return nonEmptyIndicesCache.indices;
+    }
+    const indices: number[] = [];
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i];
+      if (p && !isEmptyParagraph(p)) {
+        indices.push(i);
+      }
+    }
+    nonEmptyIndicesCache = { paragraphs, indices };
+    return indices;
   };
 
   // 查找下一个非空段落的索引
@@ -277,7 +296,7 @@ export function useParagraphNavigation(
     const editingParagraphId = currentlyEditingParagraphId.value;
     const paragraph = selectedChapterParagraphs.value.find((p) => p.id === editingParagraphId);
     if (paragraph) {
-      const cardRef = paragraphCardRefs.value.get(paragraph.id);
+      const cardRef = paragraphCardRefs.get(paragraph.id);
       if (cardRef && typeof (cardRef as { stopEditing?: () => void }).stopEditing === 'function') {
         (cardRef as { stopEditing: () => void }).stopEditing();
       }
@@ -359,7 +378,7 @@ export function useParagraphNavigation(
       }
       const targetParagraph = selectedChapterParagraphs.value[targetIndex];
       if (targetParagraph) {
-        const cardRef = paragraphCardRefs.value.get(targetParagraph.id);
+        const cardRef = paragraphCardRefs.get(targetParagraph.id);
         if (cardRef) {
           // 获取组件的 DOM 元素
           const element =
@@ -502,7 +521,7 @@ export function useParagraphNavigation(
         cancelCurrentEditing();
       }
 
-      const cardRef = paragraphCardRefs.value.get(paragraph.id);
+      const cardRef = paragraphCardRefs.get(paragraph.id);
       if (cardRef) {
         if (typeof (cardRef as { startEditing?: () => void }).startEditing === 'function') {
           currentlyEditingParagraphId.value = paragraph.id;

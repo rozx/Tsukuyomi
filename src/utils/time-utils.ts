@@ -48,3 +48,29 @@ export function isNewlyAdded(
   return editedTime > lastSyncTime;
 }
 
+/**
+ * 格式化 AI 任务的持续时间为"X秒" / "Y分Z秒"的中文显示
+ *
+ * @param startMs - 任务开始的毫秒时间戳（task.startTime）
+ * @param endMs  - 任务结束的毫秒时间戳（task.endTime）。未定义表示任务仍在进行
+ * @param nowMs  - "现在"的毫秒值。未提供时回退到 Date.now()。
+ *                 对需要"活动任务每秒滴答刷新"的组件（如 TranslationProgress、
+ *                 ThinkingProcessPanel），应传入响应式的 now.value —— Vue 模板
+ *                 在其变化时会重新渲染表达式，从而驱动计时器走动。
+ *
+ * 合并了原本散落在 TranslationProgress / ThinkingProcessPanel / ThinkingDetailDialog
+ * 三个组件的重复实现。
+ */
+export function formatTaskDuration(
+  startMs: number,
+  endMs?: number,
+  nowMs?: number,
+): string {
+  const end = endMs ?? nowMs ?? Date.now();
+  const duration = Math.floor((end - startMs) / 1000);
+  if (duration < 60) return `${duration}秒`;
+  const minutes = Math.floor(duration / 60);
+  const seconds = duration % 60;
+  return `${minutes}分${seconds}秒`;
+}
+

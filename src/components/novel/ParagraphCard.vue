@@ -11,7 +11,7 @@ import { useContextStore } from 'src/stores/context';
 import { useBooksStore } from 'src/stores/books';
 import { useUiStore } from 'src/stores/ui';
 import { ChapterService } from 'src/services/chapter-service';
-import { parseTextForHighlighting, escapeRegex } from 'src/utils/text-matcher';
+import { parseTextForHighlightingMemoized, escapeRegex } from 'src/utils/text-matcher';
 import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
 import { useContextMenuManager } from 'src/composables/useContextMenuManager';
@@ -65,6 +65,9 @@ const rawTranslationText = computed(() => {
 });
 
 // 获取当前段落的翻译文本（应用缩进过滤器，用于显示）
+// 性能关键：使用 getBookById（O(1) Pinia getter Map 查找）替代 booksStore.books.find()。
+// 之前每个 ParagraphCard 都做线性扫描查找书籍和章节；在 2000 段落的章节中，
+// 每次书籍状态变化都会触发数千次 O(N) 扫描，累计耗时显著。
 const translationText = computed(() => {
   const translation = rawTranslationText.value;
   if (!translation) {
@@ -75,9 +78,9 @@ const translationText = computed(() => {
   let book = undefined;
   let chapter = undefined;
   if (props.bookId) {
-    book = booksStore.books.find((b) => b.id === props.bookId);
+    book = booksStore.getBookById(props.bookId);
     if (book && props.chapterId) {
-      // 查找章节
+      // 查找章节（单本书籍内的章节数量通常有限，这里的 O(m) 开销可接受）
       for (const volume of book.volumes || []) {
         const foundChapter = volume.chapters?.find((ch) => ch.id === props.chapterId);
         if (foundChapter) {
@@ -168,6 +171,21 @@ const termPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+
+// 性能关键：Popover 延迟挂载
+// 之前每个 ParagraphCard 都立即挂载 4 个 PrimeVue Popover 组件。一个 2000 段的章节
+// 意味着 8000 个 Popover 实例（及其内部状态、teleport 目标、事件监听器等）被一次性创建，
+// 是大章节首次渲染/滚动卡顿的主要根因之一。
+//
+// 现在：首次与术语/角色/上下文菜单/最近翻译按钮交互时才把 popoversMounted 置为 true，
+// 之后 nextTick 内 4 个 Popover 被挂载，继续执行 toggle()。用户从未交互的卡片保持
+// 0 个 Popover 实例；即便用户与每个段落都交互过，每个卡片也只有 4 个 Popover。
+const popoversMounted = ref(false);
+const ensurePopoversMounted = async (): Promise<void> => {
+  if (popoversMounted.value) return;
+  popoversMounted.value = true;
+  await nextTick();
+};
 const paragraphCardRef = ref<HTMLElement | null>(null);
 const paragraphTextRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
@@ -182,7 +200,17 @@ const recentTranslationButtonRef = ref<HTMLElement | null>(null);
 
 /**
  * 将文本转换为包含高亮术语和角色的节点数组
+ *
+ * 性能关键：使用模块级记忆化版本（parseTextForHighlightingMemoized）。
+ * 只要 `terminologies` 和 `characterSettings` 的数组引用稳定（由
+ * BookDetailsPage.stableTerminologies/stableCharacterSettings 保证），
+ * 同一段落文本的高亮解析结果会被缓存复用，避免在书籍其他字段变化时
+ * 重新执行昂贵的注音剥离与正则匹配。
  */
+// 空数组常量：避免在 props 未提供时生成临时字面量（会破坏 WeakMap 缓存命中）
+const EMPTY_TERMS: Terminology[] = [];
+const EMPTY_CHARS: CharacterSetting[] = [];
+
 const highlightedText = computed(
   (): Array<{
     type: 'text' | 'term' | 'character';
@@ -195,16 +223,16 @@ const highlightedText = computed(
       return [{ type: 'text', content: props.paragraph.text }];
     }
 
-    return parseTextForHighlighting(
+    return parseTextForHighlightingMemoized(
       props.paragraph.text,
-      props.terminologies,
-      props.characterSettings,
+      props.terminologies ?? EMPTY_TERMS,
+      props.characterSettings ?? EMPTY_CHARS,
     );
   },
 );
 
 // 处理术语悬停
-const handleTermMouseEnter = (event: Event, term: Terminology) => {
+const handleTermMouseEnter = async (event: Event, term: Terminology) => {
   // 清除关闭定时器
   if (termPopoverCloseTimer) {
     clearTimeout(termPopoverCloseTimer);
@@ -212,9 +240,12 @@ const handleTermMouseEnter = (event: Event, term: Terminology) => {
   }
   hoveredTerm.value = term;
   const target = event.currentTarget as HTMLElement;
-  if (target && termPopoverRef.value) {
-    termRefsMap.set(term.id, target);
-    termPopoverRef.value.toggle(event);
+  if (!target) return;
+  termRefsMap.set(term.id, target);
+  // 首次交互时按需挂载 Popover
+  await ensurePopoversMounted();
+  if (termPopoverRef.value) {
+    termPopoverRef.value.toggle(event, target);
   }
 };
 
@@ -248,7 +279,7 @@ const handleTermPopoverHide = () => {
 
 // 处理角色悬停（支持多个匹配的角色）
 // allCharacters 数组已经按出现次数排序（出现次数多的在前）
-const handleCharacterMouseEnter = (
+const handleCharacterMouseEnter = async (
   event: Event,
   character: CharacterSetting,
   allCharacters?: CharacterSetting[],
@@ -262,10 +293,13 @@ const handleCharacterMouseEnter = (
   // 保持排序后的顺序，确保在 Popover 中显示时也按出现次数排序
   hoveredCharacters.value = allCharacters && allCharacters.length > 0 ? allCharacters : [character];
   const target = event.currentTarget as HTMLElement;
-  if (target && characterPopoverRef.value) {
-    // 为所有角色设置 ref（使用第一个角色的 ID 作为 key）
-    characterRefsMap.set(character.id, target);
-    characterPopoverRef.value.toggle(event);
+  if (!target) return;
+  // 为所有角色设置 ref（使用第一个角色的 ID 作为 key）
+  characterRefsMap.set(character.id, target);
+  // 首次交互时按需挂载 Popover
+  await ensurePopoversMounted();
+  if (characterPopoverRef.value) {
+    characterPopoverRef.value.toggle(event, target);
   }
 };
 
@@ -593,18 +627,22 @@ const handleTranslationKeydown = (event: KeyboardEvent, closeCallback: () => voi
 const contextMenuButtonRef = ref<HTMLElement | null>(null);
 const contextMenuTargetRef = ref<HTMLElement | null>(null);
 
-const handleContextMenuClick = (event: MouseEvent) => {
+const handleContextMenuClick = async (event: MouseEvent) => {
   // 检查是否有文本选择
   checkTextSelection();
 
-  if (contextMenuButtonRef.value && contextMenuPopoverRef.value) {
-    showContextMenu(contextMenuPopoverRef, event, contextMenuButtonRef.value);
+  const buttonEl = contextMenuButtonRef.value;
+  if (!buttonEl) return;
+  // 首次交互时按需挂载 Popover
+  await ensurePopoversMounted();
+  if (contextMenuPopoverRef.value) {
+    showContextMenu(contextMenuPopoverRef, event, buttonEl);
   }
 };
 
 // 处理右键点击段落卡片
 // 追踪上一次右键菜单显示时间，用于检测快速连续触发
-const handleParagraphContextMenu = (event: MouseEvent) => {
+const handleParagraphContextMenu = async (event: MouseEvent) => {
   event.preventDefault();
 
   // 检查是否有文本选择
@@ -628,6 +666,9 @@ const handleParagraphContextMenu = (event: MouseEvent) => {
   // 设置临时元素位置为鼠标光标位置
   target.style.left = `${event.clientX}px`;
   target.style.top = `${event.clientY}px`;
+
+  // 首次交互时按需挂载 Popover
+  await ensurePopoversMounted();
 
   // 使用 composable 显示上下文菜单
   // 这会自动隐藏之前活动的菜单
@@ -661,13 +702,13 @@ const handleEditTranslationClick = () => {
 };
 
 // 处理最近翻译按钮悬停
-const handleRecentTranslationMouseEnter = (event: Event) => {
-  if (
-    recentTranslationPopoverRef.value &&
-    recentTranslationButtonRef.value &&
-    mostRecentTranslation.value
-  ) {
-    recentTranslationPopoverRef.value.toggle(event);
+const handleRecentTranslationMouseEnter = async (event: Event) => {
+  if (!recentTranslationButtonRef.value || !mostRecentTranslation.value) return;
+  const target = recentTranslationButtonRef.value;
+  // 首次交互时按需挂载 Popover
+  await ensurePopoversMounted();
+  if (recentTranslationPopoverRef.value) {
+    recentTranslationPopoverRef.value.toggle(event, target);
   }
 };
 
@@ -1008,6 +1049,9 @@ defineExpose({
       </div>
     </div>
 
+    <!-- 性能关键：所有 Popover 延迟挂载（首次交互后 nextTick 内完成），
+         避免在 2000 段的章节里一次性创建 8000 个 Popover 实例。 -->
+    <template v-if="popoversMounted">
     <!-- 术语提示框 - 使用 PrimeVue Popover -->
     <Popover
       ref="termPopoverRef"
@@ -1166,6 +1210,7 @@ defineExpose({
         />
       </div>
     </Popover>
+    </template>
 
     <!-- 翻译历史对话框 -->
     <TranslationHistoryDialog

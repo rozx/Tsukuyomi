@@ -7,6 +7,7 @@ import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { useUiStore } from 'src/stores/ui';
+import { formatTaskDuration } from 'src/utils';
 import ThinkingDetailDialog from './ThinkingDetailDialog.vue';
 
 const aiProcessing = useAIProcessingStore();
@@ -33,16 +34,9 @@ const statusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-const formatDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || now.value;
-  const duration = Math.floor((end - startTime) / 1000);
-  if (duration < 60) {
-    return `${duration}秒`;
-  }
-  const minutes = Math.floor(duration / 60);
-  const seconds = duration % 60;
-  return `${minutes}分${seconds}秒`;
-};
+// 使用共享 formatTaskDuration 并传入响应式 now.value，让计时器随 1Hz 定时器持续刷新
+const formatDuration = (startTime: number, endTime?: number): string =>
+  formatTaskDuration(startTime, endTime, now.value);
 
 // 停止任务
 const stopTask = async (taskId: string) => {

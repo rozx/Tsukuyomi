@@ -5,7 +5,13 @@ import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import ProgressSpinner from 'primevue/progressspinner';
 import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
-import type { Chapter, Novel, Paragraph } from 'src/models/novel';
+import type {
+  Chapter,
+  Novel,
+  Paragraph,
+  Terminology,
+  CharacterSetting,
+} from 'src/models/novel';
 import {
   getChapterDisplayTitle,
   getChapterCharCount,
@@ -23,6 +29,9 @@ const props = defineProps<{
   originalTextEditValue: string;
   translatedCharCount: number;
   book: Novel | null;
+  // 稳定化的术语/角色引用，避免 ParagraphCard 在无关的 book 变化时重新计算高亮
+  terminologies: Terminology[];
+  characterSettings: CharacterSetting[];
   bookId?: string;
   selectedChapterId: string | null;
   translatingParagraphIds: Set<string>;
@@ -327,8 +336,8 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
               }
             "
             :paragraph="paragraph"
-            :terminologies="book?.terminologies || []"
-            :character-settings="book?.characterSettings || []"
+            :terminologies="terminologies"
+            :character-settings="characterSettings"
             v-bind="{
               ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
               ...(bookId ? { bookId: bookId } : {}),
@@ -542,10 +551,26 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   gap: 1rem;
   align-items: flex-start;
   position: relative;
-  /* 只允许颜色/阴影类过渡，避免 margin/padding 等布局属性过渡导致“滚动抖动” */
+  /* 只允许颜色/阴影类过渡，避免 margin/padding 等布局属性过渡导致”滚动抖动” */
   transition:
     color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /*
+   * 性能优化：CSS 级虚拟化
+   * content-visibility: auto 会让浏览器跳过视口外段落的渲染/布局/绘制，
+   * 但保持组件挂载，因此键盘导航、paragraphCardRefs、滚动到指定段落等命令式 API
+   * 都可正常工作（相比 q-virtual-scroll 避免了大量导航逻辑的重写）。
+   *
+   * contain-intrinsic-size: auto 160px
+   *   - auto 关键字：让浏览器在元素曾被渲染过后记住真实尺寸，减少二次测量误差
+   *   - 160px：首次测量前的高度估计（覆盖大多数 1-3 行的段落卡片）
+   *
+   * 已知权衡：
+   *   - 浏览器原生 Ctrl+F 搜索无法命中隐藏段落（应用自带的搜索面板不受影响）
+   *   - 屏幕阅读器顺序略有差异（可通过 contain-intrinsic-size 的 auto 模式缓解）
+   */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 /* 选中高亮：使用伪元素绘制边框/阴影，避免改变布局尺寸导致滚动“上下跳动” */
@@ -689,6 +714,9 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   padding: 1rem 1.25rem;
   width: 100%;
   position: relative;
+  /* 预览模式段落同样启用 CSS 级虚拟化 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 .translation-text {

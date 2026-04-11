@@ -336,9 +336,33 @@ export function useKeyboardShortcuts(
     }
   };
 
+  // 性能优化：用 requestAnimationFrame 节流 mousemove/scroll 处理器，
+  // 避免在窗口捕获阶段对每个事件都跑一次处理逻辑（mousemove 可达 120+/s）。
+  // 每帧至多执行一次（约 16ms），对 UI 响应无感知影响。
+  // 在没有 rAF 的测试环境中回退到 setTimeout(16)。
+  const scheduleFrame: (cb: () => void) => void =
+    typeof requestAnimationFrame === 'function'
+      ? (cb) => {
+          requestAnimationFrame(cb);
+        }
+      : (cb) => {
+          setTimeout(cb, 16);
+        };
+  const rafThrottle = (fn: () => void): (() => void) => {
+    let scheduled = false;
+    return () => {
+      if (scheduled) return;
+      scheduled = true;
+      scheduleFrame(() => {
+        scheduled = false;
+        fn();
+      });
+    };
+  };
+
   // 处理鼠标移动事件，重新启用鼠标悬停逻辑
   // 但忽略程序化滚动期间的鼠标移动（滚动时鼠标相对位置会变化，触发 mousemove）
-  const handleMouseMove = () => {
+  const handleMouseMove = rafThrottle(() => {
     const now = Date.now();
     const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
       ? now - lastKeyboardNavigationTime.value
@@ -359,11 +383,11 @@ export function useKeyboardShortcuts(
         resetNavigationTimeoutId.value = null;
       }, 300);
     }
-  };
+  });
 
   // 处理滚动事件，重新启用鼠标悬停逻辑
   // 但忽略程序化滚动（由键盘导航触发的滚动）
-  const handleScroll = () => {
+  const handleScroll = rafThrottle(() => {
     const now = Date.now();
     const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
       ? now - lastKeyboardNavigationTime.value
@@ -386,7 +410,7 @@ export function useKeyboardShortcuts(
         resetNavigationTimeoutId.value = null;
       }, 300);
     }
-  };
+  });
 
   return {
     handleKeydown,

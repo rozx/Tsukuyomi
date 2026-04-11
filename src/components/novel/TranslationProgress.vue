@@ -8,6 +8,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useThinkingFormatter } from 'src/composables/useThinkingFormatter';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { formatTaskDuration } from 'src/utils';
 import TaskSwitcher from './translation-progress/TaskSwitcher.vue';
 import TaskStatusBar from './translation-progress/TaskStatusBar.vue';
 import TaskTodos from './translation-progress/TaskTodos.vue';
@@ -123,15 +124,9 @@ const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
 };
 
 // ─── 时间格式化 ───
-
-const formatDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || now.value;
-  const duration = Math.floor((end - startTime) / 1000);
-  if (duration < 60) return `${duration}秒`;
-  const minutes = Math.floor(duration / 60);
-  const seconds = duration % 60;
-  return `${minutes}分${seconds}秒`;
-};
+// 使用共享 formatTaskDuration 并传入响应式 now.value，让计时器随 1Hz 定时器持续刷新
+const formatDuration = (startTime: number, endTime?: number): string =>
+  formatTaskDuration(startTime, endTime, now.value);
 
 // ─── 任务选择 ───
 

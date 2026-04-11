@@ -42,6 +42,6 @@ export {
   filterChangedParagraphs,
   reconstructChunkText,
 } from './text-utils';
-export { isTimeDifferent, isNewlyAdded } from './time-utils';
+export { isTimeDifferent, isNewlyAdded, formatTaskDuration } from './time-utils';
 export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
 export { extractRootDomain } from './domain-utils';

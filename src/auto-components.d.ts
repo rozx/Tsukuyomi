@@ -67,7 +67,6 @@ declare module 'vue' {
     StreamToolCall: typeof import('./components/novel/translation-progress/StreamToolCall.vue')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
-    TabPanel: typeof import('primevue/tabpanel')['default']
     TaskActionBar: typeof import('./components/novel/translation-progress/TaskActionBar.vue')['default']
     TaskStatusBar: typeof import('./components/novel/translation-progress/TaskStatusBar.vue')['default']
     TaskStream: typeof import('./components/novel/translation-progress/TaskStream.vue')['default']

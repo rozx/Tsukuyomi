@@ -569,6 +569,61 @@ export function parseTextForHighlighting(
 }
 
 /**
+ * 带记忆化的高亮解析
+ *
+ * 使用 WeakMap 缓存 (terms, characters) 到每个文本解析结果的映射：
+ * - 外层 WeakMap<Terminology[]> — 按术语数组引用索引
+ * - 中层 WeakMap<CharacterSetting[]> — 按角色数组引用索引
+ * - 内层 Map<text, HighlightNode[]> — 实际的解析结果缓存（带 FIFO 淘汰）
+ *
+ * 当上游稳定了术语/角色数组引用（见 BookDetailsPage 中的 stableTerminologies），
+ * 同一章节的所有段落在后续重渲染时都能命中缓存，彻底消除高亮重解析开销。
+ * 当术语/角色变化时，旧的 WeakMap 条目会被自动 GC。
+ *
+ * 注意：避免传入临时字面量数组（如 `props.terms || []`），否则会绕过缓存。
+ */
+const PARSE_HIGHLIGHT_CACHE_MAX = 5000;
+const parseHighlightMemo = new WeakMap<
+  Terminology[],
+  WeakMap<CharacterSetting[], Map<string, HighlightNode[]>>
+>();
+
+export function parseTextForHighlightingMemoized(
+  text: string,
+  terms: Terminology[],
+  characters: CharacterSetting[],
+): HighlightNode[] {
+  if (!text) return [];
+
+  let charsMap = parseHighlightMemo.get(terms);
+  if (!charsMap) {
+    charsMap = new WeakMap<CharacterSetting[], Map<string, HighlightNode[]>>();
+    parseHighlightMemo.set(terms, charsMap);
+  }
+
+  let textMap = charsMap.get(characters);
+  if (!textMap) {
+    textMap = new Map<string, HighlightNode[]>();
+    charsMap.set(characters, textMap);
+  }
+
+  const cached = textMap.get(text);
+  if (cached) return cached;
+
+  const result = parseTextForHighlighting(text, terms, characters);
+
+  // FIFO 淘汰：避免内存无限增长
+  if (textMap.size >= PARSE_HIGHLIGHT_CACHE_MAX) {
+    const firstKey = textMap.keys().next().value;
+    if (firstKey !== undefined) {
+      textMap.delete(firstKey);
+    }
+  }
+  textMap.set(text, result);
+  return result;
+}
+
+/**
  * 获取文本中包含的所有唯一术语
  * @param text 文本
  * @param terms 术语列表

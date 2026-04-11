@@ -203,7 +203,7 @@ describe('useParagraphNavigation', () => {
     const mockCardRef = {
       stopEditing: mock(() => {}),
     };
-    paragraphCardRefs.value.set('para-1', mockCardRef as any);
+    paragraphCardRefs.set('para-1', mockCardRef as any);
 
     cancelCurrentEditing();
 

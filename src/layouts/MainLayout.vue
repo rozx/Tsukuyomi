@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, ref, computed } from 'vue';
+import { onMounted, onUnmounted, watch, computed } from 'vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
@@ -80,19 +80,28 @@ if (typeof window !== 'undefined') {
 }
 
 // 跟踪之前的任务状态，用于检测状态变化
-const previousTasks = ref<Map<string, AIProcessingTask>>(new Map());
+// 使用非响应式 Map：这个 Map 只用于存储上一轮快照，从不被模板/计算属性读取，
+// 设为 ref 会让 Vue 在每次 .set()/.delete() 时做无意义的响应式通知。
+const previousTasks = new Map<string, AIProcessingTask>();
 
 // 监听 AI 任务状态变化
+// 性能优化：之前使用 `{ deep: true }`，会在每次 updateTask() 调用（流式响应每帧都可能触发）
+// 时对整个 activeTasks 数组做深度遍历。使用轻量签名字符串（id:status:type）替代：
+// 仅在任务数量、id、状态或类型真正变化时触发回调，流式文本长度变化不会触发。
 watch(
-  () => aiProcessingStore.activeTasks,
-  (newTasks, _oldTasks) => {
+  () =>
+    aiProcessingStore.activeTasks
+      .map((t) => `${t.id}:${t.status}:${t.type}`)
+      .join(','),
+  (_newKey, _oldKey) => {
+    const newTasks = aiProcessingStore.activeTasks;
     // 收集本周期内取消的任务
     const cancelledTasks: AIProcessingTask[] = [];
     const errorTasks: AIProcessingTask[] = [];
 
     // 处理新添加的任务
     for (const task of newTasks) {
-      const oldTask = previousTasks.value.get(task.id);
+      const oldTask = previousTasks.get(task.id);
 
       // 如果任务状态发生变化
       if (oldTask && oldTask.status !== task.status) {
@@ -105,7 +114,7 @@ watch(
       }
 
       // 更新任务记录
-      previousTasks.value.set(task.id, { ...task });
+      previousTasks.set(task.id, { ...task });
     }
 
     // 处理错误任务（每个错误任务单独显示 toast）
@@ -162,13 +171,12 @@ watch(
 
     // 清理已移除的任务记录
     const currentTaskIds = new Set(newTasks.map((t) => t.id));
-    for (const [taskId] of previousTasks.value) {
+    for (const [taskId] of previousTasks) {
       if (!currentTaskIds.has(taskId)) {
-        previousTasks.value.delete(taskId);
+        previousTasks.delete(taskId);
       }
     }
   },
-  { deep: true },
 );
 
 // 处理 Toast 关闭事件
@@ -241,8 +249,17 @@ onUnmounted(() => {
         <AppSideMenu />
       </div>
 
+      <!--
+        性能关键（已知根因）：此前这里有 `backdrop-blur-xl`（24px 高斯模糊）叠加在
+        bg-night-900/60 半透明背景上。<main> 是整个应用的滚动容器，因此每次滚动帧
+        浏览器都要：重新捕获 tsukuyomi-sky 背景 → 做 24px 高斯模糊 → 合成。
+        全屏尺寸下 GPU 负担巨大，导致 BooksPage / BookDetailsPage 等所有页面滚动卡顿。
+        移除 backdrop-blur 后，仍然通过 bg-night-900/60 显示半透明夜空底色，只是不带模糊，
+        视觉上略微清晰，但滚动流畅。如果需要恢复"毛玻璃"观感，可考虑把模糊放到固定定位
+        的伪元素上（不随滚动重绘），而不是作用在滚动容器本身。
+      -->
       <main
-        class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 backdrop-blur-xl"
+        class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60"
       >
         <RouterView />
       </main>

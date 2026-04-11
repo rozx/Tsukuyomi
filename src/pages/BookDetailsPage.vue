@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onUnmounted, onMounted } from 'vue';
+import { computed, ref, shallowRef, watch, watchEffect, nextTick, onUnmounted, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import TieredMenu from 'primevue/tieredmenu';
 import Button from 'primevue/button';
@@ -152,6 +152,28 @@ const isVolumeExpanded = (volumeId: string): boolean => {
 const book = computed(() => {
   if (!bookId.value) return undefined;
   return booksStore.getBookById(bookId.value);
+});
+
+// 稳定化的术语/角色引用
+// 性能优化：虽然 booksStore.updateBook() 在每次更新时会生成新的 book 对象
+// （通过 `{ ...existingBook, ...updates }` 展开），但未被修改的嵌套字段（如
+// terminologies、characterSettings）会保留原始引用。这两个 shallowRef 仅在
+// 数组引用真正变化时更新，从而为下游组件（ChapterContentPanel / ParagraphCard）
+// 提供稳定引用，避免每次段落编辑都触发 N 个 ParagraphCard 重解析高亮。
+// 注意：EMPTY_TERMS / EMPTY_CHARS 是共享的哨兵空数组，仅作"稳定引用"用途，禁止写入。
+// 这里不再用 Object.freeze + `as unknown as T[]` 双重类型断言 —— 空数组本身在
+// 本模块之外没有消费者会尝试变异它，类型保持正常即可。
+// shallowRef.value = x 在 x 与当前值严格相等时 Vue 3 会自行短路（见 ref.ts 中的
+// hasChanged 比较），因此此处也不需要手动 `if (next !== current)` 守卫。
+const EMPTY_TERMS: Terminology[] = [];
+const EMPTY_CHARS: CharacterSetting[] = [];
+const stableTerminologies = shallowRef<Terminology[]>(EMPTY_TERMS);
+const stableCharacterSettings = shallowRef<CharacterSetting[]>(EMPTY_CHARS);
+watchEffect(() => {
+  const terms = book.value?.terminologies;
+  stableTerminologies.value = terms && terms.length > 0 ? terms : EMPTY_TERMS;
+  const chars = book.value?.characterSettings;
+  stableCharacterSettings.value = chars && chars.length > 0 ? chars : EMPTY_CHARS;
 });
 
 // ActionInfo Toast 处理
@@ -866,112 +888,101 @@ watch(
   { immediate: true },
 );
 
-// 监听书籍变化，处理章节删除和元数据同步
+// 监听当前选中章节在 book 中的引用变化，处理章节删除和元数据同步
+// 性能优化：
+// - 之前使用 watch(book, ..., { deep: true }) 会在每次段落编辑时遍历整个书籍树并做
+//   JSON.stringify 比较，开销极大。
+// - 现在通过 computed 仅追踪"当前选中章节"的引用：Vue 只在该章节对象被替换时触发 watcher
+//   （例如 ChapterService.updateChapter 会创建新的章节对象），对无关的 book 变化（如术语
+//   编辑、收藏切换等）不会触发，根本性消除了导航/编辑时的 reactivity 遍历成本。
+// - 元数据比较从 JSON.stringify 改为直接的引用/基础类型等值比较。
+//
 // 策略：
 // 1. 如果章节被删除，清空选中状态
-// 2. 如果章节存在且有元数据更新（如标题、webUrl等），根据情况决定是否同步更新：
-//    - 如果用户正在编辑段落或原文，不更新元数据（避免覆盖本地编辑）
-//    - 如果用户未在编辑，或者更新来自外部操作（如同步、在线获取更新），则更新元数据
-// 3. 内容（content）的更新由专门的函数处理，不在此处更新
-watch(
-  book,
-  (newBook, oldBook) => {
-    // 只在书籍实际变化时触发（不是初始加载）
-    if (!oldBook || !newBook) {
-      return;
+// 2. 如果章节存在且有元数据更新，根据是否正在编辑决定是否同步
+// 3. 内容（content）的更新由专门的函数处理（例如 updateParagraphTranslation 会在
+//    调用 updateBook 之前直接更新 selectedChapterWithContent.value）
+const currentChapterInBook = computed<Chapter | null>(() => {
+  if (!book.value || !selectedChapterId.value) return null;
+  for (const volume of book.value.volumes || []) {
+    const chapter = volume.chapters?.find((ch) => ch.id === selectedChapterId.value);
+    if (chapter) return chapter;
+  }
+  return null;
+});
+
+watch(currentChapterInBook, (updatedChapter, oldChapter) => {
+  // 初始触发不处理（章节内容由 selectedChapterId watcher 负责加载）
+  if (oldChapter === undefined) return;
+
+  if (!selectedChapterId.value || !selectedChapterWithContent.value) return;
+
+  // 章节被删除
+  if (!updatedChapter) {
+    selectedChapterWithContent.value = null;
+    if (bookId.value) {
+      void bookDetailsStore.setSelectedChapter(bookId.value, null);
     }
+    return;
+  }
 
-    // 如果当前有打开的章节
-    if (selectedChapterId.value && selectedChapterWithContent.value) {
-      // 查找新书籍中的对应章节
-      let updatedChapter: Chapter | undefined;
-      for (const volume of newBook.volumes || []) {
-        if (volume.chapters) {
-          const chapter = volume.chapters.find((ch) => ch.id === selectedChapterId.value);
-          if (chapter) {
-            updatedChapter = chapter;
-            break;
-          }
-        }
-      }
+  // 同引用表示 Vue 不会触发到这里；但为了安全显式短路
+  if (updatedChapter === oldChapter) return;
 
-      if (!updatedChapter) {
-        // 章节不存在了，清空选中状态
-        selectedChapterWithContent.value = null;
-        if (bookId.value) {
-          void bookDetailsStore.setSelectedChapter(bookId.value, null);
-        }
-        return;
-      }
+  // 章节存在，检查是否有元数据更新
+  const currentChapter = selectedChapterWithContent.value;
 
-      // 章节存在，检查是否有元数据更新
-      const currentChapter = selectedChapterWithContent.value;
+  // 直接的引用/基础类型比较（替代 JSON.stringify）
+  const hasMetadataChanged =
+    currentChapter.title !== updatedChapter.title ||
+    currentChapter.webUrl !== updatedChapter.webUrl ||
+    currentChapter.lastEdited.getTime() !== updatedChapter.lastEdited.getTime() ||
+    currentChapter.createdAt.getTime() !== updatedChapter.createdAt.getTime() ||
+    currentChapter.originalContent !== updatedChapter.originalContent ||
+    currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
+    currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
+    currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
+    currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
 
-      // 检查元数据是否有变化（不包括 content，因为 content 有独立的更新机制）
-      const hasMetadataChanged =
-        JSON.stringify(currentChapter.title) !== JSON.stringify(updatedChapter.title) ||
-        currentChapter.webUrl !== updatedChapter.webUrl ||
-        currentChapter.lastEdited.getTime() !== updatedChapter.lastEdited.getTime() ||
-        currentChapter.createdAt.getTime() !== updatedChapter.createdAt.getTime() ||
-        currentChapter.originalContent !== updatedChapter.originalContent ||
-        currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
-        currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
-        currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
-        currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
+  // 内容引用变化检测
+  // 注意：updateParagraphTranslation 等函数会先更新 selectedChapterWithContent.value，
+  // 再调用 updateBook；此时 currentChapter.content 通常与 updatedChapter.content 为同一引用，
+  // 所以 hasContentUpdate 为 false，避免多余的重新赋值。
+  const hasContentUpdate =
+    Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
 
-      // 判断是否需要同步内容更新（当内容已加载时）
-      // 注意：即使用户正在编辑段落，也允许内容更新传播。
-      // ParagraphCard 中的 watcher 会检测 rawTranslationText 变化并同步到 editingTranslationValue，
-      // 确保编辑中的段落也能接收到外部更新（如 undo/redo、chat assistant edit、revert 等）。
-      const hasContentUpdate =
-        Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
+  // 如果用户正在编辑原文，不更新元数据（避免覆盖本地编辑）
+  // 段落翻译编辑不再阻止元数据更新，因为段落编辑状态由 ParagraphCard 内部管理
+  const isUserEditing = isEditingOriginalText.value;
 
-      // 判断是否应该更新元数据
-      // 如果用户正在编辑原文，不更新元数据（避免覆盖本地编辑）
-      // 注意：段落翻译编辑不再阻止元数据更新，因为段落编辑状态由 ParagraphCard 内部管理
-      const isUserEditing = isEditingOriginalText.value;
+  // 判断更新是否来自外部操作（如同步、在线获取更新）
+  const hasExternalMetadataChange =
+    currentChapter.webUrl !== updatedChapter.webUrl ||
+    currentChapter.originalContent !== updatedChapter.originalContent ||
+    (updatedChapter.lastEdited.getTime() > currentChapter.lastEdited.getTime() &&
+      Math.abs(updatedChapter.lastEdited.getTime() - Date.now()) < 10000);
 
-      // 判断更新是否来自外部操作（如同步、在线获取更新）
-      // 通过检查元数据变化类型来判断：
-      // 1. webUrl、originalContent 的变化通常来自外部操作（在线获取更新）
-      // 2. lastEdited 时间显著更新（超过当前时间或与当前时间接近）可能是外部操作
-      const hasExternalMetadataChange =
-        currentChapter.webUrl !== updatedChapter.webUrl ||
-        currentChapter.originalContent !== updatedChapter.originalContent ||
-        (updatedChapter.lastEdited.getTime() > currentChapter.lastEdited.getTime() &&
-          Math.abs(updatedChapter.lastEdited.getTime() - Date.now()) < 10000); // 10秒内的更新可能是外部操作
+  const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
+  const shouldUpdateContent = hasContentUpdate && !isUserEditing;
 
-      // 更新元数据的条件：
-      // 1. 用户未在编辑，或者
-      // 2. 更新来自外部操作（如同步、在线获取更新），此时即使正在编辑也允许更新元数据
-      const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
+  if (!hasMetadataChanged && !shouldUpdateContent) {
+    return;
+  }
 
-      const shouldUpdateContent = hasContentUpdate && !isUserEditing;
-
-      if (!hasMetadataChanged && !shouldUpdateContent) {
-        // 元数据和内容都没有需要同步的变化
-        return;
-      }
-
-      if (shouldUpdateMetadata || shouldUpdateContent) {
-        selectedChapterWithContent.value = {
-          ...currentChapter,
-          ...(shouldUpdateMetadata ? updatedChapter : {}),
-          content: shouldUpdateContent
-            ? updatedChapter.content
-            : (currentChapter.content ?? updatedChapter.content),
-          contentLoaded: shouldUpdateContent
-            ? true
-            : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
-          lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
-        };
-      }
-      // 注意：如果用户正在编辑且不是外部更新，不更新元数据，避免覆盖本地编辑
-      // 内容（content）的更新由 updateTitleTranslation 和 updateParagraphs* 函数处理
-    }
-  },
-  { deep: true },
-);
+  if (shouldUpdateMetadata || shouldUpdateContent) {
+    selectedChapterWithContent.value = {
+      ...currentChapter,
+      ...(shouldUpdateMetadata ? updatedChapter : {}),
+      content: shouldUpdateContent
+        ? updatedChapter.content
+        : (currentChapter.content ?? updatedChapter.content),
+      contentLoaded: shouldUpdateContent
+        ? true
+        : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
+      lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
+    };
+  }
+});
 
 // 实时更新 context store - 监听书籍变化
 watch(
@@ -1209,6 +1220,38 @@ const {
   updateSelectedChapterWithContent,
 );
 
+// 性能优化：向 ChapterContentPanel 传递 searchQuery 的防抖版本
+// ParagraphCard 中 translationNodes 计算高亮会随每个按键触发（对 N 个段落卡执行正则拆分），
+// 这里的 150ms 节流显著降低输入时的 DOM 工作量。
+// 注意：searchMatches 等搜索逻辑仍使用原始 searchQuery，保持即时响应。
+const debouncedSearchQuery = ref('');
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  searchQuery,
+  (val) => {
+    if (searchDebounceTimer !== null) {
+      clearTimeout(searchDebounceTimer);
+    }
+    // 空串立即生效（关闭搜索时无需延迟清理高亮）
+    if (!val) {
+      debouncedSearchQuery.value = '';
+      searchDebounceTimer = null;
+      return;
+    }
+    searchDebounceTimer = setTimeout(() => {
+      debouncedSearchQuery.value = val;
+      searchDebounceTimer = null;
+    }, 150);
+  },
+  { immediate: true },
+);
+onUnmounted(() => {
+  if (searchDebounceTimer !== null) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+});
+
 // 初始化键盘快捷键 composable
 const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts(
   // 搜索替换相关
@@ -1331,16 +1374,46 @@ const editingTerm = ref<Terminology | null>(null);
 const isSavingTerm = ref(false);
 const termDialogMode = ref<'add' | 'edit'>('edit');
 
+// 章节文本提取缓存（按 content 数组引用索引）
+// 避免 usedTerms 和 usedCharacters 分别调用 getChapterContentText 造成重复遍历
+let cachedChapterText: { content: unknown; text: string } | null = null;
+const getCachedChapterContentText = (chapter: Chapter | null): string => {
+  if (!chapter || !Array.isArray(chapter.content)) return '';
+  if (cachedChapterText && cachedChapterText.content === chapter.content) {
+    return cachedChapterText.text;
+  }
+  const text = getChapterContentText(chapter);
+  cachedChapterText = { content: chapter.content, text };
+  return text;
+};
+
 // 计算当前章节使用的术语列表
+// 性能优化：
+// - 依赖已稳定的 stableTerminologies（仅在术语真正变化时更新引用）
+// - 内部手动缓存 (content 引用, terms 引用) → 结果，消除无关触发的重复计算
+let usedTermsCache: {
+  content: unknown;
+  terms: Terminology[];
+  result: Terminology[];
+} | null = null;
 const usedTerms = computed(() => {
-  if (!selectedChapterWithContent.value || !book.value?.terminologies?.length) {
+  const chapter = selectedChapterWithContent.value;
+  const terms = stableTerminologies.value;
+  if (!chapter || terms.length === 0 || !Array.isArray(chapter.content)) {
     return [];
   }
-
-  const text = getChapterContentText(selectedChapterWithContent.value);
+  if (
+    usedTermsCache &&
+    usedTermsCache.content === chapter.content &&
+    usedTermsCache.terms === terms
+  ) {
+    return usedTermsCache.result;
+  }
+  const text = getCachedChapterContentText(chapter);
   if (!text) return [];
-
-  return findUniqueTermsInText(text, book.value.terminologies);
+  const result = findUniqueTermsInText(text, terms);
+  usedTermsCache = { content: chapter.content, terms, result };
+  return result;
 });
 
 const usedTermCount = computed(() => usedTerms.value.length);
@@ -1385,15 +1458,30 @@ const editingCharacter = ref<CharacterSetting | null>(null);
 const isSavingCharacter = ref(false);
 
 // 计算当前章节使用的角色设定列表
+// 性能优化：同 usedTerms，使用 stableCharacterSettings + 手动缓存
+let usedCharactersCache: {
+  content: unknown;
+  chars: CharacterSetting[];
+  result: CharacterSetting[];
+} | null = null;
 const usedCharacters = computed(() => {
-  if (!selectedChapterWithContent.value || !book.value?.characterSettings?.length) {
+  const chapter = selectedChapterWithContent.value;
+  const chars = stableCharacterSettings.value;
+  if (!chapter || chars.length === 0 || !Array.isArray(chapter.content)) {
     return [];
   }
-
-  const text = getChapterContentText(selectedChapterWithContent.value);
+  if (
+    usedCharactersCache &&
+    usedCharactersCache.content === chapter.content &&
+    usedCharactersCache.chars === chars
+  ) {
+    return usedCharactersCache.result;
+  }
+  const text = getCachedChapterContentText(chapter);
   if (!text) return [];
-
-  return findUniqueCharactersInText(text, book.value.characterSettings);
+  const result = findUniqueCharactersInText(text, chars);
+  usedCharactersCache = { content: chapter.content, chars, result };
+  return result;
 });
 
 const usedCharacterCount = computed(() => usedCharacters.value.length);
@@ -2585,13 +2673,15 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                 :original-text-edit-value="originalTextEditValue"
                 :translated-char-count="translatedCharCount"
                 :book="book || null"
+                :terminologies="stableTerminologies"
+                :character-settings="stableCharacterSettings"
                 :book-id="bookId"
                 :is-small-screen="isSmallScreen"
                 :selected-chapter-id="selectedChapterId"
                 :translating-paragraph-ids="translatingParagraphIds"
                 :polishing-paragraph-ids="polishingParagraphIds"
                 :proofreading-paragraph-ids="proofreadingParagraphIds"
-                :search-query="searchQuery"
+                :search-query="debouncedSearchQuery"
                 :selected-paragraph-index="selectedParagraphIndex"
                 :is-keyboard-selected="isKeyboardSelected"
                 :is-click-selected="isClickSelected"

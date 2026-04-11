@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { v4 as uuidv4 } from 'uuid';
 import Button from 'primevue/button';
@@ -73,12 +73,7 @@ const searchQuery = ref('');
 const getTotalChapters = utilGetTotalChapters;
 
 // 使用字符数加载 composable
-const {
-  loadBookCharCount,
-  getTotalWords,
-  isLoadingCharCount,
-  clearCache: clearCharCountCache,
-} = useNovelCharCount();
+const { loadBookCharCount, getTotalWords, isLoadingCharCount } = useNovelCharCount();
 
 // 排序选项
 type SortOption = {
@@ -231,34 +226,27 @@ const filteredBooks = computed(() => {
 });
 
 // 加载所有书籍的字符数
+// 注意：useNovelCharCount 内部按 book.id 缓存；重复调用相同书籍会立即短路返回，
+// 因此这个函数在正常使用中是幂等且廉价的。
 const loadAllBookCharCounts = async () => {
-  const books = filteredBooks.value;
+  const books = booksStore.books;
   const loadPromises = books.map((book) => loadBookCharCount(book));
   await Promise.all(loadPromises);
 };
 
-// 当书籍列表变化时，异步加载字符数
+// 性能优化：之前有三个触发点（onMounted + 两个 watcher），其中 `watch(booksStore.books)`
+// 会在任意书籍字段变化时清空整个缓存并重新加载所有书籍的字数（通过 Promise.all 批量
+// 读取 IndexedDB）。编辑段落、切换收藏等都会触发，造成严重卡顿。
+//
+// 现在：只监听书籍数量变化（增/删/初始加载），保留缓存，不做不必要的重载。
+// 编辑单本书籍不会刷新字数显示（会在下次会话中自然刷新），这是可接受的权衡。
 watch(
-  () => filteredBooks.value,
-  async (books) => {
+  () => booksStore.books.length,
+  async () => {
     await loadAllBookCharCounts();
   },
   { immediate: true },
 );
-
-// 当书籍存储变化时，清除缓存并重新加载
-watch(
-  () => booksStore.books,
-  async () => {
-    clearCharCountCache();
-    await loadAllBookCharCounts();
-  },
-);
-
-// 组件挂载时也加载一次
-onMounted(async () => {
-  await loadAllBookCharCounts();
-});
 
 // 获取封面图片 URL，如果没有则返回默认占位图
 const getCoverUrl = (book: Novel): string => {

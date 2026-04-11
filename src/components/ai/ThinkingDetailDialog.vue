@@ -4,6 +4,7 @@ import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { formatTaskDuration } from 'src/utils';
 
 const props = defineProps<{
   visible: boolean;
@@ -28,15 +29,6 @@ const headerText = computed(() => {
   return `${props.task.modelName} · ${typeLabel}`;
 });
 
-const formatDuration = (startTime: number, endTime?: number): string => {
-  const end = endTime || Date.now();
-  const duration = Math.floor((end - startTime) / 1000);
-  if (duration < 60) return `${duration}秒`;
-  const minutes = Math.floor(duration / 60);
-  const seconds = duration % 60;
-  return `${minutes}分${seconds}秒`;
-};
-
 const handleClose = () => {
   emit('update:visible', false);
 };
@@ -58,7 +50,7 @@ const handleClose = () => {
         <span class="meta-pill" :class="`status-${task.status}`">
           {{ statusLabels[task.status] || task.status }}
         </span>
-        <span class="meta-text">运行时间 {{ formatDuration(task.startTime, task.endTime) }}</span>
+        <span class="meta-text">运行时间 {{ formatTaskDuration(task.startTime, task.endTime) }}</span>
         <span v-if="task.endTime" class="meta-text">
           · 完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
         </span>
@@ -110,8 +102,8 @@ const handleClose = () => {
 
 .meta-pill.status-thinking,
 .meta-pill.status-processing {
-  background: rgba(108, 140, 255, 0.15);
-  color: #6c8cff;
+  background: var(--blue-500-opacity-15, rgba(108, 140, 255, 0.15));
+  color: var(--blue-500, #6c8cff);
 }
 
 .meta-pill.status-end {
@@ -125,8 +117,8 @@ const handleClose = () => {
 }
 
 .meta-pill.status-cancelled {
-  background: rgba(251, 146, 60, 0.12);
-  color: #fb923c;
+  background: var(--orange-400-opacity-12, rgba(251, 146, 60, 0.12));
+  color: var(--orange-400, #fb923c);
 }
 
 .meta-text {
