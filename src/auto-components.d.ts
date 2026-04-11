@@ -77,6 +77,7 @@ declare module 'vue' {
     TerminologyPanel: typeof import('./components/novel/TerminologyPanel.vue')['default']
     TermPopover: typeof import('./components/novel/TermPopover.vue')['default']
     TestResult: typeof import('./components/ai/TestResult.vue')['default']
+    ThinkingDetailDialog: typeof import('./components/ai/ThinkingDetailDialog.vue')['default']
     ThinkingProcessPanel: typeof import('./components/ai/ThinkingProcessPanel.vue')['default']
     ToastHistoryDialog: typeof import('./components/dialogs/ToastHistoryDialog.vue')['default']
     TranslatableChips: typeof import('./components/translation/TranslatableChips.vue')['default']

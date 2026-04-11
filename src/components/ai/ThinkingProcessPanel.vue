@@ -7,6 +7,7 @@ import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { useUiStore } from 'src/stores/ui';
+import ThinkingDetailDialog from './ThinkingDetailDialog.vue';
 
 const aiProcessing = useAIProcessingStore();
 const uiStore = useUiStore();
@@ -265,6 +266,19 @@ watch(
   { flush: 'post' }, // 在 DOM 更新后执行
 );
 
+// 思考详情弹窗
+const detailVisible = ref(false);
+const detailTask = ref<AIProcessingTask | null>(null);
+
+const openDetail = (task: AIProcessingTask) => {
+  detailTask.value = task;
+  detailVisible.value = true;
+};
+
+const handleDetailVisibilityChange = (value: boolean) => {
+  detailVisible.value = value;
+};
+
 // Popover ref
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
@@ -272,8 +286,12 @@ const popoverStyle = computed(() => {
   return {
     width: isPhone.value ? 'min(94vw, 28rem)' : 'min(32rem, 94vw)',
     maxHeight: isPhone.value ? '78dvh' : 'min(600px, 82dvh)',
-    display: 'flex',
-    flexDirection: 'column',
+  };
+});
+
+const listContainerStyle = computed(() => {
+  return {
+    maxHeight: isPhone.value ? '58dvh' : '500px',
   };
 });
 
@@ -335,7 +353,7 @@ onUnmounted(() => {
     :style="popoverStyle"
     class="thinking-popover"
   >
-    <div class="flex flex-col h-full">
+    <div class="flex flex-col">
       <div
         class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10"
       >
@@ -358,7 +376,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="thinking-list flex-1 overflow-auto min-h-0 space-y-3">
+      <div class="thinking-list overflow-auto min-h-0 space-y-3" :style="listContainerStyle">
         <div v-if="aiProcessing.allTasksList.length === 0" class="text-center py-8">
           <i class="pi pi-check-circle text-4xl text-moon/40 mb-4" />
           <p class="text-moon/60">当前没有思考过程记录</p>
@@ -400,6 +418,17 @@ onUnmounted(() => {
               <span class="text-xs text-moon/60">{{
                 statusLabels[task.status] || task.status
               }}</span>
+              <Button
+                v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                icon="pi pi-external-link"
+                class="p-button-text p-button-sm p-button-rounded"
+                @click="openDetail(task)"
+                :pt="{
+                  root: { class: '!p-1 !min-w-0 !h-6 !w-6' },
+                }"
+                title="查看完整思考过程"
+                aria-label="查看完整思考过程"
+              />
               <Button
                 v-if="task.status === 'thinking' || task.status === 'processing'"
                 icon="pi pi-stop"
@@ -471,6 +500,17 @@ onUnmounted(() => {
                 <span class="thinking-reviewed-duration text-xs text-moon/50 flex-shrink-0">{{
                   formatDuration(task.startTime, task.endTime)
                 }}</span>
+                <Button
+                  v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+                  icon="pi pi-external-link"
+                  class="p-button-text p-button-sm p-button-rounded flex-shrink-0"
+                  @click="openDetail(task)"
+                  :pt="{
+                    root: { class: '!p-1 !min-w-0 !h-6 !w-6' },
+                  }"
+                  title="查看完整思考过程"
+                  aria-label="查看完整思考过程"
+                />
               </div>
               <p v-if="task.message" class="text-xs text-moon/60 mb-2 break-words">
                 {{ task.message }}
@@ -500,15 +540,16 @@ onUnmounted(() => {
     </div>
   </Popover>
   <ConfirmDialog group="thinking-process" />
+  <ThinkingDetailDialog
+    :visible="detailVisible"
+    :task="detailTask"
+    @update:visible="handleDetailVisibilityChange"
+  />
 </template>
 
 <style scoped>
 .thinking-popover :deep(.p-popover-content) {
   padding: 1rem;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 /* 优化滚动容器的性能 */
