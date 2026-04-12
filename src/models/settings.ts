@@ -12,6 +12,32 @@ export type TaskDefaultModels = {
 };
 
 /**
+ * 记忆注入设置
+ */
+export interface MemoryInjectionSettings {
+  /**
+   * 字符预算：一次翻译注入记忆的总字符数上限
+   * 默认值：2000
+   */
+  charBudget: number;
+  /**
+   * 是否启用语义检索（本地嵌入)
+   * 默认值：true
+   */
+  enableSemantic: boolean;
+  /**
+   * 最低分数阈值：低于此分的记忆不会被注入
+   * 默认值：0.3（大致为最大得分 6.0 的 5%）
+   */
+  minScoreThreshold: number;
+  /**
+   * 是否已看过"语义记忆检索"首次使用温和提示
+   * 默认值：false
+   */
+  hasSeenIntro: boolean;
+}
+
+/**
  * 网站-代理映射条目
  */
 export interface ProxySiteMappingEntry {
@@ -104,6 +130,10 @@ export interface AppSettings {
    * 默认值：false（首次启动会自动展示）
    */
   quickStartDismissed?: boolean;
+  /**
+   * 记忆注入相关设置
+   */
+  memoryInjection?: MemoryInjectionSettings;
 }
 
 export interface Settings {

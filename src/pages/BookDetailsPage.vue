@@ -80,7 +80,7 @@ import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-ser
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
-import type { Memory, MemoryAttachmentType } from 'src/models/memory';
+import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
 
 const route = useRoute();
@@ -1630,33 +1630,6 @@ const handleMemoryDelete = async (memory: Memory) => {
   }
 };
 
-const handleMemoryNavigate = (type: MemoryAttachmentType, id: string) => {
-  if (type === 'term') {
-    closeMemoryPopover();
-    navigateToTermsSetting();
-    return;
-  }
-  if (type === 'character') {
-    closeMemoryPopover();
-    navigateToCharactersSetting();
-    return;
-  }
-  if (type === 'chapter') {
-    const chapter = book.value?.volumes
-      ?.flatMap((volume) => volume.chapters || [])
-      .find((item) => item.id === id);
-    if (chapter) {
-      closeMemoryPopover();
-      navigateToChapterInternal(chapter);
-    }
-    return;
-  }
-  if (type === 'book') {
-    closeMemoryPopover();
-    navigateToMemorySetting();
-  }
-};
-
 const toggleCharacterPopover = (event: Event) => {
   characterPopover.value?.toggle(event);
 };
@@ -2469,7 +2442,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @update:visible="(val) => (showMemoryDetailDialog = val)"
         @save="handleMemorySave"
         @delete="handleMemoryDelete"
-        @navigate="handleMemoryNavigate"
       />
 
       <!-- 编辑术语对话框 -->

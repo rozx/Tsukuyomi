@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Dialog from 'primevue/dialog';
@@ -7,15 +7,18 @@ import Textarea from 'primevue/textarea';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import InputText from 'primevue/inputtext';
-import Dropdown from 'primevue/dropdown';
+import Checkbox from 'primevue/checkbox';
 import ProgressSpinner from 'primevue/progressspinner';
 import MemoryCard from './MemoryCard.vue';
 import MemoryDetailDialog from './MemoryDetailDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import type { Novel } from 'src/models/novel';
-import type { Memory, MemoryAttachmentType } from 'src/models/memory';
+import type { Memory } from 'src/models/memory';
 import { MemoryService } from 'src/services/memory-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+
+// 嵌入模型版本常量（与 EmbeddingService 保持一致）
+const CURRENT_EMBEDDING_MODEL = 'embeddinggemma-300m@256';
 
 const props = defineProps<{
   book: Novel | null;
@@ -32,184 +35,31 @@ const searchQuery = ref('');
 // 工具栏展开状态（移动端）
 const isToolbarExpanded = ref(false);
 
-// 筛选状态
-const filterType = ref<'all' | MemoryAttachmentType>('all');
-const filterEntityId = ref<string | null>(null);
-
-// 标记是否正在通过标签设置筛选（防止 watcher 清除 entityId）
-const isSettingFilterFromTag = ref(false);
-
-// 筛选选项
-const typeOptions = [
-  { label: '全部', value: 'all', icon: 'pi pi-th-large' },
-  { label: '书籍级', value: 'book', icon: 'pi pi-book' },
-  { label: '角色', value: 'character', icon: 'pi pi-user' },
-  { label: '术语', value: 'term', icon: 'pi pi-tag' },
-  { label: '章节', value: 'chapter', icon: 'pi pi-file' },
-];
-
-// 实体筛选选项（根据类型动态生成）
-const entityOptions = computed(() => {
-  if (!props.book || filterType.value === 'all') return [];
-
-  const options: Array<{ label: string; value: string; count: number }> = [];
-
-  switch (filterType.value) {
-    case 'character':
-      props.book.characterSettings?.forEach((char) => {
-        const count = memories.value.filter((m) =>
-          m.attachedTo?.some((a) => a.type === 'character' && a.id === char.id),
-        ).length;
-        if (count > 0) {
-          // 优先使用翻译，如果没有则使用原文
-          const label = char.translation?.translation || char.name;
-          options.push({ label, value: char.id, count });
-        }
-      });
-      break;
-    case 'term':
-      props.book.terminologies?.forEach((term) => {
-        const count = memories.value.filter((m) =>
-          m.attachedTo?.some((a) => a.type === 'term' && a.id === term.id),
-        ).length;
-        if (count > 0) {
-          // 优先使用翻译，如果没有则使用原文
-          const label = term.translation?.translation || term.name;
-          options.push({ label, value: term.id, count });
-        }
-      });
-      break;
-    case 'chapter':
-      props.book.volumes?.forEach((volume) => {
-        volume.chapters?.forEach((chapter) => {
-          const count = memories.value.filter((m) =>
-            m.attachedTo?.some((a) => a.type === 'chapter' && a.id === chapter.id),
-          ).length;
-          if (count > 0) {
-            // 优先使用翻译，如果没有则使用原文
-            let chapterTitle: string;
-            if (typeof chapter.title === 'string') {
-              chapterTitle = chapter.title;
-            } else {
-              chapterTitle = chapter.title.translation?.translation || chapter.title.original;
-            }
-            options.push({ label: chapterTitle, value: chapter.id, count });
-          }
-        });
-      });
-      break;
-  }
-
-  // 确保当前选中的实体也在选项列表中（即使计数为0）
-  if (filterEntityId.value && !options.some((o) => o.value === filterEntityId.value)) {
-    const selectedEntity = findEntityById(filterEntityId.value, filterType.value);
-    if (selectedEntity) {
-      options.push(selectedEntity);
-    }
-  }
-
-  return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
-});
-
-// 根据ID查找实体信息
-function findEntityById(
-  id: string,
-  type: MemoryAttachmentType,
-): { label: string; value: string; count: number } | null {
-  if (!props.book) return null;
-
-  switch (type) {
-    case 'character': {
-      const char = props.book.characterSettings?.find((c) => c.id === id);
-      if (char) {
-        return {
-          label: char.translation?.translation || char.name,
-          value: char.id,
-          count: 0,
-        };
-      }
-      break;
-    }
-    case 'term': {
-      const term = props.book.terminologies?.find((t) => t.id === id);
-      if (term) {
-        return {
-          label: term.translation?.translation || term.name,
-          value: term.id,
-          count: 0,
-        };
-      }
-      break;
-    }
-    case 'chapter': {
-      for (const volume of props.book.volumes || []) {
-        const chapter = volume.chapters?.find((c) => c.id === id);
-        if (chapter) {
-          const chapterTitle =
-            typeof chapter.title === 'string'
-              ? chapter.title
-              : chapter.title.translation?.translation || chapter.title.original;
-          return {
-            label: chapterTitle,
-            value: chapter.id,
-            count: 0,
-          };
-        }
-      }
-      break;
-    }
-  }
-  return null;
-}
-
-// 类型筛选计数
-const typeCounts = computed(() => {
-  const counts = {
-    all: memories.value.length,
-    book: 0,
-    character: 0,
-    term: 0,
-    chapter: 0,
-  };
-
-  memories.value.forEach((memory) => {
-    memory.attachedTo?.forEach((att) => {
-      if (counts[att.type] !== undefined) {
-        counts[att.type]++;
-      }
-    });
-  });
-
-  return counts;
-});
-
-// 是否有激活的筛选
-const hasActiveFilters = computed(() => {
-  return (
-    filterType.value !== 'all' || filterEntityId.value !== null || searchQuery.value.trim() !== ''
-  );
-});
+// 仅显示未向量化的筛选
+const filterUnembeddedOnly = ref(false);
 
 // Memory 列表
 const memories = ref<Memory[]>([]);
+
+// 是否有激活的筛选
+const hasActiveFilters = computed(() => {
+  return searchQuery.value.trim() !== '' || filterUnembeddedOnly.value;
+});
+
+function isMemoryUnembedded(memory: Memory): boolean {
+  return !memory.embedding || memory.embeddingModel !== CURRENT_EMBEDDING_MODEL;
+}
 
 // 筛选后的记忆列表
 const filteredMemories = computed(() => {
   let result = memories.value;
 
-  // 类型筛选
-  if (filterType.value !== 'all') {
-    result = result.filter((memory) => memory.attachedTo?.some((a) => a.type === filterType.value));
+  // 未向量化筛选
+  if (filterUnembeddedOnly.value) {
+    result = result.filter(isMemoryUnembedded);
   }
 
-  // 实体筛选
-  if (filterEntityId.value) {
-    result = result.filter((memory) =>
-      memory.attachedTo?.some((a) => a.id === filterEntityId.value),
-    );
-  }
-
-  // 搜索筛选
+  // 文本搜索
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim();
     result = result.filter((memory) => {
@@ -224,18 +74,9 @@ const filteredMemories = computed(() => {
 
 // 清除所有筛选
 function clearFilters() {
-  filterType.value = 'all';
-  filterEntityId.value = null;
   searchQuery.value = '';
+  filterUnembeddedOnly.value = false;
 }
-
-// 当类型改变时，清除实体筛选
-watch(filterType, (newType, oldType) => {
-  // 只有当类型真正改变且不是通过标签设置时才清除实体筛选
-  if (newType !== oldType && !isSettingFilterFromTag.value) {
-    filterEntityId.value = null;
-  }
-});
 
 // 对话框状态
 const showAddDialog = ref(false);
@@ -442,24 +283,6 @@ const handleDelete = (memory: Memory) => {
   openDeleteConfirm(memory);
 };
 
-// 处理按附件筛选
-async function handleFilterByAttachment(type: string, id: string) {
-  isSettingFilterFromTag.value = true;
-  filterType.value = type as MemoryAttachmentType;
-  filterEntityId.value = id;
-  // 等待下一个 tick 后重置标志
-  await nextTick();
-  isSettingFilterFromTag.value = false;
-}
-
-// 处理导航（从详情对话框）
-function handleNavigate(type: MemoryAttachmentType, id: string) {
-  // 关闭详情对话框
-  showDetailDialog.value = false;
-  // 应用筛选
-  handleFilterByAttachment(type, id);
-}
-
 // 处理从详情对话框保存记忆
 async function handleSaveMemory(memoryId: string, summary: string, content: string) {
   if (!props.book) {
@@ -547,7 +370,6 @@ const handleExport = () => {
       id: m.id,
       summary: m.summary,
       content: m.content,
-      attachedTo: m.attachedTo,
       createdAt: m.createdAt,
       lastAccessedAt: m.lastAccessedAt,
     }));
@@ -716,46 +538,11 @@ const handleFileSelect = async (event: Event) => {
             </InputGroupAddon>
           </InputGroup>
 
-          <!-- 类型筛选 -->
-          <Dropdown
-            v-model="filterType"
-            :options="typeOptions"
-            option-label="label"
-            option-value="value"
-            placeholder="类型"
-            class="w-32"
-          >
-            <template #option="slotProps">
-              <div class="flex items-center gap-2">
-                <i :class="slotProps.option.icon"></i>
-                <span>{{ slotProps.option.label }}</span>
-                <span class="ml-auto text-xs text-moon-100/40">
-                  {{ typeCounts[slotProps.option.value as keyof typeof typeCounts] }}
-                </span>
-              </div>
-            </template>
-          </Dropdown>
-
-          <!-- 实体筛选（仅在选择了类型时显示） -->
-          <Dropdown
-            v-if="filterType !== 'all'"
-            v-model="filterEntityId"
-            :options="entityOptions"
-            option-label="label"
-            option-value="value"
-            placeholder="实体"
-            class="w-40"
-            show-clear
-          >
-            <template #option="slotProps">
-              <div class="flex items-center gap-2">
-                <span>{{ slotProps.option.label }}</span>
-                <span class="ml-auto text-xs text-moon-100/40">
-                  {{ slotProps.option.count }}
-                </span>
-              </div>
-            </template>
-          </Dropdown>
+          <!-- 仅显示未向量化 -->
+          <label class="flex items-center gap-2 text-sm text-moon-100/70 whitespace-nowrap">
+            <Checkbox v-model="filterUnembeddedOnly" :binary="true" />
+            <span>仅显示未向量化</span>
+          </label>
 
           <!-- 清除筛选按钮 -->
           <Button
@@ -850,7 +637,6 @@ const handleFileSelect = async (event: Event) => {
               :book-id="book?.id || ''"
               @click="openDetailDialog"
               @delete="handleDelete"
-              @filter-by-attachment="handleFilterByAttachment"
             />
           </div>
         </template>
@@ -938,7 +724,6 @@ const handleFileSelect = async (event: Event) => {
       :initial-edit-mode="openDetailDialogInEditMode"
       @save="handleSaveMemory"
       @delete="openDeleteConfirm"
-      @navigate="handleNavigate"
     />
 
     <!-- 隐藏的文件输入 -->

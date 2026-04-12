@@ -218,176 +218,50 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
 }
 
 /**
- * 获取与 chunk 相关的记忆
- * 按优先级顺序获取记忆：character → term → chapter → book → global
- * 确保总记忆数量不超过限制
+ * 获取与 chunk 相关的记忆（临时 LRU 实现）
+ *
+ * 注意：附件系统已移除（见 optimize-memory-injection change），此函数目前降级为
+ * "最近访问时间" 排序的 LRU 兜底。真正的三信号打分实现将在 Group 8 完成后替换此函数。
+ * 签名保持不变，调用方无需改动。
+ *
  * @param bookId 书籍 ID
  * @param chunkText chunk 文本内容
- * @param maxMemories 最大返回记忆数量（默认 10）
- * @param chapterId 章节 ID（可选，用于获取章节级别记忆）
+ * @param maxMemories 最大返回记忆数量（默认 15）
+ * @param _chapterId 章节 ID（当前未使用，保留兼容）
+ * @param _existingTerms 已提取的术语列表（当前未使用，保留兼容）
+ * @param _existingCharacters 已提取的角色列表（当前未使用，保留兼容）
  * @returns 格式化的记忆上下文字符串
  */
 export async function getRelatedMemoriesForChunk(
   bookId: string,
   chunkText: string,
   maxMemories: number = 15,
-  chapterId?: string,
-  existingTerms?: Terminology[],
-  existingCharacters?: CharacterSetting[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _chapterId?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _existingTerms?: Terminology[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _existingCharacters?: CharacterSetting[],
 ): Promise<string> {
   if (!bookId || !chunkText) {
     return '';
   }
 
   try {
-    let terms: Terminology[];
-    let characters: CharacterSetting[];
+    const recentMemories = await MemoryService.getRecentMemories(
+      bookId,
+      maxMemories,
+      'lastAccessedAt',
+      false,
+    );
 
-    if (existingTerms && existingCharacters) {
-      terms = existingTerms;
-      characters = existingCharacters;
-    } else {
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        return '';
-      }
-
-      terms = existingTerms || findUniqueTermsInText(chunkText, book.terminologies || []);
-      characters =
-        existingCharacters || findUniqueCharactersInText(chunkText, book.characterSettings || []);
-    }
-
-    // 使用 Map 去重（按 memory ID），同时保持优先级顺序
-    const uniqueMemories = new Map<string, Memory>();
-
-    // 内存填充策略：
-    // 不再使用严格的分类限制（如只能放3个角色），而是按优先级顺序填充
-    // 优先级：角色 > 术语 > 章节 > 书籍 > 全局
-    // 为防止单一实体（如主角）占用所有名额，设置每个实体的最大记忆数限制
-    const PER_ENTITY_LIMIT = Math.max(3, Math.floor(maxMemories * 0.4));
-
-    const getUniqueEntityIds = (ids: Array<string | undefined>): string[] => {
-      const seen = new Set<string>();
-      const result: string[] = [];
-
-      for (const id of ids) {
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        result.push(id);
-      }
-
-      return result;
-    };
-
-    const fetchEntityMemories = async (
-      type: 'character' | 'term',
-      entityIds: string[],
-    ): Promise<Memory[][]> => {
-      if (entityIds.length === 0) {
-        return [];
-      }
-
-      const memoryGroups = await Promise.all(
-        entityIds.map((id) =>
-          MemoryService.getMemoriesByAttachment(bookId, {
-            type,
-            id,
-          }),
-        ),
-      );
-
-      return memoryGroups.map((memories) =>
-        memories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt).slice(0, PER_ENTITY_LIMIT),
-      );
-    };
-
-    const characterIds = getUniqueEntityIds(characters.map((character) => character.id));
-    const termIds = getUniqueEntityIds(terms.map((term) => term.id));
-
-    const [characterMemoryGroups, termMemoryGroups] = await Promise.all([
-      fetchEntityMemories('character', characterIds),
-      fetchEntityMemories('term', termIds),
-    ]);
-
-    // 1. 获取角色相关记忆（最高优先级）
-    for (const characterMemories of characterMemoryGroups) {
-      if (uniqueMemories.size >= maxMemories) break;
-      for (const memory of characterMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
-    }
-
-    // 2. 获取术语相关记忆
-    if (uniqueMemories.size < maxMemories) {
-      for (const termMemories of termMemoryGroups) {
-        if (uniqueMemories.size >= maxMemories) break;
-        for (const memory of termMemories) {
-          if (uniqueMemories.size >= maxMemories) break;
-          uniqueMemories.set(memory.id, memory);
-        }
-      }
-    }
-
-    // 3. 获取章节相关记忆
-    if (chapterId && uniqueMemories.size < maxMemories) {
-      const chapterMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-        type: 'chapter',
-        id: chapterId,
-      });
-      const sortedMemories = chapterMemories
-        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-        .slice(0, PER_ENTITY_LIMIT); // 章节也应用实体限制
-
-      for (const memory of sortedMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
-    }
-
-    // 4. 获取书籍级别记忆
-    if (uniqueMemories.size < maxMemories) {
-      const bookMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-        type: 'book',
-        id: bookId,
-      });
-      const sortedMemories = bookMemories
-        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-        .slice(0, PER_ENTITY_LIMIT);
-
-      for (const memory of sortedMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
-    }
-
-    // 5. 获取全局记忆（最近访问的）
-    if (uniqueMemories.size < maxMemories) {
-      const remainingSlots = maxMemories - uniqueMemories.size;
-      const recentMemories = await MemoryService.getRecentMemories(
-        bookId,
-        remainingSlots,
-        'lastAccessedAt',
-        false, // 不更新访问时间
-      );
-      for (const memory of recentMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
-    }
-
-    // 格式化记忆上下文
-    if (uniqueMemories.size === 0) {
+    if (recentMemories.length === 0) {
       return '';
     }
 
-    // 转换为数组并按 lastAccessedAt 排序（最新的在前）
-    const sortedMemories = Array.from(uniqueMemories.values()).sort(
-      (a, b) => b.lastAccessedAt - a.lastAccessedAt,
+    const memoryLines = recentMemories.map(
+      (memory: Memory) => `  - [${memory.id}] ${memory.summary}`,
     );
-
-    const memoryLines = sortedMemories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
 
     return `\n\n【相关记忆】\n${memoryLines.join('\n')}`;
   } catch (error) {

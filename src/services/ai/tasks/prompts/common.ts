@@ -229,14 +229,7 @@ export function getMemoryWorkflowRules(): string {
 - 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（preparing；翻译任务还可在 review）
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
-- **附件最佳实践**：与具体实体相关的记忆必须设置 \`attached_to\`（角色/术语/章节）。可同时附加多个实体。
-- **补齐附件**：发现记忆缺少或错误附件时，用 \`update_memory\` 纠正（替换 \`attached_to\`）。
-- **记忆顺序**：先建立相关术语/角色后，再建立/更新记忆。这样可以方便添加附件。
-
-**附件示例**：
-- 角色背景 → \`attached_to=[{type:"character", id:"..."}]\`
-- 术语定义 → \`attached_to=[{type:"term", id:"..."}]\`
-- 章节摘要 → \`attached_to=[{type:"chapter", id:"..."}]\`
+- 在 summary 和 content 中明确提及相关角色/术语名称，系统会基于文本内容和语义相似度自动召回
 
 **字段约束**：summary ≤40字 + 关键词 | content 1-3条要点（总 ≤300字）`;
 }

@@ -90,9 +90,10 @@ interface TsukuyomiDB extends DBSchema {
       bookId: string;
       content: string;
       summary: string;
-      attachedTo: { type: string; id: string }[];
       createdAt: number;
       lastAccessedAt: number;
+      embedding?: number[];
+      embeddingModel?: string;
     };
     indexes: {
       'by-bookId': string;
@@ -110,7 +111,7 @@ interface TsukuyomiDB extends DBSchema {
 }
 
 const DB_NAME = 'tsukuyomi';
-const DB_VERSION = 8; // 升级版本保持为 8，但移除了无效的 by-attachedTo 索引
+const DB_VERSION = 9; // v9 硬迁移：清理旧 attachedTo 字段残留（memory-attachment 系统已移除）
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 
@@ -123,12 +124,28 @@ export async function resetDbForTests(): Promise<void> {
 }
 
 /**
+ * 测试专用：重置模块内缓存的 dbPromise，使得下次 getDB() 调用会重新打开数据库。
+ * 用于需要测试 schema upgrade 路径的场景。
+ */
+export async function __resetDbPromiseForTesting(): Promise<void> {
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      db.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  dbPromise = null;
+}
+
+/**
  * 初始化并获取 IndexedDB 数据库实例
  */
 export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
   if (!dbPromise) {
     dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
-      upgrade(db, _oldVersion, _newVersion, _transaction) {
+      upgrade(db, oldVersion, _newVersion, transaction) {
         // 创建 books 存储
         if (!db.objectStoreNames.contains('books')) {
           const booksStore = db.createObjectStore('books', { keyPath: 'id' });
@@ -208,6 +225,47 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
         // 创建 full-text-indexes 存储（版本 6 新增）
         if (!db.objectStoreNames.contains('full-text-indexes')) {
           db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
+        }
+
+        // 版本 9：硬迁移清理旧 attachedTo 字段
+        // 历史版本的 Memory 记录含有 attachedTo 字段，本次将其从每条记录中物理删除，
+        // 确保 DevTools / 单元测试观察到的数据形态与 TS 类型一致。
+        // 迁移在同一 upgrade 事务内完成，失败时整个升级回滚到原版本。
+        if (oldVersion < 9 && db.objectStoreNames.contains('memories')) {
+          const startedAt =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const store = (transaction as any).objectStore('memories');
+          const request = store.openCursor();
+          let migrated = 0;
+          request.onsuccess = () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cursor = request.result as any;
+            if (!cursor) {
+              const endedAt =
+                typeof performance !== 'undefined' && typeof performance.now === 'function'
+                  ? performance.now()
+                  : Date.now();
+              console.info(
+                `[indexed-db] v9 迁移完成：清理 ${migrated} 条 memory 记录的 attachedTo 字段，耗时 ${Math.round(
+                  endedAt - startedAt,
+                )} ms`,
+              );
+              return;
+            }
+            const record = cursor.value as Record<string, unknown> | undefined;
+            if (record && 'attachedTo' in record) {
+              delete record.attachedTo;
+              cursor.update(record);
+              migrated += 1;
+            }
+            cursor.continue();
+          };
+          request.onerror = () => {
+            console.error('[indexed-db] v9 迁移 cursor 打开失败:', request.error);
+          };
         }
       },
       blocked() {

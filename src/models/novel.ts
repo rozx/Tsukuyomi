@@ -206,11 +206,30 @@ export interface Paragraph {
   translations: Translation[];
 }
 
+/**
+ * 记忆打分详情
+ * 记录注入记忆时每个信号的原始值、加权值与总分，用于 UI 的评分详情 tooltip
+ */
+export interface ScoreBreakdown {
+  semantic: number; // 原始语义相似度 ∈ [0, 1]
+  keyword: number; // 原始关键词命中比例 ∈ [0, 1]
+  recency: number; // 原始时间衰减因子 ∈ [0, 1]
+  semanticWeighted: number; // semantic × 权重
+  keywordWeighted: number; // keyword × 权重
+  recencyWeighted: number; // recency × 权重
+  total: number; // 三者加权和
+}
+
 export interface Translation {
   id: string;
   translation: string;
   aiModelId: string; // id of AIModel
   referencedMemories?: string[]; // IDs of memories referenced during translation
+  /**
+   * 记忆打分详情（仅对由打分系统注入的记忆有效；AI 主动调用的不会有条目）
+   * 非同步字段：Gist 序列化时会被 strip，不参与跨设备同步
+   */
+  memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
 }
 
 export interface Note {
