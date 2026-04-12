@@ -153,8 +153,10 @@ export async function __resetDbPromiseForTesting(): Promise<void> {
 export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
   if (!dbPromise) {
     dbBlocked = false;
+    console.info(`[indexed-db] 正在打开数据库 ${DB_NAME} v${DB_VERSION}...`);
     dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
       async upgrade(db, oldVersion, _newVersion, transaction) {
+        console.info(`[indexed-db] 执行升级: v${oldVersion} → v${_newVersion}`);
         // 创建 books 存储
         if (!db.objectStoreNames.contains('books')) {
           const booksStore = db.createObjectStore('books', { keyPath: 'id' });
@@ -282,7 +284,11 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
           '[indexed-db] 当前标签页正在阻止其他标签页的数据库升级，建议刷新此页面',
         );
       },
+    }).then((db) => {
+      console.info('[indexed-db] 数据库打开成功');
+      return db;
     }).catch((error) => {
+      console.error('[indexed-db] 数据库打开失败:', error);
       // 重置缓存，允许后续重试
       dbPromise = null;
       throw error;
