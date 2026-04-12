@@ -1,8 +1,23 @@
-import type { Paragraph, CharacterSetting, Terminology } from 'src/models/novel';
+import type {
+  Paragraph,
+  CharacterSetting,
+  Terminology,
+  ScoreBreakdown,
+} from 'src/models/novel';
 import { getSelectedTranslation } from 'src/utils/text-utils';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
+import {
+  scoreMemory,
+  selectByBudget,
+  DEFAULT_CHAR_BUDGET,
+  HARD_ITEM_CAP,
+  DEFAULT_MIN_SCORE,
+  type ScoredMemory,
+} from 'src/services/memory-scoring';
+import { EmbeddingService } from 'src/services/embedding-service';
+import { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
@@ -218,35 +233,15 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
 }
 
 /**
- * 获取与 chunk 相关的记忆（临时 LRU 实现）
- *
- * 注意：附件系统已移除（见 optimize-memory-injection change），此函数目前降级为
- * "最近访问时间" 排序的 LRU 兜底。真正的三信号打分实现将在 Group 8 完成后替换此函数。
- * 签名保持不变，调用方无需改动。
- *
- * @param bookId 书籍 ID
- * @param chunkText chunk 文本内容
- * @param maxMemories 最大返回记忆数量（默认 15）
- * @param _chapterId 章节 ID（当前未使用，保留兼容）
- * @param _existingTerms 已提取的术语列表（当前未使用，保留兼容）
- * @param _existingCharacters 已提取的角色列表（当前未使用，保留兼容）
- * @returns 格式化的记忆上下文字符串
+ * 遗留 LRU 实现:纯粹的"最近访问时间"兜底。
+ * 保留作为新打分路径出错或无可用数据时的 fallback。
  */
-export async function getRelatedMemoriesForChunk(
+export async function getRelatedMemoriesForChunkLegacy(
   bookId: string,
   chunkText: string,
   maxMemories: number = 15,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _chapterId?: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _existingTerms?: Terminology[],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _existingCharacters?: CharacterSetting[],
 ): Promise<string> {
-  if (!bookId || !chunkText) {
-    return '';
-  }
-
+  if (!bookId || !chunkText) return '';
   try {
     const recentMemories = await MemoryService.getRecentMemories(
       bookId,
@@ -254,19 +249,196 @@ export async function getRelatedMemoriesForChunk(
       'lastAccessedAt',
       false,
     );
+    if (recentMemories.length === 0) return '';
+    const lines = recentMemories.map((m: Memory) => `  - [${m.id}] ${m.summary}`);
+    return `\n\n【相关记忆】\n${lines.join('\n')}`;
+  } catch (error) {
+    console.warn('Failed to get related memories (legacy fallback):', error);
+    return '';
+  }
+}
 
-    if (recentMemories.length === 0) {
-      return '';
+// ============================================================================
+// 三信号打分路径 — 任务级 chunk embedding 缓存 + 选中记忆的 breakdown 旁路
+// ============================================================================
+
+/**
+ * 任务级 chunk embedding 缓存:同一任务中不同分块会重复读取同一 chunkText,
+ * 避免反复调用 transformers.js。键 = 原始文本,值 = 归一化后的向量或 null。
+ *
+ * 调用方应在任务结束时调用 `clearChunkEmbeddingCache()`。
+ */
+const chunkEmbeddingCache = new Map<string, Float32Array | null>();
+
+export function clearChunkEmbeddingCache(): void {
+  chunkEmbeddingCache.clear();
+}
+
+/**
+ * 最近一次打分得到的 breakdown 列表(按 bookId 索引)。
+ * translation-service 在分块构造 Translation 时可从此读取,不影响其他调用方。
+ * 采用"最后写入覆盖"语义,因为同一时刻一个 bookId 只有一个任务在跑。
+ */
+const lastScoreBreakdownsByBook = new Map<string, Record<string, ScoreBreakdown>>();
+
+export function getLastScoreBreakdowns(bookId: string): Record<string, ScoreBreakdown> | undefined {
+  return lastScoreBreakdownsByBook.get(bookId);
+}
+
+export function clearLastScoreBreakdowns(bookId?: string): void {
+  if (bookId) {
+    lastScoreBreakdownsByBook.delete(bookId);
+  } else {
+    lastScoreBreakdownsByBook.clear();
+  }
+}
+
+/**
+ * 尝试计算 chunk 的语义向量。
+ * - 语义检索未启用 / service 未就绪 → 返回 null(调用方走纯关键词+时间衰减降级)
+ * - 命中缓存直接返回
+ */
+async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | null> {
+  // 读取用户设置
+  let enableSemantic = true;
+  try {
+    const settings = useSettingsStore();
+    enableSemantic = settings.settings?.memoryInjection?.enableSemantic !== false;
+  } catch {
+    // store 初始化失败时保持默认启用
+  }
+  if (!enableSemantic) return null;
+  if (!EmbeddingService.isReady()) return null;
+
+  const cached = chunkEmbeddingCache.get(chunkText);
+  if (cached !== undefined) return cached;
+
+  try {
+    const vec = await EmbeddingService.embed(chunkText);
+    chunkEmbeddingCache.set(chunkText, vec);
+    return vec;
+  } catch (error) {
+    console.warn('[context-builder] 计算 chunk embedding 失败:', error);
+    chunkEmbeddingCache.set(chunkText, null);
+    return null;
+  }
+}
+
+/**
+ * 获取与 chunk 相关的记忆 — 三信号打分路径。
+ *
+ * 流程:
+ * 1. 读取整本书 Memory(60s TTL 缓存)
+ * 2. 从 terms/characters 构造 chunkEntities(关键词信号)
+ * 3. 可选计算 chunk 语义向量(语义信号)
+ * 4. 每条记忆打分 → 阈值过滤 → 字符预算填充
+ * 5. 空选择时兜底 getRecentMemories(5)
+ * 6. 整体 try/catch 失败时退回 legacy LRU
+ *
+ * @param bookId 书籍 ID
+ * @param chunkText chunk 文本内容
+ * @param _maxMemories 已废弃:新实现按字符预算 + HARD_ITEM_CAP 限制,此参数忽略
+ * @param _chapterId 章节 ID(保留兼容)
+ * @param existingTerms 已提取的术语列表(用于关键词信号)
+ * @param existingCharacters 已提取的角色列表(用于关键词信号)
+ * @returns 格式化的记忆上下文字符串
+ */
+export async function getRelatedMemoriesForChunk(
+  bookId: string,
+  chunkText: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _maxMemories: number = 15,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _chapterId?: string,
+  existingTerms?: Terminology[],
+  existingCharacters?: CharacterSetting[],
+): Promise<string> {
+  if (!bookId || !chunkText) return '';
+
+  try {
+    // 1. 拉全量记忆(走缓存)
+    const allMemories = await MemoryService.getAllBookMemories(bookId);
+    if (allMemories.length === 0) return '';
+
+    // 2. 构造实体集合 — terms.name + characters.name + aliases
+    const chunkEntities: Array<{ name: string }> = [];
+    if (existingTerms) {
+      for (const t of existingTerms) {
+        if (t?.name) chunkEntities.push({ name: t.name });
+      }
+    }
+    if (existingCharacters) {
+      for (const c of existingCharacters) {
+        if (c?.name) chunkEntities.push({ name: c.name });
+        if (c?.aliases) {
+          for (const alias of c.aliases) {
+            if (alias?.name) chunkEntities.push({ name: alias.name });
+          }
+        }
+      }
     }
 
-    const memoryLines = recentMemories.map(
-      (memory: Memory) => `  - [${memory.id}] ${memory.summary}`,
-    );
+    // 3. 可选语义向量
+    const chunkEmbedding = await computeChunkEmbedding(chunkText);
 
-    return `\n\n【相关记忆】\n${memoryLines.join('\n')}`;
+    // 4. 逐条打分
+    const now = Date.now();
+    const scored: ScoredMemory[] = allMemories.map((memory) => ({
+      memory,
+      breakdown: scoreMemory(memory, {
+        chunkEntities,
+        chunkEmbedding: chunkEmbedding ?? undefined,
+        now,
+      }),
+    }));
+
+    // 5. 字符预算填充 — 读取用户预算设置
+    let charBudget = DEFAULT_CHAR_BUDGET;
+    let minScore = DEFAULT_MIN_SCORE;
+    try {
+      const settings = useSettingsStore();
+      const cfg = settings.settings?.memoryInjection;
+      if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
+      if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
+    } catch {
+      /* 保持默认 */
+    }
+
+    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+
+    // 6. 兜底:若打分后全部被过滤,退回 LRU 最近 5 条
+    let finalList: Memory[] = selected;
+    const breakdownMap: Record<string, ScoreBreakdown> = {};
+    if (selected.length === 0) {
+      try {
+        finalList = await MemoryService.getRecentMemories(
+          bookId,
+          5,
+          'lastAccessedAt',
+          false,
+        );
+      } catch {
+        finalList = [];
+      }
+    } else {
+      // 记录选中记忆的 breakdown(仅对"打分路径"有意义,兜底路径不记录)
+      for (const item of scored) {
+        if (selected.some((m) => m.id === item.memory.id)) {
+          breakdownMap[item.memory.id] = item.breakdown;
+        }
+      }
+    }
+
+    // 写入模块级 breakdowns 缓存,供 translation-service 旁路读取
+    lastScoreBreakdownsByBook.set(bookId, breakdownMap);
+
+    if (finalList.length === 0) return '';
+
+    const lines = finalList.map((m) => `  - [${m.id}] ${m.summary}`);
+    return `\n\n【相关记忆】\n${lines.join('\n')}`;
   } catch (error) {
-    console.warn('Failed to get related memories for chunk:', error);
-    return '';
+    console.warn('[context-builder] 三信号打分失败,退回 legacy LRU:', error);
+    return getRelatedMemoriesForChunkLegacy(bookId, chunkText, 15);
   }
 }
 

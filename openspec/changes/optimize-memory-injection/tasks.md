@@ -79,13 +79,13 @@
 
 ## 8. `context-builder` 重写
 
-- [ ] 8.1 在 `src/services/ai/tasks/utils/context-builder.ts` 将现有的 `getRelatedMemoriesForChunk` 重命名为 `getRelatedMemoriesForChunkLegacy`,内部逻辑改造为"纯 LRU 兜底"(不再依赖 `attachedTo` 或 `getMemoriesByAttachment`)
-- [ ] 8.2 实现新的 `getRelatedMemoriesForChunk`,保持签名不变,内部流程:拉 `getAllBookMemories` → 提取 chunk 实体(terms + characters) → 可选计算 chunk 嵌入 → 逐条打分 → 阈值过滤 → 按预算填充 → 格式化为 `【相关记忆】\n  - [id] summary` 字符串
-- [ ] 8.3 实现 task 级 chunk 嵌入缓存(`Map<string, Float32Array>`,任务结束时清空)
-- [ ] 8.4 空选择兜底:当打分后 `selected.length === 0` 时调用 `MemoryService.getRecentMemories(bookId, 5, 'lastAccessedAt', false)`
-- [ ] 8.5 将选中的 `ScoreBreakdown` 通过参数或 ambient context 传递到 `translation-service.ts`,由 translation 任务在构造 Translation 对象时写入 `memoryScoreBreakdown`
-- [ ] 8.6 在新实现外层包裹 `try { new } catch { console.warn; legacy }`,确保异常不影响翻译
-- [ ] 8.7 更新或新增 `src/__tests__/context-builder.test.ts`,覆盖:打分路径、语义降级路径、预算裁剪、兜底路径、异常 fallback
+- [x] 8.1 在 `src/services/ai/tasks/utils/context-builder.ts` 将现有的 `getRelatedMemoriesForChunk` 重命名为 `getRelatedMemoriesForChunkLegacy`,内部逻辑改造为"纯 LRU 兜底"(不再依赖 `attachedTo` 或 `getMemoriesByAttachment`)
+- [x] 8.2 实现新的 `getRelatedMemoriesForChunk`,保持签名不变,内部流程:拉 `getAllBookMemories` → 提取 chunk 实体(terms + characters) → 可选计算 chunk 嵌入 → 逐条打分 → 阈值过滤 → 按预算填充 → 格式化为 `【相关记忆】\n  - [id] summary` 字符串
+- [x] 8.3 实现 task 级 chunk 嵌入缓存(`Map<string, Float32Array>`,任务结束时清空)
+- [x] 8.4 空选择兜底:当打分后 `selected.length === 0` 时调用 `MemoryService.getRecentMemories(bookId, 5, 'lastAccessedAt', false)`
+- [x] 8.5 将选中的 `ScoreBreakdown` 通过参数或 ambient context 传递到 `translation-service.ts`,由 translation 任务在构造 Translation 对象时写入 `memoryScoreBreakdown`
+- [x] 8.6 在新实现外层包裹 `try { new } catch { console.warn; legacy }`,确保异常不影响翻译
+- [x] 8.7 更新或新增 `src/__tests__/context-builder.test.ts`,覆盖:打分路径、语义降级路径、预算裁剪、兜底路径、异常 fallback
 
 ## 9. CRUD 到队列的联动
 
