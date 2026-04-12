@@ -21,7 +21,7 @@ export default {
     modelInfo: '模型: {modelId} (~195 MB, 首次使用需下载)',
     advanced: '高级设置',
     minScoreThreshold: '最低分数阈值',
-    minScoreThresholdDesc: '低于此分数的记忆不会被注入（满分 6.0）',
+    minScoreThresholdDesc: '低于此分数的记忆不会被注入（满分 1.0）',
     minScoreAll: '0（全部注入）',
     infoText:
       '记忆注入使用三信号评分（语义相似度 + 关键词匹配 + 时间衰减）自动选择与当前翻译内容最相关的记忆。即使未启用语义检索，关键词和时间衰减仍会生效。',
@@ -41,7 +41,7 @@ export default {
     keywordMatch: '关键词匹配',
     timeDecay: '时间衰减',
     totalScore: '总分',
-    maxScore: '满分 6.0',
+    maxScore: '满分 1.0',
     aiInvoked: '由 AI 主动调用',
   },
 };

@@ -23,7 +23,7 @@ export default {
     modelInfo: 'Model: {modelId} (~195 MB, downloaded on first use)',
     advanced: 'Advanced Settings',
     minScoreThreshold: 'Minimum Score Threshold',
-    minScoreThresholdDesc: 'Memories below this score will not be injected (max 6.0)',
+    minScoreThresholdDesc: 'Memories below this score will not be injected (max 1.0)',
     minScoreAll: '0 (inject all)',
     infoText:
       'Memory injection uses a three-signal scoring system (semantic similarity + keyword matching + time decay) to automatically select the most relevant memories. Even without semantic search, keyword and time decay signals remain active.',
@@ -43,7 +43,7 @@ export default {
     keywordMatch: 'Keyword Match',
     timeDecay: 'Time Decay',
     totalScore: 'Total Score',
-    maxScore: 'Max 6.0',
+    maxScore: 'Max 1.0',
     aiInvoked: 'AI invoked',
   },
 };

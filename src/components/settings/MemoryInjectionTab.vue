@@ -234,20 +234,20 @@ onUnmounted(() => {
       <div v-if="showAdvanced" class="mt-3 space-y-2">
         <div class="flex items-center justify-between">
           <label class="text-xs text-moon/80">最低分数阈值</label>
-          <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(1) }}</span>
+          <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
         </div>
-        <p class="text-xs text-moon/50">低于此分数的记忆不会被注入（满分 6.0）</p>
+        <p class="text-xs text-moon/50">低于此分数的记忆不会被注入（满分 1.0）</p>
         <Slider
           v-model="minScoreThreshold"
           :min="0"
-          :max="3"
-          :step="0.1"
+          :max="0.5"
+          :step="0.01"
           class="w-full"
           @slideend="updateMinScoreThreshold($event)"
         />
         <div class="flex justify-between text-xs text-moon/40">
           <span>0（全部注入）</span>
-          <span>3.0</span>
+          <span>0.5</span>
         </div>
       </div>
     </div>

@@ -565,7 +565,7 @@ export class MemoryService {
         return { memory, score, kw };
       });
 
-      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.3);
+      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.05);
       filtered.sort((a, b) => b.score - a.score);
 
       const resultIds = filtered.map((s) => s.memory.id);

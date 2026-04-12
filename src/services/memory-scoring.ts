@@ -1,24 +1,23 @@
 /**
  * 记忆打分(三信号:语义 + 关键词 + 时间衰减)
  *
- * 公式: score = 3.0·semantic + 2.0·keyword + 1.0·recency
- * 最大分 = 6.0,默认阈值 0.3。
+ * 公式: score = 0.5·semantic + 0.333·keyword + 0.167·recency
+ * 最大分 = 1.0,默认阈值 0.05。
  */
 import type { Memory } from 'src/models/memory';
 import type { ScoreBreakdown } from 'src/models/novel';
 
 export const SCORING_WEIGHTS = {
-  semantic: 3.0,
-  keyword: 2.0,
-  recency: 1.0,
+  semantic: 0.5,
+  keyword: 1 / 3,
+  recency: 1 / 6,
 } as const;
 
-export const MAX_TOTAL_SCORE =
-  SCORING_WEIGHTS.semantic + SCORING_WEIGHTS.keyword + SCORING_WEIGHTS.recency;
+export const MAX_TOTAL_SCORE = 1.0;
 
 export const DEFAULT_CHAR_BUDGET = 2000;
 export const HARD_ITEM_CAP = 25;
-export const DEFAULT_MIN_SCORE = 0.3;
+export const DEFAULT_MIN_SCORE = 0.05;
 
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

@@ -82,6 +82,8 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
+import { scoreMemory } from 'src/services/memory-scoring';
+import type { ScoredMemory } from 'src/services/memory-scoring';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
@@ -1511,29 +1513,7 @@ const usedCharacters = computed(() => {
 const usedCharacterCount = computed(() => usedCharacters.value.length);
 
 // 计算当前章节参考的记忆数量（去重）
-const usedMemoryCount = computed(() => {
-  if (!selectedChapterParagraphs.value.length) {
-    return 0;
-  }
-
-  const memoryIds = new Set<string>();
-  for (const paragraph of selectedChapterParagraphs.value) {
-    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
-      continue;
-    }
-
-    const selectedTranslation = paragraph.translations.find(
-      (translation) => translation.id === paragraph.selectedTranslationId,
-    );
-    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
-      if (memoryId) {
-        memoryIds.add(memoryId);
-      }
-    });
-  }
-
-  return memoryIds.size;
-});
+const usedMemoryCount = computed(() => usedMemoryReferences.value.length);
 
 // 记忆引用弹出框状态
 const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
@@ -1543,77 +1523,86 @@ const isLoadingMemoryReferences = ref(false);
 const showMemoryDetailDialog = ref(false);
 const detailMemory = ref<Memory | null>(null);
 
-const referencedMemoryIds = computed(() => {
-  if (!selectedChapterParagraphs.value.length) {
-    return [];
-  }
-
-  const memoryIds = new Set<string>();
-  for (const paragraph of selectedChapterParagraphs.value) {
-    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
-      continue;
-    }
-
-    const selectedTranslation = paragraph.translations.find(
-      (translation) => translation.id === paragraph.selectedTranslationId,
-    );
-    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
-      if (memoryId) {
-        memoryIds.add(memoryId);
-      }
-    });
-  }
-
-  return Array.from(memoryIds);
-});
-
-const mergedScoreBreakdowns = computed(() => {
-  const merged: Record<string, ScoreBreakdown> = {};
-  for (const paragraph of selectedChapterParagraphs.value) {
-    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) continue;
-    const t = paragraph.translations.find((tr) => tr.id === paragraph.selectedTranslationId);
-    if (t?.memoryScoreBreakdown) {
-      Object.assign(merged, t.memoryScoreBreakdown);
-    }
-  }
-  return merged;
-});
+const mergedScoreBreakdowns = ref<Record<string, ScoreBreakdown>>({});
 
 const refreshReferencedMemories = async () => {
-  const ids = referencedMemoryIds.value;
-  if (!ids.length || !bookId.value) {
+  if (!bookId.value || !selectedChapterParagraphs.value.length) {
     usedMemoryReferences.value = [];
+    mergedScoreBreakdowns.value = {};
     return;
   }
 
   isLoadingMemoryReferences.value = true;
   try {
-    const memoryPromises = ids.map((id) => MemoryService.getMemory(bookId.value, id));
-    const memories = await Promise.all(memoryPromises);
-    usedMemoryReferences.value = memories
-      .filter((m): m is Memory => !!m)
-      .map((m) => ({
-        memoryId: m.id,
-        summary: m.summary,
-        accessedAt: m.lastAccessedAt,
-        toolName: 'get_memory',
-      }));
+    const chunkText = selectedChapterParagraphs.value.map((p) => p.text).join('\n');
+    if (!chunkText.trim()) {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+      return;
+    }
+
+    const allMemories = await MemoryService.getAllBookMemories(bookId.value);
+    if (allMemories.length === 0) {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+      return;
+    }
+
+    // 可选语义向量
+    let chunkEmbedding: Float32Array | undefined;
+    try {
+      const { EmbeddingService } = await import('src/services/embedding-service');
+      if (EmbeddingService.isReady()) {
+        const vec = await EmbeddingService.embed(chunkText.slice(0, 2000));
+        if (vec) chunkEmbedding = vec;
+      }
+    } catch {
+      // 静默降级
+    }
+
+    // 构造实体集合用于关键词匹配
+    const chunkEntities: Array<{ name: string }> = [];
+    for (const t of usedTerms.value) {
+      if (t?.name) chunkEntities.push({ name: t.name });
+    }
+    for (const c of usedCharacters.value) {
+      if (c?.name) chunkEntities.push({ name: c.name });
+      if (c?.aliases) {
+        for (const alias of c.aliases) {
+          if (alias?.name) chunkEntities.push({ name: alias.name });
+        }
+      }
+    }
+
+    const now = Date.now();
+    const scored: ScoredMemory[] = allMemories.map((memory) => ({
+      memory,
+      breakdown: scoreMemory(memory, { chunkEntities, chunkEmbedding, now }),
+    }));
+
+    const PREVIEW_MAX_ITEMS = 10;
+    scored.sort((a, b) => b.breakdown.total - a.breakdown.total);
+    const topScored = scored.slice(0, PREVIEW_MAX_ITEMS);
+    const selected = topScored.map((s) => s.memory);
+
+    const breakdowns: Record<string, ScoreBreakdown> = {};
+    for (const item of topScored) {
+      breakdowns[item.memory.id] = item.breakdown;
+    }
+    mergedScoreBreakdowns.value = breakdowns;
+
+    usedMemoryReferences.value = selected.map((m) => ({
+      memoryId: m.id,
+      summary: m.summary,
+      accessedAt: m.lastAccessedAt,
+      toolName: 'search_memories' as const,
+    }));
   } catch (error) {
-    console.warn('Failed to fetch referenced memories:', error);
+    console.warn('Failed to compute memory preview:', error);
   } finally {
     isLoadingMemoryReferences.value = false;
   }
 };
-
-watch(
-  referencedMemoryIds,
-  () => {
-    if (isMemoryPopoverOpen.value) {
-      refreshReferencedMemories();
-    }
-  },
-  { immediate: true },
-);
 
 const handleToggleMemoryPopover = (event: Event) => {
   memoryPopover.value?.toggle(event);
@@ -1621,12 +1610,24 @@ const handleToggleMemoryPopover = (event: Event) => {
 
 const handleMemoryPopoverShow = () => {
   isMemoryPopoverOpen.value = true;
-  void refreshReferencedMemories();
 };
 
 const handleMemoryPopoverHide = () => {
   isMemoryPopoverOpen.value = false;
 };
+
+// 章节加载后自动计算记忆预览
+watch(
+  () => selectedChapterParagraphs.value.length,
+  (len) => {
+    if (len > 0) {
+      void refreshReferencedMemories();
+    } else {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+    }
+  },
+);
 
 const closeMemoryPopover = () => {
   memoryPopover.value?.hide();

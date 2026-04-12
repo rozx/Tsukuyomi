@@ -21,7 +21,7 @@ export default {
     modelInfo: '模型: {modelId} (~195 MB, 首次使用需下載)',
     advanced: '進階設定',
     minScoreThreshold: '最低分數閾值',
-    minScoreThresholdDesc: '低於此分數的記憶不會被注入（滿分 6.0）',
+    minScoreThresholdDesc: '低於此分數的記憶不會被注入（滿分 1.0）',
     minScoreAll: '0（全部注入）',
     infoText:
       '記憶注入使用三信號評分（語義相似度 + 關鍵詞匹配 + 時間衰減）自動選擇與當前翻譯內容最相關的記憶。即使未啟用語義檢索，關鍵詞和時間衰減仍會生效。',
@@ -41,7 +41,7 @@ export default {
     keywordMatch: '關鍵詞匹配',
     timeDecay: '時間衰減',
     totalScore: '總分',
-    maxScore: '滿分 6.0',
+    maxScore: '滿分 1.0',
     aiInvoked: '由 AI 主動調用',
   },
 };

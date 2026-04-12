@@ -29,7 +29,7 @@ const SETTINGS_DB_KEY = 'app';
 const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
   charBudget: 2000,
   enableSemantic: true,
-  minScoreThreshold: 0.3,
+  minScoreThreshold: 0.05,
   hasSeenIntro: false,
 };
 
@@ -671,7 +671,7 @@ export const useSettingsStore = defineStore('settings', {
      * 更新记忆注入设置(带范围约束和副作用)
      *
      * - charBudget: clamp 到 [500, 5000]
-     * - minScoreThreshold: clamp 到 [0, 6.0]
+     * - minScoreThreshold: clamp 到 [0, 1.0]
      * - enableSemantic 切换时:true→resume / false→pause EmbeddingQueue
      */
     async updateMemoryInjection(
@@ -682,7 +682,7 @@ export const useSettingsStore = defineStore('settings', {
 
       // 范围约束
       merged.charBudget = Math.min(5000, Math.max(500, merged.charBudget));
-      merged.minScoreThreshold = Math.min(6.0, Math.max(0, merged.minScoreThreshold));
+      merged.minScoreThreshold = Math.min(1.0, Math.max(0, merged.minScoreThreshold));
 
       // 副作用:enableSemantic 变更时联动 EmbeddingQueue
       if (updates.enableSemantic !== undefined && updates.enableSemantic !== current.enableSemantic) {

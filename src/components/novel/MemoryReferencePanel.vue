@@ -63,6 +63,7 @@ function getBreakdown(memoryId: string): ScoreBreakdown | undefined {
   return props.scoreBreakdowns?.[memoryId];
 }
 
+
 // 格式化相对时间
 function formatRelativeTime(timestamp: number): string {
   const date = new Date(timestamp);
@@ -150,43 +151,40 @@ function formatRelativeTime(timestamp: number): string {
                 <div class="score-tooltip-trigger relative">
                   <span
                     class="text-xs text-primary-400/70 cursor-help"
-                    :title="`总分 ${getBreakdown(reference.memoryId)!.total.toFixed(2)} / 6.0`"
+                    :title="`相关度 ${getBreakdown(reference.memoryId)!.total.toFixed(2)}`"
                   >
                     <i class="pi pi-info-circle"></i>
-                    {{ getBreakdown(reference.memoryId)!.total.toFixed(1) }}
+                    {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
                   </span>
                   <!-- 悬停弹出的打分详情 -->
                   <div
-                    class="score-tooltip absolute right-0 bottom-full mb-1 w-56 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
+                    class="score-tooltip absolute right-0 bottom-full mb-1 w-52 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
                   >
                     <div class="space-y-1.5">
                       <div class="flex justify-between text-moon-100/70">
                         <span>语义相似度</span>
                         <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }} × 3.0 =
-                          {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
+                          {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
                         </span>
                       </div>
                       <div class="flex justify-between text-moon-100/70">
                         <span>关键词匹配</span>
                         <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }} × 2.0 =
-                          {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
+                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
                         </span>
                       </div>
                       <div class="flex justify-between text-moon-100/70">
                         <span>时间衰减</span>
                         <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }} × 1.0 =
-                          {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
+                          {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
                         </span>
                       </div>
                       <div
                         class="pt-1.5 mt-1 border-t border-white/10 flex justify-between font-medium text-moon-100/90"
                       >
-                        <span>总分</span>
+                        <span>相关度</span>
                         <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }} / 6.0
+                          {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
                         </span>
                       </div>
                     </div>
