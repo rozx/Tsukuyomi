@@ -434,6 +434,20 @@ export async function getRelatedMemoriesForChunk(
 
     if (finalList.length === 0) return '';
 
+    if (finalList.length > 0) {
+      const logLines = finalList.map((m) => {
+        const bd = breakdownMap[m.id];
+        const score = bd ? bd.total.toFixed(2) : '?';
+        const details = bd
+          ? `sem=${bd.semantic.toFixed(2)} kw=${bd.keyword.toFixed(2)} rec=${bd.recency.toFixed(2)}`
+          : 'fallback';
+        return `  ${m.id} [${score}] (${details}) ${m.summary.slice(0, 40)}`;
+      });
+      console.log(
+        `[context-builder] 注入 ${finalList.length}/${allMemories.length} 条记忆:\n${logLines.join('\n')}`,
+      );
+    }
+
     const lines = finalList.map((m) => `  - [${m.id}] ${m.summary}`);
     return `\n\n【相关记忆】\n${lines.join('\n')}`;
   } catch (error) {

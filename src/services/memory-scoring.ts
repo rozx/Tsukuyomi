@@ -1,16 +1,16 @@
 /**
  * 记忆打分(三信号:语义 + 关键词 + 时间衰减)
  *
- * 公式: score = 0.5·semantic + 0.333·keyword + 0.167·recency
+ * 公式: score = 0.6·semantic + 0.3·keyword + 0.1·recency
  * 最大分 = 1.0,默认阈值 0.05。
  */
 import type { Memory } from 'src/models/memory';
 import type { ScoreBreakdown } from 'src/models/novel';
 
 export const SCORING_WEIGHTS = {
-  semantic: 0.5,
-  keyword: 1 / 3,
-  recency: 1 / 6,
+  semantic: 0.6,
+  keyword: 0.3,
+  recency: 0.1,
 } as const;
 
 export const MAX_TOTAL_SCORE = 1.0;
