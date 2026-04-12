@@ -46,6 +46,7 @@ declare module 'vue' {
     KeyboardShortcutsPopover: typeof import('./components/novel/KeyboardShortcutsPopover.vue')['default']
     MemoryCard: typeof import('./components/novel/MemoryCard.vue')['default']
     MemoryDetailDialog: typeof import('./components/novel/MemoryDetailDialog.vue')['default']
+    MemoryInjectionTab: typeof import('./components/settings/MemoryInjectionTab.vue')['default']
     MemoryPanel: typeof import('./components/novel/MemoryPanel.vue')['default']
     MemoryReferencePanel: typeof import('./components/novel/MemoryReferencePanel.vue')['default']
     Menu: typeof import('primevue/menu')['default']

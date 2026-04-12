@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onUnmounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import Dialog from 'primevue/dialog';
@@ -8,6 +8,8 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import ScrollPanel from 'primevue/scrollpanel';
 import type { Memory } from 'src/models/memory';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { MemoryService } from 'src/services/memory-service';
 
 interface Props {
   visible: boolean;
@@ -152,13 +154,17 @@ function handleDelete() {
   }
 }
 
-// 手动触发单条嵌入（占位 —— EmbeddingQueue 接入后激活）
+const isEmbedding = ref(false);
+
 function handleManualEmbed() {
+  if (!props.memory) return;
+  isEmbedding.value = true;
+  EmbeddingQueue.enqueue(props.memory.id);
   toast.add({
     severity: 'info',
-    summary: '待实现',
-    detail: '单条向量生成将在 EmbeddingQueue 接入后激活',
-    life: 3000,
+    summary: '已加入嵌入队列',
+    detail: '向量生成完成后将自动更新',
+    life: 2000,
   });
 }
 
@@ -191,8 +197,8 @@ watch(
   () => props.visible,
   (visible) => {
     if (visible) {
-      // 根据 initialEditMode 设置编辑状态
       isEditing.value = props.initialEditMode ?? false;
+      isEmbedding.value = false;
       if (props.memory) {
         editedSummary.value = props.memory.summary;
         editedContent.value = props.memory.content;
@@ -200,6 +206,19 @@ watch(
     }
   },
 );
+
+// 监听 memory-changed 事件，嵌入完成后刷新对话框内的 embedding 状态
+const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) => {
+  if (!props.visible || !props.memory) return;
+  const detail = event.detail;
+  if (detail.action !== 'embedding-updated') return;
+  if (detail.memoryId !== props.memory.id) return;
+  isEmbedding.value = false;
+});
+
+onUnmounted(() => {
+  unsubscribeMemoryChange();
+});
 </script>
 
 <template>
@@ -309,6 +328,7 @@ watch(
             icon="pi pi-refresh"
             label="为此记忆生成向量"
             class="p-button-outlined p-button-sm"
+            :loading="isEmbedding"
             @click="handleManualEmbed"
           />
         </div>

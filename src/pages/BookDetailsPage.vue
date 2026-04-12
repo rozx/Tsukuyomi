@@ -14,6 +14,8 @@ import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { EmbeddingService } from 'src/services/embedding-service';
 import {
   formatWordCount,
   getNovelCharCountAsync,
@@ -34,6 +36,7 @@ import type {
   Terminology,
   CharacterSetting,
   Paragraph,
+  ScoreBreakdown,
 } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
@@ -1165,6 +1168,15 @@ const handleReSummarizeChapter = async (chapterId: string) => {
   }
 };
 
+// 嵌入模型就绪后触发 backfill
+let unsubscribeEmbeddingReady: (() => void) | null = null;
+
+const triggerBackfill = () => {
+  if (bookId.value) {
+    void EmbeddingQueue.enqueueBacklog(bookId.value);
+  }
+};
+
 onMounted(() => {
   // 延迟计算统计信息，优先渲染 UI
   setTimeout(() => {
@@ -1181,11 +1193,23 @@ onMounted(() => {
   // 注册键盘快捷键
   // 使用 capture 模式，确保即使子组件 stopPropagation 也能拦截默认滚动行为
   window.addEventListener('keydown', handleKeydown, true);
+
+  // 懒 backfill：若嵌入模型已就绪，立即 backfill；否则订阅 ready 事件
+  if (EmbeddingService.isReady()) {
+    triggerBackfill();
+  }
+  unsubscribeEmbeddingReady = EmbeddingService.addEventListener('ready', () => {
+    triggerBackfill();
+  });
 });
 
 // 组件卸载时清除上下文
 onUnmounted(() => {
   contextStore.clearContext();
+  if (unsubscribeEmbeddingReady) {
+    unsubscribeEmbeddingReady();
+    unsubscribeEmbeddingReady = null;
+  }
   // 清理段落导航相关的 timeout
   cleanupParagraphNavigation();
   // 移除键盘快捷键监听
@@ -1541,6 +1565,18 @@ const referencedMemoryIds = computed(() => {
   }
 
   return Array.from(memoryIds);
+});
+
+const mergedScoreBreakdowns = computed(() => {
+  const merged: Record<string, ScoreBreakdown> = {};
+  for (const paragraph of selectedChapterParagraphs.value) {
+    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) continue;
+    const t = paragraph.translations.find((tr) => tr.id === paragraph.selectedTranslationId);
+    if (t?.memoryScoreBreakdown) {
+      Object.assign(merged, t.memoryScoreBreakdown);
+    }
+  }
+  return merged;
 });
 
 const refreshReferencedMemories = async () => {
@@ -2418,6 +2454,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :book-id="bookId"
           :loading="isLoadingMemoryReferences"
           :always-expanded="true"
+          :score-breakdowns="mergedScoreBreakdowns"
           @view-memory="handleViewMemory"
         />
       </Popover>

@@ -104,68 +104,68 @@
 
 ## 11. 设置对话框新 Tab
 
-- [ ] 11.1 创建 `src/components/dialogs/settings/MemoryInjectionTab.vue`,使用 `<script setup lang="ts">` + PrimeVue 组件
-- [ ] 11.2 实现字符预算滑条(范围 500–5000,步长 100),绑定 `settings.memoryInjection.charBudget`
-- [ ] 11.3 实现启用语义检索开关,绑定 `enableSemantic`
-- [ ] 11.4 实现嵌入模型状态展示,订阅 `EmbeddingService` 状态 + 下载进度 event
-- [ ] 11.5 实现下载按钮(状态 = idle 时显示)、重新加载按钮(ready 时显示)、重试按钮(failed 时显示)
-- [ ] 11.6 实现高级折叠区:`Accordion` 包含最低分数阈值滑条(范围 0–3,步长 0.1,默认 0.3)
-- [ ] 11.7 更新 `src/components/dialogs/SettingsDialog.vue`,在 tabs 列表中添加"记忆注入" tab 并路由到新组件
-- [ ] 11.8 更新 `src/i18n/*` 为新 tab 文案添加 key(中/繁/英/日)
+- [x] 11.1 创建 `src/components/dialogs/settings/MemoryInjectionTab.vue`,使用 `<script setup lang="ts">` + PrimeVue 组件
+- [x] 11.2 实现字符预算滑条(范围 500–5000,步长 100),绑定 `settings.memoryInjection.charBudget`
+- [x] 11.3 实现启用语义检索开关,绑定 `enableSemantic`
+- [x] 11.4 实现嵌入模型状态展示,订阅 `EmbeddingService` 状态 + 下载进度 event
+- [x] 11.5 实现下载按钮(状态 = idle 时显示)、重新加载按钮(ready 时显示)、重试按钮(failed 时显示)
+- [x] 11.6 实现高级折叠区:`Accordion` 包含最低分数阈值滑条(范围 0–3,步长 0.1,默认 0.3)
+- [x] 11.7 更新 `src/components/dialogs/SettingsDialog.vue`,在 tabs 列表中添加"记忆注入" tab 并路由到新组件
+- [x] 11.8 更新 `src/i18n/*` 为新 tab 文案添加 key(中/繁/英/日)
 
 ## 12. 首次使用温和提示
 
-- [ ] 12.1 在 `SettingsDialog.vue` 的 `onMounted` 或 `watch(visible)` 中,判断 `!settings.memoryInjection.hasSeenIntro` 时使用 PrimeVue Toast 显示提示
-- [ ] 12.2 Toast 内容:标题"新功能:语义记忆检索",副文案简短说明,按钮"了解更多" / "稍后"
-- [ ] 12.3 "了解更多"触发:切换到 `memory-injection` tab + 关闭 toast + `settings.memoryInjection.hasSeenIntro = true`
-- [ ] 12.4 "稍后"触发:关闭 toast + 标记 `hasSeenIntro = true`
-- [ ] 12.5 确保 `hasSeenIntro` 一次性行为,重复打开设置不再弹出
+- [x] 12.1 在 `SettingsDialog.vue` 的 `onMounted` 或 `watch(visible)` 中,判断 `!settings.memoryInjection.hasSeenIntro` 时使用 PrimeVue Toast 显示提示
+- [x] 12.2 Toast 内容:标题"新功能:语义记忆检索",副文案简短说明,按钮"了解更多" / "稍后"
+- [x] 12.3 "了解更多"触发:切换到 `memory-injection` tab + 关闭 toast + `settings.memoryInjection.hasSeenIntro = true`
+- [x] 12.4 "稍后"触发:关闭 toast + 标记 `hasSeenIntro = true`
+- [x] 12.5 确保 `hasSeenIntro` 一次性行为,重复打开设置不再弹出
 
 ## 13. `MemoryPanel` / `MemoryCard` 改造
 
-- [ ] 13.1 在 `MemoryCard.vue` 右上角添加向量状态徽章组件(tiny badge),根据 `embedding`/`embeddingModel` 与当前 `MODEL_VERSION` 决定颜色(绿/黄/红)
-- [ ] 13.2 为徽章添加悬停 tooltip,文案解释对应状态
-- [ ] 13.3 **删除** `MemoryCard.vue` 中的附件 chips 渲染块(先前使用 `useMemoryAttachments` 懒加载名称的区域)
-- [ ] 13.4 在 `MemoryPanel.vue` 工具栏添加"重新向量化本书"按钮
-- [ ] 13.5 **删除** `MemoryPanel.vue` 中的"类型筛选"下拉(`全部 / 📚 / 👤 / 📝 / 📖`)
-- [ ] 13.6 **删除** `MemoryPanel.vue` 中的"实体筛选"下拉(基于选中类型动态列出实体)
-- [ ] 13.7 **删除** `MemoryPanel.vue` 中基于 `attachedTo` 的过滤计数逻辑(filterCounts computed)
-- [ ] 13.8 在 `MemoryPanel.vue` 过滤区增加"仅显示未向量化"复选框,筛选逻辑:`!embedding || embeddingModel !== MODEL_VERSION`
-- [ ] 13.9 在 `MemoryPanel.vue` 顶部添加进度横幅组件,订阅 `EmbeddingQueue` progress 事件,显示 `X / Y 条记忆` + ETA + 暂停按钮(仅在队列活跃时显示)
-- [ ] 13.10 横幅暂停按钮调用 `EmbeddingQueue.pause()`,恢复时按钮切换为"继续"
-- [ ] 13.11 保留纯文本搜索框(对 `summary + content` 的 `includes` 匹配),保留"清除筛选"按钮(仅清空文本搜索)
-- [ ] 13.12 更新 `src/i18n/*`:添加新 UI 文案 key,**删除**附件相关旧 key(`memory.type.book`、`memory.type.character`、`memory.type.term`、`memory.type.chapter`、`memory.attached` 等)
+- [x] 13.1 在 `MemoryCard.vue` 右上角添加向量状态徽章组件(tiny badge),根据 `embedding`/`embeddingModel` 与当前 `MODEL_VERSION` 决定颜色(绿/黄/红)
+- [x] 13.2 为徽章添加悬停 tooltip,文案解释对应状态
+- [x] 13.3 **删除** `MemoryCard.vue` 中的附件 chips 渲染块(先前使用 `useMemoryAttachments` 懒加载名称的区域)
+- [x] 13.4 在 `MemoryPanel.vue` 工具栏添加"重新向量化本书"按钮
+- [x] 13.5 **删除** `MemoryPanel.vue` 中的"类型筛选"下拉(`全部 / 📚 / 👤 / 📝 / 📖`)
+- [x] 13.6 **删除** `MemoryPanel.vue` 中的"实体筛选"下拉(基于选中类型动态列出实体)
+- [x] 13.7 **删除** `MemoryPanel.vue` 中基于 `attachedTo` 的过滤计数逻辑(filterCounts computed)
+- [x] 13.8 在 `MemoryPanel.vue` 过滤区增加"仅显示未向量化"复选框,筛选逻辑:`!embedding || embeddingModel !== MODEL_VERSION`
+- [x] 13.9 在 `MemoryPanel.vue` 顶部添加进度横幅组件,订阅 `EmbeddingQueue` progress 事件,显示 `X / Y 条记忆` + ETA + 暂停按钮(仅在队列活跃时显示)
+- [x] 13.10 横幅暂停按钮调用 `EmbeddingQueue.pause()`,恢复时按钮切换为"继续"
+- [x] 13.11 保留纯文本搜索框(对 `summary + content` 的 `includes` 匹配),保留"清除筛选"按钮(仅清空文本搜索)
+- [x] 13.12 更新 `src/i18n/*`:添加新 UI 文案 key,**删除**附件相关旧 key(`memory.type.book`、`memory.type.character`、`memory.type.term`、`memory.type.chapter`、`memory.attached` 等)
 
 ## 14. `MemoryDetailDialog` 改造
 
-- [ ] 14.1 **删除** "📎 关联实体" 分组整个区块(按类型分组列出附件并提供导航链接的部分)
-- [ ] 14.2 删除附件分组的相关 props、emits(`navigate`)与内部状态
-- [ ] 14.3 在对话框底部添加 metadata 行,显示 `embeddingModel` 与最近嵌入时间(若有)
-- [ ] 14.4 添加"为此记忆生成向量"按钮,仅在 `!embedding || embeddingModel !== MODEL_VERSION` 时可见
-- [ ] 14.5 按钮点击调用 `EmbeddingQueue.enqueue(memoryId)` 并显示 loading 状态
-- [ ] 14.6 嵌入完成后通过 `memory-changed` 事件刷新对话框状态
-- [ ] 14.7 保留所有其他功能(内容展示、创建/访问时间、Memory ID、编辑/删除按钮、复制内容、快捷键)
+- [x] 14.1 **删除** "📎 关联实体" 分组整个区块(按类型分组列出附件并提供导航链接的部分)
+- [x] 14.2 删除附件分组的相关 props、emits(`navigate`)与内部状态
+- [x] 14.3 在对话框底部添加 metadata 行,显示 `embeddingModel` 与最近嵌入时间(若有)
+- [x] 14.4 添加"为此记忆生成向量"按钮,仅在 `!embedding || embeddingModel !== MODEL_VERSION` 时可见
+- [x] 14.5 按钮点击调用 `EmbeddingQueue.enqueue(memoryId)` 并显示 loading 状态
+- [x] 14.6 嵌入完成后通过 `memory-changed` 事件刷新对话框状态
+- [x] 14.7 保留所有其他功能(内容展示、创建/访问时间、Memory ID、编辑/删除按钮、复制内容、快捷键)
 
 ## 15. `MemoryReferencePanel` 打分可视化
 
-- [ ] 15.1 修改 `MemoryReferencePanel.vue`,从当前 paragraph 的 translation 读取 `memoryScoreBreakdown`
-- [ ] 15.2 对每条引用记忆,若 breakdown 中有对应条目,在行尾渲染 ⓘ 图标并挂载 Popover/Tooltip
-- [ ] 15.3 Popover 内容:三行"信号 原始值 × 权重 = 加权分"(语义/关键词/时间衰减)+ 分隔线 + "总分 X.XX (满分 6.0)"
-- [ ] 15.4 对无 breakdown 的引用(由 AI 工具直接调用),显示 "由 AI 主动调用" 标签替代 ⓘ 图标
-- [ ] 15.5 确保混合来源的记忆列表显示正常(两种样式共存)
-- [ ] 15.6 更新 `src/i18n/*` 添加打分标签文案
+- [x] 15.1 修改 `MemoryReferencePanel.vue`,从当前 paragraph 的 translation 读取 `memoryScoreBreakdown`
+- [x] 15.2 对每条引用记忆,若 breakdown 中有对应条目,在行尾渲染 ⓘ 图标并挂载 Popover/Tooltip
+- [x] 15.3 Popover 内容:三行"信号 原始值 × 权重 = 加权分"(语义/关键词/时间衰减)+ 分隔线 + "总分 X.XX (满分 6.0)"
+- [x] 15.4 对无 breakdown 的引用(由 AI 工具直接调用),显示 "由 AI 主动调用" 标签替代 ⓘ 图标
+- [x] 15.5 确保混合来源的记忆列表显示正常(两种样式共存)
+- [x] 15.6 更新 `src/i18n/*` 添加打分标签文案
 
 ## 16. 触发点联动
 
-- [ ] 16.1 在 `BookDetailsPage.vue` 的 `onMounted` 中,调用 `EmbeddingQueue.enqueueBacklog(bookId)` 执行该书懒 backfill
-- [ ] 16.2 在 `EmbeddingService` 首次 init 完成后,广播 `ready` 事件;订阅方(设置 tab、打开的 BookDetailsPage)在收到事件后触发 backfill
-- [ ] 16.3 确保切换书籍时取消前一本书的 backfill(避免队列累积)
+- [x] 16.1 在 `BookDetailsPage.vue` 的 `onMounted` 中,调用 `EmbeddingQueue.enqueueBacklog(bookId)` 执行该书懒 backfill
+- [x] 16.2 在 `EmbeddingService` 首次 init 完成后,广播 `ready` 事件;订阅方(设置 tab、打开的 BookDetailsPage)在收到事件后触发 backfill
+- [x] 16.3 确保切换书籍时取消前一本书的 backfill(避免队列累积)
 
 ## 17. 端到端验证
 
-- [ ] 17.1 运行 `bun run lint && bun run type-check` 通过(所有 `attachedTo` / `MemoryAttachment` 引用已清除)
-- [ ] 17.2 运行 `bun test` 全部通过
-- [ ] 17.3 运行 `bun run build:spa` 验证 bundle 大小无明显增长(Transformers.js 未进主 bundle)
+- [x] 17.1 运行 `bun run lint && bun run type-check` 通过(所有 `attachedTo` / `MemoryAttachment` 引用已清除)
+- [x] 17.2 运行 `bun test` 全部通过
+- [x] 17.3 运行 `bun run build:spa` 验证 bundle 大小无明显增长(Transformers.js 未进主 bundle)
 - [ ] 17.4 **硬迁移验证**:在升级前备份一份含 `attachedTo` 字段的 IndexedDB(DevTools export);启动新版本后在 DevTools 中检查:
    - `DB_VERSION` 显示为 9
    - `memories` store 中所有记录的 `attachedTo` 字段**已被删除**

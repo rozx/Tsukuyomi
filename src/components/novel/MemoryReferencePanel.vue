@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
+import type { ScoreBreakdown } from 'src/models/novel';
 
 /**
  * 记忆引用接口
@@ -18,6 +19,7 @@ interface Props {
   bookId: string;
   loading?: boolean;
   alwaysExpanded?: boolean;
+  scoreBreakdowns?: Record<string, ScoreBreakdown>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -54,6 +56,11 @@ function toggleExpanded() {
 // 查看记忆详情
 function viewMemory(memoryId: string) {
   emit('view-memory', memoryId);
+}
+
+// 获取记忆的打分详情
+function getBreakdown(memoryId: string): ScoreBreakdown | undefined {
+  return props.scoreBreakdowns?.[memoryId];
 }
 
 // 格式化相对时间
@@ -137,9 +144,56 @@ function formatRelativeTime(timestamp: number): string {
               </p>
             </div>
 
-            <!-- 时间 -->
-            <div class="flex-shrink-0 text-xs text-moon-100/40">
-              {{ formatRelativeTime(reference.accessedAt) }}
+            <!-- 打分/来源标签 -->
+            <div class="flex-shrink-0">
+              <template v-if="getBreakdown(reference.memoryId)">
+                <div class="score-tooltip-trigger relative">
+                  <span
+                    class="text-xs text-primary-400/70 cursor-help"
+                    :title="`总分 ${getBreakdown(reference.memoryId)!.total.toFixed(2)} / 6.0`"
+                  >
+                    <i class="pi pi-info-circle"></i>
+                    {{ getBreakdown(reference.memoryId)!.total.toFixed(1) }}
+                  </span>
+                  <!-- 悬停弹出的打分详情 -->
+                  <div
+                    class="score-tooltip absolute right-0 bottom-full mb-1 w-56 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
+                  >
+                    <div class="space-y-1.5">
+                      <div class="flex justify-between text-moon-100/70">
+                        <span>语义相似度</span>
+                        <span class="tabular-nums">
+                          {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }} × 3.0 =
+                          {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between text-moon-100/70">
+                        <span>关键词匹配</span>
+                        <span class="tabular-nums">
+                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }} × 2.0 =
+                          {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between text-moon-100/70">
+                        <span>时间衰减</span>
+                        <span class="tabular-nums">
+                          {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }} × 1.0 =
+                          {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
+                        </span>
+                      </div>
+                      <div
+                        class="pt-1.5 mt-1 border-t border-white/10 flex justify-between font-medium text-moon-100/90"
+                      >
+                        <span>总分</span>
+                        <span class="tabular-nums">
+                          {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }} / 6.0
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <span v-else class="text-xs text-moon-100/40 italic">AI 调用</span>
             </div>
 
             <!-- 查看按钮 -->
@@ -158,5 +212,9 @@ function formatRelativeTime(timestamp: number): string {
 <style scoped>
 .memory-reference-panel {
   margin-top: 0.5rem;
+}
+
+.score-tooltip-trigger:hover .score-tooltip {
+  display: block;
 }
 </style>

@@ -15,6 +15,8 @@ import AppMessage from 'src/components/common/AppMessage.vue';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { MemoryService } from 'src/services/memory-service';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
+import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 
 // 嵌入模型版本常量（与 EmbeddingService 保持一致）
@@ -28,6 +30,25 @@ const toast = useToastWithHistory();
 const isSaving = ref(false);
 const isDeleting = ref(false);
 const isLoading = ref(false);
+
+// 嵌入队列进度
+const queueProgress = ref<EmbeddingQueueProgress>(EmbeddingQueue.getProgress());
+const showProgressBanner = computed(() => {
+  const p = queueProgress.value;
+  return p.running || p.paused || p.pending > 0;
+});
+const progressPercent = computed(() => {
+  const p = queueProgress.value;
+  if (p.total === 0) return 0;
+  return Math.round((p.completed / p.total) * 100);
+});
+const etaLabel = computed(() => {
+  const ms = queueProgress.value.etaMs;
+  if (ms == null || ms <= 0) return '';
+  const sec = Math.ceil(ms / 1000);
+  if (sec < 60) return `约 ${sec} 秒`;
+  return `约 ${Math.ceil(sec / 60)} 分钟`;
+});
 
 // 搜索关键词
 const searchQuery = ref('');
@@ -77,6 +98,35 @@ function clearFilters() {
   searchQuery.value = '';
   filterUnembeddedOnly.value = false;
 }
+
+// 重新向量化本书
+const handleReEmbed = async () => {
+  if (!props.book) return;
+  const added = await EmbeddingQueue.enqueueBacklog(props.book.id);
+  if (added > 0) {
+    toast.add({
+      severity: 'info',
+      summary: '向量化已启动',
+      detail: `已加入 ${added} 条记忆到嵌入队列`,
+      life: 3000,
+    });
+  } else {
+    toast.add({
+      severity: 'info',
+      summary: '无需向量化',
+      detail: '所有记忆已是最新向量版本',
+      life: 3000,
+    });
+  }
+};
+
+const toggleQueuePause = () => {
+  if (EmbeddingQueue.isPaused()) {
+    EmbeddingQueue.resume();
+  } else {
+    EmbeddingQueue.pause();
+  }
+};
 
 // 对话框状态
 const showAddDialog = ref(false);
@@ -141,6 +191,8 @@ const scheduleRefresh = () => {
   }, 200);
 };
 
+let unsubscribeQueueProgress: (() => void) | null = null;
+
 onMounted(() => {
   unsubscribeMemoryListener = MemoryService.addMemoryChangeListener((event) => {
     const currentBookId = props.book?.id;
@@ -151,11 +203,18 @@ onMounted(() => {
 
     scheduleRefresh();
   });
+
+  unsubscribeQueueProgress = EmbeddingQueue.addEventListener('progress', (e: CustomEvent) => {
+    queueProgress.value = e.detail as EmbeddingQueueProgress;
+  });
 });
 
 onUnmounted(() => {
   if (unsubscribeMemoryListener) unsubscribeMemoryListener();
   unsubscribeMemoryListener = null;
+
+  if (unsubscribeQueueProgress) unsubscribeQueueProgress();
+  unsubscribeQueueProgress = null;
 
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = null;
@@ -557,6 +616,13 @@ const handleFileSelect = async (event: Event) => {
         <!-- 右侧：操作按钮 -->
         <div class="toolbar-actions">
           <Button
+            icon="pi pi-sync"
+            class="p-button-outlined p-button-sm"
+            :disabled="!book || memories.length === 0"
+            @click="handleReEmbed"
+            title="重新向量化本书"
+          />
+          <Button
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
             :disabled="memories.length === 0"
@@ -583,6 +649,28 @@ const handleFileSelect = async (event: Event) => {
         class="panel-message toolbar-expandable"
         message="记忆由 AI 自动管理，会在翻译过程中自动创建和更新。手动编辑的记忆可能会被覆盖，建议仅在必要时干预。"
         :closable="false"
+      />
+    </div>
+
+    <!-- 嵌入队列进度横幅 -->
+    <div
+      v-if="showProgressBanner"
+      class="flex items-center gap-3 px-6 py-2 bg-blue-500/10 border-b border-blue-500/20 flex-none"
+    >
+      <span class="pi pi-spin pi-spinner text-blue-400" v-if="!queueProgress.paused"></span>
+      <span class="pi pi-pause text-amber-400" v-else></span>
+      <span class="text-sm text-moon/80 flex-1">
+        向量化进度：{{ queueProgress.completed }} / {{ queueProgress.total }} 条记忆
+        <span v-if="etaLabel" class="text-moon/50 ml-2">{{ etaLabel }}</span>
+      </span>
+      <span class="text-xs text-moon/50 tabular-nums">{{ progressPercent }}%</span>
+      <Button
+        :label="queueProgress.paused ? '继续' : '暂停'"
+        :icon="queueProgress.paused ? 'pi pi-play' : 'pi pi-pause'"
+        size="small"
+        severity="secondary"
+        text
+        @click="toggleQueuePause"
       />
     </div>
 
