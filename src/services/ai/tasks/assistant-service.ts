@@ -65,7 +65,6 @@ const TOOLS_REQUIRING_BOOK_ID = [
   'select_translation',
   'get_memory',
   'list_memories',
-  'get_recent_memories',
   'search_memories',
   'create_memory',
   'update_memory',

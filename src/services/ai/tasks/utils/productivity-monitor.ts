@@ -14,7 +14,6 @@ export const PRODUCTIVE_TOOLS = new Set([
   'get_term',
   'get_character',
   'get_memory',
-  'get_recent_memories',
 ]);
 
 /**

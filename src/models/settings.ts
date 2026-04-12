@@ -27,7 +27,7 @@ export interface MemoryInjectionSettings {
   enableSemantic: boolean;
   /**
    * 最低分数阈值：低于此分的记忆不会被注入
-   * 默认值：0.05（最大得分 1.0 的 5%）
+   * 默认值：0.38（最大得分 1.0）
    */
   minScoreThreshold: number;
   /**

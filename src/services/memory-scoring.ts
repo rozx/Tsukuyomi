@@ -2,7 +2,7 @@
  * 记忆打分(三信号:语义 + 关键词 + 时间衰减)
  *
  * 公式: score = 0.6·semantic + 0.3·keyword + 0.1·recency
- * 最大分 = 1.0,默认阈值 0.05。
+ * 最大分 = 1.0,默认阈值 0.38。
  */
 import type { Memory } from 'src/models/memory';
 import type { ScoreBreakdown } from 'src/models/novel';

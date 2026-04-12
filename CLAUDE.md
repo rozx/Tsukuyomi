@@ -34,18 +34,20 @@ bun test --watch               # 监听模式
 pages/components (UI) → composables (逻辑复用) → stores (Pinia 状态) → services (业务逻辑) → IndexedDB/API
 ```
 
-- **services/** — 纯业务逻辑，不依赖 Vue/Pinia。核心: `book-service`, `chapter-service`, `chapter-content-service`, `memory-service`, `terminology-service`, `sync-data-service`
+- **services/** — 纯业务逻辑，不依赖 Vue/Pinia。核心: `book-service`, `chapter-service`, `chapter-content-service`, `memory-service`, `memory-scoring`, `embedding-service`, `embedding-queue`, `terminology-service`, `sync-data-service`
 - **stores/** — Pinia 状态管理 (12 个): `books`, `book-details`, `ai-models`, `ai-processing`, `settings`, `chat-sessions`, `ui`, `context` 等
 - **composables/** — Vue Composition API 封装，包含 `book-details/`, `chat/` 等
 - **services/ai/** — AI 子系统: `core/` 基础服务, `providers/` (OpenAI/Gemini), `tasks/` (translate/polish/proofread/explain/assistant), `tools/` (30+ AI 工具定义)
-- **models/** — 数据模型: `novel.ts` (Novel/Volume/Chapter/Paragraph/Translation), `memory.ts`, `settings.ts`, `sync.ts`
+- **models/** — 数据模型: `novel.ts` (Novel/Volume/Chapter/Paragraph/Translation/ScoreBreakdown), `memory.ts` (Memory + 可选 embedding/embeddingModel), `settings.ts` (含 MemoryInjectionSettings), `sync.ts`
 
 ## 关键设计
 
 - **多版本翻译**: 每个 Paragraph 含 `translations: Translation[]` 数组，支持多个翻译版本并行
 - **章节懒加载**: 章节内容存储在独立的 `chapter-contents` IndexedDB store，按需读取
 - **AI 工具循环**: AI 任务通过工具调用循环执行（类似 function calling），30+ 个工具处理翻译、记忆更新等
-- **记忆库 LRU**: Memory 按 `lastAccessedAt` 排序，自动淘汰旧记忆
+- **记忆注入**: 三信号自动打分（语义相似度 + 关键词匹配 + 时间衰减，权重 0.6/0.3/0.1，满分 1.0），基于字符预算贪心填充注入翻译上下文
+- **本地嵌入**: Transformers.js + EmbeddingGemma 300M ONNX（256 维 Matryoshka，动态 import 不进主 bundle），EmbeddingQueue 异步批量处理
+- **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
 - **数据同步**: `SyncDataService` 负责本地/远程数据合并与冲突解决，基于 `lastEdited` 时间戳
 
