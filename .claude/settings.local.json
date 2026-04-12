@@ -8,7 +8,8 @@
       "Bash(openspec status --change \"single-para-polish-simplified\")",
       "Bash(openspec instructions proposal --change \"single-para-polish-simplified\")",
       "WebSearch",
-      "WebFetch(domain:help.router-for.me)"
+      "WebFetch(domain:help.router-for.me)",
+      "Bash(bunx tsc:*)"
     ]
   }
 }
