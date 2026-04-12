@@ -404,6 +404,58 @@ interface DataBackup {
  */
 export class SyncDataService {
   /**
+   * 剥离 Memory 的本地字段（embedding / embeddingModel / 已弃用的 attachedTo）
+   * 用于 Gist 上传时 strip，以及下载时防御性 strip 旧版本 payload
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static stripLocalFieldsFromMemory(memory: any): Memory {
+    if (!memory || typeof memory !== 'object') {
+      return memory as Memory;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { attachedTo: _a, embedding: _e, embeddingModel: _m, ...clean } = memory as Record<
+      string,
+      unknown
+    >;
+    return clean as unknown as Memory;
+  }
+
+  /**
+   * 剥离 Novel 树中所有 Translation 的 memoryScoreBreakdown 字段
+   * 该字段是 UI 调试用的本地数据，不参与跨设备同步
+   */
+  private static stripLocalFieldsFromNovel(novel: Novel): Novel {
+    if (!novel || !Array.isArray(novel.volumes)) {
+      return novel;
+    }
+
+    const stripTranslation = (t: unknown): unknown => {
+      if (!t || typeof t !== 'object') return t;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
+      return rest;
+    };
+
+    const cleanedVolumes = novel.volumes.map((volume) => {
+      if (!volume || !Array.isArray(volume.chapters)) return volume;
+      const cleanedChapters = volume.chapters.map((chapter) => {
+        if (!chapter || !Array.isArray(chapter.content)) return chapter;
+        const cleanedContent = chapter.content.map((paragraph) => {
+          if (!paragraph) return paragraph;
+          const cleanedTranslations = Array.isArray(paragraph.translations)
+            ? (paragraph.translations.map(stripTranslation) as typeof paragraph.translations)
+            : paragraph.translations;
+          return { ...paragraph, translations: cleanedTranslations };
+        });
+        return { ...chapter, content: cleanedContent };
+      });
+      return { ...volume, chapters: cleanedChapters };
+    });
+
+    return { ...novel, volumes: cleanedVolumes } as Novel;
+  }
+
+  /**
    * 验证远程数据的完整性
    * @param remoteData 远程数据
    * @returns 验证是否通过
@@ -1194,7 +1246,6 @@ export class SyncDataService {
                 memory.content,
                 memory.summary,
                 { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
-                memory.attachedTo,
               );
             } catch (error) {
               console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
@@ -1384,12 +1435,25 @@ export class SyncDataService {
         memories: [],
       };
     }
+    // 下载路径防御性 strip：清理旧版本 Gist payload 里可能带的 attachedTo 字段，
+    // 以及其他本地才关心的字段（embedding / embeddingModel / memoryScoreBreakdown）。
+    // 这样后续的合并逻辑不需要处理跨版本字段形态差异。
+    const rawMemories = Array.isArray(data.memories) ? data.memories : [];
+    const strippedMemories = rawMemories.map((m) =>
+      SyncDataService.stripLocalFieldsFromMemory(m),
+    );
+    const rawNovels = Array.isArray(data.novels) ? data.novels : [];
+    const strippedNovels = rawNovels.map((n) =>
+      n && typeof n === 'object'
+        ? SyncDataService.stripLocalFieldsFromNovel(n as Novel)
+        : (n as Novel),
+    );
     return {
-      novels: Array.isArray(data.novels) ? data.novels : [],
+      novels: strippedNovels,
       aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
       appSettings: data.appSettings,
       coverHistory: Array.isArray(data.coverHistory) ? data.coverHistory : [],
-      memories: Array.isArray(data.memories) ? data.memories : [],
+      memories: strippedMemories,
     };
   }
 
@@ -1768,12 +1832,19 @@ export class SyncDataService {
       }
     }
 
+    // 上传路径 strip：去除本地才关心的字段（embedding / embeddingModel / memoryScoreBreakdown），
+    // 以及防御性去除可能残留在旧数据中的 attachedTo 字段。
+    const strippedMemories = finalMemories.map((m) =>
+      SyncDataService.stripLocalFieldsFromMemory(m),
+    );
+    const strippedBooks = finalBooks.map((b) => SyncDataService.stripLocalFieldsFromNovel(b));
+
     return {
-      novels: finalBooks,
+      novels: strippedBooks,
       aiModels: finalModels,
       appSettings: finalSettings,
       coverHistory: dedupedCovers,
-      memories: finalMemories,
+      memories: strippedMemories,
     };
   }
 

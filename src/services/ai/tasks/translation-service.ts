@@ -6,9 +6,10 @@ import type {
   AITool,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import type { Paragraph } from 'src/models/novel';
+import type { Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import { getLastScoreBreakdowns } from 'src/services/ai/tasks/utils/context-builder';
 import {
   processTextTask,
   type ParagraphExtractCallbackParams,
@@ -41,7 +42,12 @@ export interface TranslationServiceOptions {
    * 段落翻译回调函数
    */
   onParagraphTranslation?: (
-    translations: { id: string; translation: string; referencedMemories?: string[] }[],
+    translations: {
+      id: string;
+      translation: string;
+      referencedMemories?: string[];
+      memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+    }[],
   ) => void | Promise<void>;
   /**
    * 标题翻译回调函数
@@ -144,12 +150,25 @@ export class TranslationService {
               }
             }
           }
+          // 合并上下文注入的记忆 ID（来自三信号打分管线）
+          const breakdowns = options.bookId
+            ? getLastScoreBreakdowns(options.bookId)
+            : undefined;
+          if (breakdowns) {
+            for (const memId of Object.keys(breakdowns)) {
+              referencedMemoryIds.add(memId);
+            }
+          }
+
           const referencedMemories = Array.from(referencedMemoryIds);
+          const memoryScoreBreakdown =
+            breakdowns && Object.keys(breakdowns).length > 0 ? breakdowns : undefined;
 
           // 构建带引用的段落对象
           const enrichedParagraphs = paragraphs.map((p) => ({
             ...p,
             ...(referencedMemories.length > 0 ? { referencedMemories } : {}),
+            ...(memoryScoreBreakdown ? { memoryScoreBreakdown } : {}),
           }));
 
           try {

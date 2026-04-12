@@ -89,7 +89,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'get_term',
         description:
-          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对术语的原名、翻译文本记录进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对术语的原名、翻译文本记录进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {
@@ -474,7 +474,7 @@ export const terminologyTools: ToolDefinition[] = [
       function: {
         name: 'search_terms_by_keywords',
         description:
-          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memory_by_keywords 搜索记忆。',
+          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
         parameters: {
           type: 'object',
           properties: {

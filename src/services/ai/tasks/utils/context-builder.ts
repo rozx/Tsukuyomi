@@ -1,8 +1,23 @@
-import type { Paragraph, CharacterSetting, Terminology } from 'src/models/novel';
+import type {
+  Paragraph,
+  CharacterSetting,
+  Terminology,
+  ScoreBreakdown,
+} from 'src/models/novel';
 import { getSelectedTranslation } from 'src/utils/text-utils';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
+import {
+  scoreMemory,
+  selectByBudget,
+  DEFAULT_CHAR_BUDGET,
+  HARD_ITEM_CAP,
+  DEFAULT_MIN_SCORE,
+  type ScoredMemory,
+} from 'src/services/memory-scoring';
+import { EmbeddingService } from 'src/services/embedding-service';
+import { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
@@ -218,181 +233,232 @@ export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): stri
 }
 
 /**
- * 获取与 chunk 相关的记忆
- * 按优先级顺序获取记忆：character → term → chapter → book → global
- * 确保总记忆数量不超过限制
+ * 遗留 LRU 实现:纯粹的"最近访问时间"兜底。
+ * 保留作为新打分路径出错或无可用数据时的 fallback。
+ */
+export async function getRelatedMemoriesForChunkLegacy(
+  bookId: string,
+  chunkText: string,
+  maxMemories: number = 15,
+): Promise<string> {
+  if (!bookId || !chunkText) return '';
+  try {
+    const recentMemories = await MemoryService.getRecentMemories(
+      bookId,
+      maxMemories,
+      'lastAccessedAt',
+      false,
+    );
+    if (recentMemories.length === 0) return '';
+    const lines = recentMemories.map((m: Memory) => `  - [${m.id}] ${m.summary}`);
+    return `\n\n【相关记忆】\n${lines.join('\n')}`;
+  } catch (error) {
+    console.warn('Failed to get related memories (legacy fallback):', error);
+    return '';
+  }
+}
+
+// ============================================================================
+// 三信号打分路径 — 任务级 chunk embedding 缓存 + 选中记忆的 breakdown 旁路
+// ============================================================================
+
+/**
+ * 任务级 chunk embedding 缓存:同一任务中不同分块会重复读取同一 chunkText,
+ * 避免反复调用 transformers.js。键 = 原始文本,值 = 归一化后的向量或 null。
+ *
+ * 调用方应在任务结束时调用 `clearChunkEmbeddingCache()`。
+ */
+const CHUNK_CACHE_MAX_SIZE = 50;
+const chunkEmbeddingCache = new Map<string, Float32Array | null>();
+
+export function clearChunkEmbeddingCache(): void {
+  chunkEmbeddingCache.clear();
+  lastScoreBreakdownsByBook.clear();
+}
+
+/**
+ * 最近一次打分得到的 breakdown 列表(按 bookId 索引)。
+ * translation-service 在分块构造 Translation 时可从此读取,不影响其他调用方。
+ * 采用"最后写入覆盖"语义,因为同一时刻一个 bookId 只有一个任务在跑。
+ */
+const lastScoreBreakdownsByBook = new Map<string, Record<string, ScoreBreakdown>>();
+
+export function getLastScoreBreakdowns(bookId: string): Record<string, ScoreBreakdown> | undefined {
+  return lastScoreBreakdownsByBook.get(bookId);
+}
+
+export function clearLastScoreBreakdowns(bookId?: string): void {
+  if (bookId) {
+    lastScoreBreakdownsByBook.delete(bookId);
+  } else {
+    lastScoreBreakdownsByBook.clear();
+  }
+}
+
+/**
+ * 尝试计算 chunk 的语义向量。
+ * - 语义检索未启用 / service 未就绪 → 返回 null(调用方走纯关键词+时间衰减降级)
+ * - 命中缓存直接返回
+ */
+async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | null> {
+  // 读取用户设置
+  let enableSemantic = true;
+  try {
+    const settings = useSettingsStore();
+    enableSemantic = settings.settings?.memoryInjection?.enableSemantic !== false;
+  } catch {
+    // store 初始化失败时保持默认启用
+  }
+  if (!enableSemantic) return null;
+  if (!EmbeddingService.isReady()) return null;
+
+  const cached = chunkEmbeddingCache.get(chunkText);
+  if (cached !== undefined) return cached;
+
+  try {
+    const vec = await EmbeddingService.embed(chunkText);
+    if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
+      const oldest = chunkEmbeddingCache.keys().next().value;
+      if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);
+    }
+    chunkEmbeddingCache.set(chunkText, vec);
+    return vec;
+  } catch (error) {
+    console.warn('[context-builder] 计算 chunk embedding 失败:', error);
+    chunkEmbeddingCache.set(chunkText, null);
+    return null;
+  }
+}
+
+/**
+ * 获取与 chunk 相关的记忆 — 三信号打分路径。
+ *
+ * 流程:
+ * 1. 读取整本书 Memory(60s TTL 缓存)
+ * 2. 从 terms/characters 构造 chunkEntities(关键词信号)
+ * 3. 可选计算 chunk 语义向量(语义信号)
+ * 4. 每条记忆打分 → 阈值过滤 → 字符预算填充
+ * 5. 空选择时兜底 getRecentMemories(5)
+ * 6. 整体 try/catch 失败时退回 legacy LRU
+ *
  * @param bookId 书籍 ID
  * @param chunkText chunk 文本内容
- * @param maxMemories 最大返回记忆数量（默认 10）
- * @param chapterId 章节 ID（可选，用于获取章节级别记忆）
+ * @param _maxMemories 已废弃:新实现按字符预算 + HARD_ITEM_CAP 限制,此参数忽略
+ * @param _chapterId 章节 ID(保留兼容)
+ * @param existingTerms 已提取的术语列表(用于关键词信号)
+ * @param existingCharacters 已提取的角色列表(用于关键词信号)
  * @returns 格式化的记忆上下文字符串
  */
 export async function getRelatedMemoriesForChunk(
   bookId: string,
   chunkText: string,
-  maxMemories: number = 15,
-  chapterId?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _maxMemories: number = 15,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _chapterId?: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
 ): Promise<string> {
-  if (!bookId || !chunkText) {
-    return '';
-  }
+  if (!bookId || !chunkText) return '';
 
   try {
-    let terms: Terminology[];
-    let characters: CharacterSetting[];
+    // 1. 拉全量记忆(走缓存)
+    const allMemories = await MemoryService.getAllBookMemories(bookId);
+    if (allMemories.length === 0) return '';
 
-    if (existingTerms && existingCharacters) {
-      terms = existingTerms;
-      characters = existingCharacters;
-    } else {
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        return '';
-      }
-
-      terms = existingTerms || findUniqueTermsInText(chunkText, book.terminologies || []);
-      characters =
-        existingCharacters || findUniqueCharactersInText(chunkText, book.characterSettings || []);
-    }
-
-    // 使用 Map 去重（按 memory ID），同时保持优先级顺序
-    const uniqueMemories = new Map<string, Memory>();
-
-    // 内存填充策略：
-    // 不再使用严格的分类限制（如只能放3个角色），而是按优先级顺序填充
-    // 优先级：角色 > 术语 > 章节 > 书籍 > 全局
-    // 为防止单一实体（如主角）占用所有名额，设置每个实体的最大记忆数限制
-    const PER_ENTITY_LIMIT = Math.max(3, Math.floor(maxMemories * 0.4));
-
-    const getUniqueEntityIds = (ids: Array<string | undefined>): string[] => {
-      const seen = new Set<string>();
-      const result: string[] = [];
-
-      for (const id of ids) {
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        result.push(id);
-      }
-
-      return result;
-    };
-
-    const fetchEntityMemories = async (
-      type: 'character' | 'term',
-      entityIds: string[],
-    ): Promise<Memory[][]> => {
-      if (entityIds.length === 0) {
-        return [];
-      }
-
-      const memoryGroups = await Promise.all(
-        entityIds.map((id) =>
-          MemoryService.getMemoriesByAttachment(bookId, {
-            type,
-            id,
-          }),
-        ),
-      );
-
-      return memoryGroups.map((memories) =>
-        memories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt).slice(0, PER_ENTITY_LIMIT),
-      );
-    };
-
-    const characterIds = getUniqueEntityIds(characters.map((character) => character.id));
-    const termIds = getUniqueEntityIds(terms.map((term) => term.id));
-
-    const [characterMemoryGroups, termMemoryGroups] = await Promise.all([
-      fetchEntityMemories('character', characterIds),
-      fetchEntityMemories('term', termIds),
-    ]);
-
-    // 1. 获取角色相关记忆（最高优先级）
-    for (const characterMemories of characterMemoryGroups) {
-      if (uniqueMemories.size >= maxMemories) break;
-      for (const memory of characterMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
+    // 2. 构造实体集合 — terms.name + characters.name + aliases
+    const chunkEntities: Array<{ name: string }> = [];
+    if (existingTerms) {
+      for (const t of existingTerms) {
+        if (t?.name) chunkEntities.push({ name: t.name });
       }
     }
-
-    // 2. 获取术语相关记忆
-    if (uniqueMemories.size < maxMemories) {
-      for (const termMemories of termMemoryGroups) {
-        if (uniqueMemories.size >= maxMemories) break;
-        for (const memory of termMemories) {
-          if (uniqueMemories.size >= maxMemories) break;
-          uniqueMemories.set(memory.id, memory);
+    if (existingCharacters) {
+      for (const c of existingCharacters) {
+        if (c?.name) chunkEntities.push({ name: c.name });
+        if (c?.aliases) {
+          for (const alias of c.aliases) {
+            if (alias?.name) chunkEntities.push({ name: alias.name });
+          }
         }
       }
     }
 
-    // 3. 获取章节相关记忆
-    if (chapterId && uniqueMemories.size < maxMemories) {
-      const chapterMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-        type: 'chapter',
-        id: chapterId,
-      });
-      const sortedMemories = chapterMemories
-        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-        .slice(0, PER_ENTITY_LIMIT); // 章节也应用实体限制
+    // 3. 可选语义向量
+    const chunkEmbedding = await computeChunkEmbedding(chunkText);
 
-      for (const memory of sortedMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
+    // 4. 逐条打分
+    const now = Date.now();
+    const scored: ScoredMemory[] = allMemories.map((memory) => ({
+      memory,
+      breakdown: scoreMemory(memory, {
+        chunkEntities,
+        chunkEmbedding: chunkEmbedding ?? undefined,
+        now,
+      }),
+    }));
+
+    // 5. 字符预算填充 — 读取用户预算设置
+    let charBudget = DEFAULT_CHAR_BUDGET;
+    let minScore = DEFAULT_MIN_SCORE;
+    try {
+      const settings = useSettingsStore();
+      const cfg = settings.settings?.memoryInjection;
+      if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
+      if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
+    } catch {
+      /* 保持默认 */
+    }
+
+    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+
+    // 6. 兜底:若打分后全部被过滤,退回 LRU 最近 5 条
+    let finalList: Memory[] = selected;
+    const breakdownMap: Record<string, ScoreBreakdown> = {};
+    if (selected.length === 0) {
+      try {
+        finalList = await MemoryService.getRecentMemories(
+          bookId,
+          5,
+          'lastAccessedAt',
+          false,
+        );
+      } catch {
+        finalList = [];
+      }
+    } else {
+      // 记录选中记忆的 breakdown(仅对"打分路径"有意义,兜底路径不记录)
+      for (const item of scored) {
+        if (selected.some((m) => m.id === item.memory.id)) {
+          breakdownMap[item.memory.id] = item.breakdown;
+        }
       }
     }
 
-    // 4. 获取书籍级别记忆
-    if (uniqueMemories.size < maxMemories) {
-      const bookMemories = await MemoryService.getMemoriesByAttachment(bookId, {
-        type: 'book',
-        id: bookId,
+    // 写入模块级 breakdowns 缓存,供 translation-service 旁路读取
+    lastScoreBreakdownsByBook.set(bookId, breakdownMap);
+
+    if (finalList.length === 0) return '';
+
+    if (finalList.length > 0) {
+      const logLines = finalList.map((m) => {
+        const bd = breakdownMap[m.id];
+        const score = bd ? bd.total.toFixed(2) : '?';
+        const details = bd
+          ? `sem=${bd.semantic.toFixed(2)} kw=${bd.keyword.toFixed(2)} rec=${bd.recency.toFixed(2)}`
+          : 'fallback';
+        return `  ${m.id} [${score}] (${details}) ${m.summary.slice(0, 40)}`;
       });
-      const sortedMemories = bookMemories
-        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
-        .slice(0, PER_ENTITY_LIMIT);
-
-      for (const memory of sortedMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
-    }
-
-    // 5. 获取全局记忆（最近访问的）
-    if (uniqueMemories.size < maxMemories) {
-      const remainingSlots = maxMemories - uniqueMemories.size;
-      const recentMemories = await MemoryService.getRecentMemories(
-        bookId,
-        remainingSlots,
-        'lastAccessedAt',
-        false, // 不更新访问时间
+      console.debug(
+        `[context-builder] 注入 ${finalList.length}/${allMemories.length} 条记忆:\n${logLines.join('\n')}`,
       );
-      for (const memory of recentMemories) {
-        if (uniqueMemories.size >= maxMemories) break;
-        uniqueMemories.set(memory.id, memory);
-      }
     }
 
-    // 格式化记忆上下文
-    if (uniqueMemories.size === 0) {
-      return '';
-    }
-
-    // 转换为数组并按 lastAccessedAt 排序（最新的在前）
-    const sortedMemories = Array.from(uniqueMemories.values()).sort(
-      (a, b) => b.lastAccessedAt - a.lastAccessedAt,
-    );
-
-    const memoryLines = sortedMemories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
-
-    return `\n\n【相关记忆】\n${memoryLines.join('\n')}`;
+    const lines = finalList.map((m) => `  - [${m.id}] ${m.summary}`);
+    return `\n\n【相关记忆】\n${lines.join('\n')}`;
   } catch (error) {
-    console.warn('Failed to get related memories for chunk:', error);
-    return '';
+    console.warn('[context-builder] 三信号打分失败,退回 legacy LRU:', error);
+    return getRelatedMemoriesForChunkLegacy(bookId, chunkText, 15);
   }
 }
 

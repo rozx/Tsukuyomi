@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onUnmounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import Dialog from 'primevue/dialog';
@@ -7,9 +7,10 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import ScrollPanel from 'primevue/scrollpanel';
-import type { Memory, MemoryAttachmentType } from 'src/models/memory';
-import MemoryAttachmentTag from './MemoryAttachmentTag.vue';
-import { useMemoryAttachments } from 'src/composables/useMemoryAttachments';
+import type { Memory } from 'src/models/memory';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { MemoryService } from 'src/services/memory-service';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 interface Props {
   visible: boolean;
@@ -27,52 +28,36 @@ const emit = defineEmits<{
   'update:visible': [visible: boolean];
   save: [memoryId: string, summary: string, content: string];
   delete: [memory: Memory];
-  navigate: [type: MemoryAttachmentType, id: string];
 }>();
+
 
 // 编辑状态
 const isEditing = ref(false);
 const editedSummary = ref('');
 const editedContent = ref('');
 
-// 使用 useMemoryAttachments composable
-const { resolveNames } = useMemoryAttachments({
-  bookId: computed(() => props.bookId),
+// 嵌入状态
+const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
+  if (!props.memory) return 'pending';
+  const { embedding, embeddingModel } = props.memory;
+  if (!embedding || embedding.length === 0) return 'pending';
+  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
+  return 'ready';
 });
 
-// 附件名称状态
-const attachmentsWithNames = computed(() => {
-  if (!props.memory?.attachedTo || props.memory.attachedTo.length === 0) {
-    return [];
+const embeddingStatusLabel = computed(() => {
+  switch (embeddingStatus.value) {
+    case 'ready':
+      return '已向量化';
+    case 'stale':
+      return '向量版本过期';
+    case 'pending':
+    default:
+      return '待向量化';
   }
-  return resolveNames(props.memory.attachedTo);
 });
 
-// 按类型分组的附件
-const groupedAttachments = computed(() => {
-  const groups: Record<MemoryAttachmentType, ReturnType<typeof resolveNames>> = {
-    book: [],
-    character: [],
-    term: [],
-    chapter: [],
-  };
-
-  for (const attachment of attachmentsWithNames.value) {
-    if (groups[attachment.type]) {
-      groups[attachment.type].push(attachment);
-    }
-  }
-
-  return groups;
-});
-
-// 类型标签映射
-const typeLabels: Record<MemoryAttachmentType, string> = {
-  book: '书籍',
-  character: '角色',
-  term: '术语',
-  chapter: '章节',
-};
+const canManualEmbed = computed(() => embeddingStatus.value !== 'ready');
 
 // 格式化日期时间
 function formatDateTime(timestamp: number): string {
@@ -168,9 +153,18 @@ function handleDelete() {
   }
 }
 
-// 处理导航
-function handleNavigate(type: MemoryAttachmentType, id: string) {
-  emit('navigate', type, id);
+const isEmbedding = ref(false);
+
+function handleManualEmbed() {
+  if (!props.memory) return;
+  isEmbedding.value = true;
+  EmbeddingQueue.enqueue(props.memory.id);
+  toast.add({
+    severity: 'info',
+    summary: '已加入嵌入队列',
+    detail: '向量生成完成后将自动更新',
+    life: 2000,
+  });
 }
 
 // 复制内容到剪贴板
@@ -202,8 +196,8 @@ watch(
   () => props.visible,
   (visible) => {
     if (visible) {
-      // 根据 initialEditMode 设置编辑状态
       isEditing.value = props.initialEditMode ?? false;
+      isEmbedding.value = false;
       if (props.memory) {
         editedSummary.value = props.memory.summary;
         editedContent.value = props.memory.content;
@@ -211,6 +205,25 @@ watch(
     }
   },
 );
+
+// 监听 memory-changed 事件，嵌入完成后刷新对话框内的 embedding 状态
+const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) => {
+  if (!props.visible || !props.memory) return;
+  const detail = event.detail;
+  if (detail.action !== 'embedding-updated') return;
+  if (detail.memoryId !== props.memory.id) return;
+  isEmbedding.value = false;
+});
+
+// 嵌入队列出错时也重置 loading 状态
+const unsubscribeQueueError = EmbeddingQueue.addEventListener('error', () => {
+  isEmbedding.value = false;
+});
+
+onUnmounted(() => {
+  unsubscribeMemoryChange();
+  unsubscribeQueueError();
+});
 </script>
 
 <template>
@@ -240,37 +253,6 @@ watch(
     </template>
 
     <div v-if="memory" class="p-4 space-y-6">
-      <!-- 关联实体 -->
-      <div v-if="attachmentsWithNames.length > 0">
-        <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
-          <i class="pi pi-paperclip"></i>
-          关联实体
-        </h4>
-        <div class="space-y-3">
-          <div
-            v-for="(attachments, type) in groupedAttachments"
-            :key="type"
-            v-show="attachments.length > 0"
-          >
-            <div class="text-xs text-moon-100/50 mb-2">
-              {{ typeLabels[type as MemoryAttachmentType] }}
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <MemoryAttachmentTag
-                v-for="attachment in attachments"
-                :key="`${attachment.type}:${attachment.id}`"
-                :type="attachment.type"
-                :id="attachment.id"
-                :name="attachment.name"
-                :loading="attachment.loading"
-                :clickable="true"
-                @click="handleNavigate"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 摘要 -->
       <div>
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
@@ -337,6 +319,23 @@ watch(
             <span class="text-moon-100/50">ID：</span>
             <span class="text-moon-100/30 font-mono">{{ memory.id }}</span>
           </div>
+          <div class="flex items-center gap-2">
+            <span class="text-moon-100/50">向量状态：</span>
+            <span class="text-moon-100/70">{{ embeddingStatusLabel }}</span>
+          </div>
+          <div v-if="memory.embeddingModel" class="flex items-center gap-2 col-span-2">
+            <span class="text-moon-100/50">嵌入模型：</span>
+            <span class="text-moon-100/50 font-mono text-xs">{{ memory.embeddingModel }}</span>
+          </div>
+        </div>
+        <div v-if="canManualEmbed" class="mt-3">
+          <Button
+            icon="pi pi-refresh"
+            label="为此记忆生成向量"
+            class="p-button-outlined p-button-sm"
+            :loading="isEmbedding"
+            @click="handleManualEmbed"
+          />
         </div>
       </div>
     </div>

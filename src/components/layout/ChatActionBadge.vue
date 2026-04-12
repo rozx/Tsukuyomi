@@ -339,7 +339,7 @@ const getTextPreview = (value: string | undefined, maxLength = 20): string => {
           v-else-if="
             action.type === 'read' &&
             action.entity === 'memory' &&
-            action.tool_name === 'search_memory_by_keywords' &&
+            action.tool_name === 'search_memories' &&
             action.keywords &&
             action.keywords.length > 0
           "

@@ -14,6 +14,8 @@ import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { EmbeddingService } from 'src/services/embedding-service';
 import {
   formatWordCount,
   getNovelCharCountAsync,
@@ -34,6 +36,7 @@ import type {
   Terminology,
   CharacterSetting,
   Paragraph,
+  ScoreBreakdown,
 } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
@@ -79,8 +82,17 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
+import {
+  scoreMemory,
+  selectByBudget,
+  DEFAULT_CHAR_BUDGET,
+  DEFAULT_MIN_SCORE,
+  HARD_ITEM_CAP,
+} from 'src/services/memory-scoring';
+import type { ScoredMemory } from 'src/services/memory-scoring';
+import { useSettingsStore } from 'src/stores/settings';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
-import type { Memory, MemoryAttachmentType } from 'src/models/memory';
+import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
 
 const route = useRoute();
@@ -1165,6 +1177,15 @@ const handleReSummarizeChapter = async (chapterId: string) => {
   }
 };
 
+// 嵌入模型就绪后触发 backfill
+let unsubscribeEmbeddingReady: (() => void) | null = null;
+
+const triggerBackfill = () => {
+  if (bookId.value) {
+    void EmbeddingQueue.enqueueBacklog(bookId.value);
+  }
+};
+
 onMounted(() => {
   // 延迟计算统计信息，优先渲染 UI
   setTimeout(() => {
@@ -1181,11 +1202,23 @@ onMounted(() => {
   // 注册键盘快捷键
   // 使用 capture 模式，确保即使子组件 stopPropagation 也能拦截默认滚动行为
   window.addEventListener('keydown', handleKeydown, true);
+
+  // 懒 backfill：若嵌入模型已就绪，立即 backfill；否则订阅 ready 事件
+  if (EmbeddingService.isReady()) {
+    triggerBackfill();
+  }
+  unsubscribeEmbeddingReady = EmbeddingService.addEventListener('ready', () => {
+    triggerBackfill();
+  });
 });
 
 // 组件卸载时清除上下文
 onUnmounted(() => {
   contextStore.clearContext();
+  if (unsubscribeEmbeddingReady) {
+    unsubscribeEmbeddingReady();
+    unsubscribeEmbeddingReady = null;
+  }
   // 清理段落导航相关的 timeout
   cleanupParagraphNavigation();
   // 移除键盘快捷键监听
@@ -1487,29 +1520,7 @@ const usedCharacters = computed(() => {
 const usedCharacterCount = computed(() => usedCharacters.value.length);
 
 // 计算当前章节参考的记忆数量（去重）
-const usedMemoryCount = computed(() => {
-  if (!selectedChapterParagraphs.value.length) {
-    return 0;
-  }
-
-  const memoryIds = new Set<string>();
-  for (const paragraph of selectedChapterParagraphs.value) {
-    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
-      continue;
-    }
-
-    const selectedTranslation = paragraph.translations.find(
-      (translation) => translation.id === paragraph.selectedTranslationId,
-    );
-    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
-      if (memoryId) {
-        memoryIds.add(memoryId);
-      }
-    });
-  }
-
-  return memoryIds.size;
-});
+const usedMemoryCount = computed(() => usedMemoryReferences.value.length);
 
 // 记忆引用弹出框状态
 const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
@@ -1519,65 +1530,93 @@ const isLoadingMemoryReferences = ref(false);
 const showMemoryDetailDialog = ref(false);
 const detailMemory = ref<Memory | null>(null);
 
-const referencedMemoryIds = computed(() => {
-  if (!selectedChapterParagraphs.value.length) {
-    return [];
-  }
-
-  const memoryIds = new Set<string>();
-  for (const paragraph of selectedChapterParagraphs.value) {
-    if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
-      continue;
-    }
-
-    const selectedTranslation = paragraph.translations.find(
-      (translation) => translation.id === paragraph.selectedTranslationId,
-    );
-    selectedTranslation?.referencedMemories?.forEach((memoryId) => {
-      if (memoryId) {
-        memoryIds.add(memoryId);
-      }
-    });
-  }
-
-  return Array.from(memoryIds);
-});
+const mergedScoreBreakdowns = ref<Record<string, ScoreBreakdown>>({});
 
 const refreshReferencedMemories = async () => {
-  const ids = referencedMemoryIds.value;
-  if (!ids.length || !bookId.value) {
+  if (!bookId.value || !selectedChapterParagraphs.value.length) {
     usedMemoryReferences.value = [];
+    mergedScoreBreakdowns.value = {};
     return;
   }
 
   isLoadingMemoryReferences.value = true;
   try {
-    const memoryPromises = ids.map((id) => MemoryService.getMemory(bookId.value, id));
-    const memories = await Promise.all(memoryPromises);
-    usedMemoryReferences.value = memories
-      .filter((m): m is Memory => !!m)
-      .map((m) => ({
-        memoryId: m.id,
-        summary: m.summary,
-        accessedAt: m.lastAccessedAt,
-        toolName: 'get_memory',
-      }));
+    const chunkText = selectedChapterParagraphs.value.map((p) => p.text).join('\n');
+    if (!chunkText.trim()) {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+      return;
+    }
+
+    const allMemories = await MemoryService.getAllBookMemories(bookId.value);
+    if (allMemories.length === 0) {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+      return;
+    }
+
+    // 可选语义向量
+    let chunkEmbedding: Float32Array | undefined;
+    const settingsStore = useSettingsStore();
+    const cfg = settingsStore.settings?.memoryInjection;
+    try {
+      if (cfg?.enableSemantic !== false) {
+        const { EmbeddingService } = await import('src/services/embedding-service');
+        if (EmbeddingService.isReady()) {
+          const vec = await EmbeddingService.embed(chunkText.slice(0, 2000));
+          if (vec) chunkEmbedding = vec;
+        }
+      }
+    } catch {
+      // 静默降级
+    }
+
+    // 构造实体集合用于关键词匹配
+    const chunkEntities: Array<{ name: string }> = [];
+    for (const t of usedTerms.value) {
+      if (t?.name) chunkEntities.push({ name: t.name });
+    }
+    for (const c of usedCharacters.value) {
+      if (c?.name) chunkEntities.push({ name: c.name });
+      if (c?.aliases) {
+        for (const alias of c.aliases) {
+          if (alias?.name) chunkEntities.push({ name: alias.name });
+        }
+      }
+    }
+
+    const now = Date.now();
+    const scored: ScoredMemory[] = allMemories.map((memory) => ({
+      memory,
+      breakdown: scoreMemory(memory, { chunkEntities, chunkEmbedding, now }),
+    }));
+
+    const charBudget = cfg?.charBudget ?? DEFAULT_CHAR_BUDGET;
+    const minScore = cfg?.minScoreThreshold ?? DEFAULT_MIN_SCORE;
+
+    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+
+    const selectedIds = new Set(selected.map((m) => m.id));
+    const breakdowns: Record<string, ScoreBreakdown> = {};
+    for (const item of scored) {
+      if (selectedIds.has(item.memory.id)) {
+        breakdowns[item.memory.id] = item.breakdown;
+      }
+    }
+    mergedScoreBreakdowns.value = breakdowns;
+
+    usedMemoryReferences.value = selected.map((m) => ({
+      memoryId: m.id,
+      summary: m.summary,
+      accessedAt: m.lastAccessedAt,
+      toolName: 'search_memories' as const,
+    }));
   } catch (error) {
-    console.warn('Failed to fetch referenced memories:', error);
+    console.warn('Failed to compute memory preview:', error);
   } finally {
     isLoadingMemoryReferences.value = false;
   }
 };
-
-watch(
-  referencedMemoryIds,
-  () => {
-    if (isMemoryPopoverOpen.value) {
-      refreshReferencedMemories();
-    }
-  },
-  { immediate: true },
-);
 
 const handleToggleMemoryPopover = (event: Event) => {
   memoryPopover.value?.toggle(event);
@@ -1585,12 +1624,28 @@ const handleToggleMemoryPopover = (event: Event) => {
 
 const handleMemoryPopoverShow = () => {
   isMemoryPopoverOpen.value = true;
-  void refreshReferencedMemories();
 };
 
 const handleMemoryPopoverHide = () => {
   isMemoryPopoverOpen.value = false;
 };
+
+// 章节加载后自动计算记忆预览（debounce 避免频繁触发）
+let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => selectedChapterParagraphs.value.length,
+  (len) => {
+    if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
+    if (len > 0) {
+      memoryPreviewTimer = setTimeout(() => {
+        void refreshReferencedMemories();
+      }, 500);
+    } else {
+      usedMemoryReferences.value = [];
+      mergedScoreBreakdowns.value = {};
+    }
+  },
+);
 
 const closeMemoryPopover = () => {
   memoryPopover.value?.hide();
@@ -1627,33 +1682,6 @@ const handleMemoryDelete = async (memory: Memory) => {
     await refreshReferencedMemories();
   } catch (error) {
     console.error('Failed to delete memory:', error);
-  }
-};
-
-const handleMemoryNavigate = (type: MemoryAttachmentType, id: string) => {
-  if (type === 'term') {
-    closeMemoryPopover();
-    navigateToTermsSetting();
-    return;
-  }
-  if (type === 'character') {
-    closeMemoryPopover();
-    navigateToCharactersSetting();
-    return;
-  }
-  if (type === 'chapter') {
-    const chapter = book.value?.volumes
-      ?.flatMap((volume) => volume.chapters || [])
-      .find((item) => item.id === id);
-    if (chapter) {
-      closeMemoryPopover();
-      navigateToChapterInternal(chapter);
-    }
-    return;
-  }
-  if (type === 'book') {
-    closeMemoryPopover();
-    navigateToMemorySetting();
   }
 };
 
@@ -2445,6 +2473,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           :book-id="bookId"
           :loading="isLoadingMemoryReferences"
           :always-expanded="true"
+          :score-breakdowns="mergedScoreBreakdowns"
           @view-memory="handleViewMemory"
         />
       </Popover>
@@ -2469,7 +2498,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @update:visible="(val) => (showMemoryDetailDialog = val)"
         @save="handleMemorySave"
         @delete="handleMemoryDelete"
-        @navigate="handleMemoryNavigate"
       />
 
       <!-- 编辑术语对话框 -->

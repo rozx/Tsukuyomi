@@ -1,7 +1,11 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
 import { cloneDeep } from 'lodash';
-import type { AppSettings, ProxySiteMappingEntry } from 'src/models/settings';
+import type {
+  AppSettings,
+  MemoryInjectionSettings,
+  ProxySiteMappingEntry,
+} from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
@@ -22,6 +26,14 @@ const SETTINGS_DB_KEY = 'app';
  * 注意：lastEdited 使用 epoch 时间（1970-01-01），这样在首次同步时远程设置会被优先应用
  * 当用户实际修改设置时，lastEdited 会被更新为当前时间
  */
+const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
+  charBudget: 2000,
+  enableSemantic: true,
+  minScoreThreshold: 0.38,
+  hasSeenIntro: false,
+  embeddingModelCached: false,
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   lastEdited: new Date(0), // 使用 epoch 时间，确保远程设置优先
   scraperConcurrencyLimit: 3,
@@ -35,6 +47,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxySiteMapping: DEFAULT_PROXY_SITE_MAPPING,
   booksSortOption: 'default',
   quickStartDismissed: false,
+  memoryInjection: { ...DEFAULT_MEMORY_INJECTION },
 };
 
 /**
@@ -108,6 +121,15 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
     ...(migratedMapping || {}),
   };
 
+  // 合并记忆注入设置：用户配置优先，缺失字段使用默认值
+  const rawMemoryInjection = (settings as any).memoryInjection as
+    | Partial<MemoryInjectionSettings>
+    | undefined;
+  const mergedMemoryInjection: MemoryInjectionSettings = {
+    ...DEFAULT_MEMORY_INJECTION,
+    ...(rawMemoryInjection ?? {}),
+  };
+
   const loadedSettings: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...(settings as any),
@@ -121,6 +143,7 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
       typeof (settings as any).quickStartDismissed === 'boolean'
         ? ((settings as any).quickStartDismissed as boolean)
         : false,
+    memoryInjection: mergedMemoryInjection,
   };
 
   return loadedSettings;
@@ -205,6 +228,9 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
         : {}),
       ...(rawSettings.quickStartDismissed !== undefined
         ? { quickStartDismissed: rawSettings.quickStartDismissed }
+        : {}),
+      ...(rawSettings.memoryInjection !== undefined
+        ? { memoryInjection: cloneDeep(rawSettings.memoryInjection) }
         : {}),
     };
 
@@ -640,6 +666,40 @@ export const useSettingsStore = defineStore('settings', {
      */
     async setQuickStartDismissed(dismissed: boolean): Promise<void> {
       await this.updateSettings({ quickStartDismissed: dismissed });
+    },
+
+    /**
+     * 更新记忆注入设置(带范围约束和副作用)
+     *
+     * - charBudget: clamp 到 [500, 5000]
+     * - minScoreThreshold: clamp 到 [0, 1.0]
+     * - enableSemantic 切换时:true→resume / false→pause EmbeddingQueue
+     */
+    async updateMemoryInjection(
+      updates: Partial<MemoryInjectionSettings>,
+    ): Promise<void> {
+      const current = this.settings.memoryInjection ?? { ...DEFAULT_MEMORY_INJECTION };
+      const merged = { ...current, ...updates };
+
+      // 范围约束
+      merged.charBudget = Math.min(5000, Math.max(500, merged.charBudget));
+      merged.minScoreThreshold = Math.min(1.0, Math.max(0, merged.minScoreThreshold));
+
+      // 副作用:enableSemantic 变更时联动 EmbeddingQueue
+      if (updates.enableSemantic !== undefined && updates.enableSemantic !== current.enableSemantic) {
+        try {
+          const { EmbeddingQueue } = await import('src/services/embedding-queue');
+          if (updates.enableSemantic) {
+            EmbeddingQueue.resume();
+          } else {
+            EmbeddingQueue.pause();
+          }
+        } catch {
+          // 非致命:队列模块加载失败不影响设置持久化
+        }
+      }
+
+      await this.updateSettings({ memoryInjection: merged });
     },
 
     /**

@@ -102,7 +102,7 @@ src/
 └── __tests__/     # 测试文件 (70+ 测试文件)
 ```
 
-**核心 Services**: `book-service`, `chapter-service`, `chapter-content-service`, `memory-service`, `terminology-service`, `sync-data-service`
+**核心 Services**: `book-service`, `chapter-service`, `chapter-content-service`, `memory-service`, `memory-scoring`, `embedding-service`, `embedding-queue`, `terminology-service`, `sync-data-service`
 
 ---
 
@@ -173,7 +173,9 @@ console.error('Failed to load book:', error);
 - **多版本翻译**: 每个 Paragraph 含 `translations: Translation[]`，支持多翻译版本并行
 - **章节懒加载**: 内容存储在独立的 `chapter-contents` IndexedDB store，按需读取
 - **AI 工具循环**: AI 任务通过工具调用循环执行 (function calling)，30+ 工具处理翻译、记忆更新等
-- **AI 记忆 LRU**: Memory 按 `lastAccessedAt` 排序，自动淘汰旧记忆
+- **记忆注入**: 三信号打分 (语义 0.6 + 关键词 0.3 + 时间衰减 0.1，满分 1.0) 自动选择最相关记忆注入翻译上下文，`memory-scoring.ts` 纯函数实现
+- **本地嵌入**: `embedding-service.ts` (Transformers.js + EmbeddingGemma 300M，256 维) + `embedding-queue.ts` (异步批量嵌入)，动态 import 不进主 bundle
+- **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索，复用 `scoreMemory()` 统一评分
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
 - **数据同步**: `SyncDataService` 负责本地/远程数据合并，基于 `lastEdited` 时间戳冲突解决
 - **IndexedDB**: 使用 `idb` 库操作，`src/utils/indexed-db.ts` 封装了数据库初始化

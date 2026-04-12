@@ -8,13 +8,12 @@ export const PRODUCTIVE_TOOLS = new Set([
   'list_terms',
   'list_characters',
   'list_memories',
-  'search_memory_by_keywords',
+  'search_memories',
   'get_chapter_info',
   'get_book_info',
   'get_term',
   'get_character',
   'get_memory',
-  'get_recent_memories',
 ]);
 
 /**

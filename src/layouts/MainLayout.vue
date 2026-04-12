@@ -201,8 +201,25 @@ watch(
   },
 );
 
-onMounted(() => {
+onMounted(async () => {
   setupAutoSync();
+
+  // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
+  // 注意：首次安装/首次启用时不会自动触发，需用户在设置页主动下载，避免意外产生 ~195MB 带宽消耗
+  const { useSettingsStore } = await import('src/stores/settings');
+  const settings = useSettingsStore();
+  if (!settings.isLoaded) {
+    await settings.loadSettings();
+  }
+  if (
+    settings.settings.memoryInjection?.enableSemantic !== false &&
+    settings.settings.memoryInjection?.embeddingModelCached === true
+  ) {
+    const { EmbeddingService } = await import('src/services/embedding-service');
+    if (!EmbeddingService.isReady()) {
+      void EmbeddingService.warmup();
+    }
+  }
 });
 
 onUnmounted(() => {

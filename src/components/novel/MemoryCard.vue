@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
-import type { Memory, MemoryAttachment } from 'src/models/memory';
-import MemoryAttachmentTag from './MemoryAttachmentTag.vue';
-import { useMemoryAttachments } from 'src/composables/useMemoryAttachments';
-import { useBooksStore } from 'src/stores/books';
+import type { Memory } from 'src/models/memory';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 interface Props {
   memory: Memory;
@@ -23,38 +21,38 @@ const emit = defineEmits<{
   click: [memory: Memory, openInEditMode?: boolean];
   delete: [memory: Memory];
   check: [checked: boolean, memoryId: string];
-  'filter-by-attachment': [type: string, id: string];
 }>();
 
-// 使用 useMemoryAttachments composable
-const { resolveNames, clearCache, cacheSize } = useMemoryAttachments({
-  bookId: computed(() => props.bookId),
+// 向量状态：ready（已向量化）/ pending（待向量化）/ stale（版本过期）
+const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
+  const { embedding, embeddingModel } = props.memory;
+  if (!embedding || embedding.length === 0) return 'pending';
+  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
+  return 'ready';
 });
 
-// 监听当前书籍的角色和术语变化，清除缓存并重新解析
-const booksStore = useBooksStore();
-const currentBook = computed(() => booksStore.getBookById(props.bookId));
-
-watch(
-  () => ({
-    characterSettings: currentBook.value?.characterSettings,
-    terminologies: currentBook.value?.terminologies,
-  }),
-  () => {
-    clearCache();
-  },
-  { deep: true },
-);
-
-// 附件名称状态（计算属性，自动响应缓存变化）
-// 依赖 cacheSize 确保在缓存清除后重新计算
-const attachmentsWithNames = computed(() => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _cache = cacheSize.value; // 作为依赖，触发重新计算
-  if (!props.memory.attachedTo || props.memory.attachedTo.length === 0) {
-    return [];
+const embeddingBadgeClass = computed(() => {
+  switch (embeddingStatus.value) {
+    case 'ready':
+      return 'bg-emerald-500/80';
+    case 'stale':
+      return 'bg-rose-500/80';
+    case 'pending':
+    default:
+      return 'bg-amber-400/80';
   }
-  return resolveNames(props.memory.attachedTo);
+});
+
+const embeddingBadgeTitle = computed(() => {
+  switch (embeddingStatus.value) {
+    case 'ready':
+      return '已向量化';
+    case 'stale':
+      return '向量版本过期，将被重新计算';
+    case 'pending':
+    default:
+      return '待向量化';
+  }
 });
 
 // 内容预览（限制字符数）
@@ -84,21 +82,6 @@ const relativeTime = computed(() => {
   });
 });
 
-// 显示的附件（最多3个）
-const visibleAttachments = computed(() => {
-  return attachmentsWithNames.value.slice(0, 3);
-});
-
-// 剩余附件数量
-const remainingCount = computed(() => {
-  return Math.max(0, attachmentsWithNames.value.length - 3);
-});
-
-// 处理附件点击
-function handleAttachmentClick(type: string, id: string) {
-  emit('filter-by-attachment', type, id);
-}
-
 // 处理卡片点击
 function handleCardClick() {
   emit('click', props.memory);
@@ -116,6 +99,13 @@ function handleCheck(checked: boolean) {
     :class="{ 'ring-2 ring-primary/50': showCheckbox && checked }"
     @click="handleCardClick"
   >
+    <!-- 向量状态徽章 -->
+    <div
+      class="absolute top-2 right-2 w-2 h-2 rounded-full z-20"
+      :class="embeddingBadgeClass"
+      :title="embeddingBadgeTitle"
+    />
+
     <!-- 头部：摘要和操作 -->
     <div class="flex justify-between items-start mb-3 gap-3">
       <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -129,7 +119,7 @@ function handleCheck(checked: boolean) {
         />
         <div class="flex-1 min-w-0">
           <h3
-            class="text-base font-medium text-moon-100 line-clamp-2 break-words"
+            class="text-base font-medium text-moon-100 line-clamp-2 break-words pr-4"
             :title="memory.summary"
           >
             <i class="pi pi-bookmark text-primary-400 mr-2"></i>
@@ -141,7 +131,7 @@ function handleCheck(checked: boolean) {
       <!-- 操作按钮 -->
       <div
         v-if="!showCheckbox"
-        class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-black/50 rounded backdrop-blur-sm p-1 z-10"
+        class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute right-5 top-2 bg-black/50 rounded backdrop-blur-sm p-1 z-10"
       >
         <Button
           icon="pi pi-pencil"
@@ -164,29 +154,6 @@ function handleCheck(checked: boolean) {
       >
         {{ contentPreview }}
       </p>
-    </div>
-
-    <!-- 附件标签 -->
-    <div v-if="visibleAttachments.length > 0" class="mb-3">
-      <div class="flex flex-wrap gap-1.5 items-center">
-        <MemoryAttachmentTag
-          v-for="attachment in visibleAttachments"
-          :key="`${attachment.type}:${attachment.id}`"
-          :type="attachment.type"
-          :id="attachment.id"
-          :name="attachment.name"
-          :loading="attachment.loading"
-          :clickable="true"
-          @click="handleAttachmentClick"
-        />
-        <!-- 更多附件指示器 -->
-        <div
-          v-if="remainingCount > 0"
-          class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-white/10 text-moon-100/60 border border-white/10"
-        >
-          +{{ remainingCount }}
-        </div>
-      </div>
     </div>
 
     <!-- 底部：时间戳 -->

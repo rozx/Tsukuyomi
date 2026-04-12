@@ -49,7 +49,6 @@ const mockMemoryService = {
       _memoryId: string,
       _content: string,
       _summary: string,
-      _attachedTo?: unknown,
       _preserveLastAccessedAt?: number,
     ) => Promise.resolve(),
   ),
@@ -61,7 +60,6 @@ const mockMemoryService = {
       _content: string,
       _summary: string,
       _timestamps?: { createdAt?: number; lastAccessedAt?: number },
-      _attachedTo?: unknown,
     ) => Promise.resolve(),
   ),
   deleteMemory: mock((_bookId: string, _memoryId: string) => Promise.resolve()),
@@ -913,7 +911,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 1500 }),
-        undefined,
       );
       // 第二次：本地更新，保留同一 ID（upsert）
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
@@ -922,7 +919,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
 
       // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
@@ -965,7 +961,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '角色A总是使用敬语',
         '角色A的语言风格',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
     });
 
@@ -989,7 +984,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         summary: '新摘要',
         createdAt: 1200,
         lastAccessedAt: 3000,
-        attachedTo: [{ type: 'book', id: 'b1' }],
       };
 
       mockMemoryService.getAllMemories.mockResolvedValueOnce([localMemory]);
@@ -1005,7 +999,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '角色A总是使用敬语',
         '新摘要',
         expect.objectContaining({ createdAt: 1200, lastAccessedAt: 3000 }),
-        remoteMemory.attachedTo,
       );
       // 旧的本地 Memory 应被删除（不在最终列表中）
       expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith('b1', 'local-1');
@@ -1025,7 +1018,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         summary: '旧摘要',
         createdAt: 1000,
         lastAccessedAt: localTimestamp,
-        attachedTo: [{ type: 'book', id: 'b1' }],
       };
 
       const remoteMemory = {
@@ -1035,7 +1027,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         summary: '新摘要',
         createdAt: 1000,
         lastAccessedAt: remoteTimestamp,
-        attachedTo: [{ type: 'book', id: 'b1' }],
       };
 
       // 本地有该 Memory，远程 lastAccessedAt 更大，应使用远程版本
@@ -1052,7 +1043,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '新内容',
         '新摘要',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: remoteTimestamp }),
-        remoteMemory.attachedTo,
       );
     });
 
@@ -1116,7 +1106,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '远程更新的记忆',
         '摘要',
         expect.objectContaining({ createdAt: 800, lastAccessedAt: 2000 }),
-        undefined,
       );
 
       // 应从删除记录中移除
@@ -1215,7 +1204,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
-        undefined,
       );
 
       // mem-2 不在远程且 lastAccessedAt <= syncTime → 应被删除
@@ -1292,7 +1280,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '本地记忆',
         '摘要',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
     });
 

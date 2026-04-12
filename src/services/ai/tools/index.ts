@@ -211,7 +211,7 @@ export class ToolRegistry {
       'search_characters_by_keywords',
       'list_characters',
       // 记忆工具（只读）
-      'search_memory_by_keywords',
+      'search_memories',
       'get_memory',
       'list_memories',
       // 书籍工具（只读）

@@ -671,7 +671,7 @@ class TaskLoopSession {
     const keyTools = new Set([
       'list_terms',
       'list_characters',
-      'search_memory_by_keywords',
+      'search_memories',
       'get_chapter_info',
       'get_book_info',
       'list_chapters',
