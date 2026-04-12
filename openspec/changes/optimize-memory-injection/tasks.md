@@ -54,28 +54,28 @@
 
 ## 6. `EmbeddingService`
 
-- [ ] 6.1 创建 `src/services/embedding-service.ts`,定义常量 `MODEL_ID = 'onnx-community/embeddinggemma-300m-ONNX'`、`MODEL_VERSION = 'embeddinggemma-300m@256'`、`DIMENSIONS = 256`
-- [ ] 6.2 实现 `EmbeddingService.init(): Promise<void>` 懒加载,使用动态 `import('@huggingface/transformers')`
-- [ ] 6.3 使用 `pipeline('feature-extraction', MODEL_ID, { dtype: 'q4', device: 'auto' })` 创建特征提取 pipeline,接入 `progress_callback` 广播到 event bus
-- [ ] 6.4 实现 `isReady(): boolean` 与 `getStatus(): 'idle' | 'loading' | 'ready' | 'failed'`
-- [ ] 6.5 实现 `embed(text: string): Promise<Float32Array>`,调用 pipeline 后取前 256 维并 L2 归一化
-- [ ] 6.6 实现 `embedBatch(texts: string[]): Promise<Float32Array[]>`
-- [ ] 6.7 实现 `cosineSimilarity(a, b): number` 静态工具函数
-- [ ] 6.8 实现 `warmup(): Promise<void>` 供设置页手动触发
-- [ ] 6.9 在 `package.json` 添加 `@huggingface/transformers` 依赖,验证动态 import 确实不进入主 bundle(`bun run build:spa` 检查产物)
-- [ ] 6.10 创建 `src/__tests__/embedding-service.test.ts`,mock `@huggingface/transformers`,验证懒加载、就绪状态、错误降级、维度截断
+- [x] 6.1 创建 `src/services/embedding-service.ts`,定义常量 `MODEL_ID = 'onnx-community/embeddinggemma-300m-ONNX'`、`MODEL_VERSION = 'embeddinggemma-300m@256'`、`DIMENSIONS = 256`
+- [x] 6.2 实现 `EmbeddingService.init(): Promise<void>` 懒加载,使用动态 `import('@huggingface/transformers')`
+- [x] 6.3 使用 `pipeline('feature-extraction', MODEL_ID, { dtype: 'q4', device: 'auto' })` 创建特征提取 pipeline,接入 `progress_callback` 广播到 event bus
+- [x] 6.4 实现 `isReady(): boolean` 与 `getStatus(): 'idle' | 'loading' | 'ready' | 'failed'`
+- [x] 6.5 实现 `embed(text: string): Promise<Float32Array>`,调用 pipeline 后取前 256 维并 L2 归一化
+- [x] 6.6 实现 `embedBatch(texts: string[]): Promise<Float32Array[]>`
+- [x] 6.7 实现 `cosineSimilarity(a, b): number` 静态工具函数
+- [x] 6.8 实现 `warmup(): Promise<void>` 供设置页手动触发
+- [x] 6.9 在 `package.json` 添加 `@huggingface/transformers` 依赖(v4.0.1,仅通过动态 import 使用);bundle 验证推迟到 Group 17 端到端阶段
+- [x] 6.10 创建 `src/__tests__/embedding-service.test.ts`,mock `@huggingface/transformers`,验证懒加载、就绪状态、错误降级、维度截断
 
 ## 7. `EmbeddingQueue`
 
-- [ ] 7.1 创建 `src/services/embedding-queue.ts`,使用 `EventTarget` 或 mitt 实现事件广播
-- [ ] 7.2 实现 `enqueue(memoryId: string)` 将任务加入队列,若队列空闲则启动处理循环
-- [ ] 7.3 实现 `cancel(memoryId: string)` 从队列中移除未开始的任务
-- [ ] 7.4 实现内部处理循环:按 `BATCH_SIZE = 8` 切分,调用 `EmbeddingService.embedBatch`,调用 `MemoryService.updateMemoryEmbeddingOnly` 持久化,每批后 `await new Promise(r => setTimeout(r, 0))`
-- [ ] 7.5 实现 `pause()` / `resume()` 状态控制
-- [ ] 7.6 实现 `enqueueBacklog(bookId: string)` 扫描书籍中 embedding 缺失或版本过期的记忆批量入队
-- [ ] 7.7 实现 `getProgress()` 返回 `{ total, completed, etaMs }`,使用最近 5 批吞吐量滑动窗口估算 ETA
-- [ ] 7.8 在处理失败时捕获错误,继续下一批,广播 `error` 事件
-- [ ] 7.9 创建 `src/__tests__/embedding-queue.test.ts`,mock `EmbeddingService`,测试批处理、取消、暂停/恢复、失败恢复、进度计算
+- [x] 7.1 创建 `src/services/embedding-queue.ts`,使用 `EventTarget` 或 mitt 实现事件广播
+- [x] 7.2 实现 `enqueue(memoryId: string)` 将任务加入队列,若队列空闲则启动处理循环
+- [x] 7.3 实现 `cancel(memoryId: string)` 从队列中移除未开始的任务
+- [x] 7.4 实现内部处理循环:按 `BATCH_SIZE = 8` 切分,调用 `EmbeddingService.embedBatch`,调用 `MemoryService.updateMemoryEmbeddingOnly` 持久化,每批后 `await new Promise(r => setTimeout(r, 0))`
+- [x] 7.5 实现 `pause()` / `resume()` 状态控制
+- [x] 7.6 实现 `enqueueBacklog(bookId: string)` 扫描书籍中 embedding 缺失或版本过期的记忆批量入队
+- [x] 7.7 实现 `getProgress()` 返回 `{ total, completed, etaMs }`,使用最近 5 批吞吐量滑动窗口估算 ETA
+- [x] 7.8 在处理失败时捕获错误,继续下一批,广播 `error` 事件
+- [x] 7.9 创建 `src/__tests__/embedding-queue.test.ts`,mock `EmbeddingService`,测试批处理、取消、暂停/恢复、失败恢复、进度计算
 
 ## 8. `context-builder` 重写
 

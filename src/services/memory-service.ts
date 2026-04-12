@@ -916,6 +916,24 @@ export class MemoryService {
   }
 
   /**
+   * 按 memoryId 读取单条 Memory(无副作用:不更新 lastAccessedAt,不触发任何事件)。
+   * 供嵌入队列、后台任务等"只读"场景使用,返回值保留 embedding 字段。
+   * 未找到或失败时返回 null(而非抛异常)。
+   */
+  static async getMemoryByIdOnly(memoryId: string): Promise<Memory | null> {
+    if (!memoryId) return null;
+    try {
+      const db = await getDB();
+      const storage = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
+      if (!storage) return null;
+      return this.storageToMemoryWithEmbedding(storage);
+    } catch (error) {
+      console.warn(`[MemoryService] getMemoryByIdOnly 失败 (${memoryId}):`, error);
+      return null;
+    }
+  }
+
+  /**
    * 仅写入 embedding 字段(不更新 lastAccessedAt,不触发 memory-changed 事件,
    * 不影响 Gist 同步 dirty flag)。
    *

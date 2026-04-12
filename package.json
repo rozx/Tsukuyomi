@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@huggingface/transformers": "^4.0.1",
     "@octokit/rest": "^22.0.1",
     "@primevue/themes": "^4.5.0",
     "@quasar/extras": "^1.17.0",
