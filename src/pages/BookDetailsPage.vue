@@ -1668,6 +1668,10 @@ const handleMemorySave = async (memoryId: string, summary: string, content: stri
   if (!bookId.value) return;
   try {
     await MemoryService.updateMemory(bookId.value, memoryId, content, summary);
+    // 立即更新本地状态,使弹窗内容同步刷新
+    if (detailMemory.value?.id === memoryId) {
+      detailMemory.value = { ...detailMemory.value, summary, content };
+    }
     await refreshReferencedMemories();
   } catch (error) {
     console.error('Failed to save memory:', error);

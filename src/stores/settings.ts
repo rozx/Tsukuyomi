@@ -630,6 +630,15 @@ export const useSettingsStore = defineStore('settings', {
         };
       }
 
+      // embeddingModelCached 是设备本地状态（浏览器是否缓存了模型文件），
+      // 同步时应保留本地值,避免远程覆盖导致误判
+      if (mergedSettings.memoryInjection && this.settings.memoryInjection) {
+        mergedSettings.memoryInjection = {
+          ...mergedSettings.memoryInjection,
+          embeddingModelCached: this.settings.memoryInjection.embeddingModelCached,
+        };
+      }
+
       // 深度合并 taskDefaultModels
       const finalSettings: AppSettings = {
         ...this.settings,

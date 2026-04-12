@@ -7,6 +7,7 @@ import {
   scoreMemory,
   selectByBudget,
   SCORING_WEIGHTS,
+  FALLBACK_WEIGHTS,
   MAX_TOTAL_SCORE,
   DEFAULT_MIN_SCORE,
 } from 'src/services/memory-scoring';
@@ -163,7 +164,7 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.total).toBeCloseTo(MAX_TOTAL_SCORE, 5);
   });
 
-  test('缺失 embedding 时 semantic=0, keyword/recency 仍生效', () => {
+  test('缺失 embedding 时 semantic=0, 使用降级权重 keyword/recency 仍生效', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '小明',
@@ -175,11 +176,13 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
 
+    // memory 没有 embedding,无法计算语义相似度,使用降级权重
     expect(breakdown.semantic).toBe(0);
     expect(breakdown.keyword).toBeCloseTo(1, 5);
     expect(breakdown.recency).toBeCloseTo(1, 5);
+    // 降级权重: keyword=0.75, recency=0.25, 总分 = 0.75 + 0.25 = 1.0
     expect(breakdown.total).toBeCloseTo(
-      SCORING_WEIGHTS.keyword + SCORING_WEIGHTS.recency,
+      FALLBACK_WEIGHTS.keyword + FALLBACK_WEIGHTS.recency,
       5,
     );
   });

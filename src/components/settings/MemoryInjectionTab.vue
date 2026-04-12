@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Slider from 'primevue/slider';
 import type { SliderSlideEndEvent } from 'primevue/slider';
 import ToggleSwitch from 'primevue/toggleswitch';
@@ -27,6 +27,9 @@ const syncFormState = () => {
   enableSemantic.value = memoryInjection.value?.enableSemantic ?? true;
   minScoreThreshold.value = memoryInjection.value?.minScoreThreshold ?? 0.38;
 };
+
+// store 被外部修改（如同步下载覆盖）时，将最新值同步到本地 ref
+watch(memoryInjection, () => syncFormState(), { deep: true });
 
 const statusLabel = computed(() => {
   const labels: Record<EmbeddingStatus, string> = {

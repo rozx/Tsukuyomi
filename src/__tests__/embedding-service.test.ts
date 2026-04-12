@@ -72,6 +72,8 @@ describe('EmbeddingService - 懒加载与状态', () => {
   });
 
   test('init() 失败时状态切换到 failed,不抛异常', async () => {
+    // 禁用重试,避免测试等待延迟
+    EmbeddingService.__disableRetryForTesting();
     mockPipelineFactory = async () => {
       throw new Error('download failed');
     };

@@ -206,6 +206,18 @@ watch(
   },
 );
 
+// 监听 memory prop 变化（保存后父组件更新 detailMemory 时触发）,
+// 非编辑状态下同步最新内容到本地编辑字段
+watch(
+  () => props.memory,
+  (newMemory) => {
+    if (newMemory && props.visible && !isEditing.value) {
+      editedSummary.value = newMemory.summary;
+      editedContent.value = newMemory.content;
+    }
+  },
+);
+
 // 监听 memory-changed 事件，嵌入完成后刷新对话框内的 embedding 状态
 const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) => {
   if (!props.visible || !props.memory) return;

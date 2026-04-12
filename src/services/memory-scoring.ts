@@ -72,16 +72,53 @@ export function calculateRecencyFactor(memory: Memory, now: number): number {
 }
 
 /**
+ * 判断是否可以计算语义相似度(双方都有 embedding 时才行)
+ */
+function hasEmbeddings(
+  memoryEmbedding: number[] | Float32Array | undefined | null,
+  chunkEmbedding: number[] | Float32Array | undefined | null,
+): boolean {
+  return !!(memoryEmbedding && memoryEmbedding.length > 0 && chunkEmbedding && chunkEmbedding.length > 0);
+}
+
+/**
+ * 无 embedding 时的降级权重:将语义权重按 3:1 比例重新分配给 keyword 和 recency,
+ * 使 keyword=0.75、recency=0.25,最大分仍为 1.0。
+ */
+export const FALLBACK_WEIGHTS = {
+  keyword: 0.75,
+  recency: 0.25,
+} as const;
+
+/**
  * 对单条记忆打分,返回完整 breakdown 结构体。
+ * 当 embedding 不可用时,自动切换为降级权重(keyword=0.75, recency=0.25),
+ * 避免语义信号缺失导致分数天花板过低。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
-  const semantic = calculateSemanticSim(memory.embedding, context.chunkEmbedding);
+  const canUseSemantic = hasEmbeddings(memory.embedding, context.chunkEmbedding);
+  const semantic = canUseSemantic
+    ? calculateSemanticSim(memory.embedding, context.chunkEmbedding)
+    : 0;
   const keyword = calculateKeywordHitRatio(memory, context.chunkEntities);
   const recency = calculateRecencyFactor(memory, context.now);
 
-  const semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
-  const keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-  const recencyWeighted = recency * SCORING_WEIGHTS.recency;
+  let semanticWeighted: number;
+  let keywordWeighted: number;
+  let recencyWeighted: number;
+
+  if (canUseSemantic) {
+    // 正常三信号打分
+    semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
+    keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+    recencyWeighted = recency * SCORING_WEIGHTS.recency;
+  } else {
+    // 降级:跳过语义,重新分配权重
+    semanticWeighted = 0;
+    keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
+    recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
+  }
+
   const total = semanticWeighted + keywordWeighted + recencyWeighted;
 
   return {

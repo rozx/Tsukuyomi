@@ -41,6 +41,9 @@ export class EmbeddingService {
   private static status: EmbeddingStatus = 'idle';
   private static initPromise: Promise<void> | null = null;
   private static lastError: Error | null = null;
+  private static retryCount = 0;
+  private static readonly MAX_RETRIES = 3;
+  private static readonly RETRY_DELAYS = [3000, 8000, 20000]; // 递增延迟(ms)
 
   private static readonly events = new EventTarget();
 
@@ -116,14 +119,33 @@ export class EmbeddingService {
         });
 
         this.pipeline = extractor;
+        this.retryCount = 0; // 成功后重置重试计数
         this.setStatus('ready');
         this.dispatch('ready', { modelVersion: MODEL_VERSION });
       } catch (error) {
         this.lastError = error instanceof Error ? error : new Error(String(error));
         this.pipeline = null;
+        console.warn(
+          `[EmbeddingService] 初始化失败 (${this.retryCount + 1}/${this.MAX_RETRIES + 1}):`,
+          this.lastError.message,
+        );
+
+        // 自动重试(递增延迟）
+        if (this.retryCount < this.MAX_RETRIES) {
+          const delay = this.RETRY_DELAYS[this.retryCount] ?? 20000;
+          this.retryCount++;
+          this.setStatus('loading'); // 保持 loading 状态表示仍在尝试
+          this.dispatch('error', { error: this.lastError, retrying: true, retryCount: this.retryCount });
+          console.info(`[EmbeddingService] 将在 ${delay / 1000}s 后重试...`);
+          await new Promise((r) => setTimeout(r, delay));
+          this.initPromise = null;
+          void this.init(); // 重新触发 init
+          return;
+        }
+
+        // 重试耗尽,标记失败
         this.setStatus('failed');
-        this.dispatch('error', { error: this.lastError });
-        console.warn('[EmbeddingService] 初始化失败:', this.lastError.message);
+        this.dispatch('error', { error: this.lastError, retrying: false });
       } finally {
         this.initPromise = null;
       }
@@ -148,6 +170,7 @@ export class EmbeddingService {
     this.status = 'idle';
     this.initPromise = null;
     this.lastError = null;
+    this.retryCount = 0;
     this.setStatus('idle');
     await this.init();
   }
@@ -305,5 +328,11 @@ export class EmbeddingService {
     this.status = 'idle';
     this.initPromise = null;
     this.lastError = null;
+    this.retryCount = 0;
+  }
+
+  /** 测试专用:跳过自动重试 */
+  static __disableRetryForTesting(): void {
+    this.retryCount = this.MAX_RETRIES;
   }
 }
