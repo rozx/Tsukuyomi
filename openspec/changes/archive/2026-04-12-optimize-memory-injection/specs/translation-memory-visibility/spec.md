@@ -30,7 +30,7 @@ The UI SHALL handle memories that were referenced via AI tool calls (rather than
 
 #### Scenario: Tool-invoked memory shows origin label
 
-- **GIVEN** a memory was fetched by `get_memory` or `search_memory_by_keywords` and has no corresponding `memoryScoreBreakdown` entry
+- **GIVEN** a memory was fetched by `get_memory` or `search_memories` and has no corresponding `memoryScoreBreakdown` entry
 - **WHEN** the memory reference panel renders
 - **THEN** the row shows a label "由 AI 主动调用" in subdued text
 - **AND** no score breakdown icon is displayed for that row

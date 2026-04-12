@@ -166,24 +166,24 @@
 - [x] 17.1 运行 `bun run lint && bun run type-check` 通过(所有 `attachedTo` / `MemoryAttachment` 引用已清除)
 - [x] 17.2 运行 `bun test` 全部通过
 - [x] 17.3 运行 `bun run build:spa` 验证 bundle 大小无明显增长(Transformers.js 未进主 bundle)
-- [ ] 17.4 **硬迁移验证**:在升级前备份一份含 `attachedTo` 字段的 IndexedDB(DevTools export);启动新版本后在 DevTools 中检查:
+- [x] 17.4 **硬迁移验证**:在升级前备份一份含 `attachedTo` 字段的 IndexedDB(DevTools export);启动新版本后在 DevTools 中检查:
    - `DB_VERSION` 显示为 9
    - `memories` store 中所有记录的 `attachedTo` 字段**已被删除**
    - 迁移日志显示"迁移 N 条记忆,耗时 X ms"
    - 记忆内容(summary/content/createdAt/lastAccessedAt)完全保留
-- [ ] 17.5 **迁移失败回滚验证**:在 `fake-indexeddb` 环境下 mock cursor update 抛异常,验证事务回滚 → DB 保持 v8 状态 → 下次启动重试
-- [ ] 17.6 手工测试:含 100+ 条旧记忆的书籍加载,UI 行为正常:
+- [x] 17.5 **迁移失败回滚验证**:在 `fake-indexeddb` 环境下 mock cursor update 抛异常,验证事务回滚 → DB 保持 v8 状态 → 下次启动重试
+- [x] 17.6 手工测试:含 100+ 条旧记忆的书籍加载,UI 行为正常:
    - 书籍打开正常
    - 记忆面板显示全部记忆(不再分类型筛选)
    - MemoryCard 不再显示附件 chips
    - MemoryDetailDialog 不再显示"关联实体"分组
-- [ ] 17.7 手工测试:首次下载嵌入模型 → 自动 backfill → 翻译一段,观察 `MemoryReferencePanel` 的打分 tooltip 显示三信号分值是否合理
-- [ ] 17.8 手工测试:关闭 `enableSemantic`,验证翻译仍正常(纯 keyword + recency 降级路径)
-- [ ] 17.9 手工测试:删除模型缓存后重启,验证懒加载 + 错误状态显示
-- [ ] 17.10 手工测试:AI 翻译任务中,确认 `create_memory` / `update_memory` 不再接受 `attached_to` 参数;AI 提示词明显瘦身(提示词日志对比)
-- [ ] 17.11 手工测试 Gist 同步导出:导出数据,检查 JSON 中**不含** `attachedTo`、`embedding`、`embeddingModel`、`memoryScoreBreakdown`
-- [ ] 17.12 手工测试 Gist 同步导入:从旧版本应用导出含 `attachedTo` 的 JSON,新版本导入,验证:
+- [x] 17.7 手工测试:首次下载嵌入模型 → 自动 backfill → 翻译一段,观察 `MemoryReferencePanel` 的打分 tooltip 显示三信号分值是否合理
+- [x] 17.8 手工测试:关闭 `enableSemantic`,验证翻译仍正常(纯 keyword + recency 降级路径)
+- [x] 17.9 手工测试:删除模型缓存后重启,验证懒加载 + 错误状态显示
+- [x] 17.10 手工测试:AI 翻译任务中,确认 `create_memory` / `update_memory` 不再接受 `attached_to` 参数;AI 提示词明显瘦身(提示词日志对比)
+- [x] 17.11 手工测试 Gist 同步导出:导出数据,检查 JSON 中**不含** `attachedTo`、`embedding`、`embeddingModel`、`memoryScoreBreakdown`
+- [x] 17.12 手工测试 Gist 同步导入:从旧版本应用导出含 `attachedTo` 的 JSON,新版本导入,验证:
    - 导入不 crash
    - 导入后 IDB 中的新记忆**没有** `attachedTo` 字段(反序列化阶段被 strip)
-- [ ] 17.13 运行 `bun run dev:electron` 在 Electron 环境重复 17.4 和 17.7 验证
-- [ ] 17.14 运行 `openspec validate "optimize-memory-injection" --strict` 确认所有 requirements 都有对应实现佐证
+- [x] 17.13 运行 `bun run dev:electron` 在 Electron 环境重复 17.4 和 17.7 验证
+- [x] 17.14 运行 `openspec validate "optimize-memory-injection" --strict` 确认所有 requirements 都有对应实现佐证

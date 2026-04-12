@@ -9,7 +9,7 @@ The system SHALL compute a relevance score for each candidate memory using a wei
 - **GIVEN** a candidate memory and a chunk of text being translated
 - **WHEN** the scoring function is invoked
 - **THEN** the score equals `3.0 × semanticSim + 2.0 × keywordHitRatio + 1.0 × recencyFactor`
-- **AND** the result is a non-negative number with theoretical maximum of `6.0`
+- **AND** the result is a non-negative number with theoretical maximum of `1.0`
 
 #### Scenario: Keyword hit ratio counts chunk entity names found in memory text
 
@@ -74,7 +74,7 @@ The system SHALL discard candidate memories whose total score falls below a conf
 - **GIVEN** no user override has been applied to the threshold
 - **WHEN** the scoring system initializes
 - **THEN** `minScoreThreshold` defaults to `0.3`
-- **AND** this default represents approximately 5% of the theoretical maximum score (6.0)
+- **AND** this default represents approximately 5% of the theoretical maximum score (1.0)
 
 ### Requirement: Character budget controls injection size
 

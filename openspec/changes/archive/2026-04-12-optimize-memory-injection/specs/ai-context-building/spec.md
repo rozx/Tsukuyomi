@@ -134,7 +134,7 @@ The system SHALL persist per-memory score breakdowns on the translation result s
 
 #### Scenario: AI-invoked memories have no breakdown
 
-- **GIVEN** a memory was fetched during translation by the AI calling `get_memory` or `search_memory_by_keywords`
+- **GIVEN** a memory was fetched during translation by the AI calling `get_memory` or `search_memories`
 - **AND** that memory was NOT also part of the pre-computed injection
 - **WHEN** the translation is persisted
 - **THEN** that memory appears in `referencedMemories` but not in `memoryScoreBreakdown`

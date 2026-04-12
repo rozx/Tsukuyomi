@@ -14,4 +14,4 @@
 - Users who previously filtered by character or term to find related memories will now rely on:
   1. Free-text search (if they know a keyword)
   2. AI-driven scoring during translation (automatic, invisible)
-  3. `get_memory` / `search_memory_by_keywords` AI tools for programmatic access
+  3. `get_memory` / `search_memories` AI tools for programmatic access
