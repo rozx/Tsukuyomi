@@ -114,6 +114,14 @@ const DB_NAME = 'tsukuyomi';
 const DB_VERSION = 9; // v9 硬迁移：清理旧 attachedTo 字段残留（memory-attachment 系统已移除）
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
+let dbBlocked = false;
+
+/**
+ * 检查数据库是否被阻塞升级
+ */
+export function isDbBlocked(): boolean {
+  return dbBlocked;
+}
 
 export async function resetDbForTests(): Promise<void> {
   try {
@@ -144,6 +152,7 @@ export async function __resetDbPromiseForTesting(): Promise<void> {
  */
 export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
   if (!dbPromise) {
+    dbBlocked = false;
     dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
       async upgrade(db, oldVersion, _newVersion, transaction) {
         // 创建 books 存储
@@ -263,11 +272,20 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
         }
       },
       blocked() {
-        // IndexedDB 被阻止升级
+        dbBlocked = true;
+        console.warn(
+          '[indexed-db] 数据库升级被阻塞，请关闭其他使用本应用的标签页后刷新',
+        );
       },
       blocking() {
-        // 此标签页正在阻止 IndexedDB 升级
+        console.warn(
+          '[indexed-db] 当前标签页正在阻止其他标签页的数据库升级，建议刷新此页面',
+        );
       },
+    }).catch((error) => {
+      // 重置缓存，允许后续重试
+      dbPromise = null;
+      throw error;
     });
   }
 

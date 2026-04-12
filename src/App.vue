@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { migrateFromLocalStorage } from 'src/utils/indexed-db';
+import { migrateFromLocalStorage, isDbBlocked } from 'src/utils/indexed-db';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
@@ -40,7 +40,7 @@ onMounted(async () => {
 
   // 非阻塞式地加载所有 stores 数据
   // 不使用 await，让页面立即渲染，数据在后台加载
-  void Promise.all([
+  const loadPromise = Promise.all([
     booksStore.loadBooks(),
     aiModelsStore.loadModels(),
     settingsStore.loadSettings(),
@@ -52,6 +52,16 @@ onMounted(async () => {
   ]).catch((error) => {
     console.error('Failed to load initial data:', error);
   });
+
+  // 检测数据库阻塞：如果 5 秒内数据仍未加载完成且 DB 被阻塞，提示用户
+  const blockCheckTimer = setTimeout(() => {
+    if (isDbBlocked()) {
+      console.error(
+        '[App] 数据库升级被其他标签页阻塞，数据无法加载。请关闭其他使用本应用的标签页后刷新。',
+      );
+    }
+  }, 5000);
+  void loadPromise.finally(() => clearTimeout(blockCheckTimer));
 
   // 从 localStorage 加载 UI 状态（同步）
   bookDetailsStore.loadState();
