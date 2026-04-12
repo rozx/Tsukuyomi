@@ -35,6 +35,12 @@ export interface MemoryInjectionSettings {
    * 默认值：false
    */
   hasSeenIntro: boolean;
+  /**
+   * 嵌入模型是否已成功下载并缓存过
+   * 默认值：false。首次初始化成功后设为 true，
+   * 用于区分"从未下载"和"已缓存可预热"两种场景。
+   */
+  embeddingModelCached: boolean;
 }
 
 /**

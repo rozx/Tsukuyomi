@@ -25,7 +25,7 @@ const lastError = ref<string | null>(null);
 const syncFormState = () => {
   charBudget.value = memoryInjection.value?.charBudget ?? 2000;
   enableSemantic.value = memoryInjection.value?.enableSemantic ?? true;
-  minScoreThreshold.value = memoryInjection.value?.minScoreThreshold ?? 0.3;
+  minScoreThreshold.value = memoryInjection.value?.minScoreThreshold ?? 0.38;
 };
 
 const statusLabel = computed(() => {
@@ -101,6 +101,10 @@ onMounted(async () => {
       if (embeddingStatus.value !== 'loading') {
         downloadProgress.value = null;
         downloadFile.value = '';
+      }
+      // 首次成功就绪时，持久化"已缓存"标记，供下次启动时自动预热使用
+      if (embeddingStatus.value === 'ready') {
+        void settingsStore.updateMemoryInjection({ embeddingModelCached: true });
       }
     }),
   );

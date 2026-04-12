@@ -31,6 +31,7 @@ const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
   enableSemantic: true,
   minScoreThreshold: 0.38,
   hasSeenIntro: false,
+  embeddingModelCached: false,
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
