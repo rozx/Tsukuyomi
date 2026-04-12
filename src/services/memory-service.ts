@@ -531,14 +531,7 @@ export class MemoryService {
       };
       await db.put('memories', updatedMemory);
 
-      const result: Memory = {
-        id: updatedMemory.id,
-        bookId: updatedMemory.bookId,
-        content: updatedMemory.content,
-        summary: updatedMemory.summary,
-        createdAt: updatedMemory.createdAt,
-        lastAccessedAt: updatedMemory.lastAccessedAt,
-      };
+      const result = this.storageToMemoryWithEmbedding(updatedMemory);
 
       // 更新缓存
       this.memoryCache.set(cacheKey, result);
@@ -1033,14 +1026,7 @@ export class MemoryService {
       allMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
 
       const results = allMemories.map((memory) => {
-        const result: Memory = {
-          id: memory.id,
-          bookId: memory.bookId,
-          content: memory.content,
-          summary: memory.summary,
-          createdAt: memory.createdAt,
-          lastAccessedAt: memory.lastAccessedAt,
-        };
+        const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
 
         // 更新缓存
         const cacheKey = this.getCacheKey(bookId, memory.id);
@@ -1152,16 +1138,9 @@ export class MemoryService {
 
         // 返回更新后的记忆
         const results = recentMemories.map((memory) => {
-          const result: Memory = {
-            id: memory.id,
-            bookId: memory.bookId,
-            content: memory.content,
-            summary: memory.summary,
-            createdAt: memory.createdAt,
-            lastAccessedAt: now,
-          };
+          const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
+          result.lastAccessedAt = now;
 
-          // 更新缓存
           const cacheKey = this.getCacheKey(bookId, memory.id);
           this.memoryCache.set(cacheKey, result);
           return result;
@@ -1173,16 +1152,8 @@ export class MemoryService {
 
       // 返回未更新的记忆
       const results = recentMemories.map((memory) => {
-        const result: Memory = {
-          id: memory.id,
-          bookId: memory.bookId,
-          content: memory.content,
-          summary: memory.summary,
-          createdAt: memory.createdAt,
-          lastAccessedAt: memory.lastAccessedAt,
-        };
+        const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
 
-        // 更新缓存
         const cacheKey = this.getCacheKey(bookId, memory.id);
         this.memoryCache.set(cacheKey, result);
         return result;

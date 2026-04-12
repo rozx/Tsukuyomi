@@ -83,10 +83,9 @@ const handleDownload = async () => {
 };
 
 const handleRetry = async () => {
-  EmbeddingService.__resetForTesting();
   downloadProgress.value = 0;
   lastError.value = null;
-  await EmbeddingService.warmup();
+  await EmbeddingService.reload();
 };
 
 const unsubscribers: Array<() => void> = [];
@@ -142,7 +141,7 @@ onUnmounted(() => {
       </div>
       <p class="text-xs text-moon/60">每次翻译时注入的记忆总字符数上限</p>
       <Slider
-        :model-value="charBudget"
+        v-model="charBudget"
         :min="500"
         :max="5000"
         :step="100"
@@ -239,7 +238,7 @@ onUnmounted(() => {
         </div>
         <p class="text-xs text-moon/50">低于此分数的记忆不会被注入（满分 6.0）</p>
         <Slider
-          :model-value="minScoreThreshold"
+          v-model="minScoreThreshold"
           :min="0"
           :max="3"
           :step="0.1"

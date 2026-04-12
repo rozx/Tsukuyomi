@@ -201,8 +201,21 @@ watch(
   },
 );
 
-onMounted(() => {
+onMounted(async () => {
   setupAutoSync();
+
+  // 语义检索启用时，应用启动后自动预热嵌入模型（模型文件已被浏览器缓存）
+  const { useSettingsStore } = await import('src/stores/settings');
+  const settings = useSettingsStore();
+  if (!settings.isLoaded) {
+    await settings.loadSettings();
+  }
+  if (settings.settings.memoryInjection?.enableSemantic !== false) {
+    const { EmbeddingService } = await import('src/services/embedding-service');
+    if (!EmbeddingService.isReady()) {
+      void EmbeddingService.warmup();
+    }
+  }
 });
 
 onUnmounted(() => {

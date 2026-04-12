@@ -138,6 +138,19 @@ export class EmbeddingService {
   }
 
   /**
+   * 重新加载:释放当前 pipeline 后重新初始化。
+   * 模型文件已被浏览器 Cache API 缓存,重新加载不需要重新下载。
+   */
+  static async reload(): Promise<void> {
+    this.pipeline = null;
+    this.status = 'idle';
+    this.initPromise = null;
+    this.lastError = null;
+    this.setStatus('idle');
+    await this.init();
+  }
+
+  /**
    * 对单条文本计算 embedding。
    * 返回 256 维 L2 归一化 Float32Array。
    * 未就绪或失败时返回 null(调用方 fallback 到纯关键词 + 时间衰减)。
