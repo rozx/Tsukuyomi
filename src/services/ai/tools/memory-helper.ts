@@ -32,7 +32,7 @@ export async function searchRelatedMemories(
     return [];
   }
   try {
-    const memories = await MemoryService.searchMemoriesByKeywords(bookId, keywords);
+    const memories = await MemoryService.searchMemories(bookId, keywords.join(' '));
 
     // 限制返回数量，只返回 id 和 summary（不返回 content）
     // 如果 AI 需要完整内容，可以调用 get_memory 工具

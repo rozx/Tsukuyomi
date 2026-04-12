@@ -134,7 +134,7 @@ export const memoryTools: ToolDefinition[] = [
           properties: {
             memory_id: {
               type: 'string',
-              description: 'Memory ID（从 create_memory 或 search_memory_by_keywords 获取）',
+              description: 'Memory ID（从 create_memory 或 search_memories 获取）',
             },
           },
           required: ['memory_id'],
@@ -202,22 +202,18 @@ export const memoryTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_memory_by_keywords',
+        name: 'search_memories',
         description:
-          '根据多个关键词搜索 Memory 的摘要。当需要查找包含特定关键词的记忆内容（如背景设定、章节摘要等）时使用此工具。支持多个关键词，返回包含所有关键词的 Memory（AND 逻辑）。[警告] **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
+          '搜索 Memory（混合检索：关键词匹配 + 语义相似度）。当需要查找相关记忆内容（如背景设定、章节摘要等）时使用此工具。传入自然语言查询，自动结合关键词匹配和语义向量进行排序。[警告] **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
         parameters: {
           type: 'object',
           properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '搜索关键词数组（将在 Memory 的摘要中搜索，返回包含所有关键词的 Memory）',
+            query: {
+              type: 'string',
+              description: '搜索查询（自然语言描述或关键词，用于关键词匹配和语义检索）',
             },
           },
-          required: ['keywords'],
+          required: ['query'],
         },
       },
     },
@@ -228,38 +224,24 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { keywords } = args as {
-        keywords: string[];
-      };
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      const { query } = args as { query: string };
+      if (!query || typeof query !== 'string' || !query.trim()) {
         return JSON.stringify({
           success: false,
-          error: '关键词数组不能为空',
-        });
-      }
-
-      // 过滤掉空字符串
-      const validKeywords = keywords.filter(
-        (k) => k && typeof k === 'string' && k.trim().length > 0,
-      );
-      if (validKeywords.length === 0) {
-        return JSON.stringify({
-          success: false,
-          error: '关键词数组不能为空',
+          error: '搜索查询不能为空',
         });
       }
 
       try {
-        const memories = await MemoryService.searchMemoriesByKeywords(bookId, validKeywords);
+        const memories = await MemoryService.searchMemories(bookId, query.trim());
 
-        // 报告读取操作
         if (onAction) {
           onAction({
             type: 'read',
             entity: 'memory',
             data: {
-              keywords: validKeywords,
-              tool_name: 'search_memory_by_keywords',
+              query: query.trim(),
+              tool_name: 'search_memories',
               found_memory_ids: memories.map((m) => m.id),
             },
           });
@@ -375,7 +357,7 @@ export const memoryTools: ToolDefinition[] = [
           properties: {
             memory_id: {
               type: 'string',
-              description: 'Memory ID（从 get_memory 或 search_memory_by_keywords 获取）',
+              description: 'Memory ID（从 get_memory 或 search_memories 获取）',
             },
             content: {
               type: 'string',
@@ -475,7 +457,7 @@ export const memoryTools: ToolDefinition[] = [
           properties: {
             memory_id: {
               type: 'string',
-              description: 'Memory ID（从 get_memory 或 search_memory_by_keywords 获取）',
+              description: 'Memory ID（从 get_memory 或 search_memories 获取）',
             },
           },
           required: ['memory_id'],

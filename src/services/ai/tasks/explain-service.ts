@@ -190,9 +190,7 @@ export class ExplainService {
           const memoryContent = buildExplainMemoryContent(selectedText, result.text);
 
           // 先尝试找到并更新已有“文本解释”记忆（避免重复创建）
-          const candidates = await MemoryService.searchMemoriesByKeywords(context.currentBookId, [
-            '文本解释',
-          ]);
+          const candidates = await MemoryService.searchMemories(context.currentBookId, '文本解释');
 
           const trimmedSelectedText = selectedText.trim();
           const existing = candidates.find((m) => {

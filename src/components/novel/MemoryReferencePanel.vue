@@ -11,7 +11,7 @@ export interface MemoryReference {
   memoryId: string;
   summary: string;
   accessedAt: number;
-  toolName: 'get_memory' | 'search_memory_by_keywords';
+  toolName: 'get_memory' | 'search_memories';
 }
 
 interface Props {

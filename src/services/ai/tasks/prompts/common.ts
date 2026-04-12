@@ -225,7 +225,7 @@ export function getMemoryWorkflowRules(): string {
 - **严禁存储**：故事设定、背景、世界观、剧情内容、情节发展等（这些属于冗余信息，不应占用记忆空间）
 - 记忆的核心目的是帮助未来翻译保持一致性和质量，而非记录故事情节
 
-- 使用顺序：\`get_recent_memories\` → \`search_memory_by_keywords\` → \`get_memory\`
+- 使用顺序：\`get_recent_memories\` → \`search_memories\` → \`get_memory\`
 - 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（preparing；翻译任务还可在 review）
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本

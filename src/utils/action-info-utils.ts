@@ -498,7 +498,7 @@ export function getActionDetails(
 
   // 处理 Memory 操作
   if (action.entity === 'memory') {
-    if (action.tool_name === 'search_memory_by_keywords') {
+    if (action.tool_name === 'search_memories') {
       if (action.keywords && action.keywords.length > 0) {
         details.push({
           label: '搜索关键词',

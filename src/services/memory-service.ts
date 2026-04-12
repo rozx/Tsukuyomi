@@ -70,19 +70,7 @@ export class MemoryService {
   private static bookMemoryCache = new Map<string, { data: Memory[]; expiresAt: number }>();
   private static readonly BOOK_CACHE_TTL_MS = 60_000;
 
-  // 搜索结果缓存：缓存关键词组合到记忆 ID 列表的映射
-  // 缓存键格式：search:${bookId}:${sortedKeywords.join(',')}
-  private static searchResultCache = new Map<
-    string,
-    {
-      memoryIds: string[];
-      timestamp: number;
-    }
-  >();
-  private static readonly SEARCH_CACHE_TTL = 120000; // 2 分钟
-  private static readonly SEARCH_CACHE_MAX_SIZE = 100; // 最多缓存 100 个搜索结果
-
-  /**
+/**
    * 清理缓存（当缓存过大时）
    * 使用 LRU 策略：删除最久未使用的 20% 的缓存项（Map 开头的条目）
    */
@@ -116,72 +104,6 @@ export class MemoryService {
    */
   private static getCacheKey(bookId: string, memoryId: string): string {
     return `${bookId}:${memoryId}`;
-  }
-
-  /**
-   * 获取搜索结果缓存键
-   */
-  private static getSearchCacheKey(bookId: string, keywords: string[]): string {
-    const sortedKeywords = [...keywords].sort().join(',');
-    return `search:${bookId}:${sortedKeywords}`;
-  }
-
-  /**
-   * 获取缓存的搜索结果
-   */
-  private static getCachedSearchResults(bookId: string, keywords: string[]): string[] | null {
-    const cacheKey = this.getSearchCacheKey(bookId, keywords);
-    const cached = this.searchResultCache.get(cacheKey);
-
-    if (!cached) return null;
-
-    // 检查是否过期
-    if (Date.now() - cached.timestamp > this.SEARCH_CACHE_TTL) {
-      this.searchResultCache.delete(cacheKey);
-      return null;
-    }
-
-    return cached.memoryIds;
-  }
-
-  /**
-   * 设置搜索结果缓存
-   */
-  private static setCachedSearchResults(
-    bookId: string,
-    keywords: string[],
-    memoryIds: string[],
-  ): void {
-    const cacheKey = this.getSearchCacheKey(bookId, keywords);
-
-    // 如果缓存太大，删除最旧的（LRU）
-    if (this.searchResultCache.size >= this.SEARCH_CACHE_MAX_SIZE) {
-      const oldestKey = this.searchResultCache.keys().next().value;
-      if (oldestKey) {
-        this.searchResultCache.delete(oldestKey);
-      }
-    }
-
-    this.searchResultCache.set(cacheKey, {
-      memoryIds,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * 清除与指定书籍相关的搜索结果缓存
-   * 当记忆被创建/更新/删除时调用
-   */
-  private static clearSearchCacheForBook(bookId: string): void {
-    const keysToDelete: string[] = [];
-    for (const key of this.searchResultCache.keys()) {
-      if (key.startsWith(`search:${bookId}:`)) {
-        keysToDelete.push(key);
-      }
-    }
-    for (const key of keysToDelete) {
-      this.searchResultCache.delete(key);
-    }
   }
 
   /**
@@ -331,7 +253,7 @@ export class MemoryService {
       this.evictCacheIfNeeded();
 
       // 清除该书籍的搜索结果缓存（因为新增了记忆）
-      this.clearSearchCacheForBook(bookId);
+
       this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
@@ -411,10 +333,14 @@ export class MemoryService {
         const cacheKey = this.getCacheKey(bookId, memoryId);
         this.memoryCache.set(cacheKey, result);
         this.evictCacheIfNeeded();
-        this.clearSearchCacheForBook(bookId);
+  
         this.invalidateBookMemoryCache(bookId);
 
         this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
+
+        if (existing.content !== content || existing.summary !== summary) {
+          EmbeddingQueue.enqueue(memoryId);
+        }
 
         return result;
       }
@@ -470,10 +396,12 @@ export class MemoryService {
       const cacheKey = this.getCacheKey(bookId, memory.id);
       this.memoryCache.set(cacheKey, result);
       this.evictCacheIfNeeded();
-      this.clearSearchCacheForBook(bookId);
+
       this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
+
+      EmbeddingQueue.enqueue(result.id);
 
       return result;
     } catch (error) {
@@ -568,13 +496,13 @@ export class MemoryService {
   }
 
   /**
-   * 根据关键词搜索 Memory 的摘要（支持单个关键词，向后兼容）
+   * 根据关键词搜索 Memory（向后兼容，内部调用 searchMemories）
    */
   static async searchMemoriesByKeyword(bookId: string, keyword: string): Promise<Memory[]> {
     if (!keyword || !keyword.trim()) {
       throw new Error('关键词不能为空');
     }
-    return this.searchMemoriesByKeywords(bookId, [keyword]);
+    return this.searchMemories(bookId, keyword);
   }
 
   /**
@@ -587,128 +515,69 @@ export class MemoryService {
    * 3. 延迟更新：异步更新 lastAccessedAt，不阻塞搜索结果返回
    * 4. 早期退出：如果找到足够的结果，提前停止搜索（可选，当前未实现）
    */
-  static async searchMemoriesByKeywords(bookId: string, keywords: string[]): Promise<Memory[]> {
+  static async searchMemories(bookId: string, query: string): Promise<Memory[]> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
-    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-      throw new Error('关键词数组不能为空');
+    if (!query || !query.trim()) {
+      throw new Error('搜索查询不能为空');
     }
 
-    // 过滤掉空字符串并规范化
-    const validKeywords = keywords
-      .filter((k) => k && typeof k === 'string' && k.trim().length > 0)
-      .map((k) => k.trim().toLowerCase());
-    if (validKeywords.length === 0) {
-      throw new Error('关键词数组不能为空');
-    }
+    const queryText = query.trim();
+    const queryTokens = queryText
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
 
     try {
-      // 优化 1: 检查搜索结果缓存
-      const cachedMemoryIds = this.getCachedSearchResults(bookId, validKeywords);
-      if (cachedMemoryIds) {
-        // 从缓存获取记忆（优先从内存缓存，否则从数据库）
-        const cachedMemories: Memory[] = [];
-        const missingIds: string[] = [];
+      const allMemories = await this.getAllBookMemories(bookId);
 
-        for (const memoryId of cachedMemoryIds) {
-          const cacheKey = this.getCacheKey(bookId, memoryId);
-          const cachedMemory = this.memoryCache.get(cacheKey);
-          if (cachedMemory) {
-            cachedMemories.push(cachedMemory);
-            // 更新缓存访问顺序（LRU）
-            this.touchCache(cacheKey);
-          } else {
-            missingIds.push(memoryId);
-          }
+      const keywordScore = (memory: Memory): number => {
+        if (queryTokens.length === 0) return 0;
+        const text = `${memory.summary} ${memory.content}`.toLowerCase();
+        let hits = 0;
+        for (const token of queryTokens) {
+          if (text.includes(token)) hits++;
         }
+        return hits / queryTokens.length;
+      };
 
-        // 如果有缺失的记忆，从数据库加载
-        if (missingIds.length > 0) {
-          const db = await getDB();
-          for (const memoryId of missingIds) {
-            const memory = await db.get('memories', memoryId);
-            if (memory && memory.bookId === bookId) {
-              const result: Memory = {
-                id: memory.id,
-                bookId: memory.bookId,
-                content: memory.content,
-                summary: memory.summary,
-                createdAt: memory.createdAt,
-                lastAccessedAt: memory.lastAccessedAt,
-              };
-              cachedMemories.push(result);
-              // 更新缓存
-              const cacheKey = this.getCacheKey(bookId, memory.id);
-              this.memoryCache.set(cacheKey, result);
-            }
-          }
-          this.evictCacheIfNeeded();
+      let queryEmbedding: Float32Array | null = null;
+      let cosineSim: ((a: Float32Array | number[], b: Float32Array | number[]) => number) | null =
+        null;
+      try {
+        const { EmbeddingService } = await import('src/services/embedding-service');
+        if (EmbeddingService.isReady()) {
+          queryEmbedding = await EmbeddingService.embed(queryText);
+          cosineSim = (a, b) => EmbeddingService.cosineSimilarity(a, b);
         }
-
-        // 按最后访问时间排序
-        cachedMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
-
-        // 优化 3: 延迟更新访问时间（不阻塞返回）
-        if (cachedMemoryIds.length > 0) {
-          this.updateAccessTimesBatch(cachedMemoryIds, bookId).catch((error) => {
-            console.warn('Failed to update access times asynchronously:', error);
-          });
-        }
-
-        return cachedMemories;
+      } catch {
+        // 语义搜索不可用时静默降级
       }
 
-      // 缓存未命中，执行数据库搜索
-      const db = await getDB();
-      const index = db.transaction('memories', 'readonly').store.index('by-bookId');
-      const allMemories = await index.getAll(bookId);
-
-      // 过滤匹配的记忆
-      const matchingMemories = allMemories.filter((memory) => {
-        const summaryLower = memory.summary.toLowerCase();
-        // 所有关键词都必须出现在摘要中（AND 逻辑）
-        return validKeywords.every((keyword) => summaryLower.includes(keyword));
+      const scored = allMemories.map((memory) => {
+        const kw = keywordScore(memory);
+        let semantic = 0;
+        if (queryEmbedding && cosineSim && memory.embedding) {
+          semantic = cosineSim(queryEmbedding, memory.embedding);
+        }
+        const score = queryEmbedding ? 0.6 * semantic + 0.4 * kw : kw;
+        return { memory, score, kw };
       });
 
-      // 按最后访问时间倒序排序（最近访问的在前）
-      matchingMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
+      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.3);
+      filtered.sort((a, b) => b.score - a.score);
 
-      // 提取记忆 ID 列表
-      const matchingMemoryIds = matchingMemories.map((m) => m.id);
-
-      // 优化 1: 缓存搜索结果
-      this.setCachedSearchResults(bookId, validKeywords, matchingMemoryIds);
-
-      // 构建结果
-      const results = matchingMemories.map((memory) => {
-        const result: Memory = {
-          id: memory.id,
-          bookId: memory.bookId,
-          content: memory.content,
-          summary: memory.summary,
-          createdAt: memory.createdAt,
-          lastAccessedAt: memory.lastAccessedAt, // 暂时使用旧时间，异步更新后会更新
-        };
-
-        // 更新缓存
-        const cacheKey = this.getCacheKey(bookId, memory.id);
-        this.memoryCache.set(cacheKey, result);
-        return result;
-      });
-
-      this.evictCacheIfNeeded();
-
-      // 优化 3: 延迟更新访问时间（不阻塞返回）
-      if (matchingMemoryIds.length > 0) {
-        this.updateAccessTimesBatch(matchingMemoryIds, bookId).catch((error) => {
+      const resultIds = filtered.map((s) => s.memory.id);
+      if (resultIds.length > 0) {
+        this.updateAccessTimesBatch(resultIds, bookId).catch((error) => {
           console.warn('Failed to update access times asynchronously:', error);
         });
       }
 
-      return results;
+      return filtered.map((s) => s.memory);
     } catch (error) {
-      console.error('Failed to search memories by keywords:', error);
+      console.error('Failed to search memories:', error);
       throw new Error('搜索 Memory 失败');
     }
   }
@@ -775,7 +644,7 @@ export class MemoryService {
       this.evictCacheIfNeeded();
 
       // 清除该书籍的搜索结果缓存（因为记忆内容/摘要已更新）
-      this.clearSearchCacheForBook(bookId);
+
       this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId, action: 'updated' });
@@ -850,7 +719,7 @@ export class MemoryService {
       this.memoryCache.delete(cacheKey);
 
       // 清除该书籍的搜索结果缓存（因为删除了记忆）
-      this.clearSearchCacheForBook(bookId);
+
       this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId, action: 'deleted' });
