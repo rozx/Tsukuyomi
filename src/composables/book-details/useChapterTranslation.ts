@@ -9,7 +9,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { selectChangedParagraphTranslations } from 'src/utils/translation-updates';
-import type { Chapter, Novel, Paragraph } from 'src/models/novel';
+import type { Chapter, Novel, Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
 
@@ -62,12 +62,14 @@ export function useChapterTranslation(
     translation: string,
     aiModelId: string,
     referencedMemories?: string[],
+    memoryScoreBreakdown?: Record<string, ScoreBreakdown>,
   ) => {
     return {
       id: generateShortId(),
       translation: translation,
       aiModelId,
       ...(referencedMemories ? { referencedMemories } : {}),
+      ...(memoryScoreBreakdown ? { memoryScoreBreakdown } : {}),
     };
   };
 
@@ -75,7 +77,12 @@ export function useChapterTranslation(
    * 更新段落翻译的通用辅助函数（立即更新 UI，然后保存）
    */
   const updateParagraphsFromResults = async (
-    paragraphResults: { id: string; translation: string; referencedMemories?: string[] }[],
+    paragraphResults: {
+      id: string;
+      translation: string;
+      referencedMemories?: string[];
+      memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+    }[],
     aiModelId: string,
     targetChapterId: string,
     targetBookId?: string,
@@ -85,13 +92,18 @@ export function useChapterTranslation(
 
     const paragraphUpdates = new Map<
       string,
-      { translation: string; referencedMemories?: string[] }
+      {
+        translation: string;
+        referencedMemories?: string[];
+        memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+      }
     >();
     for (const pt of paragraphResults) {
       if (pt?.id && typeof pt.translation === 'string') {
         paragraphUpdates.set(pt.id, {
           translation: pt.translation,
           ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
+          ...(pt.memoryScoreBreakdown ? { memoryScoreBreakdown: pt.memoryScoreBreakdown } : {}),
         });
       }
     }
@@ -111,7 +123,14 @@ export function useChapterTranslation(
    * @returns 如果 skipSave=true，返回需要保存的章节对象；否则返回 undefined
    */
   const updateParagraphsAndSave = async (
-    paragraphUpdates: Map<string, { translation: string; referencedMemories?: string[] }>,
+    paragraphUpdates: Map<
+      string,
+      {
+        translation: string;
+        referencedMemories?: string[];
+        memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+      }
+    >,
     aiModelId: string,
     targetChapterId: string,
     options?: { updateSelected?: boolean; skipSave?: boolean; targetBookId?: string | undefined },
@@ -164,6 +183,7 @@ export function useChapterTranslation(
             update.translation,
             aiModelId,
             update.referencedMemories,
+            update.memoryScoreBreakdown,
           );
           const updatedTranslations = ChapterService.addParagraphTranslation(
             para.translations || [],
@@ -358,7 +378,12 @@ export function useChapterTranslation(
    * @returns 更新后的段落数量
    */
   const updateParagraphsIncrementally = async (
-    paragraphTranslations: { id: string; translation: string; referencedMemories?: string[] }[],
+    paragraphTranslations: {
+      id: string;
+      translation: string;
+      referencedMemories?: string[];
+      memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+    }[],
     aiModelId: string,
     targetChapterId: string,
     lastAppliedTranslations: Map<string, string>,
@@ -373,18 +398,28 @@ export function useChapterTranslation(
     const newTranslations = selectChangedParagraphTranslations(
       paragraphTranslations as { id: string; translation: string }[],
       lastAppliedTranslations,
-    ) as { id: string; translation: string; referencedMemories?: string[] }[];
+    ) as {
+      id: string;
+      translation: string;
+      referencedMemories?: string[];
+      memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+    }[];
 
     if (newTranslations.length === 0) return 0;
 
     const translationMap = new Map<
       string,
-      { translation: string; referencedMemories?: string[] }
+      {
+        translation: string;
+        referencedMemories?: string[];
+        memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+      }
     >();
     newTranslations.forEach((pt) => {
       translationMap.set(pt.id, {
         translation: pt.translation,
         ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
+        ...(pt.memoryScoreBreakdown ? { memoryScoreBreakdown: pt.memoryScoreBreakdown } : {}),
       });
     });
 
@@ -960,6 +995,9 @@ export function useChapterTranslation(
                 {
                   translation: t.translation,
                   ...(t.referencedMemories ? { referencedMemories: t.referencedMemories } : {}),
+                  ...(t.memoryScoreBreakdown
+                    ? { memoryScoreBreakdown: t.memoryScoreBreakdown }
+                    : {}),
                 },
               ]),
             ),

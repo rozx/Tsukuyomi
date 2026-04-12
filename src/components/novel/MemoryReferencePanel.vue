@@ -158,25 +158,44 @@ function formatRelativeTime(timestamp: number): string {
                   </span>
                   <!-- 悬停弹出的打分详情 -->
                   <div
-                    class="score-tooltip absolute right-0 bottom-full mb-1 w-52 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
+                    class="score-tooltip absolute right-0 bottom-full mb-1 w-64 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
                   >
                     <div class="space-y-1.5">
+                      <!-- 表头 -->
+                      <div class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10">
+                        <span class="w-16">信号</span>
+                        <span class="tabular-nums w-9 text-right">原值</span>
+                        <span class="tabular-nums w-9 text-right">权重</span>
+                        <span class="tabular-nums w-10 text-right">加权</span>
+                      </div>
                       <div class="flex justify-between text-moon-100/70">
-                        <span>语义相似度</span>
-                        <span class="tabular-nums">
+                        <span class="w-16">语义相似</span>
+                        <span class="tabular-nums w-9 text-right">
                           {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
                         </span>
-                      </div>
-                      <div class="flex justify-between text-moon-100/70">
-                        <span>关键词匹配</span>
-                        <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
+                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.6</span>
+                        <span class="tabular-nums w-10 text-right">
+                          {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
                         </span>
                       </div>
                       <div class="flex justify-between text-moon-100/70">
-                        <span>时间衰减</span>
-                        <span class="tabular-nums">
+                        <span class="w-16">关键词</span>
+                        <span class="tabular-nums w-9 text-right">
+                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
+                        </span>
+                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.3</span>
+                        <span class="tabular-nums w-10 text-right">
+                          {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between text-moon-100/70">
+                        <span class="w-16">时间衰减</span>
+                        <span class="tabular-nums w-9 text-right">
                           {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
+                        </span>
+                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.1</span>
+                        <span class="tabular-nums w-10 text-right">
+                          {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
                         </span>
                       </div>
                       <div

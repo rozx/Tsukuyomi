@@ -145,7 +145,7 @@ export async function __resetDbPromiseForTesting(): Promise<void> {
 export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
   if (!dbPromise) {
     dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion, _newVersion, transaction) {
+      async upgrade(db, oldVersion, _newVersion, transaction) {
         // 创建 books 存储
         if (!db.objectStoreNames.contains('books')) {
           const booksStore = db.createObjectStore('books', { keyPath: 'id' });
@@ -239,33 +239,27 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
               ? performance.now()
               : Date.now();
           const memoriesStore = transaction.objectStore('memories');
-          // 使用 IIFE 把 async 迁移塞进 upgrade 回调;idb 会等待 upgrade 返回的 Promise
-          // 或等 transaction.done,这里我们让 transaction 在 cursor 处理期间保持活跃。
-          (async () => {
-            let migrated = 0;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            let cursor = await (memoriesStore as any).openCursor();
-            while (cursor) {
-              const record = cursor.value as Record<string, unknown> | undefined;
-              if (record && 'attachedTo' in record) {
-                delete record.attachedTo;
-                await cursor.update(record);
-                migrated += 1;
-              }
-              cursor = await cursor.continue();
+          let migrated = 0;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let cursor = await (memoriesStore as any).openCursor();
+          while (cursor) {
+            const record = cursor.value as Record<string, unknown> | undefined;
+            if (record && 'attachedTo' in record) {
+              delete record.attachedTo;
+              await cursor.update(record);
+              migrated += 1;
             }
-            const endedAt =
-              typeof performance !== 'undefined' && typeof performance.now === 'function'
-                ? performance.now()
-                : Date.now();
-            console.info(
-              `[indexed-db] v9 迁移完成:清理 ${migrated} 条 memory 记录的 attachedTo 字段,耗时 ${Math.round(
-                endedAt - startedAt,
-              )} ms`,
-            );
-          })().catch((error) => {
-            console.error('[indexed-db] v9 迁移失败:', error);
-          });
+            cursor = await cursor.continue();
+          }
+          const endedAt =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now();
+          console.info(
+            `[indexed-db] v9 迁移完成:清理 ${migrated} 条 memory 记录的 attachedTo 字段,耗时 ${Math.round(
+              endedAt - startedAt,
+            )} ms`,
+          );
         }
       },
       blocked() {

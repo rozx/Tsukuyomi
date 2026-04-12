@@ -1557,11 +1557,15 @@ const refreshReferencedMemories = async () => {
 
     // 可选语义向量
     let chunkEmbedding: Float32Array | undefined;
+    const settingsStore = useSettingsStore();
+    const cfg = settingsStore.settings?.memoryInjection;
     try {
-      const { EmbeddingService } = await import('src/services/embedding-service');
-      if (EmbeddingService.isReady()) {
-        const vec = await EmbeddingService.embed(chunkText.slice(0, 2000));
-        if (vec) chunkEmbedding = vec;
+      if (cfg?.enableSemantic !== false) {
+        const { EmbeddingService } = await import('src/services/embedding-service');
+        if (EmbeddingService.isReady()) {
+          const vec = await EmbeddingService.embed(chunkText.slice(0, 2000));
+          if (vec) chunkEmbedding = vec;
+        }
       }
     } catch {
       // 静默降级
@@ -1587,16 +1591,15 @@ const refreshReferencedMemories = async () => {
       breakdown: scoreMemory(memory, { chunkEntities, chunkEmbedding, now }),
     }));
 
-    const settingsStore = useSettingsStore();
-    const cfg = settingsStore.settings?.memoryInjection;
     const charBudget = cfg?.charBudget ?? DEFAULT_CHAR_BUDGET;
     const minScore = cfg?.minScoreThreshold ?? DEFAULT_MIN_SCORE;
 
     const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
 
+    const selectedIds = new Set(selected.map((m) => m.id));
     const breakdowns: Record<string, ScoreBreakdown> = {};
     for (const item of scored) {
-      if (selected.some((m) => m.id === item.memory.id)) {
+      if (selectedIds.has(item.memory.id)) {
         breakdowns[item.memory.id] = item.breakdown;
       }
     }
