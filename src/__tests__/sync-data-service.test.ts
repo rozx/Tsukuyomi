@@ -911,7 +911,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 1500 }),
-        undefined,
       );
       // 第二次：本地更新，保留同一 ID（upsert）
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
@@ -920,7 +919,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
 
       // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
@@ -963,7 +961,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '角色A总是使用敬语',
         '角色A的语言风格',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
     });
 
@@ -1109,7 +1106,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '远程更新的记忆',
         '摘要',
         expect.objectContaining({ createdAt: 800, lastAccessedAt: 2000 }),
-        undefined,
       );
 
       // 应从删除记录中移除
@@ -1208,7 +1204,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
-        undefined,
       );
 
       // mem-2 不在远程且 lastAccessedAt <= syncTime → 应被删除
@@ -1285,7 +1280,6 @@ describe('数据同步服务 (SyncDataService)', () => {
         '本地记忆',
         '摘要',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
-        undefined,
       );
     });
 

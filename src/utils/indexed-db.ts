@@ -232,40 +232,40 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
         // 确保 DevTools / 单元测试观察到的数据形态与 TS 类型一致。
         // 迁移在同一 upgrade 事务内完成，失败时整个升级回滚到原版本。
         if (oldVersion < 9 && db.objectStoreNames.contains('memories')) {
+          // 使用 idb 库的 Promise-based cursor 迭代，避免 raw IDB cursor 在 fake-indexeddb
+          // 下的时序问题(cursor.update + cursor.continue 回调在同一事务中交错导致字段未被清理)。
           const startedAt =
             typeof performance !== 'undefined' && typeof performance.now === 'function'
               ? performance.now()
               : Date.now();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const store = (transaction as any).objectStore('memories');
-          const request = store.openCursor();
-          let migrated = 0;
-          request.onsuccess = () => {
+          const memoriesStore = transaction.objectStore('memories');
+          // 使用 IIFE 把 async 迁移塞进 upgrade 回调;idb 会等待 upgrade 返回的 Promise
+          // 或等 transaction.done,这里我们让 transaction 在 cursor 处理期间保持活跃。
+          (async () => {
+            let migrated = 0;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const cursor = request.result as any;
-            if (!cursor) {
-              const endedAt =
-                typeof performance !== 'undefined' && typeof performance.now === 'function'
-                  ? performance.now()
-                  : Date.now();
-              console.info(
-                `[indexed-db] v9 迁移完成：清理 ${migrated} 条 memory 记录的 attachedTo 字段，耗时 ${Math.round(
-                  endedAt - startedAt,
-                )} ms`,
-              );
-              return;
+            let cursor = await (memoriesStore as any).openCursor();
+            while (cursor) {
+              const record = cursor.value as Record<string, unknown> | undefined;
+              if (record && 'attachedTo' in record) {
+                delete record.attachedTo;
+                await cursor.update(record);
+                migrated += 1;
+              }
+              cursor = await cursor.continue();
             }
-            const record = cursor.value as Record<string, unknown> | undefined;
-            if (record && 'attachedTo' in record) {
-              delete record.attachedTo;
-              cursor.update(record);
-              migrated += 1;
-            }
-            cursor.continue();
-          };
-          request.onerror = () => {
-            console.error('[indexed-db] v9 迁移 cursor 打开失败:', request.error);
-          };
+            const endedAt =
+              typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? performance.now()
+                : Date.now();
+            console.info(
+              `[indexed-db] v9 迁移完成:清理 ${migrated} 条 memory 记录的 attachedTo 字段,耗时 ${Math.round(
+                endedAt - startedAt,
+              )} ms`,
+            );
+          })().catch((error) => {
+            console.error('[indexed-db] v9 迁移失败:', error);
+          });
         }
       },
       blocked() {

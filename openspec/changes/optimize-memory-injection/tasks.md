@@ -35,22 +35,22 @@
 
 ## 4. 纯打分逻辑(三信号)
 
-- [ ] 4.1 创建 `src/services/memory-scoring.ts`,导出常量 `SCORING_WEIGHTS = { semantic: 3.0, keyword: 2.0, recency: 1.0 }`、`DEFAULT_CHAR_BUDGET = 2000`、`HARD_ITEM_CAP = 25`、`DEFAULT_MIN_SCORE = 0.3`
-- [ ] 4.2 实现 `calculateKeywordHitRatio(memory, chunkEntities: Array<{ name: string }>)`:统计 `chunkEntities.name` 在 `memory.summary + memory.content` 中的命中比例,空集时返回 0
-- [ ] 4.3 实现 `calculateRecencyFactor(memory, now)` 使用 `exp(-ageDays / 30)`
-- [ ] 4.4 实现 `calculateSemanticSim(memoryEmbedding, chunkEmbedding)` 余弦相似度,任一为空或维度不匹配时返回 0,结果 clamp 到 [0, 1]
-- [ ] 4.5 实现 `scoreMemory(memory, context): ScoreBreakdown` 组合三个信号,返回含原始值、加权值、总分的结构体
-- [ ] 4.6 实现 `selectByBudget(scoredMemories, charBudget, hardCap, minScore): Memory[]` 贪心填充算法,按分数降序,超预算或超上限停止,低于阈值过滤
-- [ ] 4.7 创建 `src/__tests__/memory-scoring.test.ts`,对每个信号函数单独测试 + `scoreMemory` 组合测试 + `selectByBudget` 边界测试(空候选、全部低分、超预算、超上限)
-- [ ] 4.8 验证阈值选择:给出典型的 semantic/keyword/recency 组合,确认 0.3 阈值下结果合理(至少有 1 个"新记忆无向量"的单元测试能通过阈值)
+- [x] 4.1 创建 `src/services/memory-scoring.ts`,导出常量 `SCORING_WEIGHTS = { semantic: 3.0, keyword: 2.0, recency: 1.0 }`、`DEFAULT_CHAR_BUDGET = 2000`、`HARD_ITEM_CAP = 25`、`DEFAULT_MIN_SCORE = 0.3`
+- [x] 4.2 实现 `calculateKeywordHitRatio(memory, chunkEntities: Array<{ name: string }>)`:统计 `chunkEntities.name` 在 `memory.summary + memory.content` 中的命中比例,空集时返回 0
+- [x] 4.3 实现 `calculateRecencyFactor(memory, now)` 使用 `exp(-ageDays / 30)`
+- [x] 4.4 实现 `calculateSemanticSim(memoryEmbedding, chunkEmbedding)` 余弦相似度,任一为空或维度不匹配时返回 0,结果 clamp 到 [0, 1]
+- [x] 4.5 实现 `scoreMemory(memory, context): ScoreBreakdown` 组合三个信号,返回含原始值、加权值、总分的结构体
+- [x] 4.6 实现 `selectByBudget(scoredMemories, charBudget, hardCap, minScore): Memory[]` 贪心填充算法,按分数降序,超预算或超上限停止,低于阈值过滤
+- [x] 4.7 创建 `src/__tests__/memory-scoring.test.ts`,对每个信号函数单独测试 + `scoreMemory` 组合测试 + `selectByBudget` 边界测试(空候选、全部低分、超预算、超上限)
+- [x] 4.8 验证阈值选择:给出典型的 semantic/keyword/recency 组合,确认 0.3 阈值下结果合理(至少有 1 个"新记忆无向量"的单元测试能通过阈值)
 
 ## 5. `MemoryService` 扩展
 
-- [ ] 5.1 在 `src/services/memory-service.ts` 添加私有 `bookMemoryCache: Map<string, { data: Memory[]; expiresAt: number }>` 与常量 `BOOK_CACHE_TTL_MS = 60_000`
-- [ ] 5.2 实现 `getAllBookMemories(bookId: string): Promise<Memory[]>`,命中缓存直接返回,否则走 `by-bookId` 索引查询后入缓存
-- [ ] 5.3 在 `createMemory`、`updateMemory`、`deleteMemory` 的写入路径添加 `bookMemoryCache.delete(bookId)` 调用
-- [ ] 5.4 添加内部辅助 `updateMemoryEmbeddingOnly(memoryId, embedding, embeddingModel)`,写入嵌入字段但 **不修改** `lastEdited`、不触发 Gist sync dirty flag
-- [ ] 5.5 创建 `src/__tests__/memory-service-cache.test.ts`,验证缓存命中、TTL 过期、写入失效
+- [x] 5.1 在 `src/services/memory-service.ts` 添加私有 `bookMemoryCache: Map<string, { data: Memory[]; expiresAt: number }>` 与常量 `BOOK_CACHE_TTL_MS = 60_000`
+- [x] 5.2 实现 `getAllBookMemories(bookId: string): Promise<Memory[]>`,命中缓存直接返回,否则走 `by-bookId` 索引查询后入缓存
+- [x] 5.3 在 `createMemory`、`updateMemory`、`deleteMemory` 的写入路径添加 `bookMemoryCache.delete(bookId)` 调用
+- [x] 5.4 添加内部辅助 `updateMemoryEmbeddingOnly(memoryId, embedding, embeddingModel)`,写入嵌入字段但 **不修改** `lastEdited`、不触发 Gist sync dirty flag
+- [x] 5.5 创建 `src/__tests__/memory-service-cache.test.ts`,验证缓存命中、TTL 过期、写入失效
 
 ## 6. `EmbeddingService`
 

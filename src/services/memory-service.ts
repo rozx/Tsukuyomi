@@ -64,6 +64,11 @@ export class MemoryService {
   private static memoryCache = new Map<string, Memory>();
   private static readonly CACHE_MAX_SIZE = 200; // 最多缓存 200 个记忆
 
+  // 书籍级全量缓存：记忆注入打分时一次性读取整本书的所有 Memory
+  // TTL 60s 足以覆盖同一翻译任务内多次分块的反复读取
+  private static bookMemoryCache = new Map<string, { data: Memory[]; expiresAt: number }>();
+  private static readonly BOOK_CACHE_TTL_MS = 60_000;
+
   // 搜索结果缓存：缓存关键词组合到记忆 ID 列表的映射
   // 缓存键格式：search:${bookId}:${sortedKeywords.join(',')}
   private static searchResultCache = new Map<
@@ -326,6 +331,7 @@ export class MemoryService {
 
       // 清除该书籍的搜索结果缓存（因为新增了记忆）
       this.clearSearchCacheForBook(bookId);
+      this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
 
@@ -403,6 +409,7 @@ export class MemoryService {
         this.memoryCache.set(cacheKey, result);
         this.evictCacheIfNeeded();
         this.clearSearchCacheForBook(bookId);
+        this.invalidateBookMemoryCache(bookId);
 
         this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
 
@@ -461,6 +468,7 @@ export class MemoryService {
       this.memoryCache.set(cacheKey, result);
       this.evictCacheIfNeeded();
       this.clearSearchCacheForBook(bookId);
+      this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
 
@@ -772,6 +780,7 @@ export class MemoryService {
 
       // 清除该书籍的搜索结果缓存（因为记忆内容/摘要已更新）
       this.clearSearchCacheForBook(bookId);
+      this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId, action: 'updated' });
 
@@ -837,6 +846,7 @@ export class MemoryService {
 
       // 清除该书籍的搜索结果缓存（因为删除了记忆）
       this.clearSearchCacheForBook(bookId);
+      this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId, action: 'deleted' });
     } catch (error) {
@@ -845,6 +855,134 @@ export class MemoryService {
         throw error;
       }
       throw new Error('删除 Memory 失败');
+    }
+  }
+
+  /**
+   * 从 MemoryStorage 构造 Memory,保留 embedding 字段(供打分模块使用)。
+   */
+  private static storageToMemoryWithEmbedding(storage: MemoryStorage): Memory {
+    const result: Memory = {
+      id: storage.id,
+      bookId: storage.bookId,
+      content: storage.content,
+      summary: storage.summary,
+      createdAt: storage.createdAt,
+      lastAccessedAt: storage.lastAccessedAt,
+    };
+    if (storage.embedding !== undefined) result.embedding = storage.embedding;
+    if (storage.embeddingModel !== undefined) result.embeddingModel = storage.embeddingModel;
+    return result;
+  }
+
+  /**
+   * 清理指定书籍的全量缓存(在 CRUD 写路径调用)
+   */
+  private static invalidateBookMemoryCache(bookId: string): void {
+    this.bookMemoryCache.delete(bookId);
+  }
+
+  /**
+   * 获取指定书籍的所有 Memory(带 60s TTL 缓存,返回的 Memory 保留 embedding 字段)。
+   * 供记忆注入打分模块使用:同一翻译任务中多次分块只会读一次 IDB。
+   */
+  static async getAllBookMemories(bookId: string): Promise<Memory[]> {
+    if (!bookId) {
+      throw new Error('书籍 ID 不能为空');
+    }
+
+    const now = Date.now();
+    const cached = this.bookMemoryCache.get(bookId);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
+    try {
+      const db = await getDB();
+      const index = db.transaction('memories', 'readonly').store.index('by-bookId');
+      const rows = (await index.getAll(bookId)) as MemoryStorage[];
+      const memories = rows.map((row) => this.storageToMemoryWithEmbedding(row));
+
+      this.bookMemoryCache.set(bookId, {
+        data: memories,
+        expiresAt: now + this.BOOK_CACHE_TTL_MS,
+      });
+
+      return memories;
+    } catch (error) {
+      console.error('Failed to get all book memories:', error);
+      throw new Error('获取书籍全部 Memory 失败');
+    }
+  }
+
+  /**
+   * 仅写入 embedding 字段(不更新 lastAccessedAt,不触发 memory-changed 事件,
+   * 不影响 Gist 同步 dirty flag)。
+   *
+   * 设计约束:
+   * - 直接 IDB put,绕过 updateMemory 公共入口,避免在嵌入队列批量写回时再次触发 CRUD diff 判断
+   * - 不 dispatch 'memory-changed',避免 UI 将此视作"用户可见"的修改(badge 渲染由专门的
+   *   'embedding-updated' 事件或组件轮询 bookMemoryCache 处理)
+   * - 同步更新 memoryCache / bookMemoryCache 中的对应条目,使打分立即可见
+   */
+  static async updateMemoryEmbeddingOnly(
+    memoryId: string,
+    embedding: number[],
+    embeddingModel: string,
+  ): Promise<void> {
+    if (!memoryId) {
+      throw new Error('Memory ID 不能为空');
+    }
+    if (!embedding || embedding.length === 0) {
+      throw new Error('embedding 不能为空');
+    }
+    if (!embeddingModel) {
+      throw new Error('embeddingModel 不能为空');
+    }
+
+    try {
+      const db = await getDB();
+      const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
+      if (!existing) return;
+
+      const updated: MemoryStorage = {
+        ...existing,
+        embedding,
+        embeddingModel,
+      };
+      await db.put('memories', updated);
+
+      // 同步内存缓存:单条 LRU
+      const cacheKey = this.getCacheKey(existing.bookId, memoryId);
+      const cachedSingle = this.memoryCache.get(cacheKey);
+      if (cachedSingle) {
+        this.memoryCache.set(cacheKey, {
+          ...cachedSingle,
+          embedding,
+          embeddingModel,
+        });
+      }
+
+      // 同步书级全量缓存(原地更新,避免整本缓存失效)
+      const cachedBook = this.bookMemoryCache.get(existing.bookId);
+      if (cachedBook) {
+        const next = cachedBook.data.map((m) =>
+          m.id === memoryId ? { ...m, embedding, embeddingModel } : m,
+        );
+        this.bookMemoryCache.set(existing.bookId, {
+          data: next,
+          expiresAt: cachedBook.expiresAt,
+        });
+      }
+
+      // 广播"embedding 已更新"事件供 UI 徽章订阅,复用 memory-changed 通道但 action 明确区分
+      this.dispatchMemoryChanged({
+        bookId: existing.bookId,
+        memoryId,
+        action: 'embedding-updated',
+      });
+    } catch (error) {
+      console.warn(`[MemoryService] 写入 embedding 失败 (${memoryId}):`, error);
     }
   }
 
