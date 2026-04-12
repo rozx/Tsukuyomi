@@ -8,6 +8,8 @@
  * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层
  */
 
+import { cosineSimilarity } from 'src/utils/cosine-similarity';
+
 export const MODEL_ID = 'onnx-community/embeddinggemma-300m-ONNX';
 export const MODEL_VERSION = 'embeddinggemma-300m@256';
 export const DIMENSIONS = 256;
@@ -292,22 +294,7 @@ export class EmbeddingService {
     a: Float32Array | number[] | null | undefined,
     b: Float32Array | number[] | null | undefined,
   ): number {
-    if (!a || !b) return 0;
-    if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      const av = a[i] ?? 0;
-      const bv = b[i] ?? 0;
-      dot += av * bv;
-      normA += av * av;
-      normB += bv * bv;
-    }
-    if (normA === 0 || normB === 0) return 0;
-    const sim = dot / (Math.sqrt(normA) * Math.sqrt(normB));
-    if (Number.isNaN(sim)) return 0;
-    return Math.min(1, Math.max(0, sim));
+    return cosineSimilarity(a, b);
   }
 
   /**

@@ -268,10 +268,12 @@ export async function getRelatedMemoriesForChunkLegacy(
  *
  * 调用方应在任务结束时调用 `clearChunkEmbeddingCache()`。
  */
+const CHUNK_CACHE_MAX_SIZE = 50;
 const chunkEmbeddingCache = new Map<string, Float32Array | null>();
 
 export function clearChunkEmbeddingCache(): void {
   chunkEmbeddingCache.clear();
+  lastScoreBreakdownsByBook.clear();
 }
 
 /**
@@ -315,6 +317,10 @@ async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | 
 
   try {
     const vec = await EmbeddingService.embed(chunkText);
+    if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
+      const oldest = chunkEmbeddingCache.keys().next().value;
+      if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);
+    }
     chunkEmbeddingCache.set(chunkText, vec);
     return vec;
   } catch (error) {
@@ -443,7 +449,7 @@ export async function getRelatedMemoriesForChunk(
           : 'fallback';
         return `  ${m.id} [${score}] (${details}) ${m.summary.slice(0, 40)}`;
       });
-      console.log(
+      console.debug(
         `[context-builder] 注入 ${finalList.length}/${allMemories.length} 条记忆:\n${logLines.join('\n')}`,
       );
     }

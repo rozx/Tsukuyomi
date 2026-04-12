@@ -132,9 +132,7 @@ export class EmbeddingQueue {
     const idx = this.pending.indexOf(memoryId);
     if (idx >= 0) {
       this.pending.splice(idx, 1);
-      // totalEnqueued 保持不变:它代表"本轮会话累计入队",用于显示分母
-      // 但让 completed 加一,使进度条正确前进
-      this.completed += 1;
+      this.totalEnqueued -= 1;
       this.emitProgress();
     }
   }

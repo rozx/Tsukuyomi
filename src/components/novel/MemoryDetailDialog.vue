@@ -10,6 +10,7 @@ import ScrollPanel from 'primevue/scrollpanel';
 import type { Memory } from 'src/models/memory';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { MemoryService } from 'src/services/memory-service';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 interface Props {
   visible: boolean;
@@ -29,8 +30,6 @@ const emit = defineEmits<{
   delete: [memory: Memory];
 }>();
 
-// 嵌入模型版本常量（与 EmbeddingService 保持一致）
-const CURRENT_EMBEDDING_MODEL = 'embeddinggemma-300m@256';
 
 // 编辑状态
 const isEditing = ref(false);
@@ -42,7 +41,7 @@ const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
   if (!props.memory) return 'pending';
   const { embedding, embeddingModel } = props.memory;
   if (!embedding || embedding.length === 0) return 'pending';
-  if (!embeddingModel || embeddingModel !== CURRENT_EMBEDDING_MODEL) return 'stale';
+  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
   return 'ready';
 });
 
@@ -216,8 +215,14 @@ const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) =>
   isEmbedding.value = false;
 });
 
+// 嵌入队列出错时也重置 loading 状态
+const unsubscribeQueueError = EmbeddingQueue.addEventListener('error', () => {
+  isEmbedding.value = false;
+});
+
 onUnmounted(() => {
   unsubscribeMemoryChange();
+  unsubscribeQueueError();
 });
 </script>
 

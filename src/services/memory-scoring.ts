@@ -6,6 +6,8 @@
  */
 import type { Memory } from 'src/models/memory';
 import type { ScoreBreakdown } from 'src/models/novel';
+import { cosineSimilarity as calculateSemanticSim } from 'src/utils/cosine-similarity';
+export { calculateSemanticSim };
 
 export const SCORING_WEIGHTS = {
   semantic: 0.6,
@@ -67,35 +69,6 @@ export function calculateRecencyFactor(memory: Memory, now: number): number {
   const ageMs = Math.max(0, now - ts);
   const ageDays = ageMs / MS_PER_DAY;
   return Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS);
-}
-
-/**
- * 余弦相似度(结果 clamp 到 [0, 1])。
- * 任一向量为空或维度不匹配时返回 0。
- * 约定:输入向量通常已 L2 归一化,分母依然显式计算以兼容未归一化情形。
- */
-export function calculateSemanticSim(
-  memoryEmbedding: Float32Array | number[] | undefined,
-  chunkEmbedding: Float32Array | number[] | undefined,
-): number {
-  if (!memoryEmbedding || !chunkEmbedding) return 0;
-  if (memoryEmbedding.length === 0 || chunkEmbedding.length === 0) return 0;
-  if (memoryEmbedding.length !== chunkEmbedding.length) return 0;
-
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < memoryEmbedding.length; i++) {
-    const a = memoryEmbedding[i] ?? 0;
-    const b = chunkEmbedding[i] ?? 0;
-    dot += a * b;
-    normA += a * a;
-    normB += b * b;
-  }
-  if (normA === 0 || normB === 0) return 0;
-  const sim = dot / (Math.sqrt(normA) * Math.sqrt(normB));
-  if (Number.isNaN(sim)) return 0;
-  return Math.min(1, Math.max(0, sim));
 }
 
 /**

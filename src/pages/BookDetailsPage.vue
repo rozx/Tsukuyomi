@@ -1627,12 +1627,16 @@ const handleMemoryPopoverHide = () => {
   isMemoryPopoverOpen.value = false;
 };
 
-// 章节加载后自动计算记忆预览
+// 章节加载后自动计算记忆预览（debounce 避免频繁触发）
+let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => selectedChapterParagraphs.value.length,
   (len) => {
+    if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
     if (len > 0) {
-      void refreshReferencedMemories();
+      memoryPreviewTimer = setTimeout(() => {
+        void refreshReferencedMemories();
+      }, 500);
     } else {
       usedMemoryReferences.value = [];
       mergedScoreBreakdowns.value = {};

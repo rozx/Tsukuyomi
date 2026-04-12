@@ -18,9 +18,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-
-// 嵌入模型版本常量（与 EmbeddingService 保持一致）
-const CURRENT_EMBEDDING_MODEL = 'embeddinggemma-300m@256';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 const props = defineProps<{
   book: Novel | null;
@@ -68,7 +66,7 @@ const hasActiveFilters = computed(() => {
 });
 
 function isMemoryUnembedded(memory: Memory): boolean {
-  return !memory.embedding || memory.embeddingModel !== CURRENT_EMBEDDING_MODEL;
+  return !memory.embedding || memory.embeddingModel !== MODEL_VERSION;
 }
 
 // 混合搜索结果（异步）

@@ -502,14 +502,10 @@ export class MemoryService {
   }
 
   /**
-   * 根据多个关键词搜索 Memory 的摘要
-   * 返回包含所有关键词的 Memory（AND 逻辑）
-   *
-   * 优化：
-   * 1. 搜索结果缓存：缓存关键词组合到记忆 ID 列表的映射（1-2 分钟）
-   * 2. 批量更新优化：使用 Promise.all 批量更新 lastAccessedAt
-   * 3. 延迟更新：异步更新 lastAccessedAt，不阻塞搜索结果返回
-   * 4. 早期退出：如果找到足够的结果，提前停止搜索（可选，当前未实现）
+   * 搜索 Memory（三信号打分：语义 + 关键词 + 时间衰减）。
+   * 内部复用 memory-scoring 的 scoreMemory 统一管线，EmbeddingService 不可用时自动降级为纯关键词+时间衰减。
+   * 过滤条件：keyword > 0 或 total > minScore（读取用户设置的 minScoreThreshold，默认 0.34），
+   * 即只要有关键词命中就一定返回，否则按总分过滤。
    */
   static async searchMemories(bookId: string, query: string): Promise<Memory[]> {
     if (!bookId) {
@@ -528,41 +524,38 @@ export class MemoryService {
     try {
       const allMemories = await this.getAllBookMemories(bookId);
 
-      const keywordScore = (memory: Memory): number => {
-        if (queryTokens.length === 0) return 0;
-        const text = `${memory.summary} ${memory.content}`.toLowerCase();
-        let hits = 0;
-        for (const token of queryTokens) {
-          if (text.includes(token)) hits++;
-        }
-        return hits / queryTokens.length;
-      };
-
-      let queryEmbedding: Float32Array | null = null;
-      let cosineSim: ((a: Float32Array | number[], b: Float32Array | number[]) => number) | null =
-        null;
+      let chunkEmbedding: Float32Array | undefined;
       try {
         const { EmbeddingService } = await import('src/services/embedding-service');
         if (EmbeddingService.isReady()) {
-          queryEmbedding = await EmbeddingService.embed(queryText);
-          cosineSim = (a, b) => EmbeddingService.cosineSimilarity(a, b);
+          const vec = await EmbeddingService.embed(queryText);
+          if (vec) chunkEmbedding = vec;
         }
       } catch {
         // 语义搜索不可用时静默降级
       }
 
+      const { scoreMemory } = await import('src/services/memory-scoring');
+      const now = Date.now();
+      const chunkEntities = queryTokens.map((t) => ({ name: t }));
       const scored = allMemories.map((memory) => {
-        const kw = keywordScore(memory);
-        let semantic = 0;
-        if (queryEmbedding && cosineSim && memory.embedding) {
-          semantic = cosineSim(queryEmbedding, memory.embedding);
-        }
-        const score = queryEmbedding ? 0.6 * semantic + 0.4 * kw : kw;
-        return { memory, score, kw };
+        const breakdown = scoreMemory(memory, { chunkEntities, chunkEmbedding, now });
+        return { memory, breakdown };
       });
 
-      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.3);
-      filtered.sort((a, b) => b.score - a.score);
+      let minScore = 0.34;
+      try {
+        const { useSettingsStore } = await import('src/stores/settings');
+        const cfg = useSettingsStore().settings?.memoryInjection;
+        if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
+      } catch {
+        /* 保持默认 */
+      }
+
+      const filtered = scored.filter(
+        (s) => s.breakdown.keyword > 0 || s.breakdown.total > minScore,
+      );
+      filtered.sort((a, b) => b.breakdown.total - a.breakdown.total);
 
       const resultIds = filtered.map((s) => s.memory.id);
       if (resultIds.length > 0) {
@@ -804,8 +797,8 @@ export class MemoryService {
   }
 
   /**
-   * 仅写入 embedding 字段(不更新 lastAccessedAt,不触发 memory-changed 事件,
-   * 不影响 Gist 同步 dirty flag)。
+   * 仅写入 embedding 字段(不更新 lastAccessedAt,不影响 Gist 同步 dirty flag)。
+   * 会 dispatch 'embedding-updated' 事件供 UI 徽章订阅,但不触发 CRUD 类的 memory-changed。
    *
    * 设计约束:
    * - 直接 IDB put,绕过 updateMemory 公共入口,避免在嵌入队列批量写回时再次触发 CRUD diff 判断

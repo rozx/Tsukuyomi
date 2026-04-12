@@ -15,7 +15,7 @@ const settingsStore = useSettingsStore();
 const memoryInjection = computed(() => settingsStore.settings.memoryInjection);
 const charBudget = ref(2000);
 const enableSemantic = ref(true);
-const minScoreThreshold = ref(0.3);
+const minScoreThreshold = ref(0.38);
 
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 const downloadProgress = ref<number | null>(null);

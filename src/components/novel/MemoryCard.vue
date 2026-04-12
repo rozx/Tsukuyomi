@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import type { Memory } from 'src/models/memory';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 interface Props {
   memory: Memory;
@@ -22,14 +23,11 @@ const emit = defineEmits<{
   check: [checked: boolean, memoryId: string];
 }>();
 
-// 嵌入模型版本常量（与 EmbeddingService 保持一致）
-const CURRENT_EMBEDDING_MODEL = 'embeddinggemma-300m@256';
-
 // 向量状态：ready（已向量化）/ pending（待向量化）/ stale（版本过期）
 const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
   const { embedding, embeddingModel } = props.memory;
   if (!embedding || embedding.length === 0) return 'pending';
-  if (!embeddingModel || embeddingModel !== CURRENT_EMBEDDING_MODEL) return 'stale';
+  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
   return 'ready';
 });
 

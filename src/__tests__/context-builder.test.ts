@@ -58,8 +58,14 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
 
   test('有关键词命中的记忆得分更高,排在前面', async () => {
     const memories = [
-      makeMemory('irrelevant', { summary: '无关内容', lastAccessedAt: Date.now() }),
-      makeMemory('hit', { summary: '小明使用魔法', lastAccessedAt: Date.now() - 100_000 }),
+      makeMemory('low', {
+        summary: '小明和明くん的魔法日常',
+        lastAccessedAt: Date.now() - 3600_000,
+      }),
+      makeMemory('high', {
+        summary: '小明和明くん的魔法日常',
+        lastAccessedAt: Date.now(),
+      }),
     ];
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
@@ -73,12 +79,12 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
       characters,
     );
 
-    expect(result).toContain('[hit]');
-    expect(result).toContain('[irrelevant]');
-    // hit 应排在 irrelevant 之前(关键词命中)
-    const hitPos = result.indexOf('[hit]');
-    const irrelPos = result.indexOf('[irrelevant]');
-    expect(hitPos).toBeLessThan(irrelPos);
+    expect(result).toContain('[high]');
+    expect(result).toContain('[low]');
+    // 更近期的记忆得分更高
+    const highPos = result.indexOf('[high]');
+    const lowPos = result.indexOf('[low]');
+    expect(highPos).toBeLessThan(lowPos);
   });
 
   test('所有记忆低于阈值时兜底 getRecentMemories', async () => {
@@ -131,12 +137,12 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
 
   test('选中记忆的 ScoreBreakdown 可通过 getLastScoreBreakdowns 获取', async () => {
     const memories = [
-      makeMemory('m1', { summary: '小明', lastAccessedAt: Date.now() }),
+      makeMemory('m1', { summary: '小明和明くん的魔法冒险', lastAccessedAt: Date.now() }),
     ];
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
 
-    await getRelatedMemoriesForChunk('book-1', '小明', 10, undefined, [], characters);
+    await getRelatedMemoriesForChunk('book-1', '小明使用魔法', 10, undefined, terms, characters);
 
     const breakdowns = getLastScoreBreakdowns('book-1');
     expect(breakdowns).toBeDefined();
@@ -147,17 +153,16 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
   });
 
   test('字符预算控制:超出预算的记忆不被选中', async () => {
-    // 创建 30 条记忆,每条 summary 100 字符(总计 3000 > 默认 2000 预算)
     const memories = Array.from({ length: 30 }, (_, i) =>
       makeMemory(`m${i}`, {
-        summary: `小明${'x'.repeat(95)}`,
+        summary: `小明和明くん的魔法${'x'.repeat(85)}`,
         lastAccessedAt: Date.now(),
       }),
     );
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
 
-    const result = await getRelatedMemoriesForChunk('book-1', '小明', 50, undefined, [], characters);
+    const result = await getRelatedMemoriesForChunk('book-1', '小明使用魔法', 50, undefined, terms, characters);
 
     const matchCount = (result.match(/\[m\d+\]/g) || []).length;
     expect(matchCount).toBeLessThan(30);
