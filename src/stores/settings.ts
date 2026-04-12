@@ -29,7 +29,7 @@ const SETTINGS_DB_KEY = 'app';
 const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
   charBudget: 2000,
   enableSemantic: true,
-  minScoreThreshold: 0.05,
+  minScoreThreshold: 0.38,
   hasSeenIntro: false,
 };
 

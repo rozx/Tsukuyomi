@@ -17,7 +17,7 @@ export const MAX_TOTAL_SCORE = 1.0;
 
 export const DEFAULT_CHAR_BUDGET = 2000;
 export const HARD_ITEM_CAP = 25;
-export const DEFAULT_MIN_SCORE = 0.05;
+export const DEFAULT_MIN_SCORE = 0.38;
 
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

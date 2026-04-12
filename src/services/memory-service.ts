@@ -70,7 +70,7 @@ export class MemoryService {
   private static bookMemoryCache = new Map<string, { data: Memory[]; expiresAt: number }>();
   private static readonly BOOK_CACHE_TTL_MS = 60_000;
 
-/**
+  /**
    * 清理缓存（当缓存过大时）
    * 使用 LRU 策略：删除最久未使用的 20% 的缓存项（Map 开头的条目）
    */
@@ -151,11 +151,7 @@ export class MemoryService {
    * 2. 使用游标查找最旧的记录，避免加载所有数据到内存
    * 3. 最小化数据库查询次数
    */
-  static async createMemory(
-    bookId: string,
-    content: string,
-    summary: string,
-  ): Promise<Memory> {
+  static async createMemory(bookId: string, content: string, summary: string): Promise<Memory> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
@@ -333,7 +329,7 @@ export class MemoryService {
         const cacheKey = this.getCacheKey(bookId, memoryId);
         this.memoryCache.set(cacheKey, result);
         this.evictCacheIfNeeded();
-  
+
         this.invalidateBookMemoryCache(bookId);
 
         this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
@@ -565,7 +561,7 @@ export class MemoryService {
         return { memory, score, kw };
       });
 
-      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.05);
+      const filtered = scored.filter((s) => s.kw > 0 || s.score > 0.3);
       filtered.sort((a, b) => b.score - a.score);
 
       const resultIds = filtered.map((s) => s.memory.id);
@@ -1035,5 +1031,4 @@ export class MemoryService {
       throw new Error('获取最近 Memory 失败');
     }
   }
-
 }

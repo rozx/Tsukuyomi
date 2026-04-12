@@ -82,8 +82,15 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
-import { scoreMemory } from 'src/services/memory-scoring';
+import {
+  scoreMemory,
+  selectByBudget,
+  DEFAULT_CHAR_BUDGET,
+  DEFAULT_MIN_SCORE,
+  HARD_ITEM_CAP,
+} from 'src/services/memory-scoring';
 import type { ScoredMemory } from 'src/services/memory-scoring';
+import { useSettingsStore } from 'src/stores/settings';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
@@ -1580,14 +1587,18 @@ const refreshReferencedMemories = async () => {
       breakdown: scoreMemory(memory, { chunkEntities, chunkEmbedding, now }),
     }));
 
-    const PREVIEW_MAX_ITEMS = 10;
-    scored.sort((a, b) => b.breakdown.total - a.breakdown.total);
-    const topScored = scored.slice(0, PREVIEW_MAX_ITEMS);
-    const selected = topScored.map((s) => s.memory);
+    const settingsStore = useSettingsStore();
+    const cfg = settingsStore.settings?.memoryInjection;
+    const charBudget = cfg?.charBudget ?? DEFAULT_CHAR_BUDGET;
+    const minScore = cfg?.minScoreThreshold ?? DEFAULT_MIN_SCORE;
+
+    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
 
     const breakdowns: Record<string, ScoreBreakdown> = {};
-    for (const item of topScored) {
-      breakdowns[item.memory.id] = item.breakdown;
+    for (const item of scored) {
+      if (selected.some((m) => m.id === item.memory.id)) {
+        breakdowns[item.memory.id] = item.breakdown;
+      }
     }
     mergedScoreBreakdowns.value = breakdowns;
 

@@ -21,7 +21,6 @@ const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 const downloadProgress = ref<number | null>(null);
 const downloadFile = ref('');
 const lastError = ref<string | null>(null);
-const showAdvanced = ref(false);
 
 const syncFormState = () => {
   charBudget.value = memoryInjection.value?.charBudget ?? 2000;
@@ -132,36 +131,59 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="p-4 space-y-5">
-    <!-- 字符预算 -->
-    <div class="space-y-2">
-      <div class="flex items-center justify-between">
-        <label class="text-sm font-medium text-moon/90">记忆注入字符预算</label>
-        <span class="text-sm text-moon/70 tabular-nums">{{ charBudget }}</span>
-      </div>
-      <p class="text-xs text-moon/60">每次翻译时注入的记忆总字符数上限</p>
-      <Slider
-        v-model="charBudget"
-        :min="500"
-        :max="5000"
-        :step="100"
-        class="w-full"
-        @slideend="updateCharBudget($event)"
-      />
-      <div class="flex justify-between text-xs text-moon/50">
-        <span>500</span>
-        <span>5000</span>
+  <div class="p-4 space-y-6">
+    <!-- 注入策略 -->
+    <div>
+      <h3 class="text-sm font-medium text-moon/90 mb-3">注入策略</h3>
+      <div class="space-y-4">
+        <!-- 字符预算 -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-moon/80">字符预算</label>
+            <span class="text-xs text-moon/60 tabular-nums">{{ charBudget }}</span>
+          </div>
+          <Slider
+            v-model="charBudget"
+            :min="500"
+            :max="5000"
+            :step="100"
+            class="w-full"
+            @slideend="updateCharBudget($event)"
+          />
+          <div class="flex justify-between text-xs text-moon/40">
+            <span>500</span>
+            <span>5000</span>
+          </div>
+        </div>
+
+        <!-- 最低分数阈值 -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-moon/80">最低相关度</label>
+            <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
+          </div>
+          <Slider
+            v-model="minScoreThreshold"
+            :min="0"
+            :max="0.5"
+            :step="0.01"
+            class="w-full"
+            @slideend="updateMinScoreThreshold($event)"
+          />
+          <div class="flex justify-between text-xs text-moon/40">
+            <span>0（全部注入）</span>
+            <span>0.5</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- 语义检索开关 -->
-    <div class="space-y-3">
-      <div class="flex items-center justify-between">
+    <!-- 语义检索 -->
+    <div class="border-t border-moon/10 pt-5">
+      <div class="flex items-center justify-between mb-3">
         <div>
-          <label class="text-sm font-medium text-moon/90">语义检索</label>
-          <p class="text-xs text-moon/60 mt-0.5">
-            使用本地嵌入模型为记忆生成向量，提升相关记忆的匹配精度
-          </p>
+          <h3 class="text-sm font-medium text-moon/90">语义检索</h3>
+          <p class="text-xs text-moon/50 mt-0.5">本地嵌入模型，提升记忆匹配精度</p>
         </div>
         <ToggleSwitch
           :model-value="enableSemantic"
@@ -176,7 +198,6 @@ onUnmounted(() => {
             <span :class="[statusIcon, statusClass]"></span>
             <span class="text-xs text-moon/80">{{ statusLabel }}</span>
           </div>
-          <!-- 按状态显示不同按钮 -->
           <Button
             v-if="embeddingStatus === 'idle'"
             label="下载模型"
@@ -204,60 +225,24 @@ onUnmounted(() => {
           />
         </div>
 
-        <!-- 下载进度 -->
         <div v-if="embeddingStatus === 'loading' && downloadProgress != null">
           <ProgressBar :value="downloadProgress" :show-value="true" class="h-2" />
           <p v-if="downloadFile" class="text-xs text-moon/50 mt-1 truncate">{{ downloadFile }}</p>
         </div>
 
-        <!-- 错误信息 -->
         <p v-if="lastError && embeddingStatus === 'failed'" class="text-xs text-red-400">
           {{ lastError }}
         </p>
 
-        <p class="text-xs text-moon/50">
-          模型: {{ MODEL_ID }} (~195 MB, 首次使用需下载)
-        </p>
-      </div>
-    </div>
-
-    <!-- 高级设置折叠区 -->
-    <div class="border-t border-moon/10 pt-3">
-      <button
-        class="flex items-center gap-1 text-xs text-moon/60 hover:text-moon/80 transition-colors"
-        @click="showAdvanced = !showAdvanced"
-      >
-        <span :class="['pi', showAdvanced ? 'pi-chevron-down' : 'pi-chevron-right']" />
-        高级设置
-      </button>
-
-      <div v-if="showAdvanced" class="mt-3 space-y-2">
-        <div class="flex items-center justify-between">
-          <label class="text-xs text-moon/80">最低分数阈值</label>
-          <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
-        </div>
-        <p class="text-xs text-moon/50">低于此分数的记忆不会被注入（满分 1.0）</p>
-        <Slider
-          v-model="minScoreThreshold"
-          :min="0"
-          :max="0.5"
-          :step="0.01"
-          class="w-full"
-          @slideend="updateMinScoreThreshold($event)"
-        />
-        <div class="flex justify-between text-xs text-moon/40">
-          <span>0（全部注入）</span>
-          <span>0.5</span>
-        </div>
+        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB)</p>
       </div>
     </div>
 
     <!-- 说明 -->
     <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
-      <p class="text-xs text-moon/70">
+      <p class="text-xs text-moon/60">
         <span class="pi pi-info-circle mr-1"></span>
-        记忆注入使用三信号评分（语义相似度 + 关键词匹配 + 时间衰减）自动选择与当前翻译内容最相关的记忆。
-        即使未启用语义检索，关键词和时间衰减仍会生效。
+        翻译时自动选择最相关的记忆注入上下文。评分基于语义相似度、关键词匹配和时间衰减三个信号，即使未启用语义检索仍可工作。
       </p>
     </div>
   </div>
