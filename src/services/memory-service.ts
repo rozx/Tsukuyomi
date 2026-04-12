@@ -2,6 +2,7 @@ import { getDB } from 'src/utils/indexed-db';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
 import { useSettingsStore } from 'src/stores/settings';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
@@ -334,6 +335,8 @@ export class MemoryService {
       this.invalidateBookMemoryCache(bookId);
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
+
+      EmbeddingQueue.enqueue(result.id);
 
       return result;
     } catch (error) {
@@ -784,6 +787,13 @@ export class MemoryService {
 
       this.dispatchMemoryChanged({ bookId, memoryId, action: 'updated' });
 
+      // 仅在文本内容实际变化时重新入队嵌入(避免无意义重算)
+      const oldSummary = (memory as MemoryStorage).summary;
+      const oldContent = (memory as MemoryStorage).content;
+      if (oldSummary !== summary || oldContent !== content) {
+        EmbeddingQueue.enqueue(memoryId);
+      }
+
       return result;
     } catch (error) {
       console.error('Failed to update memory:', error);
@@ -806,6 +816,8 @@ export class MemoryService {
     }
 
     try {
+      EmbeddingQueue.cancel(memoryId);
+
       const db = await getDB();
       const memory = await db.get('memories', memoryId);
 

@@ -668,6 +668,40 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 更新记忆注入设置(带范围约束和副作用)
+     *
+     * - charBudget: clamp 到 [500, 5000]
+     * - minScoreThreshold: clamp 到 [0, 6.0]
+     * - enableSemantic 切换时:true→resume / false→pause EmbeddingQueue
+     */
+    async updateMemoryInjection(
+      updates: Partial<MemoryInjectionSettings>,
+    ): Promise<void> {
+      const current = this.settings.memoryInjection ?? { ...DEFAULT_MEMORY_INJECTION };
+      const merged = { ...current, ...updates };
+
+      // 范围约束
+      merged.charBudget = Math.min(5000, Math.max(500, merged.charBudget));
+      merged.minScoreThreshold = Math.min(6.0, Math.max(0, merged.minScoreThreshold));
+
+      // 副作用:enableSemantic 变更时联动 EmbeddingQueue
+      if (updates.enableSemantic !== undefined && updates.enableSemantic !== current.enableSemantic) {
+        try {
+          const { EmbeddingQueue } = await import('src/services/embedding-queue');
+          if (updates.enableSemantic) {
+            EmbeddingQueue.resume();
+          } else {
+            EmbeddingQueue.pause();
+          }
+        } catch {
+          // 非致命:队列模块加载失败不影响设置持久化
+        }
+      }
+
+      await this.updateSettings({ memoryInjection: merged });
+    },
+
+    /**
      * 设置代理启用状态
      */
     async setProxyEnabled(enabled: boolean): Promise<void> {

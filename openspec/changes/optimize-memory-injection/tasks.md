@@ -89,18 +89,18 @@
 
 ## 9. CRUD 到队列的联动
 
-- [ ] 9.1 修改 `MemoryService.createMemory`,成功写入后(不 await)调用 `EmbeddingQueue.enqueue(memory.id)`
-- [ ] 9.2 修改 `MemoryService.updateMemory`,对新旧记忆的 `summary` 与 `content` 做 diff,仅文本字段变化时入队
-- [ ] 9.3 修改 `MemoryService.deleteMemory`,删除前调用 `EmbeddingQueue.cancel(memoryId)`
-- [ ] 9.4 确保嵌入队列写回路径不会再次触发 9.2 的判断(避免死循环):`updateMemoryEmbeddingOnly` 绕过 `updateMemory` 的公共入口,直接写 IDB
-- [ ] 9.5 扩展现有 `memory-service.test.ts` 或新增用例,验证 CRUD 与队列的联动(mock EmbeddingQueue)
+- [x] 9.1 修改 `MemoryService.createMemory`,成功写入后(不 await)调用 `EmbeddingQueue.enqueue(memory.id)`
+- [x] 9.2 修改 `MemoryService.updateMemory`,对新旧记忆的 `summary` 与 `content` 做 diff,仅文本字段变化时入队
+- [x] 9.3 修改 `MemoryService.deleteMemory`,删除前调用 `EmbeddingQueue.cancel(memoryId)`
+- [x] 9.4 确保嵌入队列写回路径不会再次触发 9.2 的判断(避免死循环):`updateMemoryEmbeddingOnly` 绕过 `updateMemory` 的公共入口,直接写 IDB
+- [x] 9.5 扩展现有 `memory-service.test.ts` 或新增用例,验证 CRUD 与队列的联动(mock EmbeddingQueue)
 
 ## 10. 设置存储与 Store
 
-- [ ] 10.1 更新 `src/stores/settings.ts` 使 `memoryInjection` 设置段响应式可读写
-- [ ] 10.2 为 `enableSemantic` 的变更添加副作用:`true` 时若模型就绪则 `EmbeddingQueue.resume()`,`false` 时 `EmbeddingQueue.pause()`
-- [ ] 10.3 为 `charBudget` 和 `minScoreThreshold` 做范围约束(500 ≤ charBudget ≤ 5000,0 ≤ threshold ≤ 6.0)
-- [ ] 10.4 确保 `hasSeenIntro` 默认 `false`,变更后持久化
+- [x] 10.1 更新 `src/stores/settings.ts` 使 `memoryInjection` 设置段响应式可读写
+- [x] 10.2 为 `enableSemantic` 的变更添加副作用:`true` 时若模型就绪则 `EmbeddingQueue.resume()`,`false` 时 `EmbeddingQueue.pause()`
+- [x] 10.3 为 `charBudget` 和 `minScoreThreshold` 做范围约束(500 ≤ charBudget ≤ 5000,0 ≤ threshold ≤ 6.0)
+- [x] 10.4 确保 `hasSeenIntro` 默认 `false`,变更后持久化
 
 ## 11. 设置对话框新 Tab
 
