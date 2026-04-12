@@ -71,23 +71,41 @@ function isMemoryUnembedded(memory: Memory): boolean {
   return !memory.embedding || memory.embeddingModel !== CURRENT_EMBEDDING_MODEL;
 }
 
+// 混合搜索结果（异步）
+const searchResults = ref<Memory[] | null>(null);
+const isSearching = ref(false);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(searchQuery, (query) => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  const trimmed = query.trim();
+  if (!trimmed) {
+    searchResults.value = null;
+    return;
+  }
+  isSearching.value = true;
+  searchDebounceTimer = setTimeout(async () => {
+    if (!props.book) {
+      searchResults.value = [];
+      isSearching.value = false;
+      return;
+    }
+    try {
+      searchResults.value = await MemoryService.searchMemories(props.book.id, trimmed);
+    } catch {
+      searchResults.value = [];
+    } finally {
+      isSearching.value = false;
+    }
+  }, 300);
+});
+
 // 筛选后的记忆列表
 const filteredMemories = computed(() => {
-  let result = memories.value;
+  let result = searchResults.value !== null ? searchResults.value : memories.value;
 
-  // 未向量化筛选
   if (filterUnembeddedOnly.value) {
     result = result.filter(isMemoryUnembedded);
-  }
-
-  // 文本搜索
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase().trim();
-    result = result.filter((memory) => {
-      const content = memory.content.toLowerCase();
-      const summary = (memory.summary || '').toLowerCase();
-      return content.includes(query) || summary.includes(query);
-    });
   }
 
   return result;
