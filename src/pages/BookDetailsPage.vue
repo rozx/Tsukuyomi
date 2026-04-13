@@ -1209,6 +1209,10 @@ onMounted(() => {
   }
   unsubscribeEmbeddingReady = EmbeddingService.addEventListener('ready', () => {
     triggerBackfill();
+    // 模型就绪后重刷当前章节的记忆预览，避免首次加载时语义信号缺失导致显示 0 条
+    if (selectedChapterParagraphs.value.length > 0) {
+      void refreshReferencedMemories();
+    }
   });
 });
 
