@@ -82,15 +82,7 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { MemoryService } from 'src/services/memory-service';
-import {
-  scoreMemory,
-  selectByBudget,
-  DEFAULT_CHAR_BUDGET,
-  DEFAULT_MIN_SCORE,
-  HARD_ITEM_CAP,
-} from 'src/services/memory-scoring';
-import type { ScoredMemory } from 'src/services/memory-scoring';
-import { useSettingsStore } from 'src/stores/settings';
+import { selectRelevantMemoriesForChunk } from 'src/services/ai/tasks/utils/context-builder';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
@@ -1177,13 +1169,29 @@ const handleReSummarizeChapter = async (chapterId: string) => {
   }
 };
 
-// 嵌入模型就绪后触发 backfill
-let unsubscribeEmbeddingReady: (() => void) | null = null;
+// 嵌入相关事件订阅统一管理,onUnmounted 一次性清理
+const embeddingUnsubscribers: Array<() => void> = [];
 
 const triggerBackfill = () => {
   if (bookId.value) {
     void EmbeddingQueue.enqueueBacklog(bookId.value);
   }
+};
+
+// 记忆预览刷新的统一入口:防抖 + 段落就绪守卫
+// 被三个触发源共享:章节 watch / EmbeddingService ready / EmbeddingQueue idle
+// 防抖可以合并短时间内连发的触发,避免同一 chunk 反复 embed 浪费算力
+let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+const scheduleMemoryPreview = (delayMs = 500) => {
+  if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
+  if (selectedChapterParagraphs.value.length === 0) {
+    usedMemoryReferences.value = [];
+    mergedScoreBreakdowns.value = {};
+    return;
+  }
+  memoryPreviewTimer = setTimeout(() => {
+    void refreshReferencedMemories();
+  }, delayMs);
 };
 
 onMounted(() => {
@@ -1207,21 +1215,25 @@ onMounted(() => {
   if (EmbeddingService.isReady()) {
     triggerBackfill();
   }
-  unsubscribeEmbeddingReady = EmbeddingService.addEventListener('ready', () => {
-    triggerBackfill();
-    // 模型就绪后重刷当前章节的记忆预览，避免首次加载时语义信号缺失导致显示 0 条
-    if (selectedChapterParagraphs.value.length > 0) {
-      void refreshReferencedMemories();
-    }
-  });
+  // ready: chunk 向量可用,适合返回用户(记忆向量已在 DB 中)
+  // idle:  backfill 全部完成,适合首次生成向量的场景 → 此刻语义信号才真正生效
+  embeddingUnsubscribers.push(
+    EmbeddingService.addEventListener('ready', () => {
+      triggerBackfill();
+      scheduleMemoryPreview();
+    }),
+    EmbeddingQueue.addEventListener('idle', () => scheduleMemoryPreview()),
+  );
 });
 
 // 组件卸载时清除上下文
 onUnmounted(() => {
   contextStore.clearContext();
-  if (unsubscribeEmbeddingReady) {
-    unsubscribeEmbeddingReady();
-    unsubscribeEmbeddingReady = null;
+  embeddingUnsubscribers.forEach((u) => u());
+  embeddingUnsubscribers.length = 0;
+  if (memoryPreviewTimer) {
+    clearTimeout(memoryPreviewTimer);
+    memoryPreviewTimer = null;
   }
   // 清理段落导航相关的 timeout
   cleanupParagraphNavigation();
@@ -1536,6 +1548,7 @@ const detailMemory = ref<Memory | null>(null);
 
 const mergedScoreBreakdowns = ref<Record<string, ScoreBreakdown>>({});
 
+// 预览与翻译注入共享同一打分/选择函数,保证"popup 显示的 = 实际注入到 AI 的"
 const refreshReferencedMemories = async () => {
   if (!bookId.value || !selectedChapterParagraphs.value.length) {
     usedMemoryReferences.value = [];
@@ -1552,64 +1565,15 @@ const refreshReferencedMemories = async () => {
       return;
     }
 
-    const allMemories = await MemoryService.getAllBookMemories(bookId.value);
-    if (allMemories.length === 0) {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-      return;
-    }
+    const { memories, breakdowns } = await selectRelevantMemoriesForChunk(
+      bookId.value,
+      chunkText,
+      usedTerms.value,
+      usedCharacters.value,
+    );
 
-    // 可选语义向量
-    let chunkEmbedding: Float32Array | undefined;
-    const settingsStore = useSettingsStore();
-    const cfg = settingsStore.settings?.memoryInjection;
-    try {
-      if (cfg?.enableSemantic !== false) {
-        const { EmbeddingService } = await import('src/services/embedding-service');
-        if (EmbeddingService.isReady()) {
-          const vec = await EmbeddingService.embed(chunkText.slice(0, 2000));
-          if (vec) chunkEmbedding = vec;
-        }
-      }
-    } catch {
-      // 静默降级
-    }
-
-    // 构造实体集合用于关键词匹配
-    const chunkEntities: Array<{ name: string }> = [];
-    for (const t of usedTerms.value) {
-      if (t?.name) chunkEntities.push({ name: t.name });
-    }
-    for (const c of usedCharacters.value) {
-      if (c?.name) chunkEntities.push({ name: c.name });
-      if (c?.aliases) {
-        for (const alias of c.aliases) {
-          if (alias?.name) chunkEntities.push({ name: alias.name });
-        }
-      }
-    }
-
-    const now = Date.now();
-    const scored: ScoredMemory[] = allMemories.map((memory) => ({
-      memory,
-      breakdown: scoreMemory(memory, { chunkEntities, chunkEmbedding, now }),
-    }));
-
-    const charBudget = cfg?.charBudget ?? DEFAULT_CHAR_BUDGET;
-    const minScore = cfg?.minScoreThreshold ?? DEFAULT_MIN_SCORE;
-
-    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
-
-    const selectedIds = new Set(selected.map((m) => m.id));
-    const breakdowns: Record<string, ScoreBreakdown> = {};
-    for (const item of scored) {
-      if (selectedIds.has(item.memory.id)) {
-        breakdowns[item.memory.id] = item.breakdown;
-      }
-    }
     mergedScoreBreakdowns.value = breakdowns;
-
-    usedMemoryReferences.value = selected.map((m) => ({
+    usedMemoryReferences.value = memories.map((m) => ({
       memoryId: m.id,
       summary: m.summary,
       accessedAt: m.lastAccessedAt,
@@ -1634,22 +1598,11 @@ const handleMemoryPopoverHide = () => {
   isMemoryPopoverOpen.value = false;
 };
 
-// 章节加载后自动计算记忆预览（debounce 避免频繁触发）
-// immediate: 首次挂载时若段落已就绪（从 store 缓存恢复）也要触发，否则 watch 不会 fire
-let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+// 章节切换/段落加载时触发记忆预览刷新
+// immediate: 首次挂载时若段落已就绪（从 store 缓存恢复）也要触发,否则 watch 不会 fire
 watch(
   () => [selectedChapterId.value, selectedChapterParagraphs.value.length] as const,
-  ([, len]) => {
-    if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
-    if (len > 0) {
-      memoryPreviewTimer = setTimeout(() => {
-        void refreshReferencedMemories();
-      }, 500);
-    } else {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-    }
-  },
+  () => scheduleMemoryPreview(),
   { immediate: true },
 );
 

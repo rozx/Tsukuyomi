@@ -331,30 +331,129 @@ async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | 
 }
 
 /**
- * 获取与 chunk 相关的记忆 — 三信号打分路径。
+ * 选择结果:UI 预览(`refreshReferencedMemories`)和翻译注入(`getRelatedMemoriesForChunk`)
+ * 共享此结构,保证两边显示/注入的记忆集合严格一致。
+ */
+export interface SelectedMemories {
+  memories: Memory[];
+  breakdowns: Record<string, ScoreBreakdown>;
+  fromFallback: boolean;
+  totalMemoryCount: number;
+}
+
+/**
+ * 核心打分 + 选择逻辑(不负责格式化)。
  *
  * 流程:
- * 1. 读取整本书 Memory(60s TTL 缓存)
+ * 1. 拉全量记忆(60s TTL 缓存)
  * 2. 从 terms/characters 构造 chunkEntities(关键词信号)
  * 3. 可选计算 chunk 语义向量(语义信号)
- * 4. 每条记忆打分 → 阈值过滤 → 字符预算填充
+ * 4. 逐条打分 → 阈值过滤 → 字符预算填充
  * 5. 空选择时兜底 getRecentMemories(5)
- * 6. 整体 try/catch 失败时退回 legacy LRU
  *
- * @param bookId 书籍 ID
- * @param chunkText chunk 文本内容
- * @param _maxMemories 已废弃:新实现按字符预算 + HARD_ITEM_CAP 限制,此参数忽略
- * @param _chapterId 章节 ID(保留兼容)
- * @param existingTerms 已提取的术语列表(用于关键词信号)
- * @param existingCharacters 已提取的角色列表(用于关键词信号)
- * @returns 格式化的记忆上下文字符串
+ * 同时写入 `lastScoreBreakdownsByBook`,供 translation-service 读取。
+ */
+export async function selectRelevantMemoriesForChunk(
+  bookId: string,
+  chunkText: string,
+  existingTerms?: Terminology[],
+  existingCharacters?: CharacterSetting[],
+): Promise<SelectedMemories> {
+  const empty: SelectedMemories = {
+    memories: [],
+    breakdowns: {},
+    fromFallback: false,
+    totalMemoryCount: 0,
+  };
+  if (!bookId || !chunkText) return empty;
+
+  // 1. 拉全量记忆(走缓存)
+  const allMemories = await MemoryService.getAllBookMemories(bookId);
+  if (allMemories.length === 0) return empty;
+
+  // 2. 构造实体集合 — terms.name + characters.name + aliases
+  const chunkEntities: Array<{ name: string }> = [];
+  if (existingTerms) {
+    for (const t of existingTerms) {
+      if (t?.name) chunkEntities.push({ name: t.name });
+    }
+  }
+  if (existingCharacters) {
+    for (const c of existingCharacters) {
+      if (c?.name) chunkEntities.push({ name: c.name });
+      if (c?.aliases) {
+        for (const alias of c.aliases) {
+          if (alias?.name) chunkEntities.push({ name: alias.name });
+        }
+      }
+    }
+  }
+
+  // 3. 可选语义向量
+  const chunkEmbedding = await computeChunkEmbedding(chunkText);
+
+  // 4. 逐条打分
+  const now = Date.now();
+  const scored: ScoredMemory[] = allMemories.map((memory) => ({
+    memory,
+    breakdown: scoreMemory(memory, {
+      chunkEntities,
+      chunkEmbedding: chunkEmbedding ?? undefined,
+      now,
+    }),
+  }));
+
+  // 5. 字符预算填充 — 读取用户预算设置
+  let charBudget = DEFAULT_CHAR_BUDGET;
+  let minScore = DEFAULT_MIN_SCORE;
+  try {
+    const settings = useSettingsStore();
+    const cfg = settings.settings?.memoryInjection;
+    if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
+    if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
+  } catch {
+    /* 保持默认 */
+  }
+
+  const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+
+  let memories: Memory[] = selected;
+  const breakdowns: Record<string, ScoreBreakdown> = {};
+  let fromFallback = false;
+
+  if (selected.length === 0) {
+    // 6. 兜底:LRU 最近 5 条(不记录 breakdown)
+    fromFallback = true;
+    try {
+      memories = await MemoryService.getRecentMemories(bookId, 5, 'lastAccessedAt', false);
+    } catch {
+      memories = [];
+    }
+  } else {
+    const selectedIds = new Set(selected.map((m) => m.id));
+    for (const item of scored) {
+      if (selectedIds.has(item.memory.id)) {
+        breakdowns[item.memory.id] = item.breakdown;
+      }
+    }
+  }
+
+  // 供 translation-service 旁路读取
+  lastScoreBreakdownsByBook.set(bookId, breakdowns);
+
+  return { memories, breakdowns, fromFallback, totalMemoryCount: allMemories.length };
+}
+
+/**
+ * 获取与 chunk 相关的记忆 — 格式化为 AI prompt 注入字符串。
+ * 与 UI 预览共享 `selectRelevantMemoriesForChunk`,保证"注入内容 = 预览内容"。
+ *
+ * @returns 格式化字符串,形如 `\n\n【相关记忆】\n  - [id] summary\n  - [id] summary`
  */
 export async function getRelatedMemoriesForChunk(
   bookId: string,
   chunkText: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _maxMemories: number = 15,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _chapterId?: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
@@ -362,99 +461,24 @@ export async function getRelatedMemoriesForChunk(
   if (!bookId || !chunkText) return '';
 
   try {
-    // 1. 拉全量记忆(走缓存)
-    const allMemories = await MemoryService.getAllBookMemories(bookId);
-    if (allMemories.length === 0) return '';
+    const { memories, breakdowns, fromFallback, totalMemoryCount } =
+      await selectRelevantMemoriesForChunk(bookId, chunkText, existingTerms, existingCharacters);
 
-    // 2. 构造实体集合 — terms.name + characters.name + aliases
-    const chunkEntities: Array<{ name: string }> = [];
-    if (existingTerms) {
-      for (const t of existingTerms) {
-        if (t?.name) chunkEntities.push({ name: t.name });
-      }
-    }
-    if (existingCharacters) {
-      for (const c of existingCharacters) {
-        if (c?.name) chunkEntities.push({ name: c.name });
-        if (c?.aliases) {
-          for (const alias of c.aliases) {
-            if (alias?.name) chunkEntities.push({ name: alias.name });
-          }
-        }
-      }
-    }
+    if (memories.length === 0) return '';
 
-    // 3. 可选语义向量
-    const chunkEmbedding = await computeChunkEmbedding(chunkText);
+    const logLines = memories.map((m) => {
+      const bd = breakdowns[m.id];
+      const score = bd ? bd.total.toFixed(2) : '?';
+      const details = bd
+        ? `sem=${bd.semantic.toFixed(2)} kw=${bd.keyword.toFixed(2)} rec=${bd.recency.toFixed(2)}`
+        : 'fallback';
+      return `  ${m.id} [${score}] (${details}) ${m.summary.slice(0, 40)}`;
+    });
+    console.debug(
+      `[context-builder] 注入 ${memories.length}/${totalMemoryCount} 条记忆${fromFallback ? ' (LRU 兜底)' : ''}:\n${logLines.join('\n')}`,
+    );
 
-    // 4. 逐条打分
-    const now = Date.now();
-    const scored: ScoredMemory[] = allMemories.map((memory) => ({
-      memory,
-      breakdown: scoreMemory(memory, {
-        chunkEntities,
-        chunkEmbedding: chunkEmbedding ?? undefined,
-        now,
-      }),
-    }));
-
-    // 5. 字符预算填充 — 读取用户预算设置
-    let charBudget = DEFAULT_CHAR_BUDGET;
-    let minScore = DEFAULT_MIN_SCORE;
-    try {
-      const settings = useSettingsStore();
-      const cfg = settings.settings?.memoryInjection;
-      if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
-      if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
-    } catch {
-      /* 保持默认 */
-    }
-
-    const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
-
-    // 6. 兜底:若打分后全部被过滤,退回 LRU 最近 5 条
-    let finalList: Memory[] = selected;
-    const breakdownMap: Record<string, ScoreBreakdown> = {};
-    if (selected.length === 0) {
-      try {
-        finalList = await MemoryService.getRecentMemories(
-          bookId,
-          5,
-          'lastAccessedAt',
-          false,
-        );
-      } catch {
-        finalList = [];
-      }
-    } else {
-      // 记录选中记忆的 breakdown(仅对"打分路径"有意义,兜底路径不记录)
-      for (const item of scored) {
-        if (selected.some((m) => m.id === item.memory.id)) {
-          breakdownMap[item.memory.id] = item.breakdown;
-        }
-      }
-    }
-
-    // 写入模块级 breakdowns 缓存,供 translation-service 旁路读取
-    lastScoreBreakdownsByBook.set(bookId, breakdownMap);
-
-    if (finalList.length === 0) return '';
-
-    if (finalList.length > 0) {
-      const logLines = finalList.map((m) => {
-        const bd = breakdownMap[m.id];
-        const score = bd ? bd.total.toFixed(2) : '?';
-        const details = bd
-          ? `sem=${bd.semantic.toFixed(2)} kw=${bd.keyword.toFixed(2)} rec=${bd.recency.toFixed(2)}`
-          : 'fallback';
-        return `  ${m.id} [${score}] (${details}) ${m.summary.slice(0, 40)}`;
-      });
-      console.debug(
-        `[context-builder] 注入 ${finalList.length}/${allMemories.length} 条记忆:\n${logLines.join('\n')}`,
-      );
-    }
-
-    const lines = finalList.map((m) => `  - [${m.id}] ${m.summary}`);
+    const lines = memories.map((m) => `  - [${m.id}] ${m.summary}`);
     return `\n\n【相关记忆】\n${lines.join('\n')}`;
   } catch (error) {
     console.warn('[context-builder] 三信号打分失败,退回 legacy LRU:', error);
