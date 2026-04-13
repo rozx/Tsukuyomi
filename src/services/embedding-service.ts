@@ -81,6 +81,28 @@ export class EmbeddingService {
     return this.status === 'ready' && this.pipeline !== null;
   }
 
+  /**
+   * 检测浏览器 Cache Storage 中是否已存在模型文件。
+   * Transformers.js 通过 Cache API 持久化模型权重,命中则说明之前在本设备加载过。
+   * 用于启动时判断是否可以静默 warmup(无需等用户再次触发下载)。
+   */
+  static async isModelCachedInBrowser(): Promise<boolean> {
+    try {
+      if (typeof caches === 'undefined') return false;
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) {
+        const cache = await caches.open(name);
+        const keys = await cache.keys();
+        if (keys.some((req) => req.url.includes('embeddinggemma'))) {
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   static getStatus(): EmbeddingStatus {
     return this.status;
   }

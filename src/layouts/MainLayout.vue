@@ -206,18 +206,22 @@ onMounted(async () => {
 
   // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
   // 注意：首次安装/首次启用时不会自动触发，需用户在设置页主动下载，避免意外产生 ~195MB 带宽消耗
+  // 检测路径双保险:
+  //   1. settings.embeddingModelCached 标记（App.vue 全局监听器负责维护）
+  //   2. 浏览器 Cache Storage 实测命中（兼容旧版本 / 标记缺失场景）
   const { useSettingsStore } = await import('src/stores/settings');
   const settings = useSettingsStore();
   if (!settings.isLoaded) {
     await settings.loadSettings();
   }
-  if (
-    settings.settings.memoryInjection?.enableSemantic !== false &&
-    settings.settings.memoryInjection?.embeddingModelCached === true
-  ) {
+  if (settings.settings.memoryInjection?.enableSemantic !== false) {
     const { EmbeddingService } = await import('src/services/embedding-service');
     if (!EmbeddingService.isReady()) {
-      void EmbeddingService.warmup();
+      const flagSet = settings.settings.memoryInjection?.embeddingModelCached === true;
+      const cacheHit = flagSet ? true : await EmbeddingService.isModelCachedInBrowser();
+      if (cacheHit) {
+        void EmbeddingService.warmup();
+      }
     }
   }
 });

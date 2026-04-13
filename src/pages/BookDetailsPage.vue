@@ -1635,10 +1635,11 @@ const handleMemoryPopoverHide = () => {
 };
 
 // 章节加载后自动计算记忆预览（debounce 避免频繁触发）
+// immediate: 首次挂载时若段落已就绪（从 store 缓存恢复）也要触发，否则 watch 不会 fire
 let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
-  () => selectedChapterParagraphs.value.length,
-  (len) => {
+  () => [selectedChapterId.value, selectedChapterParagraphs.value.length] as const,
+  ([, len]) => {
     if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
     if (len > 0) {
       memoryPreviewTimer = setTimeout(() => {
@@ -1649,6 +1650,7 @@ watch(
       mergedScoreBreakdowns.value = {};
     }
   },
+  { immediate: true },
 );
 
 const closeMemoryPopover = () => {

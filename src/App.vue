@@ -67,6 +67,16 @@ onMounted(async () => {
   bookDetailsStore.loadState();
   uiStore.loadState();
   contextStore.loadState();
+
+  // 全局监听 embedding 模型就绪事件,持久化"已缓存"标记
+  // 无论用户通过哪条路径触发加载（设置页下载、记忆面板重新向量化、章节 backfill 等）
+  // 都会被此监听器捕获,保证下次启动时 MainLayout 能自动 warmup
+  const { EmbeddingService } = await import('src/services/embedding-service');
+  EmbeddingService.addEventListener('ready', () => {
+    if (settingsStore.settings.memoryInjection?.embeddingModelCached !== true) {
+      void settingsStore.updateMemoryInjection({ embeddingModelCached: true });
+    }
+  });
 });
 </script>
 
