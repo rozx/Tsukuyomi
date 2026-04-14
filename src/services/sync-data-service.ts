@@ -1418,6 +1418,141 @@ export class SyncDataService {
   }
 
   /**
+   * 用远程快照完全覆盖本地已同步数据（用于"恢复到修订版本"场景）。
+   *
+   * 与 applyDownloadedData 不同，本方法不做 lastEdited 比较、不保留本地独有条目、
+   * 不返回 RestorableItem。执行流程：
+   *   1. 校验远程数据；失败直接抛错
+   *   2. 创建本地备份（失败时用于回滚）
+   *   3. 清空：books（含章节内容）、AI 模型、封面历史、所有书籍的 memories
+   *   4. 按快照批量写入 novels / aiModels / coverHistory / memories
+   *   5. 导入 appSettings，但保留本地当前 Gist 同步配置（凭据、enabled、lastSyncTime）
+   *   6. 清空 deletedNovelIds / deletedModelIds 删除记录
+   *   7. 失败时 restoreFromBackup 回滚
+   */
+  static async overwriteFromSnapshot(
+    remoteData: {
+      novels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+    } | null,
+  ): Promise<void> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    if (!remoteData) {
+      return;
+    }
+
+    if (!SyncDataService.validateRemoteData(remoteData)) {
+      console.error('[SyncDataService] 远程数据验证失败，拒绝覆盖');
+      throw new Error('远程数据格式无效，无法应用');
+    }
+
+    const backup = SyncDataService.createBackup();
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    try {
+      // 1. 清空本地已同步数据
+      // 1.1 删除所有书籍旧 memories（需要在清空 books 之前收集 bookId，
+      //     但我们直接使用备份中的书籍列表，避免与 clearBooks 的竞态）
+      for (const oldBook of backup.books) {
+        let oldMemories: Memory[] = [];
+        try {
+          oldMemories = await MemoryService.getAllMemories(oldBook.id);
+        } catch (error) {
+          console.warn(`[SyncDataService] 读取书籍 ${oldBook.id} 的旧 Memory 失败:`, error);
+        }
+        for (const memory of oldMemories) {
+          try {
+            await MemoryService.deleteMemory(oldBook.id, memory.id);
+          } catch (error) {
+            console.warn(`[SyncDataService] 删除旧 Memory ${memory.id} 失败:`, error);
+          }
+        }
+      }
+
+      // 1.2 清空书籍（含章节内容）、AI 模型、封面
+      await booksStore.clearBooks();
+      await aiModelsStore.clearModels();
+      await coverHistoryStore.clearHistory();
+
+      // 2. 按快照批量写入
+      const remoteNovels = Array.isArray(remoteData.novels) ? remoteData.novels : [];
+      if (remoteNovels.length > 0) {
+        await booksStore.bulkAddBooks(remoteNovels as Novel[]);
+      }
+
+      const remoteModels = Array.isArray(remoteData.aiModels) ? remoteData.aiModels : [];
+      for (const model of remoteModels) {
+        await aiModelService.saveModel(model);
+      }
+      aiModelsStore.models = remoteModels.map((m: any) => ({
+        // eslint-disable-line @typescript-eslint/no-explicit-any
+        ...m,
+        lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+      }));
+
+      const remoteCovers = Array.isArray(remoteData.coverHistory) ? remoteData.coverHistory : [];
+      for (const cover of remoteCovers) {
+        await coverHistoryStore.addCover(cover);
+      }
+
+      const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
+      for (const memory of remoteMemories) {
+        try {
+          await MemoryService.createMemoryWithId(
+            memory.bookId,
+            memory.id,
+            memory.content,
+            memory.summary,
+            { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
+          );
+        } catch (error) {
+          console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+        }
+      }
+
+      // 3. 导入 appSettings（若快照包含），随后恢复本地 Gist 凭据
+      const currentGistSync = GlobalConfig.getGistSyncSnapshot();
+      if (remoteData.appSettings) {
+        await settingsStore.importSettings(remoteData.appSettings);
+      }
+
+      // 4. 保留本地 Gist 凭据与 lastSyncTime，并清空删除记录
+      if (currentGistSync) {
+        await settingsStore.updateGistSync({
+          ...currentGistSync,
+          deletedNovelIds: [],
+          deletedModelIds: [],
+        });
+      } else {
+        await settingsStore.updateGistSync({
+          deletedNovelIds: [],
+          deletedModelIds: [],
+        });
+      }
+    } catch (error) {
+      console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
+      try {
+        await SyncDataService.restoreFromBackup(backup);
+      } catch (rollbackError) {
+        console.error('[SyncDataService] 回滚失败:', rollbackError);
+        throw new Error(
+          `应用快照失败: ${error instanceof Error ? error.message : String(error)}; ` +
+            `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
    * 创建安全的远程数据对象（确保 novels 和 aiModels 是数组）
    */
   static createSafeRemoteData(data: GistSyncData | null | undefined): {

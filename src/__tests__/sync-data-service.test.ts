@@ -10,6 +10,7 @@ const mockDeleteModel = mock((_id: string) => Promise.resolve());
 // Mock Stores
 const mockAIModelsStore = {
   models: [] as unknown[],
+  clearModels: mock(() => Promise.resolve()),
 };
 
 const mockBooksStore = {
@@ -93,6 +94,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     spyOn(ChapterContentService, 'clearCache').mockImplementation(() => {});
 
     mockAIModelsStore.models = [];
+    mockAIModelsStore.clearModels.mockClear();
     mockSaveModel.mockClear();
     mockDeleteModel.mockClear();
     spyOn(aiModelService, 'saveModel').mockImplementation(mockSaveModel as any);
@@ -1761,6 +1763,241 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       const shouldUpload = SyncDataService.hasChangesToUpload(local as any, remote as any);
       expect(shouldUpload).toBe(false);
+    });
+  });
+
+  describe('overwriteFromSnapshot (恢复修订版本完全覆盖)', () => {
+    it('覆盖后本地独有的书籍/模型/封面/记忆不再出现', async () => {
+      // 本地独有数据
+      mockBooksStore.books = [
+        { id: 'local-only-book', title: 'Local Only', lastEdited: new Date().toISOString() },
+      ];
+      mockAIModelsStore.models = [
+        { id: 'local-only-model', name: 'Local Only', lastEdited: new Date().toISOString() },
+      ];
+      mockCoverHistoryStore.covers = [{ id: 'local-only-cover', url: 'local.jpg' }];
+      spyOn(MemoryService, 'getAllMemories').mockImplementation(((bookId: string) => {
+        if (bookId === 'local-only-book') {
+          return Promise.resolve([
+            {
+              id: 'local-only-memory',
+              bookId: 'local-only-book',
+              content: 'local',
+              summary: 's',
+              createdAt: 1,
+              lastAccessedAt: 1,
+            },
+          ] as any);
+        }
+        return Promise.resolve([]);
+      }) as typeof MemoryService.getAllMemories);
+
+      const remoteData = {
+        novels: [{ id: 'snap-book', title: 'Snap', lastEdited: new Date().toISOString() }],
+        aiModels: [{ id: 'snap-model', name: 'Snap', lastEdited: new Date().toISOString() }],
+        appSettings: { theme: 'dark' },
+        coverHistory: [{ id: 'snap-cover', url: 'snap.jpg' }],
+        memories: [] as any[],
+      };
+
+      await SyncDataService.overwriteFromSnapshot(remoteData);
+
+      // 本地数据被清空
+      expect(mockBooksStore.clearBooks).toHaveBeenCalled();
+      expect(mockAIModelsStore.clearModels).toHaveBeenCalled();
+      expect(mockCoverHistoryStore.clearHistory).toHaveBeenCalled();
+      // 旧 Memory 被删除
+      expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith(
+        'local-only-book',
+        'local-only-memory',
+      );
+
+      // 快照数据被写入
+      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: 'snap-book' })]),
+      );
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'snap-model' }));
+      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'snap-cover' }),
+      );
+
+      // store 内存状态仅包含快照模型
+      expect(mockAIModelsStore.models).toHaveLength(1);
+      expect(mockAIModelsStore.models[0]).toMatchObject({ id: 'snap-model' });
+    });
+
+    it('覆盖后快照条目全部出现，不受 lastEdited 影响', async () => {
+      const oldDate = new Date('2020-01-01').toISOString();
+      mockSettingsStore.gistSync.lastSyncTime = new Date('2024-01-01').getTime();
+
+      // 本地已存在同 id 条目（更新时间较新），但覆盖不做任何 lastEdited 比较
+      mockBooksStore.books = [
+        { id: 'b1', title: 'Local Newer', lastEdited: new Date('2025-01-01').toISOString() },
+      ];
+
+      const remoteData = {
+        novels: [{ id: 'b1', title: 'Snap Older', lastEdited: oldDate }],
+        aiModels: [{ id: 'm1', name: 'Snap Model', lastEdited: oldDate }],
+        coverHistory: [{ id: 'c1', url: 'old.jpg' }],
+        memories: [
+          {
+            id: 'mem1',
+            bookId: 'b1',
+            content: 'c',
+            summary: 's',
+            createdAt: 1,
+            lastAccessedAt: 1,
+          },
+        ],
+      };
+
+      await SyncDataService.overwriteFromSnapshot(remoteData);
+
+      // 书籍使用快照版本（即使比本地旧）
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      expect(addedBooks[0]).toMatchObject({ id: 'b1', title: 'Snap Older' });
+
+      // 模型、封面、记忆都被写入
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
+      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'c1' }),
+      );
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'mem1',
+        'c',
+        's',
+        expect.objectContaining({ createdAt: 1, lastAccessedAt: 1 }),
+      );
+    });
+
+    it('覆盖后 deletedNovelIds / deletedModelIds 被清空', async () => {
+      mockSettingsStore.gistSync = {
+        lastSyncTime: 123,
+        deletedNovelIds: [{ id: 'old-n', deletedAt: 100 }],
+        deletedModelIds: [{ id: 'old-m', deletedAt: 100 }],
+        deletedCoverIds: [{ id: 'old-c', deletedAt: 100 }],
+        deletedCoverUrls: [],
+        deletedMemoryIds: [{ id: 'old-mem', deletedAt: 100 }],
+      };
+
+      await SyncDataService.overwriteFromSnapshot({
+        novels: [],
+        aiModels: [],
+        coverHistory: [],
+        memories: [],
+      });
+
+      // updateGistSync 最后一次调用应包含清空的 deletedNovelIds/deletedModelIds
+      const lastCall = mockSettingsStore.updateGistSync.mock.calls.at(-1)?.[0] as any;
+      expect(lastCall.deletedNovelIds).toEqual([]);
+      expect(lastCall.deletedModelIds).toEqual([]);
+    });
+
+    it('覆盖 appSettings 后保留本地 Gist 凭据与 lastSyncTime', async () => {
+      const localGistSync = {
+        enabled: true,
+        lastSyncTime: 999,
+        syncInterval: 60_000,
+        syncType: 'gist',
+        syncParams: { gistId: 'local-gist', username: 'local-user' },
+        secret: 'local-token',
+        apiEndpoint: '',
+        deletedNovelIds: [],
+        deletedModelIds: [],
+        deletedCoverIds: [],
+        deletedCoverUrls: [],
+        deletedMemoryIds: [],
+      };
+      mockSettingsStore.gistSync = localGistSync as any;
+
+      await SyncDataService.overwriteFromSnapshot({
+        novels: [],
+        aiModels: [],
+        coverHistory: [],
+        memories: [],
+        appSettings: {
+          theme: 'snap-theme',
+          syncs: [
+            {
+              syncType: 'gist',
+              enabled: false,
+              secret: 'snap-token',
+              syncParams: { gistId: 'snap-gist', username: 'snap-user' },
+              lastSyncTime: 0,
+            },
+          ],
+        },
+      });
+
+      // appSettings 被导入
+      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ theme: 'snap-theme' }),
+      );
+
+      // 随后 updateGistSync 用本地凭据覆盖
+      const lastCall = mockSettingsStore.updateGistSync.mock.calls.at(-1)?.[0] as any;
+      expect(lastCall).toMatchObject({
+        enabled: true,
+        lastSyncTime: 999,
+        secret: 'local-token',
+        syncParams: { gistId: 'local-gist', username: 'local-user' },
+        deletedNovelIds: [],
+        deletedModelIds: [],
+      });
+    });
+
+    it('validateRemoteData 失败时抛错且不触碰本地数据', async () => {
+      const invalidData = {
+        // novels 不是数组，应该触发验证失败
+        novels: 'not-an-array' as any,
+      };
+
+      let thrown: unknown;
+      try {
+        await SyncDataService.overwriteFromSnapshot(invalidData as any);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain('远程数据格式无效');
+
+      expect(mockBooksStore.clearBooks).not.toHaveBeenCalled();
+      expect(mockAIModelsStore.clearModels).not.toHaveBeenCalled();
+      expect(mockCoverHistoryStore.clearHistory).not.toHaveBeenCalled();
+      expect(mockBooksStore.bulkAddBooks).not.toHaveBeenCalled();
+    });
+
+    it('写入过程抛异常时回滚到覆盖前状态', async () => {
+      mockBooksStore.books = [
+        { id: 'orig-book', title: 'Original', lastEdited: new Date().toISOString() },
+      ];
+
+      // bulkAddBooks 抛错，模拟写入失败
+      mockBooksStore.bulkAddBooks.mockImplementationOnce(() => {
+        throw new Error('write failed');
+      });
+
+      let thrown: unknown;
+      try {
+        await SyncDataService.overwriteFromSnapshot({
+          novels: [{ id: 'snap-book', title: 'Snap', lastEdited: new Date().toISOString() }],
+          aiModels: [],
+          coverHistory: [],
+          memories: [],
+        });
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain('write failed');
+
+      // 回滚：备份中的 orig-book 被重新写回
+      const restoreCalls = mockBooksStore.bulkAddBooks.mock.calls;
+      const lastRestoreCall = restoreCalls.at(-1)?.[0] as Array<any>;
+      expect(lastRestoreCall).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'orig-book' })]),
+      );
     });
   });
 });

@@ -8,9 +8,7 @@ import InputNumber from 'primevue/inputnumber';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
-import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
@@ -145,9 +143,7 @@ const props = defineProps<{
   visible: boolean;
 }>();
 
-const aiModelsStore = useAIModelsStore();
 const booksStore = useBooksStore();
-const coverHistoryStore = useCoverHistoryStore();
 const settingsStore = useSettingsStore();
 const toast = useToastWithHistory();
 const confirm = useConfirm();
@@ -466,7 +462,8 @@ const revertToRevision = (version: string, event?: Event) => {
 
   confirm.require({
     group: 'sync',
-    message: '确定要恢复到该修订版本吗？这将覆盖当前本地数据。',
+    message:
+      '确定要恢复到该修订版本吗？这将用该版本的快照完全覆盖本地数据，本地独有且未同步的内容（包括书籍、记忆、AI 模型等）将会丢失，无法找回。',
     header: '确认恢复',
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
@@ -501,24 +498,9 @@ const revertToRevision = (version: string, event?: Event) => {
           const result = yield gistSyncService.downloadFromGistRevision(config, version);
 
           if (result.success && result.data) {
-            // 恢复模式：先清空本地数据，确保完全覆盖（Restore behavior）
-            // 这样 SyncDataService.applyDownloadedData 就会将远程数据视为"新数据"直接添加
-            // 从而实现"完全覆盖本地数据"的效果
-            yield booksStore.clearBooks();
-            // 这里必须 await，否则会与 applyDownloadedData 内部的导入流程产生竞态：
-            // 如果 clearModels/clearHistory 的 Promise 在导入完成后才 resolve，会把刚导入的数据清空，导致“恢复/下载后模型与封面为空”
-            yield aiModelsStore.clearModels();
-            yield coverHistoryStore.clearHistory();
-
-            // 应用下载的数据（总是使用最新的 lastEdited 时间）
-            // 恢复模式：保留所有远程书籍，即使它们的 lastEdited 时间早于 lastSyncTime
-            const items = yield SyncDataService.applyDownloadedData(result.data, undefined, true);
-
-            // 如果有可恢复的项目，显示恢复对话框
-            if (items && items.length > 0) {
-              restorableItems.value = items;
-              showRestoreDialog.value = true;
-            }
+            // 完全覆盖：SyncDataService 内部会清空所有已同步数据、按快照写回，
+            // 并清空删除记录。恢复模式下不弹出"恢复已删除项"对话框。
+            yield SyncDataService.overwriteFromSnapshot(result.data);
 
             yield settingsStore.updateLastSyncTime();
             gistLastSyncTime.value = Date.now();
