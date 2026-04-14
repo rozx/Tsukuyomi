@@ -11,10 +11,7 @@ import { navigationTools } from './navigation-tools';
 import { todoListTools } from './todo-list-tools';
 import { askUserTools } from './ask-user-tools';
 import { taskStatusTools } from './task-status-tools';
-import {
-  createTranslationTools,
-  type CreateTranslationToolsOptions,
-} from './translation-tools';
+import { createTranslationTools, type CreateTranslationToolsOptions } from './translation-tools';
 import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { jsonrepair } from 'jsonrepair';
@@ -43,6 +40,8 @@ const NAVIGATION_AND_LIST_TOOLS = [
   'list_terms',
   'list_memories',
 ];
+
+const TODO_MUTATION_TOOLS = ['create_todo', 'update_todos', 'delete_todo'] as const;
 
 export class ToolRegistry {
   /**
@@ -124,16 +123,11 @@ export class ToolRegistry {
     return [...this.getAllTools(bookId), ...this.getHelpDocsTools()];
   }
 
-  static getTranslationToolsForAI(
-    options?: CreateTranslationToolsOptions,
-  ): AITool[] {
+  static getTranslationToolsForAI(options?: CreateTranslationToolsOptions): AITool[] {
     return this.mapTools(createTranslationTools(options));
   }
 
-  static getAllTools(
-    bookId?: string,
-    toolOptions?: CreateTranslationToolsOptions,
-  ): AITool[] {
+  static getAllTools(bookId?: string, toolOptions?: CreateTranslationToolsOptions): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具始终可用（不需要 bookId）
       ...this.getWebSearchTools(),
@@ -284,6 +278,7 @@ export class ToolRegistry {
         : undefined;
     const allTools = this.getToolsExcludingTranslationManagement(bookId, toolOptions);
     let tools = this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
+    tools = this.filterTools(tools, TODO_MUTATION_TOOLS);
 
     // 书籍级配置：在翻译相关任务中跳过 ask_user（不向模型提供该工具）
     if (options?.excludeAskUser) {
@@ -402,9 +397,7 @@ export class ToolRegistry {
         ...(chunkIndex !== undefined ? { chunkIndex } : {}),
         ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
         ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
-        ...(enableOriginalTextValidation !== undefined
-          ? { enableOriginalTextValidation }
-          : {}),
+        ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}),
       });
 
       // 记录工具调用成功
