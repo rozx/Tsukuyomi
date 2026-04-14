@@ -15,6 +15,7 @@ import AppMessage from 'src/components/common/AppMessage.vue';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { MemoryService } from 'src/services/memory-service';
+import { SettingsService } from 'src/services/settings-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -449,16 +450,10 @@ const handleExport = () => {
       lastAccessedAt: m.lastAccessedAt,
     }));
 
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${props.book.title}-记忆-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    SettingsService.downloadJson(
+      exportData,
+      `${props.book.title}-记忆-${new Date().toISOString().split('T')[0]}.json`,
+    );
 
     toast.add({
       severity: 'success',
@@ -491,8 +486,8 @@ const handleFileSelect = async (event: Event) => {
   }
 
   try {
-    const content = await file.text();
-    const importedMemories = JSON.parse(content) as Partial<Memory>[];
+    const data = await SettingsService.readJsonFile(file);
+    const importedMemories = data as Partial<Memory>[];
 
     if (!Array.isArray(importedMemories) || importedMemories.length === 0) {
       toast.add({
@@ -639,14 +634,14 @@ const handleFileSelect = async (event: Event) => {
             title="重新向量化本书"
           />
           <Button
-            icon="pi pi-download"
+            icon="pi pi-upload"
             class="p-button-outlined p-button-sm"
             :disabled="memories.length === 0"
             @click="handleExport"
             title="导出"
           />
           <Button
-            icon="pi pi-upload"
+            icon="pi pi-download"
             class="p-button-outlined p-button-sm"
             @click="handleImport"
             title="导入"

@@ -656,7 +656,7 @@ const handleFileSelect = async (event: Event) => {
             />
             <Button
               label="导出"
-              icon="pi pi-download"
+              icon="pi pi-upload"
               size="small"
               class="p-button-outlined flex-shrink-0"
               :disabled="!props.book?.terminologies || props.book.terminologies.length === 0"
@@ -664,7 +664,7 @@ const handleFileSelect = async (event: Event) => {
             />
             <Button
               label="导入"
-              icon="pi pi-upload"
+              icon="pi pi-download"
               size="small"
               class="p-button-outlined flex-shrink-0"
               @click="handleImport"

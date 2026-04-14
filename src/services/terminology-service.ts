@@ -1,6 +1,7 @@
 import type { Occurrence, Terminology, Translation, Novel } from 'src/models/novel';
 import { flatMap, isEmpty, isArray } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
+import { SettingsService } from 'src/services/settings-service';
 import {
   UniqueIdGenerator,
   extractIds,
@@ -294,95 +295,44 @@ export class TerminologyService {
    * @param filename 文件名（可选，默认包含日期）
    */
   static exportTerminologiesToJson(terminologies: Terminology[], filename?: string): void {
-    try {
-      const jsonString = JSON.stringify(terminologies, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename || `terminologies-${new Date().toISOString().split('T')[0]}.json`;
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      throw new Error(error instanceof Error ? error.message : '导出术语时发生未知错误');
-    }
+    SettingsService.downloadJson(
+      terminologies,
+      filename || `terminologies-${new Date().toISOString().split('T')[0]}.json`,
+    );
   }
 
-  /**
-   * 从文件导入术语
-   * @param file 文件对象
-   * @returns Promise<Terminology[]> 导入的术语数组
-   */
-  static importTerminologiesFromFile(file: File): Promise<Terminology[]> {
-    return new Promise((resolve, reject) => {
-      // 验证文件类型
-      const isValidFile =
-        file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
+  static async importTerminologiesFromFile(file: File): Promise<Terminology[]> {
+    const data = await SettingsService.readJsonFile(file);
 
-      if (!isValidFile) {
-        reject(new Error('请选择 JSON 或 TXT 格式的文件'));
-        return;
-      }
+    let terminologies: Terminology[] = [];
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const data = JSON.parse(content);
-
-          let terminologies: Terminology[] = [];
-
-          if (Array.isArray(data)) {
-            // 验证每个术语的基本结构
-            for (const term of data) {
-              if (
-                !term.id ||
-                !term.name ||
-                !term.translation ||
-                typeof term.translation.translation !== 'string'
-              ) {
-                reject(new Error('文件格式错误：术语数据不完整'));
-                return;
-              }
-            }
-            terminologies = data as Terminology[];
-          } else if (typeof data === 'object' && data !== null) {
-            // 处理键值对格式 { "term name": "term translation" }
-            terminologies = Object.entries(data).map(([name, translation]) => ({
-              id: `import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              name,
-              translation: {
-                id: `trans-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                translation: String(translation),
-                aiModelId: 'manual-import',
-              },
-              description: undefined,
-            }));
-          } else {
-            reject(new Error('文件格式错误：应为术语数组或键值对对象'));
-            return;
-          }
-
-          resolve(terminologies);
-        } catch (error) {
-          reject(
-            new Error(
-              error instanceof Error
-                ? `解析文件时发生错误：${error.message}`
-                : '解析文件时发生未知错误',
-            ),
-          );
+    if (Array.isArray(data)) {
+      for (const term of data) {
+        if (
+          !term.id ||
+          !term.name ||
+          !term.translation ||
+          typeof term.translation.translation !== 'string'
+        ) {
+          throw new Error('文件格式错误：术语数据不完整');
         }
-      };
+      }
+      terminologies = data as Terminology[];
+    } else if (typeof data === 'object' && data !== null) {
+      terminologies = Object.entries(data).map(([name, translation]) => ({
+        id: `import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        translation: {
+          id: `trans-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          translation: String(translation),
+          aiModelId: 'manual-import',
+        },
+        description: undefined,
+      }));
+    } else {
+      throw new Error('文件格式错误：应为术语数组或键值对对象');
+    }
 
-      reader.onerror = () => {
-        reject(new Error('读取文件时发生错误'));
-      };
-
-      reader.readAsText(file);
-    });
+    return terminologies;
   }
 }

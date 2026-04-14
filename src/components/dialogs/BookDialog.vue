@@ -20,6 +20,8 @@ import TranslatableChips from '../translation/TranslatableChips.vue';
 import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { MemoryService } from 'src/services/memory-service';
+import { SettingsService } from 'src/services/settings-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
@@ -233,35 +235,24 @@ const handleExportJson = async () => {
       } as Novel;
     }
 
-    // 创建 JSON 字符串
-    const jsonString = JSON.stringify(exportData, null, 2);
+    // 加载书籍的记忆数据
+    const bookId = exportData.id;
+    const memories = bookId ? await MemoryService.getAllMemories(bookId) : [];
 
-    // 创建 Blob
-    const blob = new Blob([jsonString], { type: 'application/json' });
+    const exportPayload = {
+      novel: exportData,
+      ...(memories.length > 0 ? { memories } : {}),
+    };
 
-    // 创建下载链接
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-
-    // 生成文件名（使用书名或默认名称）
     const title = formData.value.title || props.book?.title || 'book';
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
     const timestamp = new Date().toISOString().split('T')[0];
-    link.download = `${sanitizedTitle}-${timestamp}.json`;
-
-    // 触发下载
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // 清理 URL
-    URL.revokeObjectURL(url);
+    SettingsService.downloadJson(exportPayload, `${sanitizedTitle}-${timestamp}.json`);
 
     toast.add({
       severity: 'success',
       summary: '导出成功',
-      detail: '书籍数据已成功导出为 JSON 文件',
+      detail: `书籍数据已成功导出为 JSON 文件${memories.length > 0 ? `（含 ${memories.length} 条记忆）` : ''}`,
       life: 3000,
     });
   } catch (error) {

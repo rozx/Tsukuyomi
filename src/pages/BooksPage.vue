@@ -21,6 +21,8 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { useContextStore } from 'src/stores/context';
 import { CoverService } from 'src/services/cover-service';
+import { MemoryService } from 'src/services/memory-service';
+import { SettingsService } from 'src/services/settings-service';
 import type { Novel } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
@@ -303,68 +305,16 @@ const handleFileSelect = async (event: Event) => {
     return;
   }
 
-  // 验证文件类型
-  const isValidFile =
-    file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
-
-  if (!isValidFile) {
-    toast.add({
-      severity: 'error',
-      summary: '导入失败',
-      detail: '请选择 JSON 或 TXT 格式的文件',
-      life: 3000,
-    });
-    target.value = '';
-    return;
-  }
-
   try {
-    // 读取文件
-    const content = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        resolve(e.target?.result as string);
-      };
-      reader.onerror = () => {
-        reject(new Error('读取文件时发生错误'));
-      };
-      reader.readAsText(file);
-    });
-
-    // 解析 JSON
-    const data = JSON.parse(content);
-
-    // 处理导入的数据
-    let importedBooks: Novel[] = [];
-
-    // 如果数据是数组，直接使用
-    if (Array.isArray(data)) {
-      importedBooks = data;
-    }
-    // 如果数据是单个书籍对象
-    else if (data && typeof data === 'object' && data.title) {
-      importedBooks = [data];
-    }
-    // 如果数据包含 novels 字段（Settings 格式）
-    else if (data.novels && Array.isArray(data.novels)) {
-      importedBooks = data.novels;
-    }
-    // 如果数据包含单个 novel 字段
-    else if (data.novel && typeof data.novel === 'object') {
-      importedBooks = [data.novel];
-    } else {
-      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
-    }
-
-    if (importedBooks.length === 0) {
-      throw new Error('文件中没有找到有效的书籍数据');
-    }
+    const data = await SettingsService.readJsonFile(file);
+    const { novels: importedBooks, memoriesByBookId } = SettingsService.parseBookImportData(data);
 
     // 验证并导入书籍
     const now = new Date();
     let successCount = 0;
     let errorCount = 0;
     const importedIds: string[] = [];
+    const oldIdToNewId = new Map<string, string>();
 
     for (const bookData of importedBooks) {
       try {
@@ -374,34 +324,20 @@ const handleFileSelect = async (event: Event) => {
           continue;
         }
 
-        // 创建新书籍对象
+        // 创建新书籍对象（展开全部字段，仅覆盖 id 和时间戳）
         const newBook: Novel = {
+          ...bookData,
           id: uuidv4(),
-          title: bookData.title,
-          ...(bookData.alternateTitles && Array.isArray(bookData.alternateTitles)
-            ? { alternateTitles: bookData.alternateTitles }
-            : {}),
-          ...(bookData.author && typeof bookData.author === 'string'
-            ? { author: bookData.author }
-            : {}),
-          ...(bookData.description && typeof bookData.description === 'string'
-            ? { description: bookData.description }
-            : {}),
-          ...(bookData.tags && Array.isArray(bookData.tags) ? { tags: bookData.tags } : {}),
-          ...(bookData.webUrl && Array.isArray(bookData.webUrl) ? { webUrl: bookData.webUrl } : {}),
-          ...(bookData.cover && typeof bookData.cover === 'object' && bookData.cover.url
-            ? { cover: bookData.cover }
-            : {}),
-          ...(bookData.volumes && Array.isArray(bookData.volumes)
-            ? { volumes: bookData.volumes }
-            : {}),
-          ...(bookData.starred !== undefined ? { starred: Boolean(bookData.starred) } : {}),
           createdAt: bookData.createdAt ? new Date(bookData.createdAt) : now,
           lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
         };
 
         await booksStore.addBook(newBook);
         importedIds.push(newBook.id);
+
+        if (bookData.id) {
+          oldIdToNewId.set(bookData.id, newBook.id);
+        }
 
         // 如果书籍有封面，添加到封面历史
         if (newBook.cover) {
@@ -415,13 +351,39 @@ const handleFileSelect = async (event: Event) => {
       }
     }
 
+    // 导入附带记忆
+    let importedMemoryCount = 0;
+    let memoryErrorCount = 0;
+    for (const [oldBookId, memories] of memoriesByBookId) {
+      const newBookId = oldIdToNewId.get(oldBookId);
+      if (!newBookId) continue;
+      for (const mem of memories) {
+        try {
+          await MemoryService.createMemoryWithId(newBookId, mem.id, mem.content, mem.summary, {
+            createdAt: mem.createdAt,
+            lastAccessedAt: mem.lastAccessedAt,
+          });
+          importedMemoryCount++;
+        } catch (e) {
+          console.error(`导入记忆 ${mem.id} 失败:`, e);
+          memoryErrorCount++;
+        }
+      }
+    }
+
     // 显示结果
     if (successCount > 0) {
       const idsToDelete = [...importedIds];
+      const memSummary =
+        importedMemoryCount > 0
+          ? `（含 ${importedMemoryCount} 条记忆${memoryErrorCount > 0 ? `，${memoryErrorCount} 条失败` : ''}）`
+          : memoryErrorCount > 0
+            ? `（${memoryErrorCount} 条记忆导入失败）`
+            : '';
       toast.add({
         severity: 'success',
         summary: '导入成功',
-        detail: `成功导入 ${successCount} 本书籍${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
+        detail: `成功导入 ${successCount} 本书籍${memSummary}${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
         life: 3000,
         onRevert: async () => {
           for (const id of idsToDelete) {
@@ -701,12 +663,16 @@ const handleSave = async (formData: Partial<Novel>) => {
 <template>
   <div class="w-full h-full flex flex-col p-3 sm:p-4 lg:p-6">
     <!-- 头部 -->
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+    <div
+      class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
+    >
       <div class="flex-shrink-0 min-w-0">
         <h1 class="text-2xl font-bold">书籍列表</h1>
         <p class="text-moon/70 mt-1">管理您的翻译书籍</p>
       </div>
-      <div class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap">
+      <div
+        class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap"
+      >
         <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
@@ -862,7 +828,9 @@ const handleSave = async (formData: Partial<Novel>) => {
                 </div>
 
                 <!-- 操作按钮 -->
-                <div class="book-card-actions flex items-center gap-1 pt-1.5 border-t border-white/5">
+                <div
+                  class="book-card-actions flex items-center gap-1 pt-1.5 border-t border-white/5"
+                >
                   <Button
                     :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                     :class="[

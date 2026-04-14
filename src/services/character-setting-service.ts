@@ -1,11 +1,7 @@
-import type {
-  CharacterSetting,
-  Alias,
-  Translation,
-  Novel,
-} from 'src/models/novel';
+import type { CharacterSetting, Alias, Translation, Novel } from 'src/models/novel';
 import { flatMap, isEmpty, isArray, sortBy, isEqual } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
+import { SettingsService } from 'src/services/settings-service';
 import {
   UniqueIdGenerator,
   extractIds,
@@ -77,7 +73,7 @@ export class CharacterSettingService {
     if (charData.aliases && charData.aliases.length > 0) {
       for (const aliasData of charData.aliases) {
         if (!aliasData.name.trim()) continue;
-        
+
         aliases.push({
           name: aliasData.name,
           translation: {
@@ -146,9 +142,7 @@ export class CharacterSettingService {
     // 如果更新名称，检查是否与其他角色冲突
     const nameChanged = updates.name && updates.name !== existingChar.name;
     if (nameChanged) {
-      const nameConflict = currentSettings.find(
-        (c) => c.id !== charId && c.name === updates.name,
-      );
+      const nameConflict = currentSettings.find((c) => c.id !== charId && c.name === updates.name);
       if (nameConflict) {
         throw new Error(`角色 "${updates.name}" 已存在`);
       }
@@ -156,7 +150,7 @@ export class CharacterSettingService {
 
     // 准备更新后的数据
     const updatedName = updates.name ?? existingChar.name;
-    
+
     // 处理翻译更新
     let updatedTranslation = existingChar.translation;
     if (updates.translation !== undefined) {
@@ -173,50 +167,50 @@ export class CharacterSettingService {
     if (updates.aliases !== undefined) {
       updatedAliases = [];
       for (const aliasData of updates.aliases) {
-         if (!aliasData.name.trim()) continue;
+        if (!aliasData.name.trim()) continue;
 
-         // 检查该别名是否属于其他角色（作为主名称或别名）
-         const aliasBelongsToOtherCharacter = currentSettings.some((c) => {
-           if (c.id === charId) return false; // 跳过当前角色
-           // 检查是否与其他角色的主名称冲突
-           if (c.name === aliasData.name) return true;
-           // 检查是否与其他角色的别名冲突
-           if (c.aliases?.some((a) => a.name === aliasData.name)) return true;
-           return false;
-         });
+        // 检查该别名是否属于其他角色（作为主名称或别名）
+        const aliasBelongsToOtherCharacter = currentSettings.some((c) => {
+          if (c.id === charId) return false; // 跳过当前角色
+          // 检查是否与其他角色的主名称冲突
+          if (c.name === aliasData.name) return true;
+          // 检查是否与其他角色的别名冲突
+          if (c.aliases?.some((a) => a.name === aliasData.name)) return true;
+          return false;
+        });
 
-         // 如果别名属于其他角色，跳过该别名
-         if (aliasBelongsToOtherCharacter) {
-           console.warn(
-             `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
-           );
-           continue;
-         }
+        // 如果别名属于其他角色，跳过该别名
+        if (aliasBelongsToOtherCharacter) {
+          console.warn(
+            `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
+          );
+          continue;
+        }
 
-         // 尝试查找现有的别名（按名称匹配）
-         const existingAlias = (existingChar.aliases || []).find(a => a.name === aliasData.name);
-         
-         if (existingAlias) {
-           // 保留现有别名，但更新翻译
-           updatedAliases.push({
-             name: aliasData.name,
-             translation: {
-               id: existingAlias.translation.id, // 保留原有 ID
-               translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-               aiModelId: existingAlias.translation.aiModelId,
-             },
-           });
-         } else {
-           // 创建新别名
-           updatedAliases.push({
-             name: aliasData.name,
-             translation: {
-                id: generateShortId(),
-                translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-                aiModelId: '',
-             },
-           });
-         }
+        // 尝试查找现有的别名（按名称匹配）
+        const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
+
+        if (existingAlias) {
+          // 保留现有别名，但更新翻译
+          updatedAliases.push({
+            name: aliasData.name,
+            translation: {
+              id: existingAlias.translation.id, // 保留原有 ID
+              translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
+              aiModelId: existingAlias.translation.aiModelId,
+            },
+          });
+        } else {
+          // 创建新别名
+          updatedAliases.push({
+            name: aliasData.name,
+            translation: {
+              id: generateShortId(),
+              translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
+              aiModelId: '',
+            },
+          });
+        }
       }
     }
 
@@ -249,14 +243,11 @@ export class CharacterSettingService {
     }
 
     // 更新书籍
-    const updatedSettings = currentSettings.map((c) =>
-      c.id === charId ? updatedChar : c,
-    );
+    const updatedSettings = currentSettings.map((c) => (c.id === charId ? updatedChar : c));
     await booksStore.updateBook(bookId, {
       characterSettings: updatedSettings,
       lastEdited: new Date(),
     });
-
 
     return updatedChar;
   }
@@ -297,81 +288,30 @@ export class CharacterSettingService {
     characterSettings: CharacterSetting[],
     filename?: string,
   ): void {
-    try {
-      const jsonString = JSON.stringify(characterSettings, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename || `characters-${new Date().toISOString().split('T')[0]}.json`;
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      throw new Error(error instanceof Error ? error.message : '导出角色设定时发生未知错误');
-    }
+    SettingsService.downloadJson(
+      characterSettings,
+      filename || `characters-${new Date().toISOString().split('T')[0]}.json`,
+    );
   }
 
-  /**
-   * 从文件导入角色设定
-   * @param file 文件对象
-   * @returns Promise<CharacterSetting[]> 导入的角色设定数组
-   */
-  static importCharacterSettingsFromFile(file: File): Promise<CharacterSetting[]> {
-    return new Promise((resolve, reject) => {
-      // 验证文件类型
-      const isValidFile =
-        file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
+  static async importCharacterSettingsFromFile(file: File): Promise<CharacterSetting[]> {
+    const data = await SettingsService.readJsonFile(file);
 
-      if (!isValidFile) {
-        reject(new Error('请选择 JSON 或 TXT 格式的文件'));
-        return;
+    if (!Array.isArray(data)) {
+      throw new Error('文件格式错误：应为角色设定数组');
+    }
+
+    for (const char of data) {
+      if (
+        !char.id ||
+        !char.name ||
+        !char.translation ||
+        typeof char.translation.translation !== 'string'
+      ) {
+        throw new Error('文件格式错误：角色设定数据不完整');
       }
+    }
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const data = JSON.parse(content);
-
-          // 验证数据格式
-          if (!Array.isArray(data)) {
-            reject(new Error('文件格式错误：应为角色设定数组'));
-            return;
-          }
-
-          // 验证每个角色的基本结构
-          for (const char of data) {
-            if (
-              !char.id ||
-              !char.name ||
-              !char.translation ||
-              typeof char.translation.translation !== 'string'
-            ) {
-              reject(new Error('文件格式错误：角色设定数据不完整'));
-              return;
-            }
-          }
-
-          resolve(data as CharacterSetting[]);
-        } catch (error) {
-          reject(
-            new Error(
-              error instanceof Error
-                ? `解析文件时发生错误：${error.message}`
-                : '解析文件时发生未知错误',
-            ),
-          );
-        }
-      };
-
-      reader.onerror = () => {
-        reject(new Error('读取文件时发生错误'));
-      };
-
-      reader.readAsText(file);
-    });
+    return data as CharacterSetting[];
   }
 }

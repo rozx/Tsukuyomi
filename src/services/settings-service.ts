@@ -9,46 +9,46 @@ import { SyncType } from 'src/models/sync';
  * 设置服务
  * 处理设置的导入和导出
  */
+export interface BookImportData {
+  novels: Novel[];
+  memoriesByBookId: Map<string, Memory[]>;
+}
+
 export class SettingsService {
-  /**
-   * 将值转换为时间戳（number）
-   * 如果已经是 number，直接返回；如果是 Date 或字符串，转换为时间戳
-   * @param value 时间值（Date、number 或字符串）
-   * @returns 时间戳（number）
-   */
   private static toTimestamp(value: Date | number | string): number {
     if (typeof value === 'number') {
       return value;
     }
     return new Date(value).getTime();
   }
-  /**
-   * 导出设置到 JSON 文件
-   * @param settings 要导出的设置数据
-   * @returns ExportResult 导出结果
-   */
+
+  static downloadJson(data: unknown, filename: string): void {
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  static async readJsonFile(file: File): Promise<unknown> {
+    const isValidFile =
+      file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
+    if (!isValidFile) {
+      throw new Error('请选择 JSON 或 TXT 格式的文件');
+    }
+    const content = await file.text();
+    return JSON.parse(content);
+  }
+
   static exportSettings(settings: Settings): ExportResult {
     try {
-      // 创建 JSON 字符串
-      const jsonString = JSON.stringify(settings, null, 2);
-
-      // 创建 Blob
-      const blob = new Blob([jsonString], { type: 'application/json' });
-
-      // 创建下载链接
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`;
-
-      // 触发下载
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // 清理 URL
-      URL.revokeObjectURL(url);
-
+      const filename = `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`;
+      this.downloadJson(settings, filename);
       return {
         success: true,
         message: '设置已成功导出到本地文件',
@@ -76,43 +76,15 @@ export class SettingsService {
    * @returns Promise<ImportResult> 导入结果
    */
   static async importSettingsFromFile(file: File): Promise<ImportResult> {
-    return new Promise((resolve) => {
-      // 验证文件类型
-      if (!this.validateFileType(file)) {
-        resolve({
-          success: false,
-          error: '请选择 JSON 或 TXT 格式的文件',
-        });
-        return;
-      }
-
-      // 读取文件
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const settings = JSON.parse(content) as Settings;
-
-          // 验证并解析设置数据
-          const result = this.validateAndParseSettings(settings);
-          resolve(result);
-        } catch (error) {
-          resolve({
-            success: false,
-            error: error instanceof Error ? error.message : '解析设置文件时发生未知错误',
-          });
-        }
+    try {
+      const settings = (await this.readJsonFile(file)) as Settings;
+      return this.validateAndParseSettings(settings);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '解析设置文件时发生未知错误',
       };
-
-      reader.onerror = () => {
-        resolve({
-          success: false,
-          error: '读取文件时发生错误',
-        });
-      };
-
-      reader.readAsText(file);
-    });
+    }
   }
 
   /**
@@ -398,6 +370,64 @@ export class SettingsService {
         ...(validSync.length > 0 ? { sync: validSync } : {}),
         ...(validAppSettings ? { appSettings: validAppSettings } : {}),
       },
+    };
+  }
+
+  static parseBookImportData(raw: unknown): BookImportData {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+    }
+
+    const data = raw as Record<string, unknown>;
+    let novels: unknown[] = [];
+    let rawMemories: unknown[] = [];
+    let memoriesAnchorBookId: string | undefined;
+
+    if (Array.isArray(data)) {
+      novels = data;
+    } else if (data.novels && Array.isArray(data.novels)) {
+      novels = data.novels;
+      if (data.memories && Array.isArray(data.memories)) {
+        rawMemories = data.memories;
+      }
+    } else if (data.novel && typeof data.novel === 'object') {
+      novels = [data.novel];
+      if (data.memories && Array.isArray(data.memories)) {
+        rawMemories = data.memories;
+        memoriesAnchorBookId = (data.novel as Record<string, unknown>).id as string | undefined;
+      }
+    } else if (data.title) {
+      novels = [data];
+    } else {
+      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+    }
+
+    if (novels.length === 0) {
+      throw new Error('文件中没有找到有效的书籍数据');
+    }
+
+    const memoriesByBookId = new Map<string, Memory[]>();
+    if (rawMemories.length > 0) {
+      if (memoriesAnchorBookId) {
+        memoriesByBookId.set(memoriesAnchorBookId, rawMemories as Memory[]);
+      } else {
+        for (const mem of rawMemories) {
+          const m = mem as Record<string, unknown>;
+          if (m.bookId) {
+            let list = memoriesByBookId.get(m.bookId as string);
+            if (!list) {
+              list = [];
+              memoriesByBookId.set(m.bookId as string, list);
+            }
+            list.push(mem as Memory);
+          }
+        }
+      }
+    }
+
+    return {
+      novels: novels as Novel[],
+      memoriesByBookId,
     };
   }
 }
