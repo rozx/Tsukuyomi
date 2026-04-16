@@ -10,6 +10,10 @@ import {
   buildLocalManifest,
   manifestToHashes,
 } from 'src/services/sync-manifest-builder';
+import {
+  normalizeMemoriesForSync,
+  stripNovelLocalFields,
+} from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
 
@@ -246,10 +250,15 @@ export function useSyncExecutor() {
 
       // ── 阶段 3：计算本地 manifest，判断是否需要上传 ──
       // 加载所有章节内容以用于 manifest 哈希与上传
-      const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+      const novelsLoaded = await ChapterContentService.loadAllChapterContentsForNovels(
         booksStore.books,
       );
-      const memoriesByBook = await collectMemoriesByBook();
+      const rawMemoriesByBook = await collectMemoriesByBook();
+
+      // 规范化：剥离本地字段 + 按 id 排序 memory，确保内容不变时 hash 稳定
+      // （embedding / memoryScoreBreakdown 等字段会异步变化，会污染 hash 导致误认为"有变更"）
+      const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
+      const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
 
       const localManifest = await buildLocalManifest({
         appSettings: settingsStore.getAllSettings(),
