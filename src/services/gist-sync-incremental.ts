@@ -394,10 +394,17 @@ export function filenamesForEntry(
 
 /**
  * 条件 GET：使用 `If-None-Match` 头检查远端是否有变化
- * @returns 包含响应与 `notModified` 标志的结果
+ *
+ * 不使用 Octokit 的包装，直接走 `fetch`——Octokit 对非 2xx 状态码一律抛异常，
+ * 会把 304（期望的"未修改"路径）也当作错误输出到 DevTools。
+ * 直接 fetch 可以干净地处理 304，无 console 噪音。
+ *
+ * @param token GitHub Personal Access Token
+ * @param gistId Gist ID
+ * @param lastETag 上次已知的 ETag（可选），用于条件请求
  */
 export async function conditionalGetGist(
-  octokit: Octokit,
+  token: string,
   gistId: string,
   lastETag?: string,
 ): Promise<
@@ -410,39 +417,50 @@ export async function conditionalGetGist(
       htmlUrl?: string;
     }
 > {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `token ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
   if (lastETag) headers['If-None-Match'] = lastETag;
 
-  try {
-    const response = await octokit.rest.gists.get({
-      gist_id: gistId,
-      headers,
-    });
-    const etag = (response.headers?.etag as string | undefined) ?? '';
-    return {
-      notModified: false,
-      etag,
-      updatedAt: response.data.updated_at ?? '',
-      files: (response.data.files ?? {}) as Record<string, GistFileLike>,
-      ...(response.data.html_url ? { htmlUrl: response.data.html_url } : {}),
-    };
-  } catch (error) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const status = (error as any)?.status ?? (error as any)?.response?.status;
-    if (status === 304) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const etagHeader = (error as any)?.response?.headers?.etag as string | undefined;
-      return { notModified: true, etag: etagHeader ?? lastETag ?? '' };
-    }
-    throw error;
+  const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method: 'GET',
+    headers,
+  });
+
+  const etag = response.headers.get('etag') ?? '';
+
+  if (response.status === 304) {
+    return { notModified: true, etag: etag || lastETag || '' };
   }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(
+      `GitHub Gist API 错误 ${response.status}: ${text.slice(0, 200)}`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    files?: Record<string, GistFileLike>;
+    updated_at?: string;
+    html_url?: string;
+  };
+
+  return {
+    notModified: false,
+    etag,
+    updatedAt: data.updated_at ?? '',
+    files: (data.files ?? {}) as Record<string, GistFileLike>,
+    ...(data.html_url ? { htmlUrl: data.html_url } : {}),
+  };
 }
 
 /**
  * 下载：基于 manifest 的选择性拉取
  */
 export async function downloadWithManifest(
-  octokit: Octokit,
   config: SyncConfig,
   onProgress?: (progress: { current: number; total: number; message: string }) => void,
 ): Promise<IncrementalDownloadResult> {
@@ -453,7 +471,8 @@ export async function downloadWithManifest(
 
   onProgress?.({ current: 0, total: 1, message: '正在检查远程变更...' });
 
-  const result = await conditionalGetGist(octokit, gistId, config.lastRemoteETag);
+  const token = config.secret || config.syncParams.token || '';
+  const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
   if (result.notModified) {
     return { success: true, skipped: true, remoteETag: result.etag };
   }

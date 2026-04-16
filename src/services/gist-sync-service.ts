@@ -2260,11 +2260,7 @@ export class GistSyncService {
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<IncrementalDownloadResult> {
     this.validateConfig(config);
-    this.initializeOctokit(config);
-    if (!this.octokit) {
-      throw new Error('Octokit 客户端未初始化');
-    }
-    return downloadWithManifest(this.octokit, config, onProgress);
+    return downloadWithManifest(config, onProgress);
   }
 
   /**
@@ -2298,15 +2294,12 @@ export class GistSyncService {
     | { status: 'changed'; etag: string; files: Record<string, unknown> }
   > {
     this.validateConfig(config);
-    this.initializeOctokit(config);
-    if (!this.octokit) {
-      throw new Error('Octokit 客户端未初始化');
-    }
     const gistId = config.syncParams.gistId;
     if (!gistId) {
       throw new Error('Gist ID 未配置');
     }
-    const result = await conditionalGetGist(this.octokit, gistId, config.lastRemoteETag);
+    const token = config.secret || config.syncParams.token || '';
+    const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
     if (result.notModified) {
       return { status: 'unchanged', etag: result.etag };
     }
