@@ -751,10 +751,25 @@ export async function uploadIncremental(
     message: '正在上传...',
   });
 
-  // 排序：manifest 之外的文件先分批上传；manifest 作为最后一批单独上传。
-  // 这保证若中途某批失败，Gist 仍指向旧 manifest，状态一致（孤儿文件无害但不会"部分指向新布局"）。
+  // 排序：先分批上传新增/变更内容（非 null），然后在最后一个原子 PATCH 里
+  // 同时写入 manifest 与所有删除标记（null）。
+  //
+  // 为什么删除必须与 manifest 同批：
+  // - 若先单独 PATCH 删除、再 PATCH manifest，中间任一失败都会留下
+  //   "旧 manifest 引用已被删除的文件"的坏状态，下次下载会读空。
+  // - 合并在一个 PATCH 里，GitHub 保证该请求要么全部生效要么全部回滚。
+  //
+  // 为什么 GitHub 不能接受"全 null"的 PATCH：
+  // - 只含 null 条目的 files 对象会被视作空，返回 422 missing_field:files。
+  //   把 manifest（非 null）和删除放一起顺带消除这个陷阱。
   const BATCH_SIZE = 10;
   const nonManifestEntries = Object.entries(allFiles);
+  const additions = nonManifestEntries.filter(
+    (kv): kv is [string, { content: string }] => kv[1] !== null,
+  );
+  const deletions = nonManifestEntries.filter(
+    (kv): kv is [string, null] => kv[1] === null,
+  );
   let newETag = '';
   let htmlUrl: string | undefined;
   let newUpdatedAt = '';
@@ -780,31 +795,32 @@ export async function uploadIncremental(
     }
   };
 
-  // 先上传所有非 manifest 文件
+  // 阶段 1：分批上传所有新增/变更的文件（均为非 null 内容）
   const totalFilesIncludingManifest = nonManifestEntries.length + 1;
   let firstBatch = true;
-  for (let i = 0; i < nonManifestEntries.length; i += BATCH_SIZE) {
-    const slice = nonManifestEntries.slice(i, i + BATCH_SIZE);
+  let uploadedCount = 0;
+  for (let i = 0; i < additions.length; i += BATCH_SIZE) {
+    const slice = additions.slice(i, i + BATCH_SIZE);
     const batch: Record<string, { content: string } | null> = {};
     for (const [name, f] of slice) batch[name] = f;
 
     await runBatch(batch, firstBatch);
     firstBatch = false;
+    uploadedCount = Math.min(i + BATCH_SIZE, additions.length);
 
     onProgress?.({
-      current: Math.min(i + BATCH_SIZE, nonManifestEntries.length),
+      current: uploadedCount,
       total: totalFilesIncludingManifest,
-      message: `已上传 ${Math.min(i + BATCH_SIZE, nonManifestEntries.length)} / ${totalFilesIncludingManifest}`,
+      message: `已上传 ${uploadedCount} / ${totalFilesIncludingManifest}`,
     });
   }
 
-  // 最后一批：写入 manifest——此时所有内容文件都已就位，切换指针是原子的
-  await runBatch(
-    {
-      [MANIFEST_FILE_NAME]: { content: JSON.stringify(localManifest) },
-    },
-    firstBatch,
-  );
+  // 阶段 2：原子提交——manifest + 删除一起写
+  // 即使 deletions 为空，finalBatch 也至少包含 manifest，不会出现空 files 对象
+  const finalBatch: Record<string, { content: string } | null> = {};
+  for (const [name, f] of deletions) finalBatch[name] = f;
+  finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
+  await runBatch(finalBatch, firstBatch);
 
   onProgress?.({
     current: totalFilesIncludingManifest,
