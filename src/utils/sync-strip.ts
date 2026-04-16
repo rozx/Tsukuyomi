@@ -1,5 +1,6 @@
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
+import type { AppSettings } from 'src/models/settings';
 
 /**
  * 剥离 Memory 的本地字段：
@@ -75,4 +76,36 @@ export function normalizeMemoriesForSync(
     result[bookId] = sortMemoriesById(memories.map(stripMemoryLocalFields));
   }
   return result;
+}
+
+/**
+ * 剥离 AppSettings 中不参与同步的本地字段：
+ * - `syncs`：每个设备的同步状态（lastSyncTime / lastRemoteETag / knownRemoteHashes / 删除记录等），
+ *   每次同步都会更新，若参与同步会导致 hash 永远不稳定。GitHub token 等也是设备专属的。
+ * - `memoryInjection.embeddingModelCached`：浏览器 Cache Storage 探测结果，是设备本地状态。
+ *
+ * 剥离后的 AppSettings 用于 manifest hash 与上传。下载合并时，本地 `syncs` 与
+ * `embeddingModelCached` 保持不变（见 `settingsStore.importSettings` 的实现）。
+ */
+export function stripAppSettingsLocalFields(
+  settings: AppSettings & { syncs?: unknown },
+): AppSettings {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { syncs: _syncs, memoryInjection: rawMemoryInjection, ...rest } = settings;
+
+  const memoryInjection = rawMemoryInjection
+    ? (() => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { embeddingModelCached: _c, ...miRest } = rawMemoryInjection as unknown as Record<
+          string,
+          unknown
+        >;
+        return miRest as unknown as AppSettings['memoryInjection'];
+      })()
+    : rawMemoryInjection;
+
+  return {
+    ...(rest as AppSettings),
+    ...(memoryInjection ? { memoryInjection } : {}),
+  };
 }

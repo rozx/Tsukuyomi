@@ -12,6 +12,7 @@ import {
 } from 'src/services/sync-manifest-builder';
 import {
   normalizeMemoriesForSync,
+  stripAppSettingsLocalFields,
   stripNovelLocalFields,
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
@@ -256,12 +257,15 @@ export function useSyncExecutor() {
       const rawMemoriesByBook = await collectMemoriesByBook();
 
       // 规范化：剥离本地字段 + 按 id 排序 memory，确保内容不变时 hash 稳定
-      // （embedding / memoryScoreBreakdown 等字段会异步变化，会污染 hash 导致误认为"有变更"）
+      // - novel: 剥离 translations 里的 memoryScoreBreakdown（AI 打分 UI 状态）
+      // - memory: 剥离 embedding / embeddingModel（异步生成），按 id 排序
+      // - settings: 剥离 syncs（每次同步都变）和 embeddingModelCached（设备本地状态）
       const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
       const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
+      const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
 
       const localManifest = await buildLocalManifest({
-        appSettings: settingsStore.getAllSettings(),
+        appSettings: appSettingsForSync,
         aiModels: aiModelsStore.models,
         coverHistory: coverHistoryStore.covers,
         novels: novelsWithContent,
@@ -402,7 +406,7 @@ export function useSyncExecutor() {
         const uploadResult = await gistSyncService.uploadToGistIncremental(
           latestConfig,
           {
-            appSettings: settingsStore.getAllSettings(),
+            appSettings: appSettingsForSync,
             aiModels: aiModelsStore.models,
             coverHistory: coverHistoryStore.covers,
             novels: novelsWithContent,
