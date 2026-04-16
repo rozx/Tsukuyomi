@@ -5,11 +5,13 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 import {
   ENTRY_KEYS,
   MANIFEST_SCHEMA_VERSION,
+  TOMBSTONE_TTL_MS,
   memoriesEntryKey,
   novelEntryKey,
   type GistManifest,
   type ManifestDiff,
   type ManifestEntry,
+  type Tombstone,
 } from 'src/models/manifest';
 import { hashJson } from 'src/utils/content-hash';
 
@@ -24,6 +26,13 @@ export interface LocalManifestInput {
   coverHistory: CoverHistoryItem[];
   novels: Novel[];
   memoriesByBook: Record<string, Memory[]>;
+  /**
+   * 墓碑：entryKey -> deletedAt ISO。
+   * 由调用方合并"本地删除记录 + 上次已知的远端墓碑"后传入。
+   * 超过 TTL 的墓碑会在此函数中被修剪。
+   * 当前仅支持 `novel:<bookId>` 形式的墓碑。
+   */
+  tombstones?: Record<string, string>;
 }
 
 /**
@@ -88,11 +97,27 @@ export async function buildLocalManifest(input: LocalManifestInput): Promise<Gis
     };
   }
 
-  return {
+  // 构造墓碑：过滤掉已在 entries 中复活的键，以及超过 TTL 的旧墓碑
+  const liveKeys = new Set(Object.keys(entries));
+  const now = Date.now();
+  const tombstones: Record<string, Tombstone> = {};
+  for (const [key, deletedAtIso] of Object.entries(input.tombstones ?? {})) {
+    if (liveKeys.has(key)) continue; // 条目已复活，墓碑失效
+    const t = new Date(deletedAtIso).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (now - t > TOMBSTONE_TTL_MS) continue; // 超过 TTL，修剪
+    tombstones[key] = { deletedAt: deletedAtIso };
+  }
+
+  const manifest: GistManifest = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
     entries,
   };
+  if (Object.keys(tombstones).length > 0) {
+    manifest.tombstones = tombstones;
+  }
+  return manifest;
 }
 
 /**

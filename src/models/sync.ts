@@ -39,6 +39,9 @@ export interface SyncConfig {
   // 上次已知的远程 manifest 条目哈希表（entryKey -> sha256 hex）
   // 用于增量上传/下载的 diff 计算
   knownRemoteHashes?: Record<string, string>;
+  // 上次已知的远程墓碑（entryKey -> deletedAt ISO 字符串）
+  // 用于在多设备间保留墓碑，避免单设备上传时丢失其他设备记录的删除
+  knownRemoteTombstones?: Record<string, string>;
 }
 
 export enum SyncType {

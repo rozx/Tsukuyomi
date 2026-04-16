@@ -53,6 +53,7 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     updateLastSyncedModelIds: mock(() => Promise.resolve()),
     updateLastRemoteETag: mock(() => Promise.resolve()),
     updateKnownRemoteHashes: mock(() => Promise.resolve()),
+    updateKnownRemoteTombstones: mock(() => Promise.resolve()),
     cleanupOldDeletionRecords: mock(() => Promise.resolve()),
     getAllSettings: mock(() => ({ lastEdited: new Date(0) })),
     updateGistSync: mock(() => Promise.resolve()),
@@ -151,6 +152,7 @@ describe('useGistSync (manifest-driven flow)', () => {
           },
         },
         deletedEntries: [],
+        remoteTombstones: {},
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
       const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
@@ -166,9 +168,8 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(mockSettingsStore.updateKnownRemoteHashes).toHaveBeenCalled();
     });
 
-    it('remote deletion: propagates to local via applyRemoteDeletions', async () => {
+    it('remote deletion with tombstone: propagates with deletedAt timestamp', async () => {
       const remoteManifest = makeManifest();
-      // Simulate: book-2 was in knownRemote but is no longer in remote manifest
       spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
         success: true,
         skipped: false,
@@ -176,7 +177,10 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteUpdatedAt: '2026-04-16T00:00:00Z',
         manifest: remoteManifest,
         changedEntries: {},
-        deletedEntries: [novelEntryKey('book-2')],
+        deletedEntries: [
+          { key: novelEntryKey('book-2'), deletedAt: '2026-04-15T12:00:00Z' },
+        ],
+        remoteTombstones: { [novelEntryKey('book-2')]: '2026-04-15T12:00:00Z' },
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
       spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
@@ -186,7 +190,12 @@ describe('useGistSync (manifest-driven flow)', () => {
       const { sync } = useGistSync();
       await sync();
 
-      expect(deleteSpy).toHaveBeenCalledWith([novelEntryKey('book-2')]);
+      expect(deleteSpy).toHaveBeenCalledWith([
+        { key: novelEntryKey('book-2'), deletedAt: '2026-04-15T12:00:00Z' },
+      ]);
+      expect(mockSettingsStore.updateKnownRemoteTombstones).toHaveBeenCalledWith({
+        [novelEntryKey('book-2')]: '2026-04-15T12:00:00Z',
+      });
     });
 
     it('remote deletion empty: skips applyRemoteDeletions entirely', async () => {
@@ -199,6 +208,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         manifest: remoteManifest,
         changedEntries: {},
         deletedEntries: [],
+        remoteTombstones: {},
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
       spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
@@ -221,6 +231,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         schemaVersionTooNew: true,
         changedEntries: {},
         deletedEntries: [],
+        remoteTombstones: {},
         remoteEntryKeys: [],
       } as any);
 
@@ -384,6 +395,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         needsMigration: true,
         changedEntries: {},
         deletedEntries: [],
+        remoteTombstones: {},
         remoteEntryKeys: [],
       } as any);
       const legacyDownloadSpy = spyOn(
@@ -432,6 +444,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         needsMigration: true,
         changedEntries: {},
         deletedEntries: [],
+        remoteTombstones: {},
         remoteEntryKeys: [],
       } as any);
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue({

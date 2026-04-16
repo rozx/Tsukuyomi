@@ -241,6 +241,11 @@ export function useSyncExecutor() {
           }
         }
         try {
+          await settingsStore.updateKnownRemoteTombstones(downloadResult.remoteTombstones);
+        } catch (error) {
+          console.error('[useSyncExecutor] 保存 knownRemoteTombstones 失败:', error);
+        }
+        try {
           await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
         } catch (error) {
           console.error('[useSyncExecutor] 保存 lastRemoteETag 失败:', error);
@@ -269,15 +274,33 @@ export function useSyncExecutor() {
       const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
       const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
 
+      const latestConfig = configOverride ?? settingsStore.gistSync;
+
+      // 合并墓碑：本地删除记录 (deletedNovelIds) + 上次从远端拉取的墓碑快照
+      // 过期墓碑（> 30 天）会在 buildLocalManifest 中被过滤
+      const tombstones: Record<string, string> = {};
+      for (const [k, ds] of Object.entries(latestConfig.knownRemoteTombstones ?? {})) {
+        tombstones[k] = ds;
+      }
+      for (const record of latestConfig.deletedNovelIds ?? []) {
+        const key = `novel:${record.id}`;
+        const existing = tombstones[key];
+        const existingMs = existing ? new Date(existing).getTime() : 0;
+        // 取较新的删除时间
+        if (!existing || record.deletedAt > existingMs) {
+          tombstones[key] = new Date(record.deletedAt).toISOString();
+        }
+      }
+
       const localManifest = await buildLocalManifest({
         appSettings: appSettingsForSync,
         aiModels: aiModelsStore.models,
         coverHistory: coverHistoryStore.covers,
         novels: novelsWithContent,
         memoriesByBook,
+        tombstones,
       });
 
-      const latestConfig = configOverride ?? settingsStore.gistSync;
       const knownHashes = latestConfig.knownRemoteHashes ?? {};
       const localHashes = manifestToHashes(localManifest);
       const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
@@ -416,6 +439,7 @@ export function useSyncExecutor() {
             coverHistory: coverHistoryStore.covers,
             novels: novelsWithContent,
             memoriesByBook,
+            tombstones,
           },
           remoteFilesSnapshot as Parameters<
             typeof gistSyncService.uploadToGistIncremental
@@ -440,6 +464,12 @@ export function useSyncExecutor() {
         try {
           await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
           await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
+          // 同步上传后的 manifest.tombstones 回 knownRemoteTombstones，供下次上传合并
+          const uploadedTombstones: Record<string, string> = {};
+          for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
+            uploadedTombstones[k] = v.deletedAt;
+          }
+          await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
           await settingsStore.updateLastSyncTime();
           await settingsStore.cleanupOldDeletionRecords();
         } catch (error) {

@@ -362,6 +362,9 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.knownRemoteHashes !== undefined
           ? { knownRemoteHashes: toPlain(sync.knownRemoteHashes) }
           : {}),
+        ...(sync.knownRemoteTombstones !== undefined
+          ? { knownRemoteTombstones: toPlain(sync.knownRemoteTombstones) }
+          : {}),
       };
 
       await store.put({ id, ...clean });
@@ -935,6 +938,9 @@ export const useSettingsStore = defineStore('settings', {
       const knownRemoteHashes =
         updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
 
+      const knownRemoteTombstones =
+        updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -962,6 +968,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
         ...(lastRemoteETag !== undefined ? { lastRemoteETag } : {}),
         ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
+        ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
       };
 
       if (index >= 0) {
@@ -1118,6 +1125,13 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateKnownRemoteHashes(hashes: Record<string, string>): Promise<void> {
       await this.updateGistSync({ knownRemoteHashes: hashes });
+    },
+
+    /**
+     * 更新已知的远程 manifest 墓碑表（entryKey -> deletedAt ISO）
+     */
+    async updateKnownRemoteTombstones(tombstones: Record<string, string>): Promise<void> {
+      await this.updateGistSync({ knownRemoteTombstones: tombstones });
     },
 
     /**

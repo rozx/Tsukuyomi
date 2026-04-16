@@ -2412,16 +2412,19 @@ export class SyncDataService {
   }
 
   /**
-   * 应用远端删除：当远端 manifest 中不再包含某条目（但 `knownRemoteHashes` 中有）时，
-   * 意味着另一台设备删除了它。本方法把这些删除传播到本地。
+   * 应用远端删除：把远端 manifest 中的墓碑或隐式删除传播到本地。
    *
-   * 冲突策略：若本地版本在上次同步之后被**修改过**（lastEdited > lastSyncTime），
-   * 视为"本地主动持有"，不执行远端删除——下次上传会把本地版本重新推送到远端。
+   * 冲突策略：
+   * - 若传入 `deletedAt`（来自远端墓碑）：对比本地 `lastEdited` 与 `deletedAt`；
+   *   若本地更新更晚，视为"本地主动持有"，保留本地；否则删除。
+   * - 若未传入 `deletedAt`（隐式删除，无墓碑信息）：回退到"本地在 lastSyncTime 后修改过则保留"的启发式。
    *
-   * @param deletedEntryKeys 远端已删除的 entry keys（如 `novel:abc`、`memories:xyz`）
+   * @param deletions 远端已删除的条目列表，可选带 deletedAt（墓碑时间戳）
    */
-  static async applyRemoteDeletions(deletedEntryKeys: string[]): Promise<void> {
-    if (!deletedEntryKeys.length) return;
+  static async applyRemoteDeletions(
+    deletions: Array<{ key: string; deletedAt?: string }>,
+  ): Promise<void> {
+    if (!deletions.length) return;
 
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
@@ -2430,7 +2433,16 @@ export class SyncDataService {
     const gistSync = GlobalConfig.getGistSyncSnapshot();
     const lastSyncTime = gistSync?.lastSyncTime ?? 0;
 
-    for (const key of deletedEntryKeys) {
+    // 阈值：有墓碑用墓碑时间，否则回退到 lastSyncTime
+    const thresholdFor = (deletedAt: string | undefined): number => {
+      if (deletedAt) {
+        const t = new Date(deletedAt).getTime();
+        if (Number.isFinite(t)) return t;
+      }
+      return lastSyncTime;
+    };
+
+    for (const { key, deletedAt } of deletions) {
       try {
         // novel:<id> — 删除本地书籍（包括章节内容与 memories）
         if (key.startsWith('novel:')) {
@@ -2441,10 +2453,11 @@ export class SyncDataService {
           const localTime = localBook.lastEdited
             ? new Date(localBook.lastEdited).getTime()
             : 0;
-          if (localTime > lastSyncTime) {
-            // 本地有较新编辑——保留本地，下次上传会重新推送
+          const threshold = thresholdFor(deletedAt);
+          if (localTime > threshold) {
+            // 本地编辑晚于删除时间（或 lastSyncTime）——保留本地
             console.info(
-              `[SyncDataService] 跳过远端删除 ${key}：本地有未同步的编辑`,
+              `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
             );
             continue;
           }
@@ -2457,19 +2470,19 @@ export class SyncDataService {
           continue;
         }
 
-        // memories:<bookId> — 清空该书的所有 memories
+        // memories:<bookId> — 清空该书的所有 memories（无墓碑，回退 lastSyncTime 启发式）
         if (key.startsWith('memories:')) {
           const bookId = key.slice('memories:'.length);
           const localMemories = await MemoryService.getAllMemories(bookId);
           if (localMemories.length === 0) continue;
 
-          // 若本地有任意 memory 在上次同步后被访问/更新，保留——视为本地活动
+          const threshold = thresholdFor(deletedAt);
           const hasRecent = localMemories.some(
-            (m) => m.lastAccessedAt > lastSyncTime,
+            (m) => m.lastAccessedAt > threshold,
           );
           if (hasRecent) {
             console.info(
-              `[SyncDataService] 跳过远端删除 ${key}：本地有未同步的 memory 活动`,
+              `[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`,
             );
             continue;
           }
@@ -2484,8 +2497,7 @@ export class SyncDataService {
           continue;
         }
 
-        // ai-models / cover-history / settings 作为聚合条目，极少被"整体删除"。
-        // 出于安全起见，不执行整表删除——若真有此需求，用户可以手动操作。
+        // 聚合条目（ai-models / cover-history / settings）：不做整体删除
         if (
           key === 'ai-models' ||
           key === 'cover-history' ||
@@ -2494,7 +2506,6 @@ export class SyncDataService {
           console.info(
             `[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`,
           );
-          // 刻意读取以避免"变量未使用"警告（aiModelsStore 将来可能用到）
           void aiModelsStore;
           continue;
         }

@@ -8,8 +8,6 @@ import {
   MANIFEST_FILE_NAME,
   MANIFEST_SCHEMA_VERSION,
   ENTRY_KEYS,
-  memoriesEntryKey,
-  novelEntryKey,
   parseMemoriesEntryKey,
   parseNovelEntryKey,
   type GistManifest,
@@ -55,6 +53,8 @@ export interface UploadPayload {
   coverHistory: CoverHistoryItem[];
   novels: Novel[]; // 已加载完整章节内容
   memoriesByBook: Record<string, Memory[]>;
+  /** 墓碑：entryKey -> deletedAt ISO（仅 `novel:<id>` 形式） */
+  tombstones?: Record<string, string>;
 }
 
 /**
@@ -93,10 +93,14 @@ export type IncrementalDownloadResult =
       /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化/新增的条目） */
       changedEntries: Record<string, EntryValue>;
       /**
-       * 远端已删除的条目 keys（在 knownRemote 中但不在远端 manifest 中）。
-       * 调用方应该据此在本地执行对应删除（可按本地编辑时间与 lastSyncTime 比较决定是否跳过）。
+       * 远端已删除的条目（合并两种来源：
+       * 1. 在 knownRemote 中但不在远端 manifest.entries 中
+       * 2. 在远端 manifest.tombstones 中
+       * `deletedAt` 来自墓碑，没有墓碑时为 undefined（调用方将回退到 lastSyncTime 比较）
        */
-      deletedEntries: string[];
+      deletedEntries: Array<{ key: string; deletedAt?: string }>;
+      /** 远端 manifest 中的完整墓碑表（用于持久化到 SyncConfig 并在下次上传时合并） */
+      remoteTombstones: Record<string, string>;
       /** 远端仍然存在的 entry keys（用于识别远端删除） */
       remoteEntryKeys: string[];
     };
@@ -497,6 +501,7 @@ export async function downloadWithManifest(
       needsMigration: true,
       changedEntries: {},
       deletedEntries: [],
+      remoteTombstones: {},
       remoteEntryKeys: [],
     };
   }
@@ -529,6 +534,9 @@ export async function downloadWithManifest(
       schemaVersionTooNew: true,
       changedEntries: {},
       deletedEntries: [],
+      remoteTombstones: Object.fromEntries(
+        Object.entries(remoteManifest.tombstones ?? {}).map(([k, v]) => [k, v.deletedAt]),
+      ),
       remoteEntryKeys: Object.keys(remoteManifest.entries),
     };
   }
@@ -563,6 +571,23 @@ export async function downloadWithManifest(
 
   onProgress?.({ current: total, total, message: '下载完成' });
 
+  // 合并两种"删除"来源：
+  // 1. 隐式：knownRemote 中有，但远端 manifest.entries 中没有（diff.deleted）
+  // 2. 显式：远端 manifest.tombstones 中的记录
+  const remoteTombstoneMap: Record<string, string> = Object.fromEntries(
+    Object.entries(remoteManifest.tombstones ?? {}).map(([k, v]) => [k, v.deletedAt]),
+  );
+
+  const deletionKeys = new Set<string>(diff.deleted);
+  for (const tk of Object.keys(remoteTombstoneMap)) {
+    deletionKeys.add(tk);
+  }
+  const deletedEntries: Array<{ key: string; deletedAt?: string }> = [];
+  for (const key of deletionKeys) {
+    const ds = remoteTombstoneMap[key];
+    deletedEntries.push(ds !== undefined ? { key, deletedAt: ds } : { key });
+  }
+
   return {
     success: true,
     skipped: false,
@@ -570,7 +595,8 @@ export async function downloadWithManifest(
     remoteUpdatedAt: updatedAt,
     manifest: remoteManifest,
     changedEntries,
-    deletedEntries: diff.deleted,
+    deletedEntries,
+    remoteTombstones: remoteTombstoneMap,
     remoteEntryKeys: Object.keys(remoteManifest.entries),
   };
 }
@@ -596,6 +622,7 @@ export async function uploadIncremental(
     coverHistory: payload.coverHistory,
     novels: payload.novels,
     memoriesByBook: payload.memoriesByBook,
+    ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
   });
 
   const knownHashes = config.knownRemoteHashes ?? {};

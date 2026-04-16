@@ -24,6 +24,17 @@ export interface ManifestEntry {
 }
 
 /**
+ * 墓碑记录：已删除条目的显式标记（用于跨设备传播 novel 的删除）
+ * - `deletedAt`：ISO 8601 字符串，用于与本地条目的 lastEdited 做时间戳比较
+ *
+ * 墓碑只用于 `novel:<bookId>` 键。聚合条目（settings / ai-models / cover-history）
+ * 与 `memories:<bookId>` 的删除通过"entry 消失 + 哈希变化"隐式表达，不使用墓碑。
+ */
+export interface Tombstone {
+  deletedAt: string;
+}
+
+/**
  * Gist 中的 manifest.json 结构
  * - `schemaVersion`：布局版本号；旧版本客户端遇到更大的值必须拒绝同步
  * - `updatedAt`：生成 manifest 时的客户端时间（仅供调试，不参与决策）
@@ -39,7 +50,19 @@ export interface GistManifest {
   schemaVersion: number;
   updatedAt: string;
   entries: Record<string, ManifestEntry>;
+  /**
+   * 可选墓碑记录：键（例如 `novel:abc`）-> 删除时间。
+   * 上传时，来自本地删除记录（`deletedNovelIds`）与上次见到的远端墓碑合并后写入。
+   * 超过 TTL（默认 30 天）的墓碑会被修剪。
+   */
+  tombstones?: Record<string, Tombstone>;
 }
+
+/**
+ * 墓碑 TTL：超过这个时长的墓碑会在下一次上传时被修剪
+ * 与 `cleanupOldDeletionRecords` 的 30 天窗口保持一致
+ */
+export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Manifest 条目键的命名空间前缀
