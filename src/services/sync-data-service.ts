@@ -2204,6 +2204,195 @@ export class SyncDataService {
   }
 
   /**
+   * 基于哈希比对检测本地是否有需要上传的变更。
+   *
+   * 比较本地 manifest 的每个条目哈希与 `knownRemoteHashes`（上次已知的远端状态）。
+   * - 任一条目哈希不同 → 有变更
+   * - 本地存在但 known 不存在 → 有变更（新条目）
+   * - known 存在但本地不存在 → 有变更（本地删除）
+   *
+   * @param localHashes 当前本地 manifest 的 entryKey -> hash 字典
+   * @param knownRemoteHashes SyncConfig 中持久化的上次已知远端哈希字典
+   */
+  static hasLocalChangesByHash(
+    localHashes: Record<string, string>,
+    knownRemoteHashes: Record<string, string>,
+  ): boolean {
+    const localKeys = new Set(Object.keys(localHashes));
+    const knownKeys = new Set(Object.keys(knownRemoteHashes));
+
+    for (const key of localKeys) {
+      if (!knownKeys.has(key)) return true; // 本地新增
+      if (localHashes[key] !== knownRemoteHashes[key]) return true; // 哈希不同
+    }
+    for (const key of knownKeys) {
+      if (!localKeys.has(key)) return true; // 本地删除
+    }
+    return false;
+  }
+
+  /**
+   * 基于 manifest diff 的选择性应用：仅合并变化的条目到本地。
+   *
+   * 与 `applyDownloadedData` 的差异：
+   * - 输入是按 entry key 反序列化的 map（已经是选择性下载的结果）
+   * - 每个条目按类型独立合并，不扫描全量数据
+   * - 本方法不创建备份——调用方（executor）负责 backup/rollback 语义
+   *
+   * 合并规则：
+   * - `settings`：比较 lastEdited，使用较新者
+   * - `ai-models`：远端为准（应用时已经做过时间比较）
+   * - `cover-history`：远端为准
+   * - `novel:<id>`：使用 mergeNovelWithLocalContent 保留本地章节内容
+   * - `memories:<id>`：按 lastAccessedAt 合并每本书的 memory 列表，内容去重
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static async applyPartialRemoteData(changedEntries: Record<string, any>): Promise<void> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    for (const [entryKey, entry] of Object.entries(changedEntries)) {
+      if (!entry || typeof entry !== 'object' || !('kind' in entry)) continue;
+
+      const kind = (entry as { kind: string }).kind;
+      try {
+        if (kind === 'settings') {
+          const remoteSettings = (entry as { value: Record<string, unknown> }).value;
+          const localSettings = settingsStore.getAllSettings();
+          const localTime = localSettings.lastEdited
+            ? new Date(localSettings.lastEdited as unknown as string).getTime()
+            : 0;
+          const remoteTime = remoteSettings.lastEdited
+            ? new Date(remoteSettings.lastEdited as unknown as string).getTime()
+            : 0;
+          if (remoteTime > localTime) {
+            await settingsStore.importSettings(remoteSettings);
+          }
+        } else if (kind === 'ai-models') {
+          const remoteModels = (entry as { value: Array<Record<string, unknown>> }).value;
+          // 按 ID 合并：远端每个模型与本地同 ID 比较 lastEdited
+          for (const rm of remoteModels) {
+            const localModel = aiModelsStore.models.find((m) => m.id === (rm.id as string));
+            if (!localModel) {
+              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              continue;
+            }
+            const lt = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
+            const rt = rm.lastEdited ? new Date(rm.lastEdited as string).getTime() : 0;
+            if (rt > lt) {
+              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+            }
+          }
+          // 同步 store
+          const modelIds = new Set(remoteModels.map((m) => m.id as string));
+          aiModelsStore.models = aiModelsStore.models.filter((m) => modelIds.has(m.id) || !remoteModels.find((rm) => rm.id === m.id));
+          // 重新读取以获得最新状态
+          for (const rm of remoteModels) {
+            const idx = aiModelsStore.models.findIndex((m) => m.id === (rm.id as string));
+            if (idx >= 0) {
+              aiModelsStore.models[idx] = rm as unknown as (typeof aiModelsStore.models)[number];
+            } else {
+              aiModelsStore.models.push(rm as unknown as (typeof aiModelsStore.models)[number]);
+            }
+          }
+        } else if (kind === 'cover-history') {
+          const remoteCovers = (entry as { value: Array<Record<string, unknown>> }).value;
+          // 简单策略：逐个添加/更新（store.addCover 是 upsert）
+          await coverHistoryStore.clearHistory();
+          for (const rc of remoteCovers) {
+            await coverHistoryStore.addCover(rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0]);
+          }
+        } else if (kind === 'novel') {
+          const remoteNovel = (entry as { value: Novel }).value;
+          const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
+          if (!localNovel) {
+            // 新增书籍：直接加
+            await booksStore.bulkAddBooks([remoteNovel]);
+          } else {
+            const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
+            const remoteTime = remoteNovel.lastEdited ? new Date(remoteNovel.lastEdited).getTime() : 0;
+            if (remoteTime > localTime) {
+              const merged = await SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel);
+              await booksStore.bulkAddBooks([merged]);
+            }
+            // 若 localTime >= remoteTime：保持本地不变，后续上传会把本地新版本推上去
+          }
+        } else if (kind === 'memories') {
+          const bookId = (entry as { bookId: string }).bookId;
+          const remoteMemories = (entry as { value: Memory[] }).value;
+          const localMemories = await MemoryService.getAllMemories(bookId);
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedMemoryIds = gistSync?.deletedMemoryIds || [];
+          const deletedMap = new Map<string, number>(
+            deletedMemoryIds.map((r) => [r.id, r.deletedAt]),
+          );
+
+          const localById = new Map(localMemories.map((m) => [m.id, m]));
+          const finalMap = new Map<string, Memory>(localById);
+
+          for (const rm of remoteMemories) {
+            const deletion = deletedMap.get(rm.id);
+            if (deletion !== undefined && deletion > lastSyncTime) {
+              // 本地删除晚于上次同步——不恢复
+              continue;
+            }
+            const existing = finalMap.get(rm.id);
+            if (!existing) {
+              finalMap.set(rm.id, rm);
+            } else if (rm.lastAccessedAt > existing.lastAccessedAt) {
+              finalMap.set(rm.id, rm);
+            }
+          }
+
+          // 先删除不在最终列表中的本地 memory
+          for (const local of localMemories) {
+            if (!finalMap.has(local.id)) continue; // 保留的，无需操作
+          }
+
+          // 内容去重：同 content 保留 lastAccessedAt 更大的
+          const byContent = new Map<string, Memory>();
+          for (const m of finalMap.values()) {
+            const ex = byContent.get(m.content);
+            if (!ex || m.lastAccessedAt > ex.lastAccessedAt) {
+              byContent.set(m.content, m);
+            }
+          }
+
+          const finalList = Array.from(byContent.values());
+          const finalIds = new Set(finalList.map((m) => m.id));
+
+          // 删除不在 finalList 的本地 memory
+          for (const local of localMemories) {
+            if (!finalIds.has(local.id)) {
+              try {
+                await MemoryService.deleteMemory(bookId, local.id);
+              } catch (e) {
+                console.warn(`[SyncDataService] 删除 Memory ${local.id} 失败:`, e);
+              }
+            }
+          }
+
+          // 保存最终列表（createMemoryWithId 内部是 upsert）
+          for (const m of finalList) {
+            await MemoryService.createMemoryWithId(m.bookId, m.id, m.content, m.summary, {
+              createdAt: m.createdAt,
+              lastAccessedAt: m.lastAccessedAt,
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[SyncDataService] applyPartialRemoteData 处理条目 ${entryKey} 失败:`, error);
+        // 继续处理其他条目，不中止整个 apply
+      }
+    }
+  }
+
+  /**
    * 合并远程书籍数据与本地章节内容
    * 当应用远程书籍数据时，保留本地书籍的章节内容
    * @param remoteNovel 远程书籍数据
