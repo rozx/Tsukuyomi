@@ -350,8 +350,17 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.deletedCoverUrls !== undefined
           ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) }
           : {}),
+        ...(sync.deletedMemoryIds !== undefined
+          ? { deletedMemoryIds: toPlain(sync.deletedMemoryIds) }
+          : {}),
         ...(sync.lastRemoteUpdatedAt !== undefined
           ? { lastRemoteUpdatedAt: String(sync.lastRemoteUpdatedAt) }
+          : {}),
+        ...(sync.lastRemoteETag !== undefined
+          ? { lastRemoteETag: String(sync.lastRemoteETag) }
+          : {}),
+        ...(sync.knownRemoteHashes !== undefined
+          ? { knownRemoteHashes: toPlain(sync.knownRemoteHashes) }
           : {}),
       };
 
@@ -920,6 +929,12 @@ export const useSettingsStore = defineStore('settings', {
       const lastRemoteUpdatedAt =
         updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
 
+      const lastRemoteETag =
+        updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
+
+      const knownRemoteHashes =
+        updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -945,6 +960,8 @@ export const useSettingsStore = defineStore('settings', {
         ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
         ...(deletedMemoryIds !== undefined ? { deletedMemoryIds } : {}),
         ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
+        ...(lastRemoteETag !== undefined ? { lastRemoteETag } : {}),
+        ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
       };
 
       if (index >= 0) {
@@ -1083,9 +1100,24 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 更新上次同步时远程 Gist 的 updated_at 时间戳
+     * @deprecated 由 updateLastRemoteETag 取代；保留仅用于迁移期代码路径
      */
     async updateLastRemoteUpdatedAt(timestamp: string): Promise<void> {
       await this.updateGistSync({ lastRemoteUpdatedAt: timestamp });
+    },
+
+    /**
+     * 更新上次远程 Gist 响应的 ETag（用于条件 GET 与伪 CAS）
+     */
+    async updateLastRemoteETag(etag: string): Promise<void> {
+      await this.updateGistSync({ lastRemoteETag: etag });
+    },
+
+    /**
+     * 更新已知的远程 manifest 哈希表（entryKey -> hash）
+     */
+    async updateKnownRemoteHashes(hashes: Record<string, string>): Promise<void> {
+      await this.updateGistSync({ knownRemoteHashes: hashes });
     },
 
     /**
