@@ -142,14 +142,66 @@ export function useSyncExecutor() {
         return { success: false, restorableItems: [] };
       }
 
-      // 远端无 manifest——需要迁移（Group 6 实现）
+      // 远端无 manifest——一次性迁移：
+      // 走 legacy 下载+合并流程，随后让常规上传路径写入 manifest 和拆分后的新布局
       if (downloadResult && !downloadResult.skipped && downloadResult.needsMigration) {
-        // 暂时标记为未实现：下一阶段（Group 6）将接入迁移流程
-        onError(
-          '同步失败',
-          '检测到旧布局 Gist，迁移路径尚未实现。请稍后再试或联系开发者。',
-        );
-        return { success: false, restorableItems: [] };
+        settingsStore.updateSyncProgress({
+          stage: 'downloading',
+          message: prefixMsg('检测到旧布局 Gist，正在执行一次性迁移...'),
+          current: DOWNLOAD_PHASE_MAX / 2,
+          total: OVERALL_TOTAL,
+        });
+
+        let legacyDownload;
+        try {
+          legacyDownload = await gistSyncService.downloadFromGist(config);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : '迁移下载失败';
+          console.error('[useSyncExecutor] 迁移下载失败:', errorMsg);
+          onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+          return { success: false, restorableItems: [] };
+        }
+
+        if (!legacyDownload.success) {
+          const errorMsg = legacyDownload.error || '旧布局下载失败';
+          onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+          return { success: false, restorableItems: [] };
+        }
+
+        if (legacyDownload.data) {
+          try {
+            const applied = await SyncDataService.applyDownloadedData(
+              legacyDownload.data,
+              undefined,
+              options.isManualRetrieval,
+            );
+            restorableItems.push(...applied);
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : '应用旧布局数据失败';
+            console.error('[useSyncExecutor] 迁移 apply 失败:', errorMsg);
+            onError('迁移失败', `${errorMsg}（本地数据已回滚）`);
+            return { success: false, restorableItems: [] };
+          }
+        }
+
+        // 记下当前 ETag 供后续伪 CAS 使用；清空 knownRemoteHashes，
+        // 使后续 uploadToGistIncremental 将所有条目视为新增，产出完整的新布局
+        try {
+          await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
+          await settingsStore.updateKnownRemoteHashes({});
+        } catch (error) {
+          console.error('[useSyncExecutor] 保存迁移状态失败:', error);
+        }
+
+        settingsStore.updateSyncProgress({
+          stage: 'applying',
+          message: prefixMsg('迁移合并完成，准备写入新布局...'),
+          current: UPLOAD_PHASE_START,
+          total: OVERALL_TOTAL,
+        });
+
+        // 继续流转到阶段 3（计算本地 manifest）与阶段 4（上传）
+        // 下面的代码会自然地把当前本地状态作为完整的新布局上传
       }
 
       // ── 阶段 2：应用 changedEntries ──
