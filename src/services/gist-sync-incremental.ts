@@ -696,7 +696,7 @@ export async function uploadIncremental(
 /**
  * 从 UploadPayload 中取出指定 entry key 对应的原始数据
  */
-function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown | null {
+function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
   if (entryKey === ENTRY_KEYS.SETTINGS) return payload.appSettings;
   if (entryKey === ENTRY_KEYS.AI_MODELS) return payload.aiModels;
   if (entryKey === ENTRY_KEYS.COVER_HISTORY) return payload.coverHistory;

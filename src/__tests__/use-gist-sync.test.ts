@@ -99,7 +99,7 @@ describe('useGistSync (manifest-driven flow)', () => {
     // Default memory + chapter content mocks
     spyOn(MemoryService, 'getAllMemories').mockResolvedValue([]);
     spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockImplementation(
-      async (books) => books,
+      (books) => Promise.resolve(books),
     );
   });
 
