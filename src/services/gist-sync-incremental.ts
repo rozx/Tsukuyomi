@@ -794,12 +794,6 @@ export async function uploadIncremental(
     batch: Record<string, { content: string } | null>,
     isFirst: boolean,
   ): Promise<void> => {
-    // 诊断：PATCH 失败时能看到批次结构（内容数量 / 删除数量）
-    const entries = Object.entries(batch);
-    const nonNullCount = entries.filter(([, f]) => f !== null).length;
-    console.info(
-      `[gist-sync-incremental] PATCH batch: ${entries.length} files (${nonNullCount} content, ${entries.length - nonNullCount} delete)`,
-    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
@@ -838,12 +832,6 @@ export async function uploadIncremental(
   // 解决：只写 manifest，跳过删除——被删条目因不在 manifest.entries 里，下载时不会被读取；
   // Gist 上留下的旧文件成为孤儿，无害。下一次有 additions 的同步会在 last batch 里顺带清理。
   if (additionBatches.length === 0) {
-    if (deletions.length > 0) {
-      console.info(
-        `[gist-sync-incremental] 纯删除场景：${deletions.length} 个旧文件仅从 manifest 摘除，` +
-          `Gist 上作为孤儿保留，下次有内容上传时清理`,
-      );
-    }
     additionBatches.push({});
   }
 
