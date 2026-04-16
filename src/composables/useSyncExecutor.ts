@@ -220,6 +220,11 @@ export function useSyncExecutor() {
 
         try {
           await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries);
+          // 处理远端删除：remote manifest 中不再存在的条目（曾经在 knownRemote 中）
+          // 本地若未修改，传播该删除；若有未同步的本地编辑，保留本地
+          if (downloadResult.deletedEntries.length > 0) {
+            await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : '应用远程数据时发生未知错误';
           console.error('[useSyncExecutor] 应用失败:', errorMsg);

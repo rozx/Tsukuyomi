@@ -2274,43 +2274,62 @@ export class SyncDataService {
           }
         } else if (kind === 'ai-models') {
           const remoteModels = (entry as { value: Array<Record<string, unknown>> }).value;
-          // 按 ID 合并：远端每个模型与本地同 ID 比较 lastEdited
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedModelMap = new Map<string, number>(
+            (gistSync?.deletedModelIds ?? []).map((r) => [r.id, r.deletedAt]),
+          );
+
           for (const rm of remoteModels) {
-            const localModel = aiModelsStore.models.find((m) => m.id === (rm.id as string));
+            const rmId = rm.id as string;
+            const localModel = aiModelsStore.models.find((m) => m.id === rmId);
             if (!localModel) {
+              // 本地无此模型——检查是否被本地删除（防止跨设备恢复）
+              const deletedAt = deletedModelMap.get(rmId);
+              if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
               await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              aiModelsStore.models.push(rm as unknown as (typeof aiModelsStore.models)[number]);
               continue;
             }
             const lt = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
             const rt = rm.lastEdited ? new Date(rm.lastEdited as string).getTime() : 0;
             if (rt > lt) {
               await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
-            }
-          }
-          // 同步 store
-          const modelIds = new Set(remoteModels.map((m) => m.id as string));
-          aiModelsStore.models = aiModelsStore.models.filter((m) => modelIds.has(m.id) || !remoteModels.find((rm) => rm.id === m.id));
-          // 重新读取以获得最新状态
-          for (const rm of remoteModels) {
-            const idx = aiModelsStore.models.findIndex((m) => m.id === (rm.id as string));
-            if (idx >= 0) {
-              aiModelsStore.models[idx] = rm as unknown as (typeof aiModelsStore.models)[number];
-            } else {
-              aiModelsStore.models.push(rm as unknown as (typeof aiModelsStore.models)[number]);
+              const idx = aiModelsStore.models.findIndex((m) => m.id === rmId);
+              if (idx >= 0) {
+                aiModelsStore.models[idx] = rm as unknown as (typeof aiModelsStore.models)[number];
+              }
             }
           }
         } else if (kind === 'cover-history') {
           const remoteCovers = (entry as { value: Array<Record<string, unknown>> }).value;
-          // 简单策略：逐个添加/更新（store.addCover 是 upsert）
-          await coverHistoryStore.clearHistory();
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedCoverMap = new Map<string, number>(
+            (gistSync?.deletedCoverIds ?? []).map((r) => [r.id, r.deletedAt]),
+          );
+
+          // upsert 远端封面；跳过那些本地删除晚于上次同步的
           for (const rc of remoteCovers) {
+            const rcId = rc.id as string;
+            const deletedAt = deletedCoverMap.get(rcId);
+            if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
             await coverHistoryStore.addCover(rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0]);
           }
         } else if (kind === 'novel') {
           const remoteNovel = (entry as { value: Novel }).value;
           const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
           if (!localNovel) {
-            // 新增书籍：直接加
+            // 本地无此书籍——检查是否被本地删除（防止跨设备恢复）
+            const gistSync = GlobalConfig.getGistSyncSnapshot();
+            const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+            const deletedNovelMap = new Map<string, number>(
+              (gistSync?.deletedNovelIds ?? []).map((r) => [r.id, r.deletedAt]),
+            );
+            const deletedAt = deletedNovelMap.get(remoteNovel.id);
+            if (deletedAt !== undefined && deletedAt > lastSyncTime) {
+              continue; // 本地主动删除了，不恢复
+            }
             await booksStore.bulkAddBooks([remoteNovel]);
           } else {
             const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
@@ -2388,6 +2407,102 @@ export class SyncDataService {
       } catch (error) {
         console.error(`[SyncDataService] applyPartialRemoteData 处理条目 ${entryKey} 失败:`, error);
         // 继续处理其他条目，不中止整个 apply
+      }
+    }
+  }
+
+  /**
+   * 应用远端删除：当远端 manifest 中不再包含某条目（但 `knownRemoteHashes` 中有）时，
+   * 意味着另一台设备删除了它。本方法把这些删除传播到本地。
+   *
+   * 冲突策略：若本地版本在上次同步之后被**修改过**（lastEdited > lastSyncTime），
+   * 视为"本地主动持有"，不执行远端删除——下次上传会把本地版本重新推送到远端。
+   *
+   * @param deletedEntryKeys 远端已删除的 entry keys（如 `novel:abc`、`memories:xyz`）
+   */
+  static async applyRemoteDeletions(deletedEntryKeys: string[]): Promise<void> {
+    if (!deletedEntryKeys.length) return;
+
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
+    const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+
+    for (const key of deletedEntryKeys) {
+      try {
+        // novel:<id> — 删除本地书籍（包括章节内容与 memories）
+        if (key.startsWith('novel:')) {
+          const bookId = key.slice('novel:'.length);
+          const localBook = booksStore.books.find((b) => b.id === bookId);
+          if (!localBook) continue; // 本地已无——什么都不做
+
+          const localTime = localBook.lastEdited
+            ? new Date(localBook.lastEdited).getTime()
+            : 0;
+          if (localTime > lastSyncTime) {
+            // 本地有较新编辑——保留本地，下次上传会重新推送
+            console.info(
+              `[SyncDataService] 跳过远端删除 ${key}：本地有未同步的编辑`,
+            );
+            continue;
+          }
+
+          try {
+            await booksStore.deleteBook(bookId);
+          } catch (e) {
+            console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
+          }
+          continue;
+        }
+
+        // memories:<bookId> — 清空该书的所有 memories
+        if (key.startsWith('memories:')) {
+          const bookId = key.slice('memories:'.length);
+          const localMemories = await MemoryService.getAllMemories(bookId);
+          if (localMemories.length === 0) continue;
+
+          // 若本地有任意 memory 在上次同步后被访问/更新，保留——视为本地活动
+          const hasRecent = localMemories.some(
+            (m) => m.lastAccessedAt > lastSyncTime,
+          );
+          if (hasRecent) {
+            console.info(
+              `[SyncDataService] 跳过远端删除 ${key}：本地有未同步的 memory 活动`,
+            );
+            continue;
+          }
+
+          for (const m of localMemories) {
+            try {
+              await MemoryService.deleteMemory(bookId, m.id);
+            } catch (e) {
+              console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
+            }
+          }
+          continue;
+        }
+
+        // ai-models / cover-history / settings 作为聚合条目，极少被"整体删除"。
+        // 出于安全起见，不执行整表删除——若真有此需求，用户可以手动操作。
+        if (
+          key === 'ai-models' ||
+          key === 'cover-history' ||
+          key === 'settings'
+        ) {
+          console.info(
+            `[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`,
+          );
+          // 刻意读取以避免"变量未使用"警告（aiModelsStore 将来可能用到）
+          void aiModelsStore;
+          continue;
+        }
+      } catch (error) {
+        console.error(
+          `[SyncDataService] applyRemoteDeletions 处理 ${key} 失败:`,
+          error,
+        );
       }
     }
   }

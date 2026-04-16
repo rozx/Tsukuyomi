@@ -90,8 +90,13 @@ export type IncrementalDownloadResult =
       needsMigration?: boolean;
       /** 客户端版本落后于远端 schemaVersion */
       schemaVersionTooNew?: boolean;
-      /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化的条目） */
+      /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化/新增的条目） */
       changedEntries: Record<string, EntryValue>;
+      /**
+       * 远端已删除的条目 keys（在 knownRemote 中但不在远端 manifest 中）。
+       * 调用方应该据此在本地执行对应删除（可按本地编辑时间与 lastSyncTime 比较决定是否跳过）。
+       */
+      deletedEntries: string[];
       /** 远端仍然存在的 entry keys（用于识别远端删除） */
       remoteEntryKeys: string[];
     };
@@ -491,6 +496,7 @@ export async function downloadWithManifest(
       manifest: null,
       needsMigration: true,
       changedEntries: {},
+      deletedEntries: [],
       remoteEntryKeys: [],
     };
   }
@@ -522,6 +528,7 @@ export async function downloadWithManifest(
       manifest: remoteManifest,
       schemaVersionTooNew: true,
       changedEntries: {},
+      deletedEntries: [],
       remoteEntryKeys: Object.keys(remoteManifest.entries),
     };
   }
@@ -563,6 +570,7 @@ export async function downloadWithManifest(
     remoteUpdatedAt: updatedAt,
     manifest: remoteManifest,
     changedEntries,
+    deletedEntries: diff.deleted,
     remoteEntryKeys: Object.keys(remoteManifest.entries),
   };
 }

@@ -150,6 +150,7 @@ describe('useGistSync (manifest-driven flow)', () => {
             value: { id: 'book-1', title: 'New Title', lastEdited: new Date() },
           },
         },
+        deletedEntries: [],
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
       const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
@@ -165,6 +166,51 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(mockSettingsStore.updateKnownRemoteHashes).toHaveBeenCalled();
     });
 
+    it('remote deletion: propagates to local via applyRemoteDeletions', async () => {
+      const remoteManifest = makeManifest();
+      // Simulate: book-2 was in knownRemote but is no longer in remote manifest
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: false,
+        remoteETag: 'etag-v2',
+        remoteUpdatedAt: '2026-04-16T00:00:00Z',
+        manifest: remoteManifest,
+        changedEntries: {},
+        deletedEntries: [novelEntryKey('book-2')],
+        remoteEntryKeys: Object.keys(remoteManifest.entries),
+      } as any);
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      const deleteSpy = spyOn(SyncDataService, 'applyRemoteDeletions').mockResolvedValue();
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(deleteSpy).toHaveBeenCalledWith([novelEntryKey('book-2')]);
+    });
+
+    it('remote deletion empty: skips applyRemoteDeletions entirely', async () => {
+      const remoteManifest = makeManifest();
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: false,
+        remoteETag: 'etag-v2',
+        remoteUpdatedAt: '2026-04-16T00:00:00Z',
+        manifest: remoteManifest,
+        changedEntries: {},
+        deletedEntries: [],
+        remoteEntryKeys: Object.keys(remoteManifest.entries),
+      } as any);
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      const deleteSpy = spyOn(SyncDataService, 'applyRemoteDeletions').mockResolvedValue();
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+
     it('schemaVersionTooNew: aborts with upgrade error', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
         success: true,
@@ -174,6 +220,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         manifest: { schemaVersion: 999, updatedAt: '', entries: {} },
         schemaVersionTooNew: true,
         changedEntries: {},
+        deletedEntries: [],
         remoteEntryKeys: [],
       } as any);
 
@@ -336,6 +383,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         manifest: null,
         needsMigration: true,
         changedEntries: {},
+        deletedEntries: [],
         remoteEntryKeys: [],
       } as any);
       const legacyDownloadSpy = spyOn(
@@ -383,6 +431,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         manifest: null,
         needsMigration: true,
         changedEntries: {},
+        deletedEntries: [],
         remoteEntryKeys: [],
       } as any);
       spyOn(GistSyncService.prototype, 'downloadFromGist').mockResolvedValue({
