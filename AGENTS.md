@@ -177,7 +177,7 @@ console.error('Failed to load book:', error);
 - **本地嵌入**: `embedding-service.ts` (Transformers.js + EmbeddingGemma 300M，256 维) + `embedding-queue.ts` (异步批量嵌入)，动态 import 不进主 bundle
 - **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索，复用 `scoreMemory()` 统一评分
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
-- **数据同步**: `SyncDataService` 负责本地/远程数据合并，基于 `lastEdited` 时间戳冲突解决
+- **数据同步**: 基于 manifest 的增量同步。`manifest.json` 为权威索引，记录各条目 SHA-256 哈希；上传/下载按 hash diff 选择性处理。`useSyncExecutor` 用条件 GET（`If-None-Match`）+ 伪 CAS（PATCH 前再验 ETag）检测并发写入。`SyncConfig.lastRemoteETag` / `knownRemoteHashes` 持久化同步状态。Memory / AI 模型 / 封面独立文件存储
 - **IndexedDB**: 使用 `idb` 库操作，`src/utils/indexed-db.ts` 封装了数据库初始化
 
 ---

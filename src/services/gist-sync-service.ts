@@ -9,14 +9,29 @@ import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
+import { MANIFEST_FILE_NAME } from 'src/models/manifest';
+import {
+  downloadWithManifest,
+  uploadIncremental,
+  conditionalGetGist,
+  remoteManifestToHashes,
+  type IncrementalDownloadResult,
+  type IncrementalUploadResult,
+  type UploadPayload,
+} from 'src/services/gist-sync-incremental';
 
 /**
  * Gist 文件名称常量
  */
-const GIST_FILE_NAMES = {
+export const GIST_FILE_NAMES = {
   SETTINGS: 'tsukuyomi-settings.json',
   NOVEL_PREFIX: 'novel-',
   NOVEL_CHUNK_PREFIX: 'novel-chunk-',
+  MANIFEST: MANIFEST_FILE_NAME,
+  AI_MODELS: 'ai-models.json',
+  COVER_HISTORY: 'cover-history.json',
+  MEMORIES_PREFIX: 'memories-',
+  MEMORIES_CHUNK_PREFIX: 'memories-chunk-',
 } as const;
 
 /**
@@ -2229,6 +2244,77 @@ export class GistSyncService {
       };
     }
   }
+
+  /**
+   * 增量下载：基于 manifest 的选择性拉取
+   *
+   * 流程：
+   * 1. 条件 GET（If-None-Match）检查远端是否有变更
+   * 2. 若 304：直接返回 skipped
+   * 3. 若 200 且远端无 manifest.json：返回 needsMigration 标志
+   * 4. 若 200 且 schemaVersion 超过本客户端：返回 schemaVersionTooNew 标志
+   * 5. 否则：基于 manifest diff 仅拉取变化的条目
+   */
+  async downloadFromGistWithManifest(
+    config: SyncConfig,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<IncrementalDownloadResult> {
+    this.validateConfig(config);
+    return downloadWithManifest(config, onProgress);
+  }
+
+  /**
+   * 增量上传：基于本地 manifest 与 knownRemoteHashes 的 diff，仅上传变化的条目
+   *
+   * 注意：调用方应该在调用前完成伪 CAS 检查（conditionalGetGist），
+   * 本方法不做额外的并发检测，仅负责序列化和 PATCH。
+   */
+  async uploadToGistIncremental(
+    config: SyncConfig,
+    payload: UploadPayload,
+    remoteFilesSnapshot: Record<string, { content?: string | null; truncated?: boolean | null; raw_url?: string | null; size?: number | null }>,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<IncrementalUploadResult> {
+    this.validateConfig(config);
+    this.initializeOctokit(config);
+    if (!this.octokit) {
+      throw new Error('Octokit 客户端未初始化');
+    }
+    return uploadIncremental(this.octokit, config, payload, remoteFilesSnapshot, onProgress);
+  }
+
+  /**
+   * 伪 CAS 预检：上传前检查远端是否自上次已知状态以来发生变更
+   * @returns 'unchanged' 表示安全可写；'changed' 表示需要重新合并
+   */
+  async verifyRemoteUnchanged(
+    config: SyncConfig,
+  ): Promise<
+    | { status: 'unchanged'; etag: string }
+    | { status: 'changed'; etag: string; files: Record<string, unknown> }
+  > {
+    this.validateConfig(config);
+    const gistId = config.syncParams.gistId;
+    if (!gistId) {
+      throw new Error('Gist ID 未配置');
+    }
+    const token = config.secret || config.syncParams.token || '';
+    const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
+    if (result.notModified) {
+      return { status: 'unchanged', etag: result.etag };
+    }
+    return { status: 'changed', etag: result.etag, files: result.files };
+  }
+
+  /**
+   * 将 manifest 中的条目哈希提取为平面字典，供 SyncConfig 持久化。
+   */
+  static manifestToKnownHashes = remoteManifestToHashes;
+
+  /**
+   * manifest 文件的固定名称（导出以便外部一致使用）
+   */
+  static readonly MANIFEST_FILE_NAME = MANIFEST_FILE_NAME;
 
   /**
    * 删除 Gist

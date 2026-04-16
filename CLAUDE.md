@@ -49,7 +49,7 @@ pages/components (UI) → composables (逻辑复用) → stores (Pinia 状态) �
 - **本地嵌入**: Transformers.js + EmbeddingGemma 300M ONNX（256 维 Matryoshka，动态 import 不进主 bundle），EmbeddingQueue 异步批量处理
 - **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
-- **数据同步**: `SyncDataService` 负责本地/远程数据合并与冲突解决，基于 `lastEdited` 时间戳
+- **数据同步**: 基于 manifest 的增量同步。`manifest.json` 记录每个条目（settings / ai-models / cover-history / novel:<id> / memories:<id>）的 SHA-256 哈希；上传只推哈希变化的文件，下载只解析变化条目。`useSyncExecutor` 使用 `If-None-Match` 条件 GET + 伪 CAS（PATCH 前再验 ETag）防止多设备静默覆盖。`SyncConfig.lastRemoteETag` / `knownRemoteHashes` 持久化同步状态。Memory / AI 模型 / 封面各自独立文件。`SyncDataService.applyPartialRemoteData` 按 entry 合并远端变化
 
 ## 路由
 

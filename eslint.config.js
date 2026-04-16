@@ -15,7 +15,10 @@ export default defineConfigWithVueTs(
      *
      * ESLint requires "ignores" key to be the only one in this object
      */
-    // ignores: []
+    // `.kilo/worktrees/*` 下是被 Kilo Code 代理维护的工作树副本，各自带独立的 .git。
+    // 其中的 .ts/.vue 文件未被项目 tsconfig 包含，启用 type-checked lint 会报
+    // "parserOptions.project" 错误——整目录忽略即可。
+    ignores: ['.kilo/**'],
   },
 
   pluginQuasar.configs.recommended(),

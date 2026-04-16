@@ -5,7 +5,19 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { MemoryService } from 'src/services/memory-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
+import {
+  buildLocalManifest,
+  manifestToEntries,
+  manifestToHashes,
+} from 'src/services/sync-manifest-builder';
+import {
+  normalizeMemoriesForSync,
+  stripAppSettingsLocalFields,
+  stripNovelLocalFields,
+} from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
+import type { Memory } from 'src/models/memory';
 
 /**
  * 同步执行器选项接口
@@ -36,16 +48,25 @@ export interface SyncExecutorResult {
 
 // 进度阶段分配常量
 const OVERALL_TOTAL = 100;
-const DOWNLOAD_PHASE_MAX = 50; // 下载阶段占 50%
-const APPLY_PHASE_MAX = 10; // 应用阶段占 10%
-const UPLOAD_PHASE_START = DOWNLOAD_PHASE_MAX + APPLY_PHASE_MAX; // 60
+const DOWNLOAD_PHASE_MAX = 50;
+const APPLY_PHASE_MAX = 10;
+const UPLOAD_PHASE_START = DOWNLOAD_PHASE_MAX + APPLY_PHASE_MAX;
+
+/** 伪 CAS 检测到并发写入时的最大重试轮数 */
+const MAX_CONCURRENT_WRITE_RETRIES = 3;
 
 /**
- * 共享同步执行器 composable
- * 封装核心同步流程：远程检测 → 条件下载 → apply → 本地变更检测 → 条件上传
+ * 共享同步执行器：基于 manifest 的增量同步
  *
- * useAutoSync 和 useGistSync 通过不同的 SyncExecutorOptions 调用此执行器，
- * 消除两个 composable 之间的代码重复。
+ * 流程：
+ *   1. 条件 GET（If-None-Match）下载远端
+ *      - 304 跳过 → 直接进入本地变更检测
+ *      - 200 且无 manifest → 触发迁移（在 Group 6 中实现；当前回退到 legacy 路径）
+ *      - 200 且 schemaVersion 超前 → 报错
+ *      - 200 正常 → 选择性反序列化 changed entries
+ *   2. 应用 changedEntries 到本地各 store
+ *   3. 基于 hash 比对检测本地是否有待上传的变更
+ *   4. 伪 CAS 预检 + 增量上传（失败则重试）
  */
 export function useSyncExecutor() {
   const settingsStore = useSettingsStore();
@@ -55,312 +76,436 @@ export function useSyncExecutor() {
   const gistSyncService = new GistSyncService();
 
   /**
-   * 执行完整的双向同步流程
-   * 流程：远程检测 → 条件下载 → apply → 本地变更检测 → 条件上传
+   * 收集所有书籍的 memories，按 bookId 分组
    */
-  const executeSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
-    const { messagePrefix, isManualRetrieval, onError, onSuccess, configOverride } = options;
-    const config = configOverride ?? settingsStore.gistSync;
+  const collectMemoriesByBook = async (): Promise<Record<string, Memory[]>> => {
+    const bookIds = booksStore.books.map((b) => b.id);
+    const result: Record<string, Memory[]> = {};
+    for (const bookId of bookIds) {
+      try {
+        const memories = await MemoryService.getAllMemories(bookId);
+        if (memories.length > 0) {
+          result[bookId] = memories;
+        }
+      } catch (e) {
+        console.warn(`[useSyncExecutor] 读取书籍 ${bookId} 的 Memory 失败:`, e);
+      }
+    }
+    return result;
+  };
 
+  const executeSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
+    const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
 
-    let restorableItems: RestorableItem[] = [];
+    const restorableItems: RestorableItem[] = [];
+    let retriesRemaining = MAX_CONCURRENT_WRITE_RETRIES;
 
-    // ── 阶段 1：下载远程数据（带远程变更检测） ──
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let remoteData: any = undefined;
-    let downloadSkipped = false;
-    let pendingRemoteUpdatedAt: string | undefined; // 延迟到 apply 成功后再更新
+    while (retriesRemaining > 0) {
+      retriesRemaining -= 1;
+      const config = configOverride ?? settingsStore.gistSync;
 
-    if (config.syncParams.gistId) {
+      // ── 阶段 1：条件下载 + 解析 manifest ──
       settingsStore.updateSyncProgress({
         stage: 'downloading',
-        message: prefixMsg('正在下载远程数据...'),
+        message: prefixMsg('正在检查远程变更...'),
         current: 0,
         total: OVERALL_TOTAL,
       });
 
-      let downloadPhaseTotal: number | undefined = undefined;
-
-      // 传递 lastRemoteUpdatedAt 以启用远程变更检测
       let downloadResult;
-      try {
-        downloadResult = await gistSyncService.downloadFromGist(
-          config,
-          (progress) => {
-            if (downloadPhaseTotal === undefined) {
-              downloadPhaseTotal = progress.total;
-            }
+      if (config.syncParams.gistId) {
+        try {
+          downloadResult = await gistSyncService.downloadFromGistWithManifest(
+            config,
+            (progress) => {
+              const mapped =
+                progress.total > 0
+                  ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
+                  : 0;
+              settingsStore.updateSyncProgress({
+                stage: 'downloading',
+                current: mapped,
+                total: OVERALL_TOTAL,
+                message: prefixMsg(progress.message),
+              });
+            },
+          );
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : '下载时发生未知错误';
+          console.error('[useSyncExecutor] 同步下载失败:', errorMsg);
+          onError('下载失败', errorMsg);
+          return { success: false, restorableItems: [] };
+        }
+      }
 
-            const mappedCurrent =
-              progress.total > 0
-                ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
-                : 0;
-
-            settingsStore.updateSyncProgress({
-              stage: 'downloading',
-              current: mappedCurrent,
-              total: OVERALL_TOTAL,
-              message: prefixMsg(progress.message),
-            });
-          },
-          config.lastRemoteUpdatedAt,
+      // 远端要求更高的客户端版本
+      if (downloadResult && !downloadResult.skipped && downloadResult.schemaVersionTooNew) {
+        onError(
+          '同步中止',
+          '远程数据由较新版本的应用写入，请升级客户端后再同步',
         );
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : '下载时发生未知错误';
-        console.error('[useSyncExecutor] 同步下载失败:', errorMsg);
-        onError('下载失败', errorMsg);
         return { success: false, restorableItems: [] };
       }
 
-      if (downloadResult.success && downloadResult.skipped) {
-        // 远程无变更，跳过了下载解析
-        downloadSkipped = true;
+      // 远端无 manifest——一次性迁移：
+      // 走 legacy 下载+合并流程，随后让常规上传路径写入 manifest 和拆分后的新布局
+      if (downloadResult && !downloadResult.skipped && downloadResult.needsMigration) {
+        settingsStore.updateSyncProgress({
+          stage: 'downloading',
+          message: prefixMsg('检测到旧布局 Gist，正在执行一次性迁移...'),
+          current: DOWNLOAD_PHASE_MAX / 2,
+          total: OVERALL_TOTAL,
+        });
 
-        // 更新 remoteUpdatedAt（仅在实际变化时写入，避免自动同步周期性冗余写盘）
-        if (
-          downloadResult.remoteUpdatedAt &&
-          downloadResult.remoteUpdatedAt !== config.lastRemoteUpdatedAt
-        ) {
+        let legacyDownload;
+        try {
+          legacyDownload = await gistSyncService.downloadFromGist(config);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : '迁移下载失败';
+          console.error('[useSyncExecutor] 迁移下载失败:', errorMsg);
+          onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+          return { success: false, restorableItems: [] };
+        }
+
+        if (!legacyDownload.success) {
+          const errorMsg = legacyDownload.error || '旧布局下载失败';
+          onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+          return { success: false, restorableItems: [] };
+        }
+
+        if (legacyDownload.data) {
           try {
-            await settingsStore.updateLastRemoteUpdatedAt(downloadResult.remoteUpdatedAt);
+            const applied = await SyncDataService.applyDownloadedData(
+              legacyDownload.data,
+              undefined,
+              options.isManualRetrieval,
+            );
+            restorableItems.push(...applied);
           } catch (error) {
-            console.error('[useSyncExecutor] 更新 lastRemoteUpdatedAt 失败:', error);
+            const errorMsg = error instanceof Error ? error.message : '应用旧布局数据失败';
+            console.error('[useSyncExecutor] 迁移 apply 失败:', errorMsg);
+            onError('迁移失败', `${errorMsg}（本地数据已回滚）`);
+            return { success: false, restorableItems: [] };
           }
         }
 
+        // 记下当前 ETag 供后续伪 CAS 使用；清空 knownRemoteHashes，
+        // 使后续 uploadToGistIncremental 将所有条目视为新增，产出完整的新布局
+        try {
+          await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
+          await settingsStore.updateKnownRemoteHashes({});
+          await settingsStore.updateKnownRemoteEntries({});
+        } catch (error) {
+          console.error('[useSyncExecutor] 保存迁移状态失败:', error);
+        }
+
         settingsStore.updateSyncProgress({
-          stage: 'downloading',
-          message: prefixMsg('远程无变更，跳过下载'),
+          stage: 'applying',
+          message: prefixMsg('迁移合并完成，准备写入新布局...'),
+          current: UPLOAD_PHASE_START,
+          total: OVERALL_TOTAL,
+        });
+
+        // 继续流转到阶段 3（计算本地 manifest）与阶段 4（上传）
+        // 下面的代码会自然地把当前本地状态作为完整的新布局上传
+      }
+
+      // ── 阶段 2：应用 changedEntries ──
+      if (downloadResult && !downloadResult.skipped) {
+        settingsStore.updateSyncProgress({
+          stage: 'applying',
+          message: prefixMsg('正在应用下载的数据...'),
           current: DOWNLOAD_PHASE_MAX,
           total: OVERALL_TOTAL,
         });
-      } else if (downloadResult.success && downloadResult.data) {
-        // 有新数据，继续处理
-        remoteData = downloadResult.data;
 
-        // 注意：remoteUpdatedAt 不在此处更新，而是在 Phase 2 apply 成功后更新。
-        // 这样可以防止 apply 失败时 lastRemoteUpdatedAt 超前，导致下次同步跳过下载，
-        // 使本地残留的已删除书籍在后续上传时被重新添加到远程。
-        pendingRemoteUpdatedAt = downloadResult.remoteUpdatedAt;
-      } else if (!downloadResult.success) {
-        // 下载失败，终止同步
-        const errorMsg = downloadResult.error || '从 Gist 下载数据时发生未知错误';
-        console.error('[useSyncExecutor] 同步下载失败:', errorMsg);
-        onError('下载失败', errorMsg);
-        return { success: false, restorableItems: [] };
-      } else {
-        // success 为 true 但无 data（空 Gist），继续上传
-        console.info('[useSyncExecutor] 下载成功但无数据，继续尝试上传本地数据');
+        try {
+          await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries);
+          // 处理远端删除：remote manifest 中不再存在的条目（曾经在 knownRemote 中）
+          // 本地若未修改，传播该删除；若有未同步的本地编辑，保留本地
+          if (downloadResult.deletedEntries.length > 0) {
+            await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : '应用远程数据时发生未知错误';
+          console.error('[useSyncExecutor] 应用失败:', errorMsg);
+          onError('应用失败', errorMsg);
+          return { success: false, restorableItems: [] };
+        }
+
+        // 更新本地持久化的已知远端状态
+        if (downloadResult.manifest) {
+          try {
+            await settingsStore.updateKnownRemoteHashes(manifestToHashes(downloadResult.manifest));
+            await settingsStore.updateKnownRemoteEntries(
+              manifestToEntries(downloadResult.manifest),
+            );
+          } catch (error) {
+            console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
+          }
+        }
+        try {
+          await settingsStore.updateKnownRemoteTombstones(downloadResult.remoteTombstones);
+        } catch (error) {
+          console.error('[useSyncExecutor] 保存 knownRemoteTombstones 失败:', error);
+        }
+        try {
+          await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
+        } catch (error) {
+          console.error('[useSyncExecutor] 保存 lastRemoteETag 失败:', error);
+        }
+
+        settingsStore.updateSyncProgress({
+          stage: 'applying',
+          message: prefixMsg('应用完成'),
+          current: UPLOAD_PHASE_START,
+          total: OVERALL_TOTAL,
+        });
       }
-    }
 
-    // ── 阶段 2：检测本地变更 + 应用远程数据 ──
-    // 重要：必须在 applyDownloadedData 之前检测本地变更！
-    // apply 会将远程数据合并进本地状态，合并后再比较会产生误判（内容去重、时间戳合并等导致的"假差异"）
-    // 在 apply 之前检测，能准确判断用户是否真的做过本地修改
-    let shouldUpload = false;
-    const lastSyncTime = config.lastSyncTime ?? 0;
-
-    if (remoteData) {
-      // 在 apply 之前，基于原始本地数据检测变更
-      const bookIds = booksStore.books.map((book) => book.id);
-      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
-      const localDataBeforeApply = {
-        novels: booksStore.books,
-        aiModels: aiModelsStore.models,
-        appSettings: settingsStore.getAllSettings(),
-        coverHistory: coverHistoryStore.covers,
-        memories,
-      };
-      shouldUpload = SyncDataService.hasLocalChangesSinceLastSync(
-        localDataBeforeApply,
-        lastSyncTime,
+      // ── 阶段 3：计算本地 manifest，判断是否需要上传 ──
+      // 加载所有章节内容以用于 manifest 哈希与上传
+      const novelsLoaded = await ChapterContentService.loadAllChapterContentsForNovels(
+        booksStore.books,
       );
+      const rawMemoriesByBook = await collectMemoriesByBook();
 
-      // 应用远程数据
-      settingsStore.updateSyncProgress({
-        stage: 'applying',
-        message: prefixMsg('正在应用下载的数据...'),
-        current: DOWNLOAD_PHASE_MAX,
-        total: OVERALL_TOTAL,
+      // 规范化：剥离本地字段 + 按 id 排序 memory，确保内容不变时 hash 稳定
+      // - novel: 剥离 translations 里的 memoryScoreBreakdown（AI 打分 UI 状态）
+      // - memory: 剥离 embedding / embeddingModel（异步生成），按 id 排序
+      // - settings: 剥离 syncs（每次同步都变）和 embeddingModelCached（设备本地状态）
+      const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
+      const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
+      const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
+
+      const latestConfig = configOverride ?? settingsStore.gistSync;
+
+      // 合并墓碑：本地删除记录 (deletedNovelIds) + 上次从远端拉取的墓碑快照
+      // 过期墓碑（> 30 天）会在 buildLocalManifest 中被过滤
+      const tombstones: Record<string, string> = {};
+      for (const [k, ds] of Object.entries(latestConfig.knownRemoteTombstones ?? {})) {
+        tombstones[k] = ds;
+      }
+      for (const record of latestConfig.deletedNovelIds ?? []) {
+        const key = `novel:${record.id}`;
+        const existing = tombstones[key];
+        const existingMs = existing ? new Date(existing).getTime() : 0;
+        // 取较新的删除时间
+        if (!existing || record.deletedAt > existingMs) {
+          tombstones[key] = new Date(record.deletedAt).toISOString();
+        }
+      }
+
+      const localManifest = await buildLocalManifest({
+        appSettings: appSettingsForSync,
+        aiModels: aiModelsStore.models,
+        coverHistory: coverHistoryStore.covers,
+        novels: novelsWithContent,
+        memoriesByBook,
+        tombstones,
       });
 
-      restorableItems = await SyncDataService.applyDownloadedData(
-        remoteData,
-        undefined,
-        isManualRetrieval,
-      );
+      const knownHashes = latestConfig.knownRemoteHashes ?? {};
+      const localHashes = manifestToHashes(localManifest);
+      const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
 
+      if (shouldUpload) {
+        // 诊断：记录哪些 entry 触发了上传
+        const diffs: Array<{ key: string; local: string; known: string | undefined }> = [];
+        for (const [key, localHash] of Object.entries(localHashes)) {
+          const known = knownHashes[key];
+          if (known !== localHash) {
+            diffs.push({ key, local: localHash.slice(0, 12), known: known?.slice(0, 12) });
+          }
+        }
+        for (const key of Object.keys(knownHashes)) {
+          if (!(key in localHashes)) {
+            diffs.push({ key, local: '(absent)', known: knownHashes[key]?.slice(0, 12) });
+          }
+        }
+        console.info('[useSyncExecutor] 检测到本地变更，将上传:', diffs);
+      }
+
+      if (!shouldUpload) {
+        settingsStore.updateSyncProgress({
+          stage: 'uploading',
+          message: prefixMsg('同步完成（无更改需要上传）'),
+          current: OVERALL_TOTAL,
+          total: OVERALL_TOTAL,
+        });
+        try {
+          await settingsStore.updateLastSyncTime();
+          await settingsStore.cleanupOldDeletionRecords();
+        } catch (error) {
+          console.error('[useSyncExecutor] 更新同步状态失败:', error);
+        }
+        if (onSuccess) onSuccess('同步完成', '数据已是最新，无需上传');
+        return { success: true, restorableItems };
+      }
+
+      // ── 阶段 4：伪 CAS 预检 + 增量上传 ──
       settingsStore.updateSyncProgress({
-        stage: 'applying',
-        message: prefixMsg('应用完成'),
+        stage: 'uploading',
+        message: prefixMsg('正在检查远程并发写入...'),
         current: UPLOAD_PHASE_START,
         total: OVERALL_TOTAL,
       });
 
-      // Apply 成功后，更新 remoteUpdatedAt（在 Phase 1 中延迟到此处）
-      if (pendingRemoteUpdatedAt) {
+      // 仅当有已知 ETag 时才做伪 CAS（首次同步无 ETag，跳过）
+      // 迁移路径已在阶段 1 从 downloadResult 中取到真实文件列表，直接沿用避免再 GET 一次
+      let remoteFilesSnapshot: Record<string, unknown> =
+        downloadResult && !downloadResult.skipped
+          ? (downloadResult.remoteFilesSnapshot ?? {})
+          : {};
+      if (latestConfig.syncParams.gistId && latestConfig.lastRemoteETag) {
         try {
-          await settingsStore.updateLastRemoteUpdatedAt(pendingRemoteUpdatedAt);
-        } catch (error) {
-          console.error('[useSyncExecutor] 更新 lastRemoteUpdatedAt 失败:', error);
-        }
-      }
-
-      // 更新模型同步状态
-      try {
-        await settingsStore.updateLastSyncedModelIds(aiModelsStore.models.map((m) => m.id));
-      } catch (error) {
-        console.error('[useSyncExecutor] 更新同步状态失败:', error);
-      }
-    } else if (downloadSkipped) {
-      // 远程无变更且下载被跳过：检查自上次同步以来本地是否有变更
-      const bookIds = booksStore.books.map((book) => book.id);
-      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
-      const localData = {
-        novels: booksStore.books,
-        aiModels: aiModelsStore.models,
-        appSettings: settingsStore.getAllSettings(),
-        coverHistory: coverHistoryStore.covers,
-        memories,
-      };
-      shouldUpload = SyncDataService.hasLocalChangesSinceLastSync(localData, lastSyncTime);
-    } else {
-      // 没有远程数据（首次同步或空 Gist），与空数据比较
-      const bookIds = booksStore.books.map((book) => book.id);
-      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
-      const localData = {
-        novels: booksStore.books,
-        aiModels: aiModelsStore.models,
-        appSettings: settingsStore.getAllSettings(),
-        coverHistory: coverHistoryStore.covers,
-        memories,
-      };
-      shouldUpload = SyncDataService.hasChangesToUpload(localData, {
-        novels: [],
-        aiModels: [],
-        appSettings: {},
-        coverHistory: [],
-        memories: [],
-      });
-    }
-
-    if (!shouldUpload) {
-      settingsStore.updateSyncProgress({
-        stage: 'uploading',
-        message: prefixMsg('同步完成（无更改需要上传）'),
-        current: OVERALL_TOTAL,
-        total: OVERALL_TOTAL,
-      });
-
-      // 同步完成（无需上传），更新 lastSyncTime
-      try {
-        await settingsStore.updateLastSyncTime();
-        await settingsStore.cleanupOldDeletionRecords();
-      } catch (error) {
-        console.error('[useSyncExecutor] 更新同步状态失败:', error);
-      }
-
-      if (onSuccess) {
-        onSuccess('同步完成', '数据已是最新，无需上传');
-      }
-
-      return { success: true, restorableItems };
-    }
-
-    // ── 阶段 4：上传本地数据 ──
-    settingsStore.updateSyncProgress({
-      stage: 'uploading',
-      message: prefixMsg(`正在上传数据 (${booksStore.books.length} 本书籍)...`),
-      current: UPLOAD_PHASE_START,
-      total: OVERALL_TOTAL,
-    });
-
-    let uploadPhaseTotal: number | undefined = undefined;
-    let uploadResult;
-    try {
-      uploadResult = await gistSyncService.uploadToGist(
-        config,
-        {
-          aiModels: aiModelsStore.models,
-          appSettings: settingsStore.getAllSettings(),
-          novels: booksStore.books,
-          coverHistory: coverHistoryStore.covers,
-        },
-        (progress) => {
-          if (uploadPhaseTotal === undefined) {
-            uploadPhaseTotal = progress.total;
+          const verify = await gistSyncService.verifyRemoteUnchanged(latestConfig);
+          if (verify.status === 'changed') {
+            // 远端自上次已知状态后发生了变更：重启同步循环
+            if (retriesRemaining > 0) {
+              console.info(
+                `[useSyncExecutor] 伪 CAS 检测到并发写入，重试中（剩余 ${retriesRemaining} 次）`,
+              );
+              remoteFilesSnapshot = verify.files;
+              continue; // 回到 while 顶部，重新下载
+            }
+            onError(
+              '同步冲突',
+              '其他设备正在频繁写入，请稍后再试',
+            );
+            return { success: false, restorableItems };
           }
+          // unchanged: 继续
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : '伪 CAS 检查失败';
+          console.error('[useSyncExecutor] 伪 CAS 失败:', errorMsg);
+          onError('同步失败', errorMsg);
+          return { success: false, restorableItems };
+        }
+      }
 
-          const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-          const mappedCurrent =
-            progress.total > 0
-              ? UPLOAD_PHASE_START +
-                Math.round((progress.current / progress.total) * uploadPhaseRange)
-              : UPLOAD_PHASE_START;
-
-          settingsStore.updateSyncProgress({
-            stage: 'uploading',
-            current: mappedCurrent,
-            total: OVERALL_TOTAL,
-            message: prefixMsg(progress.message),
-          });
-        },
-      );
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
-      console.error('[useSyncExecutor] 上传失败:', errorMsg);
-      onError('上传失败', errorMsg);
-      return { success: false, restorableItems };
-    }
-
-    if (uploadResult.success) {
-      // 更新进度：上传完成
       settingsStore.updateSyncProgress({
         stage: 'uploading',
-        message: prefixMsg('同步完成'),
-        current: OVERALL_TOTAL,
+        message: prefixMsg(`正在上传数据 (${booksStore.books.length} 本书籍)...`),
+        current: UPLOAD_PHASE_START,
         total: OVERALL_TOTAL,
       });
 
-      // 更新 Gist ID（如果是新创建的 Gist）
-      if (uploadResult.gistId) {
+      if (!latestConfig.syncParams.gistId) {
+        // 首次同步且无 gistId——按照 legacy 流程创建 Gist。
+        // 此时 knownRemoteHashes 为空，incremental 上传会把所有 entry 当作 added 上传。
+        // 但需要先 create Gist；委托给 legacy `uploadToGist` 完成初次创建。
+        // 初始上传后，下一轮同步就会走增量路径。
         try {
-          await settingsStore.setGistId(uploadResult.gistId);
+          const uploadResult = await gistSyncService.uploadToGist(
+            latestConfig,
+            {
+              aiModels: aiModelsStore.models,
+              appSettings: settingsStore.getAllSettings(),
+              novels: booksStore.books,
+              coverHistory: coverHistoryStore.covers,
+            },
+            (progress) => {
+              const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+              const mapped =
+                progress.total > 0
+                  ? UPLOAD_PHASE_START +
+                    Math.round((progress.current / progress.total) * uploadPhaseRange)
+                  : UPLOAD_PHASE_START;
+              settingsStore.updateSyncProgress({
+                stage: 'uploading',
+                current: mapped,
+                total: OVERALL_TOTAL,
+                message: prefixMsg(progress.message),
+              });
+            },
+          );
+          if (!uploadResult.success) {
+            onError('上传失败', uploadResult.error || '创建 Gist 失败');
+            return { success: false, restorableItems };
+          }
+          if (uploadResult.gistId) {
+            await settingsStore.setGistId(uploadResult.gistId);
+          }
+          // 初次创建后，下一次同步会建立 manifest。返回成功。
+          await settingsStore.updateLastSyncTime();
+          if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist（首次）');
+          return { success: true, restorableItems };
         } catch (error) {
-          console.error('[useSyncExecutor] 设置 Gist ID 失败:', error);
+          const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
+          onError('上传失败', errorMsg);
+          return { success: false, restorableItems };
         }
       }
 
-      // 上传成功后更新同步时间
       try {
-        await settingsStore.updateLastSyncTime();
-        await settingsStore.cleanupOldDeletionRecords();
-      } catch (error) {
-        console.error('[useSyncExecutor] 更新同步状态失败:', error);
-      }
+        const uploadResult = await gistSyncService.uploadToGistIncremental(
+          latestConfig,
+          {
+            appSettings: appSettingsForSync,
+            aiModels: aiModelsStore.models,
+            coverHistory: coverHistoryStore.covers,
+            novels: novelsWithContent,
+            memoriesByBook,
+            tombstones,
+          },
+          remoteFilesSnapshot as Parameters<
+            typeof gistSyncService.uploadToGistIncremental
+          >[2],
+          (progress) => {
+            const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+            const mapped =
+              progress.total > 0
+                ? UPLOAD_PHASE_START +
+                  Math.round((progress.current / progress.total) * uploadPhaseRange)
+                : UPLOAD_PHASE_START;
+            settingsStore.updateSyncProgress({
+              stage: 'uploading',
+              current: mapped,
+              total: OVERALL_TOTAL,
+              message: prefixMsg(progress.message),
+            });
+          },
+        );
 
-      // 上传成功后更新 lastRemoteUpdatedAt
-      if (uploadResult.remoteUpdatedAt) {
+        // 持久化新的远端状态
         try {
-          await settingsStore.updateLastRemoteUpdatedAt(uploadResult.remoteUpdatedAt);
+          await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
+          await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
+          await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
+          // 同步上传后的 manifest.tombstones 回 knownRemoteTombstones，供下次上传合并
+          const uploadedTombstones: Record<string, string> = {};
+          for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
+            uploadedTombstones[k] = v.deletedAt;
+          }
+          await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
+          await settingsStore.updateLastSyncTime();
+          await settingsStore.cleanupOldDeletionRecords();
         } catch (error) {
-          console.error('[useSyncExecutor] 更新 lastRemoteUpdatedAt 失败:', error);
+          console.error('[useSyncExecutor] 更新同步状态失败:', error);
         }
-      }
 
-      if (onSuccess) {
-        onSuccess('同步完成', '数据已同步到 Gist');
-      }
+        settingsStore.updateSyncProgress({
+          stage: 'uploading',
+          message: prefixMsg('同步完成'),
+          current: OVERALL_TOTAL,
+          total: OVERALL_TOTAL,
+        });
 
-      return { success: true, restorableItems };
-    } else {
-      const errorMsg = uploadResult.error || '上传到 Gist 时发生未知错误';
-      console.error('[useSyncExecutor] 上传失败:', errorMsg);
-      onError('上传失败', errorMsg);
-      return { success: false, restorableItems };
+        if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist');
+        return { success: true, restorableItems };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
+        console.error('[useSyncExecutor] 上传失败:', errorMsg);
+        onError('上传失败', errorMsg);
+        return { success: false, restorableItems };
+      }
     }
+
+    // 超出重试预算
+    onError('同步冲突', '其他设备正在频繁写入，请稍后再试');
+    return { success: false, restorableItems };
   };
 
   return {

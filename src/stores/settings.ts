@@ -350,8 +350,22 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.deletedCoverUrls !== undefined
           ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) }
           : {}),
-        ...(sync.lastRemoteUpdatedAt !== undefined
-          ? { lastRemoteUpdatedAt: String(sync.lastRemoteUpdatedAt) }
+        ...(sync.deletedMemoryIds !== undefined
+          ? { deletedMemoryIds: toPlain(sync.deletedMemoryIds) }
+          : {}),
+        // 注意：`lastRemoteUpdatedAt` 已由 `lastRemoteETag` 取代，主路径不再写入此字段。
+        // 仅在加载旧配置时保留读取，因此 saveSyncConfigs 不序列化它。
+        ...(sync.lastRemoteETag !== undefined
+          ? { lastRemoteETag: String(sync.lastRemoteETag) }
+          : {}),
+        ...(sync.knownRemoteHashes !== undefined
+          ? { knownRemoteHashes: toPlain(sync.knownRemoteHashes) }
+          : {}),
+        ...(sync.knownRemoteEntries !== undefined
+          ? { knownRemoteEntries: toPlain(sync.knownRemoteEntries) }
+          : {}),
+        ...(sync.knownRemoteTombstones !== undefined
+          ? { knownRemoteTombstones: toPlain(sync.knownRemoteTombstones) }
           : {}),
       };
 
@@ -920,6 +934,18 @@ export const useSettingsStore = defineStore('settings', {
       const lastRemoteUpdatedAt =
         updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
 
+      const lastRemoteETag =
+        updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
+
+      const knownRemoteHashes =
+        updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
+
+      const knownRemoteEntries =
+        updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
+
+      const knownRemoteTombstones =
+        updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -945,6 +971,10 @@ export const useSettingsStore = defineStore('settings', {
         ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
         ...(deletedMemoryIds !== undefined ? { deletedMemoryIds } : {}),
         ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
+        ...(lastRemoteETag !== undefined ? { lastRemoteETag } : {}),
+        ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
+        ...(knownRemoteEntries !== undefined ? { knownRemoteEntries } : {}),
+        ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
       };
 
       if (index >= 0) {
@@ -1083,9 +1113,43 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 更新上次同步时远程 Gist 的 updated_at 时间戳
+     * @deprecated 由 updateLastRemoteETag 取代；保留仅用于迁移期代码路径
      */
     async updateLastRemoteUpdatedAt(timestamp: string): Promise<void> {
       await this.updateGistSync({ lastRemoteUpdatedAt: timestamp });
+    },
+
+    /**
+     * 更新上次远程 Gist 响应的 ETag（用于条件 GET 与伪 CAS）
+     */
+    async updateLastRemoteETag(etag: string): Promise<void> {
+      await this.updateGistSync({ lastRemoteETag: etag });
+    },
+
+    /**
+     * 更新已知的远程 manifest 哈希表（entryKey -> hash）
+     */
+    async updateKnownRemoteHashes(hashes: Record<string, string>): Promise<void> {
+      await this.updateGistSync({ knownRemoteHashes: hashes });
+    },
+
+    /**
+     * 更新已知的远程 manifest 条目元数据（entryKey -> { hash, chunks }）
+     *
+     * 与 updateKnownRemoteHashes 相比，额外记录每条目的 chunks 数；
+     * 上传流程用它枚举每个 entry 在 Gist 上的所有文件名，避免删除/chunk 迁移后留下孤儿文件。
+     */
+    async updateKnownRemoteEntries(
+      entries: Record<string, { hash: string; chunks?: number }>,
+    ): Promise<void> {
+      await this.updateGistSync({ knownRemoteEntries: entries });
+    },
+
+    /**
+     * 更新已知的远程 manifest 墓碑表（entryKey -> deletedAt ISO）
+     */
+    async updateKnownRemoteTombstones(tombstones: Record<string, string>): Promise<void> {
+      await this.updateGistSync({ knownRemoteTombstones: tombstones });
     },
 
     /**

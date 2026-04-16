@@ -1,9 +1,4 @@
-# sync-change-detection Specification
-
-## Purpose
-Define how the sync subsystem detects whether the local or remote Gist has changes before transferring data, so that sync cycles can short-circuit when nothing has moved. Remote change detection uses HTTP conditional GET (`If-None-Match: <ETag>`) integrated into `downloadFromGist`; local change detection compares the current local manifest's hashes against the cached `knownRemoteHashes`. A pre-upload pseudo-CAS check guards against concurrent remote writes. Auto and manual sync paths share a single executor parameterised by UI/reporting behaviour.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Remote change detection via Gist metadata
 
@@ -53,6 +48,16 @@ The `GistSyncService.downloadFromGist` method SHALL accept an optional `lastRemo
 - **WHEN** `downloadFromGist` is called and the Gist API call throws an error
 - **THEN** the method SHALL return `{ success: false, error: <message> }` as before
 
+## REMOVED Requirements
+
+### Requirement: Persist remote updated_at timestamp in SyncConfig
+
+**Reason**: Replaced by ETag-based change detection which is stricter (byte-level fingerprint vs. timestamp equality) and rate-limit-free via `If-None-Match` conditional GET. Keeping two parallel fields (`lastRemoteUpdatedAt` + `lastRemoteETag`) would create ambiguity about which is authoritative.
+
+**Migration**: `SyncConfig.lastRemoteUpdatedAt` remains defined on the type for read compatibility with older persisted configs but is no longer written or read by sync logic. On upgrade, the absence of `lastRemoteETag` triggers a plain `gists.get` (no conditional header) on the next sync, which populates `lastRemoteETag` from the response and effectively bootstraps the new field. Field may be removed in a future cleanup release.
+
+## ADDED Requirements
+
 ### Requirement: Upload-phase pseudo-CAS concurrency check
 
 Because `PATCH /gists/{id}` does not honor `If-Match` headers (confirmed unresolved bug: [github/community #50084](https://github.com/orgs/community/discussions/50084)), the system SHALL implement a pseudo compare-and-swap check immediately before each upload PATCH. The check SHALL issue a conditional `gists.get` with `If-None-Match: <lastRemoteETag>`. A `304` response indicates the remote has not moved since this sync cycle began and upload is safe. A `200` response indicates concurrent remote modification and the upload SHALL be aborted, triggering a fresh sync cycle (re-download, re-merge, retry upload up to 2 times).
@@ -100,6 +105,8 @@ The `SyncConfig` interface SHALL include a `lastRemoteETag: string` field storin
 
 - **WHEN** the app loads a `SyncConfig` that does not have `lastRemoteETag`
 - **THEN** the missing field SHALL be treated as an empty string, triggering a plain (non-conditional) GET on the next sync which then populates the field
+
+## MODIFIED Requirements
 
 ### Requirement: Skip upload when local has no changes
 

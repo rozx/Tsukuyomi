@@ -2127,6 +2127,8 @@ export class SyncDataService {
    * @param localData 当前本地数据
    * @param lastSyncTime 上次同步时间（毫秒时间戳），0 表示首次同步（视为有变更）
    * @returns 如果本地有变更返回 true
+   * @deprecated 由 `hasLocalChangesByHash` 取代——manifest 驱动路径使用哈希比对，
+   *   不再依赖基于 `lastSyncTime` 的启发式。保留仅用于遗留路径与回归测试对比。
    */
   static hasLocalChangesSinceLastSync(
     localData: {
@@ -2201,6 +2203,389 @@ export class SyncDataService {
     }
 
     return false;
+  }
+
+  /**
+   * 基于哈希比对检测本地是否有需要上传的变更。
+   *
+   * 比较本地 manifest 的每个条目哈希与 `knownRemoteHashes`（上次已知的远端状态）。
+   * - 任一条目哈希不同 → 有变更
+   * - 本地存在但 known 不存在 → 有变更（新条目）
+   * - known 存在但本地不存在 → 有变更（本地删除）
+   *
+   * @param localHashes 当前本地 manifest 的 entryKey -> hash 字典
+   * @param knownRemoteHashes SyncConfig 中持久化的上次已知远端哈希字典
+   */
+  static hasLocalChangesByHash(
+    localHashes: Record<string, string>,
+    knownRemoteHashes: Record<string, string>,
+  ): boolean {
+    const localKeys = new Set(Object.keys(localHashes));
+    const knownKeys = new Set(Object.keys(knownRemoteHashes));
+
+    for (const key of localKeys) {
+      if (!knownKeys.has(key)) return true; // 本地新增
+      if (localHashes[key] !== knownRemoteHashes[key]) return true; // 哈希不同
+    }
+    for (const key of knownKeys) {
+      if (!localKeys.has(key)) return true; // 本地删除
+    }
+    return false;
+  }
+
+  /**
+   * 基于 manifest diff 的选择性应用：仅合并变化的条目到本地。
+   *
+   * 与 `applyDownloadedData` 的差异：
+   * - 输入是按 entry key 反序列化的 map（已经是选择性下载的结果）
+   * - 每个条目按类型独立合并，不扫描全量数据
+   * - 本方法不创建备份——调用方（executor）负责 backup/rollback 语义
+   *
+   * 合并规则：
+   * - `settings`：比较 lastEdited，使用较新者
+   * - `ai-models`：远端为准（应用时已经做过时间比较）
+   * - `cover-history`：远端为准
+   * - `novel:<id>`：使用 mergeNovelWithLocalContent 保留本地章节内容
+   * - `memories:<id>`：按 lastAccessedAt 合并每本书的 memory 列表，内容去重
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static async applyPartialRemoteData(changedEntries: Record<string, any>): Promise<void> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const coverHistoryStore = useCoverHistoryStore();
+    const settingsStore = useSettingsStore();
+
+    for (const [entryKey, entry] of Object.entries(changedEntries)) {
+      if (!entry || typeof entry !== 'object' || !('kind' in entry)) continue;
+
+      const kind = (entry as { kind: string }).kind;
+      try {
+        if (kind === 'settings') {
+          const remoteSettings = (entry as { value: Record<string, unknown> }).value;
+          const localSettings = settingsStore.getAllSettings();
+          const localTime = localSettings.lastEdited
+            ? new Date(localSettings.lastEdited as unknown as string).getTime()
+            : 0;
+          const remoteTime = remoteSettings.lastEdited
+            ? new Date(remoteSettings.lastEdited as unknown as string).getTime()
+            : 0;
+          if (remoteTime > localTime) {
+            await settingsStore.importSettings(remoteSettings);
+          }
+        } else if (kind === 'ai-models') {
+          const remoteModels = (entry as { value: Array<Record<string, unknown>> }).value;
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedModelMap = new Map<string, number>(
+            (gistSync?.deletedModelIds ?? []).map((r) => [r.id, r.deletedAt]),
+          );
+
+          const remoteIds = new Set<string>();
+          for (const rm of remoteModels) {
+            const rmId = rm.id as string;
+            remoteIds.add(rmId);
+            const localModel = aiModelsStore.models.find((m) => m.id === rmId);
+            if (!localModel) {
+              // 本地无此模型——检查是否被本地删除（防止跨设备恢复）
+              const deletedAt = deletedModelMap.get(rmId);
+              if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
+              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              aiModelsStore.models.push(rm as unknown as (typeof aiModelsStore.models)[number]);
+              continue;
+            }
+            const lt = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
+            const rt = rm.lastEdited ? new Date(rm.lastEdited as string).getTime() : 0;
+            if (rt > lt) {
+              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              const idx = aiModelsStore.models.findIndex((m) => m.id === rmId);
+              if (idx >= 0) {
+                aiModelsStore.models[idx] = rm as unknown as (typeof aiModelsStore.models)[number];
+              }
+            }
+          }
+
+          // 跨设备删除传播：远端聚合条目不再包含某个模型且本地自上次同步后未编辑，
+          // 视为远端删除——否则无法在多设备间传播 AI 模型删除
+          const localModelsSnapshot = [...aiModelsStore.models];
+          for (const localModel of localModelsSnapshot) {
+            if (remoteIds.has(localModel.id)) continue;
+            const lt = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
+            // 本地自上次同步后被编辑（新增/更新）——保留，让后续上传把它推给远端
+            if (lastSyncTime === 0 || lt > lastSyncTime) continue;
+            try {
+              await aiModelService.deleteModel(localModel.id);
+            } catch (e) {
+              console.warn('[SyncDataService] 传播远端模型删除失败:', localModel.id, e);
+            }
+            const idx = aiModelsStore.models.findIndex((m) => m.id === localModel.id);
+            if (idx >= 0) aiModelsStore.models.splice(idx, 1);
+          }
+        } else if (kind === 'cover-history') {
+          const remoteCovers = (entry as { value: Array<Record<string, unknown>> }).value;
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedCoverMap = new Map<string, number>(
+            (gistSync?.deletedCoverIds ?? []).map((r) => [r.id, r.deletedAt]),
+          );
+
+          // upsert 远端封面；跳过那些本地删除晚于上次同步的
+          const remoteCoverIds = new Set<string>();
+          for (const rc of remoteCovers) {
+            const rcId = rc.id as string;
+            remoteCoverIds.add(rcId);
+            const deletedAt = deletedCoverMap.get(rcId);
+            if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
+            await coverHistoryStore.addCover(rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0]);
+          }
+
+          // 跨设备删除传播：远端聚合条目不再包含某个封面且本地自上次同步后未新增，
+          // 视为远端删除
+          const localCoversSnapshot = [...coverHistoryStore.covers];
+          for (const localCover of localCoversSnapshot) {
+            if (remoteCoverIds.has(localCover.id)) continue;
+            const addedAt = localCover.addedAt
+              ? new Date(localCover.addedAt as unknown as string | number | Date).getTime()
+              : 0;
+            if (lastSyncTime === 0 || addedAt > lastSyncTime) continue;
+            try {
+              await coverHistoryStore.removeCover(localCover.id);
+            } catch (e) {
+              console.warn('[SyncDataService] 传播远端封面删除失败:', localCover.id, e);
+            }
+          }
+        } else if (kind === 'novel') {
+          const remoteNovel = (entry as { value: Novel }).value;
+          const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
+          if (!localNovel) {
+            // 本地无此书籍——检查是否被本地删除（防止跨设备恢复）
+            const gistSync = GlobalConfig.getGistSyncSnapshot();
+            const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+            const deletedNovelMap = new Map<string, number>(
+              (gistSync?.deletedNovelIds ?? []).map((r) => [r.id, r.deletedAt]),
+            );
+            const deletedAt = deletedNovelMap.get(remoteNovel.id);
+            if (deletedAt !== undefined && deletedAt > lastSyncTime) {
+              continue; // 本地主动删除了，不恢复
+            }
+            await booksStore.bulkAddBooks([remoteNovel]);
+          } else {
+            const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
+            const remoteTime = remoteNovel.lastEdited ? new Date(remoteNovel.lastEdited).getTime() : 0;
+            if (remoteTime > localTime) {
+              const merged = await SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel);
+              await booksStore.bulkAddBooks([merged]);
+            } else {
+              // 本地较新：仍然防御性地把远端独有的翻译合入本地。
+              // 翻译写入在某些路径下不会 bump novel.lastEdited（例如仅更新段落翻译数组），
+              // 这种情况下时间戳比较会漏掉远端的新翻译——fallback 保证它们不会丢。
+              try {
+                const localNovelWithContent =
+                  await SyncDataService.ensureNovelContentLoaded(localNovel);
+                const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
+                  localNovelWithContent,
+                  remoteNovel,
+                );
+                await booksStore.bulkAddBooks([mergedNovel]);
+              } catch (e) {
+                console.warn(
+                  `[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`,
+                  e,
+                );
+              }
+            }
+          }
+        } else if (kind === 'memories') {
+          const bookId = (entry as { bookId: string }).bookId;
+          const remoteMemories = (entry as { value: Memory[] }).value;
+          const localMemories = await MemoryService.getAllMemories(bookId);
+          const gistSync = GlobalConfig.getGistSyncSnapshot();
+          const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+          const deletedMemoryIds = gistSync?.deletedMemoryIds || [];
+          const deletedMap = new Map<string, number>(
+            deletedMemoryIds.map((r) => [r.id, r.deletedAt]),
+          );
+
+          const remoteIds = new Set(remoteMemories.map((m) => m.id));
+          const finalMap = new Map<string, Memory>();
+
+          // 1. 远端 memory：按 id 去重（保留 lastAccessedAt 更大的），跳过被本地删除的
+          for (const rm of remoteMemories) {
+            const deletion = deletedMap.get(rm.id);
+            if (deletion !== undefined && deletion > lastSyncTime) {
+              continue;
+            }
+            const existing = finalMap.get(rm.id);
+            if (!existing || rm.lastAccessedAt > existing.lastAccessedAt) {
+              finalMap.set(rm.id, rm);
+            }
+          }
+
+          // 2. 本地独有 memory：
+          //    - 若 lastAccessedAt > lastSyncTime → 本地新增/刚访问过，保留（下次上传传给远端）
+          //    - 若 lastAccessedAt <= lastSyncTime 且远端列表非空 → 远端已删除，本地视同删除
+          //    - 若远端列表为空 → 保留本地（避免远端空载时误删）
+          for (const local of localMemories) {
+            if (remoteIds.has(local.id)) {
+              // 远端有同 id 的记录，以远端版本合并（已在步骤 1 处理）；这里补登记本地版本用于后续 max
+              const existing = finalMap.get(local.id);
+              if (!existing || local.lastAccessedAt > existing.lastAccessedAt) {
+                finalMap.set(local.id, local);
+              }
+              continue;
+            }
+            const isFreshLocal =
+              lastSyncTime === 0 || local.lastAccessedAt > lastSyncTime;
+            if (isFreshLocal || remoteMemories.length === 0) {
+              finalMap.set(local.id, local);
+            }
+            // 否则：陈旧本地 memory + 远端非空 → 视为远端删除，不保留
+          }
+
+          // 内容去重：同 content 保留 lastAccessedAt 更大的
+          const byContent = new Map<string, Memory>();
+          for (const m of finalMap.values()) {
+            const ex = byContent.get(m.content);
+            if (!ex || m.lastAccessedAt > ex.lastAccessedAt) {
+              byContent.set(m.content, m);
+            }
+          }
+
+          const finalList = Array.from(byContent.values());
+          const finalIds = new Set(finalList.map((m) => m.id));
+
+          // 删除不在 finalList 的本地 memory
+          for (const local of localMemories) {
+            if (!finalIds.has(local.id)) {
+              try {
+                await MemoryService.deleteMemory(bookId, local.id);
+              } catch (e) {
+                console.warn(`[SyncDataService] 删除 Memory ${local.id} 失败:`, e);
+              }
+            }
+          }
+
+          // 保存最终列表（createMemoryWithId 内部是 upsert）
+          for (const m of finalList) {
+            await MemoryService.createMemoryWithId(m.bookId, m.id, m.content, m.summary, {
+              createdAt: m.createdAt,
+              lastAccessedAt: m.lastAccessedAt,
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`[SyncDataService] applyPartialRemoteData 处理条目 ${entryKey} 失败:`, error);
+        // 继续处理其他条目，不中止整个 apply
+      }
+    }
+  }
+
+  /**
+   * 应用远端删除：把远端 manifest 中的墓碑或隐式删除传播到本地。
+   *
+   * 冲突策略：
+   * - 若传入 `deletedAt`（来自远端墓碑）：对比本地 `lastEdited` 与 `deletedAt`；
+   *   若本地更新更晚，视为"本地主动持有"，保留本地；否则删除。
+   * - 若未传入 `deletedAt`（隐式删除，无墓碑信息）：回退到"本地在 lastSyncTime 后修改过则保留"的启发式。
+   *
+   * @param deletions 远端已删除的条目列表，可选带 deletedAt（墓碑时间戳）
+   */
+  static async applyRemoteDeletions(
+    deletions: Array<{ key: string; deletedAt?: string }>,
+  ): Promise<void> {
+    if (!deletions.length) return;
+
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    const aiModelsStore = useAIModelsStore();
+    const booksStore = useBooksStore();
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
+    const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+
+    // 阈值：有墓碑用墓碑时间，否则回退到 lastSyncTime
+    const thresholdFor = (deletedAt: string | undefined): number => {
+      if (deletedAt) {
+        const t = new Date(deletedAt).getTime();
+        if (Number.isFinite(t)) return t;
+      }
+      return lastSyncTime;
+    };
+
+    for (const { key, deletedAt } of deletions) {
+      try {
+        // novel:<id> — 删除本地书籍（包括章节内容与 memories）
+        if (key.startsWith('novel:')) {
+          const bookId = key.slice('novel:'.length);
+          const localBook = booksStore.books.find((b) => b.id === bookId);
+          if (!localBook) continue; // 本地已无——什么都不做
+
+          const localTime = localBook.lastEdited
+            ? new Date(localBook.lastEdited).getTime()
+            : 0;
+          const threshold = thresholdFor(deletedAt);
+          if (localTime > threshold) {
+            // 本地编辑晚于删除时间（或 lastSyncTime）——保留本地
+            console.info(
+              `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
+            );
+            continue;
+          }
+
+          try {
+            await booksStore.deleteBook(bookId);
+          } catch (e) {
+            console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
+          }
+          continue;
+        }
+
+        // memories:<bookId> — 清空该书的所有 memories（无墓碑，回退 lastSyncTime 启发式）
+        if (key.startsWith('memories:')) {
+          const bookId = key.slice('memories:'.length);
+          const localMemories = await MemoryService.getAllMemories(bookId);
+          if (localMemories.length === 0) continue;
+
+          const threshold = thresholdFor(deletedAt);
+          const hasRecent = localMemories.some(
+            (m) => m.lastAccessedAt > threshold,
+          );
+          if (hasRecent) {
+            console.info(
+              `[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`,
+            );
+            continue;
+          }
+
+          for (const m of localMemories) {
+            try {
+              await MemoryService.deleteMemory(bookId, m.id);
+            } catch (e) {
+              console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
+            }
+          }
+          continue;
+        }
+
+        // 聚合条目（ai-models / cover-history / settings）：不做整体删除
+        if (
+          key === 'ai-models' ||
+          key === 'cover-history' ||
+          key === 'settings'
+        ) {
+          console.info(
+            `[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`,
+          );
+          void aiModelsStore;
+          continue;
+        }
+      } catch (error) {
+        console.error(
+          `[SyncDataService] applyRemoteDeletions 处理 ${key} 失败:`,
+          error,
+        );
+      }
+    }
   }
 
   /**
