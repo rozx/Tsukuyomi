@@ -940,6 +940,9 @@ export const useSettingsStore = defineStore('settings', {
       const knownRemoteHashes =
         updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
 
+      const knownRemoteEntries =
+        updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
+
       const knownRemoteTombstones =
         updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
 
@@ -970,6 +973,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
         ...(lastRemoteETag !== undefined ? { lastRemoteETag } : {}),
         ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
+        ...(knownRemoteEntries !== undefined ? { knownRemoteEntries } : {}),
         ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
       };
 

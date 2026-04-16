@@ -90,6 +90,11 @@ export type IncrementalDownloadResult =
       needsMigration?: boolean;
       /** 客户端版本落后于远端 schemaVersion */
       schemaVersionTooNew?: boolean;
+      /**
+       * 迁移或版本不兼容时返回的远端文件快照，用于后续 uploadIncremental 清理遗留文件。
+       * 常规 diff 路径下为空（正常路径依赖 knownRemoteEntries 枚举文件名）。
+       */
+      remoteFilesSnapshot?: Record<string, GistFileLike>;
       /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化/新增的条目） */
       changedEntries: Record<string, EntryValue>;
       /**
@@ -357,7 +362,7 @@ async function readFile(
   const file = gistFiles[filename];
   if (!file) return null;
 
-  if (file.content && !file.truncated) {
+  if (file.content != null && !file.truncated) {
     return file.content;
   }
 
@@ -532,6 +537,7 @@ export async function downloadWithManifest(
   const manifestFile = files[MANIFEST_FILE_NAME];
   if (!manifestFile) {
     // 远端缺少 manifest，触发迁移
+    // 携带远端文件快照，便于后续 uploadIncremental 清理遗留文件（如旧 chunk / 旧分块布局）
     return {
       success: true,
       skipped: false,
@@ -539,6 +545,7 @@ export async function downloadWithManifest(
       remoteUpdatedAt: updatedAt,
       manifest: null,
       needsMigration: true,
+      remoteFilesSnapshot: files,
       changedEntries: {},
       deletedEntries: [],
       remoteTombstones: {},

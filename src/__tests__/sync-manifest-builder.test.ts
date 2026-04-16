@@ -232,6 +232,43 @@ describe('rebuildManifestFromFiles', () => {
     expect(Object.keys(m.entries)).toEqual([novelEntryKey('abc')]);
   });
 
+  it('hashes chunks deterministically regardless of input order', async () => {
+    const a = await rebuildManifestFromFiles({
+      'novel-chunk-abc_0.json': 'chunk0',
+      'novel-chunk-abc_1.json': 'chunk1',
+      'novel-chunk-abc_2.json': 'chunk2',
+    });
+    const b = await rebuildManifestFromFiles({
+      'novel-chunk-abc_2.json': 'chunk2',
+      'novel-chunk-abc_0.json': 'chunk0',
+      'novel-chunk-abc_1.json': 'chunk1',
+    });
+    expect(a.entries[novelEntryKey('abc')]!.hash).toEqual(
+      b.entries[novelEntryKey('abc')]!.hash,
+    );
+  });
+
+  it('ignores meta sidecar files and does not mix them into entry hash', async () => {
+    const withMeta = await rebuildManifestFromFiles({
+      'novel-chunk-abc_0.json': 'chunk0',
+      'novel-chunk-abc_1.json': 'chunk1',
+      'novel-abc.meta.json': '{"chunks":2,"totalSize":123}',
+    });
+    const withoutMeta = await rebuildManifestFromFiles({
+      'novel-chunk-abc_0.json': 'chunk0',
+      'novel-chunk-abc_1.json': 'chunk1',
+    });
+    expect(withMeta.entries[novelEntryKey('abc')]!.hash).toEqual(
+      withoutMeta.entries[novelEntryKey('abc')]!.hash,
+    );
+    // memories meta sidecars should also be ignored
+    const m = await rebuildManifestFromFiles({
+      'memories-xyz.json': '[]',
+      'memories-xyz.meta.json': '{"chunks":1}',
+    });
+    expect(Object.keys(m.entries)).toEqual([memoriesEntryKey('xyz')]);
+  });
+
   it('ignores manifest.json itself', async () => {
     const m = await rebuildManifestFromFiles({
       'manifest.json': '{"schemaVersion":2}',

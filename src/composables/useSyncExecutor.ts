@@ -353,7 +353,11 @@ export function useSyncExecutor() {
       });
 
       // 仅当有已知 ETag 时才做伪 CAS（首次同步无 ETag，跳过）
-      let remoteFilesSnapshot: Record<string, unknown> = {};
+      // 迁移路径已在阶段 1 从 downloadResult 中取到真实文件列表，直接沿用避免再 GET 一次
+      let remoteFilesSnapshot: Record<string, unknown> =
+        downloadResult && !downloadResult.skipped
+          ? (downloadResult.remoteFilesSnapshot ?? {})
+          : {};
       if (latestConfig.syncParams.gistId && latestConfig.lastRemoteETag) {
         try {
           const verify = await gistSyncService.verifyRemoteUnchanged(latestConfig);

@@ -212,20 +212,25 @@ export async function rebuildManifestFromFiles(
   const entries: Record<string, ManifestEntry> = {};
   const nowIso = new Date(0).toISOString();
 
-  for (const [filename, content] of Object.entries(rawFiles)) {
+  // 为保证 hash 稳定性，分块文件必须按文件名升序拼接再哈希：
+  // Object.entries 的迭代顺序依赖插入顺序，但上游实际顺序无法保证。
+  // 先按文件名排序，再按 entry 聚合内容。
+  const grouped: Record<string, string[]> = {};
+  const sortedNames = Object.keys(rawFiles).sort();
+  for (const filename of sortedNames) {
     const entryKey = filenameToEntryKey(filename);
     if (!entryKey) continue;
+    const bucket = grouped[entryKey] ?? (grouped[entryKey] = []);
+    bucket.push(rawFiles[filename]!);
+  }
 
-    // 若同一 entry 由多个文件组成（如分块），先拼接再哈希
-    const prev = entries[entryKey];
-    if (prev) {
-      prev.hash = await hashJsonString(`${prev.hash}|${content}`);
-    } else {
-      entries[entryKey] = {
-        hash: await hashJsonString(content),
-        lastEdited: nowIso,
-      };
-    }
+  for (const [entryKey, contents] of Object.entries(grouped)) {
+    // 用分隔符拼接，避免两个连续 chunk 内容边界处产生误碰撞
+    const combined = contents.join('\u0000');
+    entries[entryKey] = {
+      hash: await hashJsonString(combined),
+      lastEdited: nowIso,
+    };
   }
 
   return {
@@ -274,12 +279,16 @@ function filenameToEntryKey(filename: string): string | null {
     return null;
   }
 
-  // novel-<id>.json or novel-<id>.meta.json
-  const novelMatch = filename.match(/^novel-([^/]+?)(?:\.meta)?\.json$/);
+  // 忽略 meta 侧车文件——其内容是 chunk 元数据（chunks 数、总字节），
+  // 混入 entry hash 会破坏与 buildLocalManifest 输出的一致性。
+  if (filename.endsWith('.meta.json')) return null;
+
+  // novel-<id>.json
+  const novelMatch = filename.match(/^novel-([^/]+?)\.json$/);
   if (novelMatch && novelMatch[1]) return novelEntryKey(novelMatch[1]);
 
-  // memories-<id>.json or memories-<id>.meta.json
-  const memMatch = filename.match(/^memories-([^/]+?)(?:\.meta)?\.json$/);
+  // memories-<id>.json
+  const memMatch = filename.match(/^memories-([^/]+?)\.json$/);
   if (memMatch && memMatch[1]) return memoriesEntryKey(memMatch[1]);
 
   return null;
