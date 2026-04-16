@@ -29,66 +29,138 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 
-// 判断是否为元数据文件
+// 判断是否为元数据文件（分块 novel/memories 的 meta.json 描述文件）
 const isMetaFile = (filename: string): boolean => {
-  // 只过滤书籍元数据文件（.meta.json），设置文件应该显示
-  if (filename.endsWith('.meta.json') && filename.startsWith('novel-')) {
-    return true;
-  }
-  return false;
+  if (!filename.endsWith('.meta.json')) return false;
+  return filename.startsWith('novel-') || filename.startsWith('memories-');
 };
 
-// 从文件名中提取小说 ID
+// 从文件名中提取小说 ID（支持单文件与分块格式）
 const extractNovelIdFromFilename = (filename: string): string | null => {
-  // 格式: novel-{id}.json 或 novel-{id} (分组后的文件名)
+  if (filename.startsWith('novel-chunk-') || filename.startsWith('memories-')) return null;
   const match = filename.match(/^novel-(.+)\.json$/);
-  if (match && match[1]) {
-    return match[1];
-  }
-  // 分组后的格式也可能是 novel-{id}（不带 .json）
-  if (filename.startsWith('novel-')) {
+  if (match && match[1]) return match[1];
+  if (filename.startsWith('novel-') && !filename.startsWith('novel-chunk-')) {
     const id = filename.replace(/^novel-/, '').replace(/\.json$/, '');
-    if (id) {
-      return id;
-    }
+    return id || null;
   }
   return null;
 };
 
+// 从文件名中提取 memories 书籍 ID
+const extractMemoriesBookIdFromFilename = (filename: string): string | null => {
+  if (filename.startsWith('memories-chunk-')) return null;
+  const match = filename.match(/^memories-(.+)\.json$/);
+  if (match && match[1]) return match[1];
+  if (filename.startsWith('memories-')) {
+    const id = filename.replace(/^memories-/, '').replace(/\.json$/, '');
+    return id || null;
+  }
+  return null;
+};
+
+// 从 memories-chunk-<id>_N.json 中提取 bookId
+const extractMemoriesBookIdFromChunkFilename = (filename: string): string | null => {
+  if (!filename.startsWith('memories-chunk-')) return null;
+  const match = filename.match(/^memories-chunk-(.+?)[_#-]\d+\.json$/);
+  return match && match[1] ? match[1] : null;
+};
+
 // 获取文件的显示名称和图标
 const getFileDisplayInfo = (filename: string): { displayName: string; icon: string } => {
-  // 设置文件显示友好名称
+  // 全局文件
   if (filename === 'tsukuyomi-settings.json') {
-    return {
-      displayName: '应用设置',
-      icon: 'pi pi-cog',
-    };
+    return { displayName: '应用设置', icon: 'pi pi-cog' };
+  }
+  if (filename === 'manifest.json') {
+    return { displayName: '同步清单', icon: 'pi pi-list' };
+  }
+  if (filename === 'ai-models.json') {
+    return { displayName: 'AI 模型配置', icon: 'pi pi-microchip-ai' };
+  }
+  if (filename === 'cover-history.json') {
+    return { displayName: '封面历史', icon: 'pi pi-images' };
   }
 
-  // 尝试提取小说 ID
+  // 小说文件
   const novelId = extractNovelIdFromFilename(filename);
-  if (!novelId) {
-    // 不是小说文件，返回原文件名
-    return {
-      displayName: filename,
-      icon: 'pi pi-file',
-    };
+  if (novelId) {
+    const novel = booksStore.books.find((b) => b.id === novelId);
+    return novel
+      ? { displayName: novel.title || filename, icon: 'pi pi-book' }
+      : { displayName: `[已删除] ${filename}`, icon: 'pi pi-trash' };
   }
 
-  // 查找小说
-  const novel = booksStore.books.find((b) => b.id === novelId);
-  if (novel) {
-    return {
-      displayName: novel.title || filename,
-      icon: 'pi pi-book',
-    };
+  // memories 文件
+  const memoriesBookId =
+    extractMemoriesBookIdFromFilename(filename) ||
+    extractMemoriesBookIdFromChunkFilename(filename);
+  if (memoriesBookId) {
+    const novel = booksStore.books.find((b) => b.id === memoriesBookId);
+    return novel
+      ? { displayName: `[记忆] ${novel.title || memoriesBookId}`, icon: 'pi pi-bookmark' }
+      : { displayName: `[记忆-已删除] ${filename}`, icon: 'pi pi-trash' };
   }
 
-  // 找不到，显示"已删除"
-  return {
-    displayName: `[已删除] ${filename}`,
-    icon: 'pi pi-trash',
-  };
+  return { displayName: filename, icon: 'pi pi-file' };
+};
+
+// 将 memories 分块文件合并为单个条目（类似 groupChunkFiles 对 novel 的处理）
+const groupMemoriesChunks = <
+  T extends {
+    filename: string;
+    size?: number;
+    sizeDiff?: number;
+  },
+>(
+  files: T[],
+): T[] => {
+  const chunkGroups = new Map<
+    string,
+    { filename: string; size: number; sizeDiff: number; originalFile: T }
+  >();
+  const nonChunkFiles: T[] = [];
+
+  for (const file of files) {
+    const bookId = extractMemoriesBookIdFromChunkFilename(file.filename);
+    if (bookId) {
+      const key = `memories-${bookId}`;
+      if (!chunkGroups.has(key)) {
+        chunkGroups.set(key, {
+          filename: `memories-${bookId}.json`,
+          size: 0,
+          sizeDiff: 0,
+          originalFile: file,
+        });
+      }
+      const group = chunkGroups.get(key)!;
+      group.size += file.size || 0;
+      group.sizeDiff += file.sizeDiff || 0;
+    } else {
+      nonChunkFiles.push(file);
+    }
+  }
+
+  return [
+    ...Array.from(chunkGroups.values()).map((group) => ({
+      ...group.originalFile,
+      filename: group.filename,
+      size: group.size,
+      sizeDiff: group.sizeDiff,
+    })),
+    ...nonChunkFiles,
+  ];
+};
+
+// 文件显示顺序：manifest 最前，然后设置类全局文件，然后 novels，最后 memories
+const fileSortPriority = (filename: string): number => {
+  if (filename === 'manifest.json') return 0;
+  if (filename === 'tsukuyomi-settings.json') return 1;
+  if (filename === 'ai-models.json') return 2;
+  if (filename === 'cover-history.json') return 3;
+  if (filename.startsWith('memories-')) return 5; // memories 排在 novel 后
+  if (filename.startsWith('novel-')) return 4;
+  return 6;
 };
 
 // 分组文件，将分块文件合并显示，并过滤元数据文件
@@ -107,11 +179,12 @@ const getGroupedFiles = (
   size?: number;
   sizeDiff?: number;
 }> => {
-  // 过滤掉元数据文件
+  // 过滤元数据文件
   const filteredFiles = files.filter((file) => !isMetaFile(file.filename));
-  // 使用可重用的分组函数
-  const grouped = groupChunkFiles(filteredFiles);
-  // 为每个文件添加显示名称和图标
+  // 先合并 novel 分块，再合并 memories 分块
+  const afterNovelGrouping = groupChunkFiles(filteredFiles);
+  const grouped = groupMemoriesChunks(afterNovelGrouping);
+
   const filesWithDisplayInfo = grouped.map((file) => {
     const displayInfo = getFileDisplayInfo(file.filename);
     return {
@@ -121,20 +194,10 @@ const getGroupedFiles = (
     };
   });
 
-  // 排序：设置文件始终在最前面，其他文件按显示名称排序
   return filesWithDisplayInfo.sort((a, b) => {
-    // 设置文件优先
-    const aIsSettings = a.filename === 'tsukuyomi-settings.json';
-    const bIsSettings = b.filename === 'tsukuyomi-settings.json';
-
-    if (aIsSettings && !bIsSettings) {
-      return -1;
-    }
-    if (!aIsSettings && bIsSettings) {
-      return 1;
-    }
-
-    // 其他文件按显示名称排序
+    const priA = fileSortPriority(a.filename);
+    const priB = fileSortPriority(b.filename);
+    if (priA !== priB) return priA - priB;
     return a.displayName.localeCompare(b.displayName, 'zh-CN');
   });
 };
