@@ -39,10 +39,12 @@ function makeOctokit(onUpdate: (params: any) => void) {
 }
 
 describe('uploadIncremental — batch payload structure', () => {
-  it('reproduces user error: deletion-only batches trigger 422 missing_field:files', async () => {
-    // Scenario: local + remote agree on settings/ai-models/cover-history
-    // (hashes match), but remote has novels/memories that local has deleted.
-    // Diff produces only `deleted` entries → batch is 100% nulls → GitHub rejects.
+  it('pure-deletion scenario: writes manifest alone, leaves deleted files as harmless orphans', async () => {
+    // Scenario: local + remote agree on settings/ai-models/cover-history (hashes match),
+    // but remote has novels/memories that local has deleted. GitHub rejects
+    // "N null + 1 manifest-content" batches with 422 missing_field:files, so we
+    // write just the manifest (which no longer lists those entries). The old
+    // files remain on Gist as orphans until the next sync with real content.
     const payload: UploadPayload = {
       appSettings: { lastEdited: new Date(0) } as any,
       aiModels: [],
@@ -85,25 +87,16 @@ describe('uploadIncremental — batch payload structure', () => {
 
     await uploadIncremental(octokit, config, payload, {});
 
-    // Each batch must contain at least one non-null file entry, otherwise GitHub returns
-    // 422 missing_field: files
-    for (const [idx, batch] of patches.entries()) {
-      const keys = Object.keys(batch);
-      const nonNullKeys = keys.filter((k) => batch[k] !== null);
-      expect(
-        nonNullKeys.length,
-        `Batch #${idx} sent only null deletions: ${JSON.stringify(batch)}`,
-      ).toBeGreaterThan(0);
-    }
-
-    // The final PATCH must contain the manifest and all deletion tombstones
-    // atomically together, so the old manifest never references deleted files.
-    const finalPatch = patches[patches.length - 1]!;
-    expect(finalPatch['manifest.json']).toBeTruthy();
-    expect(finalPatch['novel-book-a.json']).toBeNull();
-    expect(finalPatch['novel-book-b.json']).toBeNull();
-    expect(finalPatch['memories-book-a.json']).toBeNull();
-    expect(finalPatch['memories-book-b.json']).toBeNull();
+    // Single PATCH with ONLY the manifest — no null deletions (GitHub would reject).
+    expect(patches.length).toBe(1);
+    const only = patches[0]!;
+    expect(only['manifest.json']).toBeTruthy();
+    // Deletion entries must NOT appear in the PATCH; they'd make it all-null-plus-manifest,
+    // the shape GitHub rejects with 422 missing_field:files
+    expect(only['novel-book-a.json']).toBeUndefined();
+    expect(only['novel-book-b.json']).toBeUndefined();
+    expect(only['memories-book-a.json']).toBeUndefined();
+    expect(only['memories-book-b.json']).toBeUndefined();
   });
 
   it('single PATCH when there are neither uploads nor deletions (manifest only)', async () => {
@@ -134,9 +127,9 @@ describe('uploadIncremental — batch payload structure', () => {
     expect(patches[0]!['manifest.json']).toBeTruthy();
   });
 
-  it('content uploads happen before manifest/deletion atomic batch', async () => {
-    // Mixed case: 1 novel added + 1 novel deleted. Non-null content must go out
-    // before the final batch that combines manifest + null deletion.
+  it('content uploads + deletions + manifest all sent in a single atomic PATCH when they fit', async () => {
+    // Mixed case: 1 novel added + 1 novel deleted. Everything fits under BATCH_SIZE,
+    // so it should go out as a single atomic PATCH with content + nulls + manifest.
     const novel = {
       id: 'new-book',
       title: 'N',
@@ -180,15 +173,140 @@ describe('uploadIncremental — batch payload structure', () => {
 
     await uploadIncremental(octokit, config, payload, {});
 
-    // At least two PATCHes — first is content, last is manifest + deletion
-    expect(patches.length).toBeGreaterThanOrEqual(2);
+    // Everything fits in one batch; merged into a single atomic PATCH
+    expect(patches.length).toBe(1);
+    const only = patches[0]!;
+    expect(only['novel-new-book.json']).toBeTruthy();
+    expect(only['manifest.json']).toBeTruthy();
+    expect(only['novel-old-book.json']).toBeNull();
+  });
 
-    const firstPatch = patches[0]!;
-    expect(firstPatch['novel-new-book.json']).toBeTruthy();
-    expect(firstPatch['manifest.json']).toBeFalsy();
+  it('multiple content batches: only the LAST batch carries manifest + deletions (no standalone null batch)', async () => {
+    // Create > BATCH_SIZE (10) novels so additions need multiple batches.
+    // The final batch should be (remaining content + deletions + manifest).
+    const novels = Array.from({ length: 12 }, (_, i) => ({
+      id: `book-${i}`,
+      title: `N${i}`,
+      cover: '',
+      author: '',
+      description: '',
+      language: 'zh-CN',
+      source: '',
+      lastEdited: new Date(0),
+      volumes: [],
+    }));
+    const payload: UploadPayload = {
+      appSettings: { lastEdited: new Date(0) } as any,
+      aiModels: [],
+      coverHistory: [],
+      novels: novels as any,
+      memoriesByBook: {},
+    };
+    const localManifest = await buildLocalManifest({
+      appSettings: payload.appSettings,
+      aiModels: payload.aiModels,
+      coverHistory: payload.coverHistory,
+      novels: payload.novels,
+      memoriesByBook: payload.memoriesByBook,
+    });
+    // Force all entries to appear as changed vs known
+    const known: Record<string, string> = {};
+    for (const k of Object.keys(manifestToHashes(localManifest))) known[k] = 'different';
+    known[novelEntryKey('phantom-book')] = 'phantom'; // forces a deletion too
 
-    const finalPatch = patches[patches.length - 1]!;
-    expect(finalPatch['manifest.json']).toBeTruthy();
-    expect(finalPatch['novel-old-book.json']).toBeNull();
+    const config = makeConfig({
+      knownRemoteHashes: known,
+      knownRemoteEntries: { [novelEntryKey('phantom-book')]: { hash: 'phantom' } },
+    });
+
+    const patches: Array<Record<string, any>> = [];
+    const octokit = makeOctokit((params) => patches.push(params.files ?? {}));
+
+    await uploadIncremental(octokit, config, payload, {});
+
+    // There should be more than one batch since we have > 10 content files
+    expect(patches.length).toBeGreaterThan(1);
+
+    // No batch may be "nulls only" (would trigger 422 missing_field:files)
+    for (const [idx, p] of patches.entries()) {
+      const nonNull = Object.values(p).filter((v) => v !== null).length;
+      expect(nonNull, `Batch #${idx} had no non-null entries`).toBeGreaterThan(0);
+    }
+
+    // First batch: pure content, no manifest, no deletions
+    expect(patches[0]!['manifest.json']).toBeFalsy();
+    expect(patches[0]!['novel-phantom-book.json']).toBeUndefined();
+
+    // Last batch: contains manifest + phantom deletion + remaining content
+    const last = patches[patches.length - 1]!;
+    expect(last['manifest.json']).toBeTruthy();
+    expect(last['novel-phantom-book.json']).toBeNull();
+  });
+
+  it('filters out deletions of files absent from remote snapshot (avoids GitHub 422)', async () => {
+    // Reproduces the real-world bug: knownEntries claims a novel was chunked (chunks=5),
+    // but those chunk files no longer exist on Gist (e.g., a partial prior sync wrote
+    // the new single-file layout but failed before updating knownEntries). If we tried
+    // to null those nonexistent chunks, GitHub rejects the entire PATCH with
+    // 422 missing_field:files. Instead, we filter deletions by actual remote presence.
+    const novel = {
+      id: 'book-a',
+      title: 'N',
+      cover: '',
+      author: '',
+      description: '',
+      language: 'zh-CN',
+      source: '',
+      lastEdited: new Date(0),
+      volumes: [],
+    };
+    const payload: UploadPayload = {
+      appSettings: { lastEdited: new Date(0) } as any,
+      aiModels: [],
+      coverHistory: [],
+      novels: [novel as any],
+      memoriesByBook: {},
+    };
+    const localManifest = await buildLocalManifest({
+      appSettings: payload.appSettings,
+      aiModels: payload.aiModels,
+      coverHistory: payload.coverHistory,
+      novels: payload.novels,
+      memoriesByBook: payload.memoriesByBook,
+    });
+    const config = makeConfig({
+      knownRemoteHashes: {
+        ...manifestToHashes(localManifest),
+        [novelEntryKey('book-a')]: 'force-upload',
+      },
+      // knownEntries says book-a was chunked=5 previously
+      knownRemoteEntries: {
+        [novelEntryKey('book-a')]: { hash: 'old', chunks: 5 },
+      },
+    });
+
+    // Remote snapshot: only the new single-file layout exists, no chunk/meta files
+    const remoteFilesSnapshot = {
+      'novel-book-a.json': { content: '{"format":"gzip","data":"..."}' },
+      // explicitly no 'novel-book-a.meta.json' nor 'novel-chunk-book-a_*.json'
+    };
+
+    const patches: Array<Record<string, any>> = [];
+    const octokit = makeOctokit((params) => patches.push(params.files ?? {}));
+
+    await uploadIncremental(octokit, config, payload, remoteFilesSnapshot as any);
+
+    // None of the non-existent chunk/meta files should appear as deletions
+    for (const batch of patches) {
+      expect(batch['novel-book-a.meta.json']).toBeUndefined();
+      for (let i = 0; i < 5; i++) {
+        expect(batch[`novel-chunk-book-a_${i}.json`]).toBeUndefined();
+      }
+    }
+
+    // The new content + manifest DOES go out
+    const allKeys = patches.flatMap((p) => Object.keys(p));
+    expect(allKeys).toContain('novel-book-a.json');
+    expect(allKeys).toContain('manifest.json');
   });
 });

@@ -91,8 +91,9 @@ export type IncrementalDownloadResult =
       /** 客户端版本落后于远端 schemaVersion */
       schemaVersionTooNew?: boolean;
       /**
-       * 迁移或版本不兼容时返回的远端文件快照，用于后续 uploadIncremental 清理遗留文件。
-       * 常规 diff 路径下为空（正常路径依赖 knownRemoteEntries 枚举文件名）。
+       * 远端文件快照：uploadIncremental 用来判断清理 null 目标是否真的存在于 Gist 上。
+       * 在所有非 skipped 的下载路径（常规 diff、迁移、schemaVersionTooNew）都会填充；
+       * 伪 CAS 命中后复用上次 verify 的 files 时也会填。
        */
       remoteFilesSnapshot?: Record<string, GistFileLike>;
       /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化/新增的条目） */
@@ -641,6 +642,10 @@ export async function downloadWithManifest(
     remoteETag: etag,
     remoteUpdatedAt: updatedAt,
     manifest: remoteManifest,
+    // 携带远端文件快照：uploadIncremental 用它来判断某个"待删除"的文件名是否
+    // 真的在 Gist 上，避免 PATCH 中出现 "null 删除不存在的文件"——这会被
+    // GitHub 以 422 missing_field:files 拒绝整个请求，连带丢掉其它合法的内容写入。
+    remoteFilesSnapshot: files,
     changedEntries,
     deletedEntries,
     remoteTombstones: remoteTombstoneMap,
@@ -691,6 +696,11 @@ export async function uploadIncremental(
   // 按 entry key 序列化文件
   const allFiles: Record<string, { content: string } | null> = {};
   const remoteFilenames = Object.keys(remoteFilesSnapshot);
+  // 用于过滤"删除不存在的文件"：GitHub 对这种 PATCH 会返回 422 拒绝整个请求。
+  // 当 remoteFilesSnapshot 为空（伪 CAS 命中、无下载阶段），我们保守选择信任
+  // knownEntries 而不做过滤；正常下载路径上这个集合总是填充的。
+  const remoteFilenameSet = new Set(remoteFilenames);
+  const hasRemoteSnapshot = remoteFilenames.length > 0;
   const uploadedEntries: string[] = [];
 
   // 合并"已知布局"与"实时快照"两个来源，确保孤儿文件一定被清理：
@@ -700,7 +710,13 @@ export async function uploadIncremental(
     const known = knownEntries[entryKey];
     const fromKnown = filenamesForEntry(entryKey, known?.chunks);
     const fromSnapshot = matchFilenamesInSnapshot(entryKey, remoteFilenames);
-    return Array.from(new Set([...fromKnown, ...fromSnapshot]));
+    const merged = Array.from(new Set([...fromKnown, ...fromSnapshot]));
+    // 若有远端文件快照，仅保留确实存在于 Gist 上的文件；其它过时的 knownEntries
+    // 条目（例如指向已被先前同步写走的 chunk）会被过滤，避免产生必然失败的 null 删除
+    if (hasRemoteSnapshot) {
+      return merged.filter((name) => remoteFilenameSet.has(name));
+    }
+    return merged;
   };
 
   for (let i = 0; i < toUpload.length; i++) {
@@ -778,22 +794,12 @@ export async function uploadIncremental(
     batch: Record<string, { content: string } | null>,
     isFirst: boolean,
   ): Promise<void> => {
-    // 诊断：422 missing_field:files 发生时，这条日志告诉我们此次 PATCH 到底发了什么
-    const summary = Object.entries(batch).map(([name, file]) => ({
-      name,
-      kind: file === null ? 'delete' : 'content',
-      bytes: file === null ? 0 : file.content.length,
-    }));
-    const nonNullCount = summary.filter((s) => s.kind === 'content').length;
+    // 诊断：PATCH 失败时能看到批次结构（内容数量 / 删除数量）
+    const entries = Object.entries(batch);
+    const nonNullCount = entries.filter(([, f]) => f !== null).length;
     console.info(
-      `[gist-sync-incremental] PATCH batch: ${summary.length} files (${nonNullCount} content, ${summary.length - nonNullCount} delete)`,
-      summary,
+      `[gist-sync-incremental] PATCH batch: ${entries.length} files (${nonNullCount} content, ${entries.length - nonNullCount} delete)`,
     );
-    if (summary.length === 0 || nonNullCount === 0) {
-      console.warn(
-        '[gist-sync-incremental] 即将发送空或全删除的 PATCH，GitHub 预期将返回 422 missing_field:files',
-      );
-    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
@@ -811,32 +817,59 @@ export async function uploadIncremental(
     }
   };
 
-  // 阶段 1：分批上传所有新增/变更的文件（均为非 null 内容）
-  const totalFilesIncludingManifest = nonManifestEntries.length + 1;
-  let firstBatch = true;
-  let uploadedCount = 0;
+  // 分批策略：把所有 additions 按 BATCH_SIZE 切块上传；最后一块额外附加
+  // 所有 deletions 与 manifest，保证"指针切换"是一次原子 PATCH。
+  //
+  // 为什么把 manifest + deletions 并入最后一个 additions 批次而不是单独一批：
+  // GitHub 的 Gist PATCH 在遇到"只有 manifest 内容 + 若干 null 删除"的请求时会
+  // 返回 422 missing_field:files（推测为空有效变更的启发式）。把它与真实的
+  // 内容写入同批，既避免触发这个陷阱，又保持 manifest 最后写入的原子语义——
+  // 前面的 N-1 批都是纯内容上传（若失败，旧 manifest 仍然指向旧布局，无害）。
+  const additionBatches: Array<Record<string, { content: string } | null>> = [];
   for (let i = 0; i < additions.length; i += BATCH_SIZE) {
     const slice = additions.slice(i, i + BATCH_SIZE);
     const batch: Record<string, { content: string } | null> = {};
     for (const [name, f] of slice) batch[name] = f;
-
-    await runBatch(batch, firstBatch);
-    firstBatch = false;
-    uploadedCount = Math.min(i + BATCH_SIZE, additions.length);
-
-    onProgress?.({
-      current: uploadedCount,
-      total: totalFilesIncludingManifest,
-      message: `已上传 ${uploadedCount} / ${totalFilesIncludingManifest}`,
-    });
+    additionBatches.push(batch);
   }
 
-  // 阶段 2：原子提交——manifest + 删除一起写
-  // 即使 deletions 为空，finalBatch 也至少包含 manifest，不会出现空 files 对象
-  const finalBatch: Record<string, { content: string } | null> = {};
-  for (const [name, f] of deletions) finalBatch[name] = f;
+  // 纯删除场景：没有任何 additions，只有 deletions + manifest
+  // GitHub 对 "N null + 1 content (manifest)" 这种形状会返回 422 missing_field:files。
+  // 解决：只写 manifest，跳过删除——被删条目因不在 manifest.entries 里，下载时不会被读取；
+  // Gist 上留下的旧文件成为孤儿，无害。下一次有 additions 的同步会在 last batch 里顺带清理。
+  if (additionBatches.length === 0) {
+    if (deletions.length > 0) {
+      console.info(
+        `[gist-sync-incremental] 纯删除场景：${deletions.length} 个旧文件仅从 manifest 摘除，` +
+          `Gist 上作为孤儿保留，下次有内容上传时清理`,
+      );
+    }
+    additionBatches.push({});
+  }
+
+  // 向最后一批追加 deletions 与 manifest（仅当该批已含非 null 内容时才追加 deletions）
+  const finalBatch = additionBatches[additionBatches.length - 1]!;
+  const lastBatchHasContent = Object.values(finalBatch).some((v) => v !== null);
+  if (lastBatchHasContent) {
+    for (const [name, f] of deletions) finalBatch[name] = f;
+  }
   finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
-  await runBatch(finalBatch, firstBatch);
+
+  const totalFilesIncludingManifest = nonManifestEntries.length + 1;
+  let firstBatch = true;
+  let uploadedCount = 0;
+  for (let bi = 0; bi < additionBatches.length; bi++) {
+    const batch = additionBatches[bi]!;
+    await runBatch(batch, firstBatch);
+    firstBatch = false;
+
+    uploadedCount += Object.keys(batch).length;
+    onProgress?.({
+      current: Math.min(uploadedCount, totalFilesIncludingManifest),
+      total: totalFilesIncludingManifest,
+      message: `已上传 ${Math.min(uploadedCount, totalFilesIncludingManifest)} / ${totalFilesIncludingManifest}`,
+    });
+  }
 
   onProgress?.({
     current: totalFilesIncludingManifest,
