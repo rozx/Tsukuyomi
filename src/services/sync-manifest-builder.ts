@@ -184,6 +184,22 @@ export function manifestToHashes(manifest: GistManifest): Record<string, string>
 }
 
 /**
+ * 从 manifest 提取完整条目元数据（hash + chunks），便于持久化到 SyncConfig。
+ * 上传路径使用它枚举每个 entry 对应的 Gist 文件名，避免删除/chunk 迁移留下孤儿文件。
+ */
+export function manifestToEntries(
+  manifest: GistManifest,
+): Record<string, { hash: string; chunks?: number }> {
+  const result: Record<string, { hash: string; chunks?: number }> = {};
+  for (const [key, entry] of Object.entries(manifest.entries)) {
+    result[key] = entry.chunks !== undefined
+      ? { hash: entry.hash, chunks: entry.chunks }
+      : { hash: entry.hash };
+  }
+  return result;
+}
+
+/**
  * 当远端 manifest.json 缺失、损坏或被第三方编辑时的回退重建。
  * 根据实际文件列表的命名约定推断 entry key，哈希值基于文件原始内容（压缩后字节）计算。
  * 返回的 manifest 是"最佳猜测"，可能与权威版本略有差异；仅用于降级同步。

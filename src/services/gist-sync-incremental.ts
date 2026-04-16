@@ -375,13 +375,16 @@ async function readFile(
 }
 
 /**
- * 根据 entry key 与可能的 chunk 数计算所有匹配的文件名，用于删除 Gist 上的文件。
- * 用于：entry 在本地被删除时，将对应远端文件置为 null。
+ * 根据 entry key 与已知 chunk 数枚举一个 entry 在 Gist 上的所有文件名。
+ * 用于：entry 在本地被删除时、或 chunk 数变化时，精确知道哪些远端文件需要置为 null。
+ *
+ * 不再依赖远端的实时文件列表——在无法获取 remoteFilesSnapshot 的路径（伪 CAS 命中、
+ * 首次迁移后的立即上传等）下也能正确枚举所有文件名。
+ *
+ * @param entryKey 条目键
+ * @param chunks 上次已知的 chunk 数（来自 `config.knownRemoteEntries`）；0/undefined 表示单文件布局
  */
-export function filenamesForEntry(
-  entryKey: string,
-  knownRemoteFiles: string[],
-): string[] {
+export function filenamesForEntry(entryKey: string, chunks?: number): string[] {
   if (entryKey === ENTRY_KEYS.SETTINGS) return [FILE_NAMES.SETTINGS];
   if (entryKey === ENTRY_KEYS.AI_MODELS) return [FILE_NAMES.AI_MODELS];
   if (entryKey === ENTRY_KEYS.COVER_HISTORY) return [FILE_NAMES.COVER_HISTORY];
@@ -391,14 +394,51 @@ export function filenamesForEntry(
   const bookId = novelBookId ?? memoryBookId;
   if (!bookId) return [];
 
+  const prefix = novelBookId ? FILE_NAMES.NOVEL_PREFIX : FILE_NAMES.MEMORIES_PREFIX;
+  const chunkPrefix = novelBookId
+    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
+    : FILE_NAMES.MEMORIES_CHUNK_PREFIX;
+
+  if (!chunks || chunks === 0) {
+    return [`${prefix}${bookId}.json`];
+  }
+
+  const names: string[] = [`${prefix}${bookId}.meta.json`];
+  for (let i = 0; i < chunks; i++) {
+    names.push(`${chunkPrefix}${bookId}_${i}.json`);
+  }
+  return names;
+}
+
+/**
+ * 兜底：扫描 remote snapshot 中与 entry 匹配的文件名。
+ * 用在迁移场景或 `knownRemoteEntries` 不可用时，发现被持久化状态遗漏的遗留文件。
+ */
+export function matchFilenamesInSnapshot(
+  entryKey: string,
+  remoteFilenames: string[],
+): string[] {
+  if (entryKey === ENTRY_KEYS.SETTINGS) {
+    return remoteFilenames.filter((f) => f === FILE_NAMES.SETTINGS);
+  }
+  if (entryKey === ENTRY_KEYS.AI_MODELS) {
+    return remoteFilenames.filter((f) => f === FILE_NAMES.AI_MODELS);
+  }
+  if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
+    return remoteFilenames.filter((f) => f === FILE_NAMES.COVER_HISTORY);
+  }
+  const novelBookId = parseNovelEntryKey(entryKey);
+  const memoryBookId = parseMemoriesEntryKey(entryKey);
+  const bookId = novelBookId ?? memoryBookId;
+  if (!bookId) return [];
+
   const prefixes = novelBookId
     ? [FILE_NAMES.NOVEL_PREFIX, FILE_NAMES.NOVEL_CHUNK_PREFIX]
     : [FILE_NAMES.MEMORIES_PREFIX, FILE_NAMES.MEMORIES_CHUNK_PREFIX];
 
-  return knownRemoteFiles.filter((f) => {
-    // 精确前缀 + bookId 匹配，避免误删其他书籍
-    return prefixes.some((p) => f.startsWith(`${p}${bookId}`));
-  });
+  return remoteFilenames.filter((f) =>
+    prefixes.some((p) => f.startsWith(`${p}${bookId}`)),
+  );
 }
 
 /**
@@ -626,6 +666,7 @@ export async function uploadIncremental(
   });
 
   const knownHashes = config.knownRemoteHashes ?? {};
+  const knownEntries = config.knownRemoteEntries ?? {};
   const knownAsManifest = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     updatedAt: '',
@@ -644,6 +685,16 @@ export async function uploadIncremental(
   const allFiles: Record<string, { content: string } | null> = {};
   const remoteFilenames = Object.keys(remoteFilesSnapshot);
   const uploadedEntries: string[] = [];
+
+  // 合并"已知布局"与"实时快照"两个来源，确保孤儿文件一定被清理：
+  // - knownEntries 给出上次成功同步时每个 entry 的 chunk 布局（权威，伪 CAS 路径也可用）
+  // - remoteFilenames 扫描可能发现被持久化状态遗漏的遗留文件（迁移、外部编辑等）
+  const resolveStaleFilenames = (entryKey: string): string[] => {
+    const known = knownEntries[entryKey];
+    const fromKnown = filenamesForEntry(entryKey, known?.chunks);
+    const fromSnapshot = matchFilenamesInSnapshot(entryKey, remoteFilenames);
+    return Array.from(new Set([...fromKnown, ...fromSnapshot]));
+  };
 
   for (let i = 0; i < toUpload.length; i++) {
     const entryKey = toUpload[i]!;
@@ -669,7 +720,7 @@ export async function uploadIncremental(
 
     // 清理：远端可能有旧的 chunk 文件（chunk 数减少时）或旧单文件/分块格式切换
     const expectedFilenames = new Set(Object.keys(files));
-    const potentiallyStale = filenamesForEntry(entryKey, remoteFilenames);
+    const potentiallyStale = resolveStaleFilenames(entryKey);
     for (const stale of potentiallyStale) {
       if (!expectedFilenames.has(stale)) {
         allFiles[stale] = null;
@@ -679,37 +730,32 @@ export async function uploadIncremental(
 
   // 处理删除的 entry
   for (const entryKey of toDelete) {
-    const toNull = filenamesForEntry(entryKey, remoteFilenames);
+    const toNull = resolveStaleFilenames(entryKey);
     for (const name of toNull) {
       allFiles[name] = null;
     }
   }
 
-  // 始终写入最新的 manifest
-  allFiles[MANIFEST_FILE_NAME] = {
-    content: JSON.stringify(localManifest),
-  };
-
   uploadedEntries.push(...toUpload);
 
   onProgress?.({
     current: 0,
-    total: Object.keys(allFiles).length,
+    total: Object.keys(allFiles).length + 1,
     message: '正在上传...',
   });
 
-  // 批量上传（复用现有批处理 + 重试思路）
+  // 排序：manifest 之外的文件先分批上传；manifest 作为最后一批单独上传。
+  // 这保证若中途某批失败，Gist 仍指向旧 manifest，状态一致（孤儿文件无害但不会"部分指向新布局"）。
   const BATCH_SIZE = 10;
-  const entries = Object.entries(allFiles);
+  const nonManifestEntries = Object.entries(allFiles);
   let newETag = '';
   let htmlUrl: string | undefined;
   let newUpdatedAt = '';
 
-  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-    const slice = entries.slice(i, i + BATCH_SIZE);
-    const batch: Record<string, { content: string } | null> = {};
-    for (const [name, f] of slice) batch[name] = f;
-
+  const runBatch = async (
+    batch: Record<string, { content: string } | null>,
+    isFirst: boolean,
+  ): Promise<void> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
@@ -717,23 +763,47 @@ export async function uploadIncremental(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       files: batch as any,
     });
-
-    if (i === 0) {
+    if (isFirst) {
       newETag = (response.headers?.etag as string | undefined) ?? '';
       newUpdatedAt = response.data?.updated_at ?? '';
       htmlUrl = response.data?.html_url ?? undefined;
     } else {
-      // 后续批次覆盖 ETag（最后一次的为准）
       if (response.headers?.etag) newETag = response.headers.etag as string;
       if (response.data?.updated_at) newUpdatedAt = response.data.updated_at;
     }
+  };
+
+  // 先上传所有非 manifest 文件
+  const totalFilesIncludingManifest = nonManifestEntries.length + 1;
+  let firstBatch = true;
+  for (let i = 0; i < nonManifestEntries.length; i += BATCH_SIZE) {
+    const slice = nonManifestEntries.slice(i, i + BATCH_SIZE);
+    const batch: Record<string, { content: string } | null> = {};
+    for (const [name, f] of slice) batch[name] = f;
+
+    await runBatch(batch, firstBatch);
+    firstBatch = false;
 
     onProgress?.({
-      current: Math.min(i + BATCH_SIZE, entries.length),
-      total: entries.length,
-      message: `已上传 ${Math.min(i + BATCH_SIZE, entries.length)} / ${entries.length}`,
+      current: Math.min(i + BATCH_SIZE, nonManifestEntries.length),
+      total: totalFilesIncludingManifest,
+      message: `已上传 ${Math.min(i + BATCH_SIZE, nonManifestEntries.length)} / ${totalFilesIncludingManifest}`,
     });
   }
+
+  // 最后一批：写入 manifest——此时所有内容文件都已就位，切换指针是原子的
+  await runBatch(
+    {
+      [MANIFEST_FILE_NAME]: { content: JSON.stringify(localManifest) },
+    },
+    firstBatch,
+  );
+
+  onProgress?.({
+    current: totalFilesIncludingManifest,
+    total: totalFilesIncludingManifest,
+    message: `已上传 ${totalFilesIncludingManifest} / ${totalFilesIncludingManifest}`,
+  });
 
   return {
     success: true,

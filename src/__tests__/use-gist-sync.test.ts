@@ -53,6 +53,7 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     updateLastSyncedModelIds: mock(() => Promise.resolve()),
     updateLastRemoteETag: mock(() => Promise.resolve()),
     updateKnownRemoteHashes: mock(() => Promise.resolve()),
+    updateKnownRemoteEntries: mock(() => Promise.resolve()),
     updateKnownRemoteTombstones: mock(() => Promise.resolve()),
     cleanupOldDeletionRecords: mock(() => Promise.resolve()),
     getAllSettings: mock(() => ({ lastEdited: new Date(0) })),

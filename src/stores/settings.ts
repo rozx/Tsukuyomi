@@ -353,14 +353,16 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.deletedMemoryIds !== undefined
           ? { deletedMemoryIds: toPlain(sync.deletedMemoryIds) }
           : {}),
-        ...(sync.lastRemoteUpdatedAt !== undefined
-          ? { lastRemoteUpdatedAt: String(sync.lastRemoteUpdatedAt) }
-          : {}),
+        // 注意：`lastRemoteUpdatedAt` 已由 `lastRemoteETag` 取代，主路径不再写入此字段。
+        // 仅在加载旧配置时保留读取，因此 saveSyncConfigs 不序列化它。
         ...(sync.lastRemoteETag !== undefined
           ? { lastRemoteETag: String(sync.lastRemoteETag) }
           : {}),
         ...(sync.knownRemoteHashes !== undefined
           ? { knownRemoteHashes: toPlain(sync.knownRemoteHashes) }
+          : {}),
+        ...(sync.knownRemoteEntries !== undefined
+          ? { knownRemoteEntries: toPlain(sync.knownRemoteEntries) }
           : {}),
         ...(sync.knownRemoteTombstones !== undefined
           ? { knownRemoteTombstones: toPlain(sync.knownRemoteTombstones) }
@@ -1125,6 +1127,18 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateKnownRemoteHashes(hashes: Record<string, string>): Promise<void> {
       await this.updateGistSync({ knownRemoteHashes: hashes });
+    },
+
+    /**
+     * 更新已知的远程 manifest 条目元数据（entryKey -> { hash, chunks }）
+     *
+     * 与 updateKnownRemoteHashes 相比，额外记录每条目的 chunks 数；
+     * 上传流程用它枚举每个 entry 在 Gist 上的所有文件名，避免删除/chunk 迁移后留下孤儿文件。
+     */
+    async updateKnownRemoteEntries(
+      entries: Record<string, { hash: string; chunks?: number }>,
+    ): Promise<void> {
+      await this.updateGistSync({ knownRemoteEntries: entries });
     },
 
     /**

@@ -8,6 +8,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import {
   buildLocalManifest,
+  manifestToEntries,
   manifestToHashes,
 } from 'src/services/sync-manifest-builder';
 import {
@@ -194,6 +195,7 @@ export function useSyncExecutor() {
         try {
           await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
           await settingsStore.updateKnownRemoteHashes({});
+          await settingsStore.updateKnownRemoteEntries({});
         } catch (error) {
           console.error('[useSyncExecutor] 保存迁移状态失败:', error);
         }
@@ -236,6 +238,9 @@ export function useSyncExecutor() {
         if (downloadResult.manifest) {
           try {
             await settingsStore.updateKnownRemoteHashes(manifestToHashes(downloadResult.manifest));
+            await settingsStore.updateKnownRemoteEntries(
+              manifestToEntries(downloadResult.manifest),
+            );
           } catch (error) {
             console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
           }
@@ -464,6 +469,7 @@ export function useSyncExecutor() {
         try {
           await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
           await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
+          await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
           // 同步上传后的 manifest.tombstones 回 knownRemoteTombstones，供下次上传合并
           const uploadedTombstones: Record<string, string> = {};
           for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
