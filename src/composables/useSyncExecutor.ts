@@ -270,10 +270,25 @@ export function useSyncExecutor() {
 
       const latestConfig = configOverride ?? settingsStore.gistSync;
       const knownHashes = latestConfig.knownRemoteHashes ?? {};
-      const shouldUpload = SyncDataService.hasLocalChangesByHash(
-        manifestToHashes(localManifest),
-        knownHashes,
-      );
+      const localHashes = manifestToHashes(localManifest);
+      const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
+
+      if (shouldUpload) {
+        // 诊断：记录哪些 entry 触发了上传
+        const diffs: Array<{ key: string; local: string; known: string | undefined }> = [];
+        for (const [key, localHash] of Object.entries(localHashes)) {
+          const known = knownHashes[key];
+          if (known !== localHash) {
+            diffs.push({ key, local: localHash.slice(0, 12), known: known?.slice(0, 12) });
+          }
+        }
+        for (const key of Object.keys(knownHashes)) {
+          if (!(key in localHashes)) {
+            diffs.push({ key, local: '(absent)', known: knownHashes[key]?.slice(0, 12) });
+          }
+        }
+        console.info('[useSyncExecutor] 检测到本地变更，将上传:', diffs);
+      }
 
       if (!shouldUpload) {
         settingsStore.updateSyncProgress({
