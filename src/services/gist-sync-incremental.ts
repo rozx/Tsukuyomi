@@ -778,6 +778,22 @@ export async function uploadIncremental(
     batch: Record<string, { content: string } | null>,
     isFirst: boolean,
   ): Promise<void> => {
+    // 诊断：422 missing_field:files 发生时，这条日志告诉我们此次 PATCH 到底发了什么
+    const summary = Object.entries(batch).map(([name, file]) => ({
+      name,
+      kind: file === null ? 'delete' : 'content',
+      bytes: file === null ? 0 : file.content.length,
+    }));
+    const nonNullCount = summary.filter((s) => s.kind === 'content').length;
+    console.info(
+      `[gist-sync-incremental] PATCH batch: ${summary.length} files (${nonNullCount} content, ${summary.length - nonNullCount} delete)`,
+      summary,
+    );
+    if (summary.length === 0 || nonNullCount === 0) {
+      console.warn(
+        '[gist-sync-incremental] 即将发送空或全删除的 PATCH，GitHub 预期将返回 422 missing_field:files',
+      );
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
