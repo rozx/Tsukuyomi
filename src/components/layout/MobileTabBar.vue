@@ -2,45 +2,38 @@
 import { computed, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
-import { useBooksStore } from 'src/stores/books';
 import SettingsDialog from 'src/components/dialogs/SettingsDialog.vue';
 
 const router = useRouter();
 const route = useRoute();
 const ui = useUiStore();
-const booksStore = useBooksStore();
 const settingsDialogVisible = ref(false);
 
-type TabId = 'home' | 'library' | 'reader' | 'chat' | 'settings';
+type TabId = 'home' | 'library' | 'chat' | 'ai' | 'help' | 'settings';
 
 type Tab = { id: TabId; icon: string; label: string };
 
-// 按设计稿顺序：首页 / 书库 / 阅读 / AI 助手 / 设置
+// 内容 → AI 工具 → 应用设置：
+//   首页 · 书库   ← 内容入口
+//   AI 助手 · AI 模型  ← 核心 AI 功能（把 AI 集群放在中间方便拇指触达）
+//   设置 · 帮助   ← 配置与支持（放在最右）
 const tabs: Tab[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
-  { id: 'reader', icon: 'pi-file-edit', label: '阅读' },
   { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
+  { id: 'ai', icon: 'pi-objects-column', label: 'AI 模型' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
+  { id: 'help', icon: 'pi-question-circle', label: '帮助' },
 ];
 
 const activeTab = computed<TabId>(() => {
   if (ui.rightPanelOpen && ui.activeRightTab === 'chat') return 'chat';
   const path = route.path;
   if (path === '/') return 'home';
-  if (path === '/books') return 'library';
-  if (path.startsWith('/books/')) return 'reader';
+  if (path.startsWith('/ai')) return 'ai';
+  if (path.startsWith('/help')) return 'help';
+  if (path === '/books' || path.startsWith('/books/')) return 'library';
   return 'home';
-});
-
-// 阅读 tab 目标：最近编辑的书籍
-const mostRecentBookId = computed(() => {
-  const books = booksStore.books;
-  if (books.length === 0) return null;
-  const sorted = [...books].sort(
-    (a, b) => new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime(),
-  );
-  return sorted[0]?.id ?? null;
 });
 
 const onTabClick = (id: TabId) => {
@@ -53,18 +46,6 @@ const onTabClick = (id: TabId) => {
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (route.path !== '/books') void router.push('/books');
       return;
-    case 'reader': {
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      const bookId = mostRecentBookId.value;
-      if (bookId) {
-        const target = `/books/${bookId}`;
-        if (route.path !== target) void router.push(target);
-      } else {
-        // 无书籍时回退到书库
-        if (route.path !== '/books') void router.push('/books');
-      }
-      return;
-    }
     case 'chat':
       // 右面板已打开且当前在 chat tab 上：再次点击关闭
       // 右面板已打开但在其它 tab（如 progress）：切换到 chat，不关闭
@@ -75,6 +56,14 @@ const onTabClick = (id: TabId) => {
         ui.setActiveRightTab('chat');
         if (!ui.rightPanelOpen) ui.openRightPanel();
       }
+      return;
+    case 'ai':
+      if (ui.rightPanelOpen) ui.closeRightPanel();
+      if (route.path !== '/ai') void router.push('/ai');
+      return;
+    case 'help':
+      if (ui.rightPanelOpen) ui.closeRightPanel();
+      if (!route.path.startsWith('/help')) void router.push('/help');
       return;
     case 'settings':
       settingsDialogVisible.value = true;
