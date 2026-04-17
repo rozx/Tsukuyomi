@@ -22,6 +22,7 @@ import {
   MESSAGE_LIMIT_THRESHOLD,
 } from 'src/stores/chat-sessions';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { getAssetUrl } from 'src/utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { estimateAssistantContextTokens } from 'src/utils/ai-context-utils';
@@ -46,6 +47,8 @@ const aiProcessingStore = useAIProcessingStore();
 const chatSessionsStore = useChatSessionsStore();
 const toast = useToastWithHistory();
 const isDesktop = computed(() => ui.deviceType === 'desktop');
+const isPhone = computed(() => ui.deviceType === 'phone');
+const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 // 当前激活的 Tab
 const activeRightTab = computed(() => ui.activeRightTab);
@@ -599,8 +602,40 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
       class="absolute inset-0 bg-gradient-to-b from-tsukuyomi-500/5 via-transparent to-transparent pointer-events-none"
     />
 
-    <!-- Header with Tab switcher -->
-    <div class="shrink-0 px-4 pt-4 pb-0 relative z-10 border-b border-white/10">
+    <!-- 手机端 · AI 助手 app bar（按设计稿） -->
+    <header v-if="isPhone && activeRightTab === 'chat'" class="mc-appbar">
+      <div class="mc-appbar-logo">
+        <img :src="logoPath" alt="" />
+      </div>
+      <div class="mc-appbar-text">
+        <div class="mc-appbar-title">AI 助手</div>
+        <div class="mc-appbar-sub">
+          <span
+            class="mc-status-dot"
+            :class="{ 'mc-status-dot--off': !assistantModel }"
+          />
+          <template v-if="assistantModel">
+            {{ assistantModel.name || assistantModel.id }} · 在线
+          </template>
+          <template v-else>未配置助手模型</template>
+        </div>
+      </div>
+      <button
+        v-if="chatSessionsStore.allSessions.length > 1"
+        id="session-list-button"
+        class="mc-icon-btn"
+        aria-label="会话历史"
+        @click="toggleSessionListPopover"
+      >
+        <i class="pi pi-history" aria-hidden="true" />
+      </button>
+      <button class="mc-icon-btn" aria-label="新聊天" @click="createNewSession">
+        <i class="pi pi-plus" aria-hidden="true" />
+      </button>
+    </header>
+
+    <!-- Header with Tab switcher (desktop / tablet) -->
+    <div v-if="!isPhone" class="shrink-0 px-4 pt-4 pb-0 relative z-10 border-b border-white/10">
       <div class="flex items-center justify-between flex-wrap gap-y-1 mb-1">
         <!-- Tab buttons -->
         <div class="flex gap-0.5 min-w-0">
@@ -682,16 +717,16 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
     <!-- AI 助手 Tab 内容 -->
     <template v-if="activeRightTab === 'chat'">
 
-    <!-- Context info -->
+    <!-- Context info (hide on phone per mobile design) -->
     <div
-      v-if="contextInfo !== '无上下文'"
+      v-if="!isPhone && contextInfo !== '无上下文'"
       class="shrink-0 px-4 py-2 relative z-10 border-b border-white/10"
     >
       <p class="text-xs text-moon-50">{{ contextInfo }}</p>
     </div>
 
-    <!-- Todo List Section -->
-    <div class="shrink-0 relative z-10 border-b border-white/10">
+    <!-- Todo List Section (hide on phone) -->
+    <div v-if="!isPhone" class="shrink-0 relative z-10 border-b border-white/10">
       <button
         class="w-full px-4 py-2 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
         @click="showTodoList = !showTodoList"
@@ -772,8 +807,11 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
       />
     </div>
 
-    <!-- Input area -->
-    <div class="shrink-0 px-4 py-3 border-t border-white/10 relative z-10 bg-night-950/50 min-w-0">
+    <!-- Input area (desktop / tablet) -->
+    <div
+      v-if="!isPhone"
+      class="shrink-0 px-4 py-3 border-t border-white/10 relative z-10 bg-night-950/50 min-w-0"
+    >
       <div class="flex flex-col gap-2 w-full min-w-0">
         <div v-if="sessionStats" class="context-usage-bar" v-tooltip.top="sessionStats.summary">
           <ProgressBar :value="sessionStats.maxPercentage" :show-value="false" />
@@ -809,6 +847,35 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
             />
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 手机端 · 胶囊状输入栏（按设计稿：plus + input + send） -->
+    <div v-if="isPhone" class="mc-composer-wrap">
+      <div class="mc-composer">
+        <button class="mc-plus" aria-label="更多操作">
+          <i class="pi pi-plus" aria-hidden="true" />
+        </button>
+        <input
+          v-model="inputMessage"
+          :disabled="isSending || !assistantModel"
+          :placeholder="assistantModel ? '向 AI 助手提问…' : '未配置助手模型'"
+          class="mc-input"
+          @keydown.enter.exact.prevent="sendMessage"
+        />
+        <button
+          class="mc-send"
+          :class="{ 'mc-send--stop': isSending, 'mc-send--idle': !isSending && !inputMessage.trim() }"
+          :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
+          :aria-label="isSending ? '停止' : '发送'"
+          @click="isSending ? stopGeneration() : sendMessage()"
+        >
+          <i
+            class="pi"
+            :class="isSending ? 'pi-stop-circle' : 'pi-send'"
+            aria-hidden="true"
+          />
+        </button>
       </div>
     </div>
     </template><!-- end AI 助手 Tab -->
@@ -924,5 +991,193 @@ const { messageDisplayItemsById } = useChatMessageDisplay(messages);
   margin-top: 6px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* ───────────────── Mobile AI 助手 ───────────────── */
+.mc-appbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: rgba(10, 12, 15, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+}
+
+.mc-appbar-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #1c1f26;
+}
+
+.mc-appbar-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mc-appbar-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-appbar-title {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: rgba(247, 244, 236, 1);
+  letter-spacing: -0.01em;
+}
+
+.mc-appbar-sub {
+  font-size: 11px;
+  color: rgba(247, 244, 236, 0.6);
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+}
+
+.mc-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a7d1b0;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
+.mc-status-dot--off {
+  background: rgba(247, 244, 236, 0.3);
+}
+
+.mc-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(247, 244, 236, 0.75);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mc-icon-btn i {
+  font-size: 16px;
+}
+
+/* 胶囊输入栏 */
+.mc-composer-wrap {
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 12, 15, 0.72);
+  flex-shrink: 0;
+}
+
+.mc-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-composer:focus-within {
+  border-color: rgba(233, 237, 245, 0.35);
+}
+
+.mc-plus {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(247, 244, 236, 0.75);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mc-plus:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mc-plus i {
+  font-size: 14px;
+}
+
+.mc-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(247, 244, 236, 1);
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 14px;
+  padding: 6px 0;
+}
+
+.mc-input::placeholder {
+  color: rgba(247, 244, 236, 0.45);
+}
+
+.mc-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #6d88a8;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-send:hover:not(:disabled) {
+  background: #7f97b4;
+}
+
+.mc-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mc-send--idle {
+  background: rgba(109, 136, 168, 0.35);
+}
+
+.mc-send--stop {
+  background: #ef5f5f;
+}
+
+.mc-send i {
+  font-size: 13px;
 }
 </style>
