@@ -25,8 +25,8 @@ const toast = useToastWithHistory();
 
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
-// 手机端分段 tab（实时/统计/日志）
-const mobileTab = ref<'live' | 'stats' | 'log'>('live');
+// 手机端分段 tab（实时/待办/统计/日志）
+const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 // 实时时钟
 const now = ref(Date.now());
@@ -403,6 +403,11 @@ const mobileLegend = computed(() => {
           >实时</button>
           <button
             class="mtp-seg-btn"
+            :class="{ 'mtp-seg-btn-active': mobileTab === 'todo' }"
+            @click="mobileTab = 'todo'"
+          >待办<span v-if="currentTaskTodos.length > 0" class="mtp-seg-count"> {{ currentTaskTodos.length }}</span></button>
+          <button
+            class="mtp-seg-btn"
             :class="{ 'mtp-seg-btn-active': mobileTab === 'stats' }"
             @click="mobileTab = 'stats'"
           >统计</button>
@@ -496,16 +501,23 @@ const mobileLegend = computed(() => {
           </div>
         </template>
 
-        <!-- 日志（占满剩余空间，内部滚动） -->
-        <template v-else-if="mobileTab === 'log'">
-          <div class="mtp-log-stack">
-            <div class="mtp-todos-wrap">
+        <!-- 待办 -->
+        <template v-else-if="mobileTab === 'todo'">
+          <div class="mtp-todo-panel">
+            <div v-if="currentTaskTodos.length > 0" class="mtp-todos-wrap mtp-todos-wrap--full">
               <TaskTodos
                 :todos="currentTaskTodos"
-                :collapsed="bookDetailsStore.translationProgress.todoCollapsed"
+                :collapsed="false"
                 @toggle-collapsed="toggleTodoCollapsed"
               />
             </div>
+            <div v-else class="mtp-empty">暂无待办事项</div>
+          </div>
+        </template>
+
+        <!-- 日志（占满剩余空间，内部滚动） -->
+        <template v-else-if="mobileTab === 'log'">
+          <div class="mtp-log-stack">
             <div class="mtp-stream-wrap mtp-stream-wrap--fill">
               <TaskStream
                 :task="currentTask"
@@ -839,6 +851,12 @@ const mobileLegend = computed(() => {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+.mtp-seg-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 /* Body */
 .mtp-body {
   flex: 1;
@@ -1060,6 +1078,37 @@ const mobileLegend = computed(() => {
   border-radius: 10px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.25);
+}
+
+/* 待办 tab：占满可用空间 */
+.mtp-todo-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full :deep(.todos-section) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full :deep(.todos-list),
+.mtp-todos-wrap--full :deep(.todo-list) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
 }
 
 .mtp-stream-wrap {
