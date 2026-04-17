@@ -340,6 +340,10 @@ const mobileCancel = () => {
   stopTask();
 };
 
+const closeMobilePanel = () => {
+  uiStore.closeRightPanel();
+};
+
 const mobileOpenBatchSettings = () => {
   // 简化：引导用户回到书籍详情页的批量设置入口（暂用 toast 提示）
   toast.add({
@@ -390,6 +394,9 @@ const mobileLegend = computed(() => {
           <template v-else>暂无翻译任务</template>
         </div>
       </div>
+      <button class="mtp-head-close" aria-label="关闭" @click="closeMobilePanel">
+        <i class="pi pi-times" aria-hidden="true" />
+      </button>
     </header>
 
     <template v-if="currentTask">
@@ -701,6 +708,30 @@ const mobileLegend = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mtp-head-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(247, 244, 236, 0.75);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mtp-head-close:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mtp-head-close i {
+  font-size: 12px;
 }
 
 /* Hero meter */
