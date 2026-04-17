@@ -2635,8 +2635,17 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           <i class="pi pi-chevron-left" aria-hidden="true" />
         </button>
         <div class="mbd-appbar-text">
-          <div class="mbd-appbar-title">{{ selectedChapter.title || '未命名章节' }}</div>
-          <div class="mbd-appbar-sub">{{ book?.title }}</div>
+          <div class="mbd-appbar-title">
+            {{ getChapterDisplayTitle(selectedChapter, book || undefined) || '未命名章节' }}
+          </div>
+          <div class="mbd-appbar-sub">
+            {{ book?.title
+            }}<template v-if="mobileReaderStats.total > 0">
+              ·
+              {{
+                Math.round((mobileReaderStats.translated / mobileReaderStats.total) * 100)
+              }}%</template>
+          </div>
         </div>
         <button
           class="mbd-icon-btn"
