@@ -1078,6 +1078,14 @@ const toggleMobileBatchMenu = (event: Event) => {
   mobileBatchMenuRef.value?.toggle(event);
 };
 
+// 手机端打开翻译进度面板（右侧面板 · 进度 tab）
+const openMobileTranslationProgress = () => {
+  uiStore.setActiveRightTab('progress');
+  if (!uiStore.rightPanelOpen) {
+    uiStore.openRightPanel();
+  }
+};
+
 // 初始化段落翻译 composable
 const {
   currentlyEditingParagraphId,
@@ -3068,6 +3076,22 @@ const handleBookSave = async (formData: Partial<Novel>) => {
             共 {{ mobileReaderStats.total }} 段 · 已译 {{ mobileReaderStats.translated }}
           </span>
           <button
+            class="mbr-strip-icon-btn"
+            :class="{ 'mbr-strip-icon-btn--active': mobileBatchBusy }"
+            aria-label="翻译进度"
+            @click="openMobileTranslationProgress"
+          >
+            <i
+              class="pi"
+              :class="mobileBatchBusy ? 'pi-spin pi-spinner' : 'pi-objects-column'"
+              aria-hidden="true"
+            />
+            <span
+              v-if="aiProcessingStore.activeTasks.length > 0"
+              class="mbr-strip-icon-badge"
+            >{{ aiProcessingStore.activeTasks.length }}</span>
+          </button>
+          <button
             class="mbr-strip-btn"
             :disabled="mobileBatchBusy || mobileBatchMenuItems.length === 0"
             aria-haspopup="true"
@@ -4472,7 +4496,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .mbr-strip-btn {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -4506,6 +4529,63 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   font-size: 9px;
   margin-left: 2px;
   opacity: 0.75;
+}
+
+/* Icon-only button in the translation state strip (progress panel opener) */
+.mbr-strip-icon-btn {
+  margin-left: auto;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 244, 236, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-strip-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mbr-strip-icon-btn i {
+  font-size: 13px;
+}
+
+.mbr-strip-icon-btn--active {
+  background: rgba(109, 136, 168, 0.15);
+  color: #bac9db;
+  border-color: rgba(109, 136, 168, 0.3);
+}
+
+.mbr-strip-icon-btn--active i {
+  color: #a3b7cf;
+}
+
+.mbr-strip-icon-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d97757;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1.5px solid rgba(10, 12, 15, 0.95);
 }
 
 /* 危险菜单项（重新翻译）淡红色 */
