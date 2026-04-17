@@ -816,8 +816,10 @@ const calculateTranslationProgress = async () => {
     for (const { id } of chapterOrder) {
       const content = contentsMap.get(id);
       const paras = content ?? [];
-      const paraTotal = paras.length;
-      const paraDone = paras.filter((p) => (p.translations?.length ?? 0) > 0).length;
+      // 仅统计非空段落：原文为空/仅空白的段落不计入分母，也不计入已翻译
+      const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+      const paraTotal = nonEmpty.length;
+      const paraDone = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
       total += paraTotal;
       translated += paraDone;
       byChapter.set(id, { total: paraTotal, translated: paraDone });
