@@ -141,20 +141,22 @@ const selectTask = (taskId: string) => {
   bookDetailsStore.selectTask(taskId);
 };
 
-// ─── 4.3 新任务自动选中 ───
+// ─── 新任务选中（仅在无任务被选中、或当前选中任务已消失时接管，不打断用户查看中的任务） ───
 
 watch(
   () => recentAITasks.value.map((t) => t.id),
-  (newIds, oldIds) => {
-    const oldSet = new Set(oldIds || []);
-    const newTask = newIds.find((id) => !oldSet.has(id));
-    if (newTask) {
-      bookDetailsStore.selectTask(newTask);
-    } else if (!selectedTaskId.value && newIds.length > 0) {
+  (newIds) => {
+    if (newIds.length === 0) return;
+    // 没有选中任务时，选中最新的一个
+    if (!selectedTaskId.value) {
       bookDetailsStore.selectTask(newIds[0]!);
-    } else if (selectedTaskId.value && !newIds.includes(selectedTaskId.value) && newIds.length > 0) {
+      return;
+    }
+    // 当前选中的任务已不存在（被清理），回退到最新的一个
+    if (!newIds.includes(selectedTaskId.value)) {
       bookDetailsStore.selectTask(newIds[0]!);
     }
+    // 新任务出现时不做自动切换，避免打断用户查看
   },
   { flush: 'post', immediate: true },
 );
@@ -532,18 +534,6 @@ const mobileLegend = computed(() => {
 
       <!-- Bottom actions -->
       <div class="mtp-actions">
-        <button
-          class="mtp-btn mtp-btn-outline"
-          :class="{ 'mtp-btn--filter-on': showOnlyCurrentChapter }"
-          @click="toggleChapterFilter"
-        >
-          <i
-            class="pi"
-            :class="showOnlyCurrentChapter ? 'pi-filter' : 'pi-filter-slash'"
-            aria-hidden="true"
-          />
-          {{ showOnlyCurrentChapter ? '仅本章' : '全部章节' }}
-        </button>
         <div class="mtp-actions-spacer" />
         <button
           v-if="mobileIsRunning"
@@ -1216,13 +1206,4 @@ const mobileLegend = computed(() => {
   border-color: rgba(239, 95, 95, 0.3);
 }
 
-.mtp-btn--filter-on {
-  background: rgba(109, 136, 168, 0.15);
-  color: #bac9db;
-  border-color: rgba(109, 136, 168, 0.35);
-}
-
-.mtp-btn--filter-on:hover:not(:disabled) {
-  background: rgba(109, 136, 168, 0.22);
-}
 </style>
