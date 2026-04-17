@@ -291,20 +291,6 @@ const mobileCurrentChapterLabel = computed<string>(() => {
   return label || '';
 });
 
-// 日志行：从 task.thinkingMessage / outputContent 提取时间戳-色-文本的结构（简化）
-const mobileLogLines = computed(() => {
-  const task = currentTask.value;
-  if (!task) return [];
-  const src = (task.thinkingMessage || '') + (task.outputContent ? '\n' + task.outputContent : '');
-  if (!src.trim()) return [];
-  return src
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .slice(-80)
-    .reverse();
-});
-
 // 统计卡片数据
 const mobileStatTotals = computed(() => {
   const task = currentTask.value;
@@ -489,16 +475,14 @@ const mobileLegend = computed(() => {
           </div>
 
           <div class="mtp-section-label">活动记录</div>
-          <div v-if="mobileLogLines.length > 0" class="mtp-log-box mtp-log-box--compact">
-            <div
-              v-for="(line, idx) in mobileLogLines.slice(0, 5)"
-              :key="idx"
-              class="mtp-log-line"
-            >
-              <span class="mtp-log-text">{{ line }}</span>
-            </div>
+          <div class="mtp-stream-wrap mtp-stream-wrap--compact">
+            <TaskStream
+              :task="currentTask"
+              :parts="currentParts"
+              :auto-scroll="currentAutoScroll"
+              @toggle-auto-scroll="toggleAutoScroll"
+            />
           </div>
-          <div v-else class="mtp-empty">暂无活动</div>
         </template>
 
         <!-- 统计 -->
@@ -533,16 +517,21 @@ const mobileLegend = computed(() => {
 
         <!-- 日志 -->
         <template v-else-if="mobileTab === 'log'">
-          <div v-if="mobileLogLines.length > 0" class="mtp-log-box">
-            <div
-              v-for="(line, idx) in mobileLogLines"
-              :key="idx"
-              class="mtp-log-line"
-            >
-              <span class="mtp-log-text">{{ line }}</span>
-            </div>
+          <div class="mtp-todos-wrap">
+            <TaskTodos
+              :todos="currentTaskTodos"
+              :collapsed="bookDetailsStore.translationProgress.todoCollapsed"
+              @toggle-collapsed="toggleTodoCollapsed"
+            />
           </div>
-          <div v-else class="mtp-empty">暂无日志</div>
+          <div class="mtp-stream-wrap">
+            <TaskStream
+              :task="currentTask"
+              :parts="currentParts"
+              :auto-scroll="currentAutoScroll"
+              @toggle-auto-scroll="toggleAutoScroll"
+            />
+          </div>
         </template>
       </div>
 
@@ -1070,33 +1059,49 @@ const mobileLegend = computed(() => {
   letter-spacing: -0.02em;
 }
 
-/* Log box */
-.mtp-log-box {
-  margin: 0 16px 14px;
-  padding: 12px 14px;
-  background: rgba(0, 0, 0, 0.35);
+/* Reuse desktop TaskTodos / TaskStream inside the mobile layout */
+.mtp-todos-wrap {
+  margin: 0 16px 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  line-height: 1.8;
-  color: rgba(247, 244, 236, 0.65);
-  max-height: none;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
 }
 
-.mtp-log-box--compact {
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-.mtp-log-line {
+.mtp-stream-wrap {
+  margin: 0 16px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  min-height: 240px;
 }
 
-.mtp-log-text {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+.mtp-stream-wrap--compact {
+  min-height: 160px;
+  max-height: 220px;
+}
+
+/* TaskStream's .stream-section is flex column with flex:1 — fill the wrapper */
+.mtp-stream-wrap :deep(.stream-section) {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+/* 实时 tab 活动记录：只保留输出内容，隐藏工具栏 + 思考过程 */
+.mtp-stream-wrap--compact :deep(.stream-header),
+.mtp-stream-wrap--compact :deep(.thinking-block),
+.mtp-stream-wrap--compact :deep(.completed-banner) {
+  display: none;
+}
+
+.mtp-stream-wrap--compact :deep(.output-block) {
+  margin: 0;
+  border: none;
+  background: transparent;
 }
 
 /* Bottom actions */
