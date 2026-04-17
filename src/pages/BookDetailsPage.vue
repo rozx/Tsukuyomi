@@ -2527,7 +2527,7 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                   <button
                     class="mbd-tree-row mbd-tree-row--vol"
                     :class="{ 'mbd-tree-row--vol-open': isVolumeExpanded(vol.id) }"
-                    @click="onToggleVolume(vol)"
+                    @click="toggleVolumeById(vol.id)"
                   >
                     <i
                       class="pi mbd-tree-vol-icon"
