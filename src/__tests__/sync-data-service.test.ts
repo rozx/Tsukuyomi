@@ -1399,6 +1399,174 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(chapter.content[0].translations).toHaveLength(1);
       expect(chapter.content[0].translations[0].translation).toBe('相同的文本');
     });
+
+    it('同一章节内多个段落文本相同时，文本回退匹配必须一次性消费（不能复用）', async () => {
+      // 回归保护：早期实现用单值 Map 做文本回退，重复文本会让多个本地段落同时
+      // 吃到同一个远端段落，造成翻译被错误复制；且副方段落会在末尾重复追加。
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: new Date(2000),
+          volumes: [
+            {
+              id: 'v1',
+              chapters: [
+                {
+                  id: 'ch1',
+                  lastEdited: new Date(1000),
+                  content: [
+                    {
+                      id: 'local-dup-1',
+                      text: '……',
+                      selectedTranslationId: '',
+                      translations: [],
+                    },
+                    {
+                      id: 'local-dup-2',
+                      text: '……',
+                      selectedTranslationId: '',
+                      translations: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ] as unknown[];
+
+      const remoteNovel = {
+        id: 'b1',
+        title: 'Book',
+        lastEdited: new Date(3000).toISOString(),
+        volumes: [
+          {
+            id: 'v1',
+            chapters: [
+              {
+                id: 'ch1',
+                lastEdited: new Date(3000).toISOString(),
+                content: [
+                  {
+                    id: 'remote-dup-1',
+                    text: '……',
+                    selectedTranslationId: 't-a',
+                    translations: [{ id: 't-a', translation: '译文 A', aiModelId: 'm1' }],
+                  },
+                  {
+                    id: 'remote-dup-2',
+                    text: '……',
+                    selectedTranslationId: 't-b',
+                    translations: [{ id: 't-b', translation: '译文 B', aiModelId: 'm1' }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({ novels: [remoteNovel] });
+
+      const savedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]![0] as any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const chapter = savedBooks[0].volumes[0].chapters[0];
+      const content = chapter.content as Array<{
+        id: string;
+        translations: Array<{ id: string }>;
+      }>;
+
+      // 远端为主导（remoteTime > localTime）→ 结果顺序跟随远端；应恰好 2 段
+      expect(content).toHaveLength(2);
+      const translationIds = content.map((p) => p.translations.map((t) => t.id).join('|'));
+      // 两段各拿到一个不同的远端翻译，而不是都指向 t-a
+      expect(new Set(translationIds).size).toBe(2);
+      expect(translationIds).toContain('t-a');
+      expect(translationIds).toContain('t-b');
+    });
+
+    it('远程较新且有额外段落时，合并结果必须包含所有远程段落（union by id）', async () => {
+      // 用户场景：本地落后、远端新增了段落。早期实现会丢弃远端独有段落、
+      // 把缩减版推回远端造成数据丢失 + manifest hash 永远不匹配。
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: new Date(1000),
+          volumes: [
+            {
+              id: 'v1',
+              chapters: [
+                {
+                  id: 'ch1',
+                  lastEdited: new Date(1000),
+                  content: [
+                    {
+                      id: 'p-old',
+                      text: '旧段落',
+                      selectedTranslationId: '',
+                      translations: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ] as unknown[];
+
+      const remoteNovel = {
+        id: 'b1',
+        title: 'Book',
+        lastEdited: new Date(3000).toISOString(),
+        volumes: [
+          {
+            id: 'v1',
+            chapters: [
+              {
+                id: 'ch1',
+                lastEdited: new Date(3000).toISOString(),
+                content: [
+                  {
+                    id: 'p-old',
+                    text: '旧段落',
+                    selectedTranslationId: 't-old',
+                    translations: [
+                      { id: 't-old', translation: '旧段落译文', aiModelId: 'm1' },
+                    ],
+                  },
+                  {
+                    id: 'p-new',
+                    text: '远端新增段落',
+                    selectedTranslationId: 't-new',
+                    translations: [
+                      { id: 't-new', translation: '新段落译文', aiModelId: 'm1' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({ novels: [remoteNovel] });
+
+      expect(mockBooksStore.bulkAddBooks).toHaveBeenCalledTimes(1);
+      const savedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]![0] as any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      const chapter = savedBooks[0].volumes[0].chapters[0];
+
+      const paragraphIds = (chapter.content as Array<{ id: string }>).map((p) => p.id);
+      expect(paragraphIds).toContain('p-old');
+      expect(paragraphIds).toContain('p-new');
+      // 远端为权威方时，顺序应跟随远端
+      expect(paragraphIds[0]).toBe('p-old');
+      expect(paragraphIds[1]).toBe('p-new');
+    });
   });
 
   describe('mergeDataForUpload (上传前合并数据)', () => {

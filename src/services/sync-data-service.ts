@@ -76,115 +76,116 @@ function hasLocalChapterSummaryMissingInRemote(localNovel: any, remoteNovel: any
 
 /**
  * 合并段落翻译
- * 将远程段落的翻译合并到本地段落中
- * @param localParagraphs 本地段落列表
- * @param remoteParagraphs 远程段落列表
- * @returns 合并后的段落列表
+ *
+ * 语义：按 id（带文本回退）union 两侧段落集合；不丢弃任何一方独有的段落。
+ *
+ * - `preferRemoteSelection=false`（默认）：本地为主导方，输出顺序跟随本地段落顺序，
+ *   远端独有段落追加在末尾；段落字段以本地为基（`{...local, translations: union}`）
+ * - `preferRemoteSelection=true`：远端为主导方，输出顺序跟随远端段落顺序，
+ *   本地独有段落追加在末尾；段落字段以远端为基
+ *
+ * 翻译始终按主导方翻译优先、副方未见 id 追加的方式 union，与段落 union 同构。
+ *
+ * 历史问题：早期实现用 `localParagraphs.map(...)` 直接丢弃远端独有段落，
+ * 导致"本地落后于远端"的设备同步时反而把远端新段落吞掉，并在下一轮上传
+ * 把截断版本推回远端造成数据丢失（见 useSyncExecutor 重复上传问题）。
  */
 function mergeParagraphTranslations(
   localParagraphs: Paragraph[],
   remoteParagraphs: Paragraph[] | undefined,
   preferRemoteSelection = false,
 ): Paragraph[] {
-  // 如果远程没有段落，直接返回本地段落
   if (!remoteParagraphs || remoteParagraphs.length === 0) {
     return localParagraphs;
   }
-
-  // 创建远程段落的映射（按 ID）
-  const remoteParagraphMap = new Map<string, Paragraph>();
-  for (const remotePara of remoteParagraphs) {
-    remoteParagraphMap.set(remotePara.id, remotePara);
+  if (!localParagraphs || localParagraphs.length === 0) {
+    return remoteParagraphs;
   }
 
-  // 创建远程段落的文本映射（用于 ID 不匹配时按内容回退匹配）
-  // 场景：同一章节在不同设备从网页重新抓取，段落文本相同但 ID 不同
-  const remoteParagraphByTextMap = new Map<string, Paragraph>();
-  for (const remotePara of remoteParagraphs) {
-    if (
-      remotePara.translations &&
-      remotePara.translations.length > 0 &&
-      !remoteParagraphByTextMap.has(remotePara.text)
-    ) {
-      remoteParagraphByTextMap.set(remotePara.text, remotePara);
-    }
+  const primary = preferRemoteSelection ? remoteParagraphs : localParagraphs;
+  const secondary = preferRemoteSelection ? localParagraphs : remoteParagraphs;
+
+  const secondaryById = new Map<string, Paragraph>();
+  for (const p of secondary) secondaryById.set(p.id, p);
+
+  // 文本回退：用于同段落在不同设备 ID 不同（例如重新抓取）的匹配。
+  // 用 FIFO 队列而非单值映射——否则小说里常见的重复文本（分隔符、「……」、
+  // 重复台词等）会让多个 primary 段落同时吃到同一个 secondary，造成错误翻译
+  // 被复制到多处 + 副方段落在末尾重复追加。每条文本按顺序只消费一次。
+  const secondaryByText = new Map<string, Paragraph[]>();
+  for (const p of secondary) {
+    const queue = secondaryByText.get(p.text);
+    if (queue) queue.push(p);
+    else secondaryByText.set(p.text, [p]);
   }
 
-  // 合并翻译到本地段落
-  const mergedParagraphs: Paragraph[] = localParagraphs.map((localPara) => {
-    // 优先按 ID 匹配，回退到按文本内容匹配
-    let remotePara = remoteParagraphMap.get(localPara.id);
-    if (!remotePara) {
-      remotePara = remoteParagraphByTextMap.get(localPara.text);
-      if (remotePara) {
-        // 已使用此文本匹配，从映射中移除防止重复匹配
-        remoteParagraphByTextMap.delete(localPara.text);
+  const consumedSecondaryIds = new Set<string>();
+
+  const mergeOne = (primaryPara: Paragraph): Paragraph => {
+    let match = secondaryById.get(primaryPara.id);
+    if (!match) {
+      const queue = secondaryByText.get(primaryPara.text);
+      // 注意：队列里可能放着已经通过 id 匹配被消费过的段落；跳过它们，
+      // 保证同一 secondary 段落不会被双重消费
+      while (queue && queue.length > 0) {
+        const candidate = queue.shift();
+        if (candidate && !consumedSecondaryIds.has(candidate.id)) {
+          match = candidate;
+          break;
+        }
+      }
+    }
+    if (!match) {
+      return primaryPara;
+    }
+    consumedSecondaryIds.add(match.id);
+
+    const seen = new Set<string>();
+    const merged: Translation[] = [];
+    for (const t of primaryPara.translations ?? []) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        merged.push(t);
+      }
+    }
+    for (const t of match.translations ?? []) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        merged.push(t);
       }
     }
 
-    // 如果远程没有对应段落，保持本地段落不变
-    if (!remotePara) {
-      return localPara;
-    }
-
-    // 如果远程段落没有翻译，保持本地段落不变
-    if (!remotePara.translations || remotePara.translations.length === 0) {
-      return localPara;
-    }
-
-    // 合并翻译：将远程翻译添加到本地翻译中（去重）
-    const localTranslationIds = new Set((localPara.translations || []).map((t) => t.id));
-
-    const mergedTranslations: Translation[] = [...(localPara.translations || [])];
-
-    for (const remoteTranslation of remotePara.translations) {
-      // 如果本地没有这个翻译 ID，添加它
-      if (!localTranslationIds.has(remoteTranslation.id)) {
-        mergedTranslations.push(remoteTranslation);
-      }
-    }
-
-    // 确定 selectedTranslationId
-    let selectedTranslationId = localPara.selectedTranslationId;
-    const localSelectedExists = mergedTranslations.some((t) => t.id === selectedTranslationId);
-    const remoteSelectedExists =
-      !!remotePara.selectedTranslationId &&
-      mergedTranslations.some((t) => t.id === remotePara.selectedTranslationId);
-
-    // 远程优先模式：用于“远程整体较新”的场景，优先采用远程选择
-    if (preferRemoteSelection) {
-      if (remoteSelectedExists) {
-        selectedTranslationId = remotePara.selectedTranslationId;
-      } else if (!localSelectedExists && mergedTranslations.length > 0 && mergedTranslations[0]) {
-        selectedTranslationId = mergedTranslations[0].id;
-      }
-
-      return {
-        ...localPara,
-        translations: mergedTranslations,
-        selectedTranslationId,
-      };
-    }
-
-    // 如果本地没有选择翻译，或者选择的翻译不存在于合并后的翻译列表中
-    if (!selectedTranslationId || !localSelectedExists) {
-      // 使用远程的 selectedTranslationId（如果存在于合并后的翻译列表中）
-      if (remoteSelectedExists) {
-        selectedTranslationId = remotePara.selectedTranslationId;
-      } else if (mergedTranslations.length > 0 && mergedTranslations[0]) {
-        // 否则使用第一个翻译
-        selectedTranslationId = mergedTranslations[0].id;
+    let selectedTranslationId = primaryPara.selectedTranslationId;
+    const primarySelectedValid =
+      !!selectedTranslationId && merged.some((t) => t.id === selectedTranslationId);
+    if (!primarySelectedValid) {
+      const secondarySelectedValid =
+        !!match.selectedTranslationId &&
+        merged.some((t) => t.id === match.selectedTranslationId);
+      if (secondarySelectedValid) {
+        selectedTranslationId = match.selectedTranslationId;
+      } else if (merged.length > 0 && merged[0]) {
+        selectedTranslationId = merged[0].id;
       }
     }
 
     return {
-      ...localPara,
-      translations: mergedTranslations,
+      ...primaryPara,
+      translations: merged,
       selectedTranslationId,
     };
-  });
+  };
 
-  return mergedParagraphs;
+  const result: Paragraph[] = primary.map(mergeOne);
+
+  // 追加副方独有段落（未被 id 或文本匹配消费过的）
+  for (const secondaryPara of secondary) {
+    if (!consumedSecondaryIds.has(secondaryPara.id)) {
+      result.push(secondaryPara);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -2466,12 +2467,10 @@ export class SyncDataService {
             }
           }
 
-          // 保存最终列表（createMemoryWithId 内部是 upsert）
+          // 保存最终列表：使用 upsertMemoryForSync 按远端字段原样写入，
+          // 不对时间戳做 min/max 钳制——否则下一轮计算的 hash 会与 manifest 不一致
           for (const m of finalList) {
-            await MemoryService.createMemoryWithId(m.bookId, m.id, m.content, m.summary, {
-              createdAt: m.createdAt,
-              lastAccessedAt: m.lastAccessedAt,
-            });
+            await MemoryService.upsertMemoryForSync(m);
           }
         }
       } catch (error) {

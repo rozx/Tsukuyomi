@@ -15,7 +15,8 @@ import {
 } from 'src/models/manifest';
 import { buildLocalManifest, diffManifests } from 'src/services/sync-manifest-builder';
 import { compressString, decompressString } from 'src/utils/compression';
-import { serializeDates, deserializeDates } from 'src/utils/serialize-dates';
+import { deserializeDates } from 'src/utils/serialize-dates';
+import { canonicalStringify } from 'src/utils/canonical-json';
 
 /**
  * 单文件大小上限（压缩后字节）。超出需要分块。GitHub 实际 1MB，留 100KB 余量。
@@ -195,8 +196,10 @@ async function serializeEntry(
   chunks: number;
   filenamesForCleanup: string[]; // 该 entry 的全部文件名（用于替换旧 chunk 数时删除多余文件）
 }> {
-  const serialized = serializeDates(payload);
-  const json = JSON.stringify(serialized);
+  // 用 canonicalStringify：键按字典序排序 + Date → ISO，确保上传字节与
+  // `hashJson` 计算哈希时使用的字节完全一致——否则一旦接收方读回 JSON
+  // 时键顺序不同，就会无限触发空转上传
+  const json = canonicalStringify(payload);
   const compressed = await compressForUpload(json);
 
   const files: Record<string, { content: string }> = {};
@@ -666,7 +669,15 @@ export async function uploadIncremental(
   const gistId = config.syncParams.gistId;
   if (!gistId) throw new Error('Gist ID 未配置');
 
-  onProgress?.({ current: 0, total: 1, message: '正在计算本地 manifest...' });
+  // 整个 uploadIncremental 对外以统一的 0-100 进度标度输出——executor 把它
+  // 线性映射到整条进度条的 upload 区段（60-100）。
+  // 三段分配：
+  // - 0-5%    计算 manifest
+  // - 5-20%   序列化 + 压缩（CPU，随 entry 数量线性走）
+  // - 20-100% 实际 PATCH 批次（网络等待，按 batch 均分）
+  const PROGRESS_TOTAL = 100;
+  const PREP_END = 20; // 序列化阶段结束时的百分比
+  onProgress?.({ current: 0, total: PROGRESS_TOTAL, message: '正在计算本地 manifest...' });
 
   const localManifest = await buildLocalManifest({
     appSettings: payload.appSettings,
@@ -723,9 +734,11 @@ export async function uploadIncremental(
     const entryKey = toUpload[i]!;
     const payloadValue = getPayloadForEntry(entryKey, payload);
     if (payloadValue === null) continue;
+    // manifest 阶段占 5%；序列化线性占 5→PREP_END
+    const serializeFraction = toUpload.length > 0 ? i / toUpload.length : 1;
     onProgress?.({
-      current: i,
-      total: toUpload.length,
+      current: Math.round(5 + (PREP_END - 5) * serializeFraction),
+      total: PROGRESS_TOTAL,
       message: `正在准备: ${entryKey}`,
     });
     const { files, chunks } = await serializeEntry(entryKey, payloadValue);
@@ -762,8 +775,8 @@ export async function uploadIncremental(
   uploadedEntries.push(...toUpload);
 
   onProgress?.({
-    current: 0,
-    total: Object.keys(allFiles).length + 1,
+    current: PREP_END,
+    total: PROGRESS_TOTAL,
     message: '正在上传...',
   });
 
@@ -779,6 +792,10 @@ export async function uploadIncremental(
   // - 只含 null 条目的 files 对象会被视作空，返回 422 missing_field:files。
   //   把 manifest（非 null）和删除放一起顺带消除这个陷阱。
   const BATCH_SIZE = 10;
+  // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB
+  // （超出会返回 `409 Gist cannot be updated`，并无具体错误信息）。
+  // 我们用 4 MB 留足 JSON 包裹 / header / base64 膨胀余量。
+  const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
   const nonManifestEntries = Object.entries(allFiles);
   const additions = nonManifestEntries.filter(
     (kv): kv is [string, { content: string }] => kv[1] !== null,
@@ -820,11 +837,27 @@ export async function uploadIncremental(
   // 内容写入同批，既避免触发这个陷阱，又保持 manifest 最后写入的原子语义——
   // 前面的 N-1 批都是纯内容上传（若失败，旧 manifest 仍然指向旧布局，无害）。
   const additionBatches: Array<Record<string, { content: string } | null>> = [];
-  for (let i = 0; i < additions.length; i += BATCH_SIZE) {
-    const slice = additions.slice(i, i + BATCH_SIZE);
-    const batch: Record<string, { content: string } | null> = {};
-    for (const [name, f] of slice) batch[name] = f;
-    additionBatches.push(batch);
+  {
+    // 按字节预算 + 文件数双重上限切分；大 chunk 文件（接近 MAX_FILE_SIZE）
+    // 单靠文件数截断容易凑出 ~9 MB 的巨型 PATCH，触发 409。
+    let current: Record<string, { content: string } | null> = {};
+    let currentBytes = 0;
+    let currentCount = 0;
+    for (const [name, file] of additions) {
+      const itemBytes = file.content.length + name.length;
+      const wouldOverflowBytes = currentBytes + itemBytes > BATCH_BYTE_BUDGET;
+      const wouldOverflowCount = currentCount >= BATCH_SIZE;
+      if (currentCount > 0 && (wouldOverflowBytes || wouldOverflowCount)) {
+        additionBatches.push(current);
+        current = {};
+        currentBytes = 0;
+        currentCount = 0;
+      }
+      current[name] = file;
+      currentBytes += itemBytes;
+      currentCount += 1;
+    }
+    if (currentCount > 0) additionBatches.push(current);
   }
 
   // 纯删除场景：没有任何 additions，只有 deletions + manifest
@@ -843,26 +876,33 @@ export async function uploadIncremental(
   }
   finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
 
-  const totalFilesIncludingManifest = nonManifestEntries.length + 1;
+  const totalBatches = additionBatches.length;
+  const uploadSpan = PROGRESS_TOTAL - PREP_END; // 80
   let firstBatch = true;
-  let uploadedCount = 0;
-  for (let bi = 0; bi < additionBatches.length; bi++) {
+  for (let bi = 0; bi < totalBatches; bi++) {
     const batch = additionBatches[bi]!;
+
+    // 批次开始时先把进度推到该批的起点——否则在网络等待期间进度条不动
+    onProgress?.({
+      current: PREP_END + Math.round((bi / totalBatches) * uploadSpan),
+      total: PROGRESS_TOTAL,
+      message: `正在上传批次 ${bi + 1} / ${totalBatches} (${Object.keys(batch).length} 个文件)...`,
+    });
+
     await runBatch(batch, firstBatch);
     firstBatch = false;
 
-    uploadedCount += Object.keys(batch).length;
     onProgress?.({
-      current: Math.min(uploadedCount, totalFilesIncludingManifest),
-      total: totalFilesIncludingManifest,
-      message: `已上传 ${Math.min(uploadedCount, totalFilesIncludingManifest)} / ${totalFilesIncludingManifest}`,
+      current: PREP_END + Math.round(((bi + 1) / totalBatches) * uploadSpan),
+      total: PROGRESS_TOTAL,
+      message: `已上传批次 ${bi + 1} / ${totalBatches}`,
     });
   }
 
   onProgress?.({
-    current: totalFilesIncludingManifest,
-    total: totalFilesIncludingManifest,
-    message: `已上传 ${totalFilesIncludingManifest} / ${totalFilesIncludingManifest}`,
+    current: PROGRESS_TOTAL,
+    total: PROGRESS_TOTAL,
+    message: '上传完成',
   });
 
   return {

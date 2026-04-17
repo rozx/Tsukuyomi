@@ -1,6 +1,7 @@
 import type { Memory } from 'src/models/memory';
-import type { Novel } from 'src/models/novel';
+import type { CoverHistoryItem, Novel } from 'src/models/novel';
 import type { AppSettings } from 'src/models/settings';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 
 /**
  * 剥离 Memory 的本地字段：
@@ -63,6 +64,22 @@ export function stripNovelLocalFields(novel: Novel): Novel {
  */
 export function sortMemoriesById(memories: Memory[]): Memory[] {
   return [...memories].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * 按 `id` 字典序排序 AI 模型数组，确保聚合条目的哈希与上传字节稳定。
+ * `aiModelsStore.models` 的顺序受本地操作历史影响（新增追加、删除 splice），
+ * 跨设备各自的局部顺序不同——同步路径强制 id 排序消除这一抖动。
+ */
+export function sortAIModelsById(models: AIModel[]): AIModel[] {
+  return [...models].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * 按 `id` 字典序排序封面历史数组（理由同 `sortAIModelsById`）。
+ */
+export function sortCoversById(covers: CoverHistoryItem[]): CoverHistoryItem[] {
+  return [...covers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**

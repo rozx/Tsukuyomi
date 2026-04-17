@@ -115,7 +115,11 @@ onMounted(async () => {
   unsubscribers.push(
     EmbeddingService.addEventListener('progress', (e: CustomEvent) => {
       const detail = e.detail as EmbeddingProgressEvent;
-      if (detail.progress != null) {
+      // 优先使用 service 侧维护的聚合进度（跨多个模型文件单调递增）；
+      // 旧的 `progress` 字段是每文件局部值，切文件时会回跳到 0，不适合做进度条。
+      if (detail.aggregatePercent != null) {
+        downloadProgress.value = detail.aggregatePercent;
+      } else if (detail.progress != null) {
         downloadProgress.value = Math.round(detail.progress);
       }
       if (detail.file) {

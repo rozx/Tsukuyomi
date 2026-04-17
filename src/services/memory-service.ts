@@ -264,6 +264,96 @@ export class MemoryService {
   }
 
   /**
+   * 同步专用：按远端条目原样 upsert 一个 Memory。
+   *
+   * 与 `createMemoryWithId` 的区别：
+   * - 不对 `createdAt` / `lastAccessedAt` 做任何钳制（min/max 合并）——远端是权威，
+   *   若本地在 apply 时把时间戳钳成别的值，会导致下一轮重新计算的 hash 与远端 manifest
+   *   不一致，触发空转上传
+   * - 不强制写 `summary` 非空（远端导入场景允许空摘要）
+   *
+   * Embedding 处理（关键）：
+   * `stripMemoryLocalFields` 在上传前就剥离了 `embedding` / `embeddingModel`，
+   * 所以增量下载拿到的 Memory 通常**不带** embedding 字段。若直接 `put(storage)`，
+   * 本地已经算好的 embedding 会被连带清掉，语义检索会退化。
+   * 规则：
+   * - 若 incoming 带 embedding：按远端字段原样保留（覆盖本地）
+   * - 若 incoming 不带 embedding，但本地 IDB 已有：保留本地 embedding
+   * - 若 incoming 的 content/summary 相对本地发生变化：既有 embedding 已陈旧，
+   *   丢弃并入队 EmbeddingQueue 异步重算
+   */
+  static async upsertMemoryForSync(memory: Memory): Promise<void> {
+    if (!memory?.id) {
+      throw new Error('Memory ID 不能为空');
+    }
+    if (!memory.bookId) {
+      throw new Error('书籍 ID 不能为空');
+    }
+    const db = await getDB();
+    const tx = db.transaction('memories', 'readwrite');
+    const store = tx.objectStore('memories');
+
+    const existing = (await store.get(memory.id)) as MemoryStorage | undefined;
+
+    // 跨 book ID 冲突守卫：`memories` store 仅以 id 为主键。若同步路径盲目 put，
+    // 另一本书里恰好同 id 的记录会被静默改 bookId / 覆盖。Memory id 是 8 位 hex，
+    // 碰撞罕见但不是零——必须显式拒绝，让上层看到错误并回退到冲突解决。
+    if (existing && existing.bookId !== memory.bookId) {
+      throw new Error(`Memory ID 冲突：${memory.id}`);
+    }
+
+    const storage: MemoryStorage = {
+      id: memory.id,
+      bookId: memory.bookId,
+      content: memory.content,
+      summary: memory.summary,
+      createdAt: memory.createdAt,
+      lastAccessedAt: memory.lastAccessedAt,
+    };
+
+    let shouldEnqueueRecompute = false;
+    if (memory.embedding !== undefined) {
+      storage.embedding = memory.embedding;
+      if (memory.embeddingModel !== undefined) storage.embeddingModel = memory.embeddingModel;
+    } else if (existing?.embedding !== undefined) {
+      // incoming 不带 embedding：本地已算好的 embedding 是否仍然可信？
+      const contentChanged =
+        existing.content !== memory.content || existing.summary !== memory.summary;
+      if (contentChanged) {
+        // 文本变了 → embedding 陈旧，不保留，交给 EmbeddingQueue 重算
+        shouldEnqueueRecompute = true;
+      } else {
+        storage.embedding = existing.embedding;
+        if (existing.embeddingModel !== undefined) storage.embeddingModel = existing.embeddingModel;
+      }
+    }
+
+    await store.put(storage);
+    await tx.done;
+
+    if (shouldEnqueueRecompute) {
+      EmbeddingQueue.enqueue(memory.id);
+    }
+
+    const cachedMemory: Memory = {
+      id: storage.id,
+      bookId: storage.bookId,
+      content: storage.content,
+      summary: storage.summary,
+      createdAt: storage.createdAt,
+      lastAccessedAt: storage.lastAccessedAt,
+    };
+    if (storage.embedding !== undefined) cachedMemory.embedding = storage.embedding;
+    if (storage.embeddingModel !== undefined) cachedMemory.embeddingModel = storage.embeddingModel;
+
+    const cacheKey = this.getCacheKey(memory.bookId, memory.id);
+    this.memoryCache.set(cacheKey, cachedMemory);
+    this.evictCacheIfNeeded();
+    this.invalidateBookMemoryCache(memory.bookId);
+    this.dispatchMemoryChanged({ bookId: memory.bookId, memoryId: memory.id, action: 'imported' });
+  }
+
+  /**
    * 以指定 ID 创建 Memory（用于同步/导入）
    * 注意：普通创建请使用 createMemory()，它会自动生成全局唯一的短 ID。
    */

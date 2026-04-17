@@ -306,7 +306,7 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
     getAllSpy = spyOn(MemoryService, 'getAllMemories').mockImplementation(() =>
       Promise.resolve(localMemories.map((m) => ({ ...m })) as any),
     );
-    createSpy = spyOn(MemoryService, 'createMemoryWithId').mockResolvedValue(
+    createSpy = spyOn(MemoryService, 'upsertMemoryForSync').mockResolvedValue(
       undefined as any,
     );
     deleteSpy = spyOn(MemoryService, 'deleteMemory').mockResolvedValue(undefined);
@@ -356,7 +356,7 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
 
     expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'm2');
     // m1 should be preserved (upserted)
-    const createCalls = createSpy.mock.calls.map((c: unknown[]) => c[1]);
+    const createCalls = createSpy.mock.calls.map((c: unknown[]) => (c[0] as { id: string }).id);
     expect(createCalls).toContain('m1');
     expect(getAllSpy).toHaveBeenCalled();
   });
@@ -380,7 +380,7 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
     });
 
     expect(deleteSpy).not.toHaveBeenCalled();
-    const createCalls = createSpy.mock.calls.map((c: unknown[]) => c[1]);
+    const createCalls = createSpy.mock.calls.map((c: unknown[]) => (c[0] as { id: string }).id);
     expect(createCalls).toContain('m-fresh');
   });
 

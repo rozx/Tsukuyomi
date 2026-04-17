@@ -13,6 +13,8 @@ import {
 } from 'src/services/sync-manifest-builder';
 import {
   normalizeMemoriesForSync,
+  sortAIModelsById,
+  sortCoversById,
   stripAppSettingsLocalFields,
   stripNovelLocalFields,
 } from 'src/utils/sync-strip';
@@ -271,12 +273,15 @@ export function useSyncExecutor() {
       );
       const rawMemoriesByBook = await collectMemoriesByBook();
 
-      // 规范化：剥离本地字段 + 按 id 排序 memory，确保内容不变时 hash 稳定
+      // 规范化：剥离本地字段 + 按 id 排序聚合条目，确保内容不变时 hash 稳定
       // - novel: 剥离 translations 里的 memoryScoreBreakdown（AI 打分 UI 状态）
       // - memory: 剥离 embedding / embeddingModel（异步生成），按 id 排序
+      // - ai-models / cover-history: 按 id 排序，避免本地插入/删除顺序影响聚合 hash
       // - settings: 剥离 syncs（每次同步都变）和 embeddingModelCached（设备本地状态）
       const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
       const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
+      const aiModelsForSync = sortAIModelsById(aiModelsStore.models);
+      const coverHistoryForSync = sortCoversById(coverHistoryStore.covers);
       const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
 
       const latestConfig = configOverride ?? settingsStore.gistSync;
@@ -299,8 +304,8 @@ export function useSyncExecutor() {
 
       const localManifest = await buildLocalManifest({
         appSettings: appSettingsForSync,
-        aiModels: aiModelsStore.models,
-        coverHistory: coverHistoryStore.covers,
+        aiModels: aiModelsForSync,
+        coverHistory: coverHistoryForSync,
         novels: novelsWithContent,
         memoriesByBook,
         tombstones,
@@ -444,8 +449,8 @@ export function useSyncExecutor() {
           latestConfig,
           {
             appSettings: appSettingsForSync,
-            aiModels: aiModelsStore.models,
-            coverHistory: coverHistoryStore.covers,
+            aiModels: aiModelsForSync,
+            coverHistory: coverHistoryForSync,
             novels: novelsWithContent,
             memoriesByBook,
             tombstones,

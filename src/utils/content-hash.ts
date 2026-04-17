@@ -1,4 +1,4 @@
-import { serializeDates } from 'src/utils/serialize-dates';
+import { canonicalStringify } from 'src/utils/canonical-json';
 
 /**
  * 将 ArrayBuffer 转为十六进制小写字符串
@@ -17,18 +17,16 @@ function bufferToHex(buffer: ArrayBuffer): string {
  * 计算 payload 的 SHA-256 哈希（十六进制小写）。
  *
  * 规则：
- * 1. 先走 `serializeDates` 将 Date → ISO 字符串，保证哈希输入不含运行时对象
- * 2. 使用 `JSON.stringify` 序列化为字符串
- * 3. UTF-8 编码后调用 `crypto.subtle.digest('SHA-256', ...)`
+ * 1. `canonicalStringify` 先走 `serializeDates`（Date → ISO），
+ *    再按键名字典序排序所有对象并 JSON.stringify——产出与 `serializeEntry`
+ *    上传路径完全一致的字节，消除任意设备的键顺序抖动
+ * 2. UTF-8 编码后调用 `crypto.subtle.digest('SHA-256', ...)`
  *
- * 稳定性：相同输入（相同结构、相同键顺序）产生相同哈希。
- * 本实现依赖 JSON.stringify 的默认行为，**不做** canonical key ordering——
- * 因为 manifest 的权威性是决策性的（决定同步什么），不是内容性的（最终以实际文件为准），
- * 即便偶发重复上传也不破坏数据。
+ * 必须与 `serializeEntry` 使用同一种序列化函数，否则 A 设备算出的 manifest
+ * 哈希与 B 设备从同一 JSON 读回再算的哈希会出现漂移，触发空转上传。
  */
 export async function hashJson(payload: unknown): Promise<string> {
-  const serialized = serializeDates(payload);
-  const json = JSON.stringify(serialized);
+  const json = canonicalStringify(payload);
   const encoder = new TextEncoder();
   const data = encoder.encode(json);
   const digest = await crypto.subtle.digest('SHA-256', data);

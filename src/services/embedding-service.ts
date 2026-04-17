@@ -24,6 +24,17 @@ export interface EmbeddingProgressEvent {
   progress?: number;
   loaded?: number;
   total?: number;
+  /**
+   * 所有已见过的模型文件聚合后的"总字节进度"——用于 UI 展示单根稳定向前的
+   * 下载进度条。transformers.js 原生只给每个文件的局部进度，切文件时会回到 0；
+   * 这里统一在 service 侧维护 `loaded_i / total_i` 的 Map 并求和。
+   *
+   * `aggregateTotal` 随下载过程中发现新文件而增长，因此 `aggregatePercent`
+   * 单调递增，不会在切文件瞬间回跳。
+   */
+  aggregateLoaded?: number;
+  aggregateTotal?: number;
+  aggregatePercent?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +57,50 @@ export class EmbeddingService {
   private static readonly RETRY_DELAYS = [3000, 8000, 20000]; // 递增延迟(ms)
 
   private static readonly events = new EventTarget();
+
+  /**
+   * 聚合进度跟踪：file → { loaded, total }
+   * transformers.js 每切一个文件会把 progress 重置为 0，导致进度条回跳；
+   * 这里按文件维度累积字节，产出单根单调递增的进度条。
+   */
+  private static readonly progressByFile = new Map<string, { loaded: number; total: number }>();
+
+  /** 重置聚合进度——init 开始时调用 */
+  private static resetProgressAggregate(): void {
+    this.progressByFile.clear();
+  }
+
+  /**
+   * 根据一条原始 transformers progress event 更新内部聚合，并返回应广播的事件对象
+   */
+  private static enrichWithAggregate(event: EmbeddingProgressEvent): EmbeddingProgressEvent {
+    const file = event.file;
+    if (file && typeof event.total === 'number' && event.total > 0) {
+      const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
+      this.progressByFile.set(file, { loaded, total: event.total });
+    } else if (file && event.status === 'done') {
+      // 完成事件不带 total——把该文件置为"已完成"
+      const existing = this.progressByFile.get(file);
+      if (existing) {
+        this.progressByFile.set(file, { loaded: existing.total, total: existing.total });
+      }
+    }
+
+    let aggLoaded = 0;
+    let aggTotal = 0;
+    for (const { loaded, total } of this.progressByFile.values()) {
+      aggLoaded += loaded;
+      aggTotal += total;
+    }
+    const aggPercent = aggTotal > 0 ? Math.min(100, Math.round((aggLoaded / aggTotal) * 100)) : 0;
+
+    return {
+      ...event,
+      aggregateLoaded: aggLoaded,
+      aggregateTotal: aggTotal,
+      aggregatePercent: aggPercent,
+    };
+  }
 
   /**
    * 订阅 EmbeddingService 事件:
@@ -121,6 +176,7 @@ export class EmbeddingService {
 
     this.setStatus('loading');
     this.lastError = null;
+    this.resetProgressAggregate();
 
     this.initPromise = (async () => {
       try {
@@ -136,7 +192,7 @@ export class EmbeddingService {
           dtype: 'q4',
           device: 'auto',
           progress_callback: (event: EmbeddingProgressEvent) => {
-            this.dispatch('progress', event);
+            this.dispatch('progress', this.enrichWithAggregate(event));
           },
         });
 
