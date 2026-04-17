@@ -230,8 +230,10 @@ module.exports = {
           borderColor: '#6D88A8', // Highlight（薄藍）
         },
         // Translation text color (distinct from original text)
+        // 使用 tsukuyomi-200 (#BAC9DB) 而非 500——在深色底上长段阅读更易读
+        // （500 级对比度约 5:1，200 级约 10:1），同时保持"冷月蓝"的身份色
         '.text-translation': {
-          color: 'rgba(109, 136, 168, 0.9)', // Highlight（薄藍）with 90% opacity for translations
+          color: 'rgba(186, 201, 219, 0.95)',
         },
         // Search input group - ensures search box can shrink and buttons stay on same line
         '.search-input-group': {

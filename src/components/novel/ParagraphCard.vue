@@ -1403,10 +1403,15 @@ defineExpose({
 
 .paragraph-translation {
   margin: 0;
-  /* 设计系统：译文用显示字体（Noto Serif JP）+ 薄藍色 fg-translation */
+  /* 译文排印：
+   * - 字体保留 Noto Serif JP，与原文形成同一阅读节奏。
+   * - 颜色使用 tsukuyomi-200 (#BAC9DB) 而非设计 token 中的 tsukuyomi-500——
+   *   后者在极暗底上对比度约 5:1，长段阅读偏吃力；
+   *   提亮到 200 级可达约 10:1，同时仍保留"冷月蓝"的身份色以区别原文。
+   */
   font-family:
     'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
-  color: rgba(109, 136, 168, 0.95);
+  color: rgba(186, 201, 219, 0.95);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
