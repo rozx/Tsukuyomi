@@ -88,6 +88,7 @@ import { selectRelevantMemoriesForChunk } from 'src/services/ai/tasks/utils/cont
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
+import type { MenuItem } from 'primevue/menuitem';
 
 const route = useRoute();
 const router = useRouter();
@@ -981,6 +982,9 @@ const chapterStatusLabel = (chapterId: string): string => {
 // ───────── 手机端阅读器状态 ─────────
 const mobileSelectedParagraphId = ref<string | null>(null);
 
+// 手机端批量操作菜单（Menu popup，由 "批量" 按钮触发）
+const mobileBatchMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
+
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
   if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
@@ -1015,6 +1019,64 @@ const mobileReaderStats = computed(() => {
     translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
   };
 });
+
+// 手机端批量菜单项：基于当前章节翻译状态动态构建
+const mobileBatchMenuItems = computed<MenuItem[]>(() => {
+  const items: MenuItem[] = [];
+  const status = translationStatus.value;
+
+  // 主要动作：未译 → 翻译本章；部分翻译 → 继续翻译；全部翻译 → 润色/校对
+  if (status.hasNone) {
+    items.push({
+      label: '翻译本章',
+      icon: 'pi pi-sparkles',
+      command: () => void translateAllParagraphs(),
+    });
+  } else if (status.hasPartial) {
+    items.push({
+      label: '继续翻译',
+      icon: 'pi pi-play',
+      command: () => void continueTranslation(),
+    });
+  }
+
+  // 已有翻译（部分或全部）时，允许润色 / 校对
+  if (status.hasPartial || status.hasAll) {
+    items.push({
+      label: '润色本章',
+      icon: 'pi pi-pencil',
+      command: () => void polishAllParagraphs(),
+    });
+    items.push({
+      label: '校对本章',
+      icon: 'pi pi-check-circle',
+      command: () => void proofreadAllParagraphs(),
+    });
+  }
+
+  // 始终允许重新翻译（危险操作放在最后）
+  if (status.hasPartial || status.hasAll) {
+    items.push({
+      separator: true,
+    });
+    items.push({
+      label: '重新翻译',
+      icon: 'pi pi-refresh',
+      class: 'mbr-menu-danger',
+      command: () => void retranslateAllParagraphs(),
+    });
+  }
+
+  return items;
+});
+
+const mobileBatchBusy = computed(
+  () => isTranslatingChapter.value || isPolishingChapter.value || isProofreadingChapter.value,
+);
+
+const toggleMobileBatchMenu = (event: Event) => {
+  mobileBatchMenuRef.value?.toggle(event);
+};
 
 // 初始化段落翻译 composable
 const {
@@ -1602,6 +1664,11 @@ const {
   polishParagraph,
   proofreadParagraph,
   retranslateParagraph,
+  translateAllParagraphs,
+  continueTranslation,
+  retranslateAllParagraphs,
+  polishAllParagraphs,
+  proofreadAllParagraphs,
   cancelTranslation,
   cancelPolish,
   cancelProofreading,
@@ -3002,16 +3069,24 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           </span>
           <button
             class="mbr-strip-btn"
-            :disabled="isTranslatingChapter || isPolishingChapter || isProofreadingChapter"
-            @click="translationButtonClick"
+            :disabled="mobileBatchBusy || mobileBatchMenuItems.length === 0"
+            aria-haspopup="true"
+            @click="toggleMobileBatchMenu"
           >
             <i
               class="pi"
-              :class="isTranslatingChapter || isPolishingChapter || isProofreadingChapter ? 'pi-spin pi-spinner' : 'pi-play'"
+              :class="mobileBatchBusy ? 'pi-spin pi-spinner' : 'pi-play'"
               aria-hidden="true"
             />
             批量
+            <i class="pi pi-chevron-down mbr-strip-btn-caret" aria-hidden="true" />
           </button>
+          <TieredMenu
+            ref="mobileBatchMenuRef"
+            :model="mobileBatchMenuItems"
+            popup
+            class="mbr-batch-menu"
+          />
         </div>
 
         <!-- 段落列表 -->
@@ -4425,6 +4500,18 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 
 .mbr-strip-btn i {
   font-size: 10px;
+}
+
+.mbr-strip-btn-caret {
+  font-size: 9px;
+  margin-left: 2px;
+  opacity: 0.75;
+}
+
+/* 危险菜单项（重新翻译）淡红色 */
+.mbr-batch-menu :deep(.mbr-menu-danger .p-menuitem-link),
+.mbr-batch-menu :deep(.mbr-menu-danger .p-menuitem-link .p-menuitem-icon) {
+  color: #ef5f5f;
 }
 
 /* Scroll area */
