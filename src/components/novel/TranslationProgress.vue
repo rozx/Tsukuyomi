@@ -496,22 +496,24 @@ const mobileLegend = computed(() => {
           </div>
         </template>
 
-        <!-- 日志 -->
+        <!-- 日志（占满剩余空间，内部滚动） -->
         <template v-else-if="mobileTab === 'log'">
-          <div class="mtp-todos-wrap">
-            <TaskTodos
-              :todos="currentTaskTodos"
-              :collapsed="bookDetailsStore.translationProgress.todoCollapsed"
-              @toggle-collapsed="toggleTodoCollapsed"
-            />
-          </div>
-          <div class="mtp-stream-wrap">
-            <TaskStream
-              :task="currentTask"
-              :parts="currentParts"
-              :auto-scroll="currentAutoScroll"
-              @toggle-auto-scroll="toggleAutoScroll"
-            />
+          <div class="mtp-log-stack">
+            <div class="mtp-todos-wrap">
+              <TaskTodos
+                :todos="currentTaskTodos"
+                :collapsed="bookDetailsStore.translationProgress.todoCollapsed"
+                @toggle-collapsed="toggleTodoCollapsed"
+              />
+            </div>
+            <div class="mtp-stream-wrap mtp-stream-wrap--fill">
+              <TaskStream
+                :task="currentTask"
+                :parts="currentParts"
+                :auto-scroll="currentAutoScroll"
+                @toggle-auto-scroll="toggleAutoScroll"
+              />
+            </div>
           </div>
         </template>
       </div>
@@ -843,6 +845,8 @@ const mobileLegend = computed(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 12px 0 14px;
+  display: flex;
+  flex-direction: column;
 }
 
 .mtp-body::-webkit-scrollbar {
@@ -1072,6 +1076,21 @@ const mobileLegend = computed(() => {
 .mtp-stream-wrap--compact {
   min-height: 160px;
   max-height: 220px;
+}
+
+/* 日志 tab：占满可用空间，内部滚动 */
+.mtp-log-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mtp-stream-wrap--fill {
+  flex: 1;
+  min-height: 320px;
+  max-height: none;
 }
 
 /* TaskStream's .stream-section is flex column with flex:1 — fill the wrapper */
