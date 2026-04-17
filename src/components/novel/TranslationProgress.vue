@@ -317,27 +317,8 @@ const mobileIsRunning = computed(() => {
   return s === 'thinking' || s === 'processing';
 });
 
-const mobilePause = () => {
-  // 翻译任务无暂停原语，这里 pause == stop
-  stopTask();
-};
-
-const mobileCancel = () => {
-  stopTask();
-};
-
 const closeMobilePanel = () => {
   uiStore.closeRightPanel();
-};
-
-const mobileOpenBatchSettings = () => {
-  // 简化：引导用户回到书籍详情页的批量设置入口（暂用 toast 提示）
-  toast.add({
-    severity: 'info',
-    summary: '批量设置',
-    detail: '请在书籍设置中调整批量翻译参数。',
-    life: 2000,
-  });
 };
 
 // 手机端状态图例（颜色 · 数量）
@@ -539,21 +520,30 @@ const mobileLegend = computed(() => {
       <div class="mtp-actions">
         <button
           class="mtp-btn mtp-btn-outline"
-          :disabled="!mobileIsRunning"
-          @click="mobilePause"
+          :class="{ 'mtp-btn--filter-on': showOnlyCurrentChapter }"
+          @click="toggleChapterFilter"
         >
-          <i class="pi pi-pause" aria-hidden="true" />暂停
-        </button>
-        <button
-          class="mtp-btn mtp-btn-outline mtp-btn-danger"
-          :disabled="!mobileIsRunning"
-          @click="mobileCancel"
-        >
-          <i class="pi pi-times" aria-hidden="true" />取消
+          <i
+            class="pi"
+            :class="showOnlyCurrentChapter ? 'pi-filter' : 'pi-filter-slash'"
+            aria-hidden="true"
+          />
+          {{ showOnlyCurrentChapter ? '仅本章' : '全部章节' }}
         </button>
         <div class="mtp-actions-spacer" />
-        <button class="mtp-btn mtp-btn-blue" @click="mobileOpenBatchSettings">
-          <i class="pi pi-cog" aria-hidden="true" />批量设置
+        <button
+          v-if="mobileIsRunning"
+          class="mtp-btn mtp-btn-outline mtp-btn-danger"
+          @click="stopTask"
+        >
+          <i class="pi pi-stop-circle" aria-hidden="true" />停止
+        </button>
+        <button
+          v-else
+          class="mtp-btn mtp-btn-outline"
+          @click="clearCompletedTasks"
+        >
+          <i class="pi pi-trash" aria-hidden="true" />清除已完成
         </button>
       </div>
     </template>
@@ -1158,14 +1148,13 @@ const mobileLegend = computed(() => {
   border-color: rgba(239, 95, 95, 0.3);
 }
 
-.mtp-btn-blue {
-  background: rgba(109, 136, 168, 0.18);
+.mtp-btn--filter-on {
+  background: rgba(109, 136, 168, 0.15);
   color: #bac9db;
   border-color: rgba(109, 136, 168, 0.35);
-  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.3);
 }
 
-.mtp-btn-blue:hover:not(:disabled) {
-  background: rgba(109, 136, 168, 0.28);
+.mtp-btn--filter-on:hover:not(:disabled) {
+  background: rgba(109, 136, 168, 0.22);
 }
 </style>
