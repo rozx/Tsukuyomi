@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, type ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
-import { useUiStore } from 'src/stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
@@ -11,7 +10,6 @@ import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
-const ui = useUiStore();
 const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
@@ -39,11 +37,6 @@ const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const toggleHistory = (event: Event) => toastHistoryRef.value?.toggle(event);
 const toggleThinking = (event: Event) => thinkingPanelRef.value?.toggle(event);
 const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
-
-const toggleRightPanel = () => {
-  if (ui.sideMenuOpen) ui.closeSideMenu();
-  ui.toggleRightPanel();
-};
 </script>
 
 <template>
@@ -113,16 +106,6 @@ const toggleRightPanel = () => {
         <span v-if="unreadCount > 0" class="sys-badge">
           {{ unreadCount > 99 ? '99+' : unreadCount }}
         </span>
-      </button>
-
-      <!-- Switcher (toggles right panel) -->
-      <button
-        class="tsm-sys-chip"
-        :class="{ active: ui.rightPanelOpen }"
-        aria-label="切换面板"
-        @click="toggleRightPanel"
-      >
-        <i class="pi pi-table" aria-hidden="true" />
       </button>
     </div>
 
