@@ -2625,11 +2625,11 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
 
-      <!-- 手机端 · 阅读页顶部 app bar（返回到详情 overview） -->
+      <!-- 手机端 · 阅读页顶部 app bar（匹配设计：chevron · title/subtitle · list · cog） -->
       <header v-if="isPhone && selectedChapter" class="mbd-appbar mbd-appbar--reader">
         <button
           class="mbd-icon-btn"
-          aria-label="返回章节目录"
+          aria-label="返回书籍详情"
           @click="onNavigateToChapterList"
         >
           <i class="pi pi-chevron-left" aria-hidden="true" />
@@ -2649,10 +2649,17 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
         <button
           class="mbd-icon-btn"
-          aria-label="更多操作"
-          @click="openBookDialog"
+          aria-label="章节目录"
+          @click="onNavigateToChapterList"
         >
-          <i class="pi pi-ellipsis-h" aria-hidden="true" />
+          <i class="pi pi-list" aria-hidden="true" />
+        </button>
+        <button
+          class="mbd-icon-btn"
+          aria-label="章节设置"
+          @click="toggleChapterSettingsPopover"
+        >
+          <i class="pi pi-cog" aria-hidden="true" />
         </button>
       </header>
 
