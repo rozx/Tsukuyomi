@@ -82,6 +82,7 @@ import { useChapterTranslation } from 'src/composables/book-details/useChapterTr
 import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
 import { selectRelevantMemoriesForChunk } from 'src/services/ai/tasks/utils/context-builder';
 import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
@@ -95,6 +96,7 @@ const bookDetailsStore = useBookDetailsStore();
 const contextStore = useContextStore();
 const uiStore = useUiStore();
 const aiProcessingStore = useAIProcessingStore();
+const aiModelsStore = useAIModelsStore();
 const toast = useToastWithHistory();
 
 const isPhone = computed(() => uiStore.deviceType === 'phone');
@@ -976,12 +978,42 @@ const chapterStatusLabel = (chapterId: string): string => {
   return `${pct}%`;
 };
 
+// ───────── 手机端阅读器状态 ─────────
+const mobileSelectedParagraphId = ref<string | null>(null);
+
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
   if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
     return [];
   }
   return selectedChapterWithContent.value.content;
+});
+
+// ───────── 手机端阅读器计算 ─────────
+// 当前章节的模型显示名
+const getParagraphModelName = (paragraph: Paragraph): string | null => {
+  const list = paragraph.translations ?? [];
+  if (list.length === 0) return null;
+  const sel = list.find((t) => t.id === paragraph.selectedTranslationId) ?? list[0];
+  if (!sel) return null;
+  const model = aiModelsStore.models.find((m) => m.id === sel.aiModelId);
+  return model?.name ?? null;
+};
+
+// 章节翻译主模型（用于顶部模型徽标）
+const mobileReaderModelName = computed<string>(() => {
+  const model = aiModelsStore.getDefaultModelForTask('translation');
+  return model?.name ?? '未配置模型';
+});
+
+// 当前章节的段落统计
+const mobileReaderStats = computed(() => {
+  const paras = selectedChapterParagraphs.value || [];
+  const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+  return {
+    total: nonEmpty.length,
+    translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
+  };
 });
 
 // 初始化段落翻译 composable
@@ -2941,14 +2973,159 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @confirm="confirmDeleteCharacter"
       />
 
-      <!-- 主内容区域（桌面/平板始终可见；手机端仅在选中章节阅读时显示） -->
+      <!-- 手机端阅读器（全新设计，替代桌面 ChapterContentPanel） -->
+      <div v-if="isPhone && selectedChapter" class="mobile-reader">
+        <!-- 翻译状态条 -->
+        <div class="mbr-strip">
+          <span class="mbr-strip-badge">
+            <i class="pi pi-sparkles" aria-hidden="true" />
+            {{ mobileReaderModelName }}
+          </span>
+          <span class="mbr-strip-stats">
+            共 {{ mobileReaderStats.total }} 段 · 已译 {{ mobileReaderStats.translated }}
+          </span>
+          <button
+            class="mbr-strip-btn"
+            :disabled="isTranslatingChapter || isPolishingChapter || isProofreadingChapter"
+            @click="translationButtonClick"
+          >
+            <i
+              class="pi"
+              :class="isTranslatingChapter || isPolishingChapter || isProofreadingChapter ? 'pi-spin pi-spinner' : 'pi-play'"
+              aria-hidden="true"
+            />
+            批量
+          </button>
+        </div>
+
+        <!-- 段落列表 -->
+        <div class="mbr-scroll">
+          <div
+            v-if="isLoadingChapterContent"
+            class="mbr-state"
+          >
+            <ProgressSpinner style="width: 28px; height: 28px" stroke-width="4" animation-duration=".8s" aria-label="加载中" />
+            <span>加载章节内容…</span>
+          </div>
+          <template v-else>
+            <div
+              v-for="(p, idx) in selectedChapterParagraphs"
+              :key="p.id"
+              class="mbr-p"
+              :class="{ selected: mobileSelectedParagraphId === p.id }"
+              @click="mobileSelectedParagraphId = mobileSelectedParagraphId === p.id ? null : p.id"
+            >
+              <!-- Meta row -->
+              <div class="mbr-p-meta">
+                <span class="mbr-p-num">§ {{ String(idx + 1).padStart(3, '0') }}</span>
+                <template v-if="translatingParagraphIds.has(p.id)">
+                  <span class="mbr-badge mbr-badge-blue">
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true" />翻译中…
+                  </span>
+                </template>
+                <template v-else-if="polishingParagraphIds.has(p.id)">
+                  <span class="mbr-badge mbr-badge-blue">
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true" />润色中…
+                  </span>
+                </template>
+                <template v-else-if="proofreadingParagraphIds.has(p.id)">
+                  <span class="mbr-badge mbr-badge-blue">
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true" />校对中…
+                  </span>
+                </template>
+                <template v-else-if="(p.translations?.length ?? 0) > 0">
+                  <i class="pi pi-sparkles mbr-p-meta-ai" aria-hidden="true" />
+                  <span v-if="getParagraphModelName(p)">{{ getParagraphModelName(p) }}</span>
+                </template>
+                <template v-else-if="(p.text ?? '').trim().length === 0">
+                  <span class="mbr-badge mbr-badge-muted">空段</span>
+                </template>
+                <template v-else>
+                  <span class="mbr-badge mbr-badge-amber">
+                    <i class="pi pi-clock" aria-hidden="true" />待翻译
+                  </span>
+                </template>
+              </div>
+
+              <!-- Original -->
+              <div v-if="(p.text ?? '').trim().length > 0" class="mbr-p-ja">{{ p.text }}</div>
+
+              <!-- Translation -->
+              <div v-if="getParagraphTranslationText(p)" class="mbr-p-zh">
+                {{ getParagraphTranslationText(p) }}
+              </div>
+
+              <!-- Pending prompt -->
+              <div
+                v-else-if="(p.text ?? '').trim().length > 0 && !translatingParagraphIds.has(p.id)"
+                class="mbr-p-pending"
+                @click.stop="retranslateParagraph(p.id)"
+              >
+                <i class="pi pi-sparkles" aria-hidden="true" />点击开始翻译此段
+              </div>
+            </div>
+
+            <!-- Prev / Next chapter -->
+            <div class="mbr-chapter-nav">
+              <button
+                class="mbr-nav-btn"
+                :disabled="!prevChapter"
+                @click="prevChapter && onNavigateToChapter(prevChapter)"
+              >
+                <i class="pi pi-chevron-left" aria-hidden="true" />上一章
+              </button>
+              <button
+                class="mbr-nav-btn"
+                :disabled="!nextChapter"
+                @click="nextChapter && onNavigateToChapter(nextChapter)"
+              >
+                下一章<i class="pi pi-chevron-right" aria-hidden="true" />
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Floating action bar for selected paragraph -->
+        <div v-if="mobileSelectedParagraphId" class="mbr-actionbar">
+          <button
+            class="ab-btn primary"
+            :disabled="translatingParagraphIds.has(mobileSelectedParagraphId)"
+            @click="retranslateParagraph(mobileSelectedParagraphId)"
+          >
+            <i class="pi pi-sparkles" aria-hidden="true" />
+            <span>翻译</span>
+          </button>
+          <button
+            class="ab-btn"
+            :disabled="polishingParagraphIds.has(mobileSelectedParagraphId)"
+            @click="polishParagraph(mobileSelectedParagraphId)"
+          >
+            <i class="pi pi-pencil" aria-hidden="true" />
+            <span>润色</span>
+          </button>
+          <button
+            class="ab-btn"
+            :disabled="proofreadingParagraphIds.has(mobileSelectedParagraphId)"
+            @click="proofreadParagraph(mobileSelectedParagraphId)"
+          >
+            <i class="pi pi-check-circle" aria-hidden="true" />
+            <span>校对</span>
+          </button>
+          <div class="ab-sep" />
+          <button class="ab-btn" @click="mobileSelectedParagraphId = null">
+            <i class="pi pi-times" aria-hidden="true" />
+            <span>关闭</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 主内容区域（桌面/平板端） -->
       <div
-        v-if="!isPhone || selectedChapter"
+        v-if="!isPhone"
         class="book-main-content"
         :class="{
           'overflow-hidden': !!selectedSettingMenu,
-          'book-main-content-mobile-hidden': isSmallScreen && !isPhone && workspaceMode === 'catalog',
-          'book-main-content-phone-reader': isPhone && !!selectedChapter,
+          'book-main-content-mobile-hidden': isSmallScreen && workspaceMode === 'catalog',
         }"
       >
         <!-- 章节阅读工具栏 -->
@@ -4156,6 +4333,341 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* ───────── Mobile Reader (matches design's .tsm-p + .tsm-actionbar) ───────── */
+.mobile-reader {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Translation state strip (under app bar) */
+.mbr-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(109, 136, 168, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.mbr-strip-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(109, 136, 168, 0.15);
+  color: #bac9db;
+  border: 1px solid rgba(109, 136, 168, 0.3);
+  white-space: nowrap;
+}
+
+.mbr-strip-badge i {
+  font-size: 9px;
+}
+
+.mbr-strip-stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+}
+
+.mbr-strip-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: rgba(109, 136, 168, 0.18);
+  color: #bac9db;
+  border: 1px solid rgba(109, 136, 168, 0.35);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.3);
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-strip-btn:hover:not(:disabled) {
+  background: rgba(109, 136, 168, 0.28);
+}
+
+.mbr-strip-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mbr-strip-btn i {
+  font-size: 10px;
+}
+
+/* Scroll area */
+.mbr-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mbr-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+/* State panel */
+.mbr-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  color: rgba(247, 244, 236, 0.55);
+  font-size: 13px;
+}
+
+/* Paragraph card */
+.mbr-p {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-p:active {
+  background: rgba(109, 136, 168, 0.06);
+}
+
+.mbr-p.selected {
+  background: rgba(109, 136, 168, 0.1);
+  box-shadow: inset 3px 0 0 #6d88a8;
+}
+
+.mbr-p-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mbr-p-num {
+  color: rgba(174, 183, 198, 0.85);
+  font-weight: 500;
+}
+
+.mbr-p-meta-ai {
+  color: #a3b7cf;
+  font-size: 11px;
+}
+
+.mbr-p-ja {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: rgba(247, 244, 236, 0.9);
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.mbr-p-zh {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 15px;
+  line-height: 1.75;
+  color: rgba(109, 136, 168, 0.95);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.mbr-p-pending {
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.55);
+  padding: 8px 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-p-pending:hover {
+  border-color: rgba(109, 136, 168, 0.4);
+  color: rgba(247, 244, 236, 0.8);
+}
+
+.mbr-p-pending i {
+  color: #a3b7cf;
+  font-size: 12px;
+}
+
+/* Badges on meta row */
+.mbr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 244, 236, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.mbr-badge i {
+  font-size: 9px;
+}
+
+.mbr-badge-blue {
+  background: rgba(109, 136, 168, 0.15);
+  color: #bac9db;
+  border-color: rgba(109, 136, 168, 0.3);
+}
+
+.mbr-badge-amber {
+  background: rgba(242, 192, 55, 0.12);
+  color: #f2c037;
+  border-color: rgba(242, 192, 55, 0.3);
+}
+
+.mbr-badge-muted {
+  opacity: 0.6;
+}
+
+/* Chapter nav */
+.mbr-chapter-nav {
+  padding: 18px 16px 140px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mbr-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(247, 244, 236, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mbr-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mbr-nav-btn i {
+  font-size: 10px;
+}
+
+/* Floating action bar */
+.mbr-actionbar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(20, 22, 26, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow:
+    0 10px 40px rgba(5, 6, 15, 0.45),
+    0 0 0 1px rgba(109, 136, 168, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  z-index: 50;
+  animation: mbr-slide-up 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes mbr-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mbr-actionbar .ab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: rgba(247, 244, 236, 0.9);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbr-actionbar .ab-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mbr-actionbar .ab-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mbr-actionbar .ab-btn i {
+  font-size: 18px;
+  color: rgba(174, 183, 198, 0.85);
+}
+
+.mbr-actionbar .ab-btn.primary i {
+  color: #a3b7cf;
+}
+
+.mbr-actionbar .ab-sep {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
 }
 
 /* ───────── Mobile Chapter Tree (章节 tab) ───────── */
