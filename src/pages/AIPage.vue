@@ -249,9 +249,15 @@ const formatApiKey = (apiKey: string): string => {
     <div
       class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
     >
-      <div class="flex-shrink-0 min-w-0">
-        <h1 class="text-2xl font-bold">AI 模型管理</h1>
-        <p class="text-moon/70 mt-1">管理可用的 AI 翻译模型配置</p>
+      <div class="flex-shrink-0 min-w-0 flex flex-col gap-1">
+        <span
+          class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
+          >AI Models</span
+        >
+        <h1 class="font-display text-[30px] font-semibold tracking-tight text-moon-100 leading-tight">
+          AI 模型管理
+        </h1>
+        <p class="text-moon/70 text-sm mt-1">管理可用的 AI 翻译模型配置</p>
       </div>
       <div class="flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap">
         <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
@@ -337,8 +343,10 @@ const formatApiKey = (apiKey: string): string => {
                       :class="model.enabled ? 'text-accent-400' : 'text-moon/50'"
                     />
                     <div class="min-w-0">
-                      <h3 class="text-lg font-semibold truncate">{{ model.name }}</h3>
-                      <p class="text-sm text-moon/70 truncate">
+                      <h3 class="font-display text-[17px] font-semibold tracking-tight text-moon-100 truncate">
+                        {{ model.name }}
+                      </h3>
+                      <p class="font-mono text-[11px] text-moon/60 truncate mt-0.5">
                         {{ getProviderLabel(model.provider) }} · {{ model.model }}
                       </p>
                     </div>

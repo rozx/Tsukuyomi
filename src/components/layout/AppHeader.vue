@@ -304,14 +304,20 @@ onUnmounted(() => {
             icon="pi pi-bars"
             @click="handleToggleSideMenu"
           />
-          <img :src="logoPath" :alt="APP_NAME.full" class="w-8 h-8 flex-shrink-0" />
-          <div v-if="!isPhone" class="flex flex-col">
-            <span class="text-[10px] uppercase tracking-[0.2em] text-moon-50"
+          <img
+            :src="logoPath"
+            :alt="APP_NAME.full"
+            class="w-9 h-9 flex-shrink-0 rounded-[10px] shadow-md"
+          />
+          <div v-if="!isPhone" class="flex flex-col leading-none">
+            <span
+              class="font-ui font-light text-[10px] uppercase tracking-brand text-accent-300"
               >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
             >
-            <span class="font-semibold text-moon-100 tracking-wide">{{
-              APP_NAME.description.en
-            }}</span>
+            <span
+              class="font-display font-semibold text-moon-100 mt-[3px] text-[15px] tracking-tight"
+              >{{ APP_NAME.description.en }}</span
+            >
           </div>
         </div>
       </template>

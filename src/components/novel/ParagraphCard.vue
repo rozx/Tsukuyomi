@@ -1352,17 +1352,30 @@ defineExpose({
 
 .paragraph-text {
   margin: 0;
-  color: var(--moon-opacity-60);
+  /* 设计系统：原文用显示字体（Noto Serif JP），正文色 fg-2 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  color: rgba(247, 244, 236, 0.9);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* 原文与译文之间的分隔线：设计系统规定使用渐变 1px 分割线替代硬线条 */
 .paragraph-translation-wrapper {
   margin: 0.75rem 0 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--white-opacity-10);
+  border-top: none;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.15),
+    transparent
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: top;
 }
 
 .translation-inplace {
@@ -1390,7 +1403,15 @@ defineExpose({
 
 .paragraph-translation {
   margin: 0;
-  color: var(--primary-opacity-90);
+  /* 译文排印：
+   * - 字体保留 Noto Serif JP，与原文形成同一阅读节奏。
+   * - 颜色使用 tsukuyomi-200 (#BAC9DB) 而非设计 token 中的 tsukuyomi-500——
+   *   后者在极暗底上对比度约 5:1，长段阅读偏吃力；
+   *   提亮到 200 级可达约 10:1，同时仍保留"冷月蓝"的身份色以区别原文。
+   */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  color: rgba(186, 201, 219, 0.95);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
