@@ -12,6 +12,7 @@ import { useContextStore } from 'src/stores/context';
 import { useUiStore } from 'src/stores/ui';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { ChapterContentService } from 'src/services/chapter-content-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
@@ -400,12 +401,15 @@ watch(
   (newBook) => {
     if (newBook) {
       void calculateStats();
+      void calculateTranslationProgress();
     } else {
       stats.value = null;
+      translationProgressState.value = null;
     }
   },
   { immediate: false },
 );
+
 
 // 获取卷列表
 const volumes = computed(() => {
@@ -726,6 +730,13 @@ const selectedChapterId = computed(() => {
   return bookDetailsStore.getSelectedChapter(bookId.value);
 });
 
+// 离开章节阅读、回到目录时刷新翻译进度（用户可能刚刚翻译了一些段落）
+watch(selectedChapterId, (newId, oldId) => {
+  if (oldId && !newId) {
+    void calculateTranslationProgress();
+  }
+});
+
 // 选中章节的完整数据（包含已加载的内容）
 const selectedChapterWithContent = ref<Chapter | null>(null);
 const isLoadingChapterContent = ref(false);
@@ -759,30 +770,92 @@ const nextChapter = computed(() => {
   return result?.chapter || null;
 });
 
-// 手机端"继续翻译"目标章节：优先选择已选中章节，否则按顺序取第一个未完全翻译的章节，
-// 若全部完成则取首章。
+// 手机端翻译进度统计（异步计算，结果写入 ref 供模板读取）
+// 章节内容是懒加载的，所以必须通过 ChapterContentService 批量读取后统计
+const translationProgressState = ref<{
+  total: number;
+  translated: number;
+  firstIncompleteChapterId: string | null;
+  // 每个章节的段落统计（用于手机端章节树显示状态图标与百分比）
+  byChapter: Map<string, { total: number; translated: number }>;
+} | null>(null);
+const isCalculatingTranslationProgress = ref(false);
+
+const calculateTranslationProgress = async () => {
+  if (!book.value || isCalculatingTranslationProgress.value) return;
+  isCalculatingTranslationProgress.value = true;
+
+  try {
+    // 收集所有章节 ID（按卷/章顺序），以便在遍历时保留"首个未完成章节"的语义
+    const chapterOrder: { id: string; chapter: Chapter }[] = [];
+    for (const vol of book.value.volumes || []) {
+      for (const ch of vol.chapters || []) {
+        chapterOrder.push({ id: ch.id, chapter: ch });
+      }
+    }
+
+    if (chapterOrder.length === 0) {
+      translationProgressState.value = {
+        total: 0,
+        translated: 0,
+        firstIncompleteChapterId: null,
+        byChapter: new Map(),
+      };
+      return;
+    }
+
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(
+      chapterOrder.map((c) => c.id),
+    );
+
+    let total = 0;
+    let translated = 0;
+    let firstIncompleteChapterId: string | null = null;
+    const byChapter = new Map<string, { total: number; translated: number }>();
+
+    for (const { id } of chapterOrder) {
+      const content = contentsMap.get(id);
+      const paras = content ?? [];
+      const paraTotal = paras.length;
+      const paraDone = paras.filter((p) => (p.translations?.length ?? 0) > 0).length;
+      total += paraTotal;
+      translated += paraDone;
+      byChapter.set(id, { total: paraTotal, translated: paraDone });
+      // 第一个尚未全部翻译（或根本没有内容）的章节视作"继续翻译"目标
+      if (firstIncompleteChapterId === null && (paraTotal === 0 || paraDone < paraTotal)) {
+        firstIncompleteChapterId = id;
+      }
+    }
+
+    translationProgressState.value = { total, translated, firstIncompleteChapterId, byChapter };
+  } finally {
+    isCalculatingTranslationProgress.value = false;
+  }
+};
+
+// 手机端"继续翻译"目标章节
 const continueReadingChapter = computed<Chapter | null>(() => {
   if (!book.value) return null;
-
+  // 优先选择当前打开中的章节
   if (selectedChapterId.value) {
     for (const vol of book.value.volumes || []) {
       const c = vol.chapters?.find((ch) => ch.id === selectedChapterId.value);
       if (c) return c;
     }
   }
-
-  let firstChapter: Chapter | null = null;
-  for (const vol of book.value.volumes || []) {
-    for (const ch of vol.chapters || []) {
-      if (!firstChapter) firstChapter = ch;
-      const total = ch.content?.length ?? 0;
-      const translated =
-        ch.content?.filter((p) => (p.translations?.length ?? 0) > 0).length ?? 0;
-      // 若尚未全部翻译，则视为可继续
-      if (total === 0 || translated < total) return ch;
+  // 否则使用异步计算出的"首个未完成章节"
+  const firstIncompleteId = translationProgressState.value?.firstIncompleteChapterId;
+  if (firstIncompleteId) {
+    for (const vol of book.value.volumes || []) {
+      const c = vol.chapters?.find((ch) => ch.id === firstIncompleteId);
+      if (c) return c;
     }
   }
-  return firstChapter;
+  // 兜底：返回第一章
+  for (const vol of book.value.volumes || []) {
+    for (const ch of vol.chapters || []) return ch;
+  }
+  return null;
 });
 
 // 手机端封面日期显示（容错处理）
@@ -817,6 +890,11 @@ const mobileActiveTab = computed<'chapters' | 'terms' | 'characters' | 'memory'>
 
 const switchMobileTab = (tab: 'chapters' | 'terms' | 'characters' | 'memory') => {
   if (tab === 'chapters') {
+    // 清除设置菜单并回到书籍根路由，保持 URL 与视图一致；也清掉选中的章节
+    selectedSettingMenu.value = null;
+    if (bookId.value && route.params.setting) {
+      void router.replace(`/books/${bookId.value}`);
+    }
     onNavigateToChapterList();
     return;
   }
@@ -834,24 +912,67 @@ const switchMobileTab = (tab: 'chapters' | 'terms' | 'characters' | 'memory') =>
   }
 };
 
-// 手机端书籍整体翻译进度（百分比）
+// 手机端书籍整体翻译进度（百分比）— 基于异步 translationProgressState
 const mobileBookProgress = computed<number>(() => {
-  if (!book.value) return 0;
-  let total = 0;
-  let translated = 0;
-  for (const vol of book.value.volumes || []) {
-    for (const ch of vol.chapters || []) {
-      const paras = ch.content || [];
-      total += paras.length;
-      translated += paras.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    }
-  }
-  if (total === 0) return 0;
-  return Math.round((translated / total) * 100);
+  const s = translationProgressState.value;
+  if (!s || s.total === 0) return 0;
+  return Math.round((s.translated / s.total) * 100);
 });
 
-// 手机端章节段落统计（用于章节列表项进度徽标）
-// 已由 VolumesList 内部处理，不再重复。
+// 手机端章节状态（用于章节树的图标/颜色/标签）
+// - done (100%)    → pi-check-circle · #A7D1B0 · "100%"
+// - inProgress     → pi-pencil        · #BAC9DB · "NN%" (tsukuyomi-300 文字)
+// - pending (0% 或内容未加载) → pi-circle-off · muted · "—"
+type ChapterStatus = 'done' | 'inProgress' | 'pending';
+
+const getChapterStatus = (chapterId: string): ChapterStatus => {
+  const byCh = translationProgressState.value?.byChapter;
+  if (!byCh) return 'pending';
+  const s = byCh.get(chapterId);
+  if (!s || s.total === 0) return 'pending';
+  if (s.translated >= s.total) return 'done';
+  if (s.translated > 0) return 'inProgress';
+  return 'pending';
+};
+
+const chapterStatusIcon = (chapterId: string): string => {
+  switch (getChapterStatus(chapterId)) {
+    case 'done':
+      return 'pi-check-circle';
+    case 'inProgress':
+      return 'pi-pencil';
+    default:
+      return 'pi-circle-off';
+  }
+};
+
+const chapterStatusColor = (chapterId: string): string => {
+  switch (getChapterStatus(chapterId)) {
+    case 'done':
+      return '#A7D1B0';
+    case 'inProgress':
+      return '#BAC9DB';
+    default:
+      return 'rgba(174,183,198,0.55)';
+  }
+};
+
+const chapterStatusTextColor = (chapterId: string): string => {
+  switch (getChapterStatus(chapterId)) {
+    case 'inProgress':
+      return '#A3B7CF';
+    default:
+      return 'rgba(247,244,236,0.55)';
+  }
+};
+
+const chapterStatusLabel = (chapterId: string): string => {
+  const byCh = translationProgressState.value?.byChapter;
+  const s = byCh?.get(chapterId);
+  if (!s || s.total === 0) return '—';
+  const pct = Math.round((s.translated / s.total) * 100);
+  return `${pct}%`;
+};
 
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
@@ -1293,6 +1414,7 @@ onMounted(() => {
   setTimeout(() => {
     isPageLoading.value = false;
     void calculateStats();
+    void calculateTranslationProgress();
   }, 100);
   // 添加点击事件监听器
   window.addEventListener('click', handleClick);
@@ -2374,16 +2496,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
               class="mbd-seg-btn"
               :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'terms' }"
               @click="switchMobileTab('terms')"
-            >
-              术语<span v-if="stableTerminologies.length" class="mbd-seg-count">{{ stableTerminologies.length }}</span>
-            </button>
+            >{{ stableTerminologies.length ? `术语 ${stableTerminologies.length}` : '术语' }}</button>
             <button
               class="mbd-seg-btn"
               :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'characters' }"
               @click="switchMobileTab('characters')"
-            >
-              角色<span v-if="stableCharacterSettings.length" class="mbd-seg-count">{{ stableCharacterSettings.length }}</span>
-            </button>
+            >{{ stableCharacterSettings.length ? `角色 ${stableCharacterSettings.length}` : '角色' }}</button>
             <button
               class="mbd-seg-btn"
               :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'memory' }"
@@ -2402,31 +2520,57 @@ const handleBookSave = async (formData: Partial<Novel>) => {
                   <i class="pi pi-plus-circle" aria-hidden="true" />新章节
                 </button>
               </div>
-              <VolumesList
-                :volumes="volumes"
-                :book="book || null"
-                :selected-chapter-id="selectedChapterId"
-                :is-page-loading="isPageLoading"
-                :is-loading-chapter-content="isLoadingChapterContent"
-                :is-volume-expanded="isVolumeExpanded"
-                :dragged-chapter="draggedChapter"
-                :drag-over-volume-id="dragOverVolumeId"
-                :drag-over-index="dragOverIndex"
-                :touch-mode="true"
-                :is-moving-chapter="isMovingChapter"
-                @toggle-volume="onToggleVolume"
-                @navigate-to-chapter="onNavigateToChapter"
-                @edit-volume="onEditVolume"
-                @delete-volume="onDeleteVolume"
-                @edit-chapter="onEditChapter"
-                @delete-chapter="onDeleteChapter"
-                @drag-start="onDragStart"
-                @drag-end="onDragEnd"
-                @drag-over="onDragOver"
-                @drop="onDrop"
-                @drag-leave="onDragLeave"
-                @move-chapter="onMoveChapter"
-              />
+
+              <!-- 清爽的手机端章节树：卷（可折叠）+ 章节（状态图标 + 百分比） -->
+              <div class="mbd-tree">
+                <template v-for="vol in volumes" :key="vol.id">
+                  <button
+                    class="mbd-tree-row mbd-tree-row--vol"
+                    :class="{ 'mbd-tree-row--vol-open': isVolumeExpanded(vol.id) }"
+                    @click="onToggleVolume(vol)"
+                  >
+                    <i
+                      class="pi mbd-tree-vol-icon"
+                      :class="isVolumeExpanded(vol.id) ? 'pi-folder-open' : 'pi-folder'"
+                      aria-hidden="true"
+                    />
+                    <span class="mbd-tree-row-title">{{ getVolumeDisplayTitle(vol) }}</span>
+                    <span class="mbd-tree-row-count">{{ (vol.chapters?.length ?? 0) }} 章</span>
+                  </button>
+                  <template v-if="isVolumeExpanded(vol.id)">
+                    <div
+                      v-for="ch in vol.chapters || []"
+                      :key="ch.id"
+                      class="mbd-tree-row mbd-tree-row--chapter"
+                      :class="{
+                        'mbd-tree-row--active':
+                          continueReadingChapter && continueReadingChapter.id === ch.id,
+                      }"
+                      role="button"
+                      @click="onNavigateToChapter(ch)"
+                    >
+                      <i
+                        class="pi mbd-tree-chap-icon"
+                        :class="chapterStatusIcon(ch.id)"
+                        :style="{ color: chapterStatusColor(ch.id) }"
+                        aria-hidden="true"
+                      />
+                      <span class="mbd-tree-row-title">{{ getChapterDisplayTitle(ch, book || undefined) }}</span>
+                      <span
+                        class="mbd-tree-row-count"
+                        :style="{ color: chapterStatusTextColor(ch.id) }"
+                      >
+                        {{ chapterStatusLabel(ch.id) }}
+                      </span>
+                    </div>
+                  </template>
+                </template>
+
+                <div v-if="volumes.length === 0" class="mbd-tree-empty">
+                  <i class="pi pi-folder-open" aria-hidden="true" />
+                  <span>尚未创建卷或章节</span>
+                </div>
+              </div>
             </template>
             <TerminologyPanel
               v-else-if="mobileActiveTab === 'terms'"
@@ -3962,12 +4106,6 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-.mbd-seg-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  opacity: 0.7;
-}
-
 /* Tab content (VolumesList + panels) */
 .mbd-tab-content {
   margin-top: 10px;
@@ -4016,5 +4154,100 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* ───────── Mobile Chapter Tree (章节 tab) ───────── */
+.mbd-tree {
+  padding: 4px 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mbd-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 13px;
+  color: rgba(247, 244, 236, 0.85);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbd-tree-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mbd-tree-row--vol {
+  font-weight: 600;
+  color: rgba(247, 244, 236, 0.85);
+}
+
+.mbd-tree-row--vol-open {
+  color: rgba(247, 244, 236, 1);
+}
+
+.mbd-tree-row--chapter {
+  padding-left: 32px;
+  font-size: 13px;
+  color: rgba(247, 244, 236, 0.8);
+}
+
+.mbd-tree-row--active {
+  background: rgba(109, 136, 168, 0.12);
+  color: rgba(247, 244, 236, 1);
+  box-shadow: inset 2px 0 0 #6d88a8;
+}
+
+.mbd-tree-vol-icon {
+  font-size: 13px;
+  color: rgba(174, 183, 198, 0.85);
+  flex-shrink: 0;
+}
+
+.mbd-tree-row--vol-open .mbd-tree-vol-icon {
+  color: #a3b7cf;
+}
+
+.mbd-tree-chap-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.mbd-tree-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbd-tree-row-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(247, 244, 236, 0.55);
+  flex-shrink: 0;
+}
+
+.mbd-tree-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: rgba(247, 244, 236, 0.5);
+  font-size: 13px;
+}
+
+.mbd-tree-empty i {
+  font-size: 18px;
+  color: rgba(247, 244, 236, 0.25);
 }
 </style>
