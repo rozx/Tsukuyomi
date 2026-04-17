@@ -139,7 +139,7 @@ const bottomItems: MenuItem[] = [
         <div class="px-3 py-2 mb-3 bg-surface-subtle rounded-lg border border-surface-subtle min-w-0 max-w-full overflow-hidden">
           <div class="flex items-center gap-2 min-w-0">
             <i class="pi pi-bookmark text-accent-400 text-sm flex-shrink-0" />
-            <span class="text-xs font-semibold text-textCharcoal dark:text-moon-50/90 uppercase tracking-wide flex-shrink-0">收藏小说</span>
+            <span class="font-ui text-[10px] font-medium text-moon/60 uppercase tracking-[0.15em] flex-shrink-0">收藏小说</span>
             <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-accent-400/20 text-accent-400 flex-shrink-0">
               {{ starredNovels.length }}
             </span>
@@ -227,14 +227,19 @@ const bottomItems: MenuItem[] = [
   transform: translateX(2px);
 }
 
-/* Active state */
+/* Active state — 设计系统：active 态使用薄藍高亮衬底 (bg-highlight-tint) + 薄藍边框 */
 :deep(.p-menu .p-menuitem-link.router-link-active),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true']) {
-  background: linear-gradient(135deg, var(--primary-opacity-25) 0%, var(--primary-opacity-15) 100%);
+  background-color: rgba(109, 136, 168, 0.12);
   color: var(--moon-opacity-100);
-  border-color: var(--primary-opacity-40);
-  box-shadow: 0 2px 8px var(--primary-opacity-15);
+  border-color: rgba(109, 136, 168, 0.35);
+  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.18);
   font-weight: 500;
+}
+
+:deep(.p-menu .p-menuitem-link.router-link-active .p-menuitem-icon),
+:deep(.p-menu .p-menuitem-link[aria-expanded='true'] .p-menuitem-icon) {
+  color: #BAC9DB; /* tsukuyomi-200 */
 }
 
 /* Icon styling */
@@ -252,11 +257,14 @@ const bottomItems: MenuItem[] = [
 
 :deep(.p-menu .p-menuitem-link.router-link-active .p-menuitem-icon),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true'] .p-menuitem-icon) {
-  color: var(--primary-opacity-100);
+  /* 薄藍 tsukuyomi-200 激活图标 */
+  color: #BAC9DB;
 }
 
 /* Label styling */
 :deep(.p-menu .p-menuitem-text) {
+  font-family:
+    'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', -apple-system, sans-serif;
   font-size: 0.875rem;
   font-weight: 400;
 }

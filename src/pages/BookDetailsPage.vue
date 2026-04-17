@@ -2866,10 +2866,14 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .book-title {
-  font-size: 1rem;
+  /* 设计系统：书名用显示字体（Noto Serif JP）传递文学感 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.0625rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--moon-opacity-95);
-  line-height: 1.3;
+  line-height: 1.25;
   text-align: left;
   word-break: break-word;
   display: -webkit-box;
@@ -2905,8 +2909,12 @@ const handleBookSave = async (formData: Partial<Novel>) => {
 }
 
 .stat-item .stat-value {
-  color: #93c5fd; /* blue-300 */
+  /* 设计系统：数值用等宽字体 + 薄藍色 */
+  font-family:
+    'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--tsukuyomi-300, #A3B7CF);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-item .stat-label {

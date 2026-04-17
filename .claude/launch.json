@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 9000
+    },
+    {
+      "name": "electron",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev:electron"],
+      "port": 5858
+    }
+  ]
+}

@@ -105,6 +105,27 @@ module.exports = {
         'tsukuyomi-gradient':
           'radial-gradient(900px circle at 75% -10%, rgba(174,183,198,0.25), transparent 60%), radial-gradient(720px circle at 12% 115%, rgba(109,136,168,0.2), transparent 45%)',
       },
+      // Tsukuyomi design-system type families
+      // display → Noto Serif JP (brand + reader)
+      // ui      → Noto Sans SC (dense UI + CJK/拉丁正文)
+      // mono    → JetBrains Mono (代码/数字)
+      fontFamily: {
+        display: ['"Noto Serif JP"', 'Songti SC', 'STSong', 'SimSun', 'serif'],
+        ui: [
+          '"Noto Sans SC"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          '"Helvetica Neue"',
+          'sans-serif',
+        ],
+        mono: ['"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
+      },
+      letterSpacing: {
+        widest: '0.3em',
+      },
     },
   },
   plugins: [

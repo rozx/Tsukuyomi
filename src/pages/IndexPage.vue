@@ -211,16 +211,18 @@ onMounted(async () => {
               class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-2xl shadow-lg ring-2 ring-white/10 transition-transform hover:scale-105"
             />
             <div class="flex flex-col text-left">
-              <span class="text-xl sm:text-2xl uppercase tracking-[0.3em] text-moon-50 font-light"
+              <span
+                class="font-ui font-light text-xs sm:text-sm uppercase tracking-[0.3em] text-accent-300"
                 >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
               >
-              <span class="text-2xl sm:text-3xl font-bold text-moon-100 tracking-wide">{{
-                APP_NAME.description.en
-              }}</span>
+              <span
+                class="font-display text-3xl sm:text-4xl font-semibold text-moon-100 tracking-tight leading-tight mt-1"
+                >{{ APP_NAME.description.en }}</span
+              >
             </div>
           </div>
           <div class="space-y-3 pt-2">
-            <h1 class="text-xl sm:text-2xl font-semibold text-moon-100">欢迎使用</h1>
+            <h1 class="font-display text-xl sm:text-2xl font-semibold text-moon-100">欢迎使用</h1>
             <p class="text-base sm:text-lg text-moon/70 max-w-2xl mx-auto px-4">
               专业的日本小说翻译工具，支持 AI 翻译、校对润色、术语管理等功能，助您高效完成翻译工作
             </p>
@@ -236,7 +238,9 @@ onMounted(async () => {
             <div class="flex items-center justify-between">
               <div class="space-y-1">
                 <p class="text-sm text-moon/60">总书籍</p>
-                <p class="text-3xl font-bold text-moon-100">{{ totalBooks }}</p>
+                <p class="font-mono text-3xl font-semibold text-moon-100 tracking-tight">
+                  {{ totalBooks }}
+                </p>
               </div>
               <div class="w-14 h-14 rounded-full flex items-center justify-center bg-primary/20">
                 <i class="pi pi-book text-2xl text-primary"></i>
@@ -251,7 +255,9 @@ onMounted(async () => {
             <div class="flex items-center justify-between">
               <div class="space-y-1">
                 <p class="text-sm text-moon/60">总章节</p>
-                <p class="text-3xl font-bold text-moon-100">{{ totalChapters }}</p>
+                <p class="font-mono text-3xl font-semibold text-moon-100 tracking-tight">
+                  {{ totalChapters }}
+                </p>
               </div>
               <div class="w-14 h-14 rounded-full flex items-center justify-center bg-accentTeal/20">
                 <i class="pi pi-list text-2xl text-accentTeal-200"></i>
@@ -266,7 +272,7 @@ onMounted(async () => {
             <div class="flex items-center justify-between">
               <div class="space-y-1">
                 <p class="text-sm text-moon/60">总字数</p>
-                <p class="text-3xl font-bold text-moon-100">
+                <p class="font-mono text-3xl font-semibold text-moon-100 tracking-tight">
                   {{ formatWordCount(totalWords) }}
                 </p>
               </div>
@@ -283,7 +289,9 @@ onMounted(async () => {
             <div class="flex items-center justify-between">
               <div class="space-y-1">
                 <p class="text-sm text-moon/60">收藏</p>
-                <p class="text-3xl font-bold text-moon-100">{{ starredBooks }}</p>
+                <p class="font-mono text-3xl font-semibold text-moon-100 tracking-tight">
+                  {{ starredBooks }}
+                </p>
               </div>
               <div class="w-14 h-14 rounded-full flex items-center justify-center bg-warning/20">
                 <i class="pi pi-star-fill text-2xl text-warning"></i>
@@ -373,7 +381,7 @@ onMounted(async () => {
               <!-- 内容 -->
               <div class="space-y-1">
                 <h3
-                  class="text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors"
+                  class="font-display text-[13px] font-semibold leading-snug line-clamp-2 min-h-[2.5rem] text-moon/90 group-hover:text-primary transition-colors"
                   :title="book.title"
                 >
                   {{ book.title }}
@@ -381,7 +389,7 @@ onMounted(async () => {
                 <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
                   {{ book.author }}
                 </p>
-                <div class="text-[10px] text-moon/50 space-y-0.5 pt-1">
+                <div class="font-mono text-[10px] text-moon/50 space-y-0.5 pt-1">
                   <div class="flex items-center justify-between">
                     <span>章节:</span>
                     <span class="font-medium">{{ getTotalChapters(book) }}</span>

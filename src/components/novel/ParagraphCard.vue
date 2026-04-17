@@ -1352,17 +1352,30 @@ defineExpose({
 
 .paragraph-text {
   margin: 0;
-  color: var(--moon-opacity-60);
+  /* 设计系统：原文用显示字体（Noto Serif JP），正文色 fg-2 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  color: rgba(247, 244, 236, 0.9);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* 原文与译文之间的分隔线：设计系统规定使用渐变 1px 分割线替代硬线条 */
 .paragraph-translation-wrapper {
   margin: 0.75rem 0 0 0;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--white-opacity-10);
+  border-top: none;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.15),
+    transparent
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: top;
 }
 
 .translation-inplace {
@@ -1390,7 +1403,10 @@ defineExpose({
 
 .paragraph-translation {
   margin: 0;
-  color: var(--primary-opacity-90);
+  /* 设计系统：译文用显示字体（Noto Serif JP）+ 薄藍色 fg-translation */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  color: rgba(109, 136, 168, 0.95);
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
