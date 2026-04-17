@@ -1,0 +1,305 @@
+<script setup lang="ts">
+import { computed, ref, type ComponentPublicInstance } from 'vue';
+import Button from 'primevue/button';
+import { useUiStore } from 'src/stores/ui';
+import { useToastHistory } from 'src/composables/useToastHistory';
+import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useSettingsStore } from 'src/stores/settings';
+import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
+import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
+import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import { getAssetUrl } from 'src/utils';
+import { APP_NAME } from 'src/constants/app';
+
+const ui = useUiStore();
+const { unreadCount } = useToastHistory();
+const aiProcessing = useAIProcessingStore();
+const settingsStore = useSettingsStore();
+
+const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
+
+const gistSync = computed(() => settingsStore.gistSync);
+const isSyncing = computed(() => settingsStore.isSyncing);
+
+const syncState = computed<'idle' | 'syncing' | 'ok' | 'pending'>(() => {
+  if (!gistSync.value.enabled) return 'idle';
+  if (isSyncing.value) return 'syncing';
+  if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) return 'ok';
+  return 'pending';
+});
+
+const thinking = computed(() => aiProcessing.hasActiveTasks);
+
+const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => void }> | null>(
+  null,
+);
+const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
+const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
+
+const toggleHistory = (event: Event) => toastHistoryRef.value?.toggle(event);
+const toggleThinking = (event: Event) => thinkingPanelRef.value?.toggle(event);
+const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
+
+const toggleRightPanel = () => {
+  if (ui.sideMenuOpen) ui.closeSideMenu();
+  ui.toggleRightPanel();
+};
+</script>
+
+<template>
+  <div class="tsm-sysbar">
+    <div class="sys-brand">
+      <img :src="logoPath" :alt="APP_NAME.full" />
+      <span>{{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
+    </div>
+
+    <div class="sys-actions">
+      <!-- AI thinking -->
+      <button
+        v-if="thinking"
+        class="tsm-sys-chip pill thinking"
+        aria-label="AI 思考过程"
+        @click="toggleThinking"
+      >
+        <span class="tsm-sys-dot" />
+        <span>AI 思考中</span>
+      </button>
+      <button
+        v-else
+        class="tsm-sys-chip"
+        aria-label="AI 思考过程"
+        @click="toggleThinking"
+      >
+        <i class="pi pi-sparkles" aria-hidden="true" />
+      </button>
+
+      <!-- Sync -->
+      <button
+        v-if="syncState === 'syncing'"
+        class="tsm-sys-chip pill sync-pending"
+        aria-label="同步中"
+        @click="toggleSync"
+      >
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+        <span>同步中</span>
+      </button>
+      <button
+        v-else-if="syncState === 'ok'"
+        class="tsm-sys-chip pill sync-ok"
+        aria-label="已同步"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud-check" aria-hidden="true" />
+        <span>已同步</span>
+      </button>
+      <button
+        v-else
+        class="tsm-sys-chip"
+        aria-label="同步状态"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud" aria-hidden="true" />
+      </button>
+
+      <div class="tsm-sys-sep" />
+
+      <!-- Notifications -->
+      <button
+        class="tsm-sys-chip"
+        aria-label="通知"
+        @click="toggleHistory"
+      >
+        <i class="pi pi-bell" aria-hidden="true" />
+        <span v-if="unreadCount > 0" class="sys-badge">
+          {{ unreadCount > 99 ? '99+' : unreadCount }}
+        </span>
+      </button>
+
+      <!-- Switcher (toggles right panel) -->
+      <button
+        class="tsm-sys-chip"
+        :class="{ active: ui.rightPanelOpen }"
+        aria-label="切换面板"
+        @click="toggleRightPanel"
+      >
+        <i class="pi pi-table" aria-hidden="true" />
+      </button>
+    </div>
+
+    <!-- Popovers (mounted to body by PrimeVue) -->
+    <ToastHistoryDialog ref="toastHistoryRef" />
+    <SyncStatusPanel ref="syncPanelRef" />
+    <ThinkingProcessPanel ref="thinkingPanelRef" />
+
+    <!-- Button refs used by PrimeVue popovers -->
+    <Button v-show="false" />
+  </div>
+</template>
+
+<style scoped>
+.tsm-sysbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 16px;
+  background: rgba(8, 10, 13, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 6;
+  min-height: 32px;
+}
+
+.sys-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: rgba(174, 183, 198, 0.85);
+  text-transform: uppercase;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sys-brand img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.sys-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Chip (icon-only default; pill variant when state is notable) */
+.tsm-sys-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(192, 198, 209, 0.85);
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tsm-sys-chip i {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tsm-sys-chip:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 244, 236, 1);
+}
+
+.tsm-sys-chip.active {
+  background: rgba(109, 136, 168, 0.14);
+  color: #bac9db;
+  border-color: rgba(109, 136, 168, 0.28);
+}
+
+/* Pill */
+.tsm-sys-chip.pill {
+  padding: 0 8px 0 7px;
+  background: rgba(109, 136, 168, 0.1);
+  border-color: rgba(109, 136, 168, 0.22);
+  color: #bac9db;
+}
+
+.tsm-sys-chip.pill.thinking {
+  background: rgba(140, 165, 195, 0.12);
+  border-color: rgba(140, 165, 195, 0.28);
+  color: #c9d8ea;
+}
+
+.tsm-sys-chip.pill.thinking i {
+  color: #a3b7cf;
+}
+
+.tsm-sys-chip.pill.sync-ok {
+  background: rgba(167, 209, 176, 0.1);
+  border-color: rgba(167, 209, 176, 0.25);
+  color: #b9d9c1;
+}
+
+.tsm-sys-chip.pill.sync-ok i {
+  color: #a7d1b0;
+}
+
+.tsm-sys-chip.pill.sync-pending {
+  background: rgba(234, 192, 123, 0.1);
+  border-color: rgba(234, 192, 123, 0.25);
+  color: #e8c78a;
+}
+
+/* Thinking dot (pulsing) */
+.tsm-sys-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a3b7cf;
+  box-shadow: 0 0 8px #a3b7cf;
+  animation: tsm-sys-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tsm-sys-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Notification badge */
+.sys-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d97757;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1;
+  border: 1.5px solid #080a0d;
+}
+
+.tsm-sys-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0 2px;
+}
+</style>

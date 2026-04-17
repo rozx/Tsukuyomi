@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 import { useUiStore } from 'src/stores/ui';
 import { resolveHelpDocumentByHref } from 'src/utils/help-navigation';
 import { getAssetUrl } from 'src/utils/assets';
+import { APP_NAME } from 'src/constants/app';
 
 interface HelpDocument {
   id: string;
@@ -36,6 +37,37 @@ const activeHeading = ref<string>('');
 const showDocumentNavDrawer = ref(false);
 const showTocDrawer = ref(false);
 const isPhone = computed(() => uiStore.deviceType === 'phone');
+
+// 手机端帮助落地页 · 快速开始 & 主题
+const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
+
+const quickStartSteps = [
+  { n: '01', t: '配置您的 AI 模型', d: '在 AI 设置中输入一个或多个服务商的密钥。' },
+  { n: '02', t: '导入或添加书籍', d: '从 syosetu / kakuyomu 抓取，或手动添加。' },
+  { n: '03', t: '建立术语与角色', d: '让 AI 理解「月詠」、「白銀の騎士」等专有名词。' },
+  { n: '04', t: '开始翻译', d: '单段翻译或批量翻译；多模型多版本自由切换。' },
+];
+
+const helpTopicsByKeyword: Array<{ icon: string; label: string; keywords: string[] }> = [
+  { icon: 'pi-book', label: '图书馆', keywords: ['图书', '库', '书籍'] },
+  { icon: 'pi-file-edit', label: '翻译功能', keywords: ['翻译'] },
+  { icon: 'pi-tags', label: '术语管理', keywords: ['术语'] },
+  { icon: 'pi-users', label: '角色设定', keywords: ['角色'] },
+  { icon: 'pi-objects-column', label: '记忆系统', keywords: ['记忆', '记忆库'] },
+  { icon: 'pi-sparkles', label: 'AI 助手', keywords: ['助手', 'AI'] },
+];
+
+// 把 topic 关键词映射到第一个匹配的文档
+const topicTiles = computed(() => {
+  return helpTopicsByKeyword.map((topic) => {
+    const match = documents.value.find((d) =>
+      topic.keywords.some(
+        (k) => d.title.includes(k) || d.description.includes(k) || d.category.includes(k),
+      ),
+    );
+    return { ...topic, doc: match };
+  });
+});
 
 // Track which categories are expanded (all expanded by default)
 const expandedCategories = ref<Set<string>>(new Set());
@@ -117,8 +149,9 @@ async function loadDocumentIndex() {
       }
     }
 
-    // Default to first doc if no route param or not found
-    if (documents.value.length > 0 && !currentDoc.value) {
+    // Default to first doc if no route param or not found.
+    // 手机端：保留无 docId 的 /help 作为引导落地页，不自动跳转。
+    if (!isPhone.value && documents.value.length > 0 && !currentDoc.value) {
       const firstDoc = documents.value[0];
       if (firstDoc) {
         // Replace current route with the default doc ID so URL is consistent
@@ -397,6 +430,61 @@ onMounted(() => {
             重试
           </button>
         </div>
+      </div>
+
+      <!-- 手机端 · 帮助中心落地页（未选中文档时显示） -->
+      <div
+        v-else-if="isPhone && !currentDoc"
+        class="mobile-help-landing flex-1 h-full overflow-y-auto"
+      >
+        <!-- Hero tile -->
+        <section class="mhl-hero">
+          <img :src="logoPath" :alt="APP_NAME.full" class="mhl-hero-logo" />
+          <div class="mhl-hero-brand">TSUKUYOMI 月詠</div>
+          <div class="mhl-hero-tagline">让每一次翻页，</div>
+          <div class="mhl-hero-tagline mhl-hero-tagline--accent">都如月光般流畅。</div>
+          <p class="mhl-hero-desc">
+            专业的日本小说翻译工具，支持 AI 翻译、校对润色、术语管理等功能。
+          </p>
+        </section>
+
+        <!-- Quick start -->
+        <section class="mhl-section">
+          <div class="mhl-section-title">快速开始</div>
+          <div class="mhl-steps">
+            <div v-for="step in quickStartSteps" :key="step.n" class="mhl-step">
+              <div class="mhl-step-num">{{ step.n }}</div>
+              <div class="mhl-step-body">
+                <div class="mhl-step-title">{{ step.t }}</div>
+                <div class="mhl-step-desc">{{ step.d }}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Topic grid -->
+        <section class="mhl-section mhl-section--last">
+          <div class="mhl-section-title">主题</div>
+          <div class="mhl-topics">
+            <button
+              v-for="topic in topicTiles"
+              :key="topic.label"
+              class="mhl-topic"
+              :disabled="!topic.doc"
+              @click="topic.doc && navigateToDocument(topic.doc)"
+            >
+              <i :class="['pi', topic.icon]" aria-hidden="true" />
+              <span>{{ topic.label }}</span>
+            </button>
+          </div>
+
+          <!-- 全部文档入口 -->
+          <button class="mhl-all-docs" @click="showDocumentNavDrawer = true">
+            <i class="pi pi-bars" aria-hidden="true" />
+            <span>查看所有文档</span>
+            <i class="pi pi-arrow-right mhl-all-docs-arrow" aria-hidden="true" />
+          </button>
+        </section>
       </div>
 
       <!-- Document Content -->
@@ -703,5 +791,196 @@ onMounted(() => {
   max-width: 100%;
   border-radius: 0.5rem;
   border: 1px solid rgb(255 255 255 / 0.1);
+}
+
+/* ───────────────── 手机端 · 帮助中心落地页 ───────────────── */
+.mobile-help-landing {
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  padding: 4px 0 32px;
+}
+
+.mhl-hero {
+  margin: 12px 16px 20px;
+  padding: 22px 18px 20px;
+  background: linear-gradient(135deg, rgba(109, 136, 168, 0.18), rgba(109, 136, 168, 0.04));
+  border: 1px solid rgba(109, 136, 168, 0.3);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(109, 136, 168, 0.2);
+}
+
+.mhl-hero-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.mhl-hero-brand {
+  font-weight: 300;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: rgba(247, 244, 236, 0.55);
+  text-transform: uppercase;
+}
+
+.mhl-hero-tagline {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(247, 244, 236, 1);
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+.mhl-hero-tagline--accent {
+  color: #a3b7cf;
+}
+
+.mhl-hero-desc {
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.7);
+  line-height: 1.65;
+  margin: 10px auto 0;
+  max-width: 300px;
+}
+
+.mhl-section {
+  padding: 0 20px;
+  margin-top: 18px;
+}
+
+.mhl-section--last {
+  margin-top: 22px;
+}
+
+.mhl-section-title {
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.mhl-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.mhl-step {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mhl-step:last-child {
+  border-bottom: none;
+}
+
+.mhl-step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: rgba(109, 136, 168, 0.12);
+  border: 1px solid rgba(109, 136, 168, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #a3b7cf;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.mhl-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.mhl-step-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(247, 244, 236, 1);
+}
+
+.mhl-step-desc {
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.6);
+  margin-top: 2px;
+  line-height: 1.55;
+}
+
+.mhl-topics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mhl-topic {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: rgba(247, 244, 236, 1);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mhl-topic:active {
+  transform: scale(0.98);
+}
+
+.mhl-topic:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mhl-topic:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(109, 136, 168, 0.3);
+}
+
+.mhl-topic i {
+  color: rgba(247, 244, 236, 0.55);
+  font-size: 16px;
+}
+
+.mhl-all-docs {
+  margin-top: 14px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: rgba(247, 244, 236, 0.9);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mhl-all-docs i {
+  color: rgba(247, 244, 236, 0.55);
+  font-size: 13px;
+}
+
+.mhl-all-docs-arrow {
+  margin-left: auto;
+  font-size: 11px;
+  color: #a3b7cf;
 }
 </style>

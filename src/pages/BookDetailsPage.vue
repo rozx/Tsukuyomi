@@ -759,6 +759,100 @@ const nextChapter = computed(() => {
   return result?.chapter || null;
 });
 
+// 手机端"继续翻译"目标章节：优先选择已选中章节，否则按顺序取第一个未完全翻译的章节，
+// 若全部完成则取首章。
+const continueReadingChapter = computed<Chapter | null>(() => {
+  if (!book.value) return null;
+
+  if (selectedChapterId.value) {
+    for (const vol of book.value.volumes || []) {
+      const c = vol.chapters?.find((ch) => ch.id === selectedChapterId.value);
+      if (c) return c;
+    }
+  }
+
+  let firstChapter: Chapter | null = null;
+  for (const vol of book.value.volumes || []) {
+    for (const ch of vol.chapters || []) {
+      if (!firstChapter) firstChapter = ch;
+      const total = ch.content?.length ?? 0;
+      const translated =
+        ch.content?.filter((p) => (p.translations?.length ?? 0) > 0).length ?? 0;
+      // 若尚未全部翻译，则视为可继续
+      if (total === 0 || translated < total) return ch;
+    }
+  }
+  return firstChapter;
+});
+
+// 手机端封面日期显示（容错处理）
+const formatRelativeDate = (date: Date | string | number | null | undefined): string => {
+  if (date === null || date === undefined) return '—';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+  if (days <= 0) return '今天';
+  if (days === 1) return '昨天';
+  if (days < 7) return `${days} 天前`;
+  if (days < 30) return `${Math.floor(days / 7)} 周前`;
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+// 手机端 CTA：继续翻译
+const continueReadingOnPhone = () => {
+  const chapter = continueReadingChapter.value;
+  if (!chapter) return;
+  navigateToChapterInternal(chapter);
+};
+
+// 手机端分段 tab（章节/术语/角色/记忆）— 映射到 selectedSettingMenu
+const mobileActiveTab = computed<'chapters' | 'terms' | 'characters' | 'memory'>(() => {
+  if (selectedSettingMenu.value === 'terms') return 'terms';
+  if (selectedSettingMenu.value === 'characters') return 'characters';
+  if (selectedSettingMenu.value === 'memory') return 'memory';
+  return 'chapters';
+});
+
+const switchMobileTab = (tab: 'chapters' | 'terms' | 'characters' | 'memory') => {
+  if (tab === 'chapters') {
+    onNavigateToChapterList();
+    return;
+  }
+  if (tab === 'terms') {
+    navigateToTermsSetting();
+    return;
+  }
+  if (tab === 'characters') {
+    navigateToCharactersSetting();
+    return;
+  }
+  if (tab === 'memory') {
+    navigateToMemorySetting();
+    return;
+  }
+};
+
+// 手机端书籍整体翻译进度（百分比）
+const mobileBookProgress = computed<number>(() => {
+  if (!book.value) return 0;
+  let total = 0;
+  let translated = 0;
+  for (const vol of book.value.volumes || []) {
+    for (const ch of vol.chapters || []) {
+      const paras = ch.content || [];
+      total += paras.length;
+      translated += paras.filter((p) => (p.translations?.length ?? 0) > 0).length;
+    }
+  }
+  if (total === 0) return 0;
+  return Math.round((translated / total) * 100);
+});
+
+// 手机端章节段落统计（用于章节列表项进度徽标）
+// 已由 VolumesList 内部处理，不再重复。
+
 // 获取选中章节的段落列表
 const selectedChapterParagraphs = computed(() => {
   if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
@@ -2170,9 +2264,214 @@ const handleBookSave = async (formData: Partial<Novel>) => {
     </div>
 
     <!-- 书籍内容 -->
-    <div v-else class="book-details-layout">
-      <!-- 左侧卷/章节面板 -->
+    <div v-else class="book-details-layout" :class="{ 'is-phone': isPhone }">
+      <!-- ─────────────── 手机端 · 书籍详情 Overview ─────────────── -->
+      <div v-if="isPhone && !selectedChapter && book" class="mobile-bd-overview">
+        <header class="mbd-appbar">
+          <button
+            class="mbd-icon-btn"
+            aria-label="返回书籍列表"
+            @click="() => void router.push('/books')"
+          >
+            <i class="pi pi-chevron-left" aria-hidden="true" />
+          </button>
+          <div class="mbd-appbar-text">
+            <div class="mbd-appbar-title">{{ book.title }}</div>
+            <div v-if="book.author" class="mbd-appbar-sub">{{ book.author }}</div>
+          </div>
+          <button
+            class="mbd-icon-btn"
+            aria-label="更多操作"
+            @click="openBookDialog"
+          >
+            <i class="pi pi-ellipsis-h" aria-hidden="true" />
+          </button>
+        </header>
+
+        <div class="mbd-scroll">
+          <!-- Hero row -->
+          <section class="mbd-hero">
+            <div class="mbd-hero-cover-wrap">
+              <img
+                :src="getCoverUrl(book)"
+                :alt="book.title"
+                class="mbd-hero-cover"
+                @error="(e) => { const t = e.target as HTMLImageElement; if (book) t.src = getCoverUrl(book); }"
+              />
+            </div>
+            <div class="mbd-hero-body">
+              <div v-if="book.author" class="mbd-hero-author">{{ book.author }}</div>
+              <h1 class="mbd-hero-title">{{ book.title }}</h1>
+              <div v-if="book.tags?.length" class="mbd-hero-badges">
+                <span
+                  v-for="tag in book.tags.slice(0, 3)"
+                  :key="tag"
+                  class="mbd-badge"
+                >{{ tag }}</span>
+              </div>
+              <div class="mbd-hero-progress">
+                <div class="mbd-prog">
+                  <div class="mbd-prog-fill" :style="{ width: `${mobileBookProgress}%` }" />
+                </div>
+                <span class="mbd-prog-value">{{ mobileBookProgress }}%</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Action row -->
+          <div class="mbd-actions">
+            <button
+              class="mbd-btn mbd-btn-primary"
+              :disabled="!continueReadingChapter"
+              @click="continueReadingOnPhone"
+            >
+              <i class="pi pi-play" aria-hidden="true" />继续翻译
+            </button>
+            <button
+              class="mbd-btn mbd-btn-outline mbd-btn-icon"
+              aria-label="编辑书籍"
+              @click="openBookDialog"
+            >
+              <i class="pi pi-pencil" aria-hidden="true" />
+            </button>
+            <button
+              class="mbd-btn mbd-btn-outline mbd-btn-icon"
+              aria-label="检查更新"
+              @click="openScraperDialog"
+            >
+              <i class="pi pi-download" aria-hidden="true" />
+            </button>
+          </div>
+
+          <!-- Stats strip -->
+          <div v-if="stats" class="mbd-stats">
+            <div class="mbd-stat">
+              <div class="mbd-stat-value">{{ stats.volumeCount }}</div>
+              <div class="mbd-stat-label">卷数</div>
+            </div>
+            <div class="mbd-stat">
+              <div class="mbd-stat-value">{{ stats.chapterCount }}</div>
+              <div class="mbd-stat-label">章节</div>
+            </div>
+            <div class="mbd-stat">
+              <div class="mbd-stat-value">{{ formatWordCount(stats.wordCount) }}</div>
+              <div class="mbd-stat-label">字数</div>
+            </div>
+            <div class="mbd-stat">
+              <div class="mbd-stat-value">{{ formatRelativeDate(book.lastEdited) }}</div>
+              <div class="mbd-stat-label">更新</div>
+            </div>
+          </div>
+
+          <!-- Segmented tabs -->
+          <div class="mbd-seg">
+            <button
+              class="mbd-seg-btn"
+              :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'chapters' }"
+              @click="switchMobileTab('chapters')"
+            >章节</button>
+            <button
+              class="mbd-seg-btn"
+              :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'terms' }"
+              @click="switchMobileTab('terms')"
+            >
+              术语<span v-if="stableTerminologies.length" class="mbd-seg-count">{{ stableTerminologies.length }}</span>
+            </button>
+            <button
+              class="mbd-seg-btn"
+              :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'characters' }"
+              @click="switchMobileTab('characters')"
+            >
+              角色<span v-if="stableCharacterSettings.length" class="mbd-seg-count">{{ stableCharacterSettings.length }}</span>
+            </button>
+            <button
+              class="mbd-seg-btn"
+              :class="{ 'mbd-seg-btn-active': mobileActiveTab === 'memory' }"
+              @click="switchMobileTab('memory')"
+            >记忆</button>
+          </div>
+
+          <!-- Tab content -->
+          <div class="mbd-tab-content">
+            <template v-if="mobileActiveTab === 'chapters'">
+              <div class="mbd-chapter-actions">
+                <button class="mbd-link-btn" @click="showAddVolumeDialog = true">
+                  <i class="pi pi-plus" aria-hidden="true" />新卷
+                </button>
+                <button class="mbd-link-btn" @click="openAddChapterDialog">
+                  <i class="pi pi-plus-circle" aria-hidden="true" />新章节
+                </button>
+              </div>
+              <VolumesList
+                :volumes="volumes"
+                :book="book || null"
+                :selected-chapter-id="selectedChapterId"
+                :is-page-loading="isPageLoading"
+                :is-loading-chapter-content="isLoadingChapterContent"
+                :is-volume-expanded="isVolumeExpanded"
+                :dragged-chapter="draggedChapter"
+                :drag-over-volume-id="dragOverVolumeId"
+                :drag-over-index="dragOverIndex"
+                :touch-mode="true"
+                :is-moving-chapter="isMovingChapter"
+                @toggle-volume="onToggleVolume"
+                @navigate-to-chapter="onNavigateToChapter"
+                @edit-volume="onEditVolume"
+                @delete-volume="onDeleteVolume"
+                @edit-chapter="onEditChapter"
+                @delete-chapter="onDeleteChapter"
+                @drag-start="onDragStart"
+                @drag-end="onDragEnd"
+                @drag-over="onDragOver"
+                @drop="onDrop"
+                @drag-leave="onDragLeave"
+                @move-chapter="onMoveChapter"
+              />
+            </template>
+            <TerminologyPanel
+              v-else-if="mobileActiveTab === 'terms'"
+              :book="book || null"
+              class="mbd-panel"
+            />
+            <CharacterSettingPanel
+              v-else-if="mobileActiveTab === 'characters'"
+              :book="book || null"
+              class="mbd-panel"
+            />
+            <MemoryPanel
+              v-else-if="mobileActiveTab === 'memory'"
+              :book="book || null"
+              class="mbd-panel"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 手机端 · 阅读页顶部 app bar（返回到详情 overview） -->
+      <header v-if="isPhone && selectedChapter" class="mbd-appbar mbd-appbar--reader">
+        <button
+          class="mbd-icon-btn"
+          aria-label="返回章节目录"
+          @click="onNavigateToChapterList"
+        >
+          <i class="pi pi-chevron-left" aria-hidden="true" />
+        </button>
+        <div class="mbd-appbar-text">
+          <div class="mbd-appbar-title">{{ selectedChapter.title || '未命名章节' }}</div>
+          <div class="mbd-appbar-sub">{{ book?.title }}</div>
+        </div>
+        <button
+          class="mbd-icon-btn"
+          aria-label="更多操作"
+          @click="openBookDialog"
+        >
+          <i class="pi pi-ellipsis-h" aria-hidden="true" />
+        </button>
+      </header>
+
+      <!-- 左侧卷/章节面板（桌面端 / 平板端） -->
       <aside
+        v-if="!isPhone"
         class="book-sidebar"
         :class="{
           'book-sidebar-mobile-hidden': isSmallScreen && workspaceMode !== 'catalog',
@@ -2496,12 +2795,14 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         @confirm="confirmDeleteCharacter"
       />
 
-      <!-- 主内容区域 -->
+      <!-- 主内容区域（桌面/平板始终可见；手机端仅在选中章节阅读时显示） -->
       <div
+        v-if="!isPhone || selectedChapter"
         class="book-main-content"
         :class="{
           'overflow-hidden': !!selectedSettingMenu,
-          'book-main-content-mobile-hidden': isSmallScreen && workspaceMode === 'catalog',
+          'book-main-content-mobile-hidden': isSmallScreen && !isPhone && workspaceMode === 'catalog',
+          'book-main-content-phone-reader': isPhone && !!selectedChapter,
         }"
       >
         <!-- 章节阅读工具栏 -->
@@ -2566,9 +2867,9 @@ const handleBookSave = async (formData: Partial<Novel>) => {
           @replace-all="replaceAll"
         />
 
-        <!-- 移动端设置子导航（术语/角色/记忆切换） -->
+        <!-- 移动端设置子导航（平板端：手机端使用分段 tab） -->
         <div
-          v-if="isSmallScreen && workspaceMode === 'settings'"
+          v-if="isSmallScreen && !isPhone && workspaceMode === 'settings'"
           class="mobile-settings-subnav"
         >
           <button
@@ -2718,8 +3019,8 @@ const handleBookSave = async (formData: Partial<Novel>) => {
         </div>
       </div>
 
-      <!-- 底部工作区切换导航（移动端） -->
-      <div v-if="isSmallScreen" class="mobile-workspace-switcher">
+      <!-- 底部工作区切换导航（平板端；手机端使用全新的分段 tab 设计，无需此切换器） -->
+      <div v-if="isSmallScreen && !isPhone" class="mobile-workspace-switcher">
         <button
           class="workspace-switch-btn"
           :class="{ 'workspace-switch-btn-active': workspaceMode === 'catalog' }"
@@ -3314,5 +3615,406 @@ const handleBookSave = async (formData: Partial<Novel>) => {
   .mobile-panel-hidden {
     display: none;
   }
+
+}
+
+/* ─────────────── 手机端 · 书籍详情 (Mobile Book Details) ─────────────── */
+.book-details-layout.is-phone {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mobile-bd-overview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+}
+
+/* App bar (顶部导航) */
+.mbd-appbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: rgba(10, 12, 15, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+}
+
+.mbd-appbar--reader {
+  border-bottom-color: rgba(109, 136, 168, 0.18);
+}
+
+.mbd-appbar-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mbd-appbar-title {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: rgba(247, 244, 236, 1);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbd-appbar-sub {
+  font-size: 11px;
+  color: rgba(247, 244, 236, 0.6);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbd-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(247, 244, 236, 0.75);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbd-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mbd-icon-btn i {
+  font-size: 16px;
+}
+
+/* Scroll container */
+.mbd-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mbd-scroll::-webkit-scrollbar {
+  width: 0;
+}
+
+/* Hero row */
+.mbd-hero {
+  display: flex;
+  gap: 14px;
+  padding: 16px 20px;
+}
+
+.mbd-hero-cover-wrap {
+  width: 92px;
+  height: 138px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #14161a;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.mbd-hero-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mbd-hero-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mbd-hero-author {
+  font-size: 10px;
+  color: rgba(174, 183, 198, 0.85);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbd-hero-title {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(247, 244, 236, 1);
+  letter-spacing: -0.01em;
+  margin: 4px 0 0;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.mbd-hero-badges {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.mbd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 244, 236, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
+.mbd-hero-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.mbd-prog {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mbd-prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6d88a8, #d8dde8);
+  border-radius: 2px;
+  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbd-prog-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #a3b7cf;
+  font-weight: 500;
+}
+
+/* Actions row */
+.mbd-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px;
+}
+
+.mbd-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.mbd-btn i {
+  font-size: 12px;
+}
+
+.mbd-btn-primary {
+  flex: 1;
+  background: #e9edf5;
+  color: #0a0c0f;
+  border-color: #e9edf5;
+  box-shadow: 0 2px 8px rgba(233, 237, 245, 0.15);
+}
+
+.mbd-btn-primary:hover {
+  background: #f5f1f0;
+}
+
+.mbd-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+}
+
+.mbd-btn-outline {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(247, 244, 236, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.mbd-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.mbd-btn-icon {
+  width: 42px;
+  padding: 10px;
+  flex-shrink: 0;
+}
+
+/* Stats strip */
+.mbd-stats {
+  margin: 16px 20px 0;
+  padding: 12px 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.mbd-stat {
+  text-align: center;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 6px;
+  min-width: 0;
+}
+
+.mbd-stat:last-child {
+  border-right: none;
+}
+
+.mbd-stat-value {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(247, 244, 236, 1);
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbd-stat-label {
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Segmented tabs */
+.mbd-seg {
+  margin: 16px 20px 0;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.mbd-seg-btn {
+  padding: 7px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: rgba(247, 244, 236, 0.7);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.mbd-seg-btn-active {
+  background: rgba(109, 136, 168, 0.2);
+  color: #e9edf5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.mbd-seg-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* Tab content (VolumesList + panels) */
+.mbd-tab-content {
+  margin-top: 10px;
+  padding-bottom: 24px;
+}
+
+.mbd-chapter-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 20px 2px;
+}
+
+.mbd-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.75);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.mbd-link-btn i {
+  font-size: 11px;
+  color: #a3b7cf;
+}
+
+.mbd-link-btn:hover {
+  color: rgba(247, 244, 236, 1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Let the reused panels fit naturally into the mobile stack */
+.mbd-panel {
+  min-height: 360px;
+}
+
+/* Reader mode: use available space after the app bar */
+.book-main-content-phone-reader {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 </style>

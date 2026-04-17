@@ -4,6 +4,8 @@ import AppHeader from '../components/layout/AppHeader.vue';
 import AppFooter from '../components/layout/AppFooter.vue';
 import AppSideMenu from '../components/layout/AppSideMenu.vue';
 import AppRightPanel from '../components/layout/AppRightPanel.vue';
+import MobileTabBar from '../components/layout/MobileTabBar.vue';
+import MobileSysBar from '../components/layout/MobileSysBar.vue';
 import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.vue';
 import Toast from 'primevue/toast';
@@ -233,7 +235,8 @@ onUnmounted(() => {
 
 <template>
   <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
-    <AppHeader />
+    <MobileSysBar v-if="isPhone" />
+    <AppHeader v-else />
 
     <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
       <div
@@ -312,6 +315,7 @@ onUnmounted(() => {
     </div>
 
     <AppFooter v-if="!isPhone" />
+    <MobileTabBar v-if="isPhone" />
   </div>
 
   <!-- Toast 组件 -->

@@ -51,6 +51,8 @@ declare module 'vue' {
     MemoryReferencePanel: typeof import('./components/novel/MemoryReferencePanel.vue')['default']
     Menu: typeof import('primevue/menu')['default']
     Menubar: typeof import('primevue/menubar')['default']
+    MobileSysBar: typeof import('./components/layout/MobileSysBar.vue')['default']
+    MobileTabBar: typeof import('./components/layout/MobileTabBar.vue')['default']
     NovelScraperDialog: typeof import('./components/dialogs/NovelScraperDialog.vue')['default']
     ParagraphCard: typeof import('./components/novel/ParagraphCard.vue')['default']
     ProxySettingsTab: typeof import('./components/settings/ProxySettingsTab.vue')['default']
