@@ -66,11 +66,14 @@ const onTabClick = (id: TabId) => {
       return;
     }
     case 'chat':
-      ui.setActiveRightTab('chat');
-      if (ui.rightPanelOpen) {
+      // 右面板已打开且当前在 chat tab 上：再次点击关闭
+      // 右面板已打开但在其它 tab（如 progress）：切换到 chat，不关闭
+      // 右面板已关闭：打开并定位到 chat
+      if (ui.rightPanelOpen && ui.activeRightTab === 'chat') {
         ui.closeRightPanel();
       } else {
-        ui.openRightPanel();
+        ui.setActiveRightTab('chat');
+        if (!ui.rightPanelOpen) ui.openRightPanel();
       }
       return;
     case 'settings':
