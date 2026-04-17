@@ -2,22 +2,25 @@
 import { computed, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
+import { useBooksStore } from 'src/stores/books';
 import SettingsDialog from 'src/components/dialogs/SettingsDialog.vue';
 
 const router = useRouter();
 const route = useRoute();
 const ui = useUiStore();
+const booksStore = useBooksStore();
 const settingsDialogVisible = ref(false);
 
-type TabId = 'home' | 'library' | 'chat' | 'ai' | 'settings';
+type TabId = 'home' | 'library' | 'reader' | 'chat' | 'settings';
 
 type Tab = { id: TabId; icon: string; label: string };
 
+// 按设计稿顺序：首页 / 书库 / 阅读 / AI 助手 / 设置
 const tabs: Tab[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
+  { id: 'reader', icon: 'pi-file-edit', label: '阅读' },
   { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
-  { id: 'ai', icon: 'pi-objects-column', label: 'AI 模型' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];
 
@@ -25,9 +28,19 @@ const activeTab = computed<TabId>(() => {
   if (ui.rightPanelOpen && ui.activeRightTab === 'chat') return 'chat';
   const path = route.path;
   if (path === '/') return 'home';
-  if (path.startsWith('/ai')) return 'ai';
-  if (path.startsWith('/books')) return 'library';
+  if (path === '/books') return 'library';
+  if (path.startsWith('/books/')) return 'reader';
   return 'home';
+});
+
+// 阅读 tab 目标：最近编辑的书籍
+const mostRecentBookId = computed(() => {
+  const books = booksStore.books;
+  if (books.length === 0) return null;
+  const sorted = [...books].sort(
+    (a, b) => new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime(),
+  );
+  return sorted[0]?.id ?? null;
 });
 
 const onTabClick = (id: TabId) => {
@@ -40,6 +53,18 @@ const onTabClick = (id: TabId) => {
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (route.path !== '/books') void router.push('/books');
       return;
+    case 'reader': {
+      if (ui.rightPanelOpen) ui.closeRightPanel();
+      const bookId = mostRecentBookId.value;
+      if (bookId) {
+        const target = `/books/${bookId}`;
+        if (route.path !== target) void router.push(target);
+      } else {
+        // 无书籍时回退到书库
+        if (route.path !== '/books') void router.push('/books');
+      }
+      return;
+    }
     case 'chat':
       ui.setActiveRightTab('chat');
       if (ui.rightPanelOpen) {
@@ -47,10 +72,6 @@ const onTabClick = (id: TabId) => {
       } else {
         ui.openRightPanel();
       }
-      return;
-    case 'ai':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/ai') void router.push('/ai');
       return;
     case 'settings':
       settingsDialogVisible.value = true;
@@ -65,7 +86,7 @@ const onTabClick = (id: TabId) => {
       v-for="tab in tabs"
       :key="tab.id"
       class="tab"
-      :class="{ active: activeTab === tab.id, 'fab-like': tab.id === 'chat' }"
+      :class="{ active: activeTab === tab.id }"
       @click="onTabClick(tab.id)"
     >
       <i :class="['pi', tab.icon]" />
@@ -80,11 +101,11 @@ const onTabClick = (id: TabId) => {
 .mobile-tabbar {
   display: flex;
   align-items: stretch;
-  padding: 8px 6px calc(env(safe-area-inset-bottom, 0px) + 12px);
-  background: rgba(10, 12, 15, 0.92);
+  padding: 8px 6px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  background: rgba(10, 12, 15, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   position: relative;
   z-index: 40;
   flex-shrink: 0;
@@ -105,15 +126,15 @@ const onTabClick = (id: TabId) => {
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   font-size: 10px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.55);
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(138, 147, 160, 0.95);
+  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tab i {
   font-size: 20px;
-  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tab:active {
@@ -127,26 +148,5 @@ const onTabClick = (id: TabId) => {
 .tab.active i {
   color: #a3b7cf;
   text-shadow: 0 0 12px rgba(109, 136, 168, 0.5);
-}
-
-/* Center tab gets a subtle glowing chip — matches the design's fab-like treatment */
-.tab.fab-like {
-  position: relative;
-}
-
-.tab.fab-like::before {
-  content: '';
-  position: absolute;
-  inset: 4px 10px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(109, 136, 168, 0.22), rgba(109, 136, 168, 0.06));
-  border: 1px solid rgba(109, 136, 168, 0.32);
-  z-index: -1;
-}
-
-.tab.fab-like.active::before {
-  background: linear-gradient(180deg, rgba(109, 136, 168, 0.35), rgba(109, 136, 168, 0.12));
-  border-color: rgba(163, 183, 207, 0.5);
-  box-shadow: 0 2px 12px rgba(109, 136, 168, 0.3);
 }
 </style>
