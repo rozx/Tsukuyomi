@@ -6,8 +6,8 @@
    - Noto Serif JP → display / brand / 日本語 / 读书页面正文
    - Noto Sans SC  → UI / 简体中文与英文正文
    - JetBrains Mono → 代码、统计数字、快捷键
-*/
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+   字体通过 index.html 的 <link rel="preconnect"> + <link rel="stylesheet"> 加载，
+   避免 CSS @import 的解析阻塞和额外往返。 */
 
 /* Base layer for the Tsukuyomi theme */
 @layer base {

@@ -255,12 +255,6 @@ const bottomItems: MenuItem[] = [
   transform: scale(1.1);
 }
 
-:deep(.p-menu .p-menuitem-link.router-link-active .p-menuitem-icon),
-:deep(.p-menu .p-menuitem-link[aria-expanded='true'] .p-menuitem-icon) {
-  /* 薄藍 tsukuyomi-200 激活图标 */
-  color: #BAC9DB;
-}
-
 /* Label styling */
 :deep(.p-menu .p-menuitem-text) {
   font-family:

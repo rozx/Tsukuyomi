@@ -124,7 +124,8 @@ module.exports = {
         mono: ['"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       letterSpacing: {
-        widest: '0.3em',
+        // 品牌标版专用字距（保留 Tailwind 默认的 widest 0.1em 不动，避免误伤正文 eyebrow）
+        brand: '0.3em',
       },
     },
   },

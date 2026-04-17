@@ -311,7 +311,7 @@ onUnmounted(() => {
           />
           <div v-if="!isPhone" class="flex flex-col leading-none">
             <span
-              class="font-ui font-light text-[10px] uppercase tracking-[0.3em] text-accent-300"
+              class="font-ui font-light text-[10px] uppercase tracking-brand text-accent-300"
               >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
             >
             <span

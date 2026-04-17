@@ -212,7 +212,7 @@ onMounted(async () => {
             />
             <div class="flex flex-col text-left">
               <span
-                class="font-ui font-light text-xs sm:text-sm uppercase tracking-[0.3em] text-accent-300"
+                class="font-ui font-light text-xs sm:text-sm uppercase tracking-brand text-accent-300"
                 >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
               >
               <span
