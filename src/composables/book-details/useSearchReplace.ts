@@ -38,7 +38,7 @@ export function useSearchReplace(
       if (paragraphElement) {
         // 查找段落内的 textarea 元素（用于编辑翻译）
         // PrimeVue Textarea 组件会将 textarea 包装在内部
-        const textarea = paragraphElement.querySelector(
+        const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
           '.paragraph-translation-edit textarea',
         );
         if (textarea && textarea.value !== undefined) {
@@ -234,7 +234,7 @@ export function useSearchReplace(
       if (currentlyEditingParagraphId?.value === paragraph.id) {
         const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
         if (paragraphElement) {
-          const textarea = paragraphElement.querySelector(
+          const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
             '.paragraph-translation-edit textarea',
           );
           if (textarea) {
@@ -332,7 +332,7 @@ export function useSearchReplace(
       if (editedParagraphIds.includes(paragraphId)) {
         const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
         if (paragraphElement) {
-          const textarea = paragraphElement.querySelector(
+          const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
             '.paragraph-translation-edit textarea',
           );
           if (textarea) {
