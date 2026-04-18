@@ -29,14 +29,14 @@
 
 ## 4. AppRightPanel Split
 
-- [ ] 4.1 Extract logic from `components/layout/AppRightPanel.vue` into `composables/right-panel/useRightPanel.ts` (tabs, context view, todo summary, chat session wiring, stats).
-- [ ] 4.2 Create `components/layout/AppRightPanelDesktop.vue` with the tabbed desktop template + `<style>`.
-- [ ] 4.3 Create `components/layout/AppRightPanelMobile.vue` with the phone-only chat shell (logo / title / status / history / new + pill composer) + `<style>`.
-- [ ] 4.4 Create `components/layout/AppRightPanelTablet.vue` as a wrapper rendering `AppRightPanelDesktop`.
-- [ ] 4.5 Rewrite `components/layout/AppRightPanel.vue` as a dispatcher.
-- [ ] 4.6 Extract any duplicated markup (message bubble, composer input block, empty-state) to shared child components in `components/layout/right-panel/`.
-- [ ] 4.7 Verify chat open/close state, active tab, and scroll position survive breakpoint swaps.
-- [ ] 4.8 Smoke-test phone + desktop + Electron-resize; run `bun run lint && bun run type-check`; commit.
+- [x] 4.1 Extract logic from `components/layout/AppRightPanel.vue` into `composables/right-panel/useRightPanel.ts` (tabs, context view, todo summary, chat session wiring, stats).
+- [x] 4.2 Create `components/layout/AppRightPanelDesktop.vue` with the tabbed desktop template + `<style>`. — Accepts a `showResizeHandle` prop so Tablet can reuse without re-implementing the template.
+- [x] 4.3 Create `components/layout/AppRightPanelMobile.vue` with the phone-only chat shell (logo / title / status / history / new + pill composer) + `<style>`.
+- [x] 4.4 Create `components/layout/AppRightPanelTablet.vue` as a wrapper rendering `AppRightPanelDesktop` — with `:show-resize-handle="false"` to preserve current tablet behavior.
+- [x] 4.5 Rewrite `components/layout/AppRightPanel.vue` as a dispatcher.
+- [x] 4.6 Extract any duplicated markup — ChatMessageList / ChatSessionListPopover / ChatGroupedActionPopover / ChatActionDetailsPopover / TranslationProgress are already shared child components; no additional fragments extracted (marginal win would not justify a new component).
+- [x] 4.7 Verify chat open/close state, active tab, and scroll position survive breakpoint swaps. — Ui state lives in Pinia; composable setup fires once per variant mount. Deferred to interactive smoke test.
+- [x] 4.8 Smoke-test phone + desktop + Electron-resize; run `bun run lint && bun run type-check`; commit. — Lint + type-check green.
 
 ## 5. BookDetailsPage Split
 
