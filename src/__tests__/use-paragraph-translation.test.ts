@@ -125,7 +125,7 @@ describe('useParagraphTranslation', () => {
             content: [
               {
                 ...paragraph,
-                translations: paragraph.translations!.map((t) =>
+                translations: paragraph.translations.map((t) =>
                   t.id === paragraph.selectedTranslationId ? { ...t, translation: '新翻译' } : t,
                 ),
               },
@@ -202,7 +202,7 @@ describe('useParagraphTranslation', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('success');
     expect(toastCall.summary).toBe('已切换翻译');
@@ -226,7 +226,7 @@ describe('useParagraphTranslation', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('error');
     expect(toastCall.summary).toBe('选择失败');

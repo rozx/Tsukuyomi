@@ -84,7 +84,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getCharacterTool!.handler({ name: '田中太郎', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(true);
       expect(resObj.character.name).toBe('田中太郎');
       expect(resObj.truncated).toBeUndefined();
@@ -94,7 +94,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getCharacterTool!.handler({ name: '田中', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(true);
       expect(resObj.characters).toBeDefined();
       expect(resObj.characters.length).toBe(1);
@@ -106,7 +106,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getCharacterTool!.handler({ name: '鬼', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(false);
       expect(resObj.message).toContain('不存在');
       expect(resObj.characters).toBeUndefined();
@@ -120,7 +120,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getTermTool!.handler({ name: '魔法', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(true);
       expect(resObj.term.name).toBe('魔法');
       expect(resObj.truncated).toBeUndefined();
@@ -130,7 +130,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getTermTool!.handler({ name: '魔', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(true);
       expect(resObj.terms).toBeDefined();
       expect(resObj.terms.length).toBe(2);
@@ -141,7 +141,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getTermTool!.handler({ name: 'Magic Sword', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(true);
       expect(resObj.terms).toBeDefined();
       expect(resObj.terms.length).toBe(1);
@@ -152,7 +152,7 @@ describe('Fallback Search for AI Tools', () => {
       const result = await getTermTool!.handler({ name: '刀', include_memory: false }, {
         bookId: 'novel-1',
       } as any);
-      const resObj = JSON.parse(result as string);
+      const resObj = JSON.parse(result);
       expect(resObj.success).toBe(false);
       expect(resObj.message).toContain('不存在');
       expect(resObj.terms).toBeUndefined();

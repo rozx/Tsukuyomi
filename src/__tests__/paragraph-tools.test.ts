@@ -337,7 +337,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
 
     // 注意：由于使用了完整关键词匹配，"测试" 在 "这是测试翻译" 和 "这是另一个测试" 中都会被匹配
@@ -390,7 +390,7 @@ describe('batch_replace_translations', () => {
     );
 
     expect(onAction).toHaveBeenCalled();
-    const actionArg = (onAction as any).mock.calls[0][0] as any;
+    const actionArg = (onAction as any).mock.calls[0][0];
     expect(actionArg?.previousData?.replaced_paragraphs?.length).toBe(1);
     expect(actionArg.previousData.replaced_paragraphs[0].paragraph_id).toBe('para1');
     // 关键断言：必须保存旧的选中翻译 ID（这里为空字符串）
@@ -457,7 +457,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1);
 
@@ -514,7 +514,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(3); // 所有三个都应该匹配，因为"测试"是完整词
 
@@ -572,7 +572,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换
 
@@ -633,7 +633,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换（因为"测试"在翻译文本中）
 
@@ -690,7 +690,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 同时满足两个条件
 
@@ -745,7 +745,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(5); // 应该只替换 5 个
   });
@@ -788,7 +788,7 @@ describe('batch_replace_translations', () => {
       { bookId: novel.id, onAction },
     );
 
-    const resultObj = JSON.parse(result as string);
+    const resultObj = JSON.parse(result);
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(0);
     expect(resultObj.message).toBe('未找到匹配的段落');
@@ -900,7 +900,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(2);
       expect(resultObj.paragraphs[0]?.id).toBe('para2');
@@ -930,7 +930,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(2);
       expect(resultObj.paragraphs[0]?.id).toBe('para3');
@@ -959,7 +959,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id }, // 没有 chunkBoundaries
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(2);
     });
@@ -986,7 +986,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(0); // para3 is last
     });
@@ -1015,7 +1015,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2', 'para3']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(2);
       expect(resultObj.paragraphs[0]?.id).toBe('para2');
@@ -1044,7 +1044,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para2', 'para3']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraphs.length).toBe(1); // Only para1 is before para2
       expect(resultObj.paragraphs[0]?.id).toBe('para1');
@@ -1074,7 +1074,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraph_index).toBe(1);
       expect(resultObj.next_paragraphs?.length).toBe(2);
@@ -1106,7 +1106,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para2', 'para3']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.paragraph_index).toBe(3);
       expect(resultObj.previous_paragraphs?.length).toBe(2);
@@ -1137,7 +1137,7 @@ describe('chunk boundary enforcement', () => {
         { bookId: novel.id, chunkBoundaries: createChunkBoundaries(['para1', 'para2']) },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
   });

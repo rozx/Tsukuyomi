@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/require-await */
+ 
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import './setup';
 import { MemoryService } from 'src/services/memory-service';

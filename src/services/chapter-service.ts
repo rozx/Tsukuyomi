@@ -2281,7 +2281,7 @@ export class ChapterService {
         // 注意：部分来源的段落 text 可能已经包含末尾换行符（例如爬取/导入数据）。
         // 如果我们仍然用 '\n' join，会在段落之间“叠加”换行，导致空行数量被放大。
         // 这里的规则是：只在“当前累计文本末尾不是 \n 且后面还有段落”时补 1 个 '\n' 作为分隔。
-        const body = chapterWithContent.content!.reduce((acc, p, idx) => {
+        const body = chapterWithContent.content.reduce((acc, p, idx) => {
           const text = p.text || '';
           acc += text;
 
@@ -2305,7 +2305,7 @@ export class ChapterService {
       } else if (type === 'translation') {
         // 译文导出：在保持原有段落结构的基础上，确保“原文中 n 个空行 → 导出 n+1 个空行”
         let consecutiveReturnParagraphs = 0;
-        const body = chapterWithContent.content!.reduce((acc, paragraph, idx, arr) => {
+        const body = chapterWithContent.content.reduce((acc, paragraph, idx, arr) => {
           let translation = getParagraphTranslationText(paragraph);
           translation = formatTranslationForDisplay(translation, book, chapterWithContent) ?? '';
 
@@ -2349,7 +2349,7 @@ export class ChapterService {
         content = `${chapterTitle}\n\n${body}`;
       } else {
         // 双语导出：type 只能是 'bilingual'
-        const lines = chapterWithContent.content!.map((p) => {
+        const lines = chapterWithContent.content.map((p) => {
           const original = p.text;
           let translation = getParagraphTranslationText(p);
 

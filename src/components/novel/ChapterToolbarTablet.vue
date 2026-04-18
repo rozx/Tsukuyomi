@@ -113,33 +113,33 @@ const overflowMenuItems = computed<MenuItem[]>(() => [
     icon: 'pi pi-file-export',
     // PrimeVue Menu command 回调只暴露 MenuItemCommandEvent，originalEvent 可能缺失，
     // 这里仅用 event 用于 Popover 定位；缺失时使用 document.body 兜底。
-    command: (event) => emit('toggleExport', (event.originalEvent as Event) ?? new Event('click')),
+    command: (event) => emit('toggleExport', (event.originalEvent) ?? new Event('click')),
   },
   { separator: true },
   {
     label: `术语（${props.usedTermCount}）`,
     icon: 'pi pi-bookmark',
     command: (event) =>
-      emit('toggleTermPopover', (event.originalEvent as Event) ?? new Event('click')),
+      emit('toggleTermPopover', (event.originalEvent) ?? new Event('click')),
   },
   {
     label: `角色（${props.usedCharacterCount}）`,
     icon: 'pi pi-user',
     command: (event) =>
-      emit('toggleCharacterPopover', (event.originalEvent as Event) ?? new Event('click')),
+      emit('toggleCharacterPopover', (event.originalEvent) ?? new Event('click')),
   },
   {
     label: `记忆（${props.usedMemoryCount}）`,
     icon: 'pi pi-lightbulb',
     command: (event) =>
-      emit('toggleMemoryPopover', (event.originalEvent as Event) ?? new Event('click')),
+      emit('toggleMemoryPopover', (event.originalEvent) ?? new Event('click')),
   },
   { separator: true },
   {
     label: '键盘快捷键',
     icon: 'pi pi-info-circle',
     command: (event) =>
-      emit('toggleKeyboardShortcuts', (event.originalEvent as Event) ?? new Event('click')),
+      emit('toggleKeyboardShortcuts', (event.originalEvent) ?? new Event('click')),
   },
 ]);
 

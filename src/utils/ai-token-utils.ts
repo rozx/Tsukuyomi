@@ -96,7 +96,7 @@ export const countTextTokens = (text: string): number => {
  */
 export const estimateMessagesTokenCount = (
   messages: ChatMessage[],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
 ): number => {
   return countMessagesTokens(messages);

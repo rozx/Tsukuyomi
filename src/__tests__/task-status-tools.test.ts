@@ -62,7 +62,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未提供任务 ID');
     });
@@ -77,7 +77,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('AI 处理 Store 未初始化');
     });
@@ -96,7 +96,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('任务不存在');
     });
@@ -115,7 +115,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态值');
     });
@@ -134,7 +134,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态值');
       expect(resultObj.error).toContain('planning');
@@ -160,7 +160,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('初始 → planning');
     });
@@ -179,7 +179,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('初始状态必须是 planning');
     });
@@ -198,7 +198,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('planning → preparing');
     });
@@ -217,7 +217,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须先进入 preparing');
     });
@@ -236,7 +236,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('preparing → working');
     });
@@ -255,7 +255,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态转换: planning → review');
     });
@@ -274,7 +274,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态转换: planning → end');
     });
@@ -293,7 +293,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('working → review');
     });
@@ -312,7 +312,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态转换: working → planning');
     });
@@ -331,7 +331,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须先进入 review');
     });
@@ -350,7 +350,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('review → end');
     });
@@ -369,7 +369,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.message).toContain('review → working');
     });
@@ -388,7 +388,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态转换: review → planning');
     });
@@ -408,7 +408,7 @@ describe('update_task_status', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(false);
         expect(resultObj.error).toContain(`无效的状态转换: end → ${status}`);
       }
@@ -430,7 +430,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -448,7 +448,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须先进入 preparing');
     });
@@ -467,7 +467,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -485,7 +485,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -503,7 +503,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('润色任务不支持 review 状态');
     });
@@ -522,7 +522,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('润色任务不支持 review 状态');
     });
@@ -541,7 +541,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('无效的状态转换: planning → end');
     });
@@ -561,7 +561,7 @@ describe('update_task_status', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(false);
         if (status === 'review') {
           expect(resultObj.error).toContain('润色任务不支持 review 状态');
@@ -587,7 +587,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -605,7 +605,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -623,7 +623,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -641,7 +641,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('校对任务不支持 review 状态');
     });
@@ -662,7 +662,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -680,7 +680,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -698,7 +698,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('章节摘要任务不支持 review 状态');
     });
@@ -724,7 +724,7 @@ describe('update_task_status', () => {
       expect(mockUpdateTask).toHaveBeenCalled();
       const calls = (mockUpdateTask as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const updateArg = calls[0][1] as any;
+      const updateArg = calls[0][1];
       expect(updateArg.workflowStatus).toBe('preparing');
     });
 
@@ -751,7 +751,7 @@ describe('update_task_status', () => {
       expect(mockUpdateTask).toHaveBeenCalled();
       const calls = (mockUpdateTask as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const updateArg = calls[0][1] as any;
+      const updateArg = calls[0][1];
       expect(updateArg.workflowStatus).toBe('end');
       expect(updateArg.status).toBeUndefined();
     });
@@ -775,7 +775,7 @@ describe('update_task_status', () => {
       expect(mockUpdateTask).toHaveBeenCalled();
       const calls = (mockUpdateTask as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
-      const updateArg = calls[0][1] as any;
+      const updateArg = calls[0][1];
       expect(updateArg.workflowStatus).toBe('preparing');
       expect(updateArg.status).toBeUndefined();
     });
@@ -796,7 +796,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('状态更新失败');
       expect(resultObj.error).toContain('更新失败');
@@ -863,7 +863,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
   });
@@ -883,7 +883,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未知的任务类型');
     });
@@ -907,7 +907,7 @@ describe('update_task_status', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.task_id).toBe('task-2');
     });
@@ -925,7 +925,7 @@ describe('update_task_status', () => {
         { status: 'planning' },
         { taskId: 'task-1', aiProcessingStore: mockStore },
       );
-      expect(JSON.parse(result as string).success).toBe(true);
+      expect(JSON.parse(result).success).toBe(true);
 
       // 更新 mock 状态
       mockStore.activeTasks[0]!.workflowStatus = 'planning';
@@ -935,7 +935,7 @@ describe('update_task_status', () => {
         { status: 'preparing' },
         { taskId: 'task-1', aiProcessingStore: mockStore },
       );
-      expect(JSON.parse(result as string).success).toBe(true);
+      expect(JSON.parse(result).success).toBe(true);
 
       // 更新 mock 状态
       mockStore.activeTasks[0]!.workflowStatus = 'preparing';
@@ -945,7 +945,7 @@ describe('update_task_status', () => {
         { status: 'working' },
         { taskId: 'task-1', aiProcessingStore: mockStore },
       );
-      expect(JSON.parse(result as string).success).toBe(true);
+      expect(JSON.parse(result).success).toBe(true);
 
       // 更新 mock 状态
       mockStore.activeTasks[0]!.workflowStatus = 'working';
@@ -955,7 +955,7 @@ describe('update_task_status', () => {
         { status: 'review' },
         { taskId: 'task-1', aiProcessingStore: mockStore },
       );
-      expect(JSON.parse(result as string).success).toBe(true);
+      expect(JSON.parse(result).success).toBe(true);
 
       // 更新 mock 状态
       mockStore.activeTasks[0]!.workflowStatus = 'review';
@@ -965,7 +965,7 @@ describe('update_task_status', () => {
         { status: 'end' },
         { taskId: 'task-1', aiProcessingStore: mockStore },
       );
-      expect(JSON.parse(result as string).success).toBe(true);
+      expect(JSON.parse(result).success).toBe(true);
     });
   });
 });

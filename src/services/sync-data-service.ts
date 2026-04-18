@@ -341,7 +341,7 @@ function normalizeCoverUrl(url: unknown): string {
 function dedupeCoverHistoryByUrl(
   covers: any[], // eslint-disable-line @typescript-eslint/no-explicit-any
 ): any[] {
-  // eslint-disable-line @typescript-eslint/no-explicit-any
+   
   const map = new Map<string, any>(); // eslint-disable-line @typescript-eslint/no-explicit-any
   for (const cover of covers) {
     const url = normalizeCoverUrl(cover?.url);
@@ -413,7 +413,7 @@ export class SyncDataService {
     if (!memory || typeof memory !== 'object') {
       return memory as Memory;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { attachedTo: _a, embedding: _e, embeddingModel: _m, ...clean } = memory as Record<
       string,
       unknown
@@ -432,7 +432,7 @@ export class SyncDataService {
 
     const stripTranslation = (t: unknown): unknown => {
       if (!t || typeof t !== 'object') return t;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+       
       const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
       return rest;
     };
@@ -606,7 +606,7 @@ export class SyncDataService {
       }
       // 确保 lastEdited 是 Date 对象（backup 经过 JSON 序列化，Date 会变成字符串）
       aiModelsStore.models = backup.models.map((m: any) => ({
-        // eslint-disable-line @typescript-eslint/no-explicit-any
+         
         ...m,
         lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
       }));
@@ -749,7 +749,7 @@ export class SyncDataService {
                   restorableItems.push({
                     id: remoteModel.id,
                     type: 'model',
-                    title: (remoteModel as any).name || remoteModel.id, // eslint-disable-line @typescript-eslint/no-explicit-any
+                    title: (remoteModel).name || remoteModel.id,  
                     deletedAt: deletionRecord,
                     data: remoteModel,
                   });
@@ -1024,7 +1024,7 @@ export class SyncDataService {
                   restorableItems.push({
                     id: remoteCover.id,
                     type: 'cover',
-                    title: (remoteCover as any).url || remoteCover.id, // eslint-disable-line @typescript-eslint/no-explicit-any
+                    title: (remoteCover).url || remoteCover.id,  
                     deletedAt: deletionRecord,
                     data: remoteCover,
                   });
@@ -1083,9 +1083,9 @@ export class SyncDataService {
             !!remoteData.coverHistory.find((c) => c.id === localCover.id) ||
             (localUrl
               ? !!remoteData.coverHistory.find(
-                  (c) => normalizeCoverUrl((c as any)?.url) === localUrl,
+                  (c) => normalizeCoverUrl((c)?.url) === localUrl,
                 )
-              : false); // eslint-disable-line @typescript-eslint/no-explicit-any
+              : false);  
           if (!existsInRemote) {
             // 检查是否是本地新增的（在上次同步后添加）
             // 如果远程封面列表为空，保留所有本地封面
@@ -1374,8 +1374,8 @@ export class SyncDataService {
             gistSync.deletedCoverIds,
           );
           const mergedDeletedCoverUrls = mergeUrlDeletionRecords(
-            (localGistSync as any).deletedCoverUrls, // eslint-disable-line @typescript-eslint/no-explicit-any
-            (gistSync as any).deletedCoverUrls, // eslint-disable-line @typescript-eslint/no-explicit-any
+            (localGistSync).deletedCoverUrls,  
+            (gistSync).deletedCoverUrls,  
           );
           const mergedDeletedMemoryIds = mergeDeletionRecords(
             localGistSync.deletedMemoryIds,
@@ -1494,7 +1494,7 @@ export class SyncDataService {
         await aiModelService.saveModel(model);
       }
       aiModelsStore.models = remoteModels.map((m: any) => ({
-        // eslint-disable-line @typescript-eslint/no-explicit-any
+         
         ...m,
         lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
       }));
@@ -1581,7 +1581,7 @@ export class SyncDataService {
     const rawNovels = Array.isArray(data.novels) ? data.novels : [];
     const strippedNovels = rawNovels.map((n) =>
       n && typeof n === 'object'
-        ? SyncDataService.stripLocalFieldsFromNovel(n as Novel)
+        ? SyncDataService.stripLocalFieldsFromNovel(n)
         : (n as Novel),
     );
     return {
@@ -1785,7 +1785,7 @@ export class SyncDataService {
           remoteCoverMap.get(localCover.id) ||
           (localUrl
             ? remoteCovers.find((c: any) => normalizeCoverUrl(c?.url) === localUrl)
-            : undefined); // eslint-disable-line @typescript-eslint/no-explicit-any
+            : undefined);  
         if (remoteCover) {
           if (shouldUseRemote(localCover.addedAt, remoteCover.addedAt)) {
             finalCovers.push(remoteCover);
@@ -1806,8 +1806,8 @@ export class SyncDataService {
         const existsInLocal =
           !!localData.coverHistory.find((c) => c.id === remoteCover.id) ||
           (remoteUrl
-            ? !!localData.coverHistory.find((c) => normalizeCoverUrl((c as any)?.url) === remoteUrl)
-            : false); // eslint-disable-line @typescript-eslint/no-explicit-any
+            ? !!localData.coverHistory.find((c) => normalizeCoverUrl((c)?.url) === remoteUrl)
+            : false);  
         if (!existsInLocal) {
           // 检查是否在本地删除记录中
           const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
@@ -1958,13 +1958,13 @@ export class SyncDataService {
         if (remoteMemory.lastAccessedAt > existingByContent.lastAccessedAt) {
           const idx = finalMemories.indexOf(existingByContent);
           if (idx >= 0) {
-            finalMemories[idx] = remoteMemory as Memory;
+            finalMemories[idx] = remoteMemory;
           }
-          contentMap.set(remoteMemory.content, remoteMemory as Memory);
+          contentMap.set(remoteMemory.content, remoteMemory);
         }
       } else {
-        finalMemories.push(remoteMemory as Memory);
-        contentMap.set(remoteMemory.content, remoteMemory as Memory);
+        finalMemories.push(remoteMemory);
+        contentMap.set(remoteMemory.content, remoteMemory);
       }
     }
 
@@ -2625,7 +2625,7 @@ export class SyncDataService {
                       ...remoteChapter,
                       summary: mergeChapterSummary(localChapter, remoteChapter),
                     } as Chapter)
-                  : (remoteChapter as Chapter);
+                  : (remoteChapter);
 
                 // 如果本地章节存在，尝试保留其内容并合并远程翻译
                 if (localChapter) {
@@ -2711,7 +2711,7 @@ export class SyncDataService {
                     } as Chapter;
                   }
                 }
-                return remoteChapter as Chapter;
+                return remoteChapter;
               }),
             );
             return {
@@ -2720,7 +2720,7 @@ export class SyncDataService {
             } as Volume;
           }
 
-          return remoteVolume as Volume;
+          return remoteVolume;
         }),
       );
     } else {

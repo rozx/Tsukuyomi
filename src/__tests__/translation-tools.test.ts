@@ -253,7 +253,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('AI 处理 Store 未初始化');
     });
@@ -271,7 +271,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未提供任务 ID');
     });
@@ -290,7 +290,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('任务不存在');
     });
@@ -309,7 +309,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
@@ -336,7 +336,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       // review 状态现在允许 add_translation_batch，应进入正常处理路径
       expect(resultObj.success).toBe(true);
       expect(resultObj).not.toHaveProperty('error');
@@ -356,7 +356,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
@@ -383,7 +383,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
   });
@@ -403,7 +403,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('段落列表不能为空');
     });
@@ -422,7 +422,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('段落列表不能为空');
     });
@@ -450,7 +450,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain(`单次批次最多支持 ${maxAllowed} 个段落`);
     });
@@ -477,7 +477,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('书籍不存在');
       expect(typeof resultObj.warning).toBe('string');
@@ -500,7 +500,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('缺少翻译文本');
     });
@@ -521,7 +521,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('缺少翻译文本');
     });
@@ -542,7 +542,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须提供 paragraph_id');
       expect(resultObj.error_code).toBe('MISSING_PARAGRAPH_ID');
@@ -579,7 +579,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -600,7 +600,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('已废弃的 index 字段');
     });
@@ -630,7 +630,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -650,7 +650,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('必须提供 paragraph_id');
     });
@@ -671,7 +671,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('paragraph_id 必须是非空字符串');
     });
@@ -697,7 +697,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('存在重复的段落 ID');
       expect(resultObj.error).toContain('para1');
@@ -724,7 +724,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('存在重复的段落 ID');
       expect(resultObj.error).toContain('para1');
@@ -768,7 +768,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error_code).toBe('DUPLICATE_PARAGRAPHS');
       expect(resultObj.invalid_paragraph_ids).toEqual(['abc12345']);
@@ -801,7 +801,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('不在当前任务范围内');
       expect(resultObj.error).toContain('para-outside');
@@ -842,7 +842,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.accepted_paragraphs).toEqual([
         {
@@ -890,7 +890,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.accepted_paragraphs).toEqual([
         {
@@ -937,7 +937,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
       expect(resultObj.invalid_paragraph_ids).toEqual([typoParagraphId]);
@@ -973,7 +973,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
       expect(resultObj.invalid_paragraph_ids).toEqual(['abcf1111']);
@@ -1008,7 +1008,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error_code).toBe('OUT_OF_RANGE_PARAGRAPHS');
       expect(resultObj.invalid_paragraph_ids).toEqual(['zzzz9999']);
@@ -1040,7 +1040,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
   });
@@ -1061,7 +1061,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未提供书籍 ID');
     });
@@ -1084,7 +1084,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('任务类型不支持批量提交');
     });
@@ -1113,7 +1113,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.task_type).toBe('polish');
     });
@@ -1142,7 +1142,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.task_type).toBe('proofreading');
     });
@@ -1165,7 +1165,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未提供 AI 模型 ID');
     });
@@ -1199,7 +1199,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
       expect(resultObj.accepted_paragraphs).toEqual([
@@ -1237,7 +1237,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
     });
@@ -1277,7 +1277,7 @@ describe('add_translation_batch', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(true);
       }
     });
@@ -1312,7 +1312,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
       expect(resultObj.quality_warnings.join('\n')).toContain('检查翻译完整性');
@@ -1348,7 +1348,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.quality_warnings).toBeUndefined();
     });
@@ -1387,7 +1387,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(Array.isArray(resultObj.errors)).toBe(true);
       expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
@@ -1423,7 +1423,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(Array.isArray(resultObj.errors)).toBe(true);
       expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
@@ -1462,7 +1462,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       // 工具层不再修改段落数据，选中状态由回调层管理
       expect(para1.translations?.length).toBe(originalCount);
@@ -1500,7 +1500,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.result_code).toBe('PARTIAL_SUCCESS');
       expect(resultObj.processed_count).toBe(1);
@@ -1544,7 +1544,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.task_type).toBe('polish');
       expect(resultObj.processed_count).toBe(1);
@@ -1583,7 +1583,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.task_type).toBe('proofreading');
       expect(resultObj.processed_count).toBe(1);
@@ -1617,7 +1617,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(Array.isArray(resultObj.errors)).toBe(true);
       expect(resultObj.errors.join('\n')).toContain('缺少原文引号符号');
@@ -1650,7 +1650,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
     });
@@ -1688,7 +1688,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
     });
@@ -1726,7 +1726,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(Array.isArray(resultObj.errors)).toBe(true);
       expect(resultObj.errors.join('\n')).toContain('缺少原文引号符号');
@@ -1756,7 +1756,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('未找到以下段落');
     });
@@ -1789,7 +1789,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(2);
     });
@@ -1838,7 +1838,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
       expect(resultObj.result_code).toBe('PARTIAL_SUCCESS');
@@ -1902,7 +1902,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error_code).toBe('ALL_PARAGRAPHS_FAILED');
       expect(Array.isArray(resultObj.failed_paragraphs)).toBe(true);
@@ -1957,7 +1957,7 @@ describe('add_translation_batch', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(true);
       }
     });
@@ -1990,7 +1990,7 @@ describe('add_translation_batch', () => {
           chunkBoundaries: createChunkBoundaries(['para1']),
         },
       );
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
 
       // 提供完整原文 '……' 作为前缀 → 也应通过
@@ -2008,7 +2008,7 @@ describe('add_translation_batch', () => {
           chunkBoundaries: createChunkBoundaries(['para1']),
         },
       );
-      const passObj = JSON.parse(passResult as string);
+      const passObj = JSON.parse(passResult);
       expect(passObj.success).toBe(true);
     });
 
@@ -2053,7 +2053,7 @@ describe('add_translation_batch', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(true);
       }
     });
@@ -2094,7 +2094,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       // ORIGINAL_TEXT_PREFIX_TOO_LONG 改为仅警告，不阻止提交
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
@@ -2136,7 +2136,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
     });
 
@@ -2195,7 +2195,7 @@ describe('add_translation_batch', () => {
           },
         );
 
-        const resultObj = JSON.parse(result as string);
+        const resultObj = JSON.parse(result);
         expect(resultObj.success).toBe(true);
       }
     });
@@ -2232,7 +2232,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
     });
@@ -2255,7 +2255,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('书籍不存在');
     });
@@ -2281,7 +2281,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('缺少章节数据');
     });
@@ -2313,7 +2313,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(resultObj.processed_count).toBe(1);
     });
@@ -2347,7 +2347,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('章节不存在');
     });
@@ -2380,7 +2380,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(warnSpy).toHaveBeenCalledWith(
         '[translation-tools] ⚠️ 未提供 chapterId，触发惰性章节扫描。建议确保任务对象包含 chapterId 以提升性能',
@@ -2419,7 +2419,7 @@ describe('add_translation_batch', () => {
       );
 
       // 不会返回批次大小错误，但会因为找不到段落而失败（没有mock书籍数据）
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       // 验证批次大小没有超过限制
       expect(resultObj.error).not.toContain('单次批次最多支持');
     });
@@ -2443,7 +2443,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('已废弃的 index 字段');
     });
@@ -2468,7 +2468,7 @@ describe('add_translation_batch', () => {
         },
       );
 
-      const resultObj = JSON.parse(result as string);
+      const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(false);
       expect(resultObj.error).toContain('已废弃的 index 字段');
     });

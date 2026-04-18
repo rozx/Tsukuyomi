@@ -52,7 +52,7 @@ export const buildAssistantMessageHistory = (
     // [兼容] 过滤空消息：部分 OpenAI 兼容服务会拒绝空 content
     .filter((msg) => Boolean(msg.content && msg.content.trim()))
     .map((msg) => ({
-      role: msg.role as 'user' | 'assistant',
+      role: msg.role,
       content: msg.content,
     }));
   return sliced.length > 0 ? sliced : undefined;

@@ -27,7 +27,7 @@ const selectedIndex = computed(() => {
 });
 
 const taskTypeLabel = (task: AIProcessingTask) => {
-  const key = task.type as keyof typeof TASK_TYPE_LABELS;
+  const key = task.type;
   return TASK_TYPE_LABELS[key] || task.type;
 };
 

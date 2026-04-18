@@ -54,7 +54,7 @@ export async function searchRelatedMemories(
  */
 export async function searchRelatedMemoriesHybrid(
   bookId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   _attachments: DeprecatedAttachmentRef[],
   keywords: string[],
   limit: number = 5,

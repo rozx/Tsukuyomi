@@ -72,7 +72,7 @@ describe('useChapterExport', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('success');
     expect(toastCall.summary).toBe('已复制到剪贴板');
@@ -102,7 +102,7 @@ describe('useChapterExport', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('success');
     expect(toastCall.summary).toBe('导出成功');
@@ -136,7 +136,7 @@ describe('useChapterExport', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     expect(toastCall.severity).toBe('error');
     expect(toastCall.summary).toBe('导出失败');
@@ -167,7 +167,7 @@ describe('useChapterExport', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     if (toastCall) {
       expect(toastCall.severity).toBe('success');
@@ -187,7 +187,7 @@ describe('useChapterExport', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0] as any;
+    const toastCall = calls[0]?.[0];
     expect(toastCall).toBeDefined();
     if (toastCall) {
       expect(toastCall.severity).toBe('warn');

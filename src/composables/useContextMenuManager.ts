@@ -39,7 +39,7 @@ export function useContextMenuManager() {
     const popoverInstance: PopoverInstance = {
       hide: () => {
         if (popoverRef.value) {
-          const instance = popoverRef.value as any;
+          const instance = popoverRef.value;
           if (instance.hide) {
             instance.hide();
           } else if (instance.$ && instance.$.exposed && instance.$.exposed.hide) {
@@ -49,7 +49,7 @@ export function useContextMenuManager() {
       },
       show: (evt: Event, tgt?: HTMLElement) => {
         if (popoverRef.value) {
-          const instance = popoverRef.value as any;
+          const instance = popoverRef.value;
           if (instance.show) {
             instance.show(evt, tgt);
           } else if (instance.$ && instance.$.exposed && instance.$.exposed.show) {

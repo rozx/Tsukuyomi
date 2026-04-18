@@ -37,7 +37,7 @@ export interface EmbeddingProgressEvent {
   aggregatePercent?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type FeatureExtractionPipeline = (
   input: string | string[],
   options?: Record<string, unknown>,
@@ -265,7 +265,7 @@ export class EmbeddingService {
       return null;
     }
     try {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+       
       const output = await this.pipeline!(text, {
         pooling: 'mean',
         normalize: false, // 我们手动处理截断 + 归一化
@@ -294,7 +294,7 @@ export class EmbeddingService {
 
     const result: Array<Float32Array | null> = texts.map(() => null);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+       
       const output = await this.pipeline!(
         indexed.map((e) => e.text),
         {

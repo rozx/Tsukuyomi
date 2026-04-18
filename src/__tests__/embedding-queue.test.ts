@@ -56,7 +56,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(updateSpy).toHaveBeenCalledTimes(1);
     const call = updateSpy.mock.calls[0]!;
     expect(call[0]).toBe('a');
-    const vec = call[1] as number[];
+    const vec = call[1];
     expect(vec).toHaveLength(2);
     expect(vec[0]).toBeCloseTo(0.1, 5);
     expect(vec[1]).toBeCloseTo(0.2, 5);

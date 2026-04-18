@@ -199,7 +199,7 @@ describe('useActionInfoToast', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const callArgs = calls[0]?.[0] as any;
+    const callArgs = calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs.severity).toBe('info');
     expect(callArgs.summary).toBe('已创建术语');
@@ -225,7 +225,7 @@ describe('useActionInfoToast', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const callArgs = calls[0]?.[0] as any;
+    const callArgs = calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs.summary).toBe('已更新角色');
     expect(callArgs.detail).toContain('角色 "测试角色"');
@@ -246,7 +246,7 @@ describe('useActionInfoToast', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const callArgs = calls[0]?.[0] as any;
+    const callArgs = calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs.summary).toBe('已删除术语');
     expect(callArgs.detail).toContain('术语 "测试术语"');
@@ -282,7 +282,7 @@ describe('useActionInfoToast', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const callArgs = calls[0]?.[0] as any;
+    const callArgs = calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs.severity).toBe('success');
   });
@@ -302,7 +302,7 @@ describe('useActionInfoToast', () => {
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
     expect(calls.length).toBeGreaterThan(0);
-    const callArgs = calls[0]?.[0] as any;
+    const callArgs = calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs.onRevert).toBeDefined();
     expect(typeof callArgs.onRevert).toBe('function');

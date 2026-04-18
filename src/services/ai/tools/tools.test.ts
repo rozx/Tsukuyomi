@@ -146,7 +146,7 @@ describe('AI Tools Tests', () => {
         },
         mockContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('段落列表不能为空');
     });
@@ -174,7 +174,7 @@ describe('AI Tools Tests', () => {
         },
         contextClone,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain("只能在 'working' 或 'review' 状态下调用此工具");
     });
@@ -186,7 +186,7 @@ describe('AI Tools Tests', () => {
         },
         mockContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('已废弃的 index 字段');
     });
@@ -216,7 +216,7 @@ describe('AI Tools Tests', () => {
         },
         mockContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('重复的段落 ID');
     });
@@ -249,7 +249,7 @@ describe('AI Tools Tests', () => {
         },
         mockContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(1);
@@ -293,7 +293,7 @@ describe('AI Tools Tests', () => {
         },
         blankContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无法翻译空段落');
@@ -337,7 +337,7 @@ describe('AI Tools Tests', () => {
         },
         symbolContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(1);
@@ -386,7 +386,7 @@ describe('AI Tools Tests', () => {
         },
         doubleLimitContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(parsed.processed_count).toBe(20);
@@ -416,7 +416,7 @@ describe('AI Tools Tests', () => {
         },
         largeChunkContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('单次批次最多支持 11 个段落');
     });
@@ -430,7 +430,7 @@ describe('AI Tools Tests', () => {
     it('should validate status values', async () => {
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'invalid_status' }, mockContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无效的状态值');
     });
@@ -439,7 +439,7 @@ describe('AI Tools Tests', () => {
       // Current status: working
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, mockContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(true);
       expect(mockContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
         workflowStatus: 'review',
@@ -487,7 +487,7 @@ describe('AI Tools Tests', () => {
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('章节标题尚未翻译');
@@ -540,7 +540,7 @@ describe('AI Tools Tests', () => {
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('全文章节内仍有 1 个非空段落未翻译');
@@ -597,7 +597,7 @@ describe('AI Tools Tests', () => {
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       // Should succeed because p2 is ignored
       expect(parsed.success).toBe(true);
@@ -654,7 +654,7 @@ describe('AI Tools Tests', () => {
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('当前分块内仍有 1 个非空段落未翻译');
@@ -702,7 +702,7 @@ describe('AI Tools Tests', () => {
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(reviewContext.aiProcessingStore.updateTask).toHaveBeenCalledWith(mockTaskId, {
@@ -714,7 +714,7 @@ describe('AI Tools Tests', () => {
       // Current status: working
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'planning' }, mockContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('无效的状态转换');
     });
@@ -742,7 +742,7 @@ describe('AI Tools Tests', () => {
       };
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'end' }, polishContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(true);
       // 只更新 workflowStatus，不要设置 store 级 status='end'：那会写入 endTime
       // 并在后续 chunk 开始时造成计时器卡住。任务真正结束由 completeTask() 负责。
@@ -773,7 +773,7 @@ describe('AI Tools Tests', () => {
       };
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, polishContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('润色任务不支持 review 状态');
     });
@@ -787,7 +787,7 @@ describe('AI Tools Tests', () => {
     it('should validate inputs', async () => {
       const handler = updateChapterTitleTool!.handler;
       const result = await handler({}, mockContext);
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
       expect(parsed.success).toBe(false);
       expect(parsed.error).toContain('章节 ID 不能为空');
     });
@@ -824,7 +824,7 @@ describe('AI Tools Tests', () => {
         },
         mockContext,
       );
-      const parsed = JSON.parse(result as string);
+      const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
       expect(ChapterService.updateChapter).toHaveBeenCalled();

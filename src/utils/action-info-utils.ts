@@ -164,7 +164,7 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
       : {}),
     // 待办事项操作相关信息
     ...(action.entity === 'todo' && 'text' in action.data
-      ? { name: (action.data as TodoItem).text }
+      ? { name: (action.data).text }
       : {}),
     // 导航操作相关信息
     ...(action.type === 'navigate' && 'book_id' in action.data

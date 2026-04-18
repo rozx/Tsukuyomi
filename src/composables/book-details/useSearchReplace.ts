@@ -40,7 +40,7 @@ export function useSearchReplace(
         // PrimeVue Textarea 组件会将 textarea 包装在内部
         const textarea = paragraphElement.querySelector(
           '.paragraph-translation-edit textarea',
-        ) as HTMLTextAreaElement | null;
+        );
         if (textarea && textarea.value !== undefined) {
           return textarea.value;
         }
@@ -236,7 +236,7 @@ export function useSearchReplace(
         if (paragraphElement) {
           const textarea = paragraphElement.querySelector(
             '.paragraph-translation-edit textarea',
-          ) as HTMLTextAreaElement | null;
+          );
           if (textarea) {
             textarea.value = newText;
             // 触发 input 事件以确保 Vue 的 v-model 更新
@@ -334,7 +334,7 @@ export function useSearchReplace(
         if (paragraphElement) {
           const textarea = paragraphElement.querySelector(
             '.paragraph-translation-edit textarea',
-          ) as HTMLTextAreaElement | null;
+          );
           if (textarea) {
             textarea.value = newText;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));

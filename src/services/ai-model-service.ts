@@ -36,7 +36,7 @@ export class AIModelService {
     try {
       const db = await getDB();
       // 将响应式对象序列化为纯对象，避免 DataCloneError
-      const serializedModel = cloneDeep(model) as AIModel;
+      const serializedModel = cloneDeep(model);
       await db.put('ai-models', serializedModel);
     } catch (error) {
       console.error('Failed to save AI model to DB:', error);
@@ -68,7 +68,7 @@ export class AIModelService {
 
       for (const model of models) {
         // 将响应式对象序列化为纯对象，避免 DataCloneError
-        const serializedModel = cloneDeep(model) as AIModel;
+        const serializedModel = cloneDeep(model);
         await store.put(serializedModel);
       }
 

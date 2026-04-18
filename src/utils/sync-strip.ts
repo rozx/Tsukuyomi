@@ -15,7 +15,7 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
  */
 export function stripMemoryLocalFields(memory: Memory): Memory {
   if (!memory || typeof memory !== 'object') return memory;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { embedding: _e, embeddingModel: _em, ...rest } = memory as Memory & {
     attachedTo?: unknown;
   };
@@ -33,7 +33,7 @@ export function stripNovelLocalFields(novel: Novel): Novel {
 
   const stripTranslation = (t: unknown): unknown => {
     if (!t || typeof t !== 'object') return t;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
     return rest;
   };
@@ -107,12 +107,12 @@ export function normalizeMemoriesForSync(
 export function stripAppSettingsLocalFields(
   settings: AppSettings & { syncs?: unknown },
 ): AppSettings {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { syncs: _syncs, memoryInjection: rawMemoryInjection, ...rest } = settings;
 
   const memoryInjection = rawMemoryInjection
     ? (() => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+         
         const { embeddingModelCached: _c, ...miRest } = rawMemoryInjection as unknown as Record<
           string,
           unknown

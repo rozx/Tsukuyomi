@@ -510,7 +510,7 @@ export async function conditionalGetGist(
     notModified: false,
     etag,
     updatedAt: data.updated_at ?? '',
-    files: (data.files ?? {}) as Record<string, GistFileLike>,
+    files: (data.files ?? {}),
     ...(data.html_url ? { htmlUrl: data.html_url } : {}),
   };
 }

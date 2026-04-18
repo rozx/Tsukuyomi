@@ -285,10 +285,10 @@ export function useChatActionHandler(
 
     // 处理导航操作
     if (action.type === 'navigate' && 'book_id' in action.data) {
-      const bookId = action.data.book_id as string;
-      const chapterId = 'chapter_id' in action.data ? (action.data.chapter_id as string) : null;
+      const bookId = action.data.book_id;
+      const chapterId = 'chapter_id' in action.data ? (action.data.chapter_id) : null;
       const paragraphId =
-        'paragraph_id' in action.data ? (action.data.paragraph_id as string) : null;
+        'paragraph_id' in action.data ? (action.data.paragraph_id) : null;
 
       // 导航到书籍详情页面
       void co(function* () {
@@ -319,8 +319,8 @@ export function useChatActionHandler(
 
     // 处理帮助文档导航操作
     if (action.type === 'navigate' && action.entity === 'help_doc' && 'doc_id' in action.data) {
-      const docId = action.data.doc_id as string;
-      const sectionId = 'section_id' in action.data ? (action.data.section_id as string) : null;
+      const docId = action.data.doc_id;
+      const sectionId = 'section_id' in action.data ? (action.data.section_id) : null;
 
       void co(function* () {
         try {
@@ -581,10 +581,10 @@ export function useChatActionHandler(
                     );
                     if (translationIndex !== -1 && paragraph.translations[translationIndex]) {
                       // 恢复原始翻译文本
-                      paragraph.translations[translationIndex]!.translation =
+                      paragraph.translations[translationIndex].translation =
                         oldTranslation.translation;
                       // 恢复原始模型信息（更完整的回滚）
-                      paragraph.translations[translationIndex]!.aiModelId =
+                      paragraph.translations[translationIndex].aiModelId =
                         oldTranslation.aiModelId;
                     }
                   }

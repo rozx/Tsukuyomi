@@ -36,7 +36,7 @@ export class TokenCounterService {
    */
   static countMessagesSync(
     messages: ChatMessage[],
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _provider?: AIProvider,
   ): number {
     return countMessagesTokens(messages);
@@ -51,7 +51,7 @@ export class TokenCounterService {
    */
   static countTextSync(
     text: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     _provider?: AIProvider,
   ): number {
     return countTextTokens(text);
