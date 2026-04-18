@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
  * Tablet shell — slim left icon rail + top utility strip + main RouterView,
- * with the existing AppRightPanel as an absolute-positioned overlay.
+ * with TWO independent right-edge slide-in panels for the AI 助手 / 翻译进度
+ * surfaces. Each panel owns its own appbar + close button and stays mounted
+ * in the DOM so its internal state (useRightPanel / TranslationProgress) isn't
+ * reset when the other opens — same pattern as MainLayoutMobile with its
+ * MobileChatSheet + MobileProgressSheet.
  *
- * Active tab state is shared with MobileTabBar via useMainNavActive().
- * Right-panel close behavior re-uses useOverlayCloseStack so Esc / mask click
- * dismiss chat or progress panels.
+ * Active tab state is shared with MobileTabBar / BookDetailsTablet rail via
+ * useMainNavActive() and the uiStore.activeRightTab state.
  */
 import { computed } from 'vue';
 import TabletSysBar from 'src/components/layout/TabletSysBar.vue';
 import TabletNavRail from 'src/components/layout/TabletNavRail.vue';
-import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
+import TabletChatPanel from 'src/components/layout/TabletChatPanel.vue';
+import TabletProgressPanel from 'src/components/layout/TabletProgressPanel.vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
@@ -20,6 +24,9 @@ const ui = useUiStore();
 const rightPanelOverlayStyle = computed(() => ({
   width: `min(92vw, ${ui.rightPanelWidth}px)`,
 }));
+
+const isChatOpen = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'chat');
+const isProgressOpen = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'progress');
 
 const closeRightPanel = () => ui.closeRightPanel();
 
@@ -47,13 +54,24 @@ useOverlayCloseStack({
 
         <RouterView />
 
+        <!-- AI 助手 面板——独立挂载，仅当 activeRightTab === 'chat' 时 slide-in -->
         <div
           class="overlay-right-panel z-50"
-          :class="{ 'overlay-right-panel-open': ui.rightPanelOpen }"
+          :class="{ 'overlay-right-panel-open': isChatOpen }"
           :style="rightPanelOverlayStyle"
-          :inert="!ui.rightPanelOpen"
+          :inert="!isChatOpen"
         >
-          <AppRightPanel />
+          <TabletChatPanel />
+        </div>
+
+        <!-- 翻译进度 面板——独立挂载，仅当 activeRightTab === 'progress' 时 slide-in -->
+        <div
+          class="overlay-right-panel z-50"
+          :class="{ 'overlay-right-panel-open': isProgressOpen }"
+          :style="rightPanelOverlayStyle"
+          :inert="!isProgressOpen"
+        >
+          <TabletProgressPanel />
         </div>
       </main>
     </div>

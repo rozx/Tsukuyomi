@@ -139,6 +139,13 @@ function createBookDetailsPageContext() {
   // 设置菜单状态
   const selectedSettingMenu = ref<SettingMenu | null>(null);
 
+  // 平板端侧边栏可折叠——竖屏 17rem 宽度下，读者想要更多阅读空间时折叠目录。
+  // 桌面 / 手机不走这个状态（桌面始终有侧栏，手机用 workspace mode 切换）。
+  const isTabletSidebarOpen = ref(true);
+  const toggleTabletSidebar = () => {
+    isTabletSidebarOpen.value = !isTabletSidebarOpen.value;
+  };
+
   // 滚动容器引用
   const scrollableContentRef = ref<HTMLElement | null>(null);
   const chapterContentPanelRef = ref<HTMLElement | null>(null);
@@ -2152,6 +2159,8 @@ function createBookDetailsPageContext() {
     // workspace mode + settings menu + page loading
     workspaceMode,
     selectedSettingMenu,
+    isTabletSidebarOpen,
+    toggleTabletSidebar,
     isPageLoading,
     isStatsCalculating,
     stats,

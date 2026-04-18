@@ -15,9 +15,7 @@ export function useMainNavActive(): ComputedRef<MainNavTab> {
 
   return computed<MainNavTab>(() => {
     const path = route.path;
-    // 平板专用 chat 页面
-    if (path === '/chat' || path.startsWith('/chat/')) return 'chat';
-    // 其他变体 chat 仍挂在右侧面板 / 底部抽屉
+    // AI 助手始终挂在右侧面板 / 底部抽屉（不再提供全屏路由）
     if (ui.rightPanelOpen && ui.activeRightTab === 'chat') return 'chat';
     if (path === '/') return 'home';
     if (path.startsWith('/ai')) return 'ai';

@@ -1,33 +1,16 @@
 <script setup lang="ts">
 /**
- * Device-variant dispatcher for the AI assistant / progress right panel.
+ * Desktop-only right panel wrapper (unified chat + progress tabs).
  *
- * Only Desktop and Tablet use this component — MainLayoutMobile renders chat /
- * progress as two independent MobileBottomSheet instances (MobileChatSheet +
- * MobileProgressSheet) rather than folding them into a single right panel. So
- * the mobile case here intentionally falls through to Desktop: if some unusual
- * call site ever mounts this on a phone, it'll get the desktop layout instead
- * of a broken empty panel.
+ * Mobile and Tablet layouts render chat / progress as TWO independent
+ * overlays mounted directly in their main layout shells (MobileChatSheet +
+ * MobileProgressSheet / TabletChatPanel + TabletProgressPanel), so this
+ * dispatcher is only consumed by MainLayoutDesktop. The fall-through to the
+ * desktop template protects any stray call site on mobile/tablet.
  */
-import { computed } from 'vue';
-import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import AppRightPanelDesktop from './AppRightPanelDesktop.vue';
-import AppRightPanelTablet from './AppRightPanelTablet.vue';
-
-const { variant } = useDeviceVariant();
-
-const variantComponent = computed(() => {
-  switch (variant.value) {
-    case 'tablet':
-      return AppRightPanelTablet;
-    case 'mobile':
-    case 'desktop':
-    default:
-      return AppRightPanelDesktop;
-  }
-});
 </script>
 
 <template>
-  <component :is="variantComponent" />
+  <AppRightPanelDesktop />
 </template>

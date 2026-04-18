@@ -7,11 +7,10 @@ import { APP_NAME } from 'src/constants/app';
 
 type Item = { id: MainNavTab; icon: string; label: string };
 
-// 主导航四项（首页 · 书库 · AI 助手 · AI 模型）在顶部，设置固定在底部。
+// 主导航三项（首页 · 书库 · AI 模型）在顶部，帮助 / 设置固定在底部。
 const primaryItems: Item[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
-  { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
   { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
 ];
 
@@ -39,10 +38,6 @@ const onItemClick = (id: MainNavTab) => {
     case 'library':
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (route.path !== '/books') void router.push('/books');
-      return;
-    case 'chat':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/chat') void router.push('/chat');
       return;
     case 'ai':
       if (ui.rightPanelOpen) ui.closeRightPanel();

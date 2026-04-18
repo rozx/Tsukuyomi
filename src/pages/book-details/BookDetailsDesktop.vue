@@ -2,7 +2,9 @@
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
+import VolumesListTablet from 'src/components/novel/VolumesListTablet.vue';
 import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
+import ChapterToolbarTablet from 'src/components/novel/ChapterToolbarTablet.vue';
 import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
@@ -19,9 +21,11 @@ const ctx = injectBookDetailsPage();
   <aside
     class="book-sidebar"
     :class="{
-      'book-sidebar-mobile-hidden': ctx.isSmallScreen.value && ctx.workspaceMode.value !== 'catalog',
+      'book-sidebar-mobile-hidden': ctx.isPhone.value && ctx.workspaceMode.value !== 'catalog',
       'book-sidebar-mobile-visible':
-        ctx.isSmallScreen.value && ctx.workspaceMode.value === 'catalog',
+        ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
+      'book-sidebar-tablet-collapsed':
+        ctx.isTablet.value && !ctx.isTabletSidebarOpen.value,
     }"
   >
     <div class="sidebar-content">
@@ -69,11 +73,11 @@ const ctx = injectBookDetailsPage();
             </div>
           </div>
         </div>
-        <div v-if="!ctx.isSmallScreen.value" class="book-separator" />
+        <div v-if="!ctx.isPhone.value" class="book-separator" />
       </div>
 
-      <!-- 设置菜单 - 移动端隐藏（设置页已有二级导航） -->
-      <div v-if="!ctx.isSmallScreen.value" class="settings-menu-wrapper">
+      <!-- 设置菜单 - 手机端隐藏（设置页已有二级导航） -->
+      <div v-if="!ctx.isPhone.value" class="settings-menu-wrapper">
         <div class="settings-menu-items">
           <button
             class="settings-menu-item"
@@ -115,7 +119,7 @@ const ctx = injectBookDetailsPage();
 
       <!-- 目录标题和操作按钮 -->
       <div class="sidebar-title-wrapper">
-        <h2 v-if="!ctx.isSmallScreen.value" class="sidebar-title">目录</h2>
+        <h2 v-if="!ctx.isPhone.value" class="sidebar-title">目录</h2>
         <div class="sidebar-actions">
           <Button
             icon="pi pi-plus"
@@ -136,8 +140,29 @@ const ctx = injectBookDetailsPage();
         </div>
       </div>
 
-      <!-- 卷和章节列表 -->
+      <!-- 卷和章节列表：平板用 mobile-style 轻量树，桌面/手机端保留原 VolumesList -->
+      <VolumesListTablet
+        v-if="ctx.isTablet.value"
+        :volumes="ctx.volumes.value"
+        :book="ctx.book.value || null"
+        :selected-chapter-id="ctx.selectedChapterId.value"
+        :is-page-loading="ctx.isPageLoading.value"
+        :is-loading-chapter-content="ctx.isLoadingChapterContent.value"
+        :is-volume-expanded="ctx.isVolumeExpanded"
+        :chapter-status-icon="ctx.chapterStatusIcon"
+        :chapter-status-color="ctx.chapterStatusColor"
+        :chapter-status-text-color="ctx.chapterStatusTextColor"
+        :chapter-status-label="ctx.chapterStatusLabel"
+        @toggle-volume="ctx.onToggleVolume"
+        @navigate-to-chapter="ctx.onNavigateToChapter"
+        @edit-volume="ctx.onEditVolume"
+        @delete-volume="ctx.onDeleteVolume"
+        @edit-chapter="ctx.onEditChapter"
+        @delete-chapter="ctx.onDeleteChapter"
+        @move-chapter="ctx.onMoveChapter"
+      />
       <VolumesList
+        v-else
         :volumes="ctx.volumes.value"
         :book="ctx.book.value || null"
         :selected-chapter-id="ctx.selectedChapterId.value"
@@ -179,15 +204,57 @@ const ctx = injectBookDetailsPage();
     :class="{
       'overflow-hidden': !!ctx.selectedSettingMenu.value,
       'book-main-content-mobile-hidden':
-        ctx.isSmallScreen.value && ctx.workspaceMode.value === 'catalog',
+        ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
     }"
   >
-    <!-- 章节阅读工具栏 -->
-    <ChapterToolbar
+    <!-- 章节阅读工具栏：平板单独用 ChapterToolbarTablet（更干净的 header），其余设备仍用 ChapterToolbar -->
+    <ChapterToolbarTablet
       v-if="
+        ctx.isTablet.value &&
+        ctx.selectedChapter.value &&
+        !ctx.selectedSettingMenu.value
+      "
+      :selected-chapter="ctx.selectedChapter.value"
+      :book="ctx.book.value || null"
+      :can-undo="ctx.canUndo.value"
+      :can-redo="ctx.canRedo.value"
+      :undo-description="ctx.undoDescription.value || null"
+      :redo-description="ctx.redoDescription.value || null"
+      :edit-mode="ctx.editMode.value"
+      :edit-mode-options="[...ctx.editModeOptions]"
+      :selected-chapter-paragraphs="ctx.selectedChapterParagraphs.value"
+      :translated-char-count="ctx.translatedCharCount.value"
+      :model-name="ctx.mobileReaderModelName.value"
+      :used-term-count="ctx.usedTermCount.value"
+      :used-character-count="ctx.usedCharacterCount.value"
+      :used-memory-count="ctx.usedMemoryCount.value"
+      :translation-status="ctx.translationStatus.value"
+      :translation-button-label="ctx.translationButtonLabel.value"
+      :translation-button-menu-items="ctx.translationButtonMenuItems.value"
+      :is-translating-chapter="ctx.isTranslatingChapter.value"
+      :is-polishing-chapter="ctx.isPolishingChapter.value"
+      :is-search-visible="ctx.isSearchVisible.value"
+      @undo="ctx.undo"
+      @redo="ctx.redo"
+      @update:edit-mode="
+        (value: EditMode) => {
+          ctx.editMode.value = value;
+        }
+      "
+      @toggle-export="(event: Event) => ctx.toggleExportMenu(event)"
+      @toggle-term-popover="(event: Event) => ctx.toggleTermPopover(event)"
+      @toggle-character-popover="(event: Event) => ctx.toggleCharacterPopover(event)"
+      @toggle-memory-popover="(event: Event) => ctx.handleToggleMemoryPopover(event)"
+      @translation-button-click="ctx.translationButtonClick"
+      @toggle-search="ctx.toggleSearch"
+      @toggle-keyboard-shortcuts="ctx.toggleKeyboardShortcutsPopover"
+      @toggle-special-instructions="ctx.toggleChapterSettingsPopover"
+    />
+    <ChapterToolbar
+      v-else-if="
         ctx.selectedChapter.value &&
         !ctx.selectedSettingMenu.value &&
-        (!ctx.isSmallScreen.value || ctx.workspaceMode.value === 'content')
+        (!ctx.isPhone.value || ctx.workspaceMode.value === 'content')
       "
       :selected-chapter="ctx.selectedChapter.value"
       :book="ctx.book.value || null"
@@ -207,7 +274,7 @@ const ctx = injectBookDetailsPage();
       :is-translating-chapter="ctx.isTranslatingChapter.value"
       :is-polishing-chapter="ctx.isPolishingChapter.value"
       :is-search-visible="ctx.isSearchVisible.value"
-      :is-small-screen="ctx.isSmallScreen.value"
+      :is-small-screen="ctx.isPhone.value"
       @undo="ctx.undo"
       @redo="ctx.redo"
       @update:edit-mode="
@@ -230,7 +297,7 @@ const ctx = injectBookDetailsPage();
       v-if="
         ctx.selectedChapter.value &&
         !ctx.selectedSettingMenu.value &&
-        (!ctx.isSmallScreen.value || ctx.workspaceMode.value === 'content')
+        (!ctx.isPhone.value || ctx.workspaceMode.value === 'content')
       "
       v-model:visible="ctx.isSearchVisible.value"
       v-model:search-query="ctx.searchQuery.value"
@@ -244,48 +311,13 @@ const ctx = injectBookDetailsPage();
       @replace-all="ctx.replaceAll"
     />
 
-    <!-- 平板端设置子导航 -->
-    <div
-      v-if="ctx.isSmallScreen.value && !ctx.isPhone.value && ctx.workspaceMode.value === 'settings'"
-      class="mobile-settings-subnav"
-    >
-      <button
-        class="settings-subnav-btn"
-        :class="{ 'settings-subnav-btn-active': ctx.selectedSettingMenu.value === 'terms' }"
-        @click="ctx.navigateToTermsSetting"
-      >
-        <i class="pi pi-bookmark" />
-        <span>术语</span>
-      </button>
-      <button
-        class="settings-subnav-btn"
-        :class="{ 'settings-subnav-btn-active': ctx.selectedSettingMenu.value === 'characters' }"
-        @click="ctx.navigateToCharactersSetting"
-      >
-        <i class="pi pi-users" />
-        <span>角色</span>
-      </button>
-      <button
-        class="settings-subnav-btn"
-        :class="{ 'settings-subnav-btn-active': ctx.selectedSettingMenu.value === 'memory' }"
-        @click="ctx.navigateToMemorySetting"
-      >
-        <i class="pi pi-database" />
-        <span>记忆</span>
-      </button>
-      <button class="settings-subnav-btn" @click="ctx.openScraperDialog">
-        <i class="pi pi-download" />
-        <span>更新</span>
-      </button>
-    </div>
-
     <div
       ref="scrollableContentRef"
       class="scrollable-content"
       :class="{
         '!overflow-hidden': !!ctx.selectedSettingMenu.value,
         'scrollable-content-mobile-hidden':
-          ctx.isSmallScreen.value &&
+          ctx.isPhone.value &&
           ctx.workspaceMode.value === 'settings' &&
           !ctx.selectedSettingMenu.value,
       }"
@@ -300,7 +332,7 @@ const ctx = injectBookDetailsPage();
         <TerminologyPanel
           v-if="
             ctx.selectedSettingMenu.value === 'terms' &&
-            (!ctx.isSmallScreen.value || ctx.workspaceMode.value === 'settings')
+            (!ctx.isPhone.value || ctx.workspaceMode.value === 'settings')
           "
           :book="ctx.book.value || null"
           class="flex-1 min-h-0"
@@ -309,7 +341,7 @@ const ctx = injectBookDetailsPage();
         <CharacterSettingPanel
           v-else-if="
             ctx.selectedSettingMenu.value === 'characters' &&
-            (!ctx.isSmallScreen.value || ctx.workspaceMode.value === 'settings')
+            (!ctx.isPhone.value || ctx.workspaceMode.value === 'settings')
           "
           :book="ctx.book.value || null"
           class="flex-1 min-h-0"
@@ -318,7 +350,7 @@ const ctx = injectBookDetailsPage();
         <MemoryPanel
           v-else-if="
             ctx.selectedSettingMenu.value === 'memory' &&
-            (!ctx.isSmallScreen.value || ctx.workspaceMode.value === 'settings')
+            (!ctx.isPhone.value || ctx.workspaceMode.value === 'settings')
           "
           :book="ctx.book.value || null"
           class="flex-1 min-h-0"
@@ -342,7 +374,7 @@ const ctx = injectBookDetailsPage();
             :terminologies="ctx.stableTerminologies.value"
             :character-settings="ctx.stableCharacterSettings.value"
             :book-id="ctx.bookId.value"
-            :is-small-screen="ctx.isSmallScreen.value"
+            :is-small-screen="ctx.isPhone.value"
             :selected-chapter-id="ctx.selectedChapterId.value"
             :translating-paragraph-ids="ctx.translatingParagraphIds.value"
             :polishing-paragraph-ids="ctx.polishingParagraphIds.value"
@@ -392,55 +424,6 @@ const ctx = injectBookDetailsPage();
     </div>
   </div>
 
-  <!-- 平板端底部工作区切换导航 -->
-  <div v-if="ctx.isSmallScreen.value && !ctx.isPhone.value" class="mobile-workspace-switcher">
-    <button
-      class="workspace-switch-btn"
-      :class="{ 'workspace-switch-btn-active': ctx.workspaceMode.value === 'catalog' }"
-      @click="ctx.switchWorkspaceMode('catalog')"
-    >
-      <i class="pi pi-list" />
-      <span>目录</span>
-    </button>
-    <button
-      class="workspace-switch-btn"
-      :class="{ 'workspace-switch-btn-active': ctx.workspaceMode.value === 'content' }"
-      @click="ctx.switchWorkspaceMode('content')"
-    >
-      <i class="pi pi-file" />
-      <span>内容</span>
-    </button>
-    <button
-      class="workspace-switch-btn"
-      :class="{ 'workspace-switch-btn-active': ctx.workspaceMode.value === 'settings' }"
-      @click="ctx.switchWorkspaceMode('settings')"
-    >
-      <i class="pi pi-cog" />
-      <span>设置</span>
-    </button>
-    <button
-      class="workspace-switch-btn relative"
-      :class="{
-        'workspace-switch-btn-active':
-          ctx.uiStore.rightPanelOpen && ctx.uiStore.activeRightTab === 'progress',
-      }"
-      @click="
-        () => {
-          ctx.uiStore.openRightPanel();
-          ctx.uiStore.setActiveRightTab('progress');
-        }
-      "
-    >
-      <i class="pi pi-objects-column" />
-      <span>进度</span>
-      <span
-        v-if="ctx.activeTranslationTaskCount.value > 0"
-        class="absolute top-0.5 right-0.5 min-w-3.5 h-3.5 px-0.5 text-[9px] font-bold rounded-full bg-primary-500 text-white flex items-center justify-center"
-      >
-        {{ ctx.activeTranslationTaskCount.value }}
-      </span>
-    </button>
-  </div>
 </template>
 
 <style scoped>
@@ -742,89 +725,6 @@ const ctx = injectBookDetailsPage();
 
 .no-selection-hint {
   margin: 0;
-}
-
-/* 平板端工作区切换 + 设置子导航 */
-.mobile-workspace-switcher {
-  flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.55);
-}
-
-.workspace-switch-btn {
-  flex: 1;
-  padding: 0.6rem 0.4rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  background: transparent;
-  border: none;
-  color: rgba(247, 244, 236, 0.55);
-  font-family: inherit;
-  font-size: 0.7rem;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.workspace-switch-btn i {
-  font-size: 0.95rem;
-}
-
-.workspace-switch-btn:hover {
-  color: rgba(247, 244, 236, 0.9);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.workspace-switch-btn-active {
-  color: #a3b7cf;
-  background: rgba(109, 136, 168, 0.16);
-}
-
-.mobile-settings-subnav {
-  flex-shrink: 0;
-  display: flex;
-  align-items: stretch;
-  padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.35);
-}
-
-.settings-subnav-btn {
-  flex: 1;
-  padding: 0.4rem 0.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: rgba(247, 244, 236, 0.55);
-  font-family: inherit;
-  font-size: 0.7rem;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.settings-subnav-btn i {
-  font-size: 0.85rem;
-}
-
-.settings-subnav-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.9);
-}
-
-.settings-subnav-btn-active {
-  color: #a3b7cf;
-  background: rgba(109, 136, 168, 0.16);
 }
 
 /* 小屏切换显示/隐藏辅助类 */

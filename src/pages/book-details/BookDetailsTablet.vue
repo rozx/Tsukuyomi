@@ -1,42 +1,262 @@
 <script setup lang="ts">
 /**
- * Tablet book-details layout — reuses BookDetailsDesktop end-to-end (toolbars,
- * catalog drawer, settings menus, ChapterContentPanel, edit flows, AI task
- * dispatch). The only tablet-specific treatment is a CSS wrapper that rewrites
- * `.paragraph-content` from a stacked flex to a 2-column grid so 原文 and 译文
- * render side-by-side, matching the handoff mockup's dual-pane reader.
+ * Tablet book-details layout — reuses BookDetailsDesktop for the dual-pane
+ * reader (catalog sidebar + chapter content), swaps in ChapterToolbarTablet
+ * inside BookDetailsDesktop when isTablet, and adds a right-edge vertical
+ * rail that toggles the two independent TabletChatPanel / TabletProgressPanel
+ * overlays (mounted in MainLayoutTablet).
  *
- * Forking ParagraphCard / ChapterContentPanel to build a bespoke tablet
- * template would duplicate ~2,700 lines of highlighted-text / term popover /
- * character popover / editing / multi-version selection logic. The CSS-only
- * treatment gets the visual layout right without touching the heavy logic.
+ * The 2-column grid for 原文 / 译文 is applied here via :deep() so we don't
+ * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
+ * term popover / character popover / editing / multi-version selection).
  */
+import { computed } from 'vue';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
+import { useUiStore } from 'src/stores/ui';
+import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
+
+const ui = useUiStore();
+const ctx = injectBookDetailsPage();
+
+const isChatActive = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'chat');
+const isProgressActive = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'progress');
+
+const toggleRail = (tab: 'chat' | 'progress') => {
+  if (ui.rightPanelOpen && ui.activeRightTab === tab) {
+    ui.closeRightPanel();
+    return;
+  }
+  ui.setActiveRightTab(tab);
+  ui.openRightPanel();
+};
 </script>
 
 <template>
   <div class="book-details-tablet">
     <BookDetailsDesktop />
+
+    <!-- 竖屏叠层遮罩：sidebar dock 打开时点击外侧关闭。横屏由 CSS display:none
+         隐藏，sidebar 参与 flex 布局、不需要遮罩 -->
+    <div
+      v-if="ctx.isTabletSidebarOpen.value"
+      class="bdt-sidebar-scrim"
+      aria-hidden="true"
+      @click="ctx.toggleTabletSidebar"
+    />
+
+    <aside class="bdt-rail" aria-label="章节辅助工具">
+      <button
+        type="button"
+        class="bdt-rail-btn"
+        :class="{ 'bdt-rail-btn--active': ctx.isTabletSidebarOpen.value }"
+        :title="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
+        :aria-label="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
+        :aria-pressed="ctx.isTabletSidebarOpen.value"
+        @click="ctx.toggleTabletSidebar"
+      >
+        <i
+          class="pi"
+          :class="ctx.isTabletSidebarOpen.value ? 'pi-angle-double-left' : 'pi-bars'"
+          aria-hidden="true"
+        />
+      </button>
+
+      <div class="bdt-rail-sep" />
+
+      <button
+        type="button"
+        class="bdt-rail-btn"
+        :class="{ 'bdt-rail-btn--active': isChatActive }"
+        title="AI 助手"
+        @click="() => toggleRail('chat')"
+      >
+        <i class="pi pi-sparkles" aria-hidden="true" />
+      </button>
+
+      <button
+        type="button"
+        class="bdt-rail-btn"
+        :class="{ 'bdt-rail-btn--active': isProgressActive }"
+        title="翻译进度"
+        @click="() => toggleRail('progress')"
+      >
+        <i class="pi pi-objects-column" aria-hidden="true" />
+        <span
+          v-if="ctx.activeTranslationTaskCount.value > 0"
+          class="bdt-rail-badge"
+        >
+          {{ ctx.activeTranslationTaskCount.value }}
+        </span>
+      </button>
+    </aside>
   </div>
 </template>
 
 <style scoped>
 .book-details-tablet {
+  position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  overflow: hidden;
 }
 
-.book-details-tablet > :deep(*) {
-  flex: 1;
-  min-height: 0;
+/* ─── 横屏：sidebar 参与 flex 布局，折叠时宽度归零，内容面板自动填满 ─── */
+.book-details-tablet :deep(.book-sidebar) {
+  width: 17rem;
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-right-color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed) {
+  width: 0;
+  border-right-color: transparent;
+}
+
+.book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed .sidebar-content) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 遮罩：仅在竖屏 sidebar 打开时显示，点击关闭 */
+.bdt-sidebar-scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  z-index: 15;
+}
+
+@media (orientation: portrait) {
+  .bdt-sidebar-scrim {
+    display: block;
+  }
+}
+
+/* ─── 竖屏：sidebar 改成可 dock 的 overlay 抽屉，不占布局——打开时从左侧
+       滑入叠在内容之上；折叠时 translate 出去藏起来；主内容始终全宽 ─── */
+@media (orientation: portrait) {
+  .book-details-tablet :deep(.book-sidebar) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 17rem;
+    max-width: 86%;
+    z-index: 20;
+    background: rgba(14, 16, 20, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  }
+
+  .book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed) {
+    width: 17rem;
+    border-right-color: rgba(255, 255, 255, 0.06);
+    transform: translateX(-100%);
+  }
+
+  .book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed .sidebar-content) {
+    opacity: 1;
+    pointer-events: none;
+  }
+}
+
+/* ChapterContentPanel 自带的章节头（标题 / 段落数 / 字数 / 时间戳 / 查看原文 / 章节摘要）
+   在平板上与 ChapterToolbarTablet 的标题 + 状态行重复，直接隐藏整块 */
+.book-details-tablet :deep(.chapter-header) {
+  display: none;
+}
+
+/* 侧边栏底部的"返回书籍列表"条——平板用左侧主导航栏（书库按钮）回退，
+   与 mobile appbar 的 back 行为一致；这条独立 bar 不在设计里 */
+.book-details-tablet :deep(.back-link-wrapper) {
+  display: none;
+}
+
+/* ───── 侧边栏密度压缩（竖屏 17rem 宽度下桌面默认尺寸显得太挤） ─────
+   参考 mobile `.mbd-hero` 的紧凑度：小封面 + 单行压缩字号 + 精简 stats */
+.book-details-tablet :deep(.book-header-content) {
+  padding: 10px 12px;
+  gap: 0.6rem;
+}
+
+.book-details-tablet :deep(.book-cover-wrapper) {
+  width: 2.75rem;
+  height: 4rem;
+  border-radius: 5px;
+}
+
+.book-details-tablet :deep(.book-title) {
+  font-size: 0.88rem;
+  line-height: 1.3;
+  margin-bottom: 0.25rem;
+  -webkit-line-clamp: 2;
+}
+
+.book-details-tablet :deep(.book-stats) {
+  font-size: 0.68rem;
+  gap: 0.3rem;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.book-details-tablet :deep(.book-stats .stat-icon) {
+  display: none;
+}
+
+.book-details-tablet :deep(.book-stats .stat-label) {
+  opacity: 0.7;
+}
+
+.book-details-tablet :deep(.book-separator) {
+  margin: 0 12px;
+}
+
+/* 设置菜单——收紧条目高度/左右 padding，图标也稍微缩 */
+.book-details-tablet :deep(.settings-menu-wrapper) {
+  padding: 0.1rem 0.35rem;
+}
+
+.book-details-tablet :deep(.settings-menu-item) {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  gap: 0.45rem;
+}
+
+.book-details-tablet :deep(.settings-menu-icon) {
+  font-size: 0.78rem;
+}
+
+.book-details-tablet :deep(.settings-menu-separator) {
+  margin: 0.35rem 0.35rem 0;
+}
+
+/* "目录" 头部 + 新卷/新章节 —— 收紧行高和按钮 padding */
+.book-details-tablet :deep(.sidebar-title-wrapper) {
+  padding: 0.35rem 0.75rem 0.25rem;
+}
+
+.book-details-tablet :deep(.sidebar-title) {
+  font-size: 0.8rem;
+}
+
+.book-details-tablet :deep(.sidebar-actions .p-button) {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.72rem;
+}
+
+/* 双栏阅读：原文 / 译文 side-by-side */
 .book-details-tablet :deep(.paragraph-content) {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   column-gap: 20px;
   padding-right: 0;
 }
@@ -81,5 +301,82 @@ import BookDetailsDesktop from './BookDetailsDesktop.vue';
 .book-details-tablet :deep(.edit-translation-icon-button),
 .book-details-tablet :deep(.context-menu-icon-button) {
   z-index: 3;
+}
+
+/* ───── Right-edge vertical rail (AI 助手 / 翻译进度) ───── */
+.bdt-rail {
+  flex-shrink: 0;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 6px;
+  background: rgba(10, 12, 15, 0.55);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bdt-rail-btn {
+  position: relative;
+  width: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: rgba(247, 244, 236, 0.72);
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bdt-rail-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e9edf5;
+}
+
+.bdt-rail-btn--active {
+  background: rgba(109, 136, 168, 0.18);
+  border-color: rgba(109, 136, 168, 0.32);
+  color: #a3b7cf;
+}
+
+.bdt-rail-btn i {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.bdt-rail-sep {
+  width: 24px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+.bdt-rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d97757;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1;
+  border: 1.5px solid #080a0d;
 }
 </style>

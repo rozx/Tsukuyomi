@@ -8,6 +8,7 @@ import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import { APP_NAME } from 'src/constants/app';
+import { APP_VERSION } from 'src/constants/version';
 
 const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
@@ -40,6 +41,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
   <div class="tsm-sysbar-tablet">
     <div class="tst-brand">
       <span class="tst-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }} · MOONLIT TRANSLATOR</span>
+      <span class="tst-brand-version">v{{ APP_VERSION }}</span>
     </div>
 
     <div class="tst-actions">
@@ -135,11 +137,14 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
 
 .tst-brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  line-height: 1.1;
 }
 
 .tst-brand-name {
@@ -148,6 +153,17 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
   letter-spacing: 0.22em;
   color: rgba(155, 164, 179, 0.85);
   text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tst-brand-version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 400;
+  color: rgba(174, 183, 198, 0.32);
+  letter-spacing: 0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
