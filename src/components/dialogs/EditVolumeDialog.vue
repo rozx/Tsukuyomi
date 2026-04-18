@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -67,12 +67,12 @@ const handleTranslationApplied = (value: string) => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
     header="编辑卷标题"
-    :style="{ width: '30rem' }"
-    :draggable="false"
+    desktop-width="30rem"
+    eyebrow="VOLUME"
+    sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -112,6 +112,6 @@ const handleTranslationApplied = (value: string) => {
         @click="handleSave"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 

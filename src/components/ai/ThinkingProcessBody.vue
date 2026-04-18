@@ -5,11 +5,12 @@
  * `active` prop 由父面板传入（桌面跟 Popover show/hide，手机跟 sheet visible）。
  * 面板关闭时 watch 会短路，避免流式思考期间做无意义的滚动计算。
  */
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
+import { useUiStore } from 'src/stores/ui';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { formatTaskDuration } from 'src/utils';
 import ThinkingDetailDialog from './ThinkingDetailDialog.vue';
@@ -23,6 +24,13 @@ const props = defineProps<{
 
 const aiProcessing = useAIProcessingStore();
 const confirm = useConfirm();
+const uiStore = useUiStore();
+
+const isPhone = computed(() => uiStore.deviceType === 'phone');
+const hasHeaderActions = computed(
+  () =>
+    aiProcessing.reviewedTasksList.length > 0 || aiProcessing.allTasksList.length > 0,
+);
 
 const now = ref(Date.now());
 let nowTimer: number | null = null;
@@ -249,9 +257,11 @@ onUnmounted(() => {
 <template>
   <div class="flex flex-col thinking-body">
     <div
+      v-if="!isPhone || hasHeaderActions"
       class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10"
+      :class="{ 'thinking-header--mobile-actions-only': isPhone }"
     >
-      <h3 class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
+      <h3 v-if="!isPhone" class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
       <div class="thinking-header-actions flex items-center gap-2">
         <Button
           v-if="aiProcessing.reviewedTasksList.length > 0"
@@ -445,6 +455,12 @@ onUnmounted(() => {
     padding-bottom: 0.65rem;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+
+  .thinking-header--mobile-actions-only {
+    justify-content: flex-end;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
   }
 
   .thinking-header-actions {

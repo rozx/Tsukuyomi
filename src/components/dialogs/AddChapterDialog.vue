@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 
 interface VolumeOption {
   label: string;
@@ -49,12 +49,12 @@ const handleCancel = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
     header="添加新章节"
-    :style="{ width: '25rem' }"
-    :draggable="false"
+    desktop-width="25rem"
+    eyebrow="CHAPTER"
+    sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -91,6 +91,6 @@ const handleCancel = () => {
         @click="handleSave"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { formatTaskDuration } from 'src/utils';
@@ -35,14 +35,11 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
-    :draggable="false"
-    :closable="true"
-    :style="{ width: 'min(48rem, 94vw)' }"
-    :content-style="{ display: 'flex', flexDirection: 'column', padding: '0' }"
     :header="headerText"
+    desktop-width="min(48rem, 94vw)"
+    eyebrow="AI · THINKING"
     @update:visible="handleClose"
   >
     <div v-if="task" class="thinking-detail-body">
@@ -68,7 +65,7 @@ const handleClose = () => {
     <template #footer>
       <Button label="关闭" icon="pi pi-times" text severity="secondary" @click="handleClose" />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

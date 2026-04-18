@@ -7,12 +7,13 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useSettingsStore } from 'src/stores/settings';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
+import { useUiStore } from 'src/stores/ui';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
@@ -21,7 +22,10 @@ import type { RestorableItem } from 'src/services/sync-data-service';
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();
 const booksStore = useBooksStore();
+const uiStore = useUiStore();
 const toast = useToastWithHistory();
+
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 // 驱动相对时间显示的定时刷新
 const nowMs = ref(Date.now());
@@ -86,6 +90,15 @@ const { sync, restoreDeletedItems } = useGistSync();
 const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
 const selectedRestoreItems = ref<string[]>([]);
+
+// 关闭（含遮罩 / X 按钮）时也走 skip 流程，避免下次再打开时残留上次的 items
+const handleRestoreDialogVisibleChange = (next: boolean) => {
+  if (!next && showRestoreDialog.value) {
+    skipRestore();
+  } else {
+    showRestoreDialog.value = next;
+  }
+};
 
 const syncData = async () => {
   const config = gistSync.value;
@@ -179,12 +192,26 @@ const syncStageLabel = computed(() => {
 
 <template>
   <div class="flex flex-col space-y-4">
-    <div class="flex items-center justify-between pb-3 border-b border-white/10">
+    <div
+      v-if="!isPhone"
+      class="flex items-center justify-between pb-3 border-b border-white/10"
+    >
       <h3 class="text-lg font-semibold text-moon/90">同步状态</h3>
       <i :class="[syncStatus.icon, syncStatus.color]" />
     </div>
 
     <div class="space-y-3">
+      <div
+        v-if="isPhone"
+        class="flex items-center justify-between pb-2 border-b border-white/10"
+      >
+        <span class="text-xs text-moon/60">当前状态</span>
+        <span class="flex items-center gap-2 text-xs text-moon/90">
+          <i :class="[syncStatus.icon, syncStatus.color]" />
+          <span>{{ syncStatus.label }}</span>
+        </span>
+      </div>
+
       <div>
         <label class="text-xs text-moon/60">最后同步时间</label>
         <p class="text-sm text-moon/90 mt-1">
@@ -253,14 +280,13 @@ const syncStageLabel = computed(() => {
     </div>
   </div>
 
-  <!-- 恢复已删除项目对话框（桌面/手机通用；PrimeVue Dialog 自带 teleport） -->
-  <Dialog
-    v-model:visible="showRestoreDialog"
-    modal
+  <!-- 恢复已删除项目对话框（桌面 Dialog / 手机 BottomSheet） -->
+  <AdaptiveDialog
+    :visible="showRestoreDialog"
     header="发现已删除的项目"
-    :style="{ width: '450px' }"
-    :closable="true"
-    @hide="skipRestore"
+    desktop-width="450px"
+    eyebrow="RESTORE"
+    @update:visible="handleRestoreDialogVisibleChange"
   >
     <div class="space-y-4">
       <p class="text-moon/80">远程存在以下您之前删除的项目，您可以选择恢复它们：</p>
@@ -296,17 +322,15 @@ const syncStageLabel = computed(() => {
     </div>
 
     <template #footer>
-      <div class="flex gap-2 justify-end">
-        <Button label="跳过" class="p-button-text" @click="skipRestore" />
-        <Button
-          label="恢复选中项目"
-          class="p-button-primary"
-          :disabled="selectedRestoreItems.length === 0"
-          @click="confirmRestore"
-        />
-      </div>
+      <Button label="跳过" class="p-button-text" @click="skipRestore" />
+      <Button
+        label="恢复选中项目"
+        class="p-button-primary"
+        :disabled="selectedRestoreItems.length === 0"
+        @click="confirmRestore"
+      />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

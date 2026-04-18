@@ -116,6 +116,9 @@ watch(
           <div class="mbs-body" :class="{ 'mbs-body--full-bleed': fullBleed }">
             <slot />
           </div>
+          <div v-if="$slots.footer" class="mbs-footer">
+            <slot name="footer" :close="close" />
+          </div>
         </div>
       </div>
     </Transition>
@@ -242,12 +245,35 @@ watch(
   color: rgba(247, 244, 236, 0.88);
   display: flex;
   flex-direction: column;
+  /*
+   * Root cause of sheet-content overflow: the sheet is narrow (often ≤375px),
+   * and desktop-first content (URL chips, long tokens) has a min-content that
+   * exceeds that width. In a flex-column with align-items:stretch, a child's
+   * used cross-axis size is max(min-content, container) — so a single 400px
+   * min-content token stretches the whole column past the sheet, and the
+   * entire layout follows. `overflow-wrap: anywhere` tells the browser that
+   * min-content for text is 0 (break anywhere is allowed), which lets flex
+   * stretch actually resolve to the sheet width instead of the widest token.
+   */
+  overflow-wrap: anywhere;
 }
 
 /* 全出血模式：消除 body 内边距并不再滚动（由内部子组件自己管理滚动区） */
 .mbs-body--full-bleed {
   padding: 0;
   overflow: hidden;
+}
+
+/* sheet 底部固定操作区 —— 放置主要按钮行，独立于可滚动 body */
+.mbs-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(14, 17, 22, 0.98);
 }
 
 /* 进出动画 */

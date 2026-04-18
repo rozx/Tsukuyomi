@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AdaptiveDialog: typeof import('./components/layout/AdaptiveDialog.vue')['default']
     AddChapterDialog: typeof import('./components/dialogs/AddChapterDialog.vue')['default']
     AddVolumeDialog: typeof import('./components/dialogs/AddVolumeDialog.vue')['default']
     AIModelDialog: typeof import('./components/dialogs/AIModelDialog.vue')['default']
@@ -44,6 +45,7 @@ declare module 'vue' {
     DeleteCharacterConfirmDialog: typeof import('./components/dialogs/DeleteCharacterConfirmDialog.vue')['default']
     DeleteTermConfirmDialog: typeof import('./components/dialogs/DeleteTermConfirmDialog.vue')['default']
     DeleteVolumeConfirmDialog: typeof import('./components/dialogs/DeleteVolumeConfirmDialog.vue')['default']
+    Dialog: typeof import('primevue/dialog')['default']
     EditChapterDialog: typeof import('./components/dialogs/EditChapterDialog.vue')['default']
     EditVolumeDialog: typeof import('./components/dialogs/EditVolumeDialog.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']

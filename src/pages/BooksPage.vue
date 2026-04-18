@@ -6,7 +6,7 @@
  */
 import { computed } from 'vue';
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
@@ -63,12 +63,12 @@ const variantComponent = computed(() => {
   <ConfirmDialog />
 
   <!-- 删除确认对话框 -->
-  <Dialog
+  <AdaptiveDialog
     v-model:visible="ctx.showDeleteConfirm.value"
-    modal
     header="确认删除"
-    :style="{ width: '30rem', maxWidth: '90vw' }"
-    class="delete-confirm-dialog"
+    desktop-width="30rem"
+    eyebrow="DELETE"
+    dialog-class="delete-confirm-dialog"
   >
     <div class="space-y-4">
       <div class="flex items-start gap-3">
@@ -123,7 +123,7 @@ const variantComponent = computed(() => {
         @click="ctx.confirmDeleteBook"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 
   <!-- Sort menu + file input live in the Desktop variant (mobile has neither) -->
 </template>

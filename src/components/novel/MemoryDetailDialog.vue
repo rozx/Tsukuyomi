@@ -2,11 +2,11 @@
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import ScrollPanel from 'primevue/scrollpanel';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Memory } from 'src/models/memory';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { MemoryService } from 'src/services/memory-service';
@@ -35,6 +35,12 @@ const emit = defineEmits<{
 const isEditing = ref(false);
 const editedSummary = ref('');
 const editedContent = ref('');
+
+const dialogHeader = computed(() => {
+  if (!props.memory) return '记忆详情';
+  if (isEditing.value) return '编辑记忆';
+  return props.memory.summary;
+});
 
 // 嵌入状态
 const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
@@ -239,32 +245,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
+    :header="dialogHeader"
+    desktop-width="800px"
+    eyebrow="MEMORY"
+    dialog-class="memory-detail-dialog"
     @update:visible="handleClose"
-    :modal="true"
-    :closable="true"
-    :dismissable-mask="true"
-    class="memory-detail-dialog"
-    :style="{ width: '800px', maxWidth: '95vw' }"
-    :pt="{
-      root: { class: 'bg-surface-900 border border-white/10' },
-      header: { class: 'border-b border-white/10 p-4' },
-      content: { class: 'p-0' },
-      footer: { class: 'border-t border-white/10 p-4' },
-    }"
   >
-    <template #header v-if="memory">
-      <div class="flex items-center gap-3 min-w-0 overflow-hidden">
-        <i class="pi pi-bookmark text-primary-400 text-xl shrink-0"></i>
-        <h3 v-if="!isEditing" class="text-lg font-medium text-moon-100 m-0 truncate min-w-0">
-          {{ memory.summary }}
-        </h3>
-        <span v-else class="text-lg font-medium text-moon-100/70 truncate">编辑记忆</span>
-      </div>
-    </template>
-
-    <div v-if="memory" class="p-4 space-y-6">
+    <div v-if="memory" class="space-y-6">
       <!-- 摘要 -->
       <div>
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
@@ -376,7 +365,7 @@ onUnmounted(() => {
         </template>
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

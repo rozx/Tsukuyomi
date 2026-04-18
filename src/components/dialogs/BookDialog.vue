@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -12,6 +11,7 @@ import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Novel, Chapter } from 'src/models/novel';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
@@ -24,7 +24,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { SettingsService } from 'src/services/settings-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
-import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
+import { useUiStore } from 'src/stores/ui';
 import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
 // 格式化日期显示
@@ -63,26 +63,8 @@ const titleInputId = computed<string>(() => {
   return prefix ? `${prefix}-title` : 'title';
 });
 const toast = useToastWithHistory();
-const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
-  desktopWidth: '900px',
-  tabletWidth: '94vw',
-  desktopHeight: '90vh',
-  tabletHeight: '94vh',
-});
-const clearConfirmDialogStyle = computed(() =>
-  isPhone.value
-    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
-    : { width: '500px' },
-);
-const clearConfirmDialogClass = computed(() => (isPhone.value ? 'adaptive-dialog-fullscreen' : ''));
-const unsavedConfirmDialogStyle = computed(() =>
-  isPhone.value
-    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
-    : { width: '460px' },
-);
-const unsavedConfirmDialogClass = computed(() =>
-  isPhone.value ? 'adaptive-dialog-fullscreen' : '',
-);
+const uiStore = useUiStore();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 // 表单数据
 const formData = ref<Partial<Novel>>({
@@ -529,15 +511,17 @@ watch(
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     :header="mode === 'add' ? '添加书籍' : '编辑书籍'"
-    :modal="true"
-    :style="dialogStyle"
+    desktop-width="900px"
+    desktop-height="90vh"
+    eyebrow="BOOK"
     :closable="!props.loading && !hasChildDialogOpen"
-    :dismissableMask="!hasChildDialogOpen"
-    :closeOnEscape="!hasChildDialogOpen"
-    :class="['book-dialog', dialogClass]"
+    :dismissable-mask="!hasChildDialogOpen"
+    :close-on-escape="!hasChildDialogOpen"
+    :sheet-dismiss-on-mask-click="!hasChildDialogOpen"
+    dialog-class="book-dialog"
     @update:visible="handleDialogVisibleChange"
   >
     <div class="book-dialog-layout flex flex-col gap-5 py-2 lg:flex-row lg:gap-6">
@@ -882,18 +866,17 @@ watch(
             >
               <img :src="formData.cover.url" alt="封面预览" class="w-full h-full object-cover" />
             </div>
-            <div class="flex gap-2 items-stretch">
+            <div class="flex flex-nowrap gap-2 items-stretch">
               <Button
                 :label="formData.cover?.url ? '管理封面' : '上传封面'"
                 :icon="formData.cover?.url ? 'pi pi-image' : 'pi pi-upload'"
-                class="p-button-outlined flex-1"
+                class="p-button-outlined flex-1 min-w-0"
                 @click="showCoverManager = true"
               />
               <Button
                 v-if="formData.cover?.url"
                 icon="pi pi-times"
-                class="p-button-outlined p-button-danger flex-shrink-0 clear-cover-button"
-                style="min-width: 2.5rem"
+                class="p-button-outlined p-button-danger flex-shrink-0"
                 title="清除封面"
                 @click="handleClearCover"
               />
@@ -977,45 +960,39 @@ watch(
       @apply="handleApplyScrapedData"
     />
 
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showUnsavedCloseConfirm"
       header="放弃未保存修改？"
-      :modal="true"
-      :style="unsavedConfirmDialogStyle"
-      :class="unsavedConfirmDialogClass"
-      :dismissableMask="true"
-      :closeOnEscape="true"
+      desktop-width="460px"
+      eyebrow="UNSAVED"
+      sheet-min-height="auto"
     >
       <div class="space-y-3">
         <p class="text-moon/90">当前表单有未保存修改，关闭后这些修改将丢失。</p>
         <p class="text-moon/70 text-sm">建议先保存，或确认放弃修改后关闭。</p>
       </div>
       <template #footer>
-        <div class="flex justify-end gap-2 w-full">
-          <Button
-            label="继续编辑"
-            icon="pi pi-pencil"
-            class="p-button-text"
-            @click="cancelDiscardAndKeepEditing"
-          />
-          <Button
-            label="放弃修改并关闭"
-            icon="pi pi-times"
-            class="p-button-danger"
-            @click="confirmDiscardAndClose"
-          />
-        </div>
+        <Button
+          label="继续编辑"
+          icon="pi pi-pencil"
+          class="p-button-text"
+          @click="cancelDiscardAndKeepEditing"
+        />
+        <Button
+          label="放弃修改并关闭"
+          icon="pi pi-times"
+          class="p-button-danger"
+          @click="confirmDiscardAndClose"
+        />
       </template>
-    </Dialog>
+    </AdaptiveDialog>
 
     <!-- 清除确认对话框 -->
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showClearConfirm"
       header="确认清除所有卷和章节"
-      :modal="true"
-      :style="clearConfirmDialogStyle"
-      :class="clearConfirmDialogClass"
-      :closable="true"
+      desktop-width="500px"
+      eyebrow="CLEAR"
     >
       <div class="space-y-4">
         <p class="text-moon/90">
@@ -1054,30 +1031,13 @@ watch(
           @click="confirmClearVolumes"
         />
       </template>
-    </Dialog>
-  </Dialog>
+    </AdaptiveDialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>
 :deep(.book-dialog .p-dialog-content) {
   overflow-x: hidden;
-}
-
-/* 确保清除封面按钮与普通按钮高度一致，并匹配深色主题 */
-:deep(.clear-cover-button.p-button-icon-only) {
-  height: auto !important;
-  padding: 0.625rem 1.25rem !important;
-  min-width: 2.5rem !important;
-  background: transparent !important;
-}
-
-/* 确保 outlined danger 按钮在深色主题中正确显示 */
-:deep(.clear-cover-button.p-button-outlined.p-button-danger) {
-  background: transparent !important;
-}
-
-:deep(.clear-cover-button.p-button-outlined.p-button-danger:hover) {
-  background: rgba(255, 143, 163, 0.1) !important;
 }
 
 .special-instructions-tabs :deep(.p-tablist) {

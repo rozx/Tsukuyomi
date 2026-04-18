@@ -256,6 +256,19 @@ const CUSTOM_CSS = `
   position: relative !important;
 }
 
+/*
+ * PrimeVue ships .p-button-icon-only::after with a hidden nbsp (content "\A0")
+ * to reserve a line-box so icon-only buttons match the height of labeled buttons.
+ * That hack relies on .p-button clipping via overflow:hidden. Since this theme
+ * forces overflow:visible !important above (for badges / tooltips / focus rings
+ * that should spill outside the button), the pseudo-element is no longer clipped
+ * and inflates icon-only buttons vertically (~72-90px tall). Neutralize it — we
+ * rely on natural padding + icon size, which is already consistent across buttons.
+ */
+.p-button-icon-only::after {
+  content: none !important;
+}
+
 /* Toast severity styling for Moonlight Glow theme - Enhanced Design */
 /* Base Toast container styling */
 .p-toast {

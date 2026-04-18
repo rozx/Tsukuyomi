@@ -1,13 +1,15 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     header="AI 提问"
-    :modal="true"
+    desktop-width="min(920px, 92vw)"
+    desktop-height="88vh"
+    eyebrow="AI · ASK"
     :closable="false"
-    :draggable="false"
-    :resizable="false"
-    :style="{ width: 'min(920px, 92vw)', maxHeight: '88vh' }"
-    class="ask-user-dialog"
+    :dismissable-mask="false"
+    :close-on-escape="false"
+    :sheet-dismiss-on-mask-click="false"
+    dialog-class="ask-user-dialog"
   >
     <div class="content">
       <div v-if="isBatch" class="batch-header">
@@ -101,14 +103,14 @@
         </div>
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useAskUserStore } from 'src/stores/ask-user';
 
 const askUserStore = useAskUserStore();

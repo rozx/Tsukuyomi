@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -315,13 +315,12 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     header="管理封面"
-    :modal="true"
-    :style="{ width: '700px' }"
-    :closable="true"
-    class="cover-manager-dialog"
+    desktop-width="700px"
+    eyebrow="COVER"
+    dialog-class="cover-manager-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
     <div class="space-y-4 py-2">
@@ -512,7 +511,7 @@ const handleClose = () => {
         @click="handleConfirm"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

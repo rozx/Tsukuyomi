@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import InputChips from 'primevue/inputchips';
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import Checkbox from 'primevue/checkbox';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
@@ -360,12 +360,12 @@ const handleTranslate = async () => {
   </div>
 
   <!-- 翻译结果对话框 -->
-  <Dialog
+  <AdaptiveDialog
     v-model:visible="showTranslationDialog"
-    modal
     header="翻译完成"
-    :style="{ width: '50rem', maxWidth: '90vw' }"
-    class="translation-dialog"
+    desktop-width="50rem"
+    eyebrow="TRANSLATION"
+    dialog-class="translation-dialog"
   >
     <div class="translation-result-container">
       <div class="translation-result-header">
@@ -416,7 +416,7 @@ const handleTranslate = async () => {
         @click="handleApplyTranslation"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

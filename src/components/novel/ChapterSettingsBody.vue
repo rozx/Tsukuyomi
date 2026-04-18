@@ -13,6 +13,7 @@ import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import InputSwitch from 'primevue/inputswitch';
 import InputNumber from 'primevue/inputnumber';
+import { useUiStore } from 'src/stores/ui';
 import type { Novel, Chapter } from 'src/models/novel';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
@@ -43,6 +44,9 @@ const emit = defineEmits<{
   ): void;
   (e: 'close'): void;
 }>();
+
+const uiStore = useUiStore();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 const mainTab = ref<string>('global');
 const instructionTab = ref<string>('translation');
@@ -127,7 +131,7 @@ const handleInstructionTabChange = (value: string | number) => {
 
 <template>
   <div class="chapter-settings-body flex flex-col h-full overflow-hidden">
-    <div class="cs-header p-3 border-b border-white/10 flex-shrink-0">
+    <div v-if="!isPhone" class="cs-header p-3 border-b border-white/10 flex-shrink-0">
       <h4 class="font-medium text-moon-100">翻译设置</h4>
       <p class="text-xs text-moon/60 mt-1">全局设置应用于整个书籍，章节设置仅应用于当前章节</p>
     </div>
