@@ -300,13 +300,13 @@ export const memoryTools: ToolDefinition[] = [
         content: string;
         summary: string;
       };
-      if (!content) {
+      if (!content?.trim()) {
         return JSON.stringify({
           success: false,
           error: '内容不能为空',
         });
       }
-      if (!summary) {
+      if (!summary?.trim()) {
         return JSON.stringify({
           success: false,
           error: '摘要不能为空',
@@ -314,7 +314,7 @@ export const memoryTools: ToolDefinition[] = [
       }
 
       try {
-        const memory = await MemoryService.createMemory(bookId, content, summary);
+        const memory = await MemoryService.createMemory(bookId, content.trim(), summary.trim());
 
         // 报告创建操作
         if (onAction) {
@@ -390,13 +390,13 @@ export const memoryTools: ToolDefinition[] = [
           error: 'Memory ID 不能为空',
         });
       }
-      if (!content) {
+      if (!content?.trim()) {
         return JSON.stringify({
           success: false,
           error: '内容不能为空',
         });
       }
-      if (!summary) {
+      if (!summary?.trim()) {
         return JSON.stringify({
           success: false,
           error: '摘要不能为空',
@@ -413,7 +413,12 @@ export const memoryTools: ToolDefinition[] = [
           });
         }
 
-        const memory = await MemoryService.updateMemory(bookId, memory_id, content, summary);
+        const memory = await MemoryService.updateMemory(
+          bookId,
+          memory_id,
+          content.trim(),
+          summary.trim(),
+        );
 
         // 报告更新操作
         if (onAction) {

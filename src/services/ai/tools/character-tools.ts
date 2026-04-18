@@ -84,8 +84,16 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('书籍 ID 不能为空');
       }
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
-      if (!name || !translation) {
+      if (!name?.trim() || !translation?.trim()) {
         throw new Error('角色名称和翻译不能为空');
+      }
+      if (aliases && Array.isArray(aliases)) {
+        const hasBlankAlias = aliases.some(
+          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
+        );
+        if (hasBlankAlias) {
+          throw new Error('别名的名称和翻译不能为空');
+        }
       }
 
       const characterData: {
@@ -96,15 +104,15 @@ export const characterTools: ToolDefinition[] = [
         speakingStyle?: string;
         aliases?: Array<{ name: string; translation: string }>;
       } = {
-        name,
-        translation: normalizeTranslationQuotes(translation),
+        name: name.trim(),
+        translation: normalizeTranslationQuotes(translation.trim()),
       };
 
       // 规范化别名翻译
       if (aliases && Array.isArray(aliases)) {
         characterData.aliases = aliases.map((alias) => ({
-          name: alias.name,
-          translation: normalizeTranslationQuotes(alias.translation),
+          name: alias.name.trim(),
+          translation: normalizeTranslationQuotes(alias.translation.trim()),
         }));
       }
 
@@ -370,6 +378,20 @@ export const characterTools: ToolDefinition[] = [
       if (!character_id) {
         throw new Error('角色 ID 不能为空');
       }
+      if (name !== undefined && !name.trim()) {
+        throw new Error('角色名称不能为空');
+      }
+      if (translation !== undefined && !translation.trim()) {
+        throw new Error('角色翻译不能为空');
+      }
+      if (aliases !== undefined && Array.isArray(aliases)) {
+        const hasBlankAlias = aliases.some(
+          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
+        );
+        if (hasBlankAlias) {
+          throw new Error('别名的名称和翻译不能为空');
+        }
+      }
 
       // 在更新前获取原始数据，用于 revert
       const booksStore = useBooksStore();
@@ -387,10 +409,10 @@ export const characterTools: ToolDefinition[] = [
       } = {};
 
       if (name !== undefined) {
-        updates.name = name;
+        updates.name = name.trim();
       }
       if (translation !== undefined) {
-        updates.translation = normalizeTranslationQuotes(translation);
+        updates.translation = normalizeTranslationQuotes(translation.trim());
       }
       if (sex !== undefined) {
         updates.sex = sex as 'male' | 'female' | 'other' | undefined;
@@ -404,8 +426,8 @@ export const characterTools: ToolDefinition[] = [
       if (aliases !== undefined) {
         updates.aliases = (aliases as Array<{ name: string; translation: string }>).map(
           (alias: { name: string; translation: string }) => ({
-            name: alias.name,
-            translation: normalizeTranslationQuotes(alias.translation),
+            name: alias.name.trim(),
+            translation: normalizeTranslationQuotes(alias.translation.trim()),
           }),
         );
       }

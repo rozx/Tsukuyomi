@@ -51,13 +51,13 @@ export const terminologyTools: ToolDefinition[] = [
         translation: string;
         description?: string;
       };
-      if (!name || !translation) {
+      if (!name?.trim() || !translation?.trim()) {
         throw new Error('术语名称和翻译不能为空');
       }
 
       const term = await TerminologyService.addTerminology(bookId, {
-        name,
-        translation: normalizeTranslationQuotes(translation),
+        name: name.trim(),
+        translation: normalizeTranslationQuotes(translation.trim()),
         ...(description !== undefined ? { description } : {}),
       });
 
@@ -257,6 +257,9 @@ export const terminologyTools: ToolDefinition[] = [
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
       }
+      if (translation !== undefined && !translation.trim()) {
+        throw new Error('术语翻译不能为空');
+      }
 
       // 在更新前获取原始数据，用于 revert
       const booksStore = useBooksStore();
@@ -270,7 +273,7 @@ export const terminologyTools: ToolDefinition[] = [
       } = {};
 
       if (translation !== undefined) {
-        updates.translation = normalizeTranslationQuotes(translation);
+        updates.translation = normalizeTranslationQuotes(translation.trim());
       }
       if (description !== undefined) {
         updates.description = description;

@@ -42,12 +42,7 @@ defineExpose({
   </Popover>
 
   <!-- 手机：底部抽屉 -->
-  <MobileBottomSheet
-    v-else
-    v-model:visible="mobileVisible"
-    title="同步状态"
-    eyebrow="CLOUD · GIST"
-  >
+  <MobileBottomSheet v-else v-model:visible="mobileVisible" title="同步状态" eyebrow="CLOUD · GIST">
     <SyncStatusBody />
   </MobileBottomSheet>
 </template>
@@ -55,5 +50,7 @@ defineExpose({
 <style scoped>
 .sync-popover :deep(.p-popover-content) {
   padding: 1rem;
+  max-height: 70vh;
+  overflow-y: auto;
 }
 </style>

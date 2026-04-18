@@ -1,10 +1,16 @@
-import { describe, expect, it, jest, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, jest, mock, beforeEach, spyOn } from 'bun:test';
 import { createTranslationTools } from './translation-tools';
 import { taskStatusTools } from './task-status-tools';
 import { bookTools } from './book-tools';
+import { terminologyTools } from './terminology-tools';
+import { characterTools } from './character-tools';
+import { memoryTools } from './memory-tools';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
+import { TerminologyService } from 'src/services/terminology-service';
+import { CharacterSettingService } from 'src/services/character-setting-service';
+import { MemoryService } from 'src/services/memory-service';
 import { useBooksStore } from 'src/stores/books';
 
 // Mock dependencies
@@ -829,6 +835,366 @@ describe('AI Tools Tests', () => {
       expect(parsed.success).toBe(true);
       expect(ChapterService.updateChapter).toHaveBeenCalled();
       expect(mockContext.onAction).toHaveBeenCalled();
+    });
+  });
+
+  // 断言 handler 调用会抛出包含指定消息的错误
+  // （handler 返回类型是 Promise<string> | string，不能直接用 expect().rejects，
+  // 否则会触发 @typescript-eslint/await-thenable）
+  const expectThrows = async (
+    invoke: () => Promise<string> | string,
+    message: string,
+  ) => {
+    let caught: unknown;
+    try {
+      await Promise.resolve(invoke());
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain(message);
+  };
+
+  describe('Terminology Tools (blank-value validation)', () => {
+    const createTermTool = terminologyTools.find(
+      (t) => t.definition.function.name === 'create_term',
+    );
+    const updateTermTool = terminologyTools.find(
+      (t) => t.definition.function.name === 'update_term',
+    );
+
+    describe('create_term', () => {
+      it('rejects blank name', async () => {
+        await expectThrows(
+          () => createTermTool!.handler({ name: '   ', translation: '英雄' }, mockContext),
+          '术语名称和翻译不能为空',
+        );
+      });
+
+      it('rejects blank translation', async () => {
+        await expectThrows(
+          () => createTermTool!.handler({ name: 'hero', translation: '   ' }, mockContext),
+          '术语名称和翻译不能为空',
+        );
+      });
+
+      it('rejects missing fields', async () => {
+        await expectThrows(
+          () => createTermTool!.handler({ translation: '英雄' }, mockContext),
+          '术语名称和翻译不能为空',
+        );
+        await expectThrows(
+          () => createTermTool!.handler({ name: 'hero' }, mockContext),
+          '术语名称和翻译不能为空',
+        );
+      });
+
+      it('trims name and translation before persisting', async () => {
+        const addSpy = spyOn(TerminologyService, 'addTerminology').mockResolvedValue({
+          id: 'term-1',
+          name: 'hero',
+          translation: { translation: '英雄' },
+        } as any);
+
+        await createTermTool!.handler(
+          { name: '  hero  ', translation: '  英雄  ' },
+          mockContext,
+        );
+
+        expect(addSpy).toHaveBeenCalledWith(
+          mockBookId,
+          expect.objectContaining({ name: 'hero', translation: '英雄' }),
+        );
+        addSpy.mockRestore();
+      });
+    });
+
+    describe('update_term', () => {
+      it('rejects whitespace-only translation', async () => {
+        await expectThrows(
+          () => updateTermTool!.handler({ term_id: 't1', translation: '   ' }, mockContext),
+          '术语翻译不能为空',
+        );
+      });
+
+      it('allows empty description (intentional delete)', async () => {
+        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue({
+          id: 't1',
+          name: 'hero',
+          translation: { translation: '英雄' },
+          description: '',
+        } as any);
+
+        await updateTermTool!.handler(
+          { term_id: 't1', description: '' },
+          mockContext,
+        );
+
+        expect(updateSpy).toHaveBeenCalledWith(
+          mockBookId,
+          't1',
+          expect.objectContaining({ description: '' }),
+        );
+        updateSpy.mockRestore();
+      });
+
+      it('trims translation before persisting', async () => {
+        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue({
+          id: 't1',
+          name: 'hero',
+          translation: { translation: '英雄' },
+        } as any);
+
+        await updateTermTool!.handler(
+          { term_id: 't1', translation: '  英雄  ' },
+          mockContext,
+        );
+
+        expect(updateSpy).toHaveBeenCalledWith(
+          mockBookId,
+          't1',
+          expect.objectContaining({ translation: '英雄' }),
+        );
+        updateSpy.mockRestore();
+      });
+    });
+  });
+
+  describe('Character Tools (blank-value validation)', () => {
+    const createCharacterTool = characterTools.find(
+      (t) => t.definition.function.name === 'create_character',
+    );
+    const updateCharacterTool = characterTools.find(
+      (t) => t.definition.function.name === 'update_character',
+    );
+
+    describe('create_character', () => {
+      it('rejects blank name', async () => {
+        await expectThrows(
+          () => createCharacterTool!.handler({ name: '   ', translation: '田中' }, mockContext),
+          '角色名称和翻译不能为空',
+        );
+      });
+
+      it('rejects blank translation', async () => {
+        await expectThrows(
+          () => createCharacterTool!.handler({ name: '田中', translation: '   ' }, mockContext),
+          '角色名称和翻译不能为空',
+        );
+      });
+
+      it('rejects aliases with blank name or translation', async () => {
+        await expectThrows(
+          () =>
+            createCharacterTool!.handler(
+              {
+                name: '田中太郎',
+                translation: '田中太郎',
+                aliases: [{ name: '   ', translation: '太郎' }],
+              },
+              mockContext,
+            ),
+          '别名的名称和翻译不能为空',
+        );
+
+        await expectThrows(
+          () =>
+            createCharacterTool!.handler(
+              {
+                name: '田中太郎',
+                translation: '田中太郎',
+                aliases: [{ name: '太郎', translation: '   ' }],
+              },
+              mockContext,
+            ),
+          '别名的名称和翻译不能为空',
+        );
+      });
+
+      it('trims name, translation and aliases before persisting', async () => {
+        const addSpy = spyOn(CharacterSettingService, 'addCharacterSetting').mockResolvedValue({
+          id: 'char-1',
+          name: '田中太郎',
+          translation: { translation: '田中太郎' },
+          aliases: [],
+        } as any);
+
+        await createCharacterTool!.handler(
+          {
+            name: '  田中太郎  ',
+            translation: '  田中太郎  ',
+            aliases: [{ name: '  田中  ', translation: '  田中  ' }],
+          },
+          mockContext,
+        );
+
+        expect(addSpy).toHaveBeenCalledWith(
+          mockBookId,
+          expect.objectContaining({
+            name: '田中太郎',
+            translation: '田中太郎',
+            aliases: [{ name: '田中', translation: '田中' }],
+          }),
+        );
+        addSpy.mockRestore();
+      });
+    });
+
+    describe('update_character', () => {
+      it('rejects whitespace-only name', async () => {
+        await expectThrows(
+          () =>
+            updateCharacterTool!.handler({ character_id: 'c1', name: '   ' }, mockContext),
+          '角色名称不能为空',
+        );
+      });
+
+      it('rejects whitespace-only translation', async () => {
+        await expectThrows(
+          () =>
+            updateCharacterTool!.handler(
+              { character_id: 'c1', translation: '   ' },
+              mockContext,
+            ),
+          '角色翻译不能为空',
+        );
+      });
+
+      it('rejects aliases with blank values', async () => {
+        await expectThrows(
+          () =>
+            updateCharacterTool!.handler(
+              {
+                character_id: 'c1',
+                aliases: [{ name: '田中', translation: '   ' }],
+              },
+              mockContext,
+            ),
+          '别名的名称和翻译不能为空',
+        );
+      });
+
+      it('allows empty description and speaking_style (intentional delete)', async () => {
+        const updateSpy = spyOn(
+          CharacterSettingService,
+          'updateCharacterSetting',
+        ).mockResolvedValue({
+          id: 'c1',
+          name: '田中',
+          translation: { translation: '田中' },
+          description: '',
+          speakingStyle: '',
+        } as any);
+
+        await updateCharacterTool!.handler(
+          { character_id: 'c1', description: '', speaking_style: '' },
+          mockContext,
+        );
+
+        expect(updateSpy).toHaveBeenCalledWith(
+          mockBookId,
+          'c1',
+          expect.objectContaining({ description: '', speakingStyle: '' }),
+        );
+        updateSpy.mockRestore();
+      });
+    });
+  });
+
+  describe('Memory Tools (blank-value validation)', () => {
+    const createMemoryTool = memoryTools.find(
+      (t) => t.definition.function.name === 'create_memory',
+    );
+    const updateMemoryTool = memoryTools.find(
+      (t) => t.definition.function.name === 'update_memory',
+    );
+
+    describe('create_memory', () => {
+      it('rejects whitespace-only content', async () => {
+        const result = await createMemoryTool!.handler(
+          { content: '   ', summary: '摘要' },
+          mockContext,
+        );
+        const parsed = JSON.parse(result);
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('内容不能为空');
+      });
+
+      it('rejects whitespace-only summary', async () => {
+        const result = await createMemoryTool!.handler(
+          { content: '内容', summary: '   ' },
+          mockContext,
+        );
+        const parsed = JSON.parse(result);
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('摘要不能为空');
+      });
+
+      it('trims content and summary before persisting', async () => {
+        const createSpy = spyOn(MemoryService, 'createMemory').mockResolvedValue({
+          id: 'm1',
+          content: '内容',
+          summary: '摘要',
+          createdAt: 0,
+          lastAccessedAt: 0,
+        } as any);
+
+        await createMemoryTool!.handler(
+          { content: '  内容  ', summary: '  摘要  ' },
+          mockContext,
+        );
+
+        expect(createSpy).toHaveBeenCalledWith(mockBookId, '内容', '摘要');
+        createSpy.mockRestore();
+      });
+    });
+
+    describe('update_memory', () => {
+      it('rejects whitespace-only content', async () => {
+        const result = await updateMemoryTool!.handler(
+          { memory_id: 'm1', content: '   ', summary: '摘要' },
+          mockContext,
+        );
+        const parsed = JSON.parse(result);
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('内容不能为空');
+      });
+
+      it('rejects whitespace-only summary', async () => {
+        const result = await updateMemoryTool!.handler(
+          { memory_id: 'm1', content: '内容', summary: '   ' },
+          mockContext,
+        );
+        const parsed = JSON.parse(result);
+        expect(parsed.success).toBe(false);
+        expect(parsed.error).toContain('摘要不能为空');
+      });
+
+      it('trims content and summary before persisting', async () => {
+        const getSpy = spyOn(MemoryService, 'getMemory').mockResolvedValue({
+          id: 'm1',
+          content: 'old',
+          summary: 'old',
+          createdAt: 0,
+          lastAccessedAt: 0,
+        } as any);
+        const updateSpy = spyOn(MemoryService, 'updateMemory').mockResolvedValue({
+          id: 'm1',
+          content: '内容',
+          summary: '摘要',
+          createdAt: 0,
+          lastAccessedAt: 0,
+        } as any);
+
+        await updateMemoryTool!.handler(
+          { memory_id: 'm1', content: '  内容  ', summary: '  摘要  ' },
+          mockContext,
+        );
+
+        expect(updateSpy).toHaveBeenCalledWith(mockBookId, 'm1', '内容', '摘要');
+        getSpy.mockRestore();
+        updateSpy.mockRestore();
+      });
     });
   });
 });
