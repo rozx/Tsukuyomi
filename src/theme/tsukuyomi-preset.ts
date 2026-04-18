@@ -482,6 +482,59 @@ const CUSTOM_CSS = `
 .p-toast-message-error .p-toast-icon-close {
   color: rgba(248, 247, 255, 0.6) !important;
 }
+
+/* 移动端：Toast 改为顶部横贯窄条，避开顶部系统栏并防止溢出 */
+@media (max-width: 599px) {
+  .p-toast {
+    top: calc(env(safe-area-inset-top, 0px) + 56px) !important;
+    right: 8px !important;
+    left: 8px !important;
+    width: auto !important;
+    max-width: none !important;
+    gap: 0.5rem;
+  }
+
+  .p-toast .p-toast-message {
+    min-width: 0 !important;
+    max-width: none !important;
+    width: 100%;
+    padding: 0.75rem 0.875rem;
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(5, 8, 24, 0.45), 0 2px 8px rgba(5, 8, 24, 0.25);
+  }
+
+  .p-toast .p-toast-message-content {
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .p-toast .p-toast-message-icon {
+    font-size: 1.125rem;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin-top: 0;
+  }
+
+  .p-toast .p-toast-message-text {
+    gap: 0.125rem;
+  }
+
+  .p-toast .p-toast-summary {
+    font-size: 0.875rem;
+  }
+
+  .p-toast .p-toast-detail {
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .p-toast .p-toast-icon-close,
+  .p-toast .p-toast-close-button {
+    width: 1.5rem;
+    height: 1.5rem;
+    opacity: 0.8;
+  }
+}
 `;
 
 const TsukuyomiPreset = definePreset(Aura, {
