@@ -70,6 +70,7 @@ declare module 'vue' {
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
     TaskActionBar: typeof import('./components/novel/translation-progress/TaskActionBar.vue')['default']
+    TaskEmptyState: typeof import('./components/novel/translation-progress/TaskEmptyState.vue')['default']
     TaskStatusBar: typeof import('./components/novel/translation-progress/TaskStatusBar.vue')['default']
     TaskStream: typeof import('./components/novel/translation-progress/TaskStream.vue')['default']
     TaskSwitcher: typeof import('./components/novel/translation-progress/TaskSwitcher.vue')['default']
@@ -85,6 +86,9 @@ declare module 'vue' {
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
     TranslationHistoryDialog: typeof import('./components/dialogs/TranslationHistoryDialog.vue')['default']
     TranslationProgress: typeof import('./components/novel/TranslationProgress.vue')['default']
+    TranslationProgressDesktop: typeof import('./components/novel/TranslationProgressDesktop.vue')['default']
+    TranslationProgressMobile: typeof import('./components/novel/TranslationProgressMobile.vue')['default']
+    TranslationProgressTablet: typeof import('./components/novel/TranslationProgressTablet.vue')['default']
     VolumesList: typeof import('./components/novel/VolumesList.vue')['default']
   }
 }
