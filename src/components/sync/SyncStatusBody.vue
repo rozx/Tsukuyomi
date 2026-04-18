@@ -302,11 +302,11 @@ const syncStageLabel = computed(() => {
           <li
             v-for="(item, idx) in visiblePendingItems"
             :key="`${item.kind}-${item.label}-${idx}`"
-            class="flex items-center gap-2 text-xs text-moon/85"
+            class="flex items-center gap-2 text-xs text-moon/85 min-w-0"
           >
             <i :class="kindIcon[item.kind]" class="text-moon/60 shrink-0" />
             <span class="text-moon/50 shrink-0">{{ kindLabel[item.kind] }}</span>
-            <span class="truncate flex-1" :title="item.label">{{ item.label }}</span>
+            <span class="truncate flex-1 min-w-0" :title="item.label">{{ item.label }}</span>
             <span
               class="text-[10px] shrink-0"
               :class="item.action === 'deleted' ? 'text-rose-300/80' : 'text-moon/50'"
