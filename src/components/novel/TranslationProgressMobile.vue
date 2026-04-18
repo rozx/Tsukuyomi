@@ -15,11 +15,9 @@ const {
   formatDuration,
   stopTask,
   clearCompletedTasks,
-  closeMobilePanel,
   mobileProgress,
   mobileEta,
   mobileWorkflowLabel,
-  mobileCurrentChapterLabel,
   mobileStatTotals,
   mobileIsRunning,
   mobileLegend,
@@ -31,23 +29,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 <template>
   <div class="translation-progress mtp">
-    <!-- Header -->
-    <header class="mtp-head">
-      <div class="mtp-head-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
-      <div class="mtp-head-text">
-        <div class="mtp-head-title">翻译进度</div>
-        <div class="mtp-head-sub">
-          <template v-if="currentTask && mobileCurrentChapterLabel">
-            {{ mobileCurrentChapterLabel }} · {{ mobileWorkflowLabel }}
-          </template>
-          <template v-else-if="currentTask">{{ mobileWorkflowLabel }}</template>
-          <template v-else>暂无翻译任务</template>
-        </div>
-      </div>
-      <button class="mtp-head-close" aria-label="关闭" @click="closeMobilePanel">
-        <i class="pi pi-times" aria-hidden="true" />
-      </button>
-    </header>
+    <!-- Header moved to MobileProgressSheet's #header slot (icon + 标题 + 副标题 + X);
+         不再在这里渲染，避免与 sheet 自己的 header 重复 -->
 
     <template v-if="currentTask">
       <!-- Hero meter -->

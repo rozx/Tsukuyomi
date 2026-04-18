@@ -906,7 +906,10 @@ function createBookDetailsPageContext() {
   };
 
   const mobileSelectedParagraphId = ref<string | null>(null);
-  const mobileBatchMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
+  // 手机端"批量"按钮改为底部抽屉 picker；之前依赖 PrimeVue TieredMenu 的
+  // popup-ref 在 `<script setup>` 变体里无法自动 bind（ref 只对顶层脚本变量生效，
+  // ctx.mobileBatchMenuRef 永远是 null），所以直接换成受控 state。
+  const showMobileBatchPicker = ref(false);
 
   const selectedChapterParagraphs = computed(() => {
     if (!selectedChapterWithContent.value || !selectedChapterWithContent.value.content) {
@@ -2258,7 +2261,7 @@ function createBookDetailsPageContext() {
     switchMobileTab,
     mobileBookProgress,
     mobileSelectedParagraphId,
-    mobileBatchMenuRef,
+    showMobileBatchPicker,
     mobileReaderModelName,
     mobileReaderStats,
     mobileBatchBusy: computed(
@@ -2304,8 +2307,19 @@ function createBookDetailsPageContext() {
       }
       return items;
     }),
-    toggleMobileBatchMenu: (event: Event) => {
-      mobileBatchMenuRef.value?.toggle(event);
+    openMobileBatchPicker: () => {
+      showMobileBatchPicker.value = true;
+    },
+    closeMobileBatchPicker: () => {
+      showMobileBatchPicker.value = false;
+    },
+    runMobileBatchItem: (item: MenuItem) => {
+      // 关闭抽屉再执行 item.command —— picker 里所有条目都是用箭头函数
+      // 写成 `() => void someAction()`，忽略 event 参数，所以传个空的占位即可
+      showMobileBatchPicker.value = false;
+      if (typeof item.command === 'function') {
+        item.command({ originalEvent: new Event('click'), item });
+      }
     },
     openMobileTranslationProgress: () => {
       uiStore.setActiveRightTab('progress');

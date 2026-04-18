@@ -40,6 +40,18 @@ import BookDetailsMobile from './book-details/BookDetailsMobile.vue';
 const ctx = provideBookDetailsPage();
 const { variant } = useDeviceVariant();
 
+// Popover / menu refs 必须 destructure 成顶层变量，模板里的 `ref="xxx"` 字符串
+// 自动绑定只查 `<script setup>` 的顶层 const/let，不会递归访问 `ctx.xxx`。
+// 不这样做的话 toggleChapterSettingsPopover() 里的 Ref 永远是 null。
+const {
+  exportMenuRef,
+  termPopover,
+  characterPopover,
+  memoryPopover,
+  keyboardShortcutsPopover,
+  chapterSettingsPopover,
+} = ctx;
+
 const variantComponent = computed(() => {
   switch (variant.value) {
     case 'mobile':

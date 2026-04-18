@@ -1,12 +1,26 @@
 <script setup lang="ts">
-import TieredMenu from 'primevue/tieredmenu';
+import { ref } from 'vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
+import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
+import type { Chapter } from 'src/models/novel';
 
 const ctx = injectBookDetailsPage();
+
+// 阅读器内的"章节目录"按钮在手机端改为底部抽屉 picker：
+// 旧行为会调用 onNavigateToChapterList() 强制 setSelectedChapter(null) ，
+// 把用户从阅读器踢回 overview；新行为保留当前阅读上下文，仅弹出 sheet。
+const showChapterListPicker = ref(false);
+const openChapterListPicker = () => {
+  showChapterListPicker.value = true;
+};
+const pickChapterFromSheet = (ch: Chapter) => {
+  showChapterListPicker.value = false;
+  ctx.onNavigateToChapter(ch);
+};
 </script>
 
 <template>
@@ -259,7 +273,7 @@ const ctx = injectBookDetailsPage();
         </template>
       </div>
     </div>
-    <button class="mbd-icon-btn" aria-label="章节目录" @click="ctx.onNavigateToChapterList">
+    <button class="mbd-icon-btn" aria-label="章节目录" @click="openChapterListPicker">
       <i class="pi pi-list" aria-hidden="true" />
     </button>
     <button class="mbd-icon-btn" aria-label="章节设置" @click="ctx.toggleChapterSettingsPopover">
@@ -300,8 +314,9 @@ const ctx = injectBookDetailsPage();
       <button
         class="mbr-strip-btn"
         :disabled="ctx.mobileBatchBusy.value || ctx.mobileBatchMenuItems.value.length === 0"
-        aria-haspopup="true"
-        @click="ctx.toggleMobileBatchMenu"
+        aria-haspopup="dialog"
+        :aria-expanded="ctx.showMobileBatchPicker.value"
+        @click="ctx.openMobileBatchPicker"
       >
         <i
           class="pi"
@@ -311,16 +326,13 @@ const ctx = injectBookDetailsPage();
         批量
         <i class="pi pi-chevron-down mbr-strip-btn-caret" aria-hidden="true" />
       </button>
-      <TieredMenu
-        ref="mobileBatchMenuRef"
-        :model="ctx.mobileBatchMenuItems.value"
-        popup
-        class="mbr-batch-menu"
-      />
     </div>
 
     <!-- 段落列表 -->
-    <div class="mbr-scroll">
+    <div
+      class="mbr-scroll"
+      :class="{ 'mbr-scroll--with-actionbar': !!ctx.mobileSelectedParagraphId.value }"
+    >
       <div v-if="ctx.isLoadingChapterContent.value" class="mbr-state">
         <ProgressSpinner
           style="width: 28px; height: 28px"
@@ -363,14 +375,7 @@ const ctx = injectBookDetailsPage();
               <i class="pi pi-sparkles mbr-p-meta-ai" aria-hidden="true" />
               <span v-if="ctx.getParagraphModelName(p)">{{ ctx.getParagraphModelName(p) }}</span>
             </template>
-            <template v-else-if="(p.text ?? '').trim().length === 0">
-              <span class="mbr-badge mbr-badge-muted">空段</span>
-            </template>
-            <template v-else>
-              <span class="mbr-badge mbr-badge-amber">
-                <i class="pi pi-clock" aria-hidden="true" />待翻译
-              </span>
-            </template>
+            <!-- 空段 / 待翻译 状态不再展示徽章，仅以 §编号 标注段落位置 -->
           </div>
 
           <!-- Original -->
@@ -379,17 +384,6 @@ const ctx = injectBookDetailsPage();
           <!-- Translation -->
           <div v-if="ctx.getParagraphTranslationText(p)" class="mbr-p-zh">
             {{ ctx.getParagraphTranslationText(p) }}
-          </div>
-
-          <!-- Pending prompt -->
-          <div
-            v-else-if="
-              (p.text ?? '').trim().length > 0 && !ctx.translatingParagraphIds.value.has(p.id)
-            "
-            class="mbr-p-pending"
-            @click.stop="ctx.retranslateParagraph(p.id)"
-          >
-            <i class="pi pi-sparkles" aria-hidden="true" />点击开始翻译此段
           </div>
         </div>
 
@@ -445,6 +439,99 @@ const ctx = injectBookDetailsPage();
         <span>关闭</span>
       </button>
     </div>
+
+    <!-- 批量操作 picker —— 使用共享 MobileBottomSheet 外壳 -->
+    <MobileBottomSheet
+      v-model:visible="ctx.showMobileBatchPicker.value"
+      title="批量操作"
+      eyebrow="CHAPTER · 批量"
+    >
+      <template
+        v-for="(item, idx) in ctx.mobileBatchMenuItems.value"
+        :key="item.separator ? `sep-${idx}` : (item.label ?? `item-${idx}`)"
+      >
+        <div v-if="item.separator" class="mbr-batch-picker-sep" />
+        <button
+          v-else
+          type="button"
+          class="mbr-batch-picker-option"
+          :class="{ 'mbr-batch-picker-option--danger': item.class === 'mbr-menu-danger' }"
+          @click="ctx.runMobileBatchItem(item)"
+        >
+          <i
+            v-if="item.icon"
+            :class="['pi', item.icon, 'mbr-batch-picker-option-icon']"
+            aria-hidden="true"
+          />
+          <span class="mbr-batch-picker-option-label">{{ item.label }}</span>
+          <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+        </button>
+      </template>
+      <div v-if="ctx.mobileBatchMenuItems.value.length === 0" class="mbr-batch-picker-empty">
+        <i class="pi pi-info-circle" aria-hidden="true" />
+        <span>当前章节没有可执行的批量操作。</span>
+      </div>
+    </MobileBottomSheet>
+
+    <!-- 章节目录 picker —— 阅读中弹出，不打断当前章节 -->
+    <MobileBottomSheet
+      v-model:visible="showChapterListPicker"
+      title="章节目录"
+      eyebrow="BOOK · 目录"
+      max-height="86dvh"
+    >
+      <div class="mbr-chapter-picker-tree">
+        <template v-for="vol in ctx.volumes.value" :key="vol.id">
+          <button
+            class="mbd-tree-row mbd-tree-row--vol"
+            :class="{ 'mbd-tree-row--vol-open': ctx.isVolumeExpanded(vol.id) }"
+            @click="ctx.toggleVolumeById(vol.id)"
+          >
+            <i
+              class="pi mbd-tree-vol-icon"
+              :class="ctx.isVolumeExpanded(vol.id) ? 'pi-folder-open' : 'pi-folder'"
+              aria-hidden="true"
+            />
+            <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol) }}</span>
+            <span class="mbd-tree-row-count">{{ vol.chapters?.length ?? 0 }} 章</span>
+          </button>
+          <template v-if="ctx.isVolumeExpanded(vol.id)">
+            <div
+              v-for="ch in vol.chapters || []"
+              :key="ch.id"
+              class="mbd-tree-row mbd-tree-row--chapter"
+              :class="{
+                'mbd-tree-row--active':
+                  ctx.selectedChapter.value && ctx.selectedChapter.value.id === ch.id,
+              }"
+              role="button"
+              @click="pickChapterFromSheet(ch)"
+            >
+              <i
+                class="pi mbd-tree-chap-icon"
+                :class="ctx.chapterStatusIcon(ch.id)"
+                :style="{ color: ctx.chapterStatusColor(ch.id) }"
+                aria-hidden="true"
+              />
+              <span class="mbd-tree-row-title">
+                {{ ctx.getChapterDisplayTitle(ch, ctx.book.value || undefined) }}
+              </span>
+              <span
+                class="mbd-tree-row-count"
+                :style="{ color: ctx.chapterStatusTextColor(ch.id) }"
+              >
+                {{ ctx.chapterStatusLabel(ch.id) }}
+              </span>
+            </div>
+          </template>
+        </template>
+
+        <div v-if="ctx.volumes.value.length === 0" class="mbd-tree-empty">
+          <i class="pi pi-folder-open" aria-hidden="true" />
+          <span>尚未创建卷或章节</span>
+        </div>
+      </div>
+    </MobileBottomSheet>
   </div>
 </template>
 
@@ -910,6 +997,9 @@ const ctx = injectBookDetailsPage();
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* 作为 .mbr-actionbar 的定位父级，让浮动操作栏贴在 reader 底部之上，
+     而不是视口底部（后者会与 MobileTabBar 重叠导致遮挡） */
+  position: relative;
 }
 
 .mbr-strip {
@@ -1041,6 +1131,12 @@ const ctx = injectBookDetailsPage();
   overflow-y: auto;
   padding: 14px 14px 32px;
   scrollbar-width: none;
+  transition: padding-bottom 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 选中段落时 actionbar 浮现，留出空间避免遮挡最后一段正文 */
+.mbr-scroll--with-actionbar {
+  padding-bottom: 100px;
 }
 
 .mbr-scroll::-webkit-scrollbar {
@@ -1118,18 +1214,6 @@ const ctx = injectBookDetailsPage();
   border-color: rgba(109, 136, 168, 0.3);
 }
 
-.mbr-badge-amber {
-  background: rgba(242, 192, 55, 0.12);
-  color: #f2c037;
-  border-color: rgba(242, 192, 55, 0.25);
-}
-
-.mbr-badge-muted {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.45);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
 .mbr-p-ja {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 14px;
@@ -1148,29 +1232,6 @@ const ctx = injectBookDetailsPage();
   margin-bottom: 2px;
   white-space: pre-wrap;
   word-wrap: break-word;
-}
-
-.mbr-p-pending {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: rgba(109, 136, 168, 0.08);
-  border: 1px dashed rgba(109, 136, 168, 0.3);
-  border-radius: 6px;
-  color: #a3b7cf;
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  margin-top: 4px;
-}
-
-.mbr-p-pending:hover {
-  background: rgba(109, 136, 168, 0.15);
-}
-
-.mbr-p-pending i {
-  font-size: 10px;
 }
 
 .mbr-chapter-nav {
@@ -1207,44 +1268,60 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbr-actionbar {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
-  display: inline-flex;
+  /* 相对于 .mobile-reader 的底部 —— reader 的 bottom 边界刚好位于 MobileTabBar
+     上方（由 MainLayoutMobile 的 flex 布局保证），因此 absolute + bottom:12px
+     自然留出 tab bar 上方的呼吸空间，不再依赖 env(safe-area-inset-bottom) 推算 */
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(10, 12, 15, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(20, 22, 26, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(109, 136, 168, 0.12);
   z-index: 40;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .ab-btn {
-  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px;
   background: transparent;
   border: none;
-  color: rgba(247, 244, 236, 0.85);
+  color: rgba(247, 244, 236, 0.82);
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: 10px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .ab-btn i {
-  font-size: 11px;
+  font-size: 18px;
+  color: rgba(247, 244, 236, 0.55);
+  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.ab-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+.ab-btn:hover:not(:disabled),
+.ab-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .ab-btn:disabled {
@@ -1252,18 +1329,113 @@ const ctx = injectBookDetailsPage();
   cursor: default;
 }
 
-.ab-btn.primary {
+.ab-btn.primary i {
   color: #a3b7cf;
 }
 
 .ab-sep {
   width: 1px;
-  height: 18px;
+  height: 32px;
   background: rgba(255, 255, 255, 0.1);
-  margin: 0 4px;
+  margin: 0 2px;
+  flex-shrink: 0;
 }
 
 :global(.mbr-menu-danger) {
   color: #ef5f5f !important;
+}
+
+/* 章节目录 picker 内的树布局复用 .mbd-tree-row*；这里只收紧 sheet 内边距 */
+.mbr-chapter-picker-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ───── 批量操作 picker 选项（sheet 外壳由 MobileBottomSheet 提供） ───── */
+.mbr-batch-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+  margin-bottom: 2px;
+  color: #e9edf5;
+}
+
+.mbr-batch-picker-option:active {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(109, 136, 168, 0.25);
+}
+
+.mbr-batch-picker-option-icon {
+  font-size: 15px;
+  color: #a3b7cf;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.mbr-batch-picker-option-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mbr-batch-picker-chev {
+  color: rgba(247, 244, 236, 0.35);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.mbr-batch-picker-option--danger {
+  color: #ef5f5f;
+}
+
+.mbr-batch-picker-option--danger .mbr-batch-picker-option-icon {
+  color: #ef5f5f;
+}
+
+.mbr-batch-picker-option--danger:active {
+  background: rgba(239, 95, 95, 0.08);
+  border-color: rgba(239, 95, 95, 0.3);
+}
+
+.mbr-batch-picker-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 6px 8px;
+}
+
+.mbr-batch-picker-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px;
+  margin: 8px 0 4px;
+  background: rgba(109, 136, 168, 0.06);
+  border: 1px solid rgba(109, 136, 168, 0.18);
+  border-radius: 10px;
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.75);
+  line-height: 1.5;
+}
+
+.mbr-batch-picker-empty i {
+  font-size: 14px;
+  color: #a3b7cf;
+  margin-top: 1px;
+  flex-shrink: 0;
 }
 </style>

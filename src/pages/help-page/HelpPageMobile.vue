@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
 import { APP_NAME } from 'src/constants/app';
+import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 
 const ctx = injectHelpPage();
 </script>
@@ -131,26 +132,14 @@ const ctx = injectHelpPage();
       </div>
     </main>
 
-    <!-- 文档抽屉 -->
-    <div
-      v-if="ctx.showDocumentNavDrawer.value"
-      class="absolute inset-0 z-40 bg-black/45"
-      @click="ctx.showDocumentNavDrawer.value = false"
-    />
-    <aside
-      class="absolute top-0 left-0 bottom-0 z-50 w-[82vw] max-w-[20rem] border-r border-white/10 flex flex-col bg-night-900/95 transition-transform duration-200"
-      :class="ctx.showDocumentNavDrawer.value ? 'translate-x-0' : '-translate-x-full'"
+    <!-- 文档抽屉（手机端改为底部抽屉，与其他 mobile popup 统一） -->
+    <MobileBottomSheet
+      v-model:visible="ctx.showDocumentNavDrawer.value"
+      title="帮助文档"
+      eyebrow="HELP · DOCS"
+      max-height="86dvh"
     >
-      <div class="p-4 border-b border-white/10 flex-shrink-0 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="pi pi-book text-primary" />
-          <span class="text-sm font-semibold text-moon-100">帮助文档</span>
-        </div>
-        <button class="text-moon/70" @click="ctx.showDocumentNavDrawer.value = false">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-      <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+      <nav class="space-y-1">
         <div v-for="(docs, category) in ctx.groupedDocuments.value" :key="category" class="mb-3">
           <button
             class="w-full flex items-center justify-between px-2 py-1.5 transition-colors group"
@@ -190,29 +179,17 @@ const ctx = injectHelpPage();
           </ul>
         </div>
       </nav>
-    </aside>
+    </MobileBottomSheet>
 
-    <!-- TOC 抽屉 -->
-    <div
-      v-if="ctx.showTocDrawer.value && ctx.toc.value.length > 0"
-      class="absolute inset-0 z-40 bg-black/45"
-      @click="ctx.showTocDrawer.value = false"
-    />
-    <aside
+    <!-- TOC 抽屉（手机端改为底部抽屉） -->
+    <MobileBottomSheet
       v-if="ctx.toc.value.length > 0"
-      class="absolute top-0 right-0 bottom-0 z-50 w-[80vw] max-w-[20rem] border-l border-white/10 bg-night-900/95 flex flex-col transition-transform duration-200"
-      :class="ctx.showTocDrawer.value ? 'translate-x-0' : 'translate-x-full'"
+      v-model:visible="ctx.showTocDrawer.value"
+      title="目录"
+      eyebrow="TABLE OF CONTENTS"
+      max-height="82dvh"
     >
-      <div class="p-4 border-b border-white/10 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <i class="pi pi-list text-primary" />
-          <span class="text-sm font-semibold text-moon-100">目录</span>
-        </div>
-        <button class="text-moon/70" @click="ctx.showTocDrawer.value = false">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-      <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+      <nav class="space-y-1">
         <a
           v-for="item in ctx.toc.value"
           :key="item.id"
@@ -232,7 +209,7 @@ const ctx = injectHelpPage();
           {{ item.text }}
         </a>
       </nav>
-    </aside>
+    </MobileBottomSheet>
   </div>
 </template>
 

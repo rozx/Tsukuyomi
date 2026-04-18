@@ -1,10 +1,33 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
+import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 
 const ctx = injectBooksPage();
+
+// 添加书籍 picker（底部抽屉）：展开手动 / 从网站 / 从 JSON 三个入口
+const showAddPicker = ref(false);
+const openAddPicker = () => {
+  showAddPicker.value = true;
+};
+const closeAddPicker = () => {
+  showAddPicker.value = false;
+};
+const pickManualAdd = () => {
+  closeAddPicker();
+  ctx.addBook();
+};
+const pickImportFromWeb = () => {
+  closeAddPicker();
+  ctx.importBookFromWeb();
+};
+const pickImportFromJson = () => {
+  closeAddPicker();
+  ctx.importBookFromJson();
+};
 </script>
 
 <template>
@@ -35,7 +58,7 @@ const ctx = injectBooksPage();
           <i class="pi pi-times" />
         </button>
       </div>
-      <button class="ml-icon-btn" title="添加书籍" @click="ctx.addBook">
+      <button class="ml-icon-btn" title="添加书籍" @click="openAddPicker">
         <i class="pi pi-plus" aria-hidden="true" />
       </button>
     </div>
@@ -62,7 +85,7 @@ const ctx = injectBooksPage();
         label="添加第一本书籍"
         icon="pi pi-plus"
         class="p-button-primary"
-        @click="ctx.addBook"
+        @click="openAddPicker"
       />
     </div>
 
@@ -93,6 +116,50 @@ const ctx = injectBooksPage();
         </div>
       </div>
     </div>
+
+    <!-- 隐藏的文件输入（JSON 导入）—— 桌面变体在自己模板里挂一份，手机这里再挂
+         一份，否则 ctx.fileInputRef 为空，importBookFromJson 触发不到点击。 -->
+    <input
+      :ref="(el) => { ctx.fileInputRef.value = el as HTMLInputElement | null; }"
+      type="file"
+      accept=".json,.txt"
+      class="hidden"
+      @change="ctx.handleFileSelect"
+    />
+
+    <!-- 添加书籍 picker —— 使用共享 MobileBottomSheet 外壳 -->
+    <MobileBottomSheet
+      v-model:visible="showAddPicker"
+      title="添加书籍"
+      eyebrow="LIBRARY"
+    >
+      <button type="button" class="ml-add-picker-option" @click="pickManualAdd">
+        <i class="pi pi-plus ml-add-picker-option-icon" aria-hidden="true" />
+        <div class="ml-add-picker-option-main">
+          <div class="ml-add-picker-option-name">手动添加</div>
+          <div class="ml-add-picker-option-meta">创建空白书籍，手动录入章节</div>
+        </div>
+        <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
+      </button>
+      <button type="button" class="ml-add-picker-option" @click="pickImportFromWeb">
+        <i class="pi pi-globe ml-add-picker-option-icon" aria-hidden="true" />
+        <div class="ml-add-picker-option-main">
+          <div class="ml-add-picker-option-name">从网站导入</div>
+          <div class="ml-add-picker-option-meta">
+            syosetu / kakuyomu 等站点直接抓取
+          </div>
+        </div>
+        <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
+      </button>
+      <button type="button" class="ml-add-picker-option" @click="pickImportFromJson">
+        <i class="pi pi-file-import ml-add-picker-option-icon" aria-hidden="true" />
+        <div class="ml-add-picker-option-main">
+          <div class="ml-add-picker-option-name">从 JSON 导入</div>
+          <div class="ml-add-picker-option-meta">从导出文件批量恢复书籍</div>
+        </div>
+        <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
+      </button>
+    </MobileBottomSheet>
   </div>
 </template>
 
@@ -326,5 +393,65 @@ const ctx = injectBooksPage();
 .ml-state-title {
   font-size: 14px;
   color: rgba(247, 244, 236, 0.7);
+}
+
+/* ───── 添加书籍 picker 选项（sheet 外壳由 MobileBottomSheet 提供） ───── */
+.ml-add-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+  margin-bottom: 2px;
+}
+
+.ml-add-picker-option:active {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(109, 136, 168, 0.25);
+}
+
+.ml-add-picker-option-icon {
+  font-size: 18px;
+  color: #a3b7cf;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.ml-add-picker-option-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ml-add-picker-option-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e9edf5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ml-add-picker-option-meta {
+  font-size: 11px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-top: 3px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ml-add-picker-chev {
+  color: rgba(247, 244, 236, 0.35);
+  font-size: 11px;
+  flex-shrink: 0;
 }
 </style>

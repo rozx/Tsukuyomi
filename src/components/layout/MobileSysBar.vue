@@ -11,6 +11,7 @@ import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
+import { APP_VERSION } from 'src/constants/version';
 
 const router = useRouter();
 const route = useRoute();
@@ -55,7 +56,10 @@ const openHelp = () => {
   <div class="tsm-sysbar">
     <div class="sys-brand">
       <img :src="logoPath" :alt="APP_NAME.full" />
-      <span>{{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
+      <div class="sys-brand-text">
+        <span class="sys-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
+        <span class="sys-brand-version">v{{ APP_VERSION }}</span>
+      </div>
     </div>
 
     <div class="sys-actions">
@@ -162,23 +166,47 @@ const openHelp = () => {
   align-items: center;
   gap: 7px;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sys-brand img {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.sys-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1;
+  gap: 2px;
+}
+
+.sys-brand-name {
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.22em;
   color: rgba(174, 183, 198, 0.85);
   text-transform: uppercase;
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sys-brand img {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  opacity: 0.9;
-  flex-shrink: 0;
+.sys-brand-version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7px;
+  font-weight: 400;
+  color: rgba(174, 183, 198, 0.28);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sys-actions {

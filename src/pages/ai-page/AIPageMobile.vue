@@ -1,9 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
+import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 
 const ctx = injectAIPage();
+
+// v-model 绑到 routingPickerTask 是否有值（true = 打开）。关闭时清空任务 key
+// 以保持 useAIPage 的既有逻辑一致。
+const routingPickerVisible = computed({
+  get: () => !!ctx.routingPickerTask.value,
+  set: (open) => {
+    if (!open) ctx.closeTaskRoutingPicker();
+  },
+});
 </script>
 
 <template>
@@ -98,23 +109,82 @@ const ctx = injectAIPage();
           <span class="ma-section-title">任务路由</span>
         </div>
         <div class="ma-routing-card">
-          <div
+          <button
             v-for="(row, idx) in ctx.taskRouting.value"
-            :key="row.label"
+            :key="row.task"
+            type="button"
             class="ma-routing-row"
             :class="{ 'ma-routing-row--last': idx === ctx.taskRouting.value.length - 1 }"
+            :aria-label="`编辑 ${row.label} 的默认模型`"
+            @click="ctx.openTaskRoutingPicker(row.task)"
           >
             <span class="ma-routing-label">{{ row.label }}</span>
             <span
               class="ma-routing-value"
-              :class="{ 'ma-routing-value--unset': row.value === '未配置' }"
+              :class="{ 'ma-routing-value--unset': !row.modelId }"
             >
               <i class="pi pi-sparkles" aria-hidden="true" /> {{ row.value }}
             </span>
-          </div>
+            <i class="pi pi-chevron-right ma-routing-chev" aria-hidden="true" />
+          </button>
         </div>
       </section>
     </div>
+
+    <!-- 任务路由 picker —— 统一使用 MobileBottomSheet -->
+    <MobileBottomSheet
+      v-model:visible="routingPickerVisible"
+      :title="ctx.routingPickerTaskLabel.value || '任务路由'"
+      eyebrow="任务路由"
+    >
+      <!-- 未设置 -->
+      <button
+        type="button"
+        class="ma-picker-option"
+        :class="{ 'ma-picker-option--active': !ctx.routingPickerCurrentModelId.value }"
+        @click="ctx.pickModelForTask(null)"
+      >
+        <div class="ma-picker-option-main">
+          <div class="ma-picker-option-name">未设置</div>
+          <div class="ma-picker-option-meta">该任务将无默认模型</div>
+        </div>
+        <i
+          v-if="!ctx.routingPickerCurrentModelId.value"
+          class="pi pi-check ma-picker-option-check"
+          aria-hidden="true"
+        />
+      </button>
+
+      <!-- 可选模型 -->
+      <button
+        v-for="model in ctx.routingPickerOptions.value"
+        :key="model.id"
+        type="button"
+        class="ma-picker-option"
+        :class="{
+          'ma-picker-option--active': model.id === ctx.routingPickerCurrentModelId.value,
+        }"
+        @click="ctx.pickModelForTask(model.id)"
+      >
+        <div class="ma-picker-option-main">
+          <div class="ma-picker-option-name">{{ model.name }}</div>
+          <div class="ma-picker-option-meta">
+            {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}
+          </div>
+        </div>
+        <i
+          v-if="model.id === ctx.routingPickerCurrentModelId.value"
+          class="pi pi-check ma-picker-option-check"
+          aria-hidden="true"
+        />
+      </button>
+
+      <!-- 空状态 -->
+      <div v-if="ctx.routingPickerOptions.value.length === 0" class="ma-picker-empty">
+        <i class="pi pi-info-circle" aria-hidden="true" />
+        <span>暂无支持此任务的模型，请在模型编辑页面中启用该任务。</span>
+      </div>
+    </MobileBottomSheet>
   </div>
 </template>
 
@@ -352,8 +422,21 @@ const ctx = injectAIPage();
 .ma-routing-row {
   display: flex;
   align-items: center;
+  gap: 10px;
+  width: 100%;
   padding: 10px 0;
+  background: transparent;
+  border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ma-routing-row:active {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .ma-routing-row--last {
@@ -377,6 +460,10 @@ const ctx = injectAIPage();
   background: rgba(109, 136, 168, 0.15);
   color: #bac9db;
   border: 1px solid rgba(109, 136, 168, 0.3);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ma-routing-value--unset {
@@ -388,6 +475,90 @@ const ctx = injectAIPage();
 .ma-routing-value i {
   font-size: 9px;
   opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.ma-routing-chev {
+  color: rgba(247, 244, 236, 0.35);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* ───── 任务路由 Picker 选项样式（sheet 外壳由 MobileBottomSheet 提供） ───── */
+.ma-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+  margin-bottom: 2px;
+}
+
+.ma-picker-option:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ma-picker-option--active {
+  background: rgba(109, 136, 168, 0.12);
+  border-color: rgba(109, 136, 168, 0.3);
+}
+
+.ma-picker-option-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ma-picker-option-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e9edf5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ma-picker-option-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ma-picker-option-check {
+  color: #a3b7cf;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.ma-picker-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px;
+  margin: 8px 0 4px;
+  background: rgba(109, 136, 168, 0.06);
+  border: 1px solid rgba(109, 136, 168, 0.18);
+  border-radius: 10px;
+  font-size: 12px;
+  color: rgba(247, 244, 236, 0.75);
+  line-height: 1.5;
+}
+
+.ma-picker-empty i {
+  font-size: 14px;
+  color: #a3b7cf;
+  margin-top: 1px;
+  flex-shrink: 0;
 }
 
 .ma-state {

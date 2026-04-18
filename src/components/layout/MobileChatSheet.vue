@@ -1,10 +1,33 @@
 <script setup lang="ts">
+/**
+ * 手机端 AI 助手底部抽屉（按月詠 Mobile 设计稿 ChatSheetVariant）。
+ *
+ * Header 走 MobileBottomSheet 的 #header slot：单行紧凑布局——
+ * logo + 标题 "AI 助手" + 副标题 "GPT-5.4 · 在线" + 会话历史 + 新聊天 + 关闭X。
+ * Body 用 fullBleed 让消息列表 + composer 占满整个 sheet 内容区。
+ *
+ * 状态来自 useRightPanel（chat 专属），与 MobileProgressSheet 完全独立。
+ */
+import { computed } from 'vue';
 import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
-import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
+import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
+
+const props = defineProps<{
+  visible: boolean;
+}>();
+
+const emit = defineEmits<{
+  'update:visible': [value: boolean];
+}>();
+
+const localVisible = computed({
+  get: () => props.visible,
+  set: (v) => emit('update:visible', v),
+});
 
 const {
   chatSessionsStore,
@@ -14,7 +37,6 @@ const {
   actionPopoverRef,
   groupedActionPopoverRef,
   logoPath,
-  activeRightTab,
   messages,
   inputMessage,
   messageDisplayItemsById,
@@ -46,69 +68,76 @@ const {
   handleGroupedActionMouseLeave,
   handleGroupedActionPopoverHide,
 } = useRightPanel();
+
+const bindSessionListRef = (el: unknown) => {
+  sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
+};
+const bindActionPopoverRef = (el: unknown) => {
+  actionPopoverRef.value = el as typeof actionPopoverRef.value;
+};
+const bindGroupedActionPopoverRef = (el: unknown) => {
+  groupedActionPopoverRef.value = el as typeof groupedActionPopoverRef.value;
+};
 </script>
 
 <template>
-  <aside
-    ref="panelContainerRef"
-    class="shrink-0 h-full border-l border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative overflow-hidden"
-    :style="{ width: '100%' }"
-  >
-    <div
-      class="absolute inset-0 bg-gradient-to-b from-tsukuyomi-500/5 via-transparent to-transparent pointer-events-none"
-    />
-
-    <!-- 手机端 · AI 助手 app bar（按设计稿） -->
-    <header v-if="activeRightTab === 'chat'" class="mc-appbar">
-      <div class="mc-appbar-logo">
-        <img :src="logoPath" alt="" />
-      </div>
-      <div class="mc-appbar-text">
-        <div class="mc-appbar-title">AI 助手</div>
-        <div class="mc-appbar-sub">
-          <span
-            class="mc-status-dot"
-            :class="{ 'mc-status-dot--off': !assistantModel }"
-          />
-          <template v-if="assistantModel">
-            {{ assistantModel.name || assistantModel.id }} · 在线
-          </template>
-          <template v-else>未配置助手模型</template>
+  <MobileBottomSheet v-model:visible="localVisible" title="AI 助手" full-bleed>
+    <!-- 按设计稿：logo + 标题 + 副标题 + 动作按钮 + 关闭X 单行紧凑布局 -->
+    <template #header="{ close }">
+      <header class="mc-appbar">
+        <div class="mc-appbar-logo">
+          <img :src="logoPath" alt="" />
         </div>
-      </div>
-      <button
-        v-if="chatSessionsStore.allSessions.length > 1"
-        id="session-list-button"
-        class="mc-icon-btn"
-        aria-label="会话历史"
-        @click="toggleSessionListPopover"
-      >
-        <i class="pi pi-history" aria-hidden="true" />
-      </button>
-      <button class="mc-icon-btn" aria-label="新聊天" @click="createNewSession">
-        <i class="pi pi-plus" aria-hidden="true" />
-      </button>
-    </header>
+        <div class="mc-appbar-text">
+          <div class="mc-appbar-title">AI 助手</div>
+          <div class="mc-appbar-sub">
+            <span
+              class="mc-status-dot"
+              :class="{ 'mc-status-dot--off': !assistantModel }"
+            />
+            <template v-if="assistantModel">
+              {{ assistantModel.name || assistantModel.id }} · 在线
+            </template>
+            <template v-else>未配置助手模型</template>
+          </div>
+        </div>
+        <button
+          v-if="chatSessionsStore.allSessions.length > 1"
+          id="session-list-button"
+          class="mc-icon-btn"
+          aria-label="会话历史"
+          @click="toggleSessionListPopover"
+        >
+          <i class="pi pi-history" aria-hidden="true" />
+        </button>
+        <button class="mc-icon-btn" aria-label="新聊天" @click="createNewSession">
+          <i class="pi pi-plus" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="mc-icon-btn mc-icon-btn--close"
+          aria-label="关闭"
+          @click="close"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
+      </header>
+    </template>
 
-    <ChatSessionListPopover
-      v-model:popover-ref="sessionListPopoverRef"
-      target="#session-list-button"
-      :sessions="recentSessions"
-      :current-session-id="chatSessionsStore.currentSessionId"
-      @hide="hideSessionListPopover"
-      @select="switchToSession"
-    />
+    <aside ref="panelContainerRef" class="mc-shell">
+      <ChatSessionListPopover
+        :ref="bindSessionListRef"
+        target="#session-list-button"
+        :sessions="recentSessions"
+        :current-session-id="chatSessionsStore.currentSessionId"
+        @hide="hideSessionListPopover"
+        @select="switchToSession"
+      />
 
-    <!-- 翻译进度 Tab -->
-    <div v-if="activeRightTab === 'progress'" class="flex-1 min-h-0 overflow-hidden w-full">
-      <TranslationProgress />
-    </div>
-
-    <!-- AI 助手 Tab -->
-    <template v-if="activeRightTab === 'chat'">
+      <!-- 消息列表（占满剩余高度） -->
       <div
         ref="messagesContainerRef"
-        class="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-2 min-h-0 min-w-0 relative z-10 messages-container"
+        class="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-3 pb-2 min-h-0 min-w-0 relative z-10 mc-messages"
       >
         <ChatMessageList
           :messages="messages"
@@ -129,7 +158,7 @@ const {
         />
       </div>
 
-      <!-- 胶囊状输入栏（按设计稿：plus + input + send） -->
+      <!-- 胶囊状输入栏 -->
       <div class="mc-composer-wrap">
         <div class="mc-composer">
           <button class="mc-plus" aria-label="更多操作">
@@ -156,80 +185,73 @@ const {
           </button>
         </div>
       </div>
-    </template>
 
-    <ChatGroupedActionPopover
-      v-model:popover-ref="groupedActionPopoverRef"
-      :actions="hoveredGroupedAction?.actions || null"
-      @hide="handleGroupedActionPopoverHide"
-    />
+      <ChatGroupedActionPopover
+        :ref="bindGroupedActionPopoverRef"
+        :actions="hoveredGroupedAction?.actions || null"
+        @hide="handleGroupedActionPopoverHide"
+      />
 
-    <ChatActionDetailsPopover
-      v-model:popover-ref="actionPopoverRef"
-      :action="hoveredAction?.action || null"
-      :context="actionDetailsContext"
-      @hide="handleActionPopoverHide"
-    />
-  </aside>
+      <ChatActionDetailsPopover
+        :ref="bindActionPopoverRef"
+        :action="hoveredAction?.action || null"
+        :context="actionDetailsContext"
+        @hide="handleActionPopoverHide"
+      />
+    </aside>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-.messages-container {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-.messages-container p {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  max-width: 100%;
-}
-
-.messages-container > div {
+.mc-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-width: 0;
-}
-
-.messages-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.messages-container::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.messages-container::-webkit-scrollbar-thumb {
+.mc-messages {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ChatMessageList 的空状态用 h-full 想撑满消息区并居中文本；在
+   手机 sheet 里父容器是 flex item，height:100% 可能解析不到父高度 ——
+   用 min-height:100% + flex:1 确保它始终占满消息区并竖直居中 */
+.mc-messages :deep(.h-full) {
+  flex: 1;
+  min-height: 100%;
+}
+
+.mc-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mc-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
 
-.messages-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* ───────────────── Mobile AI 助手 ───────────────── */
+/* 月詠 Mobile chat sheet app bar —— 单行紧凑：logo + 标题/副标题 + 动作按钮 + X */
 .mc-appbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px 12px;
-  background: rgba(10, 12, 15, 0.72);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  gap: 10px;
+  padding: 6px 14px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
-  position: relative;
-  z-index: 5;
+  width: 100%;
 }
 
 .mc-appbar-logo {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
@@ -249,19 +271,21 @@ const {
 }
 
 .mc-appbar-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 13px;
   font-weight: 600;
-  font-size: 15px;
   color: rgba(247, 244, 236, 1);
-  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .mc-appbar-sub {
-  font-size: 11px;
-  color: rgba(247, 244, 236, 0.6);
-  margin-top: 1px;
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-top: 2px;
   display: flex;
   align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mc-status-dot {
@@ -270,7 +294,7 @@ const {
   height: 6px;
   border-radius: 50%;
   background: #a7d1b0;
-  margin-right: 5px;
+  margin-right: 6px;
   flex-shrink: 0;
 }
 
@@ -279,9 +303,9 @@ const {
 }
 
 .mc-icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -293,18 +317,35 @@ const {
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.mc-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
+.mc-icon-btn:hover,
+.mc-icon-btn:active {
+  background: rgba(255, 255, 255, 0.06);
   color: rgba(247, 244, 236, 1);
 }
 
 .mc-icon-btn i {
-  font-size: 16px;
+  font-size: 13px;
+}
+
+.mc-icon-btn--close {
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(192, 198, 209, 0.85);
+}
+
+.mc-icon-btn--close i {
+  font-size: 11px;
+}
+
+.mc-icon-btn--close:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9edf5;
 }
 
 /* 胶囊输入栏 */
 .mc-composer-wrap {
-  padding: 10px 12px 12px;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(10, 12, 15, 0.72);
   flex-shrink: 0;

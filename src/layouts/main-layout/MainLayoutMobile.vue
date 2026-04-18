@@ -3,31 +3,48 @@ import { computed } from 'vue';
 import MobileSysBar from 'src/components/layout/MobileSysBar.vue';
 import MobileTabBar from 'src/components/layout/MobileTabBar.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
-import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
+import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
+import MobileProgressSheet from 'src/components/layout/MobileProgressSheet.vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
 
-const rightPanelOverlayStyle = computed(() => ({
-  width: '100vw',
-}));
+// 右侧面板在移动端拆成两张独立的 bottom sheet：
+//   MobileChatSheet    — AI 助手（activeRightTab === 'chat'）
+//   MobileProgressSheet — 翻译进度（activeRightTab === 'progress'）
+// 两者互斥，由 activeRightTab 决定 v-model:visible
+const isChatOpen = computed<boolean>({
+  get: () => ui.rightPanelOpen && ui.activeRightTab === 'chat',
+  set: (open) => {
+    if (open) {
+      ui.setActiveRightTab('chat');
+      if (!ui.rightPanelOpen) ui.openRightPanel();
+    } else if (ui.activeRightTab === 'chat') {
+      ui.closeRightPanel();
+    }
+  },
+});
+
+const isProgressOpen = computed<boolean>({
+  get: () => ui.rightPanelOpen && ui.activeRightTab === 'progress',
+  set: (open) => {
+    if (open) {
+      ui.setActiveRightTab('progress');
+      if (!ui.rightPanelOpen) ui.openRightPanel();
+    } else if (ui.activeRightTab === 'progress') {
+      ui.closeRightPanel();
+    }
+  },
+});
 
 const closeSideMenu = () => ui.closeSideMenu();
-const closeRightPanel = () => ui.closeRightPanel();
 
-// 手机端两个抽屉都是覆盖式，均应进入关闭栈
 useOverlayCloseStack({
   isOpen: computed(() => ui.sideMenuOpen),
   enabled: computed(() => true),
   onClose: closeSideMenu,
-});
-
-useOverlayCloseStack({
-  isOpen: computed(() => ui.rightPanelOpen),
-  enabled: computed(() => true),
-  onClose: closeRightPanel,
 });
 </script>
 
@@ -36,15 +53,11 @@ useOverlayCloseStack({
     <MobileSysBar />
 
     <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
+      <!-- 侧边菜单遮罩 -->
       <div
         v-if="ui.sideMenuOpen"
         class="layout-overlay-mask z-40"
         @click="closeSideMenu"
-      />
-      <div
-        v-if="ui.rightPanelOpen"
-        class="layout-overlay-mask z-40"
-        @click="closeRightPanel"
       />
 
       <div
@@ -58,18 +71,15 @@ useOverlayCloseStack({
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60">
         <RouterView />
       </main>
-
-      <div
-        class="overlay-right-panel z-50"
-        :class="{ 'overlay-right-panel-open': ui.rightPanelOpen }"
-        :style="rightPanelOverlayStyle"
-        :inert="!ui.rightPanelOpen"
-      >
-        <AppRightPanel />
-      </div>
     </div>
 
     <MobileTabBar />
+
+    <!-- 两张底部抽屉：chat 和 progress 互斥挂载，但都常驻 DOM，
+         这样各自的 useRightPanel / TranslationProgress 内部状态不会被 sheet
+         关闭时清掉 —— 只有 MobileBottomSheet 的 transition 控制可见性。 -->
+    <MobileChatSheet v-model:visible="isChatOpen" />
+    <MobileProgressSheet v-model:visible="isProgressOpen" />
   </div>
 </template>
 
@@ -93,19 +103,6 @@ useOverlayCloseStack({
 }
 
 .phone-sidebar-open {
-  transform: translateX(0);
-}
-
-.overlay-right-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  transform: translateX(100%);
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.overlay-right-panel-open {
   transform: translateX(0);
 }
 

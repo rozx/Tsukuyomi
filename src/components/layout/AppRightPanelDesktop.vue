@@ -67,6 +67,18 @@ const {
   handleGroupedActionPopoverHide,
 } = useRightPanel();
 
+// Action popover refs 绑定：桌面 Popover / 手机 MobileBottomSheet 都暴露
+// 相同的 { toggle, hide } 接口；用 function ref 手动写入 Ref.value
+const bindSessionListRef = (el: unknown) => {
+  sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
+};
+const bindActionPopoverRef = (el: unknown) => {
+  actionPopoverRef.value = el as typeof actionPopoverRef.value;
+};
+const bindGroupedActionPopoverRef = (el: unknown) => {
+  groupedActionPopoverRef.value = el as typeof groupedActionPopoverRef.value;
+};
+
 // Desktop variant 使用 ui 的面板宽度；tablet 变体传入 showResizeHandle=false 即可复用模板
 defineExpose({ props });
 </script>
@@ -161,7 +173,7 @@ defineExpose({ props });
     </div>
 
     <ChatSessionListPopover
-      v-model:popover-ref="sessionListPopoverRef"
+      :ref="bindSessionListRef"
       target="#session-list-button"
       :sessions="recentSessions"
       :current-session-id="chatSessionsStore.currentSessionId"
@@ -309,13 +321,13 @@ defineExpose({ props });
     </template>
 
     <ChatGroupedActionPopover
-      v-model:popover-ref="groupedActionPopoverRef"
+      :ref="bindGroupedActionPopoverRef"
       :actions="hoveredGroupedAction?.actions || null"
       @hide="handleGroupedActionPopoverHide"
     />
 
     <ChatActionDetailsPopover
-      v-model:popover-ref="actionPopoverRef"
+      :ref="bindActionPopoverRef"
       :action="hoveredAction?.action || null"
       :context="actionDetailsContext"
       @hide="handleActionPopoverHide"

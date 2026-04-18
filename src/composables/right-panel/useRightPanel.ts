@@ -1,7 +1,6 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import type Textarea from 'primevue/textarea';
-import type Popover from 'primevue/popover';
 import { useUiStore } from 'src/stores/ui';
 import { useContextStore } from 'src/stores/context';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -153,8 +152,12 @@ export function useRightPanel() {
     () => todos.value.filter((todo) => todo.status !== 'done').length,
   );
 
-  // 会话列表 Popover
-  const sessionListPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+  // 会话列表面板：桌面是 Popover，手机是 MobileBottomSheet —— 统一走 toggle/hide 接口
+  type SessionListControl = {
+    toggle: (event: Event) => void;
+    hide: () => void;
+  };
+  const sessionListPopoverRef = ref<SessionListControl | null>(null);
 
   // 切换会话列表 Popover
   const toggleSessionListPopover = (event: Event) => {
@@ -250,12 +253,16 @@ export function useRightPanel() {
     currentTaskId,
   );
 
-  // Popover 状态
-  const actionPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+  // Action Popover：桌面 Popover / 手机 MobileBottomSheet —— 统一 toggle/hide
+  type ActionPanelControl = {
+    toggle: (event: Event) => void;
+    hide: () => void;
+  };
+  const actionPopoverRef = ref<ActionPanelControl | null>(null);
   const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
 
-  // Popover refs for grouped action details
-  const groupedActionPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+  // Grouped action panel：同样的 toggle/hide 接口
+  const groupedActionPopoverRef = ref<ActionPanelControl | null>(null);
   const hoveredGroupedAction = ref<{
     actions: MessageAction[];
     message: ChatMessage;
