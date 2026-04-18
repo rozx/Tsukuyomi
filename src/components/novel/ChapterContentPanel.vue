@@ -556,21 +556,9 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
     color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
     background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   /*
-   * 性能优化：CSS 级虚拟化
-   * content-visibility: auto 会让浏览器跳过视口外段落的渲染/布局/绘制，
-   * 但保持组件挂载，因此键盘导航、paragraphCardRefs、滚动到指定段落等命令式 API
-   * 都可正常工作（相比 q-virtual-scroll 避免了大量导航逻辑的重写）。
-   *
-   * contain-intrinsic-size: auto 160px
-   *   - auto 关键字：让浏览器在元素曾被渲染过后记住真实尺寸，减少二次测量误差
-   *   - 160px：首次测量前的高度估计（覆盖大多数 1-3 行的段落卡片）
-   *
-   * 已知权衡：
-   *   - 浏览器原生 Ctrl+F 搜索无法命中隐藏段落（应用自带的搜索面板不受影响）
-   *   - 屏幕阅读器顺序略有差异（可通过 contain-intrinsic-size 的 auto 模式缓解）
+   * 注意：content-visibility 放在内部 .paragraph-card 上（见下方），
+   * 不能放在 wrapper 上——否则 paint 包含会裁掉 ::before 选中高亮（inset: -0.5rem 绘制在 wrapper 外）。
    */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 160px;
 }
 
 /* 选中高亮：使用伪元素绘制边框/阴影，避免改变布局尺寸导致滚动“上下跳动” */
@@ -620,6 +608,17 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   padding-left: 0;
   position: relative;
   z-index: 1; /* 确保在选中伪元素之上 */
+  /*
+   * 性能优化：CSS 级虚拟化
+   * content-visibility: auto 会让浏览器跳过视口外段落的渲染/布局/绘制，
+   * 但保持组件挂载，因此键盘导航、paragraphCardRefs、滚动到指定段落等命令式 API
+   * 都可正常工作。
+   *
+   * 放在 .paragraph-card（而非外层 .paragraph-with-line-number）上，
+   * 避免 paint 包含裁掉 wrapper 上绘制的选中高亮伪元素。
+   */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 /* 隐藏 ParagraphCard 中的原始段落符号 */
