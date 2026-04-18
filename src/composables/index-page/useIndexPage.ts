@@ -190,16 +190,22 @@ function createIndexPageContext() {
     await Promise.all(loadPromises);
   };
 
+  // immediate: true 让此 watcher 负责"首批字数加载"与"后续增删改"两种场景：
+  //   - 页面首次进入、books 还没加载：立即以空数组跑一次（no-op），随后
+  //     onMounted 里 loadBooks() 完成触发第二次（填充真实计数）
+  //   - 页面再次进入、books 已在 store 里：立即以当前书单触发加载，无需依赖
+  //     loadBooks() 的变更信号；避免过去 onMounted 里再显式 await 一次造成
+  //     与本 watcher 并发重复加载
   watch(
     () => recentBooks.value,
     async () => {
       await loadAllBookCharCounts();
     },
+    { immediate: true },
   );
 
   onMounted(async () => {
     await booksStore.loadBooks();
-    await loadAllBookCharCounts();
   });
 
   return {

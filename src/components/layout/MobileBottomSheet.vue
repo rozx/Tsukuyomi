@@ -13,7 +13,7 @@
  * 目的：所有 mobile 端的 popover / drawer 都走同一套 sheet 壳，避免每个消费者
  * 各自重复编写 backdrop / sheet 容器 / 动画。
  */
-import { watch } from 'vue';
+import { onBeforeUnmount, watch } from 'vue';
 
 const props = withDefaults(
   defineProps<{
@@ -30,8 +30,15 @@ const props = withDefaults(
      * 避免只显示几行的"贴片"观感。
      */
     minHeight?: string;
-    /** 是否允许点击遮罩关闭；默认 true */
+    /** 是否允许点击遮罩关闭；默认 true。`closable=false` 时强制无效。 */
     dismissOnMaskClick?: boolean;
+    /**
+     * 是否允许用户主动关闭。false 时：
+     *   - 隐藏 grabber 与 X 关闭按钮
+     *   - 禁用遮罩点击关闭（无论 dismissOnMaskClick 取值）
+     * 用于关键流程（AskUserDialog）或保存中状态（MemoryPanel `:closable=!isSaving`）。
+     */
+    closable?: boolean;
     /**
      * 让 body 全出血（无 padding），适合自带 app bar / composer 的面板（chat、progress）
      * 占满整个 sheet body 区域，不浪费边距。默认 false（保留 12px×16px padding）。
@@ -44,6 +51,7 @@ const props = withDefaults(
     maxHeight: '92dvh',
     minHeight: '80dvh',
     dismissOnMaskClick: true,
+    closable: true,
     fullBleed: false,
   },
 );
@@ -52,24 +60,72 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
-const close = () => emit('update:visible', false);
-
-const onBackdropClick = () => {
-  if (props.dismissOnMaskClick) close();
+const close = () => {
+  if (!props.closable) return;
+  emit('update:visible', false);
 };
 
-// 打开时锁定 body 滚动，避免页面背景跟随手势滚动
+const onBackdropClick = () => {
+  // 关闭拦截优先级：不可关闭 > 背景点击禁用
+  if (!props.closable || !props.dismissOnMaskClick) return;
+  emit('update:visible', false);
+};
+
+/**
+ * Body scroll-lock 采用模块级引用计数 + 原值捕获：
+ *   - 多个 sheet / dialog 同时打开时不会相互解锁（关闭一个时其它仍需保持锁定）
+ *   - 锁定前捕获原 overflow，全部解锁时精确还原（包括用户在 body 上自设的值）
+ *   - 若 sheet 在可见状态下卸载，onBeforeUnmount 也会释放锁定
+ */
+let lockedByThisInstance = false;
 watch(
   () => props.visible,
   (open) => {
     if (typeof document === 'undefined') return;
-    if (open) {
-      document.body.style.setProperty('overflow', 'hidden');
-    } else {
-      document.body.style.removeProperty('overflow');
+    if (open && !lockedByThisInstance) {
+      acquireBodyScrollLock();
+      lockedByThisInstance = true;
+    } else if (!open && lockedByThisInstance) {
+      releaseBodyScrollLock();
+      lockedByThisInstance = false;
     }
   },
 );
+
+onBeforeUnmount(() => {
+  if (lockedByThisInstance) {
+    releaseBodyScrollLock();
+    lockedByThisInstance = false;
+  }
+});
+</script>
+
+<script lang="ts">
+// 模块级：多个 overlay 可以同时要求锁定，只有最后一个释放时才真正解锁
+let bodyScrollLockCount = 0;
+let previousBodyOverflow: string | null = null;
+
+function acquireBodyScrollLock() {
+  if (bodyScrollLockCount === 0) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  bodyScrollLockCount += 1;
+}
+
+function releaseBodyScrollLock() {
+  if (bodyScrollLockCount === 0) return;
+  bodyScrollLockCount -= 1;
+  if (bodyScrollLockCount === 0) {
+    // 还原至锁定前的原值（可能是空串——等价于移除内联样式）
+    if (previousBodyOverflow) {
+      document.body.style.overflow = previousBodyOverflow;
+    } else {
+      document.body.style.removeProperty('overflow');
+    }
+    previousBodyOverflow = null;
+  }
+}
 </script>
 
 <template>
@@ -85,8 +141,10 @@ watch(
       >
         <div class="mbs-sheet" :style="{ maxHeight, minHeight }">
           <!-- Grabber 手柄（按月詠 mobile 设计稿 ChatSheetVariant）：
-               轻拍/下滑可关闭，视觉上提示这是一个可拖动的底部抽屉 -->
+               轻拍/下滑可关闭，视觉上提示这是一个可拖动的底部抽屉。
+               `closable=false` 时完全隐藏——关键流程不允许用户快速关闭 -->
           <button
+            v-if="closable"
             type="button"
             class="mbs-grabber"
             :aria-label="closeLabel"
@@ -94,6 +152,8 @@ watch(
           >
             <div class="mbs-grabber-bar" />
           </button>
+          <!-- 不可关闭时留出 grabber 的视觉占位，避免 head 太贴顶 -->
+          <div v-else class="mbs-grabber-spacer" aria-hidden="true" />
           <!-- 消费者可通过 #header slot 自定义整个 header 行（如 chat 需要
                logo + 标题 + 副标题 + 动作按钮 单行紧凑布局），不提供时使用
                默认的 eyebrow + title + close 布局 -->
@@ -104,6 +164,7 @@ watch(
                 <div class="mbs-title">{{ title }}</div>
               </div>
               <button
+                v-if="closable"
                 type="button"
                 class="mbs-close"
                 :aria-label="closeLabel"
@@ -176,6 +237,12 @@ watch(
 
 .mbs-grabber:active .mbs-grabber-bar {
   background: rgba(255, 255, 255, 0.45);
+}
+
+/* 不可关闭时的 grabber 占位，保持与可关闭状态相近的顶部节奏 */
+.mbs-grabber-spacer {
+  flex-shrink: 0;
+  height: 12px;
 }
 
 .mbs-head {

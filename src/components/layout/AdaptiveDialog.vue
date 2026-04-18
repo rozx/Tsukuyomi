@@ -21,10 +21,10 @@
  * 约定：
  *   - `header` 字符串 → 桌面作为 Dialog header，手机作为 sheet title
  *   - `eyebrow` 仅手机生效
- *   - 桌面独有属性（modal / dismissableMask / closeOnEscape / contentClass）
- *     原样透传给 PrimeVue Dialog
- *   - 手机的关闭行为始终走 sheet 默认 handle / backdrop / close button；
- *     `closable` 只影响桌面
+ *   - `modal` / `closeOnEscape` / `contentClass` 桌面独有，原样透传给 PrimeVue Dialog
+ *   - `closable=false` 桌面与手机均会屏蔽用户主动关闭路径（桌面隐藏 X 按钮；
+ *     手机隐藏 grabber + X + 禁用遮罩点击）
+ *   - `dismissableMask` 映射到手机的 `sheetDismissOnMaskClick`（若未显式设置）
  */
 import { computed } from 'vue';
 import Dialog from 'primevue/dialog';
@@ -49,7 +49,10 @@ const props = withDefaults(
     sheetMaxHeight?: string;
     /** sheet 的最小高度，仅手机生效 */
     sheetMinHeight?: string;
-    /** sheet 是否允许点击遮罩关闭；仅手机生效 */
+    /**
+     * sheet 是否允许点击遮罩关闭；仅手机生效。
+     * 未显式设置时默认继承 `dismissableMask`（与桌面语义对齐）。
+     */
     sheetDismissOnMaskClick?: boolean;
     /** sheet body 是否全出血（消除默认 padding）；仅手机生效 */
     sheetFullBleed?: boolean;
@@ -68,7 +71,7 @@ const props = withDefaults(
     desktopWidth: '32rem',
     sheetMaxHeight: '92dvh',
     sheetMinHeight: '80dvh',
-    sheetDismissOnMaskClick: true,
+    // 不设默认值 → undefined 表示"未显式设置"，运行时回退到 dismissableMask
     sheetFullBleed: false,
     modal: true,
     closable: true,
@@ -94,6 +97,11 @@ const mergedDialogClass = computed(() =>
   [adaptiveClass.value, props.dialogClass].filter(Boolean).join(' '),
 );
 
+// 未显式设置 sheetDismissOnMaskClick 时，沿用桌面侧 dismissableMask 的意图
+const effectiveSheetDismiss = computed(() =>
+  props.sheetDismissOnMaskClick !== undefined ? props.sheetDismissOnMaskClick : props.dismissableMask,
+);
+
 const handleVisibleChange = (next: boolean) => emit('update:visible', next);
 </script>
 
@@ -106,7 +114,8 @@ const handleVisibleChange = (next: boolean) => emit('update:visible', next);
     :eyebrow="eyebrow"
     :max-height="sheetMaxHeight"
     :min-height="sheetMinHeight"
-    :dismiss-on-mask-click="sheetDismissOnMaskClick"
+    :closable="closable"
+    :dismiss-on-mask-click="effectiveSheetDismiss"
     :full-bleed="sheetFullBleed"
     @update:visible="handleVisibleChange"
   >
