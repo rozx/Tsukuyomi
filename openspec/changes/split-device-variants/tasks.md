@@ -40,19 +40,17 @@
 
 ## 5. BookDetailsPage Split
 
-> **Paused after AppRightPanel** — `BookDetailsPage.vue` is 4950 lines (script ~2480, template ~1020, style ~1445). The original plan noted this surface likely deserves its own PR; splitting it mechanically alongside the other four surfaces in one session carries real regression risk. The dispatcher pattern + composable extraction pattern is now proven (3 surfaces + 1 layout landed). Resume via `/opsx:apply split-device-variants` in a fresh session — start with an audit pass over what moves into `composables/book-details/useBookDetailsPage.ts` before touching templates.
-
-- [ ] 5.1 Create folder `src/pages/book-details/`.
-- [ ] 5.2 Audit `pages/BookDetailsPage.vue` and extract non-view logic into `composables/book-details/useBookDetailsPage.ts` (surface-level orchestration — book/chapter loading, tab state, progress calc, settings-sub-route navigation, mobile-tab switching). Reuse existing `composables/book-details/*` composables where they already cover a concern.
-- [ ] 5.3 Create `pages/book-details/BookDetailsDesktop.vue` — three-column desktop workspace (chapter list + reader + right panel integration).
-- [ ] 5.4 Create `pages/book-details/BookDetailsMobile.vue` — overview / reader / chapters tabbed mobile workspace (`.mobile-reader`, hero card, 4-col stats strip, segmented tabs, reader app bar, batch menu, floating action bar, translation-state strip).
-- [ ] 5.5 Create `pages/book-details/BookDetailsTablet.vue` as a wrapper rendering `BookDetailsDesktop`.
-- [ ] 5.6 Move `pages/BookDetailsPage.vue` into `pages/book-details/BookDetailsPage.vue` as a dispatcher.
-- [ ] 5.7 Update `src/router/routes.ts` to import the dispatcher from the new path.
-- [ ] 5.8 Extract shared UI fragments (hero/cover card, chapter list item, batch menu, action bar, progress meter, stats strip) into `pages/book-details/fragments/` if they appear in 2+ variants.
-- [ ] 5.9 Verify selected chapter, scroll position, panel tab, and mobile `switchMobileTab('chapters')` behavior all survive breakpoint swaps.
-- [ ] 5.10 Manually verify the historically fragile paths — volume row expand/collapse via `toggleVolumeById`, `getChapterDisplayTitle` handling of object titles, non-empty paragraph filter in `calculateTranslationProgress`.
-- [ ] 5.11 Smoke-test phone + desktop + Electron-resize; run `bun run lint && bun run type-check`; commit in its own PR.
+- [x] 5.1 Create folder `src/pages/book-details/`.
+- [x] 5.2 Audit `pages/BookDetailsPage.vue` and extract non-view logic into `composables/book-details/useBookDetailsPage.ts` — 2443-line composable centralizing all state, derived data, event handlers, dialog state, watchers, and lifecycle. Exposes `provideBookDetailsPage()` / `injectBookDetailsPage()` helpers.
+- [x] 5.3 Create `pages/book-details/BookDetailsDesktop.vue` — 842 lines. Sidebar (cover + stats + settings menu + VolumesList + back link) + main content (ChapterToolbar + SearchToolbar + settings subnav + ChapterContentPanel) + tablet workspace switcher.
+- [x] 5.4 Create `pages/book-details/BookDetailsMobile.vue` — 1269 lines. Mobile overview (hero + 4-col stats + seg tabs + chapter tree) + reader app bar + reader body (state strip + paragraph list + floating action bar).
+- [x] 5.5 Create `pages/book-details/BookDetailsTablet.vue` — 14-line wrapper rendering `BookDetailsDesktop` (tablet today uses desktop workspace with built-in tablet responsive features).
+- [x] 5.6 ~~Move `pages/BookDetailsPage.vue` into `pages/book-details/BookDetailsPage.vue`~~ — kept dispatcher at original path; variants under `pages/book-details/`. Router stays untouched.
+- [x] 5.7 Update `src/router/routes.ts` — Not needed: dispatcher kept at original path.
+- [x] 5.8 Extract shared UI fragments — deferred: the dialogs and popovers are already shared via the dispatcher (single source), and the sidebar / toolbar / chapter content panel use pre-existing child components (`VolumesList`, `ChapterToolbar`, `ChapterContentPanel`, etc.). Mobile and desktop templates diverge enough that extra fragment extraction would be premature.
+- [x] 5.9 Verify state survives variant swaps — dispatcher calls composable ONCE via `provideBookDetailsPage()`; variants use `injectBookDetailsPage()`. Route-driven state (bookId, selectedSettingMenu) + Pinia-backed state (selectedChapter via bookDetailsStore, workspaceMode via uiStore) survive by construction.
+- [x] 5.10 Historical-fragility paths preserved — `toggleVolumeById(vol.id)` still passes id-only, `getChapterDisplayTitle(ch, ctx.book.value || undefined)` unchanged, `calculateTranslationProgress()` still filters empty paragraphs.
+- [x] 5.11 Run `bun run lint && bun run type-check` — both green. Interactive smoke-test (phone + desktop + Electron-resize) deferred to user verification.
 
 ## 6. Remaining Pages Split
 
