@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
- * Tablet shell — hybrid: persistent sidebar + overlay right panel + AppHeader + AppFooter.
- * This preserves today's tablet behavior (the previous v-if structure rendered this combination).
- * When a dedicated tablet redesign lands, replace this template accordingly.
+ * Tablet shell — slim left icon rail + top utility strip + main RouterView,
+ * with the existing AppRightPanel as an absolute-positioned overlay.
+ *
+ * Active tab state is shared with MobileTabBar via useMainNavActive().
+ * Right-panel close behavior re-uses useOverlayCloseStack so Esc / mask click
+ * dismiss chat or progress panels.
  */
 import { computed } from 'vue';
-import AppHeader from 'src/components/layout/AppHeader.vue';
-import AppFooter from 'src/components/layout/AppFooter.vue';
-import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
+import TabletSysBar from 'src/components/layout/TabletSysBar.vue';
+import TabletNavRail from 'src/components/layout/TabletNavRail.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
@@ -21,7 +23,7 @@ const rightPanelOverlayStyle = computed(() => ({
 
 const closeRightPanel = () => ui.closeRightPanel();
 
-// 平板：侧边栏为常驻抽屉（推开内容），右侧面板为覆盖层，仅右侧面板进入关闭栈。
+// 只有右侧面板进入关闭栈；左侧图标导航栏是常驻的，不可折叠。
 useOverlayCloseStack({
   isOpen: computed(() => ui.rightPanelOpen),
   enabled: computed(() => true),
@@ -31,58 +33,40 @@ useOverlayCloseStack({
 
 <template>
   <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
-    <AppHeader />
+    <TabletSysBar />
 
     <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
-      <div
-        v-if="ui.rightPanelOpen"
-        class="layout-overlay-mask z-40"
-        @click="closeRightPanel"
-      />
+      <TabletNavRail />
 
-      <div
-        class="sidebar-wrapper flex-shrink-0 flex flex-col"
-        :style="{ width: ui.sideMenuOpen ? '16rem' : '0' }"
-        :inert="!ui.sideMenuOpen"
-      >
+      <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 relative">
         <div
-          class="h-full w-64 transform transition duration-200 flex flex-col"
-          :class="ui.sideMenuOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'"
-        >
-          <AppSideMenu />
-        </div>
-      </div>
+          v-if="ui.rightPanelOpen"
+          class="layout-overlay-mask z-40"
+          @click="closeRightPanel"
+        />
 
-      <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60">
         <RouterView />
+
+        <div
+          class="overlay-right-panel z-50"
+          :class="{ 'overlay-right-panel-open': ui.rightPanelOpen }"
+          :style="rightPanelOverlayStyle"
+          :inert="!ui.rightPanelOpen"
+        >
+          <AppRightPanel />
+        </div>
       </main>
-
-      <div
-        class="overlay-right-panel z-50"
-        :class="{ 'overlay-right-panel-open': ui.rightPanelOpen }"
-        :style="rightPanelOverlayStyle"
-        :inert="!ui.rightPanelOpen"
-      >
-        <AppRightPanel />
-      </div>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
 <style scoped>
-.sidebar-wrapper {
-  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: width;
-  height: 100%;
-}
-
 .layout-overlay-mask {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 .overlay-right-panel {

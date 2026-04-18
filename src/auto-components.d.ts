@@ -79,6 +79,8 @@ declare module 'vue' {
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusBody: typeof import('./components/sync/SyncStatusBody.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']
+    TabletNavRail: typeof import('./components/layout/TabletNavRail.vue')['default']
+    TabletSysBar: typeof import('./components/layout/TabletSysBar.vue')['default']
     TaskActionBar: typeof import('./components/novel/translation-progress/TaskActionBar.vue')['default']
     TaskEmptyState: typeof import('./components/novel/translation-progress/TaskEmptyState.vue')['default']
     TaskStatusBar: typeof import('./components/novel/translation-progress/TaskStatusBar.vue')['default']

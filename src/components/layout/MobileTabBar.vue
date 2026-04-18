@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
+import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
 
 const router = useRouter();
 const route = useRoute();
 const ui = useUiStore();
 
-type TabId = 'home' | 'library' | 'chat' | 'ai' | 'settings';
-
-type Tab = { id: TabId; icon: string; label: string };
+type Tab = { id: MainNavTab; icon: string; label: string };
 
 // 内容 → AI 工具 → 应用设置：
 //   首页 · 书库   ← 内容入口
@@ -23,17 +21,9 @@ const tabs: Tab[] = [
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];
 
-const activeTab = computed<TabId>(() => {
-  if (ui.rightPanelOpen && ui.activeRightTab === 'chat') return 'chat';
-  const path = route.path;
-  if (path === '/') return 'home';
-  if (path.startsWith('/ai')) return 'ai';
-  if (path.startsWith('/settings')) return 'settings';
-  if (path === '/books' || path.startsWith('/books/')) return 'library';
-  return 'home';
-});
+const activeTab = useMainNavActive();
 
-const onTabClick = (id: TabId) => {
+const onTabClick = (id: MainNavTab) => {
   switch (id) {
     case 'home':
       if (ui.rightPanelOpen) ui.closeRightPanel();

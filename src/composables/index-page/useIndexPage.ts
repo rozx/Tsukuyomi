@@ -56,6 +56,9 @@ function createIndexPageContext() {
   const totalWords = computed(() =>
     booksStore.books.reduce((total, book) => total + getTotalWords(book), 0),
   );
+  const totalTerms = computed(() =>
+    booksStore.books.reduce((total, book) => total + (book.terminologies?.length ?? 0), 0),
+  );
 
   const recentBooks = computed(() =>
     [...booksStore.books]
@@ -213,6 +216,7 @@ function createIndexPageContext() {
     totalChapters,
     starredBooks,
     totalWords,
+    totalTerms,
     recentBooks,
     continueReadingBook,
     greeting,
