@@ -10,25 +10,13 @@
  * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
  * term popover / character popover / editing / multi-version selection).
  */
-import { computed } from 'vue';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
-import { useUiStore } from 'src/stores/ui';
+import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
+import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
-const ui = useUiStore();
 const ctx = injectBookDetailsPage();
-
-const isChatActive = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'chat');
-const isProgressActive = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'progress');
-
-const toggleRail = (tab: 'chat' | 'progress') => {
-  if (ui.rightPanelOpen && ui.activeRightTab === tab) {
-    ui.closeRightPanel();
-    return;
-  }
-  ui.setActiveRightTab(tab);
-  ui.openRightPanel();
-};
+const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 </script>
 
 <template>
@@ -44,11 +32,11 @@ const toggleRail = (tab: 'chat' | 'progress') => {
       @click="ctx.toggleTabletSidebar"
     />
 
-    <aside class="bdt-rail" aria-label="章节辅助工具">
+    <TabletSideRail>
       <button
         type="button"
-        class="bdt-rail-btn"
-        :class="{ 'bdt-rail-btn--active': ctx.isTabletSidebarOpen.value }"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': ctx.isTabletSidebarOpen.value }"
         :title="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
         :aria-label="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
         :aria-pressed="ctx.isTabletSidebarOpen.value"
@@ -61,12 +49,12 @@ const toggleRail = (tab: 'chat' | 'progress') => {
         />
       </button>
 
-      <div class="bdt-rail-sep" />
+      <div class="tsr-sep" />
 
       <button
         type="button"
-        class="bdt-rail-btn"
-        :class="{ 'bdt-rail-btn--active': isChatActive }"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': isChatActive }"
         title="AI 助手"
         @click="() => toggleRail('chat')"
       >
@@ -75,20 +63,17 @@ const toggleRail = (tab: 'chat' | 'progress') => {
 
       <button
         type="button"
-        class="bdt-rail-btn"
-        :class="{ 'bdt-rail-btn--active': isProgressActive }"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': isProgressActive }"
         title="翻译进度"
         @click="() => toggleRail('progress')"
       >
         <i class="pi pi-objects-column" aria-hidden="true" />
-        <span
-          v-if="ctx.activeTranslationTaskCount.value > 0"
-          class="bdt-rail-badge"
-        >
+        <span v-if="ctx.activeTranslationTaskCount.value > 0" class="tsr-badge">
           {{ ctx.activeTranslationTaskCount.value }}
         </span>
       </button>
-    </aside>
+    </TabletSideRail>
   </div>
 </template>
 
@@ -303,80 +288,4 @@ const toggleRail = (tab: 'chat' | 'progress') => {
   z-index: 3;
 }
 
-/* ───── Right-edge vertical rail (AI 助手 / 翻译进度) ───── */
-.bdt-rail {
-  flex-shrink: 0;
-  width: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 6px;
-  background: rgba(10, 12, 15, 0.55);
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.bdt-rail-btn {
-  position: relative;
-  width: 36px;
-  min-height: 36px;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 4px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: rgba(247, 244, 236, 0.72);
-  cursor: pointer;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.bdt-rail-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #e9edf5;
-}
-
-.bdt-rail-btn--active {
-  background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.32);
-  color: #a3b7cf;
-}
-
-.bdt-rail-btn i {
-  font-size: 14px;
-  line-height: 1;
-}
-
-.bdt-rail-sep {
-  width: 24px;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  margin: 4px 0;
-}
-
-.bdt-rail-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: #d97757;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
-  line-height: 1;
-  border: 1.5px solid #080a0d;
-}
 </style>

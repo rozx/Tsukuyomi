@@ -80,6 +80,7 @@ import {
   chapterStatusLabel as chapterStatusLabelPure,
   type ChapterStatus as ChapterStatusType,
 } from 'src/utils/chapter-status';
+import { isPortrait } from 'src/utils/device-orientation';
 
 /**
  * BookDetailsPage 业务逻辑 composable + provide/inject 辅助。
@@ -141,7 +142,9 @@ function createBookDetailsPageContext() {
 
   // 平板端侧边栏可折叠——竖屏 17rem 宽度下，读者想要更多阅读空间时折叠目录。
   // 桌面 / 手机不走这个状态（桌面始终有侧栏，手机用 workspace mode 切换）。
-  const isTabletSidebarOpen = ref(true);
+  // 初始化时根据当前朝向决定默认：竖屏默认关闭（避免 overlay 挡住正文），
+  // 横屏默认打开（list 参与 flex 布局，不影响阅读）。
+  const isTabletSidebarOpen = ref(!isPortrait());
   const toggleTabletSidebar = () => {
     isTabletSidebarOpen.value = !isTabletSidebarOpen.value;
   };

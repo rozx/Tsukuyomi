@@ -85,6 +85,7 @@ declare module 'vue' {
     TabletChatPanel: typeof import('./components/layout/TabletChatPanel.vue')['default']
     TabletNavRail: typeof import('./components/layout/TabletNavRail.vue')['default']
     TabletProgressPanel: typeof import('./components/layout/TabletProgressPanel.vue')['default']
+    TabletSideRail: typeof import('./components/layout/TabletSideRail.vue')['default']
     TabletSysBar: typeof import('./components/layout/TabletSysBar.vue')['default']
     TaskActionBar: typeof import('./components/novel/translation-progress/TaskActionBar.vue')['default']
     TaskEmptyState: typeof import('./components/novel/translation-progress/TaskEmptyState.vue')['default']

@@ -21,6 +21,9 @@ import { useRouter } from 'vue-router';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useTabletRightRail } from 'src/composables/useTabletRightRail';
+import { isPortrait } from 'src/utils/device-orientation';
+import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
 import {
   getChapterStatus,
   chapterStatusIcon,
@@ -35,6 +38,8 @@ const router = useRouter();
 const bookDetailsStore = useBookDetailsStore();
 const booksStore = useBooksStore();
 const toast = useToastWithHistory();
+const { isChatActive, isProgressActive, activeTranslationTaskCount, toggleRail } =
+  useTabletRightRail();
 
 // 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
 const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
@@ -67,6 +72,19 @@ const currentSortLabel = computed(
 
 // 本地 UI 状态：当前选中的书（主从布局右侧详情）。不写入任何 store。
 const selectedBookId = ref<string | null>(null);
+
+// 列表可 dock——竖屏宽度下 list + detail 同时摆显得拥挤，改成列表叠加在详情
+// 之上（参考 BookDetailsTablet 的 sidebar dock 模式）。默认打开，用户挑完一本
+// 书后自动关闭（on portrait）。横屏由 CSS media query 让列表重新参与 flex。
+const isListOpen = ref(true);
+const toggleList = () => {
+  isListOpen.value = !isListOpen.value;
+};
+const selectBook = (book: Novel) => {
+  selectedBookId.value = book.id;
+  // 竖屏：挑中后自动收起 list，让详情铺满屏幕；横屏 list 常驻不动。
+  if (isPortrait()) isListOpen.value = false;
+};
 
 const selectedBook = computed<Novel | null>(() => {
   const list = ctx.filteredBooks.value;
@@ -297,7 +315,18 @@ async function moveChapter(
 </script>
 
 <template>
-  <div class="tablet-library w-full h-full flex min-h-0">
+  <div
+    class="tablet-library w-full h-full flex min-h-0"
+    :class="{ 'tablet-library--list-open': isListOpen }"
+  >
+    <!-- 竖屏叠层：list dock 打开时点外侧关闭；横屏由 CSS display:none 隐藏 -->
+    <div
+      v-if="isListOpen"
+      class="tl-list-scrim"
+      aria-hidden="true"
+      @click="toggleList"
+    />
+
     <!-- 左侧书籍列表 -->
     <aside class="tl-list">
       <header class="tl-list-head">
@@ -384,7 +413,7 @@ async function moveChapter(
           type="button"
           class="tl-list-row"
           :class="{ 'tl-list-row--active': book.id === selectedBook?.id }"
-          @click="selectedBookId = book.id"
+          @click="selectBook(book)"
           @dblclick="ctx.navigateToBookDetails(book)"
         >
           <div class="tl-list-cover">
@@ -626,6 +655,51 @@ async function moveChapter(
       </div>
     </section>
 
+    <!-- 右侧 rail —— list 切换 + AI 助手 + 翻译进度。竖屏 list 是 overlay，
+         toggle 按钮留在 rail 上；横屏 list 参与 flex 布局，toggle 把它收掉腾空间。 -->
+    <TabletSideRail>
+      <button
+        type="button"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': isListOpen }"
+        :title="isListOpen ? '收起书籍列表' : '展开书籍列表'"
+        :aria-label="isListOpen ? '收起书籍列表' : '展开书籍列表'"
+        :aria-pressed="isListOpen"
+        @click="toggleList"
+      >
+        <i
+          class="pi"
+          :class="isListOpen ? 'pi-angle-double-left' : 'pi-bars'"
+          aria-hidden="true"
+        />
+      </button>
+
+      <div class="tsr-sep" />
+
+      <button
+        type="button"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': isChatActive }"
+        title="AI 助手"
+        @click="() => toggleRail('chat')"
+      >
+        <i class="pi pi-sparkles" aria-hidden="true" />
+      </button>
+
+      <button
+        type="button"
+        class="tsr-btn"
+        :class="{ 'tsr-btn--active': isProgressActive }"
+        title="翻译进度"
+        @click="() => toggleRail('progress')"
+      >
+        <i class="pi pi-objects-column" aria-hidden="true" />
+        <span v-if="activeTranslationTaskCount > 0" class="tsr-badge">
+          {{ activeTranslationTaskCount }}
+        </span>
+      </button>
+    </TabletSideRail>
+
     <!-- 隐藏的文件输入（JSON 导入）—— 桌面与手机都在自己模板里挂一份 -->
     <input
       :ref="(el) => { ctx.fileInputRef.value = el as HTMLInputElement | null; }"
@@ -695,6 +769,7 @@ async function moveChapter(
 
 <style scoped>
 .tablet-library {
+  position: relative;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   overflow: hidden;
 }
@@ -710,6 +785,64 @@ async function moveChapter(
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-right-color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 横屏默认：list-open 不影响布局；list 关闭时宽度归零、内容面板自动填满 */
+.tablet-library:not(.tablet-library--list-open) .tl-list {
+  width: 0;
+  border-right-color: transparent;
+}
+
+.tablet-library:not(.tablet-library--list-open) .tl-list > * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 遮罩：仅竖屏 list 打开时显示，点击关闭 */
+.tl-list-scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  z-index: 15;
+}
+
+@media (orientation: portrait) {
+  .tl-list-scrim {
+    display: block;
+  }
+
+  /* 竖屏 list 变成 overlay drawer，不参与 flex 布局——详情面板始终全宽 */
+  .tl-list {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 86%;
+    z-index: 20;
+    background: rgba(14, 16, 20, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  }
+
+  .tablet-library:not(.tablet-library--list-open) .tl-list {
+    width: 320px;
+    border-right-color: rgba(255, 255, 255, 0.06);
+    transform: translateX(-100%);
+  }
+
+  .tablet-library:not(.tablet-library--list-open) .tl-list > * {
+    opacity: 1;
+    pointer-events: none;
+  }
 }
 
 .tl-list-head {
