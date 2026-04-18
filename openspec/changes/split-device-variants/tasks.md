@@ -62,16 +62,16 @@
 
 ## 7. DRY Pass
 
-- [ ] 7.1 Scan every new variant for markup blocks duplicated across sibling variants; extract any hits into shared child components.
-- [ ] 7.2 Scan every new variant `<style>` block for duplicated hex values / gradients / shadow tokens; promote to Tailwind utility / existing CSS custom property / shared class.
-- [ ] 7.3 Verify no dispatcher contains a hand-rolled `isElectron ? ... : isPhone ? ...` conditional (grep for `isElectron` in dispatcher files — only `useDeviceVariant.ts` should match).
-- [ ] 7.4 Verify no variant re-declares state that is already exposed by its per-surface composable (grep for duplicated ref/reactive names).
+- [x] 7.1 Scan every new variant for markup blocks duplicated across sibling variants; extract any hits into shared child components. — `TaskEmptyState.vue` extracted for TranslationProgress. Other surfaces already compose shared child components (`VolumesList`, `ChapterToolbar`, `ChapterContentPanel`, `ChatMessageList`, etc.). No further extractions warranted.
+- [x] 7.2 Scan every new variant `<style>` block for duplicated hex values / gradients / shadow tokens — mobile-specific palette (`#6d88a8` / `#a3b7cf` / `#a7d1b0` / `#f2c037`) is intentionally shared with the Tsukuyomi palette; a broader token migration is out of scope. Variants use Tailwind utilities + existing CSS custom properties (`--white-opacity-*`, `--moon-*`, `--primary-*`) where available.
+- [x] 7.3 Verify no dispatcher contains a hand-rolled `isElectron ? ... : isPhone ? ...` conditional — only `useDeviceVariant.ts` (JSDoc comment + the rule itself) and leaf dialogs (`SettingsDialog`, `BookDialog`, `NovelScraperDialog` — explicitly exempted) match.
+- [x] 7.4 Verify no variant re-declares state that is already exposed by its per-surface composable — each variant consumes `injectBookDetailsPage()` / `injectIndexPage()` / `injectBooksPage()` / `injectAIPage()` / `injectHelpPage()` / `useTranslationProgressPanel()` / `useRightPanel()`. Variant-local refs are limited to genuinely ephemeral UI state (e.g., `mobileTab` in `TranslationProgressMobile`).
 
 ## 8. Verification & Documentation
 
-- [ ] 8.1 Run full `bun run lint && bun run type-check` clean.
-- [ ] 8.2 Run `bun test` — existing tests (services / stores) remain green.
-- [ ] 8.3 Manual regression pass: visit every route on phone, desktop, and Electron (resized + full); confirm behavior matches pre-refactor state.
-- [ ] 8.4 Confirm the openspec validation passes: `openspec validate split-device-variants --strict`.
-- [ ] 8.5 Update `CLAUDE.md` and/or `AGENTS.md` "架构分层" section with a sentence describing the dispatcher + variant pattern and pointing at `useDeviceVariant.ts`.
-- [ ] 8.6 Archive the change: `openspec archive split-device-variants`.
+- [x] 8.1 Run full `bun run lint && bun run type-check` clean.
+- [x] 8.2 Run `bun test` — existing tests remain green: 1052 pass / 2 skip / 0 fail / 2782 expect() calls / 1054 tests across 82 files.
+- [ ] 8.3 Manual regression pass: visit every route on phone, desktop, and Electron (resized + full); confirm behavior matches pre-refactor state. — Deferred to user: interactive smoke-testing across every route is a human task.
+- [x] 8.4 Confirm the openspec validation passes: `openspec validate split-device-variants --strict` — valid.
+- [ ] 8.5 Update `CLAUDE.md` and/or `AGENTS.md` "架构分层" section with a sentence describing the dispatcher + variant pattern and pointing at `useDeviceVariant.ts`. — Deferred to final polish pass.
+- [ ] 8.6 Archive the change: `openspec archive split-device-variants` — deferred until user approves the manual regression (8.3) and docs (8.5).
