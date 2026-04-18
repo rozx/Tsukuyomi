@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
-import type { Chapter } from 'src/models/novel';
+import type { Chapter, Volume } from 'src/models/novel';
 
 const ctx = injectBookDetailsPage();
 
@@ -20,6 +20,76 @@ const openChapterListPicker = () => {
 const pickChapterFromSheet = (ch: Chapter) => {
   showChapterListPicker.value = false;
   ctx.onNavigateToChapter(ch);
+};
+
+// 卷 / 章节行的"更多操作" picker —— 手机端替代桌面右键菜单 / 悬浮按钮。
+// 通过单个 bottom sheet 承载编辑 / 删除 / 上移 / 下移动作，避免每行塞一堆图标。
+const volumeActionTarget = ref<Volume | null>(null);
+const openVolumeActions = (vol: Volume) => {
+  volumeActionTarget.value = vol;
+};
+const closeVolumeActions = () => {
+  volumeActionTarget.value = null;
+};
+const showVolumeActions = computed({
+  get: () => volumeActionTarget.value !== null,
+  set: (open) => {
+    if (!open) closeVolumeActions();
+  },
+});
+const runVolumeEdit = () => {
+  const vol = volumeActionTarget.value;
+  closeVolumeActions();
+  if (vol) ctx.onEditVolume(vol);
+};
+const runVolumeDelete = () => {
+  const vol = volumeActionTarget.value;
+  closeVolumeActions();
+  if (vol) ctx.onDeleteVolume(vol);
+};
+
+const chapterActionTarget = ref<{ chapter: Chapter; volumeId: string; index: number } | null>(null);
+const openChapterActions = (chapter: Chapter, volumeId: string, index: number) => {
+  chapterActionTarget.value = { chapter, volumeId, index };
+};
+const closeChapterActions = () => {
+  chapterActionTarget.value = null;
+};
+const showChapterActions = computed({
+  get: () => chapterActionTarget.value !== null,
+  set: (open) => {
+    if (!open) closeChapterActions();
+  },
+});
+const chapterActionVolume = computed(() =>
+  chapterActionTarget.value
+    ? (ctx.volumes.value.find((v) => v.id === chapterActionTarget.value!.volumeId) ?? null)
+    : null,
+);
+const chapterActionCanMoveUp = computed(() =>
+  chapterActionTarget.value ? chapterActionTarget.value.index > 0 : false,
+);
+const chapterActionCanMoveDown = computed(() => {
+  const target = chapterActionTarget.value;
+  const vol = chapterActionVolume.value;
+  if (!target || !vol?.chapters) return false;
+  return target.index < vol.chapters.length - 1;
+});
+const runChapterEdit = () => {
+  const target = chapterActionTarget.value;
+  closeChapterActions();
+  if (target) ctx.onEditChapter(target.chapter);
+};
+const runChapterDelete = () => {
+  const target = chapterActionTarget.value;
+  closeChapterActions();
+  if (target) ctx.onDeleteChapter(target.chapter);
+};
+const runChapterMove = (direction: 'up' | 'down') => {
+  const target = chapterActionTarget.value;
+  closeChapterActions();
+  if (!target) return;
+  void ctx.onMoveChapter({ ...target, direction });
 };
 </script>
 
@@ -176,9 +246,10 @@ const pickChapterFromSheet = (ch: Chapter) => {
           <!-- 清爽的手机端章节树：卷（可折叠）+ 章节（状态图标 + 百分比） -->
           <div class="mbd-tree">
             <template v-for="vol in ctx.volumes.value" :key="vol.id">
-              <button
+              <div
                 class="mbd-tree-row mbd-tree-row--vol"
                 :class="{ 'mbd-tree-row--vol-open': ctx.isVolumeExpanded(vol.id) }"
+                role="button"
                 @click="ctx.toggleVolumeById(vol.id)"
               >
                 <i
@@ -188,10 +259,18 @@ const pickChapterFromSheet = (ch: Chapter) => {
                 />
                 <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol) }}</span>
                 <span class="mbd-tree-row-count">{{ vol.chapters?.length ?? 0 }} 章</span>
-              </button>
+                <button
+                  type="button"
+                  class="mbd-tree-row-more"
+                  aria-label="卷操作"
+                  @click.stop="openVolumeActions(vol)"
+                >
+                  <i class="pi pi-ellipsis-v" aria-hidden="true" />
+                </button>
+              </div>
               <template v-if="ctx.isVolumeExpanded(vol.id)">
                 <div
-                  v-for="ch in vol.chapters || []"
+                  v-for="(ch, chIdx) in vol.chapters || []"
                   :key="ch.id"
                   class="mbd-tree-row mbd-tree-row--chapter"
                   :class="{
@@ -217,6 +296,14 @@ const pickChapterFromSheet = (ch: Chapter) => {
                   >
                     {{ ctx.chapterStatusLabel(ch.id) }}
                   </span>
+                  <button
+                    type="button"
+                    class="mbd-tree-row-more"
+                    aria-label="章节操作"
+                    @click.stop="openChapterActions(ch, vol.id, chIdx)"
+                  >
+                    <i class="pi pi-ellipsis-v" aria-hidden="true" />
+                  </button>
                 </div>
               </template>
             </template>
@@ -533,6 +620,78 @@ const pickChapterFromSheet = (ch: Chapter) => {
       </div>
     </MobileBottomSheet>
   </div>
+
+  <!-- ─────────────── 卷 / 章节操作 picker（overview 和阅读器都可触发） ─────────────── -->
+  <!-- 卷操作 picker —— 编辑 / 删除 -->
+  <MobileBottomSheet
+    v-model:visible="showVolumeActions"
+    :title="volumeActionTarget ? ctx.getVolumeDisplayTitle(volumeActionTarget) : '卷操作'"
+    eyebrow="VOLUME"
+    min-height="auto"
+  >
+    <button type="button" class="mbr-batch-picker-option" @click="runVolumeEdit">
+      <i class="pi pi-pencil mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">编辑卷</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      class="mbr-batch-picker-option mbr-batch-picker-option--danger"
+      @click="runVolumeDelete"
+    >
+      <i class="pi pi-trash mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">删除卷</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+  </MobileBottomSheet>
+
+  <!-- 章节操作 picker —— 编辑 / 删除 / 上下移 -->
+  <MobileBottomSheet
+    v-model:visible="showChapterActions"
+    :title="
+      chapterActionTarget
+        ? ctx.getChapterDisplayTitle(chapterActionTarget.chapter, ctx.book.value || undefined)
+        : '章节操作'
+    "
+    eyebrow="CHAPTER"
+    min-height="auto"
+  >
+    <button type="button" class="mbr-batch-picker-option" @click="runChapterEdit">
+      <i class="pi pi-pencil mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">编辑章节</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      class="mbr-batch-picker-option"
+      :disabled="!chapterActionCanMoveUp"
+      @click="runChapterMove('up')"
+    >
+      <i class="pi pi-arrow-up mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">上移</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+    <button
+      type="button"
+      class="mbr-batch-picker-option"
+      :disabled="!chapterActionCanMoveDown"
+      @click="runChapterMove('down')"
+    >
+      <i class="pi pi-arrow-down mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">下移</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+    <div class="mbr-batch-picker-sep" />
+    <button
+      type="button"
+      class="mbr-batch-picker-option mbr-batch-picker-option--danger"
+      @click="runChapterDelete"
+    >
+      <i class="pi pi-trash mbr-batch-picker-option-icon" aria-hidden="true" />
+      <span class="mbr-batch-picker-option-label">删除章节</span>
+      <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
+    </button>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
@@ -960,6 +1119,35 @@ const pickChapterFromSheet = (ch: Chapter) => {
   flex-shrink: 0;
 }
 
+/* 行尾"更多"按钮：替代桌面右键菜单，点击弹出 bottom sheet 选编辑 / 删除 / 上下移 */
+.mbd-tree-row-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 2px;
+  margin-right: -4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(247, 244, 236, 0.45);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mbd-tree-row-more:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(247, 244, 236, 0.85);
+}
+
+.mbd-tree-row-more i {
+  font-size: 12px;
+}
+
 .mbd-tree-vol-icon {
   color: rgba(174, 183, 198, 0.85);
   font-size: 14px;
@@ -1373,6 +1561,16 @@ const pickChapterFromSheet = (ch: Chapter) => {
 .mbr-batch-picker-option:active {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(109, 136, 168, 0.25);
+}
+
+.mbr-batch-picker-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mbr-batch-picker-option:disabled:active {
+  background: transparent;
+  border-color: transparent;
 }
 
 .mbr-batch-picker-option-icon {

@@ -257,7 +257,7 @@ const CUSTOM_CSS = `
 }
 
 /*
- * PrimeVue ships .p-button-icon-only::after with a hidden nbsp (content "\A0")
+ * PrimeVue ships .p-button-icon-only::after with a hidden nbsp (content U+00A0)
  * to reserve a line-box so icon-only buttons match the height of labeled buttons.
  * That hack relies on .p-button clipping via overflow:hidden. Since this theme
  * forces overflow:visible !important above (for badges / tooltips / focus rings
