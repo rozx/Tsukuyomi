@@ -379,22 +379,32 @@ defineExpose({ props });
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* 聊天 composer：设计系统 textarea 规范——
+   空闲态 white/4 + white/10 边框，
+   聚焦态月白 (E9EDF5) 边框 + 2px 月白 alpha 柔光 */
 :deep(.p-textarea) {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--moon-opacity-90);
-  font-size: 0.875rem;
+  border-radius: 8px;
+  color: var(--fg-1, rgba(247, 244, 236, 1));
+  font-family:
+    'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', -apple-system, sans-serif;
+  font-size: 0.8125rem;
+  line-height: 1.55;
   max-height: 200px !important;
   overflow-y: auto !important;
+  transition:
+    border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :deep(.p-textarea:focus) {
-  border-color: var(--primary-opacity-50);
-  box-shadow: 0 0 0 0.2rem rgba(var(--primary-rgb), 0.1);
+  border-color: #e9edf5;
+  box-shadow: 0 0 0 2px rgba(233, 237, 245, 0.2);
 }
 
 :deep(.p-textarea::placeholder) {
-  color: var(--moon-opacity-50);
+  color: rgba(247, 244, 236, 0.45);
 }
 
 :deep(.p-textarea textarea) {

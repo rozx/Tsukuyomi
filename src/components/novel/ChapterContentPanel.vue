@@ -442,11 +442,15 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
 }
 
 .chapter-content-container .chapter-title {
-  font-size: 1.75rem;
+  /* 设计系统：章节标题用显示字体（Noto Serif JP）营造阅读仪式感 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.875rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--moon-opacity-95);
   margin: 0 0 0.75rem 0;
-  line-height: 1.4;
+  line-height: 1.25;
 }
 
 .chapter-stats {
@@ -673,11 +677,14 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
 }
 
 .preview-chapter-title {
-  font-size: 1.75rem;
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.875rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--moon-opacity-95);
   margin: 0 0 0.75rem 0;
-  line-height: 1.4;
+  line-height: 1.25;
 }
 
 .preview-chapter-stats {

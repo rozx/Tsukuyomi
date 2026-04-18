@@ -503,11 +503,14 @@ const ctx = injectBookDetailsPage();
 }
 
 .book-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 1rem;
+  /* 设计系统：书名用显示字体（Noto Serif JP）传递文学感 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.0625rem;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-opacity-95);
   letter-spacing: -0.01em;
+  line-height: 1.25;
   margin: 0 0 0.35rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -537,8 +540,12 @@ const ctx = injectBookDetailsPage();
 }
 
 .stat-value {
-  font-family: 'JetBrains Mono', monospace;
-  color: rgba(247, 244, 236, 0.85);
+  /* 设计系统：数值用等宽字体 + 薄藍色 */
+  font-family:
+    'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--tsukuyomi-300, #a3b7cf);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {

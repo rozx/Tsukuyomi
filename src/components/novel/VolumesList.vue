@@ -389,7 +389,11 @@ const isSelectedChapterLoading = (chapterId: string) => {
 
 .volume-title {
   flex: 1;
+  /* 设计系统：卷名用显示字体，强化"本卷"的阅读分章感 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   font-weight: 600;
+  letter-spacing: -0.005em;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -397,6 +401,8 @@ const isSelectedChapterLoading = (chapterId: string) => {
 }
 
 .volume-chapter-count {
+  font-family:
+    'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.75rem;
   color: var(--moon-opacity-70);
   font-weight: 400;

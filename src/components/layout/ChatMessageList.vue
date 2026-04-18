@@ -127,11 +127,11 @@ const props = defineProps<Props>();
           >
             <div
               v-if="item.type === 'content' && item.content"
-              class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 w-full"
+              class="chat-bubble px-3.5 py-2.5 max-w-[85%] min-w-0 w-full leading-relaxed"
               :class="
                 item.messageRole === 'user'
-                  ? 'bg-primary-500/20 text-primary-100'
-                  : 'bg-white/5 text-moon-90'
+                  ? 'chat-bubble--user bg-tsukuyomi-500/18 text-moon-50 border border-tsukuyomi-500/30'
+                  : 'chat-bubble--ai bg-white/[0.045] text-moon-90 border border-white/10'
               "
             >
               <div
@@ -191,6 +191,20 @@ const props = defineProps<Props>();
 </template>
 
 <style scoped>
+/* 设计系统：聊天气泡——AI 左上拐角 4px，User 右上拐角 4px，保留气泡"尾巴"感 */
+.chat-bubble {
+  border-radius: 14px;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-bubble--ai {
+  border-top-left-radius: 4px;
+}
+
+.chat-bubble--user {
+  border-top-right-radius: 4px;
+}
+
 /* Markdown 内容样式 */
 .markdown-content {
   line-height: 1.6;
@@ -229,10 +243,12 @@ const props = defineProps<Props>();
 }
 
 .markdown-content :deep(code) {
-  background-color: rgba(255, 255, 255, 0.1);
-  padding: 0.125em 0.25em;
-  border-radius: 0.25rem;
-  font-family: 'Courier New', monospace;
+  /* 设计系统：行内代码—薄藍色调 + JetBrains Mono */
+  background-color: rgba(109, 136, 168, 0.12);
+  color: #A3B7CF;
+  padding: 0.125em 0.4em;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.9em;
   word-wrap: break-word;
   overflow-wrap: break-word;

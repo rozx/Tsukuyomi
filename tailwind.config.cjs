@@ -105,6 +105,28 @@ module.exports = {
         'tsukuyomi-gradient':
           'radial-gradient(900px circle at 75% -10%, rgba(174,183,198,0.25), transparent 60%), radial-gradient(720px circle at 12% 115%, rgba(109,136,168,0.2), transparent 45%)',
       },
+      // Tsukuyomi design-system type families
+      // display → Noto Serif JP (brand + reader)
+      // ui      → Noto Sans SC (dense UI + CJK/拉丁正文)
+      // mono    → JetBrains Mono (代码/数字)
+      fontFamily: {
+        display: ['"Noto Serif JP"', 'Songti SC', 'STSong', 'SimSun', 'serif'],
+        ui: [
+          '"Noto Sans SC"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          '"Helvetica Neue"',
+          'sans-serif',
+        ],
+        mono: ['"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
+      },
+      letterSpacing: {
+        // 品牌标版专用字距（保留 Tailwind 默认的 widest 0.1em 不动，避免误伤正文 eyebrow）
+        brand: '0.3em',
+      },
     },
   },
   plugins: [
@@ -209,8 +231,10 @@ module.exports = {
           borderColor: '#6D88A8', // Highlight（薄藍）
         },
         // Translation text color (distinct from original text)
+        // 使用 tsukuyomi-200 (#BAC9DB) 而非 500——在深色底上长段阅读更易读
+        // （500 级对比度约 5:1，200 级约 10:1），同时保持"冷月蓝"的身份色
         '.text-translation': {
-          color: 'rgba(109, 136, 168, 0.9)', // Highlight（薄藍）with 90% opacity for translations
+          color: 'rgba(186, 201, 219, 0.95)',
         },
         // Search input group - ensures search box can shrink and buttons stay on same line
         '.search-input-group': {

@@ -204,8 +204,8 @@ const CUSTOM_CSS = `
   --danger-color: #ff8fa3;
   --warning-color: #ffd27b;
   
-  /* Translation text color - Highlight（薄藍）*/
-  --translation-text-color: rgba(109, 136, 168, 0.9);
+  /* Translation text color - 提亮 tsukuyomi-200（#BAC9DB）以保障长段阅读可读性 */
+  --translation-text-color: rgba(186, 201, 219, 0.95);
 }
 
 /* Badge 样式优化 - Moonlight Glow 主题 */

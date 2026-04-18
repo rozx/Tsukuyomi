@@ -19,9 +19,16 @@ const ctx = injectBooksPage();
     <div
       class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
     >
-      <div class="flex-shrink-0 min-w-0">
-        <h1 class="text-2xl font-bold">书籍列表</h1>
-        <p class="text-moon/70 mt-1">管理您的翻译书籍</p>
+      <div class="flex-shrink-0 min-w-0 flex flex-col gap-1">
+        <span class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
+          >Library</span
+        >
+        <h1
+          class="font-display text-[30px] font-semibold tracking-tight text-moon-100 leading-tight"
+        >
+          书籍列表
+        </h1>
+        <p class="text-moon/70 text-sm mt-1">管理您的翻译书籍</p>
       </div>
       <div
         class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap"
@@ -138,7 +145,7 @@ const ctx = injectBooksPage();
               </div>
               <div class="book-card-content px-1 pb-2 space-y-1.5 flex flex-col flex-1">
                 <h3
-                  class="book-card-title text-sm font-semibold line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors cursor-pointer"
+                  class="book-card-title font-display text-[13px] font-semibold leading-snug line-clamp-2 min-h-[2.5rem] text-moon/90 group-hover:text-primary transition-colors cursor-pointer"
                   :title="book.title"
                   @click="ctx.navigateToBookDetails(book)"
                 >
@@ -149,28 +156,32 @@ const ctx = injectBooksPage();
                 </p>
 
                 <div
-                  class="book-card-stats text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
+                  class="book-card-stats font-mono text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
                 >
                   <div class="flex items-center justify-between">
                     <span>章节:</span>
-                    <span class="font-medium">{{ ctx.getTotalChapters(book) }}</span>
+                    <span class="font-medium text-moon/70">{{ ctx.getTotalChapters(book) }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>字数:</span>
                     <span v-if="ctx.isLoadingCharCount(book)" class="font-medium">
                       <Skeleton width="40px" height="12px" />
                     </span>
-                    <span v-else class="font-medium">
+                    <span v-else class="font-medium text-moon/70">
                       {{ ctx.formatWordCount(ctx.getTotalWords(book)) }}
                     </span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>创建:</span>
-                    <span class="font-medium">{{ ctx.formatDate(book.createdAt) }}</span>
+                    <span class="font-medium text-moon/70">{{
+                      ctx.formatDate(book.createdAt)
+                    }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span>更新:</span>
-                    <span class="font-medium">{{ ctx.formatDate(book.lastEdited) }}</span>
+                    <span class="font-medium text-moon/70">{{
+                      ctx.formatDate(book.lastEdited)
+                    }}</span>
                   </div>
                 </div>
 

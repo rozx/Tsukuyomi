@@ -72,11 +72,13 @@ export const Theme = {
     full: 'rgba(247, 244, 236, 1)',
   },
 
-  // 翻译文本颜色（Highlight（薄藍））
+  // 翻译文本颜色（tsukuyomi-200 提亮版）
+  // 原设计 token 取 #6D88A8（500），但在极暗底上长段阅读对比度不足；
+  // 使用 #BAC9DB（200）级别可将对比度提至约 10:1，同时保留冷月蓝身份色。
   translationText: {
-    DEFAULT: 'rgba(109, 136, 168, 0.9)', // Highlight（薄藍）with high opacity
-    light: 'rgba(109, 136, 168, 0.8)',
-    medium: 'rgba(109, 136, 168, 0.7)',
+    DEFAULT: 'rgba(186, 201, 219, 0.95)',
+    light: 'rgba(186, 201, 219, 0.85)',
+    medium: 'rgba(186, 201, 219, 0.75)',
   },
 
   // 圆角

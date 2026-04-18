@@ -138,7 +138,9 @@ const ctx = injectHelpPage();
                 <i class="pi pi-angle-right text-xs opacity-50" />
                 <span>{{ ctx.currentDoc.value?.title }}</span>
               </div>
-              <h1 class="text-3xl font-bold text-moon-100 mb-4">
+              <h1
+                class="font-display text-[30px] sm:text-[40px] font-semibold tracking-tight text-moon-100 leading-tight mb-4"
+              >
                 {{ ctx.currentDoc.value?.title }}
               </h1>
               <p

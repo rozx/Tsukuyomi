@@ -2,13 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tsukuyomi design-system webfonts
+   - Noto Serif JP → display / brand / 日本語 / 读书页面正文
+   - Noto Sans SC  → UI / 简体中文与英文正文
+   - JetBrains Mono → 代码、统计数字、快捷键
+   字体通过 index.html 的 <link rel="preconnect"> + <link rel="stylesheet"> 加载，
+   避免 CSS @import 的解析阻塞和额外往返。 */
+
 /* Base layer for the Tsukuyomi theme */
 @layer base {
   html,
   body,
   #q-app {
     height: 100%;
-    @apply bg-night-950 text-moon-50;
+    @apply bg-night-950 text-moon-50 font-ui;
     /* 增强的背景渐变 - 多层月夜效果，添加对比色 */
     /* Highlight（薄藍）, Accent（銀月）, Secondary（影墨）, 对比色（暖色调）*/
     background-image:
@@ -139,5 +146,17 @@
 
   .adaptive-dialog-fullscreen .p-dialog-footer {
     padding-bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  /* 设计系统：全局统一 PrimeVue Dialog 标题排印 */
+  /* 标题用 Noto Serif JP（font-display），强调文学感；正文仍用 Noto Sans SC */
+  .p-dialog-header .p-dialog-title,
+  .p-dialog-header span.p-dialog-title {
+    font-family:
+      'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+    font-weight: 600;
+    font-size: 1.125rem;
+    letter-spacing: -0.005em;
+    color: var(--fg-1, rgba(247, 244, 236, 1));
   }
 }

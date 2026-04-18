@@ -17,6 +17,21 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png" />
     <link rel="icon" type="image/ico" href="favicon.ico" />
+
+    <!--
+      Tsukuyomi 设计系统字体：
+        - Noto Serif JP → 显示/品牌/阅读面
+        - Noto Sans SC  → UI / 正文
+        - JetBrains Mono → 数值 / 代码
+      放在 <head> 而非 tailwind.css @import，避免 @import 阻塞解析；
+      preconnect 提前建立 TLS 连接，stylesheet 与页面并行拉取。
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    />
   </head>
 
   <!--

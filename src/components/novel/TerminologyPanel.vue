@@ -818,7 +818,11 @@ const handleFileSelect = async (event: Event) => {
 }
 
 .panel-title {
-  font-size: 1.5rem;
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 2rem;
   margin-bottom: 0.5rem;
 }
