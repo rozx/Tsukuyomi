@@ -657,8 +657,9 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
 }
 
 .original-text-textarea:focus {
-  border-color: var(--primary-opacity-50);
-  box-shadow: 0 0 0 0.125rem var(--primary-opacity-20);
+  /* 设计系统：textarea 聚焦态统一使用月白描边 + 2px 月白 alpha 柔光 */
+  border-color: #e9edf5;
+  box-shadow: 0 0 0 2px rgba(233, 237, 245, 0.2);
 }
 
 /* 翻译预览容器 */

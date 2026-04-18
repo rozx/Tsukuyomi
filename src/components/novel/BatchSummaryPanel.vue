@@ -271,15 +271,15 @@ defineExpose({
         <div class="grid grid-cols-3 gap-2 text-center text-xs">
           <div class="bg-white/5 p-1 rounded">
             <div class="text-moon-50">进行中</div>
-            <div class="font-bold text-primary-400">{{ processing.size }}</div>
+            <div class="font-mono font-semibold text-primary-400">{{ processing.size }}</div>
           </div>
           <div class="bg-white/5 p-1 rounded">
             <div class="text-moon-50">成功</div>
-            <div class="font-bold text-green-400">{{ completed.size }}</div>
+            <div class="font-mono font-semibold text-green-400">{{ completed.size }}</div>
           </div>
           <div class="bg-white/5 p-1 rounded">
             <div class="text-moon-50">失败</div>
-            <div class="font-bold text-red-400">{{ failed.size }}</div>
+            <div class="font-mono font-semibold text-red-400">{{ failed.size }}</div>
           </div>
         </div>
 

@@ -18,7 +18,7 @@ const ctx = injectHelpPage();
             <i class="pi pi-book text-lg" />
           </div>
           <div>
-            <h2 class="text-base font-bold text-moon-100">帮助中心</h2>
+            <h2 class="font-display text-base font-semibold text-moon-100">帮助中心</h2>
             <p class="text-xs text-moon/60">Documentation</p>
           </div>
         </div>
@@ -31,7 +31,7 @@ const ctx = injectHelpPage();
             @click="ctx.toggleCategory(category as string)"
           >
             <h3
-              class="text-[10px] font-bold text-moon/40 uppercase tracking-widest group-hover:text-moon/60 transition-colors"
+              class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60 group-hover:text-moon-100 transition-colors"
             >
               {{ category }}
             </h3>
@@ -100,7 +100,11 @@ const ctx = injectHelpPage();
           <div class="p-5 border-b border-white/10 flex-shrink-0">
             <div class="flex items-center gap-2">
               <i class="pi pi-list text-primary text-sm" />
-              <h3 class="text-xs font-bold text-moon/50 uppercase tracking-wider">目录</h3>
+              <h3
+                class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
+              >
+                目录
+              </h3>
             </div>
           </div>
           <nav class="flex-1 overflow-y-auto p-5 space-y-0.5">

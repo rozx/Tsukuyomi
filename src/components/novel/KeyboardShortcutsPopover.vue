@@ -27,7 +27,7 @@ defineExpose({
         <div class="p-3 flex flex-col gap-4">
           <!-- 搜索相关 -->
           <div class="flex flex-col gap-2">
-            <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">搜索与替换</div>
+            <div class="font-ui text-[11px] font-medium text-moon/60 uppercase tracking-[0.2em]">搜索与替换</div>
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between py-1">
                 <span class="text-sm text-moon-90">打开/关闭查找</span>
@@ -74,7 +74,7 @@ defineExpose({
 
           <!-- 编辑相关 -->
           <div class="flex flex-col gap-2">
-            <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">编辑操作</div>
+            <div class="font-ui text-[11px] font-medium text-moon/60 uppercase tracking-[0.2em]">编辑操作</div>
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between py-1">
                 <span class="text-sm text-moon-90">撤销</span>
@@ -105,7 +105,7 @@ defineExpose({
 
           <!-- 导航相关 -->
           <div class="flex flex-col gap-2">
-            <div class="text-xs font-medium text-moon/70 uppercase tracking-wide">段落导航</div>
+            <div class="font-ui text-[11px] font-medium text-moon/60 uppercase tracking-[0.2em]">段落导航</div>
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between py-1">
                 <span class="text-sm text-moon-90">上一个段落</span>

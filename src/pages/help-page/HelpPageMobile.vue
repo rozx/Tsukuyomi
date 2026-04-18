@@ -111,7 +111,9 @@ const ctx = injectHelpPage();
                 <i class="pi pi-angle-right text-xs opacity-50" />
                 <span>{{ ctx.currentDoc.value?.title }}</span>
               </div>
-              <h1 class="text-3xl font-bold text-moon-100 mb-4">
+              <h1
+                class="font-display text-3xl font-semibold tracking-tight text-moon-100 leading-tight mb-4"
+              >
                 {{ ctx.currentDoc.value?.title }}
               </h1>
               <p
@@ -146,7 +148,7 @@ const ctx = injectHelpPage();
             @click="ctx.toggleCategory(category as string)"
           >
             <h3
-              class="text-[10px] font-bold text-moon/40 uppercase tracking-widest group-hover:text-moon/60 transition-colors"
+              class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60 group-hover:text-moon-100 transition-colors"
             >
               {{ category }}
             </h3>
