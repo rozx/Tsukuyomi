@@ -35,7 +35,6 @@ defineExpose({
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    style="width: 300px"
     class="sync-popover"
   >
     <SyncStatusBody />
@@ -47,10 +46,8 @@ defineExpose({
   </MobileBottomSheet>
 </template>
 
-<style scoped>
-.sync-popover :deep(.p-popover-content) {
-  padding: 1rem;
-  max-height: 70vh;
-  overflow-y: auto;
+<style>
+.sync-popover.p-popover {
+  width: 300px;
 }
 </style>

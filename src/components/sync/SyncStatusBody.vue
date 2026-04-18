@@ -238,7 +238,7 @@ const syncStageLabel = computed(() => {
       <i :class="[syncStatus.icon, syncStatus.color]" />
     </div>
 
-    <div class="space-y-3">
+    <div class="space-y-3 max-w-full min-w-0">
       <div
         v-if="isPhone"
         class="flex items-center justify-between pb-2 border-b border-white/10"

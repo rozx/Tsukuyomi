@@ -37,3 +37,6 @@ yarn-error.log*
 
 # Wiki sync directory (generated during CI)
 /wiki
+
+# Playwright MCP artifacts
+.playwright-mcp/
