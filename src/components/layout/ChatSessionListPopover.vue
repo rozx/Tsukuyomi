@@ -53,6 +53,15 @@ const sessionCount = computed(() => props.sessions.length);
 
 const onSelect = (sessionId: string) => {
   emit('select', sessionId);
+  // 选中会话后统一关闭 popover / sheet，避免切换后列表仍覆盖在页面上方
+  if (isPhone.value) {
+    if (mobileVisible.value) {
+      mobileVisible.value = false;
+      emit('hide');
+    }
+  } else {
+    popoverRef.value?.hide();
+  }
 };
 
 // 手机抽屉关闭也要发 hide 事件，和桌面 Popover 保持一致

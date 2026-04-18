@@ -3,7 +3,7 @@
  * 消息历史面板 —— 桌面走 PrimeVue Popover，手机走 MobileBottomSheet。
  * 两种形态共享同一个 `ToastHistoryBody`。
  */
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Popover from 'primevue/popover';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import { useUiStore } from 'src/stores/ui';
@@ -28,12 +28,16 @@ const handleShown = () => {
   void markAsRead();
 };
 
+// 无论 mobileVisible 以何种方式变为 true（toggle()、v-model、父级 ref 驱动），
+// 都触发 markAsRead；避免将"打开即已读"逻辑绑死在某一条调用路径上。
+watch(mobileVisible, (visible, wasVisible) => {
+  if (visible && !wasVisible) handleShown();
+});
+
 defineExpose({
   toggle: (event: Event) => {
     if (isPhone.value) {
-      const willOpen = !mobileVisible.value;
-      mobileVisible.value = willOpen;
-      if (willOpen) handleShown();
+      mobileVisible.value = !mobileVisible.value;
     } else {
       popoverRef.value?.toggle(event);
     }

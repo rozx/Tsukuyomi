@@ -32,24 +32,23 @@ export function useMainLayoutShell() {
   const toast = useToastWithHistory();
   const { quickStartGuideVisible, dismissQuickStartGuide } = useQuickStartGuide();
 
-  // 注册全局 toast 函数，供静态方法使用
+  // 注册全局 toast / ask_user 桥接函数，供静态调用与工具层使用。
+  // 仅在首次调用时注册，避免 HMR / 测试场景下 MainLayout 重复挂载导致覆盖旧引用。
   if (typeof window !== 'undefined') {
-    (window as unknown as { __lunaToast?: typeof toast.add }).__lunaToast = toast.add.bind(toast);
-  }
-
-  // 注册全局 ask_user 桥接函数，供工具层使用
-  if (typeof window !== 'undefined') {
-    (
-      window as unknown as {
-        __lunaAskUser?: (payload: AskUserPayload) => Promise<AskUserResult>;
-        __lunaAskUserBatch?: (payload: AskUserBatchPayload) => Promise<AskUserBatchResult>;
-      }
-    ).__lunaAskUser = (payload: AskUserPayload) => askUserStore.ask(payload);
-    (
-      window as unknown as {
-        __lunaAskUserBatch?: (payload: AskUserBatchPayload) => Promise<AskUserBatchResult>;
-      }
-    ).__lunaAskUserBatch = (payload: AskUserBatchPayload) => askUserStore.askBatch(payload);
+    const bridge = window as unknown as {
+      __lunaToast?: typeof toast.add;
+      __lunaAskUser?: (payload: AskUserPayload) => Promise<AskUserResult>;
+      __lunaAskUserBatch?: (payload: AskUserBatchPayload) => Promise<AskUserBatchResult>;
+    };
+    if (!bridge.__lunaToast) {
+      bridge.__lunaToast = toast.add.bind(toast);
+    }
+    if (!bridge.__lunaAskUser) {
+      bridge.__lunaAskUser = (payload: AskUserPayload) => askUserStore.ask(payload);
+    }
+    if (!bridge.__lunaAskUserBatch) {
+      bridge.__lunaAskUserBatch = (payload: AskUserBatchPayload) => askUserStore.askBatch(payload);
+    }
   }
 
   // 跟踪之前的任务状态，用于检测状态变化

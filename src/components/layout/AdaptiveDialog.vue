@@ -21,7 +21,7 @@
  * 约定：
  *   - `header` 字符串 → 桌面作为 Dialog header，手机作为 sheet title
  *   - `eyebrow` 仅手机生效
- *   - `modal` / `closeOnEscape` / `contentClass` 桌面独有，原样透传给 PrimeVue Dialog
+ *   - `modal` / `closeOnEscape` / `dialogClass` 桌面独有，原样透传给 PrimeVue Dialog
  *   - `closable=false` 桌面与手机均会屏蔽用户主动关闭路径（桌面隐藏 X 按钮；
  *     手机隐藏 grabber + X + 禁用遮罩点击）
  *   - `dismissableMask` 映射到手机的 `sheetDismissOnMaskClick`（若未显式设置）

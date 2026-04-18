@@ -360,8 +360,7 @@ const handleCopyUrl = async () => {
 
 // 清除封面
 const handleClearCover = () => {
-  // @ts-expect-error - 需要设置为 null 以表示删除封面
-  formData.value.cover = null;
+  delete formData.value.cover;
   toast.add({
     severity: 'success',
     summary: '已清除',

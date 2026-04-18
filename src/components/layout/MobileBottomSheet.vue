@@ -114,7 +114,14 @@ function acquireBodyScrollLock() {
 }
 
 function releaseBodyScrollLock() {
-  if (bodyScrollLockCount === 0) return;
+  if (bodyScrollLockCount === 0) {
+    // 计数器失衡通常意味着上游有未成对的 release 调用（例如异常路径忘了触发 acquire）。
+    // 生产环境静默兜底；开发环境打印告警，方便及时发现。
+    if (import.meta.env?.DEV) {
+      console.warn('[MobileBottomSheet] releaseBodyScrollLock called with empty lock counter');
+    }
+    return;
+  }
   bodyScrollLockCount -= 1;
   if (bodyScrollLockCount === 0) {
     // 还原至锁定前的原值（可能是空串——等价于移除内联样式）

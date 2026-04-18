@@ -51,6 +51,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       <!-- AI thinking -->
       <button
         v-if="thinking"
+        type="button"
         class="tst-chip pill thinking"
         aria-label="AI 思考过程"
         @click="toggleThinking"
@@ -60,6 +61,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       </button>
       <button
         v-else
+        type="button"
         class="tst-chip"
         aria-label="AI 思考过程"
         @click="toggleThinking"
@@ -71,6 +73,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       <!-- Sync -->
       <button
         v-if="syncState === 'syncing'"
+        type="button"
         class="tst-chip pill sync-pending"
         aria-label="同步中"
         @click="toggleSync"
@@ -80,6 +83,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       </button>
       <button
         v-else-if="syncState === 'changes'"
+        type="button"
         class="tst-chip pill sync-changes"
         :aria-label="`${pendingCount} 项变更`"
         @click="toggleSync"
@@ -89,6 +93,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       </button>
       <button
         v-else-if="syncState === 'ok'"
+        type="button"
         class="tst-chip pill sync-ok"
         aria-label="已同步"
         @click="toggleSync"
@@ -98,6 +103,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
       </button>
       <button
         v-else
+        type="button"
         class="tst-chip"
         aria-label="同步状态"
         @click="toggleSync"
@@ -110,6 +116,7 @@ const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
 
       <!-- Notifications -->
       <button
+        type="button"
         class="tst-chip"
         aria-label="通知"
         @click="toggleHistory"

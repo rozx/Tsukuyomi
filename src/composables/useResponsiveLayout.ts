@@ -15,8 +15,11 @@ import { useUiStore } from 'src/stores/ui';
  * （如每个 page dispatcher 通过 useDeviceVariant 调用一次）。
  * 为避免重复注册监听同步同一个状态，watcher 只在**首次调用**时安装，
  * 并置于模块级 detached effectScope 中，让其独立于首位调用方组件的生命周期。
+ *
+ * HMR：开发环境下本模块被替换时，`import.meta.hot.dispose` 钩子会停止旧 scope
+ * 并重置初始化标志，避免产生多个并存 watcher / 残留闭包引用旧 `$q` 实例。
  */
-const sharedScope = effectScope(true);
+let sharedScope = effectScope(true);
 let sharedInitialized = false;
 
 export function useResponsiveLayout() {
@@ -44,4 +47,13 @@ export function useResponsiveLayout() {
     isTablet,
     isDesktop,
   };
+}
+
+// HMR 清理：模块被热替换时停止旧 scope，新模块会创建一个全新的 scope + 标志
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    sharedScope.stop();
+    sharedScope = effectScope(true);
+    sharedInitialized = false;
+  });
 }
