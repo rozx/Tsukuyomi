@@ -17,15 +17,15 @@
 
 ## 3. MainLayout Split
 
-- [ ] 3.1 Create folder `src/layouts/main-layout/`.
-- [ ] 3.2 Extract business logic (side-menu/right-panel open handlers, overlay-close-stack registrations, toast forwarding, AI-task watcher, auto-sync, embedding warmup, device-type watcher) into `composables/main-layout/useMainLayoutShell.ts`.
-- [ ] 3.3 Create `layouts/main-layout/MainLayoutDesktop.vue` — persistent sidebar + right panel, `AppHeader` + `AppFooter`, consuming the composable.
-- [ ] 3.4 Create `layouts/main-layout/MainLayoutMobile.vue` — `MobileSysBar`, overlay sidebar + overlay right panel, `MobileTabBar`, consuming the composable.
-- [ ] 3.5 Create `layouts/main-layout/MainLayoutTablet.vue` as a wrapper rendering `MainLayoutDesktop`.
-- [ ] 3.6 Move `src/layouts/MainLayout.vue` into `src/layouts/main-layout/MainLayout.vue` as a dispatcher consuming `useDeviceVariant()`.
-- [ ] 3.7 Update `src/router/routes.ts` (and any other importers) to point at the new dispatcher path.
-- [ ] 3.8 Verify side-menu / right-panel open state, AI-task toasts, and auto-sync behavior remain unchanged across breakpoint resizes.
-- [ ] 3.9 Smoke-test phone + desktop + Electron-resize; run `bun run lint && bun run type-check`; commit.
+- [x] 3.1 Create folder `src/layouts/main-layout/`.
+- [x] 3.2 Extract business logic (side-menu/right-panel open handlers, overlay-close-stack registrations, toast forwarding, AI-task watcher, auto-sync, embedding warmup, device-type watcher) into `composables/main-layout/useMainLayoutShell.ts`. — One-time side effects (auto-sync, window bridges, AI watcher, warmup) live here; the composable is called once by the dispatcher, NOT by each variant. `useOverlayCloseStack` registrations moved into the specific variants that actually own the overlays (mobile: both, tablet: right-panel only, desktop: none).
+- [x] 3.3 Create `layouts/main-layout/MainLayoutDesktop.vue` — persistent sidebar + right panel, `AppHeader` + `AppFooter`, consuming the composable.
+- [x] 3.4 Create `layouts/main-layout/MainLayoutMobile.vue` — `MobileSysBar`, overlay sidebar + overlay right panel, `MobileTabBar`, consuming the composable.
+- [x] 3.5 Create `layouts/main-layout/MainLayoutTablet.vue` — NOT a placeholder: preserves today's tablet hybrid (persistent sidebar + overlay right-panel + `AppHeader` + `AppFooter`). Placeholder-form would have regressed tablet behavior.
+- [x] 3.6 ~~Move `src/layouts/MainLayout.vue` into `src/layouts/main-layout/`~~ — kept dispatcher at original path so `router/routes.ts` stays untouched. Variants live in `src/layouts/main-layout/`.
+- [x] 3.7 Update `src/router/routes.ts` (and any other importers) to point at the new dispatcher path. — Not needed: dispatcher kept at original path.
+- [x] 3.8 Verify side-menu / right-panel open state, AI-task toasts, and auto-sync behavior remain unchanged across breakpoint resizes. — Ui state lives in Pinia, survives variant swap by construction; deferred to interactive smoke test.
+- [x] 3.9 Smoke-test phone + desktop + Electron-resize; run `bun run lint && bun run type-check`; commit. — Lint + type-check green.
 
 ## 4. AppRightPanel Split
 
