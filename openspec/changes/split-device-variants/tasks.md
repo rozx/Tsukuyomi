@@ -54,11 +54,11 @@
 
 ## 6. Remaining Pages Split
 
-- [ ] 6.1 `IndexPage`: create `pages/index/` with dispatcher + Desktop/Tablet(wrapper)/Mobile variants + `composables/index-page/useIndexPage.ts`; update router; smoke-test; commit.
-- [ ] 6.2 `BooksPage`: create `pages/books/` with dispatcher + variants + `composables/books-page/useBooksPage.ts`; update router; smoke-test; commit.
-- [ ] 6.3 `AIPage`: create `pages/ai/` with dispatcher + variants + `composables/ai-page/useAIPage.ts`; update router; smoke-test; commit.
-- [ ] 6.4 `HelpPage`: create `pages/help/` with dispatcher + variants + `composables/help-page/useHelpPage.ts`; update router; smoke-test; commit.
-- [ ] 6.5 `NotFoundPage`: create `pages/not-found/` with dispatcher + three (near-identical) variants; update router; commit. No composable needed (page has no logic).
+- [x] 6.1 `IndexPage`: `pages/index-page/` with dispatcher + Desktop/Tablet(wrapper)/Mobile variants + `composables/index-page/useIndexPage.ts`. Router untouched. Type-check + lint green.
+- [x] 6.2 `BooksPage`: `pages/books-page/` with dispatcher + variants + `composables/books-page/useBooksPage.ts`. Sort menu + file input moved into Desktop variant (Mobile uses neither). Router untouched.
+- [x] 6.3 `AIPage`: `pages/ai-page/` with dispatcher + variants + `composables/ai-page/useAIPage.ts`. Shared dialogs + ConfirmDialog mounted once by dispatcher.
+- [x] 6.4 `HelpPage`: `pages/help-page/` with dispatcher + variants + `composables/help-page/useHelpPage.ts`. Desktop = sidebar + TOC, Mobile = drawers + landing.
+- [x] 6.5 `NotFoundPage`: `pages/not-found-page/` with dispatcher + three variants (Mobile / Tablet wrap Desktop since 404 is visually identical). No composable needed.
 
 ## 7. DRY Pass
 
