@@ -3,6 +3,7 @@ import { computed, ref, type ComponentPublicInstance } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import Button from 'primevue/button';
 import { useToastHistory } from 'src/composables/useToastHistory';
+import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
@@ -24,10 +25,12 @@ const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 const gistSync = computed(() => settingsStore.gistSync);
 const isSyncing = computed(() => settingsStore.isSyncing);
+const { pendingCount, hasPendingChanges } = useSyncPendingChanges();
 
-const syncState = computed<'idle' | 'syncing' | 'ok' | 'pending'>(() => {
+const syncState = computed<'idle' | 'syncing' | 'changes' | 'ok' | 'pending'>(() => {
   if (!gistSync.value.enabled) return 'idle';
   if (isSyncing.value) return 'syncing';
+  if (hasPendingChanges.value) return 'changes';
   if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) return 'ok';
   return 'pending';
 });
@@ -91,6 +94,15 @@ const openHelp = () => {
       >
         <i class="pi pi-spin pi-spinner" aria-hidden="true" />
         <span>同步中</span>
+      </button>
+      <button
+        v-else-if="syncState === 'changes'"
+        class="tsm-sys-chip pill sync-changes"
+        :aria-label="`${pendingCount} 项变更`"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud-upload" aria-hidden="true" />
+        <span>{{ pendingCount }} 项变更</span>
       </button>
       <button
         v-else-if="syncState === 'ok'"
@@ -283,6 +295,16 @@ const openHelp = () => {
 .tsm-sys-chip.pill.sync-pending {
   background: rgba(234, 192, 123, 0.1);
   border-color: rgba(234, 192, 123, 0.25);
+  color: #e8c78a;
+}
+
+.tsm-sys-chip.pill.sync-changes {
+  background: rgba(234, 192, 123, 0.12);
+  border-color: rgba(234, 192, 123, 0.3);
+  color: #e8c78a;
+}
+
+.tsm-sys-chip.pill.sync-changes i {
   color: #e8c78a;
 }
 

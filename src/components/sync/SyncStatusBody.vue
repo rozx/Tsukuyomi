@@ -17,6 +17,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
+import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
 import type { RestorableItem } from 'src/services/sync-data-service';
 
 const settingsStore = useSettingsStore();
@@ -48,6 +49,36 @@ const isSyncing = computed({
   set: (value: boolean) => settingsStore.setSyncing(value),
 });
 
+const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
+
+const MAX_DETAIL_ITEMS = 8;
+const visiblePendingItems = computed(() => pendingItems.value.slice(0, MAX_DETAIL_ITEMS));
+const hiddenPendingCount = computed(() =>
+  Math.max(0, pendingItems.value.length - MAX_DETAIL_ITEMS),
+);
+
+const kindLabel: Record<string, string> = {
+  book: '书籍',
+  'ai-model': 'AI 模型',
+  cover: '封面',
+  settings: '设置',
+  memory: '记忆',
+};
+
+const kindIcon: Record<string, string> = {
+  book: 'pi pi-book',
+  'ai-model': 'pi pi-cog',
+  cover: 'pi pi-image',
+  settings: 'pi pi-sliders-h',
+  memory: 'pi pi-database',
+};
+
+const actionLabel: Record<'edited' | 'added' | 'deleted', string> = {
+  edited: '已编辑',
+  added: '新增',
+  deleted: '删除',
+};
+
 const syncStatus = computed(() => {
   if (!gistSync.value.enabled) {
     return { icon: 'pi pi-cloud', color: 'text-moon/50', label: '未启用' };
@@ -55,8 +86,15 @@ const syncStatus = computed(() => {
   if (isSyncing.value) {
     return { icon: 'pi pi-spin pi-spinner', color: 'text-primary', label: '同步中' };
   }
+  if (hasPendingChanges.value) {
+    return {
+      icon: 'pi pi-cloud-upload',
+      color: 'text-amber-300',
+      label: `${pendingCount.value} 项变更`,
+    };
+  }
   if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-    return { icon: 'pi pi-cloud-upload', color: 'text-green-500', label: '已同步' };
+    return { icon: 'pi pi-cloud-check', color: 'text-green-500', label: '已同步' };
   }
   return { icon: 'pi pi-cloud', color: 'text-moon/70', label: '未同步' };
 });
@@ -249,6 +287,36 @@ const syncStageLabel = computed(() => {
         />
         <p class="text-xs text-moon/50 mt-2 truncate" style="max-width: 274px">
           {{ syncProgress.message }}
+        </p>
+      </div>
+
+      <div
+        v-if="gistSync.enabled && hasPendingChanges"
+        class="pt-2 border-t border-white/10 space-y-2"
+      >
+        <div class="flex items-center justify-between">
+          <label class="text-xs text-moon/60">待同步变更</label>
+          <span class="text-xs text-amber-300">{{ pendingCount }} 项</span>
+        </div>
+        <ul class="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+          <li
+            v-for="(item, idx) in visiblePendingItems"
+            :key="`${item.kind}-${item.label}-${idx}`"
+            class="flex items-center gap-2 text-xs text-moon/85"
+          >
+            <i :class="kindIcon[item.kind]" class="text-moon/60 shrink-0" />
+            <span class="text-moon/50 shrink-0">{{ kindLabel[item.kind] }}</span>
+            <span class="truncate flex-1" :title="item.label">{{ item.label }}</span>
+            <span
+              class="text-[10px] shrink-0"
+              :class="item.action === 'deleted' ? 'text-rose-300/80' : 'text-moon/50'"
+            >
+              {{ actionLabel[item.action] }}
+            </span>
+          </li>
+        </ul>
+        <p v-if="hiddenPendingCount > 0" class="text-xs text-moon/50">
+          还有 {{ hiddenPendingCount }} 项未列出
         </p>
       </div>
 
