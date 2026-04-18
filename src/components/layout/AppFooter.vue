@@ -7,7 +7,7 @@ import { APP_NAME } from 'src/constants/app';
   <footer class="border-t border-white/10 py-3 text-xs text-moon/60 shrink-0">
     <div class="px-3 flex items-center justify-between gap-3">
       <span class="flex items-center gap-2 min-w-0 truncate">
-        <span class="font-ui">© 2025 {{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
+        <span class="font-ui">© 2026 {{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
         <span class="text-moon/40">·</span>
         <span class="font-display">{{ APP_NAME.description.en }}</span>
         <span class="font-mono text-moon/50">v{{ APP_VERSION }}</span>

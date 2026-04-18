@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 
-const props = defineProps<{
+defineProps<{
   visible: boolean;
   termName: string | null;
   loading?: boolean;
@@ -23,12 +23,12 @@ const handleCancel = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
     header="确认删除术语"
-    :style="{ width: '25rem' }"
-    :draggable="false"
+    desktop-width="25rem"
+    eyebrow="DELETE"
+    sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -47,6 +47,5 @@ const handleCancel = () => {
         @click="handleConfirm"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
-

@@ -1,11 +1,10 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
     header="快速开始指南"
-    :style="{ width: 'min(960px, 92vw)', maxHeight: '90vh' }"
-    :draggable="false"
-    :resizable="false"
+    desktop-width="min(960px, 92vw)"
+    desktop-height="90vh"
+    eyebrow="GUIDE"
     @update:visible="handleVisibleChange"
   >
     <div class="quick-start-content">
@@ -27,13 +26,13 @@
         @click="handleDismiss"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { getAssetUrl } from 'src/utils/assets';

@@ -7,7 +7,7 @@ import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Tag from 'primevue/tag';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { extractRootDomain } from 'src/utils/domain-utils';
@@ -717,12 +717,11 @@ onMounted(async () => {
     </div>
 
     <!-- 添加/编辑代理对话框 -->
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showProxyDialog"
-      modal
       :header="editingProxy ? '编辑代理' : '添加代理'"
-      :style="{ width: 'min(500px, 92vw)' }"
-      @hide="showProxyDialog = false"
+      desktop-width="min(500px, 92vw)"
+      eyebrow="PROXY"
     >
       <div class="space-y-3">
         <div>
@@ -756,15 +755,15 @@ onMounted(async () => {
           />
         </div>
       </div>
-    </Dialog>
+    </AdaptiveDialog>
 
     <!-- 编辑网站映射对话框 -->
-    <Dialog
-      v-model:visible="showEditSiteMappingDialog"
-      modal
+    <AdaptiveDialog
+      :visible="showEditSiteMappingDialog"
       header="编辑网站-代理映射"
-      :style="{ width: 'min(700px, 94vw)' }"
-      @hide="cancelEditSiteMapping"
+      desktop-width="min(700px, 94vw)"
+      eyebrow="MAPPING"
+      @update:visible="(next) => { if (!next) cancelEditSiteMapping(); }"
     >
       <div class="space-y-4" v-if="editingSiteMapping">
         <div>
@@ -872,7 +871,7 @@ onMounted(async () => {
           <Button label="保存" size="small" @click="confirmEditSiteMapping" />
         </div>
       </div>
-    </Dialog>
+    </AdaptiveDialog>
   </div>
 </template>
 

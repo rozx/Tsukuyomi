@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import Textarea from 'primevue/textarea';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
@@ -743,12 +743,15 @@ const handleFileSelect = async (event: Event) => {
     </div>
 
     <!-- 添加 Memory 对话框 -->
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showAddDialog"
-      modal
       header="添加 记忆"
-      :style="{ width: '600px' }"
+      desktop-width="600px"
+      eyebrow="MEMORY"
       :closable="!isSaving"
+      :dismissable-mask="!isSaving"
+      :close-on-escape="!isSaving"
+      :sheet-dismiss-on-mask-click="!isSaving"
     >
       <div class="space-y-4">
         <div>
@@ -781,15 +784,15 @@ const handleFileSelect = async (event: Event) => {
         />
         <Button label="保存" icon="pi pi-check" :loading="isSaving" @click="handleSave" />
       </template>
-    </Dialog>
+    </AdaptiveDialog>
 
     <!-- 确认删除对话框 -->
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showDeleteConfirm"
-      modal
       header="确认删除 记忆"
-      :style="{ width: '25rem' }"
-      :draggable="false"
+      desktop-width="25rem"
+      eyebrow="DELETE"
+      sheet-min-height="auto"
     >
       <div class="space-y-4">
         <p class="text-moon/90">确定要删除这条 记忆吗？</p>
@@ -813,7 +816,7 @@ const handleFileSelect = async (event: Event) => {
           @click="confirmDeleteMemory"
         />
       </template>
-    </Dialog>
+    </AdaptiveDialog>
 
     <!-- 详情对话框 -->
     <MemoryDetailDialog

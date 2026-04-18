@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
@@ -761,12 +761,12 @@ const handleFileSelect = async (event: Event) => {
     />
 
     <!-- 确认删除对话框 -->
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showDeleteConfirm"
-      modal
       header="确认删除术语"
-      :style="{ width: '25rem' }"
-      :draggable="false"
+      desktop-width="25rem"
+      eyebrow="DELETE"
+      sheet-min-height="auto"
     >
       <div class="space-y-4">
         <p class="text-moon/90">
@@ -789,7 +789,7 @@ const handleFileSelect = async (event: Event) => {
           @click="confirmDeleteTerm"
         />
       </template>
-    </Dialog>
+    </AdaptiveDialog>
 
     <!-- 保留 ConfirmDialog 用于其他可能的确认操作 -->
     <ConfirmDialog group="terminology" />

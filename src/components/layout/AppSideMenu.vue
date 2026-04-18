@@ -4,11 +4,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
-import SettingsDialog from '../dialogs/SettingsDialog.vue';
 
 const router = useRouter();
 const booksStore = useBooksStore();
-const settingsDialogVisible = ref(false);
 const menuContainerRef = ref<HTMLElement | null>(null);
 
 // 获取收藏的小说
@@ -97,9 +95,7 @@ const bottomItems: MenuItem[] = [
   {
     label: '设置',
     icon: 'pi pi-cog',
-    command: () => {
-      settingsDialogVisible.value = true;
-    },
+    command: () => void router.push('/settings'),
   },
   {
     label: '帮助',
@@ -139,7 +135,7 @@ const bottomItems: MenuItem[] = [
         <div class="px-3 py-2 mb-3 bg-surface-subtle rounded-lg border border-surface-subtle min-w-0 max-w-full overflow-hidden">
           <div class="flex items-center gap-2 min-w-0">
             <i class="pi pi-bookmark text-accent-400 text-sm flex-shrink-0" />
-            <span class="font-ui text-[10px] font-medium text-moon/60 uppercase tracking-[0.15em] flex-shrink-0">收藏小说</span>
+            <span class="font-ui text-[11px] font-medium text-moon/60 uppercase tracking-[0.2em] flex-shrink-0">收藏小说</span>
             <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-accent-400/20 text-accent-400 flex-shrink-0">
               {{ starredNovels.length }}
             </span>
@@ -175,9 +171,6 @@ const bottomItems: MenuItem[] = [
       />
       <Menu :model="bottomItems" />
     </div>
-
-    <!-- 设置对话框 -->
-    <SettingsDialog v-model:visible="settingsDialogVisible" />
   </aside>
 </template>
 

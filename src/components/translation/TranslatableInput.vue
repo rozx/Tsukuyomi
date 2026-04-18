@@ -5,7 +5,7 @@ import Textarea from 'primevue/textarea';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
@@ -234,12 +234,12 @@ const handleTranslate = async () => {
     />
   </div>
   <!-- 翻译结果对话框 -->
-  <Dialog
+  <AdaptiveDialog
     v-model:visible="showTranslationDialog"
-    modal
     header="翻译完成"
-    :style="{ width: '50rem', maxWidth: '90vw' }"
-    class="translation-dialog"
+    desktop-width="50rem"
+    eyebrow="TRANSLATION"
+    dialog-class="translation-dialog"
   >
     <div class="translation-result-container">
       <div class="translation-result-label">翻译结果：</div>
@@ -272,7 +272,7 @@ const handleTranslate = async () => {
         "
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

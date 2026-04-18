@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import type { CSSProperties } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Skeleton from 'primevue/skeleton';
@@ -11,19 +10,19 @@ import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
 import VirtualScroller from 'primevue/virtualscroller';
 // 不再需要 words-count 包，直接使用字符串长度计算字符数
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Novel, Chapter } from 'src/models/novel';
 import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
+import { useUiStore } from 'src/stores/ui';
 import {
   formatWordCount,
   UniqueIdGenerator,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from 'src/utils';
-import co from 'co';
 
 // 格式化日期显示
 const formatDate = (date: Date | string | undefined): string => {
@@ -56,12 +55,8 @@ const emit = defineEmits<{
 
 const toast = useToastWithHistory();
 const settingsStore = useSettingsStore();
-const { dialogStyle, isPhone } = useAdaptiveDialog({
-  desktopWidth: '1200px',
-  tabletWidth: '96vw',
-  desktopHeight: '90vh',
-  tabletHeight: '96vh',
-});
+const uiStore = useUiStore();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
 const urlInput = ref('');
 const loading = ref(false);
 const scrapedNovel = ref<Novel | null>(null);
@@ -117,23 +112,8 @@ const hasDetailContent = computed(() => {
   return loading.value || !!scrapedNovel.value;
 });
 
-const scraperDialogStyle = computed(() => {
-  if (!isPhone.value) {
-    return dialogStyle.value;
-  }
-  return hasDetailContent.value
-    ? {
-        width: '96vw',
-        maxWidth: '96vw',
-        height: '92dvh',
-        maxHeight: '92dvh',
-      }
-    : {
-        width: '96vw',
-        maxWidth: '96vw',
-        maxHeight: '90dvh',
-      };
-});
+const scraperSheetMaxHeight = computed(() => (hasDetailContent.value ? '92dvh' : '90dvh'));
+const scraperSheetMinHeight = computed(() => (hasDetailContent.value ? '92dvh' : 'auto'));
 
 const splitterLayout = computed(() => {
   return isPhone.value ? 'vertical' : 'horizontal';
@@ -507,22 +487,14 @@ const selectChapter = (chapter: Chapter) => {
   }
   // 如果是已导入的章节，也需要加载新内容以进行对比
   if (!chapterContents.value.has(chapter.id) && chapter.webUrl) {
-    void co(function* () {
-      try {
-        yield loadChapterContent(chapter);
-      } catch (error) {
-        console.error('[NovelScraperDialog] 加载章节内容失败:', error);
-      }
+    void loadChapterContent(chapter).catch((error) => {
+      console.error('[NovelScraperDialog] 加载章节内容失败:', error);
     });
   }
   // 异步加载本地（已导入）章节内容用于比对
   if (isChapterImported(chapter)) {
-    void co(function* () {
-      try {
-        yield loadImportedChapterContent(chapter);
-      } catch (error) {
-        console.error('[NovelScraperDialog] 加载已导入章节内容失败:', error);
-      }
+    void loadImportedChapterContent(chapter).catch((error) => {
+      console.error('[NovelScraperDialog] 加载已导入章节内容失败:', error);
     });
   }
 };
@@ -928,13 +900,15 @@ watch(
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     header="从网站获取小说"
-    :modal="true"
-    :style="scraperDialogStyle"
-    :closable="true"
-    class="novel-scraper-dialog"
+    desktop-width="1200px"
+    desktop-height="90vh"
+    eyebrow="SCRAPER"
+    :sheet-max-height="scraperSheetMaxHeight"
+    :sheet-min-height="scraperSheetMinHeight"
+    dialog-class="novel-scraper-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
     <div
@@ -1507,7 +1481,7 @@ watch(
         </div>
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <!-- Non-scoped styles for teleported Dialog (PrimeVue teleports dialogs to body,

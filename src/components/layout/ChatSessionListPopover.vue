@@ -1,21 +1,35 @@
 <script setup lang="ts">
+/**
+ * 最近会话列表 —— 桌面 Popover、手机 MobileBottomSheet。
+ *
+ * 对外暴露 `toggle(event)` 与 `hide()`，兼容 useRightPanel 里对
+ * sessionListPopoverRef 的既有调用（parent 拿 template ref 后直接调方法）。
+ */
+import { computed, ref } from 'vue';
 import Popover from 'primevue/popover';
-import { computed } from 'vue';
+import { useUiStore } from 'src/stores/ui';
+import MobileBottomSheet from './MobileBottomSheet.vue';
 import type { ChatSession } from 'src/stores/chat-sessions';
 
 interface Props {
   sessions: ChatSession[];
   currentSessionId: string | null;
+  /** Popover 的目标元素选择器（仅桌面使用） */
   target: string;
 }
 
 const props = defineProps<Props>();
-const popoverRef = defineModel<InstanceType<typeof Popover> | null>('popoverRef');
 
 const emit = defineEmits<{
   hide: [];
   select: [sessionId: string];
 }>();
+
+const uiStore = useUiStore();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
+
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const mobileVisible = ref(false);
 
 const formatSessionTime = (timestamp: number): string => {
   const now = Date.now();
@@ -36,10 +50,52 @@ const formatSessionTime = (timestamp: number): string => {
 };
 
 const sessionCount = computed(() => props.sessions.length);
+
+const onSelect = (sessionId: string) => {
+  emit('select', sessionId);
+  // 选中会话后统一关闭 popover / sheet，避免切换后列表仍覆盖在页面上方
+  if (isPhone.value) {
+    if (mobileVisible.value) {
+      mobileVisible.value = false;
+      emit('hide');
+    }
+  } else {
+    popoverRef.value?.hide();
+  }
+};
+
+// 手机抽屉关闭也要发 hide 事件，和桌面 Popover 保持一致
+const onMobileVisibleChange = (visible: boolean) => {
+  const wasOpen = mobileVisible.value;
+  mobileVisible.value = visible;
+  if (wasOpen && !visible) emit('hide');
+};
+
+defineExpose({
+  toggle: (event: Event) => {
+    if (isPhone.value) {
+      mobileVisible.value = !mobileVisible.value;
+    } else {
+      popoverRef.value?.toggle(event);
+    }
+  },
+  hide: () => {
+    if (isPhone.value) {
+      if (mobileVisible.value) {
+        mobileVisible.value = false;
+        emit('hide');
+      }
+    } else {
+      popoverRef.value?.hide();
+    }
+  },
+});
 </script>
 
 <template>
+  <!-- 桌面：Popover 贴在触发按钮旁 -->
   <Popover
+    v-if="!isPhone"
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
@@ -67,7 +123,7 @@ const sessionCount = computed(() => props.sessions.length);
           :key="session.id"
           class="session-item"
           :class="{ 'session-item-active': session.id === props.currentSessionId }"
-          @click="emit('select', session.id)"
+          @click="onSelect(session.id)"
         >
           <div class="session-item-header">
             <span class="session-item-title" :title="session.title">
@@ -84,10 +140,44 @@ const sessionCount = computed(() => props.sessions.length);
       </div>
     </div>
   </Popover>
+
+  <!-- 手机：底部抽屉 -->
+  <MobileBottomSheet
+    v-else
+    :visible="mobileVisible"
+    title="最近会话"
+    eyebrow="CHAT · SESSIONS"
+    max-height="82dvh"
+    @update:visible="onMobileVisibleChange"
+  >
+    <div v-if="sessionCount === 0" class="px-4 py-8 text-sm text-moon-60 text-center">
+      暂无其他会话
+    </div>
+    <div v-else class="popover-sessions-list">
+      <button
+        v-for="session in props.sessions"
+        :key="session.id"
+        class="session-item"
+        :class="{ 'session-item-active': session.id === props.currentSessionId }"
+        @click="onSelect(session.id)"
+      >
+        <div class="session-item-header">
+          <span class="session-item-title" :title="session.title">
+            {{ session.title }}
+          </span>
+          <span class="session-item-time">
+            {{ formatSessionTime(session.updatedAt) }}
+          </span>
+        </div>
+        <div v-if="session.messages.length > 0" class="session-item-meta">
+          <span class="text-xs text-moon-60">{{ session.messages.length }} 条消息</span>
+        </div>
+      </button>
+    </div>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-/* Session List Popover 样式 */
 :deep(.session-list-popover .p-popover-content) {
   padding: 0.75rem 1rem;
 }

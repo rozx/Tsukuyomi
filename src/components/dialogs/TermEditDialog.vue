@@ -3,9 +3,9 @@ import { ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
-import Dialog from 'primevue/dialog';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Terminology } from 'src/models/novel';
 
 const props = defineProps<{
@@ -91,13 +91,12 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    @update:visible="emit('update:visible', $event)"
     :header="mode === 'add' ? '添加术语' : '编辑术语'"
-    :modal="true"
-    :style="{ width: '30rem' }"
-    :closable="true"
+    desktop-width="30rem"
+    eyebrow="TERM"
+    @update:visible="emit('update:visible', $event)"
   >
     <div class="space-y-4">
       <div class="space-y-2">
@@ -154,5 +153,5 @@ const handleClose = () => {
         @click="handleSave"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>

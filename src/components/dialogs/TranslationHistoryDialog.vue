@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
-import type { Paragraph, Translation } from 'src/models/novel';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import type { Paragraph } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
 
 const props = defineProps<{
@@ -49,13 +49,11 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
-    :style="{ width: '32rem', maxWidth: '90vw' }"
-    :closable="true"
-    :draggable="false"
     header="翻译历史"
+    desktop-width="32rem"
+    eyebrow="TRANSLATION"
     @update:visible="handleClose"
   >
     <div v-if="!paragraph || translationHistory.length === 0" class="empty-state">
@@ -98,7 +96,7 @@ const handleClose = () => {
         @click="handleClose"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

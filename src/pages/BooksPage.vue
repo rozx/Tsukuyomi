@@ -1,972 +1,131 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { v4 as uuidv4 } from 'uuid';
+/**
+ * Device-variant dispatcher for the books list page.
+ * Provides BooksPage context once; mounts Desktop / Tablet / Mobile variant and
+ * renders the shared dialogs + sort menu.
+ */
+import { computed } from 'vue';
 import Button from 'primevue/button';
-import SplitButton from 'primevue/splitbutton';
-import DataView from 'primevue/dataview';
-import Dialog from 'primevue/dialog';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
-import TieredMenu from 'primevue/tieredmenu';
 import ConfirmDialog from 'primevue/confirmdialog';
-import ProgressSpinner from 'primevue/progressspinner';
-import Skeleton from 'primevue/skeleton';
-import { useBooksStore } from 'src/stores/books';
-import { useCoverHistoryStore } from 'src/stores/cover-history';
-import { useSettingsStore } from 'src/stores/settings';
-import { useUiStore } from 'src/stores/ui';
-import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useNovelCharCount } from 'src/composables/useNovelCharCount';
-import { useContextStore } from 'src/stores/context';
-import { CoverService } from 'src/services/cover-service';
-import { MemoryService } from 'src/services/memory-service';
-import { SettingsService } from 'src/services/settings-service';
-import type { Novel } from 'src/models/novel';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
 import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
-import { formatWordCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
-import { cloneDeep } from 'lodash';
+import { useDeviceVariant } from 'src/composables/useDeviceVariant';
+import { provideBooksPage } from 'src/composables/books-page/useBooksPage';
+import BooksPageDesktop from './books-page/BooksPageDesktop.vue';
+import BooksPageTablet from './books-page/BooksPageTablet.vue';
+import BooksPageMobile from './books-page/BooksPageMobile.vue';
 
-const router = useRouter();
-const booksStore = useBooksStore();
-const coverHistoryStore = useCoverHistoryStore();
-const settingsStore = useSettingsStore();
-const uiStore = useUiStore();
-const contextStore = useContextStore();
-const toast = useToastWithHistory();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
+const ctx = provideBooksPage();
+const { variant } = useDeviceVariant();
 
-// 对话框状态
-const showAddDialog = ref(false);
-const showEditDialog = ref(false);
-const showImportDialog = ref(false);
-const selectedBook = ref<Novel | null>(null);
-
-// 删除确认对话框状态
-const showDeleteConfirm = ref(false);
-const deleteConfirmInput = ref('');
-const bookToDelete = ref<Novel | null>(null);
-
-// 文件输入引用（用于导入 JSON）
-const fileInputRef = ref<HTMLInputElement | null>(null);
-
-// 排序菜单
-const sortMenuRef = ref<{
-  toggle: (event: Event) => void;
-  show: (event: Event) => void;
-  hide: () => void;
-} | null>(null);
-const sortMenuItems = computed(() => {
-  return sortOptions.map((option) => ({
-    label: option.label,
-    icon: selectedSort.value === option.value ? 'pi pi-check' : '',
-    command: () => {
-      selectedSort.value = option.value;
-    },
-  }));
+const variantComponent = computed(() => {
+  switch (variant.value) {
+    case 'mobile':
+      return BooksPageMobile;
+    case 'tablet':
+      return BooksPageTablet;
+    case 'desktop':
+    default:
+      return BooksPageDesktop;
+  }
 });
-
-// 搜索关键词
-const searchQuery = ref('');
-
-// 使用工具函数计算（需要在排序选项之前定义）
-const getTotalChapters = utilGetTotalChapters;
-
-// 使用字符数加载 composable
-const { loadBookCharCount, getTotalWords, isLoadingCharCount } = useNovelCharCount();
-
-// 排序选项
-type SortOption = {
-  label: string;
-  value: string;
-  sortFn: (a: Novel, b: Novel) => number;
-};
-
-const sortOptions: SortOption[] = [
-  {
-    label: '默认',
-    value: 'default',
-    sortFn: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  },
-  {
-    label: '标题 (A-Z)',
-    value: 'title-asc',
-    sortFn: (a, b) => a.title.localeCompare(b.title, 'zh-CN'),
-  },
-  {
-    label: '标题 (Z-A)',
-    value: 'title-desc',
-    sortFn: (a, b) => b.title.localeCompare(a.title, 'zh-CN'),
-  },
-  {
-    label: '创建时间 (最新)',
-    value: 'created-desc',
-    sortFn: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  },
-  {
-    label: '创建时间 (最早)',
-    value: 'created-asc',
-    sortFn: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  },
-  {
-    label: '更新时间 (最新)',
-    value: 'updated-desc',
-    sortFn: (a, b) => new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime(),
-  },
-  {
-    label: '更新时间 (最早)',
-    value: 'updated-asc',
-    sortFn: (a, b) => new Date(a.lastEdited).getTime() - new Date(b.lastEdited).getTime(),
-  },
-  {
-    label: '章节数 (多→少)',
-    value: 'chapters-desc',
-    sortFn: (a, b) => getTotalChapters(b) - getTotalChapters(a),
-  },
-  {
-    label: '章节数 (少→多)',
-    value: 'chapters-asc',
-    sortFn: (a, b) => getTotalChapters(a) - getTotalChapters(b),
-  },
-  {
-    label: '字数 (多→少)',
-    value: 'words-desc',
-    sortFn: (a, b) => getTotalWords(b) - getTotalWords(a),
-  },
-  {
-    label: '字数 (少→多)',
-    value: 'words-asc',
-    sortFn: (a, b) => getTotalWords(a) - getTotalWords(b),
-  },
-  {
-    label: '收藏优先',
-    value: 'starred',
-    sortFn: (a, b) => {
-      const aStarred = a.starred || false;
-      const bStarred = b.starred || false;
-      if (aStarred === bStarred) {
-        return new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime();
-      }
-      return aStarred ? -1 : 1;
-    },
-  },
-];
-
-const selectedSort = computed({
-  get: () => settingsStore.booksSortOption || 'default',
-  set: (value: string) => {
-    // 触发保存
-    void settingsStore.setBooksSortOption(value);
-  },
-});
-
-const pageRows = computed(() => {
-  return isPhone.value ? 10 : 20;
-});
-
-const rowsPerPageOptions = computed(() => {
-  return isPhone.value ? [10, 20, 50] : [10, 20, 50, 100];
-});
-
-const paginatorTemplate = computed(() => {
-  return isPhone.value
-    ? 'PrevPageLink CurrentPageReport NextPageLink'
-    : 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink';
-});
-
-// 分割按钮菜单项
-const addBookMenuItems = computed(() => [
-  {
-    label: '从网站导入',
-    icon: 'pi pi-globe',
-    command: () => {
-      importBookFromWeb();
-    },
-  },
-  {
-    label: '从 JSON 导入',
-    icon: 'pi pi-file-import',
-    command: () => {
-      importBookFromJson();
-    },
-  },
-]);
-
-// 过滤和排序后的书籍列表
-const filteredBooks = computed(() => {
-  let books = booksStore.books;
-
-  // 搜索过滤
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase().trim();
-    books = books.filter((book) => {
-      const title = book.title.toLowerCase();
-      const alternateTitles = book.alternateTitles?.join(' ').toLowerCase() || '';
-      const author = book.author?.toLowerCase() || '';
-      const description = book.description?.toLowerCase() || '';
-      const tags = book.tags?.join(' ').toLowerCase() || '';
-      return (
-        title.includes(query) ||
-        alternateTitles.includes(query) ||
-        author.includes(query) ||
-        description.includes(query) ||
-        tags.includes(query)
-      );
-    });
-  }
-
-  // 排序
-  const sortedBooks = [...books];
-  const sortOption = sortOptions.find((opt) => opt.value === selectedSort.value);
-  if (sortOption) {
-    sortedBooks.sort(sortOption.sortFn);
-  }
-
-  return sortedBooks;
-});
-
-// 加载所有书籍的字符数
-// 注意：useNovelCharCount 内部按 book.id 缓存；重复调用相同书籍会立即短路返回，
-// 因此这个函数在正常使用中是幂等且廉价的。
-const loadAllBookCharCounts = async () => {
-  const books = booksStore.books;
-  const loadPromises = books.map((book) => loadBookCharCount(book));
-  await Promise.all(loadPromises);
-};
-
-// 性能优化：之前有三个触发点（onMounted + 两个 watcher），其中 `watch(booksStore.books)`
-// 会在任意书籍字段变化时清空整个缓存并重新加载所有书籍的字数（通过 Promise.all 批量
-// 读取 IndexedDB）。编辑段落、切换收藏等都会触发，造成严重卡顿。
-//
-// 现在：只监听书籍数量变化（增/删/初始加载），保留缓存，不做不必要的重载。
-// 编辑单本书籍不会刷新字数显示（会在下次会话中自然刷新），这是可接受的权衡。
-watch(
-  () => booksStore.books.length,
-  async () => {
-    await loadAllBookCharCounts();
-  },
-  { immediate: true },
-);
-
-// 获取封面图片 URL，如果没有则返回默认占位图
-const getCoverUrl = (book: Novel): string => {
-  return CoverService.getCoverUrl(book);
-};
-
-// 格式化字数（使用工具函数）
-// formatWordCount 已从 utils 导入
-
-// 格式化日期
-const formatDate = (date: Date): string => {
-  const d = new Date(date);
-  const now = new Date();
-  const diff = now.getTime() - d.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) return '今天';
-  if (days === 1) return '昨天';
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  if (days < 365) return `${Math.floor(days / 30)}个月前`;
-
-  return d.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-};
-
-// 添加书籍
-const addBook = () => {
-  selectedBook.value = null;
-  showAddDialog.value = true;
-  // 清除上下文（添加新书籍时没有当前书籍）
-  contextStore.clearContext();
-};
-
-// 从网站导入书籍
-const importBookFromWeb = () => {
-  showImportDialog.value = true;
-};
-
-// 从 JSON 文件导入书籍
-const importBookFromJson = () => {
-  fileInputRef.value?.click();
-};
-
-// 处理文件选择
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
-  try {
-    const data = await SettingsService.readJsonFile(file);
-    const { novels: importedBooks, memoriesByBookId } = SettingsService.parseBookImportData(data);
-
-    // 验证并导入书籍
-    const now = new Date();
-    let successCount = 0;
-    let errorCount = 0;
-    const importedIds: string[] = [];
-    const oldIdToNewId = new Map<string, string>();
-
-    for (const bookData of importedBooks) {
-      try {
-        // 验证必需字段
-        if (!bookData.title || typeof bookData.title !== 'string') {
-          errorCount++;
-          continue;
-        }
-
-        // 创建新书籍对象（展开全部字段，仅覆盖 id 和时间戳）
-        const newBook: Novel = {
-          ...bookData,
-          id: uuidv4(),
-          createdAt: bookData.createdAt ? new Date(bookData.createdAt) : now,
-          lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
-        };
-
-        await booksStore.addBook(newBook);
-        importedIds.push(newBook.id);
-
-        if (bookData.id) {
-          oldIdToNewId.set(bookData.id, newBook.id);
-        }
-
-        // 如果书籍有封面，添加到封面历史
-        if (newBook.cover) {
-          void coverHistoryStore.addCover(newBook.cover);
-        }
-
-        successCount++;
-      } catch (error) {
-        console.error('导入书籍时出错:', error);
-        errorCount++;
-      }
-    }
-
-    // 导入附带记忆
-    let importedMemoryCount = 0;
-    let memoryErrorCount = 0;
-    for (const [oldBookId, memories] of memoriesByBookId) {
-      const newBookId = oldIdToNewId.get(oldBookId);
-      if (!newBookId) continue;
-      for (const mem of memories) {
-        try {
-          await MemoryService.createMemoryWithId(newBookId, mem.id, mem.content, mem.summary, {
-            createdAt: mem.createdAt,
-            lastAccessedAt: mem.lastAccessedAt,
-          });
-          importedMemoryCount++;
-        } catch (e) {
-          console.error(`导入记忆 ${mem.id} 失败:`, e);
-          memoryErrorCount++;
-        }
-      }
-    }
-
-    // 显示结果
-    if (successCount > 0) {
-      const idsToDelete = [...importedIds];
-      const memSummary =
-        importedMemoryCount > 0
-          ? `（含 ${importedMemoryCount} 条记忆${memoryErrorCount > 0 ? `，${memoryErrorCount} 条失败` : ''}）`
-          : memoryErrorCount > 0
-            ? `（${memoryErrorCount} 条记忆导入失败）`
-            : '';
-      toast.add({
-        severity: 'success',
-        summary: '导入成功',
-        detail: `成功导入 ${successCount} 本书籍${memSummary}${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
-        life: 3000,
-        onRevert: async () => {
-          for (const id of idsToDelete) {
-            await booksStore.deleteBook(id);
-          }
-        },
-      });
-    } else {
-      toast.add({
-        severity: 'error',
-        summary: '导入失败',
-        detail: `未能导入任何书籍${errorCount > 0 ? `（${errorCount} 本失败）` : ''}`,
-        life: 3000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '导入失败',
-      detail: error instanceof Error ? error.message : '解析文件时发生未知错误',
-      life: 5000,
-    });
-  }
-
-  // 清空输入
-  target.value = '';
-};
-
-// 处理从网站导入的书籍
-const handleImportBook = async (novel: Novel) => {
-  const now = new Date();
-  const newBook: Novel = {
-    ...novel,
-    id: uuidv4(),
-    createdAt: now,
-    lastEdited: now,
-  };
-  await booksStore.addBook(newBook);
-
-  // 如果导入的书籍有封面，添加到封面历史
-  if (newBook.cover) {
-    void coverHistoryStore.addCover(newBook.cover);
-  }
-
-  showImportDialog.value = false;
-  toast.add({
-    severity: 'success',
-    summary: '导入成功',
-    detail: `已成功从网站导入书籍 "${newBook.title}"`,
-    life: 3000,
-    onRevert: () => booksStore.deleteBook(newBook.id),
-  });
-};
-
-// 编辑书籍
-const editBook = (book: Novel) => {
-  selectedBook.value = { ...book };
-  showEditDialog.value = true;
-  // 更新上下文：设置当前书籍，清除章节和段落
-  contextStore.setContext({
-    currentBookId: book.id,
-    currentChapterId: null,
-    hoveredParagraphId: null,
-    selectedParagraphId: null,
-  });
-};
-
-// 删除书籍
-const deleteBook = (book: Novel) => {
-  bookToDelete.value = book;
-  deleteConfirmInput.value = '';
-  showDeleteConfirm.value = true;
-};
-
-// 删除加载状态
-const isDeletingBook = ref(false);
-
-// 确认删除书籍
-const confirmDeleteBook = async () => {
-  if (!bookToDelete.value || isDeletingBook.value) {
-    return;
-  }
-
-  const bookTitle = bookToDelete.value.title;
-
-  // 检查用户输入的标题是否匹配（不区分大小写，去除首尾空格）
-  const inputTitle = deleteConfirmInput.value.trim();
-  if (inputTitle !== bookTitle) {
-    toast.add({
-      severity: 'error',
-      summary: '标题不匹配',
-      detail: '输入的标题与书籍标题不一致，请重新输入',
-      life: 3000,
-    });
-    return;
-  }
-
-  isDeletingBook.value = true;
-  try {
-    // 执行删除
-    // 深拷贝保存原始数据用于撤销
-    const bookToRestore = cloneDeep(bookToDelete.value);
-    await booksStore.deleteBook(bookToDelete.value.id);
-
-    // 关闭对话框
-    showDeleteConfirm.value = false;
-    deleteConfirmInput.value = '';
-    bookToDelete.value = null;
-
-    toast.add({
-      severity: 'success',
-      summary: '删除成功',
-      detail: `已成功删除书籍 "${bookTitle}"`,
-      life: 3000,
-      onRevert: () => booksStore.addBook(bookToRestore),
-    });
-  } finally {
-    isDeletingBook.value = false;
-  }
-};
-
-// 取消删除
-const cancelDeleteBook = () => {
-  showDeleteConfirm.value = false;
-  deleteConfirmInput.value = '';
-  bookToDelete.value = null;
-};
-
-// 复制书籍标题并填充到输入框
-const copyBookTitle = async () => {
-  if (!bookToDelete.value) {
-    return;
-  }
-
-  const title = bookToDelete.value.title;
-
-  try {
-    // 复制到剪贴板
-    await navigator.clipboard.writeText(title);
-    // 同时填充到输入框，方便用户直接粘贴或修改
-    deleteConfirmInput.value = title;
-    toast.add({
-      severity: 'success',
-      summary: '已复制',
-      detail: '书籍标题已复制并填充到输入框',
-      life: 2000,
-    });
-  } catch {
-    // 即使复制失败，也填充到输入框
-    deleteConfirmInput.value = title;
-    toast.add({
-      severity: 'info',
-      summary: '已填充',
-      detail: '书籍标题已填充到输入框（复制到剪贴板失败）',
-      life: 2000,
-    });
-  }
-};
-
-// 计算删除按钮是否可用
-const isDeleteDisabled = computed(() => {
-  if (!bookToDelete.value) {
-    return true;
-  }
-  return deleteConfirmInput.value.trim() !== bookToDelete.value.title;
-});
-
-// 切换收藏状态
-const toggleStar = async (book: Novel) => {
-  const isStarred = book.starred || false;
-  await booksStore.updateBook(book.id, { starred: !isStarred });
-  toast.add({
-    severity: 'success',
-    summary: isStarred ? '已取消收藏' : '已收藏',
-    detail: `已${isStarred ? '取消收藏' : '收藏'}书籍 "${book.title}"`,
-    life: 2000,
-  });
-};
-
-// 导航到书籍详情页
-const navigateToBookDetails = (book: Novel) => {
-  void router.push(`/books/${book.id}`);
-};
-
-// 保存书籍（添加或编辑）
-const handleSave = async (formData: Partial<Novel>) => {
-  if (showAddDialog.value) {
-    // 添加新书籍
-    const now = new Date();
-    const newBook: Novel = {
-      id: uuidv4(),
-      title: formData.title!,
-      ...(formData.alternateTitles && formData.alternateTitles.length > 0
-        ? { alternateTitles: formData.alternateTitles }
-        : {}),
-      ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
-      ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
-      ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
-      ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
-      ...(formData.cover ? { cover: formData.cover } : {}),
-      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
-      createdAt: now,
-      lastEdited: now,
-    };
-    await booksStore.addBook(newBook);
-
-    // 如果新书有封面，添加到封面历史
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showAddDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  } else if (showEditDialog.value && selectedBook.value) {
-    // 更新现有书籍
-    const updates: Partial<Novel> = {
-      title: formData.title!,
-      lastEdited: new Date(),
-    };
-    if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-      updates.alternateTitles = formData.alternateTitles;
-    }
-    if (formData.author?.trim()) {
-      updates.author = formData.author.trim();
-    }
-    if (formData.description?.trim()) {
-      updates.description = formData.description.trim();
-    }
-    if (formData.tags && formData.tags.length > 0) {
-      updates.tags = formData.tags;
-    }
-    if (formData.webUrl && formData.webUrl.length > 0) {
-      updates.webUrl = formData.webUrl;
-    }
-    // 处理封面：如果提供了封面就更新，如果为 null 就删除封面
-    if (formData.cover !== undefined) {
-      updates.cover = formData.cover;
-    }
-    // 处理 volumes：如果提供了 volumes 就更新
-    if (formData.volumes !== undefined) {
-      updates.volumes = formData.volumes;
-    }
-    // 处理特殊指令：始终包含这些字段（即使为空字符串，用于清除现有值）
-    if (formData.translationInstructions !== undefined) {
-      updates.translationInstructions = formData.translationInstructions;
-    }
-    if (formData.polishInstructions !== undefined) {
-      updates.polishInstructions = formData.polishInstructions;
-    }
-    if (formData.proofreadingInstructions !== undefined) {
-      updates.proofreadingInstructions = formData.proofreadingInstructions;
-    }
-
-    // 深拷贝保存原始数据用于撤销
-    const oldBook = cloneDeep(selectedBook.value);
-    await booksStore.updateBook(selectedBook.value.id, updates);
-    showEditDialog.value = false;
-    const bookTitle = updates.title || selectedBook.value.title;
-    selectedBook.value = null;
-    toast.add({
-      severity: 'success',
-      summary: '更新成功',
-      detail: `已成功更新书籍 "${bookTitle}"`,
-      life: 3000,
-      onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
-    });
-  }
-};
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col p-3 sm:p-4 lg:p-6">
-    <!-- 头部 -->
-    <div
-      class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
-    >
-      <div class="flex-shrink-0 min-w-0 flex flex-col gap-1">
-        <span
-          class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
-          >Library</span
-        >
-        <h1 class="font-display text-[30px] font-semibold tracking-tight text-moon-100 leading-tight">
-          书籍列表
-        </h1>
-        <p class="text-moon/70 text-sm mt-1">管理您的翻译书籍</p>
-      </div>
-      <div
-        class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap"
-      >
-        <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
-          <InputGroupAddon>
-            <i class="pi pi-search text-base" />
-          </InputGroupAddon>
-          <InputText
-            v-model="searchQuery"
-            placeholder="搜索书籍标题、别名、作者、描述或标签..."
-            class="search-input"
-          />
-          <InputGroupAddon v-if="searchQuery" class="input-action-addon">
-            <Button
-              icon="pi pi-times"
-              class="p-button-text p-button-sm input-action-button"
-              @click="searchQuery = ''"
-              title="清除搜索"
-            />
-          </InputGroupAddon>
-        </InputGroup>
-        <Button
-          :label="sortOptions.find((opt) => opt.value === selectedSort)?.label || '排序'"
-          icon="pi pi-sort-alt"
-          iconPos="right"
-          class="p-button-outlined icon-button-hover flex-shrink-0 w-full sm:w-auto"
-          @click="
-            (e: Event) => {
-              const menu = sortMenuRef;
-              if (menu) {
-                menu.toggle(e);
-              }
-            }
-          "
-        />
-        <SplitButton
-          label="添加书籍"
-          icon="pi pi-plus"
-          :model="addBookMenuItems"
-          class="books-add-split-button p-button-primary icon-button-hover flex-shrink-0 w-full sm:w-auto"
-          @click="addBook"
-        />
-      </div>
-    </div>
+  <component :is="variantComponent" />
 
-    <!-- DataView 内容区域 -->
-    <div class="flex-1 flex flex-col min-h-0">
-      <!-- 加载指示器 -->
-      <div
-        v-if="booksStore.isLoading || !booksStore.isLoaded"
-        class="flex-1 flex items-center justify-center"
-      >
-        <div class="text-center">
-          <ProgressSpinner
-            style="width: 50px; height: 50px"
-            strokeWidth="4"
-            animationDuration=".8s"
-            aria-label="加载中"
-          />
-          <p class="text-moon/70 mt-4">正在加载书籍列表...</p>
-        </div>
-      </div>
-      <!-- 书籍列表 -->
-      <DataView
-        v-else-if="booksStore.isLoaded"
-        :value="filteredBooks"
-        data-key="id"
-        :rows="pageRows"
-        :paginator="filteredBooks.length > 0"
-        :rows-per-page-options="rowsPerPageOptions"
-        :paginator-template="paginatorTemplate"
-        current-page-report-template="{currentPage} / {totalPages}"
-        layout="grid"
-        class="flex-1 flex flex-col min-h-0"
-      >
-        <template #empty>
-          <div class="text-center py-12">
-            <i class="pi pi-book text-4xl text-moon/50 mb-4 icon-hover" />
-            <p class="text-moon/70">
-              {{ searchQuery ? '未找到匹配的书籍' : '暂无书籍' }}
-            </p>
-            <Button
-              v-if="!searchQuery"
-              label="添加第一本书籍"
-              icon="pi pi-plus"
-              class="p-button-primary mt-4 icon-button-hover"
-              @click="addBook"
-            />
-          </div>
-        </template>
+  <!-- Shared dialogs + menus (mounted once by dispatcher) -->
+  <BookDialog
+    v-model:visible="ctx.showAddDialog.value"
+    mode="add"
+    @save="ctx.handleSave"
+    @cancel="ctx.showAddDialog.value = false"
+  />
 
-        <template #grid="slotProps">
-          <div
-            class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-stretch"
-          >
-            <div
-              v-for="book in slotProps.items"
-              :key="book.id"
-              class="book-card group flex flex-col h-full"
-            >
-              <!-- 封面 -->
-              <div
-                class="book-cover relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
-                @click="navigateToBookDetails(book)"
-              >
-                <img
-                  :src="getCoverUrl(book)"
-                  :alt="book.title"
-                  class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  @error="
-                    (e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = getCoverUrl(book);
-                    }
-                  "
+  <BookDialog
+    v-model:visible="ctx.showEditDialog.value"
+    mode="edit"
+    :book="ctx.selectedBook.value"
+    @save="ctx.handleSave"
+    @cancel="ctx.showEditDialog.value = false"
+  />
+
+  <NovelScraperDialog
+    v-model:visible="ctx.showImportDialog.value"
+    :current-book="null"
+    @apply="ctx.handleImportBook"
+  />
+
+  <ConfirmDialog />
+
+  <!-- 删除确认对话框 -->
+  <AdaptiveDialog
+    v-model:visible="ctx.showDeleteConfirm.value"
+    header="确认删除"
+    desktop-width="30rem"
+    eyebrow="DELETE"
+    dialog-class="delete-confirm-dialog"
+  >
+    <div class="space-y-4">
+      <div class="flex items-start gap-3">
+        <i class="pi pi-exclamation-triangle text-2xl text-yellow-400 flex-shrink-0 mt-0.5" />
+        <div class="flex-1">
+          <p class="text-moon/90 mb-2">
+            确定要删除书籍
+            <strong class="text-moon/95">"{{ ctx.bookToDelete.value?.title }}"</strong> 吗？
+          </p>
+          <p class="text-sm text-moon/70 mb-4">请在下方的输入框中输入书籍标题以确认删除。</p>
+          <div class="space-y-2">
+            <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
+            <InputGroup class="w-full">
+              <InputText
+                v-model="ctx.deleteConfirmInput.value"
+                :placeholder="ctx.bookToDelete.value?.title"
+                class="flex-1"
+                autofocus
+                @keyup.enter="if (!ctx.isDeleteDisabled.value) ctx.confirmDeleteBook();"
+              />
+              <InputGroupAddon class="input-action-addon">
+                <Button
+                  icon="pi pi-copy"
+                  class="p-button-text p-button-sm input-action-button"
+                  title="复制标题"
+                  @click="ctx.copyBookTitle"
                 />
-              </div>
-              <!-- 内容 -->
-              <div class="book-card-content px-1 pb-2 space-y-1.5 flex flex-col flex-1">
-                <h3
-                  class="book-card-title font-display text-[13px] font-semibold leading-snug line-clamp-2 min-h-[2.5rem] text-moon/90 group-hover:text-primary transition-colors cursor-pointer"
-                  :title="book.title"
-                  @click="navigateToBookDetails(book)"
-                >
-                  {{ book.title }}
-                </h3>
-                <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
-                  {{ book.author }}
-                </p>
-
-                <!-- 统计信息 -->
-                <div
-                  class="book-card-stats font-mono text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
-                >
-                  <div class="flex items-center justify-between">
-                    <span>章节:</span>
-                    <span class="font-medium text-moon/70">{{ getTotalChapters(book) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span>字数:</span>
-                    <span v-if="isLoadingCharCount(book)" class="font-medium">
-                      <Skeleton width="40px" height="12px" />
-                    </span>
-                    <span v-else class="font-medium text-moon/70">{{
-                      formatWordCount(getTotalWords(book))
-                    }}</span>
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span>创建:</span>
-                    <span class="font-medium text-moon/70">{{ formatDate(book.createdAt) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between">
-                    <span>更新:</span>
-                    <span class="font-medium text-moon/70">{{ formatDate(book.lastEdited) }}</span>
-                  </div>
-                </div>
-
-                <!-- 操作按钮 -->
-                <div
-                  class="book-card-actions flex items-center gap-1 pt-1.5 border-t border-white/5"
-                >
-                  <Button
-                    :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
-                    :class="[
-                      'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2',
-                      book.starred ? '!text-yellow-400' : '',
-                    ]"
-                    @click.stop="toggleStar(book)"
-                    :title="book.starred ? '取消收藏' : '收藏'"
-                  />
-                  <Button
-                    icon="pi pi-pencil"
-                    class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2"
-                    @click.stop="editBook(book)"
-                    title="编辑"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-2"
-                    @click.stop="deleteBook(book)"
-                    title="删除"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </DataView>
-    </div>
-
-    <!-- 添加对话框 -->
-    <BookDialog
-      v-model:visible="showAddDialog"
-      mode="add"
-      @save="handleSave"
-      @cancel="showAddDialog = false"
-    />
-
-    <!-- 编辑对话框 -->
-    <BookDialog
-      v-model:visible="showEditDialog"
-      mode="edit"
-      :book="selectedBook"
-      @save="handleSave"
-      @cancel="showEditDialog = false"
-    />
-
-    <!-- 从网站导入对话框 -->
-    <NovelScraperDialog
-      v-model:visible="showImportDialog"
-      :current-book="null"
-      @apply="handleImportBook"
-    />
-
-    <!-- 确认对话框 -->
-    <ConfirmDialog />
-
-    <!-- 删除确认对话框 -->
-    <Dialog
-      v-model:visible="showDeleteConfirm"
-      modal
-      header="确认删除"
-      :style="{ width: '30rem', maxWidth: '90vw' }"
-      class="delete-confirm-dialog"
-    >
-      <div class="space-y-4">
-        <div class="flex items-start gap-3">
-          <i class="pi pi-exclamation-triangle text-2xl text-yellow-400 flex-shrink-0 mt-0.5" />
-          <div class="flex-1">
-            <p class="text-moon/90 mb-2">
-              确定要删除书籍 <strong class="text-moon/95">"{{ bookToDelete?.title }}"</strong> 吗？
-            </p>
-            <p class="text-sm text-moon/70 mb-4">请在下方的输入框中输入书籍标题以确认删除。</p>
-            <div class="space-y-2">
-              <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
-              <InputGroup class="w-full">
-                <InputText
-                  v-model="deleteConfirmInput"
-                  :placeholder="bookToDelete?.title"
-                  class="flex-1"
-                  autofocus
-                  @keyup.enter="if (!isDeleteDisabled) confirmDeleteBook();"
-                />
-                <InputGroupAddon class="input-action-addon">
-                  <Button
-                    icon="pi pi-copy"
-                    class="p-button-text p-button-sm input-action-button"
-                    title="复制标题"
-                    @click="copyBookTitle"
-                  />
-                </InputGroupAddon>
-              </InputGroup>
-              <small class="text-xs text-moon/60 block">
-                <i class="pi pi-info-circle mr-1" />
-                提示：点击右侧的复制按钮会将标题复制到剪贴板并自动填充到输入框
-              </small>
-            </div>
+              </InputGroupAddon>
+            </InputGroup>
+            <small class="text-xs text-moon/60 block">
+              <i class="pi pi-info-circle mr-1" />
+              提示：点击右侧的复制按钮会将标题复制到剪贴板并自动填充到输入框
+            </small>
           </div>
         </div>
       </div>
-      <template #footer>
-        <Button
-          label="取消"
-          icon="pi pi-times"
-          class="p-button-text"
-          :disabled="isDeletingBook"
-          @click="cancelDeleteBook"
-        />
-        <Button
-          label="删除"
-          icon="pi pi-trash"
-          class="p-button-danger"
-          :loading="isDeletingBook"
-          :disabled="isDeleteDisabled || isDeletingBook"
-          @click="confirmDeleteBook"
-        />
-      </template>
-    </Dialog>
+    </div>
+    <template #footer>
+      <Button
+        label="取消"
+        icon="pi pi-times"
+        class="p-button-text"
+        :disabled="ctx.isDeletingBook.value"
+        @click="ctx.cancelDeleteBook"
+      />
+      <Button
+        label="删除"
+        icon="pi pi-trash"
+        class="p-button-danger"
+        :loading="ctx.isDeletingBook.value"
+        :disabled="ctx.isDeleteDisabled.value || ctx.isDeletingBook.value"
+        @click="ctx.confirmDeleteBook"
+      />
+    </template>
+  </AdaptiveDialog>
 
-    <!-- 排序菜单 -->
-    <TieredMenu ref="sortMenuRef" :model="sortMenuItems" popup />
-
-    <!-- 隐藏的文件输入（用于导入 JSON） -->
-    <input
-      ref="fileInputRef"
-      type="file"
-      accept=".json,.txt"
-      class="hidden"
-      @change="handleFileSelect"
-    />
-  </div>
+  <!-- Sort menu + file input live in the Desktop variant (mobile has neither) -->
 </template>
 
 <style scoped>
@@ -987,131 +146,5 @@ const handleSave = async (formData: Partial<Novel>) => {
   min-width: 2.5rem;
   margin: 0 !important;
   border-radius: 0 !important;
-}
-
-.book-card {
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 8px;
-  padding: 8px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.book-card:hover {
-  background: var(--white-opacity-4);
-  border-color: var(--white-opacity-15);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--black-opacity-15);
-}
-
-.line-clamp-1 {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* 使 DataView 使用 flex 布局，内容可滚动，分页器固定在底部 */
-:deep(.p-dataview) {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: transparent !important;
-}
-
-:deep(.p-dataview-content) {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  background: transparent !important;
-}
-
-:deep(.p-paginator) {
-  flex-shrink: 0;
-  margin-top: auto;
-}
-
-/* 确保搜索框可以收缩，所有按钮保持在同一行 */
-.search-input-group {
-  min-width: 0;
-  flex: 1 1 auto;
-  max-width: 400px;
-}
-
-.search-input-group :deep(.p-inputtext) {
-  min-width: 0;
-}
-
-@media (max-width: 640px) {
-  .search-input-group {
-    max-width: none;
-  }
-
-  .books-toolbar :deep(.p-splitbutton) {
-    width: 100%;
-  }
-
-  .books-toolbar :deep(.p-splitbutton .p-button) {
-    min-height: 2.5rem;
-  }
-
-  .books-toolbar :deep(.p-splitbutton .p-splitbutton-button) {
-    flex: 1 1 auto;
-    justify-content: center;
-  }
-
-  .book-card {
-    display: flex;
-    flex-direction: row;
-    gap: 0.625rem;
-    padding: 0.625rem;
-    border-radius: 10px;
-  }
-
-  .book-card:hover {
-    transform: none;
-  }
-
-  .book-cover {
-    flex: 0 0 5.4rem;
-    width: 5.4rem;
-    min-width: 5.4rem;
-    margin-bottom: 0;
-    border-radius: 8px;
-  }
-
-  .book-card-content {
-    padding: 0 0 0.125rem;
-    min-width: 0;
-  }
-
-  .book-card-title {
-    min-height: auto;
-    font-size: 0.92rem;
-    line-height: 1.35;
-    margin-bottom: 0.1rem;
-  }
-
-  .book-card-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.2rem 0.6rem;
-    padding-top: 0.45rem;
-  }
-
-  .book-card-actions {
-    padding-top: 0.5rem;
-    margin-top: 0.15rem;
-  }
 }
 </style>

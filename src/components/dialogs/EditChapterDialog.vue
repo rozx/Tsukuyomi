@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -11,6 +10,7 @@ import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 
 interface VolumeOption {
   label: string;
@@ -128,12 +128,11 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    modal
     header="编辑章节"
-    :style="{ width: '30rem' }"
-    :draggable="false"
+    desktop-width="30rem"
+    eyebrow="CHAPTER"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -306,7 +305,7 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
         @click="handleSave"
       />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

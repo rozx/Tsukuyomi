@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputNumber from 'primevue/inputnumber';
@@ -9,8 +8,8 @@ import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useAdaptiveDialog } from 'src/composables/useAdaptiveDialog';
 import { useElectron } from 'src/composables/useElectron';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
@@ -37,20 +36,6 @@ const emit = defineEmits<{
 const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
 const toast = useToastWithHistory();
 const { isBrowser } = useElectron();
-const { dialogStyle, dialogClass, isPhone } = useAdaptiveDialog({
-  desktopWidth: '750px',
-  tabletWidth: '94vw',
-  desktopHeight: '90vh',
-  tabletHeight: '94vh',
-});
-const unsavedConfirmDialogStyle = computed(() =>
-  isPhone.value
-    ? { width: '100vw', maxWidth: '100vw', height: '100dvh', maxHeight: '100dvh' }
-    : { width: '420px' },
-);
-const unsavedConfirmDialogClass = computed(() =>
-  isPhone.value ? 'adaptive-dialog-fullscreen' : '',
-);
 
 // 测试相关状态
 const isTesting = ref(false);
@@ -519,15 +504,17 @@ const updateCustomHeaders = () => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     :header="mode === 'add' ? '添加 AI 模型' : '编辑 AI 模型'"
-    :modal="true"
-    :style="dialogStyle"
+    desktop-width="750px"
+    desktop-height="90vh"
+    eyebrow="AI · MODEL"
     :closable="!hasChildDialogOpen"
-    :dismissableMask="!hasChildDialogOpen"
-    :closeOnEscape="!hasChildDialogOpen"
-    :class="['ai-model-dialog', dialogClass]"
+    :dismissable-mask="!hasChildDialogOpen"
+    :close-on-escape="!hasChildDialogOpen"
+    :sheet-dismiss-on-mask-click="!hasChildDialogOpen"
+    dialog-class="ai-model-dialog"
     @update:visible="handleDialogVisibleChange"
   >
     <div class="space-y-5 py-2">
@@ -999,36 +986,32 @@ const updateCustomHeaders = () => {
       </div>
     </template>
 
-    <Dialog
+    <AdaptiveDialog
       v-model:visible="showUnsavedCloseConfirm"
       header="放弃未保存修改？"
-      :modal="true"
-      :style="unsavedConfirmDialogStyle"
-      :class="unsavedConfirmDialogClass"
-      :dismissableMask="true"
-      :closeOnEscape="true"
+      desktop-width="420px"
+      eyebrow="UNSAVED"
+      sheet-min-height="auto"
     >
       <div class="space-y-3">
         <p class="text-moon/90">当前模型配置有未保存修改，关闭后这些修改将丢失。</p>
       </div>
       <template #footer>
-        <div class="flex justify-end gap-2 w-full">
-          <Button
-            label="继续编辑"
-            icon="pi pi-pencil"
-            class="p-button-text"
-            @click="cancelDiscardAndKeepEditing"
-          />
-          <Button
-            label="放弃修改并关闭"
-            icon="pi pi-times"
-            class="p-button-danger"
-            @click="confirmDiscardAndClose"
-          />
-        </div>
+        <Button
+          label="继续编辑"
+          icon="pi pi-pencil"
+          class="p-button-text"
+          @click="cancelDiscardAndKeepEditing"
+        />
+        <Button
+          label="放弃修改并关闭"
+          icon="pi pi-times"
+          class="p-button-danger"
+          @click="confirmDiscardAndClose"
+        />
       </template>
-    </Dialog>
-  </Dialog>
+    </AdaptiveDialog>
+  </AdaptiveDialog>
 </template>
 
 <style scoped>

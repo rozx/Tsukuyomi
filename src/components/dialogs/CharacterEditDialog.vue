@@ -3,10 +3,10 @@ import { ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
-import Dialog from 'primevue/dialog';
 import SelectButton from 'primevue/selectbutton';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { CharacterSetting, Alias } from 'src/models/novel';
 
 const props = defineProps<{
@@ -108,12 +108,11 @@ const removeAlias = (index: number) => {
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
     :header="character ? '编辑角色' : '添加角色'"
-    :modal="true"
-    :style="{ width: '700px' }"
-    :closable="true"
+    desktop-width="700px"
+    eyebrow="CHARACTER"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -278,5 +277,5 @@ const removeAlias = (index: number) => {
         />
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>

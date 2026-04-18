@@ -1,5 +1,12 @@
 <script setup lang="ts">
+/**
+ * 单个 Action 的详情面板 —— 桌面 Popover、手机 MobileBottomSheet。
+ * 对外仍暴露 `toggle(event)` / `hide()`，兼容 useRightPanel 对 Ref 的既有调用。
+ */
+import { computed, ref } from 'vue';
 import Popover from 'primevue/popover';
+import { useUiStore } from 'src/stores/ui';
+import MobileBottomSheet from './MobileBottomSheet.vue';
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
 import { getActionDetails, ACTION_LABELS, ENTITY_LABELS } from 'src/utils/action-info-utils';
@@ -10,19 +17,52 @@ interface Props {
 }
 
 const props = defineProps<Props>();
-const popoverRef = defineModel<InstanceType<typeof Popover> | null>('popoverRef');
 
 const emit = defineEmits<{
   hide: [];
 }>();
 
-const getActionTitle = (action: MessageAction): string => {
-  return `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
+const uiStore = useUiStore();
+const isPhone = computed(() => uiStore.deviceType === 'phone');
+
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const mobileVisible = ref(false);
+
+const getActionTitle = (action: MessageAction): string =>
+  `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
+
+const title = computed(() => (props.action ? getActionTitle(props.action) : ''));
+
+const onMobileVisibleChange = (visible: boolean) => {
+  const wasOpen = mobileVisible.value;
+  mobileVisible.value = visible;
+  if (wasOpen && !visible) emit('hide');
 };
+
+defineExpose({
+  toggle: (event: Event) => {
+    if (isPhone.value) {
+      mobileVisible.value = !mobileVisible.value;
+    } else {
+      popoverRef.value?.toggle(event);
+    }
+  },
+  hide: () => {
+    if (isPhone.value) {
+      if (mobileVisible.value) {
+        mobileVisible.value = false;
+        emit('hide');
+      }
+    } else {
+      popoverRef.value?.hide();
+    }
+  },
+});
 </script>
 
 <template>
   <Popover
+    v-if="!isPhone"
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
@@ -46,10 +86,29 @@ const getActionTitle = (action: MessageAction): string => {
       </div>
     </div>
   </Popover>
+
+  <MobileBottomSheet
+    v-else
+    :visible="mobileVisible"
+    :title="title || '操作详情'"
+    eyebrow="CHAT · ACTION"
+    max-height="70dvh"
+    @update:visible="onMobileVisibleChange"
+  >
+    <div v-if="props.action" class="popover-details">
+      <div
+        v-for="(detail, detailIdx) in getActionDetails(props.action, props.context)"
+        :key="detailIdx"
+        class="popover-detail-item"
+      >
+        <span class="popover-detail-label">{{ detail.label }}：</span>
+        <span class="popover-detail-value">{{ detail.value }}</span>
+      </div>
+    </div>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-/* Action Popover 样式 */
 :deep(.action-popover .p-popover-content) {
   padding: 0.75rem 1rem;
 }

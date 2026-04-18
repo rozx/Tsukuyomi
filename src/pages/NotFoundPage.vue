@@ -1,18 +1,29 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router';
-import Button from 'primevue/button';
+/**
+ * Dispatcher for the 404 page. Variants are identical today but ship separately
+ * so the pattern is uniform across all pages per the `device-variant-dispatch` spec.
+ */
+import { computed } from 'vue';
+import { useDeviceVariant } from 'src/composables/useDeviceVariant';
+import NotFoundPageDesktop from './not-found-page/NotFoundPageDesktop.vue';
+import NotFoundPageTablet from './not-found-page/NotFoundPageTablet.vue';
+import NotFoundPageMobile from './not-found-page/NotFoundPageMobile.vue';
+
+const { variant } = useDeviceVariant();
+
+const variantComponent = computed(() => {
+  switch (variant.value) {
+    case 'mobile':
+      return NotFoundPageMobile;
+    case 'tablet':
+      return NotFoundPageTablet;
+    case 'desktop':
+    default:
+      return NotFoundPageDesktop;
+  }
+});
 </script>
 
 <template>
-  <div class="w-full h-full bg-night-900 text-moon text-center p-4 flex items-center justify-center">
-    <div>
-      <div style="font-size: 30vh">404</div>
-
-      <div class="text-2xl" style="opacity: 0.4">Oops. Nothing here...</div>
-
-      <RouterLink to="/">
-        <Button label="Go Home" icon="pi pi-home" class="mt-8" />
-      </RouterLink>
-    </div>
-  </div>
+  <component :is="variantComponent" />
 </template>

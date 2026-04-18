@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Checkbox from 'primevue/checkbox';
+import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { CoverHistoryItem } from 'src/models/novel';
@@ -117,13 +117,11 @@ watch(
 </script>
 
 <template>
-  <Dialog
+  <AdaptiveDialog
     :visible="visible"
-    :modal="true"
-    :closable="true"
-    :draggable="false"
-    :style="{ width: '600px' }"
     header="恢复已删除的项目"
+    desktop-width="600px"
+    eyebrow="RESTORE"
     @update:visible="visible = $event"
   >
     <div class="flex flex-col gap-4">
@@ -176,6 +174,6 @@ watch(
         />
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
