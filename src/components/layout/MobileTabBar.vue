@@ -1,29 +1,26 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
-import SettingsDialog from 'src/components/dialogs/SettingsDialog.vue';
 
 const router = useRouter();
 const route = useRoute();
 const ui = useUiStore();
-const settingsDialogVisible = ref(false);
 
-type TabId = 'home' | 'library' | 'chat' | 'ai' | 'help' | 'settings';
+type TabId = 'home' | 'library' | 'chat' | 'ai' | 'settings';
 
 type Tab = { id: TabId; icon: string; label: string };
 
 // 内容 → AI 工具 → 应用设置：
 //   首页 · 书库   ← 内容入口
 //   AI 助手 · AI 模型  ← 核心 AI 功能（把 AI 集群放在中间方便拇指触达）
-//   设置 · 帮助   ← 配置与支持（放在最右）
+//   设置         ← 配置入口（帮助已移至顶栏）
 const tabs: Tab[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
   { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
   { id: 'ai', icon: 'pi-objects-column', label: 'AI 模型' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
-  { id: 'help', icon: 'pi-question-circle', label: '帮助' },
 ];
 
 const activeTab = computed<TabId>(() => {
@@ -31,7 +28,7 @@ const activeTab = computed<TabId>(() => {
   const path = route.path;
   if (path === '/') return 'home';
   if (path.startsWith('/ai')) return 'ai';
-  if (path.startsWith('/help')) return 'help';
+  if (path.startsWith('/settings')) return 'settings';
   if (path === '/books' || path.startsWith('/books/')) return 'library';
   return 'home';
 });
@@ -61,12 +58,9 @@ const onTabClick = (id: TabId) => {
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (route.path !== '/ai') void router.push('/ai');
       return;
-    case 'help':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (!route.path.startsWith('/help')) void router.push('/help');
-      return;
     case 'settings':
-      settingsDialogVisible.value = true;
+      if (ui.rightPanelOpen) ui.closeRightPanel();
+      if (!route.path.startsWith('/settings')) void router.push('/settings');
       return;
   }
 };
@@ -85,8 +79,6 @@ const onTabClick = (id: TabId) => {
       <span>{{ tab.label }}</span>
     </button>
   </nav>
-
-  <SettingsDialog v-model:visible="settingsDialogVisible" />
 </template>
 
 <style scoped>

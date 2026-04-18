@@ -13,6 +13,7 @@ const routes: RouteRecordRaw[] = [
       },
       { path: 'books/:id', component: () => import('src/pages/BookDetailsPage.vue') },
       { path: 'ai', component: () => import('src/pages/AIPage.vue') },
+      { path: 'settings', component: () => import('src/pages/SettingsPage.vue') },
       { path: 'help/:docId?', component: () => import('src/pages/HelpPage.vue') },
     ],
   },

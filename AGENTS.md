@@ -106,6 +106,66 @@ src/
 
 ---
 
+## 设备变体规则 (Dispatcher + Desktop / Tablet / Mobile)
+
+**强制规则**: 所有 `src/layouts/*.vue`、`src/pages/*.vue`，以及任何在桌面 / 平板 / 手机上呈现差异明显的组件，都必须使用 dispatcher + 三变体模式。**严禁**在页面或布局里直接写 `v-if="isPhone"` / `v-if="isElectron"` 分支。
+
+### 分派规则
+
+唯一实现位置: [`src/composables/useDeviceVariant.ts`](src/composables/useDeviceVariant.ts)
+
+- Electron 永远强制 `'desktop'`（不看窗口尺寸）
+- Web 端按 `useResponsiveLayout()` 断点: `'mobile'` / `'tablet'` / `'desktop'`
+- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。豁免：叶子对话框（`BookDialog`、`NovelScraperDialog` 等）
+
+### 标准文件结构
+
+```
+src/pages/<name>.vue                          # dispatcher (30 行内，路由指向它)
+src/pages/<name-kebab>/
+  <Name>Desktop.vue
+  <Name>Tablet.vue                            # 通常是 <Desktop /> 的 3 行 wrapper
+  <Name>Mobile.vue
+src/composables/<name-kebab>/use<Name>.ts     # 业务逻辑，provide/inject 跨变体
+```
+
+同构适用于 `src/layouts/` 和需要差异渲染的 `src/components/`（如 `AppRightPanel`、`TranslationProgress`）。
+
+### Dispatcher 模板
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useDeviceVariant } from 'src/composables/useDeviceVariant';
+import { provide<Name>Page } from 'src/composables/<name-kebab>/use<Name>Page';
+import <Name>Desktop from './<name-kebab>/<Name>Desktop.vue';
+import <Name>Tablet from './<name-kebab>/<Name>Tablet.vue';
+import <Name>Mobile from './<name-kebab>/<Name>Mobile.vue';
+
+provide<Name>Page();
+const { variant } = useDeviceVariant();
+const variantComponent = computed(() => {
+  switch (variant.value) {
+    case 'mobile': return <Name>Mobile;
+    case 'tablet': return <Name>Tablet;
+    default: return <Name>Desktop;
+  }
+});
+</script>
+<template><component :is="variantComponent" /></template>
+```
+
+### 关键约定
+
+1. **业务逻辑进 composable** — 变体只写模板。composable 暴露 `provide<Name>()` / `inject<Name>()`（参考 `useBookDetailsPage.ts`、`useSettingsPage.ts`、`useHelpPage.ts`）
+2. **一次性副作用只跑一次** — auto-sync、AI watcher、embedding warmup、初始 toast 等放在 composable 的 `onMounted` 或 dispatcher 里，不要在每个变体里重复注册（否则断点切换会重复触发）
+3. **共享弹窗 / Toast 挂 dispatcher** — 不在三个变体里各挂一份
+4. **跨断点存活的状态** 走 Pinia 或 provide/inject — 变体切换时组件会被整体替换，本地 `ref` 会丢
+5. **Tablet 默认 wrap Desktop** — 除非有三套独立设计；wrapper 保留结构一致性
+6. **DRY 重复模板片段** 抽到 `components/<surface>/XxxFragment.vue`
+
+---
+
 ## 路由
 
 ```
@@ -114,8 +174,11 @@ src/
 /books/:id                                 → BookDetailsPage (书籍详情，最复杂的页面)
 /books/:id/settings/:setting(terms|characters|memory) → BookDetailsPage (设置标签)
 /ai                                        → AIPage (AI 配置)
+/settings                                  → SettingsPage (应用设置，已从弹窗改为路由页)
 /help/:docId?                              → HelpPage
 ```
+
+> 所有页面都是 dispatcher，路由**只指向 dispatcher** (`src/pages/*.vue`)，变体文件不进路由表。
 
 ---
 
@@ -197,3 +260,4 @@ AI: OpenAI SDK + Google Generative AI | 存储: IndexedDB (idb) + GitHub Gist (@
 3. **遵循现有风格**: 创建新文件前参考现有实现
 4. **DRY 原则**: 不重复代码，提取可复用函数
 5. **路径别名**: 使用 `src/` 前缀导入模块 (tsconfig paths 配置)
+6. **设备变体**: 新建页面 / 布局必须遵循 dispatcher + Desktop/Tablet/Mobile 三变体结构（见上节）；严禁在页面或布局内写 `v-if="isPhone"` / `v-if="isElectron"`

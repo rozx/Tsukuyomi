@@ -40,6 +40,36 @@ pages/components (UI) → composables (逻辑复用) → stores (Pinia 状态) �
 - **services/ai/** — AI 子系统: `core/` 基础服务, `providers/` (OpenAI/Gemini), `tasks/` (translate/polish/proofread/explain/assistant), `tools/` (30+ AI 工具定义)
 - **models/** — 数据模型: `novel.ts` (Novel/Volume/Chapter/Paragraph/Translation/ScoreBreakdown), `memory.ts` (Memory + 可选 embedding/embeddingModel), `settings.ts` (含 MemoryInjectionSettings), `sync.ts`
 
+## 设备变体规则（Dispatcher + Desktop/Tablet/Mobile）
+
+**强制规则**: 所有 `src/layouts/*.vue`、`src/pages/*.vue`，以及任何在桌面 / 平板 / 手机呈现差异明显的组件，都**必须**使用 dispatcher + 三变体模式。禁止在页面或布局里直接写 `v-if="isPhone"` / `v-if="isElectron"` 分支。
+
+**分派规则**（唯一实现位置：[`src/composables/useDeviceVariant.ts`](src/composables/useDeviceVariant.ts)）：
+
+- Electron 永远强制 `'desktop'`（无论窗口尺寸）
+- Web 端按 `useResponsiveLayout()` 断点选择 `'mobile'` / `'tablet'` / `'desktop'`
+- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。叶子对话框（`BookDialog`、`NovelScraperDialog` 等）是明确豁免项
+
+**标准文件结构**（以页面为例，布局/组件同构）：
+
+```
+src/pages/<name>.vue                              # dispatcher（30 行内，保持路由路径稳定）
+src/pages/<name-kebab>/
+  <Name>Desktop.vue                               # 桌面模板
+  <Name>Tablet.vue                                # 平板：多为 3 行 wrapper（<Desktop />）
+  <Name>Mobile.vue                                # 手机模板
+src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provide / inject 跨变体共享
+```
+
+**关键约定**：
+
+1. **业务逻辑全部进 composable** — 变体文件只负责模板。composable 暴露 `provide<Name>()` + `inject<Name>()` 两个 helper，dispatcher 调 provide，变体调 inject（参考 `useBookDetailsPage.ts`、`useSettingsPage.ts`）
+2. **一次性副作用只跑一次** — auto-sync、AI 任务 watcher、embedding warmup、toast 初始化等放在 composable 的 `onMounted` 或 dispatcher 里，**不得**在每个变体里重复注册（否则断点切换会重复触发）
+3. **跨变体共享的弹窗 / Toast 挂在 dispatcher** — 避免三个变体各自渲染一份造成重复挂载和状态分叉
+4. **UI 状态走 Pinia 或 provide/inject** — 不要在变体内部用本地 `ref` 保存需要跨断点切换存活的状态；变体组件会被整体换掉
+5. **Tablet 常是 `<Desktop />` wrapper** — 除非确有三套模板，否则写 wrapper 保留文件结构统一（后续做独立平板设计时不改 dispatcher）
+6. **DRY**：变体之间重复的模板片段要抽成 `components/<surface>/XxxFragment.vue`（例子：`components/novel/translation-progress/TaskEmptyState.vue`）
+
 ## 关键设计
 
 - **多版本翻译**: 每个 Paragraph 含 `translations: Translation[]` 数组，支持多个翻译版本并行
@@ -59,8 +89,11 @@ pages/components (UI) → composables (逻辑复用) → stores (Pinia 状态) �
 /books/:id            → BookDetailsPage (书籍详情，最复杂的页面)
 /books/:id/settings/:setting(terms|characters|memory) → BookDetailsPage (设置标签)
 /ai                   → AIPage (AI 配置)
+/settings             → SettingsPage (应用设置，已从弹窗改为路由页)
 /help/:docId?         → HelpPage
 ```
+
+> 所有页面都是 dispatcher，见「设备变体规则」。路由**只指向 dispatcher** (`src/pages/*.vue`)，变体文件不进路由表。
 
 ## 代码风格
 
