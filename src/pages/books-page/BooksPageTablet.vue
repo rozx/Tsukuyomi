@@ -1,13 +1,69 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import Button from 'primevue/button';
+import Menu from 'primevue/menu';
+import TieredMenu from 'primevue/tieredmenu';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
+import AddVolumeDialog from 'src/components/dialogs/AddVolumeDialog.vue';
+import AddChapterDialog from 'src/components/dialogs/AddChapterDialog.vue';
+import EditVolumeDialog from 'src/components/dialogs/EditVolumeDialog.vue';
+import EditChapterDialog from 'src/components/dialogs/EditChapterDialog.vue';
+import DeleteVolumeConfirmDialog from 'src/components/dialogs/DeleteVolumeConfirmDialog.vue';
+import DeleteChapterConfirmDialog from 'src/components/dialogs/DeleteChapterConfirmDialog.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
+import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { Novel } from 'src/models/novel';
+import type { Chapter, Novel, Volume } from 'src/models/novel';
+import { useBookDetailsStore } from 'src/stores/book-details';
+import { useBooksStore } from 'src/stores/books';
+import { useRouter } from 'vue-router';
+import { ChapterContentService } from 'src/services/chapter-content-service';
+import { ChapterService } from 'src/services/chapter-service';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
+import {
+  getChapterStatus,
+  chapterStatusIcon,
+  chapterStatusColor,
+  chapterStatusTextColor,
+  chapterStatusLabel,
+  type ChapterProgressMap,
+} from 'src/utils/chapter-status';
 
 const ctx = injectBooksPage();
+const router = useRouter();
+const bookDetailsStore = useBookDetailsStore();
+const booksStore = useBooksStore();
+const toast = useToastWithHistory();
+
+// 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
+const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+const addMenuItems = computed(() => [
+  {
+    label: '新建书籍',
+    icon: 'pi pi-plus',
+    command: () => ctx.addBook(),
+  },
+  {
+    label: '从网站导入',
+    icon: 'pi pi-globe',
+    command: () => ctx.importBookFromWeb(),
+  },
+  {
+    label: '从 JSON 导入',
+    icon: 'pi pi-file-import',
+    command: () => ctx.importBookFromJson(),
+  },
+]);
+const toggleAddMenu = (event: Event) => addMenuRef.value?.toggle(event);
+
+const toggleSortMenu = (event: Event) => {
+  ctx.sortMenuRef.value?.toggle(event);
+};
+
+const currentSortLabel = computed(
+  () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label ?? '排序',
+);
 
 // 本地 UI 状态：当前选中的书（主从布局右侧详情）。不写入任何 store。
 const selectedBookId = ref<string | null>(null);
@@ -33,6 +89,211 @@ watch(
   },
   { immediate: true },
 );
+
+// 当前选中书的章节翻译进度（懒加载，切书时重算）
+const progressByChapter = ref<ChapterProgressMap | null>(null);
+const isLoadingProgress = ref(false);
+let progressLoadToken = 0;
+
+async function loadProgressFor(book: Novel | null) {
+  const token = ++progressLoadToken;
+  if (!book) {
+    progressByChapter.value = null;
+    isLoadingProgress.value = false;
+    return;
+  }
+  const chapterIds: string[] = [];
+  for (const vol of book.volumes ?? []) {
+    for (const ch of vol.chapters ?? []) chapterIds.push(ch.id);
+  }
+  if (chapterIds.length === 0) {
+    if (token === progressLoadToken) {
+      progressByChapter.value = new Map();
+      isLoadingProgress.value = false;
+    }
+    return;
+  }
+  isLoadingProgress.value = true;
+  try {
+    const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+    if (token !== progressLoadToken) return; // 切书后丢弃旧结果
+    const map: ChapterProgressMap = new Map();
+    for (const id of chapterIds) {
+      const paras = contents.get(id) ?? [];
+      const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+      const total = nonEmpty.length;
+      const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
+      map.set(id, { total, translated });
+    }
+    progressByChapter.value = map;
+  } finally {
+    if (token === progressLoadToken) isLoadingProgress.value = false;
+  }
+}
+
+watch(
+  () => selectedBook.value?.id ?? null,
+  () => void loadProgressFor(selectedBook.value),
+  { immediate: true },
+);
+
+// 卷展开 / 折叠状态（默认折叠，只显示前 COLLAPSED_PREVIEW 章作为预览）
+const COLLAPSED_PREVIEW = 5;
+const expandedVolumes = reactive<Record<string, boolean>>({});
+function isVolumeExpanded(id: string): boolean {
+  return expandedVolumes[id] === true;
+}
+function toggleVolume(id: string): void {
+  expandedVolumes[id] = !isVolumeExpanded(id);
+}
+function visibleChapters(volumeId: string, chapters: Chapter[]): Chapter[] {
+  if (isVolumeExpanded(volumeId)) return chapters;
+  return chapters.slice(0, COLLAPSED_PREVIEW);
+}
+
+function chIcon(id: string): string {
+  return chapterStatusIcon(getChapterStatus(progressByChapter.value, id));
+}
+function chColor(id: string): string {
+  return chapterStatusColor(getChapterStatus(progressByChapter.value, id));
+}
+function chTextColor(id: string): string {
+  return chapterStatusTextColor(getChapterStatus(progressByChapter.value, id));
+}
+function chLabel(id: string): string {
+  return chapterStatusLabel(progressByChapter.value, id);
+}
+
+function openChapter(book: Novel, chapter: Chapter): void {
+  if (editMode.value) return; // 编辑模式下章节点击无效，避免误触离开列表
+  void bookDetailsStore.setSelectedChapter(book.id, chapter.id);
+  void router.push(`/books/${book.id}`);
+}
+
+// ───── 卷 / 章节编辑（复用 useChapterManagement 的 dialog 状态 + CRUD） ─────
+// 手机端 / 书籍详情页已经使用同一个 composable；本页只是把它绑到当前选中的书上。
+const selectedBookForEdit = computed<Novel | undefined>(() => selectedBook.value ?? undefined);
+
+const chapterMgmt = useChapterManagement(selectedBookForEdit);
+
+const volumeOptions = computed(() =>
+  (selectedBook.value?.volumes ?? []).map((v) => ({
+    label: getVolumeDisplayTitle(v),
+    value: v.id,
+  })),
+);
+
+// 编辑模式：默认关闭，开启后显示 ⋮ 操作按钮，关闭时树保持干净
+const editMode = ref(false);
+function toggleEditMode(): void {
+  editMode.value = !editMode.value;
+}
+
+// ⋮ 动作菜单：单个 Menu 实例，根据当前 target 动态生成菜单项
+const actionMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+type ActionTarget =
+  | { kind: 'volume'; volume: Volume }
+  | { kind: 'chapter'; chapter: Chapter; volumeId: string; index: number };
+const actionTarget = ref<ActionTarget | null>(null);
+
+const actionMenuItems = computed(() => {
+  const target = actionTarget.value;
+  if (!target) return [];
+  if (target.kind === 'volume') {
+    return [
+      {
+        label: '编辑卷',
+        icon: 'pi pi-pencil',
+        command: () => chapterMgmt.openEditVolumeDialog(target.volume),
+      },
+      {
+        label: '删除卷',
+        icon: 'pi pi-trash',
+        class: 'p-menuitem-danger',
+        command: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
+      },
+    ];
+  }
+  const vol = selectedBook.value?.volumes?.find((v) => v.id === target.volumeId);
+  const canMoveUp = target.index > 0;
+  const canMoveDown = !!vol?.chapters && target.index < vol.chapters.length - 1;
+  return [
+    {
+      label: '编辑章节',
+      icon: 'pi pi-pencil',
+      command: () => chapterMgmt.openEditChapterDialog(target.chapter),
+    },
+    {
+      label: '上移',
+      icon: 'pi pi-arrow-up',
+      disabled: !canMoveUp,
+      command: () => void moveChapter(target, 'up'),
+    },
+    {
+      label: '下移',
+      icon: 'pi pi-arrow-down',
+      disabled: !canMoveDown,
+      command: () => void moveChapter(target, 'down'),
+    },
+    { separator: true },
+    {
+      label: '删除章节',
+      icon: 'pi pi-trash',
+      class: 'p-menuitem-danger',
+      command: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
+    },
+  ];
+});
+
+function openVolumeMenu(event: Event, volume: Volume): void {
+  event.stopPropagation();
+  actionTarget.value = { kind: 'volume', volume };
+  actionMenuRef.value?.toggle(event);
+}
+
+function openChapterMenu(
+  event: Event,
+  chapter: Chapter,
+  volumeId: string,
+  index: number,
+): void {
+  event.stopPropagation();
+  actionTarget.value = { kind: 'chapter', chapter, volumeId, index };
+  actionMenuRef.value?.toggle(event);
+}
+
+const isMovingChapter = ref(false);
+async function moveChapter(
+  target: { chapter: Chapter; volumeId: string; index: number },
+  direction: 'up' | 'down',
+): Promise<void> {
+  const book = selectedBook.value;
+  if (!book || isMovingChapter.value) return;
+  const targetIndex = direction === 'up' ? target.index - 1 : target.index + 1;
+  if (targetIndex < 0) return;
+  const vol = book.volumes?.find((v) => v.id === target.volumeId);
+  if (!vol?.chapters || targetIndex >= vol.chapters.length) return;
+
+  isMovingChapter.value = true;
+  try {
+    const updatedVolumes = ChapterService.moveChapter(
+      book,
+      target.chapter.id,
+      target.volumeId,
+      targetIndex,
+    );
+    await booksStore.updateBook(book.id, { volumes: updatedVolumes, lastEdited: new Date() });
+  } catch (err) {
+    toast.add({
+      severity: 'error',
+      summary: '排序失败',
+      detail: err instanceof Error ? err.message : String(err),
+      life: 3000,
+    });
+  } finally {
+    isMovingChapter.value = false;
+  }
+}
 </script>
 
 <template>
@@ -65,9 +326,34 @@ watch(
               <i class="pi pi-times" />
             </button>
           </div>
-          <button class="tl-icon-btn" title="添加书籍" @click="ctx.addBook">
+          <button
+            class="tl-icon-btn"
+            :title="`排序：${currentSortLabel}`"
+            aria-haspopup="true"
+            @click="toggleSortMenu"
+          >
+            <i class="pi pi-sort-alt" aria-hidden="true" />
+          </button>
+          <button
+            class="tl-icon-btn"
+            title="添加书籍"
+            aria-haspopup="true"
+            @click="toggleAddMenu"
+          >
             <i class="pi pi-plus" aria-hidden="true" />
           </button>
+          <Menu
+            ref="addMenuRef"
+            :model="addMenuItems"
+            :popup="true"
+            append-to="body"
+          />
+          <TieredMenu
+            :ref="(el) => { ctx.sortMenuRef.value = el as unknown as typeof ctx.sortMenuRef.value; }"
+            :model="ctx.sortMenuItems.value"
+            popup
+            append-to="body"
+          />
         </div>
       </header>
 
@@ -146,9 +432,7 @@ watch(
           <div class="tl-hero-body">
             <div class="tl-hero-eyebrow">
               {{ selectedBook.author || '未知作者' }}
-              <template v-if="selectedBook.tags && selectedBook.tags.length > 0">
-                · {{ selectedBook.tags.slice(0, 2).join(' · ') }}
-              </template>
+              · {{ ctx.getTotalChapters(selectedBook) }} 章
             </div>
             <h2 class="tl-hero-title">{{ selectedBook.title }}</h2>
             <div
@@ -162,11 +446,21 @@ watch(
               <span class="tl-badge tl-badge--blue">
                 <i class="pi pi-sparkles" /> {{ selectedBook.tags?.[0] || '小说' }}
               </span>
-              <span class="tl-badge">{{ ctx.getTotalChapters(selectedBook) }} 章</span>
+              <span
+                v-for="tag in (selectedBook.tags ?? []).slice(1, 6)"
+                :key="tag"
+                class="tl-badge"
+              >
+                {{ tag }}
+              </span>
               <span v-if="selectedBook.starred" class="tl-badge tl-badge--star">
                 <i class="pi pi-star-fill" /> 收藏
               </span>
             </div>
+
+            <p v-if="selectedBook.description" class="tl-desc">
+              {{ selectedBook.description }}
+            </p>
 
             <div class="tl-hero-actions">
               <Button
@@ -231,48 +525,104 @@ watch(
           </div>
         </div>
 
-        <!-- 章节树双列预览 -->
+        <!-- 章节树：全部卷 / 章节，可折叠，点击跳转到阅读 -->
         <section class="tl-chapters">
           <header class="tl-chapters-head">
             <span>章节 · {{ ctx.getTotalChapters(selectedBook) }}</span>
-          </header>
-          <div v-if="selectedBook.volumes && selectedBook.volumes.length > 0" class="tl-chapters-grid">
-            <div
-              v-for="(volume, vi) in selectedBook.volumes.slice(0, 4)"
-              :key="volume.id ?? vi"
-              class="tl-volume"
+            <span v-if="isLoadingProgress" class="tl-chapters-loading">
+              <i class="pi pi-spin pi-spinner" aria-hidden="true" /> 正在统计进度…
+            </span>
+            <button
+              type="button"
+              class="tl-chapters-edit-btn"
+              :class="{ 'tl-chapters-edit-btn--on': editMode }"
+              :aria-pressed="editMode"
+              :title="editMode ? '完成编辑' : '编辑章节'"
+              @click="toggleEditMode"
             >
-              <div class="tl-volume-head">
-                <i class="pi pi-folder-open" aria-hidden="true" />
-                <span class="tl-volume-name">{{ getVolumeDisplayTitle(volume) || `卷 ${vi + 1}` }}</span>
-                <span class="tl-volume-count">{{ volume.chapters?.length ?? 0 }} 章</span>
+              <i class="pi" :class="editMode ? 'pi-check' : 'pi-pencil'" aria-hidden="true" />
+              <span>{{ editMode ? '完成' : '编辑' }}</span>
+            </button>
+          </header>
+          <div
+            v-if="selectedBook.volumes && selectedBook.volumes.length > 0"
+            class="tl-tree"
+          >
+            <div
+              v-for="(volume, vi) in selectedBook.volumes"
+              :key="volume.id ?? vi"
+              class="tl-tree-group"
+            >
+              <div
+                class="tl-tree-vol"
+                role="button"
+                :aria-expanded="isVolumeExpanded(volume.id)"
+                @click="toggleVolume(volume.id)"
+              >
+                <i
+                  class="pi"
+                  :class="isVolumeExpanded(volume.id) ? 'pi-folder-open tl-tree-vol-icon-open' : 'pi-folder tl-tree-vol-icon-closed'"
+                  aria-hidden="true"
+                />
+                <span class="tl-tree-vol-title">{{ getVolumeDisplayTitle(volume) || `卷 ${vi + 1}` }}</span>
+                <span class="tl-tree-count">{{ volume.chapters?.length ?? 0 }} 章</span>
+                <button
+                  v-if="editMode"
+                  type="button"
+                  class="tl-tree-more-btn"
+                  aria-label="卷操作"
+                  @click.stop="openVolumeMenu($event, volume)"
+                >
+                  <i class="pi pi-ellipsis-v" aria-hidden="true" />
+                </button>
               </div>
-              <ul class="tl-chapter-list">
-                <li
-                  v-for="(chapter, ci) in volume.chapters?.slice(0, 5) ?? []"
-                  :key="chapter.id ?? ci"
-                  class="tl-chapter-item"
+              <div
+                v-for="(chapter, ci) in visibleChapters(volume.id, volume.chapters ?? [])"
+                :key="chapter.id ?? ci"
+                class="tl-tree-chap"
+                :class="{ 'tl-tree-chap--readonly': editMode }"
+                :role="editMode ? undefined : 'button'"
+                @click="openChapter(selectedBook, chapter)"
+              >
+                <i
+                  class="pi"
+                  :class="chIcon(chapter.id)"
+                  :style="{ color: chColor(chapter.id) }"
+                  aria-hidden="true"
+                />
+                <span class="tl-tree-chap-title">
+                  {{ getChapterDisplayTitle(chapter, selectedBook) || `第 ${ci + 1} 章` }}
+                </span>
+                <span
+                  class="tl-tree-count"
+                  :style="{ color: chTextColor(chapter.id) }"
                 >
-                  <i class="pi pi-circle-off tl-chapter-icon" aria-hidden="true" />
-                  <span class="tl-chapter-title">{{ getChapterDisplayTitle(chapter, selectedBook) || `第 ${ci + 1} 章` }}</span>
-                </li>
-                <li
-                  v-if="(volume.chapters?.length ?? 0) > 5"
-                  class="tl-chapter-more"
+                  {{ chLabel(chapter.id) }}
+                </span>
+                <button
+                  v-if="editMode"
+                  type="button"
+                  class="tl-tree-more-btn"
+                  aria-label="章节操作"
+                  @click.stop="openChapterMenu($event, chapter, volume.id, ci)"
                 >
-                  还有 {{ (volume.chapters!.length ?? 0) - 5 }} 章…
-                </li>
-              </ul>
+                  <i class="pi pi-ellipsis-v" aria-hidden="true" />
+                </button>
+              </div>
+              <div
+                v-if="!isVolumeExpanded(volume.id) && (volume.chapters?.length ?? 0) > COLLAPSED_PREVIEW"
+                class="tl-tree-more"
+                role="button"
+                @click="toggleVolume(volume.id)"
+              >
+                展开余下 {{ (volume.chapters!.length) - COLLAPSED_PREVIEW }} 章
+              </div>
             </div>
           </div>
           <div v-else class="tl-chapters-empty">
             <i class="pi pi-book" aria-hidden="true" /> 暂无章节
           </div>
         </section>
-
-        <p v-if="selectedBook.description" class="tl-desc">
-          {{ selectedBook.description }}
-        </p>
       </div>
     </section>
 
@@ -284,12 +634,69 @@ watch(
       class="hidden"
       @change="ctx.handleFileSelect"
     />
+
+    <!-- ⋮ 动作菜单 —— 卷 / 章节共用一个 Menu 实例 -->
+    <Menu
+      ref="actionMenuRef"
+      :model="actionMenuItems"
+      :popup="true"
+      append-to="body"
+    />
+
+    <!-- 卷 / 章节编辑对话框 —— 绑定 useChapterManagement 的状态与处理函数 -->
+    <EditVolumeDialog
+      v-model:visible="chapterMgmt.showEditVolumeDialog.value"
+      :title="chapterMgmt.editingVolumeTitle.value"
+      :translation="chapterMgmt.editingVolumeTranslation.value"
+      :loading="chapterMgmt.isEditingVolume.value"
+      @save="chapterMgmt.handleEditVolume"
+    />
+    <EditChapterDialog
+      v-model:visible="chapterMgmt.showEditChapterDialog.value"
+      :title="chapterMgmt.editingChapterTitle.value || ''"
+      :translation="chapterMgmt.editingChapterTranslation.value || ''"
+      :target-volume-id="chapterMgmt.editingChapterTargetVolumeId.value || null"
+      :volume-options="volumeOptions"
+      :loading="chapterMgmt.isEditingChapter.value"
+      :web-url="chapterMgmt.editingChapterWebUrl.value || ''"
+      :last-updated="chapterMgmt.editingChapterLastUpdated.value"
+      :last-edited="chapterMgmt.editingChapterLastEdited.value"
+      :created-at="chapterMgmt.editingChapterCreatedAt.value"
+      :translation-instructions="chapterMgmt.editingChapterTranslationInstructions.value || ''"
+      :polish-instructions="chapterMgmt.editingChapterPolishInstructions.value || ''"
+      :proofreading-instructions="chapterMgmt.editingChapterProofreadingInstructions.value || ''"
+      @save="chapterMgmt.handleEditChapter"
+    />
+    <DeleteVolumeConfirmDialog
+      v-model:visible="chapterMgmt.showDeleteVolumeConfirm.value"
+      :volume-title="chapterMgmt.deletingVolumeTitle.value"
+      :loading="chapterMgmt.isDeletingVolume.value"
+      @confirm="chapterMgmt.handleDeleteVolume"
+    />
+    <DeleteChapterConfirmDialog
+      v-model:visible="chapterMgmt.showDeleteChapterConfirm.value"
+      :chapter-title="chapterMgmt.deletingChapterTitle.value"
+      :loading="chapterMgmt.isDeletingChapter.value"
+      @confirm="chapterMgmt.handleDeleteChapter"
+    />
+    <AddVolumeDialog
+      v-model:visible="chapterMgmt.showAddVolumeDialog.value"
+      :loading="chapterMgmt.isAddingVolume.value"
+      @save="chapterMgmt.handleAddVolume"
+    />
+    <AddChapterDialog
+      v-model:visible="chapterMgmt.showAddChapterDialog.value"
+      :volume-options="volumeOptions"
+      :loading="chapterMgmt.isAddingChapter.value"
+      @save="chapterMgmt.handleAddChapter"
+    />
   </div>
 </template>
 
 <style scoped>
 .tablet-library {
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  overflow: hidden;
 }
 
 /* 左侧列表 */
@@ -301,6 +708,8 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .tl-list-head {
@@ -529,6 +938,7 @@ watch(
   flex: 1;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -722,6 +1132,7 @@ watch(
 .tl-chapters-head {
   display: flex;
   align-items: center;
+  gap: 10px;
   font-size: 10px;
   color: rgba(247, 244, 236, 0.55);
   text-transform: uppercase;
@@ -730,34 +1141,61 @@ watch(
   margin-bottom: 12px;
 }
 
-.tl-chapters-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-
-.tl-volume {
-  display: flex;
-  flex-direction: column;
+.tl-chapters-loading {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(174, 183, 198, 0.7);
+  text-transform: none;
 }
 
-.tl-volume-head {
+.tl-chapters-loading i {
+  font-size: 10px;
+}
+
+/* 章节树：2 列 grid（依照 mockup），同一卷的 header + 章节保持在一个 group 内避免跨列断裂 */
+.tl-tree {
+  columns: 2;
+  column-gap: 20px;
+}
+
+.tl-tree-group {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 4px;
+}
+
+.tl-tree-vol {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 0;
+  gap: 8px;
+  padding: 8px 4px;
+  margin: 0 -4px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   color: rgba(247, 244, 236, 1);
+  cursor: pointer;
+  transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.tl-volume-head i {
+.tl-tree-vol:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tl-tree-vol-icon-open {
   color: #a3b7cf;
   font-size: 11px;
 }
 
-.tl-volume-name {
+.tl-tree-vol-icon-closed {
+  color: rgba(174, 183, 198, 0.55);
+  font-size: 11px;
+}
+
+.tl-tree-vol-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -765,43 +1203,125 @@ watch(
   white-space: nowrap;
 }
 
-.tl-volume-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
-}
-
-.tl-chapter-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tl-chapter-item {
+.tl-tree-chap {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 0 5px 20px;
+  gap: 8px;
+  padding: 6px 0 6px 20px;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.75);
+  color: rgba(247, 244, 236, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.tl-chapter-icon {
+.tl-tree-chap:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tl-tree-chap--readonly {
+  cursor: default;
+}
+
+.tl-tree-chap--readonly:hover {
+  background: transparent;
+}
+
+.tl-tree-chap > i {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.35);
+  flex-shrink: 0;
 }
 
-.tl-chapter-title {
+.tl-tree-chap-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tl-chapter-more {
+.tl-tree-count {
+  font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.35);
-  padding: 4px 0 4px 20px;
+  color: rgba(247, 244, 236, 0.5);
+  flex-shrink: 0;
+}
+
+.tl-tree-more {
+  padding: 6px 0 6px 20px;
+  font-size: 10px;
+  color: rgba(163, 183, 207, 0.75);
+  cursor: pointer;
   font-style: italic;
+  transition: color 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tl-tree-more:hover {
+  color: #a3b7cf;
+}
+
+.tl-tree-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(247, 244, 236, 0.55);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tl-tree-more-btn i {
+  font-size: 11px;
+}
+
+.tl-tree-more-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(247, 244, 236, 1);
+}
+
+.tl-chapters-edit-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(163, 183, 207, 0.85);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 140ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tl-chapters-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #a3b7cf;
+}
+
+.tl-chapters-edit-btn--on {
+  background: rgba(109, 136, 168, 0.18);
+  border-color: rgba(109, 136, 168, 0.3);
+  color: #a3b7cf;
+}
+
+.tl-chapters-edit-btn--on:hover {
+  background: rgba(109, 136, 168, 0.24);
+}
+
+.tl-chapters-edit-btn i {
+  font-size: 10px;
 }
 
 .tl-chapters-empty {
@@ -816,13 +1336,15 @@ watch(
 }
 
 .tl-desc {
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  margin: 14px 0 0;
   font-size: 12px;
   color: rgba(247, 244, 236, 0.7);
-  line-height: 1.6;
-  margin: 0;
+  line-height: 1.65;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

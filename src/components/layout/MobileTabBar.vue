@@ -17,7 +17,7 @@ const tabs: Tab[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
   { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
-  { id: 'ai', icon: 'pi-objects-column', label: 'AI 模型' },
+  { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];
 

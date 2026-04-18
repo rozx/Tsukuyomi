@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type ComponentPublicInstance } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
 import Button from 'primevue/button';
 import { useToastHistory } from 'src/composables/useToastHistory';
-import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
@@ -11,9 +9,6 @@ import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import { APP_NAME } from 'src/constants/app';
 
-const router = useRouter();
-const route = useRoute();
-const ui = useUiStore();
 const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
@@ -39,13 +34,6 @@ const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const toggleHistory = (event: Event) => toastHistoryRef.value?.toggle(event);
 const toggleThinking = (event: Event) => thinkingPanelRef.value?.toggle(event);
 const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
-
-const isHelpActive = computed(() => route.path.startsWith('/help'));
-
-const openHelp = () => {
-  if (ui.rightPanelOpen) ui.closeRightPanel();
-  if (!route.path.startsWith('/help')) void router.push('/help');
-};
 </script>
 
 <template>
@@ -116,16 +104,6 @@ const openHelp = () => {
         <span v-if="unreadCount > 0" class="tst-badge">
           {{ unreadCount > 99 ? '99+' : unreadCount }}
         </span>
-      </button>
-
-      <!-- Help -->
-      <button
-        class="tst-chip"
-        :class="{ active: isHelpActive }"
-        aria-label="帮助"
-        @click="openHelp"
-      >
-        <i class="pi pi-question-circle" aria-hidden="true" />
       </button>
     </div>
 

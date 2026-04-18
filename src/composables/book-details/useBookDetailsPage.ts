@@ -72,6 +72,14 @@ import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
 import type { MenuItem } from 'primevue/menuitem';
 import type Popover from 'primevue/popover';
+import {
+  getChapterStatus as getChapterStatusPure,
+  chapterStatusIcon as chapterStatusIconPure,
+  chapterStatusColor as chapterStatusColorPure,
+  chapterStatusTextColor as chapterStatusTextColorPure,
+  chapterStatusLabel as chapterStatusLabelPure,
+  type ChapterStatus as ChapterStatusType,
+} from 'src/utils/chapter-status';
 
 /**
  * BookDetailsPage 业务逻辑 composable + provide/inject 辅助。
@@ -87,7 +95,7 @@ import type Popover from 'primevue/popover';
  */
 export type MobileActiveTab = 'chapters' | 'terms' | 'characters' | 'memory';
 export type SettingMenu = 'terms' | 'characters' | 'memory';
-export type ChapterStatus = 'done' | 'inProgress' | 'pending';
+export type ChapterStatus = ChapterStatusType;
 
 export type BookDetailsPageContext = ReturnType<typeof createBookDetailsPageContext>;
 
@@ -856,54 +864,19 @@ function createBookDetailsPageContext() {
     return Math.round((s.translated / s.total) * 100);
   });
 
-  const getChapterStatus = (chapterId: string): ChapterStatus => {
-    const byCh = translationProgressState.value?.byChapter;
-    if (!byCh) return 'pending';
-    const s = byCh.get(chapterId);
-    if (!s || s.total === 0) return 'pending';
-    if (s.translated >= s.total) return 'done';
-    if (s.translated > 0) return 'inProgress';
-    return 'pending';
-  };
+  const chapterStatusIcon = (chapterId: string): string =>
+    chapterStatusIconPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
 
-  const chapterStatusIcon = (chapterId: string): string => {
-    switch (getChapterStatus(chapterId)) {
-      case 'done':
-        return 'pi-check-circle';
-      case 'inProgress':
-        return 'pi-pencil';
-      default:
-        return 'pi-circle-off';
-    }
-  };
+  const chapterStatusColor = (chapterId: string): string =>
+    chapterStatusColorPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
 
-  const chapterStatusColor = (chapterId: string): string => {
-    switch (getChapterStatus(chapterId)) {
-      case 'done':
-        return '#A7D1B0';
-      case 'inProgress':
-        return '#BAC9DB';
-      default:
-        return 'rgba(174,183,198,0.55)';
-    }
-  };
+  const chapterStatusTextColor = (chapterId: string): string =>
+    chapterStatusTextColorPure(
+      getChapterStatusPure(translationProgressState.value?.byChapter, chapterId),
+    );
 
-  const chapterStatusTextColor = (chapterId: string): string => {
-    switch (getChapterStatus(chapterId)) {
-      case 'inProgress':
-        return '#A3B7CF';
-      default:
-        return 'rgba(247,244,236,0.55)';
-    }
-  };
-
-  const chapterStatusLabel = (chapterId: string): string => {
-    const byCh = translationProgressState.value?.byChapter;
-    const s = byCh?.get(chapterId);
-    if (!s || s.total === 0) return '—';
-    const pct = Math.round((s.translated / s.total) * 100);
-    return `${pct}%`;
-  };
+  const chapterStatusLabel = (chapterId: string): string =>
+    chapterStatusLabelPure(translationProgressState.value?.byChapter, chapterId);
 
   const mobileSelectedParagraphId = ref<string | null>(null);
   // 手机端"批量"按钮改为底部抽屉 picker；之前依赖 PrimeVue TieredMenu 的

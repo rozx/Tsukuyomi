@@ -72,7 +72,7 @@ function panelFor(value: string) {
   position: relative;
   height: 100%;
   min-height: 0;
-  padding: 32px 40px 40px;
+  padding: clamp(16px, 3vh, 32px) clamp(16px, 3vw, 40px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -90,9 +90,8 @@ function panelFor(value: string) {
 .settings-tablet-card {
   position: relative;
   width: 100%;
-  max-width: 820px;
+  max-width: 1080px;
   height: 100%;
-  max-height: 640px;
   background: #14161a;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;

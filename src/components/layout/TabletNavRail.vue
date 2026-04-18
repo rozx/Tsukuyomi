@@ -7,12 +7,17 @@ import { APP_NAME } from 'src/constants/app';
 
 type Item = { id: MainNavTab; icon: string; label: string };
 
-// 与 MobileTabBar 保持同样的五个入口：首页 · 书库 · AI 助手 · AI 模型 · 设置
-const items: Item[] = [
+// 主导航四项（首页 · 书库 · AI 助手 · AI 模型）在顶部，设置固定在底部。
+const primaryItems: Item[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
   { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
-  { id: 'ai', icon: 'pi-objects-column', label: 'AI 模型' },
+  { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
+];
+
+// 底部工具项：帮助 · 设置
+const secondaryItems: Item[] = [
+  { id: 'help', icon: 'pi-question-circle', label: '帮助' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];
 
@@ -43,6 +48,10 @@ const onItemClick = (id: MainNavTab) => {
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (route.path !== '/ai') void router.push('/ai');
       return;
+    case 'help':
+      if (ui.rightPanelOpen) ui.closeRightPanel();
+      if (!route.path.startsWith('/help')) void router.push('/help');
+      return;
     case 'settings':
       if (ui.rightPanelOpen) ui.closeRightPanel();
       if (!route.path.startsWith('/settings')) void router.push('/settings');
@@ -63,7 +72,7 @@ const onItemClick = (id: MainNavTab) => {
 
     <div class="rail-items">
       <button
-        v-for="item in items"
+        v-for="item in primaryItems"
         :key="item.id"
         class="rail-item"
         :class="{ active: activeTab === item.id }"
@@ -77,7 +86,19 @@ const onItemClick = (id: MainNavTab) => {
 
     <div class="rail-spacer" />
 
-    <div class="rail-avatar" aria-hidden="true">月</div>
+    <div class="rail-items">
+      <button
+        v-for="item in secondaryItems"
+        :key="item.id"
+        class="rail-item"
+        :class="{ active: activeTab === item.id }"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="onItemClick(item.id)"
+      >
+        <i :class="['pi', item.icon]" aria-hidden="true" />
+      </button>
+    </div>
   </nav>
 </template>
 
@@ -166,22 +187,5 @@ const onItemClick = (id: MainNavTab) => {
 
 .rail-spacer {
   flex: 1;
-}
-
-.rail-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6d88a8, #1c1f26);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  flex-shrink: 0;
 }
 </style>

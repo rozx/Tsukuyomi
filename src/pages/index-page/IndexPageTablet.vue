@@ -285,12 +285,12 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 /* Hero grid */
 .th-hero-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
 
 .th-hero-grid--single {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .th-hero-card {
@@ -377,7 +377,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .th-stat-cell {
@@ -480,7 +480,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 /* Quick actions grid */
 .th-quick-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -533,7 +533,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 /* Recent books grid */
 .th-recent-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
