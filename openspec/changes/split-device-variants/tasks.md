@@ -40,6 +40,8 @@
 
 ## 5. BookDetailsPage Split
 
+> **Paused after AppRightPanel** — `BookDetailsPage.vue` is 4950 lines (script ~2480, template ~1020, style ~1445). The original plan noted this surface likely deserves its own PR; splitting it mechanically alongside the other four surfaces in one session carries real regression risk. The dispatcher pattern + composable extraction pattern is now proven (3 surfaces + 1 layout landed). Resume via `/opsx:apply split-device-variants` in a fresh session — start with an audit pass over what moves into `composables/book-details/useBookDetailsPage.ts` before touching templates.
+
 - [ ] 5.1 Create folder `src/pages/book-details/`.
 - [ ] 5.2 Audit `pages/BookDetailsPage.vue` and extract non-view logic into `composables/book-details/useBookDetailsPage.ts` (surface-level orchestration — book/chapter loading, tab state, progress calc, settings-sub-route navigation, mobile-tab switching). Reuse existing `composables/book-details/*` composables where they already cover a concern.
 - [ ] 5.3 Create `pages/book-details/BookDetailsDesktop.vue` — three-column desktop workspace (chapter list + reader + right panel integration).
