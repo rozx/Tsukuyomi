@@ -84,6 +84,7 @@ declare module 'vue' {
     TestResult: typeof import('./components/ai/TestResult.vue')['default']
     ThinkingDetailDialog: typeof import('./components/ai/ThinkingDetailDialog.vue')['default']
     ThinkingProcessPanel: typeof import('./components/ai/ThinkingProcessPanel.vue')['default']
+    TieredMenu: typeof import('primevue/tieredmenu')['default']
     ToastHistoryDialog: typeof import('./components/dialogs/ToastHistoryDialog.vue')['default']
     TranslatableChips: typeof import('./components/translation/TranslatableChips.vue')['default']
     TranslatableInput: typeof import('./components/translation/TranslatableInput.vue')['default']
