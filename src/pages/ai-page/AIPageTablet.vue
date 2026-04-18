@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
@@ -7,6 +7,7 @@ import InputGroupAddon from 'primevue/inputgroupaddon';
 import ProgressSpinner from 'primevue/progressspinner';
 import Dialog from 'primevue/dialog';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+import { isPortrait } from 'src/utils/device-orientation';
 
 const ctx = injectAIPage();
 
@@ -16,10 +17,23 @@ const routingPickerVisible = computed({
     if (!value) ctx.closeTaskRoutingPicker();
   },
 });
+
+// 横屏：路由侧栏始终参与 flex 布局；竖屏：变成右侧滑入抽屉，默认收起
+const isRoutingOpen = ref(!isPortrait());
+function toggleRouting(): void {
+  isRoutingOpen.value = !isRoutingOpen.value;
+}
 </script>
 
 <template>
-  <div class="ai-tablet">
+  <div class="ai-tablet" :class="{ 'ai-tablet--routing-open': isRoutingOpen }">
+    <div
+      v-if="isRoutingOpen"
+      class="ait-scrim"
+      aria-hidden="true"
+      @click="toggleRouting"
+    />
+
     <header class="ait-head">
       <div class="ait-head-text">
         <div class="ait-eyebrow">AI MODELS</div>
@@ -51,8 +65,25 @@ const routingPickerVisible = computed({
         <Button
           label="添加 AI 模型"
           icon="pi pi-plus"
-          class="p-button-primary p-button-sm"
+          class="p-button-primary p-button-sm ait-add-btn"
           @click="ctx.addModel"
+        />
+        <Button
+          icon="pi pi-plus"
+          class="p-button-primary p-button-sm ait-add-btn-compact"
+          title="添加 AI 模型"
+          aria-label="添加 AI 模型"
+          @click="ctx.addModel"
+        />
+        <Button
+          icon="pi pi-sliders-h"
+          :class="[
+            'p-button-sm ait-routing-toggle',
+            isRoutingOpen ? 'p-button-primary' : 'p-button-outlined',
+          ]"
+          title="任务路由"
+          aria-label="任务路由"
+          @click="toggleRouting"
         />
       </div>
     </header>
@@ -277,12 +308,24 @@ const routingPickerVisible = computed({
 
 <style scoped>
 .ai-tablet {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   color: rgba(247, 244, 236, 0.92);
+  overflow: hidden;
+}
+
+.ait-scrim {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  z-index: 15;
 }
 
 .ait-head {
@@ -334,6 +377,12 @@ const routingPickerVisible = computed({
 .ait-search {
   width: 280px;
   min-width: 0;
+}
+
+/* 横屏只显示带文字的 Add 按钮；路由切换按钮在横屏隐藏（侧栏常驻） */
+.ait-add-btn-compact,
+.ait-routing-toggle {
+  display: none;
 }
 
 .ait-body {
@@ -555,6 +604,9 @@ const routingPickerVisible = computed({
   background: rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-left-color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ait-routing-head {
@@ -715,5 +767,82 @@ const routingPickerVisible = computed({
 .ait-picker-check {
   color: #a3b7cf;
   font-size: 14px;
+}
+
+/* ───────────── 竖屏：头部栈叠 + 路由变成右侧 overlay 抽屉 ───────────── */
+@media (orientation: portrait) {
+  .ait-scrim {
+    display: block;
+  }
+
+  /* 头部：标题与操作栏上下堆叠，避免挤压 */
+  .ait-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 18px 20px 14px;
+  }
+
+  .ait-title {
+    font-size: 22px;
+  }
+
+  .ait-head-actions {
+    gap: 8px;
+  }
+
+  .ait-search {
+    flex: 1;
+    width: auto;
+  }
+
+  /* 压缩圆形 Add 按钮替换长按钮 + 路由切换按钮 */
+  .ait-add-btn {
+    display: none;
+  }
+
+  .ait-add-btn-compact,
+  .ait-routing-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .ait-add-btn-compact :deep(.p-button-icon),
+  .ait-routing-toggle :deep(.p-button-icon) {
+    font-size: 13px;
+  }
+
+  /* 列表区收紧 padding */
+  .ait-models {
+    padding: 14px 18px 20px;
+  }
+
+  /* 参数 4 列 grid 在窄宽度下挤，改成 2 列 */
+  .ait-params {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ait-param-full {
+    grid-column: 1 / span 2;
+  }
+
+  /* 路由侧栏变成 overlay 抽屉，从右侧滑入 */
+  .ait-routing {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 86%;
+    z-index: 20;
+    background: rgba(14, 16, 20, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: -12px 0 36px rgba(0, 0, 0, 0.55);
+  }
+
+  .ai-tablet:not(.ai-tablet--routing-open) .ait-routing {
+    transform: translateX(100%);
+  }
 }
 </style>
