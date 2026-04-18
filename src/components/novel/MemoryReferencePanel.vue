@@ -3,16 +3,7 @@ import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
 import type { ScoreBreakdown } from 'src/models/novel';
-
-/**
- * 记忆引用接口
- */
-export interface MemoryReference {
-  memoryId: string;
-  summary: string;
-  accessedAt: number;
-  toolName: 'get_memory' | 'search_memories';
-}
+import type { MemoryReference } from './memory-reference-types';
 
 interface Props {
   references: MemoryReference[];

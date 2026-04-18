@@ -47,7 +47,7 @@ import type {
   Paragraph,
   ScoreBreakdown,
 } from 'src/models/novel';
-import { type MemoryReference } from 'src/components/novel/MemoryReferencePanel.vue';
+import type { MemoryReference } from 'src/components/novel/memory-reference-types';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
