@@ -392,10 +392,10 @@ const runChapterMove = (direction: 'up' | 'down') => {
           aria-hidden="true"
         />
         <span
-          v-if="ctx.aiProcessingStore.activeTasks.length > 0"
+          v-if="ctx.activeTranslationTaskCount.value > 0"
           class="mbr-strip-icon-badge"
         >
-          {{ ctx.aiProcessingStore.activeTasks.length }}
+          {{ ctx.activeTranslationTaskCount.value }}
         </span>
       </button>
       <button
@@ -780,7 +780,11 @@ const runChapterMove = (direction: 'up' | 'down') => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 16px 24px;
+  /* Horizontal + bottom padding only — NO padding-top. Sticky elements inside
+     (panel toolbars in terminology / character / memory tabs) use `top: 0` to
+     stick under the appbar; padding-top would offset their stick point and
+     leave a visible gap between the appbar and the stuck toolbar. */
+  padding: 0 16px 24px;
   scrollbar-width: none;
 }
 
@@ -791,6 +795,9 @@ const runChapterMove = (direction: 'up' | 'down') => {
 .mbd-hero {
   display: flex;
   gap: 14px;
+  /* margin-top replaces the old .mbd-scroll padding-top so hero still has
+     breathing room under the appbar without breaking sticky children below. */
+  margin-top: 16px;
   margin-bottom: 16px;
 }
 
