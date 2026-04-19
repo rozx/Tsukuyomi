@@ -338,6 +338,65 @@ function clearTaskPersistTimer(taskId: string): void {
   }
 }
 
+/**
+ * 检查任务数量是否超过 MAX_AI_PROCESS_HISTORY，若超限则按开始时间删除最旧的非运行态任务。
+ *
+ * 该辅助函数抽取自 loadThinkingProcesses 和 addTask 中完全相同的"超限裁剪"逻辑，
+ * 调用方只需提供日志文案差异（加载场景 vs 新增场景）。
+ *
+ * 副作用：
+ *   - 异步（通过 co）从 IndexedDB 批量删除被裁剪的任务记录
+ *   - 裁剪发生时打印 info 日志；若全部任务都在运行导致无法裁剪则打印 warn
+ *
+ * @param tasks 当前任务列表（不会被就地修改）
+ * @param formatters 日志文案定制
+ * @returns 裁剪后的新任务列表；若未超限或无可删除任务则返回 null（调用方应保持原列表不变）
+ */
+function enforceTaskHistoryLimit(
+  tasks: AIProcessingTask[],
+  formatters: {
+    deleteLog: (count: number) => string;
+    warnLog: (totalCount: number, activeCount: number) => string;
+  },
+): AIProcessingTask[] | null {
+  if (tasks.length <= MAX_AI_PROCESS_HISTORY) return null;
+
+  // 按开始时间排序，找出最旧的任务（排除正在进行的任务）
+  const sortedTasks = [...tasks]
+    .filter((t) => t.status !== 'thinking' && t.status !== 'processing')
+    .sort((a, b) => a.startTime - b.startTime);
+
+  // 计算需要删除的数量
+  const excessCount = tasks.length - MAX_AI_PROCESS_HISTORY;
+  const tasksToDelete = sortedTasks.slice(0, excessCount);
+
+  if (tasksToDelete.length > 0) {
+    const idsToDelete = tasksToDelete.map((t) => t.id);
+    const remaining = tasks.filter((t) => !idsToDelete.includes(t.id));
+
+    // 从 IndexedDB 中删除（异步，不阻塞）
+    void co(function* () {
+      try {
+        yield deleteThinkingProcessesFromDB(idsToDelete);
+        console.log(`[AIProcessingStore] ${formatters.deleteLog(idsToDelete.length)}`);
+      } catch (error) {
+        console.error('Failed to delete old tasks from IndexedDB:', error);
+      }
+    });
+
+    return remaining;
+  }
+
+  // 如果所有任务都是正在进行的，无法删除，记录警告
+  const activeCount = tasks.filter(
+    (t) => t.status === 'thinking' || t.status === 'processing',
+  ).length;
+  if (activeCount >= MAX_AI_PROCESS_HISTORY) {
+    console.warn(`[AIProcessingStore] ${formatters.warnLog(tasks.length, activeCount)}`);
+  }
+  return null;
+}
+
 export const useAIProcessingStore = defineStore('aiProcessing', {
   state: () => ({
     activeTasks: [] as AIProcessingTask[],
@@ -461,44 +520,14 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           });
 
           // 检查任务数量，如果超过最大限制，删除最旧的任务
-          if (this.activeTasks.length > MAX_AI_PROCESS_HISTORY) {
-            // 按开始时间排序，找出最旧的任务（排除正在进行的任务）
-            const sortedTasks = [...this.activeTasks]
-              .filter((t) => t.status !== 'thinking' && t.status !== 'processing')
-              .sort((a, b) => a.startTime - b.startTime);
-
-            // 计算需要删除的数量
-            const excessCount = this.activeTasks.length - MAX_AI_PROCESS_HISTORY;
-            const tasksToDelete = sortedTasks.slice(0, excessCount);
-
-            if (tasksToDelete.length > 0) {
-              const idsToDelete = tasksToDelete.map((t) => t.id);
-
-              // 从内存中删除
-              this.activeTasks = this.activeTasks.filter((t) => !idsToDelete.includes(t.id));
-
-              // 从 IndexedDB 中删除（异步，不阻塞）
-              void co(function* () {
-                try {
-                  yield deleteThinkingProcessesFromDB(idsToDelete);
-                  console.log(
-                    `[AIProcessingStore] 加载时已删除 ${idsToDelete.length} 个最旧的 AI 处理历史记录（超过最大限制 ${MAX_AI_PROCESS_HISTORY}）`,
-                  );
-                } catch (error) {
-                  console.error('Failed to delete old tasks from IndexedDB:', error);
-                }
-              });
-            } else {
-              // 如果所有任务都是正在进行的，无法删除，记录警告
-              const activeCount = this.activeTasks.filter(
-                (t) => t.status === 'thinking' || t.status === 'processing',
-              ).length;
-              if (activeCount >= MAX_AI_PROCESS_HISTORY) {
-                console.warn(
-                  `[AIProcessingStore] 警告：加载时有 ${this.activeTasks.length} 个任务，其中 ${activeCount} 个正在进行中，无法删除以满足最大限制 ${MAX_AI_PROCESS_HISTORY}。任务完成后会自动清理。`,
-                );
-              }
-            }
+          const trimmedOnLoad = enforceTaskHistoryLimit(this.activeTasks, {
+            deleteLog: (count) =>
+              `加载时已删除 ${count} 个最旧的 AI 处理历史记录（超过最大限制 ${MAX_AI_PROCESS_HISTORY}）`,
+            warnLog: (total, active) =>
+              `警告：加载时有 ${total} 个任务，其中 ${active} 个正在进行中，无法删除以满足最大限制 ${MAX_AI_PROCESS_HISTORY}。任务完成后会自动清理。`,
+          });
+          if (trimmedOnLoad) {
+            this.activeTasks = trimmedOnLoad;
           }
 
           this.isLoaded = true;
@@ -537,44 +566,14 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       this.activeTasks.push(newTask);
 
       // 检查任务数量，如果超过最大限制，删除最旧的任务
-      if (this.activeTasks.length > MAX_AI_PROCESS_HISTORY) {
-        // 按开始时间排序，找出最旧的任务（排除正在进行的任务）
-        const sortedTasks = [...this.activeTasks]
-          .filter((t) => t.status !== 'thinking' && t.status !== 'processing')
-          .sort((a, b) => a.startTime - b.startTime);
-
-        // 计算需要删除的数量
-        const excessCount = this.activeTasks.length - MAX_AI_PROCESS_HISTORY;
-        const tasksToDelete = sortedTasks.slice(0, excessCount);
-
-        if (tasksToDelete.length > 0) {
-          const idsToDelete = tasksToDelete.map((t) => t.id);
-
-          // 从内存中删除
-          this.activeTasks = this.activeTasks.filter((t) => !idsToDelete.includes(t.id));
-
-          // 从 IndexedDB 中删除（异步，不阻塞）
-          void co(function* () {
-            try {
-              yield deleteThinkingProcessesFromDB(idsToDelete);
-              console.log(
-                `[AIProcessingStore] 已删除 ${idsToDelete.length} 个最旧的 AI 处理历史记录（超过最大限制 ${MAX_AI_PROCESS_HISTORY}）`,
-              );
-            } catch (error) {
-              console.error('Failed to delete old tasks from IndexedDB:', error);
-            }
-          });
-        } else {
-          // 如果所有任务都是正在进行的，无法删除，记录警告
-          const activeCount = this.activeTasks.filter(
-            (t) => t.status === 'thinking' || t.status === 'processing',
-          ).length;
-          if (activeCount >= MAX_AI_PROCESS_HISTORY) {
-            console.warn(
-              `[AIProcessingStore] 警告：当前有 ${this.activeTasks.length} 个任务，其中 ${activeCount} 个正在进行中，无法删除以满足最大限制 ${MAX_AI_PROCESS_HISTORY}。任务完成后会自动清理。`,
-            );
-          }
-        }
+      const trimmedOnAdd = enforceTaskHistoryLimit(this.activeTasks, {
+        deleteLog: (count) =>
+          `已删除 ${count} 个最旧的 AI 处理历史记录（超过最大限制 ${MAX_AI_PROCESS_HISTORY}）`,
+        warnLog: (total, active) =>
+          `警告：当前有 ${total} 个任务，其中 ${active} 个正在进行中，无法删除以满足最大限制 ${MAX_AI_PROCESS_HISTORY}。任务完成后会自动清理。`,
+      });
+      if (trimmedOnAdd) {
+        this.activeTasks = trimmedOnAdd;
       }
 
       // 保存到 IndexedDB（异步，不阻塞任务创建）

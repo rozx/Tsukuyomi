@@ -14,6 +14,61 @@ export function useParagraphTranslation(
   const currentlyEditingParagraphId = ref<string | null>(null);
 
   /**
+   * 持久化给定的段落内容数组：
+   * 1. 构造完整的 updatedChapter（保留最新 title 与必需字段）
+   * 2. 直接保存章节内容到 IndexedDB（saveChapterContent）
+   * 3. 立即更新 UI（selectedChapterWithContent）
+   * 4. 通过 ChapterService.updateChapter 刷新章节元数据
+   * 5. 调用 booksStore.updateBook 持久化书籍
+   *
+   * 抽取自 updateParagraphTranslation / selectParagraphTranslation 的共同尾部逻辑。
+   */
+  const persistUpdatedContent = async (
+    chapter: Chapter,
+    updatedContent: NonNullable<Chapter['content']>,
+  ) => {
+    if (!book.value) return;
+
+    // 优化：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
+    // 注意：使用 selectedChapterWithContent.value 而不是 chapter 引用，以保留最新的标题
+    // （可能已被并发执行的标题翻译更新）
+    // 确保所有必需字段存在（因为 chapter 不为 null，所以 selectedChapterWithContent.value 也不为 null）
+    const currentChapter = selectedChapterWithContent.value;
+    if (!currentChapter) return; // 类型守卫
+    const updatedChapter: Chapter = {
+      ...currentChapter,
+      id: chapter.id, // 明确包含 id 以确保类型正确
+      title: currentChapter.title ?? chapter.title, // 明确包含 title 以确保类型正确
+      createdAt: currentChapter.createdAt ?? chapter.createdAt, // 明确包含 createdAt 以确保类型正确
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+    await ChapterService.saveChapterContent(updatedChapter);
+
+    // 立即更新 UI，避免等待 updateBook 完成
+    selectedChapterWithContent.value = updatedChapter;
+
+    // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
+    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
+    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
+    const updateData: Parameters<typeof ChapterService.updateChapter>[2] = {
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+    // 只在有值时才传递 title
+    if (updatedChapter.title) {
+      updateData.title = updatedChapter.title;
+    }
+    const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, updateData);
+
+    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
+    await booksStore.updateBook(book.value.id, {
+      volumes: updatedVolumes,
+      lastEdited: new Date(),
+    });
+  };
+
+  /**
    * 更新 selectedChapterWithContent 以反映保存的更改
    * @param updatedVolumes 更新后的卷数组
    */
@@ -72,44 +127,7 @@ export function useParagraphTranslation(
       return para;
     });
 
-    // 优化：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
-    // 这样可以避免遍历所有章节来保留内容
-    // 注意：使用 selectedChapterWithContent.value 而不是 chapter 引用，以保留最新的标题
-    // （可能已被并发执行的标题翻译更新）
-    // 确保所有必需字段存在（因为 chapter 不为 null，所以 selectedChapterWithContent.value 也不为 null）
-    const currentChapter = selectedChapterWithContent.value;
-    if (!currentChapter) return; // 类型守卫
-    const updatedChapter: Chapter = {
-      ...currentChapter,
-      id: chapter.id, // 明确包含 id 以确保类型正确
-      title: currentChapter.title ?? chapter.title, // 明确包含 title 以确保类型正确
-      createdAt: currentChapter.createdAt ?? chapter.createdAt, // 明确包含 createdAt 以确保类型正确
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    await ChapterService.saveChapterContent(updatedChapter);
-
-    // 立即更新 UI，避免等待 updateBook 完成
-    selectedChapterWithContent.value = updatedChapter;
-
-    // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
-    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
-    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
-    const updateData: Parameters<typeof ChapterService.updateChapter>[2] = {
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    // 只在有值时才传递 title
-    if (updatedChapter.title) {
-      updateData.title = updatedChapter.title;
-    }
-    const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, updateData);
-
-    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
+    await persistUpdatedContent(chapter, updatedContent);
   };
 
   // 选择段落翻译
@@ -144,43 +162,7 @@ export function useParagraphTranslation(
       };
     });
 
-    // 优化：直接保存章节内容到 IndexedDB
-    // 注意：使用 selectedChapterWithContent.value 而不是 chapter 引用，以保留最新的标题
-    // （可能已被并发执行的标题翻译更新）
-    // 确保所有必需字段存在（因为 chapter 不为 null，所以 selectedChapterWithContent.value 也不为 null）
-    const currentChapter = selectedChapterWithContent.value;
-    if (!currentChapter) return; // 类型守卫
-    const updatedChapter: Chapter = {
-      ...currentChapter,
-      id: chapter.id, // 明确包含 id 以确保类型正确
-      title: currentChapter.title ?? chapter.title, // 明确包含 title 以确保类型正确
-      createdAt: currentChapter.createdAt ?? chapter.createdAt, // 明确包含 createdAt 以确保类型正确
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    await ChapterService.saveChapterContent(updatedChapter);
-
-    // 立即更新 UI，避免等待 updateBook 完成
-    selectedChapterWithContent.value = updatedChapter;
-
-    // 使用 ChapterService.updateChapter 确保更新章节的 lastEdited 时间
-    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
-    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
-    const updateData: Parameters<typeof ChapterService.updateChapter>[2] = {
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    // 只在有值时才传递 title
-    if (updatedChapter.title) {
-      updateData.title = updatedChapter.title;
-    }
-    const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, updateData);
-
-    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
+    await persistUpdatedContent(chapter, updatedContent);
 
     toast.add({
       severity: 'success',

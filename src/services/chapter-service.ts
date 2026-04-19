@@ -444,6 +444,132 @@ function countTrailingLineBreaks(text: string | null | undefined): number {
 }
 
 /**
+ * 同步版扫描逻辑，供 `searchParagraphsByKeyword` 复用。
+ * 与 `searchParagraphsAsyncShared` 的差异：
+ *   - 同步执行，不做任何章节内容的按需加载；仅扫描 `chapter.content` 已存在的章节
+ *   - 适用于调用方已确保所需章节内容均已加载的场景（例如同步关键词搜索入口）
+ *
+ * 其余遍历与过滤语义保持一致：按 chapterId 定位、遍历卷/章/段、调用 `match(paragraph)`，
+ * 可选的 `onlyWithTranslation` 过滤，以及达到 `maxParagraphs` 后的提前退出。
+ */
+function searchParagraphsSyncShared(
+  novel: Novel,
+  chapterId: string | undefined,
+  maxParagraphs: number,
+  onlyWithTranslation: boolean,
+  match: (paragraph: Paragraph) => boolean,
+): ParagraphSearchResult[] {
+  // 调用方已保证 novel.volumes 非空
+  const volumes = novel.volumes ?? [];
+
+  // 如果提供了 chapterId，需要找到该章节的位置
+  let targetVolumeIndex: number | null = null;
+  let targetChapterIndex: number | null = null;
+
+  if (chapterId) {
+    // 查找目标章节的位置
+    for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
+      const volume = volumes[vIndex];
+      if (volume && volume.chapters) {
+        const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (cIndex !== -1) {
+          targetVolumeIndex = vIndex;
+          targetChapterIndex = cIndex;
+          break;
+        }
+      }
+    }
+
+    // 如果找不到指定的章节，返回空结果
+    if (targetVolumeIndex === null || targetChapterIndex === null) {
+      return [];
+    }
+  }
+
+  const results: ParagraphSearchResult[] = [];
+
+  // 如果指定了章节，只搜索该章节；否则搜索所有章节
+  const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
+  const endVolumeIndex =
+    chapterId && targetVolumeIndex !== null ? targetVolumeIndex : volumes.length - 1;
+
+  for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+
+    // 如果指定了章节，只处理目标卷
+    if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
+      continue;
+    }
+
+    // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
+    const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
+    const endChapterIndex =
+      chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+
+    // 遍历章节
+    for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+
+      // 搜索段落（同步版本不加载：内容未加载的章节直接跳过）
+      if (chapter.content) {
+        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+          // 如果已达到最大返回数量，停止搜索
+          if (results.length >= maxParagraphs) {
+            break;
+          }
+
+          const paragraph = chapter.content[pIndex];
+          if (!paragraph) continue;
+
+          if (match(paragraph)) {
+            // 如果要求只返回有翻译的段落，检查段落是否有翻译
+            if (onlyWithTranslation) {
+              const hasTranslation =
+                paragraph.translations &&
+                paragraph.translations.length > 0 &&
+                paragraph.translations.some(
+                  (t) => t.translation && t.translation.trim().length > 0,
+                );
+              if (!hasTranslation) {
+                continue; // 跳过没有翻译的段落
+              }
+            }
+
+            results.push({
+              paragraph,
+              paragraphIndex: pIndex,
+              chapter,
+              chapterIndex: cIndex,
+              volume,
+              volumeIndex: vIndex,
+            });
+
+            // 如果已达到最大返回数量，停止搜索
+            if (results.length >= maxParagraphs) {
+              break;
+            }
+          }
+        }
+      }
+
+      // 如果已达到最大返回数量，停止搜索章节
+      if (results.length >= maxParagraphs) {
+        break;
+      }
+    }
+
+    // 如果已达到最大返回数量，停止搜索卷
+    if (results.length >= maxParagraphs) {
+      break;
+    }
+  }
+
+  return results;
+}
+
+/**
  * `searchParagraphsByKeywordAsync` / `searchParagraphsByRegexAsync` 共享的扫描逻辑。
  * 负责：
  *   1. 根据 chapterId 定位目标卷/章索引（若提供）
@@ -1476,110 +1602,15 @@ export class ChapterService {
       return [];
     }
 
-    const results: ParagraphSearchResult[] = [];
     const trimmedKeyword = keyword.trim().toLowerCase();
 
-    // 如果提供了 chapterId，需要找到该章节的位置
-    let targetVolumeIndex: number | null = null;
-    let targetChapterIndex: number | null = null;
-
-    if (chapterId) {
-      // 查找目标章节的位置
-      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-        const volume = novel.volumes[vIndex];
-        if (volume && volume.chapters) {
-          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
-          if (cIndex !== -1) {
-            targetVolumeIndex = vIndex;
-            targetChapterIndex = cIndex;
-            break;
-          }
-        }
-      }
-
-      // 如果找不到指定的章节，返回空结果
-      if (targetVolumeIndex === null || targetChapterIndex === null) {
-        return [];
-      }
-    }
-
-    // 如果指定了章节，只搜索该章节；否则搜索所有章节
-    const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
-      const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 搜索段落
-        if (chapter.content) {
-          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-
-            const paragraph = chapter.content[pIndex];
-            if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
-              // 如果要求只返回有翻译的段落，检查段落是否有翻译
-              if (onlyWithTranslation) {
-                const hasTranslation =
-                  paragraph.translations &&
-                  paragraph.translations.length > 0 &&
-                  paragraph.translations.some(
-                    (t) => t.translation && t.translation.trim().length > 0,
-                  );
-                if (!hasTranslation) {
-                  continue; // 跳过没有翻译的段落
-                }
-              }
-
-              results.push({
-                paragraph,
-                paragraphIndex: pIndex,
-                chapter,
-                chapterIndex: cIndex,
-                volume,
-                volumeIndex: vIndex,
-              });
-
-              // 如果已达到最大返回数量，停止搜索
-              if (results.length >= maxParagraphs) {
-                break;
-              }
-            }
-          }
-        }
-
-        // 如果已达到最大返回数量，停止搜索章节
-        if (results.length >= maxParagraphs) {
-          break;
-        }
-      }
-
-      // 如果已达到最大返回数量，停止搜索卷
-      if (results.length >= maxParagraphs) {
-        break;
-      }
-    }
-
-    return results;
+    return searchParagraphsSyncShared(
+      novel,
+      chapterId,
+      maxParagraphs,
+      onlyWithTranslation,
+      (paragraph) => paragraph.text.toLowerCase().includes(trimmedKeyword),
+    );
   }
 
   /**
