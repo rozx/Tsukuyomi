@@ -126,6 +126,47 @@ async function resolveChapterWithContent(
   }
 }
 
+function hasChapterMetadataChanged(current: Chapter, updated: Chapter): boolean {
+  return (
+    current.title !== updated.title ||
+    current.webUrl !== updated.webUrl ||
+    toMillis(current.lastEdited) !== toMillis(updated.lastEdited) ||
+    toMillis(current.createdAt) !== toMillis(updated.createdAt) ||
+    current.originalContent !== updated.originalContent ||
+    current.contentLoaded !== updated.contentLoaded ||
+    current.translationInstructions !== updated.translationInstructions ||
+    current.polishInstructions !== updated.polishInstructions ||
+    current.proofreadingInstructions !== updated.proofreadingInstructions
+  );
+}
+
+function detectExternalMetadataChange(current: Chapter, updated: Chapter): boolean {
+  const currentMs = toMillis(current.lastEdited);
+  const updatedMs = toMillis(updated.lastEdited);
+  return (
+    current.webUrl !== updated.webUrl ||
+    current.originalContent !== updated.originalContent ||
+    (updatedMs > currentMs && Math.abs(updatedMs - Date.now()) < 10000)
+  );
+}
+
+function buildMergedSelectedChapter(
+  current: Chapter,
+  updated: Chapter,
+  shouldUpdateMetadata: boolean,
+  shouldUpdateContent: boolean,
+): Chapter {
+  return {
+    ...current,
+    ...(shouldUpdateMetadata ? updated : {}),
+    content: shouldUpdateContent ? updated.content : (current.content ?? updated.content),
+    contentLoaded: shouldUpdateContent
+      ? true
+      : (current.contentLoaded ?? updated.contentLoaded),
+    lastEdited: shouldUpdateMetadata ? updated.lastEdited : current.lastEdited,
+  };
+}
+
 async function syncSelectedChapterAfterUndoRedo(
   updatedBook: Novel,
   selectedChapterId: string | null,
@@ -1083,53 +1124,24 @@ function createBookDetailsPageContext() {
     if (updatedChapter === oldChapter) return;
 
     const currentChapter = selectedChapterWithContent.value;
-
-    // 注意：lastEdited / createdAt 的类型声明是 Date，但在某些跨序列化路径
-    // （例如同步合并，或旧数据兼容）下可能以字符串形式进入 store。直接调用
-    // `.getTime()` 会抛 TypeError，这里走 `toMillis` 做防御性归一。
-    const currentLastEditedMs = toMillis(currentChapter.lastEdited);
-    const updatedLastEditedMs = toMillis(updatedChapter.lastEdited);
-
-    const hasMetadataChanged =
-      currentChapter.title !== updatedChapter.title ||
-      currentChapter.webUrl !== updatedChapter.webUrl ||
-      currentLastEditedMs !== updatedLastEditedMs ||
-      toMillis(currentChapter.createdAt) !== toMillis(updatedChapter.createdAt) ||
-      currentChapter.originalContent !== updatedChapter.originalContent ||
-      currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
-      currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
-      currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
-      currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
-
+    const isUserEditing = isEditingOriginalText.value;
+    const hasMetadataChanged = hasChapterMetadataChanged(currentChapter, updatedChapter);
     const hasContentUpdate =
       Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
-
-    const isUserEditing = isEditingOriginalText.value;
-
-    const hasExternalMetadataChange =
-      currentChapter.webUrl !== updatedChapter.webUrl ||
-      currentChapter.originalContent !== updatedChapter.originalContent ||
-      (updatedLastEditedMs > currentLastEditedMs &&
-        Math.abs(updatedLastEditedMs - Date.now()) < 10000);
+    const hasExternalMetadataChange = detectExternalMetadataChange(currentChapter, updatedChapter);
 
     const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
     const shouldUpdateContent = hasContentUpdate && !isUserEditing;
 
     if (!hasMetadataChanged && !shouldUpdateContent) return;
+    if (!shouldUpdateMetadata && !shouldUpdateContent) return;
 
-    if (shouldUpdateMetadata || shouldUpdateContent) {
-      selectedChapterWithContent.value = {
-        ...currentChapter,
-        ...(shouldUpdateMetadata ? updatedChapter : {}),
-        content: shouldUpdateContent
-          ? updatedChapter.content
-          : (currentChapter.content ?? updatedChapter.content),
-        contentLoaded: shouldUpdateContent
-          ? true
-          : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
-        lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
-      };
-    }
+    selectedChapterWithContent.value = buildMergedSelectedChapter(
+      currentChapter,
+      updatedChapter,
+      shouldUpdateMetadata,
+      shouldUpdateContent,
+    );
   });
 
   watch(

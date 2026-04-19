@@ -16,6 +16,21 @@ function getProxyDisplayName(proxyUrl: string): string {
   return proxy ? proxy.name : proxyUrl;
 }
 
+const INTERNAL_PROXY_HOSTS: Record<string, string> = {
+  'kakuyomu.jp': '/api/kakuyomu',
+  'ncode.syosetu.com': '/api/ncode',
+  'novel18.syosetu.com': '/api/novel18',
+  'syosetu.org': '/api/syosetu',
+  'p.sda1.dev': '/api/sda1',
+};
+
+function buildInternalProxyPath(originalUrl: string): string | null {
+  const urlObj = new URL(originalUrl);
+  const prefix = INTERNAL_PROXY_HOSTS[urlObj.hostname];
+  if (!prefix) return null;
+  return `${prefix}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+}
+
 /**
  * 代理服务
  * 统一管理所有网络请求的代理设置
@@ -31,94 +46,42 @@ export class ProxyService {
   static getProxiedUrl(
     originalUrl: string,
     options: {
-      /**
-       * 是否跳过代理（用于内部 API 请求）
-       * @default false
-       */
       skipProxy?: boolean;
-      /**
-       * 是否跳过内部代理路径（用于浏览器环境的 /api/ 路径）
-       * @default false
-       */
       skipInternalProxy?: boolean;
     } = {},
   ): string {
     const { skipProxy = false, skipInternalProxy = false } = options;
+    if (skipProxy) return originalUrl;
+    if (originalUrl.startsWith('/api/')) return originalUrl;
 
-    // 如果跳过代理，直接返回原始 URL
-    if (skipProxy) {
-      return originalUrl;
-    }
-
-    // 内部 API 请求（以 /api/ 开头）应该跳过代理
-    if (originalUrl.startsWith('/api/')) {
-      return originalUrl;
-    }
-
-    const inElectron = isElectron();
-
-    // 检查是否启用了代理
     const proxyEnabled = GlobalConfig.getProxyEnabled();
-    let proxyUrl = GlobalConfig.getProxyUrl();
-
-    // 如果启用了代理，优先使用网站特定的代理
     if (proxyEnabled) {
-      const domain = this.extractDomain(originalUrl);
-      if (domain) {
-        const rootDomain = extractRootDomain(domain);
-        if (rootDomain) {
-          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
-          if (siteProxies.length > 0) {
-            // 如果当前代理在网站特定列表中，使用当前代理
-            // 否则使用网站特定列表中的第一个
-            if (proxyUrl && siteProxies.includes(proxyUrl)) {
-              // 使用当前代理
-            } else {
-              const siteProxy = siteProxies[0];
-              if (siteProxy) {
-                proxyUrl = siteProxy;
-              }
-            }
-          }
-        }
+      const resolvedProxyUrl = this.resolveExternalProxyUrl(originalUrl);
+      if (resolvedProxyUrl) {
+        return resolvedProxyUrl.replace('{url}', encodeURIComponent(originalUrl));
       }
     }
 
-    // 如果启用了代理且代理 URL 不为空，使用代理
-    if (proxyEnabled && proxyUrl && proxyUrl.trim()) {
-      // 替换 {url} 占位符为实际 URL
-      const proxiedUrl = proxyUrl.replace('{url}', encodeURIComponent(originalUrl));
-
-      // 在纯浏览器环境中，直接使用代理 URL（代理服务本身就是为了解决 CORS 问题）
-      // 在 Electron/Node.js 环境中，也可以直接使用代理 URL
-      // 只有在开发环境且有后端服务器支持时，才使用 /api/proxy（但这不是必需的）
-      // 为了简化逻辑，我们统一直接使用代理 URL，让代理服务处理 CORS
-      return proxiedUrl;
-    }
-    if (!skipInternalProxy && !inElectron) {
-      // 在浏览器环境中（非 Electron），使用服务器代理路径
-      const urlObj = new URL(originalUrl);
-      let internalProxyUrl: string | null = null;
-
-      if (urlObj.hostname === 'kakuyomu.jp') {
-        internalProxyUrl = `/api/kakuyomu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'ncode.syosetu.com') {
-        internalProxyUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'novel18.syosetu.com') {
-        internalProxyUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'syosetu.org') {
-        internalProxyUrl = `/api/syosetu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'p.sda1.dev') {
-        internalProxyUrl = `/api/sda1${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      }
-
-      if (internalProxyUrl) {
-        return internalProxyUrl;
-      }
+    if (!skipInternalProxy && !isElectron()) {
+      const internal = buildInternalProxyPath(originalUrl);
+      if (internal) return internal;
     }
 
-    // 默认返回原始 URL
     return originalUrl;
+  }
+
+  private static resolveExternalProxyUrl(originalUrl: string): string | null {
+    let proxyUrl = GlobalConfig.getProxyUrl();
+    const domain = this.extractDomain(originalUrl);
+    const rootDomain = domain ? extractRootDomain(domain) : null;
+    if (rootDomain) {
+      const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
+      if (siteProxies.length > 0 && !(proxyUrl && siteProxies.includes(proxyUrl))) {
+        const siteProxy = siteProxies[0];
+        if (siteProxy) proxyUrl = siteProxy;
+      }
+    }
+    return proxyUrl && proxyUrl.trim() ? proxyUrl : null;
   }
 
   /**

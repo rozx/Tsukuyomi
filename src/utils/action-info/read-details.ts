@@ -52,89 +52,86 @@ function appendParagraphPreviewByPath(
 /**
  * 处理 action.type === 'read' 下所有工具的详情。
  */
+type ReadToolHandler = (
+  details: ActionDetail[],
+  action: MessageAction,
+  context: ActionDetailsContext,
+) => void;
+
+function appendKeywordsLine(
+  details: ActionDetail[],
+  keywords: string[] | undefined,
+  label: string,
+): void {
+  if (!keywords || keywords.length === 0) return;
+  details.push({ label, value: keywords.join('、') });
+}
+
+const READ_TOOL_HANDLERS: Record<string, ReadToolHandler> = {
+  get_help_doc: (details, action) => {
+    if (action.title) details.push({ label: '文档标题', value: action.title });
+  },
+  list_help_docs: (details) => {
+    details.push({ label: '文档列表', value: '已获取' });
+  },
+  get_book_info: (details, action, context) => {
+    if (action.book_id) appendBookInfo(details, action.book_id, context);
+  },
+  get_memory: (details, action) => {
+    if (action.memory_id) details.push({ label: 'Memory ID', value: action.memory_id });
+  },
+  search_characters_by_keywords: (details, action) => {
+    appendKeywordsLine(details, action.keywords, '搜索关键词');
+  },
+  search_terms_by_keywords: (details, action) => {
+    appendKeywordsLine(details, action.keywords, '搜索关键词');
+  },
+  find_paragraph_by_keywords: (details, action, context) => {
+    appendKeywordsLine(details, action.keywords, '原文关键词');
+    appendKeywordsLine(details, action.translation_keywords, '翻译关键词');
+    if (action.chapter_id) appendChapterDetailByChapterId(details, action.chapter_id, context);
+  },
+  search_paragraphs_by_regex: (details, action, context) => {
+    if (action.regex_pattern) details.push({ label: '正则表达式', value: action.regex_pattern });
+    if (action.chapter_id) appendChapterDetailByChapterId(details, action.chapter_id, context);
+  },
+  get_occurrences_by_keywords: (details, action) => {
+    appendKeywordsLine(details, action.keywords, '关键词');
+  },
+};
+
+function appendDefaultReadFields(
+  details: ActionDetail[],
+  action: MessageAction,
+  context: ActionDetailsContext,
+): void {
+  appendKeywordsLine(details, action.keywords, '关键词');
+  if (action.regex_pattern) details.push({ label: '正则表达式', value: action.regex_pattern });
+  if (action.chapter_id) appendChapterDetailByChapterId(details, action.chapter_id, context);
+}
+
+function appendCommonReadFields(
+  details: ActionDetail[],
+  action: MessageAction,
+  context: ActionDetailsContext,
+): void {
+  if (action.chapter_title) details.push({ label: '章节标题', value: action.chapter_title });
+  if (action.paragraph_id) {
+    details.push({ label: '段落 ID', value: action.paragraph_id });
+    appendParagraphPreviewByPath(details, action, context);
+  }
+  if (action.character_name) details.push({ label: '角色名称', value: action.character_name });
+  if (action.name) details.push({ label: '名称', value: action.name });
+}
+
 export function appendReadDetails(
   details: ActionDetail[],
   action: MessageAction,
   context: ActionDetailsContext,
 ): void {
-  if (action.tool_name) {
-    details.push({ label: '工具', value: action.tool_name });
-  }
-
-  // 按 tool_name 分支
-  switch (action.tool_name) {
-    case 'get_help_doc':
-      if (action.title) details.push({ label: '文档标题', value: action.title });
-      break;
-    case 'list_help_docs':
-      details.push({ label: '文档列表', value: '已获取' });
-      break;
-    case 'get_book_info':
-      if (action.book_id) appendBookInfo(details, action.book_id, context);
-      break;
-    case 'get_memory':
-      if (action.memory_id) {
-        details.push({ label: 'Memory ID', value: action.memory_id });
-      }
-      break;
-    case 'search_characters_by_keywords':
-    case 'search_terms_by_keywords':
-      if (action.keywords && action.keywords.length > 0) {
-        details.push({ label: '搜索关键词', value: action.keywords.join('、') });
-      }
-      break;
-    case 'find_paragraph_by_keywords':
-      if (action.keywords && action.keywords.length > 0) {
-        details.push({ label: '原文关键词', value: action.keywords.join('、') });
-      }
-      if (action.translation_keywords && action.translation_keywords.length > 0) {
-        details.push({ label: '翻译关键词', value: action.translation_keywords.join('、') });
-      }
-      if (action.chapter_id) {
-        appendChapterDetailByChapterId(details, action.chapter_id, context);
-      }
-      break;
-    case 'search_paragraphs_by_regex':
-      if (action.regex_pattern) {
-        details.push({ label: '正则表达式', value: action.regex_pattern });
-      }
-      if (action.chapter_id) {
-        appendChapterDetailByChapterId(details, action.chapter_id, context);
-      }
-      break;
-    case 'get_occurrences_by_keywords':
-      if (action.keywords && action.keywords.length > 0) {
-        details.push({ label: '关键词', value: action.keywords.join('、') });
-      }
-      break;
-    default:
-      // 其他工具的通用字段
-      if (action.keywords && action.keywords.length > 0) {
-        details.push({ label: '关键词', value: action.keywords.join('、') });
-      }
-      if (action.regex_pattern) {
-        details.push({ label: '正则表达式', value: action.regex_pattern });
-      }
-      if (action.chapter_id) {
-        appendChapterDetailByChapterId(details, action.chapter_id, context);
-      }
-      break;
-  }
-
-  if (action.chapter_title) {
-    details.push({ label: '章节标题', value: action.chapter_title });
-  }
-
-  if (action.paragraph_id) {
-    details.push({ label: '段落 ID', value: action.paragraph_id });
-    appendParagraphPreviewByPath(details, action, context);
-  }
-
-  if (action.character_name) {
-    details.push({ label: '角色名称', value: action.character_name });
-  }
-
-  if (action.name) {
-    details.push({ label: '名称', value: action.name });
-  }
+  if (action.tool_name) details.push({ label: '工具', value: action.tool_name });
+  const handler = action.tool_name ? READ_TOOL_HANDLERS[action.tool_name] : undefined;
+  if (handler) handler(details, action, context);
+  else appendDefaultReadFields(details, action, context);
+  appendCommonReadFields(details, action, context);
 }
