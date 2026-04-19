@@ -37,6 +37,7 @@ import {
   formatTranslationForDisplay,
 } from 'src/utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
 import type {
   Chapter,
@@ -1070,11 +1071,17 @@ function createBookDetailsPageContext() {
 
     const currentChapter = selectedChapterWithContent.value;
 
+    // 注意：lastEdited / createdAt 的类型声明是 Date，但在某些跨序列化路径
+    // （例如同步合并，或旧数据兼容）下可能以字符串形式进入 store。直接调用
+    // `.getTime()` 会抛 TypeError，这里走 `toMillis` 做防御性归一。
+    const currentLastEditedMs = toMillis(currentChapter.lastEdited);
+    const updatedLastEditedMs = toMillis(updatedChapter.lastEdited);
+
     const hasMetadataChanged =
       currentChapter.title !== updatedChapter.title ||
       currentChapter.webUrl !== updatedChapter.webUrl ||
-      currentChapter.lastEdited.getTime() !== updatedChapter.lastEdited.getTime() ||
-      currentChapter.createdAt.getTime() !== updatedChapter.createdAt.getTime() ||
+      currentLastEditedMs !== updatedLastEditedMs ||
+      toMillis(currentChapter.createdAt) !== toMillis(updatedChapter.createdAt) ||
       currentChapter.originalContent !== updatedChapter.originalContent ||
       currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
       currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
@@ -1089,8 +1096,8 @@ function createBookDetailsPageContext() {
     const hasExternalMetadataChange =
       currentChapter.webUrl !== updatedChapter.webUrl ||
       currentChapter.originalContent !== updatedChapter.originalContent ||
-      (updatedChapter.lastEdited.getTime() > currentChapter.lastEdited.getTime() &&
-        Math.abs(updatedChapter.lastEdited.getTime() - Date.now()) < 10000);
+      (updatedLastEditedMs > currentLastEditedMs &&
+        Math.abs(updatedLastEditedMs - Date.now()) < 10000);
 
     const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
     const shouldUpdateContent = hasContentUpdate && !isUserEditing;

@@ -3,6 +3,28 @@
  */
 
 /**
+ * 将 Date / 时间戳 / ISO 字符串统一转换为毫秒时间戳。
+ * 空值（null/undefined）返回 0；无效输入也返回 0 而非 NaN，
+ * 使得直接比较不会因类型不统一而崩溃。
+ *
+ * 数据模型里 `lastEdited` / `createdAt` 等字段的类型是 `Date`，但在
+ * 某些跨序列化路径（同步合并、兼容的旧数据等）里可能以字符串形式流入，
+ * 调用方不应该再直接 `.getTime()`——请走此函数归一化。
+ */
+export function toMillis(value: Date | number | string | null | undefined): number {
+  if (value == null) return 0;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? 0 : t;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
  * 检查两个时间之间的差异是否超过阈值
  * @param localTime 本地时间（Date、时间戳或字符串）
  * @param remoteTime 远程时间（Date、时间戳或字符串）
@@ -14,17 +36,7 @@ export function isTimeDifferent(
   remoteTime: Date | number | string,
   thresholdMs = 1000,
 ): boolean {
-  const local = typeof localTime === 'string'
-    ? new Date(localTime).getTime()
-    : typeof localTime === 'number'
-      ? localTime
-      : localTime.getTime();
-  const remote = typeof remoteTime === 'string'
-    ? new Date(remoteTime).getTime()
-    : typeof remoteTime === 'number'
-      ? remoteTime
-      : remoteTime.getTime();
-  return Math.abs(local - remote) > thresholdMs;
+  return Math.abs(toMillis(localTime) - toMillis(remoteTime)) > thresholdMs;
 }
 
 /**
@@ -40,12 +52,7 @@ export function isNewlyAdded(
 ): boolean {
   // 首次同步时，所有项目都应该被视为"新添加"的，需要同步
   if (lastSyncTime <= 0) return true;
-  const editedTime = typeof lastEdited === 'string'
-    ? new Date(lastEdited).getTime()
-    : typeof lastEdited === 'number'
-      ? lastEdited
-      : lastEdited.getTime();
-  return editedTime > lastSyncTime;
+  return toMillis(lastEdited) > lastSyncTime;
 }
 
 /**
