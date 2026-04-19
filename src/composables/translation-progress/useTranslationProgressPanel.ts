@@ -141,22 +141,35 @@ export function useTranslationProgressPanel() {
     bookDetailsStore.selectTask(taskId);
   };
 
-  // ─── 新任务选中（仅在无任务被选中、或当前选中任务已消失时接管，不打断用户查看中的任务） ───
+  // ─── 新任务选中 ───
+  // 规则：
+  // 1) 无选中任务 → 选中最新
+  // 2) 选中任务被清理 → 回退到最新
+  // 3) 出现全新任务（ID 不在旧列表中）时：若当前选中任务仍在 thinking / processing，
+  //    保留用户的观察视图；否则切换到最新任务（新批量翻译 / 润色 / 校对启动即聚焦）
+  // 注：immediate 首次触发时 oldIds 为 undefined，不视为"新任务出现"，避免挂载时覆盖用户上次的选择。
 
   watch(
     () => recentAITasks.value.map((t) => t.id),
-    (newIds) => {
+    (newIds, oldIds) => {
       if (newIds.length === 0) return;
-      // 没有选中任务时，选中最新的一个
       if (!selectedTaskId.value) {
         bookDetailsStore.selectTask(newIds[0]!);
         return;
       }
-      // 当前选中的任务已不存在（被清理），回退到最新的一个
       if (!newIds.includes(selectedTaskId.value)) {
         bookDetailsStore.selectTask(newIds[0]!);
+        return;
       }
-      // 新任务出现时不做自动切换，避免打断用户查看
+      if (!oldIds) return;
+      const oldSet = new Set(oldIds);
+      const hasNewTask = newIds.some((id) => !oldSet.has(id));
+      if (!hasNewTask) return;
+      const selectedTask = recentAITasks.value.find((t) => t.id === selectedTaskId.value);
+      const selectedIsRunning =
+        selectedTask?.status === 'thinking' || selectedTask?.status === 'processing';
+      if (selectedIsRunning) return;
+      bookDetailsStore.selectTask(newIds[0]!);
     },
     { flush: 'post', immediate: true },
   );
