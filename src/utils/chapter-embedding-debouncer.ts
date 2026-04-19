@@ -5,9 +5,11 @@
  * 静默期达到后自动把章节入队 EmbeddingQueue 重新嵌入。
  *
  * 新建章节或批量导入时不应走防抖,直接调用 `EmbeddingQueue.enqueueChapter`。
+ *
+ * 注：EmbeddingQueue 使用动态 import 以打破 debouncer → embedding-queue →
+ * chapter-embedding-service → chapter-content-service（dynamic import 回这里）
+ * 的循环依赖。
  */
-
-import { EmbeddingQueue } from 'src/services/embedding-queue';
 
 const DEFAULT_DEBOUNCE_MS = 60_000;
 
@@ -24,11 +26,14 @@ export function markChapterDirty(chapterId: string): void {
   if (existing) clearTimeout(existing);
   const handle = setTimeout(() => {
     timers.delete(chapterId);
-    try {
-      EmbeddingQueue.enqueueChapter(chapterId);
-    } catch (error) {
-      console.warn('[chapter-embedding-debouncer] enqueueChapter 失败:', error);
-    }
+    void (async () => {
+      try {
+        const { EmbeddingQueue } = await import('src/services/embedding-queue');
+        EmbeddingQueue.enqueueChapter(chapterId);
+      } catch (error) {
+        console.warn('[chapter-embedding-debouncer] enqueueChapter 失败:', error);
+      }
+    })();
   }, debounceMs);
   timers.set(chapterId, handle);
 }

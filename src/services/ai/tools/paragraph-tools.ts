@@ -11,7 +11,7 @@ import {
   isEmptyOrSymbolOnly,
 } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import type { Translation } from 'src/models/novel';
+import type { Novel, Paragraph, Translation } from 'src/models/novel';
 import type { ToolDefinition, ActionInfo, ToolContext } from './types';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 import {
@@ -66,6 +66,127 @@ function extractKeywordsFromParagraph(text: string, maxLength: number = 20): str
  */
 function toDisplayParagraphIndex(paragraphIndex: number): number {
   return paragraphIndex + 1;
+}
+
+/**
+ * 将段落搜索结果序列化为工具返回的 JSON 字符串。
+ * 被邻近段落查询 / 关键词搜索等多个工具共享的响应结构。
+ * @param validResults 已经过空段落过滤的搜索结果
+ * @param includeMemory 是否启用记忆联查
+ * @param relatedMemories 已查询好的相关记忆（调用方负责决定关键词来源）
+ */
+function buildParagraphSearchResponse(
+  validResults: ParagraphSearchResult[],
+  includeMemory: boolean,
+  relatedMemories: Array<{ id: string; summary: string }>,
+): string {
+  return JSON.stringify({
+    success: true,
+    paragraphs: validResults.map((result) => ({
+      id: result.paragraph.id,
+      text: result.paragraph.text,
+      translation:
+        result.paragraph.translations.find(
+          (t) => t.id === result.paragraph.selectedTranslationId,
+        )?.translation ||
+        result.paragraph.translations[0]?.translation ||
+        '',
+      chapter: {
+        id: result.chapter.id,
+        title:
+          typeof result.chapter.title === 'string'
+            ? result.chapter.title
+            : result.chapter.title.original,
+        title_translation:
+          typeof result.chapter.title === 'string'
+            ? ''
+            : result.chapter.title.translation?.translation || '',
+      },
+      volume: {
+        id: result.volume.id,
+        title:
+          typeof result.volume.title === 'string'
+            ? result.volume.title
+            : result.volume.title.original,
+        title_translation:
+          typeof result.volume.title === 'string'
+            ? ''
+            : result.volume.title.translation?.translation || '',
+      },
+      paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+      chapter_index: result.chapterIndex,
+      volume_index: result.volumeIndex,
+    })),
+    count: validResults.length,
+    ...(includeMemory && relatedMemories.length > 0
+      ? { related_memories: relatedMemories }
+      : {}),
+  });
+}
+
+/**
+ * `select_translation` / `remove_translation` 共享的前置流程：
+ * 校验参数 → 查找书籍 → 定位目标段落。
+ * 返回 discriminated union：ok=true 提供调用方继续处理需要的上下文，
+ * ok=false 携带可直接返回给工具的 JSON 字符串（段落不存在的软失败）。
+ * 硬错误（bookId / id 为空、书不存在）仍以 throw 抛出。
+ *
+ * 注意：不做 translations 非空校验 —— 两个调用方相对于 onAction 的顺序
+ * 不同，需要各自保留原有副作用顺序。
+ */
+async function resolveTranslationTarget(
+  bookId: string | undefined,
+  args: Record<string, unknown>,
+): Promise<
+  | {
+      ok: true;
+      bookId: string;
+      book: Novel;
+      paragraph: Paragraph;
+      paragraph_id: string;
+      translation_id: string;
+      booksStore: ReturnType<typeof useBooksStore>;
+    }
+  | { ok: false; response: string }
+> {
+  if (!bookId) {
+    throw new Error('书籍 ID 不能为空');
+  }
+  const { paragraph_id, translation_id } = args as {
+    paragraph_id: string;
+    translation_id: string;
+  };
+  if (!paragraph_id || !translation_id) {
+    throw new Error('段落 ID 和翻译 ID 不能为空');
+  }
+
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  if (!book) {
+    throw new Error(`书籍不存在: ${bookId}`);
+  }
+
+  // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+  const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+  if (!location) {
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: `段落不存在: ${paragraph_id}`,
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    bookId,
+    book,
+    paragraph: location.paragraph,
+    paragraph_id,
+    translation_id,
+    booksStore,
+  };
 }
 
 /**
@@ -151,48 +272,7 @@ async function handleNeighborParagraphs(
     }
   }
 
-  return JSON.stringify({
-    success: true,
-    paragraphs: validResults.map((result) => ({
-      id: result.paragraph.id,
-      text: result.paragraph.text,
-      translation:
-        result.paragraph.translations.find(
-          (t) => t.id === result.paragraph.selectedTranslationId,
-        )?.translation ||
-        result.paragraph.translations[0]?.translation ||
-        '',
-      chapter: {
-        id: result.chapter.id,
-        title:
-          typeof result.chapter.title === 'string'
-            ? result.chapter.title
-            : result.chapter.title.original,
-        title_translation:
-          typeof result.chapter.title === 'string'
-            ? ''
-            : result.chapter.title.translation?.translation || '',
-      },
-      volume: {
-        id: result.volume.id,
-        title:
-          typeof result.volume.title === 'string'
-            ? result.volume.title
-            : result.volume.title.original,
-        title_translation:
-          typeof result.volume.title === 'string'
-            ? ''
-            : result.volume.title.translation?.translation || '',
-      },
-      paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
-      chapter_index: result.chapterIndex,
-      volume_index: result.volumeIndex,
-    })),
-    count: validResults.length,
-    ...(include_memory && relatedMemories.length > 0
-      ? { related_memories: relatedMemories }
-      : {}),
-  });
+  return buildParagraphSearchResponse(validResults, include_memory, relatedMemories);
 }
 
 /**
@@ -1008,48 +1088,7 @@ export const paragraphTools: ToolDefinition[] = [
         }
       }
 
-      return JSON.stringify({
-        success: true,
-        paragraphs: validResults.map((result) => ({
-          id: result.paragraph.id,
-          text: result.paragraph.text,
-          translation:
-            result.paragraph.translations.find(
-              (t) => t.id === result.paragraph.selectedTranslationId,
-            )?.translation ||
-            result.paragraph.translations[0]?.translation ||
-            '',
-          chapter: {
-            id: result.chapter.id,
-            title:
-              typeof result.chapter.title === 'string'
-                ? result.chapter.title
-                : result.chapter.title.original,
-            title_translation:
-              typeof result.chapter.title === 'string'
-                ? ''
-                : result.chapter.title.translation?.translation || '',
-          },
-          volume: {
-            id: result.volume.id,
-            title:
-              typeof result.volume.title === 'string'
-                ? result.volume.title
-                : result.volume.title.original,
-            title_translation:
-              typeof result.volume.title === 'string'
-                ? ''
-                : result.volume.title.translation?.translation || '',
-          },
-          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
-          chapter_index: result.chapterIndex,
-          volume_index: result.volumeIndex,
-        })),
-        count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0
-          ? { related_memories: relatedMemories }
-          : {}),
-      });
+      return buildParagraphSearchResponse(validResults, include_memory, relatedMemories);
     },
   },
   {
@@ -1447,34 +1486,13 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
+    handler: async (args, context) => {
+      const { onAction } = context;
+      const resolved = await resolveTranslationTarget(context.bookId, args);
+      if (!resolved.ok) {
+        return resolved.response;
       }
-      const { paragraph_id, translation_id } = args as {
-        paragraph_id: string;
-        translation_id: string;
-      };
-      if (!paragraph_id || !translation_id) {
-        throw new Error('段落 ID 和翻译 ID 不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
-      const { paragraph } = location;
+      const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
 
       // 报告读取操作（选择翻译也是一种读取操作）
       if (onAction) {
@@ -1711,34 +1729,13 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
+    handler: async (args, context) => {
+      const { onAction } = context;
+      const resolved = await resolveTranslationTarget(context.bookId, args);
+      if (!resolved.ok) {
+        return resolved.response;
       }
-      const { paragraph_id, translation_id } = args as {
-        paragraph_id: string;
-        translation_id: string;
-      };
-      if (!paragraph_id || !translation_id) {
-        throw new Error('段落 ID 和翻译 ID 不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
-      const { paragraph } = location;
+      const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
 
       // 验证翻译是否存在
       if (!paragraph.translations || paragraph.translations.length === 0) {

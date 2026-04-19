@@ -349,6 +349,29 @@ async function mergeRemoteTranslationsIntoLocalNovel(
 }
 
 /**
+ * 根据 useRemote 判断选择合并策略，返回合并后的书籍：
+ * - useRemote=true: 以远程书籍为主，但保留本地章节内容
+ * - useRemote=false: 以本地书籍为主（先加载本地章节内容），再合并远程翻译
+ *
+ * 抽取自 applyDownloadedData 和 mergeData 中的重复分支，
+ * 两处判断 useRemote 的默认值不同（下载方向默认 true，上传方向默认 false），
+ * 因此由调用方先算好 useRemote 再传入，helper 只负责合并。
+ */
+async function mergeNovelPreferringNewer(
+  localNovel: Novel,
+  remoteNovel: Novel,
+  useRemote: boolean,
+): Promise<Novel> {
+  if (useRemote) {
+    // 使用远程书籍，但需要保留本地章节内容
+    return await SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel);
+  }
+  // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
+  const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
+  return await mergeRemoteTranslationsIntoLocalNovel(localNovelWithContent, remoteNovel);
+}
+
+/**
  * 可恢复的项目接口
  */
 export interface RestorableItem {
@@ -809,24 +832,12 @@ export class SyncDataService {
           const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
           if (localNovel) {
             // 比较 lastEdited 时间，使用最新的
-            if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
-              // 使用远程书籍，但需要保留本地章节内容
-              const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
-                remoteNovel as Novel,
-                localNovel,
-              );
-              finalBooks.push(mergedNovel);
-            } else {
-              // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
-              const localNovelWithContent =
-                await SyncDataService.ensureNovelContentLoaded(localNovel);
-              // 合并远程翻译到本地书籍
-              const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
-                localNovelWithContent,
-                remoteNovel as Novel,
-              );
-              finalBooks.push(mergedNovel);
-            }
+            const mergedNovel = await mergeNovelPreferringNewer(
+              localNovel,
+              remoteNovel as Novel,
+              shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited),
+            );
+            finalBooks.push(mergedNovel);
           } else {
             // 本地不存在，检查是否在删除记录中
             const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
@@ -1656,23 +1667,12 @@ export class SyncDataService {
     for (const localNovel of localData.novels) {
       const remoteNovel = remoteNovelMap.get(localNovel.id);
       if (remoteNovel) {
-        if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
-          // 使用远程书籍，但保留本地章节内容
-          const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
-            remoteNovel as Novel,
-            localNovel,
-          );
-          finalBooks.push(mergedNovel);
-        } else {
-          // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
-          const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
-          // 合并远程翻译到本地书籍
-          const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
-            localNovelWithContent,
-            remoteNovel as Novel,
-          );
-          finalBooks.push(mergedNovel);
-        }
+        const mergedNovel = await mergeNovelPreferringNewer(
+          localNovel,
+          remoteNovel as Novel,
+          shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited),
+        );
+        finalBooks.push(mergedNovel);
       } else {
         // 本地独有的书籍，检查是否是新增的
         // 如果 lastEdited 未设置，保守处理：视为新增（避免丢失数据）

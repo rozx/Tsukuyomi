@@ -4,7 +4,8 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { processTextTask, type ParagraphExtractCallbackParams } from './utils/text-task-processor';
+import { processTextTask } from './utils/text-task-processor';
+import { buildChangedParagraphsExtractCallback } from './utils/paragraph-task-shared';
 import { buildProofreadingSystemPrompt } from './prompts';
 import {
   buildSingleParagraphProofreadingSystemPrompt,
@@ -109,28 +110,11 @@ export class ProofreadingService {
     options?: ProofreadingServiceOptions,
   ): Promise<ProofreadingResult> {
     // 构建段落提取回调
-    const onParagraphsExtracted = options?.onParagraphProofreading
-      ? async (params: ParagraphExtractCallbackParams) => {
-          const { paragraphs, originalTranslations } = params;
-          // 过滤出有变化的段落
-          const changedParagraphs: { id: string; translation: string }[] = [];
-          for (const para of paragraphs) {
-            if (para.id && para.translation) {
-              const original = originalTranslations.get(para.id);
-              if (original !== para.translation) {
-                changedParagraphs.push(para);
-              }
-            }
-          }
-          if (changedParagraphs.length > 0) {
-            try {
-              await Promise.resolve(options.onParagraphProofreading!(changedParagraphs));
-            } catch (error) {
-              console.error('[ProofreadingService] ⚠️ 段落校对回调失败:', error);
-            }
-          }
-        }
-      : undefined;
+    const onParagraphsExtracted = buildChangedParagraphsExtractCallback({
+      onChangedParagraphs: options?.onParagraphProofreading,
+      logLabel: 'ProofreadingService',
+      taskLabel: '段落校对',
+    });
 
     return processTextTask(
       content,
