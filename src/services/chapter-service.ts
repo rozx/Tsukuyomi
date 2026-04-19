@@ -44,6 +44,160 @@ function hasParagraphContent(paragraph: Paragraph | null | undefined): boolean {
   return !!paragraph?.text && paragraph.text.trim().length > 0;
 }
 
+function resolveExportChapterTitle(
+  chapter: Chapter,
+  type: 'original' | 'translation' | 'bilingual',
+  book?: Novel,
+): string {
+  if (type !== 'original') return getChapterDisplayTitle(chapter, book);
+  let title = '';
+  if (chapter.title) {
+    title = typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+  }
+  const normalizeEnabled =
+    chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+  return normalizeEnabled ? normalizeChapterTitle(title) : title;
+}
+
+function buildOriginalExportBody(paragraphs: Paragraph[]): string {
+  return paragraphs.reduce((acc, p, idx) => {
+    const text = p.text || '';
+    acc += text;
+    const isLast = idx === paragraphs.length - 1;
+    if (isLast) return acc;
+    if (text.trim() === '') return `${acc}\n`;
+    if (!acc.endsWith('\n')) return `${acc}\n`;
+    return acc;
+  }, '');
+}
+
+function buildTranslationExportBody(
+  paragraphs: Paragraph[],
+  book: Novel | undefined,
+  chapter: Chapter,
+): string {
+  let consecutiveReturnParagraphs = 0;
+  return paragraphs.reduce((acc, paragraph, idx, arr) => {
+    let translation = getParagraphTranslationText(paragraph);
+    translation = formatTranslationForDisplay(translation, book, chapter) ?? '';
+    const isLast = idx === arr.length - 1;
+    const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
+    const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
+
+    let next = acc;
+    if (!isReturnParagraph && consecutiveReturnParagraphs > 0) {
+      next += '\n';
+      consecutiveReturnParagraphs = 0;
+    }
+    next += translation;
+
+    if (!isLast) {
+      const translationTrailingBreaks = countTrailingLineBreaks(translation);
+      const originalTrailingBreaks = countTrailingLineBreaks(paragraph.text);
+      const targetBreaks = Math.max(originalTrailingBreaks + 1, 1);
+      const missingBreaks = targetBreaks - translationTrailingBreaks;
+      if (missingBreaks > 0) next += '\n'.repeat(missingBreaks);
+    }
+
+    if (isReturnParagraph) {
+      consecutiveReturnParagraphs++;
+      if (isLast) {
+        next += '\n';
+        consecutiveReturnParagraphs = 0;
+      }
+    }
+    return next;
+  }, '');
+}
+
+function buildBilingualExportLines(
+  paragraphs: Paragraph[],
+  book: Novel | undefined,
+  chapter: Chapter,
+): string {
+  const lines = paragraphs.map((p) => {
+    const original = p.text;
+    let translation = getParagraphTranslationText(p);
+    translation = formatTranslationForDisplay(translation, book, chapter);
+    let normalizedTranslation = translation || original;
+    const originalTrailingNewlines = countTrailingLineBreaks(original);
+    normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
+    normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
+    return `${original}\n${normalizedTranslation}\n`;
+  });
+  const processedLines = lines.map((line) => {
+    if (line.trim() === '') return '\n\n';
+    return line.endsWith('\n') ? line : `${line}\n`;
+  });
+  return processedLines.join('');
+}
+
+function buildExportChapterContent(
+  chapterWithContent: Chapter,
+  chapterTitle: string,
+  type: 'original' | 'translation' | 'bilingual',
+  format: 'txt' | 'json' | 'clipboard',
+  book?: Novel,
+): string {
+  const paragraphs = chapterWithContent.content || [];
+  if (format === 'json') {
+    const data = paragraphs.map((p) => ({
+      original: p.text,
+      translation: formatTranslationForDisplay(
+        getParagraphTranslationText(p),
+        book,
+        chapterWithContent,
+      ),
+    }));
+    return JSON.stringify({ title: chapterTitle, content: data }, null, 2);
+  }
+  if (type === 'original') {
+    return `${chapterTitle}\n\n${buildOriginalExportBody(paragraphs)}`;
+  }
+  if (type === 'translation') {
+    return `${chapterTitle}\n\n${buildTranslationExportBody(paragraphs, book, chapterWithContent)}`;
+  }
+  return `${chapterTitle}\n\n${buildBilingualExportLines(paragraphs, book, chapterWithContent)}`;
+}
+
+async function performChapterExportAction(
+  content: string,
+  format: 'txt' | 'json' | 'clipboard',
+  chapterTitle: string,
+): Promise<void> {
+  if (format === 'clipboard') {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch (err) {
+      throw new Error(
+        err instanceof Error
+          ? `复制到剪贴板失败：${err.message}`
+          : '复制到剪贴板失败：请重试或检查权限',
+      );
+    }
+    return;
+  }
+  const isWindows =
+    typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
+      ? /Windows/i.test(navigator.userAgent)
+      : false;
+  const fileContent =
+    format === 'txt' && isWindows
+      ? content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
+      : content;
+  const blob = new Blob([fileContent], {
+    type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${chapterTitle}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): boolean {
   if (existing.content === undefined || existing.content === null) return false;
   if (incoming.content === undefined || incoming.content === null) return true;
@@ -2211,215 +2365,15 @@ export class ChapterService {
     format: 'txt' | 'json' | 'clipboard',
     book?: Novel,
   ): Promise<void> {
-    if (!chapter) {
-      throw new Error('章节内容为空，无法导出');
-    }
-
-    // 确保章节内容已加载
+    if (!chapter) throw new Error('章节内容为空，无法导出');
     const chapterWithContent = await this.loadChapterContent(chapter);
-
     if (!chapterWithContent.content || chapterWithContent.content.length === 0) {
       throw new Error('章节内容为空，无法导出');
     }
 
-    // 根据导出类型选择标题（并应用“显示/导出层标题规范化”，不写回标题）
-    // - 译文/双语：与界面显示一致，优先使用翻译标题
-    // - 原文：强制使用原文标题（即使存在翻译标题）
-    let chapterTitle = '';
-    if (type === 'original') {
-      if (!chapter.title) {
-        chapterTitle = '';
-      } else if (typeof chapter.title === 'string') {
-        // 兼容旧数据
-        chapterTitle = chapter.title;
-      } else {
-        chapterTitle = chapter.title.original || '';
-      }
-
-      const normalizeEnabled =
-        chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-      if (normalizeEnabled) {
-        chapterTitle = normalizeChapterTitle(chapterTitle);
-      }
-    } else {
-      chapterTitle = getChapterDisplayTitle(chapter, book);
-    }
-
-    let content = '';
-
-    // 构建导出内容
-    if (format === 'json') {
-      const data = chapterWithContent.content.map((p) => {
-        const translation = getParagraphTranslationText(p);
-        // 应用显示/导出层格式化（不写回译文）
-        const formattedTranslation = formatTranslationForDisplay(
-          translation,
-          book,
-          chapterWithContent,
-        );
-        return {
-          original: p.text,
-          translation: formattedTranslation,
-        };
-      });
-      content = JSON.stringify(
-        {
-          title: chapterTitle,
-          content: data,
-        },
-        null,
-        2,
-      );
-    } else {
-      // 原文导出：保持与应用内“章节文本合并”一致的逻辑（`getChapterContentText`）
-      // 避免导出时额外注入换行，导致在 Word 等软件中出现“回车数暴涨”。
-      if (type === 'original') {
-        // 注意：部分来源的段落 text 可能已经包含末尾换行符（例如爬取/导入数据）。
-        // 如果我们仍然用 '\n' join，会在段落之间“叠加”换行，导致空行数量被放大。
-        // 这里的规则是：只在“当前累计文本末尾不是 \n 且后面还有段落”时补 1 个 '\n' 作为分隔。
-        const body = chapterWithContent.content.reduce((acc, p, idx) => {
-          const text = p.text || '';
-          acc += text;
-
-          const isLast = idx === chapterWithContent.content!.length - 1;
-          if (isLast) return acc;
-
-          // 空段落本身不包含任何字符，但它代表一个段落分隔。
-          // 因此需要显式补 1 个换行，避免空段落在导出中“消失”。
-          if (text.trim() === '') {
-            return `${acc}\n`;
-          }
-
-          // 非空段落：仅当当前累计末尾不是换行时，补 1 个换行作为分隔
-          if (!acc.endsWith('\n')) {
-            return `${acc}\n`;
-          }
-
-          return acc;
-        }, '');
-        content = `${chapterTitle}\n\n${body}`;
-      } else if (type === 'translation') {
-        // 译文导出：在保持原有段落结构的基础上，确保“原文中 n 个空行 → 导出 n+1 个空行”
-        let consecutiveReturnParagraphs = 0;
-        const body = chapterWithContent.content.reduce((acc, paragraph, idx, arr) => {
-          let translation = getParagraphTranslationText(paragraph);
-          translation = formatTranslationForDisplay(translation, book, chapterWithContent) ?? '';
-
-          const isLast = idx === arr.length - 1;
-          const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
-          const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
-
-          let next = acc;
-
-          // 如果前面累计了空段落（代表空行），在遇到下一段非空内容前额外补 1 个换行
-          if (!isReturnParagraph && consecutiveReturnParagraphs > 0) {
-            next += '\n';
-            consecutiveReturnParagraphs = 0;
-          }
-
-          next += translation;
-
-          if (!isLast) {
-            const translationTrailingBreaks = countTrailingLineBreaks(translation);
-            const originalTrailingBreaks = countTrailingLineBreaks(paragraph.text);
-            const targetBreaks = Math.max(originalTrailingBreaks + 1, 1);
-            const missingBreaks = targetBreaks - translationTrailingBreaks;
-
-            if (missingBreaks > 0) {
-              next += '\n'.repeat(missingBreaks);
-            }
-          }
-
-          if (isReturnParagraph) {
-            consecutiveReturnParagraphs++;
-            // 章节末尾如果以空段落结束，同样需要补 1 个换行来满足 n+1 的需求
-            if (isLast) {
-              next += '\n';
-              consecutiveReturnParagraphs = 0;
-            }
-          }
-
-          return next;
-        }, '');
-
-        content = `${chapterTitle}\n\n${body}`;
-      } else {
-        // 双语导出：type 只能是 'bilingual'
-        const lines = chapterWithContent.content.map((p) => {
-          const original = p.text;
-          let translation = getParagraphTranslationText(p);
-
-          // 应用显示/导出层格式化（不写回译文）
-          translation = formatTranslationForDisplay(translation, book, chapterWithContent);
-
-          // 规范化换行符：确保翻译文本的换行符数量与原文一致
-          // 如果原文没有换行符，翻译也不应有
-          // 如果原文末尾有换行符，翻译也应有
-          let normalizedTranslation = translation || original;
-
-          // 检测原文末尾的换行符数量
-          const originalTrailingNewlines = countTrailingLineBreaks(original);
-          // 移除翻译末尾的所有换行符
-          normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
-          // 添加与原文相同数量的换行符
-          normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
-
-          // 双语导出：返回原文和翻译的组合
-          return `${original}\n${normalizedTranslation}\n`;
-        });
-        // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
-        const processedLines = lines.map((line) => {
-          const trimmed = line.trim();
-          if (trimmed === '') {
-            // 空行替换为两个换行符
-            return '\n\n';
-          }
-
-          // 非空行：确保以至少一个换行符结尾
-          // 如果末尾已有换行符，保持不变；否则添加一个换行符
-          return line.endsWith('\n') ? line : `${line}\n`;
-        });
-        // 使用空字符串连接，因为每行已包含必要的换行符
-        content = `${chapterTitle}\n\n${processedLines.join('')}`;
-      }
-    }
-
-    // 执行导出动作
-    if (format === 'clipboard') {
-      try {
-        await navigator.clipboard.writeText(content);
-      } catch (err) {
-        throw new Error(
-          err instanceof Error
-            ? `复制到剪贴板失败：${err.message}`
-            : '复制到剪贴板失败：请重试或检查权限',
-        );
-      }
-    } else {
-      // Windows 下不少文本查看器（如记事本）要求 CRLF 才能正确显示换行。
-      // 剪贴板粘贴通常会自动处理，但下载的 txt 文件需要我们主动转换。
-      const isWindows =
-        typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
-          ? /Windows/i.test(navigator.userAgent)
-          : false;
-
-      const fileContent =
-        format === 'txt' && isWindows
-          ? content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
-          : content;
-
-      const blob = new Blob([fileContent], {
-        type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8',
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${chapterTitle}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
+    const chapterTitle = resolveExportChapterTitle(chapter, type, book);
+    const content = buildExportChapterContent(chapterWithContent, chapterTitle, type, format, book);
+    await performChapterExportAction(content, format, chapterTitle);
   }
 
   // --- 懒加载相关方法 ---
