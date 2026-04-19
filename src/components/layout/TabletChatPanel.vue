@@ -13,17 +13,16 @@ import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPop
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
 import { useUiStore } from 'src/stores/ui';
-import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
+import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
 
 const ui = useUiStore();
 
+// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，
+// Mobile 变体也走同一份 helper，保持两边行为一致。
 const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  sessionListPopoverRef,
-  actionPopoverRef,
-  groupedActionPopoverRef,
   logoPath,
   messages,
   inputMessage,
@@ -55,17 +54,10 @@ const {
   toggleGroupedActionPopover,
   handleGroupedActionMouseLeave,
   handleGroupedActionPopoverHide,
-} = useRightPanel();
-
-const bindSessionListRef = (el: unknown) => {
-  sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
-};
-const bindActionPopoverRef = (el: unknown) => {
-  actionPopoverRef.value = el as typeof actionPopoverRef.value;
-};
-const bindGroupedActionPopoverRef = (el: unknown) => {
-  groupedActionPopoverRef.value = el as typeof groupedActionPopoverRef.value;
-};
+  bindSessionListRef,
+  bindActionPopoverRef,
+  bindGroupedActionPopoverRef,
+} = useChatPanelSetup();
 
 const close = () => ui.closeRightPanel();
 </script>
