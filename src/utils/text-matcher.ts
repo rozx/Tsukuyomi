@@ -34,7 +34,7 @@ export interface FuriganaMapResult {
  * @param text 原始文本
  * @returns { textWithoutFurigana: string, positionMap: number[], lengthMap: number[] }
  */
-export function removeFuriganaWithMap(text: string): FuriganaMapResult {
+function removeFuriganaWithMap(text: string): FuriganaMapResult {
   const textWithoutFurigana: string[] = [];
   const positionMap: number[] = []; // 去除注音后文本中的每个位置对应的原始文本位置
   const lengthMap: number[] = []; // 去除注音后文本中的每个位置对应的原始文本长度
@@ -689,7 +689,7 @@ export function findUniqueCharactersInText(
  * @param names 名称列表
  * @returns 出现次数
  */
-export function countNamesInText(text: string, names: string[]): number {
+function countNamesInText(text: string, names: string[]): number {
   if (!text || !names || names.length === 0) return 0;
 
   // 过滤空值并按长度降序排序

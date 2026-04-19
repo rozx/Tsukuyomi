@@ -23,7 +23,7 @@ export interface DeprecatedAttachmentRef {
  * @param limit 返回的记忆数量限制（默认 5）
  * @returns 简化的记忆数组（只包含 id 和 summary）
  */
-export async function searchRelatedMemories(
+async function searchRelatedMemories(
   bookId: string,
   keywords: string[],
   limit: number = 5,

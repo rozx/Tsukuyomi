@@ -29,7 +29,7 @@ export interface FormattedMessagePart {
  * 状态切换标记：由 task-runner 在思考流中注入，UI 解析后渲染为特殊分隔条
  * 格式与 {@link buildStateTransitionMarker} 一一对应，修改时必须同步调整
  */
-export const STATE_TRANSITION_PATTERN = /\[状态切换: (\w+) → (\w+)\]/g;
+const STATE_TRANSITION_PATTERN = /\[状态切换: (\w+) → (\w+)\]/g;
 
 /**
  * 构造状态切换标记。使用此函数而非手写字符串以避免与解析正则漂移
@@ -104,7 +104,7 @@ function extractBracketBalancedMarkerMatches(
 
 // ─── 公共工具函数 ───
 
-export function detectToolResultTone(toolResult: string): ToolResultTone {
+function detectToolResultTone(toolResult: string): ToolResultTone {
   const trimmed = toolResult.trim();
   if (!trimmed) return 'warning';
 
@@ -126,13 +126,13 @@ export function detectToolResultTone(toolResult: string): ToolResultTone {
   return 'success';
 }
 
-export function formatToolResultPreview(toolResult: string): string {
+function formatToolResultPreview(toolResult: string): string {
   const compact = toolResult.replace(/\s+/g, ' ').trim();
   if (compact.length <= 100) return compact;
   return `${compact.slice(0, 100)}...`;
 }
 
-export function formatToolResultTooltip(toolResult: string): string {
+function formatToolResultTooltip(toolResult: string): string {
   const trimmed = toolResult.trim();
   if (!trimmed) return '';
   try {

@@ -594,7 +594,7 @@ export async function migrateFromLocalStorage(): Promise<void> {
 /**
  * 清空所有 IndexedDB 数据（用于测试/重置）
  */
-export async function clearAllData(): Promise<void> {
+async function clearAllData(): Promise<void> {
   const db = await getDB();
   const storeNames = [
     'books',

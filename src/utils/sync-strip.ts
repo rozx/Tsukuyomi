@@ -13,7 +13,7 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
  * 1. 计算 manifest hash（确保相同内容产生相同 hash，不受 embedding 填充进度影响）
  * 2. 上传到 Gist（远端不需要本地 embedding）
  */
-export function stripMemoryLocalFields(memory: Memory): Memory {
+function stripMemoryLocalFields(memory: Memory): Memory {
   if (!memory || typeof memory !== 'object') return memory;
    
   const { embedding: _e, embeddingModel: _em, ...rest } = memory as Memory & {
@@ -62,7 +62,7 @@ export function stripNovelLocalFields(novel: Novel): Novel {
  * `MemoryService.getAllMemories` 按 `lastAccessedAt` 排序，每次读写都可能改变顺序，
  * 会导致同内容不同哈希。同步路径统一用 id 排序消除这一不稳定性。
  */
-export function sortMemoriesById(memories: Memory[]): Memory[] {
+function sortMemoriesById(memories: Memory[]): Memory[] {
   return [...memories].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

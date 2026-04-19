@@ -5,13 +5,13 @@
 /**
  * 默认的上下文窗口使用比例（用于估算 maxInputTokens）
  */
-export const DEFAULT_CONTEXT_WINDOW_RATIO = 0.8;
+const DEFAULT_CONTEXT_WINDOW_RATIO = 0.8;
 
 /**
  * 默认的最大输出 token 数（用于配置请求）
  * 增加此值以确保配置 JSON 响应不会被截断
  */
-export const DEFAULT_MAX_OUTPUT_TOKENS = 1000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 1000;
 
 /**
  * 默认的温度值（用于配置请求）
@@ -34,7 +34,7 @@ export const OPENAI_MAX_TOKENS_LIMIT = 65536;
  * 配置中允许的最大 token 数（用于 UI 和配置）
  * 实际发送到 API 时会根据 API 限制进行限制
  */
-export const CONFIG_MAX_TOKENS_LIMIT = 1_000_000;
+const CONFIG_MAX_TOKENS_LIMIT = 1_000_000;
 
 /**
  * AI 任务类型标签映射

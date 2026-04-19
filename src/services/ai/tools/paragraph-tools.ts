@@ -69,7 +69,7 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
-export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
+function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
   if (!text || !keyword) {
     return text;
   }

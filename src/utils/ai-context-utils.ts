@@ -105,7 +105,7 @@ const buildAssistantSystemPromptForStats = (
   return { prompt: systemPrompt, tools };
 };
 
-export const buildAssistantStatsMessages = (params: AssistantStatsParams): AIChatMessage[] => {
+const buildAssistantStatsMessages = (params: AssistantStatsParams): AIChatMessage[] => {
   const { context, session, currentMessages, includeToolSchemas = true } = params;
   const { prompt, tools } = buildAssistantSystemPromptForStats(context, session);
   const history =

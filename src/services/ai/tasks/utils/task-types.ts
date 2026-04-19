@@ -11,7 +11,7 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
  */
 export type TaskStatus = AIWorkflowStatus;
 
-export const VALID_TASK_STATUSES: TaskStatus[] = [
+const VALID_TASK_STATUSES: TaskStatus[] = [
   'planning',
   'preparing',
   'working',

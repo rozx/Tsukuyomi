@@ -5,10 +5,5 @@ export { NovelScraperFactory } from './novel-scraper-factory';
 export type { NovelScraper, FetchNovelResult, ScraperType } from 'src/services/scraper/types';
 
 // 导出具体实现（供需要时直接使用）
-export { SyosetuScraper } from './scrapers';
-export { KakuyomuScraper } from './scrapers';
-export { NcodeSyosetuScraper } from './scrapers';
-export { Novel18SyosetuScraper } from './scrapers';
-export { BaseScraper } from './core';
 export { ScraperService } from './services';
 export type { ChapterContentResult, BatchFetchResult } from './services';

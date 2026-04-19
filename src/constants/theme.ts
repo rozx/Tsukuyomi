@@ -111,7 +111,7 @@ export const Theme = {
  * Tailwind CSS 工具类映射
  * 这些类名可以在组件中直接使用
  */
-export const ThemeClasses = {
+const ThemeClasses = {
   // 背景
   bgCard: 'bg-night-900/50',
   bgCardLight: 'bg-white/5',

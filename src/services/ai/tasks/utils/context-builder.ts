@@ -696,7 +696,7 @@ export function getSpecialInstructions(
  * @param allParagraphs 全章段落数组
  * @param count 前后各取多少段（默认 3）
  */
-export function buildSurroundingParagraphsContext(
+function buildSurroundingParagraphsContext(
   currentParagraphId: string,
   allParagraphs: Paragraph[],
   count: number = 3,
@@ -736,7 +736,7 @@ export function buildSurroundingParagraphsContext(
  * 构建章节角色上下文（用于单段落润色/校对）
  * @param characters 本章出场的角色列表
  */
-export function buildChapterCharactersContext(characters: CharacterSetting[]): string {
+function buildChapterCharactersContext(characters: CharacterSetting[]): string {
   if (!characters || characters.length === 0) return '';
 
   const sexLabels: Record<string, string> = {

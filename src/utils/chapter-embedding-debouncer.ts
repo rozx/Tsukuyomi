@@ -14,11 +14,11 @@ const DEFAULT_DEBOUNCE_MS = 60_000;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 let debounceMs = DEFAULT_DEBOUNCE_MS;
 
-export function setDebounceMsForTesting(ms: number): void {
+function setDebounceMsForTesting(ms: number): void {
   debounceMs = ms;
 }
 
-export function resetDebounceMsForTesting(): void {
+function resetDebounceMsForTesting(): void {
   debounceMs = DEFAULT_DEBOUNCE_MS;
 }
 
@@ -44,7 +44,7 @@ export function markChapterDirty(chapterId: string): void {
 /**
  * 取消防抖(通常用于章节被删除)。
  */
-export function cancelChapterDirty(chapterId: string): void {
+function cancelChapterDirty(chapterId: string): void {
   if (!chapterId) return;
   const existing = timers.get(chapterId);
   if (existing) {
@@ -57,7 +57,7 @@ export function cancelChapterDirty(chapterId: string): void {
  * 立即触发某章节的防抖(不等待)。
  * 供测试或用户显式刷新使用。
  */
-export function flushChapterDirty(chapterId: string): void {
+function flushChapterDirty(chapterId: string): void {
   if (!chapterId) return;
   const existing = timers.get(chapterId);
   if (!existing) return;
@@ -70,7 +70,7 @@ export function flushChapterDirty(chapterId: string): void {
   }
 }
 
-export function __resetForTesting(): void {
+function __resetForTesting(): void {
   for (const handle of timers.values()) clearTimeout(handle);
   timers.clear();
   debounceMs = DEFAULT_DEBOUNCE_MS;

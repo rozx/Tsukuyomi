@@ -35,7 +35,7 @@ export function serializeDates<T>(obj: T): T {
  * 日期字段白名单——只有这些键的字符串值会在反序列化时转换回 Date。
  * 避免误将小说内容或消息正文里的日期字符串转换。
  */
-export const DATE_FIELD_NAMES = new Set<string>([
+const DATE_FIELD_NAMES = new Set<string>([
   'lastEdited',
   'createdAt',
   'addedAt',

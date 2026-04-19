@@ -10,7 +10,7 @@ import { TASK_TYPE_LABELS, type TaskType } from './task-types';
  * @param taskType 任务类型
  * @returns AI 模型
  */
-export async function getAIModelForTask(
+async function getAIModelForTask(
   bookId: string,
   taskType: 'translation' | 'polish' | 'proofreading' | 'termsTranslation',
 ): Promise<AIModel> {

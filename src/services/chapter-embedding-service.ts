@@ -235,7 +235,7 @@ export const CHUNK_TARGET_CHARS = 400;
  * 与 MODEL_VERSION 分离的目的:memory 也用 MODEL_VERSION,但 memory 没有 chunking
  * 概念。chapter chunking 改动不应触发 memory 重嵌。
  */
-export const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs400';
+const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs400';
 /**
  * 章节嵌入实际使用的版本号 = MODEL_VERSION + chunking version。
  * `writeChunksForChapter` 写入此值;`queryChapters` / `findChaptersNeedingEmbedding`
@@ -264,13 +264,13 @@ export const TITLE_CHUNK_INDEX = 0;
 // 与 [memory-scoring.ts] 的 SCORING_WEIGHTS(0.6/0.3/0.1)同源 — 这里去掉 recency
 // 那 0.1 重分配到 semantic(章节级 query 没有"新近性"概念,recency 不适用)。
 /** 章节级 semantic 在最终 total 中的权重 */
-export const CHAPTER_SEMANTIC_WEIGHT = 0.65;
+const CHAPTER_SEMANTIC_WEIGHT = 0.65;
 /** 章节级 keyword 在最终 total 中的权重 */
-export const CHAPTER_KEYWORD_WEIGHT = 0.35;
+const CHAPTER_KEYWORD_WEIGHT = 0.35;
 /** Title 字面命中权重(强信号 — 章节真就叫这个名;加性公式里仍是 1.0 满权重) */
-export const TITLE_KW_WEIGHT = 1.0;
+const TITLE_KW_WEIGHT = 1.0;
 /** content_top_k_mean 取前 K 个 content chunk 的均值,K = min(CONTENT_TOP_K, 实际数量) */
-export const CONTENT_TOP_K = 3;
+const CONTENT_TOP_K = 3;
 /**
  * Content 通道融合权重 — content_semantic = α × content_max + (1-α) × content_top_k_mean
  *
@@ -281,7 +281,7 @@ export const CONTENT_TOP_K = 3;
  * α = 0.6 偏向 max,保留"单段强命中"的检索效果(用户反馈已生效的场景);
  * 0.4 给 top_k_mean,提升"整章中等命中"的章节排名。
  */
-export const CONTENT_MAX_BLEND_ALPHA = 0.6;
+const CONTENT_MAX_BLEND_ALPHA = 0.6;
 /**
  * 专名命中加权系数。query unit 出现在书的专名表(terminologies + characterSettings + aliases
  * 双语)里时,该 unit 的命中分乘以此系数(再 clamp 到 [0, 1])。让"夏洛特"、"莉莉花园"
@@ -290,14 +290,14 @@ export const CONTENT_MAX_BLEND_ALPHA = 0.6;
  * 2.0 是经验值:足够把"全是泛词"的命中和"含一两个专名"的命中分开,但不会把
  * 单个专名命中放大到完全压制其它信号(clamp [0,1] 兜底)。
  */
-export const PROPER_NOUN_BOOST = 2.0;
+const PROPER_NOUN_BOOST = 2.0;
 /**
  * Identifier(章节序号 / 卷号:阿拉伯数字、中文数字、圈号 ①-⑳、罗马数字 Ⅰ-Ⅹ)
  * 命中加权系数。比专名更强,因为 identifier 通常表示用户想精确命中某一章。
  *
  * 配合 IDENTIFIER_MISMATCH_PENALTY 使用:identifier 命中时大幅加分,反之大幅减分。
  */
-export const IDENTIFIER_BOOST = 3.0;
+const IDENTIFIER_BOOST = 3.0;
 /**
  * 当 query 含 identifier 但候选章节标题(含卷标题)缺该 identifier 时,
  * 整章 total score 乘以此系数(强降权但不归零,留给"用户记错章号"等模糊场景兜底)。
@@ -305,9 +305,9 @@ export const IDENTIFIER_BOOST = 3.0;
  * 0.3 经验值:足够让"83 星天 ⑥" 类 query 把"星天 ⑤"压到正确"星天 ⑥"之下,
  * 又不会硬过滤掉所有非完美匹配。
  */
-export const IDENTIFIER_MISMATCH_PENALTY = 0.3;
+const IDENTIFIER_MISMATCH_PENALTY = 0.3;
 /** Title + content keyword 加性融合的 content 加成系数(round 2 改为加性 cap 1.0) */
-export const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
+const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
 /**
  * IDF 加权下界 — 即便单元出现在每一章(idf=0),也保留 IDF_FLOOR 的最低权重
  * 而不是把命中分压到 0;同时 1.0 + (1 - IDF_FLOOR) × idf 让最稀有单元 (idf=1) 拿
@@ -316,13 +316,13 @@ export const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
  * 实施在 [memory-scoring.ts] 内:`multiplier = 0.5 + 1.5 × idf`,即 IDF_FLOOR = 0.5。
  * 这里只放注释说明数值含义;memory-scoring 才是事实源。
  */
-export const IDF_FLOOR_FOR_DOC = 0.5;
+const IDF_FLOOR_FOR_DOC = 0.5;
 
 /**
  * IDB 复合 key 工厂。集中在一处避免多处手写出错。
  * v11 后所有新写入都用复合 key;v10 旧 key 已在 upgrade 里 migrate。
  */
-export function chunkKey(
+function chunkKey(
   chapterId: string,
   kind: ChapterEmbeddingKind,
   chunkIndex: number,

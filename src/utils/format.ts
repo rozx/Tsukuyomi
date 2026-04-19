@@ -3,7 +3,7 @@
  * @param count 数字
  * @returns 格式化后的字符串（如：1.5k, 10.2万）
  */
-export function formatNumber(count: number | null): string {
+function formatNumber(count: number | null): string {
   if (count === null) return '-';
   if (count === 0) return '0';
   if (count < 1000) return count.toString();

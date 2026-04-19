@@ -2,7 +2,7 @@ import { getDB } from 'src/utils/indexed-db';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import { cloneDeep } from 'lodash';
 
-export class AIModelService {
+class AIModelService {
   /**
    * 获取所有 AI 模型
    */

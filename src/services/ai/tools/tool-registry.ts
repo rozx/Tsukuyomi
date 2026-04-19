@@ -1,6 +1,12 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
-import type { ActionInfo, ToolDefinition, ChunkBoundaries } from './types';
+import type { ActionInfo, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
+import {
+  buildErrorToolResult,
+  buildUnknownToolResult,
+  invokeToolHandler,
+  type HandleToolCallOptions,
+} from './tool-call-invoker';
 import { terminologyTools } from './terminology-tools';
 import { characterTools } from './character-tools';
 import { paragraphTools } from './paragraph-tools';
@@ -16,7 +22,6 @@ import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
-import { jsonrepair } from 'jsonrepair';
 
 /** 依赖本地嵌入的工具 —— 总开关 OFF / 手机端时从可用集合里整体剔除 */
 const EMBEDDING_DEPENDENT_TOOL_NAMES = ['query_chapter'] as const;
@@ -339,120 +344,43 @@ export class ToolRegistry {
     onToast?: ToastCallback,
     taskId?: string,
     sessionId?: string,
-    paragraphIds?: string[], // 当前块的段落 ID 列表，用于边界限制
+    paragraphIds?: string[],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aiProcessingStore?: any, // AI 处理 Store，用于任务状态工具
+    aiProcessingStore?: any,
     aiModelId?: string,
-    chunkIndex?: number, // 当前块索引，用于 review 检查跳过非首块的标题验证
-    submittedParagraphIds?: Set<string>, // 已提交的段落 ID 集合，用于计算剩余 chunk 大小
-    accumulatedParagraphs?: Map<string, string>, // 当前 session 已积累的翻译内存，用于 review 完整性检查
-    enableOriginalTextValidation?: boolean, // 是否启用原文校验
+    chunkIndex?: number,
+    submittedParagraphIds?: Set<string>,
+    accumulatedParagraphs?: Map<string, string>,
+    enableOriginalTextValidation?: boolean,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
-    const allTools = this.getAllToolDefinitions();
-    const tool = allTools.find((t) => t.definition.function.name === functionName);
+    const tool = this.getAllToolDefinitions().find(
+      (t) => t.definition.function.name === functionName,
+    );
 
     if (!tool) {
-      console.warn(`[ToolRegistry] ⚠️ 未知的工具: ${functionName}`);
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        name: functionName,
-        content: JSON.stringify({
-          success: false,
-          error: `未知的工具: ${functionName}`,
-        }),
-      };
+      return buildUnknownToolResult(toolCall);
     }
 
+    const options: HandleToolCallOptions = {
+      bookId,
+      ...(onAction ? { onAction } : {}),
+      ...(onToast ? { onToast } : {}),
+      ...(taskId ? { taskId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(paragraphIds ? { paragraphIds } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+      ...(aiModelId ? { aiModelId } : {}),
+      ...(chunkIndex !== undefined ? { chunkIndex } : {}),
+      ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
+      ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
+      ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}),
+    };
+
     try {
-      let args;
-      try {
-        args = JSON.parse(toolCall.function.arguments);
-      } catch (e) {
-        // 尝试使用 jsonrepair 修复格式错误的 JSON
-        // 某些 AI 模型（如 Yi/Minimax）可能生成格式不正确的 JSON
-        try {
-          const repairedJson = jsonrepair(toolCall.function.arguments);
-          args = JSON.parse(repairedJson);
-          console.log(`[ToolRegistry] 🔧 使用 jsonrepair 修复了格式错误的 JSON [${functionName}]`);
-        } catch (repairError) {
-          const errorMsg = `无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`;
-          console.error(
-            `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
-            errorMsg,
-            '\n原始参数:',
-            toolCall.function.arguments,
-          );
-          throw new Error(errorMsg);
-        }
-      }
-
-      // 记录工具调用开始
-      const argsPreview = JSON.stringify(args);
-      const argsDisplay =
-        argsPreview.length > 200 ? argsPreview.substring(0, 200) + '...' : argsPreview;
-      console.log(
-        `[ToolRegistry] 🔧 AI 调用工具: ${functionName}${bookId ? ` (bookId: ${bookId})` : ''}`,
-        argsDisplay,
-      );
-
-      // 构建块边界信息（如果提供了 paragraphIds）
-      let chunkBoundaries: ChunkBoundaries | undefined;
-      if (paragraphIds && paragraphIds.length > 0) {
-        chunkBoundaries = {
-          allowedParagraphIds: new Set(paragraphIds),
-          paragraphIds: paragraphIds, // 保留顺序数组用于计算剩余段落
-          firstParagraphId: paragraphIds[0]!,
-          lastParagraphId: paragraphIds[paragraphIds.length - 1]!,
-        };
-      }
-
-      // 将 taskId 和 sessionId 传递给工具上下文（由服务层自动提供）
-      const result = await tool.handler(args, {
-        ...(bookId ? { bookId } : {}),
-        ...(taskId ? { taskId } : {}),
-        ...(sessionId ? { sessionId } : {}),
-        ...(aiModelId ? { aiModelId } : {}),
-        ...(onAction ? { onAction } : {}),
-        ...(onToast ? { onToast } : {}),
-        ...(chunkBoundaries ? { chunkBoundaries } : {}),
-        ...(aiProcessingStore ? { aiProcessingStore } : {}),
-        ...(chunkIndex !== undefined ? { chunkIndex } : {}),
-        ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
-        ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
-        ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}),
-      });
-
-      // 记录工具调用成功
-      const resultPreview =
-        typeof result === 'string'
-          ? result.length > 200
-            ? result.substring(0, 200) + '...'
-            : result
-          : JSON.stringify(result).length > 200
-            ? JSON.stringify(result).substring(0, 200) + '...'
-            : JSON.stringify(result);
-      console.log(`[ToolRegistry] ✅ 工具调用成功 [${functionName}]:`, resultPreview);
-
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        name: functionName,
-        content: result,
-      };
+      return await invokeToolHandler(tool, toolCall, options);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        name: functionName,
-        content: JSON.stringify({
-          success: false,
-          error: errorMsg,
-        }),
-      };
+      return buildErrorToolResult(toolCall, error);
     }
   }
 }

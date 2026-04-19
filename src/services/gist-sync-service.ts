@@ -23,7 +23,7 @@ import {
 /**
  * Gist 文件名称常量
  */
-export const GIST_FILE_NAMES = {
+const GIST_FILE_NAMES = {
   SETTINGS: 'tsukuyomi-settings.json',
   NOVEL_PREFIX: 'novel-',
   NOVEL_CHUNK_PREFIX: 'novel-chunk-',
@@ -42,7 +42,7 @@ export const GIST_FILE_NAMES = {
  * @param fileName 文件名
  * @returns 书籍 ID，如果不是分块文件则返回 null
  */
-export function extractNovelIdFromChunkFileName(fileName: string): string | null {
+function extractNovelIdFromChunkFileName(fileName: string): string | null {
   if (!fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
     return null;
   }

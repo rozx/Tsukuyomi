@@ -9,7 +9,7 @@
  * @param ms 延迟时间（毫秒），默认 0
  * @returns Promise，在指定时间后解析
  */
-export function yieldToEventLoop(ms: number = 0): Promise<void> {
+function yieldToEventLoop(ms: number = 0): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
@@ -23,7 +23,7 @@ export function yieldToEventLoop(ms: number = 0): Promise<void> {
  * @param yieldMs 每批之间的延迟时间（毫秒），默认 0
  * @returns Promise，在所有批次处理完成后解析
  */
-export async function processInBatches<T, R>(
+async function processInBatches<T, R>(
   items: T[],
   processor: (batch: T[], startIndex: number) => Promise<R> | R,
   batchSize: number = 5,

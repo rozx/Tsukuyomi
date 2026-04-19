@@ -32,8 +32,8 @@ export const DEFAULT_MIN_SCORE = 0.3;
  *
  * 值按经验选定 — 可通过调用 filterByRelativeRanking 覆写。
  */
-export const DEFAULT_TOP_K = 8;
-export const DEFAULT_RELATIVE_DELTA = 0.08;
+const DEFAULT_TOP_K = 8;
+const DEFAULT_RELATIVE_DELTA = 0.08;
 
 /**
  * 语义 spread 的下限阈值。
@@ -172,7 +172,7 @@ export function isIdentifierUnit(unit: string): boolean {
  *    "他和芬恩是什么关系"]
  */
 const COMPOUND_SPLIT_RE = /[，,、；;。？?！!\s]+/;
-export function splitCompoundQuery(query: string): string[] {
+function splitCompoundQuery(query: string): string[] {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const parts = trimmed.split(COMPOUND_SPLIT_RE).filter((p) => p.length >= 2);

@@ -10,7 +10,7 @@ import { normalizeTranslationSymbols } from './translation-normalizer';
  * @param chapter 章节对象（可选，用于获取章节级别的设置，优先级高于书籍级别）
  * @returns 过滤后的翻译文本
  */
-export function filterIndents(
+function filterIndents(
   translation: string,
   book?: Novel,
   chapter?: Chapter,

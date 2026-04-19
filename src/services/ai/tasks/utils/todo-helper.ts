@@ -37,7 +37,7 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
  * @param taskDescription 任务描述
  * @param taskId 任务 ID（必需）
  */
-export function createTaskTodo(
+function createTaskTodo(
   taskType: 'translation' | 'polish' | 'proofreading' | 'assistant',
   taskDescription: string,
   taskId: string,
@@ -57,7 +57,7 @@ export function createTaskTodo(
 /**
  * 查找并标记相关的待办事项为完成
  */
-export function markRelatedTodosDone(
+function markRelatedTodosDone(
   taskType: 'translation' | 'polish' | 'proofreading' | 'assistant',
   taskDescription?: string,
 ): void {
@@ -132,7 +132,7 @@ export function getPostToolCallReminder(
  * 获取待办事项的简要列表（用于添加到提示词）
  * @param taskId 任务 ID（必需）
  */
-export function getTodosSummary(taskId: string): string {
+function getTodosSummary(taskId: string): string {
   if (!taskId) {
     return '当前无待办事项。';
   }

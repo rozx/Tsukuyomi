@@ -1,6 +1,5 @@
 export { generateShortId, UniqueIdGenerator, extractIds } from './id-generator';
-export { runWithConcurrencyLimit } from './concurrency';
-export { formatNumber, formatCharCount, formatWordCount } from './format';
+export { formatCharCount, formatWordCount } from './format';
 export {
   getChapterCharCount,
   getChapterCharCountAsync,
@@ -18,8 +17,8 @@ export {
   hasParagraphTranslation,
   ensureChapterContentLoaded,
 } from './novel-utils';
-export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
-export { filterIndents, formatTranslationForDisplay } from './translation-utils';
+export { normalizeTranslationQuotes } from './translation-normalizer';
+export { formatTranslationForDisplay } from './translation-utils';
 export {
   escapeRegex,
   matchTermsInText,
@@ -31,7 +30,6 @@ export {
   calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
-export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export {
   isEmptyOrSymbolOnly,
@@ -42,6 +40,5 @@ export {
   filterChangedParagraphs,
   reconstructChunkText,
 } from './text-utils';
-export { isTimeDifferent, isNewlyAdded, formatTaskDuration } from './time-utils';
-export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
-export { extractRootDomain } from './domain-utils';
+export { formatTaskDuration } from './time-utils';
+export { processItemsInBatches } from './yield';
