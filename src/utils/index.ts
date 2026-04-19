@@ -3,40 +3,27 @@ export { formatCharCount, formatWordCount } from './format';
 export {
   getChapterCharCount,
   getChapterCharCountAsync,
-  getVolumeCharCount,
-  getVolumeCharCountAsync,
   getNovelCharCount,
   getNovelCharCountAsync,
   getTotalChapters,
   getChapterContentText,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
-  normalizeChapterTitle,
-  getCharacterNameVariants,
-  isEmptyParagraph,
   hasParagraphTranslation,
   ensureChapterContentLoaded,
 } from './novel-utils';
 export { normalizeTranslationQuotes } from './translation-normalizer';
 export { formatTranslationForDisplay } from './translation-utils';
 export {
-  escapeRegex,
-  matchTermsInText,
-  matchCharactersInText,
-  parseTextForHighlighting,
   findUniqueTermsInText,
   findUniqueCharactersInText,
-  countNamesInText,
-  calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export {
-  isEmptyOrSymbolOnly,
-  isSymbolOnly,
+  isEmptyParagraph,
   getSelectedTranslation,
   buildOriginalTranslationsMap,
-  hasTranslationChanged,
   filterChangedParagraphs,
   reconstructChunkText,
 } from './text-utils';

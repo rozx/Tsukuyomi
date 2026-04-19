@@ -43,9 +43,9 @@ global.document = {
   getElementById: mockGetElementById,
 } as any;
 
-// Mock isEmptyParagraph
-const mockIsEmptyParagraph = mock((paragraph: Paragraph) => {
-  return !paragraph.text || paragraph.text.trim() === '';
+// Mock isEmptyParagraph（text-utils 版本：签名接收 string | null | undefined）
+const mockIsEmptyParagraph = mock((text: string | null | undefined) => {
+  return !text || text.trim() === '';
 });
 
 // Helper functions

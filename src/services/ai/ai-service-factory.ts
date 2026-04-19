@@ -3,9 +3,6 @@ import type {
   AIService,
   AIServiceConfig,
   AIConfigResult,
-  TextGenerationRequest,
-  TextGenerationResult,
-  TextGenerationStreamCallback,
   AvailableModelsResult,
 } from 'src/services/ai/types/ai-service';
 import { OpenAIService } from 'src/services/ai/providers/openai-service';
@@ -39,24 +36,6 @@ export class AIServiceFactory {
   static async getConfig(provider: AIProvider, config: AIServiceConfig): Promise<AIConfigResult> {
     const service = this.getService(provider);
     return service.getConfig(config);
-  }
-
-  /**
-   * 生成文本（流式模式，统一接口）
-   * @param provider AI 提供商
-   * @param config 服务配置
-   * @param request 文本生成请求
-   * @param onChunk 流式数据回调函数，每次收到数据块时调用
-   * @returns 生成的完整文本结果
-   */
-  static async generateText(
-    provider: AIProvider,
-    config: AIServiceConfig,
-    request: TextGenerationRequest,
-    onChunk?: TextGenerationStreamCallback,
-  ): Promise<TextGenerationResult> {
-    const service = this.getService(provider);
-    return service.generateText(config, request, onChunk);
   }
 
   /**

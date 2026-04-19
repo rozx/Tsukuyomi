@@ -233,20 +233,6 @@ export class TodoListService {
   }
 
   /**
-   * 删除所有已完成的待办事项
-   */
-  static deleteCompletedTodos(): number {
-    const todos = this.getAllTodos();
-    const completedCount = todos.filter((todo) => todo.status === 'done').length;
-    const activeTodos = todos.filter((todo) => todo.status !== 'done');
-
-    saveTodosToStorage(activeTodos);
-
-    console.log(`[TodoListService] 删除 ${completedCount} 个已完成的待办事项`);
-    return completedCount;
-  }
-
-  /**
    * 清空所有待办事项
    */
   static clearAllTodos(): void {

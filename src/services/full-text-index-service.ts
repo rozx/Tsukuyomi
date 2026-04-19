@@ -2,7 +2,7 @@ import Fuse from 'fuse.js';
 import { getDB } from 'src/utils/indexed-db';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { BookService } from 'src/services/book-service';
-import type { Novel, Chapter, Paragraph } from 'src/models/novel';
+import type { Novel, Chapter } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/services/chapter-service';
 import { ChapterService } from 'src/services/chapter-service';
 
@@ -456,19 +456,7 @@ export class FullTextIndexService {
   /**
    * 更新索引（当章节内容改变时）
    */
-  static async updateIndexForChapter(bookId: string, chapterId: string): Promise<void> {
-    // 使索引失效，下次搜索时重建
-    await this.invalidateIndex(bookId);
-  }
-
-  /**
-   * 更新索引（当段落内容改变时）
-   */
-  static async updateIndexForParagraph(
-    bookId: string,
-    chapterId: string,
-    paragraphId: string,
-  ): Promise<void> {
+  static async updateIndexForChapter(bookId: string, _chapterId: string): Promise<void> {
     // 使索引失效，下次搜索时重建
     await this.invalidateIndex(bookId);
   }
@@ -499,17 +487,4 @@ export class FullTextIndexService {
     }
   }
 
-  /**
-   * 清除索引（从内存和 IndexedDB）
-   */
-  static async clearIndex(bookId: string): Promise<void> {
-    await this.invalidateIndex(bookId);
-  }
-
-  /**
-   * 清除所有缓存
-   */
-  static clearAllCache(): void {
-    this.indexCache.clear();
-  }
 }

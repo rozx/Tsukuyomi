@@ -265,36 +265,4 @@ export class BookService {
     await ChapterContentService.clearAllChapterContent();
   }
 
-  /**
-   * 加载指定章节的内容
-   * @param book 小说对象
-   * @param chapterId 章节 ID
-   * @returns 包含内容的章节对象，如果找不到则返回 undefined
-   */
-  static async loadChapterContent(book: Novel, chapterId: string): Promise<Chapter | undefined> {
-    if (!book.volumes) return undefined;
-
-    // 查找章节
-    for (const volume of book.volumes) {
-      if (volume.chapters) {
-        const chapter = volume.chapters.find((ch) => ch.id === chapterId);
-        if (chapter) {
-          // 如果内容已加载，直接返回
-          if (chapter.content !== undefined) {
-            return chapter;
-          }
-
-          // 从独立存储加载内容
-          const content = await ChapterContentService.loadChapterContent(chapterId);
-          return {
-            ...chapter,
-            content: content || [],
-            contentLoaded: true,
-          };
-        }
-      }
-    }
-
-    return undefined;
-  }
 }

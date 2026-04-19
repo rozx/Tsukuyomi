@@ -1,20 +1,10 @@
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 import { extractRootDomain } from 'src/utils/domain-utils';
 import { isElectron } from 'src/utils/platform';
-import co from 'co';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
-
-/**
- * 获取代理显示名称
- */
-function getProxyDisplayName(proxyUrl: string): string {
-  const proxyList = GlobalConfig.getProxyList();
-  const proxy = proxyList.find((p) => p.url === proxyUrl);
-  return proxy ? proxy.name : proxyUrl;
-}
 
 const INTERNAL_PROXY_HOSTS: Record<string, string> = {
   'kakuyomu.jp': '/api/kakuyomu',
@@ -82,22 +72,6 @@ export class ProxyService {
       }
     }
     return proxyUrl && proxyUrl.trim() ? proxyUrl : null;
-  }
-
-  /**
-   * 检查代理是否启用
-   * @returns 是否启用代理
-   */
-  static isProxyEnabled(): boolean {
-    return GlobalConfig.getProxyEnabled();
-  }
-
-  /**
-   * 获取代理 URL
-   * @returns 代理 URL 或空字符串
-   */
-  static getProxyUrl(): string {
-    return GlobalConfig.getProxyUrl();
   }
 
   /**
@@ -245,54 +219,6 @@ export class ProxyService {
     ];
 
     return networkErrorKeywords.some((keyword) => errorMessage.includes(keyword));
-  }
-
-  /**
-   * 切换到下一个代理服务
-   * @param originalUrl 原始 URL（用于查找网站特定的代理和记录映射）
-   * @returns 是否成功切换
-   */
-  private static switchToNextProxy(originalUrl?: string): boolean {
-    const settingsStore = useSettingsStore();
-    const nextProxyUrl = this.getNextProxyUrl(originalUrl);
-
-    if (nextProxyUrl) {
-      void co(function* () {
-        try {
-          yield settingsStore.setProxyUrl(nextProxyUrl);
-        } catch (error) {
-          console.error('[ProxyService] 切换代理 URL 失败:', error);
-        }
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * 处理代理错误，如果启用了自动切换，切换到下一个代理服务
-   * @param error 错误对象
-   * @returns 是否已切换到下一个代理服务
-   */
-  static handleProxyError(error: unknown): boolean {
-    const autoSwitch = GlobalConfig.getProxyAutoSwitch();
-
-    // 如果未启用自动切换，不处理
-    if (!autoSwitch) {
-      return false;
-    }
-
-    // 检查错误是否是网络错误
-    const isNetworkErr = this.isNetworkError(error);
-    if (!isNetworkErr) {
-      return false;
-    }
-
-    // 切换到下一个代理服务
-    // 注意：handleProxyError 没有 originalUrl 参数，所以无法使用网站特定代理
-    // 这个函数主要用于向后兼容，实际应该使用 executeWithAutoSwitch
-    return this.switchToNextProxy();
   }
 
   /**

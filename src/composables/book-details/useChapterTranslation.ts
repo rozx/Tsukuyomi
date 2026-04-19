@@ -911,7 +911,7 @@ export function useChapterTranslation(
     uiStore.setActiveRightTab('progress');
 
     const paragraphs = selectedChapterParagraphs.value;
-    const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para));
+    const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para.text));
     const targetParagraphIds = new Set(nonEmptyParagraphs.map((para) => para.id));
 
     // 初始化进度
@@ -1128,7 +1128,7 @@ export function useChapterTranslation(
 
     // 过滤出未翻译的段落（排除空段落）
     const untranslatedParagraphs = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para) && !hasParagraphTranslation(para),
+      (para) => !isEmptyParagraph(para.text) && !hasParagraphTranslation(para),
     );
 
     if (untranslatedParagraphs.length === 0) {
@@ -1310,7 +1310,7 @@ export function useChapterTranslation(
 
     // 检查段落是否有翻译
     const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para) && hasParagraphTranslation(para),
+      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
     );
 
     if (paragraphsWithTranslation.length === 0) {
@@ -1555,7 +1555,7 @@ export function useChapterTranslation(
 
     // 检查段落是否有翻译
     const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para) && hasParagraphTranslation(para),
+      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
     );
 
     if (paragraphsWithTranslation.length === 0) {
@@ -1819,7 +1819,7 @@ export function useChapterTranslation(
     }
 
     // 过滤掉空段落，只统计有内容的段落
-    const nonEmptyParagraphs = paragraphs.filter((p) => !isEmptyParagraph(p));
+    const nonEmptyParagraphs = paragraphs.filter((p) => !isEmptyParagraph(p.text));
 
     if (nonEmptyParagraphs.length === 0) {
       // 如果所有段落都是空的，视为无翻译状态

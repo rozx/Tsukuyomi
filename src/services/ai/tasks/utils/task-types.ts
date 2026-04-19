@@ -1,5 +1,5 @@
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { type AIWorkflowStatus } from 'src/constants/ai';
+import { type AIWorkflowStatus, TASK_TYPE_LABELS } from 'src/constants/ai';
 
 /**
  * 任务类型
@@ -10,20 +10,6 @@ export type TaskType = 'translation' | 'polish' | 'proofreading';
  * 状态类型
  */
 export type TaskStatus = AIWorkflowStatus;
-
-const VALID_TASK_STATUSES: TaskStatus[] = [
-  'planning',
-  'preparing',
-  'working',
-  'review',
-  'end',
-];
-
-export const TASK_TYPE_LABELS: Record<TaskType, string> = {
-  translation: '翻译',
-  polish: '润色',
-  proofreading: '校对',
-};
 
 export const MAX_DESC_LEN = 600;
 

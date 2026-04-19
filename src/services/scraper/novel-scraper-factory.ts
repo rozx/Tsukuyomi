@@ -1,4 +1,4 @@
-import type { NovelScraper, ScraperType } from 'src/services/scraper/types';
+import type { NovelScraper } from 'src/services/scraper/types';
 import { SyosetuScraper } from './scrapers';
 import { KakuyomuScraper } from './scrapers';
 import { NcodeSyosetuScraper } from './scrapers';
@@ -56,44 +56,6 @@ export class NovelScraperFactory {
    */
   static isValidUrl(url: string): boolean {
     return this.getScraper(url) !== null;
-  }
-
-  /**
-   * 获取 URL 对应的爬虫类型
-   * @param url 小说 URL
-   * @returns 爬虫类型
-   */
-  static getScraperType(url: string): ScraperType {
-    if (url.includes('kakuyomu.jp')) {
-      return 'kakuyomu';
-    }
-
-    if (url.includes('novel18.syosetu.com')) {
-      return 'ncode'; // novel18 和 ncode 使用相同的类型
-    }
-
-    if (url.includes('ncode.syosetu.com')) {
-      return 'ncode';
-    }
-
-    if (url.includes('syosetu.org')) {
-      return 'syosetu';
-    }
-
-    return 'unknown';
-  }
-
-  /**
-   * 获取所有支持的爬虫服务
-   * @returns 爬虫服务列表
-   */
-  static getAllScrapers(): NovelScraper[] {
-    return [
-      this.syosetuScraper,
-      this.kakuyomuScraper,
-      this.ncodeSyosetuScraper,
-      this.novel18SyosetuScraper,
-    ];
   }
 
   /**

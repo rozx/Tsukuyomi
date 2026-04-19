@@ -79,7 +79,7 @@ export function buildOriginalTranslationsMap(paragraphs: Paragraph[]): Map<strin
  * @param modified 修改后的翻译文本
  * @returns 如果翻译有变化，返回 true
  */
-export function hasTranslationChanged(original: string, modified: string): boolean {
+function hasTranslationChanged(original: string, modified: string): boolean {
   const normalizedOriginal = original.trim();
   const normalizedModified = modified.trim();
   return normalizedOriginal !== normalizedModified;

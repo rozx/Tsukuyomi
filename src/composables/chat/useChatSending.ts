@@ -2,7 +2,7 @@ import { ref, type Ref } from 'vue';
 import type { Router } from 'vue-router';
 import {
   useChatSessionsStore,
-  type ChatMessage,
+  type ChatSessionMessage,
   type ChatSession,
   type MessageAction,
   type ApiMessage,
@@ -18,7 +18,7 @@ import { useChatActionHandler } from './useChatActionHandler';
 import { useInternalSummarization } from './useInternalSummarization';
 
 export function useChatSending(
-  messages: Ref<ChatMessage[]>,
+  messages: Ref<ChatSessionMessage[]>,
   inputMessage: Ref<string>,
   assistantModel: Ref<AIModel | undefined>,
   scrollToBottom: () => void,
@@ -124,7 +124,7 @@ export function useChatSending(
   const pushUserAndAssistantPlaceholder = (
     message: string,
   ): { assistantMessageIdRef: { value: string } } => {
-    const userMessage: ChatMessage = {
+    const userMessage: ChatSessionMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: message,
@@ -289,7 +289,7 @@ export function useChatSending(
       resetInternalSummarization();
       const chatResult = await AssistantService.chat(assistantModel.value, message, {
         ...(sessionSummary ? { sessionSummary } : {}),
-        ...(messageHistory ? { messageHistory: messageHistory as ChatMessage[] } : {}),
+        ...(messageHistory ? { messageHistory } : {}),
         ...(sessionId ? { sessionId } : {}),
         ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
         aiProcessingStore,

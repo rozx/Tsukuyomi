@@ -135,7 +135,7 @@ export function useParagraphNavigation(
     const indices: number[] = [];
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs[i];
-      if (p && !isEmptyParagraph(p)) {
+      if (p && !isEmptyParagraph(p.text)) {
         indices.push(i);
       }
     }
@@ -306,7 +306,7 @@ export function useParagraphNavigation(
 
   const resolveNonEmptyTargetIndex = (targetIndex: number): number | null => {
     const paragraph = selectedChapterParagraphs.value[targetIndex];
-    if (!paragraph || !isEmptyParagraph(paragraph)) return targetIndex;
+    if (!paragraph || !isEmptyParagraph(paragraph.text)) return targetIndex;
     const nextNonEmpty = findNextNonEmptyParagraph(targetIndex, 'down');
     if (nextNonEmpty !== null) return nextNonEmpty;
     const prevNonEmpty = findNextNonEmptyParagraph(targetIndex, 'up');
@@ -407,7 +407,7 @@ export function useParagraphNavigation(
 
       // 如果点击的是空段落，找到最近的非空段落
       let targetIndex = index;
-      if (isEmptyParagraph(paragraph)) {
+      if (isEmptyParagraph(paragraph.text)) {
         const nextNonEmpty = findNextNonEmptyParagraph(index, 'down');
         if (nextNonEmpty !== null) {
           targetIndex = nextNonEmpty;

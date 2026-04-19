@@ -1,5 +1,4 @@
 export * from './task-types';
-export * from './model-selector';
 export * from './chunk-formatter';
 export * from './productivity-monitor';
 export * from './context-builder';

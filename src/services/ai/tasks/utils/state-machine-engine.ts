@@ -7,16 +7,9 @@ export class StateMachineEngine {
   private currentStatus: TaskStatus;
   private readonly validTransitions: Record<TaskStatus, TaskStatus[]>;
 
-  constructor(
-    private readonly taskType: TaskType,
-    initialStatus: TaskStatus = 'planning',
-  ) {
+  constructor(taskType: TaskType, initialStatus: TaskStatus = 'planning') {
     this.currentStatus = initialStatus;
     this.validTransitions = getValidTransitionsForTaskType(taskType);
-  }
-
-  public getCurrentStatus(): TaskStatus {
-    return this.currentStatus;
   }
 
   public isValidTransition(next: TaskStatus): boolean {
@@ -26,16 +19,6 @@ export class StateMachineEngine {
 
     const allowed = this.validTransitions[this.currentStatus];
     return !!allowed && allowed.includes(next);
-  }
-
-  public transition(next: TaskStatus): void {
-    if (!this.isValidTransition(next)) {
-      throw new Error(
-        `无效状态迁移：${this.taskType} 任务不允许从 ${this.currentStatus} 迁移到 ${next}`,
-      );
-    }
-
-    this.currentStatus = next;
   }
 
   /**

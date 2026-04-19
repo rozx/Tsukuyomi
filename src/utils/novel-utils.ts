@@ -169,7 +169,7 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
  * @param volume 卷对象
  * @returns 总字符数
  */
-export function getVolumeCharCount(volume: Volume): number {
+function getVolumeCharCount(volume: Volume): number {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
@@ -181,7 +181,7 @@ export function getVolumeCharCount(volume: Volume): number {
  * @param volume 卷对象
  * @returns Promise<number> 总字符数
  */
-export async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
+async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
@@ -343,18 +343,6 @@ export function getCharacterNameVariants(name: string): string[] {
   }
 
   return Array.from(variants);
-}
-
-/**
- * 检查段落是否为空（无内容或只有空白字符）
- * @param paragraph 段落对象
- * @returns 如果段落为空返回 true，否则返回 false
- */
-export function isEmptyParagraph(paragraph: Paragraph): boolean {
-  if (!paragraph.text) {
-    return true;
-  }
-  return paragraph.text.trim().length === 0;
 }
 
 /**

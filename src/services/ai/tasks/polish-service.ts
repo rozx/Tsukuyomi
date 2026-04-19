@@ -6,7 +6,6 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import {
   processTextTask,
-  type TextTaskOptions,
   type ParagraphExtractCallbackParams,
 } from './utils/text-task-processor';
 import { buildPolishSystemPrompt } from './prompts';
@@ -100,8 +99,6 @@ export interface PolishResult {
  * 使用 AI 服务进行文本润色，支持术语 CRUD 工具和翻译历史参考
  */
 export class PolishService {
-  static readonly CHUNK_SIZE = 8000;
-
   /**
    * 润色文本
    * @param content 要润色的段落列表（必须包含翻译历史）

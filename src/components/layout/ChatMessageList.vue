@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage, MessageAction } from 'src/stores/chat-sessions';
+import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import ChatActionBadge from 'src/components/layout/ChatActionBadge.vue';
 
 interface MessageDisplayItem {
@@ -13,7 +13,7 @@ interface MessageDisplayItem {
 }
 
 interface Props {
-  messages: ChatMessage[];
+  messages: ChatSessionMessage[];
   messageDisplayItemsById: Record<string, MessageDisplayItem[]>;
   displayedThinkingProcess: Record<string, string>;
   displayedThinkingPreview: Record<string, string>;
@@ -27,14 +27,14 @@ interface Props {
   onActionHover: (
     event: Event,
     action: MessageAction,
-    message: ChatMessage,
+    message: ChatSessionMessage,
     popoverKey: string,
   ) => void;
   onActionLeave: () => void;
   onGroupedActionHover: (
     event: Event,
     actions: MessageAction[],
-    message: ChatMessage,
+    message: ChatSessionMessage,
     timestamp: number,
   ) => void;
   onGroupedActionLeave: () => void;

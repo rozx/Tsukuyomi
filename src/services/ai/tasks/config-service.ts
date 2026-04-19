@@ -1,7 +1,6 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult, AIServiceConfig } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
-import { CONFIG_DISCOVERY_PROMPT } from '../core/config-prompt';
 
 /**
  * 配置服务选项
@@ -18,14 +17,6 @@ export interface ConfigServiceOptions {
  * 管理 AI 模型配置相关的功能，包括配置获取提示词和配置获取
  */
 export class ConfigService {
-  /**
-   * 获取配置信息的提示词
-   * 要求 AI 以 JSON 格式返回最大输入 token 数和最大输出 token 数
-   */
-  static getConfigPrompt(): string {
-    return CONFIG_DISCOVERY_PROMPT;
-  }
-
   /**
    * 获取模型配置信息
    * @param model AI 模型配置

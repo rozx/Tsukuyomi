@@ -131,15 +131,6 @@ export class SettingsService {
   }
 
   /**
-   * 验证文件类型
-   * @param file 文件对象
-   * @returns 是否为有效的 JSON 文件
-   */
-  static validateFileType(file: File): boolean {
-    return file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
-  }
-
-  /**
    * 从文件读取设置
    * @param file 文件对象
    * @returns Promise<ImportResult> 导入结果

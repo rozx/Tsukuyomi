@@ -262,38 +262,6 @@ export class ToolRegistry {
   }
 
   /**
-   * 获取术语翻译服务允许的工具
-   * 只包含只读工具：get_book_info, get/list/search terms, get/list/search characters, get/list/search memory, search paragraphs
-   *
-   * ⚠️ 重要：此方法明确排除所有变更工具（create_term, update_term, delete_term 等），
-   * 因为术语翻译服务只用于查询上下文信息，不应该进行任何数据变更操作。
-   * 术语的创建、更新、删除应该在其他服务（如翻译服务、校对服务）中完成。
-   */
-  static getTermTranslationTools(bookId?: string): AITool[] {
-    if (!bookId) return [];
-
-    // [重要] 术语翻译服务：只允许 keyword 搜索类工具（search_*_by_keywords）
-    // 目的：避免模型使用其它只读工具（get/list/find 等）导致提示与工具集不一致。
-    const allowedToolNames = [
-      'search_terms_by_keywords',
-      'search_characters_by_keywords',
-      'find_paragraph_by_keywords',
-    ];
-
-    // 获取所有工具（包括变更工具）
-    const allTools = [
-      ...this.getBookTools(bookId),
-      ...this.getTerminologyTools(bookId), // 包含 create_term, update_term, delete_term 等
-      ...this.getCharacterSettingTools(bookId),
-      ...this.getMemoryTools(bookId),
-      ...this.getParagraphTools(bookId),
-    ];
-
-    // 通过过滤器只返回允许的只读工具，明确排除所有变更工具
-    return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
-  }
-
-  /**
    * 获取翻译服务允许的工具
    * 排除翻译管理工具和导航/列表工具，让AI专注于当前文本块
    */

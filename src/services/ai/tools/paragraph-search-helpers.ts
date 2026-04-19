@@ -20,7 +20,7 @@ export function filterValidKeywords(source: unknown): string[] {
  * 在书籍 volumes 树中定位 chapterId 所在位置。
  * 找不到返回 null。
  */
-export function findChapterPosition(
+function findChapterPosition(
   book: Novel,
   chapterId: string,
 ): { volumeIndex: number; chapterIndex: number } | null {
@@ -70,7 +70,7 @@ export function resolveSearchRange(
   };
 }
 
-export function resolveChapterRange(
+function resolveChapterRange(
   volumeChaptersLength: number,
   targetChapterIndex: number | null,
 ): { startChapterIndex: number; endChapterIndex: number } {
@@ -100,24 +100,8 @@ export async function ensureChaptersLoaded(chapters: Chapter[]): Promise<number>
 }
 
 /**
- * 收集 [startVolumeIndex..endVolumeIndex] × [targetChapterIndex | 全部] 范围内的所有章节。
- * 返回的章节保持书籍中的顺序。
- */
-export function collectChaptersInRange(
-  book: Novel,
-  range: {
-    startVolumeIndex: number;
-    endVolumeIndex: number;
-    targetVolumeIndex: number | null;
-    targetChapterIndex: number | null;
-  },
-): Chapter[] {
-  return collectChapterLocationsInRange(book, range).map((loc) => loc.chapter);
-}
-
-/**
- * 与 collectChaptersInRange 相同的遍历顺序，但连同 volume/chapter 的索引一起返回，
- * 供需要构造 ParagraphSearchResult 的搜索循环使用。
+ * 遍历 [startVolumeIndex..endVolumeIndex] × [targetChapterIndex | 全部] 范围内的所有章节，
+ * 连同 volume/chapter 的索引一起返回，供需要构造 ParagraphSearchResult 的搜索循环使用。
  */
 export function collectChapterLocationsInRange(
   book: Novel,

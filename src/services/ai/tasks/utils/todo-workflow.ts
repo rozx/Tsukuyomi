@@ -225,19 +225,6 @@ export class TodoWorkflow {
   }
 
   /**
-   * 清除指定状态的预定义待办（状态转换成功后调用）
-   */
-  clearStateTodos(state: TaskStatus): void {
-    const todos = TodoListService.getTodosByTaskId(this.taskId);
-    const toDelete = todos.filter(
-      (t) => t.predefined && t.taskState === state && t.chunkIndex === this.chunkIndex,
-    );
-    for (const todo of toDelete) {
-      TodoListService.deleteTodo(todo.id);
-    }
-  }
-
-  /**
    * 检查当前状态的 gate：所有预定义待办是否都已完成
    * 仅检查 predefined=true 的待办，忽略 agent 自创的 ad-hoc 待办
    */
@@ -303,8 +290,4 @@ export class TodoWorkflow {
     return block;
   }
 
-  /** 检查某个状态是否已初始化 */
-  isStateInitialized(state: TaskStatus): boolean {
-    return this.initializedStates.has(state);
-  }
 }

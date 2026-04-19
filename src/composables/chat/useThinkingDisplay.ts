@@ -1,11 +1,11 @@
 import { ref, nextTick, type Ref, onUnmounted } from 'vue';
-import type { ChatMessage } from 'src/stores/chat-sessions';
+import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import { throttle } from 'src/utils/throttle';
 
 /**
  * 思考过程显示逻辑
  */
-export function useThinkingDisplay(messages: Ref<ChatMessage[]>, scrollToBottom: () => void) {
+export function useThinkingDisplay(messages: Ref<ChatSessionMessage[]>, scrollToBottom: () => void) {
   // 思考过程展开状态（messageId -> expanded）
   const thinkingExpanded = ref<Map<string, boolean>>(new Map());
 

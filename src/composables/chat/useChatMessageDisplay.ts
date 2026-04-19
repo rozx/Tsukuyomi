@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue';
-import type { ChatMessage, MessageAction } from 'src/stores/chat-sessions';
+import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 
 // 消息显示项类型
 export interface MessageDisplayItem {
@@ -55,7 +55,7 @@ function collectTodoCreateGroup(
 
 function buildActionItems(
   sortedActions: MessageAction[],
-  message: ChatMessage,
+  message: ChatSessionMessage,
 ): MessageDisplayItem[] {
   const items: MessageDisplayItem[] = [];
   let i = 0;
@@ -103,7 +103,7 @@ function buildActionItems(
 }
 
 function buildTrailingContentItem(
-  message: ChatMessage,
+  message: ChatSessionMessage,
   sortedActions: MessageAction[],
 ): MessageDisplayItem | null {
   if (!message.content) return null;
@@ -127,7 +127,7 @@ function compareDisplayItems(a: MessageDisplayItem, b: MessageDisplayItem): numb
   return 0;
 }
 
-const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
+const getMessageDisplayItems = (message: ChatSessionMessage): MessageDisplayItem[] => {
   if (!message.actions || message.actions.length === 0) {
     if (!message.content) return [];
     return [
@@ -148,7 +148,7 @@ const getMessageDisplayItems = (message: ChatMessage): MessageDisplayItem[] => {
   return items.sort(compareDisplayItems);
 };
 
-export const useChatMessageDisplay = (messages: Ref<ChatMessage[]>) => {
+export const useChatMessageDisplay = (messages: Ref<ChatSessionMessage[]>) => {
   const messageDisplayItemsById = computed<Record<string, MessageDisplayItem[]>>(() => {
     const result: Record<string, MessageDisplayItem[]> = {};
     for (const message of messages.value) {

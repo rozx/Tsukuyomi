@@ -601,16 +601,6 @@ export class MemoryService {
   }
 
   /**
-   * 根据关键词搜索 Memory（向后兼容，内部调用 searchMemories）
-   */
-  static async searchMemoriesByKeyword(bookId: string, keyword: string): Promise<Memory[]> {
-    if (!keyword || !keyword.trim()) {
-      throw new Error('关键词不能为空');
-    }
-    return this.searchMemories(bookId, keyword);
-  }
-
-  /**
    * 搜索 Memory（三信号打分：语义 + 关键词 + 时间衰减）。
    * 内部复用 memory-scoring 的 scoreMemory 统一管线，EmbeddingService 不可用时自动降级为纯关键词+时间衰减。
    * 过滤条件：keyword > 0 或 total > minScore（读取用户设置的 minScoreThreshold，默认 0.34），

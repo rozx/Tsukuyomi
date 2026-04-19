@@ -6,7 +6,7 @@ import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
 import {
   useChatSessionsStore,
-  type ChatMessage,
+  type ChatSessionMessage,
   type ChatSession,
   type MessageAction,
   MAX_MESSAGES_PER_SESSION,
@@ -28,7 +28,7 @@ export function useChatActionHandler(
   toast: { add: (msg: any) => void },
   scrollToBottom: () => void,
   loadTodos: () => void,
-  messages: Ref<ChatMessage[]>,
+  messages: Ref<ChatSessionMessage[]>,
   currentMessageActions: Ref<MessageAction[]>,
   setThinkingActive: (id: string, active: boolean) => void,
   getMessagesSinceSummaryCount: (session: ChatSession | null) => number,

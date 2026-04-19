@@ -18,7 +18,8 @@ import {
 } from 'src/services/memory-scoring';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
-import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
+import { type TaskType, MAX_DESC_LEN } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';

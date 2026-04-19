@@ -193,19 +193,6 @@ export class AssistantService {
   }
 
   /**
-   * 估算消息历史的 token 数（改进版，支持自定义倍数）
-   * @param messages 消息列表
-   * @param multiplier token 倍数（默认 2.5，更保守；原方法使用 2.0）
-   * @returns 估算的 token 数
-   */
-  public static estimateTokenCount(
-    messages: ChatMessage[],
-    multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-  ): number {
-    return estimateMessagesTokenCount(messages, multiplier);
-  }
-
-  /**
    * 更新任务的上下文 token 统计
    */
   private static async updateTaskContextUsage(params: {

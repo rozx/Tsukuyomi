@@ -392,12 +392,150 @@ export interface GistSyncData {
 }
 
 /**
+ * Gist 分块文件收集结果：包括成功获取的分块以及截断/获取失败的分块。
+ */
+interface CollectedChapterChunks {
+  chunkFiles: Array<{
+    index: number;
+    content: string;
+    fileName: string;
+    size: number;
+  }>;
+  truncatedChunkFiles: Array<{
+    index: number;
+    fileName: string;
+    size: number;
+    contentLength: number;
+  }>;
+}
+
+/**
+ * Gist 文件的最小结构，用于分块收集逻辑。
+ */
+interface GistFileLike {
+  content?: string;
+  size?: number;
+  truncated?: boolean;
+  raw_url?: string;
+}
+
+/**
+ * 从 metadata 文件中解析预期分块数量；失败时返回默认上限。
+ */
+function parseExpectedChunks(
+  metadataFile: GistFileLike | null | undefined,
+  defaultLimit: number,
+): number {
+  if (metadataFile && metadataFile.content) {
+    try {
+      const metadata = JSON.parse(metadataFile.content) as {
+        chunks: number;
+        totalSize: number;
+      };
+      if (metadata.chunks && metadata.chunks > 0) {
+        return metadata.chunks;
+      }
+    } catch {
+      // 忽略元数据解析错误，使用默认上限
+    }
+  }
+  return defaultLimit;
+}
+
+/**
+ * 按 novelId 收集 Gist 中该书的所有分块文件。
+ * 依次尝试三种历史文件名格式（`_`、`#`、`-`），并在分块被 GitHub 截断时从 raw_url 回取内容。
+ * 返回值同时包含成功获取的分块与记录截断/回取失败的分块，调用方可选择是否使用 truncatedChunkFiles。
+ */
+async function collectNovelChunkFiles(
+  gistFiles: Record<string, GistFileLike | null | undefined>,
+  novelId: string,
+  metadataFile: GistFileLike | null | undefined,
+  defaultLimit: number,
+): Promise<CollectedChapterChunks> {
+  const chunkFiles: CollectedChapterChunks['chunkFiles'] = [];
+  const truncatedChunkFiles: CollectedChapterChunks['truncatedChunkFiles'] = [];
+
+  const expectedChunks = parseExpectedChunks(metadataFile, defaultLimit);
+
+  for (let i = 0; i < expectedChunks; i++) {
+    // 优先尝试最新格式（使用 _ 分隔符）
+    let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
+    let chunkFile: GistFileLike | null | undefined = gistFiles[chunkFileName];
+
+    // 尝试旧格式（使用 # 分隔符）
+    if (!chunkFile) {
+      chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
+      chunkFile = gistFiles[chunkFileName];
+    }
+
+    // 向后兼容：如果新格式不存在，尝试旧格式
+    if (!chunkFile) {
+      chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}-${i}.json`;
+      chunkFile = gistFiles[chunkFileName];
+    }
+    if (chunkFile) {
+      // 检查分块文件是否被截断（GitHub API 对大文件返回 truncated=true）
+      const chunkSize = chunkFile.size || 0;
+      const chunkContentLength = chunkFile.content?.length || 0;
+      const isChunkTruncated = chunkFile.truncated === true || !chunkFile.content;
+
+      let chunkContent = chunkFile.content;
+
+      // 如果文件被截断（GitHub API 行为），尝试从 raw_url 获取完整内容
+      if (isChunkTruncated && chunkFile.raw_url) {
+        try {
+          const rawResponse = await fetch(chunkFile.raw_url);
+          if (rawResponse.ok) {
+            chunkContent = await rawResponse.text();
+          } else {
+            truncatedChunkFiles.push({
+              index: i,
+              fileName: chunkFileName,
+              size: chunkSize,
+              contentLength: chunkContentLength,
+            });
+          }
+        } catch {
+          truncatedChunkFiles.push({
+            index: i,
+            fileName: chunkFileName,
+            size: chunkSize,
+            contentLength: chunkContentLength,
+          });
+        }
+      }
+
+      if (chunkContent) {
+        chunkFiles.push({
+          index: i,
+          content: chunkContent,
+          fileName: chunkFileName,
+          size: chunkSize,
+        });
+      } else {
+        truncatedChunkFiles.push({
+          index: i,
+          fileName: chunkFileName,
+          size: chunkSize,
+          contentLength: 0,
+        });
+      }
+    } else {
+      // 没有找到更多分块文件，停止搜索
+      break;
+    }
+  }
+
+  return { chunkFiles, truncatedChunkFiles };
+}
+
+/**
  * Gist 同步服务
  * 用于将应用设置和书籍数据同步到 GitHub Gist
  */
 export class GistSyncService {
   private octokit: Octokit | null = null;
-  private config: SyncConfig | null = null;
 
   /**
    * 从 SyncConfig 获取 Gist 配置参数
@@ -433,7 +571,6 @@ export class GistSyncService {
     this.octokit = new Octokit({
       auth: params.token,
     });
-    this.config = config;
   }
 
   /**
@@ -852,7 +989,6 @@ export class GistSyncService {
           });
 
           const currentFiles = currentGist.data.files || {};
-          const localNovelIds = new Set(novelsWithContent.map((n) => n.id));
 
           // 创建一个集合，包含所有本地已经添加到 files 中的文件名（排除 null 值）
           const localFileNames = new Set<string>();
@@ -1385,105 +1521,16 @@ export class GistSyncService {
           const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
 
           // 首先检查是否有分块文件（优先使用分块文件）
-          const chunkFiles: Array<{
-            index: number;
-            content: string;
-            fileName: string;
-            size: number;
-          }> = [];
-          const truncatedChunkFiles: Array<{
-            index: number;
-            fileName: string;
-            size: number;
-            contentLength: number;
-          }> = [];
-
           // 从 metadata 文件中获取预期的分块数量，作为搜索上限
           // 如果没有 metadata 或解析失败，回退到默认上限
           const MAX_CHUNK_SEARCH_LIMIT = 1000;
-          let expectedChunks = MAX_CHUNK_SEARCH_LIMIT;
-          if (metadataFile && metadataFile.content) {
-            try {
-              const metadata = JSON.parse(metadataFile.content) as {
-                chunks: number;
-                totalSize: number;
-              };
-              if (metadata.chunks && metadata.chunks > 0) {
-                expectedChunks = metadata.chunks;
-              }
-            } catch {
-              // 忽略元数据解析错误，使用默认上限
-            }
-          }
-
-          for (let i = 0; i < expectedChunks; i++) {
-            // 优先尝试最新格式（使用 _ 分隔符）
-            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
-            let chunkFile = gistFiles[chunkFileName];
-
-            // 尝试旧格式（使用 # 分隔符）
-            if (!chunkFile) {
-              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
-              chunkFile = gistFiles[chunkFileName];
-            }
-
-            // 向后兼容：如果新格式不存在，尝试旧格式
-            if (!chunkFile) {
-              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}-${i}.json`;
-              chunkFile = gistFiles[chunkFileName];
-            }
-            if (chunkFile) {
-              // 检查分块文件是否被截断（GitHub API 对大文件返回 truncated=true）
-              const chunkSize = chunkFile.size || 0;
-              const chunkContentLength = chunkFile.content?.length || 0;
-              const isChunkTruncated = chunkFile.truncated === true || !chunkFile.content;
-
-              let chunkContent = chunkFile.content;
-
-              // 如果文件被截断（GitHub API 行为），尝试从 raw_url 获取完整内容
-              if (isChunkTruncated && chunkFile.raw_url) {
-                try {
-                  const rawResponse = await fetch(chunkFile.raw_url);
-                  if (rawResponse.ok) {
-                    chunkContent = await rawResponse.text();
-                  } else {
-                    truncatedChunkFiles.push({
-                      index: i,
-                      fileName: chunkFileName,
-                      size: chunkSize,
-                      contentLength: chunkContentLength,
-                    });
-                  }
-                } catch {
-                  truncatedChunkFiles.push({
-                    index: i,
-                    fileName: chunkFileName,
-                    size: chunkSize,
-                    contentLength: chunkContentLength,
-                  });
-                }
-              }
-
-              if (chunkContent) {
-                chunkFiles.push({
-                  index: i,
-                  content: chunkContent,
-                  fileName: chunkFileName,
-                  size: chunkSize,
-                });
-              } else {
-                truncatedChunkFiles.push({
-                  index: i,
-                  fileName: chunkFileName,
-                  size: chunkSize,
-                  contentLength: 0,
-                });
-              }
-            } else {
-              // 没有找到更多分块文件，停止搜索
-              break;
-            }
-          }
+          const { chunkFiles, truncatedChunkFiles } = await collectNovelChunkFiles(
+            gistFiles,
+            novelId ?? '',
+            metadataFile,
+            MAX_CHUNK_SEARCH_LIMIT,
+          );
+          const expectedChunks = parseExpectedChunks(metadataFile, MAX_CHUNK_SEARCH_LIMIT);
 
           // 如果发现分块文件被截断，直接报告错误并跳过
           if (truncatedChunkFiles.length > 0) {
@@ -2129,73 +2176,14 @@ export class GistSyncService {
           const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
           const metadataFile = gistFiles[metadataFileName];
 
-          const chunkFiles: Array<{
-            index: number;
-            content: string;
-            fileName: string;
-            size: number;
-          }> = [];
-
           // 从 metadata 获取预期分块数量
           const MAX_CHUNK_SEARCH_LIMIT = 1000;
-          let expectedChunks = MAX_CHUNK_SEARCH_LIMIT;
-          if (metadataFile && metadataFile.content) {
-            try {
-              const metadata = JSON.parse(metadataFile.content) as {
-                chunks: number;
-                totalSize: number;
-              };
-              if (metadata.chunks && metadata.chunks > 0) {
-                expectedChunks = metadata.chunks;
-              }
-            } catch {
-              // 忽略元数据解析错误
-            }
-          }
-
-          for (let i = 0; i < expectedChunks; i++) {
-            // 优先尝试最新格式（使用 _ 分隔符）
-            let chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}_${i}.json`;
-            let chunkFile = gistFiles[chunkFileName];
-
-            // 尝试旧格式（使用 # 分隔符）
-            if (!chunkFile) {
-              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}#${i}.json`;
-              chunkFile = gistFiles[chunkFileName];
-            }
-
-            // 向后兼容：如果新格式不存在，尝试旧格式
-            if (!chunkFile) {
-              chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${novelId}-${i}.json`;
-              chunkFile = gistFiles[chunkFileName];
-            }
-            if (chunkFile) {
-              let chunkContent = chunkFile.content;
-              const isChunkTruncated = chunkFile.truncated === true || !chunkContent;
-
-              if (isChunkTruncated && chunkFile.raw_url) {
-                try {
-                  const rawResponse = await fetch(chunkFile.raw_url);
-                  if (rawResponse.ok) {
-                    chunkContent = await rawResponse.text();
-                  }
-                } catch {
-                  // 忽略获取失败
-                }
-              }
-
-              if (chunkContent) {
-                chunkFiles.push({
-                  index: i,
-                  content: chunkContent,
-                  fileName: chunkFileName,
-                  size: chunkFile.size || 0,
-                });
-              }
-            } else {
-              break;
-            }
-          }
+          const { chunkFiles } = await collectNovelChunkFiles(
+            gistFiles,
+            novelId,
+            metadataFile,
+            MAX_CHUNK_SEARCH_LIMIT,
+          );
 
           if (chunkFiles.length > 0) {
             try {

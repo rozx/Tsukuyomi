@@ -682,27 +682,3 @@ export function findUniqueCharactersInText(
   return uniqueCharacters;
 }
 
-/**
- * 统计名称（及其变体）在文本中出现的次数
- * 优先匹配较长的名称以避免重复计数
- * @param text 文本
- * @param names 名称列表
- * @returns 出现次数
- */
-export function countNamesInText(text: string, names: string[]): number {
-  if (!text || !names || names.length === 0) return 0;
-
-  // 过滤空值并按长度降序排序
-  const sortedNames = names
-    .filter((n) => n && n.trim())
-    .map((n) => n.trim())
-    .sort((a, b) => b.length - a.length);
-
-  if (sortedNames.length === 0) return 0;
-
-  const namePatterns = sortedNames.map((n) => escapeRegex(n)).join('|');
-  const regex = new RegExp(`(${namePatterns})`, 'g');
-
-  const matches = text.match(regex);
-  return matches ? matches.length : 0;
-}

@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue';
-import { useChatSessionsStore, type ChatMessage, type ChatSession } from 'src/stores/chat-sessions';
+import { useChatSessionsStore, type ChatSessionMessage, type ChatSession } from 'src/stores/chat-sessions';
 import { AssistantService } from 'src/services/ai/tasks';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { SUMMARIZING_MESSAGE_CONTENT, SUMMARIZED_MESSAGE_CONTENT } from './constants';
@@ -7,7 +7,7 @@ import { SUMMARIZING_MESSAGE_CONTENT, SUMMARIZED_MESSAGE_CONTENT } from './const
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
 export function useChatSummarizer(
-  messages: Ref<ChatMessage[]>,
+  messages: Ref<ChatSessionMessage[]>,
   assistantModel: Ref<AIModel | undefined>,
   reloadMessages: () => Promise<void>,
   scrollToBottom: () => void,
@@ -31,7 +31,7 @@ export function useChatSummarizer(
    */
   const buildMessagesToSummarize = (
     session: ChatSession,
-    allMessages: ChatMessage[],
+    allMessages: ChatSessionMessage[],
   ): Array<{ role: 'user' | 'assistant'; content: string }> => {
     const cutoff = session.lastSummarizedMessageIndex ?? 0;
     return allMessages
@@ -69,7 +69,7 @@ export function useChatSummarizer(
     try {
       // 创建总结消息气泡
       const summarizationMessageId = (Date.now() - 1).toString();
-      const summarizationMessage: ChatMessage = {
+      const summarizationMessage: ChatSessionMessage = {
         id: summarizationMessageId,
         role: 'assistant',
         content: SUMMARIZING_MESSAGE_CONTENT,

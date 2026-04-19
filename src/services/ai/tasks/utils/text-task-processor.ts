@@ -13,7 +13,8 @@ import type {
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { TASK_TYPE_LABELS, type TaskType, type AIProcessingStore } from './task-types';
+import type { TaskType, AIProcessingStore } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import type { TextChunk } from './chunk-formatter';
 import { AIServiceFactory } from '../../ai-service-factory';
 import { ToolRegistry } from '../../tools/tool-registry';

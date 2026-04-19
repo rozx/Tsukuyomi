@@ -90,7 +90,7 @@ export interface MessageAction {
 /**
  * 聊天消息接口
  */
-export interface ChatMessage {
+export interface ChatSessionMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
@@ -134,7 +134,7 @@ export interface ApiMessage {
 export interface ChatSession {
   id: string;
   title: string;
-  messages: ChatMessage[];
+  messages: ChatSessionMessage[];
   context: SessionContext;
   createdAt: number;
   updatedAt: number;
@@ -242,7 +242,7 @@ function saveCurrentSessionIdToStorage(sessionId: string | null): void {
 /**
  * 从消息生成会话标题
  */
-function generateSessionTitle(messages: ChatMessage[]): string {
+function generateSessionTitle(messages: ChatSessionMessage[]): string {
   // 使用第一条用户消息的前 30 个字符作为标题
   const firstUserMessage = messages.find((msg) => msg.role === 'user');
   if (firstUserMessage) {
@@ -338,7 +338,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     /**
      * 更新当前会话的消息
      */
-    updateCurrentSessionMessages(messages: ChatMessage[]): void {
+    updateCurrentSessionMessages(messages: ChatSessionMessage[]): void {
       if (!this.currentSessionId) return;
 
       const session = this.sessions.find((s) => s.id === this.currentSessionId);
@@ -358,7 +358,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     /**
      * 更新指定会话的消息（用于异步操作期间会话可能切换的情况）
      */
-    updateSessionMessages(sessionId: string, messages: ChatMessage[]): void {
+    updateSessionMessages(sessionId: string, messages: ChatSessionMessage[]): void {
       const session = this.sessions.find((s) => s.id === sessionId);
       if (session) {
         session.messages = messages;
@@ -376,7 +376,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     /**
      * 添加消息到当前会话
      */
-    addMessageToCurrentSession(message: ChatMessage): void {
+    addMessageToCurrentSession(message: ChatSessionMessage): void {
       if (!this.currentSessionId) return;
 
       const session = this.sessions.find((s) => s.id === this.currentSessionId);

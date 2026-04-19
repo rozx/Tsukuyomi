@@ -8,7 +8,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import {
   useChatSessionsStore,
-  type ChatMessage,
+  type ChatSessionMessage,
   type MessageAction,
   MESSAGE_LIMIT_THRESHOLD,
 } from 'src/stores/chat-sessions';
@@ -102,7 +102,7 @@ export function useRightPanel() {
   const inputRef = ref<InstanceType<typeof Textarea> | null>(null);
 
   // 会话输入状态
-  const messages = ref<ChatMessage[]>([]);
+  const messages = ref<ChatSessionMessage[]>([]);
   const inputMessage = ref('');
   const currentTaskId = ref<string | null>(null);
   const currentMessageActions = ref<MessageAction[]>([]);
@@ -287,13 +287,13 @@ export function useRightPanel() {
     hide: () => void;
   };
   const actionPopoverRef = ref<ActionPanelControl | null>(null);
-  const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
+  const hoveredAction = ref<{ action: MessageAction; message: ChatSessionMessage } | null>(null);
 
   // Grouped action panel：同样的 toggle/hide 接口
   const groupedActionPopoverRef = ref<ActionPanelControl | null>(null);
   const hoveredGroupedAction = ref<{
     actions: MessageAction[];
-    message: ChatMessage;
+    message: ChatSessionMessage;
     timestamp: number;
   } | null>(null);
 
@@ -502,7 +502,7 @@ export function useRightPanel() {
   const toggleActionPopover = (
     event: Event,
     action: MessageAction,
-    message: ChatMessage,
+    message: ChatSessionMessage,
     _popoverKey: string,
   ) => {
     if (actionPopoverRef.value) {
@@ -524,7 +524,7 @@ export function useRightPanel() {
   const toggleGroupedActionPopover = (
     event: Event,
     actions: MessageAction[],
-    message: ChatMessage,
+    message: ChatSessionMessage,
     timestamp: number,
   ) => {
     if (groupedActionPopoverRef.value) {

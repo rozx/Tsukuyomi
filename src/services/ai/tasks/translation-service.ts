@@ -1,8 +1,6 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   TextGenerationStreamCallback,
-  AIToolCall,
-  AIToolCallResult,
   AITool,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
@@ -15,7 +13,6 @@ import {
   type ParagraphExtractCallbackParams,
   type TitleExtractCallbackParams,
 } from './utils/text-task-processor';
-import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import { buildTranslationSystemPrompt } from './prompts/translation';
 
 /**
@@ -106,21 +103,6 @@ export interface TranslationResult {
  * 翻译服务
  */
 export class TranslationService {
-  static readonly CHUNK_SIZE = 8000;
-
-  /**
-   * 处理工具调用
-   */
-  static async handleToolCall(
-    toolCall: AIToolCall,
-    bookId: string,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-  ): Promise<AIToolCallResult> {
-    return ToolRegistry.handleToolCall(toolCall, bookId, onAction, onToast, taskId);
-  }
-
   /**
    * 翻译文本
    */

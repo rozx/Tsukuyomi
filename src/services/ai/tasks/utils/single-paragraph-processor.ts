@@ -16,7 +16,7 @@ import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore, TaskType } from './task-types';
-import { TASK_TYPE_LABELS } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { AIServiceFactory } from '../../ai-service-factory';
 import { AIEmptyResponseError } from '../../core';
 import { ToolRegistry } from '../../tools/tool-registry';

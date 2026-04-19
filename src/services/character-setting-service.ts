@@ -1,5 +1,4 @@
-import type { CharacterSetting, Alias, Translation, Novel } from 'src/models/novel';
-import { flatMap, isEmpty, isArray, sortBy, isEqual } from 'lodash';
+import type { CharacterSetting, Alias, Translation } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
 import {
@@ -7,11 +6,7 @@ import {
   extractIds,
   generateShortId,
   normalizeTranslationQuotes,
-  getCharacterNameVariants,
-  processItemsInBatches,
-  ensureChapterContentLoaded,
 } from 'src/utils';
-import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
 
 /**
  * 角色设定服务

@@ -78,7 +78,6 @@ import {
   chapterStatusColor as chapterStatusColorPure,
   chapterStatusTextColor as chapterStatusTextColorPure,
   chapterStatusLabel as chapterStatusLabelPure,
-  type ChapterStatus as ChapterStatusType,
 } from 'src/utils/chapter-status';
 import { isPortrait } from 'src/utils/device-orientation';
 
@@ -96,7 +95,6 @@ import { isPortrait } from 'src/utils/device-orientation';
  */
 export type MobileActiveTab = 'chapters' | 'terms' | 'characters' | 'memory';
 export type SettingMenu = 'terms' | 'characters' | 'memory';
-export type ChapterStatus = ChapterStatusType;
 
 export type BookDetailsPageContext = ReturnType<typeof createBookDetailsPageContext>;
 

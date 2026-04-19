@@ -12,7 +12,7 @@ import {
 } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import type { Translation } from 'src/models/novel';
-import type { ToolDefinition, ActionInfo, ToolContext, ChunkBoundaries } from './types';
+import type { ToolDefinition, ActionInfo, ToolContext } from './types';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 import {
   collectChapterLocationsInRange,
@@ -66,6 +66,133 @@ function extractKeywordsFromParagraph(text: string, maxLength: number = 20): str
  */
 function toDisplayParagraphIndex(paragraphIndex: number): number {
   return paragraphIndex + 1;
+}
+
+/**
+ * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的处理逻辑。
+ * 两者除了调用的 ChapterService 方法以及上报的 tool_name 外完全一致。
+ */
+async function handleNeighborParagraphs(
+  args: Record<string, unknown>,
+  context: ToolContext,
+  options: {
+    toolName: 'get_previous_paragraphs' | 'get_next_paragraphs';
+    fetch: (
+      book: Parameters<typeof ChapterService.getPreviousParagraphsAsync>[0],
+      paragraphId: string,
+      count: number,
+    ) => Promise<ParagraphSearchResult[]>;
+  },
+): Promise<string> {
+  const { bookId, onAction } = context;
+  if (!bookId) {
+    throw new Error('书籍 ID 不能为空');
+  }
+  const {
+    paragraph_id,
+    count = 3,
+    include_memory = true,
+  } = args as {
+    paragraph_id: string;
+    count?: number;
+    include_memory?: boolean;
+  };
+  if (!paragraph_id) {
+    throw new Error('段落 ID 不能为空');
+  }
+
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  if (!book) {
+    throw new Error(`书籍不存在: ${bookId}`);
+  }
+
+  // 检查起始段落是否在块边界内
+  // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+  //   return getOutOfBoundsError(chunkBoundaries);
+  // }
+
+  // 报告读取操作
+  if (onAction) {
+    onAction({
+      type: 'read',
+      entity: 'paragraph',
+      data: {
+        paragraph_id,
+        tool_name: options.toolName,
+      },
+    });
+  }
+
+  // 使用优化的异步方法，按需加载章节内容
+  const results = await options.fetch(book, paragraph_id, count);
+
+  // 过滤掉空段落或仅包含符号的段落
+  const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
+  // 移除块边界限制，允许跨 chunk 获取上下文
+  // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
+
+  // 如果过滤后没有结果，说明请求超出了块边界
+  // if (chunkBoundaries && validResults.length === 0) {
+  //   return getOutOfBoundsError(chunkBoundaries);
+  // }
+
+  // 搜索相关记忆（从段落文本中提取关键词）
+  let relatedMemories: Array<{ id: string; summary: string }> = [];
+  if (include_memory && bookId && validResults.length > 0) {
+    // 从第一个段落中提取关键词
+    const firstResult = validResults[0];
+    if (firstResult?.paragraph?.text) {
+      const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
+      if (keywords.length > 0) {
+        relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+      }
+    }
+  }
+
+  return JSON.stringify({
+    success: true,
+    paragraphs: validResults.map((result) => ({
+      id: result.paragraph.id,
+      text: result.paragraph.text,
+      translation:
+        result.paragraph.translations.find(
+          (t) => t.id === result.paragraph.selectedTranslationId,
+        )?.translation ||
+        result.paragraph.translations[0]?.translation ||
+        '',
+      chapter: {
+        id: result.chapter.id,
+        title:
+          typeof result.chapter.title === 'string'
+            ? result.chapter.title
+            : result.chapter.title.original,
+        title_translation:
+          typeof result.chapter.title === 'string'
+            ? ''
+            : result.chapter.title.translation?.translation || '',
+      },
+      volume: {
+        id: result.volume.id,
+        title:
+          typeof result.volume.title === 'string'
+            ? result.volume.title
+            : result.volume.title.original,
+        title_translation:
+          typeof result.volume.title === 'string'
+            ? ''
+            : result.volume.title.translation?.translation || '',
+      },
+      paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+      chapter_index: result.chapterIndex,
+      volume_index: result.volumeIndex,
+    })),
+    count: validResults.length,
+    ...(include_memory && relatedMemories.length > 0
+      ? { related_memories: relatedMemories }
+      : {}),
+  });
 }
 
 /**
@@ -551,116 +678,12 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const {
-        paragraph_id,
-        count = 3,
-        include_memory = true,
-      } = args as {
-        paragraph_id: string;
-        count?: number;
-        include_memory?: boolean;
-      };
-      if (!paragraph_id) {
-        throw new Error('段落 ID 不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 检查起始段落是否在块边界内
-      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-      //   return getOutOfBoundsError(chunkBoundaries);
-      // }
-
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            paragraph_id,
-            tool_name: 'get_previous_paragraphs',
-          },
-        });
-      }
-
-      // 使用优化的异步方法，按需加载章节内容
-      const results = await ChapterService.getPreviousParagraphsAsync(book, paragraph_id, count);
-
-      // 过滤掉空段落或仅包含符号的段落
-      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
-
-      // 移除块边界限制，允许跨 chunk 获取上下文
-      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
-
-      // 如果过滤后没有结果，说明请求超出了块边界
-      // if (chunkBoundaries && validResults.length === 0) {
-      //   return getOutOfBoundsError(chunkBoundaries);
-      // }
-
-      // 搜索相关记忆（从段落文本中提取关键词）
-      let relatedMemories: Array<{ id: string; summary: string }> = [];
-      if (include_memory && bookId && validResults.length > 0) {
-        // 从第一个段落中提取关键词
-        const firstResult = validResults[0];
-        if (firstResult?.paragraph?.text) {
-          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
-          if (keywords.length > 0) {
-            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-          }
-        }
-      }
-
-      return JSON.stringify({
-        success: true,
-        paragraphs: validResults.map((result) => ({
-          id: result.paragraph.id,
-          text: result.paragraph.text,
-          translation:
-            result.paragraph.translations.find(
-              (t) => t.id === result.paragraph.selectedTranslationId,
-            )?.translation ||
-            result.paragraph.translations[0]?.translation ||
-            '',
-          chapter: {
-            id: result.chapter.id,
-            title:
-              typeof result.chapter.title === 'string'
-                ? result.chapter.title
-                : result.chapter.title.original,
-            title_translation:
-              typeof result.chapter.title === 'string'
-                ? ''
-                : result.chapter.title.translation?.translation || '',
-          },
-          volume: {
-            id: result.volume.id,
-            title:
-              typeof result.volume.title === 'string'
-                ? result.volume.title
-                : result.volume.title.original,
-            title_translation:
-              typeof result.volume.title === 'string'
-                ? ''
-                : result.volume.title.translation?.translation || '',
-          },
-          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
-          chapter_index: result.chapterIndex,
-          volume_index: result.volumeIndex,
-        })),
-        count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0
-          ? { related_memories: relatedMemories }
-          : {}),
-      });
-    },
+    handler: async (args, context) =>
+      handleNeighborParagraphs(args, context, {
+        toolName: 'get_previous_paragraphs',
+        fetch: (book, paragraphId, count) =>
+          ChapterService.getPreviousParagraphsAsync(book, paragraphId, count),
+      }),
   },
   {
     definition: {
@@ -689,116 +712,12 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const {
-        paragraph_id,
-        count = 3,
-        include_memory = true,
-      } = args as {
-        paragraph_id: string;
-        count?: number;
-        include_memory?: boolean;
-      };
-      if (!paragraph_id) {
-        throw new Error('段落 ID 不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 检查起始段落是否在块边界内
-      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-      //   return getOutOfBoundsError(chunkBoundaries);
-      // }
-
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            paragraph_id,
-            tool_name: 'get_next_paragraphs',
-          },
-        });
-      }
-
-      // 使用优化的异步方法，按需加载章节内容
-      const results = await ChapterService.getNextParagraphsAsync(book, paragraph_id, count);
-
-      // 过滤掉空段落或仅包含符号的段落
-      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
-
-      // 移除块边界限制，允许跨 chunk 获取上下文
-      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
-
-      // 如果过滤后没有结果，说明请求超出了块边界
-      // if (chunkBoundaries && validResults.length === 0) {
-      //   return getOutOfBoundsError(chunkBoundaries);
-      // }
-
-      // 搜索相关记忆（从段落文本中提取关键词）
-      let relatedMemories: Array<{ id: string; summary: string }> = [];
-      if (include_memory && bookId && validResults.length > 0) {
-        // 从第一个段落中提取关键词
-        const firstResult = validResults[0];
-        if (firstResult?.paragraph?.text) {
-          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
-          if (keywords.length > 0) {
-            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-          }
-        }
-      }
-
-      return JSON.stringify({
-        success: true,
-        paragraphs: validResults.map((result) => ({
-          id: result.paragraph.id,
-          text: result.paragraph.text,
-          translation:
-            result.paragraph.translations.find(
-              (t) => t.id === result.paragraph.selectedTranslationId,
-            )?.translation ||
-            result.paragraph.translations[0]?.translation ||
-            '',
-          chapter: {
-            id: result.chapter.id,
-            title:
-              typeof result.chapter.title === 'string'
-                ? result.chapter.title
-                : result.chapter.title.original,
-            title_translation:
-              typeof result.chapter.title === 'string'
-                ? ''
-                : result.chapter.title.translation?.translation || '',
-          },
-          volume: {
-            id: result.volume.id,
-            title:
-              typeof result.volume.title === 'string'
-                ? result.volume.title
-                : result.volume.title.original,
-            title_translation:
-              typeof result.volume.title === 'string'
-                ? ''
-                : result.volume.title.translation?.translation || '',
-          },
-          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
-          chapter_index: result.chapterIndex,
-          volume_index: result.volumeIndex,
-        })),
-        count: validResults.length,
-        ...(include_memory && relatedMemories.length > 0
-          ? { related_memories: relatedMemories }
-          : {}),
-      });
-    },
+    handler: async (args, context) =>
+      handleNeighborParagraphs(args, context, {
+        toolName: 'get_next_paragraphs',
+        fetch: (book, paragraphId, count) =>
+          ChapterService.getNextParagraphsAsync(book, paragraphId, count),
+      }),
   },
   {
     definition: {

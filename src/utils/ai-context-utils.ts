@@ -2,7 +2,7 @@ import { getAssistantSystemPrompt } from 'src/services/ai/tasks/prompts/assistan
 import { getTodosSystemPrompt } from 'src/services/ai/tasks/utils/todo-helper';
 import { ToolRegistry } from 'src/services/ai/tools';
 import type { AITool, ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
-import type { ChatMessage, ChatSession } from 'src/stores/chat-sessions';
+import type { ChatSessionMessage, ChatSession } from 'src/stores/chat-sessions';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 
 export type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
@@ -16,7 +16,7 @@ export interface AssistantContextInfo {
 export interface AssistantStatsParams {
   context: AssistantContextInfo;
   session: SessionWithSummaryIndex | null;
-  currentMessages: ChatMessage[];
+  currentMessages: ChatSessionMessage[];
   includeToolSchemas?: boolean;
 }
 
@@ -60,7 +60,7 @@ export const buildAssistantMessageHistory = (
 
 const ensurePendingUserMessage = (
   history: AIChatMessage[] | undefined,
-  currentMessages: ChatMessage[],
+  currentMessages: ChatSessionMessage[],
 ): AIChatMessage[] | undefined => {
   if (!history || history.length === 0) return history;
   const lastMessage = currentMessages[currentMessages.length - 1];

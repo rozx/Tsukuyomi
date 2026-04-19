@@ -173,7 +173,7 @@ export function useKeyboardShortcuts(
     }
 
     const paragraph = selectedChapterParagraphs.value[currentIndex];
-    if (paragraph && isEmptyParagraph(paragraph)) {
+    if (paragraph && isEmptyParagraph(paragraph.text)) {
       const nextNonEmpty = findNextNonEmptyParagraph(currentIndex, 'down');
       if (nextNonEmpty !== null) {
         currentIndex = nextNonEmpty;

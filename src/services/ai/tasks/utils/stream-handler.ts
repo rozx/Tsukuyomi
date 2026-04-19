@@ -1,5 +1,6 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
-import { type TaskType, type AIProcessingStore, TASK_TYPE_LABELS } from './task-types';
+import type { TaskType, AIProcessingStore } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
 
 // 常量定义
