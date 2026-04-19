@@ -35,6 +35,26 @@ export const DEFAULT_MIN_SCORE = 0.38;
 export const DEFAULT_TOP_K = 8;
 export const DEFAULT_RELATIVE_DELTA = 0.08;
 
+/**
+ * 语义 spread 的下限阈值。
+ *
+ * mean-pooled 多语言 BERT 向量在同书同领域下会抱团 — 本次 query 对所有 memory
+ * 的原始余弦可能全部落在 0.9±0.02 之间,此时"语义分数"没有任何区分度。
+ * 若 stddev 低于此阈值,`scoreMemoriesBatch` 判定本批语义信号退化为噪声,整批
+ * 把 semantic 设为 0(权重仍是 SCORING_WEIGHTS,不重新分配),让关键词和新近性
+ * 来区分 — 避免把噪声当信号注入。
+ *
+ * 经验值:对 256 维 Matryoshka L2-normalized 向量,0.02 对应 ~2% 相对差异,
+ * 低于这个量级几乎全是噪声。
+ */
+export const SPREAD_FLOOR = 0.02;
+
+/**
+ * z-score 归一化后的截断边界。raw cosine 距群体均值 ±Z_CLAMP·stddev 以外
+ * 的映射到 [0, 1] 两端。设成 2 覆盖约 95% 正态分布区间。
+ */
+export const Z_CLAMP = 2;
+
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -102,18 +122,13 @@ function hasEmbeddings(
 }
 
 /**
- * 无 embedding 时的降级权重:将语义权重按 3:1 比例重新分配给 keyword 和 recency,
- * 使 keyword=0.75、recency=0.25,最大分仍为 1.0。
- */
-export const FALLBACK_WEIGHTS = {
-  keyword: 0.75,
-  recency: 0.25,
-} as const;
-
-/**
  * 对单条记忆打分,返回完整 breakdown 结构体。
- * 当 embedding 不可用时,自动切换为降级权重(keyword=0.75, recency=0.25),
- * 避免语义信号缺失导致分数天花板过低。
+ *
+ * 权重固定为 SCORING_WEIGHTS(0.6 / 0.3 / 0.1)—— 不再按 embedding 可用性重新分配。
+ * 当 embedding 不可用(关闭本地嵌入、版本不匹配、缺失等)时,semantic 记为 0,
+ * 该条的最大总分回落到 0.4(keyword=1 + recency=1),用户的 minScore 阈值在
+ * 这种模式下应当相应下调 —— 这是刻意的设计,让"有/无嵌入"模式下的权重含义一致,
+ * 而不是靠重新分配权重人为抬高无嵌入模式的分数上限。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
   const versionOk =
@@ -125,22 +140,9 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
   const keyword = calculateKeywordHitRatio(memory, context.chunkEntities);
   const recency = calculateRecencyFactor(memory, context.now);
 
-  let semanticWeighted: number;
-  let keywordWeighted: number;
-  let recencyWeighted: number;
-
-  if (canUseSemantic) {
-    // 正常三信号打分
-    semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
-    keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-    recencyWeighted = recency * SCORING_WEIGHTS.recency;
-  } else {
-    // 降级:跳过语义,重新分配权重
-    semanticWeighted = 0;
-    keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
-    recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
-  }
-
+  const semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
+  const keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+  const recencyWeighted = recency * SCORING_WEIGHTS.recency;
   const total = semanticWeighted + keywordWeighted + recencyWeighted;
 
   return {
@@ -152,6 +154,86 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
     recencyWeighted,
     total,
   };
+}
+
+/**
+ * Population-aware 批量打分 — 解决"所有 memory 向量抱团,绝对/相对阈值都失效"的场景。
+ *
+ * 和 `scoreMemory` 单条打分的关键区别:
+ * 1. 先算所有 memory 的 raw cosine,再对**本批**做 z-score 归一化,映射回 [0, 1]
+ *    作为语义信号。这样即使绝对值全部在 0.92 附近,分数也能按相对偏离度拉开。
+ * 2. 若本批 raw cosine 的 stddev 低于 `SPREAD_FLOOR`(或有效样本 <2),整批
+ *    把 semantic 记为 0 —— 权重仍是 SCORING_WEIGHTS,不做重新分配。
+ * 3. 单条无 embedding 或版本不匹配的 memory 同样 semantic=0,独立降级不影响其它条。
+ *
+ * 返回与输入下标一一对应的 ScoredMemory 数组(未排序,保持输入顺序)。
+ *
+ * `breakdown.semantic` 存归一化后的值(UI 展示的就是"在本批中的相对排名信号"),
+ * 这样 `semantic * SCORING_WEIGHTS.semantic === semanticWeighted` 的不变式始终成立。
+ */
+export function scoreMemoriesBatch(
+  memories: Memory[],
+  context: ScoringContext,
+): ScoredMemory[] {
+  if (!memories || memories.length === 0) return [];
+
+  // Pass 1:算所有 memory 的 raw cosine(不可用的记为 null)
+  const rawSemantics: Array<number | null> = memories.map((memory) => {
+    const versionOk =
+      !context.expectedModelVersion ||
+      memory.embeddingModel === context.expectedModelVersion;
+    if (!versionOk) return null;
+    if (!hasEmbeddings(memory.embedding, context.chunkEmbedding)) return null;
+    return calculateSemanticSim(memory.embedding, context.chunkEmbedding);
+  });
+
+  // Pass 2:统计本批 raw cosine 的 mean/stddev,判定语义信号是否有区分度
+  const valid = rawSemantics.filter((r): r is number => r !== null);
+  let mean = 0;
+  let stddev = 0;
+  if (valid.length >= 2) {
+    mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+    const variance =
+      valid.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / valid.length;
+    stddev = Math.sqrt(variance);
+  }
+  // 只有一条 memory 或 spread 太小 → 语义不可用,整批降级
+  const semanticUsable = valid.length >= 2 && stddev >= SPREAD_FLOOR;
+
+  // Pass 3:逐条构造 breakdown
+  return memories.map((memory, i) => {
+    const raw = rawSemantics[i] ?? null;
+    const itemCanUse = semanticUsable && raw !== null;
+
+    // z-normalize 到 [0, 1]:(z + Z_CLAMP) / (2·Z_CLAMP),clamp 两端
+    const normalized =
+      itemCanUse && raw !== null
+        ? Math.min(
+            1,
+            Math.max(0, ((raw - mean) / stddev + Z_CLAMP) / (2 * Z_CLAMP)),
+          )
+        : 0;
+
+    const keyword = calculateKeywordHitRatio(memory, context.chunkEntities);
+    const recency = calculateRecencyFactor(memory, context.now);
+
+    const semanticWeighted = normalized * SCORING_WEIGHTS.semantic;
+    const keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+    const recencyWeighted = recency * SCORING_WEIGHTS.recency;
+
+    return {
+      memory,
+      breakdown: {
+        semantic: normalized,
+        keyword,
+        recency,
+        semanticWeighted,
+        keywordWeighted,
+        recencyWeighted,
+        total: semanticWeighted + keywordWeighted + recencyWeighted,
+      },
+    };
+  });
 }
 
 /**

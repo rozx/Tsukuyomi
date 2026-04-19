@@ -9,7 +9,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import {
-  scoreMemory,
+  scoreMemoriesBatch,
   selectByBudget,
   DEFAULT_CHAR_BUDGET,
   HARD_ITEM_CAP,
@@ -382,19 +382,16 @@ export async function selectRelevantMemoriesForChunk(
   // 3. 可选语义向量
   const chunkEmbedding = await computeChunkEmbedding(chunkText);
 
-  // 4. 逐条打分 — chunkEmbedding 存在时传入 expectedModelVersion,
-  //    让跨版本的 stale 记忆退回到 keyword+recency 降级权重,不被当前空间的 query 向量污染
+  // 4. 批量打分 — chunkEmbedding 存在时传入 expectedModelVersion 过滤 stale 记忆;
+  //    batch 版会对本批 raw cosine 做 z-score 归一化,spread 过小时整批把 semantic 置 0(权重不变)
   const now = Date.now();
   const expectedModelVersion = chunkEmbedding ? MODEL_VERSION : undefined;
-  const scored: ScoredMemory[] = allMemories.map((memory) => ({
-    memory,
-    breakdown: scoreMemory(memory, {
-      chunkEntities,
-      chunkEmbedding: chunkEmbedding ?? undefined,
-      now,
-      expectedModelVersion,
-    }),
-  }));
+  const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
+    chunkEntities,
+    chunkEmbedding: chunkEmbedding ?? undefined,
+    now,
+    expectedModelVersion,
+  });
 
   // 5. 字符预算填充 — 读取用户预算设置
   let charBudget = DEFAULT_CHAR_BUDGET;
@@ -410,31 +407,27 @@ export async function selectRelevantMemoriesForChunk(
 
   const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
 
-  let memories: Memory[] = selected;
+  // 严格阈值策略:不走 LRU 兜底。minScore 以下的记忆一律不返回 —
+  // UI 预览和翻译注入共用同一函数,所以两边的过滤规则自动一致。
+  // 如果这一批全部不达标,用户看到"未参考记忆",这是正确的信号(说明当前
+  // chunk 没有足够相关的历史记忆,而不是用低分噪音凑数)。
+  const memories: Memory[] = selected;
   const breakdowns: Record<string, ScoreBreakdown> = {};
-  let fromFallback = false;
-
-  if (selected.length === 0) {
-    // 6. 兜底:LRU 最近 5 条(不记录 breakdown)
-    fromFallback = true;
-    try {
-      memories = await MemoryService.getRecentMemories(bookId, 5, 'lastAccessedAt', false);
-    } catch {
-      memories = [];
-    }
-  } else {
-    const selectedIds = new Set(selected.map((m) => m.id));
-    for (const item of scored) {
-      if (selectedIds.has(item.memory.id)) {
-        breakdowns[item.memory.id] = item.breakdown;
-      }
-    }
+  const scoredById = new Map(scored.map((s) => [s.memory.id, s.breakdown]));
+  for (const mem of memories) {
+    const bd = scoredById.get(mem.id);
+    if (bd) breakdowns[mem.id] = bd;
   }
 
   // 供 translation-service 旁路读取
   lastScoreBreakdownsByBook.set(bookId, breakdowns);
 
-  return { memories, breakdowns, fromFallback, totalMemoryCount: allMemories.length };
+  return {
+    memories,
+    breakdowns,
+    fromFallback: false,
+    totalMemoryCount: allMemories.length,
+  };
 }
 
 /**

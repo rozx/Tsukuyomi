@@ -87,20 +87,23 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     expect(highPos).toBeLessThan(lowPos);
   });
 
-  test('所有记忆低于阈值时兜底 getRecentMemories', async () => {
+  test('所有记忆低于 minScore 时严格返回空(不做 LRU 兜底)', async () => {
+    // 严格阈值策略:minScore 以下的记忆一律不注入,UI 和翻译侧都会看到空结果。
+    // 这是刻意的 — 让"无足够相关记忆"成为一个清晰信号,而不是用低分噪声凑数。
     const veryOldMemory = makeMemory('old', {
       summary: '完全无关的远古记忆',
-      lastAccessedAt: 100, // 极旧
+      lastAccessedAt: 100,
       createdAt: 100,
     });
-    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([veryOldMemory]);
-    spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
-
-    const fallbackMemory = makeMemory('fallback', {
-      summary: '近期记忆',
+    const recentMemory = makeMemory('recent', {
+      summary: '近期但也无关的记忆',
       lastAccessedAt: Date.now(),
     });
-    spyOn(MemoryService, 'getRecentMemories').mockResolvedValue([fallbackMemory]);
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
+      veryOldMemory,
+      recentMemory,
+    ]);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
 
     const result = await getRelatedMemoriesForChunk(
       'book-1',
@@ -111,7 +114,9 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
       [],
     );
 
-    expect(result).toContain('[fallback]');
+    // 两条 memory 的 chunkEntities 都为空,keyword=0,recency ≈ 1 / ≈ 0
+    // total = 0 × 0.6 + 0 × 0.3 + recency × 0.1 ≤ 0.1,远低于 0.38 minScore → 全部过滤
+    expect(result).toBe('');
   });
 
   test('getAllBookMemories 抛异常时退回 legacy 路径', async () => {

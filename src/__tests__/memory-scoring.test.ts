@@ -5,12 +5,13 @@ import {
   calculateRecencyFactor,
   calculateSemanticSim,
   scoreMemory,
+  scoreMemoriesBatch,
   selectByBudget,
   filterByRelativeRanking,
   SCORING_WEIGHTS,
-  FALLBACK_WEIGHTS,
   MAX_TOTAL_SCORE,
   DEFAULT_MIN_SCORE,
+  SPREAD_FLOOR,
 } from 'src/services/memory-scoring';
 import type { ScoredMemory } from 'src/services/memory-scoring';
 
@@ -171,7 +172,7 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.total).toBeCloseTo(MAX_TOTAL_SCORE, 5);
   });
 
-  test('缺失 embedding 时 semantic=0, 使用降级权重 keyword/recency 仍生效', () => {
+  test('缺失 embedding 时 semantic=0,权重不重新分配(total 上限 0.4)', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '小明',
@@ -183,13 +184,14 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
 
-    // memory 没有 embedding,无法计算语义相似度,使用降级权重
+    // memory 没有 embedding,semantic=0,但权重依然是 SCORING_WEIGHTS(不做 FALLBACK 重新分配)。
+    // 这样"有/无嵌入"两种模式下权重含义保持一致,用户只需调整 minScore 阈值。
     expect(breakdown.semantic).toBe(0);
     expect(breakdown.keyword).toBeCloseTo(1, 5);
     expect(breakdown.recency).toBeCloseTo(1, 5);
-    // 降级权重: keyword=0.75, recency=0.25, 总分 = 0.75 + 0.25 = 1.0
+    // keyword(1) × 0.3 + recency(1) × 0.1 = 0.4
     expect(breakdown.total).toBeCloseTo(
-      FALLBACK_WEIGHTS.keyword + FALLBACK_WEIGHTS.recency,
+      SCORING_WEIGHTS.keyword + SCORING_WEIGHTS.recency,
       5,
     );
   });
@@ -374,5 +376,200 @@ describe('memory-scoring - filterByRelativeRanking', () => {
     const snapshot = list.map((s) => s.memory.id);
     filterByRelativeRanking(list);
     expect(list.map((s) => s.memory.id)).toEqual(snapshot);
+  });
+});
+
+describe('memory-scoring - scoreMemoriesBatch', () => {
+  // 构造一个"抱团"场景:8 条记忆的 embedding 都和 query 余弦 ≈ 0.93(差异 <0.005)。
+  // 这是 mean-pooled 多语言 BERT 对同书同领域 memory 的典型表现 —
+  // 期望整批降级到 FALLBACK_WEIGHTS,由 keyword 和 recency 来区分。
+  function makeEmbedding(values: number[]): number[] {
+    // L2 归一化
+    let norm = 0;
+    for (const v of values) norm += v * v;
+    norm = Math.sqrt(norm);
+    return values.map((v) => v / (norm || 1));
+  }
+
+  test('stddev 低于 SPREAD_FLOOR 时整批降级到 FALLBACK_WEIGHTS', () => {
+    // query 向量固定
+    const query = makeEmbedding([1, 0, 0, 0]);
+    // 8 条 memory 向量都和 query 极其接近(cosine ≈ 1.0,互相差异 <0.001)
+    const tightCluster = [
+      makeEmbedding([1, 0.001, 0, 0]),
+      makeEmbedding([1, 0.002, 0, 0]),
+      makeEmbedding([1, 0.003, 0, 0]),
+      makeEmbedding([1, 0.001, 0.001, 0]),
+      makeEmbedding([1, 0, 0.002, 0]),
+      makeEmbedding([1, 0.001, 0.001, 0.001]),
+      makeEmbedding([1, 0.002, 0.001, 0]),
+      makeEmbedding([1, 0.001, 0.002, 0.001]),
+    ];
+    const memories: Memory[] = tightCluster.map((_, i) =>
+      makeMemory({
+        id: `m${i}`,
+        summary: i === 3 ? '包含关键词小明' : '普通内容',
+        // 最后一条设成很旧
+        lastAccessedAt: i === 7 ? 0 : 1_000_000_000,
+      }),
+    );
+    memories.forEach((m, i) => (m.embedding = tightCluster[i]!));
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }],
+      chunkEmbedding: query,
+      now: 1_000_000_000,
+    });
+
+    // 整批语义信号被判为不可用,每条 semantic 都是 0
+    result.forEach((s) => {
+      expect(s.breakdown.semantic).toBe(0);
+      expect(s.breakdown.semanticWeighted).toBe(0);
+    });
+
+    // keyword 命中的 m3 用 SCORING_WEIGHTS.keyword(0.3)加权
+    const m3 = result.find((s) => s.memory.id === 'm3')!;
+    expect(m3.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
+
+    // m3 应该是排名最高的(有 keyword 命中 + recency 高)
+    result.sort((a, b) => b.breakdown.total - a.breakdown.total);
+    expect(result[0]!.memory.id).toBe('m3');
+
+    // 旧 memory(m7)因 recency 衰减,应该排在末尾
+    expect(result[result.length - 1]!.memory.id).toBe('m7');
+  });
+
+  test('spread 足够时启用 z-score 归一化', () => {
+    const query = makeEmbedding([1, 0, 0]);
+    // 3 条 memory:一条高相关、一条中、一条低相关(余弦差距足够大)
+    const high = makeEmbedding([1, 0.1, 0]);
+    const mid = makeEmbedding([0.5, 0.5, 0]);
+    const low = makeEmbedding([0, 1, 0]);
+    const memories: Memory[] = [
+      makeMemory({ id: 'high' }),
+      makeMemory({ id: 'mid' }),
+      makeMemory({ id: 'low' }),
+    ];
+    memories[0]!.embedding = high;
+    memories[1]!.embedding = mid;
+    memories[2]!.embedding = low;
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+
+    // 语义区分度足够,没有整批降级 — semantic 值应该拉开
+    const resultById = new Map(result.map((s) => [s.memory.id, s]));
+    const highSem = resultById.get('high')!.breakdown.semantic;
+    const lowSem = resultById.get('low')!.breakdown.semantic;
+    expect(highSem).toBeGreaterThan(lowSem + 0.3); // 归一化后差距至少 0.3
+
+    // 归一化值必须在 [0, 1]
+    result.forEach((s) => {
+      expect(s.breakdown.semantic).toBeGreaterThanOrEqual(0);
+      expect(s.breakdown.semantic).toBeLessThanOrEqual(1);
+    });
+
+    // 不变式:semantic * WEIGHT === semanticWeighted
+    result.forEach((s) => {
+      expect(s.breakdown.semanticWeighted).toBeCloseTo(
+        s.breakdown.semantic * SCORING_WEIGHTS.semantic,
+        6,
+      );
+    });
+  });
+
+  test('无 chunkEmbedding 时整批 semantic=0,keyword 走 SCORING_WEIGHTS', () => {
+    const memories: Memory[] = [
+      makeMemory({ id: 'a', summary: '小明' }),
+      makeMemory({ id: 'b', summary: '小红' }),
+    ];
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }],
+      now: Date.now(),
+    });
+
+    result.forEach((s) => {
+      expect(s.breakdown.semantic).toBe(0);
+      expect(s.breakdown.semanticWeighted).toBe(0);
+    });
+    const a = result.find((s) => s.memory.id === 'a')!;
+    expect(a.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
+  });
+
+  test('expectedModelVersion 不匹配的 memory 按 per-item 降级', () => {
+    const query = makeEmbedding([1, 0, 0]);
+    const vA = makeEmbedding([1, 0.1, 0]); // 和 query 相似
+    const vB = makeEmbedding([0, 1, 0]); // 不相似
+    const vC = makeEmbedding([1, 0.1, 0.05]); // 相似
+    const memories: Memory[] = [
+      makeMemory({ id: 'a', summary: '', embedding: vA, embeddingModel: 'v-new' }),
+      makeMemory({ id: 'b', summary: '', embedding: vB, embeddingModel: 'v-new' }),
+      // c 版本不匹配 → semantic 退化,但别人可以用
+      makeMemory({ id: 'c', summary: '小明', embedding: vC, embeddingModel: 'v-old' }),
+    ];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }],
+      chunkEmbedding: query,
+      now: Date.now(),
+      expectedModelVersion: 'v-new',
+    });
+
+    const byId = new Map(result.map((s) => [s.memory.id, s]));
+    // c 被当作无 semantic,keyword 仍用 SCORING_WEIGHTS 权重(0.3,不重新分配)
+    expect(byId.get('c')!.breakdown.semantic).toBe(0);
+    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(
+      SCORING_WEIGHTS.keyword,
+      5,
+    );
+    // a、b 语义值正常计算(spread 足够大)
+    expect(byId.get('a')!.breakdown.semantic).toBeGreaterThan(0);
+  });
+
+  test('空数组直接返回空', () => {
+    expect(scoreMemoriesBatch([], { chunkEntities: [], now: 0 })).toEqual([]);
+  });
+
+  test('单条 memory 时 semantic 无法计算,keyword 仍用 SCORING_WEIGHTS', () => {
+    const memories: Memory[] = [makeMemory({ id: 'only', summary: '小明' })];
+    memories[0]!.embedding = makeEmbedding([1, 0, 0]);
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }],
+      chunkEmbedding: makeEmbedding([1, 0, 0]),
+      now: Date.now(),
+    });
+    // 单条无法判断 spread,保守把 semantic 置 0(权重不变)
+    expect(result[0]!.breakdown.semantic).toBe(0);
+    expect(result[0]!.breakdown.keywordWeighted).toBeCloseTo(
+      SCORING_WEIGHTS.keyword,
+      5,
+    );
+  });
+
+  test('保持输入顺序(未按分数排序)', () => {
+    const query = makeEmbedding([1, 0, 0]);
+    const memories: Memory[] = [
+      makeMemory({ id: 'a' }),
+      makeMemory({ id: 'b' }),
+      makeMemory({ id: 'c' }),
+    ];
+    memories[0]!.embedding = makeEmbedding([0.1, 1, 0]); // low
+    memories[1]!.embedding = makeEmbedding([1, 0, 0]); // high
+    memories[2]!.embedding = makeEmbedding([0.5, 0.5, 0]); // mid
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+    expect(result.map((s) => s.memory.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('SPREAD_FLOOR 常量导出正确', () => {
+    expect(SPREAD_FLOOR).toBeGreaterThan(0);
+    expect(SPREAD_FLOOR).toBeLessThan(0.1);
   });
 });

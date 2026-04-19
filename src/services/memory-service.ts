@@ -630,22 +630,24 @@ export class MemoryService {
         // 语义搜索不可用时静默降级
       }
 
-      const { scoreMemory, filterByRelativeRanking } = await import(
+      const { scoreMemoriesBatch, filterByRelativeRanking, DEFAULT_MIN_SCORE } = await import(
         'src/services/memory-scoring'
       );
       const now = Date.now();
       const chunkEntities = queryTokens.map((t) => ({ name: t }));
-      const scored = allMemories.map((memory) => {
-        const breakdown = scoreMemory(memory, {
-          chunkEntities,
-          chunkEmbedding,
-          now,
-          expectedModelVersion,
-        });
-        return { memory, breakdown };
+      // 用 batch 版打分:对本批 raw cosine 做 z-score 归一化,spread 太小时整批
+      // 把 semantic 记为 0(权重仍 0.6/0.3/0.1)— 避免多语言 BERT 向量抱团把噪声当信号
+      const scored = scoreMemoriesBatch(allMemories, {
+        chunkEntities,
+        chunkEmbedding,
+        now,
+        expectedModelVersion,
       });
 
-      let minScore = 0.34;
+      // 默认阈值与 selectByBudget 保持一致(DEFAULT_MIN_SCORE = 0.38),
+      // 让"搜索工具"和"翻译注入"走相同的过滤规则,避免 AI 通过 search_memories
+      // 看到注入阶段会被过滤掉的低分项,产生行为不一致。
+      let minScore = DEFAULT_MIN_SCORE;
       try {
         const { useSettingsStore } = await import('src/stores/settings');
         const cfg = useSettingsStore().settings?.memoryInjection;
@@ -654,10 +656,9 @@ export class MemoryService {
         /* 保持默认 */
       }
 
-      // 绝对阈值兜底:有关键词命中或 total 超过 minScore 的才进入候选集
-      const absoluteFiltered = scored.filter(
-        (s) => s.breakdown.keyword > 0 || s.breakdown.total > minScore,
-      );
+      // 绝对阈值:严格按 total >= minScore 过滤,不再给"有关键词命中"开后门 —
+      // 保证搜索和注入的收敛条件完全相同。
+      const absoluteFiltered = scored.filter((s) => s.breakdown.total >= minScore);
       // 相对排名收缩:针对语义余弦噪声地板高的场景,把候选从"全员高分"压成
       // "top 附近的少数突出项",避免工具向 AI 返回一大堆中庸匹配。
       const filtered = filterByRelativeRanking(absoluteFiltered);
