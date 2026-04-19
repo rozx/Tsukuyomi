@@ -7,6 +7,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
+import { createImportBookHandler } from 'src/composables/shared/useBookImportActions';
 import { CoverService } from 'src/services/cover-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
@@ -387,29 +388,14 @@ function createBooksPageContext() {
     target.value = '';
   };
 
-  const handleImportBook = async (novel: Novel) => {
-    const now = new Date();
-    const newBook: Novel = {
-      ...novel,
-      id: uuidv4(),
-      createdAt: now,
-      lastEdited: now,
-    };
-    await booksStore.addBook(newBook);
-
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showImportDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '导入成功',
-      detail: `已成功从网站导入书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
+  const handleImportBook = createImportBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showImportDialog.value = false;
+    },
+  });
 
   const editBook = (book: Novel) => {
     selectedBook.value = { ...book };

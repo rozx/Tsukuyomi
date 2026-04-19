@@ -147,6 +147,80 @@ export function useSyncExecutor() {
     };
   };
 
+  /**
+   * 执行增量上传并持久化远端同步状态。
+   *
+   * 本 helper 只封装两处上传点的严格共性：
+   *   1. 调用 `uploadToGistIncremental`，按 UPLOAD_PHASE_START → OVERALL_TOTAL 线性映射上传进度
+   *   2. 按固定顺序持久化 lastRemoteETag / knownRemoteHashes / knownRemoteEntries /
+   *      knownRemoteTombstones / lastSyncTime，并清理过期墓碑
+   *
+   * 与上层方向相关的差异（首次上传 vs 增量上传、是否清空 known、onSuccess/forceSyncMode
+   * 收尾、markFailure 等）均在调用点处理，不纳入 helper。持久化失败按原行为仅打印日志、
+   * 不抛出——上层据此仍视为上传成功。
+   */
+  const uploadIncrementalAndPersist = async (
+    config: SyncConfig,
+    bundle: {
+      appSettingsForSync: ReturnType<typeof stripAppSettingsLocalFields>;
+      aiModelsForSync: ReturnType<typeof sortAIModelsById>;
+      coverHistoryForSync: ReturnType<typeof sortCoversById>;
+      novelsWithContent: Awaited<ReturnType<typeof buildLocalSyncBundle>>['novelsWithContent'];
+      memoriesByBook: Record<string, Memory[]>;
+      tombstones: Record<string, string>;
+    },
+    remoteFilesSnapshot: Record<string, unknown>,
+    prefixMsg: (msg: string) => string,
+  ) => {
+    const uploadResult = await gistSyncService.uploadToGistIncremental(
+      config,
+      {
+        appSettings: bundle.appSettingsForSync,
+        aiModels: bundle.aiModelsForSync,
+        coverHistory: bundle.coverHistoryForSync,
+        novels: bundle.novelsWithContent,
+        memoriesByBook: bundle.memoriesByBook,
+        tombstones: bundle.tombstones,
+      },
+      remoteFilesSnapshot as Parameters<
+        typeof gistSyncService.uploadToGistIncremental
+      >[2],
+      (progress) => {
+        const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+        const mapped =
+          progress.total > 0
+            ? UPLOAD_PHASE_START +
+              Math.round((progress.current / progress.total) * uploadPhaseRange)
+            : UPLOAD_PHASE_START;
+        settingsStore.updateSyncProgress({
+          stage: 'uploading',
+          current: mapped,
+          total: OVERALL_TOTAL,
+          message: prefixMsg(progress.message),
+        });
+      },
+    );
+
+    // 持久化新的远端状态（失败不影响上传成功判定，仅打印日志）
+    try {
+      await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
+      await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
+      await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
+      // 同步上传后的 manifest.tombstones 回 knownRemoteTombstones，供下次上传合并
+      const uploadedTombstones: Record<string, string> = {};
+      for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
+        uploadedTombstones[k] = v.deletedAt;
+      }
+      await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
+      await settingsStore.updateLastSyncTime();
+      await settingsStore.cleanupOldDeletionRecords();
+    } catch (error) {
+      console.error('[useSyncExecutor] 更新同步状态失败:', error);
+    }
+
+    return uploadResult;
+  };
+
   const executeSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
     const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
@@ -464,51 +538,19 @@ export function useSyncExecutor() {
       }
 
       try {
-        const uploadResult = await gistSyncService.uploadToGistIncremental(
+        await uploadIncrementalAndPersist(
           latestConfig,
           {
-            appSettings: appSettingsForSync,
-            aiModels: aiModelsForSync,
-            coverHistory: coverHistoryForSync,
-            novels: novelsWithContent,
+            appSettingsForSync,
+            aiModelsForSync,
+            coverHistoryForSync,
+            novelsWithContent,
             memoriesByBook,
             tombstones,
           },
-          remoteFilesSnapshot as Parameters<
-            typeof gistSyncService.uploadToGistIncremental
-          >[2],
-          (progress) => {
-            const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-            const mapped =
-              progress.total > 0
-                ? UPLOAD_PHASE_START +
-                  Math.round((progress.current / progress.total) * uploadPhaseRange)
-                : UPLOAD_PHASE_START;
-            settingsStore.updateSyncProgress({
-              stage: 'uploading',
-              current: mapped,
-              total: OVERALL_TOTAL,
-              message: prefixMsg(progress.message),
-            });
-          },
+          remoteFilesSnapshot,
+          prefixMsg,
         );
-
-        // 持久化新的远端状态
-        try {
-          await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
-          await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
-          await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
-          // 同步上传后的 manifest.tombstones 回 knownRemoteTombstones，供下次上传合并
-          const uploadedTombstones: Record<string, string> = {};
-          for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
-            uploadedTombstones[k] = v.deletedAt;
-          }
-          await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
-          await settingsStore.updateLastSyncTime();
-          await settingsStore.cleanupOldDeletionRecords();
-        } catch (error) {
-          console.error('[useSyncExecutor] 更新同步状态失败:', error);
-        }
 
         settingsStore.updateSyncProgress({
           stage: 'uploading',
@@ -658,50 +700,19 @@ export function useSyncExecutor() {
     };
 
     try {
-      const uploadResult = await gistSyncService.uploadToGistIncremental(
+      await uploadIncrementalAndPersist(
         effectiveConfig,
         {
-          appSettings: appSettingsForSync,
-          aiModels: aiModelsForSync,
-          coverHistory: coverHistoryForSync,
-          novels: novelsWithContent,
+          appSettingsForSync,
+          aiModelsForSync,
+          coverHistoryForSync,
+          novelsWithContent,
           memoriesByBook,
           tombstones,
         },
-        remoteFilesSnapshot as Parameters<
-          typeof gistSyncService.uploadToGistIncremental
-        >[2],
-        (progress) => {
-          const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-          const mapped =
-            progress.total > 0
-              ? UPLOAD_PHASE_START +
-                Math.round((progress.current / progress.total) * uploadPhaseRange)
-              : UPLOAD_PHASE_START;
-          settingsStore.updateSyncProgress({
-            stage: 'uploading',
-            current: mapped,
-            total: OVERALL_TOTAL,
-            message: prefixMsg(progress.message),
-          });
-        },
+        remoteFilesSnapshot,
+        prefixMsg,
       );
-
-      // 持久化新的远端状态（失败不影响推送成功判定）
-      try {
-        await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
-        await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
-        await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
-        const uploadedTombstones: Record<string, string> = {};
-        for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
-          uploadedTombstones[k] = v.deletedAt;
-        }
-        await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
-        await settingsStore.updateLastSyncTime();
-        await settingsStore.cleanupOldDeletionRecords();
-      } catch (error) {
-        console.error('[useSyncExecutor] 更新同步状态失败:', error);
-      }
 
       // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
       try {

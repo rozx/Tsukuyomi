@@ -7,6 +7,7 @@ import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { createImportBookHandler } from 'src/composables/shared/useBookImportActions';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -106,29 +107,14 @@ function createIndexPageContext() {
     showImportDialog.value = true;
   };
 
-  const handleImportBook = async (novel: Novel) => {
-    const now = new Date();
-    const newBook: Novel = {
-      ...novel,
-      id: uuidv4(),
-      createdAt: now,
-      lastEdited: now,
-    };
-    await booksStore.addBook(newBook);
-
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showImportDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '导入成功',
-      detail: `已成功从网站导入书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
+  const handleImportBook = createImportBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showImportDialog.value = false;
+    },
+  });
 
   const handleSave = async (formData: Partial<Novel>) => {
     const now = new Date();

@@ -1517,6 +1517,96 @@ export class AssistantService {
   }
 
   /**
+   * 触发一次「构建摘要 → 用摘要重建消息 → 重新发起完整请求」的重试流程。
+   *
+   * 将两处（请求前主动摘要 / catch 中 token 限制补救摘要）共享的成功路径抽离：
+   * - 以统一方式调用 {@link requestSummaryReset} 构造参数
+   * - 摘要成功：可选打印日志 → 调 `onSummarizingEnd` → `rebuildMessagesWithSummary` →
+   *   `executeFullRequest` → 返回带 `needsReset + summary` 的结果
+   * - 摘要失败（返回 null）：由调用者负责走各自的降级路径（两处降级行为不同，不合并）
+   *
+   * 返回 `null` 表示摘要未产生，调用者应执行自己的降级分支。
+   */
+  private static async attemptSummaryAndRetry(params: {
+    model: AIModel;
+    systemPrompt: string;
+    userMessage: string;
+    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
+    tools: AITool[];
+    bookId: string | null;
+    options: AssistantServiceOptions;
+    taskId?: string | undefined;
+    sessionId?: string | undefined;
+    finalSignal?: AbortSignal | undefined;
+    aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
+    successLogMessage?: string;
+  }): Promise<AssistantResult | null> {
+    const {
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      tools,
+      bookId,
+      options,
+      taskId,
+      sessionId,
+      finalSignal,
+      aiProcessingStore,
+      successLogMessage,
+    } = params;
+
+    const summaryResult = await this.requestSummaryReset({
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
+      context: { currentBookId: bookId },
+      ...(finalSignal ? { finalSignal } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+      ...(taskId ? { taskId } : {}),
+      ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+      ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
+    });
+
+    if (!summaryResult || !summaryResult.summary) {
+      return null;
+    }
+
+    // 摘要成功：可选日志（仅请求前摘要路径使用）
+    if (successLogMessage) {
+      console.log(successLogMessage, summaryResult.summary.length);
+    }
+
+    // 通知 UI 摘要已完成，可以开始接收新的 chunk
+    options.onSummarizingEnd?.();
+
+    const retryMessages = this.rebuildMessagesWithSummary(
+      systemPrompt,
+      summaryResult.summary,
+      userMessage,
+    );
+
+    const retryResult = await this.executeFullRequest({
+      model,
+      messages: retryMessages,
+      tools,
+      bookId,
+      options,
+      taskId,
+      sessionId,
+      signal: finalSignal,
+    });
+
+    return {
+      ...retryResult,
+      needsReset: true,
+      summary: summaryResult.summary,
+    };
+  }
+
+  /**
    * 与助手对话
    * @param model AI 模型
    * @param userMessage 用户消息
@@ -1718,49 +1808,24 @@ export class AssistantService {
         const messagesToSummarize = this.buildMessagesToSummarize(options.messageHistory, true);
 
         if (messagesToSummarize.length > 0) {
-          const summaryResult = await this.requestSummaryReset({
+          const retryResult = await this.attemptSummaryAndRetry({
             model,
             systemPrompt,
             userMessage,
             messagesToSummarize,
-            ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
-            context: { currentBookId: context.currentBookId },
-            ...(finalSignal ? { finalSignal } : {}),
-            ...(aiProcessingStore ? { aiProcessingStore } : {}),
-            ...(taskId ? { taskId } : {}),
-            ...(options.onSummarizingStart
-              ? { onSummarizingStart: options.onSummarizingStart }
-              : {}),
-            ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
+            tools,
+            bookId: context.currentBookId,
+            options,
+            taskId,
+            sessionId,
+            finalSignal,
+            aiProcessingStore,
+            successLogMessage: '[AssistantService] 摘要成功，使用新摘要继续聊天，摘要长度:',
           });
 
-          if (summaryResult && summaryResult.summary) {
-            // 摘要成功，使用新摘要重建消息并继续聊天
-            console.log(
-              '[AssistantService] 摘要成功，使用新摘要继续聊天，摘要长度:',
-              summaryResult.summary.length,
-            );
-
-            // 通知 UI 摘要已完成，可以开始接收新的 chunk
-            options.onSummarizingEnd?.();
-
-            const retryMessages = this.rebuildMessagesWithSummary(
-              systemPrompt, summaryResult.summary, userMessage,
-            );
-
-            // 使用重建的消息继续聊天
-            const retryResult = await this.executeFullRequest({
-              model, messages: retryMessages, tools,
-              bookId: context.currentBookId,
-              options, taskId, sessionId, signal: finalSignal,
-            });
-
+          if (retryResult) {
             // 返回结果，同时包含摘要信息供 UI 层更新会话状态
-            return {
-              ...retryResult,
-              needsReset: true,
-              summary: summaryResult.summary,
-            };
+            return retryResult;
           }
 
           console.warn('[AssistantService] 自动总结失败，使用降级策略：只保留最近 5 条消息');
@@ -1847,42 +1912,23 @@ export class AssistantService {
           const messagesToSummarize = this.buildMessagesToSummarize(options.messageHistory, false);
 
           if (messagesToSummarize.length > 0) {
-            const summaryResult = await this.requestSummaryReset({
+            const retryResult = await this.attemptSummaryAndRetry({
               model,
               systemPrompt,
               userMessage,
               messagesToSummarize,
-              ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
-              context: { currentBookId: context.currentBookId },
-              ...(finalSignal ? { finalSignal } : {}),
-              ...(aiProcessingStore ? { aiProcessingStore } : {}),
-              ...(taskId ? { taskId } : {}),
-              ...(options.onSummarizingStart
-                ? { onSummarizingStart: options.onSummarizingStart }
-                : {}),
-              ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
+              tools,
+              bookId: context.currentBookId,
+              options,
+              taskId,
+              sessionId,
+              finalSignal,
+              aiProcessingStore,
+              // catch 分支不打印"摘要成功"日志（保留原有行为）
             });
 
-            if (summaryResult && summaryResult.summary) {
-              // 通知 UI 摘要已完成，可以开始接收新的 chunk
-              options.onSummarizingEnd?.();
-
-              const retryMessages = this.rebuildMessagesWithSummary(
-                systemPrompt, summaryResult.summary, userMessage,
-              );
-
-              // 使用重建的消息继续聊天
-              const retryResult = await this.executeFullRequest({
-                model, messages: retryMessages, tools,
-                bookId: context.currentBookId,
-                options, taskId, sessionId, signal: finalSignal,
-              });
-
-              return {
-                ...retryResult,
-                needsReset: true,
-                summary: summaryResult.summary,
-              };
+            if (retryResult) {
+              return retryResult;
             }
 
             console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
