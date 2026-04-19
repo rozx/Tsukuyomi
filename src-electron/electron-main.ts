@@ -85,6 +85,104 @@ function resolvePreloadPath(): string | null {
   return null;
 }
 
+function loadDevServer(): void {
+  if (!mainWindow) return;
+  const devUrl = 'http://localhost:9000';
+  console.log(`[Electron] Loading dev server: ${devUrl}`);
+  void mainWindow.loadURL(devUrl).catch((err) => {
+    console.error('[Electron] Failed to load dev server:', err);
+    console.error('[Electron] Make sure Vite dev server is running on port 9000');
+    if (!mainWindow) return;
+    const indexPath = join(__dirname, '../index.html');
+    console.log(`[Electron] Falling back to: ${indexPath}`);
+    void mainWindow.loadFile(indexPath).catch((fileErr) => {
+      console.error('[Electron] Failed to load file:', fileErr);
+    });
+  });
+  if (isDebugMode) mainWindow.webContents.openDevTools();
+}
+
+function resolveProductionIndexPaths(): string[] {
+  return [
+    join(__dirname, 'index.html'),
+    join(__dirname, '../index.html'),
+    join(process.resourcesPath || __dirname, 'index.html'),
+    join(process.resourcesPath || __dirname, '../index.html'),
+  ];
+}
+
+function logProductionBuildDiagnostics(possiblePaths: string[], indexPath: string): void {
+  console.log(`[Electron] Loading production build`);
+  console.log(`[Electron] __dirname: ${__dirname}`);
+  console.log(`[Electron] process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
+  console.log(`[Electron] indexPath: ${indexPath}`);
+  console.log(`[Electron] File exists: ${existsSync(indexPath)}`);
+  console.log(
+    `[Electron] Tried paths:`,
+    possiblePaths.map((p) => ({ path: p, exists: existsSync(p) })),
+  );
+  if (!isDebugMode) return;
+  try {
+    const files = readdirSync(__dirname);
+    console.log(`[Electron] Files in __dirname:`, files.slice(0, 10));
+    if (process.resourcesPath && process.resourcesPath !== __dirname) {
+      try {
+        const resourceFiles = readdirSync(process.resourcesPath);
+        console.log(`[Electron] Files in process.resourcesPath:`, resourceFiles.slice(0, 10));
+      } catch (e) {
+        console.error('[Electron] Failed to read resourcesPath directory:', e);
+      }
+    }
+  } catch (e) {
+    console.error('[Electron] Failed to read directory:', e);
+  }
+}
+
+function showMissingIndexFallback(possiblePaths: string[]): void {
+  console.error('[Electron] index.html not found in any of the tried paths!');
+  console.error(`[Electron] Tried paths:`, possiblePaths);
+  if (!mainWindow) return;
+  mainWindow.show();
+  if (!isDebugMode) return;
+  void mainWindow.webContents.executeJavaScript(`
+    document.body.innerHTML = '<div style="padding: 20px; font-family: monospace; color: red;">
+      <h1>File Not Found</h1>
+      <p>index.html not found in any of the following paths:</p>
+      <ul>
+        ${possiblePaths.map((p) => `<li>${p}</li>`).join('')}
+      </ul>
+      <p>Check console for more details.</p>
+    </div>';
+  `);
+}
+
+function openDevToolsDelayed(delayMs: number): void {
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.webContents.isDevToolsOpened()) {
+      mainWindow.webContents.openDevTools();
+    }
+  }, delayMs);
+}
+
+function loadProductionBuild(): void {
+  if (!mainWindow) return;
+  const possiblePaths = resolveProductionIndexPaths();
+  const foundPath = possiblePaths.find((path) => existsSync(path));
+  const indexPath = foundPath || possiblePaths[0] || join(__dirname, 'index.html');
+  logProductionBuildDiagnostics(possiblePaths, indexPath);
+
+  if (existsSync(indexPath)) {
+    void mainWindow.loadFile(indexPath).catch((err) => {
+      console.error('[Electron] Failed to load index.html:', err);
+      handleLoadError(mainWindow, err, indexPath);
+    });
+  } else {
+    showMissingIndexFallback(possiblePaths);
+  }
+
+  if (isDebugMode) openDevToolsDelayed(500);
+}
+
 function createWindow() {
   const preloadPath = resolvePreloadPath();
   if (!preloadPath) {
@@ -94,120 +192,18 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    backgroundColor: '#ffffff', // 设置背景色以减少白屏闪烁
-    show: false, // 先不显示窗口，等内容加载完成后再显示
+    backgroundColor: '#ffffff',
+    show: false,
     webPreferences: {
-      // 仅当找到 preload 文件时才设置
       ...(preloadPath ? { preload: preloadPath } : {}),
       nodeIntegration: false,
       contextIsolation: true,
-      // 禁用 webSecurity 以允许爬虫服务通过 Electron fetch API 绕过 CORS 限制
-      // 这是安全的，因为我们控制所有请求的来源
       webSecurity: false,
     },
   });
 
-  // 开发环境加载开发服务器，生产环境加载构建后的文件
-  if (isDev) {
-    const devUrl = 'http://localhost:9000';
-    console.log(`[Electron] Loading dev server: ${devUrl}`);
-    void mainWindow.loadURL(devUrl).catch((err) => {
-      console.error('[Electron] Failed to load dev server:', err);
-      console.error('[Electron] Make sure Vite dev server is running on port 9000');
-      // 如果开发服务器不可用，尝试加载生产构建
-      if (mainWindow) {
-        const indexPath = join(__dirname, '../index.html');
-        console.log(`[Electron] Falling back to: ${indexPath}`);
-        void mainWindow.loadFile(indexPath).catch((fileErr) => {
-          console.error('[Electron] Failed to load file:', fileErr);
-        });
-      }
-    });
-    if (isDebugMode) {
-      mainWindow.webContents.openDevTools();
-    }
-  } else {
-    // 生产环境：加载构建后的文件
-    // 在 Quasar 构建中，index.html 与 electron-main.js 在同一目录
-    // 对于打包后的应用，路径可能有所不同
-    // 尝试多个可能的路径
-    const possiblePaths = [
-      join(__dirname, 'index.html'), // 标准路径
-      join(__dirname, '../index.html'), // 备用路径
-      join(process.resourcesPath || __dirname, 'index.html'), // 打包后的资源路径
-      join(process.resourcesPath || __dirname, '../index.html'), // 打包后的备用路径
-    ];
-
-    // 找到第一个存在的路径
-    const foundPath = possiblePaths.find((path) => existsSync(path));
-    const indexPath = foundPath || possiblePaths[0] || join(__dirname, 'index.html');
-
-    console.log(`[Electron] Loading production build`);
-    console.log(`[Electron] __dirname: ${__dirname}`);
-    console.log(`[Electron] process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
-    console.log(`[Electron] indexPath: ${indexPath}`);
-    console.log(`[Electron] File exists: ${existsSync(indexPath)}`);
-
-    // 列出所有尝试的路径
-    console.log(
-      `[Electron] Tried paths:`,
-      possiblePaths.map((p) => ({ path: p, exists: existsSync(p) })),
-    );
-
-    // 列出目录内容以便调试
-    if (isDebugMode) {
-      try {
-        const files = readdirSync(__dirname);
-        console.log(`[Electron] Files in __dirname:`, files.slice(0, 10));
-        if (process.resourcesPath && process.resourcesPath !== __dirname) {
-          try {
-            const resourceFiles = readdirSync(process.resourcesPath);
-            console.log(`[Electron] Files in process.resourcesPath:`, resourceFiles.slice(0, 10));
-          } catch (e) {
-            console.error('[Electron] Failed to read resourcesPath directory:', e);
-          }
-        }
-      } catch (e) {
-        console.error('[Electron] Failed to read directory:', e);
-      }
-    }
-
-    // 检查文件是否存在并加载
-    if (existsSync(indexPath)) {
-      void mainWindow.loadFile(indexPath).catch((err) => {
-        console.error('[Electron] Failed to load index.html:', err);
-        handleLoadError(mainWindow, err, indexPath);
-      });
-    } else {
-      console.error('[Electron] index.html not found in any of the tried paths!');
-      console.error(`[Electron] Tried paths:`, possiblePaths);
-      if (mainWindow) {
-        mainWindow.show();
-        // 显示错误信息
-        if (isDebugMode) {
-          void mainWindow.webContents.executeJavaScript(`
-            document.body.innerHTML = '<div style="padding: 20px; font-family: monospace; color: red;">
-              <h1>File Not Found</h1>
-              <p>index.html not found in any of the following paths:</p>
-              <ul>
-                ${possiblePaths.map((p) => `<li>${p}</li>`).join('')}
-              </ul>
-              <p>Check console for more details.</p>
-            </div>';
-          `);
-        }
-      }
-    }
-
-    // 在调试模式下打开开发者工具（延迟打开以确保窗口已创建）
-    if (isDebugMode) {
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.webContents.isDevToolsOpened()) {
-          mainWindow.webContents.openDevTools();
-        }
-      }, 500);
-    }
-  }
+  if (isDev) loadDevServer();
+  else loadProductionBuild();
 
   // 监听页面加载完成事件
   mainWindow.webContents.on('did-finish-load', () => {

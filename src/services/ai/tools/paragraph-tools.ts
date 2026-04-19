@@ -75,102 +75,95 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
-export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
-  if (!text || !keyword) {
-    return text;
+function classifyKeywordContext(
+  text: string,
+  keyword: string,
+): { isEnglishWord: boolean; containsCJK: boolean; textHasCJK: boolean; escapedKeyword: string } {
+  return {
+    isEnglishWord: /^[a-zA-Z]+$/.test(keyword),
+    containsCJK: hasCJK(keyword),
+    textHasCJK: hasCJK(text),
+    escapedKeyword: keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  };
+}
+
+function buildEnglishWordPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(
+    `(^|[^a-zA-Z0-9]|[${CJK_CHAR_CLASS}])${escapedKeyword}([^a-zA-Z0-9]|[${CJK_CHAR_CLASS}]|$)`,
+    flags,
+  );
+}
+
+function buildCjkPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(
+    `(^|[^${CJK_CHAR_CLASS}])${escapedKeyword}([^${CJK_CHAR_CLASS}]|$)`,
+    flags,
+  );
+}
+
+function buildAsciiWordPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, flags);
+}
+
+function boundaryTypesAt(text: string, keyword: string, index: number): {
+  isValidBoundary: boolean;
+} {
+  const beforeChar = index > 0 ? (text[index - 1] ?? '') : '';
+  const afterChar =
+    index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
+  const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
+  const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
+  const beforeIsCJK = index > 0 && isCJK(beforeChar);
+  const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
+  return {
+    isValidBoundary:
+      (beforeIsBoundary && afterIsBoundary) ||
+      (beforeIsCJK && afterIsCJK) ||
+      (beforeIsBoundary && afterIsCJK) ||
+      (beforeIsCJK && afterIsBoundary),
+  };
+}
+
+function replaceKeywordInCjkFallback(text: string, keyword: string, replacement: string): string {
+  const parts: string[] = [];
+  let lastIndex = 0;
+  let searchIndex = 0;
+  let anyMatch = false;
+  while (true) {
+    const index = text.indexOf(keyword, searchIndex);
+    if (index === -1) break;
+    if (boundaryTypesAt(text, keyword, index).isValidBoundary) {
+      if (index > lastIndex) parts.push(text.substring(lastIndex, index));
+      parts.push(replacement);
+      lastIndex = index + keyword.length;
+      anyMatch = true;
+    }
+    searchIndex = index + 1;
   }
+  if (!anyMatch) return text;
+  if (lastIndex < text.length) parts.push(text.substring(lastIndex));
+  return parts.join('');
+}
 
-  // 转义正则表达式特殊字符
-  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
+  if (!text || !keyword) return text;
+  const { isEnglishWord, containsCJK, textHasCJK, escapedKeyword } = classifyKeywordContext(
+    text,
+    keyword,
+  );
 
-  // 检查关键词是否包含 CJK 字符（中文、日文、韩文）
-  const containsCJK = hasCJK(keyword);
-  // 检查文本是否包含 CJK 字符
-  const textHasCJK = hasCJK(text);
-  // 检查关键词是否只包含ASCII字母（英文单词）
-  const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
-
-  const cjkCharClass = CJK_CHAR_CLASS;
-
-  let pattern: RegExp;
+  const applyBoundaryReplace = (pattern: RegExp) =>
+    text.replace(pattern, (_match, before, after) => `${before || ''}${replacement}${after || ''}`);
 
   if (isEnglishWord && !containsCJK) {
-    // 对于英文单词，使用单词边界
-    pattern = new RegExp(
-      `(^|[^a-zA-Z0-9]|[${cjkCharClass}])${escapedKeyword}([^a-zA-Z0-9]|[${cjkCharClass}]|$)`,
-      'giu',
-    );
-    return text.replace(pattern, (match, before, after) => {
-      // 保留前后的边界字符
-      return (before || '') + replacement + (after || '');
-    });
-  } else if (containsCJK || textHasCJK) {
-    // 对于 CJK 字符，使用更复杂的匹配
-    // 方案1：关键词前后是文本边界或非CJK字符
-    pattern = new RegExp(`(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`, 'giu');
-    let result = text.replace(pattern, (match, before, after) => {
-      return (before || '') + replacement + (after || '');
-    });
-
-    // 如果方案1没有匹配，尝试方案2：关键词在CJK字符中间
-    if (result === text) {
-      // 手动检查并替换
-      let searchIndex = 0;
-      const parts: string[] = [];
-      let lastIndex = 0;
-
-      while (true) {
-        const index = text.indexOf(keyword, searchIndex);
-        if (index === -1) {
-          break;
-        }
-
-        const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
-        const afterChar: string =
-          index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
-
-        const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
-        const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
-        const beforeIsCJK = index > 0 && isCJK(beforeChar);
-        const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
-
-        // 匹配条件：前后都是边界，或前后都是CJK，或混合
-        if (
-          (beforeIsBoundary && afterIsBoundary) ||
-          (beforeIsCJK && afterIsCJK) ||
-          (beforeIsBoundary && afterIsCJK) ||
-          (beforeIsCJK && afterIsBoundary)
-        ) {
-          // 添加之前的部分
-          if (index > lastIndex) {
-            parts.push(text.substring(lastIndex, index));
-          }
-          // 添加替换文本
-          parts.push(replacement);
-          lastIndex = index + keyword.length;
-        }
-
-        searchIndex = index + 1;
-      }
-
-      // 添加剩余部分
-      if (lastIndex < text.length) {
-        parts.push(text.substring(lastIndex));
-      }
-
-      if (parts.length > 0) {
-        result = parts.join('');
-      }
-    }
-
-    return result;
-  } else {
-    // 对于纯非 CJK 字符（主要是英文），使用单词边界
-    pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, 'giu');
-    return text.replace(pattern, (match, before, after) => {
-      return (before || '') + replacement + (after || '');
-    });
+    return applyBoundaryReplace(buildEnglishWordPattern(escapedKeyword, 'giu'));
   }
+  if (!containsCJK && !textHasCJK) {
+    return applyBoundaryReplace(buildAsciiWordPattern(escapedKeyword, 'giu'));
+  }
+  const firstPass = applyBoundaryReplace(buildCjkPattern(escapedKeyword, 'giu'));
+  if (firstPass !== text) return firstPass;
+  return replaceKeywordInCjkFallback(text, keyword, replacement);
 }
 
 /**
@@ -179,129 +172,46 @@ export function replaceWholeKeyword(text: string, keyword: string, replacement: 
  * @param keyword 关键词
  * @returns 如果文本中包含完整的关键词，返回 true
  */
+function tryCjkLookbehindPattern(escapedKeyword: string): RegExp | null {
+  try {
+    const p = new RegExp(
+      `(?<=[${CJK_CHAR_CLASS}]|^)${escapedKeyword}(?=[${CJK_CHAR_CLASS}]|$)`,
+      'iu',
+    );
+    p.test('test');
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+function containsKeywordInCjkFallback(text: string, keyword: string): boolean {
+  let searchIndex = 0;
+  while (true) {
+    const index = text.indexOf(keyword, searchIndex);
+    if (index === -1) return false;
+    if (boundaryTypesAt(text, keyword, index).isValidBoundary) return true;
+    searchIndex = index + 1;
+  }
+}
+
 export function containsWholeKeyword(text: string, keyword: string): boolean {
-  if (!text || !keyword) {
-    return false;
-  }
+  if (!text || !keyword) return false;
+  const { isEnglishWord, containsCJK, textHasCJK, escapedKeyword } = classifyKeywordContext(
+    text,
+    keyword,
+  );
 
-  // 转义正则表达式特殊字符
-  const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  // 检查关键词是否包含 CJK 字符（中文、日文、韩文）
-  const containsCJK = hasCJK(keyword);
-  // 检查文本是否包含 CJK 字符
-  const textHasCJK = hasCJK(text);
-  // 检查关键词是否只包含ASCII字母（英文单词）
-  const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
-
-  // 如果关键词是英文单词，即使文本包含CJK字符，也使用英文单词边界匹配
   if (isEnglishWord && !containsCJK) {
-    // 对于英文单词，使用单词边界
-    // 但需要考虑混合语言情况：如果前后是CJK字符，也应该匹配
-    const cjkCharClass = CJK_CHAR_CLASS;
-    // 匹配：前后是文本边界、非字母数字字符、或CJK字符
-    const pattern = new RegExp(
-      `(^|[^a-zA-Z0-9]|[${cjkCharClass}])${escapedKeyword}([^a-zA-Z0-9]|[${cjkCharClass}]|$)`,
-      'iu',
-    );
-    return pattern.test(text);
-  } else if (containsCJK || textHasCJK) {
-    // 对于包含 CJK 字符的情况，需要特殊处理
-    // CJK 文本没有明确的单词边界，所以匹配精确的子字符串
-    // 匹配规则：
-    // 1. 关键词前必须是文本开头或非CJK字符（标点、空格、英文等）
-    // 2. 关键词后必须是文本结尾或非CJK字符
-    // 3. 如果关键词前后都是CJK字符，也匹配（因为CJK没有单词边界，精确匹配子字符串是可以接受的）
-
-    // 定义CJK字符范围（用于字符类）
-    const cjkCharClass = CJK_CHAR_CLASS;
-
-    // 方案1：关键词前后是文本边界或非CJK字符
-    const pattern1 = new RegExp(
-      `(^|[^${cjkCharClass}])${escapedKeyword}([^${cjkCharClass}]|$)`,
-      'iu',
-    );
-
-    // 方案2：关键词前后都是CJK字符或文本边界（使用负向前瞻和后顾）
-    // 如果关键词在CJK字符中间，也匹配（因为CJK没有单词边界）
-    // 注意：后顾 (?<=...) 需要检查浏览器支持，如果不支持则回退
-    let pattern2: RegExp | null = null;
-    try {
-      pattern2 = new RegExp(
-        `(?<=[${cjkCharClass}]|^)${escapedKeyword}(?=[${cjkCharClass}]|$)`,
-        'iu',
-      );
-      // 测试后顾是否支持
-      pattern2.test('test');
-    } catch (e) {
-      pattern2 = null;
-    }
-
-    // 先尝试方案1（关键词前后是文本边界或非CJK字符）
-    if (pattern1.test(text)) {
-      return true;
-    }
-
-    // 如果方案2支持，也尝试方案2
-    if (pattern2 && pattern2.test(text)) {
-      return true;
-    }
-
-    // 如果都不匹配，使用手动检查（fallback）
-    {
-      // 如果不支持后顾，使用方案1，并且对于CJK字符，也允许在CJK字符中间匹配
-      // 通过检查关键词前后的字符来实现
-      if (pattern1.test(text)) {
-        return true;
-      }
-
-      // 检查关键词是否在文本中，并且前后都是CJK字符或边界
-      // 需要检查所有出现的位置，因为可能有多个匹配
-
-      // 检查所有出现的位置
-      let searchIndex = 0;
-      while (true) {
-        const index = text.indexOf(keyword, searchIndex);
-        if (index === -1) {
-          break;
-        }
-
-        const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
-        const afterChar: string =
-          index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
-
-        // 检查前后字符
-        const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
-        const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
-        const beforeIsCJK = index > 0 && isCJK(beforeChar);
-        const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
-
-        // 匹配条件：
-        // 1. 前后都是边界（文本开头/结尾或非CJK字符）
-        // 2. 或者前后都是CJK字符（因为CJK没有单词边界，精确匹配子字符串是可以接受的）
-        // 3. 或者前是边界后是CJK，或前是CJK后是边界（CJK字符边界也是有效的）
-        if (
-          (beforeIsBoundary && afterIsBoundary) ||
-          (beforeIsCJK && afterIsCJK) ||
-          (beforeIsBoundary && afterIsCJK) ||
-          (beforeIsCJK && afterIsBoundary)
-        ) {
-          return true;
-        }
-
-        searchIndex = index + 1;
-      }
-
-      return false;
-    }
-  } else {
-    // 对于非 CJK 字符（主要是英文），使用单词边界
-    // 匹配规则：
-    // 1. 关键词前必须是文本开头或非字母数字字符
-    // 2. 关键词后必须是文本结尾或非字母数字字符
-    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, 'iu');
-    return pattern.test(text);
+    return buildEnglishWordPattern(escapedKeyword, 'iu').test(text);
   }
+  if (!containsCJK && !textHasCJK) {
+    return buildAsciiWordPattern(escapedKeyword, 'iu').test(text);
+  }
+  if (buildCjkPattern(escapedKeyword, 'iu').test(text)) return true;
+  const lookbehindPattern = tryCjkLookbehindPattern(escapedKeyword);
+  if (lookbehindPattern && lookbehindPattern.test(text)) return true;
+  return containsKeywordInCjkFallback(text, keyword);
 }
 
 export const paragraphTools: ToolDefinition[] = [
