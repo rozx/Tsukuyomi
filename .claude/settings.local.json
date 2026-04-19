@@ -1,15 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bun bump 0.9.3)",
+      "Bash(bun bump *)",
       "Bash(bun run type-check)",
       "Bash(bun run lint)",
-      "Bash(openspec new change \"single-para-polish-simplified\")",
-      "Bash(openspec status --change \"single-para-polish-simplified\")",
-      "Bash(openspec instructions proposal --change \"single-para-polish-simplified\")",
+      "Bash(openspec *)",
       "WebSearch",
       "WebFetch(domain:help.router-for.me)",
-      "Bash(bunx tsc:*)"
+      "Bash(bunx tsc:*)",
+      "Bash(bunx fallow *)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

@@ -12,7 +12,9 @@
     "src/css/**/*.{css,scss}",
     "src-electron/electron-main.ts",
     "src-electron/electron-preload.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "src/__tests__/**",
+    "src/**/*.test.ts"
   ],
   "ignorePatterns": [
     "src/__tests__/examplePages/**",
