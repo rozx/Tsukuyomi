@@ -193,7 +193,7 @@ onUnmounted(() => {
         <p class="text-xs text-moon/60">
           <span class="pi pi-info-circle mr-1"></span>
           {{ MODEL_ID }}
-          (WebGPU: q4f16 ~567 MB / 无 WebGPU 回落 WASM: q8 ~614 MB,首次使用需下载到浏览器缓存)
+          (WebGPU: q4f16 ~465 MB / 无 WebGPU 回落 WASM: int8 ~340 MB,首次使用需下载到浏览器缓存)
         </p>
       </div>
     </div>

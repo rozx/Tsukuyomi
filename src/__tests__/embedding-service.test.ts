@@ -30,11 +30,11 @@ function makeFloat32(values: number[]): Float32Array {
 }
 
 /**
- * 构造 last-token pooled 的模拟输出:形状 [batch, 1024](Qwen3-Embedding 原生维度)。
+ * 构造 mean-pooled 的模拟输出:形状 [batch, 768](gte-multilingual-base 原生维度)。
  * 前几维为 fill,其余为 0。
  */
 function fakePooledOutput(batch: number, fill: number) {
-  const hidden = 1024;
+  const hidden = 768;
   const data = new Float32Array(batch * hidden);
   for (let b = 0; b < batch; b++) {
     for (let i = 0; i < hidden; i++) {
@@ -217,7 +217,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     // mock 会把输入文本回传,我们用它构造基于前缀长度差异的输出
     mockPipelineImpl = async (input: unknown) => {
       const texts = Array.isArray(input) ? (input as string[]) : [input as string];
-      const hidden = 1024;
+      const hidden = 768;
       const data = new Float32Array(texts.length * hidden);
       for (let b = 0; b < texts.length; b++) {
         const t = texts[b] ?? '';
@@ -279,7 +279,7 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('qwen3-embedding-0.6b@256');
+    expect(MODEL_VERSION).toBe('gte-multilingual-base@256');
     expect(DIMENSIONS).toBe(256);
   });
 });
@@ -329,14 +329,15 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
     const cache = makeCache('transformers-cache', [
       'https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_q4.onnx',
       'https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer.json',
-      'https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/main/onnx/model_q8.onnx',
+      'https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/main/onnx/model_q4f16.onnx',
+      'https://huggingface.co/onnx-community/gte-multilingual-base/resolve/main/onnx/model_q4f16.onnx',
     ]);
     const restore = installFakeCaches([cache]);
     try {
       const deleted = await EmbeddingService.cleanupLegacyModelCache();
-      expect(deleted).toBe(2);
+      expect(deleted).toBe(3); // 2 条 embeddinggemma + 1 条 qwen3
       expect(cache.entries).toHaveLength(1);
-      expect(cache.entries[0]!.url).toContain('Qwen3-Embedding');
+      expect(cache.entries[0]!.url).toContain('gte-multilingual');
     } finally {
       restore();
     }
@@ -344,7 +345,7 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
 
   test('没有匹配项时返回 0 不抛错', async () => {
     const cache = makeCache('transformers-cache', [
-      'https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/main/onnx/model_q8.onnx',
+      'https://huggingface.co/onnx-community/gte-multilingual-base/resolve/main/onnx/model_q4f16.onnx',
     ]);
     const restore = installFakeCaches([cache]);
     try {

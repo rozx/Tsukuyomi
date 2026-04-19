@@ -2,22 +2,23 @@
  * EmbeddingService — 基于 Transformers.js 的本地特征提取
  *
  * 约定:
- * - 使用 Qwen3-Embedding-0.6B ONNX(Alibaba 2025),q8 量化 ~600MB;多语言 RAG SOTA,
- *   中日文表现明显优于 EmbeddingGemma-300m
- * - 采用 Matryoshka 表征:从原生 1024 维中截取前 256 维,再 L2 归一化
- *   (Qwen3 官方支持 32–1024 任意输出维度,256 维保留 ~95% 质量)
- * - 模型加载走动态 import,确保 Transformers.js 不进主 bundle
- * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层
+ * - 使用 GTE-Multilingual-Base ONNX(Alibaba 2024),305M 参数 BERT-encoder。
+ *   体积:WebGPU q4f16 ~465MB / WASM int8 ~340MB。
+ *   相比 Qwen3-Embedding-0.6B(decoder + last-token pooling)同硬件下快 3-5×,
+ *   因为 encoder 的 forward pass 比同等参数的 decoder 轻很多。
+ * - 采用 Matryoshka 表征:从原生 768 维中截取前 256 维,再 L2 归一化。
+ * - 模型加载走动态 import,确保 Transformers.js 不进主 bundle。
+ * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层。
  */
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 
-export const MODEL_ID = 'onnx-community/Qwen3-Embedding-0.6B-ONNX';
+export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 前缀方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
-export const MODEL_VERSION = 'qwen3-embedding-0.6b@256';
+export const MODEL_VERSION = 'gte-multilingual-base@256';
 export const DIMENSIONS = 256;
-const NATIVE_DIMENSIONS = 1024;
+const NATIVE_DIMENSIONS = 768;
 
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
@@ -29,34 +30,31 @@ export type EmbeddingBackend = 'webgpu' | 'wasm';
 
 interface PipelineConfig {
   device: EmbeddingBackend;
-  dtype: 'q4f16' | 'q8';
+  dtype: 'q4f16' | 'int8';
 }
 
-/** WebGPU 上:4-bit 权重 + fp16 激活,~567MB,显存友好且推理快。 */
+/** WebGPU 上:4-bit 权重 + fp16 激活,gte 的 q4f16 ≈ 465MB。 */
 const WEBGPU_CONFIG: PipelineConfig = { device: 'webgpu', dtype: 'q4f16' };
-/** WASM 上:8-bit 对称量化,~600MB,兼容性最好但速度慢于 WebGPU 许多。 */
-const WASM_CONFIG: PipelineConfig = { device: 'wasm', dtype: 'q8' };
+/** WASM 上:8-bit 量化,gte 的 int8 ≈ 340MB,兼容性最好但速度慢于 WebGPU 许多。 */
+const WASM_CONFIG: PipelineConfig = { device: 'wasm', dtype: 'int8' };
 
 function hasWebGPU(): boolean {
   return typeof navigator !== 'undefined' && 'gpu' in navigator;
 }
 
 /**
- * Qwen3-Embedding 官方非对称检索方案(参见 Qwen 模型卡):
- * - query 端:`Instruct: {task}\nQuery:{text}` — 带指令提示输出空间
+ * GTE-Multilingual 官方非对称检索方案(参见 Alibaba-NLP/gte-multilingual-base 模型卡):
+ * - query 端:`Represent this sentence for searching relevant passages: {text}`
  * - document 端:原文不加任何前缀 — 直接 encode
  *
- * 两侧必须严格配对:若 query 漏加 instruct 或 document 误加前缀,余弦相似度会退化。
- * 指令要求用英文,文档/查询本体可任意语言(模型原生多语言)。
+ * 两侧必须严格配对:若 query 漏加前缀或 document 误加前缀,余弦相似度会退化。
+ * 前缀字面量用英文,文档/查询本体可任意语言(模型原生多语言)。
  */
 export type EmbeddingTask = 'query' | 'document';
-const QUERY_INSTRUCTION =
-  'Given a search query about a Japanese light novel (plot, characters, events, settings, or terminology), retrieve the most semantically relevant chapter passages or memory summaries.';
+const QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
 
 function applyTaskPrefix(text: string, task: EmbeddingTask): string {
-  if (task === 'query') {
-    return `Instruct: ${QUERY_INSTRUCTION}\nQuery:${text}`;
-  }
+  if (task === 'query') return QUERY_PREFIX + text;
   return text; // document 侧不加前缀
 }
 
@@ -210,7 +208,7 @@ export class EmbeddingService {
       for (const name of cacheNames) {
         const cache = await caches.open(name);
         const keys = await cache.keys();
-        if (keys.some((req) => req.url.toLowerCase().includes('qwen3-embedding'))) {
+        if (keys.some((req) => req.url.toLowerCase().includes('gte-multilingual'))) {
           return true;
         }
       }
@@ -225,7 +223,10 @@ export class EmbeddingService {
    * 每次切换嵌入模型时,往这里追加旧模型的 URL 关键词,启动清理会把它们从 Cache API 中删除。
    * 匹配采用小写 `includes`,不区分大小写。
    */
-  private static readonly LEGACY_MODEL_URL_PATTERNS: readonly string[] = ['embeddinggemma'];
+  private static readonly LEGACY_MODEL_URL_PATTERNS: readonly string[] = [
+    'embeddinggemma',
+    'qwen3-embedding', // 0.6B decoder 在 WebGPU 上仍过慢,已弃用,回收 ~567MB 缓存
+  ];
 
   /**
    * 清理历史嵌入模型在浏览器 Cache Storage 中的残留文件。
@@ -397,7 +398,7 @@ export class EmbeddingService {
     try {
 
       const output = await this.pipeline!(applyTaskPrefix(text, task), {
-        pooling: 'last_token', // Qwen3-Embedding 官方要求 last-token pooling
+        pooling: 'mean', // gte-multilingual-base 官方使用 mean pooling
         normalize: false, // 我们手动处理截断 + 归一化(Matryoshka 截前 DIMENSIONS 维后再 L2)
       });
       return this.extractFirstVector(output);
