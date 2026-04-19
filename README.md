@@ -98,16 +98,16 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ![桌面首页](public/screenshots/index-desktop.png)
 
-|                                    平板 · Tablet                                    |                                   手机 · Mobile                                    |
-| :---------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
+|                                 平板 · Tablet                                 |                                 手机 · Mobile                                 |
+| :---------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
 | <img src="public/screenshots/index-tablet.png" alt="平板首页" width="100%" /> | <img src="public/screenshots/index-mobile.png" alt="手机首页" width="100%" /> |
 
 ### 📚 书库 · Library
 
 ![桌面书库](public/screenshots/library-desktop.png)
 
-|                                    平板 · Tablet                                    |                                   手机 · Mobile                                    |
-| :---------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
+|                                  平板 · Tablet                                  |                                  手机 · Mobile                                  |
+| :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
 | <img src="public/screenshots/library-tablet.png" alt="平板书库" width="100%" /> | <img src="public/screenshots/library-mobile.png" alt="手机书库" width="100%" /> |
 
 ### 📖 书籍详情 / 阅读器 · Book Details & Reader
@@ -116,8 +116,8 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ![桌面书籍详情](public/screenshots/book-details-desktop.png)
 
-|                                       平板 · Tablet                                       |                                     手机 (书籍详情)                                      |                                     手机 (阅读器)                                      |
-| :---------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------: |
+|                                      平板 · Tablet                                       |                                     手机 (书籍详情)                                      |                                  手机 (阅读器)                                   |
+| :--------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------: |
 | <img src="public/screenshots/book-details-tablet.png" alt="平板书籍详情" width="100%" /> | <img src="public/screenshots/book-details-mobile.png" alt="手机书籍详情" width="100%" /> | <img src="public/screenshots/reader-mobile.png" alt="手机阅读器" width="100%" /> |
 
 ### 💬 AI 助手协作 · Reader + Chat Workspace
@@ -126,16 +126,16 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ![桌面阅读器 + AI 助手](public/screenshots/reader-desktop-with-chat.png)
 
-|                                         平板 · Tablet                                         |                                        手机 · Mobile                                        |
-| :-------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------: |
+|                                            平板 · Tablet                                             |                                        手机 · Mobile                                         |
+| :--------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
 | <img src="public/screenshots/reader-tablet-with-chat.png" alt="平板阅读器 + AI 助手" width="100%" /> | <img src="public/screenshots/reader-mobile-with-chat.png" alt="手机 AI 助手" width="100%" /> |
 
 ### 🤖 AI 模型管理 · Model Management
 
 ![桌面 AI 模型](public/screenshots/ai-models-desktop.png)
 
-|                                       平板 · Tablet                                       |                                      手机 · Mobile                                      |
-| :---------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------: |
+|                                     平板 · Tablet                                     |                                     手机 · Mobile                                     |
+| :-----------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
 | <img src="public/screenshots/ai-models-tablet.png" alt="平板 AI 模型" width="100%" /> | <img src="public/screenshots/ai-models-mobile.png" alt="手机 AI 模型" width="100%" /> |
 
 ## 🔒 隐私与数据主权
@@ -185,37 +185,32 @@ bun run dev
 
 ## 🧱 技术栈
 
-| 层级                      | 技术                                                                                                                                 |
-| :------------------------ | :----------------------------------------------------------------------------------------------------------------------------------- |
-| **前端框架**              | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US)                |
-| **桌面封装**              | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                                             |
-| **运行时 / 构建**         | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                        |
-| **AI SDK**                | OpenAI SDK · Google Generative AI · 自定义 Claude 集成 · Moonshot Kimi 等兼容 OpenAI 协议的模型（BYOK）                              |
-| **本地嵌入**              | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16（优先）/ WASM + q8（回退）                             |
-| **存储 / 同步**           | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                               |
-| **抓取**                  | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理轮询（Web 版）                                             |
-| **测试**                  | Bun test · fake-indexeddb                                                                                                            |
+| 层级              | 技术                                                                                                                  |
+| :---------------- | :-------------------------------------------------------------------------------------------------------------------- |
+| **前端框架**      | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
+| **桌面封装**      | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
+| **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
+| **AI SDK**        | OpenAI SDK · Google Generative AI · 自定义 Claude 集成 · Moonshot Kimi 等兼容 OpenAI 协议的模型（BYOK）               |
+| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16（优先）/ WASM + q8（回退）              |
+| **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |
+| **抓取**          | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理轮询（Web 版）                              |
+| **测试**          | Bun test · fake-indexeddb                                                                                             |
 
 ## 🛠️ 开发与构建
 
-| 命令                     | 用途                               |
-| :----------------------- | :--------------------------------- |
-| `bun install`            | 安装依赖                           |
+| 命令                     | 用途                                      |
+| :----------------------- | :---------------------------------------- |
+| `bun install`            | 安装依赖                                  |
 | `bun run dev`            | 启动 Web 开发模式（前端:9000, 后端:8080） |
-| `bun run dev:electron`   | 启动 Electron 开发模式             |
-| `bun run build:spa`      | 构建生产环境 Web SPA               |
-| `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb) |
-| `bun run lint`           | 代码规范性检测                     |
-| `bun run type-check`     | TypeScript 类型检查                |
-| `bun test`               | 运行测试套件                       |
-| `bun run bump`           | 手动/自动更新版本号                |
+| `bun run dev:electron`   | 启动 Electron 开发模式                    |
+| `bun run build:spa`      | 构建生产环境 Web SPA                      |
+| `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb)        |
+| `bun run lint`           | 代码规范性检测                            |
+| `bun run type-check`     | TypeScript 类型检查                       |
+| `bun test`               | 运行测试套件                              |
+| `bun run bump`           | 手动/自动更新版本号                       |
 
 **开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
-
-## 📦 最新发布
-
-- **v0.10.1** — [完整发布说明](public/releaseNotes/RELEASE_NOTES_v0.10.1.md) · 记忆系统三信号评分、章节语义索引、Manifest 增量同步、移动 / 平板全新设计。
-- 历史版本：见 `public/releaseNotes/` 目录或应用内"帮助 → 更新日志"。
 
 ## 🤝 贡献
 
