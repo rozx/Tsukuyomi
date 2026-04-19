@@ -14,6 +14,12 @@ export function useChatSession(messages: Ref<ChatMessage[]>, onSessionSwitched?:
   const contextStore = useContextStore();
   const aiProcessingStore = useAIProcessingStore();
 
+  // 提前从 localStorage hydrate context（loadState 内部有 isLoaded 幂等守卫）。
+  // 否则 App.vue 的 onMounted 会在子组件 onMounted 之后才调用 loadState，
+  // 导致下面的 context watcher 把 null→bookId 的初始化误当成用户切换书籍，
+  // 从而覆盖用户刚恢复的 currentSessionId。
+  contextStore.loadState();
+
   let isUpdatingFromStore = false;
 
   // 使用 throttle 工具函数
