@@ -96,6 +96,57 @@ export function useSyncExecutor() {
     return result;
   };
 
+  /**
+   * 从本地 stores 构建同步上传所需的完整 bundle（manifest + 规范化的各 payload + 合并墓碑）
+   * 供 executeSync（阶段 3）和 executeForceSync 复用
+   */
+  const buildLocalSyncBundle = async (config: SyncConfig) => {
+    const novelsLoaded = await ChapterContentService.loadAllChapterContentsForNovels(
+      booksStore.books,
+    );
+    const rawMemoriesByBook = await collectMemoriesByBook();
+
+    const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
+    const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
+    const aiModelsForSync = sortAIModelsById(aiModelsStore.models);
+    const coverHistoryForSync = sortCoversById(coverHistoryStore.covers);
+    const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
+
+    // 合并墓碑：本地删除记录 (deletedNovelIds) + 上次从远端拉取的墓碑快照
+    // 过期墓碑（> 30 天）会在 buildLocalManifest 中被过滤
+    const tombstones: Record<string, string> = {};
+    for (const [k, ds] of Object.entries(config.knownRemoteTombstones ?? {})) {
+      tombstones[k] = ds;
+    }
+    for (const record of config.deletedNovelIds ?? []) {
+      const key = `novel:${record.id}`;
+      const existing = tombstones[key];
+      const existingMs = existing ? new Date(existing).getTime() : 0;
+      if (!existing || record.deletedAt > existingMs) {
+        tombstones[key] = new Date(record.deletedAt).toISOString();
+      }
+    }
+
+    const localManifest = await buildLocalManifest({
+      appSettings: appSettingsForSync,
+      aiModels: aiModelsForSync,
+      coverHistory: coverHistoryForSync,
+      novels: novelsWithContent,
+      memoriesByBook,
+      tombstones,
+    });
+
+    return {
+      localManifest,
+      appSettingsForSync,
+      aiModelsForSync,
+      coverHistoryForSync,
+      novelsWithContent,
+      memoriesByBook,
+      tombstones,
+    };
+  };
+
   const executeSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
     const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
@@ -267,49 +318,17 @@ export function useSyncExecutor() {
       }
 
       // ── 阶段 3：计算本地 manifest，判断是否需要上传 ──
-      // 加载所有章节内容以用于 manifest 哈希与上传
-      const novelsLoaded = await ChapterContentService.loadAllChapterContentsForNovels(
-        booksStore.books,
-      );
-      const rawMemoriesByBook = await collectMemoriesByBook();
-
-      // 规范化：剥离本地字段 + 按 id 排序聚合条目，确保内容不变时 hash 稳定
-      // - novel: 剥离 translations 里的 memoryScoreBreakdown（AI 打分 UI 状态）
-      // - memory: 剥离 embedding / embeddingModel（异步生成），按 id 排序
-      // - ai-models / cover-history: 按 id 排序，避免本地插入/删除顺序影响聚合 hash
-      // - settings: 剥离 syncs（每次同步都变）和 embeddingModelCached（设备本地状态）
-      const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
-      const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
-      const aiModelsForSync = sortAIModelsById(aiModelsStore.models);
-      const coverHistoryForSync = sortCoversById(coverHistoryStore.covers);
-      const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
-
       const latestConfig = configOverride ?? settingsStore.gistSync;
-
-      // 合并墓碑：本地删除记录 (deletedNovelIds) + 上次从远端拉取的墓碑快照
-      // 过期墓碑（> 30 天）会在 buildLocalManifest 中被过滤
-      const tombstones: Record<string, string> = {};
-      for (const [k, ds] of Object.entries(latestConfig.knownRemoteTombstones ?? {})) {
-        tombstones[k] = ds;
-      }
-      for (const record of latestConfig.deletedNovelIds ?? []) {
-        const key = `novel:${record.id}`;
-        const existing = tombstones[key];
-        const existingMs = existing ? new Date(existing).getTime() : 0;
-        // 取较新的删除时间
-        if (!existing || record.deletedAt > existingMs) {
-          tombstones[key] = new Date(record.deletedAt).toISOString();
-        }
-      }
-
-      const localManifest = await buildLocalManifest({
-        appSettings: appSettingsForSync,
-        aiModels: aiModelsForSync,
-        coverHistory: coverHistoryForSync,
-        novels: novelsWithContent,
+      const bundle = await buildLocalSyncBundle(latestConfig);
+      const {
+        localManifest,
+        appSettingsForSync,
+        aiModelsForSync,
+        coverHistoryForSync,
+        novelsWithContent,
         memoriesByBook,
         tombstones,
-      });
+      } = bundle;
 
       const knownHashes = latestConfig.knownRemoteHashes ?? {};
       const localHashes = manifestToHashes(localManifest);
@@ -513,7 +532,208 @@ export function useSyncExecutor() {
     return { success: false, restorableItems };
   };
 
+  /**
+   * 强制推送：本地覆盖远端（严格镜像）
+   *
+   * 与 executeSync 的差异：
+   *   - 不 apply 远端数据到本地（仅取 remoteFilesSnapshot）
+   *   - 不做 pseudo-CAS（用户已显式选择覆盖）
+   *   - 清空内存中的 knownRemoteHashes/Entries，使 uploadToGistIncremental 将所有本地条目
+   *     视为"新增/修改"；远端独有的条目（不在本地 manifest 中）会被 PATCH 删除，实现严格镜像
+   *   - 成功后自动关闭 forceSyncMode；失败后保留 active=true 并写入 lastFailedAt
+   *
+   * 首次同步（无 gistId）会被判定为"无可覆盖远端"，退化为 executeSync 首次上传路径，
+   * 并强制重置 forceSyncMode。
+   */
+  const executeForceSync = async (
+    options: SyncExecutorOptions,
+  ): Promise<SyncExecutorResult> => {
+    const { messagePrefix, onError, onSuccess, configOverride } = options;
+    const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
+    const config = configOverride ?? settingsStore.gistSync;
+
+    const markFailure = async () => {
+      try {
+        await settingsStore.updateForceSyncMode({ active: true, lastFailedAt: Date.now() });
+      } catch (e) {
+        console.error('[useSyncExecutor] 写入 forceSyncMode 失败状态出错:', e);
+      }
+    };
+
+    // 首次同步（无 gistId）——没有远端可覆盖，走普通首次上传
+    if (!config.syncParams.gistId) {
+      const fallback = await executeSync(options);
+      try {
+        await settingsStore.updateForceSyncMode({ active: false });
+      } catch (e) {
+        console.error('[useSyncExecutor] 重置 forceSyncMode 失败:', e);
+      }
+      if (fallback.success && onSuccess) {
+        onSuccess(
+          '同步完成',
+          '未检测到远程 Gist，已按普通同步处理',
+        );
+      }
+      return fallback;
+    }
+
+    // ── 阶段 1：获取远端文件清单（不 apply）──
+    settingsStore.updateSyncProgress({
+      stage: 'downloading',
+      message: prefixMsg('正在获取远程文件清单...'),
+      current: 0,
+      total: OVERALL_TOTAL,
+    });
+
+    let remoteFilesSnapshot: Record<string, unknown> = {};
+    let remoteETag = '';
+    try {
+      // 绕过 If-None-Match：强制推送时总是需要最新的远端文件清单用于删除对比
+      const { lastRemoteETag: _discarded, ...configWithoutETag } = config;
+      void _discarded;
+      const forceFetchConfig: SyncConfig = configWithoutETag;
+      const downloadResult = await gistSyncService.downloadFromGistWithManifest(
+        forceFetchConfig,
+        (progress) => {
+          const mapped =
+            progress.total > 0
+              ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
+              : 0;
+          settingsStore.updateSyncProgress({
+            stage: 'downloading',
+            current: mapped,
+            total: OVERALL_TOTAL,
+            message: prefixMsg(progress.message),
+          });
+        },
+      );
+      if (downloadResult.skipped) {
+        // 绕过 ETag 后理论上不会走 304；保底兜底：没拿到 snapshot 直接上传所有本地条目
+        remoteFilesSnapshot = {};
+        remoteETag = config.lastRemoteETag ?? '';
+      } else {
+        remoteFilesSnapshot = downloadResult.remoteFilesSnapshot ?? {};
+        remoteETag = downloadResult.remoteETag ?? '';
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '获取远端文件清单失败';
+      console.error('[useSyncExecutor] 强制推送 阶段 1 失败:', errorMsg);
+      await markFailure();
+      onError('强制推送失败', errorMsg);
+      return { success: false, restorableItems: [] };
+    }
+
+    // ── 阶段 2：构建本地 bundle ──
+    settingsStore.updateSyncProgress({
+      stage: 'applying',
+      message: prefixMsg('正在准备本地数据...'),
+      current: DOWNLOAD_PHASE_MAX,
+      total: OVERALL_TOTAL,
+    });
+
+    const bundle = await buildLocalSyncBundle(config);
+    const {
+      appSettingsForSync,
+      aiModelsForSync,
+      coverHistoryForSync,
+      novelsWithContent,
+      memoriesByBook,
+      tombstones,
+    } = bundle;
+
+    // ── 阶段 3：上传（清空 known 状态，跳过 pseudo-CAS）──
+    settingsStore.updateSyncProgress({
+      stage: 'uploading',
+      message: prefixMsg(`正在强制推送到远程 (${booksStore.books.length} 本书籍)...`),
+      current: UPLOAD_PHASE_START,
+      total: OVERALL_TOTAL,
+    });
+
+    // 构造 effectiveConfig：清空 knownRemoteHashes/Entries，让 uploadToGistIncremental
+    // 将所有本地 manifest 条目视为新增/修改，远端独有条目视为需删除
+    const effectiveConfig: SyncConfig = {
+      ...config,
+      knownRemoteHashes: {},
+      knownRemoteEntries: {},
+    };
+
+    try {
+      const uploadResult = await gistSyncService.uploadToGistIncremental(
+        effectiveConfig,
+        {
+          appSettings: appSettingsForSync,
+          aiModels: aiModelsForSync,
+          coverHistory: coverHistoryForSync,
+          novels: novelsWithContent,
+          memoriesByBook,
+          tombstones,
+        },
+        remoteFilesSnapshot as Parameters<
+          typeof gistSyncService.uploadToGistIncremental
+        >[2],
+        (progress) => {
+          const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+          const mapped =
+            progress.total > 0
+              ? UPLOAD_PHASE_START +
+                Math.round((progress.current / progress.total) * uploadPhaseRange)
+              : UPLOAD_PHASE_START;
+          settingsStore.updateSyncProgress({
+            stage: 'uploading',
+            current: mapped,
+            total: OVERALL_TOTAL,
+            message: prefixMsg(progress.message),
+          });
+        },
+      );
+
+      // 持久化新的远端状态（失败不影响推送成功判定）
+      try {
+        await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
+        await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
+        await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
+        const uploadedTombstones: Record<string, string> = {};
+        for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
+          uploadedTombstones[k] = v.deletedAt;
+        }
+        await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
+        await settingsStore.updateLastSyncTime();
+        await settingsStore.cleanupOldDeletionRecords();
+      } catch (error) {
+        console.error('[useSyncExecutor] 更新同步状态失败:', error);
+      }
+
+      // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
+      try {
+        await settingsStore.updateForceSyncMode({ active: false });
+      } catch (error) {
+        console.error('[useSyncExecutor] 重置 forceSyncMode 失败:', error);
+      }
+
+      settingsStore.updateSyncProgress({
+        stage: 'uploading',
+        message: prefixMsg('强制推送完成'),
+        current: OVERALL_TOTAL,
+        total: OVERALL_TOTAL,
+      });
+
+      if (onSuccess) onSuccess('强制推送完成', '本地数据已覆盖远端');
+      // 避免未使用变量警告：remoteETag 仅作日志留痕
+      if (remoteETag) {
+        console.info('[useSyncExecutor] 强制推送替换 ETag:', remoteETag);
+      }
+      return { success: true, restorableItems: [] };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
+      console.error('[useSyncExecutor] 强制推送上传失败:', errorMsg);
+      await markFailure();
+      onError('强制推送失败', errorMsg);
+      return { success: false, restorableItems: [] };
+    }
+  };
+
   return {
     executeSync,
+    executeForceSync,
   };
 }

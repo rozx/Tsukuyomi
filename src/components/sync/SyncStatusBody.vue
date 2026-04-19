@@ -5,11 +5,13 @@
  * 所有状态（syncStatus、remoteStats、进度、恢复对话框等）都留在这里，
  * 由父面板通过 slot 引用，这样就不需要把 props / emits 链到顶层。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
+import { SyncPanelCloseKey } from 'src/components/sync/sync-panel-injection';
 import { useSettingsStore } from 'src/stores/settings';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
@@ -17,6 +19,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
+import { useForceSync } from 'src/composables/useForceSync';
 import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
 import type { RestorableItem } from 'src/services/sync-data-service';
 
@@ -124,6 +127,19 @@ const remoteStats = ref<{
 } | null>(null);
 
 const { sync, restoreDeletedItems } = useGistSync();
+const { confirmAndForceSync } = useForceSync();
+
+// 强制推送模式状态（从 settingsStore 驱动）
+const forceMode = computed(() => settingsStore.forceSyncMode.active);
+
+// 父 SyncStatusPanel 通过 provide 注入的关闭回调；
+// 弹确认对话框前调用，避免 Popover/BottomSheet 挡住 ConfirmDialog 的操作链路
+const closePanel = inject(SyncPanelCloseKey, undefined);
+
+const triggerForceSync = () => {
+  const onBeforeConfirm = closePanel ? () => closePanel() : undefined;
+  void confirmAndForceSync(onBeforeConfirm ? { onBeforeConfirm } : {});
+};
 
 const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
@@ -336,14 +352,16 @@ const syncStageLabel = computed(() => {
       </div>
     </div>
 
-    <div class="flex flex-col gap-2 pt-2 border-t border-white/10">
+    <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
+      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing" />
       <Button
-        label="同步"
+        :label="forceMode ? '强制推送到远程' : '同步'"
         icon="pi pi-sync"
-        class="p-button-primary w-full"
+        :severity="forceMode ? 'danger' : 'primary'"
+        class="w-full"
         :disabled="!gistSync.enabled || isSyncing"
         :loading="isSyncing"
-        @click="syncData"
+        @click="forceMode ? triggerForceSync() : syncData()"
       />
     </div>
   </div>

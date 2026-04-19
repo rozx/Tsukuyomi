@@ -17,6 +17,8 @@ import type { SyncConfig } from 'src/models/sync';
 import { formatRelativeTime } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
+import { useForceSync } from 'src/composables/useForceSync';
+import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
 import co from 'co';
 
@@ -255,6 +257,26 @@ const loadingRevisionDetails = ref<Set<string>>(new Set());
 
 // 同步相关 - 使用 composable
 const { sync: syncComposable, restoreDeletedItems: restoreDeletedItemsComposable } = useGistSync();
+const { confirmAndForceSync } = useForceSync();
+
+// 强制推送模式状态
+const forceMode = computed(() => settingsStore.forceSyncMode.active);
+
+// 触发强制推送：使用当前表单的配置作为 config 覆盖
+const triggerForceSync = () => {
+  const baseConfig = settingsStore.gistSync;
+  const currentConfig: SyncConfig = {
+    ...baseConfig,
+    enabled: true,
+    syncParams: {
+      ...baseConfig.syncParams,
+      username: gistUsername.value,
+      ...(gistId.value ? { gistId: gistId.value } : {}),
+    },
+    secret: gistToken.value,
+  };
+  void confirmAndForceSync({ config: currentConfig });
+};
 
 // 恢复对话框状态
 const showRestoreDialog = ref(false);
@@ -1004,7 +1026,8 @@ const deleteGist = () => {
     </div>
 
     <!-- 操作按钮 -->
-    <div class="space-y-2 pt-2">
+    <div class="space-y-3 pt-2">
+      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing" />
       <Button
         label="验证 Token"
         icon="pi pi-check-circle"
@@ -1014,12 +1037,13 @@ const deleteGist = () => {
         @click="validateGistToken"
       />
       <Button
-        label="同步"
+        :label="forceMode ? '强制推送到远程' : '同步'"
         icon="pi pi-sync"
-        class="p-button-primary w-full"
+        :severity="forceMode ? 'danger' : 'primary'"
+        class="w-full"
         :disabled="!gistEnabled || gistSyncing"
         :loading="gistSyncing"
-        @click="syncToGist"
+        @click="forceMode ? triggerForceSync() : syncToGist()"
       />
     </div>
 
@@ -1148,7 +1172,7 @@ const deleteGist = () => {
       />
     </div>
 
-    <!-- 确认对话框 -->
+    <!-- 确认对话框（force-sync group 挂在 MainLayout，这里不重复挂） -->
     <ConfirmDialog group="sync" />
     <RestoreDeletedItemsDialog
       :visible="showRestoreDialog"

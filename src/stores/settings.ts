@@ -368,6 +368,9 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
         ...(sync.knownRemoteTombstones !== undefined
           ? { knownRemoteTombstones: toPlain(sync.knownRemoteTombstones) }
           : {}),
+        ...(sync.forceSyncMode !== undefined
+          ? { forceSyncMode: toPlain(sync.forceSyncMode) }
+          : {}),
       };
 
       await store.put({ id, ...clean });
@@ -497,6 +500,15 @@ export const useSettingsStore = defineStore('settings', {
     gistSync: (state): SyncConfig => {
       const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
       return gistSync ?? createDefaultGistSyncConfig();
+    },
+
+    /**
+     * 获取强制推送模式状态
+     * 旧数据缺失时返回 { active: false }
+     */
+    forceSyncMode: (state): { active: boolean; lastFailedAt?: number } => {
+      const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
+      return gistSync?.forceSyncMode ?? { active: false };
     },
   },
 
@@ -947,6 +959,9 @@ export const useSettingsStore = defineStore('settings', {
       const knownRemoteTombstones =
         updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
 
+      const forceSyncMode =
+        updates.forceSyncMode ?? existingConfig?.forceSyncMode;
+
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
         lastSyncTime:
@@ -976,6 +991,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
         ...(knownRemoteEntries !== undefined ? { knownRemoteEntries } : {}),
         ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
+        ...(forceSyncMode !== undefined ? { forceSyncMode } : {}),
       };
 
       if (index >= 0) {
@@ -1151,6 +1167,23 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateKnownRemoteTombstones(tombstones: Record<string, string>): Promise<void> {
       await this.updateGistSync({ knownRemoteTombstones: tombstones });
+    },
+
+    /**
+     * 更新强制推送模式状态
+     * 传 { active: false } 时会同时清除 lastFailedAt
+     */
+    async updateForceSyncMode(
+      partial: { active: boolean; lastFailedAt?: number | undefined },
+    ): Promise<void> {
+      // active=false 时强制清除 lastFailedAt，保证语义：关闭 = 完全退出强制模式
+      const next: { active: boolean; lastFailedAt?: number } = partial.active
+        ? {
+            active: true,
+            ...(partial.lastFailedAt !== undefined ? { lastFailedAt: partial.lastFailedAt } : {}),
+          }
+        : { active: false };
+      await this.updateGistSync({ forceSyncMode: next });
     },
 
     /**

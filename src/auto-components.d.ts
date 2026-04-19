@@ -48,6 +48,7 @@ declare module 'vue' {
     EditChapterDialog: typeof import('./components/dialogs/EditChapterDialog.vue')['default']
     EditVolumeDialog: typeof import('./components/dialogs/EditVolumeDialog.vue')['default']
     EmbeddingSettingsTab: typeof import('./components/settings/EmbeddingSettingsTab.vue')['default']
+    ForceSyncToggle: typeof import('./components/sync/ForceSyncToggle.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
     InputText: typeof import('primevue/inputtext')['default']
     KeyboardShortcutsPopover: typeof import('./components/novel/KeyboardShortcutsPopover.vue')['default']

@@ -40,6 +40,8 @@ const variantComponent = computed(() => {
   <!-- Global chrome — same across every variant, rendered once by the dispatcher -->
   <Toast position="top-right" @close="handleToastClose" />
   <ConfirmDialog />
+  <!-- 强制推送确认对话框：挂在 MainLayout 确保 SyncStatusPanel 关闭后仍能弹出 -->
+  <ConfirmDialog group="force-sync" />
   <AskUserDialog />
   <QuickStartGuideDialog :visible="quickStartGuideVisible" @dismiss="dismissQuickStartGuide" />
 </template>

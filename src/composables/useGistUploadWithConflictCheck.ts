@@ -18,7 +18,7 @@ export function useGistSync() {
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
-  const { executeSync } = useSyncExecutor();
+  const { executeSync, executeForceSync } = useSyncExecutor();
 
   /**
    * 统一的双向同步操作
@@ -153,8 +153,64 @@ export function useGistSync() {
     });
   };
 
+  /**
+   * 强制推送：用本地数据完全覆盖远端
+   *
+   * 与 sync() 的差异：
+   *   - 不下载、不合并远端到本地
+   *   - 远端上本地不存在的条目会被删除（严格镜像）
+   *   - 跳过 pseudo-CAS 检查（用户已显式选择覆盖）
+   *
+   * 调用方（useForceSync）应在调用前已获得用户确认。
+   * 成功时自动关闭 forceSyncMode；失败时保留 active=true 并写入 lastFailedAt。
+   */
+  const forceSync = async (config?: SyncConfig): Promise<void> => {
+    if (settingsStore.isSyncing) {
+      console.warn('[useGistSync] 同步已在进行中，跳过强制推送');
+      return;
+    }
+
+    settingsStore.setSyncing(true);
+
+    try {
+      await executeForceSync({
+        messagePrefix: '',
+        isManualRetrieval: true,
+        ...(config ? { configOverride: config } : {}),
+        onError: (summary, detail) => {
+          toast.add({
+            severity: 'error',
+            summary,
+            detail,
+            life: 5000,
+          });
+        },
+        onSuccess: (summary, detail) => {
+          toast.add({
+            severity: 'success',
+            summary,
+            detail,
+            life: 3000,
+          });
+        },
+      });
+    } catch (error) {
+      console.error('[useGistSync] 强制推送异常:', error);
+      const errorMsg = error instanceof Error ? error.message : '强制推送时发生未知错误';
+      toast.add({
+        severity: 'error',
+        summary: '强制推送失败',
+        detail: errorMsg,
+        life: 5000,
+      });
+    } finally {
+      settingsStore.setSyncing(false);
+    }
+  };
+
   return {
     sync,
+    forceSync,
     restoreDeletedItems,
   };
 }
