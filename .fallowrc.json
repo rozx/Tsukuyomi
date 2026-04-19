@@ -10,8 +10,6 @@
     "src/pages/**/*.vue",
     "src/boot/**/*.ts",
     "src/css/**/*.{css,scss}",
-    "src/__tests__/**/*.test.ts",
-    "src/**/*.test.ts",
     "src-electron/electron-main.ts",
     "src-electron/electron-preload.ts",
     "scripts/**/*.ts"
