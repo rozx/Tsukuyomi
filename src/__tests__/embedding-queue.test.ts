@@ -141,6 +141,33 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(2);
   });
 
+  test('tryResume 在重新开启后消费之前被停下的 pending', async () => {
+    // 关闭状态下入队两条,确认不处理
+    useSettingsStore().settings.enableLocalEmbedding = false;
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
+      async (texts: string[]) => texts.map(() => new Float32Array([0.1])),
+    );
+
+    EmbeddingQueue.enqueueMemory('m1');
+    EmbeddingQueue.enqueueMemory('m2');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(embedBatchSpy).not.toHaveBeenCalled();
+    expect(EmbeddingQueue.getProgress().pending).toBe(2);
+
+    // 重新开启 + tryResume → 之前积压的 pending 自动消费
+    useSettingsStore().settings.enableLocalEmbedding = true;
+    EmbeddingQueue.tryResume();
+    await waitForIdle();
+
+    expect(embedBatchSpy).toHaveBeenCalledTimes(1);
+    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(2);
+    expect(EmbeddingQueue.getProgress().pending).toBe(0);
+  });
+
   test('总开关关闭时:不处理 pending,也不调用 embedBatch', async () => {
     useSettingsStore().settings.enableLocalEmbedding = false;
     const getMemSpy = spyOn(MemoryService, 'getMemoryByIdOnly').mockResolvedValue(makeMemory('a'));

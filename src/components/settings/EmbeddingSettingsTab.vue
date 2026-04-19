@@ -7,6 +7,7 @@ import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingService } from 'src/services/embedding-service';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingStatus, EmbeddingProgressEvent } from 'src/services/embedding-service';
 import { MODEL_ID } from 'src/services/embedding-service';
 import { isMobileDevice } from 'src/utils/local-embedding';
@@ -92,8 +93,13 @@ const updateEnableLocalEmbedding = async (value: boolean) => {
   // 两种情况 UI 都有明确反馈,不需要用户再手动按"下载模型"。
   // 关闭时不动已加载的 pipeline — EmbeddingQueue 的 gate 自会让它闲置,
   // 用户再次开启也不用重新加载。
-  if (value && (embeddingStatus.value === 'idle' || embeddingStatus.value === 'failed')) {
-    await handleDownload();
+  if (value) {
+    if (embeddingStatus.value === 'idle' || embeddingStatus.value === 'failed') {
+      void handleDownload();
+    }
+    // 踢一下队列:之前 mid-run 被关闭保留下来的 pending 在这里自动继续。
+    // 如果 pipeline 还在加载,run() 内部会等 init 就绪再消费。
+    EmbeddingQueue.tryResume();
   }
 };
 

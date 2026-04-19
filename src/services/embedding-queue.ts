@@ -337,6 +337,19 @@ export class EmbeddingQueue {
     return this.processing;
   }
 
+  /**
+   * 尝试消费现有 pending。用户在 Settings 里重新开启本地嵌入时调用,
+   * 这样之前 mid-run 被总开关打断后保留下来的 item 能自动继续处理,
+   * 不必让用户再手动 enqueue 一次。
+   *
+   * - pending 为空 → 没事发生
+   * - 已在 processing → scheduleRun 内部短路,无害
+   * - pending 有东西且未 paused → 启动 run(run 内部会等 EmbeddingService 就绪)
+   */
+  static tryResume(): void {
+    this.scheduleRun();
+  }
+
   // ==========================================================================
   // 进度
   // ==========================================================================
