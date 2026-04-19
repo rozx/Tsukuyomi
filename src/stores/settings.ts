@@ -842,84 +842,27 @@ export const useSettingsStore = defineStore('settings', {
       const defaultConfig = createDefaultGistSyncConfig();
       const existingConfig = index >= 0 ? this.syncs[index] : undefined;
 
-      const lastSyncedModelIds =
-        updates.lastSyncedModelIds ??
-        existingConfig?.lastSyncedModelIds ??
-        defaultConfig.lastSyncedModelIds;
-
-      const deletedNovelIds =
-        updates.deletedNovelIds ?? existingConfig?.deletedNovelIds ?? defaultConfig.deletedNovelIds;
-      const deletedModelIds =
-        updates.deletedModelIds ?? existingConfig?.deletedModelIds ?? defaultConfig.deletedModelIds;
-      const deletedCoverIds =
-        updates.deletedCoverIds ?? existingConfig?.deletedCoverIds ?? defaultConfig.deletedCoverIds;
-      const deletedCoverUrls =
-        updates.deletedCoverUrls ??
-        existingConfig?.deletedCoverUrls ??
-        defaultConfig.deletedCoverUrls;
-      const deletedMemoryIds =
-        updates.deletedMemoryIds ??
-        existingConfig?.deletedMemoryIds ??
-        defaultConfig.deletedMemoryIds;
-
-      const lastRemoteUpdatedAt =
-        updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
-
-      const lastRemoteETag = updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
-
-      const knownRemoteHashes = updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
-
-      const knownRemoteEntries = updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
-
-      const knownRemoteTombstones =
-        updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
-
-      const forceSyncMode = updates.forceSyncMode ?? existingConfig?.forceSyncMode;
-
+      // 三层优先级合并（updates > existing > default）。
+      // Partial<T> 字段仅在调用方显式给 key 时才会写入，
+      // `updates.syncTime = 0` 这类数字 0/false 的合法值不会被 `??` 意外回退。
       const updatedConfig: SyncConfig = {
-        enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
-        lastSyncTime:
-          updates.lastSyncTime !== undefined
-            ? updates.lastSyncTime
-            : (existingConfig?.lastSyncTime ?? defaultConfig.lastSyncTime),
-        syncInterval:
-          updates.syncInterval !== undefined
-            ? updates.syncInterval
-            : (existingConfig?.syncInterval ?? defaultConfig.syncInterval),
-        syncType: updates.syncType ?? existingConfig?.syncType ?? defaultConfig.syncType,
+        ...defaultConfig,
+        ...(existingConfig ?? {}),
+        ...updates,
         syncParams: {
-          ...(existingConfig?.syncParams ?? defaultConfig.syncParams),
-          ...(updates.syncParams || {}),
+          ...defaultConfig.syncParams,
+          ...(existingConfig?.syncParams ?? {}),
+          ...(updates.syncParams ?? {}),
         },
-        secret: updates.secret ?? existingConfig?.secret ?? defaultConfig.secret,
-        apiEndpoint:
-          updates.apiEndpoint ?? existingConfig?.apiEndpoint ?? defaultConfig.apiEndpoint,
-        ...(lastSyncedModelIds !== undefined ? { lastSyncedModelIds } : {}),
-        ...(deletedNovelIds !== undefined ? { deletedNovelIds } : {}),
-        ...(deletedModelIds !== undefined ? { deletedModelIds } : {}),
-        ...(deletedCoverIds !== undefined ? { deletedCoverIds } : {}),
-        ...(deletedCoverUrls !== undefined ? { deletedCoverUrls } : {}),
-        ...(deletedMemoryIds !== undefined ? { deletedMemoryIds } : {}),
-        ...(lastRemoteUpdatedAt !== undefined ? { lastRemoteUpdatedAt } : {}),
-        ...(lastRemoteETag !== undefined ? { lastRemoteETag } : {}),
-        ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
-        ...(knownRemoteEntries !== undefined ? { knownRemoteEntries } : {}),
-        ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
-        ...(forceSyncMode !== undefined ? { forceSyncMode } : {}),
       };
 
-      if (index >= 0) {
-        // 更新现有配置对象的所有属性，确保响应式更新
+      if (index >= 0 && this.syncs[index]) {
+        // 原地更新以保持响应式引用不变
         const existing = this.syncs[index];
-        if (existing) {
-          Object.keys(updatedConfig).forEach((key) => {
-            const typedKey = key as keyof SyncConfig;
-            if (updatedConfig[typedKey] !== undefined) {
-              (existing as Record<string, unknown>)[key] = updatedConfig[typedKey];
-            }
-          });
-        } else {
-          this.syncs[index] = updatedConfig;
+        for (const key of Object.keys(updatedConfig) as (keyof SyncConfig)[]) {
+          if (updatedConfig[key] !== undefined) {
+            (existing as Record<string, unknown>)[key] = updatedConfig[key];
+          }
         }
       } else {
         this.syncs.push(updatedConfig);

@@ -9,6 +9,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import { MemoryService } from 'src/services/memory-service';
+import type { Memory } from 'src/models/memory';
 import { SettingsService } from 'src/services/settings-service';
 import type { Novel } from 'src/models/novel';
 import { formatWordCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
@@ -253,100 +254,127 @@ function createBooksPageContext() {
     fileInputRef.value?.click();
   };
 
+  interface BookImportStats {
+    successCount: number;
+    errorCount: number;
+    importedIds: string[];
+    oldIdToNewId: Map<string, string>;
+  }
+
+  const importBookEntries = async (importedBooks: Novel[]): Promise<BookImportStats> => {
+    const now = new Date();
+    const stats: BookImportStats = {
+      successCount: 0,
+      errorCount: 0,
+      importedIds: [],
+      oldIdToNewId: new Map(),
+    };
+
+    for (const bookData of importedBooks) {
+      if (!bookData.title || typeof bookData.title !== 'string') {
+        stats.errorCount++;
+        continue;
+      }
+
+      try {
+        const newBook: Novel = {
+          ...bookData,
+          id: uuidv4(),
+          createdAt: bookData.createdAt ? new Date(bookData.createdAt) : now,
+          lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
+        };
+
+        await booksStore.addBook(newBook);
+        stats.importedIds.push(newBook.id);
+
+        if (bookData.id) stats.oldIdToNewId.set(bookData.id, newBook.id);
+        if (newBook.cover) void coverHistoryStore.addCover(newBook.cover);
+
+        stats.successCount++;
+      } catch (error) {
+        console.error('导入书籍时出错:', error);
+        stats.errorCount++;
+      }
+    }
+
+    return stats;
+  };
+
+  const importMemoriesForBooks = async (
+    memoriesByBookId: Map<string, Memory[]>,
+    oldIdToNewId: Map<string, string>,
+  ): Promise<{ imported: number; failed: number }> => {
+    let imported = 0;
+    let failed = 0;
+    for (const [oldBookId, memories] of memoriesByBookId) {
+      const newBookId = oldIdToNewId.get(oldBookId);
+      if (!newBookId) continue;
+      for (const mem of memories) {
+        try {
+          await MemoryService.createMemoryWithId(newBookId, mem.id, mem.content, mem.summary, {
+            createdAt: mem.createdAt,
+            lastAccessedAt: mem.lastAccessedAt,
+          });
+          imported++;
+        } catch (e) {
+          console.error(`导入记忆 ${mem.id} 失败:`, e);
+          failed++;
+        }
+      }
+    }
+    return { imported, failed };
+  };
+
+  const buildMemorySummary = (imported: number, failed: number): string => {
+    if (imported > 0) {
+      return `（含 ${imported} 条记忆${failed > 0 ? `，${failed} 条失败` : ''}）`;
+    }
+    if (failed > 0) return `（${failed} 条记忆导入失败）`;
+    return '';
+  };
+
+  const notifyImportResult = (
+    stats: BookImportStats,
+    memory: { imported: number; failed: number },
+  ): void => {
+    if (stats.successCount > 0) {
+      const idsToDelete = [...stats.importedIds];
+      const memSummary = buildMemorySummary(memory.imported, memory.failed);
+      const errorSuffix = stats.errorCount > 0 ? `，${stats.errorCount} 本失败` : '';
+      toast.add({
+        severity: 'success',
+        summary: '导入成功',
+        detail: `成功导入 ${stats.successCount} 本书籍${memSummary}${errorSuffix}`,
+        life: 3000,
+        onRevert: async () => {
+          for (const id of idsToDelete) {
+            await booksStore.deleteBook(id);
+          }
+        },
+      });
+      return;
+    }
+    toast.add({
+      severity: 'error',
+      summary: '导入失败',
+      detail: `未能导入任何书籍${stats.errorCount > 0 ? `（${stats.errorCount} 本失败）` : ''}`,
+      life: 3000,
+    });
+  };
+
   const handleFileSelect = async (event: Event) => {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
-
     if (!file) return;
 
     try {
       const data = await SettingsService.readJsonFile(file);
-      const { novels: importedBooks, memoriesByBookId } = SettingsService.parseBookImportData(data);
+      const { novels: importedBooks, memoriesByBookId } =
+        SettingsService.parseBookImportData(data);
 
-      const now = new Date();
-      let successCount = 0;
-      let errorCount = 0;
-      const importedIds: string[] = [];
-      const oldIdToNewId = new Map<string, string>();
-
-      for (const bookData of importedBooks) {
-        try {
-          if (!bookData.title || typeof bookData.title !== 'string') {
-            errorCount++;
-            continue;
-          }
-
-          const newBook: Novel = {
-            ...bookData,
-            id: uuidv4(),
-            createdAt: bookData.createdAt ? new Date(bookData.createdAt) : now,
-            lastEdited: bookData.lastEdited ? new Date(bookData.lastEdited) : now,
-          };
-
-          await booksStore.addBook(newBook);
-          importedIds.push(newBook.id);
-
-          if (bookData.id) {
-            oldIdToNewId.set(bookData.id, newBook.id);
-          }
-
-          if (newBook.cover) {
-            void coverHistoryStore.addCover(newBook.cover);
-          }
-
-          successCount++;
-        } catch (error) {
-          console.error('导入书籍时出错:', error);
-          errorCount++;
-        }
-      }
-
-      let importedMemoryCount = 0;
-      let memoryErrorCount = 0;
-      for (const [oldBookId, memories] of memoriesByBookId) {
-        const newBookId = oldIdToNewId.get(oldBookId);
-        if (!newBookId) continue;
-        for (const mem of memories) {
-          try {
-            await MemoryService.createMemoryWithId(newBookId, mem.id, mem.content, mem.summary, {
-              createdAt: mem.createdAt,
-              lastAccessedAt: mem.lastAccessedAt,
-            });
-            importedMemoryCount++;
-          } catch (e) {
-            console.error(`导入记忆 ${mem.id} 失败:`, e);
-            memoryErrorCount++;
-          }
-        }
-      }
-
-      if (successCount > 0) {
-        const idsToDelete = [...importedIds];
-        const memSummary =
-          importedMemoryCount > 0
-            ? `（含 ${importedMemoryCount} 条记忆${memoryErrorCount > 0 ? `，${memoryErrorCount} 条失败` : ''}）`
-            : memoryErrorCount > 0
-              ? `（${memoryErrorCount} 条记忆导入失败）`
-              : '';
-        toast.add({
-          severity: 'success',
-          summary: '导入成功',
-          detail: `成功导入 ${successCount} 本书籍${memSummary}${errorCount > 0 ? `，${errorCount} 本失败` : ''}`,
-          life: 3000,
-          onRevert: async () => {
-            for (const id of idsToDelete) {
-              await booksStore.deleteBook(id);
-            }
-          },
-        });
-      } else {
-        toast.add({
-          severity: 'error',
-          summary: '导入失败',
-          detail: `未能导入任何书籍${errorCount > 0 ? `（${errorCount} 本失败）` : ''}`,
-          life: 3000,
-        });
-      }
+      const stats = await importBookEntries(importedBooks);
+      const memory = await importMemoriesForBooks(memoriesByBookId, stats.oldIdToNewId);
+      notifyImportResult(stats, memory);
     } catch (error) {
       toast.add({
         severity: 'error',
@@ -489,74 +517,89 @@ function createBooksPageContext() {
     void router.push(`/books/${book.id}`);
   };
 
+  const buildNovelFromFormData = (formData: Partial<Novel>): Novel => {
+    const now = new Date();
+    return {
+      id: uuidv4(),
+      title: formData.title!,
+      ...(formData.alternateTitles && formData.alternateTitles.length > 0
+        ? { alternateTitles: formData.alternateTitles }
+        : {}),
+      ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
+      ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
+      ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
+      ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
+      ...(formData.cover ? { cover: formData.cover } : {}),
+      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
+      createdAt: now,
+      lastEdited: now,
+    };
+  };
+
+  const buildNovelUpdatesFromFormData = (formData: Partial<Novel>): Partial<Novel> => {
+    const updates: Partial<Novel> = {
+      title: formData.title!,
+      lastEdited: new Date(),
+    };
+    if (formData.alternateTitles && formData.alternateTitles.length > 0) {
+      updates.alternateTitles = formData.alternateTitles;
+    }
+    if (formData.author?.trim()) updates.author = formData.author.trim();
+    if (formData.description?.trim()) updates.description = formData.description.trim();
+    if (formData.tags && formData.tags.length > 0) updates.tags = formData.tags;
+    if (formData.webUrl && formData.webUrl.length > 0) updates.webUrl = formData.webUrl;
+    if (formData.cover !== undefined) updates.cover = formData.cover;
+    if (formData.volumes !== undefined) updates.volumes = formData.volumes;
+    if (formData.translationInstructions !== undefined) {
+      updates.translationInstructions = formData.translationInstructions;
+    }
+    if (formData.polishInstructions !== undefined) {
+      updates.polishInstructions = formData.polishInstructions;
+    }
+    if (formData.proofreadingInstructions !== undefined) {
+      updates.proofreadingInstructions = formData.proofreadingInstructions;
+    }
+    return updates;
+  };
+
+  const saveNewBook = async (formData: Partial<Novel>): Promise<void> => {
+    const newBook = buildNovelFromFormData(formData);
+    await booksStore.addBook(newBook);
+    if (newBook.cover) {
+      void coverHistoryStore.addCover(newBook.cover);
+    }
+    showAddDialog.value = false;
+    toast.add({
+      severity: 'success',
+      summary: '添加成功',
+      detail: `已成功添加书籍 "${newBook.title}"`,
+      life: 3000,
+      onRevert: () => booksStore.deleteBook(newBook.id),
+    });
+  };
+
+  const saveEditedBook = async (formData: Partial<Novel>): Promise<void> => {
+    if (!selectedBook.value) return;
+    const updates = buildNovelUpdatesFromFormData(formData);
+    const oldBook = cloneDeep(selectedBook.value);
+    await booksStore.updateBook(selectedBook.value.id, updates);
+    showEditDialog.value = false;
+    const bookTitle = updates.title || selectedBook.value.title;
+    selectedBook.value = null;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已成功更新书籍 "${bookTitle}"`,
+      life: 3000,
+      onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
+    });
+  };
+
   const handleSave = async (formData: Partial<Novel>) => {
     if (showAddDialog.value) {
-      const now = new Date();
-      const newBook: Novel = {
-        id: uuidv4(),
-        title: formData.title!,
-        ...(formData.alternateTitles && formData.alternateTitles.length > 0
-          ? { alternateTitles: formData.alternateTitles }
-          : {}),
-        ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
-        ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
-        ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
-        ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
-        ...(formData.cover ? { cover: formData.cover } : {}),
-        ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
-        createdAt: now,
-        lastEdited: now,
-      };
-      await booksStore.addBook(newBook);
-
-      if (newBook.cover) {
-        void coverHistoryStore.addCover(newBook.cover);
-      }
-
-      showAddDialog.value = false;
-      toast.add({
-        severity: 'success',
-        summary: '添加成功',
-        detail: `已成功添加书籍 "${newBook.title}"`,
-        life: 3000,
-        onRevert: () => booksStore.deleteBook(newBook.id),
-      });
+      await saveNewBook(formData);
     } else if (showEditDialog.value && selectedBook.value) {
-      const updates: Partial<Novel> = {
-        title: formData.title!,
-        lastEdited: new Date(),
-      };
-      if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-        updates.alternateTitles = formData.alternateTitles;
-      }
-      if (formData.author?.trim()) updates.author = formData.author.trim();
-      if (formData.description?.trim()) updates.description = formData.description.trim();
-      if (formData.tags && formData.tags.length > 0) updates.tags = formData.tags;
-      if (formData.webUrl && formData.webUrl.length > 0) updates.webUrl = formData.webUrl;
-      if (formData.cover !== undefined) updates.cover = formData.cover;
-      if (formData.volumes !== undefined) updates.volumes = formData.volumes;
-      if (formData.translationInstructions !== undefined) {
-        updates.translationInstructions = formData.translationInstructions;
-      }
-      if (formData.polishInstructions !== undefined) {
-        updates.polishInstructions = formData.polishInstructions;
-      }
-      if (formData.proofreadingInstructions !== undefined) {
-        updates.proofreadingInstructions = formData.proofreadingInstructions;
-      }
-
-      const oldBook = cloneDeep(selectedBook.value);
-      await booksStore.updateBook(selectedBook.value.id, updates);
-      showEditDialog.value = false;
-      const bookTitle = updates.title || selectedBook.value.title;
-      selectedBook.value = null;
-      toast.add({
-        severity: 'success',
-        summary: '更新成功',
-        detail: `已成功更新书籍 "${bookTitle}"`,
-        life: 3000,
-        onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
-      });
+      await saveEditedBook(formData);
     }
   };
 
