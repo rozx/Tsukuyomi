@@ -13,6 +13,34 @@ import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 
+function validateRemoteCollection(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  collection: any[] | null | undefined,
+  entityLabel: string,
+  requiredStringFields: string[],
+): boolean {
+  if (collection === null || collection === undefined) return true;
+  if (!Array.isArray(collection)) {
+    console.error(`[SyncDataService] 验证失败: ${entityLabel}s 必须是数组`);
+    return false;
+  }
+  for (const item of collection) {
+    if (!item || typeof item !== 'object') {
+      console.error(`[SyncDataService] 验证失败: ${entityLabel} 必须是对象`);
+      return false;
+    }
+    for (const field of requiredStringFields) {
+      if (!item[field] || typeof item[field] !== 'string') {
+        console.error(
+          `[SyncDataService] 验证失败: ${entityLabel} 必须包含有效的 ${field}`,
+        );
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function hasNovelChangesToUpload(localNovels: any[], remoteNovels: any[] | undefined): boolean {
   const remote = remoteNovels || [];
@@ -474,91 +502,11 @@ export class SyncDataService {
       memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
   ): boolean {
-    if (!remoteData) {
-      return true; // null 数据是有效的（表示没有远程数据）
-    }
-
-    // 验证 novels 数组
-    if (remoteData.novels !== null && remoteData.novels !== undefined) {
-      if (!Array.isArray(remoteData.novels)) {
-        console.error('[SyncDataService] 验证失败: novels 必须是数组');
-        return false;
-      }
-      // 验证每个 novel 的基本结构
-      for (const novel of remoteData.novels) {
-        if (!novel || typeof novel !== 'object') {
-          console.error('[SyncDataService] 验证失败: novel 必须是对象');
-          return false;
-        }
-        if (!novel.id || typeof novel.id !== 'string') {
-          console.error('[SyncDataService] 验证失败: novel 必须包含有效的 id');
-          return false;
-        }
-      }
-    }
-
-    // 验证 aiModels 数组
-    if (remoteData.aiModels !== null && remoteData.aiModels !== undefined) {
-      if (!Array.isArray(remoteData.aiModels)) {
-        console.error('[SyncDataService] 验证失败: aiModels 必须是数组');
-        return false;
-      }
-      // 验证每个 model 的基本结构
-      for (const model of remoteData.aiModels) {
-        if (!model || typeof model !== 'object') {
-          console.error('[SyncDataService] 验证失败: model 必须是对象');
-          return false;
-        }
-        if (!model.id || typeof model.id !== 'string') {
-          console.error('[SyncDataService] 验证失败: model 必须包含有效的 id');
-          return false;
-        }
-      }
-    }
-
-    // 验证 coverHistory 数组
-    if (remoteData.coverHistory !== null && remoteData.coverHistory !== undefined) {
-      if (!Array.isArray(remoteData.coverHistory)) {
-        console.error('[SyncDataService] 验证失败: coverHistory 必须是数组');
-        return false;
-      }
-      // 验证每个 cover 的基本结构
-      for (const cover of remoteData.coverHistory) {
-        if (!cover || typeof cover !== 'object') {
-          console.error('[SyncDataService] 验证失败: cover 必须是对象');
-          return false;
-        }
-        if (!cover.id || typeof cover.id !== 'string') {
-          console.error('[SyncDataService] 验证失败: cover 必须包含有效的 id');
-          return false;
-        }
-      }
-    }
-
-    // 验证 memories 数组
-    if (remoteData.memories !== null && remoteData.memories !== undefined) {
-      if (!Array.isArray(remoteData.memories)) {
-        console.error('[SyncDataService] 验证失败: memories 必须是数组');
-        return false;
-      }
-      // 验证每个 memory 的基本结构
-      for (const memory of remoteData.memories) {
-        if (!memory || typeof memory !== 'object') {
-          console.error('[SyncDataService] 验证失败: memory 必须是对象');
-          return false;
-        }
-        if (!memory.id || typeof memory.id !== 'string') {
-          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 id');
-          return false;
-        }
-        if (!memory.bookId || typeof memory.bookId !== 'string') {
-          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 bookId');
-          return false;
-        }
-      }
-    }
-
-    // appSettings 可以是任何对象，不需要严格验证
+    if (!remoteData) return true;
+    if (!validateRemoteCollection(remoteData.novels, 'novel', ['id'])) return false;
+    if (!validateRemoteCollection(remoteData.aiModels, 'model', ['id'])) return false;
+    if (!validateRemoteCollection(remoteData.coverHistory, 'cover', ['id'])) return false;
+    if (!validateRemoteCollection(remoteData.memories, 'memory', ['id', 'bookId'])) return false;
     return true;
   }
 
