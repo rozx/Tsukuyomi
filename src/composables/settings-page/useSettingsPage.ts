@@ -66,54 +66,107 @@ function createSettingsPageContext(): SettingsPageContext {
   // 当前选中的标签页值（字符串）
   const activeTab = ref('0');
 
-  // 显式 tab 列表：Electron 环境移除 "代理设置"（由系统代理处理）
+  // 显式 tab 列表：Electron 环境移除 "代理设置"（由系统代理处理）。
+  // 顺序与 public/help/settings-guide.md 一致：
+  //   AI 模型 → (代理设置) → API Keys → 同步设置 → 本地嵌入 → 爬虫设置 → 导入/导出
   const tabs = computed<SettingsTab[]>(() => {
     const list: SettingsTab[] = [{ value: '0', label: 'AI 模型' }];
     if (!isElectron.value) list.push({ value: '1', label: '代理设置' });
     list.push({ value: isElectron.value ? '1' : '2', label: 'API Keys' });
     list.push({ value: isElectron.value ? '2' : '3', label: '同步设置' });
-    list.push({ value: isElectron.value ? '3' : '4', label: '爬虫设置' });
-    list.push({ value: isElectron.value ? '4' : '5', label: '导入/导出' });
-    list.push({ value: isElectron.value ? '5' : '6', label: '本地嵌入' });
+    list.push({ value: isElectron.value ? '3' : '4', label: '本地嵌入' });
+    list.push({ value: isElectron.value ? '4' : '5', label: '爬虫设置' });
+    list.push({ value: isElectron.value ? '5' : '6', label: '导入/导出' });
     return list;
   });
 
-  // 本地嵌入 tab 的 value（Electron: '5'，否则 '6'）
-  const embeddingSettingsTabValue = computed(() => (isElectron.value ? '5' : '6'));
+  // 本地嵌入 tab 的 value（Electron: '3'，否则 '4'）
+  const embeddingSettingsTabValue = computed(() => (isElectron.value ? '3' : '4'));
 
-  // ── 持久化映射（保留向后兼容,逻辑来自旧 SettingsDialog） ──
-  // 非 Electron: 0=AI模型, 1=代理设置, 2=API Keys, 3=同步, 4=爬虫, 5=导入, 6=本地嵌入
-  // Electron:    0=AI模型, 1=API Keys, 2=同步, 3=爬虫, 4=导入, 5=本地嵌入
+  // ── 持久化映射（保留向后兼容，savedIndex 沿用旧 SettingsDialog 的语义） ──
+  // 旧 savedIndex 含义（稳定不变）：
+  //   0=AI模型  1=代理设置  2=同步  3=爬虫  4=导入/导出  6=API Keys  7=本地嵌入
+  // 新 UI tab value：
+  //   非 Electron: 0=AI · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入/导出
+  //   Electron:    0=AI · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入/导出
   const convertSavedTabIndex = (savedIndex: number): string => {
     if (isElectron.value) {
-      if (savedIndex === 0) return '0';
-      if (savedIndex === 1) return '1'; // 代理 → API Keys
-      if (savedIndex === 7) return '5'; // 本地嵌入
-      if (savedIndex >= 2) return String(savedIndex);
-      return '0';
+      switch (savedIndex) {
+        case 0:
+          return '0'; // AI
+        case 1: // 旧代理（Electron 不显示）→ 退回 API Keys
+        case 6:
+          return '1'; // API Keys
+        case 2:
+          return '2'; // 同步
+        case 7:
+          return '3'; // 本地嵌入
+        case 3:
+          return '4'; // 爬虫
+        case 4:
+          return '5'; // 导入/导出
+        default:
+          return '0';
+      }
     } else {
-      if (savedIndex === 6) return '2'; // 新 API Keys
-      if (savedIndex === 7) return '6'; // 本地嵌入
-      if (savedIndex < 2) return String(savedIndex);
-      if (savedIndex >= 2 && savedIndex <= 4) return String(savedIndex + 1);
-      return '0';
+      switch (savedIndex) {
+        case 0:
+          return '0'; // AI
+        case 1:
+          return '1'; // 代理
+        case 6:
+          return '2'; // API Keys
+        case 2:
+          return '3'; // 同步
+        case 7:
+          return '4'; // 本地嵌入
+        case 3:
+          return '5'; // 爬虫
+        case 4:
+          return '6'; // 导入/导出
+        default:
+          return '0';
+      }
     }
   };
 
   const convertTabValueToIndex = (tabValue: string): number => {
-    const tabIndex = Number(tabValue);
     if (isElectron.value) {
-      if (tabIndex === 0) return 0;
-      if (tabIndex === 1) return 1;
-      if (tabIndex === 5) return 7;
-      if (tabIndex >= 2) return tabIndex;
-      return 0;
+      switch (tabValue) {
+        case '0':
+          return 0; // AI
+        case '1':
+          return 6; // API Keys
+        case '2':
+          return 2; // 同步
+        case '3':
+          return 7; // 本地嵌入
+        case '4':
+          return 3; // 爬虫
+        case '5':
+          return 4; // 导入/导出
+        default:
+          return 0;
+      }
     } else {
-      if (tabIndex < 2) return tabIndex;
-      if (tabIndex === 2) return 6;
-      if (tabIndex === 6) return 7;
-      if (tabIndex >= 3) return tabIndex - 1;
-      return 0;
+      switch (tabValue) {
+        case '0':
+          return 0; // AI
+        case '1':
+          return 1; // 代理
+        case '2':
+          return 6; // API Keys
+        case '3':
+          return 2; // 同步
+        case '4':
+          return 7; // 本地嵌入
+        case '5':
+          return 3; // 爬虫
+        case '6':
+          return 4; // 导入/导出
+        default:
+          return 0;
+      }
     }
   };
 
