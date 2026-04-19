@@ -28,7 +28,6 @@ const syncFormState = () => {
   minScoreThreshold.value = memoryInjection.value?.minScoreThreshold ?? 0.38;
 };
 
-// store 被外部修改（如同步下载覆盖）时，将最新值同步到本地 ref
 watch(memoryInjection, () => syncFormState(), { deep: true });
 
 const statusLabel = computed(() => {
@@ -105,7 +104,6 @@ onMounted(async () => {
         downloadProgress.value = null;
         downloadFile.value = '';
       }
-      // 首次成功就绪时，持久化"已缓存"标记，供下次启动时自动预热使用
       if (embeddingStatus.value === 'ready') {
         void settingsStore.updateMemoryInjection({ embeddingModelCached: true });
       }
@@ -115,8 +113,6 @@ onMounted(async () => {
   unsubscribers.push(
     EmbeddingService.addEventListener('progress', (e: CustomEvent) => {
       const detail = e.detail as EmbeddingProgressEvent;
-      // 优先使用 service 侧维护的聚合进度（跨多个模型文件单调递增）；
-      // 旧的 `progress` 字段是每文件局部值，切文件时会回跳到 0，不适合做进度条。
       if (detail.aggregatePercent != null) {
         downloadProgress.value = detail.aggregatePercent;
       } else if (detail.progress != null) {
@@ -142,15 +138,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="p-4 space-y-8">
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <!-- 组 1: 嵌入模型 (共享基础设施)                            -->
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <section>
-      <div class="mb-3">
-        <h2 class="text-base font-semibold text-moon/95">嵌入模型</h2>
-        <p class="text-xs text-moon/50 mt-0.5">
-          本地运行的嵌入模型,为下面的记忆注入与章节嵌入提供向量
+  <div class="p-4 space-y-5">
+    <!-- 嵌入模型 -->
+    <div class="space-y-3">
+      <div>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">嵌入模型</h3>
+        <p class="text-xs text-moon/70">
+          本地运行的嵌入模型,为下方记忆注入与章节嵌入提供向量
         </p>
       </div>
 
@@ -196,22 +190,23 @@ onUnmounted(() => {
           {{ lastError }}
         </p>
 
-        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB,首次使用需下载到浏览器缓存)</p>
+        <p class="text-xs text-moon/60">
+          <span class="pi pi-info-circle mr-1"></span>
+          {{ MODEL_ID }} (~195 MB,首次使用需下载到浏览器缓存)
+        </p>
       </div>
-    </section>
+    </div>
 
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <!-- 组 2: 记忆注入                                           -->
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <section class="border-t border-moon/10 pt-6">
-      <div class="mb-4">
-        <h2 class="text-base font-semibold text-moon/95">记忆注入</h2>
-        <p class="text-xs text-moon/50 mt-0.5">
+    <!-- 记忆注入 -->
+    <div class="space-y-3">
+      <div>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">记忆注入</h3>
+        <p class="text-xs text-moon/70">
           翻译时自动选择最相关的记忆作为上下文
         </p>
       </div>
 
-      <div class="space-y-5">
+      <div class="space-y-4">
         <!-- 字符预算 -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
@@ -256,7 +251,7 @@ onUnmounted(() => {
         <div class="flex items-center justify-between pt-1">
           <div class="pr-3">
             <label class="text-xs text-moon/80 block">启用语义信号</label>
-            <p class="text-xs text-moon/50 mt-0.5">
+            <p class="text-xs text-moon/60 mt-0.5">
               关闭后记忆打分仅用关键词和时间衰减
             </p>
           </div>
@@ -265,32 +260,33 @@ onUnmounted(() => {
             @update:model-value="updateEnableSemantic($event as boolean)"
           />
         </div>
+      </div>
 
-        <p class="text-xs text-moon/50 bg-moon/5 rounded px-3 py-2 border border-moon/10">
+      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
+        <p class="text-xs text-moon/70">
           <span class="pi pi-info-circle mr-1"></span>
-          评分基于三信号(语义相似度 + 关键词匹配 + 时间衰减),即使关闭语义信号,关键词与时间衰减仍会工作。
+          评分基于三信号(语义相似度 + 关键词匹配 + 时间衰减)。即使关闭语义信号,关键词与时间衰减仍会工作。
         </p>
       </div>
-    </section>
+    </div>
 
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <!-- 组 3: 章节嵌入                                           -->
-    <!-- ═══════════════════════════════════════════════════════ -->
-    <section class="border-t border-moon/10 pt-6">
-      <div class="mb-3">
-        <h2 class="text-base font-semibold text-moon/95">章节嵌入</h2>
-        <p class="text-xs text-moon/50 mt-0.5">
+    <!-- 章节嵌入 -->
+    <div class="space-y-3">
+      <div>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">章节嵌入</h3>
+        <p class="text-xs text-moon/70">
           为每章生成多段向量,让 AI 按剧情/事件/人物语义找相关章节
         </p>
       </div>
 
-      <p class="text-xs text-moon/50 bg-moon/5 rounded px-3 py-2 border border-moon/10 space-y-1">
-        <span class="pi pi-info-circle mr-1"></span>
-        章节嵌入在后台自动运行,段落或译文变更后 60 秒防抖重算。无可配置项。
-        <br />
-        要查看 / 回填 / 重算进度,请在书籍详情页顶部的
-        <strong class="text-moon/70">向量索引</strong> popup 中操作。
-      </p>
-    </section>
+      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
+        <p class="text-xs text-moon/70">
+          <span class="pi pi-info-circle mr-1"></span>
+          章节嵌入在后台自动运行,段落或译文变更后 60 秒防抖重算,无可配置项。
+          要查看 / 回填 / 重算进度,请在书籍详情页顶部的
+          <strong class="text-moon/90">向量索引</strong> popup 中操作。
+        </p>
+      </div>
+    </div>
   </div>
 </template>
