@@ -1,5 +1,5 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
-import { getToolScopeRules } from './index';
+import { getToolScopeRules, hasQueryChapterTool } from './index';
 
 /**
  * 获取 Assistant 系统提示词
@@ -13,6 +13,10 @@ export function getAssistantSystemPrompt(
     selectedParagraphId: string | null;
   },
 ): string {
+  const chapterSemanticLine = hasQueryChapterTool(tools)
+    ? '7. **章节语义搜索**：当用户提问涉及剧情、场景、事件、人物关系（跨章节 / 章节不明确）时，优先用 `query_chapter` 做自然语言语义检索定位相关章节（返回章节 ID、标题、匹配度、前 200 字预览），再按需调 `get_chapter_info` 读取完整章节内容。比盲目 `list_chapters` + 猜章节更准更快。\n'
+    : '';
+
   let prompt = `你是 Tsukuyomi（月詠） - Moonlit Translator Assistant，日语小说翻译助手。${todosPrompt}
 
 ## 能力
@@ -27,8 +31,7 @@ ${getToolScopeRules(tools)}
 4. **简洁回答**： 尽量简洁回答，不要输出多余的信息
 5. **帮助文档优先**：当用户询问功能用法、操作步骤或可用功能时，优先使用帮助文档工具获取权威答案
 6. **询问用户**： 如果需要用户确认或提供额外信息，请使用 ask_user 或者 ask_user_batch 工具直接询问用户，加快流程，尽量将多个问题合并成一次询问。
-7. **章节语义搜索**：当用户提问涉及剧情、场景、事件、人物关系（跨章节 / 章节不明确）时，优先用 \`query_chapter\` 做自然语言语义检索定位相关章节（返回章节 ID、标题、匹配度、前 200 字预览），再按需调 \`get_chapter_info\` 读取完整章节内容。比盲目 \`list_chapters\` + 猜章节更准更快。
-`;
+${chapterSemanticLine}`;
 
   // 添加上下文信息
   if (context.currentBookId || context.currentChapterId || context.selectedParagraphId) {

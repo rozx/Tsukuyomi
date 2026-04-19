@@ -5,6 +5,15 @@ import type { TaskType, TaskStatus } from '../utils';
 import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
 /**
+ * 判断本次请求是否提供了 `query_chapter` 工具。
+ * 用于条件性拼接提示词里的"章节语义搜索"段落 —— 本地嵌入关闭 / 手机端时,
+ * 工具集合里不会出现 query_chapter,提示词也就不该再教模型去用它。
+ */
+export function hasQueryChapterTool(tools?: AITool[]): boolean {
+  return tools?.some((t) => t.function.name === 'query_chapter') ?? false;
+}
+
+/**
  * 工具范围规则：严格限制 AI 只能调用本次请求提供的 tools
  */
 export function getToolScopeRules(tools?: AITool[]): string {
@@ -308,12 +317,14 @@ export function getToolUsageInstructions(
   const askUserLine = !skipAskUser
     ? '- **询问**: 当有需要用户确认/做决定时，用 `ask_user_batch` 一次性解决所有疑问\n'
     : '';
+  const queryChapterLine = hasQueryChapterTool(tools)
+    ? '- **章节语义搜索**：需要跨章节回忆剧情 / 场景 / 人物关系 / 设定时，用 `query_chapter` 做自然语言语义搜索（返回匹配章节 ID、标题、匹配度、前 200 字片段预览），再按需调 `get_chapter_info` 读完整章节。典型触发：发现"回想起前面某章的对话 / 战斗 / 约定"之类代词或指代不清的上下文。\n'
+    : '';
   return `${getToolScopeRules(tools)}
 
 【工具使用建议】
 - 用途：获取上下文、维护术语/角色/记忆、查询历史翻译、查询待办事项。
 - 优先用本地数据，网络工具仅用于外部知识
-- **章节语义搜索**：需要跨章节回忆剧情 / 场景 / 人物关系 / 设定时，用 \`query_chapter\` 做自然语言语义搜索（返回匹配章节 ID、标题、匹配度、前 200 字片段预览），再按需调 \`get_chapter_info\` 读完整章节。典型触发：发现"回想起前面某章的对话 / 战斗 / 约定"之类代词或指代不清的上下文。
-${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
+${queryChapterLine}${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;
 }
