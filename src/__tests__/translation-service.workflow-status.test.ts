@@ -4,7 +4,6 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Paragraph } from 'src/models/novel';
 import { AIServiceFactory } from 'src/services/ai';
 import { ToolRegistry } from 'src/services/ai/tools';
-import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import * as TasksUtils from 'src/services/ai/tasks/utils';
 import * as Prompts from 'src/services/ai/tasks/prompts';
 import * as TodoHelper from 'src/services/ai/tasks/utils/todo-helper';
@@ -105,7 +104,6 @@ describe('TranslationService - workflowStatus 重置', () => {
     } as any);
 
     spyOn(ToolRegistry, 'getTranslationTools').mockImplementation(mockGetTranslationTools);
-    spyOn(ChapterSummaryService, 'generateSummary').mockReturnValue(Promise.resolve(''));
     spyOn(TodoHelper, 'getTodosSystemPrompt').mockReturnValue('');
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       getBookById: () => undefined,

@@ -131,6 +131,14 @@ export class ChapterContentService {
       this.contentCache.set(chapterId, { parsed: content, serialized });
       this.evictCacheIfNeeded();
 
+      // 段落内容(原文或译文)变动 → 触发章节 embedding 防抖重算(异步,不阻塞保存)
+      try {
+        const { markChapterDirty } = await import('src/utils/chapter-embedding-debouncer');
+        markChapterDirty(chapterId);
+      } catch (error) {
+        console.warn('Failed to mark chapter dirty for embedding:', error);
+      }
+
       // 使全文索引失效（异步，不阻塞保存操作）
       // 从章节内容中提取 bookId（需要从 books store 查找）
       try {
@@ -355,6 +363,21 @@ export class ChapterContentService {
       // 清除缓存
       this.contentCache.delete(chapterId);
 
+      // 清理章节 embedding(异步,不阻塞删除)
+      try {
+        const [{ cancelChapterDirty }, { EmbeddingQueue }, { ChapterEmbeddingService }] =
+          await Promise.all([
+            import('src/utils/chapter-embedding-debouncer'),
+            import('src/services/embedding-queue'),
+            import('src/services/chapter-embedding-service'),
+          ]);
+        cancelChapterDirty(chapterId);
+        EmbeddingQueue.cancelChapter(chapterId);
+        await ChapterEmbeddingService.deleteChunksForChapter(chapterId);
+      } catch (error) {
+        console.warn('Failed to cleanup chapter embeddings on delete:', error);
+      }
+
       // 使全文索引失效（异步，不阻塞删除操作）
       try {
         const { FullTextIndexService } = await import('src/services/full-text-index-service');
@@ -399,6 +422,23 @@ export class ChapterContentService {
       }
 
       await tx.done;
+
+      // 清理所有被删章节的 embedding(异步,不阻塞)
+      try {
+        const [{ cancelChapterDirty }, { EmbeddingQueue }, { ChapterEmbeddingService }] =
+          await Promise.all([
+            import('src/utils/chapter-embedding-debouncer'),
+            import('src/services/embedding-queue'),
+            import('src/services/chapter-embedding-service'),
+          ]);
+        for (const chapterId of chapterIds) {
+          cancelChapterDirty(chapterId);
+          EmbeddingQueue.cancelChapter(chapterId);
+          await ChapterEmbeddingService.deleteChunksForChapter(chapterId);
+        }
+      } catch (error) {
+        console.warn('Failed to cleanup chapter embeddings on bulk delete:', error);
+      }
     } catch (error) {
       console.error('Failed to bulk delete chapter contents:', error);
       throw error;
@@ -461,8 +501,6 @@ export class ChapterContentService {
             const content = await ChapterContentService.loadChapterContent(chapter.id);
             return {
               ...chapter,
-              // 显式保留章节摘要，避免在某些结构/Proxy 场景下丢失
-              summary: chapter.summary,
               content: content || [],
               contentLoaded: true,
             };

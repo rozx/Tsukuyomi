@@ -46,7 +46,6 @@ export const TASK_TYPE_LABELS: Record<
   | 'termsTranslation'
   | 'assistant'
   | 'config'
-  | 'chapter_summary'
   | 'other',
   string
 > = {
@@ -56,7 +55,6 @@ export const TASK_TYPE_LABELS: Record<
   termsTranslation: '术语翻译',
   assistant: '助手',
   config: '配置获取',
-  chapter_summary: '章节摘要',
   other: '其他',
 } as const;
 

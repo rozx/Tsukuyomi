@@ -136,72 +136,69 @@ function formatRelativeTime(timestamp: number): string {
               </p>
             </div>
 
-            <!-- 打分/来源标签 -->
-            <div class="flex-shrink-0">
-              <template v-if="getBreakdown(reference.memoryId)">
-                <div class="score-tooltip-trigger relative">
-                  <span
-                    class="text-xs text-primary-400/70 cursor-help"
-                    :title="`相关度 ${getBreakdown(reference.memoryId)!.total.toFixed(2)}`"
-                  >
-                    <i class="pi pi-info-circle"></i>
-                    {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
-                  </span>
-                  <!-- 悬停弹出的打分详情 -->
-                  <div
-                    class="score-tooltip absolute right-0 bottom-full mb-1 w-64 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
-                  >
-                    <div class="space-y-1.5">
-                      <!-- 表头 -->
-                      <div class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10">
-                        <span class="w-16">信号</span>
-                        <span class="tabular-nums w-9 text-right">原值</span>
-                        <span class="tabular-nums w-9 text-right">权重</span>
-                        <span class="tabular-nums w-10 text-right">加权</span>
-                      </div>
-                      <div class="flex justify-between text-moon-100/70">
-                        <span class="w-16">语义相似</span>
-                        <span class="tabular-nums w-9 text-right">
-                          {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
-                        </span>
-                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.6</span>
-                        <span class="tabular-nums w-10 text-right">
-                          {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
-                        </span>
-                      </div>
-                      <div class="flex justify-between text-moon-100/70">
-                        <span class="w-16">关键词</span>
-                        <span class="tabular-nums w-9 text-right">
-                          {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
-                        </span>
-                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.3</span>
-                        <span class="tabular-nums w-10 text-right">
-                          {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
-                        </span>
-                      </div>
-                      <div class="flex justify-between text-moon-100/70">
-                        <span class="w-16">时间衰减</span>
-                        <span class="tabular-nums w-9 text-right">
-                          {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
-                        </span>
-                        <span class="tabular-nums w-9 text-right text-moon-100/40">×0.1</span>
-                        <span class="tabular-nums w-10 text-right">
-                          {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
-                        </span>
-                      </div>
-                      <div
-                        class="pt-1.5 mt-1 border-t border-white/10 flex justify-between font-medium text-moon-100/90"
-                      >
-                        <span>相关度</span>
-                        <span class="tabular-nums">
-                          {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
-                        </span>
-                      </div>
+            <!-- 打分标签 -->
+            <div v-if="getBreakdown(reference.memoryId)" class="flex-shrink-0">
+              <div class="score-tooltip-trigger relative">
+                <span
+                  class="text-xs text-primary-400/70 cursor-help"
+                  :title="`相关度 ${getBreakdown(reference.memoryId)!.total.toFixed(2)}`"
+                >
+                  <i class="pi pi-info-circle"></i>
+                  {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
+                </span>
+                <!-- 悬停弹出的打分详情 -->
+                <div
+                  class="score-tooltip absolute right-0 bottom-full mb-1 w-64 p-2.5 rounded-lg bg-surface-800 border border-white/15 shadow-lg z-50 text-xs hidden"
+                >
+                  <div class="space-y-1.5">
+                    <!-- 表头 -->
+                    <div class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10">
+                      <span class="w-16">信号</span>
+                      <span class="tabular-nums w-9 text-right">原值</span>
+                      <span class="tabular-nums w-9 text-right">权重</span>
+                      <span class="tabular-nums w-10 text-right">加权</span>
+                    </div>
+                    <div class="flex justify-between text-moon-100/70">
+                      <span class="w-16">语义相似</span>
+                      <span class="tabular-nums w-9 text-right">
+                        {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
+                      </span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.6</span>
+                      <span class="tabular-nums w-10 text-right">
+                        {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
+                      </span>
+                    </div>
+                    <div class="flex justify-between text-moon-100/70">
+                      <span class="w-16">关键词</span>
+                      <span class="tabular-nums w-9 text-right">
+                        {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
+                      </span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.3</span>
+                      <span class="tabular-nums w-10 text-right">
+                        {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
+                      </span>
+                    </div>
+                    <div class="flex justify-between text-moon-100/70">
+                      <span class="w-16">时间衰减</span>
+                      <span class="tabular-nums w-9 text-right">
+                        {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
+                      </span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.1</span>
+                      <span class="tabular-nums w-10 text-right">
+                        {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
+                      </span>
+                    </div>
+                    <div
+                      class="pt-1.5 mt-1 border-t border-white/10 flex justify-between font-medium text-moon-100/90"
+                    >
+                      <span>相关度</span>
+                      <span class="tabular-nums">
+                        {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
+                      </span>
                     </div>
                   </div>
                 </div>
-              </template>
-              <span v-else class="text-xs text-moon-100/40 italic">AI 调用</span>
+              </div>
             </div>
 
             <!-- 查看按钮 -->

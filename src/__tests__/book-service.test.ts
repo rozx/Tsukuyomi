@@ -270,12 +270,14 @@ describe('BookService', () => {
       });
     });
 
-    it('should preserve chapter summary when stripping content for storage', async () => {
-      const chapterWithSummary: Chapter = {
+    it('should strip legacy summary residue when saving', async () => {
+      // 老数据里可能残留 summary 字段,新版不再使用,保存时应被 strip
+      const chapterWithLegacySummary: Chapter = {
         ...createTestChapter('chapter-1', [createTestParagraph()]),
-        summary: '这是章节摘要',
       };
-      const volume = createTestVolume('volume-1', [chapterWithSummary]);
+      (chapterWithLegacySummary as unknown as Record<string, unknown>).summary = '旧摘要残留';
+
+      const volume = createTestVolume('volume-1', [chapterWithLegacySummary]);
       const book: Novel = {
         id: 'book-1',
         title: 'Test Book',
@@ -287,8 +289,10 @@ describe('BookService', () => {
       await BookService.saveBook(book);
 
       const savedBook = await BookService.getBookById('book-1');
-      const savedSummary = savedBook?.volumes?.[0]?.chapters?.[0]?.summary;
-      expect(savedSummary).toBe('这是章节摘要');
+      const savedChapter = savedBook?.volumes?.[0]?.chapters?.[0] as unknown as
+        | Record<string, unknown>
+        | undefined;
+      expect(savedChapter?.summary).toBeUndefined();
     });
   });
 });

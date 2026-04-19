@@ -14,7 +14,25 @@ import { taskStatusTools } from './task-status-tools';
 import { createTranslationTools, type CreateTranslationToolsOptions } from './translation-tools';
 import { helpDocsTools } from './help-docs-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { useSettingsStore } from 'src/stores/settings';
+import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 import { jsonrepair } from 'jsonrepair';
+
+/** 依赖本地嵌入的工具 —— 总开关 OFF / 手机端时从可用集合里整体剔除 */
+const EMBEDDING_DEPENDENT_TOOL_NAMES = ['query_chapter'] as const;
+
+/**
+ * 根据当前设置判断本地嵌入是否有效启用(桌面 + 用户 toggle on)。
+ * 读 Pinia 失败时按"未启用"处理,避免因未初始化就向模型暴露用不了的工具。
+ */
+function isLocalEmbeddingOn(): boolean {
+  try {
+    const store = useSettingsStore();
+    return isLocalEmbeddingEffectivelyEnabled(store.settings.enableLocalEmbedding);
+  } catch {
+    return false;
+  }
+}
 
 export type { ActionInfo };
 
@@ -75,7 +93,13 @@ export class ToolRegistry {
 
   static getBookTools(bookId?: string): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(bookTools);
+    const all = this.mapTools(bookTools);
+    // 本地嵌入关闭(手机端 / 用户 toggle off)时,剔除依赖嵌入的工具,
+    // 让模型的工具列表和 prompt 描述保持一致 —— 不描述用不了的工具。
+    if (!isLocalEmbeddingOn()) {
+      return this.filterTools(all, EMBEDDING_DEPENDENT_TOOL_NAMES);
+    }
+    return all;
   }
 
   static getMemoryTools(bookId?: string): AITool[] {
@@ -211,7 +235,7 @@ export class ToolRegistry {
       // 书籍工具（只读）
       'get_book_info',
       'get_chapter_info',
-      'search_chapter_summaries',
+      'query_chapter',
       // 网络搜索
       'search_web',
       'fetch_webpage',

@@ -239,7 +239,6 @@ export class TranslationService {
         buildSystemPrompt,
         onParagraphsExtracted,
         onTitleExtracted,
-        enableChapterSummary: true,
         enablePreviousChapter: true,
         enableBriefPlanning: true,
       },

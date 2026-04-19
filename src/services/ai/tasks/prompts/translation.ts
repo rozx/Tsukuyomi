@@ -9,6 +9,7 @@ import {
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
+  hasQueryChapterTool,
 } from './index';
 import type { AITool } from 'src/services/ai/types/ai-service';
 
@@ -44,6 +45,10 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
     enableOriginalTextValidation,
   } = params;
 
+  const chapterLookupHint = hasQueryChapterTool(tools)
+    ? '需要章节上下文时用 query_chapter（三类最稳 query：标题/系列名直搜、人物+具体动作+独特细节、事件锚点；中文转述日文标题字面差异大时优先用原文；避免抽象读后感、仅人名无动作；Top1 未必最佳默认看 Top3-5），再按需调 get_chapter_info 读全文。'
+    : '需要章节上下文时用 list_chapters 找到章节 ID 后调 get_chapter_info 读全文。';
+
   return `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${bookContextSection}${chapterContextSection}${previousChapterSection}${specialInstructionsSection}
 
 【核心规则】
@@ -54,7 +59,7 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
 5. **前后一致**: 必须参考前文翻译的段落、标题和相关记忆，保持标题/人名/术语/风格/称呼一致。翻译前使用工具获取相关信息。
 6. **保持原意**: 避免误译、漏译、增译。根据上下文找出最准确的表达。
 7. **完整翻译**: ⚠️ 必须翻译所有单词和短语，禁止在翻译结果中保留明显未翻译的日语原文（尤其是假名、助词、语尾等）
-8. **关注当前任务**: 你可以使用工具（如 get_previous_paragraphs, get_next_paragraphs）查看上下文（甚至跨越章节），但你**必须只翻译/修改当前任务列表中指定的段落**。上下文仅供参考，切勿翻译上下文段落作为输出。
+8. **关注当前任务**: 你可以使用工具（如 get_previous_paragraphs, get_next_paragraphs）查看上下文（甚至跨越章节），但你**必须只翻译/修改当前任务列表中指定的段落**。上下文仅供参考，切勿翻译上下文段落作为输出。${chapterLookupHint}
 9. **段落标识**: ⚠️ 提交翻译时 **必须使用 paragraph_id**（从段落 [ID: xxx] 获取），**禁止使用 index** 提交。
 10. ${getSymbolFormatRules()}
 

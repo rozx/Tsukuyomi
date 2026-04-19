@@ -907,7 +907,7 @@ const updateCustomHeaders = () => {
                 <label
                   :for="`${idPrefix}-default-termsTranslation`"
                   class="ml-2 text-sm cursor-pointer"
-                  >术语翻译 / 章节摘要</label
+                  >术语翻译</label
                 >
               </div>
               <span

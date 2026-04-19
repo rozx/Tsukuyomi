@@ -7,6 +7,7 @@ import {
   type InjectionKey,
   type Ref,
 } from 'vue';
+import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
@@ -30,10 +31,11 @@ export interface SettingsPageContext {
   isElectron: Ref<boolean>;
   activeTab: Ref<string>;
   tabs: Ref<SettingsTab[]>;
-  memoryInjectionTabValue: Ref<string>;
+  embeddingSettingsTabValue: Ref<string>;
   handleTabChange: (value: string | number) => void;
   dismissIntro: () => Promise<void>;
   handleIntroLearnMore: () => Promise<void>;
+  goBack: () => void;
 }
 
 const SETTINGS_PAGE_KEY: InjectionKey<SettingsPageContext> = Symbol('settings-page');
@@ -57,6 +59,7 @@ export function injectSettingsPage(): SettingsPageContext {
 function createSettingsPageContext(): SettingsPageContext {
   const settingsStore = useSettingsStore();
   const toast = useToast();
+  const router = useRouter();
   const { isElectron } = useElectron();
 
   // 当前选中的标签页值（字符串）
@@ -70,26 +73,26 @@ function createSettingsPageContext(): SettingsPageContext {
     list.push({ value: isElectron.value ? '2' : '3', label: '同步设置' });
     list.push({ value: isElectron.value ? '3' : '4', label: '爬虫设置' });
     list.push({ value: isElectron.value ? '4' : '5', label: '导入/导出' });
-    list.push({ value: isElectron.value ? '5' : '6', label: '记忆注入' });
+    list.push({ value: isElectron.value ? '5' : '6', label: '本地嵌入' });
     return list;
   });
 
-  // 记忆注入 tab 的 value（Electron: '5'，否则 '6'）
-  const memoryInjectionTabValue = computed(() => (isElectron.value ? '5' : '6'));
+  // 本地嵌入 tab 的 value（Electron: '5'，否则 '6'）
+  const embeddingSettingsTabValue = computed(() => (isElectron.value ? '5' : '6'));
 
-  // ── 持久化映射（保留向后兼容，逻辑来自旧 SettingsDialog） ──
-  // 非 Electron: 0=AI模型, 1=代理设置, 2=API Keys, 3=同步, 4=爬虫, 5=导入, 6=记忆注入
-  // Electron:    0=AI模型, 1=API Keys, 2=同步, 3=爬虫, 4=导入, 5=记忆注入
+  // ── 持久化映射（保留向后兼容,逻辑来自旧 SettingsDialog） ──
+  // 非 Electron: 0=AI模型, 1=代理设置, 2=API Keys, 3=同步, 4=爬虫, 5=导入, 6=本地嵌入
+  // Electron:    0=AI模型, 1=API Keys, 2=同步, 3=爬虫, 4=导入, 5=本地嵌入
   const convertSavedTabIndex = (savedIndex: number): string => {
     if (isElectron.value) {
       if (savedIndex === 0) return '0';
       if (savedIndex === 1) return '1'; // 代理 → API Keys
-      if (savedIndex === 7) return '5'; // 记忆注入
+      if (savedIndex === 7) return '5'; // 本地嵌入
       if (savedIndex >= 2) return String(savedIndex);
       return '0';
     } else {
       if (savedIndex === 6) return '2'; // 新 API Keys
-      if (savedIndex === 7) return '6'; // 记忆注入
+      if (savedIndex === 7) return '6'; // 本地嵌入
       if (savedIndex < 2) return String(savedIndex);
       if (savedIndex >= 2 && savedIndex <= 4) return String(savedIndex + 1);
       return '0';
@@ -142,15 +145,15 @@ function createSettingsPageContext(): SettingsPageContext {
     }
   };
 
-  // 记忆注入首次提示
+  // 本地嵌入首次提示(引导记忆注入 + 章节语义查询)
   const showMemoryIntroToast = () => {
     const mi = settingsStore.settings.memoryInjection;
     if (mi && mi.hasSeenIntro) return;
     toast.add({
       group: 'memory-intro',
       severity: 'info',
-      summary: '新功能：语义记忆检索',
-      detail: '翻译时自动匹配最相关的记忆，无需手动关联。',
+      summary: '新功能：本地嵌入模型',
+      detail: '翻译时自动匹配相关记忆,AI 也能用 query_chapter 语义检索章节。',
       closable: false,
       life: 0,
     });
@@ -162,10 +165,21 @@ function createSettingsPageContext(): SettingsPageContext {
   };
 
   const handleIntroLearnMore = async () => {
-    activeTab.value = memoryInjectionTabValue.value;
-    const savedIndex = convertTabValueToIndex(memoryInjectionTabValue.value);
+    activeTab.value = embeddingSettingsTabValue.value;
+    const savedIndex = convertTabValueToIndex(embeddingSettingsTabValue.value);
     void settingsStore.setLastOpenedSettingsTab(savedIndex);
     await dismissIntro();
+  };
+
+  // 返回上一页：优先使用浏览器历史，若无历史则回到首页
+  const goBack = () => {
+    const hasHistory =
+      typeof window !== 'undefined' && window.history && window.history.length > 1;
+    if (hasHistory) {
+      router.back();
+    } else {
+      void router.push('/');
+    }
   };
 
   // 页面挂载时初始化 + 首次提示
@@ -178,9 +192,10 @@ function createSettingsPageContext(): SettingsPageContext {
     isElectron,
     activeTab,
     tabs,
-    memoryInjectionTabValue,
+    embeddingSettingsTabValue,
     handleTabChange,
     dismissIntro,
     handleIntroLearnMore,
+    goBack,
   };
 }

@@ -131,7 +131,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'list_chapters',
         description:
-          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题、翻译标题和章节摘要。当需要查看所有可用章节并选择参考章节时使用此工具。支持分页（offset/limit）。',
+          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题、翻译标题。当需要查看所有可用章节并选择参考章节时使用此工具。支持分页（offset/limit）。如需按语义查找相关章节,请用 query_chapter。',
         parameters: {
           type: 'object',
           properties: {
@@ -178,7 +178,6 @@ export const bookTools: ToolDefinition[] = [
           id: string;
           title_original: string;
           title_translation: string;
-          summary: string;
         }> = [];
 
         if (book.volumes) {
@@ -201,7 +200,6 @@ export const bookTools: ToolDefinition[] = [
                 id: chapter.id,
                 title_original: titleOriginal,
                 title_translation: titleTranslation,
-                summary: chapter.summary || '',
               });
             }
           }
@@ -288,7 +286,6 @@ export const bookTools: ToolDefinition[] = [
             id: string;
             title_original: string;
             title_translation: string;
-            summary: string;
           }>;
           chapterCount: number;
         }> = [];
@@ -312,7 +309,6 @@ export const bookTools: ToolDefinition[] = [
                     typeof chapter.title === 'string'
                       ? ''
                       : chapter.title.translation?.translation || '',
-                  summary: chapter.summary || '',
                 })) || [];
 
               volumes.push({
@@ -344,106 +340,87 @@ export const bookTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_chapter_summaries',
+        name: 'query_chapter',
         description:
-          '通过关键词搜索章节摘要。当需要根据剧情内容、特定事件或人物行为查找对应章节时使用此工具。返回包含关键词的章节列表（含ID、标题、摘要片段），使用中文搜索。',
+          '混合检索章节(语义 + 标题/正文关键词 + 在线 IDF 稀有词加权 + identifier 章号/卷号加权)。返回章节 ID、标题、匹配度、前 200 字片段预览;如需完整内容再调 `get_chapter_info`。本地嵌入未就绪时返回结构化错误,稍后重试。\n\n**最稳的三类 query**(这些都已在全书测试中验证 Top-K 命中):\n1. **标题/系列名直搜** — `第二王女` / `深渊之森攻略` / `星天 ⑥`(圈号、章号、罗马数字都正确识别)\n2. **人物 + 身份 + 具体动作 + 独特细节** — `夏洛特作为第二王女再次接近芬恩,紧张到胃痛` / `阿莉亚背着芬恩,提到和别的女人同居`\n3. **事件锚点型** — `吻痕被发现后开始审问` / `艾莉莎被给出三个选择`\n\n**中等可用**(可能要 Top2-5 二次确认):\n- 整章主题型描述\n- 中文转述日文标题(原标题字面差异大时不稳,**优先用原文标题词**或加更强锚点)\n\n**较弱**(query 改写或换思路):\n- 抽象读后感(`后宫气氛成形`、`主角让大家心理受冲击`)→ 改成 query 里实际出现的具体场面\n- 仅人名无动作细节(`阿莉亚`)→ 补具体动作 / 场景词\n- 不存在的系列词 → 别用,改用 `list_chapters` 看真实标题\n\n**通用心法**:\n- 把它当 **候选定位器**,不是精确答案:Top1 未必最佳,默认看 Top3-5\n- 不确定时 `limit` 调到 8-10,人工筛选\n- 中文 query 含的专名(角色名、地名、术语)如果在 terminologies/characters 里维护过,系统会自动跨语言归一(中→日 / 日→中)。否则用原文形态命中率更高',
         parameters: {
           type: 'object',
           properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: '搜索关键词列表（至少提供一个）',
+            query: {
+              type: 'string',
+              description:
+                '自然语言查询(中日文皆可)。三类最稳:① 标题/系列名直搜("第二王女"、"星天 ⑥");② 人物+身份+动作+细节("夏洛特紧张到胃痛接近芬恩");③ 事件锚点("吻痕被发现后开始审问")。避免抽象读后感("后宫气氛成形")或仅人名无动作。中文 query 系统会自动跨语言归一已维护的专名,否则**优先用原文标题词**命中更稳。',
             },
             limit: {
               type: 'number',
-              description: '限制返回结果的数量（默认 10）',
+              description: '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
             },
           },
-          required: ['keywords'],
+          required: ['query'],
         },
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ keywords: string[]; limit?: number }>(args);
+      const parsedArgs = parseToolArgs<{ query: string; limit?: number }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { keywords, limit = 10 } = parsedArgs;
-
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        return JSON.stringify({ success: false, error: '必须提供搜索关键词' });
+      const { query, limit = 5 } = parsedArgs;
+      if (!query || typeof query !== 'string' || !query.trim()) {
+        return JSON.stringify({ success: false, error: 'query 不能为空' });
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        const { useSettingsStore } = await import('src/stores/settings');
+        const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
+          'src/utils/local-embedding'
+        );
+        const stored = useSettingsStore().settings.enableLocalEmbedding;
+        if (!isLocalEmbeddingEffectivelyEnabled(stored)) {
+          return JSON.stringify({
+            success: false,
+            error: isMobileDevice()
+              ? '当前为移动设备,本地嵌入被强制禁用 — 请在桌面端使用此功能'
+              : '本地嵌入功能未启用,请让用户在「设置 → 本地嵌入」中打开总开关',
+            feature_disabled: true,
+            reason: isMobileDevice() ? 'mobile_device' : 'user_disabled',
+          });
         }
 
-        // 报告读取操作
+        const { EmbeddingService } = await import('src/services/embedding-service');
+        if (!EmbeddingService.isReady()) {
+          return JSON.stringify({
+            success: false,
+            error: '章节嵌入服务未就绪,请稍后重试或让用户在设置里完成嵌入模型下载',
+            service_status: EmbeddingService.getStatus(),
+          });
+        }
+
         if (onAction) {
           onAction({
             type: 'search',
             entity: 'chapter',
             data: {
               book_id: bookId,
-              tool_name: 'search_chapter_summaries',
-              keywords,
+              tool_name: 'query_chapter',
+              query,
             },
           });
         }
 
-        const matches: Array<{
-          id: string;
-          title: string;
-          summary: string;
-          match_score: number;
-          matched_keywords: string[];
-        }> = [];
-
-        if (book.volumes) {
-          for (const volume of book.volumes) {
-            if (!volume.chapters) continue;
-            for (const chapter of volume.chapters) {
-              if (!chapter.summary) continue;
-
-              const matchedKeywords: string[] = [];
-              let score = 0;
-
-              for (const keyword of keywords) {
-                if (chapter.summary.includes(keyword)) {
-                  matchedKeywords.push(keyword);
-                  score++;
-                }
-              }
-
-              if (score > 0) {
-                matches.push({
-                  id: chapter.id,
-                  title: getChapterDisplayTitle(chapter),
-                  summary: chapter.summary,
-                  match_score: score,
-                  matched_keywords: matchedKeywords,
-                });
-              }
-            }
-          }
-        }
-
-        // 按匹配分数排序（降序）并应用限制
-        const sortedMatches = matches.sort((a, b) => b.match_score - a.match_score).slice(0, limit);
+        const { ChapterEmbeddingService } = await import(
+          'src/services/chapter-embedding-service'
+        );
+        const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit);
 
         return JSON.stringify({
           success: true,
-          matches: sortedMatches,
+          matches,
         });
       } catch (error) {
         return JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : '搜索章节摘要失败',
+          error: error instanceof Error ? error.message : '章节语义查询失败',
         });
       }
     },
@@ -454,13 +431,21 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_chapter_info',
         description:
-          '获取章节的详细信息，包括标题、原文内容、段落列表、章节摘要、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
+          '获取章节的详细信息，包括标题、段落列表（默认分页）、翻译进度等。章节可能很长，返回内容会按 limit/offset 分页；先用小 limit 确认方向，需要更多段落再通过 offset 继续读取，避免一次性拉整章把上下文塞满。',
         parameters: {
           type: 'object',
           properties: {
             chapter_id: {
               type: 'string',
               description: '章节 ID',
+            },
+            limit: {
+              type: 'number',
+              description: '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
+            },
+            offset: {
+              type: 'number',
+              description: '起始段落索引（0-based，默认 0）。配合 limit 翻页读取。',
             },
             include_memory: {
               type: 'boolean',
@@ -472,11 +457,20 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ chapter_id: string; include_memory?: boolean }>(args);
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        limit?: number;
+        offset?: number;
+        include_memory?: boolean;
+      }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
       const { chapter_id, include_memory = true } = parsedArgs;
+      const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
+      const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
+      const rawOffset = typeof parsedArgs.offset === 'number' ? parsedArgs.offset : 0;
+      const offset = Math.max(0, Math.floor(rawOffset));
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -543,27 +537,32 @@ export const bookTools: ToolDefinition[] = [
             },
           });
         }
-        const chapterContent = getChapterContentText(chapter);
         const paragraphCount = chapter.content?.length || 0;
         const translatedCount =
           chapter.content?.filter(
             (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
           ).length || 0;
 
+        // 分页：根据 offset/limit 切片段落，避免一次性返回整章把 context 塞满
+        const effectiveOffset = Math.min(offset, paragraphCount);
+        const effectiveEnd = Math.min(effectiveOffset + limit, paragraphCount);
+        const slicedParagraphs = chapter.content?.slice(effectiveOffset, effectiveEnd) || [];
+        const hasMore = effectiveEnd < paragraphCount;
+        const chapterContent = slicedParagraphs.map((para) => para.text).join('\n');
+
         // 构建段落信息
-        const paragraphs =
-          chapter.content?.map((para) => {
-            const selectedTranslation = para.translations?.find(
-              (t) => t.id === para.selectedTranslationId,
-            );
-            return {
-              id: para.id,
-              text: para.text,
-              translation: selectedTranslation?.translation || '',
-              hasTranslation: !!selectedTranslation,
-              translationCount: para.translations?.length || 0,
-            };
-          }) || [];
+        const paragraphs = slicedParagraphs.map((para) => {
+          const selectedTranslation = para.translations?.find(
+            (t) => t.id === para.selectedTranslationId,
+          );
+          return {
+            id: para.id,
+            text: para.text,
+            translation: selectedTranslation?.translation || '',
+            hasTranslation: !!selectedTranslation,
+            translationCount: para.translations?.length || 0,
+          };
+        });
 
         // 搜索相关记忆（使用章节标题作为关键词）
         let relatedMemories: Array<{ id: string; summary: string }> = [];
@@ -587,11 +586,17 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
             paragraphs,
+            pagination: {
+              offset: effectiveOffset,
+              limit,
+              returned: paragraphs.length,
+              hasMore,
+              nextOffset: hasMore ? effectiveEnd : null,
+            },
             volume: volume
               ? {
                   id: volume.id,
@@ -622,7 +627,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_previous_chapter',
         description:
-          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {
@@ -728,7 +733,6 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -762,7 +766,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_next_chapter',
         description:
-          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {
@@ -868,7 +872,6 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,

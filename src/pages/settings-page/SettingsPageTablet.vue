@@ -6,14 +6,14 @@ import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
 import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import MemoryInjectionTab from 'src/components/settings/MemoryInjectionTab.vue';
+import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
 
 const ctx = injectSettingsPage();
 
 // 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
 // 已由 composable 的 `tabs` 列表处理，本文件只需按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=爬虫 · 5=导入导出 · 6=记忆注入
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=爬虫 · 4=导入导出 · 5=记忆注入
+// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=爬虫 · 5=导入导出 · 6=本地嵌入
+// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=爬虫 · 4=导入导出 · 5=本地嵌入
 function panelFor(value: string) {
   if (ctx.isElectron.value) {
     if (value === '0') return AIModelSettingsTab;
@@ -21,7 +21,7 @@ function panelFor(value: string) {
     if (value === '2') return SyncSettingsTab;
     if (value === '3') return ScraperSettingsTab;
     if (value === '4') return ImportExportTab;
-    if (value === '5') return MemoryInjectionTab;
+    if (value === '5') return EmbeddingSettingsTab;
   } else {
     if (value === '0') return AIModelSettingsTab;
     if (value === '1') return ProxySettingsTab;
@@ -29,7 +29,7 @@ function panelFor(value: string) {
     if (value === '3') return SyncSettingsTab;
     if (value === '4') return ScraperSettingsTab;
     if (value === '5') return ImportExportTab;
-    if (value === '6') return MemoryInjectionTab;
+    if (value === '6') return EmbeddingSettingsTab;
   }
   return AIModelSettingsTab;
 }
@@ -44,6 +44,14 @@ function panelFor(value: string) {
           <div class="st-eyebrow">SETTINGS</div>
           <h1 class="st-title">设置</h1>
         </div>
+        <button
+          type="button"
+          class="st-close"
+          aria-label="返回上一页"
+          @click="ctx.goBack"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
       </header>
 
       <nav class="st-tabs" role="tablist">
@@ -105,6 +113,36 @@ function panelFor(value: string) {
 .st-head {
   padding: 22px 32px 6px;
   flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.st-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: rgba(247, 244, 236, 0.5);
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.st-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e9edf5;
+}
+
+.st-close .pi {
+  font-size: 14px;
 }
 
 .st-eyebrow {

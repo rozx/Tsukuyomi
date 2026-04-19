@@ -86,7 +86,7 @@ describe('upsertMemoryForSync: embedding preservation', () => {
     expect(after?.embedding).toBeUndefined();
     expect(after?.embeddingModel).toBeUndefined();
     expect(after?.content).toBe('新内容');
-    expect(enqueueSpy).toHaveBeenCalledWith('m-2');
+    expect(enqueueSpy).toHaveBeenCalledWith('m-2', BOOK_ID);
   });
 
   it('同 id 但 bookId 不同时，必须抛错而不是静默改属主', async () => {

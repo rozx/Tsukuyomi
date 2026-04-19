@@ -13,11 +13,12 @@ export class BookService {
    * @returns 不包含 content 的章节对象
    */
   private static stripChapterContent(chapter: Chapter): Chapter {
-    const { content, ...chapterWithoutContent } = chapter;
+    // 同时兜底清理已经被移除的 summary 字段(旧数据里仍可能残留)
+    const { content, summary: _droppedSummary, ...chapterWithoutContent } = chapter as Chapter & {
+      summary?: unknown;
+    };
     return {
       ...chapterWithoutContent,
-      // 显式保留章节摘要，避免在极端情况下被结构解构/rest 丢失
-      summary: chapter.summary,
       contentLoaded: content !== undefined,
     };
   }

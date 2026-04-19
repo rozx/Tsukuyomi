@@ -62,7 +62,6 @@ import { useParagraphNavigation } from 'src/composables/book-details/useParagrap
 import { useKeyboardShortcuts } from 'src/composables/book-details/useKeyboardShortcuts';
 import { useChapterTranslation } from 'src/composables/book-details/useChapterTranslation';
 import { useUndoRedo } from 'src/composables/useUndoRedo';
-import { ChapterSummaryService } from 'src/services/ai/tasks/chapter-summary-service';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
@@ -1198,98 +1197,12 @@ function createBookDetailsPageContext() {
     { immediate: true },
   );
 
-  const isSummarizing = computed(() => {
-    if (!selectedChapterId.value) return false;
-    return aiProcessingStore.activeTasks.some(
-      (task) =>
-        task.type === 'chapter_summary' &&
-        task.chapterId === selectedChapterId.value &&
-        (task.status === 'thinking' || task.status === 'processing'),
-    );
-  });
-
-  const handleReSummarizeChapter = async (chapterId: string) => {
-    if (!bookId.value || !selectedChapterWithContent.value) return;
-
-    const content = getChapterContentText(selectedChapterWithContent.value);
-    if (!content) {
-      toast.add({
-        severity: 'warn',
-        summary: '无法生成摘要',
-        detail: '章节内容为空',
-        life: 3000,
-      });
-      return;
-    }
-
-    try {
-      toast.add({
-        severity: 'info',
-        summary: '正在生成摘要',
-        detail: '请求已发送，请稍候...',
-        life: 3000,
-      });
-
-      await ChapterSummaryService.generateSummary(chapterId, content, {
-        bookId: bookId.value,
-        chapterTitle: getChapterDisplayTitle(selectedChapterWithContent.value),
-        aiProcessingStore,
-        force: true,
-        onSuccess: async (summary) => {
-          toast.add({
-            severity: 'success',
-            summary: '摘要生成成功',
-            detail: '摘要已经更新',
-            life: 3000,
-          });
-
-          if (
-            selectedChapterWithContent.value &&
-            selectedChapterWithContent.value.id === chapterId
-          ) {
-            selectedChapterWithContent.value = {
-              ...selectedChapterWithContent.value,
-              summary,
-            };
-          }
-
-          if (bookId.value && book.value) {
-            const updatedVolumes = book.value.volumes?.map((v) => {
-              const chIndex = v.chapters?.findIndex((c) => c.id === chapterId);
-              if (chIndex !== undefined && chIndex !== -1 && v.chapters) {
-                const newChapters = [...v.chapters];
-                const targetChapter = newChapters[chIndex];
-                if (targetChapter) {
-                  newChapters[chIndex] = { ...targetChapter, summary, lastEdited: new Date() };
-                }
-                return { ...v, chapters: newChapters };
-              }
-              return v;
-            });
-            if (updatedVolumes) {
-              await booksStore.updateBook(bookId.value, { volumes: updatedVolumes });
-            }
-          }
-        },
-        onError: (error) => {
-          toast.add({
-            severity: 'error',
-            summary: '生成摘要失败',
-            detail: error instanceof Error ? error.message : '未知错误',
-            life: 5000,
-          });
-        },
-      });
-    } catch (error) {
-      console.error('Generative summary failed:', error);
-    }
-  };
-
   const embeddingUnsubscribers: Array<() => void> = [];
 
   const triggerBackfill = () => {
     if (bookId.value) {
       void EmbeddingQueue.enqueueBacklog(bookId.value);
+      void EmbeddingQueue.enqueueChapterBacklog(bookId.value);
     }
   };
 
@@ -2327,7 +2240,6 @@ function createBookDetailsPageContext() {
     editModeOptions,
     originalTextEditValue,
     translatedCharCount,
-    isSummarizing,
     // popovers & exports
     exportMenuRef,
     exportMenuItems,
@@ -2379,7 +2291,6 @@ function createBookDetailsPageContext() {
     toggleKeyboardShortcutsPopover,
     toggleChapterSettingsPopover,
     handleSaveChapterSettings,
-    handleReSummarizeChapter,
     // undo/redo
     canUndo,
     canRedo,

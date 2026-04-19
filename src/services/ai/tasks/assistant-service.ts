@@ -29,7 +29,9 @@ import {
 
 // 常量定义
 const MAX_TOOL_CALL_TURNS = 50;
-const TOKEN_THRESHOLD_RATIO = 0.85; // 当达到 85% 时触发总结
+const TOKEN_THRESHOLD_RATIO = 0.7; // 当达到 70% 时触发总结（留给工具循环充足的缓冲空间）
+const IN_LOOP_SUMMARIZE_THRESHOLD = 0.85; // 工具循环内的摘要兜底阈值（trim 救不回来时才触发）
+const MAX_IN_LOOP_SUMMARIZATIONS = 2; // 单次 chat() 调用中最多摘要次数，防止无限循环
 const SUMMARY_TEMPERATURE = 1;
 const DEFAULT_TEMPERATURE = 0.7;
 
@@ -835,6 +837,7 @@ export class AssistantService {
     let currentTurnCount = 0;
     let finalText = '';
     const allActions: ActionInfo[] = [];
+    let summarizationCount = 0;
 
     while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
       currentTurnCount++;
@@ -871,6 +874,33 @@ export class AssistantService {
         taskId,
       });
 
+      // trim 救不回来时，在循环内主动触发摘要，避免 followUp 请求超出 context
+      if (summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS) {
+        const summarizeResult = await this.maybeSummarizeInLoop({
+          messages,
+          model,
+          tools,
+          bookId,
+          aiService,
+          config,
+          options,
+          toolSchemaTokens,
+          ...(taskId ? { taskId } : {}),
+          ...(signal ? { signal } : {}),
+        });
+        if (summarizeResult) {
+          summarizationCount++;
+          if (summarizeResult.finalText && summarizeResult.finalText.trim()) {
+            finalText = summarizeResult.finalText;
+          }
+          toolCalls = summarizeResult.toolCalls;
+          if (toolCalls.length === 0) {
+            break;
+          }
+          continue;
+        }
+      }
+
       // 跟进请求
       const followUpRequest = this.buildTextRequest(messages, tools, {
         temperature: model.temperature ?? DEFAULT_TEMPERATURE,
@@ -906,6 +936,143 @@ export class AssistantService {
     }
 
     return { finalText, actions: allActions };
+  }
+
+  /**
+   * 工具循环中的摘要兜底：当累积的 messages 超过 IN_LOOP_SUMMARIZE_THRESHOLD 时，
+   * 用 requestSummaryReset 生成整段会话摘要，替换掉中间所有工具调用/结果，
+   * 然后以 [system+summary, user] 重发起初始请求，拿到新一轮 toolCalls 供循环继续。
+   *
+   * 返回 null 表示无需（或无法）摘要，调用方继续正常的 followUp 请求。
+   */
+  private static async maybeSummarizeInLoop(params: {
+    messages: ChatMessage[];
+    model: AIModel;
+    tools: AITool[];
+    bookId: string | null;
+    aiService: ReturnType<typeof AIServiceFactory.getService>;
+    config: AIServiceConfig;
+    options: AssistantServiceOptions;
+    toolSchemaTokens: number;
+    taskId?: string;
+    signal?: AbortSignal;
+  }): Promise<{ finalText: string; toolCalls: AIToolCall[] } | null> {
+    const {
+      messages,
+      model,
+      tools,
+      bookId,
+      aiService,
+      config,
+      options,
+      toolSchemaTokens,
+      taskId,
+      signal,
+    } = params;
+
+    // 只对有明确输入上限的模型做这个检查
+    if (
+      !model.maxInputTokens ||
+      model.maxInputTokens <= 0 ||
+      model.maxInputTokens === UNLIMITED_TOKENS
+    ) {
+      return null;
+    }
+
+    const currentTokens =
+      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
+    const threshold = Math.floor(model.maxInputTokens * IN_LOOP_SUMMARIZE_THRESHOLD);
+    if (currentTokens < threshold) {
+      return null;
+    }
+
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const userMsg = messages.find((m) => m.role === 'user');
+    if (!systemMsg?.content || !userMsg?.content) {
+      return null;
+    }
+
+    const systemPrompt = systemMsg.content;
+    const userMessage = userMsg.content;
+
+    // 保留原始用户消息，其余（assistant/tool/后续 user）全部进入摘要
+    const messagesToSummarize = messages
+      .filter((m) => m !== systemMsg && m !== userMsg && (m.content ?? '').length > 0)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content || '',
+      }));
+
+    if (messagesToSummarize.length === 0) {
+      return null;
+    }
+
+    console.warn(
+      `[AssistantService] 工具循环 context 过载 (${currentTokens} >= ${threshold}，${Math.round(
+        (currentTokens / model.maxInputTokens) * 100,
+      )}%)，触发循环内摘要`,
+    );
+
+    const summaryResult = await this.requestSummaryReset({
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      context: { currentBookId: bookId },
+      ...(signal ? { finalSignal: signal } : {}),
+      ...(options.aiProcessingStore ? { aiProcessingStore: options.aiProcessingStore } : {}),
+      ...(taskId ? { taskId } : {}),
+      ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+    });
+
+    if (!summaryResult?.summary) {
+      console.warn('[AssistantService] 工具循环内摘要失败，回退到 followUp 请求');
+      return null;
+    }
+
+    options.onSummarizingEnd?.();
+
+    const rebuilt = this.rebuildMessagesWithSummary(systemPrompt, summaryResult.summary, userMessage);
+    messages.length = 0;
+    messages.push(...rebuilt);
+
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+
+    // 重启初始请求：摘要后 messages 只剩 [system+summary, user]，没有 pending tool_results，
+    // 必须以 isInitialRequest=true 重新拉一轮 AI 回复，拿到新的 toolCalls 供循环继续。
+    const restartRequest = this.buildTextRequest(messages, tools, {
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
+      maxOutputTokens: model.maxOutputTokens,
+    });
+
+    const restartResult = await this.executeAIRequest({
+      aiService,
+      config,
+      request: restartRequest,
+      messages,
+      options,
+      ...(taskId ? { taskId } : {}),
+      isInitialRequest: true,
+    });
+
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+
+    return {
+      finalText: restartResult.text,
+      toolCalls: restartResult.toolCalls,
+    };
   }
 
   /**
@@ -1397,7 +1564,6 @@ export class AssistantService {
       // 需要将其纳入 token 估算以避免低估实际用量
       const toolSchemaTokens = estimateToolSchemaTokens(tools);
       const estimatedTokens = messageTokens + toolSchemaTokens;
-      // const TOKEN_THRESHOLD_RATIO = 0.85; // 使用常量
 
       // 检查是否超过模型的最大上下文长度（contextWindow）
       // 如果模型有 contextWindow，需要确保 estimatedTokens + maxTokens <= contextWindow

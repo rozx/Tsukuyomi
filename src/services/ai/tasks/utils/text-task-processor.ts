@@ -51,7 +51,6 @@ import {
 import { getTodosSystemPrompt } from './todo-helper';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 import { isSymbolOnly } from 'src/utils/text-utils';
-import { ChapterSummaryService } from '../chapter-summary-service';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
@@ -159,8 +158,6 @@ export interface TaskSpecificConfig {
     isFirstChunk: boolean;
     enableOriginalTextValidation: boolean;
   }) => string;
-  // 是否启用章节摘要生成（可选，仅翻译服务使用）
-  enableChapterSummary?: boolean | undefined;
   // 是否获取前一章节信息（可选，仅翻译服务使用）
   enablePreviousChapter?: boolean | undefined;
   // 是否使用简短规划模式（可选，仅翻译服务使用）
@@ -238,7 +235,6 @@ export async function processTextTask(
     onParagraphsExtracted,
     onTitleExtracted,
     buildSystemPrompt,
-    enableChapterSummary = false,
     enablePreviousChapter = false,
     enableBriefPlanning = false,
     collectedActions = [],
@@ -337,27 +333,6 @@ export async function processTextTask(
     },
   );
 
-  // 触发章节摘要生成（后台运行，仅翻译服务）
-  if (enableChapterSummary && chapterId && bookId && content.length > 0) {
-    const fullSourceText = content
-      .map((p) => p.text || '')
-      .filter((t) => t.trim().length > 0)
-      .join('\n\n');
-
-    if (fullSourceText.trim()) {
-      void ChapterSummaryService.generateSummary(chapterId, fullSourceText, {
-        bookId,
-        ...(chapterTitle ? { chapterTitle } : {}),
-        ...(aiProcessingStore ? { aiProcessingStore } : {}),
-        onSuccess: (summary: string) =>
-          console.log(`[${logLabel}] 自动生成章节摘要成功: ${summary.slice(0, 30)}...`),
-        onError: (error: unknown) => console.error(`[${logLabel}] 自动生成章节摘要失败:`, error),
-      }).catch((error: unknown) => {
-        console.error(`[${logLabel}] 触发章节摘要服务异常:`, error);
-      });
-    }
-  }
-
   // 创建统一的 AbortController
   const { controller: internalController, cleanup: cleanupAbort } = createUnifiedAbortController(
     signal,
@@ -400,7 +375,7 @@ export async function processTextTask(
     const bookContextSection = await buildBookContextSection(bookId);
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
-    // 获取前一章节信息（仅翻译服务）
+    // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
     let previousChapterSection = '';
     if (enablePreviousChapter && bookId && chapterId) {
       try {
@@ -410,8 +385,7 @@ export async function processTextTask(
           const prev = ChapterService.getPreviousChapter(book, chapterId);
           if (prev) {
             const prevTitle = getChapterDisplayTitle(prev.chapter);
-            const prevSummary = prev.chapter.summary;
-            previousChapterSection = buildPreviousChapterSection(prevTitle, prevSummary);
+            previousChapterSection = buildPreviousChapterSection(prevTitle);
           }
         }
       } catch (error) {

@@ -85,16 +85,6 @@ function getTemplates(taskType: TaskType, state: TaskStatus): TodoTemplate | nul
           return null;
       }
 
-    case 'chapter_summary':
-      switch (state) {
-        case 'planning':
-          return ['确认章节内容与前文摘要', '制定摘要策略'];
-        case 'working':
-          return ['生成章节摘要'];
-        default:
-          return null;
-      }
-
     default:
       return null;
   }

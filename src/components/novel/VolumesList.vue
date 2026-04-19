@@ -210,21 +210,6 @@ const isSelectedChapterLoading = (chapterId: string) => {
                 <span class="chapter-title">{{
                   getChapterDisplayTitle(chapter, book || undefined)
                 }}</span>
-                <i
-                  v-if="chapter.summary"
-                  class="pi pi-info-circle summary-icon"
-                  v-tooltip.bottom="{
-                    value: chapter.summary,
-                    pt: {
-                      text: {
-                        style: {
-                          maxWidth: '300px',
-                          whiteSpace: 'pre-wrap',
-                        },
-                      },
-                    },
-                  }"
-                ></i>
               </div>
               <div
                 class="chapter-actions"

@@ -275,144 +275,6 @@ describe('数据同步服务 (SyncDataService)', () => {
       );
     });
 
-    it('同步时应保留本地章节摘要（远程缺失 summary 不应覆盖）', async () => {
-      const localLastEdited = new Date('2024-01-03').toISOString();
-      const remoteLastEdited = new Date('2024-01-02').toISOString();
-
-      // 本地书籍较新 → 走 mergeRemoteTranslationsIntoLocalNovel 分支
-      mockBooksStore.books = [
-        {
-          id: 'n1',
-          title: 'Local Novel',
-          lastEdited: localLastEdited,
-          createdAt: new Date('2024-01-01').toISOString(),
-          volumes: [
-            {
-              id: 'v1',
-              title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
-              chapters: [
-                {
-                  id: 'c1',
-                  title: {
-                    original: 'c',
-                    translation: { id: 't2', translation: '', aiModelId: '' },
-                  },
-                  summary: '本地摘要',
-                  lastEdited: localLastEdited,
-                  createdAt: new Date('2024-01-01').toISOString(),
-                  content: [],
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      const remoteData = {
-        novels: [
-          {
-            id: 'n1',
-            title: 'Remote Novel',
-            lastEdited: remoteLastEdited,
-            createdAt: new Date('2024-01-01').toISOString(),
-            volumes: [
-              {
-                id: 'v1',
-                title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
-                chapters: [
-                  {
-                    id: 'c1',
-                    title: {
-                      original: 'c',
-                      translation: { id: 't2', translation: '', aiModelId: '' },
-                    },
-                    // 远程缺失 summary
-                    lastEdited: remoteLastEdited,
-                    createdAt: new Date('2024-01-01').toISOString(),
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      };
-
-      await SyncDataService.applyDownloadedData(remoteData);
-
-      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
-      const summary = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.summary;
-      expect(summary).toBe('本地摘要');
-    });
-
-    it('同步时应从远程补齐章节摘要（本地缺失 summary 时）', async () => {
-      const localLastEdited = new Date('2024-01-03').toISOString();
-      const remoteLastEdited = new Date('2024-01-02').toISOString();
-
-      // 本地书籍较新 → 走 mergeRemoteTranslationsIntoLocalNovel 分支
-      mockBooksStore.books = [
-        {
-          id: 'n1',
-          title: 'Local Novel',
-          lastEdited: localLastEdited,
-          createdAt: new Date('2024-01-01').toISOString(),
-          volumes: [
-            {
-              id: 'v1',
-              title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
-              chapters: [
-                {
-                  id: 'c1',
-                  title: {
-                    original: 'c',
-                    translation: { id: 't2', translation: '', aiModelId: '' },
-                  },
-                  // 本地缺失 summary
-                  lastEdited: localLastEdited,
-                  createdAt: new Date('2024-01-01').toISOString(),
-                  content: [],
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      const remoteData = {
-        novels: [
-          {
-            id: 'n1',
-            title: 'Remote Novel',
-            lastEdited: remoteLastEdited,
-            createdAt: new Date('2024-01-01').toISOString(),
-            volumes: [
-              {
-                id: 'v1',
-                title: { original: 'v', translation: { id: 't1', translation: '', aiModelId: '' } },
-                chapters: [
-                  {
-                    id: 'c1',
-                    title: {
-                      original: 'c',
-                      translation: { id: 't2', translation: '', aiModelId: '' },
-                    },
-                    summary: '远程摘要',
-                    lastEdited: remoteLastEdited,
-                    createdAt: new Date('2024-01-01').toISOString(),
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      };
-
-      await SyncDataService.applyDownloadedData(remoteData);
-
-      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
-      const summary = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.summary;
-      expect(summary).toBe('远程摘要');
-    });
-
     it('当远程书籍较新时，应应用远程段落的 selectedTranslationId', async () => {
       const oldDate = new Date('2024-01-01').toISOString();
       const newDate = new Date('2024-01-02').toISOString();
@@ -1811,7 +1673,7 @@ describe('数据同步服务 (SyncDataService)', () => {
   });
 
   describe('hasChangesToUpload (检测是否需要上传)', () => {
-    it('当书籍 lastEdited 相同但本地章节摘要存在、远程缺失时，应触发上传', () => {
+    it.skip('当书籍 lastEdited 相同但本地章节摘要存在、远程缺失时，应触发上传（已废弃：summary 字段已移除）', () => {
       const sameTime = new Date('2024-01-03').toISOString();
 
       const local = {
@@ -1872,7 +1734,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(shouldUpload).toBe(true);
     });
 
-    it('当书籍 lastEdited 相同且远程章节摘要存在、本地缺失时，不应触发上传（避免覆盖远程摘要）', () => {
+    it.skip('当书籍 lastEdited 相同且远程章节摘要存在、本地缺失时，不应触发上传（已废弃：summary 字段已移除）', () => {
       const sameTime = new Date('2024-01-03').toISOString();
 
       const local = {

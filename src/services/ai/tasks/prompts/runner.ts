@@ -5,22 +5,11 @@ import { MAX_TRANSLATION_BATCH_SIZE } from './common';
  * 获取规划阶段提示（包含循环检测）
  */
 export function getPlanningLoopPrompt(
-  taskType: TaskType,
+  _taskType: TaskType,
   isBriefPlanning: boolean,
   isLoopDetected: boolean,
 ): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-
   if (isLoopDetected) {
-    // chapter_summary 没有 preparing 阶段，直接进入 working
-    if (taskType === 'chapter_summary') {
-      return (
-        `[警告] **立即进入${taskLabel}阶段**！你已经在规划阶段停留过久。` +
-        `**现在必须**将状态更新为 "working"，开始${taskLabel}。` +
-        `不要再停留在 planning。` +
-        `请使用工具调用：\`update_task_status({"status":"working"})\`。`
-      );
-    }
     return (
       `[警告] **立即进入准备阶段**！你已经在规划阶段停留过久。` +
       `**现在必须**将状态更新为 "preparing"，并在准备阶段完成必要的数据维护。` +
@@ -29,8 +18,7 @@ export function getPlanningLoopPrompt(
     );
   }
 
-  // chapter_summary 没有 preparing 阶段，直接进入 working
-  const nextStatus = taskType === 'chapter_summary' ? 'working' : 'preparing';
+  const nextStatus = 'preparing';
 
   return isBriefPlanning
     ? `收到。你已继承前一部分的规划上下文（包括术语、角色、记忆等信息），**请直接使用这些信息**。` +
@@ -144,13 +132,6 @@ export function getStatusRestrictedToolPrompt(
   taskType?: TaskType,
 ): string {
   if (currentStatus === 'planning') {
-    // chapter_summary 无 preparing 阶段，planning 后直接进入 working
-    if (taskType === 'chapter_summary') {
-      return (
-        `[限制] 当前状态为 planning，不能调用 ${toolName} 进行数据写入。` +
-        `章节摘要任务不支持数据写入操作。`
-      );
-    }
     return (
       `[限制] 当前状态为 planning，不能调用 ${toolName} 进行数据写入。` +
       `请先用 \`update_task_status({"status":"preparing"})\` 进入 preparing 后再更新术语/角色/记忆。`

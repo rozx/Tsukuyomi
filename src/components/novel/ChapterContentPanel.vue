@@ -42,7 +42,6 @@ const props = defineProps<{
   isKeyboardSelected: boolean;
   isClickSelected: boolean;
   paragraphCardRefs: Map<string, InstanceType<typeof ParagraphCard>>;
-  isSummarizing?: boolean;
   isSmallScreen: boolean;
   prevChapter: Chapter | null;
   nextChapter: Chapter | null;
@@ -61,7 +60,6 @@ const emit = defineEmits<{
   (e: 'paragraph-click', paragraphId: string): void;
   (e: 'paragraph-edit-start', paragraphId: string): void;
   (e: 'paragraph-edit-stop', paragraphId: string): void;
-  (e: 're-summarize-chapter', chapterId: string): void;
   (e: 'navigate-to-chapter', chapter: Chapter): void;
   (e: 'navigate-to-chapter-list'): void;
 }>();
@@ -282,39 +280,6 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
           <span>查看原文</span>
         </a>
 
-        <!-- 章节摘要 -->
-        <div
-          v-if="selectedChapter.summary"
-          class="chapter-summary-section mt-4 p-4 bg-white/5 rounded-lg border border-white/10"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-sm font-medium text-moon/80 flex items-center gap-2">
-              <i class="pi pi-align-justify text-primary/70"></i>
-              章节摘要
-            </h3>
-            <Button
-              icon="pi pi-refresh"
-              label="重新生成"
-              class="p-button-text p-button-sm !text-xs !py-1"
-              :loading="isSummarizing"
-              :disabled="isSummarizing"
-              @click="emit('re-summarize-chapter', selectedChapter.id)"
-            />
-          </div>
-          <p class="text-sm text-moon/90 leading-relaxed whitespace-pre-wrap">
-            {{ selectedChapter.summary }}
-          </p>
-        </div>
-        <div v-else class="chapter-summary-section mt-4">
-          <Button
-            icon="pi pi-sparkles"
-            label="生成摘要"
-            class="p-button-outlined p-button-sm text-sm"
-            :loading="isSummarizing"
-            :disabled="isSummarizing"
-            @click="emit('re-summarize-chapter', selectedChapter.id)"
-          />
-        </div>
       </div>
 
       <!-- 章节段落列表 -->

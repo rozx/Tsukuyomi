@@ -46,6 +46,14 @@ export interface SyncConfig {
   // 上次已知的远程墓碑（entryKey -> deletedAt ISO 字符串）
   // 用于在多设备间保留墓碑，避免单设备上传时丢失其他设备记录的删除
   knownRemoteTombstones?: Record<string, string>;
+  // 强制推送模式状态（本地覆盖远端）
+  // active=true 时，点击"同步"执行单向强制推送；成功后自动置回 false
+  // lastFailedAt 仅在上次强制推送失败后保留，用于 UI 展示失败 badge
+  // 旧数据缺失该字段时等同 { active: false }
+  forceSyncMode?: {
+    active: boolean;
+    lastFailedAt?: number;
+  };
 }
 
 export enum SyncType {

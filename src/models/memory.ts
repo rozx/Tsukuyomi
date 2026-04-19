@@ -1,6 +1,6 @@
 /**
  * Memory 模型
- * 用于存储 AI 记忆的大块内容（如背景设定、章节摘要等）
+ * 用于存储 AI 记忆的大块内容（如背景设定、关键情节、角色关系等）
  */
 export interface Memory {
   id: string; // 短 ID（8 位十六进制字符串）
@@ -10,5 +10,5 @@ export interface Memory {
   createdAt: number; // 创建时间戳
   lastAccessedAt: number; // 最后访问时间戳（用于 LRU）
   embedding?: number[]; // 语义向量（256 维 Matryoshka 截断，L2 归一化）
-  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "embeddinggemma-300m@256"
+  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "gte-multilingual-base@256"
 }

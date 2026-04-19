@@ -15,7 +15,7 @@ import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
 import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import MemoryInjectionTab from 'src/components/settings/MemoryInjectionTab.vue';
+import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
 
 const ctx = injectSettingsPage();
 </script>
@@ -63,8 +63,8 @@ const ctx = injectSettingsPage();
       <ImportExportTab
         v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '4' : '5')"
       />
-      <MemoryInjectionTab
-        v-else-if="ctx.activeTab.value === ctx.memoryInjectionTabValue.value"
+      <EmbeddingSettingsTab
+        v-else-if="ctx.activeTab.value === ctx.embeddingSettingsTabValue.value"
       />
     </div>
   </section>

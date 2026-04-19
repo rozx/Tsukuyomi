@@ -20,7 +20,6 @@ export interface AIProcessingTask {
     | 'termsTranslation'
     | 'assistant'
     | 'config'
-    | 'chapter_summary'
     | 'other';
   modelName: string;
   status: AIProcessingTaskStatus;

@@ -10,7 +10,6 @@ export * from './common';
 export * from './translation';
 export * from './proofreading';
 export * from './polish';
-export * from './chapter-summary';
 export * from './term-translation';
 export * from './explain';
 export * from './assistant';

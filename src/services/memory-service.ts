@@ -3,8 +3,27 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 const MAX_MEMORIES_PER_BOOK = 500;
+
+/**
+ * 单一事实源 — 判定一条 memory 是否需要(重新)嵌入:无 vector 或 model 版本不匹配。
+ *
+ * 集中在这里避免 `!memory.embedding || memory.embeddingModel !== MODEL_VERSION` 这种
+ * 比对在 EmbeddingQueue / MemoryCard / MemoryPanel / Dialog 各处独立漂移。
+ *
+ * 语义:返回 true 表示"stale 或缺失",一概视为需要嵌入(EmbeddingQueue.memoryNeedsEmbedding
+ * 与 UI 的 stale 标识沿用同一语义,backlog 入队 / UI 显示 / 测试查询过滤都用它)。
+ */
+export function isMemoryEmbeddingStale(memory: {
+  embedding?: number[] | undefined;
+  embeddingModel?: string | undefined;
+}): boolean {
+  if (!memory.embedding || memory.embedding.length === 0) return true;
+  if (memory.embeddingModel !== MODEL_VERSION) return true;
+  return false;
+}
 
 /**
  * Memory 存储结构（用于 IndexedDB）
@@ -254,7 +273,7 @@ export class MemoryService {
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
 
-      EmbeddingQueue.enqueue(result.id);
+      EmbeddingQueue.enqueue(result.id, bookId);
 
       return result;
     } catch (error) {
@@ -332,7 +351,7 @@ export class MemoryService {
     await tx.done;
 
     if (shouldEnqueueRecompute) {
-      EmbeddingQueue.enqueue(memory.id);
+      EmbeddingQueue.enqueue(memory.id, memory.bookId);
     }
 
     const cachedMemory: Memory = {
@@ -425,7 +444,7 @@ export class MemoryService {
         this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
 
         if (existing.content !== content || existing.summary !== summary) {
-          EmbeddingQueue.enqueue(memoryId);
+          EmbeddingQueue.enqueue(memoryId, bookId);
         }
 
         return result;
@@ -487,7 +506,7 @@ export class MemoryService {
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
 
-      EmbeddingQueue.enqueue(result.id);
+      EmbeddingQueue.enqueue(result.id, bookId);
 
       return result;
     } catch (error) {
@@ -606,34 +625,43 @@ export class MemoryService {
     }
 
     const queryText = query.trim();
-    const queryTokens = queryText
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((t) => t.length > 0);
 
     try {
       const allMemories = await this.getAllBookMemories(bookId);
 
       let chunkEmbedding: Float32Array | undefined;
+      let expectedModelVersion: string | undefined;
       try {
-        const { EmbeddingService } = await import('src/services/embedding-service');
+        const { EmbeddingService, MODEL_VERSION } = await import('src/services/embedding-service');
         if (EmbeddingService.isReady()) {
-          const vec = await EmbeddingService.embed(queryText);
-          if (vec) chunkEmbedding = vec;
+          const vec = await EmbeddingService.embed(queryText, 'query');
+          if (vec) {
+            chunkEmbedding = vec;
+            // 当前 query 向量已对齐到 MODEL_VERSION,传入让 scoreMemory 跳过版本不符的 stale 记录
+            expectedModelVersion = MODEL_VERSION;
+          }
         }
       } catch {
         // 语义搜索不可用时静默降级
       }
 
-      const { scoreMemory } = await import('src/services/memory-scoring');
+      const { scoreMemoriesBatch, filterByRelativeRanking, DEFAULT_MIN_SCORE } =
+        await import('src/services/memory-scoring');
       const now = Date.now();
-      const chunkEntities = queryTokens.map((t) => ({ name: t }));
-      const scored = allMemories.map((memory) => {
-        const breakdown = scoreMemory(memory, { chunkEntities, chunkEmbedding, now });
-        return { memory, breakdown };
+      // 传 rawQuery(不是 whitespace-split 出来的 token),让 scoreMemoriesBatch 走
+      // 部分匹配打分 — 对无空格 CJK 自然语言查询友好很多。chunkEntities 传空即可。
+      const scored = scoreMemoriesBatch(allMemories, {
+        chunkEntities: [],
+        rawQuery: queryText,
+        chunkEmbedding,
+        now,
+        expectedModelVersion,
       });
 
-      let minScore = 0.34;
+      // 默认阈值与 selectByBudget 保持一致(DEFAULT_MIN_SCORE = 0.3),
+      // 让"搜索工具"和"翻译注入"走相同的过滤规则,避免 AI 通过 search_memories
+      // 看到注入阶段会被过滤掉的低分项,产生行为不一致。
+      let minScore = DEFAULT_MIN_SCORE;
       try {
         const { useSettingsStore } = await import('src/stores/settings');
         const cfg = useSettingsStore().settings?.memoryInjection;
@@ -642,10 +670,12 @@ export class MemoryService {
         /* 保持默认 */
       }
 
-      const filtered = scored.filter(
-        (s) => s.breakdown.keyword > 0 || s.breakdown.total > minScore,
-      );
-      filtered.sort((a, b) => b.breakdown.total - a.breakdown.total);
+      // 绝对阈值:严格按 total >= minScore 过滤,不再给"有关键词命中"开后门 —
+      // 保证搜索和注入的收敛条件完全相同。
+      const absoluteFiltered = scored.filter((s) => s.breakdown.total >= minScore);
+      // 相对排名收缩:针对语义余弦噪声地板高的场景,把候选从"全员高分"压成
+      // "top 附近的少数突出项",避免工具向 AI 返回一大堆中庸匹配。
+      const filtered = filterByRelativeRanking(absoluteFiltered);
 
       const resultIds = filtered.map((s) => s.memory.id);
       if (resultIds.length > 0) {
@@ -732,7 +762,7 @@ export class MemoryService {
       const oldSummary = (memory as MemoryStorage).summary;
       const oldContent = (memory as MemoryStorage).content;
       if (oldSummary !== summary || oldContent !== content) {
-        EmbeddingQueue.enqueue(memoryId);
+        EmbeddingQueue.enqueue(memoryId, bookId);
       }
 
       return result;

@@ -638,6 +638,10 @@ const handleFileSelect = async (event: Event) => {
   padding: 1rem 1.5rem;
 }
 
+.panel-message {
+  margin-top: 0.75rem;
+}
+
 /* 工具栏布局 */
 .toolbar-row {
   display: flex;

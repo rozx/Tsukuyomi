@@ -29,7 +29,7 @@ const SETTINGS_DB_KEY = 'app';
 const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
   charBudget: 2000,
   enableSemantic: true,
-  minScoreThreshold: 0.38,
+  minScoreThreshold: 0.3,
   hasSeenIntro: false,
   embeddingModelCached: false,
 };
@@ -48,6 +48,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   booksSortOption: 'default',
   quickStartDismissed: false,
   memoryInjection: { ...DEFAULT_MEMORY_INJECTION },
+  enableLocalEmbedding: false, // 默认关闭,用户在设置页主动开启以触发模型下载
 };
 
 /**
@@ -190,49 +191,14 @@ async function loadSettingsFromDB(): Promise<AppSettings | null> {
 async function saveSettingsToDB(settings: AppSettings): Promise<void> {
   try {
     const db = await getDB();
-    // 使用 toRaw 获取原始对象，去除 Vue 响应式包装
-    const rawSettings = toRaw(settings);
-
-    // 创建一个"纯净"的对象，避免 Proxy/响应式对象导致结构化克隆失败
-    // 使用 cloneDeep 深度克隆嵌套对象，确保去除响应式包装
-    // 确保 Date 对象是普通 Date 实例
-    const clean: AppSettings = {
-      lastEdited:
-        rawSettings.lastEdited instanceof Date
-          ? new Date(rawSettings.lastEdited.getTime())
-          : new Date(rawSettings.lastEdited || 0),
-      scraperConcurrencyLimit: rawSettings.scraperConcurrencyLimit,
-      ...(rawSettings.taskDefaultModels !== undefined
-        ? { taskDefaultModels: cloneDeep(rawSettings.taskDefaultModels) }
-        : {}),
-      ...(rawSettings.lastOpenedSettingsTab !== undefined
-        ? { lastOpenedSettingsTab: rawSettings.lastOpenedSettingsTab }
-        : {}),
-      ...(rawSettings.proxyEnabled !== undefined ? { proxyEnabled: rawSettings.proxyEnabled } : {}),
-      ...(rawSettings.proxyUrl !== undefined ? { proxyUrl: rawSettings.proxyUrl } : {}),
-      ...(rawSettings.proxyAutoSwitch !== undefined
-        ? { proxyAutoSwitch: rawSettings.proxyAutoSwitch }
-        : {}),
-      ...(rawSettings.proxyAutoAddMapping !== undefined
-        ? { proxyAutoAddMapping: rawSettings.proxyAutoAddMapping }
-        : {}),
-      ...(rawSettings.proxySiteMapping !== undefined
-        ? { proxySiteMapping: cloneDeep(rawSettings.proxySiteMapping) }
-        : {}),
-      ...(rawSettings.proxyList !== undefined
-        ? { proxyList: cloneDeep(rawSettings.proxyList) }
-        : {}),
-      ...(rawSettings.tavilyApiKey !== undefined ? { tavilyApiKey: rawSettings.tavilyApiKey } : {}),
-      ...(rawSettings.booksSortOption !== undefined
-        ? { booksSortOption: rawSettings.booksSortOption }
-        : {}),
-      ...(rawSettings.quickStartDismissed !== undefined
-        ? { quickStartDismissed: rawSettings.quickStartDismissed }
-        : {}),
-      ...(rawSettings.memoryInjection !== undefined
-        ? { memoryInjection: cloneDeep(rawSettings.memoryInjection) }
-        : {}),
-    };
+    // cloneDeep(toRaw(...)) 深度剥离 Vue 响应式包装，避免 Proxy 导致 structured clone 失败。
+    // 依赖 AppSettings 类型作为单一事实来源：新增字段自动持久化，无需维护白名单。
+    const clean = cloneDeep(toRaw(settings));
+    // 保证 lastEdited 是普通 Date 实例（cloneDeep 会复制 Date，但防御历史数据里可能是字符串）
+    clean.lastEdited =
+      clean.lastEdited instanceof Date
+        ? new Date(clean.lastEdited.getTime())
+        : new Date((clean.lastEdited as unknown as string | number | undefined) || 0);
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
   } catch (error) {
@@ -307,14 +273,6 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
     const tx = db.transaction('sync-configs', 'readwrite');
     const store = tx.objectStore('sync-configs');
 
-    // 使用 lodash 将响应式/Proxy 对象深拷贝为纯对象，避免 IndexedDB structured clone 报错
-    const toPlain = <T>(value: T): T => {
-      if (value === undefined || value === null) return value;
-      // 先 toRaw 获取原始对象（如果是顶层 Proxy），然后 cloneDeep 确保所有嵌套的 Proxy 也被转换为纯对象
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return cloneDeep(toRaw(value as any)) as T;
-    };
-
     // 简化：以当前内存状态为准，覆盖保存
     await store.clear();
 
@@ -326,48 +284,11 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
       typeCounter.set(type, nextIndex);
       const id = nextIndex === 1 ? `sync-${type}` : `sync-${type}-${nextIndex}`;
 
-      // 创建纯净对象，避免 Proxy 导致结构化克隆失败
-      const clean: SyncConfig = {
-        enabled: Boolean(sync.enabled),
-        lastSyncTime: Number(sync.lastSyncTime || 0),
-        syncInterval: Number(sync.syncInterval || 0),
-        syncType: sync.syncType,
-        syncParams: toPlain(sync.syncParams || {}),
-        secret: String(sync.secret || ''),
-        apiEndpoint: String(sync.apiEndpoint || ''),
-        ...(sync.lastSyncedModelIds !== undefined
-          ? { lastSyncedModelIds: toPlain(sync.lastSyncedModelIds) }
-          : {}),
-        ...(sync.deletedNovelIds !== undefined
-          ? { deletedNovelIds: toPlain(sync.deletedNovelIds) }
-          : {}),
-        ...(sync.deletedModelIds !== undefined
-          ? { deletedModelIds: toPlain(sync.deletedModelIds) }
-          : {}),
-        ...(sync.deletedCoverIds !== undefined
-          ? { deletedCoverIds: toPlain(sync.deletedCoverIds) }
-          : {}),
-        ...(sync.deletedCoverUrls !== undefined
-          ? { deletedCoverUrls: toPlain(sync.deletedCoverUrls) }
-          : {}),
-        ...(sync.deletedMemoryIds !== undefined
-          ? { deletedMemoryIds: toPlain(sync.deletedMemoryIds) }
-          : {}),
-        // 注意：`lastRemoteUpdatedAt` 已由 `lastRemoteETag` 取代，主路径不再写入此字段。
-        // 仅在加载旧配置时保留读取，因此 saveSyncConfigs 不序列化它。
-        ...(sync.lastRemoteETag !== undefined
-          ? { lastRemoteETag: String(sync.lastRemoteETag) }
-          : {}),
-        ...(sync.knownRemoteHashes !== undefined
-          ? { knownRemoteHashes: toPlain(sync.knownRemoteHashes) }
-          : {}),
-        ...(sync.knownRemoteEntries !== undefined
-          ? { knownRemoteEntries: toPlain(sync.knownRemoteEntries) }
-          : {}),
-        ...(sync.knownRemoteTombstones !== undefined
-          ? { knownRemoteTombstones: toPlain(sync.knownRemoteTombstones) }
-          : {}),
-      };
+      // cloneDeep(toRaw(...)) 深度剥离 Vue 响应式包装，避免 Proxy 导致 structured clone 失败。
+      // 依赖 SyncConfig 类型作为单一事实来源：新增字段自动持久化。
+      const clean = cloneDeep(toRaw(sync));
+      // `lastRemoteUpdatedAt` 已由 `lastRemoteETag` 取代，写入时去掉（读取仍保留以兼容旧数据）
+      delete clean.lastRemoteUpdatedAt;
 
       await store.put({ id, ...clean });
     }
@@ -496,6 +417,15 @@ export const useSettingsStore = defineStore('settings', {
     gistSync: (state): SyncConfig => {
       const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
       return gistSync ?? createDefaultGistSyncConfig();
+    },
+
+    /**
+     * 获取强制推送模式状态
+     * 旧数据缺失时返回 { active: false }
+     */
+    forceSyncMode: (state): { active: boolean; lastFailedAt?: number } => {
+      const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
+      return gistSync?.forceSyncMode ?? { active: false };
     },
   },
 
@@ -698,9 +628,7 @@ export const useSettingsStore = defineStore('settings', {
      * - minScoreThreshold: clamp 到 [0, 1.0]
      * - enableSemantic 切换时:true→resume / false→pause EmbeddingQueue
      */
-    async updateMemoryInjection(
-      updates: Partial<MemoryInjectionSettings>,
-    ): Promise<void> {
+    async updateMemoryInjection(updates: Partial<MemoryInjectionSettings>): Promise<void> {
       const current = this.settings.memoryInjection ?? { ...DEFAULT_MEMORY_INJECTION };
       const merged = { ...current, ...updates };
 
@@ -709,7 +637,10 @@ export const useSettingsStore = defineStore('settings', {
       merged.minScoreThreshold = Math.min(1.0, Math.max(0, merged.minScoreThreshold));
 
       // 副作用:enableSemantic 变更时联动 EmbeddingQueue
-      if (updates.enableSemantic !== undefined && updates.enableSemantic !== current.enableSemantic) {
+      if (
+        updates.enableSemantic !== undefined &&
+        updates.enableSemantic !== current.enableSemantic
+      ) {
         try {
           const { EmbeddingQueue } = await import('src/services/embedding-queue');
           if (updates.enableSemantic) {
@@ -934,17 +865,16 @@ export const useSettingsStore = defineStore('settings', {
       const lastRemoteUpdatedAt =
         updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
 
-      const lastRemoteETag =
-        updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
+      const lastRemoteETag = updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
 
-      const knownRemoteHashes =
-        updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
+      const knownRemoteHashes = updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
 
-      const knownRemoteEntries =
-        updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
+      const knownRemoteEntries = updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
 
       const knownRemoteTombstones =
         updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
+
+      const forceSyncMode = updates.forceSyncMode ?? existingConfig?.forceSyncMode;
 
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
@@ -975,6 +905,7 @@ export const useSettingsStore = defineStore('settings', {
         ...(knownRemoteHashes !== undefined ? { knownRemoteHashes } : {}),
         ...(knownRemoteEntries !== undefined ? { knownRemoteEntries } : {}),
         ...(knownRemoteTombstones !== undefined ? { knownRemoteTombstones } : {}),
+        ...(forceSyncMode !== undefined ? { forceSyncMode } : {}),
       };
 
       if (index >= 0) {
@@ -1150,6 +1081,24 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateKnownRemoteTombstones(tombstones: Record<string, string>): Promise<void> {
       await this.updateGistSync({ knownRemoteTombstones: tombstones });
+    },
+
+    /**
+     * 更新强制推送模式状态
+     * 传 { active: false } 时会同时清除 lastFailedAt
+     */
+    async updateForceSyncMode(partial: {
+      active: boolean;
+      lastFailedAt?: number | undefined;
+    }): Promise<void> {
+      // active=false 时强制清除 lastFailedAt，保证语义：关闭 = 完全退出强制模式
+      const next: { active: boolean; lastFailedAt?: number } = partial.active
+        ? {
+            active: true,
+            ...(partial.lastFailedAt !== undefined ? { lastFailedAt: partial.lastFailedAt } : {}),
+          }
+        : { active: false };
+      await this.updateGistSync({ forceSyncMode: next });
     },
 
     /**

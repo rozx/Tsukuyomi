@@ -9,14 +9,14 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import {
-  scoreMemory,
+  scoreMemoriesBatch,
   selectByBudget,
   DEFAULT_CHAR_BUDGET,
   HARD_ITEM_CAP,
   DEFAULT_MIN_SCORE,
   type ScoredMemory,
 } from 'src/services/memory-scoring';
-import { EmbeddingService } from 'src/services/embedding-service';
+import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
@@ -68,7 +68,6 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
     translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
     proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
     polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
-    chapter_summary: '',
   };
   return reminders[taskType];
 }
@@ -91,23 +90,14 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 }
 
 /**
- * 构建前一个章节的上下文信息（用于系统提示词）
+ * 构建前一个章节的上下文信息(仅标题,保持时序感知)。
+ * 章节摘要字段已移除,AI 如需前一章具体内容可调用 `query_chapter` / `get_chapter_info`。
  * @param title 前一章节标题
- * @param summary 前一章节摘要
- * @returns 格式化的前文信息，如果都没有则返回空字符串
+ * @returns 格式化的前文信息,无 title 时返回空字符串
  */
-export function buildPreviousChapterSection(title?: string, summary?: string): string {
-  if (!title && !summary) return '';
-
-  const parts: string[] = [];
-  if (title) {
-    parts.push(`**前一章节标题**: ${title}`);
-  }
-  if (summary) {
-    parts.push(`**前一章节摘要**: ${summary}`);
-  }
-
-  return `\n\n【前文信息】\n${parts.join('\n')}\n`;
+export function buildPreviousChapterSection(title?: string): string {
+  if (!title) return '';
+  return `\n\n【前文信息】\n**前一章节标题**: ${title}\n`;
 }
 
 /**
@@ -316,7 +306,7 @@ async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | 
   if (cached !== undefined) return cached;
 
   try {
-    const vec = await EmbeddingService.embed(chunkText);
+    const vec = await EmbeddingService.embed(chunkText, 'query');
     if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
       const oldest = chunkEmbeddingCache.keys().next().value;
       if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);
@@ -392,16 +382,16 @@ export async function selectRelevantMemoriesForChunk(
   // 3. 可选语义向量
   const chunkEmbedding = await computeChunkEmbedding(chunkText);
 
-  // 4. 逐条打分
+  // 4. 批量打分 — chunkEmbedding 存在时传入 expectedModelVersion 过滤 stale 记忆;
+  //    batch 版会对本批 raw cosine 做 z-score 归一化,spread 过小时整批把 semantic 置 0(权重不变)
   const now = Date.now();
-  const scored: ScoredMemory[] = allMemories.map((memory) => ({
-    memory,
-    breakdown: scoreMemory(memory, {
-      chunkEntities,
-      chunkEmbedding: chunkEmbedding ?? undefined,
-      now,
-    }),
-  }));
+  const expectedModelVersion = chunkEmbedding ? MODEL_VERSION : undefined;
+  const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
+    chunkEntities,
+    chunkEmbedding: chunkEmbedding ?? undefined,
+    now,
+    expectedModelVersion,
+  });
 
   // 5. 字符预算填充 — 读取用户预算设置
   let charBudget = DEFAULT_CHAR_BUDGET;
@@ -417,31 +407,27 @@ export async function selectRelevantMemoriesForChunk(
 
   const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
 
-  let memories: Memory[] = selected;
+  // 严格阈值策略:不走 LRU 兜底。minScore 以下的记忆一律不返回 —
+  // UI 预览和翻译注入共用同一函数,所以两边的过滤规则自动一致。
+  // 如果这一批全部不达标,用户看到"未参考记忆",这是正确的信号(说明当前
+  // chunk 没有足够相关的历史记忆,而不是用低分噪音凑数)。
+  const memories: Memory[] = selected;
   const breakdowns: Record<string, ScoreBreakdown> = {};
-  let fromFallback = false;
-
-  if (selected.length === 0) {
-    // 6. 兜底:LRU 最近 5 条(不记录 breakdown)
-    fromFallback = true;
-    try {
-      memories = await MemoryService.getRecentMemories(bookId, 5, 'lastAccessedAt', false);
-    } catch {
-      memories = [];
-    }
-  } else {
-    const selectedIds = new Set(selected.map((m) => m.id));
-    for (const item of scored) {
-      if (selectedIds.has(item.memory.id)) {
-        breakdowns[item.memory.id] = item.breakdown;
-      }
-    }
+  const scoredById = new Map(scored.map((s) => [s.memory.id, s.breakdown]));
+  for (const mem of memories) {
+    const bd = scoredById.get(mem.id);
+    if (bd) breakdowns[mem.id] = bd;
   }
 
   // 供 translation-service 旁路读取
   lastScoreBreakdownsByBook.set(bookId, breakdowns);
 
-  return { memories, breakdowns, fromFallback, totalMemoryCount: allMemories.length };
+  return {
+    memories,
+    breakdowns,
+    fromFallback: false,
+    totalMemoryCount: allMemories.length,
+  };
 }
 
 /**
@@ -807,22 +793,7 @@ export async function buildSingleParagraphDefaultContext(options: {
   const chapterContext = buildChapterContextSection(chapterId, chapterTitle);
   if (chapterContext) parts.push(chapterContext);
 
-  // 3. 章节摘要
-  if (bookId && chapterId) {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    if (book) {
-      for (const volume of book.volumes || []) {
-        const chapter = volume.chapters?.find((c) => c.id === chapterId);
-        if (chapter?.summary) {
-          parts.push(`\n\n【当前章节摘要】\n${chapter.summary}\n`);
-          break;
-        }
-      }
-    }
-  }
-
-  // 4. 本章角色
+  // 3. 本章角色
   if (bookId) {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -835,7 +806,7 @@ export async function buildSingleParagraphDefaultContext(options: {
     }
   }
 
-  // 5. 相关术语（基于当前段落文本匹配）
+  // 4. 相关术语（基于当前段落文本匹配）
   if (bookId) {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -854,7 +825,7 @@ export async function buildSingleParagraphDefaultContext(options: {
     }
   }
 
-  // 6. 前后段落上下文
+  // 5. 前后段落上下文
   const surroundingContext = buildSurroundingParagraphsContext(
     currentParagraphId,
     allChapterParagraphs,

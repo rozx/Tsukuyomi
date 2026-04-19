@@ -5,6 +5,15 @@ import type { TaskType, TaskStatus } from '../utils';
 import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
 
 /**
+ * 判断本次请求是否提供了 `query_chapter` 工具。
+ * 用于条件性拼接提示词里的"章节语义搜索"段落 —— 本地嵌入关闭 / 手机端时,
+ * 工具集合里不会出现 query_chapter,提示词也就不该再教模型去用它。
+ */
+export function hasQueryChapterTool(tools?: AITool[]): boolean {
+  return tools?.some((t) => t.function.name === 'query_chapter') ?? false;
+}
+
+/**
  * 工具范围规则：严格限制 AI 只能调用本次请求提供的 tools
  */
 export function getToolScopeRules(tools?: AITool[]): string {
@@ -39,7 +48,7 @@ export function getSymbolFormatRules(): string {
 /**
  * 获取规划阶段描述
  */
-function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolean): string {
+function getPlanningStateDescription(_taskLabel: string, isBriefPlanning?: boolean): string {
   if (isBriefPlanning) {
     return `**当前状态：简短规划阶段 (planning)**
 已继承前一部分的规划上下文。如需补充信息可调用工具。
@@ -67,9 +76,6 @@ function getWorkingStateDescription(taskType: TaskType): string {
   switch (taskType) {
     case 'translation':
       focusDesc = '1:1翻译，敬语按流程处理';
-      break;
-    case 'chapter_summary':
-      focusDesc = '生成章节摘要，概括主要情节';
       break;
     case 'polish':
       focusDesc = '语气词优化、摆脱翻译腔、节奏调整';
@@ -102,7 +108,7 @@ ${dataWriteRestrictionLine}- 使用 \`add_translation_batch\` 提交结果 ${onl
 /**
  * 获取复核阶段描述
  */
-function getReviewStateDescription(taskLabel: string): string {
+function getReviewStateDescription(_taskLabel: string): string {
   return `**当前状态：复核阶段 (review)**
 按待办清单逐项检查，发现问题可直接用 \`add_translation_batch\` 修正。
 可创建/更新术语、角色、记忆。
@@ -311,11 +317,18 @@ export function getToolUsageInstructions(
   const askUserLine = !skipAskUser
     ? '- **询问**: 当有需要用户确认/做决定时，用 `ask_user_batch` 一次性解决所有疑问\n'
     : '';
+  const queryChapterLine = hasQueryChapterTool(tools)
+    ? '- **章节混合检索**：需要跨章节回忆剧情/场景/人物关系/设定时，用 `query_chapter`（语义 + 标题/正文关键词 + IDF 稀有词加权 + 章号/卷号 identifier 强匹配），返回章节 ID、标题、匹配度、前 200 字预览；再按需调 `get_chapter_info` 读全文。\n' +
+      '  - **三类最稳 query**：① 标题/系列名直搜（"第二王女" / "深渊之森攻略" / "星天 ⑥"）；② 人物+身份+具体动作+独特细节（"夏洛特紧张到胃痛接近芬恩"）；③ 事件锚点（"吻痕被发现后开始审问"）。\n' +
+      '  - **较弱**：抽象读后感（"后宫气氛成形"）→ 改成具体场面；仅人名无动作 → 补动作/细节；不存在的系列词 → 改用 `list_chapters` 看真实标题。\n' +
+      '  - **中文转述日文标题**：字面差异大时不稳，**优先用原文标题词**或加更强锚点（人物+动作）。\n' +
+      '  - **把它当候选定位器**：Top1 未必最佳，默认看 Top3-5；不确定时 `limit` 调到 8-10。\n'
+    : '';
   return `${getToolScopeRules(tools)}
 
 【工具使用建议】
 - 用途：获取上下文、维护术语/角色/记忆、查询历史翻译、查询待办事项。
 - 优先用本地数据，网络工具仅用于外部知识
-${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
+${queryChapterLine}${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;
 }

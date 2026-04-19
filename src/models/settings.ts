@@ -27,7 +27,7 @@ export interface MemoryInjectionSettings {
   enableSemantic: boolean;
   /**
    * 最低分数阈值：低于此分的记忆不会被注入
-   * 默认值：0.38（最大得分 1.0）
+   * 默认值：0.3（最大得分 1.0）
    */
   minScoreThreshold: number;
   /**
@@ -140,6 +140,20 @@ export interface AppSettings {
    * 记忆注入相关设置
    */
   memoryInjection?: MemoryInjectionSettings;
+  /**
+   * 全局开关:是否启用本地嵌入(Transformers.js + gte-multilingual-base)。
+   * 默认值:false(用户主动开启,避免首次启动就触发 ~340-465MB 模型下载)
+   *
+   * 关闭时:
+   * - 应用启动不 warmup / 不下载嵌入模型
+   * - EmbeddingQueue 收到的任务保留但不处理,等开启后再消费
+   * - `query_chapter` 工具直接返回"功能未启用"错误
+   * - 记忆检索降级为纯关键词 + 时间衰减(不走语义打分)
+   *
+   * 此开关是"总电源",作用域覆盖记忆 + 章节两类嵌入;`memoryInjection.enableSemantic`
+   * 只是记忆注入打分管线里的语义信号子开关,在总开关为 true 时才有意义。
+   */
+  enableLocalEmbedding?: boolean;
 }
 
 export interface Settings {

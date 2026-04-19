@@ -1,5 +1,5 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
-import { getToolScopeRules } from './index';
+import { getToolScopeRules, hasQueryChapterTool } from './index';
 
 /**
  * 获取 Assistant 系统提示词
@@ -13,6 +13,14 @@ export function getAssistantSystemPrompt(
     selectedParagraphId: string | null;
   },
 ): string {
+  const chapterSemanticLine = hasQueryChapterTool(tools)
+    ? '7. **章节混合检索**：用户提问涉及剧情、场景、事件、人物关系、章节标题或系列名（跨章节/章节不明确）时，优先用 `query_chapter`（语义 + 标题/正文关键词 + IDF 稀有词加权 + 章号/卷号 identifier 强匹配），返回章节 ID、标题、匹配度、前 200 字预览，再按需调 `get_chapter_info`。比盲目 `list_chapters` + 猜章节更准更快。\n' +
+      '   - **三类最稳 query**：① 标题/系列名直搜（"第二王女" / "深渊之森攻略" / "星天 ⑥"）；② 人物+身份+具体动作+独特细节（"夏洛特紧张到胃痛接近芬恩"）；③ 事件锚点（"吻痕被发现后开始审问"）。\n' +
+      '   - **较弱**：抽象读后感（"后宫气氛成形"）→ 改成具体场面；仅人名无动作 → 补动作/细节；不存在的系列词 → 改用 `list_chapters`。\n' +
+      '   - **中文转述日文标题**：字面差异大时不稳，**优先用原文标题词**或加更强锚点。\n' +
+      '   - **当候选定位器用**：Top1 未必最佳，默认看 Top3-5；不确定时 `limit` 调到 8-10。\n'
+    : '';
+
   let prompt = `你是 Tsukuyomi（月詠） - Moonlit Translator Assistant，日语小说翻译助手。${todosPrompt}
 
 ## 能力
@@ -27,7 +35,7 @@ ${getToolScopeRules(tools)}
 4. **简洁回答**： 尽量简洁回答，不要输出多余的信息
 5. **帮助文档优先**：当用户询问功能用法、操作步骤或可用功能时，优先使用帮助文档工具获取权威答案
 6. **询问用户**： 如果需要用户确认或提供额外信息，请使用 ask_user 或者 ask_user_batch 工具直接询问用户，加快流程，尽量将多个问题合并成一次询问。
-`;
+${chapterSemanticLine}`;
 
   // 添加上下文信息
   if (context.currentBookId || context.currentChapterId || context.selectedParagraphId) {

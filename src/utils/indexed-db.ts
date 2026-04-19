@@ -6,6 +6,7 @@ import type { CoverHistoryItem } from 'src/models/novel';
 import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
+import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 
 /**
  * 书籍详情页面 UI 状态
@@ -108,10 +109,21 @@ interface TsukuyomiDB extends DBSchema {
       lastUpdated: string; // ISO 日期字符串
     };
   };
+  'chapter-embeddings': {
+    key: string; // `${chapterId}:${kind}:${chunkIndex}` (v11+);v10 旧 key 为 `${chapterId}:${chunkIndex}`
+    value: ChapterEmbedding;
+    indexes: {
+      'by-chapterId': string;
+      'by-bookId': string;
+    };
+  };
 }
 
 const DB_NAME = 'tsukuyomi';
-const DB_VERSION = 9; // v9 硬迁移：清理旧 attachedTo 字段残留（memory-attachment 系统已移除）
+// v11 在 chapter-embeddings 上新增 `kind: 'content' | 'title'` 字段并改为复合 key
+// `${chapterId}:${kind}:${chunkIndex}`,以支持章节标题专属语义 chunk;旧 v10 记录在 upgrade
+// 中回填 `kind: 'content'` 并按新 key 重写。
+const DB_VERSION = 11;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -236,6 +248,63 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
         // 创建 full-text-indexes 存储（版本 6 新增）
         if (!db.objectStoreNames.contains('full-text-indexes')) {
           db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
+        }
+
+        // 创建 chapter-embeddings 存储（版本 10 新增）
+        if (!db.objectStoreNames.contains('chapter-embeddings')) {
+          const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
+          chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
+          chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
+        }
+
+        // 版本 11:给 chapter-embeddings 旧记录回填 `kind: 'content'`,并按新 key 格式
+        // `${chapterId}:content:${chunkIndex}` 重写。
+        // 旧 v10 key 为 `${chapterId}:${chunkIndex}`,字段无 kind。整批在同一 upgrade 事务内
+        // 完成,任一失败回滚到 v10。索引 by-chapterId / by-bookId 字段名未变,无需重建。
+        if (oldVersion < 11 && db.objectStoreNames.contains('chapter-embeddings')) {
+          const startedAt =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now();
+          const store = transaction.objectStore('chapter-embeddings');
+          let migrated = 0;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let cursor = await (store as any).openCursor();
+          // 收集 [oldKey, newKey, value] 后批量删/写,避免在 cursor 迭代过程中边删边写
+          // 触发 fake-indexeddb 时序问题(v9 迁移踩过同样的坑)。
+          type MigrationOp = { oldKey: string; newKey: string; value: ChapterEmbedding };
+          const ops: MigrationOp[] = [];
+          while (cursor) {
+            const oldKey = cursor.key as string;
+            const record = cursor.value as ChapterEmbedding & { kind?: ChapterEmbeddingKind };
+            const value: ChapterEmbedding = {
+              chapterId: record.chapterId,
+              bookId: record.bookId,
+              kind: 'content',
+              chunkIndex: record.chunkIndex,
+              vector: record.vector,
+              textSnippet: record.textSnippet,
+              model: record.model,
+              updatedAt: record.updatedAt,
+            };
+            const newKey = `${value.chapterId}:content:${value.chunkIndex}`;
+            ops.push({ oldKey, newKey, value });
+            cursor = await cursor.continue();
+          }
+          for (const op of ops) {
+            await store.delete(op.oldKey);
+            await store.put(op.value, op.newKey);
+            migrated += 1;
+          }
+          const endedAt =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now();
+          console.info(
+            `[indexed-db] v11 迁移完成:回填 ${migrated} 条 chapter-embeddings 的 kind 字段并重写 key,耗时 ${Math.round(
+              endedAt - startedAt,
+            )} ms`,
+          );
         }
 
         // 版本 9：硬迁移清理旧 attachedTo 字段
@@ -541,6 +610,7 @@ export async function clearAllData(): Promise<void> {
     'chapter-contents',
     'memories',
     'full-text-indexes',
+    'chapter-embeddings',
   ] as const;
 
   for (const storeName of storeNames) {
