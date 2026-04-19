@@ -309,23 +309,22 @@ defineExpose({ toggle });
         <div
           v-if="activeTask && activeTask.bookId"
           :class="[
-            'flex items-center gap-2 p-2 rounded text-xs',
+            'flex items-start gap-2 p-2 rounded text-xs min-w-0',
             isProcessingOtherBook
               ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
               : 'bg-primary-500/10 border border-primary-500/20 text-primary-300',
           ]"
         >
-          <i class="pi pi-spin pi-spinner"></i>
-          <span class="flex-1 min-w-0 truncate">
-            <template v-if="isProcessingOtherBook">
-              正在处理其它书籍:
-              <span class="font-medium">{{ activeBookTitle }}</span>
-              ({{ activeKindLabel }} ×{{ activeTask.itemCount }})
-            </template>
-            <template v-else>
-              正在处理本书 {{ activeKindLabel }} ×{{ activeTask.itemCount }}
-            </template>
-          </span>
+          <i class="pi pi-spin pi-spinner shrink-0 mt-0.5"></i>
+          <div class="flex-1 min-w-0">
+            <div v-if="isProcessingOtherBook">
+              <div class="truncate">其它书籍 · {{ activeKindLabel }} ×{{ activeTask.itemCount }}</div>
+              <div class="truncate font-medium mt-0.5">{{ activeBookTitle }}</div>
+            </div>
+            <div v-else class="truncate">
+              本书 {{ activeKindLabel }} ×{{ activeTask.itemCount }}
+            </div>
+          </div>
         </div>
 
         <!-- 全局状态 -->
