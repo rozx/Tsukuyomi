@@ -35,293 +35,280 @@ export function useKeyboardShortcuts(
   canRedo: ComputedRef<boolean>,
   redo: () => Promise<void>,
 ) {
-  // 键盘快捷键处理
-  const handleKeydown = (event: KeyboardEvent) => {
-    const target = event.target as HTMLElement;
-    const isInputElement =
-      target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+  const INTERACTIVE_OVERLAY_SELECTOR = [
+    // PrimeVue 常见 overlay/popup 容器
+    '.p-tieredmenu',
+    '.p-menu',
+    '.p-contextmenu',
+    '.p-dropdown-panel',
+    '.p-multiselect-panel',
+    '.p-overlaypanel',
+    '.p-dialog',
+    // 通用 ARIA role
+    '[role="menu"]',
+    '[role="listbox"]',
+    '[role="tree"]',
+    '[role="grid"]',
+    '[role="combobox"]',
+  ].join(',');
 
-    const isArrowKey = event.key === 'ArrowUp' || event.key === 'ArrowDown';
-    // PrimeVue/可交互弹层（菜单、下拉、对话框等）需要使用方向键进行导航；在这些场景下不要拦截默认行为
-    const isInInteractiveOverlay =
-      !!target.closest(
-        [
-          // PrimeVue 常见 overlay/popup 容器
-          '.p-tieredmenu',
-          '.p-menu',
-          '.p-contextmenu',
-          '.p-dropdown-panel',
-          '.p-multiselect-panel',
-          '.p-overlaypanel',
-          '.p-dialog',
-          // 通用 ARIA role
-          '[role="menu"]',
-          '[role="listbox"]',
-          '[role="tree"]',
-          '[role="grid"]',
-          '[role="combobox"]',
-        ].join(','),
-      );
+  /**
+   * 查找替换相关快捷键：Ctrl+F / Ctrl+H / F3 / Shift+F3 / Escape。
+   * 返回 true 表示已处理。
+   */
+  const tryHandleSearchShortcut = (event: KeyboardEvent, isInputElement: boolean): boolean => {
+    const hasMod = event.ctrlKey || event.metaKey;
 
-    // Ctrl+F 或 Cmd+F: 打开/关闭查找（如果不在搜索输入框中）
-    if ((event.ctrlKey || event.metaKey) && event.key === 'f' && !event.shiftKey) {
-      // 如果搜索工具栏已打开且焦点在搜索输入框，不处理（让浏览器默认行为处理）
-      if (isSearchVisible.value && isInputElement) {
-        return;
-      }
+    // Ctrl+F / Cmd+F
+    if (hasMod && event.key === 'f' && !event.shiftKey) {
+      if (isSearchVisible.value && isInputElement) return true;
       event.preventDefault();
       toggleSearch();
-      return;
+      return true;
     }
 
-    // Ctrl+H 或 Cmd+H: 打开/关闭替换（如果查找已打开）
-    if ((event.ctrlKey || event.metaKey) && event.key === 'h' && !event.shiftKey) {
-      // 如果焦点在输入框中，不处理
-      if (isInputElement) {
-        return;
-      }
+    // Ctrl+H / Cmd+H
+    if (hasMod && event.key === 'h' && !event.shiftKey) {
+      if (isInputElement) return true;
       event.preventDefault();
       if (isSearchVisible.value) {
         showReplace.value = !showReplace.value;
       } else {
         toggleSearch();
-        // 延迟显示替换，确保搜索工具栏已打开
         nextTick(() => {
           showReplace.value = true;
         });
       }
-      return;
+      return true;
     }
 
-    // F3: 下一个匹配（仅在搜索工具栏打开时，且不在输入框中）
-    if (event.key === 'F3' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    // F3 / Shift+F3（仅在搜索工具栏打开且不在输入框时响应）
+    if (event.key === 'F3' && !event.ctrlKey && !event.metaKey) {
       if (isSearchVisible.value && !isInputElement) {
         event.preventDefault();
-        nextMatch();
+        if (event.shiftKey) prevMatch();
+        else nextMatch();
       }
-      return;
+      return true;
     }
 
-    // Shift+F3: 上一个匹配（仅在搜索工具栏打开时，且不在输入框中）
-    if (event.key === 'F3' && event.shiftKey && !event.ctrlKey && !event.metaKey) {
-      if (isSearchVisible.value && !isInputElement) {
-        event.preventDefault();
-        prevMatch();
-      }
-      return;
-    }
-
-    // Escape: 关闭搜索工具栏（如果搜索工具栏已打开）
+    // Escape：关闭搜索
     if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
       if (isSearchVisible.value) {
         event.preventDefault();
         toggleSearch();
-        return;
+        return true;
       }
     }
 
-    // Ctrl+Shift+C 或 Cmd+Shift+C: 复制所有已翻译文本到剪贴板
-    if (
+    return false;
+  };
+
+  /**
+   * Ctrl+Shift+C: 复制所有已翻译文本。
+   */
+  const tryHandleCopyShortcut = (event: KeyboardEvent, isInputElement: boolean): boolean => {
+    const isCopyCombo =
       (event.ctrlKey || event.metaKey) &&
       event.shiftKey &&
       event.key.toLowerCase() === 'c' &&
-      !event.altKey
-    ) {
-      if (isInputElement) {
-        return;
-      }
-      event.preventDefault();
-      if (selectedChapterWithContent.value && selectedChapterParagraphs.value.length > 0) {
-        void copyAllTranslatedText();
-      }
-      return;
+      !event.altKey;
+    if (!isCopyCombo) return false;
+    if (isInputElement) return true;
+    event.preventDefault();
+    if (selectedChapterWithContent.value && selectedChapterParagraphs.value.length > 0) {
+      void copyAllTranslatedText();
     }
+    return true;
+  };
 
-    // Ctrl+Z 或 Cmd+Z: 撤销（需要在输入框检查之前处理，但只在非输入框时生效）
-    if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+  /**
+   * Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z: 撤销 / 重做。
+   */
+  const tryHandleUndoRedoShortcut = (
+    event: KeyboardEvent,
+    isInputElement: boolean,
+  ): boolean => {
+    const hasMod = event.ctrlKey || event.metaKey;
+
+    if (hasMod && event.key === 'z' && !event.shiftKey) {
       if (!isInputElement && canUndo.value) {
         event.preventDefault();
         void undo();
       }
-      return;
+      return true;
     }
 
-    // Ctrl+Y 或 Ctrl+Shift+Z 或 Cmd+Shift+Z: 重做（需要在输入框检查之前处理，但只在非输入框时生效）
-    if (
-      ((event.ctrlKey || event.metaKey) && event.key === 'y') ||
-      ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z')
-    ) {
+    const isRedoCombo =
+      (hasMod && event.key === 'y') ||
+      (hasMod && event.shiftKey && event.key === 'z');
+    if (isRedoCombo) {
       if (!isInputElement && canRedo.value) {
         event.preventDefault();
         void redo();
       }
-      return;
+      return true;
     }
 
-    // 如果用户在输入框中输入，不处理其他快捷键
-    if (isInputElement) {
-      return;
+    return false;
+  };
+
+  /**
+   * 计算箭头导航起点：若当前索引为空段落，跳到最近的非空段落。
+   * 找不到非空段落时返回 null。
+   */
+  const resolveArrowNavigationStart = (): number | null => {
+    if (selectedChapterParagraphs.value.length === 0) return null;
+
+    let currentIndex: number;
+    if (selectedParagraphIndex.value !== null) {
+      currentIndex = selectedParagraphIndex.value;
+    } else {
+      const nonEmptyIndices = getNonEmptyParagraphIndices();
+      if (nonEmptyIndices.length === 0) return null;
+      const firstIndex = nonEmptyIndices[0];
+      if (firstIndex === undefined) return null;
+      currentIndex = firstIndex;
+      selectedParagraphIndex.value = currentIndex;
     }
 
-    // 章节内容页：在【翻译模式】下屏蔽上下方向键触发的默认滚动（用于段落键盘导航）
-    // - 原文编辑/译文预览模式：需要允许默认滚动与浏览行为
-    // - 菜单/下拉等 overlay：需要允许方向键默认导航
-    if (
-      isArrowKey &&
-      selectedChapter.value &&
-      !selectedSettingMenu.value &&
-      editMode.value === 'translation' &&
-      !isInInteractiveOverlay &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey
-    ) {
+    const paragraph = selectedChapterParagraphs.value[currentIndex];
+    if (paragraph && isEmptyParagraph(paragraph)) {
+      const nextNonEmpty = findNextNonEmptyParagraph(currentIndex, 'down');
+      if (nextNonEmpty !== null) {
+        currentIndex = nextNonEmpty;
+      } else {
+        const prevNonEmpty = findNextNonEmptyParagraph(currentIndex, 'up');
+        if (prevNonEmpty === null) return null;
+        currentIndex = prevNonEmpty;
+      }
+      selectedParagraphIndex.value = currentIndex;
+    }
+
+    return currentIndex;
+  };
+
+  /**
+   * 从 currentIndex 在 nonEmptyIndices 中计算 ArrowUp/ArrowDown 的目标下标。
+   */
+  const computeNextArrowTarget = (
+    nonEmptyIndices: number[],
+    currentIndex: number,
+    direction: 'up' | 'down',
+  ): number | undefined => {
+    if (nonEmptyIndices.length === 0) return undefined;
+
+    let currentNonEmptyIndex = nonEmptyIndices.findIndex((idx) => idx === currentIndex);
+    if (currentNonEmptyIndex === -1) {
+      if (direction === 'up') {
+        const reversedIndices = [...nonEmptyIndices].reverse();
+        const foundIndex = reversedIndices.findIndex((idx) => idx < currentIndex);
+        currentNonEmptyIndex =
+          foundIndex !== -1 ? nonEmptyIndices.length - 1 - foundIndex : nonEmptyIndices.length - 1;
+      } else {
+        const foundIndex = nonEmptyIndices.findIndex((idx) => idx > currentIndex);
+        currentNonEmptyIndex = foundIndex === -1 ? 0 : foundIndex;
+      }
+    }
+
+    const targetNonEmptyIndex =
+      direction === 'up'
+        ? currentNonEmptyIndex > 0
+          ? currentNonEmptyIndex - 1
+          : nonEmptyIndices.length - 1
+        : currentNonEmptyIndex < nonEmptyIndices.length - 1
+          ? currentNonEmptyIndex + 1
+          : 0;
+    return nonEmptyIndices[targetNonEmptyIndex];
+  };
+
+  /**
+   * 箭头键段落导航（翻译模式下）。
+   */
+  const tryHandleArrowNavigation = (
+    event: KeyboardEvent,
+    isInInteractiveOverlay: boolean,
+  ): boolean => {
+    const isArrowKey = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    if (!isArrowKey) return false;
+    if (!selectedChapter.value) return false;
+    if (selectedSettingMenu.value) return false;
+    if (editMode.value !== 'translation') return false;
+    if (isInInteractiveOverlay) return false;
+
+    if (!event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
     }
 
-    // 上下箭头键：在段落之间导航（仅在翻译模式下且不在预览模式下）
-    if (
-      selectedChapter.value &&
-      !selectedSettingMenu.value &&
-      editMode.value === 'translation' &&
-      isArrowKey &&
-      !isInInteractiveOverlay
-    ) {
-      if (selectedChapterParagraphs.value.length === 0) return;
-
-      // 标记正在使用键盘导航
-      isKeyboardNavigating.value = true;
-      // 更新最后一次键盘导航的时间
-      lastKeyboardNavigationTime.value = Date.now();
-      // 清除重置导航的防抖 timeout（避免在键盘导航期间触发重置）
-      if (resetNavigationTimeoutId.value !== null) {
-        clearTimeout(resetNavigationTimeoutId.value);
-        resetNavigationTimeoutId.value = null;
-      }
-
-      // 获取当前索引：使用 selectedParagraphIndex（如果已通过点击设置）
-      // 如果 selectedParagraphIndex 是 null，说明还没有选中任何段落，需要找到第一个非空段落
-      let currentIndex: number;
-      if (selectedParagraphIndex.value !== null) {
-        currentIndex = selectedParagraphIndex.value;
-      } else {
-        // 如果还没有选中，找到第一个非空段落作为起点
-        const nonEmptyIndices = getNonEmptyParagraphIndices();
-        if (nonEmptyIndices.length === 0) return;
-        const firstIndex = nonEmptyIndices[0];
-        if (firstIndex === undefined) return;
-        currentIndex = firstIndex;
-        // 设置选中段落
-        selectedParagraphIndex.value = currentIndex;
-      }
-
-      // 确保当前索引对应的段落是非空的
-      const paragraph = selectedChapterParagraphs.value[currentIndex];
-      if (paragraph && isEmptyParagraph(paragraph)) {
-        // 如果是空段落，找到最近的非空段落
-        const nextNonEmpty = findNextNonEmptyParagraph(currentIndex, 'down');
-        if (nextNonEmpty !== null) {
-          currentIndex = nextNonEmpty;
-        } else {
-          const prevNonEmpty = findNextNonEmptyParagraph(currentIndex, 'up');
-          if (prevNonEmpty !== null) {
-            currentIndex = prevNonEmpty;
-          } else {
-            return; // 没有非空段落
-          }
-        }
-        // 更新选中段落
-        selectedParagraphIndex.value = currentIndex;
-      }
-
-      // 如果还没有显示键盘选中效果，需要先切换到键盘选中模式
-      // 如果段落是通过点击选中的，第一次按箭头键应该直接开始导航
-      // 如果段落还没有被选中，第一次按箭头键先显示选中效果
-      if (!isKeyboardSelected.value) {
-        // 清除点击选中状态，切换到键盘选中模式
-        isClickSelected.value = false;
-        // 如果段落已经被选中（通过点击），直接开始导航，不需要先显示选中效果
-        if (selectedParagraphIndex.value === currentIndex) {
-          isKeyboardSelected.value = true;
-          // 继续执行下面的导航逻辑
-        } else {
-          // 如果段落还没有被选中，先显示选中效果
-          navigateToParagraph(currentIndex, false, true); // 不滚动，只显示选中效果
-          return;
-        }
-      }
-
-      // 如果已经显示了选中效果，则移动到下一个/上一个段落
-      if (event.key === 'ArrowUp') {
-        // 向上导航到上一个非空段落
-        const nonEmptyIndices = getNonEmptyParagraphIndices();
-        if (nonEmptyIndices.length === 0) return;
-
-        // 找到当前索引在非空段落列表中的位置
-        let currentNonEmptyIndex = nonEmptyIndices.findIndex((idx) => idx === currentIndex);
-        if (currentNonEmptyIndex === -1) {
-          // 如果当前索引不在非空段落列表中（可能是空段落），找到第一个小于当前索引的
-          const reversedIndices = [...nonEmptyIndices].reverse();
-          const foundIndex = reversedIndices.findIndex((idx) => idx < currentIndex);
-          if (foundIndex !== -1) {
-            currentNonEmptyIndex = nonEmptyIndices.length - 1 - foundIndex;
-          } else {
-            // 如果都大于当前索引，选择最后一个
-            currentNonEmptyIndex = nonEmptyIndices.length - 1;
-          }
-        }
-
-        // 获取上一个非空段落的索引（循环）
-        const prevNonEmptyIndex =
-          currentNonEmptyIndex > 0 ? currentNonEmptyIndex - 1 : nonEmptyIndices.length - 1;
-        const targetIndex = nonEmptyIndices[prevNonEmptyIndex];
-        if (targetIndex !== undefined) {
-          navigateToParagraph(targetIndex, true, true); // 键盘导航，显示效果
-        }
-      } else if (event.key === 'ArrowDown') {
-        // 向下导航到下一个非空段落
-        const nonEmptyIndices = getNonEmptyParagraphIndices();
-        if (nonEmptyIndices.length === 0) return;
-
-        // 找到当前索引在非空段落列表中的位置
-        let currentNonEmptyIndex = nonEmptyIndices.findIndex((idx) => idx === currentIndex);
-        if (currentNonEmptyIndex === -1) {
-          // 如果当前索引不在非空段落列表中（可能是空段落），找到第一个大于当前索引的
-          currentNonEmptyIndex = nonEmptyIndices.findIndex((idx) => idx > currentIndex);
-          if (currentNonEmptyIndex === -1) {
-            // 如果都小于当前索引，选择第一个
-            currentNonEmptyIndex = 0;
-          }
-        }
-
-        // 获取下一个非空段落的索引（循环）
-        const nextNonEmptyIndex =
-          currentNonEmptyIndex < nonEmptyIndices.length - 1 ? currentNonEmptyIndex + 1 : 0;
-        const targetIndex = nonEmptyIndices[nextNonEmptyIndex];
-        if (targetIndex !== undefined) {
-          navigateToParagraph(targetIndex, true, true); // 键盘导航，显示效果
-        }
-      }
-      return;
+    isKeyboardNavigating.value = true;
+    lastKeyboardNavigationTime.value = Date.now();
+    if (resetNavigationTimeoutId.value !== null) {
+      clearTimeout(resetNavigationTimeoutId.value);
+      resetNavigationTimeoutId.value = null;
     }
 
-    // Enter 键：开始编辑当前选中的段落（仅在翻译模式下）
-    if (
+    const currentIndex = resolveArrowNavigationStart();
+    if (currentIndex === null) return true;
+
+    if (!isKeyboardSelected.value) {
+      isClickSelected.value = false;
+      if (selectedParagraphIndex.value === currentIndex) {
+        isKeyboardSelected.value = true;
+      } else {
+        navigateToParagraph(currentIndex, false, true);
+        return true;
+      }
+    }
+
+    const direction = event.key === 'ArrowUp' ? 'up' : 'down';
+    const targetIndex = computeNextArrowTarget(
+      getNonEmptyParagraphIndices(),
+      currentIndex,
+      direction,
+    );
+    if (targetIndex !== undefined) {
+      navigateToParagraph(targetIndex, true, true);
+    }
+    return true;
+  };
+
+  /**
+   * Enter: 在翻译模式下对选中段落开始编辑。
+   */
+  const tryHandleEnterEdit = (event: KeyboardEvent): boolean => {
+    const isPlainEnter =
       event.key === 'Enter' &&
       !event.ctrlKey &&
       !event.metaKey &&
       !event.shiftKey &&
-      !event.altKey &&
-      selectedChapter.value &&
-      !selectedSettingMenu.value &&
-      editMode.value === 'translation' &&
-      selectedParagraphIndex.value !== null
-    ) {
-      event.preventDefault();
-      startEditingSelectedParagraph();
-      return;
-    }
+      !event.altKey;
+    if (!isPlainEnter) return false;
+    if (!selectedChapter.value || selectedSettingMenu.value) return false;
+    if (editMode.value !== 'translation') return false;
+    if (selectedParagraphIndex.value === null) return false;
 
+    event.preventDefault();
+    startEditingSelectedParagraph();
+    return true;
+  };
+
+  // 键盘快捷键处理
+  const handleKeydown = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement;
+    const isInputElement =
+      target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+    const isInInteractiveOverlay = !!target.closest(INTERACTIVE_OVERLAY_SELECTOR);
+
+    // 全局快捷键：在输入框中也要处理（自己内部判断）
+    if (tryHandleSearchShortcut(event, isInputElement)) return;
+    if (tryHandleCopyShortcut(event, isInputElement)) return;
+    if (tryHandleUndoRedoShortcut(event, isInputElement)) return;
+
+    // 其余快捷键仅在非输入框中响应
+    if (isInputElement) return;
+
+    if (tryHandleArrowNavigation(event, isInInteractiveOverlay)) return;
+    tryHandleEnterEdit(event);
   };
 
   // 处理点击事件，重置键盘导航状态（允许鼠标悬停再次生效）

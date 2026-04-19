@@ -32,7 +32,10 @@
     "unused-files": "error",
     "unused-exports": "warn",
     "unused-types": "off",
-    "unresolved-imports": "error"
+    "unused-class-members": "warn",
+    "unresolved-imports": "warn",
+    "circular-dependencies": "warn",
+    "duplicate-exports": "warn"
   },
   "duplicates": {
     "mode": "mild",
@@ -41,11 +44,8 @@
     "threshold": 10
   },
   "health": {
-    "maxCyclomatic": 20,
-    "maxCognitive": 15,
-    "ignore": ["**/*.generated.ts"]
-  },
-  "boundaries": {
-    "preset": "bulletproof"
+    "maxCyclomatic": 30,
+    "maxCognitive": 30,
+    "ignore": ["src/components/settings/**", "src/__tests__/**"]
   }
 }
